@@ -27,6 +27,7 @@ import { makeFileRestartSnapshotStore, makeMemoryRestartSnapshotStore } from "./
 import { makeServerAutoResume } from "./routes/auto-resume-dispatch.js"
 import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
+import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import { makeSessionEventRouter } from "./routes/session-event-router.js"
@@ -147,6 +148,9 @@ export const makeCodevisorServerApp = (
   )
   const unsubscribeBotConversations = fanout.subscribe(
     makeBotConversationListener(services, fanout)
+  )
+  const unsubscribeUsageHoldRelease = fanout.subscribe(
+    makeUsageHoldReleaseListener(services, fanout, routeState, config.id)
   )
   const sessionEvents = makeSessionEventRouter(services, fanout, routeState, config.id)
   const unsubscribeSessionEvents = fanout.subscribe(sessionEvents.listener)
@@ -294,6 +298,7 @@ export const makeCodevisorServerApp = (
       autoResume.close()
       unsubscribeTurns()
       unsubscribeBotConversations()
+      unsubscribeUsageHoldRelease()
       unsubscribeSessionEvents()
       unsubscribeJobEvents?.()
       unsubscribeSessionActivity?.()

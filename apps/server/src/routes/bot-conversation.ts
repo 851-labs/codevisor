@@ -117,26 +117,60 @@ export const agentMessageEvent = async (
   ].join("\n")
 }
 
-export const makeBotConversationListener =
-  (services: CodevisorServerServices, fanout: EventFanout) =>
-  (event: EventEnvelope): void => {
-    const payload = isRecord(event.payload) ? event.payload : {}
-    if (event.kind === "session.error") {
-      const message = String(payload.message)
-      void (async () => {
-        if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
-        await postBotMessage(services, fanout, event.subjectId, {
-          sender: "notice",
-          text: `Couldn't reply: ${message}`
-        })
-      })().catch(swallowError)
-      return
-    }
-    if (event.kind !== "session.updated" || payload.turnState !== "ended") return
-    if (typeof payload.stopKind !== "string" || typeof payload.stopDetail !== "string") return
-    const notice = payload.stopDetail
-    void (async () => {
-      if ((await conversationalBotForSession(services, event.subjectId)) === undefined) return
-      await postBotMessage(services, fanout, event.subjectId, { sender: "notice", text: notice })
-    })().catch(swallowError)
+export const makeBotConversationListener = (
+  services: CodevisorServerServices,
+  fanout: EventFanout
+) => {
+  const serialized = makeSessionChains()
+  return (event: EventEnvelope): void => {
+    const notice = turnNotice(event)
+    if (notice === undefined) return
+
+    const sessionId = event.subjectId
+    void serialized(sessionId, () => postBotNotice(services, fanout, sessionId, notice))
   }
+}
+
+const turnNotice = (event: EventEnvelope): string | undefined => {
+  const payload = isRecord(event.payload) ? event.payload : {}
+  if (event.kind === "session.error") return `Couldn't reply: ${String(payload.message)}`
+  if (event.kind !== "session.updated" || payload.turnState !== "ended") return undefined
+
+  return stopNotice(payload)
+}
+
+const stopNotice = (payload: Record<string, unknown>): string | undefined => {
+  if (typeof payload.stopKind !== "string") return undefined
+
+  return typeof payload.stopDetail === "string" ? payload.stopDetail : undefined
+}
+
+const postBotNotice = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  sessionId: string,
+  text: string
+): Promise<void> => {
+  if ((await conversationalBotForSession(services, sessionId)) === undefined) return
+  if (await repeatsLatestMessage(services, sessionId, text)) return
+
+  await postBotMessage(services, fanout, sessionId, { sender: "notice", text })
+}
+
+const repeatsLatestMessage = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  text: string
+): Promise<boolean> => {
+  const [latest] = (await run(services.db.listBotMessages(sessionId, undefined, 1))).messages
+  return latest?.sender === "notice" && latest.text === text
+}
+
+const makeSessionChains = () => {
+  const chains = new Map<string, Promise<void>>()
+  return (sessionId: string, step: () => Promise<void>): Promise<void> => {
+    const next = (chains.get(sessionId) ?? Promise.resolve()).then(step).catch(swallowError)
+    chains.set(sessionId, next)
+    return next
+  }
+}

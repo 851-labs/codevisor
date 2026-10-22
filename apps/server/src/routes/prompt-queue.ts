@@ -23,6 +23,7 @@ import {
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
+import { coalesceReleasedWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
 import { transcriptOrigin } from "./prompt-origin.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
@@ -209,6 +210,11 @@ export const drainPromptQueue = async (
         await publishPromptQueue(services.db, fanout, sessionId)
         return
       }
+      if (await heldForUsageLimit(services, sessionId)) {
+        await publishPromptQueue(services.db, fanout, sessionId)
+        return
+      }
+      await coalesceReleasedWakeUps(services, sessionId)
       const item = await run(services.db.claimPromptQueueItem(sessionId))
       if (item === undefined) {
         await publishPromptQueue(services.db, fanout, sessionId)

@@ -8,7 +8,7 @@ import { Bot, decode, Project } from "@codevisor/api"
 import { Schema } from "effect"
 import { expect, onTestFinished } from "vitest"
 
-import type { CodevisorServerConfig } from "../server.js"
+import type { CodevisorServerConfig, RunningCodevisorServer } from "../server.js"
 import { jsonRequest, listSubjectEvents, start, tempDirs } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
@@ -26,9 +26,14 @@ const useWorktreesRoot = (): string => {
   return root
 }
 
-export const setUp = async (configOverrides: Partial<CodevisorServerConfig> = {}) => {
+export const setUp = (configOverrides: Partial<CodevisorServerConfig> = {}) =>
+  setUpWith(() => start(undefined, {}, configOverrides))
+
+export const setUpWith = async <Started extends { readonly server: RunningCodevisorServer }>(
+  startServer: () => Promise<Started>
+) => {
   useWorktreesRoot()
-  const running = await start(undefined, {}, configOverrides)
+  const running = await startServer()
   const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-bot-repos-")))
   tempDirs.push(repoRoot)
   const addProject = async (id: string, name: string): Promise<string> => {
@@ -51,14 +56,14 @@ export const setUp = async (configOverrides: Partial<CodevisorServerConfig> = {}
 
 export type Running = Awaited<ReturnType<typeof setUp>>
 
-export const endedTurns = (running: Running, sessionId: string) =>
+export const endedTurns = (running: Pick<Running, "services">, sessionId: string) =>
   listSubjectEvents(running.services, sessionId).filter(
     (event) =>
       event.kind === "session.updated" &&
       JSON.stringify(event.payload).includes('"turnState":"ended"')
   ).length
 
-export const createBot = (running: Running, body: Record<string, unknown>) =>
+export const createBot = (running: Pick<Running, "server">, body: Record<string, unknown>) =>
   jsonRequest(running.server, "/v1/bots", {
     body: JSON.stringify({
       name: "Release Helper",
