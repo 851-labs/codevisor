@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto"
 
 import {
+  answersIfPresent,
   normalizePromptInput,
+  sessionUpdateFirstPayloads,
   skillsUpdateEvent,
   type PromptInput,
   type QuestionAnswer,
+  type QuestionResolution,
   type RuntimeEmit,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
@@ -41,6 +44,8 @@ import {
   requireSession,
   userInputRequest
 } from "./wire.js"
+
+const questionPayloads = sessionUpdateFirstPayloads(answersIfPresent)
 
 interface Turn {
   readonly id: string
@@ -112,8 +117,7 @@ export const startMuseChat = async (
   const museInput = (input: string | PromptInput) =>
     turnInput(normalizePromptInput(input), skills?.skills ?? [])
   const currentOptions = () => configOptions({ models, modelId, effort })
-  const send = (kind: EventKind, payload: Record<string, unknown>) =>
-    emit({ kind, payload, subjectId: key })
+  const send = (kind: EventKind, payload: object) => emit({ kind, payload, subjectId: key })
   const announceOptions = () => void send("session.updated", { configOptions: currentOptions() })
 
   const startTurn = (initiatedBy: "user" | "agent", museTurnId?: string): Turn => {
@@ -129,18 +133,8 @@ export const startMuseChat = async (
     return started
   }
 
-  const resolved = (
-    questionId: string,
-    question: MuseQuestion,
-    answer: QuestionAnswer | { outcome: "autoResolved" }
-  ) =>
-    send("session.output", {
-      sessionUpdate: "question_resolved",
-      questionId,
-      outcome: answer.outcome,
-      questions: question.specs,
-      ...("answers" in answer && answer.answers !== undefined ? { answers: answer.answers } : {})
-    })
+  const resolved = (questionId: string, question: MuseQuestion, resolution: QuestionResolution) =>
+    send("session.output", questionPayloads.resolved(questionId, question.specs, resolution))
 
   const endTurn = async (outcome: TurnOutcome) => {
     const ended = turn
@@ -167,14 +161,12 @@ export const startMuseChat = async (
     const replaced = questions.get(id)
     if (replaced !== undefined) void resolved(id, replaced, { outcome: "autoResolved" })
     questions.set(id, question)
-    void send("session.output", {
-      sessionUpdate: "question",
-      questionId: id,
-      ...(question.autoResolutionMs === undefined
-        ? {}
-        : { autoResolutionMs: question.autoResolutionMs }),
-      questions: question.specs
-    })
+    void send(
+      "session.output",
+      questionPayloads.asked(id, question.specs, {
+        autoResolutionMs: question.autoResolutionMs
+      })
+    )
   }
 
   const settledElsewhere = (value: unknown) => {

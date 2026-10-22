@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto"
 
-import type { QuestionAnswer, RuntimeEvent } from "@codevisor/agent-runtime"
+import {
+  answersIfDefined,
+  questionIdFirstPayloads,
+  type QuestionAnswer,
+  type RuntimeEvent
+} from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
 import { record, type JsonRecord } from "./internal.js"
 import { canonicalToolName, filePath, stringValue } from "./tool-updates.js"
 import { prefixChildTitle, type ChildSession, type TrackedTool } from "./translate.js"
+
+const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
 export type PermissionDecision = "once" | "always" | "reject"
 
@@ -78,13 +85,10 @@ export const makePermissionQuestions = (emit: (event: RuntimeEvent) => void, ses
     emit({
       kind: "session.output",
       subjectId: sessionId,
-      payload: {
+      payload: questionPayloads.resolved(questionId, entry.questions, {
         outcome,
-        questionId,
-        questions: entry.questions,
-        sessionUpdate: "question_resolved",
-        ...(answers === undefined ? {} : { answers })
-      }
+        answers
+      })
     })
 
   return {
@@ -93,7 +97,7 @@ export const makePermissionQuestions = (emit: (event: RuntimeEvent) => void, ses
       emit({
         kind: "session.output",
         subjectId: sessionId,
-        payload: { questionId, questions: [spec], sessionUpdate: "question" }
+        payload: questionPayloads.asked(questionId, [spec])
       })
       return new Promise((settle) => {
         pending.set(questionId, { requestID, questions: [spec], settle })

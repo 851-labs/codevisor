@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto"
 
-import type { QuestionAnswer } from "@codevisor/agent-runtime"
+import {
+  answersIfDefined,
+  questionIdFirstPayloads,
+  type QuestionAnswer,
+  type QuestionOutcome
+} from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
 import { elicitationFields } from "./elicitation-schema.js"
 import { isRecord } from "./internal.js"
 import type { CodexSession, PendingCodexQuestion } from "./session.js"
+
+const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
 export const serverRequestResponse = (
   session: CodexSession,
@@ -76,12 +83,7 @@ const holdApprovalRequest = (
   const questionId = randomUUID()
   void session.emit({
     kind: "session.output",
-    payload: {
-      questionId,
-      questions: [spec],
-      sessionUpdate: "question",
-      ...(detail === undefined ? {} : { message: detail })
-    },
+    payload: questionPayloads.asked(questionId, [spec], { message: detail }),
     subjectId: session.key
   })
   return new Promise<unknown>((resolve, reject) => {
@@ -120,12 +122,7 @@ const holdQuestionRequest = (
     typeof params.autoResolutionMs === "number" ? params.autoResolutionMs : undefined
   void session.emit({
     kind: "session.output",
-    payload: {
-      questionId,
-      questions,
-      sessionUpdate: "question",
-      ...(autoResolutionMs === undefined ? {} : { autoResolutionMs })
-    },
+    payload: questionPayloads.asked(questionId, questions, { autoResolutionMs }),
     subjectId: session.key
   })
   return new Promise<unknown>((resolve, reject) => {
@@ -183,9 +180,7 @@ const holdElicitationRequest = (
     kind: "session.output",
     payload: {
       message: message ?? `${serverName} needs input to continue.`,
-      questionId,
-      questions,
-      sessionUpdate: "question"
+      ...questionPayloads.asked(questionId, questions)
     },
     subjectId: session.key
   })
@@ -252,7 +247,7 @@ export const askAsyncQuestions = (session: CodexSession, itemId: string, value: 
   session.asyncQuestion = { questionId, questions }
   void session.emit({
     kind: "session.output",
-    payload: { questionId, questions, sessionUpdate: "question" },
+    payload: questionPayloads.asked(questionId, questions),
     subjectId: session.key
   })
 }
@@ -282,19 +277,13 @@ const asyncQuestionSpecsFrom = (itemId: string, value: unknown): Array<QuestionS
 export const emitQuestionResolved = (
   session: CodexSession,
   questionId: string,
-  outcome: "answered" | "cancelled" | "autoResolved",
+  outcome: QuestionOutcome,
   questions: ReadonlyArray<QuestionSpec>,
   answers: QuestionAnswer["answers"]
 ): Promise<void> =>
   session.emit({
     kind: "session.output",
-    payload: {
-      outcome,
-      questionId,
-      questions,
-      sessionUpdate: "question_resolved",
-      ...(answers === undefined ? {} : { answers })
-    },
+    payload: questionPayloads.resolved(questionId, questions, { outcome, answers }),
     subjectId: session.key
   })
 

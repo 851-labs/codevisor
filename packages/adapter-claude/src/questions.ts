@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto"
 
-import type { QuestionAnswer } from "@codevisor/agent-runtime"
+import {
+  answersIfDefined,
+  questionIdFirstPayloads,
+  type QuestionAnswer
+} from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
 import type { ClaudeSession, ClaudeToolDecision } from "./session.js"
 import { toolTitle } from "./tool-presentation.js"
+
+const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
 export const holdClaudeQuestion = (
   session: ClaudeSession,
@@ -18,7 +24,7 @@ export const holdClaudeQuestion = (
   const questionId = randomUUID()
   void session.emit({
     kind: "session.output",
-    payload: { questionId, questions, sessionUpdate: "question" },
+    payload: questionPayloads.asked(questionId, questions),
     subjectId: session.key
   })
   return new Promise((resolve) => {
@@ -108,13 +114,7 @@ const emitClaudeQuestionResolved = (
 ): Promise<void> =>
   session.emit({
     kind: "session.output",
-    payload: {
-      outcome,
-      questionId,
-      questions,
-      sessionUpdate: "question_resolved",
-      ...(answers === undefined ? {} : { answers })
-    },
+    payload: questionPayloads.resolved(questionId, questions, { outcome, answers }),
     subjectId: session.key
   })
 
@@ -135,9 +135,7 @@ export const holdClaudeApproval = (
     kind: "session.output",
     payload: {
       message: toolTitle(toolName, toolInput),
-      questionId,
-      questions: [spec],
-      sessionUpdate: "question"
+      ...questionPayloads.asked(questionId, [spec])
     },
     subjectId: session.key
   })
@@ -183,7 +181,7 @@ export const holdClaudePlanApproval = (
   const questionId = randomUUID()
   void session.emit({
     kind: "session.output",
-    payload: { questionId, questions: [spec], sessionUpdate: "question" },
+    payload: questionPayloads.asked(questionId, [spec]),
     subjectId: session.key
   })
   return new Promise((resolve) => {

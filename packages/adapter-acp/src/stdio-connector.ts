@@ -6,6 +6,8 @@ import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk"
 import {
   adapterPromise,
+  answersIfDefined,
+  questionIdFirstPayloads,
   skillsUpdateEvent,
   summarizeProcessFailure,
   type AgentSessionMetadata,
@@ -34,6 +36,8 @@ import {
   type AcpSdkConnectionCustomization
 } from "./sdk-connection.js"
 import { discoverSkillFolders, makeAcpSkillTracker } from "./skills.js"
+
+const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
 export interface AcpStdioExtensionContext {
   readonly emit: (event: RuntimeEvent) => void
@@ -98,13 +102,10 @@ export const makeStdioAcpConnectorWithOptions = (
       ): void => {
         safeEmit({
           kind: "session.output",
-          payload: {
+          payload: questionPayloads.resolved(questionId, pending.questions, {
             outcome,
-            questionId,
-            questions: pending.questions,
-            sessionUpdate: "question_resolved",
-            ...(answers === undefined ? {} : { answers })
-          },
+            answers
+          }),
           subjectId: pending.sessionId
         })
       }
@@ -121,11 +122,7 @@ export const makeStdioAcpConnectorWithOptions = (
         }
         safeEmit({
           kind: "session.output",
-          payload: {
-            questionId,
-            questions: question.questions,
-            sessionUpdate: "question"
-          },
+          payload: questionPayloads.asked(questionId, question.questions),
           subjectId: question.sessionId
         })
         return new Promise<Response>((resolve) => {

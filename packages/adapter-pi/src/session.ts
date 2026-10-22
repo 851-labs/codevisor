@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto"
 
 import {
+  answersIfDefined,
   normalizePromptInput,
   sessionSkills,
+  sessionUpdateFirstPayloads,
   withAttachmentNotes,
   type PromptInput,
   type QuestionAnswer,
@@ -22,6 +24,8 @@ import {
 import { dialogQuestion, type PiDialogQuestion } from "./questions.js"
 import { failureDetail, piStop } from "./stops.js"
 import { errorMessage, record } from "./values.js"
+
+const questionPayloads = sessionUpdateFirstPayloads(answersIfDefined)
 
 export const MINIMUM_PI_VERSION = "0.81.0"
 
@@ -126,8 +130,7 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
   let key = ""
 
   const options = () => configOptions({ models, model, levels, level })
-  const send = (kind: EventKind, payload: Record<string, unknown>) =>
-    emit({ kind, payload, subjectId: key })
+  const send = (kind: EventKind, payload: object) => emit({ kind, payload, subjectId: key })
 
   const startTurn = (initiatedBy: "user" | "agent"): Turn => {
     const started: Turn = { id: randomUUID(), initiatedBy, cancelled: false }
@@ -140,13 +143,7 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
   const resolveQuestion = (questionId: string, open: OpenQuestion, answer: QuestionAnswer) => {
     questions.delete(questionId)
     client.respond({ id: open.dialogId, ...open.dialog.response(answer) })
-    void send("session.output", {
-      sessionUpdate: "question_resolved",
-      questionId,
-      outcome: answer.outcome,
-      questions: [open.dialog.spec],
-      ...(answer.answers === undefined ? {} : { answers: answer.answers })
-    })
+    void send("session.output", questionPayloads.resolved(questionId, [open.dialog.spec], answer))
   }
 
   const endTurn = async (detail?: string): Promise<void> => {
@@ -172,12 +169,10 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
     if (dialog === undefined || typeof request.id !== "string") return
     const questionId = randomUUID()
     questions.set(questionId, { dialogId: request.id, dialog })
-    void send("session.output", {
-      sessionUpdate: "question",
-      questionId,
-      ...(dialog.message === undefined ? {} : { message: dialog.message }),
-      questions: [dialog.spec]
-    })
+    void send(
+      "session.output",
+      questionPayloads.asked(questionId, [dialog.spec], { message: dialog.message })
+    )
   }
 
   client.onEvent((event) => {

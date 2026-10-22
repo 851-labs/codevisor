@@ -20,6 +20,14 @@ describe("OpenCode permission questions", () => {
     expect(question("glob", { pattern: "**/*.ts" })).toBe("glob: **/*.ts")
     expect(question("edit", { filePath: "src/a.ts" })).toBe("edit: src/a.ts")
     expect(question("bash", { cmd: "make" })).toBe("bash: make")
+    expect(question("bash", { command: "make test", cmd: "make" })).toBe("bash: make test")
+    expect(question("external_directory", { description: "Read logs", parentDir: "/var" })).toBe(
+      "external_directory: Read logs"
+    )
+    expect(question("webfetch", { url: "https://opencode.ai" })).toBe(
+      "webfetch: https://opencode.ai"
+    )
+    expect(question("grep", { pattern: "TODO" })).toBe("grep: TODO")
     expect(question("mcp_tool", {}, { message: "Use the browser" })).toBe(
       "mcp_tool: Use the browser"
     )

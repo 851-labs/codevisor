@@ -257,6 +257,35 @@ describe("ClaudeProvider", () => {
     ).toEqual([])
   })
 
+  it("leaves skipped and blank answers out of updatedInput", async () => {
+    const { fake, events, created } = await startTestSession()
+
+    const toolInput = {
+      questions: [
+        { options: [{ label: "Web" }, { label: "iOS" }], question: "Which platforms?" },
+        { options: [{ label: "Yes" }], question: "Ship today?" },
+        { options: [], question: "Anything else?" }
+      ]
+    }
+    const decision = fake.options!.canUseTool!("AskUserQuestion", toolInput, toolCheck())
+    await fake.drain()
+    const questionId = stringValue(payloadOf(events.at(-1)).questionId)
+
+    await run(
+      created.handle.answerQuestion!(questionId, {
+        answers: {
+          question_0: { answers: ["Web"] },
+          question_2: { answers: [], note: "  " }
+        },
+        outcome: "answered"
+      })
+    )
+    await expect(decision).resolves.toEqual({
+      behavior: "allow",
+      updatedInput: { ...toolInput, answers: { "Which platforms?": "Web" } }
+    })
+  })
+
   it("cancelling a question denies the tool; interrupts deny all held questions", async () => {
     const { fake, events, created } = await startTestSession()
 

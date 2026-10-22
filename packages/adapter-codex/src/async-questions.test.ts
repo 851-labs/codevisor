@@ -203,6 +203,34 @@ describe("Codex asynchronous questions", () => {
     })
   })
 
+  it("drops blank asynchronous questions and options from the card", async () => {
+    const { client, events } = await startTurn()
+    deliverAsyncMessage(
+      client,
+      asyncMessage("call-2", [
+        { title: "  " },
+        { options: ["Web", " ", 3], title: "Which platform?" },
+        { options: "Web", title: "Which engine?" }
+      ])
+    )
+
+    expect(questionEvents(events, "question").at(-1)?.questions).toEqual([
+      expect.objectContaining({ id: ARENA_ID }),
+      {
+        allowsOther: true,
+        id: '["request_user_input_async","call-2",1]',
+        options: [{ label: "Web" }],
+        question: "Which platform?"
+      },
+      {
+        allowsOther: true,
+        id: '["request_user_input_async","call-2",2]',
+        options: [],
+        question: "Which engine?"
+      }
+    ])
+  })
+
   it("shows free-form asynchronous messages, which arrive without text deltas", async () => {
     const { client, events } = await setup()
     deliverAsyncMessage(client, {
