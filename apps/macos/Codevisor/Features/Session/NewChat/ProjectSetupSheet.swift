@@ -13,7 +13,7 @@ struct ProjectSetupSheet: View {
     let screen = setup.screen(showing: shownPlan)
     VStack(spacing: 20) {
       VStack(spacing: 4) {
-        Image(systemName: screen.symbol)
+        SheetSymbolImage(screen.symbol)
           .font(.system(size: 30, weight: .medium))
           .symbolRenderingMode(.hierarchical)
           .foregroundStyle(.secondary)
@@ -26,20 +26,15 @@ struct ProjectSetupSheet: View {
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)
-        if isCloning {
-          ProgressView(value: setup.progress.fraction) {
-            Text(setup.progress.label)
-          } currentValueLabel: {
-            Text(setup.progress.detail ?? " ")
-          }
-          .monospacedDigit()
-          .frame(maxWidth: 320)
-          .padding(.top, 12)
-        }
       }
 
       if hasCard(caution: screen.caution) {
-        PermissionCard { card(caution: screen.caution) }
+        VStack(spacing: 12) {
+          PermissionCard { card(caution: screen.caution) }
+          if let codeActivity {
+            SheetActivityLabel(codeActivity)
+          }
+        }
       }
 
       HStack {
@@ -69,32 +64,30 @@ struct ProjectSetupSheet: View {
     }
   }
 
-  private var isCloning: Bool {
-    switch setup.phase {
-    case let .running(plan): return !plan.needsRemote
-    case .finished: return true
-    default: return false
-    }
-  }
-
   private func hasCard(caution: String?) -> Bool {
     switch setup.phase {
     case .idle, .unavailable, .finished: return false
     case let .running(plan): return plan.needsRemote
     case let .failed(plan, _): return plan.needsRemote || caution != nil
+    case let .signingIn(_, model): return showsCodeOrFailure(model)
     default: return true
     }
   }
 
   private var activity: String? {
-    switch setup.phase {
-    case let .running(plan) where plan.needsRemote:
-      return setup.progress.label
-    case let .signingIn(_, model):
-      if case .waiting = model.step { return "Waiting for sign-in…" }
-      return nil
-    default:
-      return nil
+    guard codeActivity == nil else { return nil }
+    return setup.activity
+  }
+
+  private var codeActivity: String? {
+    guard case let .signingIn(_, model) = setup.phase, case .waiting = model.step else { return nil }
+    return model.activity
+  }
+
+  private func showsCodeOrFailure(_ model: GitSignInModel) -> Bool {
+    switch model.step {
+    case .waiting, .failed: return true
+    default: return false
     }
   }
 
@@ -197,14 +190,8 @@ struct ProjectSetupSheet: View {
       .padding(.vertical, 14)
     case let .failed(_, message):
       caution(firstLine(message))
-    case let .installing(provider):
-      PermissionRow(symbol: "arrow.down.circle", title: "Installing \(provider.cliName)…") {
-        ProgressView().controlSize(.small)
-      }
-    case .idle, .starting, .signedIn:
-      PermissionRow(symbol: "person.badge.key", title: "Starting sign-in") {
-        ProgressView().controlSize(.small)
-      }
+    case .idle, .starting, .confirmingSetup, .installing, .signedIn:
+      EmptyView()
     }
   }
 
@@ -229,10 +216,10 @@ struct ProjectSetupSheet: View {
       }
     case let .failed(plan, _):
       return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: plan.isReady) { setup.retry() }
-    case let .preparing(plan), let .running(plan):
+    case let .preparing(plan):
       return Primary(title: plan.needsRemote ? plan.pushTitle : plan.cloneTitle, isEnabled: false) {}
-    case .finished:
-      return shownPlan.map { Primary(title: $0.cloneTitle, isEnabled: false) {} }
+    case .running, .finished:
+      return nil
     case let .signingIn(_, model):
       switch model.step {
       case let .waiting(provider, flow):
@@ -240,8 +227,10 @@ struct ProjectSetupSheet: View {
         return Primary(title: "Open \(provider.displayName)", isEnabled: url != nil) {
           if let url { openURL(url) }
         }
-      case let .failed(provider, _):
-        return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: true) { model.signIn(with: provider) }
+      case .confirmingSetup:
+        return Primary(title: ProjectMachineSetup.setUpTitle, isEnabled: true) { model.setUp() }
+      case .failed:
+        return Primary(title: ProjectMachineSetup.retryTitle, isEnabled: true) { model.retry() }
       default:
         return nil
       }

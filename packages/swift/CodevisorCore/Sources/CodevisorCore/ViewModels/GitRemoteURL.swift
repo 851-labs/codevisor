@@ -26,7 +26,15 @@ public enum GitHostProvider: String, Sendable, CaseIterable, Identifiable {
     }
   }
 
-  public var cliName: String { "\(displayName) CLI" }
+  public static let genericLogo = SheetSymbol.system("server.rack")
+
+  public var logo: SheetSymbol {
+    switch self {
+    case .github: .custom("github-mark")
+    case .gitlab: .custom("gitlab-mark")
+    case .bitbucket: Self.genericLogo
+    }
+  }
 
   public var defaultHost: String {
     switch self {

@@ -64,6 +64,7 @@ public final class ProjectMachineSetup {
     public var provider: GitHostProvider? { host.flatMap(GitHostProvider.init(host:)) }
     public var isMissingRepository: Bool { code == "repo_not_found" }
     public var needsSignIn: Bool { canSignIn && code == "auth_failed" }
+    public var needsHostSignIn: Bool { !canSignIn && code == "auth_failed" }
     public var canSignIn: Bool {
       guard provider?.supportsSignIn == true else { return false }
       return code == "auth_failed" || isMissingRepository
