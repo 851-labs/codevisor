@@ -36,25 +36,72 @@ export class AppStoreConnectError extends Error {
   }
 }
 
-export function appStoreClient(credentials, { fetchImplementation = fetch, now = Date.now } = {}) {
-  return async (path, { query = {}, method = "GET", body, timeout = 60_000 } = {}) => {
-    const url = new URL(`https://api.appstoreconnect.apple.com/v1/${path}`)
-    url.search = new URLSearchParams(query).toString()
-    const response = await fetchImplementation(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${appStoreToken(credentials, now())}`,
-        "Content-Type": "application/json"
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(Math.min(60_000, timeout))
-    })
-    if (!response.ok) {
-      const details = await response.text()
-      throw new AppStoreConnectError(method, path, response.status, details)
+const attemptTimeout = 60_000
+const defaultRequestBudget = 2 * 60_000
+const readRetryDelays = [5_000, 15_000, 30_000, 60_000]
+
+export function appStoreClient(
+  credentials,
+  { fetchImplementation = fetch, now = Date.now, sleep = setTimeout } = {}
+) {
+  return async (
+    path,
+    { query = {}, method = "GET", body, timeout = defaultRequestBudget } = {}
+  ) => {
+    const deadline = now() + timeout
+    const send = () =>
+      fetchImplementation(appStoreUrl(path, query), {
+        method,
+        headers: {
+          Authorization: `Bearer ${appStoreToken(credentials, now())}`,
+          "Content-Type": "application/json"
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(Math.min(attemptTimeout, deadline - now()))
+      })
+
+    for (const delay of readRetryDelays) {
+      const outcome = await sendOnce(send)
+      if (!canRetry(method, outcome, now() + delay, deadline)) return settle(outcome, method, path)
+
+      await discard(outcome)
+      await sleep(delay)
     }
-    return response.status === 204 ? undefined : response.json()
+    return settle(await sendOnce(send), method, path)
   }
+}
+
+function appStoreUrl(path, query) {
+  const url = new URL(`https://api.appstoreconnect.apple.com/v1/${path}`)
+  url.search = new URLSearchParams(query).toString()
+  return url
+}
+
+async function sendOnce(send) {
+  try {
+    const response = await send()
+    return { response, transient: transientStatus(response.status) }
+  } catch (error) {
+    return { error, transient: true }
+  }
+}
+
+const transientStatus = (status) => status === 429 || status >= 500
+
+const canRetry = (method, outcome, resumeAt, deadline) =>
+  method === "GET" && outcome.transient && resumeAt < deadline
+
+async function discard({ response }) {
+  await response?.body?.cancel()
+}
+
+async function settle({ response, error }, method, path) {
+  if (error) throw error
+  if (!response.ok) {
+    const details = await response.text()
+    throw new AppStoreConnectError(method, path, response.status, details)
+  }
+  return response.status === 204 ? undefined : response.json()
 }
 
 export async function findApp(client, bundleId) {

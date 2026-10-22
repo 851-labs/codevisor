@@ -47,6 +47,7 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 derived_data="$repo_root/dist/release/DerivedData"
 runtime_root="$repo_root/dist/release/work/app-server-runtimes"
 node_entitlements="$script_dir/node-entitlements.plist"
+sign="$script_dir/codesign-with-timestamp-retry.sh"
 host_target="$("$script_dir/detect-target.sh")"
 build_number="${CODEVISOR_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 source_revision="${CODEVISOR_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
@@ -171,25 +172,25 @@ sign_sparkle() {
   )
   for component in "${sparkle_components[@]}"; do
     [[ -e "$component" ]] || { echo "error: missing Sparkle component: $component" >&2; exit 1; }
-    codesign "${sign_args[@]}" --preserve-metadata=entitlements "$component"
+    "$sign" "${sign_args[@]}" --preserve-metadata=entitlements "$component"
   done
-  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
+  "$sign" "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
   codesign --verify --deep --strict "$sparkle_framework"
 }
 
 sign_browser_and_frameworks() {
   node "$script_dir/macos-browser-artifact.mjs" sign-libraries "$app_path" "${identity:--}"
   while IFS= read -r library; do
-    codesign "${sign_args[@]}" "$library"
+    "$sign" "${sign_args[@]}" "$library"
   done < <(find "$app_path/Contents/Frameworks/Chromium Embedded Framework.framework" -name "*.dylib" -type f)
   while IFS= read -r helper; do
-    codesign "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
+    "$sign" "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
   done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Browser Helper*.app" -type d)
 
   while IFS= read -r framework; do
     [[ -n "$framework" ]] || continue
     [[ "$(basename "$framework")" != "Sparkle.framework" ]] || continue
-    codesign "${sign_args[@]}" --preserve-metadata=entitlements "$framework"
+    "$sign" "${sign_args[@]}" --preserve-metadata=entitlements "$framework"
     codesign --verify --deep --strict "$framework"
   done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "*.framework" -type d 2>/dev/null)
 }
@@ -205,19 +206,19 @@ sign_server_runtime() {
   while IFS= read -r macho; do
     case "$macho" in
       "$server_resources"/*/bin/node)
-        codesign "${sign_args[@]}" --entitlements "$node_entitlements" "$macho"
+        "$sign" "${sign_args[@]}" --entitlements "$node_entitlements" "$macho"
         ;;
     esac
   done < "$macho_manifest"
   { grep -v "/bin/node$" "$macho_manifest" || true; } | tr '\n' '\0' \
-    | xargs -0 -n 8 -P 4 codesign "${sign_args[@]}"
+    | xargs -0 -n 8 -P 4 "$sign" "${sign_args[@]}"
 }
 
 sign_sparkle
 sign_browser_and_frameworks
 sign_server_runtime
 
-codesign "${sign_args[@]}" "$app_path"
+"$sign" "${sign_args[@]}" "$app_path"
 codesign --verify --deep --strict "$app_path"
 if [[ -n "$identity" ]]; then
   node "$script_dir/macos-browser-artifact.mjs" distribution "$app_path" arm64
@@ -236,7 +237,7 @@ make_dmg() {
   ln -s /Applications "$dmg_root/Applications"
   hdiutil create -volname "Codevisor" -srcfolder "$dmg_root" -fs HFS+ -format UDZO -ov "$dmg"
   if [[ -n "$identity" ]]; then
-    codesign --force --sign "$identity" "$dmg"
+    "$sign" --force --sign "$identity" "$dmg"
   fi
 }
 

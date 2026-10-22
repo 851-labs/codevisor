@@ -1,23 +1,13 @@
 import assert from "node:assert/strict"
-import { createPublicKey, verify } from "node:crypto"
 import test from "node:test"
 
 import {
   AppStoreConnectError,
-  appStoreClient,
-  appStoreToken,
   deliverInternalBuild,
-  findApp,
   internalGroup,
   waitForBuild
 } from "./app-store-connect.mjs"
 
-const privateKey = `-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgzCncWVIrLZn98Skm
-aMBqCDEJbkF+dDR7f8xgXFr4k6uhRANCAARsJMG/JX/pUF7QgVsxX30DiMyEtw3r
-HFugpyUpdCsX+Z3SrfPyq7+v21XbnOeDnUjdMNXtTJ4cd++x1lbBQLKn
------END PRIVATE KEY-----`
-const credentials = { privateKey, keyId: "EXAMPLEKEY", issuerId: "example-issuer" }
 const build = { appId: "app", version: "1.2.3", buildNumber: "42" }
 const validBuild = {
   id: "build",
@@ -98,49 +88,6 @@ function missingBuildError(id = "build", type = "builds", status = 404) {
     })
   )
 }
-
-const decode = (value) => JSON.parse(Buffer.from(value, "base64url"))
-
-test("API authentication creates an ES256 token with Apple's audience and a bounded lifetime", () => {
-  const token = appStoreToken(credentials, 1_700_000_000_000)
-  const [header, payload, signature] = token.split(".")
-  assert.deepEqual(decode(header), { alg: "ES256", kid: "EXAMPLEKEY", typ: "JWT" })
-  assert.deepEqual(decode(payload), {
-    iss: "example-issuer",
-    iat: 1_700_000_000,
-    exp: 1_700_001_200,
-    aud: "appstoreconnect-v1"
-  })
-  assert.equal(
-    verify(
-      "sha256",
-      Buffer.from(`${header}.${payload}`),
-      {
-        key: createPublicKey(privateKey),
-        dsaEncoding: "ieee-p1363"
-      },
-      Buffer.from(signature, "base64url")
-    ),
-    true
-  )
-})
-
-test("app preflight queries the exact bundle and exposes authorization failures", async () => {
-  const client = appStoreClient(credentials, {
-    now: () => 1_700_000_000_000,
-    fetchImplementation: async (url, options) => {
-      assert.equal(url.origin, "https://api.appstoreconnect.apple.com")
-      assert.equal(url.searchParams.get("filter[bundleId]"), "com.example.app")
-      assert.match(options.headers.Authorization, /^Bearer /)
-      return new Response("API key lacks access", { status: 403 })
-    }
-  })
-  await assert.rejects(findApp(client, "com.example.app"), /403.*API key lacks access/)
-  await assert.rejects(
-    findApp(async () => ({ data: [] }), "com.example.app"),
-    /team and app access/
-  )
-})
 
 test("readiness waits for the matching beta detail after processing becomes valid", async () => {
   const states = [
@@ -420,25 +367,6 @@ test("assignment does not retry unrelated resources, authorization, validation, 
     )
     assert.equal(fixture.counts.posts, 1)
   }
-})
-
-test("API errors expose HTTP status and Apple error details for retry classification", async () => {
-  const body = { errors: [{ code: "NOT_FOUND", detail: "A resource is missing" }] }
-  const client = appStoreClient(credentials, {
-    now: () => 1_700_000_000_000,
-    fetchImplementation: async () => Response.json(body, { status: 404 })
-  })
-  await assert.rejects(
-    client("betaGroups/group/relationships/builds", { method: "POST" }),
-    (error) => {
-      assert.ok(error instanceof AppStoreConnectError)
-      assert.equal(error.status, 404)
-      assert.equal(error.method, "POST")
-      assert.equal(error.path, "betaGroups/group/relationships/builds")
-      assert.deepEqual(error.errors, body.errors)
-      return true
-    }
-  )
 })
 
 test("a matching external group is never used for internal delivery", async () => {

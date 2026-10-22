@@ -7,6 +7,7 @@ import test from "node:test"
 
 import { chromiumHelperSuffixes } from "../chromium-artifact.mjs"
 import {
+  codesignWithTimestampRetry,
   embeddedLibraries,
   signEmbeddedLibraries,
   verifyBrowserDistribution,
@@ -63,7 +64,7 @@ test("release signing includes top-level libraries without touching sealed frame
     expected
   )
   for (const { command, args } of calls) {
-    assert.equal(command, "codesign")
+    assert.equal(command, codesignWithTimestampRetry)
     assert.ok(args.includes("--timestamp"))
     assert.equal(args[args.indexOf("--options") + 1], "runtime")
     assert.equal(args[args.indexOf("--sign") + 1], "Developer ID Application: Fixture")

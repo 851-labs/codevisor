@@ -7,6 +7,9 @@ import { chromiumHelperSuffixes } from "../chromium-artifact.mjs"
 
 const storageName = "CodevisorBrowserStorage.dylib"
 const storageLoadPath = `@rpath/${storageName}`
+export const codesignWithTimestampRetry = fileURLToPath(
+  new URL("./codesign-with-timestamp-retry.sh", import.meta.url)
+)
 
 function execute(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8" })
@@ -27,7 +30,7 @@ export async function embeddedLibraries(app) {
 export async function signEmbeddedLibraries(app, identity, run = execute) {
   if (!identity) throw new Error("An explicit signing identity is required (use - for ad-hoc).")
   for (const library of await embeddedLibraries(app)) {
-    run("codesign", [
+    run(codesignWithTimestampRetry, [
       "--force",
       "--sign",
       identity,
