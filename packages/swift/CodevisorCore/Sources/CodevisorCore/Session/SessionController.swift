@@ -235,78 +235,134 @@ final public class SessionController {
       preparationState = .ready
     }
   }
-}
 
-struct ComposerSelectionIntent: Equatable {
-  let harnessId: String
-  let configValues: [String: String]
-  let modelValue: String?
-  var modelName: String? = nil
-
-  @MainActor
-  func canCarry(to capability: ServerHarnessCapability) -> Bool {
-    guard let modelValue else { return true }
-    guard let model = SessionController.modelOption(in: capability.configOptions) else { return false }
-    return model.options.contains { $0.value == modelValue }
-  }
-
-  @MainActor
-  func carriedConfigValues(to capability: ServerHarnessCapability) -> [String: String] {
-    var carried = configValues
-    if let modelValue,
-      let model = SessionController.modelOption(in: capability.configOptions)
-    {
-      carried[model.id] = modelValue
+  func resolveRetargetedComposerSelection(
+    _ intent: ComposerSelectionIntent,
+    targetServerId: String
+  ) async {
+    guard isStillTargeting(intent, onServer: targetServerId),
+      selectedHarnessId == intent.harnessId,
+      let client = serverClient
+    else {
+      clearUnreachableAutomaticSelection(intent, targetServerId: targetServerId)
+      return
     }
-    return carried
-  }
-
-  @MainActor
-  func compatibleConfigValues(in destinationOptions: [SessionConfigOption]) -> [String: String] {
-    configValues.filter { configId, value in
-      guard let option = destinationOptions.first(where: { $0.id == configId }) else {
-        return false
-      }
-      return !SessionController.isModelOption(option) && option.options.contains { $0.value == value }
+    guard let modelValue = intent.modelValue else {
+      automaticSelectionNeedsResolution = false
+      return
     }
-  }
-
-  @MainActor
-  func resolveRememberedOptions(
-    in options: inout [SessionConfigOption],
-    resolvedModel: SessionConfigOption,
-    resolvedModelValue: String,
-    destinationValues: [String: String]
-  ) -> [String: String] {
-    var resolvedValues: [String: String] = [:]
-    for index in options.indices
-    where SessionController.rememberedConfigCategories.contains(options[index].category ?? "") {
-      let option = options[index]
-      let carriedValue =
-        option.id == resolvedModel.id ? resolvedModelValue : configValues[option.id]
-      let value = preferredValue(
-        for: option,
-        carriedValue: carriedValue,
-        destinationValues: destinationValues
+    guard
+      let currentModel = intent.catalogModel(
+        offering: modelValue,
+        in: configOptionsByHarness[intent.harnessId]
       )
-      guard let value else { continue }
-      options[index].currentValue = value
-      resolvedValues[option.id] = value
+    else {
+      rejectRetargetedComposerSelection(intent, modelValue: modelValue)
+      return
     }
-    return resolvedValues
+
+    let revision = beginModelConfigurationResolution()
+    defer { finishModelConfigurationResolution(revision) }
+
+    let destinationValues = rememberedConfigSelections(forHarness: intent.harnessId)
+    let requested = intent.requestedSelections(
+      modelOptionId: currentModel.id,
+      modelValue: modelValue,
+      over: destinationValues
+    )
+    guard
+      let response = try? await client.capabilities(
+        cwd: capabilityCwd,
+        harnessId: intent.harnessId,
+        configSelections: requested
+      )
+    else { return }
+
+    guard modelConfigurationResolutionRevision == revision,
+      isStillTargeting(intent, onServer: targetServerId),
+      let capability = intent.resolvedCapability(in: response),
+      let resolvedModel = Self.modelOption(in: capability.configOptions)
+    else { return }
+    guard ComposerSelectionIntent.modelWasApplied(resolvedModel, in: capability) else {
+      rejectRetargetedComposerSelection(intent, modelValue: modelValue)
+      return
+    }
+
+    adoptResolvedComposerSelection(
+      intent,
+      options: capability.configOptions,
+      resolvedModel: resolvedModel,
+      destinationValues: destinationValues
+    )
   }
 
-  private func preferredValue(
-    for option: SessionConfigOption,
-    carriedValue: String?,
+  private func beginModelConfigurationResolution() -> UInt64 {
+    modelConfigurationResolutionRevision &+= 1
+    let revision = modelConfigurationResolutionRevision
+    isResolvingModelConfiguration = true
+    return revision
+  }
+
+  private func finishModelConfigurationResolution(_ revision: UInt64) {
+    guard modelConfigurationResolutionRevision == revision else { return }
+    isResolvingModelConfiguration = false
+  }
+
+  func cancelModelConfigurationResolution() {
+    modelConfigurationResolutionRevision &+= 1
+    isResolvingModelConfiguration = false
+  }
+
+  private func isStillTargeting(_ intent: ComposerSelectionIntent, onServer serverId: String) -> Bool {
+    project.serverId == serverId && automaticSelectionIntent == intent
+  }
+
+  private func clearUnreachableAutomaticSelection(
+    _ intent: ComposerSelectionIntent,
+    targetServerId: String
+  ) {
+    guard project.serverId == targetServerId, !harnesses.isEmpty,
+      automaticSelectionIntent == intent
+    else { return }
+    clearAutomaticSelection()
+  }
+
+  private func rememberedConfigSelections(forHarness harnessId: String) -> [String: String] {
+    composerDefaults?.configSelections(forHarness: harnessId, in: resolvedComposerDefaultsScope) ?? [:]
+  }
+
+  private func adoptResolvedComposerSelection(
+    _ intent: ComposerSelectionIntent,
+    options: [SessionConfigOption],
+    resolvedModel: SessionConfigOption,
     destinationValues: [String: String]
-  ) -> String? {
-    let acceptedCarriedValue = option.currentValue == carriedValue ? carriedValue : nil
-    return [acceptedCarriedValue, destinationValues[option.id], option.currentValue]
-      .compactMap { $0 }
-      .first { candidate in
-        option.options.contains { $0.value == candidate }
-      }
+  ) {
+    var options = options
+    let resolvedValues = intent.resolveRememberedOptions(
+      in: &options,
+      resolvedModel: resolvedModel,
+      resolvedModelValue: resolvedModel.currentValue,
+      destinationValues: destinationValues
+    )
+    configOptionsByHarness[intent.harnessId] = options
+    pendingConfiguration.replaceValues(resolvedValues, for: intent.harnessId)
+    automaticSelectionIntent = ComposerSelectionIntent(
+      harnessId: intent.harnessId,
+      configValues: resolvedValues,
+      modelValue: resolvedModel.currentValue,
+      modelName: resolvedModel.currentName
+    )
+    automaticSelectionNeedsResolution = false
+  }
+
+  private func rejectRetargetedComposerSelection(_ intent: ComposerSelectionIntent, modelValue: String) {
+    clearAutomaticSelection()
+    markDraftModel(
+      modelValue,
+      name: intent.modelName ?? modelValue,
+      harnessId: intent.harnessId,
+      checking: false
+    )
   }
 }
 

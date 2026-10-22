@@ -118,8 +118,7 @@ extension SessionController {
   public func invalidateHarnessCapabilities() {
     harnessCapabilityRequestRevision &+= 1
     guard model == nil else { return }
-    modelConfigurationResolutionRevision &+= 1
-    isResolvingModelConfiguration = false
+    cancelModelConfigurationResolution()
     isRefreshingHarnessCapabilities = true
     preparationState =
       harnesses.isEmpty && configCache.signInRequired(forServer: project.serverId).isEmpty
