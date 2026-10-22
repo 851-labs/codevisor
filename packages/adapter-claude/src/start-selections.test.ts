@@ -52,6 +52,25 @@ describe("Claude start selections", () => {
     )
   })
 
+  it("starts later sessions directly on the listed row for an older saved id", async () => {
+    const first = new FakeQuery()
+    const second = new FakeQuery()
+    vi.spyOn(first, "supportedModels").mockResolvedValue(RELEASE_MODELS)
+    vi.spyOn(second, "supportedModels").mockResolvedValue(RELEASE_MODELS)
+    first.successors.push(second)
+    const provider = makeProvider(first)
+    await run(provider.createSession(definition, "/tmp", async () => {}))
+
+    await run(
+      provider.createSession(definition, "/tmp", async () => {}, undefined, undefined, {
+        configSelections: { model: "claude-fable-5[1m]" }
+      })
+    )
+
+    expect(second.options?.model).toBe("claude-fable-5-1[1m]")
+    expect(second.models).toEqual([])
+  })
+
   it("reports a CLI that starts on another model than it was given as a fallback", async () => {
     const fake = new FakeQuery()
     const events: Array<RuntimeEvent> = []

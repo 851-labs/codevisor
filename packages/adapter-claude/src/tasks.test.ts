@@ -282,6 +282,44 @@ describe("ClaudeProvider", () => {
     ])
   })
 
+  it("publishes hook-reported tasks once per status change", async () => {
+    const { fake, events } = await startTestSession()
+    const hookOptions = { signal: new AbortController().signal }
+    const hookInput = {
+      cwd: "/tmp",
+      session_id: "sdk-session-1",
+      task_id: "7",
+      task_subject: "Ship it",
+      transcript_path: "/tmp/transcript"
+    }
+    const taskCreated = fake.options?.hooks?.TaskCreated?.[0]?.hooks[0]
+    const taskCompleted = fake.options?.hooks?.TaskCompleted?.[0]?.hooks[0]
+
+    await taskCreated?.({ ...hookInput, hook_event_name: "TaskCreated" }, undefined, hookOptions)
+    await taskCreated?.({ ...hookInput, hook_event_name: "TaskCreated" }, undefined, hookOptions)
+    await taskCompleted?.(
+      { ...hookInput, hook_event_name: "TaskCompleted" },
+      undefined,
+      hookOptions
+    )
+    await taskCompleted?.(
+      { ...hookInput, hook_event_name: "TaskCompleted" },
+      undefined,
+      hookOptions
+    )
+
+    expect(events.map(payloadOf).filter((payload) => payload.sessionUpdate === "plan")).toEqual([
+      {
+        entries: [{ content: "Ship it", priority: "medium", status: "pending" }],
+        sessionUpdate: "plan"
+      },
+      {
+        entries: [{ content: "Ship it", priority: "medium", status: "completed" }],
+        sessionUpdate: "plan"
+      }
+    ])
+  })
+
   it("recovers a TaskCreate id from Claude's rendered tool result", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)

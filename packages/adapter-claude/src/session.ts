@@ -58,6 +58,8 @@ export type ClaudeQuery = AsyncIterable<SDKMessage> &
     readonly supportedCommands: () => Promise<ReadonlyArray<ClaudeSlashCommand>>
   }
 
+export type CurrentSession = () => ClaudeSession | undefined
+
 export type ClaudeQueryFn = (input: {
   prompt: AsyncIterable<SDKUserMessage>
   options: ClaudeOptions
