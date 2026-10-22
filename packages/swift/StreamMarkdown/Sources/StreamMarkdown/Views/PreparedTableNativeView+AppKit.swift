@@ -27,11 +27,8 @@
     func updateNSView(_ view: TableBleedContainer, context: Context) {
       let textView = view.scrollView.tableTextView
       if textView.layoutManager !== layout.manager {
-        let selection = textView.selectedRange()
-        textView.replaceTextContainer(layout.container)
-        textView.preparedWidth = layout.size.width
+        textView.adoptPreparedLayout(layout)
         textView.setFrameSize(layout.size)
-        if NSMaxRange(selection) <= layout.text.length { textView.setSelectedRange(selection) }
         view.needsLayout = true
       }
       textView.linkAction = linkAction

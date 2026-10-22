@@ -21,6 +21,20 @@
       needsLayout = true
     }
 
+    func adoptPreparedLayout(_ layout: PreparedNativeTextLayout) {
+      guard layoutManager !== layout.manager else { return }
+      let selection = selectedRange()
+      model = nil
+      renderMemo = nil
+      builtWidth = -1
+      updateLinkHover(at: nil)
+      textContainer?.textView = nil
+      layout.container.textView = self
+      preparedWidth = layout.size.width
+      if NSMaxRange(selection) <= layout.text.length { setSelectedRange(selection) }
+      needsDisplay = true
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
       super.setFrameSize(newSize)
       if abs(newSize.width - builtWidth) > 0.25 { needsLayout = true }

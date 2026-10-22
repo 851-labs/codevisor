@@ -81,6 +81,23 @@
           == "Name\tValue\nAlpha\t42")
     }
 
+    @Test func tableViewAdoptsAReplacementLayoutWithItsText() async throws {
+      let first = PreparedTextContent.table(
+        headers: ["Name"], alignments: [.leading], rows: [["Alpha"]], theme: .default)
+      let second = PreparedTextContent.table(
+        headers: ["Name"], alignments: [.leading], rows: [["Beta"]], theme: .default)
+      let layouts = try await Task.detached {
+        (try first.prepare(width: 360, wrapsText: true), try second.prepare(width: 360, wrapsText: true))
+      }.value
+      let view = TableTextView(frame: CGRect(origin: .zero, size: layouts.0.size), textContainer: layouts.0.container)
+
+      view.adoptPreparedLayout(layouts.1)
+
+      #expect(view.layoutManager === layouts.1.manager)
+      #expect(view.textStorage?.string.contains("Beta") == true)
+      #expect(layouts.0.container.textView == nil)
+    }
+
     private struct ImmutableText: @unchecked Sendable {
       let text: NSAttributedString
       init(_ text: NSAttributedString) { self.text = text }
