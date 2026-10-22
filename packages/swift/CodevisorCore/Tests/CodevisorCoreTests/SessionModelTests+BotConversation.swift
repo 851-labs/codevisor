@@ -168,6 +168,49 @@ extension SessionModelTests {
     model.shutdown()
   }
 
+  @Test("A bot's full transcript pages back through the agent history while the same chat shows bubbles")
+  func botFullTranscriptPagesAgentHistory() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    func page(_ range: Range<Int>) -> ServerTranscriptPage {
+      ServerTranscriptPage(
+        items: range.map { sequence in
+          ServerTranscriptItem(
+            id: UUID().uuidString, sessionId: sessionId.uuidString, sequence: sequence,
+            role: .user, text: "Message \(sequence)", createdAt: "2026-10-19T00:00:00.000Z",
+            updatedAt: "2026-10-19T00:00:00.000Z", isGenerating: false,
+            hasDetails: false, revision: 1)
+        }, nextBefore: String(range.lowerBound), hasMore: range.lowerBound > 0,
+        eventCursor: 1)
+    }
+    client.initialTranscriptPage = page(16..<24)
+    client.olderTranscriptPage = page(0..<16)
+    client.botConversationPage = ServerBotConversationPage(
+      messages: [botFeedMessage("b1", .bot, "Hi there", sequence: 1, sessionId: sessionId)],
+      hasMore: false,
+      working: false
+    )
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+    let controller = SessionController(
+      project: Project.fromFolder(URL(fileURLWithPath: "/tmp/bot-full-transcript")),
+      configCache: ConfigOptionCache(store: InMemoryStore())
+    )
+    controller.model = model
+    controller.presentBotConversation()
+    await model.loadHistoryForInitialDisplay()
+    await settleUntil { model.botMessages.count == 1 }
+
+    #expect(!controller.hasOlderHistory(presentingBotConversation: true))
+    #expect(controller.hasOlderHistory(presentingBotConversation: false))
+    #expect(await controller.loadOlderHistory(presentingBotConversation: false) == 16)
+    #expect(model.settledConversation.count == 24)
+    #expect(!controller.hasOlderHistory(presentingBotConversation: false))
+    model.shutdown()
+  }
+
   private func loadedBotModel() async -> (FakeSessionServerClient, SessionModel) {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)

@@ -147,16 +147,18 @@ extension ChatScreen {
     }
   }
 
-  var hasOlderHistory: Bool { controller.hasOlderPresentedHistory }
+  var hasOlderHistory: Bool { controller.hasOlderHistory(presentingBotConversation: presentsBotConversation) }
 
-  var isLoadingOlderHistory: Bool { controller.isLoadingOlderPresentedHistory }
+  var isLoadingOlderHistory: Bool {
+    controller.isLoadingOlderHistory(presentingBotConversation: presentsBotConversation)
+  }
 
   @discardableResult
   func requestOlderHistoryLoad() -> Bool {
     guard historyLoadTask == nil, hasOlderHistory, !isLoadingOlderHistory else { return false }
     historyLoadTask = Task { @MainActor in
       defer { historyLoadTask = nil }
-      await controller.loadOlderPresentedHistory()
+      await controller.loadOlderHistory(presentingBotConversation: presentsBotConversation)
     }
     return true
   }

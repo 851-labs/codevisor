@@ -70,17 +70,18 @@ extension SessionController {
     presentsBotConversation ? "Message" : "Do something"
   }
 
-  public var hasOlderPresentedHistory: Bool {
-    presentsBotConversation ? hasOlderBotMessages : hasOlderHistory
+  public func hasOlderHistory(presentingBotConversation: Bool) -> Bool {
+    presentingBotConversation ? hasOlderBotMessages : hasOlderHistory
   }
 
-  public var isLoadingOlderPresentedHistory: Bool {
-    presentsBotConversation ? isLoadingOlderBotMessages : isLoadingOlderHistory
+  public func isLoadingOlderHistory(presentingBotConversation: Bool) -> Bool {
+    presentingBotConversation ? isLoadingOlderBotMessages : isLoadingOlderHistory
   }
 
   @discardableResult
-  public func loadOlderPresentedHistory() async -> Int {
-    presentsBotConversation ? await loadOlderBotMessages() : await loadOlderHistory()
+  public func loadOlderHistory(presentingBotConversation: Bool) async -> Int {
+    if presentingBotConversation { return await loadOlderBotMessages() }
+    return await loadOlderHistory()
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }

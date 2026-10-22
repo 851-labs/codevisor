@@ -51,7 +51,7 @@ extension SessionTranscriptView {
           projectionRevision: projectedRowsVersion,
           initialState: controller.scrollState,
           followsLatest: followsLatest,
-          hasOlderHistory: controller.hasOlderPresentedHistory,
+          hasOlderHistory: hasOlderHistory,
           showsOlderHistoryLoadingIndicator: presentationRole == .foreground
             && olderHistoryPresentation.isPresented,
           olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
@@ -167,19 +167,26 @@ extension SessionTranscriptView {
     projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
   }
 
+  var hasOlderHistory: Bool {
+    controller.hasOlderHistory(presentingBotConversation: controller.presentsBotConversation)
+  }
+
+  var isLoadingOlderHistory: Bool {
+    controller.isLoadingOlderHistory(presentingBotConversation: controller.presentsBotConversation)
+  }
+
   @discardableResult
   func requestOlderHistoryLoad() -> Bool {
-    guard historyLoadTask == nil, controller.hasOlderPresentedHistory,
-      !controller.isLoadingOlderPresentedHistory
-    else { return false }
+    guard historyLoadTask == nil, hasOlderHistory, !isLoadingOlderHistory else { return false }
     guard
       let token = olderHistoryPresentation.begin(
-        hasOlderHistory: controller.hasOlderPresentedHistory
+        hasOlderHistory: hasOlderHistory
       )
     else { return false }
     historyLoadTask = Task { @MainActor in
       defer { historyLoadTask = nil }
-      let insertedItemCount = await controller.loadOlderPresentedHistory()
+      let insertedItemCount = await controller.loadOlderHistory(
+        presentingBotConversation: controller.presentsBotConversation)
       guard !Task.isCancelled else {
         olderHistoryPresentation.cancel(token: token)
         return
