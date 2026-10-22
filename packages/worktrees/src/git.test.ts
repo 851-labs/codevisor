@@ -15,6 +15,7 @@ import {
   addWorktree,
   cloneRepository,
   gitBranchDiffTotals,
+  gitCurrentBranch,
   gitRemoteUrl,
   isGitWorkTree,
   isWorktreeBranchCollision,
@@ -49,6 +50,15 @@ describe("git helper", () => {
 
   it("treats a nonexistent directory as not a git worktree", async () => {
     expect(await isGitWorkTree("/nonexistent-codevisor-repo")).toBe(false)
+  })
+
+  it("names the checked-out branch and nothing on a detached HEAD", async () => {
+    const { repo } = makeRepo()
+    execFileSync("git", ["checkout", "-q", "-b", "feature/badge"], { cwd: repo })
+    expect(await gitCurrentBranch(repo, process.env)).toBe("feature/badge")
+
+    execFileSync("git", ["checkout", "-q", "--detach"], { cwd: repo })
+    expect(await gitCurrentBranch(repo, process.env)).toBeNull()
   })
 
   it("discovers the origin remote, falling back to the first remote", async () => {

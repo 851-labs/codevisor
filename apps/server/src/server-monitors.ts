@@ -1,3 +1,4 @@
+import { gitHostsOf } from "./infra/git-hosts.js"
 import { startWorkspaceGitMonitor, type WorkspaceGitMonitor } from "./infra/workspace-git.js"
 import { workspaceGitCheckout } from "./server-context.js"
 import type {
@@ -17,7 +18,8 @@ export const startWorkspaceGitMonitorIfEnabled = (
     fanout,
     checkout: (workspace) => workspaceGitCheckout(services, config.id, workspace),
     environment: (directory) =>
-      services.resolveGitEnvironment?.(directory) ?? Promise.resolve(process.env)
+      services.resolveGitEnvironment?.(directory) ?? Promise.resolve(process.env),
+    pullRequestOf: gitHostsOf(services).github.findPullRequest
   })
 }
 

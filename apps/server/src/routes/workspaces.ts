@@ -7,6 +7,7 @@ import {
 } from "@codevisor/api"
 import { gitCurrentBranch } from "@codevisor/worktrees"
 
+import { gitHostsOf } from "../infra/git-hosts.js"
 import {
   appendAndPublish,
   applyWorkspaceArchiveEffects,
@@ -190,7 +191,10 @@ const workspaceGit = async (
   const owned = checkout.ownedBranch
   return {
     branch,
-    pullRequest: await cachedPullRequest(checkout.directory, env, { branch, owned })
+    pullRequest: await cachedPullRequest(gitHostsOf(services), checkout.directory, env, {
+      branch,
+      owned
+    })
   }
 }
 

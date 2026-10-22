@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -142,6 +142,43 @@ describe("git review routes", () => {
     expect(await Promise.all([lookup(), lookup()])).toEqual([expected, expected])
     expect(await lookup()).toEqual(expected)
     expect(readFileSync(calls, "utf8").trim().split("\n")).toHaveLength(1)
+  })
+
+  it("answers no pull request on a detached HEAD without asking gh", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = tempFolder("codevisor-pr-detached-")
+    execFileSync("git", ["init", "--quiet", "-b", "main"], { cwd: folder })
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "c"
+      ],
+      { cwd: folder }
+    )
+    execFileSync("git", ["checkout", "--quiet", "--detach"], { cwd: folder })
+    const bin = join(tempFolder("codevisor-gh-"), "bin")
+    mkdirSync(bin)
+    const calls = join(bin, "calls")
+    writeFileSync(join(bin, "gh"), `#!/bin/sh\necho call >> '${calls}'\n`)
+    chmodSync(join(bin, "gh"), 0o755)
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }
+    const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
+
+    const lookup = await jsonRequest(
+      server,
+      `/v1/fs/git/pull-request?path=${encodeURIComponent(folder)}`
+    )
+
+    expect(lookup).toEqual({ status: 200, body: { pullRequest: null } })
+    expect(existsSync(calls)).toBe(false)
   })
 
   it("asks gh again once a pull request answer is a minute old", async () => {

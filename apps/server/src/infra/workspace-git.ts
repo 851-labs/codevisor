@@ -1,6 +1,7 @@
 import type { GitPullRequest, Workspace } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { findGitPullRequest, gitCurrentBranch, type OwnedBranch } from "@codevisor/worktrees"
+import type { PullRequestHost } from "@codevisor/git-hosts"
+import { gitCurrentBranch } from "@codevisor/worktrees"
 
 import { failureMessage, run, type EventFanout } from "../server-context.js"
 import type { WorkspaceGitCheckout } from "../server-workspace-effects.js"
@@ -12,12 +13,7 @@ export interface WorkspaceGitMonitorOptions {
   readonly checkout: (workspace: Workspace) => Promise<WorkspaceGitCheckout | undefined>
   readonly environment: (directory: string) => Promise<NodeJS.ProcessEnv>
   readonly branchOf?: (directory: string, env: NodeJS.ProcessEnv) => Promise<string | null>
-  readonly pullRequestOf?: (
-    directory: string,
-    env: NodeJS.ProcessEnv,
-    branch: string,
-    owned?: OwnedBranch
-  ) => Promise<GitPullRequest | null | undefined>
+  readonly pullRequestOf: PullRequestHost["findPullRequest"]
   readonly branchIntervalMs?: number
   readonly pullRequestIntervalMs?: number
 }
@@ -48,7 +44,7 @@ export const startWorkspaceGitMonitor = ({
   checkout,
   environment,
   branchOf = gitCurrentBranch,
-  pullRequestOf = findGitPullRequest,
+  pullRequestOf,
   branchIntervalMs = 30_000,
   pullRequestIntervalMs = 120_000
 }: WorkspaceGitMonitorOptions): WorkspaceGitMonitor => {

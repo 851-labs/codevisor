@@ -77,6 +77,9 @@
       "path": "../../packages/worktrees"
     },
     {
+      "path": "../../packages/git-hosts"
+    },
+    {
       "path": "../../packages/processes"
     }
   ]

@@ -1,5 +1,5 @@
 import type { Workspace } from "@codevisor/api"
-import type { OwnedBranch } from "@codevisor/worktrees"
+import type { OwnedBranch } from "@codevisor/git-hosts"
 
 import type { CodevisorServerServices } from "./server-context-types.js"
 import { run } from "./server-http.js"

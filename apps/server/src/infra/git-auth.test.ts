@@ -1,16 +1,12 @@
-import { chmodSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import type { GitAuthFlow } from "@codevisor/api"
+import { makeGitHosts } from "@codevisor/git-hosts"
 import { describe, expect, it } from "vitest"
 
 import { fakeCli, tempDir } from "../routes/project-setup-test-support.js"
-import {
-  makeGitAuthManager,
-  parseDeviceCode,
-  parseVerificationUrl,
-  type GitAuthManager
-} from "./git-auth.js"
+import { makeGitAuthManager, type GitAuthManager } from "./git-auth.js"
 
 const fastTimings = { codeWaitMs: 2_000, loginTimeoutMs: 60_000, retentionMs: 60_000 }
 
@@ -25,8 +21,10 @@ const settled = async (
   }
 }
 
+const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
+
 const managerWith = (env: NodeJS.ProcessEnv, timings = fastTimings): GitAuthManager =>
-  makeGitAuthManager(async () => env, timings)
+  makeGitAuthManager(async () => env, makeGitHosts(), timings)
 
 describe("git sign-in flows", () => {
   it("signs in to GitLab with glab's device flow", async () => {
@@ -82,7 +80,7 @@ esac`
       message: "glab isn't installed on this machine"
     })
     expect(await unrunnable.status("github.com")).toMatchObject({
-      cliInstalled: true,
+      cliInstalled: false,
       signedIn: false
     })
     expect(await settled(failing, failed.id)).toMatchObject({
@@ -112,6 +110,30 @@ esac`
     })
   })
 
+  it("keeps a cancelled sign-in cancelled when the CLI shows its code late", async () => {
+    const markers = tempDir("codevisor-late-code-")
+    const env = fakeCli(
+      "gh",
+      `trap 'echo "! First copy your one-time code: AB12-CD34"; echo "Open https://github.com/login/device"; touch "${markers}/shown"; exit 0' TERM
+touch "${markers}/ready"
+while :; do sleep 0.05; done`
+    )
+    const manager = managerWith(env, {
+      codeWaitMs: 10,
+      loginTimeoutMs: 60_000,
+      retentionMs: 60_000
+    })
+    const flow = await manager.begin("github.com")
+    while (!existsSync(join(markers, "ready"))) await pause()
+
+    manager.cancel(flow.id)
+    while (!existsSync(join(markers, "shown"))) await pause()
+    await pause()
+
+    expect(manager.flow(flow.id)).toMatchObject({ state: "cancelled" })
+    expect(manager.flow(flow.id)?.userCode).toBeUndefined()
+  })
+
   it("forgets finished sign-ins after the retention period", async () => {
     const manager = managerWith(fakeCli("gh", "exec sleep 30"), {
       codeWaitMs: 50,
@@ -127,15 +149,5 @@ esac`
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(manager.cancel(flow.id)).toBe(false)
-  })
-
-  it("reads device codes and verification links from CLI output", () => {
-    expect(parseDeviceCode("! First copy your one-time code: A6A2-6357")).toBe("A6A2-6357")
-    expect(parseDeviceCode("Enter ABCD-EFGH at the page")).toBe("ABCD-EFGH")
-    expect(parseDeviceCode("no code here")).toBeUndefined()
-    expect(parseVerificationUrl("Open https://github.com/login/device.")).toBe(
-      "https://github.com/login/device"
-    )
-    expect(parseVerificationUrl("nothing")).toBeUndefined()
   })
 })

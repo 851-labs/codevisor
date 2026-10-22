@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { StartGitAuthRequest as StartGitAuthRequestSchema } from "@codevisor/api"
 
 import { makeGitAuthManager, type GitAuthManager } from "../infra/git-auth.js"
+import { gitHostsOf } from "../infra/git-hosts.js"
 import {
   failureMessage,
   HttpFailure,
@@ -16,7 +17,9 @@ import { gitEnvironment } from "./project-setup-source.js"
 const managers = new WeakMap<CodevisorServerServices, GitAuthManager>()
 
 const managerFor = (services: CodevisorServerServices): GitAuthManager => {
-  const manager = managers.get(services) ?? makeGitAuthManager(() => gitEnvironment(services))
+  const manager =
+    managers.get(services) ??
+    makeGitAuthManager(() => gitEnvironment(services), gitHostsOf(services))
   managers.set(services, manager)
   return manager
 }

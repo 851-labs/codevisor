@@ -11,6 +11,7 @@ import type {
   UpdateInfo
 } from "@codevisor/api"
 import type { AttachmentStore, CodevisorDatabaseService } from "@codevisor/db"
+import type { GitHosts } from "@codevisor/git-hosts"
 import type { CredentialSource } from "@codevisor/harness-manager"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import type { HarnessLifecycleManager } from "@codevisor/harness-manager"
@@ -132,6 +133,7 @@ export interface CodevisorServerServices {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly resolveGitEnvironment?: (directory?: string) => Promise<NodeJS.ProcessEnv>
+  readonly gitHosts?: GitHosts
   readonly auth?: HarnessAuthManager
   readonly sharedAccounts?: SharedAccounts
   readonly credentialFerry?: ReadonlyArray<CredentialSource>

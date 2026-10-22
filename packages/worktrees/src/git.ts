@@ -84,6 +84,19 @@ export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   }
 }
 
+export const gitCurrentBranch = async (
+  dir: string,
+  env: NodeJS.ProcessEnv
+): Promise<string | null> => {
+  const branch = await runGit(
+    "current-branch",
+    ["symbolic-ref", "--short", "--quiet", "HEAD"],
+    dir,
+    env
+  ).catch(() => null)
+  return branch === null || branch.length === 0 ? null : branch
+}
+
 export const gitRemoteUrl = async (
   dir: string,
   env?: NodeJS.ProcessEnv

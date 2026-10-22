@@ -1,36 +1,29 @@
-import { execFileSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import {
-  findGitPullRequest,
-  gitPullRequest,
-  parseGitPullRequest,
-  rollUpChecks
-} from "./git-pull-request.js"
-import { makeGitRepo } from "./git-test-support.js"
+import { githubHost } from "./github-host.js"
+import { parseGitPullRequest, rollUpChecks } from "./github-pull-request.js"
+import { emptyEnv, fakeCli, testTempDir } from "./test-support.js"
 
-const fakeGh = (root: string, script: string): { env: NodeJS.ProcessEnv; argsFile: string } => {
-  const bin = join(root, "bin")
-  mkdirSync(bin)
-  const argsFile = join(root, "gh-args")
-  writeFileSync(
-    join(bin, "gh"),
-    `#!/bin/sh\nprintf '%s\\n' "$@" "prompt=$GH_PROMPT_DISABLED" > '${argsFile}'\n${script}\n`
+const fakeGh = (script: string): { env: NodeJS.ProcessEnv; argsFile: string } => {
+  const argsFile = join(testTempDir("codevisor-gh-args-"), "gh-args")
+  const { env } = fakeCli(
+    "gh",
+    `printf '%s\\n' "$@" "prompt=$GH_PROMPT_DISABLED" "cwd=$(pwd -P)" > '${argsFile}'\n${script}`
   )
-  chmodSync(join(bin, "gh"), 0o755)
-  return { env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }, argsFile }
+  return { env, argsFile }
 }
 
 const mergedAnswer = (createdAt: string | undefined): string =>
   JSON.stringify({ number: 9, title: "t", state: "MERGED", isDraft: false, url: "u", createdAt })
 
-describe("gitPullRequest", () => {
-  it("asks gh about the current branch and normalizes its answer", async () => {
-    const { root, repo } = makeGitRepo()
-    execFileSync("git", ["checkout", "-q", "-b", "feature/badge"], { cwd: repo })
+const findPullRequest = githubHost().findPullRequest
+
+describe("GitHub pull request lookups", () => {
+  it("asks gh about the branch in the checkout and normalizes its answer", async () => {
+    const repo = testTempDir("codevisor-pr-repo-")
     const answer = {
       number: 42,
       title: "Add the PR badge",
@@ -38,51 +31,50 @@ describe("gitPullRequest", () => {
       isDraft: false,
       url: "https://github.com/o/r/pull/42"
     }
-    const { env, argsFile } = fakeGh(root, `echo '${JSON.stringify(answer)}'`)
+    const { env, argsFile } = fakeGh(`echo '${JSON.stringify(answer)}'`)
 
-    expect(await gitPullRequest(repo, env)).toEqual({ ...answer, state: "merged", checks: "none" })
+    expect(await findPullRequest(repo, env, "feature/badge")).toEqual({
+      ...answer,
+      state: "merged",
+      checks: "none"
+    })
     const args = readFileSync(argsFile, "utf8").split("\n")
-    expect(args.slice(0, 3)).toEqual(["pr", "view", "feature/badge"])
+    expect(args.slice(0, 5)).toEqual([
+      "pr",
+      "view",
+      "feature/badge",
+      "--json",
+      "number,title,state,isDraft,url,statusCheckRollup,createdAt"
+    ])
     expect(args).toContain("prompt=1")
-  })
-
-  it("is null when gh has no pull request for the branch", async () => {
-    const { root, repo } = makeGitRepo()
-    const { env } = fakeGh(root, `echo 'no pull requests found for branch "main"' >&2; exit 1`)
-
-    expect(await gitPullRequest(repo, env)).toBeNull()
+    expect(args.find((line) => line.startsWith("cwd="))).toMatch(/codevisor-pr-repo-/)
   })
 
   it("tells a branch without a pull request apart from a lookup that failed", async () => {
-    const { root, repo } = makeGitRepo()
-    const missing = fakeGh(root, `echo 'no pull requests found for branch "main"' >&2; exit 1`)
-    expect(await findGitPullRequest(repo, missing.env, "main")).toBeNull()
+    const repo = testTempDir("codevisor-pr-repo-")
+    const missing = fakeGh(`echo 'no pull requests found for branch "main"' >&2; exit 1`)
+    const noOpen = fakeGh(`echo 'no open pull requests found for branch "main"' >&2; exit 1`)
+    const failing = fakeGh(`echo 'error connecting to api.github.com' >&2; exit 1`)
 
-    const offline = makeGitRepo()
-    const failing = fakeGh(offline.root, `echo 'error connecting to api.github.com' >&2; exit 1`)
-    expect(await findGitPullRequest(offline.repo, failing.env, "main")).toBeUndefined()
-    expect(await gitPullRequest(offline.repo, failing.env, "main")).toBeNull()
+    expect(await findPullRequest(repo, missing.env, "main")).toBeNull()
+    expect(await findPullRequest(repo, noOpen.env, "main")).toBeNull()
+    expect(await findPullRequest(repo, failing.env, "main")).toBeUndefined()
+    expect(await findPullRequest(repo, emptyEnv(), "main")).toBeUndefined()
   })
 
-  it("asks gh about a branch it is given instead of the checkout's", async () => {
-    const { root, repo } = makeGitRepo()
-    const answer = { number: 7, title: "t", state: "OPEN", isDraft: false, url: "u" }
-    const { env, argsFile } = fakeGh(root, `echo '${JSON.stringify(answer)}'`)
+  it("treats an answer it can't read as no pull request", async () => {
+    const repo = testTempDir("codevisor-pr-repo-")
+    const { env } = fakeGh(`echo 'not json'`)
 
-    expect(await gitPullRequest(repo, env, "codevisor/archived")).toMatchObject({ number: 7 })
-    expect(readFileSync(argsFile, "utf8").split("\n").slice(0, 3)).toEqual([
-      "pr",
-      "view",
-      "codevisor/archived"
-    ])
+    expect(await findPullRequest(repo, env, "main")).toBeNull()
   })
 
   it("ignores a pull request opened before the worktree claimed its branch", async () => {
     const owned = { name: "codevisor/sushi", ownedSince: "2026-03-01T12:00:00.000Z" }
     const ask = async (createdAt: string | undefined, branch = owned.name) => {
-      const { root, repo } = makeGitRepo()
-      const { env } = fakeGh(root, `echo '${mergedAnswer(createdAt)}'`)
-      return findGitPullRequest(repo, env, branch, owned)
+      const repo = testTempDir("codevisor-pr-repo-")
+      const { env } = fakeGh(`echo '${mergedAnswer(createdAt)}'`)
+      return findPullRequest(repo, env, branch, owned)
     }
 
     expect(await ask("2026-02-01T09:30:00Z")).toBeNull()
@@ -91,12 +83,11 @@ describe("gitPullRequest", () => {
     expect(await ask(undefined)).toMatchObject({ number: 9 })
   })
 
-  it("is null on a detached HEAD without asking gh", async () => {
-    const { root, repo } = makeGitRepo()
-    execFileSync("git", ["checkout", "-q", "--detach"], { cwd: repo })
-    const { env, argsFile } = fakeGh(root, `echo '{}'`)
+  it("doesn't run anything when gh is missing", async () => {
+    const repo = testTempDir("codevisor-pr-repo-")
+    const { argsFile } = fakeGh("exit 0")
 
-    expect(await gitPullRequest(repo, env)).toBeNull()
+    expect(await findPullRequest(repo, emptyEnv(), "main")).toBeUndefined()
     expect(existsSync(argsFile)).toBe(false)
   })
 })

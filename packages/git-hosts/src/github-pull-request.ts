@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process"
-
 import { isRecord } from "@codevisor/api"
 import type { GitPullRequest, GitPullRequestChecks, GitPullRequestState } from "@codevisor/api"
 
-import { runGit } from "./git.js"
+import { runCli } from "./cli-process.js"
+import type { OwnedBranch } from "./git-host.js"
 
 const ghTimeoutMs = 15_000
 
@@ -22,6 +21,9 @@ const failedResults = new Set([
   "STARTUP_FAILURE"
 ])
 
+const pullRequestFields = "number,title,state,isDraft,url,statusCheckRollup,createdAt"
+const noPullRequest = /no (?:open )?pull requests? found/i
+
 export const rollUpChecks = (rollup: unknown): GitPullRequestChecks => {
   if (!Array.isArray(rollup) || rollup.length === 0) return "none"
   let pending = false
@@ -37,75 +39,34 @@ export const rollUpChecks = (rollup: unknown): GitPullRequestChecks => {
   return pending ? "pending" : "passing"
 }
 
-type GhResult = { readonly stdout: string } | { readonly failure: string }
-
-const runGh = (
-  args: ReadonlyArray<string>,
-  cwd: string,
-  env: NodeJS.ProcessEnv
-): Promise<GhResult> =>
-  new Promise((resolve) => {
-    execFile(
-      "gh",
-      args,
-      {
-        cwd,
-        timeout: ghTimeoutMs,
-        env: { ...env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }
-      },
-      (error, stdout, stderr) => resolve(error === null ? { stdout } : { failure: stderr })
-    )
-  })
-
-const pullRequestFields = "number,title,state,isDraft,url,statusCheckRollup,createdAt"
-const noPullRequest = /no (?:open )?pull requests? found/i
-
-export interface OwnedBranch {
-  readonly name: string
-  readonly ownedSince: string
-}
-
 export const parseGitPullRequest = (json: string): GitPullRequest | null =>
   pullRequestFrom(parseJson(json))
 
-export const gitCurrentBranch = async (
-  dir: string,
-  env: NodeJS.ProcessEnv
-): Promise<string | null> => {
-  const branch = await runGit(
-    "current-branch",
-    ["symbolic-ref", "--short", "--quiet", "HEAD"],
-    dir,
-    env
-  ).catch(() => null)
-  return branch === null || branch.length === 0 ? null : branch
-}
-
-export const gitPullRequest = async (
-  dir: string,
-  env: NodeJS.ProcessEnv,
-  knownBranch?: string,
-  owned?: OwnedBranch
-): Promise<GitPullRequest | null> => {
-  const branch = knownBranch ?? (await gitCurrentBranch(dir, env))
-  if (branch === null || branch.length === 0) return null
-  return (await findGitPullRequest(dir, env, branch, owned)) ?? null
-}
-
-export const findGitPullRequest = async (
-  dir: string,
+export const findGithubPullRequest = async (
+  gh: string | undefined,
+  directory: string,
   env: NodeJS.ProcessEnv,
   branch: string,
   owned?: OwnedBranch
 ): Promise<GitPullRequest | null | undefined> => {
-  const result = await runGh(["pr", "view", branch, "--json", pullRequestFields], dir, env)
-  if (!("stdout" in result)) return noPullRequest.test(result.failure) ? null : undefined
+  if (gh === undefined) return undefined
+
+  const result = await viewPullRequest(gh, directory, env, branch)
+  if (result.exitCode !== 0) return noPullRequest.test(result.stderr) ? null : undefined
 
   const answer = parseJson(result.stdout)
   if (openedBefore(answer, ownedSince(branch, owned))) return null
 
   return pullRequestFrom(answer)
 }
+
+const viewPullRequest = (gh: string, directory: string, env: NodeJS.ProcessEnv, branch: string) =>
+  runCli(
+    gh,
+    ["pr", "view", branch, "--json", pullRequestFields],
+    { ...env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" },
+    { cwd: directory, timeoutMs: ghTimeoutMs }
+  )
 
 const ownedSince = (branch: string, owned: OwnedBranch | undefined): number | undefined =>
   owned?.name === branch ? Date.parse(owned.ownedSince) : undefined

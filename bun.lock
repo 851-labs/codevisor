@@ -65,6 +65,7 @@
         "@codevisor/automation": "workspace:*",
         "@codevisor/cloud-client": "workspace:*",
         "@codevisor/db": "workspace:*",
+        "@codevisor/git-hosts": "workspace:*",
         "@codevisor/harness-manager": "workspace:*",
         "@codevisor/mcp": "workspace:*",
         "@codevisor/net": "workspace:*",
@@ -313,6 +314,15 @@
       },
       "devDependencies": {
         "@types/better-sqlite3": "7.6.13",
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/git-hosts": {
+      "name": "@codevisor/git-hosts",
+      "dependencies": {
+        "@codevisor/api": "workspace:*",
+      },
+      "devDependencies": {
         "vitest": "4.1.6",
       },
     },
@@ -623,6 +633,8 @@
     "@codevisor/cloud-crypto": ["@codevisor/cloud-crypto@workspace:packages/cloud-crypto"],
 
     "@codevisor/db": ["@codevisor/db@workspace:packages/db"],
+
+    "@codevisor/git-hosts": ["@codevisor/git-hosts@workspace:packages/git-hosts"],
 
     "@codevisor/harness-manager": ["@codevisor/harness-manager@workspace:packages/harness-manager"],
 

@@ -2,16 +2,17 @@ import { statSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { GitDiffMode, type GitPullRequest } from "@codevisor/api"
+import type { GitHosts, OwnedBranch } from "@codevisor/git-hosts"
 import {
+  gitCurrentBranch,
   gitDiff,
-  gitPullRequest,
   gitRefs,
   GitReviewError,
-  type GitReviewFailureCode,
-  type OwnedBranch
+  type GitReviewFailureCode
 } from "@codevisor/worktrees"
 import { Schema } from "effect"
 
+import { gitHostsOf } from "../infra/git-hosts.js"
 import { HttpFailure, writeJson, type CodevisorServerServices } from "../server-context.js"
 import { folderOwnedBranch } from "../workspace-owned-branch.js"
 import { expandFsPath } from "./fs-paths.js"
@@ -50,6 +51,7 @@ export interface PullRequestQuery {
 }
 
 export const cachedPullRequest = (
+  hosts: GitHosts,
   directory: string,
   env: NodeJS.ProcessEnv,
   { branch, owned }: PullRequestQuery = {},
@@ -61,9 +63,21 @@ export const cachedPullRequest = (
   const key = [directory, branch ?? "", owned?.name ?? "", owned?.ownedSince ?? ""].join("\0")
   const cached = pullRequests.get(key)
   if (cached !== undefined) return cached.lookup
-  const lookup = gitPullRequest(directory, env, branch, owned)
+  const lookup = branchPullRequest(hosts, directory, env, { branch, owned })
   pullRequests.set(key, { at: now, lookup })
   return lookup
+}
+
+const branchPullRequest = async (
+  hosts: GitHosts,
+  directory: string,
+  env: NodeJS.ProcessEnv,
+  { branch, owned }: PullRequestQuery
+): Promise<GitPullRequest | null> => {
+  const current = branch ?? (await gitCurrentBranch(directory, env))
+  if (current === null || current.length === 0) return null
+
+  return (await hosts.github.findPullRequest(directory, env, current, owned)) ?? null
 }
 
 const gitReviewPaths = new Set(["/v1/fs/git/diff", "/v1/fs/git/refs", "/v1/fs/git/pull-request"])
@@ -85,7 +99,8 @@ export const routeGitReview = async (
     }
     if (url.pathname === "/v1/fs/git/pull-request") {
       const owned = await folderOwnedBranch(services, directory)
-      writeJson(response, 200, { pullRequest: await cachedPullRequest(directory, env, { owned }) })
+      const pullRequest = await cachedPullRequest(gitHostsOf(services), directory, env, { owned })
+      writeJson(response, 200, { pullRequest })
       return true
     }
     const mode = url.searchParams.get("mode")

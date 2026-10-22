@@ -7,13 +7,13 @@ import {
   worktreePathBeside,
   worktreeTrashRoot
 } from "@codevisor/db"
+import type { OwnedBranch } from "@codevisor/git-hosts"
 import {
   deleteSnapshot,
   removeArchivedWorktreeFiles,
   restoreWorktree,
   snapshotWorktree,
-  sweepWorktreeTrash,
-  type OwnedBranch
+  sweepWorktreeTrash
 } from "@codevisor/worktrees"
 
 import type { CodevisorServerServices, RouteState } from "./server-context-types.js"
