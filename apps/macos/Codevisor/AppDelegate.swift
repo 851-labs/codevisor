@@ -83,10 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       sender.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
       return .terminateCancel
     }
-    let skip = skipsNextConfirmation
+    let skip = skipsNextConfirmation || Self.isQuitAppleEvent
     skipsNextConfirmation = false
-    guard !skip, let settings, settings.shouldConfirmBeforeQuitting else { return terminateBrowsers(sender) }
-    if appUpdate?.isUpdating == true { return terminateBrowsers(sender) }
+    guard !skip, let settings, settings.shouldConfirmBeforeQuitting else { return terminateAfterBrowsers() }
+    if appUpdate?.isUpdating == true { return terminateAfterBrowsers() }
     if let pendingQuitWindow {
       pendingQuitWindow.makeKeyAndOrderFront(nil)
       return .terminateCancel
@@ -95,30 +95,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.activate()
     guard let window = Self.quitAlertHost() else {
       return Self.recordQuit(alert, response: alert.runModal(), settings: settings)
-        ? terminateBrowsers(sender) : .terminateCancel
+        ? terminateAfterBrowsers() : .terminateCancel
     }
     pendingQuitWindow = window
     window.makeKeyAndOrderFront(nil)
     alert.beginSheetModal(for: window) { [weak self] response in
       self?.pendingQuitWindow = nil
-      let quit = Self.recordQuit(alert, response: response, settings: settings)
-      NSApp.reply(toApplicationShouldTerminate: false)
-      if quit {
-        _ = self?.terminateBrowsers(NSApp)
+      guard Self.recordQuit(alert, response: response, settings: settings) else {
+        NSApp.reply(toApplicationShouldTerminate: false)
+        return
       }
+      self?.shutDownBrowsersThenReply()
     }
     return .terminateLater
   }
 
-  private func terminateBrowsers(_ sender: NSApplication) -> NSApplication.TerminateReply {
+  private func terminateAfterBrowsers() -> NSApplication.TerminateReply {
+    shutDownBrowsersThenReply()
+    return .terminateLater
+  }
+
+  private func shutDownBrowsersThenReply() {
     chromiumShutdownInProgress = true
     DispatchQueue.main.async {
       CVShutdownChromium {
         self.chromiumShutdownComplete = true
-        sender.terminate(nil)
+        NSApp.reply(toApplicationShouldTerminate: true)
       }
     }
-    return .terminateCancel
+  }
+
+  private static var isQuitAppleEvent: Bool {
+    guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+    return event.eventClass == AEEventClass(kCoreEventClass) && event.eventID == AEEventID(kAEQuitApplication)
   }
 
   private static func quitAlertHost() -> NSWindow? {

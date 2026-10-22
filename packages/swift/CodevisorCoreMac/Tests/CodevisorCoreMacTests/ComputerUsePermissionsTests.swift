@@ -183,7 +183,7 @@ struct ComputerUsePermissionsTests {
     #expect(!relaunched.fullDiskAccessNeedsRestart)
   }
 
-  @Test("Full Disk Access probe reports only a successful open as granted")
+  @Test("Full Disk Access probe reports granted when any protected file opens")
   func fullDiskAccessProbeReadsFile() throws {
     let dir = FileManager.default.temporaryDirectory
       .appendingPathComponent("fda-probe-\(UUID().uuidString)")
@@ -192,12 +192,14 @@ struct ComputerUsePermissionsTests {
 
     let readable = dir.appendingPathComponent("TCC.db").path
     FileManager.default.createFile(atPath: readable, contents: Data())
-    #expect(fullDiskAccessProbe(path: readable))
-
-    #expect(!fullDiskAccessProbe(path: dir.appendingPathComponent("missing.db").path))
+    let missing = dir.appendingPathComponent("missing.db").path
     let unreadable = dir.appendingPathComponent("locked.db").path
     FileManager.default.createFile(atPath: unreadable, contents: Data(), attributes: [.posixPermissions: 0o000])
-    #expect(!fullDiskAccessProbe(path: unreadable))
+
+    #expect(fullDiskAccessProbe(paths: [readable]))
+    #expect(fullDiskAccessProbe(paths: [missing, unreadable, readable]))
+    #expect(!fullDiskAccessProbe(paths: [missing]))
+    #expect(!fullDiskAccessProbe(paths: [missing, unreadable]))
   }
 
   @Test("Requests prompt once, then fall back to the System Settings pane")

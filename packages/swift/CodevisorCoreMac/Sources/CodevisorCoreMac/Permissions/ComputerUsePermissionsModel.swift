@@ -71,9 +71,18 @@ public struct ComputerUsePermissionProbes: Sendable {
   )
 }
 
-func fullDiskAccessProbe(
-  path: String = NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db"
-) -> Bool {
+let fullDiskAccessProtectedFiles = [
+  NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db",
+  "/Library/Application Support/com.apple.TCC/TCC.db",
+  NSHomeDirectory() + "/Library/Safari/Bookmarks.plist",
+  NSHomeDirectory() + "/Library/Messages/chat.db",
+]
+
+func fullDiskAccessProbe(paths: [String] = fullDiskAccessProtectedFiles) -> Bool {
+  paths.contains(where: canOpen)
+}
+
+private func canOpen(_ path: String) -> Bool {
   let fd = open(path, O_RDONLY)
   guard fd >= 0 else { return false }
   close(fd)
