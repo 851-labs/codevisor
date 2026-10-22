@@ -38,20 +38,17 @@ struct ProjectSetupSheet: View {
       }
 
       HStack {
-        Button("Cancel", role: .cancel) { setup.cancel() }
-          .keyboardShortcut(.cancelAction)
+        SheetCancelButton { setup.cancel() }
         Spacer()
         if let activity {
           SheetActivityLabel(activity)
         }
         if setup.offersSignIn {
           Button("Sign In") { setup.signIn() }
+            .buttonStyle(.bordered)
         }
         if let primary {
-          Button(primary.title, action: primary.perform)
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!primary.isEnabled)
+          SheetPrimaryButton(primary.title, isEnabled: primary.isEnabled, action: primary.perform)
         }
       }
       .controlSize(.large)
