@@ -112,6 +112,12 @@ export const parseDeviceSettings = (
   }
 }
 
+const colorFilterArguments = (change: SimulatorSettingsChange) => {
+  if (change.colorFilter === undefined) return []
+  if (change.colorFilter === "none") return ["--color-filter", "off"]
+  return ["--color-filter", "on", "--color-filter-type", change.colorFilter]
+}
+
 const optional = async (read: () => Promise<unknown>): Promise<unknown> => {
   try {
     return await read()
@@ -165,11 +171,7 @@ export const makeSimulatorDeviceSettings = (environment: SimulatorEnvironment) =
       ...(change.liquidGlass === undefined
         ? []
         : ["--liquid-glass-opacity", String(Math.round(change.liquidGlass * 100) / 100)]),
-      ...(change.colorFilter === undefined
-        ? []
-        : change.colorFilter === "none"
-          ? ["--color-filter", "off"]
-          : ["--color-filter", "on", "--color-filter-type", change.colorFilter]),
+      ...colorFilterArguments(change),
       ...(change.reduceMotion === undefined ? [] : ["--reduce-motion", onOff(change.reduceMotion)]),
       ...(change.showBorders === undefined ? [] : ["--show-borders", onOff(change.showBorders)]),
       ...(change.reduceTransparency === undefined

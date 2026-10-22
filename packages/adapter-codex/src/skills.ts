@@ -35,6 +35,12 @@ export interface CodexSkill extends SessionSkill {
   readonly path: string
 }
 
+const codexSkillSource = (pluginId: string | undefined, skill: Record<string, unknown>) => {
+  if (pluginId !== undefined) return "plugin"
+  if (typeof skill.scope === "string") return SCOPE_SOURCES[skill.scope]
+  return undefined
+}
+
 export const codexSkillsFrom = (response: unknown): ReadonlyArray<CodexSkill> => {
   const data = isRecord(response) && Array.isArray(response.data) ? response.data : []
   const entry = data.find(isRecord)
@@ -52,12 +58,7 @@ export const codexSkillsFrom = (response: unknown): ReadonlyArray<CodexSkill> =>
       trimmedText(ui.shortDescription) ??
       trimmedText(skill.shortDescription) ??
       trimmedText(skill.description)
-    const source =
-      pluginId === undefined
-        ? typeof skill.scope === "string"
-          ? SCOPE_SOURCES[skill.scope]
-          : undefined
-        : "plugin"
+    const source = codexSkillSource(pluginId, skill)
     return [
       {
         invocation: `$${name}`,

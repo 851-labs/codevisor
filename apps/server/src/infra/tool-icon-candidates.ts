@@ -12,8 +12,11 @@ const largestSize = (sizes: string | undefined): number | undefined => {
   return dimensions.length === 0 ? undefined : Math.max(...dimensions)
 }
 
-const themeRank = (declared: ToolIconTheme | undefined, theme: ToolIconTheme): number =>
-  declared === undefined ? 0 : declared === theme ? -5000 : 5000
+const themeRank = (declared: ToolIconTheme | undefined, theme: ToolIconTheme): number => {
+  if (declared === undefined) return 0
+  if (declared === theme) return -5000
+  return 5000
+}
 
 type RankedPageIcon = { readonly url: string; readonly rank: number; readonly order: number }
 
@@ -33,24 +36,18 @@ const pageIconSizeRank = (tag: string, url: URL, touch: boolean): number => {
   const type = htmlAttribute(tag, "type")?.toLowerCase()
   const svg = type === "image/svg+xml" || /\.svg(?:$|\?)/i.test(url.pathname)
   const size = largestSize(htmlAttribute(tag, "sizes"))
-  return touch
-    ? 3000
-    : svg || size === Number.POSITIVE_INFINITY
-      ? 50
-      : size === undefined
-        ? 2000
-        : size >= 64
-          ? size - 64
-          : 100 + (64 - size)
+  if (touch) return 3000
+  if (svg || size === Number.POSITIVE_INFINITY) return 50
+  if (size === undefined) return 2000
+  if (size >= 64) return size - 64
+  return 100 + (64 - size)
 }
 
 const pageIconScheme = (tag: string): ToolIconTheme | undefined => {
   const media = htmlAttribute(tag, "media")?.toLowerCase() ?? ""
-  return /prefers-color-scheme\s*:\s*dark/.test(media)
-    ? "dark"
-    : /prefers-color-scheme\s*:\s*light/.test(media)
-      ? "light"
-      : undefined
+  if (/prefers-color-scheme\s*:\s*dark/.test(media)) return "dark"
+  if (/prefers-color-scheme\s*:\s*light/.test(media)) return "light"
+  return undefined
 }
 
 const appendPageIcon = (

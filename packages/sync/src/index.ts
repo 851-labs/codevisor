@@ -14,7 +14,9 @@ export interface SyncEntryRecord {
 export const compareSyncTimestamps = (a: SyncTimestampValue, b: SyncTimestampValue): number => {
   if (a.wallMs !== b.wallMs) return a.wallMs - b.wallMs
   if (a.counter !== b.counter) return a.counter - b.counter
-  return a.deviceId < b.deviceId ? -1 : a.deviceId > b.deviceId ? 1 : 0
+  if (a.deviceId < b.deviceId) return -1
+  if (a.deviceId > b.deviceId) return 1
+  return 0
 }
 
 export const nextSyncTimestamp = (

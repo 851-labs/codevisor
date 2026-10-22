@@ -7,6 +7,13 @@ import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
 import { updateClaudeCommands } from "./skills.js"
 import { toolKind } from "./tool-presentation.js"
 
+const compactionStatus = (message: Extract<SDKMessage, { subtype: "status"; type: "system" }>) => {
+  if (message.compact_result === "success") return "completed"
+  if (message.compact_result === "failed") return "failed"
+  if (message.status === "compacting") return "started"
+  return undefined
+}
+
 export const handleSystemMessage = (
   session: ClaudeSession,
   message: Extract<SDKMessage, { type: "system" }>
@@ -33,14 +40,7 @@ export const handleSystemMessage = (
       break
     }
     case "status": {
-      const status =
-        message.compact_result === "success"
-          ? "completed"
-          : message.compact_result === "failed"
-            ? "failed"
-            : message.status === "compacting"
-              ? "started"
-              : undefined
+      const status = compactionStatus(message)
       if (status === undefined) break
       if (status === "started" || session.activeContextCompactionId === undefined) {
         session.activeContextCompactionId = randomUUID()
@@ -186,18 +186,21 @@ const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean =
   return true
 }
 
+type ApiRetryMessage = Extract<SDKMessage, { subtype: "api_retry"; type: "system" }>
+
+const retryReason = (status: number | undefined, message: ApiRetryMessage) => {
+  if (status === 529 || message.error === "overloaded") return "Claude is overloaded, retrying"
+  if (status === 429 || message.error === "rate_limit")
+    return "Claude is temporarily rate limited, retrying"
+  if (status !== undefined && status >= 500) return "Claude returned a server error, retrying"
+  return "Claude connection was interrupted, retrying"
+}
+
 const claudeInternalRetryStatus = (
-  message: Extract<SDKMessage, { subtype: "api_retry"; type: "system" }>
+  message: ApiRetryMessage
 ): { attempt?: number; message: string; of?: number } => {
   const status = message.error_status ?? undefined
-  const retryMessage =
-    status === 529 || message.error === "overloaded"
-      ? "Claude is overloaded, retrying"
-      : status === 429 || message.error === "rate_limit"
-        ? "Claude is temporarily rate limited, retrying"
-        : status !== undefined && status >= 500
-          ? "Claude returned a server error, retrying"
-          : "Claude connection was interrupted, retrying"
+  const retryMessage = retryReason(status, message)
   return {
     ...(message.attempt > 0 ? { attempt: message.attempt } : {}),
     message: retryMessage,

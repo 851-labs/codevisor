@@ -4,6 +4,15 @@ import { isRecord } from "./internal.js"
 
 export const codexSignedOutDetail = "Codex isn't signed in. Sign in to continue."
 
+const httpStatusCode = (
+  info: Record<string, unknown>,
+  variantDetails: Record<string, unknown> | undefined
+): number | undefined => {
+  if (typeof info.httpStatusCode === "number") return info.httpStatusCode
+  if (typeof variantDetails?.httpStatusCode === "number") return variantDetails.httpStatusCode
+  return undefined
+}
+
 const codexErrorSignal = (
   info: unknown
 ): { kind: string | undefined; statusCode: number | undefined } => {
@@ -12,12 +21,7 @@ const codexErrorSignal = (
 
   const variant = Object.entries(info).find(([key]) => key !== "httpStatusCode")
   const variantDetails = variant === undefined || !isRecord(variant[1]) ? undefined : variant[1]
-  const statusCode =
-    typeof info.httpStatusCode === "number"
-      ? info.httpStatusCode
-      : typeof variantDetails?.httpStatusCode === "number"
-        ? variantDetails.httpStatusCode
-        : undefined
+  const statusCode = httpStatusCode(info, variantDetails)
   return { kind: variant?.[0], statusCode }
 }
 

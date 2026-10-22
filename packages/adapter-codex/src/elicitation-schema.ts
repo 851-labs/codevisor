@@ -70,10 +70,15 @@ const multiSelectField = (
   ]
 }
 
+const yesNoAnswer = (entry: QuestionAnswerEntry) => {
+  if (entry.answers[0] === "Yes") return true
+  if (entry.answers[0] === "No") return false
+  return undefined
+}
+
 const booleanField = (base: Pick<QuestionSpec, "id" | "question">): Array<ElicitationField> => [
   {
-    coerce: (entry) =>
-      entry.answers[0] === "Yes" ? true : entry.answers[0] === "No" ? false : undefined,
+    coerce: yesNoAnswer,
     spec: {
       ...base,
       allowsOther: false,

@@ -38,12 +38,18 @@ export interface OpenCodeServerSessionsDeps {
 
 const VOLATILE_ENV = new Set(["PWD", "OLDPWD", "SHLVL", "_"])
 
+const compareNames = (left: string, right: string) => {
+  if (left < right) return -1
+  if (left > right) return 1
+  return 0
+}
+
 const serverKey = (launch: Pick<OpenCodeServerLaunch, "command" | "env" | "toolGateway">) =>
   JSON.stringify([
     launch.command,
     Object.entries(launch.env)
       .filter(([name, value]) => value !== undefined && !VOLATILE_ENV.has(name))
-      .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+      .toSorted(([left], [right]) => compareNames(left, right)),
     launch.toolGateway?.url ?? null
   ])
 

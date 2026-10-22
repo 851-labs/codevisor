@@ -3,7 +3,7 @@ import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { isRecord } from "@codevisor/api"
 import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
 
-import { record } from "./record.js"
+import { record, type JsonRecord } from "./record.js"
 
 export type GrokMappedQuestion<Response> = AcpMappedQuestion<Response>
 
@@ -59,6 +59,12 @@ const grokGoalStatus = (status: string): GoalStatus | undefined => {
   }
 }
 
+const grokGoalActivity = (update: JsonRecord) => {
+  if (update.verifying_completion === true) return { activity: "verifying" as const }
+  if (update.planning === true) return { activity: "planning" as const }
+  return {}
+}
+
 export const grokGoalNotification = (
   params: unknown,
   currentGoal: (sessionId: string) => SessionGoal | undefined = () => undefined,
@@ -100,11 +106,7 @@ export const grokGoalNotification = (
   const goal: SessionGoal = {
     objective: update.objective,
     status,
-    ...(update.verifying_completion === true
-      ? { activity: "verifying" as const }
-      : update.planning === true
-        ? { activity: "planning" as const }
-        : {}),
+    ...grokGoalActivity(update),
     tokenBudget,
     tokensUsed,
     timeUsedSeconds,

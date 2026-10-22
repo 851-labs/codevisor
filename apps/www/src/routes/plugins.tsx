@@ -64,23 +64,26 @@ function PluginsDirectory() {
       <main className="mx-auto max-w-5xl px-6 pt-28 pb-16 sm:pt-32 sm:pb-24">
         <h1 className="text-4xl font-semibold tracking-[-0.035em] text-text">Plugin directory</h1>
 
-        <section className="pt-12">
-          {entries === null ? (
-            <p className="text-lg text-muted">
-              The plugin registry is unreachable right now. Try again in a few minutes.
-            </p>
-          ) : entries.length === 0 ? (
-            <EmptyDirectory />
-          ) : (
-            <ul className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
-              {entries.map((entry) => (
-                <PluginRow key={entry.id} entry={entry} />
-              ))}
-            </ul>
-          )}
-        </section>
+        <section className="pt-12">{directoryContent(entries)}</section>
       </main>
     </div>
+  )
+}
+
+function directoryContent(entries: ReadonlyArray<DirectoryEntry> | null) {
+  if (entries === null)
+    return (
+      <p className="text-lg text-muted">
+        The plugin registry is unreachable right now. Try again in a few minutes.
+      </p>
+    )
+  if (entries.length === 0) return <EmptyDirectory />
+  return (
+    <ul className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
+      {entries.map((entry) => (
+        <PluginRow key={entry.id} entry={entry} />
+      ))}
+    </ul>
   )
 }
 

@@ -17,6 +17,8 @@ import {
 } from "@codevisor/cloud-client"
 import { WebSocket } from "ws"
 
+import { rawDataBytes } from "./ws-raw-data.js"
+
 export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) => {
   const queued: Array<{ readonly data: Uint8Array; readonly sealedBytes: number }> = []
   let ended = false
@@ -77,12 +79,6 @@ const fetchBodyInit = (body: Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array
   if (body instanceof ReadableStream) return { body, duplex: "half" as const }
   if (body.byteLength === 0) return {}
   return { body }
-}
-
-const rawDataBytes = (data: WebSocket.RawData) => {
-  if (Array.isArray(data)) return Buffer.concat(data)
-  if (data instanceof ArrayBuffer) return Buffer.from(data)
-  return data
 }
 
 export const httpChannelHandler =

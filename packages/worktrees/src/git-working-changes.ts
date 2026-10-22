@@ -23,12 +23,18 @@ const outputOptions = { maxBuffer: 16 * 1024 * 1024, priority: "utility" } as co
 const records = (output: string): ReadonlyArray<string> =>
   output.split("\0").filter((record) => record !== "")
 
+const changeStatus = (code: string): GitWorkingChangeStatus => {
+  if (code === "A") return "added"
+  if (code === "D") return "deleted"
+  return "modified"
+}
+
 export const parseNameStatus = (output: string): ReadonlyMap<string, GitWorkingChangeStatus> => {
   const statuses = new Map<string, GitWorkingChangeStatus>()
   const fields = records(output)
   for (let index = 0; index + 1 < fields.length; index += 2) {
     const code = fields[index]!.charAt(0)
-    statuses.set(fields[index + 1]!, code === "A" ? "added" : code === "D" ? "deleted" : "modified")
+    statuses.set(fields[index + 1]!, changeStatus(code))
   }
   return statuses
 }

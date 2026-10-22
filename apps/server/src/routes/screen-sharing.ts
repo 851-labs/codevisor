@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
+import { ScreenSharingReply, ScreenSharingRequest, type WorkspacePane } from "@codevisor/api"
 import { Schema } from "effect"
 
 import {
@@ -24,6 +24,20 @@ const computerUseSessionId = (displayId: string | undefined): string | undefined
 const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const isSimulatorTarget = (displayId: string | undefined): boolean =>
   displayId !== undefined && simulatorTarget.test(displayId)
+
+const paneMismatchesTarget = (
+  pane: WorkspacePane,
+  displayId: string | undefined,
+  sessionId: string | undefined
+): boolean => {
+  if (isSimulatorTarget(displayId)) return pane.paneType !== "simulator"
+  if (sessionId === undefined) return pane.paneType !== "screen-sharing"
+  return (
+    pane.paneType !== "chat" ||
+    pane.resourceKind !== "session" ||
+    String(pane.resourceId).toLowerCase() !== sessionId
+  )
+}
 
 const isKnownTarget = (displayId: string): boolean =>
   uuid.test(displayId) ||
@@ -85,13 +99,7 @@ export const routeScreenSharing = async (
       pane === undefined ||
       pane.workspaceId.toLowerCase() !== workspace.id.toLowerCase() ||
       pane.providerId !== "codevisor" ||
-      (isSimulatorTarget(payload.displayId)
-        ? pane.paneType !== "simulator"
-        : sessionId === undefined
-          ? pane.paneType !== "screen-sharing"
-          : pane.paneType !== "chat" ||
-            pane.resourceKind !== "session" ||
-            String(pane.resourceId).toLowerCase() !== sessionId)
+      paneMismatchesTarget(pane, payload.displayId, sessionId)
     )
       throw new HttpFailure(404, "Screen Sharing pane is no longer available")
   }

@@ -1,5 +1,11 @@
 export type RFBClientMessageKind = "input" | "clipboard" | "resize" | "other"
 
+const phaseAfterSecurity = (unit: Buffer) => {
+  if (unit[0] === 1) return "clientInit"
+  if (unit[0] === 2) return "authentication"
+  return "passthrough"
+}
+
 export class RFBClientStreamFilter {
   private buffer: Buffer = Buffer.alloc(0)
   private phase:
@@ -15,7 +21,7 @@ export class RFBClientStreamFilter {
     const out: Buffer[] = []
     let data = chunk
     while (data.length > 0 && this.phase !== "messages" && this.phase !== "passthrough") {
-      const size = this.phase === "version" ? 12 : this.phase === "authentication" ? 16 : 1
+      const size = this.unitSize()
       const take = data.subarray(0, size - this.unit.length)
       out.push(take)
       this.unit = Buffer.concat([this.unit, take])
@@ -45,6 +51,12 @@ export class RFBClientStreamFilter {
     return Buffer.concat(out)
   }
 
+  private unitSize() {
+    if (this.phase === "version") return 12
+    if (this.phase === "authentication") return 16
+    return 1
+  }
+
   private advance(): void {
     const unit = this.unit
     this.unit = Buffer.alloc(0)
@@ -53,7 +65,7 @@ export class RFBClientStreamFilter {
         this.phase = unit.toString("latin1") === "RFB 003.008\n" ? "security" : "passthrough"
         return
       case "security":
-        this.phase = unit[0] === 1 ? "clientInit" : unit[0] === 2 ? "authentication" : "passthrough"
+        this.phase = phaseAfterSecurity(unit)
         return
       case "authentication":
         this.phase = "clientInit"

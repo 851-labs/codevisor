@@ -23,10 +23,16 @@ const failure = (
   return typeof error === "string" ? error : `the server answered HTTP ${response.status}`
 }
 
+const machinePresence = (machine: MachineSummary): string => {
+  if (machine.isCurrent) return "(this machine)"
+  if (machine.online) return "online"
+  return "offline"
+}
+
 const describeMachine = (machine: MachineSummary): string =>
   [
     machine.name,
-    machine.isCurrent ? "(this machine)" : machine.online ? "online" : "offline",
+    machinePresence(machine),
     ...(machine.os === undefined ? [] : [machine.os]),
     ...(machine.addedBy === undefined ? [] : [`added by ${machine.addedBy}`]),
     machine.id

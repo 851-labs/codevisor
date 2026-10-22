@@ -170,14 +170,12 @@ export const routeWorkspaceMedia = async (
   }
   const before = decodeCursor(url.searchParams.get("before"))
   const limit = url.searchParams.get("limit")
-  writeJson(
-    response,
-    200,
-    photosRoute !== undefined
-      ? await workspacePhotos(services, workspaceId, before, pageLimit(limit, 60))
-      : mediaRoute !== undefined
-        ? await workspaceMedia(services, workspaceId, before, pageLimit(limit, 60))
-        : await workspaceLinks(services, workspaceId, before, pageLimit(limit, 100))
-  )
+  let page: WorkspacePhotoPage | WorkspaceMediaPage | WorkspaceLinkPage
+  if (photosRoute !== undefined)
+    page = await workspacePhotos(services, workspaceId, before, pageLimit(limit, 60))
+  else if (mediaRoute !== undefined)
+    page = await workspaceMedia(services, workspaceId, before, pageLimit(limit, 60))
+  else page = await workspaceLinks(services, workspaceId, before, pageLimit(limit, 100))
+  writeJson(response, 200, page)
   return true
 }

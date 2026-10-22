@@ -56,8 +56,14 @@ const assertSourceOwner = (parsed: ParsedPluginSource, manifest: PluginManifest)
   }
 }
 
+const receiptSourceKind = (source: ParsedPluginSource) => {
+  if (source.repo !== undefined) return "github"
+  if (source.local === true) return "local"
+  return "git"
+}
+
 const receiptSource = (source: ParsedPluginSource): PluginInstallSourceReceipt => ({
-  kind: source.repo !== undefined ? "github" : source.local === true ? "local" : "git",
+  kind: receiptSourceKind(source),
   tracking: source.repo !== undefined && source.ref === undefined ? "registry" : "pinned",
   url: source.url,
   ...(source.repo === undefined ? {} : { repo: source.repo }),

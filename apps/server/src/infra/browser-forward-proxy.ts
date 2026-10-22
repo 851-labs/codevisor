@@ -6,6 +6,12 @@ import {
 } from "node:http"
 import { connect, type Socket } from "node:net"
 
+const headerValues = (value: string | Array<string> | undefined): ReadonlyArray<string> => {
+  if (Array.isArray(value)) return value
+  if (value === undefined) return []
+  return [value]
+}
+
 export const isBrowserProxyRequest = (request: IncomingMessage) =>
   request.url !== undefined && !request.url.startsWith("/") && request.url !== "*"
 
@@ -108,7 +114,7 @@ export function forwardBrowserUpgrade(
     }
     let opening = `${request.method} ${target.url.pathname}${target.url.search} HTTP/1.1\r\n`
     for (const [name, value] of Object.entries(headers)) {
-      for (const item of Array.isArray(value) ? value : value === undefined ? [] : [value]) {
+      for (const item of headerValues(value)) {
         opening += `${name}: ${item}\r\n`
       }
     }

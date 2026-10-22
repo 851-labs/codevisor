@@ -5,25 +5,54 @@ import { dirname, join } from "node:path"
 
 import { CdpConnection, delay } from "./browser-cdp.js"
 
+const systemChromeCandidates = (taskHome: string | undefined): Array<string> => {
+  if (process.platform === "darwin")
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      ...(taskHome === undefined
+        ? []
+        : [join(taskHome, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")])
+    ]
+  if (process.platform === "linux")
+    return [
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/snap/bin/chromium"
+    ]
+  return []
+}
+
+const downloadedChromiumCandidates = (root: string): Array<string> => {
+  if (process.platform === "darwin")
+    return [
+      join(
+        root,
+        "chrome-mac-arm64",
+        "Google Chrome for Testing.app",
+        "Contents",
+        "MacOS",
+        "Google Chrome for Testing"
+      ),
+      join(
+        root,
+        "chrome-mac-x64",
+        "Google Chrome for Testing.app",
+        "Contents",
+        "MacOS",
+        "Google Chrome for Testing"
+      ),
+      join(root, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium")
+    ]
+  if (process.platform === "linux")
+    return [join(root, "chrome-linux64", "chrome"), join(root, "chrome-linux", "chrome")]
+  return []
+}
+
 export const systemChromePath = (): string | undefined => {
   const taskHome = process.env.HOME
-  const candidates =
-    process.platform === "darwin"
-      ? [
-          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          ...(taskHome === undefined
-            ? []
-            : [join(taskHome, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")])
-        ]
-      : process.platform === "linux"
-        ? [
-            "/usr/bin/google-chrome-stable",
-            "/usr/bin/google-chrome",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/chromium",
-            "/snap/bin/chromium"
-          ]
-        : []
+  const candidates = systemChromeCandidates(taskHome)
   return candidates.find(existsSync)
 }
 
@@ -35,30 +64,7 @@ export const downloadedChromiumPath = (browsersDir: string): string | undefined 
     .toSorted()
     .toReversed()
   for (const root of roots) {
-    const candidates =
-      process.platform === "darwin"
-        ? [
-            join(
-              root,
-              "chrome-mac-arm64",
-              "Google Chrome for Testing.app",
-              "Contents",
-              "MacOS",
-              "Google Chrome for Testing"
-            ),
-            join(
-              root,
-              "chrome-mac-x64",
-              "Google Chrome for Testing.app",
-              "Contents",
-              "MacOS",
-              "Google Chrome for Testing"
-            ),
-            join(root, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium")
-          ]
-        : process.platform === "linux"
-          ? [join(root, "chrome-linux64", "chrome"), join(root, "chrome-linux", "chrome")]
-          : []
+    const candidates = downloadedChromiumCandidates(root)
     const executable = candidates.find(existsSync)
     if (executable !== undefined) return executable
   }

@@ -102,7 +102,7 @@ const namedKeyDescription = (
   }
   const match = named[raw.toLowerCase()]
   if (match !== undefined) {
-    const text = match[0] === "Enter" ? "\r" : match[0] === " " ? " " : undefined
+    const text = namedKeyText(match)
     return {
       key: match[0],
       code: match[1],
@@ -114,6 +114,18 @@ const namedKeyDescription = (
   return undefined
 }
 
+const namedKeyText = (match: [string, string, number]) => {
+  if (match[0] === "Enter") return "\r"
+  if (match[0] === " ") return " "
+  return undefined
+}
+
+const printableKeyCode = (raw: string, upper: string, letter: boolean): string => {
+  if (letter) return `Key${upper}`
+  if (/^[0-9]$/.test(raw)) return `Digit${raw}`
+  return raw
+}
+
 const printableKeyDescription = (
   raw: string,
   modifiers: number
@@ -121,7 +133,7 @@ const printableKeyDescription = (
   if (!isSingleCharacter(raw)) throw new Error(`Unsupported key: ${raw}`)
   const upper = raw.toUpperCase()
   const letter = /^[A-Z]$/.test(upper)
-  const code = letter ? `Key${upper}` : /^[0-9]$/.test(raw) ? `Digit${raw}` : raw
+  const code = printableKeyCode(raw, upper, letter)
   const key = (modifiers & 8) !== 0 ? upper : raw
   return {
     key,

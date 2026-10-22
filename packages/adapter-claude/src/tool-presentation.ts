@@ -98,15 +98,17 @@ export interface WebSearchSource {
   readonly url: string
 }
 
+const contentText = (content: unknown): string => {
+  if (typeof content === "string") return content
+  if (Array.isArray(content))
+    return content
+      .map((block) => (isRecord(block) && typeof block.text === "string" ? block.text : ""))
+      .join("")
+  return ""
+}
+
 export const webSearchSources = (content: unknown): Array<WebSearchSource> => {
-  const text =
-    typeof content === "string"
-      ? content
-      : Array.isArray(content)
-        ? content
-            .map((block) => (isRecord(block) && typeof block.text === "string" ? block.text : ""))
-            .join("")
-        : ""
+  const text = contentText(content)
   if (!text.includes("Web search results for query:")) return []
   const marker = text.indexOf("Links:")
   if (marker === -1) return []

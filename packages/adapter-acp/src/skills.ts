@@ -101,6 +101,11 @@ const SOURCE_SUFFIX = /\s*\((?:project|user|global) skill\)$/i
 const metaText = (meta: Record<string, unknown> | null | undefined, key: string) =>
   typeof meta?.[key] === "string" ? meta[key] : undefined
 
+const declaredSkillSource = (scope: string | undefined) => {
+  if (scope === undefined) return undefined
+  return GROK_SCOPES[scope]
+}
+
 export const acpSkills = (
   commands: ReadonlyArray<AcpAvailableCommand>,
   skillFolders: ReadonlyMap<string, SessionSkillSource>
@@ -110,11 +115,7 @@ export const acpSkills = (
       const scope = metaText(command._meta, "scope")
       const declared = metaText(command._meta, "path") !== undefined
       if (!declared && !skillFolders.has(command.name)) return []
-      const source = declared
-        ? scope === undefined
-          ? undefined
-          : GROK_SCOPES[scope]
-        : skillFolders.get(command.name)
+      const source = declared ? declaredSkillSource(scope) : skillFolders.get(command.name)
       const description = (command.description ?? "").replace(SOURCE_SUFFIX, "").trim()
       return [
         {

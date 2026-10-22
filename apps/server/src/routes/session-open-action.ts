@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { OpenSessionRequest as OpenSessionRequestSchema } from "@codevisor/api"
-import type { OpenSessionRequest } from "@codevisor/api"
+import type { OpenSessionRequest, SessionSummary } from "@codevisor/api"
 
 import { appendAndPublish, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import type {
@@ -29,17 +29,19 @@ export const openSessionAction = async (
     await ensureOpenProject(services, fanout, payload)
   }
   const existing = await findSession(services.db, openSessionId)
-  const session =
-    existing === undefined
-      ? (
-          await createSessionIfMissing(services, fanout, routeState, config, {
-            ...payload.session,
-            id: openSessionId
-          })
-        ).session
-      : payload.update === undefined
-        ? existing
-        : await applySessionUpdate(services, fanout, openSessionId, payload.update)
+  let session: SessionSummary
+  if (existing === undefined) {
+    session = (
+      await createSessionIfMissing(services, fanout, routeState, config, {
+        ...payload.session,
+        id: openSessionId
+      })
+    ).session
+  } else if (payload.update === undefined) {
+    session = existing
+  } else {
+    session = await applySessionUpdate(services, fanout, openSessionId, payload.update)
+  }
   const transcript = await withAutoResume(
     services.db,
     withUpdateGate(

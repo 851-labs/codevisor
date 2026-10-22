@@ -1,6 +1,8 @@
 import type { CloudSocket } from "@codevisor/cloud-client"
 import { WebSocket } from "ws"
 
+import { rawDataBytes } from "./ws-raw-data.js"
+
 export const socketFactory = (url: string, headers: Record<string, string>): CloudSocket => {
   const socket = new WebSocket(url, { headers })
   const adapted: CloudSocket = {
@@ -20,11 +22,7 @@ export const socketFactory = (url: string, headers: Record<string, string>): Clo
   })
   socket.on("message", (data, isBinary) => {
     try {
-      const bytes = Array.isArray(data)
-        ? Buffer.concat(data)
-        : data instanceof ArrayBuffer
-          ? Buffer.from(data)
-          : data
+      const bytes = rawDataBytes(data)
       adapted.onmessage?.(isBinary ? new Uint8Array(bytes) : bytes.toString())
     } catch {
       socket.close(1011, "message handler failed")

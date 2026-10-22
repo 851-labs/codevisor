@@ -3,17 +3,19 @@ import { isoTimestamp, type SessionGoal } from "@codevisor/api"
 
 import type { ClaudeSession } from "./session.js"
 
+const settledGoalStatus = (session: ClaudeSession, message: SDKMessage & { type: "result" }) => {
+  if (session.interruptRequested) return "paused"
+  if (message.subtype === "success") return "complete"
+  return "blocked"
+}
+
 export const settleGoalOnTurnEnd = (
   session: ClaudeSession,
   message: SDKMessage & { type: "result" }
 ): void => {
   const goal = session.currentGoal
   if (goal === undefined || goal.status !== "active") return
-  const status = session.interruptRequested
-    ? "paused"
-    : message.subtype === "success"
-      ? "complete"
-      : "blocked"
+  const status = settledGoalStatus(session, message)
   const settled: SessionGoal = { ...goal, status, updatedAt: isoTimestamp() }
   session.currentGoal = settled
   void session.emit({

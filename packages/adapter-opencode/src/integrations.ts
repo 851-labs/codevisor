@@ -41,6 +41,14 @@ export type OpenCodeIntegration = typeof OpenCodeIntegration.Type
 
 export const OPENCODE_KEY_METHOD = "key"
 
+type OpenCodeConnection = NonNullable<OpenCodeIntegration["connections"]>[number]
+
+const connectionCredentialType = (active: OpenCodeConnection | undefined) => {
+  if (active?.method === "oauth") return "oauth"
+  if (active === undefined) return undefined
+  return "api"
+}
+
 const prompts = (form: ReadonlyArray<FormField> = []): Array<OpenCodeAuthPrompt> =>
   form.flatMap((field): Array<OpenCodeAuthPrompt> => {
     if (field.hidden === true || field.key === undefined) return []
@@ -99,8 +107,7 @@ export const openCodeProvidersFromIntegrations = (
         return []
       })
       const active = integration.connections?.find((connection) => connection.type === "credential")
-      const credentialType =
-        active?.method === "oauth" ? "oauth" : active === undefined ? undefined : "api"
+      const credentialType = connectionCredentialType(active)
       if (methods.length === 0 && credentialType === undefined) return []
       return [
         {

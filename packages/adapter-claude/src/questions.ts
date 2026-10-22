@@ -13,6 +13,9 @@ import { toolTitle } from "./tool-presentation.js"
 
 const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
+const labelsWithNote = (labels: string, note: string): string =>
+  note.length > 0 ? `${labels} — ${note}` : labels
+
 export const holdClaudeQuestion = (
   session: ClaudeSession,
   toolInput: Record<string, unknown>
@@ -42,8 +45,7 @@ export const holdClaudeQuestion = (
           if (entry === undefined) continue
           const note = entry.note?.trim() ?? ""
           const labels = entry.answers.join(", ")
-          const value =
-            labels.length > 0 ? (note.length > 0 ? `${labels} — ${note}` : labels) : note
+          const value = labels.length > 0 ? labelsWithNote(labels, note) : note
           if (value.length > 0) {
             answers[spec.question] = value
           }

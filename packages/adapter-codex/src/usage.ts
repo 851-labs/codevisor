@@ -33,6 +33,12 @@ const codexUsageWindow = (
   }
 }
 
+const creditBalance = (credits: Record<string, unknown>) => {
+  if (typeof credits.balance === "string") return { balance: credits.balance }
+  if (typeof credits.balance === "number") return { balance: String(credits.balance) }
+  return {}
+}
+
 export const codexUsageLimitsFrom = (response: unknown): HarnessUsageLimits => {
   const root = isRecord(response) ? response : {}
   const limits = isRecord(root.rateLimits) ? root.rateLimits : root
@@ -54,11 +60,7 @@ export const codexUsageLimitsFrom = (response: unknown): HarnessUsageLimits => {
           credits: {
             hasCredits: credits.hasCredits === true,
             unlimited: credits.unlimited === true,
-            ...(typeof credits.balance === "string"
-              ? { balance: credits.balance }
-              : typeof credits.balance === "number"
-                ? { balance: String(credits.balance) }
-                : {})
+            ...creditBalance(credits)
           }
         }),
     ...(windows.length > 0

@@ -60,9 +60,18 @@ export const compareSemanticVersions = (left: string, right: string): number => 
 const validIdentifier = (identifier: string): boolean =>
   identifier.length > 0 && IDENTIFIER_PATTERN.test(identifier)
 
+const compareEmptyPrerelease = (
+  left: ReadonlyArray<string>,
+  right: ReadonlyArray<string>
+): number => {
+  if (left.length === right.length) return 0
+  if (left.length === 0) return 1
+  return -1
+}
+
 const comparePrerelease = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): number => {
   if (left.length === 0 || right.length === 0) {
-    return left.length === right.length ? 0 : left.length === 0 ? 1 : -1
+    return compareEmptyPrerelease(left, right)
   }
   for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
     const a = left[index]
@@ -87,13 +96,8 @@ const coreIdentifiers = (version: string): readonly [string, string, string] => 
   return [major, minor, patch]
 }
 
-const compareNumericIdentifier = (left: string, right: string): number =>
-  left.length === right.length
-    ? left === right
-      ? 0
-      : left > right
-        ? 1
-        : -1
-    : left.length > right.length
-      ? 1
-      : -1
+const compareNumericIdentifier = (left: string, right: string): number => {
+  if (left.length !== right.length) return left.length > right.length ? 1 : -1
+  if (left === right) return 0
+  return left > right ? 1 : -1
+}

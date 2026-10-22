@@ -66,17 +66,18 @@ export type CredentialCoordinator = (
   command: CredentialCommand
 ) => Promise<CredentialCoordinationResult>
 
+type SharedCredentialFailure = "offline" | "reauthenticate" | "revoked" | "busy"
+
+const sharedCredentialMessage = (reason: SharedCredentialFailure): string => {
+  if (reason === "offline") return "Account sync is unavailable. Try again when connected."
+  if (reason === "busy") return "Account is reconnecting. Try again."
+  if (reason === "revoked") return "This account has been signed out."
+  return "Sign in again to reconnect this account on your machines."
+}
+
 export class SharedCredentialError extends Error {
-  constructor(readonly reason: "offline" | "reauthenticate" | "revoked" | "busy") {
-    super(
-      reason === "offline"
-        ? "Account sync is unavailable. Try again when connected."
-        : reason === "busy"
-          ? "Account is reconnecting. Try again."
-          : reason === "revoked"
-            ? "This account has been signed out."
-            : "Sign in again to reconnect this account on your machines."
-    )
+  constructor(readonly reason: SharedCredentialFailure) {
+    super(sharedCredentialMessage(reason))
   }
 }
 

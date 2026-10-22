@@ -115,7 +115,7 @@ export const makeSharedProviderStore = (options: {
     const current = await get(slot)
     const same = (row: SharedProviderRecord | undefined) =>
       row?.subject === bundle.subject && row.organizationId === bundle.organizationId
-    const destination = shared || !global ? global : same(global) ? global : current
+    const destination = shared || !global || same(global) ? global : current
     if (
       !explicit &&
       ((await store.entries()).some((entry) => entry.key === slot && entry.deleted) ||

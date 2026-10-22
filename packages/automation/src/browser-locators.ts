@@ -1,6 +1,6 @@
-import { assertReadOnlyFunction } from "./browser-cdp-engine.js"
 import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-engine.js"
 import { delay, evaluatedValue } from "./browser-cdp.js"
+import { assertReadOnlyFunction } from "./browser-evaluate-guard.js"
 import { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import { expectBoolean, expectRecord } from "./unknown-values.js"

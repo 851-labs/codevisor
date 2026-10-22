@@ -36,15 +36,15 @@ const workspace = (value: unknown): string | undefined => {
   return undefined
 }
 
+const timestampMillis = (number: number, value: unknown): number => {
+  if (Number.isFinite(number)) return number < 1e12 ? number * 1000 : number
+  if (typeof value === "string") return Date.parse(value)
+  return Number.NaN
+}
+
 const timestamp = (value: unknown): string | undefined => {
   const number = finite(value) ?? (typeof value === "string" ? Number(value) : Number.NaN)
-  const millis = Number.isFinite(number)
-    ? number < 1e12
-      ? number * 1000
-      : number
-    : typeof value === "string"
-      ? Date.parse(value)
-      : Number.NaN
+  const millis = timestampMillis(number, value)
   return Number.isFinite(millis) ? new Date(millis).toISOString() : undefined
 }
 

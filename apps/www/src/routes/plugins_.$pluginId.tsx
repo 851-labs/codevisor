@@ -88,20 +88,26 @@ function PluginDetailPage() {
         <Link to="/plugins" className="text-sm text-muted transition-colors hover:text-text">
           ← All plugins
         </Link>
-        {plugin === null ? (
-          <p className="mt-10 text-lg text-muted">
-            The plugin registry is unreachable right now. Try again in a few minutes.
-          </p>
-        ) : plugin === "missing" ? (
-          <p className="mt-10 text-lg text-muted">
-            This plugin isn’t in the registry — it may have been delisted, or the link is stale.
-          </p>
-        ) : (
-          <PluginDetailBody plugin={plugin} />
-        )}
+        {pluginDetailContent(plugin)}
       </main>
     </div>
   )
+}
+
+function pluginDetailContent(plugin: PluginDetail | "missing" | null) {
+  if (plugin === null)
+    return (
+      <p className="mt-10 text-lg text-muted">
+        The plugin registry is unreachable right now. Try again in a few minutes.
+      </p>
+    )
+  if (plugin === "missing")
+    return (
+      <p className="mt-10 text-lg text-muted">
+        This plugin isn’t in the registry — it may have been delisted, or the link is stale.
+      </p>
+    )
+  return <PluginDetailBody plugin={plugin} />
 }
 
 function PluginDetailBody({ plugin }: { plugin: PluginDetail }) {

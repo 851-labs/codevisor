@@ -53,17 +53,18 @@ const transcriptPageCursor = (url: URL) => {
   return { before, limit, forward }
 }
 
+const transcriptBefore = (rawBefore: string | null, byId: boolean, forward: boolean) => {
+  if (rawBefore === null) return undefined
+  if (byId) return rawBefore.slice(rawBefore.indexOf(":") + 1)
+  return Number(forward ? rawBefore.slice(6) : rawBefore)
+}
+
 const transcriptPosition = (rawBefore: string | null) => {
   const byId =
     rawBefore?.startsWith("after-id:") === true || rawBefore?.startsWith("before-id:") === true
   const forward =
     rawBefore?.startsWith("after:") === true || rawBefore?.startsWith("after-id:") === true
-  const before =
-    rawBefore === null
-      ? undefined
-      : byId
-        ? rawBefore.slice(rawBefore.indexOf(":") + 1)
-        : Number(forward ? rawBefore.slice(6) : rawBefore)
+  const before = transcriptBefore(rawBefore, byId, forward)
   if (
     (typeof before === "number" && (!Number.isSafeInteger(before) || before < 0)) ||
     (typeof before === "string" && !/^[a-fA-F0-9-]{36}$/.test(before))

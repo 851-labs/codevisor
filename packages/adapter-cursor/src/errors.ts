@@ -40,6 +40,13 @@ const cursorErrorMessage = (kind: CursorTerminalErrorKind, detail: string): stri
   return detail.length === 0 ? "Cursor ended the response unexpectedly." : detail
 }
 
+const terminalErrorKind = (name: string | undefined): CursorTerminalErrorKind => {
+  if (name === "RetriableError") return "retriable"
+  if (name === "NonRetriableError") return "non_retriable"
+  if (name === "ActionRequiredError") return "action_required"
+  return "cancelled"
+}
+
 export const parseCursorTerminalError = (text: string): CursorTerminalError | undefined => {
   const match =
     /^\s*Error:\s*(RetriableError|NonRetriableError|ActionRequiredError|CancelledError):\s*(.*?)\s*$/s.exec(
@@ -48,14 +55,7 @@ export const parseCursorTerminalError = (text: string): CursorTerminalError | un
   if (match === null) return usageLimitNotice(text)
   const name = match[1]
   const rawDetail = match[2] ?? ""
-  const kind: CursorTerminalErrorKind =
-    name === "RetriableError"
-      ? "retriable"
-      : name === "NonRetriableError"
-        ? "non_retriable"
-        : name === "ActionRequiredError"
-          ? "action_required"
-          : "cancelled"
+  const kind = terminalErrorKind(name)
   return {
     kind,
     message: cursorErrorMessage(kind, rawDetail),

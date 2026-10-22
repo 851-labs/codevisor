@@ -92,10 +92,13 @@ const steer = (
       () => false
     )
 
+const labelsWithNote = (labels: string, note: string): string =>
+  note.length > 0 ? `${labels} — ${note}` : labels
+
 const replyText = (entry: QuestionAnswerEntry | undefined): string | undefined => {
   if (entry === undefined) return undefined
   const note = entry.note?.trim() ?? ""
   const labels = entry.answers.join(", ")
-  const text = labels.length > 0 ? (note.length > 0 ? `${labels} — ${note}` : labels) : note
+  const text = labels.length > 0 ? labelsWithNote(labels, note) : note
   return text.length === 0 ? undefined : text
 }

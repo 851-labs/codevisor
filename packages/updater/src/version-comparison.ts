@@ -24,9 +24,18 @@ const parseVersion = (
   }
 }
 
+const compareEmptyPrerelease = (
+  left: ReadonlyArray<string>,
+  right: ReadonlyArray<string>
+): number => {
+  if (left.length === right.length) return 0
+  if (left.length === 0) return 1
+  return -1
+}
+
 const comparePrerelease = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): number => {
   if (left.length === 0 || right.length === 0) {
-    return left.length === right.length ? 0 : left.length === 0 ? 1 : -1
+    return compareEmptyPrerelease(left, right)
   }
   for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
     const a = left[index]

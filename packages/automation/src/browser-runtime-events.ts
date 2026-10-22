@@ -5,6 +5,32 @@ import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import { observeBrowserLoadEvent } from "./browser-load-state.js"
 import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
 
+type CdpParams = Readonly<Record<string, unknown>>
+type BrowserDownload = BrowserRuntime["downloads"] extends Map<string, infer D> ? D : never
+
+function downloadProgressState(params: CdpParams, existing: BrowserDownload) {
+  if (typeof params.state === "string") return { state: params.state }
+  if (existing.state === undefined) return {}
+  return { state: existing.state }
+}
+
+type DownloadParams = CdpParams & { readonly guid: string }
+
+function hasDownloadGuid(params: CdpParams): params is DownloadParams {
+  return typeof params.guid === "string"
+}
+
+function downloadProgressPath(
+  params: DownloadParams,
+  existing: BrowserDownload,
+  downloadsDir: string
+) {
+  if (typeof params.filePath === "string") return { path: params.filePath }
+  if (params.state === "completed" && existing.path === undefined)
+    return { path: join(downloadsDir, params.guid) }
+  return {}
+}
+
 export function observeBrowserRuntime(
   active: BrowserRuntime,
   downloadsDir: string,
@@ -53,22 +79,14 @@ export function observeBrowserRuntime(
         })
       } else if (
         (event.method === "Browser.downloadProgress" || event.method === "Page.downloadProgress") &&
-        typeof params.guid === "string"
+        hasDownloadGuid(params)
       ) {
         const existing = active.downloads.get(params.guid)
         if (existing !== undefined) {
           active.downloads.set(params.guid, {
             ...existing,
-            ...(typeof params.state === "string"
-              ? { state: params.state }
-              : existing.state === undefined
-                ? {}
-                : { state: existing.state }),
-            ...(typeof params.filePath === "string"
-              ? { path: params.filePath }
-              : params.state === "completed" && existing.path === undefined
-                ? { path: join(downloadsDir, params.guid) }
-                : {})
+            ...downloadProgressState(params, existing),
+            ...downloadProgressPath(params, existing, downloadsDir)
           })
         }
       }

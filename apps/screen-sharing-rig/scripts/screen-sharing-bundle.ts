@@ -119,9 +119,15 @@ function plistValue(value: PlistValue): string {
   return `<string>${escapeXML(value)}</string>`
 }
 
+function compareKeys(a: string, b: string) {
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
+}
+
 function plistDict(entries: PlistDictionary): string {
   const body = Object.entries(entries)
-    .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .toSorted(([a], [b]) => compareKeys(a, b))
     .map(([key, value]) => `<key>${escapeXML(key)}</key>${plistValue(value)}`)
     .join("\n")
   return `<dict>\n${body}\n</dict>`

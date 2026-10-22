@@ -7,6 +7,12 @@ import {
 
 import { SocketAttachment } from "./hub-schema.js"
 
+const noticeSubject = (frame: HubToApp & HubToMachine) => {
+  if (frame.t === "presence") return frame.machine.deviceId
+  if ("machineId" in frame) return frame.machineId
+  return undefined
+}
+
 export class HubSockets {
   constructor(private readonly ctx: Pick<DurableObjectState, "getWebSockets">) {}
 
@@ -95,12 +101,7 @@ export class HubSockets {
 
   broadcastMachineNotice(frame: HubToApp & HubToMachine): void {
     this.broadcastToApps(frame)
-    const subject =
-      frame.t === "presence"
-        ? frame.machine.deviceId
-        : "machineId" in frame
-          ? frame.machineId
-          : undefined
+    const subject = noticeSubject(frame)
     this.broadcastToPeerMachines(frame, subject)
   }
 }

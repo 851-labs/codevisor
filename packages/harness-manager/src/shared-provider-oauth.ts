@@ -23,19 +23,26 @@ export const providerOAuthSupported = (
   harness: ProviderOAuthHarness,
   providerId: string,
   providers: ReadonlyArray<Provider> = builtinProviders()
-): boolean =>
-  harness === "pi"
-    ? providers.some((provider) => provider.id === providerId && provider.auth.oauth !== undefined)
-    : harness === "grok-build"
-      ? providerId === "xai"
-      : ["openai", "xai", "github-copilot", "github-copilot-enterprise"].includes(providerId)
+): boolean => {
+  if (harness === "pi")
+    return providers.some(
+      (provider) => provider.id === providerId && provider.auth.oauth !== undefined
+    )
+  if (harness === "grok-build") return providerId === "xai"
+  return ["openai", "xai", "github-copilot", "github-copilot-enterprise"].includes(providerId)
+}
 
-export const providerTokenEndpoint = (providerId: string): string | undefined =>
-  providerId === "openai"
-    ? "https://auth.openai.com/oauth/token"
-    : providerId === "xai"
-      ? "https://auth.x.ai/oauth2/token"
-      : undefined
+export const providerTokenEndpoint = (providerId: string): string | undefined => {
+  if (providerId === "openai") return "https://auth.openai.com/oauth/token"
+  if (providerId === "xai") return "https://auth.x.ai/oauth2/token"
+  return undefined
+}
+
+const credentialExpiry = (durable: boolean, grok: boolean, credential: Record<string, unknown>) => {
+  if (durable) return Number.MAX_SAFE_INTEGER
+  if (grok) return Date.parse(String(credential.expires_at))
+  return credential.expires
+}
 
 export const parseProviderOAuth = (
   harnessId: ProviderOAuthHarness,
@@ -71,11 +78,7 @@ export const parseProviderOAuth = (
   const durable = harnessId === "opencode" && providerId.startsWith("github-copilot")
   const accessToken = durable ? refresh : string(grok ? credential.key : credential.access)
   if (!accessToken || !refresh || refresh.startsWith(MANAGED_REFRESH_PREFIX)) return undefined
-  const expiresAt = durable
-    ? Number.MAX_SAFE_INTEGER
-    : grok
-      ? Date.parse(String(credential.expires_at))
-      : credential.expires
+  const expiresAt = credentialExpiry(durable, grok, credential)
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined
   const accessIdentity = claims(accessToken)
   const identity = grok

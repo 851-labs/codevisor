@@ -30,12 +30,11 @@ export const makeExecutionSteps = (deps: {
   const { recorder, collector } = deps
   let browserSite: CodevisorExecutionIcon | undefined
   let computerApp: CodevisorExecutionIcon | undefined
-  const surface = (touched: CodevisorExecutionIcon | undefined) =>
-    isBuiltin(touched, "browser")
-      ? browserSite
-      : isBuiltin(touched, "computer")
-        ? computerApp
-        : undefined
+  const surface = (touched: CodevisorExecutionIcon | undefined) => {
+    if (isBuiltin(touched, "browser")) return browserSite
+    if (isBuiltin(touched, "computer")) return computerApp
+    return undefined
+  }
   const storedFiles: Array<CodevisorExecutionFile> = []
   const artifacts: SandboxArtifactCollector = {
     ...collector,
