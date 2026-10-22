@@ -157,6 +157,17 @@ struct MachineControllerCloudTests {
     #expect(controller.canonicalComposerMachineId(for: twinId) == "local")
   }
 
+  @Test("A remembered composer machine resolves to a live machine, or to nothing once it is gone")
+  func composerMachineIdResolution() {
+    let (controller, _, provider) = makeController()
+    provider.cloudMachines = [makeCloudMachine(deviceId: "dev-rack", name: "Rack")]
+
+    #expect(controller.canonicalComposerMachineId(for: "local") == "local")
+    #expect(controller.canonicalComposerMachineId(for: "cloud:dev-rack") == "cloud:dev-rack")
+    #expect(controller.canonicalComposerMachineId(for: "cloud:dev-retired") == nil)
+    #expect(controller.canonicalComposerMachineId(for: "ssh-retired-box") == nil)
+  }
+
   @Test("A resolved local registration removes its cloud twin before fleet sync")
   func resolvedLocalRegistrationPrunesTwin() async {
     let deviceId = "local-device"

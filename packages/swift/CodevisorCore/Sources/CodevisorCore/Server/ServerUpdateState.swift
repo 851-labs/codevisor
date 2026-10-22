@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+public enum ServerUpdatePhase: Equatable, Sendable {
+  case idle
+  case updating
+  case failed(String)
+}
+
 @MainActor
 @Observable
 final class ServerUpdateState {
