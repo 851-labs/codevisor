@@ -240,6 +240,14 @@ describe("sessions routes", () => {
     expect(twins[0]).toMatchObject({ id: lowerId, title: "Renamed from the Mac" })
   })
 
+  it("answers a malformed percent-encoded session id with a JSON failure", async () => {
+    const { server } = await start()
+
+    const malformed = await jsonRequest(server, "/v1/sessions/%ZZ")
+
+    expect(malformed).toEqual({ status: 500, body: { error: "URI malformed" } })
+  })
+
   it("creates sessions with harness titles, deferred and concurrent creation, and lookups", async () => {
     const { agents, server, workspace, workspaceFolder } = await setUpWorkspace()
     const session = await createFirstSession(server, workspace)

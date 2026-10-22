@@ -1,15 +1,19 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
-
-import type { AttachmentRef, PromptAcceptedResponse } from "@codevisor/api"
+import type { AgentSessionMetadata, QuestionAnswer, SetGoalUpdate } from "@codevisor/agent-runtime"
+import type {
+  SessionGoal,
+  SessionSummary,
+  SetGoalRequest as SetGoalRequestBody,
+  SetModeRequest as SetModeRequestBody,
+  SetQuestionAnswerRequest as SetQuestionAnswerRequestBody,
+  TranscriptItem,
+  TranscriptPage
+} from "@codevisor/api"
 import {
   CancelRequest,
-  PromptRequest,
-  ReorderQueuedPromptsRequest,
   SetConfigRequest,
   SetGoalRequest,
   SetModeRequest,
   SetQuestionAnswerRequest,
-  UpdateQueuedPromptRequest,
   isoTimestamp
 } from "@codevisor/api"
 
@@ -19,397 +23,280 @@ import {
   matchRouteParams,
   readSchema,
   run,
-  sessionIsArchived,
-  swallowError,
   writeJson
 } from "../server-context.js"
-import type {
-  CodevisorServerConfig,
-  CodevisorServerServices,
-  EventFanout,
-  RouteState
-} from "../server-context.js"
-import { agentMessageEvent, routeBotConversation } from "./bot-conversation.js"
-import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
-import {
-  defaultPromptDelivery,
-  deliverQueuedPrompt,
-  refuseWhileUpdating,
-  sendQueuedPromptNow
-} from "./prompt-delivery.js"
-import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
+import type { CodevisorServerConfig, CodevisorServerServices } from "../server-context.js"
+import { routeBotConversation } from "./bot-conversation.js"
+import { refuseWhileUpdating } from "./prompt-delivery.js"
+import { rejectSyncThrows } from "./route-context.js"
+import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
+import { writeIdempotentAction } from "./session-action-results.js"
 import { applySessionConfigPick } from "./session-config.js"
 import { openSessionAction } from "./session-open-action.js"
+import { sendPrompt } from "./session-prompt-route.js"
+import { routeQueuedPrompt, routeSessionQueue } from "./session-queue-routes.js"
 import { routeSessionTranscript } from "./session-transcript.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
-import { MAX_PROMPT_ATTACHMENTS } from "./sessions.js"
 
-export const routeSessionActions = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  request: IncomingMessage,
-  response: ServerResponse,
-  url: URL,
-  config: CodevisorServerConfig
-): Promise<boolean> => {
+export const routeSessionActions = (route: RouteContext): Promise<boolean> =>
+  rejectSyncThrows(() => dispatchSessionAction(route))
+
+const dispatchSessionAction = (route: RouteContext): Promise<boolean> => {
+  const { request, url } = route
   const connectSessionId = matchRoute(url.pathname, "/v1/sessions/:id/connect")
-  if (connectSessionId !== undefined && request.method === "POST") {
-    const metadata = await ensureAgentSessionFor(services, fanout, config.id, connectSessionId)
-    writeJson(response, 200, metadata)
-    return true
-  }
+  if (connectSessionId !== undefined && request.method === "POST")
+    return connectSession(route, connectSessionId)
 
   const openSessionId = matchRoute(url.pathname, "/v1/sessions/:id/open")
-  if (openSessionId !== undefined && request.method === "POST") {
-    return openSessionAction(services, fanout, routeState, request, response, config, openSessionId)
-  }
+  if (openSessionId !== undefined && request.method === "POST")
+    return openSession(route, openSessionId)
 
+  return routeAfterDelegates(route)
+}
+
+const routeAfterDelegates = async (route: RouteContext): Promise<boolean> => {
+  const { services, fanout, routeState, request, response, url } = route
   if (
     request.method === "GET" &&
     (await routeSessionTranscript(services, routeState, request, response, url))
   ) {
     return true
   }
-
   if (await routeBotConversation(services, fanout, routeState, request, response, url)) {
     return true
   }
 
-  const queueSessionId = matchRoute(url.pathname, "/v1/sessions/:id/queue")
-  if (queueSessionId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await run(services.db.listPromptQueue(queueSessionId)))
-    return true
-  }
+  const queueRoute = routeSessionQueue(route)
+  if (queueRoute !== undefined) return queueRoute
 
-  if (queueSessionId !== undefined && request.method === "PATCH") {
-    const payload = await readSchema(request, ReorderQueuedPromptsRequest)
-    await run(services.db.reorderPromptQueue(queueSessionId, payload.queueItemIds))
-    writeJson(response, 200, await publishPromptQueue(services.db, fanout, queueSessionId))
-    return true
-  }
+  refuseRemovedEventsRoute(route)
 
+  return routeQueuedPrompt(route) ?? routeSessionCommand(route) ?? false
+}
+
+const refuseRemovedEventsRoute = ({ request, url }: RouteContext): void => {
   const eventsSessionId = matchRoute(url.pathname, "/v1/sessions/:id/events")
   if (eventsSessionId !== undefined && request.method === "GET") {
     throw new HttpFailure(410, "Use the paginated transcript endpoint and its event cursor")
   }
+}
 
-  const queueItemRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId")
-  if (queueItemRoute !== undefined && request.method === "PATCH") {
-    const id = routeParam(queueItemRoute, "id")
-    const queueId = routeParam(queueItemRoute, "queueId")
-    const payload = await readSchema(request, UpdateQueuedPromptRequest)
-    if (payload.attachments !== undefined)
-      await requireKnownAttachments(services, payload.attachments)
-    const item = await run(
-      services.db.updatePromptQueueItem(id, queueId, payload.text, payload.attachments)
-    )
-    await publishPromptQueue(services.db, fanout, id)
-    writeJson(response, 200, item)
-    return true
-  }
-
-  if (queueItemRoute !== undefined && request.method === "DELETE") {
-    const id = routeParam(queueItemRoute, "id")
-    const queueId = routeParam(queueItemRoute, "queueId")
-    await run(services.db.deletePromptQueueItem(id, queueId))
-    await publishPromptQueue(services.db, fanout, id)
-    writeNoContent(response)
-    return true
-  }
-
-  const sendNowRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId/send-now")
-  if (sendNowRoute !== undefined && request.method === "POST") {
-    const id = routeParam(sendNowRoute, "id")
-    const queueId = routeParam(sendNowRoute, "queueId")
-    refuseWhileUpdating(routeState, id)
-    const outcome = await sendQueuedPromptNow(services, fanout, routeState, config.id, id, queueId)
-    const result: PromptAcceptedResponse = {
-      accepted: true,
-      sessionId: id,
-      queueItemId: queueId,
-      ...outcome
-    }
-    writeJson(response, 200, result)
-    void drainPromptQueue(services, fanout, routeState, config.id, id).catch(swallowError)
-    return true
-  }
-
+const routeSessionCommand = (route: RouteContext): Promise<boolean> | undefined => {
+  const { request, url } = route
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
-  if (promptSessionId !== undefined && request.method === "POST") {
-    if (
-      await sessionIsArchived(services, await run(services.db.getSessionSummary(promptSessionId)))
-    ) {
-      throw new HttpFailure(409, "Restore the workspace before sending a prompt")
-    }
-    const payload = await readSchema(request, PromptRequest)
-    const actionKey = actionIdKey(promptSessionId, payload.clientActionId)
-    if (payload.clientActionId !== undefined) {
-      const existing = await run(
-        services.db.getSessionActionResult(promptSessionId, payload.clientActionId)
-      )
-      if (existing !== undefined) {
-        writeJson(response, 202, existing)
-        return true
-      }
-    }
-    refuseWhileUpdating(routeState, promptSessionId)
-    /* v8 ignore next 4 */
-    if (actionKey !== undefined && routeState.pendingPromptActions.has(actionKey)) {
-      writeJson(response, 202, { accepted: true, sessionId: promptSessionId })
-      return true
-    }
-    const attachments = payload.attachments ?? []
-    await requireKnownAttachments(services, attachments)
-    if (actionKey !== undefined) {
-      routeState.pendingPromptActions.add(actionKey)
-    }
-    const toBot = (await conversationalBotForSession(services, promptSessionId)) !== undefined
-    const agentSessionId =
-      toBot && payload.fromSessionId?.toLowerCase() !== promptSessionId.toLowerCase()
-        ? payload.fromSessionId
-        : undefined
-    const queueItem = await run(
-      services.db.createPromptQueueItem(
-        promptSessionId,
-        agentSessionId === undefined
-          ? payload.text
-          : await agentMessageEvent(services, agentSessionId, payload.text),
-        attachments,
-        payload.messageId,
-        payload.clientId,
-        agentSessionId === undefined ? "user" : "system"
-      )
-    )
-    if (toBot && agentSessionId === undefined) {
-      await postBotMessage(services, fanout, promptSessionId, {
-        id: queueItem.id,
-        sender: "user",
-        text: payload.text,
-        ...(attachments.length === 0 ? {} : { attachments })
-      })
-    }
-    const outcome = await deliverQueuedPrompt(
-      services,
-      fanout,
-      routeState,
-      config.id,
-      promptSessionId,
-      queueItem.id,
-      payload.delivery ?? defaultPromptDelivery
-    )
-    const result: PromptAcceptedResponse = {
-      accepted: true,
-      sessionId: promptSessionId,
-      queueItemId: queueItem.id,
-      ...outcome
-    }
-    if (payload.clientActionId !== undefined) {
-      await run(
-        services.db.saveSessionActionResult(
-          promptSessionId,
-          payload.clientActionId,
-          "prompt",
-          result
-        )
-      )
-    }
-    writeJson(response, 202, result)
-    void drainPromptQueue(services, fanout, routeState, config.id, promptSessionId)
-      .catch(swallowError)
-      .finally(() => {
-        if (actionKey !== undefined) {
-          routeState.pendingPromptActions.delete(actionKey)
-        }
-      })
-    return true
-  }
+  if (promptSessionId !== undefined && request.method === "POST")
+    return sendPrompt(route, promptSessionId)
 
   const cancelSessionId = matchRoute(url.pathname, "/v1/sessions/:id/cancel")
-  if (cancelSessionId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, CancelRequest)
-    await writeIdempotentAction(
-      services,
-      response,
-      cancelSessionId,
-      "cancel",
-      payload,
-      async () => {
-        routeState.updateResume.cancel(cancelSessionId)
-        const cancelRequestedAt = isoTimestamp()
-        const session = await run(services.db.getSessionSummary(cancelSessionId))
-        const activeItem = (
-          await run(services.db.getTranscriptPage(cancelSessionId, undefined, 1))
-        ).items.at(-1)
-        const agentSession = await ensureAgentSessionFor(
-          services,
-          fanout,
-          config.id,
-          cancelSessionId
-        )
-        const outcome = await run(services.agents.cancel(agentSession.sessionId))
-        if (outcome.runtimeState === "retire") {
-          const forcedAt = isoTimestamp()
-          console.error(
-            JSON.stringify({
-              event: "agent_cancel_forced",
-              sessionId: cancelSessionId,
-              harnessId: session.harnessId,
-              agentSessionId: agentSession.sessionId,
-              turnId: activeItem?.turnId,
-              providerPhase: "cancelling",
-              lastEventType: "durable_transcript_snapshot",
-              lastEventAt: activeItem?.updatedAt,
-              cancelRequestedAt,
-              forcedAt,
-              runtimeRetired: true,
-              bootId: config.bootId,
-              processId: config.processId,
-              version: config.version,
-              buildNumber: config.buildNumber,
-              sourceRevision: config.sourceRevision
-            })
-          )
-        }
-        return { cancelled: true }
-      }
-    )
-    return true
-  }
+  if (cancelSessionId !== undefined && request.method === "POST")
+    return cancelSession(route, cancelSessionId)
 
   const modeSessionId = matchRoute(url.pathname, "/v1/sessions/:id/mode")
-  if (modeSessionId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, SetModeRequest)
-    await writeIdempotentAction(services, response, modeSessionId, "mode", payload, async () => {
-      const agentSession = await ensureAgentSessionFor(services, fanout, config.id, modeSessionId)
-      await run(services.agents.setMode(agentSession.sessionId, payload.modeId))
-      return { modeId: payload.modeId }
-    })
-    return true
-  }
+  if (modeSessionId !== undefined && request.method === "POST") return setMode(route, modeSessionId)
 
   const configSessionId = matchRoute(url.pathname, "/v1/sessions/:id/config")
-  if (configSessionId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, SetConfigRequest)
-    await writeIdempotentAction(
-      services,
-      response,
-      configSessionId,
-      "config",
-      payload,
-      async () => {
-        return applySessionConfigPick(services, fanout, config.id, configSessionId, payload)
-      }
-    )
-    return true
-  }
+  if (configSessionId !== undefined && request.method === "POST")
+    return setConfig(route, configSessionId)
 
   const goalSessionId = matchRoute(url.pathname, "/v1/sessions/:id/goal")
-  if (goalSessionId !== undefined && request.method === "POST") {
-    refuseWhileUpdating(routeState, goalSessionId)
-    const payload = await readSchema(request, SetGoalRequest)
-    await writeIdempotentAction(services, response, goalSessionId, "goal", payload, async () => {
-      const agentSession = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
-      return await run(
-        services.agents.setGoal(agentSession.sessionId, {
-          ...(payload.objective === undefined ? {} : { objective: payload.objective }),
-          ...(payload.status === undefined ? {} : { status: payload.status }),
-          ...("tokenBudget" in payload ? { tokenBudget: payload.tokenBudget ?? null } : {})
-        })
-      )
-    })
-    return true
-  }
-  if (goalSessionId !== undefined && request.method === "DELETE") {
-    const agentSession = await ensureAgentSessionFor(services, fanout, config.id, goalSessionId)
-    await run(services.agents.clearGoal(agentSession.sessionId))
-    writeJson(response, 204, undefined)
-    return true
-  }
+  if (goalSessionId !== undefined && request.method === "POST") return setGoal(route, goalSessionId)
+  if (goalSessionId !== undefined && request.method === "DELETE")
+    return clearGoal(route, goalSessionId)
 
   const answerRoute = matchRouteParams(
     url.pathname,
     "/v1/sessions/:id/questions/:questionId/answer"
   )
-  if (answerRoute !== undefined && request.method === "POST") {
-    const answerSessionId = routeParam(answerRoute, "id")
-    const questionId = routeParam(answerRoute, "questionId")
-    const payload = await readSchema(request, SetQuestionAnswerRequest)
-    await writeIdempotentAction(
-      services,
-      response,
-      answerSessionId,
-      "question-answer",
-      payload,
-      async () => {
-        const answer = {
-          outcome: payload.outcome,
-          ...(payload.answers === undefined ? {} : { answers: payload.answers })
-        }
-        const handledByAutomation =
-          (await services.mcp?.answerQuestion(answerSessionId, questionId, answer)) ?? false
-        if (!handledByAutomation) {
-          const agentSession = await ensureAgentSessionFor(
-            services,
-            fanout,
-            config.id,
-            answerSessionId
-          )
-          await run(services.agents.answerQuestion(agentSession.sessionId, questionId, answer))
-        }
-        return { outcome: payload.outcome, questionId }
-      }
-    )
-    return true
-  }
-
-  return false
+  if (answerRoute !== undefined && request.method === "POST")
+    return answerQuestion(route, answerRoute)
+  return undefined
 }
 
-const writeIdempotentAction = async (
-  services: CodevisorServerServices,
-  response: ServerResponse,
+const connectSession = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  const metadata = await agentSessionFor(route, sessionId)
+  writeJson(route.response, 200, metadata)
+  return true
+}
+
+const openSession = async (
+  { services, fanout, routeState, request, response, config }: RouteContext,
+  sessionId: string
+): Promise<boolean> =>
+  openSessionAction(services, fanout, routeState, request, response, config, sessionId)
+
+const cancelSession = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  const payload = await readSchema(route.request, CancelRequest)
+  await writeIdempotentAction(route.services, route.response, sessionId, "cancel", payload, () =>
+    cancelTurn(route, sessionId)
+  )
+  return true
+}
+
+const cancelTurn = async (route: RouteContext, sessionId: string): Promise<CancelResult> => {
+  const { services, routeState, config } = route
+  routeState.updateResume.cancel(sessionId)
+  const cancelRequestedAt = isoTimestamp()
+  const session = await run(services.db.getSessionSummary(sessionId))
+  const activeItem = (await latestTranscriptPage(services, sessionId)).items.at(-1)
+  const agentSession = await agentSessionFor(route, sessionId)
+  const outcome = await run(services.agents.cancel(agentSession.sessionId))
+  if (outcome.runtimeState === "retire") {
+    logForcedCancel(config, { sessionId, session, agentSession, activeItem, cancelRequestedAt })
+  }
+  return { cancelled: true }
+}
+
+const setMode = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  const payload = await readSchema(route.request, SetModeRequest)
+  await writeIdempotentAction(route.services, route.response, sessionId, "mode", payload, () =>
+    applyMode(route, sessionId, payload)
+  )
+  return true
+}
+
+const applyMode = async (
+  route: RouteContext,
   sessionId: string,
-  actionKind: string,
-  payload: { readonly clientActionId?: string | undefined },
-  runAction: () => Promise<unknown>
-): Promise<void> => {
-  if (payload.clientActionId !== undefined) {
-    const existing = await run(
-      services.db.getSessionActionResult(sessionId, payload.clientActionId)
-    )
-    if (existing !== undefined) {
-      writeJson(response, 202, existing)
-      return
-    }
-  }
-  const result = await runAction()
-  if (payload.clientActionId !== undefined) {
-    await run(
-      services.db.saveSessionActionResult(sessionId, payload.clientActionId, actionKind, result)
-    )
-  }
-  writeJson(response, 202, result)
+  payload: SetModeRequestBody
+): Promise<ModeResult> => {
+  const agentSession = await agentSessionFor(route, sessionId)
+  await run(route.services.agents.setMode(agentSession.sessionId, payload.modeId))
+  return { modeId: payload.modeId }
 }
 
-const actionIdKey = (sessionId: string, clientActionId: string | undefined): string | undefined =>
-  clientActionId === undefined ? undefined : `${sessionId}:${clientActionId}`
-
-const writeNoContent = (response: ServerResponse): void => {
-  writeJson(response, 204, {})
+const setConfig = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  const { services, fanout, request, response, config } = route
+  const payload = await readSchema(request, SetConfigRequest)
+  await writeIdempotentAction(services, response, sessionId, "config", payload, async () =>
+    applySessionConfigPick(services, fanout, config.id, sessionId, payload)
+  )
+  return true
 }
 
-const requireKnownAttachments = async (
+const setGoal = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  refuseWhileUpdating(route.routeState, sessionId)
+  const payload = await readSchema(route.request, SetGoalRequest)
+  await writeIdempotentAction(route.services, route.response, sessionId, "goal", payload, () =>
+    applyGoal(route, sessionId, payload)
+  )
+  return true
+}
+
+const applyGoal = async (
+  route: RouteContext,
+  sessionId: string,
+  payload: SetGoalRequestBody
+): Promise<SessionGoal> => {
+  const agentSession = await agentSessionFor(route, sessionId)
+  return await run(route.services.agents.setGoal(agentSession.sessionId, goalUpdate(payload)))
+}
+
+const clearGoal = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  const agentSession = await agentSessionFor(route, sessionId)
+  await run(route.services.agents.clearGoal(agentSession.sessionId))
+  writeJson(route.response, 204, undefined)
+  return true
+}
+
+const answerQuestion = async (
+  route: RouteContext,
+  params: Record<string, string>
+): Promise<boolean> => {
+  const sessionId = routeParam(params, "id")
+  const questionId = routeParam(params, "questionId")
+  const payload = await readSchema(route.request, SetQuestionAnswerRequest)
+  await writeIdempotentAction(
+    route.services,
+    route.response,
+    sessionId,
+    "question-answer",
+    payload,
+    () => deliverAnswer(route, sessionId, questionId, payload)
+  )
+  return true
+}
+
+const deliverAnswer = async (
+  route: RouteContext,
+  sessionId: string,
+  questionId: string,
+  payload: SetQuestionAnswerRequestBody
+): Promise<AnswerResult> => {
+  const { services } = route
+  const answer = questionAnswer(payload)
+  const handledByAutomation =
+    (await services.mcp?.answerQuestion(sessionId, questionId, answer)) ?? false
+  if (!handledByAutomation) {
+    const agentSession = await agentSessionFor(route, sessionId)
+    await run(services.agents.answerQuestion(agentSession.sessionId, questionId, answer))
+  }
+  return { outcome: payload.outcome, questionId }
+}
+
+interface CancelResult {
+  readonly cancelled: true
+}
+
+interface ModeResult {
+  readonly modeId: string
+}
+
+interface AnswerResult {
+  readonly outcome: SetQuestionAnswerRequestBody["outcome"]
+  readonly questionId: string
+}
+
+interface ForcedCancel {
+  readonly sessionId: string
+  readonly session: SessionSummary
+  readonly agentSession: AgentSessionMetadata
+  readonly activeItem: TranscriptItem | undefined
+  readonly cancelRequestedAt: string
+}
+
+const transcriptTailSize = 1
+
+const agentSessionFor = (route: RouteContext, sessionId: string): Promise<AgentSessionMetadata> =>
+  ensureAgentSessionFor(route.services, route.fanout, route.config.id, sessionId)
+
+const latestTranscriptPage = (
   services: CodevisorServerServices,
-  attachments: ReadonlyArray<AttachmentRef>
-): Promise<void> => {
-  if (attachments.length > MAX_PROMPT_ATTACHMENTS) {
-    throw new HttpFailure(422, `A prompt may carry at most ${MAX_PROMPT_ATTACHMENTS} attachments`)
-  }
-  for (const attachment of attachments) {
-    if ((await run(services.db.getFileMetadata(attachment.fileId))) === undefined) {
-      throw new HttpFailure(422, `Unknown attachment file: ${attachment.fileId}`)
-    }
-  }
+  sessionId: string
+): Promise<TranscriptPage> =>
+  run(services.db.getTranscriptPage(sessionId, undefined, transcriptTailSize))
+
+const logForcedCancel = (config: CodevisorServerConfig, cancel: ForcedCancel): void => {
+  const forcedAt = isoTimestamp()
+  console.error(
+    JSON.stringify({
+      event: "agent_cancel_forced",
+      sessionId: cancel.sessionId,
+      harnessId: cancel.session.harnessId,
+      agentSessionId: cancel.agentSession.sessionId,
+      turnId: cancel.activeItem?.turnId,
+      providerPhase: "cancelling",
+      lastEventType: "durable_transcript_snapshot",
+      lastEventAt: cancel.activeItem?.updatedAt,
+      cancelRequestedAt: cancel.cancelRequestedAt,
+      forcedAt,
+      runtimeRetired: true,
+      bootId: config.bootId,
+      processId: config.processId,
+      version: config.version,
+      buildNumber: config.buildNumber,
+      sourceRevision: config.sourceRevision
+    })
+  )
 }
+
+const goalUpdate = (payload: SetGoalRequestBody): SetGoalUpdate => ({
+  ...(payload.objective === undefined ? {} : { objective: payload.objective }),
+  ...(payload.status === undefined ? {} : { status: payload.status }),
+  ...("tokenBudget" in payload ? { tokenBudget: payload.tokenBudget ?? null } : {})
+})
+
+const questionAnswer = (payload: SetQuestionAnswerRequestBody): QuestionAnswer => ({
+  outcome: payload.outcome,
+  ...(payload.answers === undefined ? {} : { answers: payload.answers })
+})
