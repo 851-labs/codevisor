@@ -190,7 +190,7 @@ struct McpMachineTrailing: View {
   var body: some View {
     #if os(macOS)
       if entry.kind == "browserUse" {
-        McpBrowserExtensionStatus(machineId: row.machineId, model: model)
+        McpBrowserExtensionInstallButton(machineId: row.machineId, model: model)
       }
     #endif
     Toggle("Available on \(row.name)", isOn: availability)
