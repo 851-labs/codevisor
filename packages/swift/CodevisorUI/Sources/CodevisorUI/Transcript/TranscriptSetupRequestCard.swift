@@ -27,38 +27,28 @@ public struct TranscriptSetupRequestCard: View {
 
   public var body: some View {
     HStack(spacing: 0) {
-      Group {
-        if copy.isPending {
-          SetupRequestPendingContent(copy: copy, actions: actions)
-        } else {
-          SetupRequestResolvedRow(copy: copy)
-        }
-      }
-      .padding(.horizontal, ComposerCardStyle.contentPadding)
-      .padding(.vertical, verticalPadding)
-      .modifier(SetupRequestCardSurface(inBotConversation: inBotConversation))
-      .frame(maxWidth: SetupRequestCardMetrics.maxWidth, alignment: .leading)
+      SetupRequestContent(copy: copy, actions: actions)
+        .padding(.horizontal, ComposerCardStyle.contentPadding)
+        .padding(.vertical, verticalPadding)
+        .modifier(SetupRequestCardSurface(inBotConversation: inBotConversation))
+        .frame(maxWidth: SetupRequestCardMetrics.maxWidth, alignment: .leading)
       Spacer(minLength: inBotConversation ? SetupRequestCardMetrics.bubbleTrailingInset : 0)
     }
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(copy.isPending ? copy.title : copy.resolvedTitle)
+    .accessibilityLabel(copy.headline)
   }
 
   private var copy: SetupRequestCopy {
     SetupRequestCopy(request: request, handoffMachineName: handoffMachineName, machineName: machineName)
   }
 
+  private var verticalPadding: CGFloat {
+    copy.isPending ? ComposerCardStyle.contentPadding : SetupRequestCardMetrics.resolvedVerticalPadding
+  }
+
   private var actions: [ComposerNoticeCard.Action] {
     let decline = ComposerNoticeCard.Action("Not Now", emphasis: .quiet, perform: onDecline)
     guard copy.canSetUpHere else { return [decline] }
     return [decline, ComposerNoticeCard.Action(copy.setUpTitle, emphasis: .primary, perform: onSetUp)]
-  }
-
-  private var verticalPadding: CGFloat {
-    if copy.isPending {
-      ComposerCardStyle.contentPadding
-    } else {
-      SetupRequestCardMetrics.resolvedVerticalPadding
-    }
   }
 }

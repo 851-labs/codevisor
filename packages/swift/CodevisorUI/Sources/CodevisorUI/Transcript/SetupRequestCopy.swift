@@ -8,6 +8,8 @@ nonisolated struct SetupRequestCopy: Sendable {
   var isPending: Bool { request.state == .pending }
   var canSetUpHere: Bool { handoffMachineName == nil }
 
+  var headline: String { isPending ? title : resolvedTitle }
+
   var symbol: String {
     switch request.kind {
     case .computerUse: "macwindow.and.cursorarrow"
@@ -26,29 +28,17 @@ nonisolated struct SetupRequestCopy: Sendable {
   var setUpTitle: String {
     switch request.kind {
     case .chromeExtensionUpdate: "Update"
-    case .computerUse, .chromeExtension: "Set Up…"
+    case .computerUse, .chromeExtension: "Set Up"
     }
   }
 
   var detail: String {
-    if let handoffMachineName { return "Open Codevisor on \(handoffMachineName) to \(handoffTask)" }
+    if let handoffMachineName { return "Open Codevisor on \(handoffMachineName) to \(handoffTask)." }
     return switch request.kind {
-    case .computerUse: "Accessibility, Screen Recording"
-    case .chromeExtension: "Codevisor extension"
-    case .chromeExtensionUpdate: updateDetail
-    }
-  }
-
-  private var updateDetail: String {
-    guard let machineName else { return "Codevisor extension" }
-    return "The Codevisor Chrome extension you have installed on \(machineName) needs to be updated."
-  }
-
-  private var handoffTask: String {
-    switch request.kind {
-    case .computerUse: "set up Computer Use"
-    case .chromeExtension: "connect Chrome"
-    case .chromeExtensionUpdate: "update the Chrome extension"
+    case .computerUse: "Codevisor needs Accessibility and Screen Recording on \(machine) to use your Mac."
+    case .chromeExtension: "Add the Codevisor extension to Chrome on \(machine) so Codevisor can use your browser."
+    case .chromeExtensionUpdate:
+      "The Codevisor Chrome extension you have installed on \(machine) needs to be updated."
     }
   }
 
@@ -60,6 +50,18 @@ nonisolated struct SetupRequestCopy: Sendable {
     case (.computerUse, _): "Computer Use allowed"
     case (.chromeExtension, _): "Chrome connected"
     case (.chromeExtensionUpdate, _): "Chrome extension updated"
+    }
+  }
+
+  private var machine: String {
+    handoffMachineName ?? machineName ?? "this Mac"
+  }
+
+  private var handoffTask: String {
+    switch request.kind {
+    case .computerUse: "set up Computer Use"
+    case .chromeExtension: "connect Chrome"
+    case .chromeExtensionUpdate: "update the Chrome extension"
     }
   }
 }
