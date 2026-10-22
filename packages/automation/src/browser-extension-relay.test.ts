@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { promisify } from "node:util"
 import { crc32 } from "node:zlib"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -210,6 +212,23 @@ describe("portable browser extension archive", () => {
     }
   })
 
+  it("extracts to files anyone can read, even with Info-ZIP unzip", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "codevisor-archive-modes-"))
+    temporaryDirectories.push(parent)
+    const root = join(parent, "extension")
+    await mkdir(join(root, "icons"), { recursive: true })
+    await writeFile(join(root, "manifest.json"), '{"name":"Codevisor"}', { mode: 0o600 })
+    await writeFile(join(root, "icons", "16.png"), "png", { mode: 0o600 })
+    const extracted = join(parent, "extracted")
+
+    await promisify(execFile)("unzip", ["-q", createBrowserExtensionArchive(root), "-d", extracted])
+
+    for (const file of ["manifest.json", join("icons", "16.png")]) {
+      expect((await stat(join(extracted, file))).mode & 0o777).toBe(0o644)
+    }
+    expect(await readFile(join(extracted, "manifest.json"), "utf8")).toBe('{"name":"Codevisor"}')
+  })
+
   it("publishes a deterministic store-only ZIP with valid headers, offsets and CRCs", async () => {
     const parent = await mkdtemp(join(tmpdir(), "codevisor-archive-records-"))
     temporaryDirectories.push(parent)
@@ -259,7 +278,8 @@ describe("portable browser extension archive", () => {
       expect(bytes.readUInt32LE(central + 24)).toBe(Buffer.byteLength(entry.text))
       const nameSize = Buffer.byteLength(entry.name)
       expect(bytes.readUInt16LE(central + 28)).toBe(nameSize)
-      expect(bytes.subarray(central + 30, central + 42)).toEqual(Buffer.alloc(12))
+      expect(bytes.subarray(central + 30, central + 38)).toEqual(Buffer.alloc(8))
+      expect(bytes.readUInt32LE(central + 38) >>> 16).toBe(0o100644)
       expect(bytes.readUInt32LE(central + 42)).toBe(entry.offset)
       expect(bytes.subarray(central + 46, central + 46 + nameSize).toString()).toBe(entry.name)
       central += 46 + nameSize

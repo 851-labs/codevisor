@@ -11,6 +11,8 @@ const zipCrcTable = Array.from({ length: 256 }, (_, index) => {
   return value >>> 0
 })
 
+const readableFileAttributes = (0o100644 << 16) >>> 0
+
 const crc32 = (data: Buffer): number => {
   let value = 0xffffffff
   for (const byte of data) value = zipCrcTable[(value ^ byte) & 0xff]! ^ (value >>> 8)
@@ -85,7 +87,7 @@ const centralHeader = (
   central.writeUInt16LE(0, 32)
   central.writeUInt16LE(0, 34)
   central.writeUInt16LE(0, 36)
-  central.writeUInt32LE(0, 38)
+  central.writeUInt32LE(readableFileAttributes, 38)
   central.writeUInt32LE(localOffset, 42)
   return central
 }
