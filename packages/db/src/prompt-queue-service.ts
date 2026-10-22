@@ -43,15 +43,7 @@ export const makePromptQueueService = (
           ...(origin === "system" ? { origin } : {})
         }
         sqlite
-          .prepare(
-            `insert into prompt_queue_items (
-              id, session_id, text, created_at, updated_at, attachments, client_id, origin, position
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, (
-              select coalesce(max(position), -1) + 1
-              from prompt_queue_items
-              where session_id = ? and state = 'pending'
-            ))`
-          )
+          .prepare(queueSql.insert)
           .run(
             item.id,
             sessionId,
@@ -76,7 +68,7 @@ export const makePromptQueueService = (
         const sessionId = canonicalUuid(rawSessionId)
         const now = isoTimestamp()
         const result = sqlite
-          .prepare(updateQueuedPromptSql)
+          .prepare(queueSql.update)
           .run(
             text,
             attachments === undefined ? 0 : 1,
@@ -88,13 +80,7 @@ export const makePromptQueueService = (
         if (result.changes === 0) {
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
-        return promptQueueFromRow(
-          promptQueueRows.one(
-            sqlite
-              .prepare("select * from prompt_queue_items where session_id = ? and id = ?")
-              .get(sessionId, queueItemId)
-          )
-        )
+        return promptQueueFromRow(queueRow(sqlite, sessionId, queueItemId))
       }),
     reorderPromptQueue: (rawSessionId, queueItemIds) =>
       attempt("reorderPromptQueue", () => {
@@ -111,9 +97,7 @@ export const makePromptQueueService = (
           })
           orderedIDs.push(...current.map((item) => item.id).filter((id) => !seen.has(id)))
 
-          const updatePosition = sqlite.prepare(
-            "update prompt_queue_items set position = ? where session_id = ? and state = 'pending' and id = ?"
-          )
+          const updatePosition = sqlite.prepare(queueSql.setPosition)
           orderedIDs.forEach((id, position) => {
             updatePosition.run(position, sessionId, id)
           })
@@ -123,9 +107,7 @@ export const makePromptQueueService = (
       }),
     deletePromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("deletePromptQueueItem", () => {
-        const result = sqlite
-          .prepare("delete from prompt_queue_items where session_id = ? and id = ?")
-          .run(canonicalUuid(rawSessionId), queueItemId)
+        const result = sqlite.prepare(queueSql.delete).run(canonicalUuid(rawSessionId), queueItemId)
         if (result.changes === 0) {
           throw new Error(`Prompt queue item not found: ${queueItemId}`)
         }
@@ -138,28 +120,18 @@ export const makePromptQueueService = (
           if (row === undefined) {
             return undefined
           }
-          sqlite
-            .prepare("update prompt_queue_items set state = 'processing' where id = ?")
-            .run(row.id)
+          sqlite.prepare(queueSql.claim).run(row.id)
           return promptQueueFromRow(row)
         })
         return transaction()
       }),
     completePromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("completePromptQueueItem", () => {
-        sqlite
-          .prepare(
-            "delete from prompt_queue_items where session_id = ? and id = ? and state = 'processing'"
-          )
-          .run(canonicalUuid(rawSessionId), queueItemId)
+        sqlite.prepare(queueSql.complete).run(canonicalUuid(rawSessionId), queueItemId)
       }),
     releasePromptQueueItem: (rawSessionId, queueItemId) =>
       attempt("releasePromptQueueItem", () => {
-        sqlite
-          .prepare(
-            "update prompt_queue_items set state = 'pending' where session_id = ? and id = ? and state = 'processing'"
-          )
-          .run(canonicalUuid(rawSessionId), queueItemId)
+        sqlite.prepare(queueSql.release).run(canonicalUuid(rawSessionId), queueItemId)
       }),
     listProcessingPromptQueue: (rawSessionId) =>
       attempt("listProcessingPromptQueue", () => {
@@ -176,19 +148,37 @@ const pendingQueueRow = (
   queueItemId: string | undefined
 ) => {
   if (queueItemId === undefined) {
-    return promptQueueRows.maybe(sqlite.prepare(nextPendingQueueRowSql).get(sessionId))
+    return promptQueueRows.maybe(sqlite.prepare(queueSql.nextPending).get(sessionId))
   }
-  return promptQueueRows.maybe(sqlite.prepare(pendingQueueRowSql).get(sessionId, queueItemId))
+  return promptQueueRows.maybe(sqlite.prepare(queueSql.pending).get(sessionId, queueItemId))
 }
 
-const nextPendingQueueRowSql = `select * from prompt_queue_items
+const queueRow = (sqlite: ServiceContext["sqlite"], sessionId: string, queueItemId: string) =>
+  promptQueueRows.one(sqlite.prepare(queueSql.byId).get(sessionId, queueItemId))
+
+const queueSql = {
+  insert: `insert into prompt_queue_items (
+              id, session_id, text, created_at, updated_at, attachments, client_id, origin, position
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, (
+              select coalesce(max(position), -1) + 1
+              from prompt_queue_items
+              where session_id = ? and state = 'pending'
+            ))`,
+  update: `update prompt_queue_items
+  set text = ?, attachments = iif(?, ?, attachments), updated_at = ?
+  where session_id = ? and id = ?`,
+  byId: "select * from prompt_queue_items where session_id = ? and id = ?",
+  nextPending: `select * from prompt_queue_items
   where session_id = ? and state = 'pending'
   order by position asc, created_at asc, rowid asc
-  limit 1`
-
-const pendingQueueRowSql =
-  "select * from prompt_queue_items where session_id = ? and state = 'pending' and id = ?"
-
-const updateQueuedPromptSql = `update prompt_queue_items
-  set text = ?, attachments = iif(?, ?, attachments), updated_at = ?
-  where session_id = ? and id = ?`
+  limit 1`,
+  pending: "select * from prompt_queue_items where session_id = ? and state = 'pending' and id = ?",
+  setPosition:
+    "update prompt_queue_items set position = ? where session_id = ? and state = 'pending' and id = ?",
+  delete: "delete from prompt_queue_items where session_id = ? and id = ?",
+  claim: "update prompt_queue_items set state = 'processing' where id = ?",
+  complete:
+    "delete from prompt_queue_items where session_id = ? and id = ? and state = 'processing'",
+  release:
+    "update prompt_queue_items set state = 'pending' where session_id = ? and id = ? and state = 'processing'"
+}

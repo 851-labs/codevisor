@@ -47,11 +47,7 @@ export const makeFilesService = (
           createdAt: isoTimestamp()
         }
         sqlite
-          .prepare(
-            `insert into files (
-              id, name, mime_type, size_bytes, sha256, kind, created_at, data
-            ) values (?, ?, ?, ?, ?, ?, ?, ?)`
-          )
+          .prepare(fileSql.insert)
           .run(
             metadata.id,
             metadata.name,
@@ -67,11 +63,7 @@ export const makeFilesService = (
     createDiskFile: (metadata) =>
       attempt("createDiskFile", () => {
         sqlite
-          .prepare(
-            `insert into files (
-              id, name, mime_type, size_bytes, sha256, kind, created_at, data, storage_state
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, 'disk')`
-          )
+          .prepare(fileSql.insertDisk)
           .run(
             metadata.id,
             metadata.name,
@@ -86,73 +78,75 @@ export const makeFilesService = (
       }),
     getFileMetadata: (id) =>
       attempt("getFileMetadata", () => {
-        const row = fileMetadataRows.maybe(
-          sqlite
-            .prepare(
-              "select id, name, mime_type, size_bytes, sha256, kind, created_at from files where id = ?"
-            )
-            .get(id)
-        )
+        const row = fileMetadataRow(sqlite, id)
         return row === undefined ? undefined : fileMetadataFromRow(row)
       }),
     getFileStorage: (id) =>
       attempt("getFileStorage", () => {
-        const row = fileStorageRows.maybe(
-          sqlite.prepare("select * from files where id = ?").get(id)
-        )
+        const row = fileStorageRow(sqlite, id)
         return row === undefined ? undefined : fileStorageRecordFromRow(row)
       }),
     listFileStorage: (state, limit) =>
       attempt("listFileStorage", () =>
-        fileStorageRows
-          .all(
-            sqlite
-              .prepare("select * from files where storage_state = ? order by rowid asc limit ?")
-              .all(state, Math.max(1, limit))
-          )
-          .map(fileStorageRecordFromRow)
+        filesInState(sqlite, state, limit).map(fileStorageRecordFromRow)
       ),
     fileStorageCounts: attempt("fileStorageCounts", () => {
       const counts: Record<FileStorageState, number> = { disk: 0, dual: 0, sqlite: 0 }
-      const rows = storageCountRows.all(
-        sqlite
-          .prepare("select storage_state, count(*) as count from files group by storage_state")
-          .all()
-      )
+      const rows = storageCounts(sqlite)
       for (const row of rows) counts[row.storage_state] = row.count
       return counts
     }),
     markFileStorageDual: (id) =>
       attempt("markFileStorageDual", () => {
-        const result = sqlite
-          .prepare(
-            "update files set storage_state = 'dual' where id = ? and storage_state = 'sqlite'"
-          )
-          .run(id)
+        const result = sqlite.prepare(fileSql.markDual).run(id)
         if (result.changes === 0) {
-          const current = storageStateRows.maybe(
-            sqlite.prepare("select storage_state from files where id = ?").get(id)
-          )
-          if (current?.storage_state !== "dual" && current?.storage_state !== "disk") {
+          const current = storedState(sqlite, id)
+          if (current !== "dual" && current !== "disk") {
             throw new Error(`File not found while marking dual storage: ${id}`)
           }
         }
       }),
     markFileStorageDisk: (id) =>
       attempt("markFileStorageDisk", () => {
-        const result = sqlite
-          .prepare(
-            "update files set storage_state = 'disk', data = x'' where id = ? and storage_state = 'dual'"
-          )
-          .run(id)
+        const result = sqlite.prepare(fileSql.markDisk).run(id)
         if (result.changes === 0) {
-          const current = storageStateRows.maybe(
-            sqlite.prepare("select storage_state from files where id = ?").get(id)
-          )
-          if (current?.storage_state !== "disk") {
+          if (storedState(sqlite, id) !== "disk") {
             throw new Error(`File is not ready for disk-only storage: ${id}`)
           }
         }
       })
   }
+}
+
+const fileMetadataRow = (sqlite: ServiceContext["sqlite"], id: string) =>
+  fileMetadataRows.maybe(sqlite.prepare(fileSql.metadata).get(id))
+
+const fileStorageRow = (sqlite: ServiceContext["sqlite"], id: string) =>
+  fileStorageRows.maybe(sqlite.prepare(fileSql.byId).get(id))
+
+const filesInState = (sqlite: ServiceContext["sqlite"], state: FileStorageState, limit: number) =>
+  fileStorageRows.all(sqlite.prepare(fileSql.inState).all(state, Math.max(1, limit)))
+
+const storageCounts = (sqlite: ServiceContext["sqlite"]) =>
+  storageCountRows.all(sqlite.prepare(fileSql.stateCounts).all())
+
+const storedState = (sqlite: ServiceContext["sqlite"], id: string): FileStorageState | undefined =>
+  storageStateRows.maybe(sqlite.prepare(fileSql.storageState).get(id))?.storage_state
+
+const fileSql = {
+  insert: `insert into files (
+              id, name, mime_type, size_bytes, sha256, kind, created_at, data
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)`,
+  insertDisk: `insert into files (
+              id, name, mime_type, size_bytes, sha256, kind, created_at, data, storage_state
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, 'disk')`,
+  metadata:
+    "select id, name, mime_type, size_bytes, sha256, kind, created_at from files where id = ?",
+  byId: "select * from files where id = ?",
+  inState: "select * from files where storage_state = ? order by rowid asc limit ?",
+  stateCounts: "select storage_state, count(*) as count from files group by storage_state",
+  markDual: "update files set storage_state = 'dual' where id = ? and storage_state = 'sqlite'",
+  markDisk:
+    "update files set storage_state = 'disk', data = x'' where id = ? and storage_state = 'dual'",
+  storageState: "select storage_state from files where id = ?"
 }

@@ -26,12 +26,7 @@ export const makeStreamingReconciliationService = (
       attempt("reconcileQuietStreamingSession", () =>
         context.sqlite.transaction(() => {
           const id = canonicalUuid(rawId)
-          const quiet = context.sqlite
-            .prepare(
-              "select 1 from sessions where id = ? and coalesce(last_event_at, created_at) <= ?"
-            )
-            .get(id, quietSinceIso)
-          if (quiet === undefined) return { repaired: 0, events: [] }
+          if (!quietSince(context.sqlite, id, quietSinceIso)) return { repaired: 0, events: [] }
           const page = Effect.runSync(transcript.getTranscriptPage(id, undefined, 1))
           const active = page.items.at(-1)
           const orphaned = active?.role === "assistant" && active.isGenerating
@@ -66,3 +61,9 @@ export const makeStreamingReconciliationService = (
       )
   }
 }
+
+const quietSince = (sqlite: ServiceContext["sqlite"], id: string, quietSinceIso: string): boolean =>
+  sqlite.prepare(quietSessionSql).get(id, quietSinceIso) !== undefined
+
+const quietSessionSql =
+  "select 1 from sessions where id = ? and coalesce(last_event_at, created_at) <= ?"

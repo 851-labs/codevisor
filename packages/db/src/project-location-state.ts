@@ -25,14 +25,15 @@ export const detectGitLocation = (folder: string): boolean => {
 }
 
 export const migrateProjectLocationState = (db: Database.Database): void => {
-  const rows = pendingLocationRows.all(
-    db
-      .prepare("select id, folder_path from project_locations where is_git_repository is null")
-      .all()
-  )
+  const rows = locationsWithUnknownGit(db)
   for (const row of rows)
-    db.prepare("update project_locations set is_git_repository = ? where id = ?").run(
-      Number(detectGitLocation(row.folder_path)),
-      row.id
-    )
+    db.prepare(locationGitSql.set).run(Number(detectGitLocation(row.folder_path)), row.id)
+}
+
+const locationsWithUnknownGit = (db: Database.Database) =>
+  pendingLocationRows.all(db.prepare(locationGitSql.unknown).all())
+
+const locationGitSql = {
+  unknown: "select id, folder_path from project_locations where is_git_repository is null",
+  set: "update project_locations set is_git_repository = ? where id = ?"
 }

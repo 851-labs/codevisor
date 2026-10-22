@@ -24,24 +24,12 @@ export const makeUpdatesService = (
 
   return {
     listHarnessPendingUpdates: attempt("listHarnessPendingUpdates", () =>
-      harnessPendingUpdateRows
-        .all(sqlite.prepare("select * from harness_pending_updates").all())
-        .map(harnessPendingUpdateFromRow)
+      pendingUpdates(sqlite).map(harnessPendingUpdateFromRow)
     ),
     setHarnessPendingUpdate: (record) =>
       attempt("setHarnessPendingUpdate", () => {
         sqlite
-          .prepare(
-            `insert into harness_pending_updates (
-              harness_id, state, target_version, requested_at, started_at, timeout_at
-            ) values (?, ?, ?, ?, ?, ?)
-            on conflict(harness_id) do update set
-              state = excluded.state,
-              target_version = excluded.target_version,
-              requested_at = excluded.requested_at,
-              started_at = excluded.started_at,
-              timeout_at = excluded.timeout_at`
-          )
+          .prepare(pendingUpdateSql.upsert)
           .run(
             record.harnessId,
             record.state,
@@ -54,30 +42,15 @@ export const makeUpdatesService = (
       }),
     clearHarnessPendingUpdate: (harnessId) =>
       attempt("clearHarnessPendingUpdate", () => {
-        sqlite.prepare("delete from harness_pending_updates where harness_id = ?").run(harnessId)
+        sqlite.prepare(pendingUpdateSql.delete).run(harnessId)
       }),
     listHarnessUpdateStates: attempt("listHarnessUpdateStates", () =>
-      harnessUpdateStateRows
-        .all(sqlite.prepare("select * from harness_update_state").all())
-        .map(harnessUpdateStateFromRow)
+      harnessUpdateStates(sqlite).map(harnessUpdateStateFromRow)
     ),
     setHarnessUpdateState: (record) =>
       attempt("setHarnessUpdateState", () => {
         sqlite
-          .prepare(
-            `insert into harness_update_state (
-              harness_id, installed_version, latest_version, update_available,
-              source, install_origin, channel, checked_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?)
-            on conflict(harness_id) do update set
-              installed_version = excluded.installed_version,
-              latest_version = excluded.latest_version,
-              update_available = excluded.update_available,
-              source = excluded.source,
-              install_origin = excluded.install_origin,
-              channel = excluded.channel,
-              checked_at = excluded.checked_at`
-          )
+          .prepare(harnessUpdateStateSql.upsert)
           .run(
             record.harnessId,
             record.info.installedVersion ?? null,
@@ -90,24 +63,11 @@ export const makeUpdatesService = (
           )
         return record
       }),
-    getUpdateInfo: attempt("getUpdateInfo", () =>
-      updateFromRow(updateRows.one(sqlite.prepare("select * from update_state where id = 1").get()))
-    ),
+    getUpdateInfo: attempt("getUpdateInfo", () => updateFromRow(serverUpdateState(sqlite))),
     setUpdateInfo: (update) =>
       attempt("setUpdateInfo", () => {
         sqlite
-          .prepare(
-            `insert into update_state (
-              id, current_version, latest_version, update_available, channel, checked_at, migration_state
-            ) values (1, ?, ?, ?, ?, ?, ?)
-            on conflict(id) do update set
-              current_version = excluded.current_version,
-              latest_version = excluded.latest_version,
-              update_available = excluded.update_available,
-              channel = excluded.channel,
-              checked_at = excluded.checked_at,
-              migration_state = excluded.migration_state`
-          )
+          .prepare(serverUpdateSql.upsert)
           .run(
             update.currentVersion,
             update.latestVersion,
@@ -119,4 +79,57 @@ export const makeUpdatesService = (
         return update
       })
   }
+}
+
+const pendingUpdates = (sqlite: ServiceContext["sqlite"]) =>
+  harnessPendingUpdateRows.all(sqlite.prepare(pendingUpdateSql.all).all())
+
+const harnessUpdateStates = (sqlite: ServiceContext["sqlite"]) =>
+  harnessUpdateStateRows.all(sqlite.prepare(harnessUpdateStateSql.all).all())
+
+const serverUpdateState = (sqlite: ServiceContext["sqlite"]) =>
+  updateRows.one(sqlite.prepare(serverUpdateSql.current).get())
+
+const pendingUpdateSql = {
+  all: "select * from harness_pending_updates",
+  upsert: `insert into harness_pending_updates (
+              harness_id, state, target_version, requested_at, started_at, timeout_at
+            ) values (?, ?, ?, ?, ?, ?)
+            on conflict(harness_id) do update set
+              state = excluded.state,
+              target_version = excluded.target_version,
+              requested_at = excluded.requested_at,
+              started_at = excluded.started_at,
+              timeout_at = excluded.timeout_at`,
+  delete: "delete from harness_pending_updates where harness_id = ?"
+}
+
+const harnessUpdateStateSql = {
+  all: "select * from harness_update_state",
+  upsert: `insert into harness_update_state (
+              harness_id, installed_version, latest_version, update_available,
+              source, install_origin, channel, checked_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict(harness_id) do update set
+              installed_version = excluded.installed_version,
+              latest_version = excluded.latest_version,
+              update_available = excluded.update_available,
+              source = excluded.source,
+              install_origin = excluded.install_origin,
+              channel = excluded.channel,
+              checked_at = excluded.checked_at`
+}
+
+const serverUpdateSql = {
+  current: "select * from update_state where id = 1",
+  upsert: `insert into update_state (
+              id, current_version, latest_version, update_available, channel, checked_at, migration_state
+            ) values (1, ?, ?, ?, ?, ?, ?)
+            on conflict(id) do update set
+              current_version = excluded.current_version,
+              latest_version = excluded.latest_version,
+              update_available = excluded.update_available,
+              channel = excluded.channel,
+              checked_at = excluded.checked_at,
+              migration_state = excluded.migration_state`
 }

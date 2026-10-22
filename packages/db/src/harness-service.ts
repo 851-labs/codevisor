@@ -4,17 +4,15 @@ import { attempt } from "./errors.js"
 import { saveHarnessAccountId } from "./harness-account-save.js"
 import { harnessAccountFromRow } from "./row-mappers.js"
 import { rowReader, text } from "./row-reader.js"
-import { harnessAccountRows, type HarnessAccountRecord } from "./rows.js"
+import {
+  harnessAccountRows,
+  type HarnessAccountRecord,
+  type UpdateHarnessAccountAuthRequest
+} from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
 const harnessIdRows = rowReader({ harness_id: text })
-
-const accountByIdSql = `select a.*,
-                case when s.account_id = a.id then 1 else 0 end as is_active
-         from harness_accounts a
-         left join harness_account_selection s on s.harness_id = a.harness_id
-         where a.id = ? and a.removed_at is null`
 
 export const makeHarnessService = (
   context: ServiceContext
@@ -34,21 +32,10 @@ export const makeHarnessService = (
   const { sqlite, getSession } = context
 
   const listAccountRows = (harnessId: string) =>
-    harnessAccountRows.all(
-      sqlite
-        .prepare(
-          `select a.*,
-                case when s.account_id = a.id then 1 else 0 end as is_active
-         from harness_accounts a
-         left join harness_account_selection s on s.harness_id = a.harness_id
-         where a.harness_id = ? and a.removed_at is null
-         order by is_active desc, a.created_at asc`
-        )
-        .all(harnessId)
-    )
+    harnessAccountRows.all(sqlite.prepare(accountSql.byHarness).all(harnessId))
 
   const accountRow = (accountId: string) =>
-    harnessAccountRows.maybe(sqlite.prepare(accountByIdSql).get(accountId))
+    harnessAccountRows.maybe(sqlite.prepare(accountSql.byId).get(accountId))
 
   const requiredHarnessAccount = (accountId: string): HarnessAccountRecord => {
     const row = accountRow(accountId)
@@ -59,20 +46,11 @@ export const makeHarnessService = (
   return {
     setHarnessEnabled: (harnessId, enabled) =>
       attempt("setHarnessEnabled", () => {
-        sqlite
-          .prepare(
-            `insert into harness_settings (harness_id, enabled) values (?, ?)
-             on conflict(harness_id) do update set enabled = excluded.enabled`
-          )
-          .run(harnessId, enabled ? 1 : 0)
+        sqlite.prepare(harnessSettingSql.setEnabled).run(harnessId, enabled ? 1 : 0)
       }),
     applyHarnessSettings: (harnesses) =>
       attempt("applyHarnessSettings", () => {
-        const disabled = new Set(
-          harnessIdRows
-            .all(sqlite.prepare("select harness_id from harness_settings where enabled = 0").all())
-            .map((row) => row.harness_id)
-        )
+        const disabled = new Set(disabledHarnessIds(sqlite))
         return harnesses.map((harness) => ({ ...harness, enabled: !disabled.has(harness.id) }))
       }),
     listHarnessAccounts: (harnessId) =>
@@ -90,40 +68,14 @@ export const makeHarnessService = (
     updateHarnessAccountAuth: (accountId, request) =>
       attempt("updateHarnessAccountAuth", () => {
         const current = requiredHarnessAccount(accountId)
-        sqlite
-          .prepare(
-            `update harness_accounts set
-               label = ?, email = ?, organization_id = ?, auth_method = ?, auth_state = ?,
-               can_login = ?, can_logout = ?, last_checked_at = ?, detail = ?, updated_at = ?
-             where id = ? and removed_at is null`
-          )
-          .run(
-            request.label ?? current.label,
-            request.email === undefined ? (current.email ?? null) : request.email,
-            request.organizationId === undefined
-              ? (current.organizationId ?? null)
-              : request.organizationId,
-            request.authMethod === undefined ? (current.authMethod ?? null) : request.authMethod,
-            request.authState,
-            (request.canLogin ?? current.canLogin) ? 1 : 0,
-            (request.canLogout ?? current.canLogout) ? 1 : 0,
-            request.lastCheckedAt ?? isoTimestamp(),
-            request.detail === undefined ? (current.detail ?? null) : request.detail,
-            isoTimestamp(),
-            accountId
-          )
+        sqlite.prepare(accountSql.updateAuth).run(...accountAuthParams(accountId, request, current))
         return requiredHarnessAccount(accountId)
       }),
     setActiveHarnessAccount: (harnessId, accountId) =>
       attempt("setActiveHarnessAccount", () => {
         const account = requiredHarnessAccount(accountId)
         if (account.harnessId !== harnessId) throw new Error("Account belongs to another harness")
-        sqlite
-          .prepare(
-            `insert into harness_account_selection (harness_id, account_id) values (?, ?)
-             on conflict(harness_id) do update set account_id = excluded.account_id`
-          )
-          .run(harnessId, accountId)
+        sqlite.prepare(accountSql.select).run(harnessId, accountId)
       }),
     removeHarnessAccount: (accountId) =>
       attempt("removeHarnessAccount", () => {
@@ -131,29 +83,79 @@ export const makeHarnessService = (
         if (account.profileKind === "default") {
           throw new Error("The default harness profile cannot be removed")
         }
-        const inUse = sqlite
-          .prepare("select id from sessions where harness_account_id = ? limit 1")
-          .get(accountId)
-        if (inUse !== undefined) throw new Error("Account is used by an existing session")
-        sqlite.prepare("delete from harness_account_selection where account_id = ?").run(accountId)
-        sqlite
-          .prepare("update harness_accounts set removed_at = ?, updated_at = ? where id = ?")
-          .run(isoTimestamp(), isoTimestamp(), accountId)
+        if (accountInUse(sqlite, accountId))
+          throw new Error("Account is used by an existing session")
+        sqlite.prepare(accountSql.deselect).run(accountId)
+        sqlite.prepare(accountSql.remove).run(isoTimestamp(), isoTimestamp(), accountId)
       }),
     bindSessionHarnessAccount: (sessionId, accountId) =>
       attempt("bindSessionHarnessAccount", () => {
         requiredHarnessAccount(accountId)
-        sqlite
-          .prepare("update sessions set harness_account_id = ? where id = ?")
-          .run(accountId, sessionId)
+        sqlite.prepare(sessionAccountSql.bind).run(accountId, sessionId)
         return getSession(sessionId)
       }),
     rebindHarnessAccountSessions: (fromAccountId, toAccountId) =>
       attempt("rebindHarnessAccountSessions", () => {
         requiredHarnessAccount(toAccountId)
-        return sqlite
-          .prepare("update sessions set harness_account_id = ? where harness_account_id = ?")
-          .run(toAccountId, fromAccountId).changes
+        return sqlite.prepare(sessionAccountSql.rebind).run(toAccountId, fromAccountId).changes
       })
   }
+}
+
+const accountAuthParams = (
+  accountId: string,
+  request: UpdateHarnessAccountAuthRequest,
+  current: HarnessAccountRecord
+): ReadonlyArray<string | number | null> => [
+  request.label ?? current.label,
+  request.email === undefined ? (current.email ?? null) : request.email,
+  request.organizationId === undefined ? (current.organizationId ?? null) : request.organizationId,
+  request.authMethod === undefined ? (current.authMethod ?? null) : request.authMethod,
+  request.authState,
+  (request.canLogin ?? current.canLogin) ? 1 : 0,
+  (request.canLogout ?? current.canLogout) ? 1 : 0,
+  request.lastCheckedAt ?? isoTimestamp(),
+  request.detail === undefined ? (current.detail ?? null) : request.detail,
+  isoTimestamp(),
+  accountId
+]
+
+const disabledHarnessIds = (sqlite: ServiceContext["sqlite"]): ReadonlyArray<string> =>
+  harnessIdRows.all(sqlite.prepare(harnessSettingSql.disabled).all()).map((row) => row.harness_id)
+
+const accountInUse = (sqlite: ServiceContext["sqlite"], accountId: string): boolean =>
+  sqlite.prepare(sessionAccountSql.firstUsing).get(accountId) !== undefined
+
+const harnessSettingSql = {
+  setEnabled: `insert into harness_settings (harness_id, enabled) values (?, ?)
+             on conflict(harness_id) do update set enabled = excluded.enabled`,
+  disabled: "select harness_id from harness_settings where enabled = 0"
+}
+
+const accountSql = {
+  byHarness: `select a.*,
+                case when s.account_id = a.id then 1 else 0 end as is_active
+         from harness_accounts a
+         left join harness_account_selection s on s.harness_id = a.harness_id
+         where a.harness_id = ? and a.removed_at is null
+         order by is_active desc, a.created_at asc`,
+  byId: `select a.*,
+                case when s.account_id = a.id then 1 else 0 end as is_active
+         from harness_accounts a
+         left join harness_account_selection s on s.harness_id = a.harness_id
+         where a.id = ? and a.removed_at is null`,
+  updateAuth: `update harness_accounts set
+               label = ?, email = ?, organization_id = ?, auth_method = ?, auth_state = ?,
+               can_login = ?, can_logout = ?, last_checked_at = ?, detail = ?, updated_at = ?
+             where id = ? and removed_at is null`,
+  select: `insert into harness_account_selection (harness_id, account_id) values (?, ?)
+             on conflict(harness_id) do update set account_id = excluded.account_id`,
+  deselect: "delete from harness_account_selection where account_id = ?",
+  remove: "update harness_accounts set removed_at = ?, updated_at = ? where id = ?"
+}
+
+const sessionAccountSql = {
+  firstUsing: "select id from sessions where harness_account_id = ? limit 1",
+  bind: "update sessions set harness_account_id = ? where id = ?",
+  rebind: "update sessions set harness_account_id = ? where harness_account_id = ?"
 }

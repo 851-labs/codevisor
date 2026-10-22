@@ -9,17 +9,18 @@ export const journaledNavigationChanges =
   ({ sqlite }: ServiceContext) =>
   (update: (now: string) => void): ReadonlyArray<EventEnvelope> =>
     sqlite.transaction(() => {
-      const { cursor } = cursorRows.one(
-        sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get()
-      )
+      const cursor = latestEventId(sqlite)
       update(isoTimestamp())
-      return eventRows
-        .all(
-          sqlite
-            .prepare(
-              "select * from events where id > ? and kind = 'navigation.changed' order by id"
-            )
-            .all(cursor)
-        )
-        .map(eventFromRow)
+      return navigationEventsAfter(sqlite, cursor).map(eventFromRow)
     })()
+
+const latestEventId = (sqlite: ServiceContext["sqlite"]): number =>
+  cursorRows.one(sqlite.prepare(navigationChangeSql.latestEventId).get()).cursor
+
+const navigationEventsAfter = (sqlite: ServiceContext["sqlite"], cursor: number) =>
+  eventRows.all(sqlite.prepare(navigationChangeSql.eventsAfter).all(cursor))
+
+const navigationChangeSql = {
+  latestEventId: "select coalesce(max(id), 0) as cursor from events",
+  eventsAfter: "select * from events where id > ? and kind = 'navigation.changed' order by id"
+}

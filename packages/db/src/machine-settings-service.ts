@@ -1,4 +1,4 @@
-import { readInstanceMeta } from "./common-rows.js"
+import { instanceMetaSql, readInstanceMeta } from "./common-rows.js"
 import { attempt } from "./errors.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
@@ -13,13 +13,9 @@ export const makeMachineSettingsService = ({
   setMachineSetting: (key, value) =>
     attempt("setMachineSetting", () => {
       if (value === undefined) {
-        sqlite.prepare("delete from instance_meta where key = ?").run(settingKey(key))
+        sqlite.prepare(instanceMetaSql.delete).run(settingKey(key))
         return
       }
-      sqlite
-        .prepare(
-          "insert into instance_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value"
-        )
-        .run(settingKey(key), value)
+      sqlite.prepare(instanceMetaSql.upsert).run(settingKey(key), value)
     })
 })

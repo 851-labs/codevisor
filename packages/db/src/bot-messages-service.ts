@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto"
 import type { BotMessage } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
-import { botMessageRows, type BotMessageRow, type BotsService } from "./bot-rows.js"
+import {
+  botMessageRows,
+  type AppendBotMessageRecord,
+  type BotMessageRow,
+  type BotsService
+} from "./bot-rows.js"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { parseAttachments, serializeAttachments } from "./message-row-codecs.js"
@@ -33,11 +38,7 @@ export const makeBotMessagesService = (
         const sessionId = canonicalUuid(rawSessionId)
         return sqlite.transaction(() => {
           if (record.id !== undefined) {
-            const existing = botMessageRows.maybe(
-              sqlite
-                .prepare("select * from bot_messages where id = ? and session_id = ?")
-                .get(record.id, sessionId)
-            )
+            const existing = sessionBotMessage(sqlite, record, sessionId)
             if (existing !== undefined) {
               return { message: botMessageFromRow(existing), created: false }
             }
@@ -45,12 +46,7 @@ export const makeBotMessagesService = (
           const id = record.id ?? randomUUID()
           const createdAt = isoTimestamp()
           sqlite
-            .prepare(
-              `insert into bot_messages (id, session_id, sequence, sender, text, attachments, created_at)
-               values (?, ?, (
-                 select coalesce(max(sequence), 0) + 1 from bot_messages where session_id = ?
-               ), ?, ?, ?, ?)`
-            )
+            .prepare(botMessageSql.insert)
             .run(
               id,
               sessionId,
@@ -61,9 +57,7 @@ export const makeBotMessagesService = (
               createdAt
             )
           return {
-            message: botMessageFromRow(
-              botMessageRows.one(sqlite.prepare("select * from bot_messages where id = ?").get(id))
-            ),
+            message: botMessageFromRow(savedBotMessage(sqlite, id)),
             created: true
           }
         })()
@@ -71,19 +65,44 @@ export const makeBotMessagesService = (
     listBotMessages: (rawSessionId, before, limit) =>
       attempt("listBotMessages", () => {
         const sessionId = canonicalUuid(rawSessionId)
-        const rows = botMessageRows.all(
-          sqlite
-            .prepare(
-              `select * from bot_messages
-               where session_id = ? and sequence < ?
-               order by sequence desc limit ?`
-            )
-            .all(sessionId, before ?? Number.MAX_SAFE_INTEGER, limit + 1)
-        )
+        const rows = botMessagesBefore(sqlite, sessionId, before, limit)
         return {
           messages: rows.slice(0, limit).toReversed().map(botMessageFromRow),
           hasMore: rows.length > limit
         }
       })
   }
+}
+
+const sessionBotMessage = (
+  sqlite: ServiceContext["sqlite"],
+  record: AppendBotMessageRecord,
+  sessionId: string
+) => botMessageRows.maybe(sqlite.prepare(botMessageSql.inSession).get(record.id, sessionId))
+
+const savedBotMessage = (sqlite: ServiceContext["sqlite"], id: string) =>
+  botMessageRows.one(sqlite.prepare(botMessageSql.byId).get(id))
+
+const botMessagesBefore = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  before: number | undefined,
+  limit: number
+) =>
+  botMessageRows.all(
+    sqlite
+      .prepare(botMessageSql.before)
+      .all(sessionId, before ?? Number.MAX_SAFE_INTEGER, limit + 1)
+  )
+
+const botMessageSql = {
+  inSession: "select * from bot_messages where id = ? and session_id = ?",
+  byId: "select * from bot_messages where id = ?",
+  insert: `insert into bot_messages (id, session_id, sequence, sender, text, attachments, created_at)
+               values (?, ?, (
+                 select coalesce(max(sequence), 0) + 1 from bot_messages where session_id = ?
+               ), ?, ?, ?, ?)`,
+  before: `select * from bot_messages
+               where session_id = ? and sequence < ?
+               order by sequence desc limit ?`
 }

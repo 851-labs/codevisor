@@ -28,28 +28,14 @@ export const makeSyncService = (
   const { sqlite } = context
 
   const load = (namespace: string): ReadonlyArray<SyncEntryRecord> =>
-    syncRows
-      .all(
-        sqlite.prepare("select * from sync_entries where namespace = ? order by key").all(namespace)
-      )
-      .map(recordFromRow)
+    syncRows.all(sqlite.prepare(syncSql.byNamespace).all(namespace)).map(recordFromRow)
 
   return {
     getSyncEntries: (namespace) => attempt("getSyncEntries", () => load(namespace)),
     mergeSyncEntries: (namespace, entries) =>
       attempt("mergeSyncEntries", () => {
         const result = mergeSyncEntries(load(namespace), entries)
-        const upsert = sqlite.prepare(
-          `insert into sync_entries (
-            namespace, key, value, deleted, ts_wall, ts_counter, ts_device
-          ) values (?, ?, ?, ?, ?, ?, ?)
-          on conflict(namespace, key) do update set
-            value = excluded.value,
-            deleted = excluded.deleted,
-            ts_wall = excluded.ts_wall,
-            ts_counter = excluded.ts_counter,
-            ts_device = excluded.ts_device`
-        )
+        const upsert = sqlite.prepare(syncSql.upsert)
         for (const entry of result.changed) {
           upsert.run(
             namespace,
@@ -64,4 +50,17 @@ export const makeSyncService = (
         return result
       })
   }
+}
+
+const syncSql = {
+  byNamespace: "select * from sync_entries where namespace = ? order by key",
+  upsert: `insert into sync_entries (
+            namespace, key, value, deleted, ts_wall, ts_counter, ts_device
+          ) values (?, ?, ?, ?, ?, ?, ?)
+          on conflict(namespace, key) do update set
+            value = excluded.value,
+            deleted = excluded.deleted,
+            ts_wall = excluded.ts_wall,
+            ts_counter = excluded.ts_counter,
+            ts_device = excluded.ts_device`
 }

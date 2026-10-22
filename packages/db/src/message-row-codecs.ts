@@ -86,11 +86,7 @@ export const listPromptQueueSync = (
   state: PromptQueueRow["state"] = "pending"
 ): ReadonlyArray<PromptQueueItem> =>
   sqlite
-    .prepare(
-      `select * from prompt_queue_items
-       where session_id = ? and state = ?
-       order by position asc, created_at asc, rowid asc`
-    )
+    .prepare(promptQueueListSql)
     .all(sessionId, state)
     .map((row) => promptQueueFromRow(promptQueueRows.one(row)))
 
@@ -114,3 +110,7 @@ export const sessionEventFromRow = (row: SessionEventRow): EventEnvelope => ({
   createdAt: row.created_at,
   payload: withChatItemId(JSON.parse(row.payload) as unknown, row.chat_item_id)
 })
+
+const promptQueueListSql = `select * from prompt_queue_items
+       where session_id = ? and state = ?
+       order by position asc, created_at asc, rowid asc`

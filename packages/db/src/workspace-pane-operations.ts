@@ -26,6 +26,9 @@ const sessionProjectRows = rowReader({ id: text, project_id: text })
 export const readPane = (sqlite: Database.Database, id: string) =>
   workspacePaneFromRow(workspacePaneRows.one(sqlite.prepare(paneSql.byId).get(id)))
 
+export const paneRow = (sqlite: Database.Database, id: string) =>
+  workspacePaneRows.maybe(sqlite.prepare(paneSql.byId).get(id))
+
 export const listWorkspacePanes = (sqlite: Database.Database) =>
   workspacePaneRows.all(sqlite.prepare(paneSql.ordered).all()).map(workspacePaneFromRow)
 
@@ -171,9 +174,6 @@ export const promoteWorkspacePaneToSession = (
   })()
   return readPane(sqlite, paneId)
 }
-
-const paneRow = (sqlite: Database.Database, id: string) =>
-  workspacePaneRows.maybe(sqlite.prepare(paneSql.byId).get(id))
 
 const workspaceExists = (sqlite: Database.Database, workspaceId: string): boolean =>
   sqlite.prepare(paneSql.workspaceId).get(workspaceId) !== undefined

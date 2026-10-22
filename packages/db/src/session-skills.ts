@@ -11,14 +11,8 @@ export const readSessionSkills = (
   sqlite: Database.Database,
   sessionId: string
 ): SessionSkills | undefined => {
-  const row = payloadRows.maybe(
-    sqlite
-      .prepare(
-        "select payload from session_state where session_id = ? and state_key = 'available_skills_update'"
-      )
-      .get(sessionId)
-  )
-  const payload = row === undefined ? undefined : jsonRecord(JSON.parse(row.payload))
+  const raw = skillsPayload(sqlite, sessionId)
+  const payload = raw === undefined ? undefined : jsonRecord(JSON.parse(raw))
   if (
     payload === undefined ||
     !isSkillList(payload.skills) ||
@@ -31,3 +25,9 @@ export const readSessionSkills = (
     skills: payload.skills
   }
 }
+
+const skillsPayload = (sqlite: Database.Database, sessionId: string): string | undefined =>
+  payloadRows.maybe(sqlite.prepare(skillsSql).get(sessionId))?.payload
+
+const skillsSql =
+  "select payload from session_state where session_id = ? and state_key = 'available_skills_update'"

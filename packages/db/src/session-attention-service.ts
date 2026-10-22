@@ -45,16 +45,7 @@ export const makeSessionAttentionService = (
       getSession(id)
       const changedAt = isoTimestamp()
       sqlite.transaction(() => {
-        sqlite
-          .prepare(
-            `insert into session_read_state (
-                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-               ) values (?, 'owner', 0, 1, ?)
-               on conflict(session_id, reader_id) do update set
-                 manually_unread = 1,
-                 updated_at = excluded.updated_at`
-          )
-          .run(id, changedAt)
+        sqlite.prepare(readStateSql.markUnread).run(id, changedAt)
         projectSessionSidebarState(sqlite, id, changedAt)
       })()
       return getSession(id)
@@ -66,9 +57,7 @@ export const makeSessionAttentionService = (
       const changedAt = isoTimestamp()
       sqlite.transaction(() => {
         ensureSessionAttentionState(sqlite, id)
-        sqlite
-          .prepare("update session_attention set pending_plan_approval = 0 where session_id = ?")
-          .run(id)
+        sqlite.prepare(attentionSql.clearPlanApproval).run(id)
         projectSessionSidebarState(sqlite, id, changedAt)
       })()
       return getSession(id)
@@ -88,13 +77,7 @@ export const makeSessionAttentionService = (
 })
 
 const readLatestAttentionRevision = (sqlite: ServiceContext["sqlite"], id: string): number => {
-  return revisionRows.one(
-    sqlite
-      .prepare(
-        "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision"
-      )
-      .get(id)
-  ).revision
+  return revisionRows.one(sqlite.prepare(attentionSql.latestRevision).get(id)).revision
 }
 
 const advanceSessionReadCursor = (
@@ -103,17 +86,7 @@ const advanceSessionReadCursor = (
   requested: number,
   changedAt: string
 ): void => {
-  sqlite
-    .prepare(
-      `insert into session_read_state (
-                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-               ) values (?, 'owner', ?, 0, ?)
-               on conflict(session_id, reader_id) do update set
-                 last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
-                 manually_unread = 0,
-                 updated_at = excluded.updated_at`
-    )
-    .run(id, requested, changedAt)
+  sqlite.prepare(readStateSql.advance).run(id, requested, changedAt)
 }
 
 const acknowledgeReadAttentionError = (
@@ -121,9 +94,29 @@ const acknowledgeReadAttentionError = (
   id: string,
   requested: number
 ): void => {
-  sqlite
-    .prepare(
-      "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"
-    )
-    .run(id, requested)
+  sqlite.prepare(attentionSql.acknowledgeError).run(id, requested)
+}
+
+const readStateSql = {
+  markUnread: `insert into session_read_state (
+                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+               ) values (?, 'owner', 0, 1, ?)
+               on conflict(session_id, reader_id) do update set
+                 manually_unread = 1,
+                 updated_at = excluded.updated_at`,
+  advance: `insert into session_read_state (
+                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+               ) values (?, 'owner', ?, 0, ?)
+               on conflict(session_id, reader_id) do update set
+                 last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
+                 manually_unread = 0,
+                 updated_at = excluded.updated_at`
+}
+
+const attentionSql = {
+  clearPlanApproval: "update session_attention set pending_plan_approval = 0 where session_id = ?",
+  latestRevision:
+    "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision",
+  acknowledgeError:
+    "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"
 }

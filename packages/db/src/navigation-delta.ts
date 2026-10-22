@@ -7,9 +7,11 @@ import {
   workspaceFromRow,
   workspacePaneFromRow
 } from "./row-mappers.js"
-import { projectRows, sessionRows, workspacePaneRows, workspaceRows } from "./rows.js"
-import type { ServiceContext } from "./service-context.js"
+import { projectRows, sessionRows } from "./rows.js"
+import { sessionByIdSql, type ServiceContext } from "./service-context.js"
 import type { SyncBatch } from "./sync-journal.js"
+import { paneRow } from "./workspace-pane-operations.js"
+import { readWorkspaceRow } from "./workspaces-service.js"
 
 export const materializeNavigationDelta = (
   context: ServiceContext,
@@ -23,12 +25,7 @@ export const materializeNavigationDelta = (
   for (const change of changes) {
     const payload = jsonRecord(change.payload)
     const source = payload?.table
-    const table =
-      source === "project_locations"
-        ? "projects"
-        : source === "session_attention" || source === "session_read_state"
-          ? "sessions"
-          : source
+    const table = changedTable(source)
     const id = source === "project_locations" ? payload?.projectId : change.subjectId
     if (typeof table !== "string" || typeof id !== "string")
       return { events: [], cursor: batch.cursor, requiresSnapshot: true }
@@ -42,26 +39,22 @@ export const materializeNavigationDelta = (
   const panes: NavigationSnapshot["panes"][number][] = []
   const deleted: Array<{ table: string; id: string }> = []
   for (const id of ids.get("projects") ?? []) {
-    const row = projectRows.maybe(sqlite.prepare("select * from projects where id = ?").get(id))
+    const row = projectRow(sqlite, id)
     if (row === undefined) deleted.push({ table: "projects", id })
     else projects.push(projectFromRow(row, locationRowsFor(id)))
   }
   for (const id of ids.get("sessions") ?? []) {
-    const row = sessionRows.maybe(
-      sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id)
-    )
+    const row = sessionSummaryRow(sqlite, sessionSummarySelect, id)
     if (row === undefined) deleted.push({ table: "sessions", id })
     else sessions.push(sessionFromRow(row, localLocationFor(row.project_id)?.folder_path))
   }
   for (const id of ids.get("workspaces") ?? []) {
-    const row = workspaceRows.maybe(sqlite.prepare("select * from workspaces where id = ?").get(id))
+    const row = readWorkspaceRow(sqlite, id)
     if (row === undefined) deleted.push({ table: "workspaces", id })
     else workspaces.push(workspaceFromRow(row))
   }
   for (const id of ids.get("workspace_panes") ?? []) {
-    const row = workspacePaneRows.maybe(
-      sqlite.prepare("select * from workspace_panes where id = ?").get(id)
-    )
+    const row = paneRow(sqlite, id)
     if (row === undefined) deleted.push({ table: "workspace_panes", id })
     else panes.push(workspacePaneFromRow(row))
   }
@@ -77,3 +70,17 @@ export const materializeNavigationDelta = (
     return { events: [], cursor: batch.cursor, requiresSnapshot: true }
   return { ...batch, events }
 }
+
+const changedTable = (source: unknown): unknown => {
+  if (source === "project_locations") return "projects"
+  if (source === "session_attention" || source === "session_read_state") return "sessions"
+  return source
+}
+
+const projectRow = (sqlite: ServiceContext["sqlite"], id: string) =>
+  projectRows.maybe(sqlite.prepare(projectByIdSql).get(id))
+
+const sessionSummaryRow = (sqlite: ServiceContext["sqlite"], summarySelect: string, id: string) =>
+  sessionRows.maybe(sqlite.prepare(sessionByIdSql(summarySelect)).get(id))
+
+const projectByIdSql = "select * from projects where id = ?"

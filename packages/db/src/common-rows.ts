@@ -33,5 +33,7 @@ export const readInstanceMeta = (sqlite: Database.Database, key: string): string
 export const instanceMetaSql = {
   read: "select value from instance_meta where key = ?",
   upsert:
-    "insert into instance_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value"
+    "insert into instance_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value",
+  insertMachineId: "insert into instance_meta (key, value) values ('machine-id', ?)",
+  delete: "delete from instance_meta where key = ?"
 }

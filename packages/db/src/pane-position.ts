@@ -12,14 +12,8 @@ export const nextPanePositionIn = (
   workspaceId: string,
   paneId: string
 ): string => {
-  const last = panePositionRows.one(
-    sqlite
-      .prepare(
-        "select max(position) as position from workspace_panes where workspace_id = ? and position <> '' and id <> ?"
-      )
-      .get(workspaceId, paneId)
-  )
-  return nextPanePosition(last.position ?? undefined, Date.now(), paneId)
+  const last = lastPanePosition(sqlite, workspaceId, paneId)
+  return nextPanePosition(last ?? undefined, Date.now(), paneId)
 }
 
 const orderedPaneIds = (
@@ -35,9 +29,7 @@ const orderedPaneIds = (
 }
 
 const writePanePositions = (sqlite: Database.Database, paneIds: ReadonlyArray<string>): void => {
-  const update = sqlite.prepare(
-    "update workspace_panes set position = ?, updated_at = ? where id = ? and position <> ?"
-  )
+  const update = sqlite.prepare(panePositionSql.update)
   const now = isoTimestamp()
   let previous: string | undefined
   for (const id of paneIds) {
@@ -54,4 +46,16 @@ export const reorderPanePositions = (
 ): void => {
   const ordered = orderedPaneIds(panes, paneIds)
   writePanePositions(sqlite, ordered)
+}
+
+const lastPanePosition = (
+  sqlite: Database.Database,
+  workspaceId: string,
+  paneId: string
+): string | null =>
+  panePositionRows.one(sqlite.prepare(panePositionSql.last).get(workspaceId, paneId)).position
+
+const panePositionSql = {
+  last: "select max(position) as position from workspace_panes where workspace_id = ? and position <> '' and id <> ?",
+  update: "update workspace_panes set position = ?, updated_at = ? where id = ? and position <> ?"
 }

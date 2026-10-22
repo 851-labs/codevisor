@@ -13,32 +13,29 @@ export const makeTerminalPaneTitlesService = (
     setTerminalPaneStatus: (terminalKey, liveTitle, activity) =>
       attempt("setTerminalPaneStatus", () =>
         journaled((now) => {
-          sqlite
-            .prepare(
-              `update workspace_panes set
-                   live_title = @title,
-                   terminal_activity = @activity,
-                   updated_at = @now
-                 where resource_kind = 'terminal' and lower(resource_id) = lower(@key)
-                   and (live_title is not @title or terminal_activity is not @activity)`
-            )
-            .run({
-              title: liveTitle ?? null,
-              activity: activity ?? null,
-              now,
-              key: terminalKey
-            })
+          sqlite.prepare(terminalStatusSql.set).run({
+            title: liveTitle ?? null,
+            activity: activity ?? null,
+            now,
+            key: terminalKey
+          })
         })
       ),
     clearTerminalPaneStatuses: attempt("clearTerminalPaneStatuses", () =>
       journaled((now) => {
-        sqlite
-          .prepare(
-            `update workspace_panes set live_title = null, terminal_activity = null, updated_at = ?
-               where live_title is not null or terminal_activity is not null`
-          )
-          .run(now)
+        sqlite.prepare(terminalStatusSql.clearAll).run(now)
       })
     )
   }
+}
+
+const terminalStatusSql = {
+  set: `update workspace_panes set
+                   live_title = @title,
+                   terminal_activity = @activity,
+                   updated_at = @now
+                 where resource_kind = 'terminal' and lower(resource_id) = lower(@key)
+                   and (live_title is not @title or terminal_activity is not @activity)`,
+  clearAll: `update workspace_panes set live_title = null, terminal_activity = null, updated_at = ?
+               where live_title is not null or terminal_activity is not null`
 }

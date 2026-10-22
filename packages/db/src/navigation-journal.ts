@@ -30,11 +30,24 @@ export const installNavigationJournal = (db: Database.Database): void => {
   for (const [table, columns] of Object.entries(tables)) {
     for (const operation of ["insert", "update", "delete"] as const) {
       const record = operation === "delete" ? "old" : "new"
-      const condition =
-        operation === "update" && columns !== undefined
-          ? `when ${columns.map((column) => `old.${column} is not new.${column}`).join(" or ")}`
-          : ""
-      db.exec(`create trigger if not exists navigation_${table}_${operation} after ${operation} on ${table} ${condition}
+      const condition = triggerCondition(operation, columns)
+      db.exec(navigationTriggerSql(table, operation, condition, record))
+    }
+  }
+}
+
+const triggerCondition = (operation: string, columns: readonly string[] | undefined): string => {
+  if (operation !== "update" || columns === undefined) return ""
+  return `when ${columns.map((column) => `old.${column} is not new.${column}`).join(" or ")}`
+}
+
+const navigationTriggerSql = (
+  table: string,
+  operation: string,
+  condition: string,
+  record: string
+): string =>
+  `create trigger if not exists navigation_${table}_${operation} after ${operation} on ${table} ${condition}
         begin
           insert into events (server_id, kind, subject_id, created_at, payload)
             values (coalesce((select value from instance_meta where key = 'adopted-server-id'), 'local'),
@@ -42,7 +55,4 @@ export const installNavigationJournal = (db: Database.Database): void => {
           insert into sync_watermarks (subject_id, floor) values ('global', max(0, last_insert_rowid() - 2048))
             on conflict(subject_id) do update set floor = max(floor, excluded.floor);
           delete from events where id <= (select floor from sync_watermarks where subject_id = 'global');
-        end;`)
-    }
-  }
-}
+        end;`

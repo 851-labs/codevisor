@@ -18,21 +18,11 @@ const findExistingAccount = (
   request: SaveHarnessAccountRequest
 ): ExistingAccount => {
   if (request.profileKind === "default") {
-    return idRows.maybe(
-      sqlite
-        .prepare(
-          "select id from harness_accounts where harness_id = ? and profile_kind = 'default' and removed_at is null"
-        )
-        .get(request.harnessId)
-    )
+    return idRows.maybe(sqlite.prepare(accountSaveSql.defaultAccount).get(request.harnessId))
   }
   if (request.profileKey === undefined) return undefined
   return idRows.maybe(
-    sqlite
-      .prepare(
-        "select id from harness_accounts where harness_id = ? and profile_key = ? and removed_at is null"
-      )
-      .get(request.harnessId, request.profileKey)
+    sqlite.prepare(accountSaveSql.profileAccount).get(request.harnessId, request.profileKey)
   )
 }
 
@@ -43,25 +33,7 @@ const upsertAccount = (
   now: string
 ): void => {
   sqlite
-    .prepare(
-      `insert into harness_accounts (
-               id, harness_id, profile_kind, profile_key, label, email, organization_id,
-               auth_method, auth_state, can_login, can_logout, last_checked_at, detail,
-               created_at, updated_at, removed_at
-             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
-             on conflict(id) do update set
-               label = excluded.label,
-               email = excluded.email,
-               organization_id = excluded.organization_id,
-               auth_method = excluded.auth_method,
-               auth_state = excluded.auth_state,
-               can_login = excluded.can_login,
-               can_logout = excluded.can_logout,
-               last_checked_at = excluded.last_checked_at,
-               detail = excluded.detail,
-               updated_at = excluded.updated_at,
-               removed_at = null`
-    )
+    .prepare(accountSaveSql.upsert)
     .run(
       id,
       request.harnessId,
@@ -86,16 +58,8 @@ const selectFirstAccount = (
   request: SaveHarnessAccountRequest,
   id: string
 ): void => {
-  const selected = selectionRows.maybe(
-    sqlite
-      .prepare("select account_id from harness_account_selection where harness_id = ?")
-      .get(request.harnessId)
-  )
-  if (selected === undefined) {
-    sqlite
-      .prepare("insert into harness_account_selection (harness_id, account_id) values (?, ?)")
-      .run(request.harnessId, id)
-  }
+  if (selectedAccountId(sqlite, request) !== undefined) return
+  sqlite.prepare(accountSaveSql.insertSelection).run(request.harnessId, id)
 }
 
 export const saveHarnessAccountId = (
@@ -108,4 +72,36 @@ export const saveHarnessAccountId = (
   upsertAccount(sqlite, request, id, now)
   selectFirstAccount(sqlite, request, id)
   return id
+}
+
+const selectedAccountId = (
+  sqlite: Sqlite,
+  request: SaveHarnessAccountRequest
+): string | undefined =>
+  selectionRows.maybe(sqlite.prepare(accountSaveSql.selection).get(request.harnessId))?.account_id
+
+const accountSaveSql = {
+  defaultAccount:
+    "select id from harness_accounts where harness_id = ? and profile_kind = 'default' and removed_at is null",
+  profileAccount:
+    "select id from harness_accounts where harness_id = ? and profile_key = ? and removed_at is null",
+  upsert: `insert into harness_accounts (
+               id, harness_id, profile_kind, profile_key, label, email, organization_id,
+               auth_method, auth_state, can_login, can_logout, last_checked_at, detail,
+               created_at, updated_at, removed_at
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+             on conflict(id) do update set
+               label = excluded.label,
+               email = excluded.email,
+               organization_id = excluded.organization_id,
+               auth_method = excluded.auth_method,
+               auth_state = excluded.auth_state,
+               can_login = excluded.can_login,
+               can_logout = excluded.can_logout,
+               last_checked_at = excluded.last_checked_at,
+               detail = excluded.detail,
+               updated_at = excluded.updated_at,
+               removed_at = null`,
+  selection: "select account_id from harness_account_selection where harness_id = ?",
+  insertSelection: "insert into harness_account_selection (harness_id, account_id) values (?, ?)"
 }

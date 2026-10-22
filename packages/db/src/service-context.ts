@@ -33,20 +33,51 @@ export const createServiceContext = (
   config: CodevisorDatabaseConfig
 ): ServiceContext => {
   const locationRowsFor = (projectId: string): ReadonlyArray<ProjectLocationRow> =>
-    projectLocationRows.all(
-      sqlite
-        .prepare("select * from project_locations where project_id = ? order by created_at asc")
-        .all(projectId)
-    )
+    projectLocationRows.all(sqlite.prepare(contextSql.projectLocations).all(projectId))
 
   const localLocationFor = (projectId: string): ProjectLocationRow | undefined =>
     projectLocationRows.maybe(
-      sqlite
-        .prepare("select * from project_locations where project_id = ? and server_id = ?")
-        .get(projectId, config.serverId)
+      sqlite.prepare(contextSql.localLocation).get(projectId, config.serverId)
     )
 
-  const sessionSummarySelect = `
+  const getProject = (id: string): Project => {
+    const row = projectRows.maybe(sqlite.prepare(contextSql.project).get(id))
+    if (row === undefined) {
+      throw new Error(`Project not found: ${id}`)
+    }
+    return projectFromRow(row, locationRowsFor(row.id))
+  }
+
+  const getSession = (rawId: string): SessionSummary => {
+    const id = canonicalUuid(rawId)
+    const row = sessionRows.maybe(sqlite.prepare(sessionByIdSql(sessionSummarySql)).get(id))
+    if (row === undefined) {
+      throw new Error(`Session not found: ${id}`)
+    }
+    return sessionFromRow(row, localLocationFor(row.project_id)?.folder_path)
+  }
+
+  return {
+    sqlite,
+    config,
+    locationRowsFor,
+    localLocationFor,
+    sessionSummarySelect: sessionSummarySql,
+    getProject,
+    getSession
+  }
+}
+
+export const sessionByIdSql = (summarySelect: string): string =>
+  `${summarySelect} where sessions.id = ?`
+
+const contextSql = {
+  projectLocations: "select * from project_locations where project_id = ? order by created_at asc",
+  localLocation: "select * from project_locations where project_id = ? and server_id = ?",
+  project: "select * from projects where id = ? collate nocase"
+}
+
+const sessionSummarySql = `
     select sessions.*,
       coalesce((
         select attention_revision from session_attention sa
@@ -85,35 +116,3 @@ export const createServiceContext = (
         where sa.session_id = sessions.id
       ), 0) as pending_plan_approval,${latestBotMessageColumns}
     from sessions`
-
-  const getProject = (id: string): Project => {
-    const row = projectRows.maybe(
-      sqlite.prepare("select * from projects where id = ? collate nocase").get(id)
-    )
-    if (row === undefined) {
-      throw new Error(`Project not found: ${id}`)
-    }
-    return projectFromRow(row, locationRowsFor(row.id))
-  }
-
-  const getSession = (rawId: string): SessionSummary => {
-    const id = canonicalUuid(rawId)
-    const row = sessionRows.maybe(
-      sqlite.prepare(`${sessionSummarySelect} where sessions.id = ?`).get(id)
-    )
-    if (row === undefined) {
-      throw new Error(`Session not found: ${id}`)
-    }
-    return sessionFromRow(row, localLocationFor(row.project_id)?.folder_path)
-  }
-
-  return {
-    sqlite,
-    config,
-    locationRowsFor,
-    localLocationFor,
-    sessionSummarySelect,
-    getProject,
-    getSession
-  }
-}

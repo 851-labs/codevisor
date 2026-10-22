@@ -51,7 +51,7 @@ export const navigationDelta = (event: EventEnvelope | undefined): NavigationDel
 export const listEvents = (filename: string, since = 0): ReadonlyArray<EventEnvelope> =>
   readDatabase(filename, (sqlite) =>
     sqlite
-      .prepare("select * from events where id > ? order by id asc")
+      .prepare(eventLogSql.after)
       .all(since)
       .map((row) => eventFromRow(eventRows.one(row)))
   )
@@ -63,25 +63,68 @@ export const listSubjectEvents = (
 ): ReadonlyArray<EventEnvelope> =>
   readDatabase(filename, (sqlite) => {
     const subjectId = canonicalUuid(rawSubjectId)
-    const isSession =
-      sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
-    return isSession
-      ? sqlite
-          .prepare(
-            "select * from session_events where session_id = ? and revision > ? order by revision asc"
-          )
-          .all(subjectId, since)
-          .map((row) => sessionEventFromRow(sessionEventRows.one(row)))
-      : sqlite
-          .prepare("select * from events where subject_id = ? and id > ? order by id asc")
-          .all(subjectId, since)
-          .map((row) => eventFromRow(eventRows.one(row)))
+    if (isSessionSubject(sqlite, subjectId)) return sessionEventsAfter(sqlite, subjectId, since)
+    return subjectEventsAfter(sqlite, subjectId, since)
   })
 
 export const buildV4Fixture = (filename: string): void => {
   const sqlite = new Database(filename)
   try {
-    sqlite.exec(`
+    sqlite.exec(v4FixtureSql)
+  } finally {
+    sqlite.close()
+  }
+}
+
+export const memoryDatabase = async (): Promise<{
+  sqlite: Database.Database
+  config: CodevisorDatabaseConfig
+  db: CodevisorDatabaseService
+  project: Project
+  session: SessionSummary
+}> => {
+  const sqlite = new Database(":memory:")
+  const config = { filename: ":memory:", serverId: "local" }
+  const db = createService(sqlite, config)
+  onTestFinished(() => run(db.close))
+  await run(db.migrate)
+  const project = await run(db.createProject({ folderPath: "/tmp/transcript-state-test" }))
+  const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+  return { sqlite, config, db, project, session }
+}
+
+const isSessionSubject = (sqlite: Database.Database, subjectId: string): boolean =>
+  sqlite.prepare(eventLogSql.session).get(subjectId) !== undefined
+
+const sessionEventsAfter = (
+  sqlite: Database.Database,
+  sessionId: string,
+  since: number
+): ReadonlyArray<EventEnvelope> =>
+  sqlite
+    .prepare(eventLogSql.sessionAfter)
+    .all(sessionId, since)
+    .map((row) => sessionEventFromRow(sessionEventRows.one(row)))
+
+const subjectEventsAfter = (
+  sqlite: Database.Database,
+  subjectId: string,
+  since: number
+): ReadonlyArray<EventEnvelope> =>
+  sqlite
+    .prepare(eventLogSql.subjectAfter)
+    .all(subjectId, since)
+    .map((row) => eventFromRow(eventRows.one(row)))
+
+const eventLogSql = {
+  after: "select * from events where id > ? order by id asc",
+  session: "select 1 from sessions where id = ?",
+  sessionAfter:
+    "select * from session_events where session_id = ? and revision > ? order by revision asc",
+  subjectAfter: "select * from events where subject_id = ? and id > ? order by id asc"
+}
+
+const v4FixtureSql = `
     create table schema_migrations (id integer primary key, name text not null);
     insert into schema_migrations (id, name) values
       (1, 'initial'), (2, 'session action idempotency'),
@@ -207,25 +250,4 @@ export const buildV4Fixture = (filename: string): void => {
       values ('queue-1', 'sess-1', 'queued', '2026-06-01T01:02:00.000Z', '2026-06-01T01:02:00.000Z');
     insert into session_actions (session_id, client_action_id, action_kind, response, created_at)
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
-  `)
-  } finally {
-    sqlite.close()
-  }
-}
-
-export const memoryDatabase = async (): Promise<{
-  sqlite: Database.Database
-  config: CodevisorDatabaseConfig
-  db: CodevisorDatabaseService
-  project: Project
-  session: SessionSummary
-}> => {
-  const sqlite = new Database(":memory:")
-  const config = { filename: ":memory:", serverId: "local" }
-  const db = createService(sqlite, config)
-  onTestFinished(() => run(db.close))
-  await run(db.migrate)
-  const project = await run(db.createProject({ folderPath: "/tmp/transcript-state-test" }))
-  const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-  return { sqlite, config, db, project, session }
-}
+  `

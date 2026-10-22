@@ -40,44 +40,21 @@ export const makeWorktreesService = (
           createdAt: isoTimestamp()
         }
         sqlite
-          .prepare(
-            `insert into worktrees (
-              id, project_id, server_id, name, branch, created_at
-            ) values (?, ?, ?, ?, ?, ?)`
-          )
+          .prepare(worktreeSql.insert)
           .run(worktree.id, projectId, worktree.serverId, name, branch, worktree.createdAt)
         return worktree
       }),
     listWorktrees: (projectId) =>
-      attempt("listWorktrees", () =>
-        worktreeRows
-          .all(
-            sqlite
-              .prepare("select * from worktrees where project_id = ? order by created_at asc")
-              .all(canonicalUuid(projectId))
-          )
-          .map(worktreeFromRow)
-      ),
+      attempt("listWorktrees", () => projectWorktrees(sqlite, projectId).map(worktreeFromRow)),
     deleteWorktree: (id) =>
       attempt("deleteWorktree", () => {
-        sqlite.prepare("delete from worktrees where id = ?").run(canonicalUuid(id))
+        sqlite.prepare(worktreeSql.delete).run(canonicalUuid(id))
       }),
     createArchivedWorktree: (record) =>
       attempt("createArchivedWorktree", () => {
         const id = canonicalUuid(record.id)
         sqlite
-          .prepare(
-            `insert into archived_worktrees (
-               id, project_id, server_id, original_name, branch, parent_sha, snapshot_ref,
-               created_at, state
-             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             on conflict(id) do update set
-               original_name = excluded.original_name,
-               branch = excluded.branch,
-               parent_sha = excluded.parent_sha,
-               snapshot_ref = excluded.snapshot_ref,
-               state = excluded.state`
-          )
+          .prepare(archivedWorktreeSql.upsert)
           .run(
             id,
             canonicalUuid(record.projectId),
@@ -89,40 +66,71 @@ export const makeWorktreesService = (
             record.createdAt,
             record.state
           )
-        return archivedWorktreeFromRow(
-          archivedWorktreeRows.one(
-            sqlite.prepare("select * from archived_worktrees where id = ?").get(id)
-          )
-        )
+        return archivedWorktreeFromRow(savedArchivedWorktree(sqlite, id))
       }),
     findArchivedWorktree: (rawProjectId, serverId, originalName) =>
       attempt("findArchivedWorktree", () => {
-        const row = archivedWorktreeRows.maybe(
-          sqlite
-            .prepare(
-              `select * from archived_worktrees
-             where project_id = ? collate nocase and server_id = ? and original_name = ?
-             order by created_at desc limit 1`
-            )
-            .get(canonicalUuid(rawProjectId), serverId, originalName)
-        )
+        const row = latestArchivedWorktree(sqlite, rawProjectId, serverId, originalName)
         return row === undefined ? undefined : archivedWorktreeFromRow(row)
       }),
     listArchivedWorktrees: (rawProjectId) =>
       attempt("listArchivedWorktrees", () =>
-        archivedWorktreeRows
-          .all(
-            sqlite
-              .prepare(
-                "select * from archived_worktrees where project_id = ? collate nocase order by created_at desc"
-              )
-              .all(canonicalUuid(rawProjectId))
-          )
-          .map(archivedWorktreeFromRow)
+        projectArchivedWorktrees(sqlite, rawProjectId).map(archivedWorktreeFromRow)
       ),
     deleteArchivedWorktree: (id) =>
       attempt("deleteArchivedWorktree", () => {
-        sqlite.prepare("delete from archived_worktrees where id = ?").run(canonicalUuid(id))
+        sqlite.prepare(archivedWorktreeSql.delete).run(canonicalUuid(id))
       })
   }
+}
+
+const projectWorktrees = (sqlite: ServiceContext["sqlite"], rawProjectId: string) =>
+  worktreeRows.all(sqlite.prepare(worktreeSql.byProject).all(canonicalUuid(rawProjectId)))
+
+const savedArchivedWorktree = (sqlite: ServiceContext["sqlite"], id: string) =>
+  archivedWorktreeRows.one(sqlite.prepare(archivedWorktreeSql.byId).get(id))
+
+const latestArchivedWorktree = (
+  sqlite: ServiceContext["sqlite"],
+  rawProjectId: string,
+  serverId: string,
+  originalName: string
+) =>
+  archivedWorktreeRows.maybe(
+    sqlite
+      .prepare(archivedWorktreeSql.latestByName)
+      .get(canonicalUuid(rawProjectId), serverId, originalName)
+  )
+
+const projectArchivedWorktrees = (sqlite: ServiceContext["sqlite"], rawProjectId: string) =>
+  archivedWorktreeRows.all(
+    sqlite.prepare(archivedWorktreeSql.byProject).all(canonicalUuid(rawProjectId))
+  )
+
+const worktreeSql = {
+  insert: `insert into worktrees (
+              id, project_id, server_id, name, branch, created_at
+            ) values (?, ?, ?, ?, ?, ?)`,
+  byProject: "select * from worktrees where project_id = ? order by created_at asc",
+  delete: "delete from worktrees where id = ?"
+}
+
+const archivedWorktreeSql = {
+  upsert: `insert into archived_worktrees (
+               id, project_id, server_id, original_name, branch, parent_sha, snapshot_ref,
+               created_at, state
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             on conflict(id) do update set
+               original_name = excluded.original_name,
+               branch = excluded.branch,
+               parent_sha = excluded.parent_sha,
+               snapshot_ref = excluded.snapshot_ref,
+               state = excluded.state`,
+  byId: "select * from archived_worktrees where id = ?",
+  latestByName: `select * from archived_worktrees
+             where project_id = ? collate nocase and server_id = ? and original_name = ?
+             order by created_at desc limit 1`,
+  byProject:
+    "select * from archived_worktrees where project_id = ? collate nocase order by created_at desc",
+  delete: "delete from archived_worktrees where id = ?"
 }

@@ -33,25 +33,26 @@ export const recordToolFileChanges = (
   if (typeof toolCallId !== "string") return
   const status = typeof payload.status === "string" ? payload.status : undefined
   const changes = fileChanges(payload.diffStats) ?? []
-  const upsert = sqlite.prepare(
-    `insert into chat_item_file_changes (
+  const upsert = sqlite.prepare(fileChangeSql.upsert)
+  for (const change of changes) {
+    upsert.run({ itemId, toolCallId, ...change, status: status ?? null, at: event.created_at })
+  }
+  if (status !== undefined) {
+    sqlite
+      .prepare(fileChangeSql.setStatus)
+      .run(status, event.created_at, itemId, toolCallId, status)
+  }
+}
+
+const fileChangeSql = {
+  upsert: `insert into chat_item_file_changes (
        item_id, tool_call_id, path, added, removed, status, updated_at
      ) values (@itemId, @toolCallId, @path, @added, @removed, coalesce(@status, 'pending'), @at)
      on conflict(item_id, tool_call_id, path) do update set
        added = excluded.added,
        removed = excluded.removed,
        status = coalesce(@status, status),
-       updated_at = excluded.updated_at`
-  )
-  for (const change of changes) {
-    upsert.run({ itemId, toolCallId, ...change, status: status ?? null, at: event.created_at })
-  }
-  if (status !== undefined) {
-    sqlite
-      .prepare(
-        `update chat_item_file_changes set status = ?, updated_at = ?
+       updated_at = excluded.updated_at`,
+  setStatus: `update chat_item_file_changes set status = ?, updated_at = ?
          where item_id = ? and tool_call_id = ? and status <> ?`
-      )
-      .run(status, event.created_at, itemId, toolCallId, status)
-  }
 }
