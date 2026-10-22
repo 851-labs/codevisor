@@ -4,6 +4,7 @@ import { ScreenSharingReply, ScreenSharingRequest, type WorkspacePane } from "@c
 import { Schema } from "effect"
 
 import {
+  BoundedBody,
   HttpFailure,
   run,
   writeJson,
@@ -11,6 +12,7 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 
+const maxRequestBytes = 300 * 1024
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const computerUsePrefix = "computer-use:"
 const computerUseTarget =
@@ -56,19 +58,12 @@ export const routeScreenSharing = async (
     throw new HttpFailure(403, "Native clients only")
   if (request.method !== "POST") throw new HttpFailure(405, "Use POST for Screen Sharing")
   response.setHeader("Cache-Control", "no-store")
-  const chunks: Buffer[] = []
-  let size = 0
-  for await (const chunk of request) {
-    const bytes = Buffer.from(chunk)
-    size += bytes.length
-    if (size > 300 * 1024) throw new HttpFailure(413, "Screen Sharing request is too large")
-    chunks.push(bytes)
-  }
+  const received = new BoundedBody(maxRequestBytes)
+  for await (const chunk of request)
+    if (!received.accept(chunk)) throw new HttpFailure(413, "Screen Sharing request is too large")
   let payload: ScreenSharingRequest
   try {
-    payload = Schema.decodeUnknownSync(ScreenSharingRequest)(
-      JSON.parse(Buffer.concat(chunks).toString("utf8"))
-    )
+    payload = Schema.decodeUnknownSync(ScreenSharingRequest)(JSON.parse(received.text()))
   } catch {
     throw new HttpFailure(400, "Invalid Screen Sharing request")
   }

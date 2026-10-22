@@ -4,8 +4,43 @@ import { pipeline } from "node:stream/promises"
 
 import { SharedCredentialError, type SharedTokenBundle } from "@codevisor/harness-manager"
 
-const digest = (token: string) => createHash("sha256").update(token).digest("hex")
-const MAX_BODY = 32 * 1024 * 1024
+import { BoundedBody, isLocalhost } from "../server-http.js"
+
+const maxBodyBytes = 32 * 1024 * 1024
+const routePrefix = "/harness/claude"
+const upstreamOrigin = "https://api.anthropic.com"
+const postPaths = new Set(["/v1/messages", "/v1/messages/count_tokens"])
+const forwardedHeaderNames = new Set(["content-type", "accept", "user-agent", "x-app"])
+const strippedResponseHeaders = new Set([
+  "connection",
+  "transfer-encoding",
+  "content-length",
+  "content-encoding",
+  "set-cookie",
+  "cache-control"
+])
+const reconnectError = {
+  type: "error",
+  error: {
+    type: "authentication_error",
+    message: "Reconnect this account in Codevisor."
+  }
+}
+
+interface UpstreamCall {
+  readonly id: string
+  readonly request: IncomingMessage
+  readonly url: URL
+  readonly path: string
+  readonly headers: Headers
+  readonly body: Buffer<ArrayBuffer> | undefined
+  readonly abort: AbortController
+}
+
+interface UpstreamReply {
+  readonly result: Response
+  readonly token: string
+}
 
 export const makeSharedClaudeGateway = (options: {
   readonly token: (id: string, rejected?: string) => Promise<SharedTokenBundle>
@@ -13,6 +48,18 @@ export const makeSharedClaudeGateway = (options: {
 }) => {
   const credentials = new Map<string, string>()
   const requestUpstream = options.fetch ?? fetch
+  const send = async (call: UpstreamCall, rejected?: string): Promise<UpstreamReply> => {
+    const token = await options.token(call.id, rejected)
+    call.headers.set("authorization", `Bearer ${token.accessToken}`)
+    const result = await requestUpstream(`${upstreamOrigin}${call.path}${call.url.search}`, {
+      method: call.request.method!,
+      headers: call.headers,
+      ...(call.body === undefined ? {} : { body: call.body }),
+      signal: call.abort.signal,
+      redirect: "error"
+    })
+    return { result, token: token.accessToken }
+  }
   return {
     register: (id: string, accessToken: string) => {
       credentials.set(digest(accessToken), id)
@@ -23,112 +70,97 @@ export const makeSharedClaudeGateway = (options: {
     close: () => credentials.clear(),
     handle: async (request: IncomingMessage, response: ServerResponse, url: URL): Promise<void> => {
       response.setHeader("Cache-Control", "no-store")
-      const address = request.socket.remoteAddress
-      if (
-        request.headers.origin !== undefined ||
-        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address ?? "")
-      ) {
-        response.writeHead(403).end()
-        return
-      }
-      const bearer = request.headers.authorization?.match(/^Bearer (.+)$/i)?.[1]
-      const id = bearer === undefined ? undefined : credentials.get(digest(bearer))
-      if (id === undefined) {
-        response.writeHead(401).end()
-        return
-      }
-      const path = url.pathname.slice("/harness/claude".length)
-      if (
-        !(
-          (request.method === "POST" &&
-            ["/v1/messages", "/v1/messages/count_tokens"].includes(path)) ||
-          (request.method === "GET" && path === "/v1/models")
-        )
-      ) {
-        response.writeHead(404).end()
-        return
-      }
+      if (isForeignCaller(request)) return reply(response, 403)
+
+      const id = accountFor(credentials, request)
+      if (id === undefined) return reply(response, 401)
+
+      const path = url.pathname.slice(routePrefix.length)
+      if (!isProxiedRoute(request, path)) return reply(response, 404)
+
       const abort = new AbortController()
-      const disconnected = () => {
-        if (!response.writableFinished) abort.abort()
-      }
+      const disconnected = abortUnlessFinished(response, abort)
       response.once("close", disconnected)
       try {
-        const chunks: Buffer[] = []
-        let size = 0
-        for await (const chunk of request) {
-          const bytes = Buffer.from(chunk)
-          size += bytes.length
-          if (size > MAX_BODY) {
-            response.writeHead(413).end()
-            return
-          }
-          chunks.push(bytes)
-        }
-        const body = request.method === "POST" ? Buffer.concat(chunks) : undefined
-        const headers = new Headers()
-        for (const [name, value] of Object.entries(request.headers)) {
-          if (
-            typeof value === "string" &&
-            (name.startsWith("anthropic-") ||
-              ["content-type", "accept", "user-agent", "x-app"].includes(name))
-          )
-            headers.set(name, value)
-        }
-        const send = async (rejected?: string) => {
-          const token = await options.token(id, rejected)
-          headers.set("authorization", `Bearer ${token.accessToken}`)
-          const result = await requestUpstream(`https://api.anthropic.com${path}${url.search}`, {
-            method: request.method!,
-            headers,
-            ...(body === undefined ? {} : { body }),
-            signal: abort.signal,
-            redirect: "error"
-          })
-          return { result, token: token.accessToken }
-        }
-        let upstream = await send()
+        const received = new BoundedBody(maxBodyBytes)
+        for await (const chunk of request) if (!received.accept(chunk)) return reply(response, 413)
+
+        const body = request.method === "POST" ? received.bytes() : undefined
+        const call = { id, request, url, path, headers: forwardedHeaders(request), body, abort }
+        let upstream = await send(call)
         if (upstream.result.status === 401) {
           await upstream.result.body?.cancel()
-          upstream = await send(upstream.token)
+          upstream = await send(call, upstream.token)
         }
-        for (const [name, value] of upstream.result.headers) {
-          if (
-            ![
-              "connection",
-              "transfer-encoding",
-              "content-length",
-              "content-encoding",
-              "set-cookie",
-              "cache-control"
-            ].includes(name)
-          )
-            response.setHeader(name, value)
-        }
+
+        copyResponseHeaders(upstream.result.headers, response)
         response.writeHead(upstream.result.status)
         if (upstream.result.body)
-          await pipeline(upstream.result.body, response, {
-            signal: abort.signal
-          })
+          await pipeline(upstream.result.body, response, { signal: abort.signal })
         else response.end()
       } catch (cause) {
-        const signedOut =
-          cause instanceof SharedCredentialError &&
-          (cause.reason === "reauthenticate" || cause.reason === "revoked")
-        if (!response.headersSent)
-          response.writeHead(signedOut ? 401 : 503, { "content-type": "application/json" }).end(
-            JSON.stringify({
-              type: "error",
-              error: {
-                type: "authentication_error",
-                message: "Reconnect this account in Codevisor."
-              }
-            })
-          )
-        else response.destroy()
+        failRequest(response, cause)
       } finally {
         response.off("close", disconnected)
       }
     }
   }
 }
+
+const digest = (token: string) => createHash("sha256").update(token).digest("hex")
+
+const reply = (response: ServerResponse, status: number): void => {
+  response.writeHead(status).end()
+}
+
+const isForeignCaller = (request: IncomingMessage): boolean => {
+  const address = request.socket.remoteAddress
+  return request.headers.origin !== undefined || !isLocalhost(address)
+}
+
+const accountFor = (
+  credentials: ReadonlyMap<string, string>,
+  request: IncomingMessage
+): string | undefined => {
+  const bearer = request.headers.authorization?.match(/^Bearer (.+)$/i)?.[1]
+  if (bearer === undefined) return undefined
+  return credentials.get(digest(bearer))
+}
+
+const isProxiedRoute = (request: IncomingMessage, path: string): boolean =>
+  (request.method === "POST" && postPaths.has(path)) ||
+  (request.method === "GET" && path === "/v1/models")
+
+const abortUnlessFinished = (response: ServerResponse, abort: AbortController) => () => {
+  if (!response.writableFinished) abort.abort()
+}
+
+const forwardedHeaders = (request: IncomingMessage): Headers => {
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(request.headers))
+    if (typeof value === "string" && isForwardedHeader(name)) headers.set(name, value)
+  return headers
+}
+
+const isForwardedHeader = (name: string): boolean =>
+  name.startsWith("anthropic-") || forwardedHeaderNames.has(name)
+
+const copyResponseHeaders = (headers: Headers, response: ServerResponse): void => {
+  for (const [name, value] of headers)
+    if (!strippedResponseHeaders.has(name)) response.setHeader(name, value)
+}
+
+const failRequest = (response: ServerResponse, cause: unknown): void => {
+  const signedOut = isSignedOut(cause)
+  if (response.headersSent) {
+    response.destroy()
+    return
+  }
+  response
+    .writeHead(signedOut ? 401 : 503, { "content-type": "application/json" })
+    .end(JSON.stringify(reconnectError))
+}
+
+const isSignedOut = (cause: unknown): boolean =>
+  cause instanceof SharedCredentialError &&
+  (cause.reason === "reauthenticate" || cause.reason === "revoked")

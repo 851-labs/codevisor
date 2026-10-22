@@ -292,6 +292,28 @@ const localhostAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 export const isLocalhost = (address: string | undefined): boolean =>
   localhostAddresses.has(String(address))
 
+export class BoundedBody {
+  private readonly chunks: Buffer[] = []
+  private size = 0
+
+  constructor(private readonly maxBytes: number) {}
+
+  accept(chunk: Buffer): boolean {
+    this.size += Buffer.byteLength(chunk)
+    if (this.size > this.maxBytes) return false
+    this.chunks.push(Buffer.from(chunk))
+    return true
+  }
+
+  bytes(): Buffer<ArrayBuffer> {
+    return Buffer.concat(this.chunks)
+  }
+
+  text(): string {
+    return this.bytes().toString("utf8")
+  }
+}
+
 /* v8 ignore next */
 export const failureMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)

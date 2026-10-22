@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto"
 import { mkdir, symlink, writeFile, chmod } from "node:fs/promises"
-import type { IncomingMessage, ServerResponse } from "node:http"
 import { dirname, join, resolve } from "node:path"
 
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
@@ -10,14 +9,12 @@ import {
   piAuthExtension,
   providerCredential,
   providerTokenEndpoint,
-  SharedCredentialError,
   type SharedCredentialVault,
   type SharedTokenBundle,
   type ProviderOAuthHarness
 } from "@codevisor/harness-manager"
-import { Schema } from "effect"
 
-import { errorCode, field, isRecord } from "../unknown-values.js"
+import { errorCode, field } from "../unknown-values.js"
 import {
   prepareProviderAuthDocument,
   readProviderDocument,
@@ -42,16 +39,14 @@ import {
   type SharedProviderRecord,
   type SharedProviderStore
 } from "./shared-provider-store.js"
+import {
+  isCapability,
+  makeProviderTokenBroker,
+  type Capability
+} from "./shared-provider-token-broker.js"
 
 export { readProviderDocument } from "./shared-provider-documents.js"
 
-const Capability = Schema.Struct({
-  capability: Schema.String,
-  slot: Schema.String,
-  credentialId: Schema.String
-})
-type Capability = typeof Capability.Type
-const isCapability = Schema.is(Capability)
 interface ManifestProvider {
   capability: string
   endpoint?: string
@@ -336,81 +331,7 @@ export const makeSharedProviderRuntime = (options: {
   return {
     materialize: (...args: Parameters<typeof materialize>) =>
       serialize(JSON.stringify(args.slice(0, 2)), () => materialize(...args)),
-    handle: async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-      response.setHeader("Cache-Control", "no-store")
-      if (
-        request.headers.origin !== undefined ||
-        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "")
-      ) {
-        response.writeHead(403).end()
-        return
-      }
-      if (request.method !== "POST") {
-        response.writeHead(405).end()
-        return
-      }
-      const bearer = request.headers.authorization?.match(/^Bearer ([\w-]{43})$/)?.[1]
-      const cap = (await store.localEntries())
-        .filter((entry) => entry.key.startsWith("cap:"))
-        .map((entry) => entry.value)
-        .filter(isCapability)
-        .find((value) => value.capability === bearer)
-      if (!bearer || !cap) {
-        response.writeHead(401).end()
-        return
-      }
-      const row = await store.get(cap.slot)
-      if (!row || row.credential.id !== cap.credentialId) {
-        response.writeHead(401).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let size = 0
-        for await (const chunk of request) {
-          size += Buffer.byteLength(chunk)
-          if (size > 16_384) {
-            response.writeHead(413).end()
-            return
-          }
-          chunks.push(Buffer.from(chunk))
-        }
-        let body: unknown
-        try {
-          body = JSON.parse(Buffer.concat(chunks).toString())
-        } catch {
-          response.writeHead(400).end()
-          return
-        }
-        const rejectedAccessToken = field(body, "rejectedAccessToken")
-        if (
-          !isRecord(body) ||
-          (rejectedAccessToken !== undefined && typeof rejectedAccessToken !== "string")
-        ) {
-          response.writeHead(400).end()
-          return
-        }
-        let token = await vault.token(row.credential, rejectedAccessToken)
-        if (body.force === true && row.harnessId === "grok-build")
-          token = await vault.token(row.credential, token.accessToken)
-        response.writeHead(200, { "Content-Type": "application/json" }).end(
-          JSON.stringify({
-            credential: providerCredential(token, MANAGED_REFRESH_PREFIX + cap.capability),
-            ...(token.idToken ? { idToken: token.idToken } : {}),
-            access_token: token.accessToken,
-            expires_in: Math.max(1, Math.floor((token.expiresAt - Date.now()) / 1000)),
-            issuer: "https://auth.x.ai"
-          })
-        )
-      } catch (cause) {
-        response
-          .writeHead(
-            cause instanceof SharedCredentialError && cause.reason === "revoked" ? 401 : 503,
-            { "Content-Type": "application/json" }
-          )
-          .end(JSON.stringify({ error: "Reconnect this account in Codevisor." }))
-      }
-    }
+    handle: makeProviderTokenBroker(store, vault)
   }
 }
 
