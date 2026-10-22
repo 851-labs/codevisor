@@ -92,7 +92,7 @@ public final class SessionModel {
   }
   @ObservationIgnored var streamSynchronization: SessionStreamSynchronization = .caughtUp
   @ObservationIgnored let streamReconnectNotice: DelayedConnectionNotice
-  @ObservationIgnored var connectionRecoveryGeneration: UInt64 = 0
+  let connectionRecovery: SessionConnectionRecovery
   let promptQueue: SessionPromptQueue
   public var queuedPrompts: [ServerPromptQueueItem] { promptQueue.items }
   public internal(set) var updateGateHarnessName: String? {
@@ -181,13 +181,6 @@ public final class SessionModel {
 
   var consumerTask: Task<Void, Never>?
   @ObservationIgnored var stalledTurnSchedule: SessionQuietTurnCancellation?
-  @ObservationIgnored var connectionRecoveryTask: Task<Void, Never>?
-  @ObservationIgnored var surfacedConnectionRecoveryError: String?
-
-  let connectionRecoveryScheduler: SessionConnectionRecoveryScheduler
-  let connectionRecoveryStatusDelay: Duration
-  let connectionRecoveryRetryBaseDelay: Duration
-  let connectionRecoveryRetryMaximumDelay: Duration
 
   @ObservationIgnored nonisolated let pendingEvents = SessionEventBuffer()
   @ObservationIgnored var isFlushScheduled = false
@@ -224,15 +217,18 @@ public final class SessionModel {
     self.configOptions = configOptions
     self.now = now
     self.quietTurnScheduler = quietTurnScheduler
-    self.connectionRecoveryScheduler = connectionRecoveryScheduler
-    self.connectionRecoveryStatusDelay = connectionRecoveryStatusDelay
-    self.connectionRecoveryRetryBaseDelay = connectionRecoveryRetryBaseDelay
-    self.connectionRecoveryRetryMaximumDelay = connectionRecoveryRetryMaximumDelay
+    self.connectionRecovery = SessionConnectionRecovery(
+      scheduler: connectionRecoveryScheduler,
+      statusDelay: connectionRecoveryStatusDelay,
+      retryBaseDelay: connectionRecoveryRetryBaseDelay,
+      retryMaximumDelay: connectionRecoveryRetryMaximumDelay
+    )
     self.streamReconnectNotice = DelayedConnectionNotice(
       delay: connectionRecoveryStatusDelay, now: connectionRecoveryScheduler.now,
       sleep: connectionRecoveryScheduler.sleep)
+    connectionRecovery.model = self
     streamReconnectNotice.onVisibilityChange = { [weak self] isVisible in
-      self?.streamReconnectNoticeChanged(isVisible: isVisible)
+      self?.connectionRecovery.streamReconnectNoticeChanged(isVisible: isVisible)
     }
     promptQueue.onMessageQueued = { [weak self] id in
       self?.confirmOutgoing(id)

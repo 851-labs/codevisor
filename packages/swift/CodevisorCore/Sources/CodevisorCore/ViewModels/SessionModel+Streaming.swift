@@ -202,7 +202,7 @@ extension SessionModel {
   }
 
   public func shutdown() {
-    stopConnectionRecovery()
+    connectionRecovery.stop()
     for task in transcriptDetailLoadTasks.values { task.cancel() }
     transcriptDetailLoadTasks.removeAll(keepingCapacity: false)
     consumerTask?.cancel()

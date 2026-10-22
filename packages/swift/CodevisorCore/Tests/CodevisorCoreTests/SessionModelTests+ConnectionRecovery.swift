@@ -70,7 +70,7 @@ extension SessionModelTests {
     await settleUntil { scheduler.pendingCount == 1 }
     #expect(scheduler.requestedIntervals == [.milliseconds(10)])
     scheduler.advance()
-    await model.connectionRecoveryTask?.value
+    await model.connectionRecovery.task?.value
     #expect(client.transcriptPageRequests.count == 2)
     #expect(model.errorMessage == nil)
     #expect(model.connectionRecoveryMessage == nil)
@@ -122,9 +122,9 @@ extension SessionModelTests {
     let attempts = client.transcriptPageRequests.count
     client.clearTranscriptPageFailures()
     scheduler.advance()
-    await model.connectionRecoveryTask?.value
+    await model.connectionRecovery.task?.value
     #expect(client.transcriptPageRequests.count > attempts)
-    #expect(model.connectionRecoveryTask == nil)
+    #expect(model.connectionRecovery.task == nil)
     #expect(model.connectionRecoveryMessage == nil)
     #expect(model.errorMessage == nil)
     #expect(model.isSending)
@@ -248,5 +248,156 @@ extension SessionModelTests {
     #expect(!model.isSending)
     #expect(model.serverEventCursor == 3)
     #expect(model.connectionRecoveryMessage == nil)
+  }
+}
+
+extension SessionModelTests {
+  private func recoveringModel(
+    _ client: FakeSessionServerClient,
+    sessionId: UUID,
+    scheduler: ManualSessionConnectionRecoveryScheduler
+  ) -> SessionModel {
+    SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString, connectionRecoveryScheduler: scheduler.scheduler,
+      connectionRecoveryRetryBaseDelay: .milliseconds(10), connectionRecoveryRetryMaximumDelay: .milliseconds(10))
+  }
+
+  @Test("A permanent reconciliation failure shows its error without retrying, until a later recovery clears it")
+  func permanentReconciliationFailureSurfaces() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let model = recoveringModel(client, sessionId: sessionId, scheduler: scheduler)
+    defer { model.shutdown() }
+    client.failNextTranscriptPages(1, with: CodevisorServerClientError.httpStatus(404, "missing"))
+
+    await model.reconcileFromServer()
+
+    let firstError = model.errorMessage
+    #expect(firstError != nil)
+    #expect(model.connectionRecovery.task == nil)
+    #expect(model.connectionRecoveryMessage == nil)
+    #expect(scheduler.requestedIntervals.isEmpty)
+
+    client.failNextTranscriptPages(1, with: CodevisorServerClientError.invalidResponse)
+    await model.reconcileFromServer()
+
+    #expect(model.errorMessage != nil)
+    #expect(model.errorMessage != firstError)
+
+    await model.reconcileFromServer()
+
+    #expect(model.errorMessage == nil)
+    #expect(client.transcriptPageRequests.count == 3)
+    #expect(scheduler.requestedIntervals.isEmpty)
+  }
+
+  @Test("A permanent reconciliation failure leaves an unrelated error in place")
+  func permanentReconciliationFailureKeepsUnrelatedError() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let model = recoveringModel(client, sessionId: sessionId, scheduler: scheduler)
+    defer { model.shutdown() }
+    model.errorMessage = "Unrelated failure"
+    client.failNextTranscriptPages(1, with: CodevisorServerClientError.httpStatus(404, "missing"))
+
+    await model.reconcileFromServer()
+    #expect(model.errorMessage == "Unrelated failure")
+
+    await model.reconcileFromServer()
+    #expect(model.errorMessage == "Unrelated failure")
+  }
+
+  @Test("Retry cancels a running recovery loop, then reconciles once more")
+  func retrySessionFailureReplacesRecoveryLoop() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let model = recoveringModel(client, sessionId: sessionId, scheduler: scheduler)
+    defer { model.shutdown() }
+    client.failNextTranscriptPages(100)
+    await model.reconcileFromServer()
+    await settleUntil { scheduler.pendingCount == 1 }
+    let requests = client.transcriptPageRequests.count
+    client.clearTranscriptPageFailures()
+
+    await model.retrySessionFailure()
+
+    #expect(scheduler.pendingCount == 0)
+    #expect(model.connectionRecovery.task == nil)
+    #expect(client.transcriptPageRequests.count == requests + 1)
+    #expect(model.errorMessage == nil)
+    #expect(model.connectionRecoveryMessage == nil)
+  }
+
+  @Test("Reconciling while a recovery is already running leaves that recovery alone")
+  func reconcileDuringRecoveryIsIgnored() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let model = recoveringModel(client, sessionId: sessionId, scheduler: scheduler)
+    defer { model.shutdown() }
+    client.failNextTranscriptPages(100)
+    await model.reconcileFromServer()
+    await settleUntil { scheduler.pendingCount == 1 }
+    let recovery = model.connectionRecovery.task
+    let requests = client.transcriptPageRequests.count
+
+    await model.reconcileFromServer()
+
+    #expect(recovery != nil)
+    #expect(model.connectionRecovery.task == recovery)
+    #expect(client.transcriptPageRequests.count == requests)
+    #expect(scheduler.pendingCount == 1)
+  }
+
+  @Test("A stopped recovery attempt that finishes late doesn't clear its replacement")
+  func staleRecoveryAttemptKeepsReplacement() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    let model = recoveringModel(client, sessionId: sessionId, scheduler: scheduler)
+    defer { model.shutdown() }
+    client.transcriptPageFaults.holdNext()
+    let stale = Task { await model.reconcileFromServer() }
+    await client.transcriptPageFaults.held.wait()
+    model.connectionRecovery.stop()
+    client.failNextTranscriptPages(100)
+    await model.reconcileFromServer()
+    await settleUntil { scheduler.pendingCount == 1 }
+    let replacement = model.connectionRecovery.task
+
+    client.transcriptPageFaults.release.signal()
+    await stale.value
+
+    #expect(replacement != nil)
+    #expect(model.connectionRecovery.task == replacement)
+    #expect(scheduler.pendingCount == 1)
+  }
+
+  @Test("A recovery loop keeps its session model alive until it settles")
+  func recoveryLoopRetainsModel() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let scheduler = ManualSessionConnectionRecoveryScheduler()
+    weak var weakModel: SessionModel?
+    var recovery: Task<Void, Never>?
+    do {
+      let model = recoveringModel(client, sessionId: sessionId, scheduler: scheduler)
+      weakModel = model
+      client.failNextTranscriptPages(1)
+      await model.reconcileFromServer()
+      await settleUntil { scheduler.pendingCount == 1 }
+      recovery = model.connectionRecovery.task
+    }
+    #expect(weakModel != nil)
+
+    scheduler.advance()
+    await recovery?.value
+    client.finishEvents()
+
+    #expect(weakModel == nil)
   }
 }

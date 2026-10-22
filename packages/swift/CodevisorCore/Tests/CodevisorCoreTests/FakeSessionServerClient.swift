@@ -33,7 +33,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
   private var _transcriptDetailRequestCount = 0
   private var _transcriptDetailGate: AsyncStream<Void>?
-  private var _transcriptPageFailuresRemaining = 0
   private var _promptQueueResponse: [ServerPromptQueueItem] = []
   private var _promptQueueGate: AsyncStream<Void>?
   private var _promptQueueRequestCount = 0
@@ -58,6 +57,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var olderTranscriptPage: ServerTranscriptPage?
   var olderTranscriptPageHandler: (@Sendable (String) async throws -> ServerTranscriptPage)?
   let olderTranscriptPageRequests = TestSignal()
+  let transcriptPageFaults = FakeTranscriptPageFaults()
   let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
   var transcriptDetailHandler: (@Sendable (String, String?) async throws -> ServerTranscriptItemDetails)?
@@ -170,12 +170,12 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     lock.withLock { _transcriptDetailGate = gate }
   }
 
-  func failNextTranscriptPages(_ count: Int) {
-    lock.withLock { _transcriptPageFailuresRemaining = count }
+  func failNextTranscriptPages(_ count: Int, with error: any Error = URLError(.networkConnectionLost)) {
+    transcriptPageFaults.failNext(count, with: error)
   }
 
   func clearTranscriptPageFailures() {
-    lock.withLock { _transcriptPageFailuresRemaining = 0 }
+    transcriptPageFaults.clear()
   }
 
   var promptQueueRequestCount: Int {
@@ -264,13 +264,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   func listSessions() async throws -> [ServerSession] { [] }
 
   func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
-    let shouldFail = lock.withLock {
-      _transcriptPageRequests.append((before, limit))
-      guard _transcriptPageFailuresRemaining > 0 else { return false }
-      _transcriptPageFailuresRemaining -= 1
-      return true
-    }
-    if shouldFail { throw URLError(.networkConnectionLost) }
+    lock.withLock { _transcriptPageRequests.append((before, limit)) }
+    try await transcriptPageFaults.apply()
     if before != nil { olderTranscriptPageRequests.signal() }
     if let before, let olderTranscriptPageHandler { return try await olderTranscriptPageHandler(before) }
     if before == nil, let initialTranscriptPage { return initialTranscriptPage }

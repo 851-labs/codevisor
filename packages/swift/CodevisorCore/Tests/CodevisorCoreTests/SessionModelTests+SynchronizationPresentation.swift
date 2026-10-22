@@ -100,14 +100,14 @@ extension SessionModelTests {
     client.failNextTranscriptPages(100)
     await model.reconcileFromServer()
     await settleUntil { scheduler.pendingCount == 1 }
-    let recovery = model.connectionRecoveryTask
+    let recovery = model.connectionRecovery.task
     let requests = client.transcriptPageRequests.count
 
     model.apply(.synchronization(.catchingUp))
     model.apply(.update(.agentMessageChunk(.text(" more live text"))))
     await recovery?.value
     await settleUntil { scheduler.pendingCount == 0 }
-    #expect(model.connectionRecoveryTask == nil)
+    #expect(model.connectionRecovery.task == nil)
     #expect(model.connectionRecoveryMessage == nil)
     #expect(model.errorMessage == nil)
     #expect(model.streamSynchronization == .catchingUp)

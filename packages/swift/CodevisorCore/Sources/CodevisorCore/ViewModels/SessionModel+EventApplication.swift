@@ -154,8 +154,8 @@ extension SessionModel {
       applySynchronization(state)
       return
     }
-    if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization != .reconnecting {
-      stopConnectionRecovery()
+    if !isReplayingHistory, connectionRecovery.isRunning, streamSynchronization != .reconnecting {
+      connectionRecovery.stop()
     }
     if !isReplayingHistory, isProviderActivity(event) {
       noteProviderActivity()
@@ -315,7 +315,7 @@ extension SessionModel {
   func endTurn() {
     let wasSending = isSending
     isSending = false
-    stopConnectionRecovery()
+    connectionRecovery.stop()
     stalledTurnSchedule?.cancel()
     stalledTurnSchedule = nil
     isTakingLongerThanExpected = false

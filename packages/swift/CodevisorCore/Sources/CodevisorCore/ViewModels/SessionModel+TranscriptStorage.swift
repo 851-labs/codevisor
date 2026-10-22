@@ -22,7 +22,7 @@ extension SessionModel {
   }
 
   func startActiveBubble(startedAt: Date? = nil) {
-    stopConnectionRecovery()
+    connectionRecovery.stop()
     errorMessage = nil
     harnessAuthenticationErrorMessage = nil
     activeItem = .assistant(
