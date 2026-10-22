@@ -85,14 +85,7 @@ export const storeMachineTunnelAddr = (
     ...(tunnel.relayUrl === undefined ? {} : { relayUrl: tunnel.relayUrl }),
     directAddrs: tunnel.directAddrs.slice(0, 32)
   })
-  return (
-    sql.exec(
-      "UPDATE machines SET tunnel_addr = ? WHERE device_id = ? AND tunnel_endpoint_id = ?",
-      stored,
-      deviceId,
-      tunnel.endpointId
-    ).rowsWritten > 0
-  )
+  return sql.exec(machineTunnelSql.storeAddr, stored, deviceId, tunnel.endpointId).rowsWritten > 0
 }
 
 interface AppDeviceRow extends Record<string, SqlStorageValue> {
@@ -103,21 +96,8 @@ interface AppDeviceRow extends Record<string, SqlStorageValue> {
 
 export const recordAppDevice = (sql: SqlStorage, device: CloudDeviceInfo, now: string): boolean => {
   if (!isEndpointId(device.tunnelEndpointId)) return false
-  const existing = sql
-    .exec<AppDeviceRow>("SELECT * FROM app_devices WHERE device_id = ?", device.deviceId)
-    .toArray()[0]
-  sql.exec(
-    `INSERT INTO app_devices (device_id, public_key, endpoint_id, last_seen_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(device_id) DO UPDATE SET
-       public_key = excluded.public_key,
-       endpoint_id = excluded.endpoint_id,
-       last_seen_at = excluded.last_seen_at`,
-    device.deviceId,
-    device.publicKey,
-    device.tunnelEndpointId,
-    now
-  )
+  const existing = storedAppDevice(sql, device.deviceId)
+  sql.exec(appDeviceSql.upsert, device.deviceId, device.publicKey, device.tunnelEndpointId, now)
   return (
     existing?.public_key !== device.publicKey || existing.endpoint_id !== device.tunnelEndpointId
   )
@@ -125,10 +105,28 @@ export const recordAppDevice = (sql: SqlStorage, device: CloudDeviceInfo, now: s
 
 export const vouchedDevices = (sql: SqlStorage): CloudVouchedDevice[] =>
   sql
-    .exec<AppDeviceRow>("SELECT * FROM app_devices ORDER BY device_id")
+    .exec<AppDeviceRow>(appDeviceSql.all)
     .toArray()
     .map((row) => ({
       deviceId: row.device_id,
       publicKey: row.public_key,
       endpointId: row.endpoint_id
     }))
+
+const storedAppDevice = (sql: SqlStorage, deviceId: string) =>
+  sql.exec<AppDeviceRow>(appDeviceSql.byId, deviceId).toArray()[0]
+
+const machineTunnelSql = {
+  storeAddr: "UPDATE machines SET tunnel_addr = ? WHERE device_id = ? AND tunnel_endpoint_id = ?"
+}
+
+const appDeviceSql = {
+  byId: "SELECT * FROM app_devices WHERE device_id = ?",
+  upsert: `INSERT INTO app_devices (device_id, public_key, endpoint_id, last_seen_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(device_id) DO UPDATE SET
+       public_key = excluded.public_key,
+       endpoint_id = excluded.endpoint_id,
+       last_seen_at = excluded.last_seen_at`,
+  all: "SELECT * FROM app_devices ORDER BY device_id"
+}

@@ -14,9 +14,7 @@ export const notifyPluginReports = async (env: CloudEnv): Promise<void> => {
   if (url.origin !== "https://hooks.slack.com" || !url.pathname.startsWith("/services/")) {
     throw new Error("Invalid plugin report webhook configuration")
   }
-  const pending = await env.DB.prepare(
-    "SELECT id, plugin_id, plugin_name, reason, details FROM plugin_reports WHERE notified_at IS NULL ORDER BY created_at LIMIT 20"
-  ).all<PendingReport>()
+  const pending = await pendingReports(env)
   for (const report of pending.results) {
     try {
       const response = await (env.PLUGIN_REPORT_FETCH ?? fetch)(url.toString(), {
@@ -36,9 +34,15 @@ export const notifyPluginReports = async (env: CloudEnv): Promise<void> => {
         })
       })
       if (!response.ok) continue
-      await env.DB.prepare("UPDATE plugin_reports SET notified_at = ? WHERE id = ?")
-        .bind(Date.now(), report.id)
-        .run()
+      await env.DB.prepare(reportSql.markNotified).bind(Date.now(), report.id).run()
     } catch {}
   }
+}
+
+const pendingReports = (env: CloudEnv) => env.DB.prepare(reportSql.pending).all<PendingReport>()
+
+const reportSql = {
+  pending:
+    "SELECT id, plugin_id, plugin_name, reason, details FROM plugin_reports WHERE notified_at IS NULL ORDER BY created_at LIMIT 20",
+  markNotified: "UPDATE plugin_reports SET notified_at = ? WHERE id = ?"
 }

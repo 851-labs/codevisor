@@ -374,11 +374,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       .filter((candidate) => candidate !== socket && this.#net.isRoutable(candidate))
     if (survivors.length > 0) return
     if (attachment.kind === "machine") {
-      this.ctx.storage.sql.exec(
-        "UPDATE machines SET last_seen_at = ? WHERE device_id = ?",
-        isoTimestamp(),
-        attachment.deviceId!
-      )
+      this.ctx.storage.sql.exec(markMachineSeenSql, isoTimestamp(), attachment.deviceId!)
     }
     this.#metrics.sessionEnd(attachment)
     const deadline = this.#resume.markDisconnected(attachment.connectionId, Date.now())
@@ -413,3 +409,5 @@ export class UserHub extends DurableObject<CloudEnv> {
     }
   }
 }
+
+const markMachineSeenSql = "UPDATE machines SET last_seen_at = ? WHERE device_id = ?"

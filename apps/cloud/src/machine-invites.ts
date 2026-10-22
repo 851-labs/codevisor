@@ -17,9 +17,7 @@ const deviceHasCredential = async (
   userId: string,
   deviceId: string
 ): Promise<boolean> => {
-  const { results } = await env.DB.prepare("SELECT metadata FROM apikey WHERE reference_id = ?")
-    .bind(userId)
-    .all<{ metadata: string | null }>()
+  const { results } = await apiKeyMetadata(env, userId)
   return results.some((row) => {
     let value: unknown = row.metadata
     for (let depth = 0; depth < 2 && typeof value === "string"; depth += 1) {
@@ -48,15 +46,15 @@ machineInviteRoutes.post("/api/machine/invites", async (c) => {
   const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
   const expiresAt = now + INVITE_TTL_MS
   await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM machine_invite WHERE user_id = ? AND expires_at <= ?").bind(
+    c.env.DB.prepare(inviteSql.deleteExpired).bind(machine.userId, now),
+    c.env.DB.prepare(inviteSql.insert).bind(
+      await sha256Hex(token),
       machine.userId,
-      now
-    ),
-    c.env.DB.prepare(
-      `INSERT INTO machine_invite
-         (token_hash, user_id, created_by_device_id, created_by_name, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).bind(await sha256Hex(token), machine.userId, machine.deviceId, inviterName, now, expiresAt)
+      machine.deviceId,
+      inviterName,
+      now,
+      expiresAt
+    )
   ])
   c.header("Cache-Control", "no-store")
   return c.json({ token, expiresAt: new Date(expiresAt).toISOString() })
@@ -92,13 +90,9 @@ machineInviteRoutes.post(
       return c.json({ error: "invalid invite redemption" }, 400)
     }
     const now = Date.now()
-    const invite = await c.env.DB.prepare(
-      `UPDATE machine_invite SET redeemed_at = ?, redeemed_device_id = ?
-       WHERE token_hash = ? AND redeemed_at IS NULL AND expires_at > ?
-       RETURNING user_id, created_by_device_id, created_by_name`
-    )
+    const invite = await c.env.DB.prepare(inviteSql.redeem)
       .bind(now, body.deviceId, await sha256Hex(body.token), now)
-      .first<{ user_id: string; created_by_device_id: string; created_by_name: string }>()
+      .first<RedeemedInvite>()
     if (invite === null) {
       return c.json({ error: "This invite is invalid, expired, or already used." }, 401)
     }
@@ -121,3 +115,24 @@ machineInviteRoutes.post(
     return c.json({ key: created.key })
   }
 )
+
+interface RedeemedInvite {
+  user_id: string
+  created_by_device_id: string
+  created_by_name: string
+}
+
+const apiKeyMetadata = (env: CloudEnv, userId: string) =>
+  env.DB.prepare(apiKeyMetadataSql).bind(userId).all<{ metadata: string | null }>()
+
+const apiKeyMetadataSql = "SELECT metadata FROM apikey WHERE reference_id = ?"
+
+const inviteSql = {
+  deleteExpired: "DELETE FROM machine_invite WHERE user_id = ? AND expires_at <= ?",
+  insert: `INSERT INTO machine_invite
+         (token_hash, user_id, created_by_device_id, created_by_name, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+  redeem: `UPDATE machine_invite SET redeemed_at = ?, redeemed_device_id = ?
+       WHERE token_hash = ? AND redeemed_at IS NULL AND expires_at > ?
+       RETURNING user_id, created_by_device_id, created_by_name`
+}

@@ -49,16 +49,14 @@ export const createAuth = (env: CloudEnv) => {
         beforeDelete: async (user) => {
           await revokeAppleAuthorization(env, user.id)
           await env.DB.batch([
-            env.DB.prepare("DELETE FROM apikey WHERE reference_id = ?").bind(user.id),
-            env.DB.prepare("DELETE FROM device_code WHERE user_id = ?").bind(user.id),
-            env.DB.prepare(
-              "DELETE FROM verification WHERE value IN (SELECT token FROM session WHERE user_id = ?)"
-            ).bind(user.id)
+            env.DB.prepare(deleteUserSql.apiKeys).bind(user.id),
+            env.DB.prepare(deleteUserSql.deviceCodes).bind(user.id),
+            env.DB.prepare(deleteUserSql.verifications).bind(user.id)
           ])
           await env.USER_HUB.get(env.USER_HUB.idFromName(user.id)).deleteAccount()
         },
         afterDelete: async (user) => {
-          await env.DB.prepare("DELETE FROM apikey WHERE reference_id = ?").bind(user.id).run()
+          await env.DB.prepare(deleteUserSql.apiKeys).bind(user.id).run()
         }
       }
     },
@@ -88,4 +86,11 @@ export const createAuth = (env: CloudEnv) => {
       apiKey({ enableMetadata: true, rateLimit: { enabled: false } })
     ]
   })
+}
+
+const deleteUserSql = {
+  apiKeys: "DELETE FROM apikey WHERE reference_id = ?",
+  deviceCodes: "DELETE FROM device_code WHERE user_id = ?",
+  verifications:
+    "DELETE FROM verification WHERE value IN (SELECT token FROM session WHERE user_id = ?)"
 }

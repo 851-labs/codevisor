@@ -18,23 +18,7 @@ export const registerMachine = (
 ): number => {
   const generation = (machineRow(sql, deviceId)?.active_generation ?? 0) + 1
   sql.exec(
-    `INSERT INTO machines
-       (device_id, name, os, app_version, public_key, last_seen_at, active_generation, server_id,
-        peer_aware, tunnel_endpoint_id, reported_icon)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(device_id) DO UPDATE SET
-       name = excluded.name,
-       os = excluded.os,
-       reported_icon = excluded.reported_icon,
-       app_version = excluded.app_version,
-       public_key = excluded.public_key,
-       last_seen_at = excluded.last_seen_at,
-       active_generation = excluded.active_generation,
-       server_id = excluded.server_id,
-       peer_aware = excluded.peer_aware,
-       tunnel_addr = CASE WHEN tunnel_endpoint_id IS excluded.tunnel_endpoint_id
-         THEN tunnel_addr ELSE NULL END,
-       tunnel_endpoint_id = excluded.tunnel_endpoint_id`,
+    machineSql.register,
     deviceId,
     device.name,
     device.os ?? null,
@@ -62,10 +46,10 @@ export const updateHubMachine = (
 ): boolean => {
   if (machineRow(hub.sql, deviceId) === undefined) return false
   if (update.name !== undefined) {
-    hub.sql.exec("UPDATE machines SET display_name = ? WHERE device_id = ?", update.name, deviceId)
+    hub.sql.exec(machineSql.rename, update.name, deviceId)
   }
   if (update.icon !== undefined) {
-    hub.sql.exec("UPDATE machines SET icon = ? WHERE device_id = ?", update.icon, deviceId)
+    hub.sql.exec(machineSql.setIcon, update.icon, deviceId)
   }
   const row = machineRow(hub.sql, deviceId)
   if (row !== undefined) {
@@ -99,8 +83,8 @@ export const removeHubMachine = (
 ): boolean => {
   const existing = machineRow(hub.sql, deviceId)
   if (existing === undefined) return false
-  hub.sql.exec("DELETE FROM machines WHERE device_id = ?", deviceId)
-  hub.sql.exec("DELETE FROM machine_origins WHERE device_id = ?", deviceId)
+  hub.sql.exec(machineSql.delete, deviceId)
+  hub.sql.exec(machineOriginSql.delete, deviceId)
   for (const connectionId of hub.resume.deleteForMachineDevice(deviceId)) {
     hub.net.broadcastToPeerMachines({ t: "peer-gone", peerId: connectionId })
   }
@@ -119,14 +103,37 @@ export const recordMachineOrigin = (
   deviceId: string,
   addedBy: { readonly deviceId: string; readonly name: string }
 ): void => {
-  sql.exec(
-    `INSERT INTO machine_origins (device_id, added_by_device_id, added_by_name)
+  sql.exec(machineOriginSql.upsert, deviceId, addedBy.deviceId, addedBy.name)
+}
+
+const machineSql = {
+  register: `INSERT INTO machines
+       (device_id, name, os, app_version, public_key, last_seen_at, active_generation, server_id,
+        peer_aware, tunnel_endpoint_id, reported_icon)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(device_id) DO UPDATE SET
+       name = excluded.name,
+       os = excluded.os,
+       reported_icon = excluded.reported_icon,
+       app_version = excluded.app_version,
+       public_key = excluded.public_key,
+       last_seen_at = excluded.last_seen_at,
+       active_generation = excluded.active_generation,
+       server_id = excluded.server_id,
+       peer_aware = excluded.peer_aware,
+       tunnel_addr = CASE WHEN tunnel_endpoint_id IS excluded.tunnel_endpoint_id
+         THEN tunnel_addr ELSE NULL END,
+       tunnel_endpoint_id = excluded.tunnel_endpoint_id`,
+  rename: "UPDATE machines SET display_name = ? WHERE device_id = ?",
+  setIcon: "UPDATE machines SET icon = ? WHERE device_id = ?",
+  delete: "DELETE FROM machines WHERE device_id = ?"
+}
+
+const machineOriginSql = {
+  upsert: `INSERT INTO machine_origins (device_id, added_by_device_id, added_by_name)
      VALUES (?, ?, ?)
      ON CONFLICT(device_id) DO UPDATE SET
        added_by_device_id = excluded.added_by_device_id,
        added_by_name = excluded.added_by_name`,
-    deviceId,
-    addedBy.deviceId,
-    addedBy.name
-  )
+  delete: "DELETE FROM machine_origins WHERE device_id = ?"
 }

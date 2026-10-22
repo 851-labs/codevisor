@@ -79,17 +79,11 @@ export const SocketAttachment = z.object({
 })
 export type SocketAttachment = z.infer<typeof SocketAttachment>
 
-const MACHINE_SELECT = `SELECT machines.*, machine_origins.added_by_device_id,
-    machine_origins.added_by_name
-  FROM machines LEFT JOIN machine_origins USING (device_id)`
-
 export const machineRows = (sql: SqlStorage): MachineRow[] =>
-  sql
-    .exec<MachineRow>(`${MACHINE_SELECT} ORDER BY COALESCE(display_name, name), device_id`)
-    .toArray()
+  sql.exec<MachineRow>(machineSelectSql.all).toArray()
 
 export const machineRow = (sql: SqlStorage, deviceId: string): MachineRow | undefined =>
-  sql.exec<MachineRow>(`${MACHINE_SELECT} WHERE device_id = ?`, deviceId).toArray()[0]
+  sql.exec<MachineRow>(machineSelectSql.byDeviceId, deviceId).toArray()[0]
 
 export const machinePresence = (row: MachineRow, online: boolean): CloudMachinePresence => {
   const tunnel = machineTunnel(row.tunnel_endpoint_id, row.tunnel_addr)
@@ -110,4 +104,13 @@ export const machinePresence = (row: MachineRow, online: boolean): CloudMachineP
     online,
     lastSeenAt: row.last_seen_at
   }
+}
+
+const MACHINE_SELECT = `SELECT machines.*, machine_origins.added_by_device_id,
+    machine_origins.added_by_name
+  FROM machines LEFT JOIN machine_origins USING (device_id)`
+
+const machineSelectSql = {
+  all: `${MACHINE_SELECT} ORDER BY COALESCE(display_name, name), device_id`,
+  byDeviceId: `${MACHINE_SELECT} WHERE device_id = ?`
 }

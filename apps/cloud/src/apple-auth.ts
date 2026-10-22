@@ -69,12 +69,7 @@ export const appleUserInfo = async (
   suppliedName?: { firstName?: unknown; lastName?: unknown }
 ) => {
   if (typeof payload.sub !== "string" || !payload.sub) return null
-  const existing = await env.DB.prepare(
-    `SELECT u.email, u.name, u.email_verified FROM account a
-       JOIN user u ON u.id = a.user_id WHERE a.provider_id = 'apple' AND a.account_id = ?`
-  )
-    .bind(payload.sub)
-    .first<{ email: string; name: string; email_verified: number }>()
+  const existing = await appleAccountUser(env, payload)
   const email = typeof payload.email === "string" ? payload.email : existing?.email
   if (!email) return null
   const name = [suppliedName?.firstName, suppliedName?.lastName]
@@ -127,11 +122,7 @@ export const exchangeNativeAppleCode = async (env: CloudEnv, code: string, nonce
 }
 
 export const revokeAppleAuthorization = async (env: CloudEnv, userId: string): Promise<void> => {
-  const { results } = await env.DB.prepare(
-    "SELECT refresh_token, access_token, id_token FROM account WHERE user_id = ? AND provider_id = 'apple'"
-  )
-    .bind(userId)
-    .all<{ refresh_token: string | null; access_token: string | null; id_token: string | null }>()
+  const { results } = await appleAccountTokens(env, userId)
   for (const account of results) {
     const token = account.refresh_token ?? account.access_token
     if (!token) throw new Error("Sign in with Apple again before deleting your account")
@@ -156,4 +147,21 @@ export const revokeAppleAuthorization = async (env: CloudEnv, userId: string): P
     if (!response.ok) throw new Error("Apple authorization could not be revoked. Please try again.")
     await response.body?.cancel()
   }
+}
+
+const appleAccountUser = (env: CloudEnv, payload: JWTPayload) =>
+  env.DB.prepare(appleAccountSql.user)
+    .bind(payload.sub)
+    .first<{ email: string; name: string; email_verified: number }>()
+
+const appleAccountTokens = (env: CloudEnv, userId: string) =>
+  env.DB.prepare(appleAccountSql.tokens)
+    .bind(userId)
+    .all<{ refresh_token: string | null; access_token: string | null; id_token: string | null }>()
+
+const appleAccountSql = {
+  user: `SELECT u.email, u.name, u.email_verified FROM account a
+       JOIN user u ON u.id = a.user_id WHERE a.provider_id = 'apple' AND a.account_id = ?`,
+  tokens:
+    "SELECT refresh_token, access_token, id_token FROM account WHERE user_id = ? AND provider_id = 'apple'"
 }

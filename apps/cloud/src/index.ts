@@ -205,14 +205,10 @@ const removeMachine = async (
   deviceId: string,
   cf: unknown
 ): Promise<boolean> => {
-  const { results } = await env.DB.prepare("SELECT id, metadata FROM apikey WHERE reference_id = ?")
-    .bind(userId)
-    .all<{ id: string; metadata: string | null }>()
+  const { results } = await userApiKeys(env, userId)
   const revoked = results.filter((row) => metadataDeviceId(row.metadata) === deviceId)
   if (revoked.length > 0) {
-    await env.DB.batch(
-      revoked.map((row) => env.DB.prepare("DELETE FROM apikey WHERE id = ?").bind(row.id))
-    )
+    await env.DB.batch(revoked.map((row) => env.DB.prepare(apiKeySql.delete).bind(row.id)))
   }
   await forgetTunnelEndpoints(env, userId, deviceId)
   return userHub(env, userId, cf).removeMachine(deviceId)
@@ -338,3 +334,11 @@ const worker = {
 } satisfies ExportedHandler<CloudEnv>
 
 export default worker
+
+const userApiKeys = (env: CloudEnv, userId: string) =>
+  env.DB.prepare(apiKeySql.byUser).bind(userId).all<{ id: string; metadata: string | null }>()
+
+const apiKeySql = {
+  byUser: "SELECT id, metadata FROM apikey WHERE reference_id = ?",
+  delete: "DELETE FROM apikey WHERE id = ?"
+}
