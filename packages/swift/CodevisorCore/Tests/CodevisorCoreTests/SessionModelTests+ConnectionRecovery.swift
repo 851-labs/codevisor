@@ -208,7 +208,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString)
     defer { model.shutdown() }
     await model.loadHistoryForInitialDisplay()
-    #expect(await model.loadTranscriptDetails(itemId: itemId))
+    #expect(await model.transcriptDetails.load(itemId: itemId))
 
     page.eventCursor = 3
     page.items[0].revision = 3
@@ -243,7 +243,7 @@ extension SessionModelTests {
     await model.loadHistoryForInitialDisplay()
     #expect(client.transcriptDetailRequestCount == 0)
     #expect(model.serverEventCursor == 2)
-    #expect(await model.loadTranscriptDetails(itemId: page.items[0].id) == false)
+    #expect(await model.transcriptDetails.load(itemId: page.items[0].id) == false)
     client.transcriptDetailsByItem[page.items[0].id] = ServerTranscriptItemDetails(
       itemId: page.items[0].id, revision: 2, eventCursor: 2,
       entries: [
@@ -252,7 +252,7 @@ extension SessionModelTests {
           payload: toolCallEnvelope(id: 2, sessionId: sessionId, toolCallId: "historical-tool", status: "completed")
             .payload)
       ])
-    #expect(await model.loadTranscriptDetails(itemId: page.items[0].id))
+    #expect(await model.transcriptDetails.load(itemId: page.items[0].id))
     guard case let .assistant(message) = model.activeItem else {
       Issue.record("Expected recovered active turn"); return
     }

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ACPKit
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -27,7 +28,7 @@ extension SessionModelTests {
       configOptions: [option]
     )
 
-    let update = Task { await model.setConfigOption(configId: "model", value: "large") }
+    let update = Task { await model.configuration.set(configId: "model", value: "large") }
     await settleUntil { !client.configUpdates.isEmpty }
 
     #expect(client.configUpdates.count == 1)
@@ -61,10 +62,67 @@ extension SessionModelTests {
       configOptions: [option]
     )
 
-    let accepted = await model.setConfigOption(configId: "effort", value: "xhigh")
+    let accepted = await model.configuration.set(configId: "effort", value: "xhigh")
 
     #expect(!accepted)
     #expect(model.configOptions.first?.currentValue == "low")
+  }
+
+  @Test("The catalog the server returns for a pick replaces the session's options")
+  func serverResolvedConfigCatalog() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let resolved = [modelOption(current: "large"), effortOption(current: "high")]
+    client.configUpdateReplies.handler = { _, _ in resolved }
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString,
+      configOptions: [modelOption(current: "small")]
+    )
+
+    #expect(await model.configuration.set(configId: "model", value: "large"))
+
+    #expect(model.configOptions == resolved)
+  }
+
+  @Test("A superseded pick's reply neither replaces the options nor ends the newer pick")
+  func supersededConfigPick() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let (firstGate, releaseFirst) = AsyncStream.makeStream(of: Void.self)
+    let (secondGate, releaseSecond) = AsyncStream.makeStream(of: Void.self)
+    let firstArrived = TestSignal()
+    let secondArrived = TestSignal()
+    client.configUpdateReplies.handler = { _, value in
+      guard value == "large" else {
+        secondArrived.signal()
+        for await _ in secondGate { break }
+        return nil
+      }
+      firstArrived.signal()
+      for await _ in firstGate { break }
+      return [modelOption(current: "large")]
+    }
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString,
+      configOptions: [modelOption(current: "small")]
+    )
+    let first = Task { await model.configuration.set(configId: "model", value: "large") }
+    await firstArrived.wait()
+    let second = Task { await model.configuration.set(configId: "model", value: "medium") }
+    await secondArrived.wait()
+
+    releaseFirst.finish()
+    #expect(await first.value)
+    #expect(model.configOptions.first?.currentValue == "medium")
+    model.applyRuntimeMetadata(modeState: nil, configOptions: [modelOption(current: "small")])
+    #expect(model.configOptions.first?.currentValue == "medium")
+
+    releaseSecond.finish()
+    #expect(await second.value)
+    model.applyRuntimeMetadata(modeState: nil, configOptions: [modelOption(current: "small")])
+    #expect(model.configOptions.first?.currentValue == "small")
   }
 
   @Test("History paints the persisted answer and loads tools only on disclosure")
@@ -95,7 +153,7 @@ extension SessionModelTests {
     #expect(model.conversation.count == 2)
     #expect(userMessages(model).first?.text == "edit the file")
     #expect(client.transcriptDetailRequestCount == 0)
-    #expect(await model.loadTranscriptDetails(itemId: assistantId.uuidString))
+    #expect(await model.transcriptDetails.load(itemId: assistantId.uuidString))
     guard case let .assistant(assistant) = model.conversation.last else { Issue.record("expected assistant"); return }
     #expect(assistant.turn.toolCalls.count == 1)
     #expect(assistant.turn.toolCalls.first?.diffStats?.first?.added == 3)
@@ -247,4 +305,16 @@ extension SessionModelTests {
 
     #expect(model.availableSkills == latest)
   }
+}
+
+private func modelOption(current: String) -> SessionConfigOption {
+  SessionConfigOption(
+    id: "model", name: "Model", category: "model", currentValue: current,
+    options: ["small", "medium", "large"].map { SessionConfigSelectOption(value: $0, name: $0.capitalized) })
+}
+
+private func effortOption(current: String) -> SessionConfigOption {
+  SessionConfigOption(
+    id: "effort", name: "Reasoning", category: "thought_level", currentValue: current,
+    options: ["low", "high"].map { SessionConfigSelectOption(value: $0, name: $0.capitalized) })
 }

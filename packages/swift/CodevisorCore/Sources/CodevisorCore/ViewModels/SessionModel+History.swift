@@ -58,7 +58,7 @@ extension SessionModel {
         guard historyPaging.olderPageCursor == cursor, conversation.first?.id == anchor else { continue }
         let existing = Set(conversation.map(\.id))
         let unique = page.conversation
-          .map(restoringCachedTranscriptDetails)
+          .map(transcriptDetails.restoringCachedDetails)
           .filter {
             $0.hasRenderableTranscriptContent && !existing.contains($0.id)
           }

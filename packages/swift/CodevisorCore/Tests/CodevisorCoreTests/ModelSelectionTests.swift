@@ -276,7 +276,7 @@ struct ModelSelectionTests {
       configOptions: catalog(currentModel: "gpt-5.5").configOptions
     )
 
-    let pick = Task { await model.setConfigOption(configId: "model", value: "gpt-5.6") }
+    let pick = Task { await model.configuration.set(configId: "model", value: "gpt-5.6") }
     await awaitObserved { !client.configUpdates.isEmpty }
     model.apply(.update(.configOptionUpdate(catalog(currentModel: "gpt-5.5").configOptions)))
     #expect(model.configOptions.first?.currentValue == "gpt-5.6")

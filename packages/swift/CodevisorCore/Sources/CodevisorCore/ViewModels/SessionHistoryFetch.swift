@@ -34,7 +34,7 @@ struct SessionHistoryFetch {
 
   private func hydrated(_ details: DeferredDetails) async throws -> ConversationItem {
     let (_, events) = try await transport.transcriptDetailEvents(itemId: details.itemID)
-    let turn = SessionModel.hydratedTranscriptTurn(details.message, events: events)
+    let turn = TranscriptDetailsLoader.hydratedTurn(details.message.turn, events: events)
     return .assistant(AssistantMessage(id: details.message.id, turn: turn))
   }
 

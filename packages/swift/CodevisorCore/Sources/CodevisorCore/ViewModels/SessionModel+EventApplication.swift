@@ -231,7 +231,7 @@ extension SessionModel {
 
   private func applyConfigOptions(_ options: [SessionConfigOption]) {
     guard isReplayingHistory else {
-      configOptions = preservingInFlightPicks(options)
+      configuration.adoptLive(options)
       return
     }
 
@@ -296,7 +296,7 @@ extension SessionModel {
     TranscriptReducer.apply(update, to: &message.turn)
     setItem(.assistant(message), at: index)
     updateRoutes.record(update, owner: message.id, conversation: conversation)
-    loadDeferredTranscriptDetails(of: message)
+    transcriptDetails.loadDeferred(of: message)
     return true
   }
 

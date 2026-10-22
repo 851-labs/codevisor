@@ -323,7 +323,7 @@ extension SessionModelTests {
 
     await model(client, sessionId: sessionId) { model in
       await model.loadHistoryForInitialDisplay()
-      #expect(await model.loadTranscriptDetails(itemId: itemId.uuidString))
+      #expect(await model.transcriptDetails.load(itemId: itemId.uuidString))
       guard case let .assistant(message) = model.conversation.last else {
         Issue.record("expected assistant")
         return

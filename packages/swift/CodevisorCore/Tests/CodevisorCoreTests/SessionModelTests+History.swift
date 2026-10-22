@@ -364,7 +364,7 @@ extension SessionModelTests {
     #expect(client.transcriptPageRequests.last?.limit == 16)
     #expect(await model.loadOlderHistory() == 0)
 
-    #expect(await model.loadTranscriptDetails(itemId: assistantId.uuidString))
+    #expect(await model.transcriptDetails.load(itemId: assistantId.uuidString))
     guard case let .assistant(message) = model.conversation.last else {
       Issue.record("expected hydrated assistant")
       return

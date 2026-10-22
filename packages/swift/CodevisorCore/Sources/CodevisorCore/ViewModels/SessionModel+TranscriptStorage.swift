@@ -42,7 +42,7 @@ extension SessionModel {
     pendingOptimisticUserMessageIDs.removeAll()
     let items =
       items
-      .map(restoringCachedTranscriptDetails)
+      .map(transcriptDetails.restoringCachedDetails)
       .map(carryingLiveTurnState)
       .filter(\.hasRenderableTranscriptContent)
     if case .assistant = items.last {
@@ -114,15 +114,6 @@ extension SessionModel {
     } else if index == settledConversation.count, activeItem != nil {
       activeItem = item
     }
-  }
-
-  func restoringCachedTranscriptDetails(_ item: ConversationItem) -> ConversationItem {
-    guard case let .assistant(message) = item,
-      let itemId = message.turn.deferredDetailItemId,
-      let cached = transcriptDetailsCache[itemId],
-      cached.revision == message.turn.detailRevision
-    else { return item }
-    return .assistant(AssistantMessage(id: message.id, turn: cached.turn))
   }
 
   var itemCount: Int {

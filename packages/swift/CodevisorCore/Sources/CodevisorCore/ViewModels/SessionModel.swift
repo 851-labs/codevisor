@@ -2,11 +2,6 @@ import Foundation
 import Observation
 import ACPKit
 
-struct TranscriptDetailsCacheEntry {
-  let revision: Int
-  let turn: AssistantTurn
-}
-
 @MainActor
 @Observable
 public final class SessionModel {
@@ -116,9 +111,11 @@ public final class SessionModel {
   public internal(set) var availableCommands: [AvailableCommand] = []
   public internal(set) var availableSkills: SessionSkills?
   public internal(set) var modeState: SessionModeState?
-  public internal(set) var configOptions: [SessionConfigOption]
-  @ObservationIgnored var configMutationRevisions: [String: UInt64] = [:]
-  @ObservationIgnored var inFlightConfigValues: [String: String] = [:]
+  let configuration: SessionConfigOptions
+  public internal(set) var configOptions: [SessionConfigOption] {
+    get { configuration.options }
+    set { configuration.options = newValue }
+  }
   public internal(set) var errorMessage: String? {
     didSet {
       if errorMessage != oldValue { transcriptProjectionRevision &+= 1 }
@@ -144,8 +141,7 @@ public final class SessionModel {
   let historyPaging = SessionHistoryPaging()
   public var hasOlderHistory: Bool { historyPaging.hasOlderPages }
   public var isLoadingOlderHistory: Bool { historyPaging.isLoadingOlderPage }
-  @ObservationIgnored var transcriptDetailsCache: [String: TranscriptDetailsCacheEntry] = [:]
-  @ObservationIgnored var transcriptDetailLoadTasks: [String: Task<Bool, Never>] = [:]
+  let transcriptDetails: TranscriptDetailsLoader
   @ObservationIgnored var settledIndexById: [UUID: Int] = [:]
 
   public var waitingBackgroundTasks: [BackgroundTaskInfo] {
@@ -214,7 +210,8 @@ public final class SessionModel {
     self.promptQueue = SessionPromptQueue(transport: serverTransport)
     self.sessionId = sessionId
     self.modeState = modeState
-    self.configOptions = configOptions
+    self.configuration = SessionConfigOptions(options: configOptions, transport: serverTransport)
+    self.transcriptDetails = TranscriptDetailsLoader(transport: serverTransport)
     self.now = now
     self.stalledTurnWatch = SessionStalledTurnWatch(scheduler: quietTurnScheduler)
     self.connectionRecovery = SessionConnectionRecovery(
@@ -227,6 +224,7 @@ public final class SessionModel {
       delay: connectionRecoveryStatusDelay, now: connectionRecoveryScheduler.now,
       sleep: connectionRecoveryScheduler.sleep)
     connectionRecovery.model = self
+    transcriptDetails.model = self
     streamReconnectNotice.onVisibilityChange = { [weak self] isVisible in
       self?.connectionRecovery.streamReconnectNoticeChanged(isVisible: isVisible)
     }
@@ -236,6 +234,14 @@ public final class SessionModel {
     promptQueue.onFailure = { [weak self] error in
       self?.errorMessage = serverErrorMessage(error)
     }
+    configuration.onFailure = { [weak self] error in
+      self?.errorMessage = serverErrorMessage(error)
+    }
+  }
+
+  public func applyRuntimeMetadata(modeState: SessionModeState?, configOptions: [SessionConfigOption]) {
+    if let modeState { self.modeState = modeState }
+    if !configOptions.isEmpty { configuration.adoptLive(configOptions) }
   }
 
   @ObservationIgnored var appliedUpdateCount = 0
@@ -303,7 +309,7 @@ public final class SessionModel {
 
     showHistory(page, preservingContent: preservingContent)
     await followLiveStream(preservingContent: preservingContent)
-    restoreActiveTranscriptDetails()
+    transcriptDetails.restoreActive(in: conversation)
   }
 
   private func showHistory(_ page: TranscriptHistoryPage, preservingContent: Bool) {

@@ -43,7 +43,7 @@ struct TranscriptContentContractTests {
     defer { model.shutdown(); release.finish() }
     await model.loadHistoryForInitialDisplay()
     let before = model.conversation
-    let loading = Task { await model.loadTranscriptDetails(itemId: itemID) }
+    let loading = Task { await model.transcriptDetails.load(itemId: itemID) }
     await waiting.wait()
     #expect(model.conversation == before)
     release.finish()
@@ -54,7 +54,7 @@ struct TranscriptContentContractTests {
     #expect(!message.turn.hasDeferredWorkedDetails)
     #expect(message.turn.hasHydratedWorkedDetails)
     #expect(client.transcriptDetailCursors == [nil, "32", "64", "96", "128"])
-    #expect(await model.loadTranscriptDetails(itemId: itemID))
+    #expect(await model.transcriptDetails.load(itemId: itemID))
     #expect(client.transcriptDetailRequestCount == 5)
   }
 
@@ -83,15 +83,40 @@ struct TranscriptContentContractTests {
       serverTransport: .init(client: client, sessionId: sessionID), sessionId: sessionID.uuidString)
     defer { model.shutdown() }
     await model.loadHistoryForInitialDisplay()
-    for id in ids { #expect(await model.loadTranscriptDetails(itemId: id)) }
+    for id in ids { #expect(await model.transcriptDetails.load(itemId: id)) }
     for item in model.conversation {
       guard case let .assistant(message) = item else { continue }
       #expect(message.turn.toolCalls.count == 1)
       #expect(message.turn.hasHydratedWorkedDetails)
       #expect(!message.turn.hasDeferredWorkedDetails)
     }
-    #expect(await model.loadTranscriptDetails(itemId: ids[0]))
+    #expect(await model.transcriptDetails.load(itemId: ids[0]))
     #expect(client.transcriptDetailRequestCount == ids.count)
+  }
+
+  @Test func detailsCachedForAnOlderRevisionAreFetchedAgain() async {
+    let sessionID = UUID()
+    let itemUUID = UUID()
+    let itemID = itemUUID.uuidString
+    let client = FakeSessionServerClient(sessionId: sessionID)
+    var item = transcriptStateItem(id: itemUUID, sessionId: sessionID, text: "Answer", hasDetails: true)
+    client.initialTranscriptPage = ServerTranscriptPage(items: [item], hasMore: false, eventCursor: 1)
+    client.transcriptDetailsByItem[itemID] = readDetails(itemID: itemID, revision: 1, toolCallID: "first-read")
+    let model = SessionModel(
+      serverTransport: .init(client: client, sessionId: sessionID), sessionId: sessionID.uuidString)
+    defer { model.shutdown() }
+    await model.loadHistoryForInitialDisplay()
+    #expect(await model.transcriptDetails.load(itemId: itemID))
+
+    item.revision = 2
+    client.initialTranscriptPage = ServerTranscriptPage(items: [item], hasMore: false, eventCursor: 2)
+    client.transcriptDetailsByItem[itemID] = readDetails(itemID: itemID, revision: 2, toolCallID: "second-read")
+    await model.loadHistoryForInitialDisplay()
+    #expect(await model.transcriptDetails.load(itemId: itemID))
+
+    #expect(client.transcriptDetailRequestCount == 2)
+    guard case let .assistant(message) = model.conversation.first else { Issue.record("Missing turn"); return }
+    #expect(message.turn.toolCalls.map(\.toolCallId) == ["second-read"])
   }
 
   @Test func longTextLoadsCompletelyBeforeItsHistoryPageIsPublished() async throws {
@@ -202,4 +227,17 @@ struct TranscriptContentContractTests {
         "position": position, "text": text, "revision": revision, "encoding": "text",
       ]))
   }
+}
+
+private func readDetails(itemID: String, revision: Int, toolCallID: String) -> ServerTranscriptItemDetails {
+  ServerTranscriptItemDetails(
+    itemId: itemID, revision: revision, eventCursor: revision,
+    entries: [
+      ServerTranscriptEntry(
+        key: "tool:read", position: 0, revision: revision,
+        payload: .object([
+          "sessionUpdate": .string("tool_call"), "toolCallId": .string(toolCallID),
+          "title": .string("Read source"), "status": .string("completed"),
+        ]))
+    ])
 }

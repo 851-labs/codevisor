@@ -124,7 +124,7 @@ extension SessionController {
 
   @discardableResult
   public func loadTranscriptDetails(_ itemId: String) async -> Bool {
-    await model?.loadTranscriptDetails(itemId: itemId) ?? false
+    await model?.transcriptDetails.load(itemId: itemId) ?? false
   }
 
   public func transcriptBodyPage(

@@ -242,7 +242,7 @@ extension SessionController {
     var accepted = true
     if let model, !isConnectingToHarness, let harnessId {
       pendingConfiguration.stage(value, for: configId, in: harnessId)
-      accepted = await model.setConfigOption(configId: configId, value: value)
+      accepted = await model.configuration.set(configId: configId, value: value)
       pendingConfiguration.clearAppliedValue(value, for: configId, in: harnessId)
       if let connectedHarnessId, !model.configOptions.isEmpty {
         configOptionsByHarness[connectedHarnessId] = model.configOptions

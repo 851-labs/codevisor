@@ -111,7 +111,7 @@ final class PendingSessionConfiguration {
         continue
       }
       appliedAny = true
-      await model.setConfigOption(configId: configId, value: value)
+      await model.configuration.set(configId: configId, value: value)
       clearAppliedValue(value, for: configId, in: harnessId)
     }
     for (configId, value) in pendingConfig where supportedPendingConfig[configId] == nil {

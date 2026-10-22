@@ -25,9 +25,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _promptedClientIds: [String?] = []
   private var _promptGate: AsyncStream<Void>?
   private var _cancelCount = 0
-  private var _configUpdates: [(String, String)] = []
-  private var _configUpdateGate: AsyncStream<Void>?
-  private var _nextConfigUpdateShouldFail = false
   private var _eventSinceValues: [Int] = []
   private var _sessionEventSinceValues: [Int] = []
   private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
@@ -61,6 +58,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
   var transcriptDetailHandler: (@Sendable (String, String?) async throws -> ServerTranscriptItemDetails)?
+  let configUpdateReplies = FakeConfigUpdates()
   var transcriptBodyHandler: (@Sendable (String, String, String, Int) async throws -> ServerTranscriptBodyPage)?
   private var _transcriptBodyRequests: [Int] = []
   var transcriptBodyRequests: [Int] { lock.withLock { _transcriptBodyRequests } }
@@ -139,15 +137,15 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   }
 
   var configUpdates: [(String, String)] {
-    lock.withLock { _configUpdates }
+    configUpdateReplies.recorded
   }
 
   func holdConfigUpdates(until gate: AsyncStream<Void>) {
-    lock.withLock { _configUpdateGate = gate }
+    configUpdateReplies.hold(until: gate)
   }
 
   func failNextConfigUpdate() {
-    lock.withLock { _nextConfigUpdateShouldFail = true }
+    configUpdateReplies.failNext()
   }
 
   var eventSinceValues: [Int] {
@@ -467,19 +465,24 @@ extension FakeSessionServerClient {
   }
 
   func setSessionConfig(id: UUID, configId: String, value: String) async throws {
-    let (gate, shouldFail) = lock.withLock {
-      _runtimeRequests.append("config:\(configId):\(value)")
-      _configUpdates.append((configId, value))
-      let shouldFail = _nextConfigUpdateShouldFail
-      _nextConfigUpdateShouldFail = false
-      return (_configUpdateGate, shouldFail)
-    }
-    if let gate {
+    lock.withLock { _runtimeRequests.append("config:\(configId):\(value)") }
+    let update = configUpdateReplies.record(configId: configId, value: value)
+    if let gate = update.gate {
       for await _ in gate { break }
     }
-    if shouldFail {
+    if update.fails {
       throw CodevisorServerClientError.invalidResponse
     }
+  }
+
+  func setSessionConfigAndReturnOptions(
+    id: UUID, configId: String, value: String
+  ) async throws -> [SessionConfigOption]? {
+    if let handler = configUpdateReplies.handler {
+      return try await handler(configId, value)
+    }
+    try await setSessionConfig(id: id, configId: configId, value: value)
+    return nil
   }
 
   @discardableResult
