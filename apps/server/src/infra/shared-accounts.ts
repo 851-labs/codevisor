@@ -1,57 +1,31 @@
-import { randomUUID } from "node:crypto"
-import { homedir } from "node:os"
-import { join } from "node:path"
+import { resolveShellEnv } from "@codevisor/agent-runtime"
+import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { HarnessAuthManager, SharedCredentialVault } from "@codevisor/harness-manager"
 
-import { resolveShellEnv, type HarnessAccountContext } from "@codevisor/agent-runtime"
-import { isoTimestamp, type HarnessAccount } from "@codevisor/api"
-import type { CodevisorDatabaseService, HarnessAccountRecord } from "@codevisor/db"
-import {
-  removeAntigravityAuth,
-  removeMuseAuth,
-  SharedCredentialError,
-  sharedApiKey,
-  sharedOAuthIdentity
-} from "@codevisor/harness-manager"
-import type {
-  HarnessAuthManager,
-  SharedCredentialVault,
-  SharedOAuthHarness,
-  SharedTokenBundle
-} from "@codevisor/harness-manager"
-import { Effect } from "effect"
-
-import { makeClaudeLoginTakeover, type MachineClaudeLogin } from "./claude-login-takeover.js"
-import { sharedAccountContext } from "./shared-account-context.js"
-import { machineLoginReplacesDeadGrant } from "./shared-account-dead-grants.js"
+import type { MachineClaudeLogin } from "./claude-login-takeover.js"
+import { makeSharedAccountCredentials } from "./shared-account-credentials.js"
+import { makeSharedAccountImports } from "./shared-account-imports.js"
+import { makeSharedAccountLifecycle } from "./shared-account-lifecycle.js"
+import { makeLocalAccountRows } from "./shared-account-local-rows.js"
 import { SharedAccountLocalState } from "./shared-account-local-state.js"
 import {
   makeClaudeProfileLogins,
   type ForgetProfileLogin
 } from "./shared-account-profile-logins.js"
+import { makeSharedAccountReconcile } from "./shared-account-reconcile.js"
+import { makeSharedAccountRoster } from "./shared-account-roster.js"
 import {
   discoverNativeAccount,
   forgetNativeProfileLogin,
   nativeClaudeMachine,
   sharedAccountVault
 } from "./shared-account-storage.js"
-import {
-  makeSharedAccountStore,
-  sharedAccountFor,
-  sharedHarness,
-  type SharedHarnessAccount
-} from "./shared-account-store.js"
+import { makeSharedAccountStore } from "./shared-account-store.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
 import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 
-const run = Effect.runPromise
-const FILE_GRANTS = new Set(["muse-code", "antigravity"])
-const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
-  const { profileKey: _key, createdAt: _created, updatedAt: _updated, ...account } = record
-  return account
-}
-
-export const makeSharedAccounts = (options: {
+export interface SharedAccountsOptions {
   readonly db: CodevisorDatabaseService
   readonly auth: HarnessAuthManager
   readonly dataDir: string
@@ -63,17 +37,14 @@ export const makeSharedAccounts = (options: {
   readonly forgetProfileLogin?: ForgetProfileLogin
   readonly claudeMachine?: (env: NodeJS.ProcessEnv) => MachineClaudeLogin
   readonly openCode2?: OpenCode2Deps
-}) => {
+}
+
+export const makeSharedAccounts = (options: SharedAccountsOptions) => {
   const { db, auth, dataDir, serverId } = options
   const store = makeSharedAccountStore(db, serverId)
   const vault = options.vault ?? sharedAccountVault(dataDir)
   const environment = options.environment ?? resolveShellEnv
-  const providers = makeSharedProviderAccounts({
-    ...options,
-    store,
-    vault,
-    environment
-  })
+  const providers = makeSharedProviderAccounts({ ...options, store, vault, environment })
   const discover = options.discover ?? discoverNativeAccount
   const claudeMachine = options.claudeMachine ?? nativeClaudeMachine(dataDir)
   const localState = new SharedAccountLocalState(db, serverId)
@@ -84,317 +55,59 @@ export const makeSharedAccounts = (options: {
     environment,
     forget: options.forgetProfileLogin ?? forgetNativeProfileLogin
   })
-  let reconciling: Promise<void> | undefined
-  const resolve = async (id: string) => store.get(await localState.resolveAlias(id))
-  const token = async (id: string, rejected?: string) => {
-    const account = await resolve(id)
-    if (!account?.credential || (await localState.isDisabled(account.id)))
-      throw new SharedCredentialError("revoked")
-    return vault.token(account.credential, rejected)
-  }
-  const gateway = makeSharedClaudeGateway({ token })
-  const saveLocal = async (account: SharedHarnessAccount, adopted?: SharedTokenBundle) => {
-    const existing = await run(db.getHarnessAccount(account.id))
-    const live = adopted !== undefined && adopted.expiresAt > Date.now() + 30_000
-    return run(
-      db.saveHarnessAccount({
-        id: account.id,
-        harnessId: account.harnessId,
-        profileKind: "managed",
-        profileKey: account.id,
-        label: account.label,
-        ...(account.email ? { email: account.email } : {}),
-        ...(account.organizationId ? { organizationId: account.organizationId } : {}),
-        authMethod: existing?.authMethod ?? adopted?.authMethod ?? "oauth",
-        authState: existing?.authState ?? (live ? "authenticated" : "checking"),
-        canLogin: true,
-        canLogout: existing?.canLogout ?? account.credential !== undefined,
-        ...(existing?.detail ? { detail: existing.detail } : {})
-      })
-    )
-  }
-  const applySelection = async (harnessId: string) => {
-    const selected = await store.selected(harnessId, true)
-    if (!selected) return
-    const rows = await run(db.listHarnessAccounts(harnessId))
-    if (
-      !rows.some((row) => row.id === selected) ||
-      rows.some((row) => row.id === selected && row.isActive)
-    )
-      return
-    await run(db.setActiveHarnessAccount(harnessId, selected))
-    for (const previous of rows.filter(
-      (row) =>
-        row.id !== selected && (harnessId === "claude-code" || row.authState !== "authenticated")
-    )) {
-      if (harnessId === "codex" && (await localState.hasAlias(previous.id))) continue
-      await run(db.rebindHarnessAccountSessions(previous.id, selected))
-    }
-  }
-  const importBundle = async (
-    bundle: SharedTokenBundle,
-    nativeId?: string,
-    explicit = false,
-    label?: string
-  ) => {
-    const id = sharedOAuthIdentity(bundle)
-    const previous = await store.get(id)
-    explicit ||= !!(
-      bundle.refreshToken &&
-      bundle.ownership === "managed" &&
-      previous?.sourceMachineId
-    )
-    const tombstone = (await store.entries()).some((entry) => entry.key === id && entry.deleted)
-    if (tombstone && !explicit) return undefined
-    if (!explicit && (await machineLoginReplacesDeadGrant(vault, bundle, previous))) {
-      console.error(`Using this machine's ${bundle.harnessId} login: the synced sign-in expired`)
-      explicit = true
-    }
-    if (previous?.credential && !explicit) {
-      if (bundle.ownership === "external") await vault.publishExternal(previous.credential, bundle)
-    } else {
-      const credential = await vault.create(bundle)
-      if (previous?.credential) await vault.revoke(previous.credential)
-      await store.save(sharedAccountFor(bundle, credential, previous, serverId, label))
-    }
-    const saved = (await store.get(id))!
-    await saveLocal(saved, previous?.credential && !explicit ? undefined : bundle)
-    await linkNative(nativeId, saved)
-    return saved
-  }
-  const linkNative = async (nativeId: string | undefined, account: SharedHarnessAccount) => {
-    if (!nativeId || nativeId === account.id) return
-    await localState.setAlias(nativeId, account.id)
-    if (account.harnessId === "claude-code")
-      await run(db.rebindHarnessAccountSessions(nativeId, account.id))
-  }
-  const claudeTakeover = makeClaudeLoginTakeover({
+
+  const credentials = makeSharedAccountCredentials({ db, store, vault, localState })
+  const gateway = makeSharedClaudeGateway({ token: credentials.token })
+  const localRows = makeLocalAccountRows({ db, store, localState })
+  const imports = makeSharedAccountImports({
+    db,
+    store,
     vault,
+    localState,
+    localRows,
+    profileLogins,
+    dataDir,
+    serverId,
+    environment,
+    discover,
+    claudeMachine,
+    probe: credentials.probe
+  })
+  const reconcile = makeSharedAccountReconcile({
+    db,
     store,
     localState,
-    record: async ({ login, credential, previous }, nativeId) => {
-      await store.save(sharedAccountFor(login, credential, previous, serverId))
-      const saved = (await store.get(sharedOAuthIdentity(login)))!
-      await saveLocal(saved, login)
-      await linkNative(nativeId, saved)
-      await probe(saved.id)
-    },
-    log: (line) => console.error(line),
-    platform: process.platform
+    localRows,
+    imports,
+    profileLogins,
+    providers,
+    environment,
+    discover
   })
-  const nativeBundle = async (account: HarnessAccountRecord, managed: boolean) => {
-    if (!sharedHarness(account.harnessId) || account.profileKind !== "managed") return undefined
-    const path = join(
-      dataDir,
-      "harness-profiles",
-      account.harnessId,
-      account.profileKey ?? account.id
-    )
-    return discover(account.harnessId, path, false, managed, await environment())
-  }
+  const roster = makeSharedAccountRoster({
+    db,
+    store,
+    vault,
+    localState,
+    localRows,
+    credentials,
+    reconcile
+  })
+  const lifecycle = makeSharedAccountLifecycle({
+    db,
+    auth,
+    store,
+    vault,
+    localState,
+    localRows,
+    credentials,
+    profileLogins,
+    gateway,
+    dataDir,
+    environment,
+    options
+  })
 
-  const captureLogin = async (id: string) => {
-    const row = await run(db.getHarnessAccount(id))
-    const target = await localState.loginTarget(id)
-    if (!row || target === undefined) return
-    const bundle = await nativeBundle(row, true)
-    if (!bundle || (!bundle.refreshToken && !FILE_GRANTS.has(bundle.harnessId)))
-      throw new Error("Sign-in could not be saved. Try signing in again.")
-    const account = (await importBundle(bundle, id, true, row.label))!
-    if (bundle.harnessId === "claude-code") await profileLogins.afterCapture(row)
-    if (
-      target !== account.id &&
-      target.startsWith("shared-") &&
-      !(await store.get(target))?.credential
-    )
-      await store.remove(target)
-    await localState.setAlias(target, account.id)
-    await localState.setDisabled(account.id, false)
-    await localState.completeLogin(id, target)
-    await applySelection(bundle.harnessId)
-  }
-  const adoptClaudeMachineLogin = async (env: NodeJS.ProcessEnv, nativeId: string | undefined) => {
-    const machine = claudeMachine(env)
-    const login = await machine.read()
-    if (login?.authMethod === "apiKey") await importBundle(login, nativeId)
-    else await claudeTakeover.run(machine, login, nativeId)
-  }
-  const reconcile = (): Promise<void> => {
-    reconciling ??= (async () => {
-      for (const harnessId of ["claude-code", "codex"] as const) {
-        const env = await environment()
-        try {
-          const rows = await run(db.listHarnessAccounts(harnessId))
-          const nativeId = rows.find((row) => row.profileKind === "default")?.id
-          if (harnessId === "claude-code") await adoptClaudeMachineLogin(env, nativeId)
-          else {
-            const directory = env.CODEX_HOME ?? join(env.HOME ?? homedir(), ".codex")
-            const bundle = await discover(harnessId, directory, true, false, env)
-            if (bundle) await importBundle(bundle, nativeId)
-          }
-          for (const row of rows.filter(
-            (candidate) =>
-              candidate.profileKind === "managed" &&
-              !candidate.id.startsWith("shared-") &&
-              !localState.isCapturingLogin(candidate.id)
-          )) {
-            if (await localState.hasAlias(row.id)) continue
-            if ((await localState.loginTarget(row.id)) !== undefined) {
-              const saved = await nativeBundle(row, true)
-              if (saved?.refreshToken) await captureLogin(row.id)
-              continue
-            }
-            const existing = await nativeBundle(row, true)
-            if (existing) await importBundle(existing, row.id, false, row.label)
-          }
-        } catch {}
-      }
-      try {
-        for (const row of await run(db.listHarnessAccounts("antigravity"))) {
-          if (
-            row.profileKind !== "managed" ||
-            row.id.startsWith("shared-") ||
-            localState.isCapturingLogin(row.id) ||
-            (await localState.hasAlias(row.id)) ||
-            (await localState.loginTarget(row.id)) !== undefined
-          )
-            continue
-          const existing = await nativeBundle(row, true)
-          if (existing) await importBundle(existing, row.id, false, row.label)
-        }
-      } catch {}
-      await profileLogins.sweepOnce()
-      for (const account of await store.accounts()) await saveLocal(account)
-      for (const harnessId of ["claude-code", "codex", "muse-code", "antigravity"])
-        await applySelection(harnessId)
-      await providers.reconcile()
-    })().finally(() => {
-      reconciling = undefined
-    })
-    return reconciling
-  }
-  const probe = async (id: string, shared = false): Promise<HarnessAccount | undefined> => {
-    if (localState.isCapturingLogin(id)) return undefined
-    if (await localState.isLoginPending(id)) {
-      const update = {
-        authState: "checking" as const,
-        canLogin: true,
-        canLogout: false,
-        detail: null
-      }
-      return publicAccount(await run(db.updateHarnessAccountAuth(id, update)))
-    }
-    const account = await resolve(id)
-    const native = await run(db.getHarnessAccount(id))
-    if (!account && native && !sharedHarness(native.harnessId)) return undefined
-    if (!account && !id.startsWith("shared-")) return undefined
-    let detail: string | null = null
-    let authMethod: "oauth" | "apiKey" = "oauth"
-    let authState: "authenticated" | "expired" | "unauthenticated" = "authenticated"
-    try {
-      const bundle =
-        shared && account?.credential ? await vault.token(account.credential) : await token(id)
-      authMethod = bundle.authMethod ?? "oauth"
-    } catch (cause) {
-      authState = account?.credential ? "expired" : "unauthenticated"
-      detail =
-        cause instanceof SharedCredentialError
-          ? cause.message
-          : "Account sync is unavailable. Try again."
-    }
-    const existing = await run(db.getHarnessAccount(id))
-    if (!existing) return undefined
-    if (shared) {
-      const { detail: _detail, ...value } = publicAccount(existing)
-      return {
-        ...value,
-        authState,
-        authMethod,
-        canLogin: true,
-        canLogout: authState === "authenticated",
-        ...(detail ? { detail } : {})
-      }
-    }
-    return publicAccount(
-      await run(
-        db.updateHarnessAccountAuth(id, {
-          authState,
-          authMethod,
-          detail,
-          canLogin: true,
-          canLogout: authState === "authenticated",
-          lastCheckedAt: isoTimestamp()
-        })
-      )
-    )
-  }
-  const storedAccounts = async (
-    harnessId: SharedOAuthHarness
-  ): Promise<ReadonlyArray<HarnessAccount>> => {
-    const sharedIds = new Set((await store.accounts()).map((account) => account.id))
-    const rows: HarnessAccount[] = []
-    for (const row of await run(db.listHarnessAccounts(harnessId))) {
-      if (row.id.startsWith("shared-")) {
-        if (!sharedIds.has(row.id)) continue
-      } else if (localState.isCapturingLogin(row.id) || (await localState.hasAlias(row.id)))
-        continue
-      rows.push(publicAccount(row))
-    }
-    return rows
-  }
-  const accounts = async (
-    harnessId: string,
-    shared = false
-  ): Promise<ReadonlyArray<HarnessAccount> | undefined> => {
-    if (!sharedHarness(harnessId)) return undefined
-    await reconcile()
-    const selected = await store.selected(harnessId, !shared)
-    const selectionScope =
-      !shared &&
-      ((await store.overridden(harnessId)) || (selected && (await localState.isDisabled(selected))))
-        ? "machine"
-        : "shared"
-    const rows: HarnessAccount[] = []
-    for (const account of await store.accounts()) {
-      if (account.harnessId !== harnessId) continue
-      const value = await probe(account.id, shared)
-      if (value)
-        rows.push({
-          ...value,
-          isActive: account.id === selected,
-          selectionScope
-        })
-    }
-    if (!shared)
-      for (const row of await storedAccounts(harnessId)) {
-        if (!row.id.startsWith("shared-")) rows.push(row)
-      }
-    return rows
-  }
-  const activate = async (harnessId: string, id: string, shared = false): Promise<boolean> => {
-    const account = await resolve(id)
-    if (!account) return false
-    if (account.harnessId !== harnessId) throw new Error("Account belongs to another harness")
-    if (!account.credential) throw new Error("Sign in to this account first")
-    await vault.token(account.credential)
-    await localState.setDisabled(account.id, false)
-    if (!shared && account.id === (await store.selected(harnessId, false)))
-      await store.inherit(harnessId)
-    else await store.select(harnessId, account.id, !shared)
-    await applySelection(harnessId)
-    await probe(account.id)
-    return true
-  }
-  const create = async (harnessId: SharedOAuthHarness, label?: string) => {
-    const account: SharedHarnessAccount = {
-      id: `shared-${randomUUID()}`,
-      harnessId,
-      label: label?.trim() || "New Account",
-      createdAt: Date.now()
-    }
-    await store.save(account)
-    return publicAccount(await saveLocal(account))
-  }
   return {
     store,
     providers,
@@ -403,89 +116,23 @@ export const makeSharedAccounts = (options: {
       vault.invalidate()
       await reconcile()
     },
-    probe,
-    accounts,
-    storedAccounts: async (harnessId: string) =>
-      sharedHarness(harnessId) ? storedAccounts(harnessId) : undefined,
-    activate,
+    probe: credentials.probe,
+    accounts: roster.accounts,
+    storedAccounts: roster.storedAccounts,
+    activate: roster.activate,
     gateway,
     subscribe: store.subscribe,
-    create,
-    saveApiKey: async (id: string, key: string): Promise<void> => {
-      const row = await run(db.getHarnessAccount(id))
-      if (!row || !sharedHarness(row.harnessId) || !key.trim()) throw new Error("Enter an API key")
-      const account = (await importBundle(
-        sharedApiKey(row.harnessId, key.trim()),
-        id,
-        true,
-        row.label
-      ))!
-      if (id.startsWith("shared-") && account.id !== id && !(await store.get(id))?.credential)
-        await store.remove(id)
-      await applySelection(row.harnessId)
-    },
-    prepareLogin: async (id: string, method?: string): Promise<string> => {
-      const row = await run(db.getHarnessAccount(id))
-      if (!row || !sharedHarness(row.harnessId) || method === "apiKey") return id
-      const fresh = await auth.createAccount(row.harnessId, row.label)
-      await localState.prepareLogin(fresh.id, id)
-      return fresh.id
-    },
-    loginFailed: (id: string) => localState.cancelLogin(id),
-    notice: claudeTakeover.notice,
-    subscribeNotices: claudeTakeover.subscribe,
-    captureLogin,
-    context: async (id: string): Promise<HarnessAccountContext | undefined> => {
-      const account = await resolve(id)
-      if (!account) {
-        const native = await run(db.getHarnessAccount(id))
-        if (id.startsWith("shared-") && (!native || sharedHarness(native.harnessId)))
-          throw new SharedCredentialError("revoked")
-        return undefined
-      }
-      const bundle = await token(id)
-      if (account.harnessId === "claude-code") await profileLogins.beforeSession(account.id)
-      return sharedAccountContext(
-        {
-          dataDir,
-          baseUrl: options.baseUrl,
-          environment,
-          token,
-          gateway,
-          record: (recordId) => run(db.getHarnessAccount(recordId))
-        },
-        account,
-        id,
-        bundle
-      )
-    },
-    logout: async (id: string, shared = false): Promise<HarnessAccount | undefined> => {
-      const account = await resolve(id)
-      if (!account) return undefined
-      if (shared) {
-        if (account.credential) await vault.revoke(account.credential)
-        await store.remove(account.id)
-      } else await localState.setDisabled(account.id, true)
-      gateway.forget(account.id)
-      if (account.harnessId === "muse-code")
-        await removeMuseAuth(join(dataDir, "harness-profiles", "muse-code", account.id))
-      if (account.harnessId === "antigravity")
-        await removeAntigravityAuth(join(dataDir, "harness-profiles", "antigravity", account.id))
-      return probe(account.id)
-    },
-    rename: async (id: string, label: string) => {
-      const account = await resolve(id)
-      if (!account) throw new Error("Account not found")
-      await store.save({ ...account, label: label.trim() || account.label })
-      await saveLocal({ ...account, label: label.trim() || account.label })
-      return probe(account.id)
-    },
-    inherit: async (harnessId: string) => {
-      await store.inherit(harnessId)
-      for (const account of await store.accounts())
-        if (account.harnessId === harnessId) await localState.setDisabled(account.id, false)
-      await applySelection(harnessId)
-    }
+    create: lifecycle.create,
+    saveApiKey: imports.saveApiKey,
+    prepareLogin: lifecycle.prepareLogin,
+    loginFailed: lifecycle.loginFailed,
+    notice: imports.takeover.notice,
+    subscribeNotices: imports.takeover.subscribe,
+    captureLogin: imports.captureLogin,
+    context: lifecycle.context,
+    logout: lifecycle.logout,
+    rename: lifecycle.rename,
+    inherit: roster.inherit
   }
 }
 

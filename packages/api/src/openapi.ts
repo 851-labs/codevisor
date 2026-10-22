@@ -1,6 +1,6 @@
 import type { Schema } from "effect"
 
-import { EventEnvelope, GitDiffMode, TerminalClientFrame, TerminalServerFrame } from "./index.js"
+import { EventEnvelope, TerminalClientFrame, TerminalServerFrame } from "./index.js"
 import {
   accepted,
   created,
@@ -10,6 +10,7 @@ import {
   websocketEndpoints,
   type Endpoint
 } from "./openapi-endpoints.js"
+import { queryParameters } from "./openapi-query-parameters.js"
 import { jsonSchema, requestSchemas, responseSchemas, type JsonObject } from "./openapi-schemas.js"
 
 export { endpoints } from "./openapi-endpoints.js"
@@ -69,118 +70,6 @@ const pathParameters = (path: string): ReadonlyArray<JsonObject> =>
     required: true,
     schema: { type: "string" }
   }))
-
-const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
-  if (endpoint === "GET /v1/capabilities") {
-    return [
-      { name: "cwd", in: "query", schema: { type: "string" } },
-      { name: "harnessId", in: "query", schema: { type: "string" } }
-    ]
-  }
-  if (endpoint === "GET /v1/plugins/registry") {
-    return [{ name: "q", in: "query", schema: { type: "string" } }]
-  }
-  if (endpoint === "GET /v1/sessions/:id/transcript") {
-    return [
-      {
-        name: "before",
-        in: "query",
-        description: "Opaque nextBefore or nextAfter cursor from a transcript page.",
-        schema: { type: "string" }
-      },
-      {
-        name: "limit",
-        in: "query",
-        schema: { type: "integer", minimum: 1, maximum: 64, default: 32 }
-      }
-    ]
-  }
-  if (endpoint === "GET /v1/sessions/:id/transcript/:itemId/details") {
-    return [
-      {
-        name: "after",
-        in: "query",
-        description:
-          "Opaque nextAfter or previousBefore cursor, or latest to open the newest details.",
-        schema: { type: "string" }
-      }
-    ]
-  }
-  if (endpoint === "GET /v1/sessions/:id/transcript/:itemId/body") {
-    return [
-      { name: "key", in: "query", required: true, schema: { type: "string" } },
-      { name: "field", in: "query", required: true, schema: { type: "string" } },
-      { name: "position", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }
-    ]
-  }
-  if (endpoint === "GET /v1/fs/git/diff") {
-    return [
-      { name: "path", in: "query", required: true, schema: { type: "string" } },
-      {
-        name: "mode",
-        in: "query",
-        required: true,
-        schema: { type: "string", enum: [...GitDiffMode.literals] }
-      },
-      {
-        name: "base",
-        in: "query",
-        description: "Branch mode's base ref; defaults to the repository's default branch.",
-        schema: { type: "string" }
-      },
-      {
-        name: "revision",
-        in: "query",
-        description: "A previous response's revision; when still current, files are not resent.",
-        schema: { type: "string" }
-      }
-    ]
-  }
-  if (endpoint === "GET /v1/fs/git/refs" || endpoint === "GET /v1/fs/git/pull-request") {
-    return [{ name: "path", in: "query", required: true, schema: { type: "string" } }]
-  }
-  if (endpoint === "GET /v1/workspaces/:workspaceId/git") {
-    return [
-      {
-        name: "pullRequest",
-        in: "query",
-        description: "Also look up the branch's GitHub pull request.",
-        schema: { type: "boolean" }
-      }
-    ]
-  }
-  if (
-    endpoint === "GET /v1/workspaces/:workspaceId/photos" ||
-    endpoint === "GET /v1/workspaces/:workspaceId/media" ||
-    endpoint === "GET /v1/workspaces/:workspaceId/links"
-  ) {
-    return [
-      {
-        name: "before",
-        in: "query",
-        description: "Opaque nextBefore cursor from a previous page.",
-        schema: { type: "string" }
-      },
-      { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200 } }
-    ]
-  }
-  if (endpoint === "GET /v1/files/:id") {
-    return [{ name: "preview", in: "query", schema: { type: "string", enum: ["1"] } }]
-  }
-  if (endpoint === "POST /v1/files") {
-    return [{ name: "name", in: "query", schema: { type: "string", default: "attachment" } }]
-  }
-  if (endpoint === "GET /v1/terminals/:id/socket") {
-    return [{ name: "lastOutputSeq", in: "query", schema: { type: "integer", minimum: 0 } }]
-  }
-  if (endpoint === "GET /v1/events/socket" || endpoint === "GET /v1/sessions/:id/events/socket") {
-    return [{ name: "since", in: "query", schema: { type: "integer", minimum: 0 } }]
-  }
-  if (endpoint === "GET /v1/events") {
-    return [{ name: "since", in: "query", schema: { type: "integer", minimum: 0 } }]
-  }
-  return []
-}
 
 const successStatusFor = (endpoint: Endpoint, isWebSocket: boolean): string =>
   noContent.has(endpoint)

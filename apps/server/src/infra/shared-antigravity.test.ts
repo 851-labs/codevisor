@@ -100,6 +100,22 @@ describe("Antigravity account sync", () => {
     ).rejects.toMatchObject({ code: "ENOENT" })
   })
 
+  it("leaves a sign-in interrupted by a restart to its capture instead of adopting it early", async () => {
+    const a = await fleet().machine("a")
+    const placeholder = await a.shared.create("antigravity")
+    const fresh = await a.shared.prepareLogin(placeholder.id)
+    a.setBundle(signIn)
+    const restarted = a.restart()
+    const ids = async () =>
+      (await restarted.accounts("antigravity", true))!.map((account) => account.id)
+
+    await restarted.reconcile()
+    expect(await ids()).toEqual([placeholder.id])
+
+    await restarted.captureLogin(fresh)
+    expect(await ids()).toEqual([sharedOAuthIdentity(signIn)])
+  })
+
   it("brings an account signed in before sync into the fleet, keeping its conversations", async () => {
     const f = fleet(),
       a = await f.machine("a"),
