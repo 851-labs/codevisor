@@ -41,7 +41,7 @@ struct MachineControllerDataUpgradeTests {
     #expect(row.machineId == remote.id)
 
     await clock.waitForSleep(.seconds(2))
-    #expect(connection.preparationFailures == 0)
+    #expect(connection.preparation.failures == 0)
 
     clock.advance(by: .seconds(2))
     try await waitUntil { connection.status?.isReachable == true }

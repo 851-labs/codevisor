@@ -193,7 +193,7 @@ private final class Client {
   }
 
   func shutdown(serverId: String) async {
-    let stream = machine.connection(for: serverId).eventSyncTask
+    let stream = machine.connection(for: serverId).navigationSync.eventStreamTask
     machine.stopEventSync()
     await stream?.value
   }

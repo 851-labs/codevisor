@@ -28,7 +28,7 @@ struct NavigationEventRecoveryTests {
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.centerTabs == fixture.workspace.centerTabs)
     #expect(fixture.fake.workspaceSnapshotCallCount == 1)
     await clock.waitForSleep(.seconds(2))
-    let firstRetry = try #require(connection.navigationRetryTask)
+    let firstRetry = try #require(connection.navigationSync.retryTask)
     clock.advance(by: .seconds(2))
     await firstRetry.value
     #expect(fixture.fake.workspaceSnapshotCallCount == 2)
@@ -40,14 +40,14 @@ struct NavigationEventRecoveryTests {
     await clock.waitForSleep(.seconds(4))
     let snapshot = fixture.archivedSnapshot()
     fixture.fake.workspaceSnapshotHandler = { snapshot }
-    let secondRetry = try #require(connection.navigationRetryTask)
+    let secondRetry = try #require(connection.navigationSync.retryTask)
     clock.advance(by: .seconds(4))
     await secondRetry.value
 
     #expect(connection.navigationSyncState == .current)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
     #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) == other)
-    #expect(connection.navigationRetryTask == nil)
+    #expect(connection.navigationSync.retryTask == nil)
     await fixture.stop()
     #expect(clock.pendingCount == 0)
   }
@@ -74,13 +74,13 @@ struct NavigationEventRecoveryTests {
     await clock.waitForSleep(.seconds(2))
     let snapshot = fixture.archivedSnapshot()
     fixture.fake.workspaceSnapshotHandler = { snapshot }
-    let retry = try #require(connection.navigationRetryTask)
+    let retry = try #require(connection.navigationSync.retryTask)
     clock.advance(by: .seconds(2))
     await retry.value
 
     #expect(connection.navigationSyncState == .current)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
-    #expect(connection.navigationRetryTask == nil)
+    #expect(connection.navigationSync.retryTask == nil)
     await fixture.stop()
     #expect(clock.pendingCount == 0)
   }
@@ -99,7 +99,7 @@ struct NavigationEventRecoveryTests {
       payload: fixture.payload(isArchived: true, name: fixture.workspace.name))
 
     await clock.waitForSleep(.milliseconds(300))
-    let refresh = try #require(fixture.controller.connection(for: fixture.serverId).pendingRefreshTask)
+    let refresh = try #require(fixture.controller.connection(for: fixture.serverId).navigationSync.pendingRefreshTask)
     clock.advance(by: .milliseconds(300))
     await refresh.value
     #expect(fixture.store.hasCache(for: fixture.serverId))
@@ -120,12 +120,12 @@ struct NavigationEventRecoveryTests {
     fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
     await handled.wait()
     let connection = fixture.controller.connection(for: fixture.serverId)
-    let stream = try #require(connection.eventSyncTask)
+    let stream = try #require(connection.navigationSync.eventStreamTask)
     fixture.fake.finishEventStreams(throwing: fails ? URLError(.networkConnectionLost) : nil)
     await stream.value
 
     await clock.waitForSleep(.seconds(2))
-    let retry = try #require(connection.navigationRetryTask)
+    let retry = try #require(connection.navigationSync.retryTask)
     clock.advance(by: .seconds(2))
     await retry.value
     fixture.fake.emit(kind: "plugin.updated", subjectId: "reconnected-barrier")
@@ -146,7 +146,7 @@ struct NavigationEventRecoveryTests {
       serverId: fixture.serverId, client: fixture.fake, presentation: .background
     )
     await clock.waitForSleep(.seconds(2))
-    let retry = try #require(fixture.controller.connection(for: fixture.serverId).navigationRetryTask)
+    let retry = try #require(fixture.controller.connection(for: fixture.serverId).navigationSync.retryTask)
     fixture.controller.removeConnection(for: fixture.serverId)
     await retry.value
     clock.advance(by: .seconds(60))
@@ -187,7 +187,7 @@ struct NavigationEventRecoveryTests {
     clock.advance(by: .seconds(30))
     await clock.waitForSleep(.seconds(2))
     let connection = fixture.controller.connection(for: fixture.serverId)
-    let retry = try #require(connection.navigationRetryTask)
+    let retry = try #require(connection.navigationSync.retryTask)
     clock.advance(by: .seconds(2))
     await retry.value
     #expect(connection.navigationSyncState == .current)

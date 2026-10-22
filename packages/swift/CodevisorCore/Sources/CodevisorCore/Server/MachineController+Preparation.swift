@@ -4,7 +4,7 @@ extension MachineController {
   public func prepareMachine(_ machineId: String) async {
     guard let machine = machine(for: machineId) else { return }
     let connection = connection(for: machineId)
-    if let preparationTask = connection.preparationTask {
+    if let preparationTask = connection.preparation.task {
       await preparationTask.value
       return
     }
@@ -15,9 +15,9 @@ extension MachineController {
         client: self.client(for: machineId)
       )
     }
-    connection.preparationTask = task
+    connection.preparation.task = task
     await task.value
-    connection.preparationTask = nil
+    connection.preparation.task = nil
   }
 
   public func prepareAllMachines() async {

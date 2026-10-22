@@ -53,7 +53,7 @@ struct MachineNavigationRefreshTests {
     await blocked.wait()
     await clock.waitForSleep(.seconds(5))
     await awaitObserved { controller.navigationSyncStateByMachineId["cloud:healthy"] == .current }
-    let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
+    let operation = try #require(controller.connection(for: "local").navigationSync.manualRefresh?.task)
 
     #expect(healthy.snapshots.value == 1)
     clock.advance(by: .milliseconds(4999))
@@ -68,7 +68,7 @@ struct MachineNavigationRefreshTests {
     release.signal()
     await operation.value
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
-    #expect(controller.connection(for: "local").manualNavigationRefresh == nil)
+    #expect(controller.connection(for: "local").navigationSync.manualRefresh == nil)
   }
 
   @Test("An unreachable machine is retried but never holds the gesture while a ready one finishes")
@@ -89,7 +89,7 @@ struct MachineNavigationRefreshTests {
     #expect(controller.navigationSyncStateByMachineId["cloud:healthy"] == .current)
     #expect(clock.pendingCount == 0)
 
-    let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
+    let operation = try #require(controller.connection(for: "local").navigationSync.manualRefresh?.task)
     await client.probes.wait()
     #expect(controller.navigationSyncStateByMachineId["local"] != .current)
     release.signal()
@@ -111,7 +111,7 @@ struct MachineNavigationRefreshTests {
 
     await controller.refreshNavigation(sleep: clock.sleep)
     #expect(clock.pendingCount == 0)
-    let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
+    let operation = try #require(controller.connection(for: "local").navigationSync.manualRefresh?.task)
     await client.probes.wait()
     release.signal()
     await operation.value
@@ -136,8 +136,8 @@ struct MachineNavigationRefreshTests {
       await clock.waitForSleep(.seconds(5), count: pull)
       await client.snapshots.wait()
       await healthy.snapshots.wait(for: pull)
-      await controller.connection(for: "cloud:healthy").manualNavigationRefresh?.task?.value
-      let operation = controller.connection(for: "local").manualNavigationRefresh
+      await controller.connection(for: "cloud:healthy").navigationSync.manualRefresh?.task?.value
+      let operation = controller.connection(for: "local").navigationSync.manualRefresh
       if pull == 1 { firstOperation = operation }
       #expect(operation === firstOperation)
       clock.advance(by: .seconds(5))
@@ -164,7 +164,7 @@ struct MachineNavigationRefreshTests {
     let second = Task { await controller.refreshNavigation(sleep: clock.sleep) }
     await client.snapshots.wait()
     await clock.waitForSleep(.seconds(5), count: 2)
-    let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
+    let operation = try #require(controller.connection(for: "local").navigationSync.manualRefresh?.task)
 
     first.cancel()
     await first.value
@@ -177,6 +177,28 @@ struct MachineNavigationRefreshTests {
     release.signal()
     await operation.value
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
+  }
+
+  @Test("Stopping sync cancels a refresh that a stalled machine is holding")
+  func stopSyncCancelsStalledRefresh() async throws {
+    let clock = TestClock()
+    let release = TestSignal()
+    let client = ManualRefreshClient(snapshot: { await release.wait() })
+    let controller = try makeController(local: client)
+    defer { release.signal() }
+    let gesture = Task { await controller.refreshNavigation(sleep: clock.sleep) }
+    await client.snapshots.wait()
+    await clock.waitForSleep(.seconds(5))
+    let operation = try #require(controller.connection(for: "local").navigationSync.manualRefresh?.task)
+
+    controller.stopEventSync()
+
+    #expect(operation.isCancelled)
+    #expect(controller.connection(for: "local").navigationSync.manualRefresh == nil)
+    release.signal()
+    await operation.value
+    await gesture.value
+    #expect(clock.pendingCount == 0)
   }
 
   @Test("Refresh joins an existing preparation without waiting on it")
@@ -193,7 +215,7 @@ struct MachineNavigationRefreshTests {
     await client.probes.wait()
     await controller.refreshNavigation(sleep: clock.sleep)
     #expect(clock.pendingCount == 0)
-    let operation = controller.connection(for: "local").manualNavigationRefresh?.task
+    let operation = controller.connection(for: "local").navigationSync.manualRefresh?.task
     #expect(client.probes.value == 1)
     #expect(client.snapshots.value == 0)
     release.signal()

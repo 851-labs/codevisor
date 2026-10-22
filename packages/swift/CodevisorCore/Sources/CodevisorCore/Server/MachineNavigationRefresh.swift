@@ -25,18 +25,18 @@ extension MachineController {
 
   private func manualRefresh(for machineId: String) -> MachineNavigationRefresh {
     let connection = connection(for: machineId)
-    if let existing = connection.manualNavigationRefresh { return existing }
+    if let existing = connection.navigationSync.manualRefresh { return existing }
     let refresh = MachineNavigationRefresh()
-    connection.manualNavigationRefresh = refresh
+    connection.navigationSync.manualRefresh = refresh
     refresh.task = Task { [weak self] in
       defer {
         refresh.finish()
-        if connection.manualNavigationRefresh === refresh {
-          connection.manualNavigationRefresh = nil
+        if connection.navigationSync.manualRefresh === refresh {
+          connection.navigationSync.manualRefresh = nil
         }
       }
       guard let self, !Task.isCancelled else { return }
-      if let preparation = connection.preparationTask {
+      if let preparation = connection.preparation.task {
         await preparation.value
       } else if case .failed = connection.availability {
         await self.prepareMachine(machineId)

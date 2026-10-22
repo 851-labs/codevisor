@@ -7,29 +7,12 @@ public final class MachineConnection {
   public let machineId: String
 
   public internal(set) var status: MachineStatus?
-  public internal(set) var updateInfo: ServerUpdateInfo?
-  public internal(set) var restartDrain: ServerRestartDrainState?
   public internal(set) var availability: ServerAvailability?
-  public internal(set) var navigationSyncState: NavigationSyncState?
-  public internal(set) var updatePhase: ServerUpdatePhase = .idle
-  public internal(set) var updateStatusMessage: String?
-  public internal(set) var updateProgress: Double?
-  public internal(set) var dataUpgradeProgress: ServerMigrationProgress?
   public internal(set) var reportedIcon: String?
 
-  @ObservationIgnored var eventSyncTask: Task<Void, Never>?
-  @ObservationIgnored var backgroundConnectInFlight = false
-  @ObservationIgnored var preparationTask: Task<Void, Never>?
-  @ObservationIgnored var navigationSyncToken: UUID?
-  @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
-
-  @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
-  @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
-  @ObservationIgnored var navigationRetryTask: Task<Void, Never>?
-  @ObservationIgnored var navigationFailures = 0
-  @ObservationIgnored var preparationRetryTask: Task<Void, Never>?
-  @ObservationIgnored var preparationFailures = 0
-
+  let navigationSync = MachineNavigationSync()
+  let serverUpdate = ServerUpdateState()
+  let preparation = MachinePreparation()
   let reconnectNotice: DelayedConnectionNotice
 
   init(machineId: String, reconnectNotice: DelayedConnectionNotice) {
@@ -37,66 +20,80 @@ public final class MachineConnection {
     self.reconnectNotice = reconnectNotice
   }
 
-  var isWaitingForCatchUp: Bool {
-    navigationSyncTask == nil && navigationSyncState == .catchingUp
+  public internal(set) var navigationSyncState: NavigationSyncState? {
+    get { navigationSync.state }
+    set { navigationSync.state = newValue }
   }
 
-  func beginNavigationCatchUp() {
-    if navigationSyncState == nil || navigationSyncState == .cached {
-      navigationSyncState = .catchingUp
-    }
+  public internal(set) var updateInfo: ServerUpdateInfo? {
+    get { serverUpdate.info }
+    set { serverUpdate.info = newValue }
   }
 
-  func loadRestartDrain(from client: any CodevisorServerClienting) async {
-    guard let drain = try? await client.restartDrainState(), !Task.isCancelled else { return }
-
-    restartDrain = drain
+  public internal(set) var restartDrain: ServerRestartDrainState? {
+    get { serverUpdate.restartDrain }
+    set { serverUpdate.restartDrain = newValue }
   }
 
-  func beginNavigationSync(_ task: Task<Void, Never>) -> UUID {
-    navigationSyncTask?.cancel()
-    let token = UUID()
-    navigationSyncToken = token
-    navigationSyncTask = task
-    return token
+  public internal(set) var updatePhase: ServerUpdatePhase {
+    get { serverUpdate.phase }
+    set { serverUpdate.phase = newValue }
   }
 
-  func isRunningNavigationSync(_ token: UUID) -> Bool {
-    navigationSyncToken == token
+  public internal(set) var updateStatusMessage: String? {
+    get { serverUpdate.statusMessage }
+    set { serverUpdate.statusMessage = newValue }
   }
 
-  func finishNavigationSync(_ token: UUID) {
-    guard isRunningNavigationSync(token) else { return }
-
-    endNavigationSync()
+  public internal(set) var updateProgress: Double? {
+    get { serverUpdate.progress }
+    set { serverUpdate.progress = newValue }
   }
 
-  func endNavigationSync() {
-    navigationSyncToken = nil
-    navigationSyncTask = nil
+  public internal(set) var dataUpgradeProgress: ServerMigrationProgress? {
+    get { serverUpdate.dataUpgradeProgress }
+    set { serverUpdate.dataUpgradeProgress = newValue }
   }
 
-  func markNavigationCurrent() {
-    navigationSyncState = .current
-    navigationFailures = 0
-    navigationRetryTask?.cancel()
-    navigationRetryTask = nil
+  var isIdle: Bool {
+    navigationSync.eventStreamTask == nil
+      && preparation.task == nil
+      && !preparation.backgroundConnectInFlight
+  }
+
+  func beginWaiting(_ reason: ServerWaitingReason) {
+    navigationSync.stopSyncing()
+    preparation.cancelRetry()
+    availability = .waiting(reason)
+    reconnectNotice.update(isActive: true)
+    navigationSync.beginCatchUp()
+  }
+
+  func markReady() {
+    availability = .ready
+    reconnectNotice.update(isActive: false)
+    preparation.resetRetries()
+  }
+
+  func markFailed(_ message: String) {
+    availability = .failed(message)
+    reconnectNotice.update(isActive: true)
+    navigationSyncState = .stale(message)
   }
 
   func cancelSyncWork() {
-    manualNavigationRefresh?.cancel()
-    manualNavigationRefresh = nil
-    eventSyncTask?.cancel()
-    eventSyncTask = nil
-    pendingRefreshTask?.cancel()
-    pendingRefreshTask = nil
-    navigationRetryTask?.cancel()
-    navigationRetryTask = nil
-    navigationSyncTask?.cancel()
-    navigationSyncTask = nil
-    navigationSyncToken = nil
-    preparationRetryTask?.cancel()
-    preparationRetryTask = nil
+    navigationSync.cancelAll()
+    preparation.cancelRetry()
+  }
+
+  func cancelAllWork() {
+    navigationSync.manualRefresh?.cancel()
+    navigationSync.eventStreamTask?.cancel()
+    preparation.task?.cancel()
+    navigationSync.task?.cancel()
+    navigationSync.pendingRefreshTask?.cancel()
+    navigationSync.retryTask?.cancel()
+    preparation.retryTask?.cancel()
   }
 }
 
@@ -114,49 +111,22 @@ extension MachineController {
   }
 
   func removeConnection(for machineId: String) {
-    connectionsById[machineId]?.manualNavigationRefresh?.cancel()
-    connectionsById[machineId]?.eventSyncTask?.cancel()
-    connectionsById[machineId]?.preparationTask?.cancel()
-    connectionsById[machineId]?.navigationSyncTask?.cancel()
-    connectionsById[machineId]?.pendingRefreshTask?.cancel()
-    connectionsById[machineId]?.navigationRetryTask?.cancel()
-    connectionsById[machineId]?.preparationRetryTask?.cancel()
+    connectionsById[machineId]?.cancelAllWork()
     connectionsById[machineId] = nil
   }
 
   func beginWaiting(for machineId: String, reason: ServerWaitingReason) {
-    let connection = connection(for: machineId)
-    connection.navigationSyncTask?.cancel()
-    connection.navigationSyncToken = nil
-    connection.navigationSyncTask = nil
-    connection.pendingRefreshTask?.cancel()
-    connection.pendingRefreshTask = nil
-    connection.navigationRetryTask?.cancel()
-    connection.navigationRetryTask = nil
-    stopEventSync(for: machineId)
-    connection.preparationRetryTask?.cancel()
-    connection.preparationRetryTask = nil
-    connection.availability = .waiting(reason)
-    connection.reconnectNotice.update(isActive: true)
-    connection.beginNavigationCatchUp()
+    connection(for: machineId).beginWaiting(reason)
     requestGate.beginWaiting(for: machineId)
   }
 
   func markReady(for machineId: String) {
-    let connection = connection(for: machineId)
-    connection.availability = .ready
-    connection.reconnectNotice.update(isActive: false)
-    connection.preparationRetryTask?.cancel()
-    connection.preparationRetryTask = nil
-    connection.preparationFailures = 0
+    connection(for: machineId).markReady()
     requestGate.markReady(for: machineId)
   }
 
   func markFailed(for machineId: String, message: String) {
-    let connection = connection(for: machineId)
-    connection.availability = .failed(message)
-    connection.reconnectNotice.update(isActive: true)
-    connection.navigationSyncState = .stale(message)
+    connection(for: machineId).markFailed(message)
     requestGate.markFailed(for: machineId, message: message)
   }
 
@@ -167,21 +137,15 @@ extension MachineController {
 
   func schedulePreparationRetry(for machineId: String, delay override: Duration? = nil) {
     let connection = connection(for: machineId)
-    connection.preparationRetryTask?.cancel()
-    let delay: Duration
-    if let override {
-      delay = override
-    } else {
-      connection.preparationFailures += 1
-      delay = preparationRetryBaseDelay * min(60, 1 << min(connection.preparationFailures, 6))
-    }
+    connection.preparation.retryTask?.cancel()
+    let delay = override ?? connection.preparation.nextRetryDelay(base: preparationRetryBaseDelay)
     let sleep = preparationSleep
-    connection.preparationRetryTask = Task { [weak self] in
+    connection.preparation.retryTask = Task { [weak self] in
       try? await sleep(delay)
       guard let self, !Task.isCancelled else { return }
-      connection.preparationRetryTask = nil
+      connection.preparation.retryTask = nil
       guard self.machine(for: machineId) != nil,
-        connection.preparationTask == nil,
+        connection.preparation.task == nil,
         case .some(.failed) = connection.availability
       else { return }
       await self.prepareMachine(machineId)
@@ -196,7 +160,7 @@ extension MachineController {
   public func cloudMachineBecameReachable(deviceId: String) {
     let machineId = CodevisorMachine.cloudIdPrefix + deviceId
     guard machine(for: machineId) != nil, let connection = connectionsById[machineId],
-      connection.preparationTask == nil, case .failed = connection.availability
+      connection.preparation.task == nil, case .failed = connection.availability
     else { return }
     Task { await self.prepareMachine(machineId) }
   }
@@ -264,11 +228,11 @@ extension MachineController {
     guard machine(for: machineId) != nil else { return }
     guard !isCloudTwinOfConfiguredMachine(machineId) else { return }
     let connection = connection(for: machineId)
-    guard connection.eventSyncTask == nil, !connection.backgroundConnectInFlight else {
+    guard connection.navigationSync.eventStreamTask == nil, !connection.preparation.backgroundConnectInFlight else {
       return
     }
-    connection.backgroundConnectInFlight = true
-    defer { connection.backgroundConnectInFlight = false }
+    connection.preparation.backgroundConnectInFlight = true
+    defer { connection.preparation.backgroundConnectInFlight = false }
     let client = client(for: machineId)
     await refreshStatus(for: machineId)
     guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
@@ -286,13 +250,7 @@ extension MachineController {
 
   public func ensureBackgroundConnections() {
     for machine in allMachines {
-      let connection = connection(for: machine.id)
-      guard connection.eventSyncTask == nil,
-        connection.preparationTask == nil,
-        !connection.backgroundConnectInFlight
-      else {
-        continue
-      }
+      guard connection(for: machine.id).isIdle else { continue }
       Task { await self.prepareMachine(machine.id) }
     }
   }

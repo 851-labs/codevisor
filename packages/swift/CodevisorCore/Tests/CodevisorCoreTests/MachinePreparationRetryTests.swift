@@ -59,8 +59,35 @@ struct MachinePreparationRetryTests {
     try await waitUntil {
       controller.navigationSyncStateByMachineId[remote.id] == .current
     }
-    await controller.connection(for: remote.id).preparationTask?.value
+    await controller.connection(for: remote.id).preparation.task?.value
     try await controller.requestGate.waitUntilReady(for: remote.id)
+  }
+
+  @Test("Pruning a cloud twin cancels the retries it still had scheduled")
+  func pruningTwinCancelsItsRetries() async throws {
+    let clock = TestClock()
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel.fixture(),
+      clientFactory: { _ in PreparationFakeServerClient() },
+      preparationSleep: clock.sleep,
+      navigationClock: clock
+    )
+    let twinId = CodevisorMachine.cloudIdPrefix + "twin-device"
+    controller.schedulePreparationRetry(for: twinId)
+    controller.scheduleNavigationRetry(serverId: twinId, client: PreparationFakeServerClient())
+    let twin = controller.connection(for: twinId)
+    let preparationRetry = try #require(twin.preparation.retryTask)
+    let navigationRetry = try #require(twin.navigationSync.retryTask)
+    await clock.waitForSleep(.seconds(2), count: 2)
+
+    controller.pruneCloudTwinRecords(deviceId: "twin-device")
+
+    #expect(controller.connectionsById[twinId] == nil)
+    #expect(clock.pendingCount == 0)
+    clock.advance(by: .seconds(2))
+    await preparationRetry.value
+    await navigationRetry.value
   }
 
   @Test("A user-driven re-preparation clears the latch immediately")

@@ -11,16 +11,15 @@ extension MachineController {
 
   func scheduleNavigationRetry(serverId: String, client: any CodevisorServerClienting) {
     let connection = connection(for: serverId)
-    guard connection.navigationRetryTask == nil else { return }
-    connection.navigationFailures += 1
-    let delay = Duration.seconds(min(60, 1 << min(connection.navigationFailures, 6)))
+    guard connection.navigationSync.retryTask == nil else { return }
+    let delay = connection.navigationSync.nextRetryDelay()
     let clock = navigationClock
-    connection.navigationRetryTask = Task { [weak self] in
+    connection.navigationSync.retryTask = Task { [weak self] in
       try? await clock.sleep(for: delay)
       guard let self, !Task.isCancelled,
         self.connectionsById[serverId] === connection
       else { return }
-      connection.navigationRetryTask = nil
+      connection.navigationSync.retryTask = nil
       await self.synchronizeNavigationState(
         serverId: serverId, client: client, presentation: .background
       )

@@ -66,11 +66,8 @@ final class WorkspaceEventFixture {
   }
 
   func stop() async {
-    let connection = controller.connection(for: serverId)
-    let tasks = [
-      connection.eventSyncTask, connection.navigationRetryTask, connection.navigationSyncTask,
-      connection.pendingRefreshTask,
-    ].compactMap { $0 }
+    let sync = controller.connection(for: serverId).navigationSync
+    let tasks = [sync.eventStreamTask, sync.retryTask, sync.task, sync.pendingRefreshTask].compactMap { $0 }
     controller.stopEventSync()
     for task in tasks { await task.value }
   }
