@@ -154,10 +154,8 @@ struct SessionSetupPhaseView: View {
     failed.appendLog(stream: "stderr", line: "fatal: a branch named 'codevisor/fix-auth' already exists")
     failed.fail(message: "fatal: a branch named 'codevisor/fix-auth' already exists")
 
-    let agent = SessionSetupPhase.startingAgent(named: "Claude Code", startedAt: Date().addingTimeInterval(-2))
-
     return ScrollView {
-      SessionSetupView(phases: [running, done, failed, agent])
+      SessionSetupView(phases: [running, done, failed])
         .padding()
     }
     .frame(width: 640, height: 420)

@@ -154,18 +154,12 @@ struct SessionSetupTests {
     #expect(failed.duration == 2)
   }
 
-  @Test("Phase titles cover worktree setup and agent start")
+  @Test("Worktree setup phase titles")
   func phaseTitles() {
     let worktree = SessionSetupPhase.worktree()
     #expect(worktree.id == SessionSetupPhase.worktreePhaseId)
     #expect(worktree.activeTitle == "Setting up worktree")
     #expect(worktree.completedTitle == "Set up worktree")
     #expect(worktree.failedTitle == "Could not set up worktree")
-
-    let agent = SessionSetupPhase.startingAgent(named: "Claude Code")
-    #expect(agent.id == SessionSetupPhase.agentPhaseId)
-    #expect(agent.activeTitle == "Starting Claude Code")
-    #expect(agent.completedTitle == "Started Claude Code")
-    #expect(agent.failedTitle == "Could not start Claude Code")
   }
 }

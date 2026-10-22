@@ -31,7 +31,7 @@ struct ComposerServerAvailabilityTests {
     #expect(controller.pendingUserMessage == nil)
   }
 
-  @Test("A server paused for an update keeps the draft and rejects sending until it resumes")
+  @Test("A server paused for an update keeps the draft and rejects prompts and goals until it resumes")
   func pausedForUpdateKeepsDraft() async {
     let fixture = Fixture()
     let controller = fixture.controller
@@ -45,8 +45,11 @@ struct ComposerServerAvailabilityTests {
     #expect(controller.isPausedForUpdate)
     #expect(!controller.canSend)
     await controller.send()
+    controller.isGoalComposerArmed = true
+    await controller.submitGoalFromComposer()
     #expect(!accepted)
     #expect(controller.composerText == "Continue my work")
+    #expect(controller.isGoalComposerArmed)
 
     fixture.machines.connection(for: "macbook").restartDrain = ServerRestartDrainState(
       state: "idle", remaining: 0, pausedSessionIds: [])

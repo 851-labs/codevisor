@@ -326,7 +326,7 @@ struct TranscriptRowProjectionTests {
 
   @Test func pendingMessageAdoptsTheSettledRowsIdentityWithoutDuplicating() throws {
     let message = UserMessage(text: "Hello")
-    let phase = SessionSetupPhase.startingAgent(named: "Codex")
+    let phase = SessionSetupPhase.worktree()
     let input = makeInput(
       settled: [.user(message)],
       pending: message,

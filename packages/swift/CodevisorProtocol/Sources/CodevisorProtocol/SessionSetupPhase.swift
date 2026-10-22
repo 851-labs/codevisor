@@ -84,7 +84,6 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
 
 extension SessionSetupPhase {
   public static let worktreePhaseId = "worktree"
-  public static let agentPhaseId = "agent"
 
   public static func worktree(startedAt: Date = Date()) -> SessionSetupPhase {
     SessionSetupPhase(
@@ -92,16 +91,6 @@ extension SessionSetupPhase {
       activeTitle: "Setting up worktree",
       completedTitle: "Set up worktree",
       failedTitle: "Could not set up worktree",
-      startedAt: startedAt
-    )
-  }
-
-  public static func startingAgent(named name: String, startedAt: Date = Date()) -> SessionSetupPhase {
-    SessionSetupPhase(
-      id: agentPhaseId,
-      activeTitle: "Starting \(name)",
-      completedTitle: "Started \(name)",
-      failedTitle: "Could not start \(name)",
       startedAt: startedAt
     )
   }

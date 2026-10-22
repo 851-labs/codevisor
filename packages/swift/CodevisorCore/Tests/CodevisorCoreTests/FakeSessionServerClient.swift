@@ -71,6 +71,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   let openSessionRequests = TestSignal()
   var promptFailure: CodevisorServerClientError?
   let sendAttempts = FakeSendAttempts()
+  let setupRequests = FakeSetupRequests()
   let promptRequests = TestSignal()
 
   func openSession(

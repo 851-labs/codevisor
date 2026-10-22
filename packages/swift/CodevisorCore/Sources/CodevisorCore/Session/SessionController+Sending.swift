@@ -13,23 +13,8 @@ extension SessionController {
 
   public func send(delivery: ServerPromptDelivery = .steer) async {
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || !composerAttachments.isEmpty,
-      !isConnecting,
-      isServerReady,
-      !isPausedForUpdate,
-      configurationValidationState == .ready,
-      !requiresModelSelection,
-      !isSubmitting
-    else { return }
-    showsNewChatAfterSetupFailure = false
-    status = .idle
-    if let notificationDelivery {
-      Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
-    }
-    isSubmitting = true
-    if !hasSentFirst {
-      isFirstSendConnecting = true
-    }
+    guard !text.isEmpty || !composerAttachments.isEmpty, isReadyToSubmit else { return }
+    beginSubmission()
     defer { isFirstSendConnecting = false }
 
     let attachments: [Attachment]
@@ -53,33 +38,9 @@ extension SessionController {
       pendingUserMessage = outgoingMessage
     }
 
-    let showsSetupPhases =
-      (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
-      && resumeAgentSessionId?.isEmpty != false
     let staged = composerAttachments
     composerText = ""
     self.attachments.clearAfterCollecting()
-    if project.isRunTargetPlaceholder {
-      if let failure = await materializeScratchProject() {
-        composerText = text
-        self.attachments.restore(staged)
-        pendingUserMessage = nil
-        cancelUserSendAnimation(for: outgoingMessage.id)
-        isSubmitting = false
-        status = .failed(failure)
-        return
-      }
-    }
-    if !hasSentFirst {
-      firstSendSelections = rememberedConfigValues
-      hasSentFirst = true
-      if onFirstSend != nil {
-        pendingNewChatAnalytics = true
-      }
-      onFirstSend?(text)
-      onFirstSend = nil
-    }
-    isSubmitting = false
 
     func restoreComposer() {
       composerText = text
@@ -88,41 +49,105 @@ extension SessionController {
       cancelUserSendAnimation(for: outgoingMessage.id)
     }
 
-    if wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch {
-      if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
-        restoreComposer()
-        handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
-        return
-      }
-    }
+    guard let model = await prepareSession(for: text, restoreComposer: restoreComposer) else { return }
+    await submit(outgoingMessage, to: model, delivery: resolvedDelivery)
+    self.attachments.releaseStagedFiles(of: staged)
+  }
 
-    if let model {
-      await pendingConfiguration.apply(to: model)
-      await applyPendingGoal(to: model)
-      await submit(outgoingMessage, to: model, delivery: resolvedDelivery)
-      self.attachments.releaseStagedFiles(of: staged)
-      return
-    }
+  var isReadyToSubmit: Bool {
+    !isConnecting
+      && isServerReady
+      && !isPausedForUpdate
+      && configurationValidationState == .ready
+      && !requiresModelSelection
+      && !isSubmitting
+  }
 
+  func beginSubmission() {
+    showsNewChatAfterSetupFailure = false
+    status = .idle
+    if let notificationDelivery {
+      Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
+    }
+    isSubmitting = true
+    if !hasSentFirst {
+      isFirstSendConnecting = true
+    }
+  }
+
+  @discardableResult
+  func prepareSession(for prompt: String, restoreComposer: () -> Void) async -> SessionModel? {
+    let showsSetupPhases = showsSetupPhasesForSubmission
+    guard await materializeRunTarget(restoreComposer: restoreComposer) else { return nil }
+    acceptFirstSend(prompt)
+    isSubmitting = false
+
+    guard await createRequestedWorktree(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
+    else { return nil }
+
+    guard let model = await sessionModel(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
+    else { return nil }
+    await pendingConfiguration.apply(to: model)
+    await applyPendingGoal(to: model)
+    return model
+  }
+
+  private var showsSetupPhasesForSubmission: Bool {
+    (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
+      && resumeAgentSessionId?.isEmpty != false
+  }
+
+  private func materializeRunTarget(restoreComposer: () -> Void) async -> Bool {
+    guard project.isRunTargetPlaceholder else { return true }
+    guard let failure = await materializeScratchProject() else { return true }
+
+    restoreComposer()
+    isSubmitting = false
+    status = .failed(failure)
+    return false
+  }
+
+  private func acceptFirstSend(_ prompt: String) {
+    guard !hasSentFirst else { return }
+
+    firstSendSelections = rememberedConfigValues
+    hasSentFirst = true
+    if onFirstSend != nil {
+      pendingNewChatAnalytics = true
+    }
+    onFirstSend?(prompt)
+    onFirstSend = nil
+  }
+
+  private func createRequestedWorktree(showsSetupPhases: Bool, restoreComposer: () -> Void) async -> Bool {
+    guard wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch else { return true }
+    guard let failure = await createWorktree(showsSetupPhase: showsSetupPhases) else { return true }
+
+    restoreComposer()
+    handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
+    return false
+  }
+
+  private func sessionModel(showsSetupPhases: Bool, restoreComposer: () -> Void) async -> SessionModel? {
+    if let model { return model }
     guard let harness = selectedHarness else {
       let message = "No agent is installed. Install Claude Code or Codex and try again."
       restoreComposer()
       handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
-      return
+      return nil
     }
+
     status = .connecting("Starting \(harness.name)…")
     do {
       let model = try await connect(harnessId: harness.id)
       self.model = model
       status = .idle
-      await pendingConfiguration.apply(to: model)
-      await applyPendingGoal(to: model)
-      await submit(outgoingMessage, to: model, delivery: resolvedDelivery)
-      self.attachments.releaseStagedFiles(of: staged)
+      return model
     } catch {
       let message = serverErrorMessage(error)
       restoreComposer()
       handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
+      return nil
     }
   }
 
