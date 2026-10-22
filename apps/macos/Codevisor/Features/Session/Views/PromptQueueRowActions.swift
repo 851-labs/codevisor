@@ -11,14 +11,16 @@ struct PromptQueueRowActions: View {
   var body: some View {
     HStack(spacing: 0) {
       if controller.canSendQueuedPromptNow {
-        PromptQueueIconButton(systemImage: "arrow.turn.right.up", help: "Send now", isRowHovered: isHovered) {
+        PromptQueueIconButton(
+          systemImage: "arrow.turn.right.up", help: PromptQueueActionTitle.sendNow, isRowHovered: isHovered
+        ) {
           Task { await controller.sendQueuedPromptNow(id: item.id) }
         }
         .opacity(isBeingEdited ? 0 : 1)
         .allowsHitTesting(!isBeingEdited)
         .accessibilityHidden(isBeingEdited)
       }
-      PromptQueueIconButton(systemImage: "trash", help: "Remove from queue", isRowHovered: isHovered) {
+      PromptQueueIconButton(systemImage: "trash", help: PromptQueueActionTitle.remove, isRowHovered: isHovered) {
         Task { await controller.deleteQueuedPrompt(id: item.id) }
       }
     }

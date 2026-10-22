@@ -51,14 +51,13 @@ struct PromptQueueRow: View {
     .contentShape(selectionShape)
     .onTapGesture(perform: onEdit)
     .onHover { isHovered = $0 }
-    .help("Edit")
     .accessibilityElement(children: .contain)
     .accessibilityActions {
       if controller.canSendQueuedPromptNow, !isBeingEdited {
-        Button("Send Now") { Task { await controller.sendQueuedPromptNow(id: item.id) } }
+        Button(PromptQueueActionTitle.sendNow) { Task { await controller.sendQueuedPromptNow(id: item.id) } }
       }
-      Button("Edit", action: onEdit)
-      Button("Remove") { Task { await controller.deleteQueuedPrompt(id: item.id) } }
+      Button(PromptQueueActionTitle.edit, action: onEdit)
+      Button(PromptQueueActionTitle.remove) { Task { await controller.deleteQueuedPrompt(id: item.id) } }
     }
   }
 
@@ -70,6 +69,8 @@ struct PromptQueueRow: View {
       .truncationMode(.tail)
       .alignmentGuide(.queueRowFirstLine) { $0[.firstTextBaseline] - textCapCenter }
       .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+      .help(PromptQueueActionTitle.edit)
       .accessibilityAddTraits(.isButton)
       .accessibilityHint("Edits this queued message in the composer")
       .accessibilityAction(.default, onEdit)

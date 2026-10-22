@@ -29,25 +29,25 @@ struct IOSPromptQueueRow: View {
     .frame(minHeight: Typography.minimumInteractiveTargetSize)
     .disabled(isBusy)
     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-      Button("Remove", systemImage: "trash", role: .destructive, action: actions.remove)
+      Button(PromptQueueActionTitle.remove, systemImage: "trash", role: .destructive, action: actions.remove)
     }
     .swipeActions(edge: .leading, allowsFullSwipe: true) {
       if canSendNow {
-        Button("Send Now", systemImage: "arrow.turn.right.up", action: actions.sendNow)
+        Button(PromptQueueActionTitle.sendNow, systemImage: "arrow.turn.right.up", action: actions.sendNow)
           .tint(.accentColor)
       }
     }
     .contextMenu {
       if canSendNow {
-        Button("Send Now", systemImage: "arrow.turn.right.up", action: actions.sendNow)
+        Button(PromptQueueActionTitle.sendNow, systemImage: "arrow.turn.right.up", action: actions.sendNow)
       }
-      Button("Edit", systemImage: "pencil", action: actions.edit)
-      Button("Remove", systemImage: "trash", role: .destructive, action: actions.remove)
+      Button(PromptQueueActionTitle.edit, systemImage: "pencil", action: actions.edit)
+      Button(PromptQueueActionTitle.remove, systemImage: "trash", role: .destructive, action: actions.remove)
     }
     .accessibilityActions {
-      if canSendNow { Button("Send Now", action: actions.sendNow) }
-      Button("Edit", action: actions.edit)
-      Button("Remove", action: actions.remove)
+      if canSendNow { Button(PromptQueueActionTitle.sendNow, action: actions.sendNow) }
+      Button(PromptQueueActionTitle.edit, action: actions.edit)
+      Button(PromptQueueActionTitle.remove, action: actions.remove)
     }
   }
 
@@ -85,7 +85,7 @@ private struct IOSPromptQueueSendNowButton: View {
       .composerCircleActionLabel(.secondary)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("Send now")
+    .accessibilityLabel(PromptQueueActionTitle.sendNow)
     .accessibilityHint("Adds this message to the running turn")
   }
 }
