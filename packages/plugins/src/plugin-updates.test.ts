@@ -32,6 +32,7 @@ const installed = (options: {
   readonly tracking?: "registry" | "pinned"
   readonly repo?: string
   readonly receipt?: boolean
+  readonly receiptPluginId?: string
   readonly extra?: Record<string, unknown>
 }): InstalledPlugin => {
   const path = makeDir("codevisor-plugin-update-installed-")
@@ -42,7 +43,7 @@ const installed = (options: {
       JSON.stringify({
         installedAt: "2026-08-01T00:00:00.000Z",
         installedVersion: options.version,
-        pluginId: options.id,
+        pluginId: options.receiptPluginId ?? options.id,
         resolvedCommit: "a".repeat(40),
         schemaVersion: 1,
         source: {
@@ -193,6 +194,34 @@ describe("plugin update states", () => {
       { pluginId: "acme.legacy", state: "sourceUnknown" },
       { pluginId: "acme.pinned", state: "pinned" },
       { pluginId: "acme.norepo", state: "checkFailed" }
+    ])
+    expect(fetchRegistry).not.toHaveBeenCalled()
+  })
+
+  it("treats a receipt written for another plugin as an unknown source", async () => {
+    const copied = installed({
+      id: "acme.copied",
+      receiptPluginId: "acme.original",
+      repo: "acme/plugin",
+      version: "1.0.0"
+    })
+    const fetchRegistry = vi.fn(async () => index([entry("acme.copied", "2.0.0")]))
+    const updates = makePluginUpdates({
+      fetchRegistry,
+      installer: installerHarness(copied.manifest).installer,
+      listInstalled: () => [copied],
+      now: () => Date.parse("2026-08-23T00:00:00.000Z"),
+      platform: "darwin"
+    })
+
+    expect((await updates.list()).updates).toEqual([
+      {
+        checkedAt: "2026-08-23T00:00:00.000Z",
+        installedVersion: "1.0.0",
+        pluginId: "acme.copied",
+        reason: "Reinstall from a known source to enable updates",
+        state: "sourceUnknown"
+      }
     ])
     expect(fetchRegistry).not.toHaveBeenCalled()
   })

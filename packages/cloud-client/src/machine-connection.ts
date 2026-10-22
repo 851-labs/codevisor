@@ -1,6 +1,5 @@
 import {
   CLOUD_PROTOCOL_VERSION,
-  decodeRelayEnvelopes,
   encodeCloudFrame,
   MACHINE_PEERS_FEATURE,
   parseHubToAppRelayHeader,
@@ -13,6 +12,12 @@ import {
 
 import type { OutgoingChannel } from "./channel-opener.js"
 import { ChannelReceiver } from "./channel-receiver.js"
+import {
+  decodeRelayBatch,
+  tunnelConfigOf,
+  type HubFrame,
+  type WelcomeResume
+} from "./hub-frames.js"
 import { releaseChannelField, type MachineConnectionOptions } from "./machine-connection-options.js"
 import { MachinePeers } from "./machine-peers.js"
 import {
@@ -192,78 +197,20 @@ export class CloudMachineConnection {
 
   #onMessage(socket: CloudSocket, data: string | Uint8Array): void {
     if (this.#socket !== socket) return
-    if (typeof data !== "string") {
-      let envelopes: WireRelayEnvelope[]
-      try {
-        envelopes = decodeRelayEnvelopes(data)
-      } catch {
-        return
-      }
-      for (const envelope of envelopes) {
-        const header = parseHubToMachineRelayHeader(envelope.header)
-        if (header !== undefined) {
-          this.#receiver.handleRelay(
-            header.peerId,
-            header.frame,
-            envelope.payload,
-            header.peerPublicKey,
-            header.peerDeviceId,
-            header.peerKind
-          )
-          continue
-        }
-        const answer = parseHubToAppRelayHeader(envelope.header)
-        if (answer !== undefined) {
-          this.#peers.handleRelay(answer.machineId, answer.frame, envelope.payload)
-        }
-      }
-      return
-    }
+    if (typeof data !== "string") return this.#onRelayBatch(data)
+
     const frame = decodeHubFrame(data)
     if (frame === undefined) return
+
     switch (frame.t) {
-      case "welcome": {
-        this.#attempt = 0
-        this.#cancelWelcomeTimeout?.()
-        this.#cancelWelcomeTimeout = undefined
-        this.#resumeToken = frame.resume
-        const resumed = frame.resumed === true && frame.connectionId === this.#connectionId
-        const replayedFrames = this.#retained.length
-        this.#connectionId = frame.connectionId
-        if (resumed) {
-          const retained = this.#retained
-          this.#retained = []
-          this.#retainedBytes = 0
-          for (const envelope of retained) {
-            this.#outbox?.push(envelope.header, envelope.payload)
-          }
-        } else {
-          this.#retained = []
-          this.#retainedBytes = 0
-          this.#dropChannels()
-        }
-        this.#peers.welcome(frame.machines)
-        this.#setState("connected")
-        this.options.onTunnelConfig?.({
-          relays: frame.relays ?? [],
-          enabled: frame.tunnel === "on"
-        })
-        this.options.onWelcome?.({
-          resumed,
-          replayedFrames: resumed ? replayedFrames : 0
-        })
-        this.#scheduleHeartbeat(socket)
+      case "welcome":
+        this.#onWelcome(frame, socket)
         return
-      }
       case "pong":
-        if (this.#cancelPongTimeout !== undefined) {
-          this.#cancelPongTimeout()
-          this.#cancelPongTimeout = undefined
-          this.#scheduleHeartbeat(socket)
-        }
+        this.#onPong(socket)
         return
       case "error":
-        if (frame.machineId !== undefined) this.#peers.hubError(frame.machineId, frame.channelId)
+        this.#onHubError(frame)
         return
       case "peer-gone":
         this.#receiver.dropPeer(frame.peerId)
@@ -278,6 +225,84 @@ export class CloudMachineConnection {
         this.options.onPeerDevices?.(frame.devices)
         return
     }
+  }
+
+  #onRelayBatch(data: Uint8Array): void {
+    const envelopes = decodeRelayBatch(data)
+    if (envelopes === undefined) return
+
+    for (const envelope of envelopes) this.#routeRelay(envelope)
+  }
+
+  #routeRelay(envelope: WireRelayEnvelope): void {
+    const header = parseHubToMachineRelayHeader(envelope.header)
+    if (header !== undefined) {
+      return this.#receiver.handleRelay(
+        header.peerId,
+        header.frame,
+        envelope.payload,
+        header.peerPublicKey,
+        header.peerDeviceId,
+        header.peerKind
+      )
+    }
+
+    const answer = parseHubToAppRelayHeader(envelope.header)
+    if (answer === undefined) return
+
+    this.#peers.handleRelay(answer.machineId, answer.frame, envelope.payload)
+  }
+
+  #onWelcome(frame: HubFrame<"welcome">, socket: CloudSocket): void {
+    this.#attempt = 0
+    this.#cancelWelcomeTimeout?.()
+    this.#cancelWelcomeTimeout = undefined
+
+    const resume = this.#adoptConnection(frame)
+    this.#settleRetained(resume.resumed)
+    this.#peers.welcome(frame.machines)
+    this.#setState("connected")
+    this.options.onTunnelConfig?.(tunnelConfigOf(frame))
+    this.options.onWelcome?.(resume)
+    this.#scheduleHeartbeat(socket)
+  }
+
+  #adoptConnection(frame: HubFrame<"welcome">): WelcomeResume {
+    this.#resumeToken = frame.resume
+    const resumed = frame.resumed === true && frame.connectionId === this.#connectionId
+    const retainedFrames = this.#retained.length
+    this.#connectionId = frame.connectionId
+    return { resumed, replayedFrames: resumed ? retainedFrames : 0 }
+  }
+
+  #settleRetained(resumed: boolean): void {
+    if (resumed) return this.#replayRetained()
+    this.#discardRetained()
+  }
+
+  #replayRetained(): void {
+    const retained = this.#retained
+    this.#retained = []
+    this.#retainedBytes = 0
+    for (const envelope of retained) this.#outbox?.push(envelope.header, envelope.payload)
+  }
+
+  #discardRetained(): void {
+    this.#retained = []
+    this.#retainedBytes = 0
+    this.#dropChannels()
+  }
+
+  #onPong(socket: CloudSocket): void {
+    if (this.#cancelPongTimeout === undefined) return
+
+    this.#cancelPongTimeout()
+    this.#cancelPongTimeout = undefined
+    this.#scheduleHeartbeat(socket)
+  }
+
+  #onHubError(frame: HubFrame<"error">): void {
+    if (frame.machineId !== undefined) this.#peers.hubError(frame.machineId, frame.channelId)
   }
 
   sendTunnelAddr(tunnel: CloudTunnelInfo): boolean {

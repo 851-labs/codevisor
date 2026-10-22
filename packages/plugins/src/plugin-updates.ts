@@ -3,23 +3,22 @@ import { randomUUID } from "node:crypto"
 import type {
   PluginManifest,
   PluginNamedChanges,
-  PluginRegistryEntry,
   PluginRegistryIndex,
   PluginUpdatePlan,
   PluginUpdateReview,
   PluginUpdatesResponse
 } from "@codevisor/api"
-import {
-  compareSemanticVersions,
-  isSupportedPluginProtocolVersion,
-  parseSemanticVersion
-} from "@codevisor/api"
 
 import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
 import type { PreparedPluginUpdate } from "./plugin-install-types.js"
 import type { PluginInstaller } from "./plugin-install.js"
-import { readPluginInstallReceipt } from "./plugin-receipt.js"
 import type { InstalledPlugin } from "./plugin-store.js"
+import {
+  registryFailures,
+  resolveTracked,
+  triageInstalled,
+  type ResolvedUpdate
+} from "./plugin-update-status.js"
 import { PluginsError } from "./plugins-error.js"
 
 export const PLUGIN_UPDATE_PLAN_TTL_MS = 15 * 60_000
@@ -41,21 +40,11 @@ export interface PluginUpdates {
   readonly apply: (pluginId: string, planId: string) => Promise<PluginManifest>
 }
 
-interface ResolvedUpdate {
-  readonly installed: InstalledPlugin
-  readonly installedResolvedCommit?: string
-  readonly entry?: PluginRegistryEntry
-  readonly status: PluginUpdatesResponse["updates"][number]
-}
-
 interface StoredPlan {
   readonly candidate: PreparedPluginUpdate
   readonly plan: PluginUpdatePlan
   readonly expiresAtMs: number
 }
-
-const errorMessage = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : String(cause)
 
 const review = (manifest: PluginManifest, platform: string): PluginUpdateReview => ({
   ...(manifest.ageRating === undefined ? {} : { ageRating: manifest.ageRating }),
@@ -88,29 +77,6 @@ const namedChanges = <Value>(
   }
 }
 
-const compatibilityFailure = (
-  entry: PluginRegistryEntry,
-  platform: string,
-  codevisorVersion: string | undefined
-): string | undefined => {
-  if (!isSupportedPluginProtocolVersion(entry.protocolVersion)) {
-    return `Version ${entry.version} uses unsupported plugin protocol ${entry.protocolVersion}`
-  }
-  if (entry.platforms !== undefined && !entry.platforms.includes(platform)) {
-    return `Version ${entry.version} does not support ${platform}`
-  }
-  if (entry.minCodevisorVersion === undefined) return undefined
-  if (parseSemanticVersion(entry.minCodevisorVersion) === undefined) {
-    return `Version ${entry.version} has invalid minimum Codevisor version metadata`
-  }
-  if (codevisorVersion === undefined || parseSemanticVersion(codevisorVersion) === undefined) {
-    return `Version ${entry.version} requires Codevisor ${entry.minCodevisorVersion} or newer, but this build has no comparable version`
-  }
-  return compareSemanticVersions(codevisorVersion, entry.minCodevisorVersion) < 0
-    ? `Version ${entry.version} requires Codevisor ${entry.minCodevisorVersion} or newer; this server is ${codevisorVersion}`
-    : undefined
-}
-
 export const makePluginUpdates = (deps: PluginUpdatesDeps): PluginUpdates => {
   const now = deps.now ?? Date.now
   const createPlanId = deps.createPlanId ?? randomUUID
@@ -130,66 +96,7 @@ export const makePluginUpdates = (deps: PluginUpdatesDeps): PluginUpdates => {
 
   const resolveUpdates = async (): Promise<ReadonlyArray<ResolvedUpdate>> => {
     const checkedAt = new Date(now()).toISOString()
-    const installed = deps.listInstalled()
-    const resolved: Array<ResolvedUpdate> = []
-    const tracked: Array<{
-      installed: InstalledPlugin
-      repo: string
-      resolvedCommit: string
-    }> = []
-    for (const plugin of installed) {
-      const base = { checkedAt, installedVersion: plugin.manifest.version, pluginId: plugin.id }
-      if (plugin.source === "linked") {
-        resolved.push({
-          installed: plugin,
-          status: {
-            ...base,
-            reason: "Linked development plugins do not track registry updates",
-            state: "pinned"
-          }
-        })
-        continue
-      }
-      const receipt = readPluginInstallReceipt(plugin.path)
-      if (receipt === undefined || receipt.pluginId !== plugin.id) {
-        resolved.push({
-          installed: plugin,
-          status: {
-            ...base,
-            reason: "Reinstall from a known source to enable updates",
-            state: "sourceUnknown"
-          }
-        })
-        continue
-      }
-      if (receipt.source.tracking === "pinned") {
-        resolved.push({
-          installed: plugin,
-          status: {
-            ...base,
-            reason: "This plugin was installed from a pinned source",
-            state: "pinned"
-          }
-        })
-        continue
-      }
-      if (receipt.source.repo === undefined) {
-        resolved.push({
-          installed: plugin,
-          status: {
-            ...base,
-            reason: "The install receipt has no registry repository",
-            state: "checkFailed"
-          }
-        })
-        continue
-      }
-      tracked.push({
-        installed: plugin,
-        repo: receipt.source.repo,
-        resolvedCommit: receipt.resolvedCommit
-      })
-    }
+    const { resolved, tracked } = triageInstalled(deps.listInstalled(), checkedAt)
     if (tracked.length === 0) return resolved
 
     let index: PluginRegistryIndex
@@ -197,89 +104,10 @@ export const makePluginUpdates = (deps: PluginUpdatesDeps): PluginUpdates => {
       if (deps.fetchRegistry === undefined) throw new Error("Plugin registry is unavailable")
       index = await deps.fetchRegistry()
     } catch (cause) {
-      for (const item of tracked) {
-        resolved.push({
-          installed: item.installed,
-          status: {
-            checkedAt,
-            installedVersion: item.installed.manifest.version,
-            pluginId: item.installed.id,
-            reason: errorMessage(cause),
-            state: "checkFailed"
-          }
-        })
-      }
-      return resolved
+      return [...resolved, ...registryFailures(tracked, checkedAt, cause)]
     }
 
-    for (const item of tracked) {
-      const plugin = item.installed
-      const entry = index.entries.find((candidate) => candidate.id === plugin.id)
-      const base = { checkedAt, installedVersion: plugin.manifest.version, pluginId: plugin.id }
-      if (entry === undefined) {
-        resolved.push({
-          installed: plugin,
-          status: {
-            ...base,
-            reason: `Plugin ${plugin.id} is not present in the registry`,
-            state: "checkFailed"
-          }
-        })
-        continue
-      }
-      if (entry.repo.toLowerCase() !== item.repo.toLowerCase()) {
-        resolved.push({
-          entry,
-          installed: plugin,
-          installedResolvedCommit: item.resolvedCommit,
-          status: {
-            ...base,
-            reason: `Registry repository ${entry.repo} does not match installed source ${item.repo}`,
-            registryVersion: entry.version,
-            state: "checkFailed"
-          }
-        })
-        continue
-      }
-      if (
-        parseSemanticVersion(plugin.manifest.version) === undefined ||
-        parseSemanticVersion(entry.version) === undefined
-      ) {
-        resolved.push({
-          entry,
-          installed: plugin,
-          installedResolvedCommit: item.resolvedCommit,
-          status: {
-            ...base,
-            reason: "Installed and registry versions must both be valid semantic versions",
-            registryVersion: entry.version,
-            state: "checkFailed"
-          }
-        })
-        continue
-      }
-      if (compareSemanticVersions(entry.version, plugin.manifest.version) <= 0) {
-        resolved.push({
-          entry,
-          installed: plugin,
-          status: { ...base, registryVersion: entry.version, state: "current" }
-        })
-        continue
-      }
-      const incompatible = compatibilityFailure(entry, deps.platform, deps.codevisorVersion)
-      resolved.push({
-        entry,
-        installed: plugin,
-        installedResolvedCommit: item.resolvedCommit,
-        status: {
-          ...base,
-          registryVersion: entry.version,
-          ...(incompatible === undefined ? {} : { reason: incompatible }),
-          state: incompatible === undefined ? "available" : "incompatible"
-        }
-      })
-    }
-    return resolved
+    return [...resolved, ...tracked.map((item) => resolveTracked(item, index, checkedAt, deps))]
   }
 
   return {
