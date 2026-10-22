@@ -20,7 +20,7 @@ export {
   legacyBotsRoot,
   legacyScratchWorkspacesRoot,
   legacyWorktreeTrashRoot,
-  managedRepoPath,
+  defaultCloneBaseFolder,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
   worktreeNameAt,

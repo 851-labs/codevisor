@@ -24,6 +24,7 @@ export default defineConfig({
         "src/routes/bot-test-support.ts",
         "src/routes/gateway-test-support.ts",
         "src/routes/response-test-support.ts",
+        "src/routes/project-setup-test-support.ts",
         "src/main.ts",
         "src/serve.ts",
         "src/serve-boot.ts",

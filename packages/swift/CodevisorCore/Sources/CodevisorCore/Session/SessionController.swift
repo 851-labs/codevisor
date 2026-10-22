@@ -120,6 +120,8 @@ final public class SessionController {
   public var onFirstSend: ((String) -> Void)?
   public var onScratchProjectCreated: ((Project) -> Void)?
   public var onSetupFailed: (() -> Void)?
+  @ObservationIgnored public var sendInterceptor: ((ServerPromptDelivery) -> Bool)?
+  public internal(set) var submitRequest = 0
   public var resumeAgentSessionId: String?
   public var serverSession: ChatSession?
   public var wantsNewWorktree = false {

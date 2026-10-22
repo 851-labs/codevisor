@@ -14,8 +14,11 @@ export type CloneFailureCode =
   | "network"
   | "disk_full"
   | "invalid_url"
+  | "cancelled"
 
-export const classifyCloneFailure = (stderrText: string): CloneFailureCode | undefined => {
+export const classifyCloneFailure = (
+  stderrText: string
+): Exclude<CloneFailureCode, "cancelled"> | undefined => {
   const text = stderrText.toLowerCase()
   if (
     text.includes("authentication failed") ||

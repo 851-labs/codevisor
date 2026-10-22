@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest"
 
 import {
   botPath,
+  defaultCloneBaseFolder,
   isBotFolder,
   isScratchFolder,
   legacyWorktreeTrashRoot,
-  managedRepoPath,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
   worktreeNameAt,
@@ -32,12 +32,14 @@ const withWorktreesRoot = (body: (root: string) => void): void => {
 }
 
 describe("@codevisor/db", () => {
-  it("derives managed repo paths from the canonical repos root", () => {
+  it("clones repos beside worktrees unless the repos root is overridden", () => {
     const previous = process.env["CODEVISOR_REPOS_ROOT"]
     delete process.env["CODEVISOR_REPOS_ROOT"]
-    expect(managedRepoPath("my-repo")).toBe(join(homedir(), ".codevisor", "repos", "my-repo"))
+    withWorktreesRoot((root) => {
+      expect(defaultCloneBaseFolder()).toBe(join(root, "repos"))
+    })
     process.env["CODEVISOR_REPOS_ROOT"] = "/tmp/custom-repos"
-    expect(managedRepoPath("my-repo")).toBe("/tmp/custom-repos/my-repo")
+    expect(defaultCloneBaseFolder()).toBe("/tmp/custom-repos")
     if (previous === undefined) {
       delete process.env["CODEVISOR_REPOS_ROOT"]
     } else {

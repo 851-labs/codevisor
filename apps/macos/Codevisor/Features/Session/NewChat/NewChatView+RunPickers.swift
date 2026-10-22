@@ -43,11 +43,10 @@ extension NewChatView {
     .filter { !$0.isScratch }
   }
 
-  private func pickerGroups(on serverId: String) -> [ProjectGroup] {
+  private var pickerGroups: [ProjectGroup] {
     environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency(
       environment.workspaces.loadAll()
     )
-    .filter { $0.member(on: serverId) != nil }
   }
 
   var showsMachinePicker: Bool { environment.machines.allMachines.count > 1 }
@@ -105,9 +104,10 @@ extension NewChatView {
 
   func projectPicker(_ controller: SessionController) -> some View {
     let selected = controller.project
-    let isNoProject = selected.isRunTargetPlaceholder || selected.isScratch
-    let groups = pickerGroups(on: selected.serverId)
-    let selectedGroup = isNoProject ? nil : groups.first { $0.contains(selected) }
+    let pending = selected.isRunTargetPlaceholder ? pendingSetupGroup : nil
+    let isNoProject = pending == nil && (selected.isRunTargetPlaceholder || selected.isScratch)
+    let groups = pickerGroups
+    let selectedGroup = pending ?? (isNoProject ? nil : groups.first { $0.contains(selected) })
     let chipText = isNoProject ? "No project" : (selectedGroup?.name ?? selected.name)
     let selection = Binding<ProjectPickerTarget>(
       get: { isNoProject ? .noProject : .project(selectedGroup?.id ?? selected.id.uuidString) },
@@ -194,9 +194,11 @@ extension NewChatView {
     let current = controller.project
     guard machine.id != current.serverId else { return }
     environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
-    if let linked = environment.projectList.fleetProjectGroup(containing: current)?
-      .member(on: machine.id)
-    {
+    let currentGroup =
+      current.isRunTargetPlaceholder
+      ? pendingSetupGroup : environment.projectList.fleetProjectGroup(containing: current)
+    if let linked = currentGroup?.member(on: machine.id) {
+      pendingSetupGroupID = nil
       selectTargetProject(
         linked,
         controller: controller,
@@ -204,6 +206,18 @@ extension NewChatView {
       )
       return
     }
+    if let currentGroup {
+      pendingSetupGroupID = currentGroup.id
+      selectedProjectId = nil
+      Task {
+        await controller.retarget(
+          to: .runTargetPlaceholder(serverId: machine.id),
+          serverClient: environment.machines.client(for: machine.id)
+        )
+      }
+      return
+    }
+    pendingSetupGroupID = nil
     let scoped = pickerProjects.filter { $0.serverId == machine.id }
     let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
     let isNoProject = current.isRunTargetPlaceholder || current.isScratch
@@ -222,13 +236,21 @@ extension NewChatView {
   }
 
   func selectTargetGroup(_ group: ProjectGroup, controller: SessionController) {
-    let project =
-      group.member(on: controller.project.serverId)
-      ?? environment.projectList.mostRecentlyUsedMember(of: group)
-    selectTargetProject(project, controller: controller)
+    if let project = group.member(on: controller.project.serverId) {
+      selectTargetProject(project, controller: controller)
+      return
+    }
+    let serverId = controller.project.serverId
+    pendingSetupGroupID = group.id
+    selectedProjectId = nil
+    guard !controller.project.isRunTargetPlaceholder else { return }
+    Task {
+      await controller.selectProject(.runTargetPlaceholder(serverId: serverId))
+    }
   }
 
   func selectNoProject(_ controller: SessionController) {
+    pendingSetupGroupID = nil
     guard !controller.project.isRunTargetPlaceholder, !controller.project.isScratch else { return }
     let serverId = controller.project.serverId
     selectedProjectId = nil
@@ -246,6 +268,7 @@ extension NewChatView {
     controller: SessionController,
     wantsWorktree: Bool? = nil
   ) {
+    pendingSetupGroupID = nil
     selectedProjectId = project.id
     environment.composerDefaults.rememberNewWorkspaceProject(
       serverId: project.serverId,

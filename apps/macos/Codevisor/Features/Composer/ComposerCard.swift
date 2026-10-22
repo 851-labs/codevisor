@@ -121,6 +121,9 @@ struct ComposerCard: View {
       guard case let .success(urls) = result else { return }
       controller.attachments.attachFileURLs(urls)
     }
+    .onChange(of: controller.submitRequest) { _, _ in
+      sendDraft(delivery: .steer)
+    }
     .onChange(of: controller.composerQuestion?.questionId) { _, _ in
       didStartResolvingQuestion = false
     }
@@ -440,6 +443,7 @@ private extension ComposerCard {
 
   private func sendDraft(delivery: ServerPromptDelivery) {
     guard controller.canSend, !isAppUpdateInProgress else { return }
+    if controller.interceptsSend(delivery) { return }
     didAcceptSubmission = true
     if !reduceMotion, !controller.sendLandsInQueue(delivery) {
       sendSource.stage(controller: controller)

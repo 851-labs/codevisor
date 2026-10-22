@@ -435,6 +435,11 @@ export interface CodevisorDatabaseService
     paneId: string,
     navigation: BrowserNavigation
   ) => Effect.Effect<void, DatabaseError>
+  readonly getMachineSetting: (key: string) => Effect.Effect<string | undefined, DatabaseError>
+  readonly setMachineSetting: (
+    key: string,
+    value: string | undefined
+  ) => Effect.Effect<void, DatabaseError>
   readonly getUpdateInfo: Effect.Effect<UpdateInfo, DatabaseError>
   readonly setUpdateInfo: (update: UpdateInfo) => Effect.Effect<UpdateInfo, DatabaseError>
   readonly listHarnessUpdateStates: Effect.Effect<

@@ -3,6 +3,14 @@ import ACPKit
 import os
 
 extension SessionController {
+  public func interceptsSend(_ delivery: ServerPromptDelivery) -> Bool {
+    sendInterceptor?(delivery) == true
+  }
+
+  public func requestSubmit() {
+    submitRequest &+= 1
+  }
+
   public func send(delivery: ServerPromptDelivery = .steer) async {
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !composerAttachments.isEmpty,

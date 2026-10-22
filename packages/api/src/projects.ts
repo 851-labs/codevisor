@@ -66,14 +66,72 @@ export const CreateScratchProjectRequest = Schema.Struct({
 })
 export type CreateScratchProjectRequest = typeof CreateScratchProjectRequest.Type
 
+export const ProjectEnvFileContent = Schema.Struct({
+  path: Schema.String,
+  contents: Schema.String
+})
+export type ProjectEnvFileContent = typeof ProjectEnvFileContent.Type
+
 export const CreateProjectFromGitRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   url: Schema.String,
-  name: Schema.optional(Schema.String)
+  name: Schema.optional(Schema.String),
+  homeRelativePath: Schema.optional(Schema.String),
+  envFiles: Schema.optional(Schema.Array(ProjectEnvFileContent)),
+  worktreeBase: Schema.optional(ProjectWorktreeBase),
+  defaultRunLocation: Schema.optional(ProjectRunLocation)
 })
 export type CreateProjectFromGitRequest = typeof CreateProjectFromGitRequest.Type
 
-export const ProjectSetupState = Schema.Literals(["started", "log", "completed", "failed"])
+export const ProjectEnvFile = Schema.Struct({
+  path: Schema.String,
+  size: Schema.Number
+})
+export type ProjectEnvFile = typeof ProjectEnvFile.Type
+
+export const ProjectSetupSource = Schema.Struct({
+  projectId: Schema.String,
+  folderPath: Schema.String,
+  homeRelativePath: Schema.optional(Schema.String),
+  envFiles: Schema.Array(ProjectEnvFile),
+  needsInitialCommit: Schema.Boolean
+})
+export type ProjectSetupSource = typeof ProjectSetupSource.Type
+
+export const PublishProjectRemoteRequest = Schema.Struct({
+  url: Schema.String,
+  initialize: Schema.optional(Schema.Boolean)
+})
+export type PublishProjectRemoteRequest = typeof PublishProjectRemoteRequest.Type
+
+export const ReadProjectEnvFilesRequest = Schema.Struct({
+  paths: Schema.Array(Schema.String)
+})
+export type ReadProjectEnvFilesRequest = typeof ReadProjectEnvFilesRequest.Type
+
+export const ReadProjectEnvFilesResponse = Schema.Struct({
+  files: Schema.Array(ProjectEnvFileContent)
+})
+export type ReadProjectEnvFilesResponse = typeof ReadProjectEnvFilesResponse.Type
+
+export const ProjectCloneSettings = Schema.Struct({
+  baseFolder: Schema.String,
+  defaultBaseFolder: Schema.String
+})
+export type ProjectCloneSettings = typeof ProjectCloneSettings.Type
+
+export const UpdateProjectCloneSettingsRequest = Schema.Struct({
+  baseFolder: Schema.NullOr(Schema.String)
+})
+export type UpdateProjectCloneSettingsRequest = typeof UpdateProjectCloneSettingsRequest.Type
+
+export const ProjectSetupState = Schema.Literals([
+  "started",
+  "log",
+  "progress",
+  "completed",
+  "failed"
+])
 export type ProjectSetupState = typeof ProjectSetupState.Type
 
 export const ProjectSetupErrorCode = Schema.Literals([
@@ -82,9 +140,33 @@ export const ProjectSetupErrorCode = Schema.Literals([
   "network",
   "disk_full",
   "invalid_url",
-  "already_exists"
+  "already_exists",
+  "cancelled",
+  "in_progress",
+  "push_rejected",
+  "identity_missing"
 ])
 export type ProjectSetupErrorCode = typeof ProjectSetupErrorCode.Type
+
+export const ProjectCloneStage = Schema.Literals([
+  "connecting",
+  "counting",
+  "receiving",
+  "resolving",
+  "checkout",
+  "copying"
+])
+export type ProjectCloneStage = typeof ProjectCloneStage.Type
+
+export const ProjectCloneProgress = Schema.Struct({
+  stage: ProjectCloneStage,
+  percent: Schema.optional(Schema.Number),
+  completed: Schema.optional(Schema.Number),
+  total: Schema.optional(Schema.Number),
+  bytes: Schema.optional(Schema.Number),
+  bytesPerSecond: Schema.optional(Schema.Number)
+})
+export type ProjectCloneProgress = typeof ProjectCloneProgress.Type
 
 export const ProjectSetupUpdate = Schema.Struct({
   state: ProjectSetupState,
@@ -94,6 +176,9 @@ export const ProjectSetupUpdate = Schema.Struct({
   line: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
   code: Schema.optional(ProjectSetupErrorCode),
+  host: Schema.optional(Schema.String),
+  progress: Schema.optional(ProjectCloneProgress),
+  folderPath: Schema.optional(Schema.String),
   durationMs: Schema.optional(Schema.Number)
 })
 export type ProjectSetupUpdate = typeof ProjectSetupUpdate.Type

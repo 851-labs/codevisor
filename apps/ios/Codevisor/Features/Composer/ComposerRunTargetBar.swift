@@ -9,9 +9,11 @@ struct ComposerRunTargetBar: View {
   let selectedServerId: String
   let readyMachineIds: Set<String>
   let project: Project
+  let pendingSetupGroup: ProjectGroup?
   let wantsNewWorktree: Bool
   let onMachine: (CodevisorMachine) -> Void
   let onProject: (Project) -> Void
+  let onSetUpProject: (ProjectGroup) -> Void
   let onLocation: @MainActor (Bool) -> Void
   let onManageMachines: () -> Void
   let onManageProject: () -> Void
@@ -45,7 +47,9 @@ struct ComposerRunTargetBar: View {
       }
       ComposerProjectMenu(
         currentProject: project,
+        pendingSetupGroup: pendingSetupGroup,
         onSelected: onProject,
+        onSetUp: onSetUpProject,
         onProjectDeleted: onProjectDeleted
       ) {
         chipLabel(
@@ -58,7 +62,7 @@ struct ComposerRunTargetBar: View {
       .accessibilityValue(projectName)
       .accessibilityIdentifier("newChat.projectPicker")
       .layoutValue(key: RunTargetPickerRoleKey.self, value: .project)
-      if !isPlaceholder && project.isGitRepository {
+      if !isPlaceholder && pendingSetupGroup == nil && project.isGitRepository {
         pickerDivider
         Menu {
           Section {
@@ -99,11 +103,12 @@ struct ComposerRunTargetBar: View {
   }
 
   private var isPlaceholder: Bool {
-    project.isRunTargetPlaceholder || project.isScratch
+    pendingSetupGroup == nil && (project.isRunTargetPlaceholder || project.isScratch)
   }
 
   private var projectName: String {
-    isPlaceholder ? "No project" : project.name
+    if let pendingSetupGroup { return pendingSetupGroup.name }
+    return isPlaceholder ? "No project" : project.name
   }
 
   private var pickerDivider: some View {

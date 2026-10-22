@@ -62,8 +62,8 @@ export const isBotFolder = (folderPath: string): boolean =>
 export const isManagedFolder = (folderPath: string): boolean =>
   isScratchFolder(folderPath) || isBotFolder(folderPath)
 
-export const managedRepoPath = (name: string): string =>
-  join(process.env["CODEVISOR_REPOS_ROOT"] ?? join(homedir(), ".codevisor", "repos"), name)
+export const defaultCloneBaseFolder = (): string =>
+  process.env["CODEVISOR_REPOS_ROOT"] ?? join(worktreesRoot(), "repos")
 
 export const resolveSessionCwd = (
   folderPath: string | undefined,

@@ -61,6 +61,8 @@ struct NewChatView: View {
   @State private var appliedInitialProjectTarget: NewChatTarget?
   @State private var focus = TerminalFocusController()
   @State var hoveredRunPicker: RunPicker?
+  @State var pendingSetupGroupID: ProjectGroup.ID?
+  @State var projectSetup: ProjectMachineSetup?
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
@@ -181,6 +183,7 @@ struct NewChatView: View {
       }
     }
     .attachmentDropTarget(controller)
+    .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {
         setUpController()
@@ -314,6 +317,7 @@ struct NewChatView: View {
         selectTargetMachine(machine, controller: controller)
       }
     }
+    installSendInterceptor(on: controller)
     controller.onScratchProjectCreated = { [weak projectList = environment.projectList] scratch in
       projectList?.registerServerProject(scratch)
     }

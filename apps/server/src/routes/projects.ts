@@ -30,11 +30,14 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
-import { routeProjectFromGit } from "./project-clone.js"
+import { routeProjectCloneSettings } from "./project-clone-settings.js"
+import { cancelProjectSetup, routeProjectFromGit } from "./project-clone.js"
 import { probeProject } from "./project-probe.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
+import { routePublishProjectRemote } from "./project-remote.js"
 import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { createScratchProject } from "./project-scratch.js"
+import { routeProjectSetupSource, routeReadProjectEnvFiles } from "./project-setup-source.js"
 import { createProjectWorktree } from "./project-worktree-create.js"
 
 export { probeProject } from "./project-probe.js"
@@ -58,6 +61,33 @@ export const routeProjects = async (
     return createProject(services, fanout, serverId, request, response)
   if (request.method === "POST" && url.pathname === "/v1/projects/from-git") {
     await routeProjectFromGit(services, fanout, serverId, request, response)
+    return true
+  }
+  if (url.pathname === "/v1/projects/clone-settings") {
+    await routeProjectCloneSettings(services.db, request, response)
+    return true
+  }
+  const cancelSetupId = matchRoute(url.pathname, "/v1/projects/from-git/:id")
+  if (cancelSetupId !== undefined && request.method === "DELETE") {
+    if (!cancelProjectSetup(cancelSetupId)) {
+      throw new HttpFailure(404, `No setup in progress for ${cancelSetupId}`)
+    }
+    response.writeHead(204).end()
+    return true
+  }
+  const setupSourceId = matchRoute(url.pathname, "/v1/projects/:id/setup-source")
+  if (setupSourceId !== undefined && request.method === "GET") {
+    await routeProjectSetupSource(services, serverId, setupSourceId, response)
+    return true
+  }
+  const remoteId = matchRoute(url.pathname, "/v1/projects/:id/remote")
+  if (remoteId !== undefined && request.method === "POST") {
+    await routePublishProjectRemote(services, fanout, serverId, remoteId, request, response)
+    return true
+  }
+  const envFilesId = matchRoute(url.pathname, "/v1/projects/:id/env-files/read")
+  if (envFilesId !== undefined && request.method === "POST") {
+    await routeReadProjectEnvFiles(services, serverId, envFilesId, request, response)
     return true
   }
   if (request.method === "POST" && url.pathname === "/v1/projects/scratch")

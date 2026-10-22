@@ -5,11 +5,13 @@ import { join, resolve as resolvePath } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
+import { cloneCancelled, nonInteractiveGitEnvironment, parseCloneProgress } from "./git-clone.js"
 import { CloneError, classifyCloneFailure, GitError, gitFailureMessage } from "./git-errors.js"
 import { GitCommandOutput, type GitOutputListener } from "./git-output.js"
 import { type CommandPriority, withPriority } from "./low-priority.js"
 
 export { CloneError, type CloneFailureCode, classifyCloneFailure, GitError } from "./git-errors.js"
+export * from "./git-clone.js"
 
 export {
   sanitizeGitOutputLine,
@@ -87,7 +89,7 @@ export const gitRemoteUrl = async (
   env?: NodeJS.ProcessEnv
 ): Promise<string | undefined> => {
   const remoteUrl = (remote: string): Promise<string> =>
-    git("remote-url", ["remote", "get-url", remote], dir, env)
+    git("remote-url", ["config", "--get", `remote.${remote}.url`], dir, env)
   try {
     return await remoteUrl("origin")
   } catch {}
@@ -246,16 +248,13 @@ export const cloneRepository = (
   url: string,
   destination: string,
   onOutput?: GitOutputListener,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  signal?: AbortSignal
 ): Promise<void> =>
   new Promise((resolve, reject) => {
-    const child = spawn("git", ["clone", "--progress", url, destination], {
-      env: {
-        ...env,
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_ASKPASS: "true",
-        GIT_SSH_COMMAND: env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes"
-      }
+    const child = spawn("git", ["clone", "--progress", "--", url, destination], {
+      env: { ...nonInteractiveGitEnvironment(env), GIT_PROGRESS_DELAY: "0", LC_ALL: "C" },
+      ...(signal === undefined ? {} : { signal })
     })
     const output = new GitCommandOutput(child, onOutput)
     const settle = (failure: CloneError | undefined): void => {
@@ -267,14 +266,17 @@ export const cloneRepository = (
       }
     }
     child.once("error", (cause) => {
-      settle(new CloneError(cause.message, undefined))
+      settle(signal?.aborted === true ? cloneCancelled() : new CloneError(cause.message, undefined))
     })
     child.once("close", (code) => {
       if (code === 0) {
         settle(undefined)
         return
       }
-      const stderrText = output.stderrLines.join("\n").trim()
+      const stderrText = output.stderrLines
+        .filter((line) => parseCloneProgress(line) === undefined)
+        .join("\n")
+        .trim()
       const message =
         stderrText.length > 0 ? stderrText : `git clone exited with code ${String(code)}`
       settle(new CloneError(message, classifyCloneFailure(stderrText)))

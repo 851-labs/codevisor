@@ -150,23 +150,6 @@ describe("project routes", () => {
       expect(states[0]).toBe("started")
       expect(states.at(-1)).toBe("completed")
 
-      const renamed = await jsonRequest(server, "/v1/projects/from-git", {
-        body: JSON.stringify({ url, name: "widget-two" }),
-        method: "POST"
-      })
-      expect(renamed.status).toBe(201)
-      expect(renamed.body).toMatchObject({
-        name: "widget-two",
-        locations: [{ folderPath: join(reposRoot, "widget-two") }]
-      })
-
-      const duplicate = await jsonRequest(server, "/v1/projects/from-git", {
-        body: JSON.stringify({ url }),
-        method: "POST"
-      })
-      expect(duplicate.status).toBe(409)
-      expect(duplicate.body).toMatchObject({ code: "already_exists" })
-
       const invalid = await jsonRequest(server, "/v1/projects/from-git", {
         body: JSON.stringify({ url: "not a url" }),
         method: "POST"

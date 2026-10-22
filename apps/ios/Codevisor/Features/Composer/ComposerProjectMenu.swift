@@ -6,7 +6,9 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
   @Environment(AppEnvironment.self) private var environment
 
   let currentProject: Project
+  let pendingSetupGroup: ProjectGroup?
   let onSelected: (Project) -> Void
+  let onSetUp: (ProjectGroup) -> Void
   let onProjectDeleted: (ProjectGroup) -> Void
   @ViewBuilder let label: () -> MenuLabel
 
@@ -16,24 +18,32 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
 
   private var serverId: String { currentProject.serverId }
 
-  private var projects: [Project] {
-    environment.projectList
-      .fleetActiveProjectsByWorkspaceRecency(environment.workspaces.loadAll())
-      .filter { $0.serverId == serverId && !$0.isScratch }
+  private static var noProjectTag: String { "no-project" }
+
+  private var groups: [ProjectGroup] {
+    environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency(environment.workspaces.loadAll())
   }
 
   private var isPlaceholder: Bool {
-    currentProject.isRunTargetPlaceholder || currentProject.isScratch
+    pendingSetupGroup == nil && (currentProject.isRunTargetPlaceholder || currentProject.isScratch)
   }
 
-  private var selection: Binding<UUID> {
+  private var selection: Binding<String> {
     Binding(
-      get: { isPlaceholder ? Project.runTargetPlaceholderID : currentProject.id },
+      get: {
+        if let pendingSetupGroup { return pendingSetupGroup.id }
+        if isPlaceholder { return Self.noProjectTag }
+        return groups.first { $0.contains(currentProject) }?.id ?? Self.noProjectTag
+      },
       set: { id in
-        if id == Project.runTargetPlaceholderID {
+        if id == Self.noProjectTag {
           if !isPlaceholder { onSelected(.runTargetPlaceholder(serverId: serverId)) }
-        } else if let project = projects.first(where: { $0.id == id }) {
-          onSelected(project)
+        } else if let group = groups.first(where: { $0.id == id }) {
+          if let project = group.member(on: serverId) {
+            onSelected(project)
+          } else {
+            onSetUp(group)
+          }
         }
       }
     )
@@ -49,14 +59,14 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
 
       Picker("Project", selection: selection) {
         Label("No project", systemImage: EntitySystemSymbol.projectList)
-          .tag(Project.runTargetPlaceholderID)
-        ForEach(projects) { project in
-          Label(project.name, systemImage: EntitySystemSymbol.project)
-            .tag(project.id)
+          .tag(Self.noProjectTag)
+        ForEach(groups) { group in
+          Label(group.name, systemImage: EntitySystemSymbol.project)
+            .tag(group.id)
         }
       }
 
-      if projects.isEmpty {
+      if groups.isEmpty {
         Section {
           if isLoading {
             Button("Loading Projects…") {}.disabled(true)

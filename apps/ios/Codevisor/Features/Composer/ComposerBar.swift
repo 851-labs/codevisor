@@ -42,6 +42,7 @@ struct ComposerBar: View {
   @State var isPickingFiles = false
   @State var isCapturingPhoto = false
   @State var managedProject: Project?
+  @State var projectSetupState = ComposerProjectSetupState()
   @State var showsMachineSettings = false
   @State var runTargetSelectionRevision = 0
   @State var pasteFailureNotice: ComposerPasteFailureNotice?

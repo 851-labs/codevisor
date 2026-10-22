@@ -4,6 +4,10 @@ import SwiftUI
 
 extension ComposerBar {
   var runTargetControls: some View {
+    withProjectSetup(runTargetBar)
+  }
+
+  private var runTargetBar: some View {
     let machine = environment.machines.machine(for: controller.project.serverId)
     return ComposerRunTargetBar(
       machineName: environment.machines.allMachines.count > 1 ? (machine?.name ?? "Machine") : nil,
@@ -16,9 +20,11 @@ extension ComposerBar {
           .map(\.id)
       ),
       project: liveProject,
+      pendingSetupGroup: controller.project.isRunTargetPlaceholder ? pendingSetupGroup : nil,
       wantsNewWorktree: controller.wantsNewWorktree,
       onMachine: selectTargetMachine,
       onProject: { selectTargetProject($0) },
+      onSetUpProject: selectSetUpGroup,
       onLocation: selectRunLocation,
       onManageMachines: { showsMachineSettings = true },
       onManageProject: { managedProject = liveProject },
@@ -29,7 +35,9 @@ extension ComposerBar {
       shape: cardStyle.shape, id: .newChatConfiguration, in: glassNamespace
     )
     .padding(.vertical, 6)
-    .disabled(controller.isSubmitting || controller.hasAcceptedFirstSend)
+    .disabled(
+      controller.isSubmitting || controller.hasAcceptedFirstSend
+    )
   }
 
   private var liveProject: Project {
@@ -43,10 +51,16 @@ extension ComposerBar {
     guard machine.id != current.serverId,
       environment.machines.availability(for: machine.id) == .ready
     else { return }
-    if let linked = environment.projectList.fleetProjectGroup(containing: current)?
-      .member(on: machine.id)
-    {
+    let currentGroup =
+      current.isRunTargetPlaceholder
+      ? pendingSetupGroup : environment.projectList.fleetProjectGroup(containing: current)
+    if let linked = currentGroup?.member(on: machine.id) {
       selectTargetProject(linked, wantsWorktree: controller.wantsNewWorktree)
+      return
+    }
+    if let currentGroup {
+      pendingSetupGroupID = currentGroup.id
+      applyRunTarget(.runTargetPlaceholder(serverId: machine.id), wantsWorktree: false)
       return
     }
     let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
@@ -95,7 +109,14 @@ extension ComposerBar {
     }
   }
 
+  func selectSetUpGroup(_ group: ProjectGroup) {
+    pendingSetupGroupID = group.id
+    guard !controller.project.isRunTargetPlaceholder else { return }
+    applyRunTarget(.runTargetPlaceholder(serverId: controller.project.serverId), wantsWorktree: false)
+  }
+
   func selectTargetProject(_ project: Project, wantsWorktree: Bool? = nil) {
+    pendingSetupGroupID = nil
     guard project.serverId != controller.project.serverId || project.id != controller.project.id
     else { return }
     let prefersWorktree = wantsWorktree ?? environment.prefersNewWorktree(for: project)

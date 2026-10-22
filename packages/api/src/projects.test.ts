@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { gitHostProvider } from "./git-auth.js"
 import { repoIdentityKey } from "./projects.js"
 
 describe("repoIdentityKey", () => {
@@ -52,5 +53,15 @@ describe("repoIdentityKey", () => {
     expect(repoIdentityKey("https://")).toBeUndefined()
     expect(repoIdentityKey("git@github.com:")).toBeUndefined()
     expect(repoIdentityKey("git@github.com:.git")).toBeUndefined()
+  })
+})
+
+describe("gitHostProvider", () => {
+  it("recognizes the hosted git providers by host name", () => {
+    expect(gitHostProvider("GitHub.com")).toBe("github")
+    expect(gitHostProvider("gitlab.com")).toBe("gitlab")
+    expect(gitHostProvider("gitlab.example.org")).toBe("gitlab")
+    expect(gitHostProvider("bitbucket.org")).toBe("bitbucket")
+    expect(gitHostProvider("git.example.org")).toBeUndefined()
   })
 })

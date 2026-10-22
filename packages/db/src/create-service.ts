@@ -11,6 +11,7 @@ import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
 import { makeFilesService } from "./files-service.js"
 import { makeHarnessService } from "./harness-service.js"
+import { makeMachineSettingsService } from "./machine-settings-service.js"
 import { makeMcpService } from "./mcp-service.js"
 import { makeNavigationService } from "./navigation-service.js"
 import { makeProjectsService } from "./projects-service.js"
@@ -63,6 +64,7 @@ export const createService = (
     ...makeMcpService(context),
     ...makeAuthService(context),
     ...makeBrowserStateService(context),
+    ...makeMachineSettingsService(context),
     ...makeUpdatesService(context),
     ...makeSyncService(context)
   }

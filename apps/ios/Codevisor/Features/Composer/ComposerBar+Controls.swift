@@ -363,6 +363,10 @@ extension ComposerBar {
     }
     let outgoing = text
     let isSubmittingGoal = controller.isGoalComposerArmed
+    if showsRunPickers, !isSubmittingGoal, beginProjectSetupIfNeeded() {
+      controller.composerText = outgoing
+      return
+    }
     IOSNavigationDiagnostics.record(
       "composer.submit",
       "chars=\(outgoing.count) preservesFocus=\(preservesFocusAfterSend) role=\(textEditorHandoffRole)"

@@ -170,6 +170,17 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func projectRecommendations(limit: Int) async throws -> [ServerProjectRecommendation]
   func createDirectory(path: String) async throws -> String
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
+  func projectSetupSource(projectId: UUID) async throws -> ServerProjectSetupSource
+  func readProjectEnvFiles(projectId: UUID, paths: [String]) async throws -> [ServerProjectEnvFileContent]
+  func publishProjectRemote(projectId: UUID, url: String, initialize: Bool) async throws -> ServerProject
+  func setUpProjectFromGit(_ request: ServerProjectSetupRequest) async throws -> ServerProject
+  func cancelProjectSetup(id: UUID) async throws
+  func projectCloneSettings() async throws -> ServerProjectCloneSettings
+  func updateProjectCloneSettings(baseFolder: String?) async throws -> ServerProjectCloneSettings
+  func gitAuthStatus(host: String) async throws -> ServerGitHostAuthStatus
+  func startGitAuth(host: String) async throws -> ServerGitAuthFlow
+  func gitAuthFlow(id: String) async throws -> ServerGitAuthFlow
+  func cancelGitAuth(id: String) async throws
   func listSessions() async throws -> [ServerSession]
   func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
   func sessionContext(id: UUID) async throws -> ServerSessionContext?

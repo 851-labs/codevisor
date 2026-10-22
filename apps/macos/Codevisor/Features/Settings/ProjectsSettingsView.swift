@@ -67,6 +67,24 @@ struct ProjectsSettingsView: View {
           }
         }
       }
+      if !readyMachineIds.isEmpty {
+        Section {
+          ForEach(readyMachineIds, id: \.self) { serverId in
+            if let machine = environment.machines.machine(for: serverId) {
+              ProjectCloneLocationRow(
+                machine: machine,
+                client: environment.machines.client(for: serverId)
+              )
+            }
+          }
+        } header: {
+          Text("Clone Location")
+        } footer: {
+          Text(
+            "When you start a chat in a project a machine doesn't have yet, Codevisor clones it here. If the project lives under your home folder on another machine, the same path is used when it's free."
+          )
+        }
+      }
     }
     .formStyle(.grouped)
     .sheet(isPresented: $showingAdd) {

@@ -16,6 +16,7 @@ import { handleEvents } from "./routes/events.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFs } from "./routes/fs.js"
 import { routeGatewayInvoke } from "./routes/gateway-invoke.js"
+import { routeGitAuth } from "./routes/git-auth.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeLinkPreviews } from "./routes/link-previews.js"
 import { routeMachineStats } from "./routes/machine-stats.js"
@@ -205,6 +206,7 @@ export const handleRequest = async (
           "transcript-pagination-v1",
           "bots-v1",
           "bot-projects-v1",
+          "project-machine-setup-v1",
           ...(services.plugins === undefined ? [] : ["plugins-v1"]),
           ...((await simulatorsAvailable(config)) ? ["simulator-v1"] : [])
         ],
@@ -323,6 +325,7 @@ export const handleRequest = async (
 
     if (await routeGatewayInvoke(services, request, response, url)) return
     if (await routeProjects(services, config, fanout, request, response, url)) return
+    if (await routeGitAuth(services, request, response, url)) return
     if (await routeClientControl(routeState.clientControl, config, request, response, url)) return
     if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
       return
