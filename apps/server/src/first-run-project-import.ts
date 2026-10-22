@@ -57,8 +57,13 @@ export const importFirstRunProjects = async (
     excludedRoots: [config.dataDirectory],
     projectFolders: await localProjectFolders(services, serverId)
   })
-  for (const project of selection.added.toReversed()) {
+  for (const [index, project] of selection.added.toReversed().entries()) {
     await addProject(services, fanout, { folderPath: project.path })
+    await publishFirstRunStatus(services, fanout, {
+      state: "running",
+      harnesses: found,
+      addedProjects: index + 1
+    })
   }
   await run(services.db.setMachineSetting(FIRST_RUN_PROJECTS_SETTING, firstRunProjectsDone))
   await publishFirstRunStatus(services, fanout, {

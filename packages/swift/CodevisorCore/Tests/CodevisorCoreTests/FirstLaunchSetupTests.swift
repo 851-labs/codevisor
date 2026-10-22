@@ -19,47 +19,35 @@ struct FirstLaunchSetupTests {
 
     #expect(setup.presentation == .dismissed)
     #expect(!setup.wasShown)
+    #expect(setup.detailCandidates(for: .projects) == ["2 projects"])
   }
 
-  @Test("Stays up for at least a second and a half once it is shown")
-  func keepsMinimumTimeOnScreen() async {
+  @Test("Offers Get Started once the last check lands, and only dismisses when pressed")
+  func offersGetStartedWhenDone() async {
     let clock = TestClock()
     let work = readyExceptHarnesses()
     let setup = FirstLaunchSetup(work: work, clock: clock)
     let running = Task { await setup.run() }
     await show(setup, clock: clock)
-
-    clock.advance(by: .milliseconds(200))
-    work.harnesses.resolve(["Claude Code"])
-    await clock.waitForSleep(.milliseconds(1_300))
+    setup.getStarted()
     #expect(setup.presentation == .visible)
 
-    clock.advance(by: .milliseconds(1_300))
-    await awaitObserved { setup.presentation == .dismissed }
-    await running.value
-    #expect(setup.wasShown)
-  }
-
-  @Test("Lets the last check settle briefly when the minimum has already passed")
-  func settlesAfterMinimum() async {
-    let clock = TestClock()
-    let work = readyExceptHarnesses()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
-    await show(setup, clock: clock)
-
-    clock.advance(by: .seconds(3))
     work.harnesses.resolve(["Claude Code"])
+    await clock.waitForSleep(.milliseconds(140))
+    clock.advance(by: .milliseconds(140))
     await clock.waitForSleep(.milliseconds(400))
-    #expect(setup.presentation == .visible)
-
+    #expect(!setup.canGetStarted)
     clock.advance(by: .milliseconds(400))
-    await awaitObserved { setup.presentation == .dismissed }
     await running.value
+
+    #expect(setup.canGetStarted)
+    #expect(setup.presentation == .visible)
+    setup.getStarted()
+    #expect(setup.presentation == .dismissed)
   }
 
-  @Test("Goes away after fifteen seconds and leaves slow work running")
-  func dismissesAtMaximum() async {
+  @Test("Offers Get Started at fifteen seconds while slow work keeps going")
+  func offersGetStartedAtCap() async {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
     let setup = FirstLaunchSetup(work: work, clock: clock)
@@ -68,9 +56,11 @@ struct FirstLaunchSetupTests {
 
     await clock.waitForSleep(.seconds(15))
     clock.advance(by: .seconds(15))
-    await awaitObserved { setup.presentation == .dismissed }
+    await awaitObserved { setup.canGetStarted }
 
     #expect(setup.revealed(.server) == .running)
+    setup.getStarted()
+    #expect(setup.presentation == .dismissed)
     running.cancel()
     await running.value
   }
@@ -88,9 +78,10 @@ struct FirstLaunchSetupTests {
 
     #expect(setup.presentation == .handedOff)
     #expect(setup.wasShown == afterShowing)
+    #expect(!setup.canGetStarted)
   }
 
-  @Test("Skips steps that run past their time limits, revealing them in order")
+  @Test("Skips steps that run past their time limits, keeping one spinner at a time")
   func skipsSlowSteps() async {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
@@ -101,29 +92,29 @@ struct FirstLaunchSetupTests {
       await clock.waitForSleep(limit)
     }
     await show(setup, clock: clock)
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
 
     clock.advance(by: .milliseconds(4_500))
     await awaitObserved { setup.revealed(.harnesses) == .skipped }
-    #expect(setup.revealed(.projects) == .running)
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .running, .pending])
 
     clock.advance(by: .seconds(1))
     await awaitObserved { setup.outcomes[.models] == .skipped }
-    #expect(setup.revealed(.models) == .running)
+    #expect(setup.revealed(.models) == .pending)
 
     clock.advance(by: .seconds(4))
     await awaitObserved { setup.isComplete }
     #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .skipped, .skipped])
-    #expect(setup.revealedHarnessNames.isEmpty)
-    #expect(setup.revealedProjectCount == 0)
+    #expect(setup.detailCandidates(for: .harnesses).isEmpty)
 
     await clock.waitForSleep(.milliseconds(400))
     clock.advance(by: .milliseconds(400))
     await running.value
-    #expect(setup.presentation == .dismissed)
+    #expect(setup.canGetStarted)
   }
 
-  @Test("Holds a finished step and its detail until every step above it is done")
-  func revealsDetailsInOrder() async {
+  @Test("Keeps a finished step quiet until every step above it is done")
+  func revealsInOrder() async {
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
     work.models.resolve(())
@@ -132,14 +123,52 @@ struct FirstLaunchSetupTests {
 
     work.projects.resolve(6)
     await awaitObserved { setup.outcomes[.projects] == .done && setup.outcomes[.models] == .done }
-    #expect(setup.revealed(.models) == .running)
-    #expect(setup.revealedProjectCount == 0)
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
+    #expect(setup.detailCandidates(for: .projects).isEmpty)
 
     work.harnesses.resolve(["Claude Code", "Codex"])
     await running.value
-    #expect(setup.revealedHarnessNames == ["Claude Code", "Codex"])
-    #expect(setup.revealedProjectCount == 6)
+    #expect(setup.visibleHarnessNames == ["Claude Code", "Codex"])
+    #expect(setup.detailCandidates(for: .projects) == ["6 projects"])
     #expect(setup.revealed(.models) == .done)
+  }
+
+  @Test("Counts projects up from real progress, only once projects is the current step")
+  func countsProjectsUp() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    work.server.resolve(.ready)
+    work.models.resolve(())
+    let setup = FirstLaunchSetup(work: work, clock: clock)
+    let running = Task { await setup.run() }
+    await show(setup, clock: clock)
+
+    work.reportProjectsAdded(2)
+    work.harnesses.resolve(["Codex"])
+    await clock.waitForSleep(.milliseconds(140))
+    #expect(setup.visibleProjectCount == 0)
+    clock.advance(by: .milliseconds(140))
+    await awaitObserved { setup.revealed(.harnesses) == .done }
+
+    for count in 1...2 {
+      await clock.waitForSleep(.milliseconds(140), count: count + 1)
+      clock.advance(by: .milliseconds(140))
+      await awaitObserved { setup.visibleProjectCount == count }
+    }
+    #expect(setup.revealed(.projects) == .running)
+
+    work.projects.resolve(4)
+    await clock.waitForSleep(.milliseconds(140), count: 4)
+    clock.advance(by: .milliseconds(140))
+    await awaitObserved { setup.visibleProjectCount == 3 }
+    await clock.waitForSleep(.milliseconds(140), count: 5)
+    clock.advance(by: .milliseconds(140))
+    await awaitObserved { setup.revealed(.projects) == .done }
+    #expect(setup.detailCandidates(for: .projects) == ["4 projects"])
+
+    await clock.waitForSleep(.milliseconds(400))
+    clock.advance(by: .milliseconds(400))
+    await running.value
   }
 
   @Test("Treats a failed step as a skip")
@@ -160,7 +189,7 @@ struct FirstLaunchSetupTests {
   private func readyExceptHarnesses() -> FirstLaunchFakeWork {
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
-    work.projects.resolve(3)
+    work.projects.resolve(0)
     work.models.resolve(())
     return work
   }

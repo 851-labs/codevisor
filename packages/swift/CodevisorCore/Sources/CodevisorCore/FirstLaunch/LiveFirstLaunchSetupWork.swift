@@ -28,8 +28,18 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     return try await installedHarnessNames()
   }
 
-  public func addRecentProjects() async throws -> Int {
-    let status = try await feed.status(where: \.isFinal)
+  public func addRecentProjects(progress: @escaping @MainActor (Int) -> Void) async throws -> Int {
+    var reported = 0
+    while true {
+      let status = try await feed.status { $0.isFinal || ($0.addedProjects ?? 0) > reported }
+      reported = max(reported, status.addedProjects ?? 0)
+      progress(reported)
+      guard status.isFinal else { continue }
+      return try finalProjectCount(status)
+    }
+  }
+
+  private func finalProjectCount(_ status: ServerFirstRunStatus) throws -> Int {
     switch status.state {
     case .done: return status.addedProjects ?? 0
     case .notApplicable: return 0

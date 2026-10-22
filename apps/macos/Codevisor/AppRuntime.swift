@@ -13,6 +13,7 @@ final class AppRuntime {
   private(set) var environment: AppEnvironment?
   private(set) var sparkleUpdater: SparkleUpdateController?
   private(set) var firstLaunchSetup: FirstLaunchSetup?
+  private(set) var firstLaunchLanding: FirstLaunchLanding?
   var startupError: String?
   @ObservationIgnored private var startupInProgress = false
   @ObservationIgnored let serverAgent = MacServerAgentController()
@@ -88,8 +89,11 @@ final class AppRuntime {
   }
 
   private func startFirstLaunchSetup(_ environment: AppEnvironment) {
+    ClientPreferences.shared.set(true, forKey: RootView.sidebarCollapsedKey)
+    ClientPreferences.shared.set(false, forKey: WorkspaceInspectorPresentation.presentedKey)
     let setup = FirstLaunchSetup(work: LiveFirstLaunchSetupWork(environment: environment))
     firstLaunchSetup = setup
+    firstLaunchLanding = FirstLaunchLanding()
     Task { await setup.run() }
   }
 }

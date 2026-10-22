@@ -12,14 +12,14 @@ struct FirstLaunchRevealTests {
   }
 
   static let rows = [
-    Row(name: "nothing started", actual: [:], shown: [.pending, .pending, .pending, .pending]),
+    Row(name: "nothing started", actual: [:], shown: [.running, .pending, .pending, .pending]),
     Row(
       name: "a later step finished first",
       actual: [.server: .done, .harnesses: .running, .projects: .running, .models: .done],
-      shown: [.done, .running, .running, .running]
+      shown: [.done, .running, .pending, .pending]
     ),
     Row(
-      name: "a skipped step lets the ones below it show",
+      name: "a skipped step hands the spinner to the next one",
       actual: [.server: .done, .harnesses: .skipped, .projects: .done, .models: .running],
       shown: [.done, .skipped, .done, .running]
     ),
@@ -29,16 +29,17 @@ struct FirstLaunchRevealTests {
       shown: [.done, .done, .done, .done]
     ),
     Row(
-      name: "an unfinished step keeps finished steps below it hidden",
+      name: "an unfinished step keeps the steps below it quiet",
       actual: [.server: .running, .harnesses: .done, .projects: .skipped, .models: .done],
-      shown: [.running, .running, .running, .running]
+      shown: [.running, .pending, .pending, .pending]
     ),
   ]
 
-  @Test("Reveals finished steps strictly top to bottom", arguments: rows)
+  @Test("Reveals finished steps top to bottom with one spinner at a time", arguments: rows)
   func revealsInOrder(row: Row) {
     let revealed = FirstLaunchReveal.revealed(row.actual)
     #expect(FirstLaunchStep.allCases.map { revealed[$0] } == row.shown)
+    #expect(revealed.values.filter { $0 == .running }.count <= 1)
   }
 }
 

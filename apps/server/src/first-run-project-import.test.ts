@@ -44,6 +44,8 @@ describe("first-run project import", () => {
     expect(machine.statusEvents()).toEqual([
       { state: "running" },
       { state: "running", harnesses: foundHarnesses },
+      { state: "running", harnesses: foundHarnesses, addedProjects: 1 },
+      { state: "running", harnesses: foundHarnesses, addedProjects: 2 },
       { state: "done", harnesses: foundHarnesses, addedProjects: 2 }
     ])
     expect(machine.logs()).toEqual(

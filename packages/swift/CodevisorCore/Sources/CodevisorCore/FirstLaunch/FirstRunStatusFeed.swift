@@ -50,8 +50,12 @@ final class FirstRunStatusFeed {
     await withCheckedContinuation { waiters.append($0) }
   }
 
-  private static func progress(of status: ServerFirstRunStatus?) -> Int {
-    guard let status else { return 0 }
+  private static func progress(of status: ServerFirstRunStatus?) -> FirstRunProgress {
+    guard let status else { return FirstRunProgress(stage: 0, addedProjects: 0) }
+    return FirstRunProgress(stage: stage(of: status), addedProjects: status.addedProjects ?? 0)
+  }
+
+  private static func stage(of status: ServerFirstRunStatus) -> Int {
     if status.isFinal { return 3 }
     return status.harnesses == nil ? 1 : 2
   }

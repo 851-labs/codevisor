@@ -25,5 +25,6 @@ struct ModelPickerChipLabel: View {
         .truncationMode(.tail)
     }
     .contentShape(Rectangle())
+    .firstLaunchLandingTarget(.modelChip)
   }
 }

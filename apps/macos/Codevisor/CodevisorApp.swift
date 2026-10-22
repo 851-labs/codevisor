@@ -17,8 +17,8 @@ struct CodevisorApp: App {
           .themedRoot()
           .modifier(DebugMetricsOverlayModifier())
           .overlay {
-            if let setup = runtime.firstLaunchSetup {
-              FirstLaunchSetupOverlay(setup: setup)
+            if let setup = runtime.firstLaunchSetup, let landing = runtime.firstLaunchLanding {
+              FirstLaunchSetupOverlay(setup: setup, landing: landing)
             }
           }
           .environment(environment)
@@ -105,7 +105,8 @@ struct RootView: View {
   @Environment(\.openSettings) var openClientSettings
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
-  @ClientPreference("sidebar.collapsed", default: false) var sidebarCollapsed
+  static let sidebarCollapsedKey = "sidebar.collapsed"
+  @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
