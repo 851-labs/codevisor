@@ -118,6 +118,7 @@ export interface McpManager {
     answer: QuestionAnswer
   ) => Promise<boolean>
   readonly acceptBrowserExtension: (socket: WebSocket) => void
+  readonly acceptBrowserNativeHost: (socket: WebSocket) => void
   readonly acceptBrowserHost: (socket: WebSocket) => void
   readonly subscribeBrowserPreview: (
     sessionId: string,

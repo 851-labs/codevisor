@@ -167,6 +167,11 @@ describe("browser extension background connection", () => {
       "relay-candidates.js",
       "tab-groups.js"
     )
+    expect(importScripts).toHaveBeenCalledWith(
+      "native-relay.js",
+      "clipboard-commands.js",
+      "history-commands.js"
+    )
     expect(FakeWebSocket.instances).toHaveLength(1)
     const first = FakeWebSocket.instances[0]!
     await first.error()

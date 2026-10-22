@@ -121,6 +121,9 @@ export const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider =
     acceptExtensionConnection: (socket) => {
       socket.close()
     },
+    acceptNativeHostConnection: (socket) => {
+      socket.close()
+    },
     onExtensionConnectionChange: () => () => undefined,
     openDevelopmentExtensionFolder: unavailable,
     openDevelopmentExtensionPage: unavailable,

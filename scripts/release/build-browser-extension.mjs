@@ -54,6 +54,7 @@ const archiveName = `Codevisor-Chrome-${version}.zip`
 const archivePath = join(outputDir, archiveName)
 const checksumPath = `${archivePath}.sha256`
 const productionRelay = "ws://127.0.0.1:49361/v1/browser-use/extension/socket"
+const productionNativeHost = "com.codevisor.host"
 const reviewedPermissions = [
   "alarms",
   "clipboardRead",
@@ -61,6 +62,7 @@ const reviewedPermissions = [
   "debugger",
   "downloads",
   "history",
+  "nativeMessaging",
   "offscreen",
   "tabGroups",
   "tabs"
@@ -154,12 +156,19 @@ try {
 
   writeFileSync(
     join(stageDir, "relay-config.js"),
-    `globalThis.CODEVISOR_RELAY = ${JSON.stringify(productionRelay)}\n`
+    [
+      `globalThis.CODEVISOR_RELAY = ${JSON.stringify(productionRelay)}`,
+      `globalThis.CODEVISOR_NATIVE_HOST = ${JSON.stringify(productionNativeHost)}`,
+      ""
+    ].join("\n")
   )
 
   const requiredFiles = [
     "manifest.json",
     "background.js",
+    "native-relay.js",
+    "clipboard-commands.js",
+    "history-commands.js",
     "connect.html",
     "connect.js",
     "offscreen.html",

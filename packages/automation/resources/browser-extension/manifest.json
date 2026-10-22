@@ -14,6 +14,7 @@
     "tabs",
     "tabGroups",
     "history",
+    "nativeMessaging",
     "downloads",
     "offscreen",
     "clipboardRead",

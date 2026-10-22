@@ -1,7 +1,9 @@
 importScripts("relay-config.js", "relay-candidates.js", "tab-groups.js")
+importScripts("native-relay.js", "clipboard-commands.js", "history-commands.js")
 
 const connections = new Set()
 const relays = globalThis.codevisorRelays(globalThis.CODEVISOR_RELAY)
+const CODEVISOR_NATIVE_HOST = globalThis.CODEVISOR_NATIVE_HOST
 const RECONNECT_ALARM = "codevisor-reconnect"
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
@@ -17,7 +19,7 @@ let lastDisconnectedAt
 let lastConnectionError
 let lastCommandError
 let lastCommandErrorAt
-let offscreenCreation
+let relayTransport = "native"
 
 const tabUrl = (tab) => tab.url || tab.pendingUrl || "about:blank"
 const fileName = (path) =>
@@ -25,33 +27,6 @@ const fileName = (path) =>
     .split(/[\\/]/)
     .at(-1) || "download"
 const downloadProgressStates = { complete: "completed", interrupted: "canceled" }
-
-const ensureOffscreenDocument = async () => {
-  if (await chrome.offscreen.hasDocument()) return
-  offscreenCreation ??= chrome.offscreen
-    .createDocument({
-      url: "offscreen.html",
-      reasons: ["CLIPBOARD"],
-      justification: "Read and write the clipboard for Codevisor Browser Use."
-    })
-    .finally(() => {
-      offscreenCreation = undefined
-    })
-  await offscreenCreation
-}
-
-const runClipboardCommand = async (method, params) => {
-  await ensureOffscreenDocument()
-  const response = await chrome.runtime.sendMessage({
-    target: "codevisor-offscreen",
-    method,
-    params
-  })
-  if (response?.ok !== true) {
-    throw new Error(response?.error || "The Codevisor clipboard operation failed")
-  }
-  return response.result ?? {}
-}
 
 const tabTarget = (tab) => ({
   targetId: String(tab.id),
@@ -231,21 +206,7 @@ class CodevisorConnection {
         return {}
       }
       case "Codevisor.getHistory":
-        return {
-          entries: await chrome.history.search({
-            text: message.params?.text ?? "",
-            ...(typeof message.params?.startTime === "number"
-              ? { startTime: message.params.startTime }
-              : {}),
-            ...(typeof message.params?.endTime === "number"
-              ? { endTime: message.params.endTime }
-              : {}),
-            maxResults:
-              typeof message.params?.maxResults === "number"
-                ? Math.max(1, Math.min(1000, message.params.maxResults))
-                : 100
-          })
-        }
+        return searchCodevisorHistory(message.params ?? {})
       default:
         throw new Error(`Unsupported browser command: ${message.method}`)
     }
@@ -367,7 +328,8 @@ const connectionStatus = () => {
     lastConnectionError: lastConnectionError ?? null,
     lastCommandError: lastCommandError ?? null,
     lastCommandErrorAt: lastCommandErrorAt ?? null,
-    relay: relays.current(),
+    relay: relayTransport === "native" ? `Native host ${CODEVISOR_NATIVE_HOST}` : relays.current(),
+    transport: relayTransport,
     version: chrome.runtime.getManifest().version
   }
 }
@@ -392,6 +354,7 @@ const scheduleReconnect = () => {
   const scheduleGeneration = reconnectScheduleGeneration
   const delay = reconnectDelay()
   reconnectAttempt += 1
+  relayTransport = "native"
   connectionState = "reconnecting"
   nextReconnectAt = Date.now() + delay
   const scheduledAt = nextReconnectAt
@@ -414,7 +377,7 @@ const connectToCodevisor = () => {
   connectionState = reconnectAttempt === 0 ? "connecting" : "reconnecting"
   let socket
   try {
-    socket = new WebSocket(relays.current())
+    socket = openRelay()
   } catch (error) {
     lastConnectionError = error instanceof Error ? error.message : String(error)
     lastDisconnectedAt = Date.now()
@@ -452,9 +415,14 @@ const connectToCodevisor = () => {
     if (activeSocket !== socket) return
     activeSocket = undefined
     lastDisconnectedAt = Date.now()
-    lastConnectionError ??= "The connection to Codevisor closed"
-    if (connection === undefined && relays.advance()) connectToCodevisor()
-    else scheduleReconnect()
+    if (fallBackFromMissingNativeHost(socket)) return
+    lastConnectionError =
+      socket.failure ?? lastConnectionError ?? "The connection to Codevisor closed"
+    if (relayTransport === "websocket" && connection === undefined && relays.advance()) {
+      connectToCodevisor()
+    } else {
+      scheduleReconnect()
+    }
   })
   socket.addEventListener("error", () => {
     if (activeSocket === socket) {
@@ -464,9 +432,27 @@ const connectToCodevisor = () => {
   })
 }
 
+const openRelay = () => {
+  const native =
+    relayTransport === "native"
+      ? globalThis.openCodevisorNativeRelay?.(CODEVISOR_NATIVE_HOST)
+      : undefined
+  if (native !== undefined) return native
+  relayTransport = "websocket"
+  return new WebSocket(relays.current())
+}
+
+const fallBackFromMissingNativeHost = (socket) => {
+  if (!socket.hostMissing) return false
+  relayTransport = "websocket"
+  connectToCodevisor()
+  return true
+}
+
 const reconnectNow = () => {
   clearReconnectSchedule()
   reconnectAttempt = 0
+  relayTransport = "native"
   connectionState = "connecting"
   lastConnectionError = undefined
   const socket = activeSocket

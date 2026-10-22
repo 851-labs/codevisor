@@ -27,6 +27,7 @@ import {
 } from "./browser-extension-relay.js"
 import { extensionNeedsUpdate } from "./browser-extension-update.js"
 import { makeBrowserHostRegistry, type BrowserHostRegistry } from "./browser-host-registry.js"
+import { authenticateNativeHost, readNativeHostSecret } from "./browser-native-host.js"
 import { makeBrowserPreviews } from "./browser-preview.js"
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
 import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
@@ -290,6 +291,16 @@ export const makeBrowserUseProvider = (
     acceptExtensionConnection: (socket) => {
       runtimes.delete("extension")
       extensionRelay.accept(socket)
+    },
+    acceptNativeHostConnection: (socket) => {
+      const secret = readNativeHostSecret(dataDir)
+      if (secret === undefined) {
+        socket.close(1008, "This Codevisor server has no native host secret")
+        return
+      }
+      void authenticateNativeHost(socket, secret).then((authenticated) => {
+        if (authenticated) provider.acceptExtensionConnection(socket)
+      })
     },
     onExtensionConnectionChange: extensionRelay.onConnectionChange,
     openDevelopmentExtensionFolder: () =>

@@ -48,6 +48,7 @@ export const attachEventSocket = async (
 
 export const acceptPublicSocket = (upgrade: SocketUpgrade, url: URL): boolean => {
   if (acceptBrowserExtension(upgrade, url)) return true
+  if (acceptBrowserNativeHost(upgrade, url)) return true
   return acceptDirectConnection(upgrade, url)
 }
 
@@ -66,6 +67,15 @@ const acceptBrowserExtension = (upgrade: SocketUpgrade, url: URL): boolean => {
 
   accept(upgrade, (webSocket) => {
     upgrade.services.mcp!.acceptBrowserExtension(webSocket)
+  })
+  return true
+}
+
+const acceptBrowserNativeHost = (upgrade: SocketUpgrade, url: URL): boolean => {
+  if (!isBrowserNativeHostSocket(upgrade, url)) return false
+
+  accept(upgrade, (webSocket) => {
+    upgrade.services.mcp!.acceptBrowserNativeHost(webSocket)
   })
   return true
 }
@@ -211,6 +221,12 @@ const isBrowserExtensionSocket = ({ services, request }: SocketUpgrade, url: URL
   services.mcp !== undefined &&
   isLocalhost(request.socket.remoteAddress) &&
   request.headers.origin === BROWSER_EXTENSION_ORIGIN
+
+const isBrowserNativeHostSocket = ({ services, request }: SocketUpgrade, url: URL): boolean =>
+  isGetTo(request, url, "/v1/browser-use/extension/native") &&
+  services.mcp !== undefined &&
+  isLocalhost(request.socket.remoteAddress) &&
+  request.headers.origin === undefined
 
 const isGetTo = (request: IncomingMessage, url: URL, pathname: string): boolean =>
   request.method === "GET" && url.pathname === pathname

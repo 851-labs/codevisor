@@ -5,6 +5,7 @@ import { promisify } from "node:util"
 
 import { makeAgentRuntime, makeShellEnvCache, resolveShellEnv } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress } from "@codevisor/api"
+import { installServerNativeHost } from "@codevisor/automation"
 import {
   makeAttachmentStore,
   makeDatabase,
@@ -322,6 +323,15 @@ export const runServe = (
         ...(plugins === undefined ? {} : { pluginTools: plugins })
       })
     )
+    if (resolvedKind === "local" || worktreeNameStyle === "production") {
+      initializeOptionalServerFeature("Browser native host", () =>
+        installServerNativeHost(dirname(databasePath), {
+          env: process.env,
+          home: homedir(),
+          platform: process.platform
+        })
+      )
+    }
     let nativeMcp: NativeMcpManager | undefined
     if (mcp !== undefined) {
       nativeMcp = initializeOptionalServerFeature("Native MCP discovery", () =>

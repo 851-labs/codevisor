@@ -28,6 +28,7 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   ) => Promise<void>
   readonly acceptBrowserHost: (socket: BrowserHostSocket) => void
   readonly acceptExtensionConnection: (socket: WebSocket) => void
+  readonly acceptNativeHostConnection: (socket: WebSocket) => void
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
   readonly openDevelopmentExtensionFolder: () => Promise<void>
   readonly openDevelopmentExtensionPage: () => Promise<void>

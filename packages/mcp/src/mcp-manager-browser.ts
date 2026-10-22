@@ -6,6 +6,7 @@ import type { McpManager } from "./mcp-manager-types.js"
 export type McpBrowserOperations = Pick<
   McpManager,
   | "acceptBrowserExtension"
+  | "acceptBrowserNativeHost"
   | "acceptBrowserHost"
   | "answerQuestion"
   | "browserConfiguration"
@@ -51,6 +52,7 @@ export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperat
     answerQuestion: (sessionId, questionId, answer) =>
       browserSetupBroker.answerQuestion(sessionId, questionId, answer),
     acceptBrowserExtension: (socket) => browserProvider.acceptExtensionConnection(socket),
+    acceptBrowserNativeHost: (socket) => browserProvider.acceptNativeHostConnection(socket),
     acceptBrowserHost: (socket) => browserProvider.acceptBrowserHost(socket),
     browserConfiguration,
     openBrowserExtensionInstaller: async () => {

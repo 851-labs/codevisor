@@ -14,6 +14,7 @@ import { basename, dirname, join } from "node:path"
 
 import { CdpConnection, type CdpSocket } from "./browser-cdp.js"
 import { createBrowserExtensionArchive } from "./browser-extension-archive.js"
+import { nativeHostNameFor } from "./browser-native-host.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 import { expectRecord, recordOrEmpty } from "./unknown-values.js"
 
@@ -185,7 +186,7 @@ export const prepareBrowserExtension = (
   relay.protocol = relay.protocol === "https:" ? "wss:" : "ws:"
   writeFileSync(
     join(staged, "relay-config.js"),
-    `globalThis.CODEVISOR_RELAY = ${JSON.stringify(relay.toString())}\n`,
+    relayConfig(relay.toString(), nativeHostNameFor(branding.worktreeName)),
     { mode: 0o600 }
   )
   replaceDirectory(staged, extension)
@@ -194,6 +195,13 @@ export const prepareBrowserExtension = (
 }
 
 let stagedExtensions = 0
+
+const relayConfig = (relay: string, nativeHost: string): string =>
+  [
+    `globalThis.CODEVISOR_RELAY = ${JSON.stringify(relay)}`,
+    `globalThis.CODEVISOR_NATIVE_HOST = ${JSON.stringify(nativeHost)}`,
+    ""
+  ].join("\n")
 
 const copyDirectory = (source: string, target: string): void => {
   mkdirSync(target, { recursive: true })

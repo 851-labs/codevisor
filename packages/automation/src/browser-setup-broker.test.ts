@@ -32,6 +32,7 @@ const fixture = (
     ensureSetup: async () => {},
     acceptBrowserHost: () => {},
     acceptExtensionConnection: () => {},
+    acceptNativeHostConnection: () => {},
     openDevelopmentExtensionInstaller: async () => {},
     extensionArchivePath: () => "",
     extensionIconPath: () => "",
