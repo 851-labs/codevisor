@@ -16,7 +16,8 @@ export class SizeArbiter {
   resize(clientId: string, size: TerminalSize): TerminalSize | undefined {
     this.visible.set(clientId, size)
     this.owner ??= clientId
-    return this.owner === clientId ? this.apply(size) : undefined
+    if (this.owner === clientId) return this.apply(size)
+    return undefined
   }
 
   claim(clientId: string): TerminalSize | undefined {
@@ -31,7 +32,8 @@ export class SizeArbiter {
   hide(clientId: string): TerminalSize | undefined {
     if (!this.visible.delete(clientId) || this.owner !== clientId) return undefined
     this.owner = [...this.visible.keys()].at(-1)
-    return this.owner === undefined ? undefined : this.apply(this.visible.get(this.owner)!)
+    if (this.owner === undefined) return undefined
+    return this.apply(this.visible.get(this.owner)!)
   }
 
   release(clientId: string): TerminalSize | undefined {

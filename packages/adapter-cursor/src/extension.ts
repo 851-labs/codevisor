@@ -295,9 +295,8 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
       const normalized = (): ReadonlyArray<RuntimeEvent> =>
         subagents.mapToolEvents(sessionId, normalizer.mapSessionNotification(notification))
       if (subagents.isChildSession(sessionId)) {
-        return subagents.isThreadUpdate(update)
-          ? subagents.childEvents(sessionId, normalized())
-          : []
+        if (subagents.isThreadUpdate(update)) return subagents.childEvents(sessionId, normalized())
+        return []
       }
       if (update.sessionUpdate !== "config_option_update" || !Array.isArray(update.configOptions)) {
         return normalized()

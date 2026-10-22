@@ -16,6 +16,14 @@ export const attachmentRef = (file: FileMetadata): AttachmentRef => ({
   kind: file.kind
 })
 
+const storeAttachmentInput = (
+  services: CodevisorServerServices,
+  input: Parameters<typeof captureAssistantFile>[1]
+) => {
+  if ("path" in input) return services.attachments.putStream(createReadStream(input.path))
+  return services.attachments.put(input.data)
+}
+
 export const captureAssistantFile = async (
   services: CodevisorServerServices,
   input:
@@ -26,10 +34,7 @@ export const captureAssistantFile = async (
 ): Promise<AttachmentRef> => {
   if ("path" in input && !(await stat(input.path)).isFile())
     throw new Error("Attachment path is not a regular file")
-  const stored =
-    "path" in input
-      ? await services.attachments.putStream(createReadStream(input.path))
-      : await services.attachments.put(input.data)
+  const stored = await storeAttachmentInput(services, input)
   for (const ref of existing) {
     const metadata = await run(services.db.getFileMetadata(ref.fileId))
     if (metadata?.sha256 === stored.sha256) return ref

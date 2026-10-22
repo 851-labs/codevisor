@@ -166,7 +166,8 @@ export const makeExecutionJobs = (options: {
     get: (jobId) => {
       prune()
       const job = registry.get(jobId)
-      return job === undefined ? undefined : collectedSnapshot(job)
+      if (job === undefined) return undefined
+      return collectedSnapshot(job)
     },
     list: (sessionId) => {
       prune()

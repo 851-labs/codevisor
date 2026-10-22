@@ -35,7 +35,8 @@ export const deliverToMachine = (
     port.retire(socket)
   }
   const session = port.resume.machineGraceSession(machineId, Date.now())
-  return session === undefined ? false : bufferOrAbandon(port, session, message)
+  if (session === undefined) return false
+  return bufferOrAbandon(port, session, message)
 }
 
 export const deliverToPeer = (
@@ -52,5 +53,6 @@ export const deliverToPeer = (
     port.retire(socket)
   }
   const session = port.resume.openerGraceSession(peerId, Date.now())
-  return session === undefined ? false : bufferOrAbandon(port, session, message)
+  if (session === undefined) return false
+  return bufferOrAbandon(port, session, message)
 }

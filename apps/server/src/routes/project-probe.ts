@@ -15,14 +15,16 @@ export const probeProject = async (serverId: string, project: Project): Promise<
       return repoKey === undefined ? {} : { repoKey }
     })(),
     locations: await Promise.all(
-      project.locations.map(async (location) =>
-        location.serverId === serverId && existingDirectory(location.folderPath) !== undefined
-          ? {
-              ...location,
-              isGitRepository: isScratch || isBot ? false : await isGitWorkTree(location.folderPath)
-            }
-          : location
-      )
+      project.locations.map(async (location) => {
+        if (
+          location.serverId !== serverId ||
+          existingDirectory(location.folderPath) === undefined
+        ) {
+          return location
+        }
+        if (isScratch || isBot) return { ...location, isGitRepository: false }
+        return { ...location, isGitRepository: await isGitWorkTree(location.folderPath) }
+      })
     ),
     ...(isScratch ? { isScratch: true } : {}),
     ...(isBot ? { isBot: true } : {})

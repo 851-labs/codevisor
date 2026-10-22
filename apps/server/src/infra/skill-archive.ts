@@ -19,9 +19,10 @@ const tarExec = (args: ReadonlyArray<string>, input?: Buffer): Promise<Buffer> =
     const chunks: Array<Buffer> = []
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
     child.once("error", reject)
-    child.once("close", (code) =>
-      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`tar exited with ${code}`))
-    )
+    child.once("close", (code) => {
+      if (code === 0) resolve(Buffer.concat(chunks))
+      else reject(new Error(`tar exited with ${code}`))
+    })
     child.stdin.on("error", () => undefined)
     if (input !== undefined) child.stdin.write(input)
     child.stdin.end()

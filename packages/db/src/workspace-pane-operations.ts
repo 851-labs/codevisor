@@ -58,10 +58,16 @@ export const upsertWorkspacePane = (
   const now = isoTimestamp()
   const resourceId = upsertResourceId(sqlite, workspaceId, id, request)
   sqlite.transaction(() => {
-    const replacedPosition =
-      request.resourceKind !== undefined && resourceId !== null
-        ? discardConflictingPanes(sqlite, id, request.resourceKind, resourceId, workspaceId)
-        : undefined
+    let replacedPosition: string | undefined
+    if (request.resourceKind !== undefined && resourceId !== null) {
+      replacedPosition = discardConflictingPanes(
+        sqlite,
+        id,
+        request.resourceKind,
+        resourceId,
+        workspaceId
+      )
+    }
     writePaneUpsert(sqlite, workspaceId, id, request, resourceId, now, replacedPosition)
     assignPaneSession(sqlite, workspaceId, request.resourceKind, resourceId)
   })()

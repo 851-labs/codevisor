@@ -29,7 +29,8 @@ export const makeOpenCode2Deps = (): OpenCode2Deps => {
   return {
     majorVersion: async (env) => {
       const command = locateOpenCode(env)
-      return command === undefined ? undefined : version(command)
+      if (command === undefined) return undefined
+      return version(command)
     },
     syncCredentials: accounts.syncCredentials
   }
@@ -129,9 +130,8 @@ export const makeOpenCode2Materializer =
     for (const row of rows) {
       const token = await deps.vault.token(row.credential).catch(() => undefined)
       if (!token) continue
-      const cap = refreshedThroughCodevisor(row.providerId)
-        ? await deps.capabilityFor(profile, row)
-        : undefined
+      let cap: { readonly capability: string } | undefined
+      if (refreshedThroughCodevisor(row.providerId)) cap = await deps.capabilityFor(profile, row)
       const credential = seededOAuthCredential(token, cap?.capability)
       if (credential) seeded.push(credential)
     }

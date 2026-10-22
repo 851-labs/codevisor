@@ -96,7 +96,8 @@ export const startWorkspaceGitMonitor = ({
           const batch = [...queued].slice(0, concurrency)
           for (const [id] of batch) queued.delete(id)
           const needsLookup = batch.some(([, entry]) => entry.workspace === undefined)
-          const workspaces = needsLookup ? await run(db.listWorkspaces) : []
+          let workspaces: ReadonlyArray<Workspace> = []
+          if (needsLookup) workspaces = await run(db.listWorkspaces)
           await Promise.all(
             batch.map(async ([id, entry]) => {
               const workspace =

@@ -94,9 +94,10 @@ export const spawnAgyProcess: AgyConnector = async (request) => {
   }
   return wireAgyProcess(transport, interrupt, () => {
     transport.close()
-    void (identity === undefined ? Promise.resolve() : stopProcessTree(pid, { identity })).catch(
-      () => child.kill()
-    )
+    let stopping: Promise<void>
+    if (identity === undefined) stopping = Promise.resolve()
+    else stopping = stopProcessTree(pid, { identity })
+    void stopping.catch(() => child.kill())
   })
 }
 

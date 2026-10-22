@@ -1,10 +1,23 @@
 import { createHash } from "node:crypto"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { AttachmentRef } from "@codevisor/api"
 
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { field, isRecord } from "../unknown-values.js"
 import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
+
+const generatedImageSource = (result: unknown, savedPath: unknown) => {
+  if (typeof result === "string" && result !== "") {
+    return {
+      data: Buffer.from(result, "base64"),
+      name: "Generated image.png",
+      mimeType: "image/png"
+    }
+  }
+  if (typeof savedPath === "string" && savedPath !== "") return { path: savedPath }
+  throw new Error("Image generation returned no image")
+}
 
 export const persistGeneratedImage = async (
   services: CodevisorServerServices,
@@ -29,25 +42,17 @@ export const persistGeneratedImage = async (
         .update(JSON.stringify([event.subjectId, payload.parentToolCallId, payload.toolCallId]))
         .digest("hex")
     const existing = await run(services.db.getFileMetadata(fileId))
-    const attachment =
-      existing === undefined
-        ? await captureAssistantFile(
-            services,
-            typeof result === "string" && result !== ""
-              ? {
-                  data: Buffer.from(result, "base64"),
-                  name: "Generated image.png",
-                  mimeType: "image/png"
-                }
-              : typeof savedPath === "string" && savedPath !== ""
-                ? { path: savedPath }
-                : (() => {
-                    throw new Error("Image generation returned no image")
-                  })(),
-            [],
-            fileId
-          )
-        : attachmentRef(existing)
+    let attachment: AttachmentRef
+    if (existing === undefined) {
+      attachment = await captureAssistantFile(
+        services,
+        generatedImageSource(result, savedPath),
+        [],
+        fileId
+      )
+    } else {
+      attachment = attachmentRef(existing)
+    }
     return { ...event, payload: { ...published, rawOutput: { attachment } } }
   } catch (cause) {
     console.error(

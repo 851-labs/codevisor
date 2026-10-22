@@ -36,8 +36,8 @@ export const systemPriorityHost: PriorityHost = {
 
 export const makePriorityWrapper = (host: PriorityHost): PriorityWrapper => {
   const taskpolicy = host.platform === "darwin" && host.isExecutable(taskpolicyPath)
-  const nice = host.platform === "linux" ? nicePaths.find(host.isExecutable) : undefined
-  const ionice = nice === undefined ? undefined : ionicePaths.find(host.isExecutable)
+  const nice = findNiceOnLinux(host)
+  const ionice = findIoniceIfNiceFound(host, nice)
   return (command, args, priority) => {
     if (priority === undefined) return { command, args }
     if (taskpolicy) {
@@ -53,6 +53,19 @@ export const makePriorityWrapper = (host: PriorityHost): PriorityWrapper => {
     }
     return { command, args }
   }
+}
+
+const findNiceOnLinux = (host: PriorityHost): string | undefined => {
+  if (host.platform !== "linux") return undefined
+  return nicePaths.find(host.isExecutable)
+}
+
+const findIoniceIfNiceFound = (
+  host: PriorityHost,
+  nice: string | undefined
+): string | undefined => {
+  if (nice === undefined) return undefined
+  return ionicePaths.find(host.isExecutable)
 }
 
 let systemWrapper: PriorityWrapper | undefined

@@ -51,7 +51,8 @@ export const makeBotsService = (
 
   const findBot = (id: string): Bot | undefined => {
     const row = botRow(sqlite, id)
-    return row === undefined ? undefined : botFromRow(row)
+    if (row === undefined) return undefined
+    return botFromRow(row)
   }
 
   const requireBot = (id: string): Bot => {
@@ -137,7 +138,8 @@ export const makeBotsService = (
       attempt("findBotOwning", () => {
         const projectId = query.projectId === undefined ? null : canonicalUuid(query.projectId)
         const row = owningBotRow(sqlite, projectId, query)
-        return row === undefined ? undefined : botFromRow(row)
+        if (row === undefined) return undefined
+        return botFromRow(row)
       }),
     listBotWorkspaces: (botId) =>
       attempt("listBotWorkspaces", () => botWorkspaces(sqlite, botId).map(workspaceFromRow))

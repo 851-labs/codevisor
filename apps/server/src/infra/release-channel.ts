@@ -34,7 +34,9 @@ export const machineReleaseChannel = (
   dataDir: string,
   db: Pick<CodevisorDatabaseService, "getSyncEntries">,
   env: Readonly<Record<string, string | undefined>>
-): (() => ServerUpdateChannel | undefined) =>
-  env.CODEVISOR_DEV_INSTANCE_ID === undefined
-    ? releaseChannelReader({ dataDir, syncedValue: () => syncedUpdateChannel(db) })
-    : () => "alpha"
+): (() => ServerUpdateChannel | undefined) => {
+  if (env.CODEVISOR_DEV_INSTANCE_ID === undefined) {
+    return releaseChannelReader({ dataDir, syncedValue: () => syncedUpdateChannel(db) })
+  }
+  return () => "alpha"
+}

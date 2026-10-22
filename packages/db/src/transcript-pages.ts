@@ -154,12 +154,7 @@ const transcriptPageItem = (
   const item = transcriptFromChatRow(row)
   if (row.role !== "assistant") {
     const entryKey = firstTextEntryKey(sqlite, row.id)
-    return {
-      ...item,
-      ...(entryKey === undefined
-        ? {}
-        : { textResource: transcriptTextResource(sqlite, row.id, entryKey) })
-    }
+    return { ...item, ...textResourceIfPresent(sqlite, row, entryKey) }
   }
   const summary = chatAssistantSummary(sqlite, sessionId, row.id)
   const setupRequests = transcriptSetupRequests(sqlite, row.id, pendingQuestionId)
@@ -176,6 +171,15 @@ const transcriptPageItem = (
     ...(summary.messageId === undefined ? {} : { messageId: summary.messageId }),
     ...(summary.phase === undefined ? {} : { phase: summary.phase })
   }
+}
+
+const textResourceIfPresent = (
+  sqlite: ServiceContext["sqlite"],
+  row: ChatItemRow,
+  entryKey: string | undefined
+) => {
+  if (entryKey === undefined) return {}
+  return { textResource: transcriptTextResource(sqlite, row.id, entryKey) }
 }
 
 const firstTextEntryKey = (sqlite: ServiceContext["sqlite"], itemId: string): string | undefined =>

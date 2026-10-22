@@ -122,10 +122,10 @@ const discoverHarnessesWithAuthMode = async (
   )
   const filtered =
     harnessId === undefined ? discovered : discovered.filter((harness) => harness.id === harnessId)
-  const harnesses =
-    includeLifecycle && services.lifecycle !== undefined
-      ? await services.lifecycle.decorateHarnesses(filtered)
-      : filtered
+  let harnesses = filtered
+  if (includeLifecycle && services.lifecycle !== undefined) {
+    harnesses = await services.lifecycle.decorateHarnesses(filtered)
+  }
   if (services.auth === undefined) return harnesses
   if (authMode === "stored") return services.auth.decorateHarnessesFromStoredState(harnesses)
   return services.auth.decorateHarnesses(harnesses, authMode === "force")

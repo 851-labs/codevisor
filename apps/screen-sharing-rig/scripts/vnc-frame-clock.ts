@@ -28,10 +28,15 @@ function lanAddress(): string {
   return "localhost"
 }
 
+interface ClockOffset {
+  offsetMs: number
+  roundTripMs: number
+}
+
 async function measureClockOffset(
   host: string,
   hostKeyAlias: string | undefined
-): Promise<{ offsetMs: number; roundTripMs: number }> {
+): Promise<ClockOffset> {
   const ssh = spawn(
     "ssh",
     [
@@ -102,10 +107,10 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
   const out =
     options.out ?? join(root, "tmp/vnc-frame-clock", new Date().toISOString().replaceAll(":", "-"))
   mkdirSync(out, { recursive: true })
-  const clock =
-    options.hostSsh === undefined
-      ? undefined
-      : await measureClockOffset(options.hostSsh, options.hostKeyAlias)
+  let clock: ClockOffset | undefined
+  if (options.hostSsh !== undefined) {
+    clock = await measureClockOffset(options.hostSsh, options.hostKeyAlias)
+  }
   if (clock !== undefined) {
     console.log(
       `${options.hostSsh} clock: ${clock.offsetMs.toFixed(1)} ms ahead of this Mac (± ${(clock.roundTripMs / 2).toFixed(1)} ms)`

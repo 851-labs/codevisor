@@ -149,16 +149,18 @@ const makeExecuteCall = (
     })
     const untrack = execution.track(path)
     try {
-      const value =
-        machine === undefined
-          ? await invokeLocally(path, args)
-          : await deps.dispatch.invokeOnMachine(
-              machine,
-              path,
-              args,
-              await remoteOrigin(),
-              execution.signal
-            )
+      let value: unknown
+      if (machine === undefined) {
+        value = await invokeLocally(path, args)
+      } else {
+        value = await deps.dispatch.invokeOnMachine(
+          machine,
+          path,
+          args,
+          await remoteOrigin(),
+          execution.signal
+        )
+      }
       await settle({ ok: true, value })
       return value
     } catch (cause) {
@@ -188,9 +190,10 @@ const makeExecuteCall = (
 
   const failure = async (error: string): Promise<CallToolResult> => {
     await recorder.finish(error)
-    const openTabs = usedBrowser
-      ? await deps.openBrowserSessionTabs(sessionId, projectId).catch(() => "")
-      : ""
+    let openTabs = ""
+    if (usedBrowser) {
+      openTabs = await deps.openBrowserSessionTabs(sessionId, projectId).catch(() => "")
+    }
     return { isError: true, content: [{ type: "text", text: `${error}${openTabs}` }] }
   }
 

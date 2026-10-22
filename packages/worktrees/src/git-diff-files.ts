@@ -37,14 +37,16 @@ export const gitBytes = async (
     )
   })
   const stdin = child.stdin!
-  const fed =
-    input === undefined
-      ? Promise.resolve(undefined)
-      : new Promise<Error | undefined>((resolve) => {
-          finished(stdin, (error) => resolve(error ?? undefined))
-        })
-  if (input === undefined) stdin.destroy()
-  else stdin.end(input)
+  let fed: Promise<Error | undefined>
+  if (input === undefined) {
+    fed = Promise.resolve(undefined)
+    stdin.destroy()
+  } else {
+    fed = new Promise<Error | undefined>((resolve) => {
+      finished(stdin, (error) => resolve(error ?? undefined))
+    })
+    stdin.end(input)
+  }
   const [run, stdinError] = await Promise.all([exited, fed])
   if (run.error !== null) {
     throw new GitError(operation, run.stderr.toString("utf8").trim() || run.error.message)

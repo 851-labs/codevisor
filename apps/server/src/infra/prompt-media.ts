@@ -85,9 +85,10 @@ export const inlineSizing = async (attachment: {
   readonly sizeBytes: number
 }): Promise<InlineSizing> => {
   if (attachment.mimeType === "application/pdf") {
-    return attachment.sizeBytes <= INLINE_PDF_MAX_BYTES
-      ? { inline: { data: await readFile(attachment.path), mimeType: "application/pdf" } }
-      : { inlineOmitted: true }
+    if (attachment.sizeBytes <= INLINE_PDF_MAX_BYTES) {
+      return { inline: { data: await readFile(attachment.path), mimeType: "application/pdf" } }
+    }
+    return { inlineOmitted: true }
   }
   if (attachment.kind === "image" && INLINE_IMAGE_MEDIA_TYPES.has(attachment.mimeType)) {
     return await normalizeImage(attachment.path, attachment.mimeType, attachment.sizeBytes)

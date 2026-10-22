@@ -58,13 +58,15 @@ export const makeExecutionSteps = (deps: {
     if (separator <= 0) return undefined
     const serverId = path.slice(0, separator)
     const name = path.slice(separator + 1)
-    const declared = !local
-      ? []
-      : (deps.automationProviders.get(serverId)?.tools ??
+    let declared: UpstreamConnection["tools"] = []
+    if (local) {
+      declared =
+        deps.automationProviders.get(serverId)?.tools ??
         (await deps.connectUpstream(serverId).then(
           (connection) => connection.tools,
           () => []
-        )))
+        ))
+    }
     const tool = declared.find((candidate) => candidate.name === name)
     return tool?.title ?? tool?.annotations?.title ?? humanizeToolName(name === "js" ? path : name)
   }

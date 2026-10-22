@@ -36,6 +36,16 @@ const jsonObject = (content: string | undefined): Record<string, unknown> => {
   }
 }
 
+const homeConfigDisabledSkills = (
+  home: string | undefined,
+  readFile: (path: string) => string | undefined
+): ReadonlyArray<string> => {
+  if (home === undefined) return []
+  return ["managed_config.toml", "config.toml"].flatMap((file) =>
+    disabledSkills(tomlFile(join(home, file), readFile))
+  )
+}
+
 const readGrokConfigFile = (path: string): string | undefined => {
   try {
     return readFileSync(path, "utf8")
@@ -53,11 +63,7 @@ export const withGrokSkillsDisabled = (
   const home = env.GROK_HOME ?? (env.HOME === undefined ? undefined : join(env.HOME, ".grok"))
   const overlay = jsonObject(env.GROK_CONFIG)
   const disabled = new Set([
-    ...(home === undefined
-      ? []
-      : ["managed_config.toml", "config.toml"].flatMap((file) =>
-          disabledSkills(tomlFile(join(home, file), readFile))
-        )),
+    ...homeConfigDisabledSkills(home, readFile),
     ...disabledSkills(overlay),
     ...SUPERSEDED_NATIVE_SKILLS
   ])

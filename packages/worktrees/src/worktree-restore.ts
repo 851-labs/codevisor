@@ -65,9 +65,8 @@ export const restoreWorktree = async (request: RestoreRequest): Promise<RestoreR
   let path = worktreePathFor(name)
 
   const hasSnapshot = await snapshotExists(repoDir, snapshotRef, env)
-  const startPoint = hasSnapshot
-    ? parentSha
-    : ((await worktreeStartPoint(repoDir, undefined, env)) ?? parentSha)
+  let startPoint = parentSha
+  if (!hasSnapshot) startPoint = (await worktreeStartPoint(repoDir, undefined, env)) ?? parentSha
 
   try {
     await addWorktree(repoDir, path, branch, request.onOutput, startPoint, env)

@@ -61,9 +61,8 @@ export class GrokSubagents {
   ): ReadonlyArray<RuntimeEvent> {
     return events.map((event) => {
       const payload = record(event.payload)
-      return payload === undefined
-        ? event
-        : { ...event, payload: this.mapToolUpdate(sessionId, payload) }
+      if (payload === undefined) return event
+      return { ...event, payload: this.mapToolUpdate(sessionId, payload) }
     })
   }
 

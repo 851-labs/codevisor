@@ -27,7 +27,8 @@ export const nativeAppleAuth = (env: CloudEnv) => ({
             message: "Native Apple sign-in is not configured on this server."
           })
         }
-        const session = c.body.link ? await getSessionFromCtx(c) : null
+        let session: Awaited<ReturnType<typeof getSessionFromCtx>> = null
+        if (c.body.link) session = await getSessionFromCtx(c)
         if (c.body.link && !session) throw new APIError("UNAUTHORIZED")
         const id = crypto.randomUUID()
         const nonce = crypto.randomUUID() + crypto.randomUUID()
@@ -64,7 +65,8 @@ export const nativeAppleAuth = (env: CloudEnv) => ({
             message: "This sign-in request expired. Please try again."
           })
         const challenge = challengeSchema.parse(JSON.parse(stored.value))
-        const session = challenge.userId ? await getSessionFromCtx(c) : null
+        let session: Awaited<ReturnType<typeof getSessionFromCtx>> = null
+        if (challenge.userId) session = await getSessionFromCtx(c)
         if (
           challenge.userId &&
           (session?.user.id !== challenge.userId || session?.session.id !== challenge.sessionId)

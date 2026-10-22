@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import {
+  type ComposerSkill,
   CreateSkillRequest as CreateSkillRequestSchema,
   DiscoverRemoteSkillsRequest as DiscoverRemoteSkillsRequestSchema,
   ImportRemoteSkillRequest as ImportRemoteSkillRequestSchema,
@@ -23,12 +24,11 @@ export const routeSkills = async (
 ): Promise<boolean> => {
   if (url.pathname === "/v1/composer-skills" && request.method === "GET") {
     const param = (name: string) => url.searchParams.get(name)?.trim() || undefined
-    writeJson(response, 200, {
-      skills:
-        services.mcp === undefined
-          ? []
-          : await services.mcp.composerSkills(param("projectId"), param("sessionId"))
-    })
+    let skills: ReadonlyArray<ComposerSkill> = []
+    if (services.mcp !== undefined) {
+      skills = await services.mcp.composerSkills(param("projectId"), param("sessionId"))
+    }
+    writeJson(response, 200, { skills })
     return true
   }
   const manager = services.skills

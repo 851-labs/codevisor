@@ -69,5 +69,7 @@ export const resolveSessionCwd = (
   folderPath: string | undefined,
   projectId: string,
   worktreeName: string | undefined
-): string | undefined =>
-  worktreeName === undefined ? folderPath : worktreePath(projectId, worktreeName)
+): string | undefined => {
+  if (worktreeName === undefined) return folderPath
+  return worktreePath(projectId, worktreeName)
+}

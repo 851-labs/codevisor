@@ -31,7 +31,8 @@ const diffBlock = async (
   read: ReadText
 ): Promise<ReadonlyArray<JsonRecord>> => {
   const path = absolutePath(file.file, cwd)
-  const newText = file.status === "deleted" ? "" : await read(path)
+  let newText = ""
+  if (file.status !== "deleted") newText = await read(path)
   if (file.status === "added") return [{ type: "diff", path, oldText: null, newText }]
   const recorded = parsePatch(file.patch)[0]
   if (recorded === undefined || recorded.hunks.length === 0) return []

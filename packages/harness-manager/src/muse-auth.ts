@@ -130,9 +130,10 @@ export const makeMuseAuth = (
       if (!logins.delete(id)) return
       if (outcome === "expired") await cancelMuseLogin(client).catch(() => undefined)
       client.close()
-      const success = await (
-        outcome === "granted" ? signedIn(account) : Promise.resolve(false)
-      ).catch(() => false)
+      let verification: Promise<boolean>
+      if (outcome === "granted") verification = signedIn(account)
+      else verification = Promise.resolve(false)
+      const success = await verification.catch(() => false)
       if (!success) await loginFailed(account.id).catch(() => undefined)
       core.emit({
         kind: "harness.authFlow.updated",

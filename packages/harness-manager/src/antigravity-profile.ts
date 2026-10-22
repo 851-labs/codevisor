@@ -59,10 +59,9 @@ export const prepareAntigravityProfile = async (
   const settings = join(cli, "settings.json")
   const userSettings = own === undefined ? undefined : join(own, "antigravity-cli", "settings.json")
   if (apiKey !== undefined) {
-    const document = {
-      ...(userSettings === undefined ? {} : await settingsDocument(userSettings)),
-      modelProvider: "gemini"
-    }
+    let userDocument: Record<string, unknown> = {}
+    if (userSettings !== undefined) userDocument = await settingsDocument(userSettings)
+    const document = { ...userDocument, modelProvider: "gemini" }
     const temporary = `${settings}.${process.pid}.tmp`
     await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 })
     await rm(settings, { force: true })

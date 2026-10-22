@@ -132,7 +132,8 @@ export class NodeStreamableHttpTransport implements Transport {
       pending += decoder.decode(chunk.value, { stream: !chunk.done })
       const blocks = pending.split(/\r?\n\r?\n/)
       /* v8 ignore next */
-      pending = chunk.done ? "" : (blocks.pop() ?? "")
+      if (chunk.done) pending = ""
+      else pending = blocks.pop() ?? ""
       for (const block of blocks) {
         const decoded = messageFromSseBlock(block)
         if (decoded === undefined) {

@@ -39,6 +39,11 @@ export interface NdjsonTransport {
   close: () => void
 }
 
+const startNdjsonWorkerIfIsolated = (options: NdjsonTransportOptions): Worker | undefined => {
+  if (options.isolateCodexHistory !== true) return undefined
+  return new Worker(new URL("./ndjson-worker.js", import.meta.url))
+}
+
 export const makeNdjsonTransport = (
   endpoint: StdioEndpoint,
   options: NdjsonTransportOptions = {}
@@ -49,10 +54,7 @@ export const makeNdjsonTransport = (
   let lineHandler: ((line: string) => void) | undefined
   let stderrTail = ""
   let messageHandler: ((message: Record<string, unknown>) => void) | undefined
-  const worker =
-    options.isolateCodexHistory === true
-      ? new Worker(new URL("./ndjson-worker.js", import.meta.url))
-      : undefined
+  const worker = startNdjsonWorkerIfIsolated(options)
   let pendingCharacters = 0
   let processExit: Error | undefined
 

@@ -88,13 +88,13 @@ export const prepareMachineTunnel = async (
   const secretKeyHex = await loadOrCreateSecretKey(net, tunnelKeyPath(options.credentialsPath))
   const endpointPins = await loadEndpointPins(options)
   const caFile = options.env.CODEVISOR_NET_CA_FILE
-  const fileAnchor =
-    caFile === undefined || caFile === ""
-      ? undefined
-      : await readFile(caFile, "utf8").catch((cause: unknown) => {
-          options.log(`Tunnel: ignoring unreadable CODEVISOR_NET_CA_FILE: ${String(cause)}`)
-          return undefined
-        })
+  let fileAnchor: string | undefined
+  if (caFile !== undefined && caFile !== "") {
+    fileAnchor = await readFile(caFile, "utf8").catch((cause: unknown) => {
+      options.log(`Tunnel: ignoring unreadable CODEVISOR_NET_CA_FILE: ${String(cause)}`)
+      return undefined
+    })
+  }
   const trustAnchorsPem = [
     ...(fileAnchor === undefined ? [] : [fileAnchor]),
     ...(options.env.CODEVISOR_NET_CA_PEM ? [options.env.CODEVISOR_NET_CA_PEM] : [])

@@ -243,9 +243,10 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
             return []
         }
       }
-      return previous === undefined && edge !== "started" && ROWS.has(item.kind)
-        ? [...events("started"), ...events(edge)]
-        : events(edge)
+      if (previous === undefined && edge !== "started" && ROWS.has(item.kind)) {
+        return [...events("started"), ...events(edge)]
+      }
+      return events(edge)
     },
     delta: (itemId, field, delta) => {
       if (delta.length === 0) return []

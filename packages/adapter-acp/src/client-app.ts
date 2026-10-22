@@ -18,6 +18,7 @@ export const createClientApp = (
     .onRequest(acp.methods.client.session.requestPermission, ({ params }) =>
       onPermissionRequest(params)
     )
-  return configure === undefined ? app : configure(app)
+  if (configure === undefined) return app
+  return configure(app)
 }
 /* v8 ignore stop */

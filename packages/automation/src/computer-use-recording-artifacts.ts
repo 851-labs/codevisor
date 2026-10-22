@@ -52,14 +52,17 @@ export const makeRecordingArtifacts = () => {
         result.content.map(async (block) => {
           if (block.type !== "text") return block
           const value = recordOrEmpty(JSON.parse(block.text))
-          const enriched = Array.isArray(value.recordings)
-            ? {
-                ...value,
-                recordings: await Promise.all(
-                  value.recordings.map((entry) => enrich(recordOrEmpty(entry)))
-                )
-              }
-            : await enrich(value)
+          let enriched: Record<string, unknown>
+          if (Array.isArray(value.recordings)) {
+            enriched = {
+              ...value,
+              recordings: await Promise.all(
+                value.recordings.map((entry) => enrich(recordOrEmpty(entry)))
+              )
+            }
+          } else {
+            enriched = await enrich(value)
+          }
           return { ...block, text: JSON.stringify(enriched) }
         })
       )

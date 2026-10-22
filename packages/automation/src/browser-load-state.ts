@@ -92,8 +92,9 @@ export const waitForBrowserState = async (
     const matchesUrl =
       options.url === undefined || (await pageInformation(runtime, page)).url === options.url
     if (navigated && matchesUrl) {
-      const ready =
-        state === "commit" ? "complete" : await evaluate(runtime, page, "document.readyState")
+      let ready: unknown
+      if (state === "commit") ready = "complete"
+      else ready = await evaluate(runtime, page, "document.readyState")
       const documentReady =
         ready === "complete" || (state === "domcontentloaded" && ready === "interactive")
       const network = loadFor(runtime, page.sessionId)

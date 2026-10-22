@@ -261,11 +261,20 @@ export interface TokenOptions extends CommandOptions {
   readonly rotate?: boolean | undefined
 }
 
+const fetchOrRotateConnectionToken = (
+  deps: CliDeps,
+  port: number,
+  rotate: TokenOptions["rotate"]
+) => {
+  if (rotate) {
+    return deps.fetchJson(`${baseUrl(port)}/v1/auth/connection-token/rotate`, { method: "POST" })
+  }
+  return deps.fetchJson(`${baseUrl(port)}/v1/auth/connection-token`)
+}
+
 export const tokenCommand = async (deps: CliDeps, options: TokenOptions = {}): Promise<number> => {
   const port = await resolvePort(deps, options.port)
-  const response = options.rotate
-    ? await deps.fetchJson(`${baseUrl(port)}/v1/auth/connection-token/rotate`, { method: "POST" })
-    : await deps.fetchJson(`${baseUrl(port)}/v1/auth/connection-token`)
+  const response = await fetchOrRotateConnectionToken(deps, port, options.rotate)
   const okStatus = options.rotate === true ? 201 : 200
   if (response === undefined || response.status !== okStatus) {
     deps.error(`Codevisor server is not running on port ${port}; start it first: codevisor start`)

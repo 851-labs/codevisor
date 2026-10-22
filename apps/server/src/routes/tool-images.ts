@@ -95,21 +95,22 @@ export const persistToolImages = async (
     try {
       const fileId = imageFileId(event, payload.toolCallId, image)
       const existing = await run(services.db.getFileMetadata(fileId))
-      saved.set(
-        node,
-        existing === undefined
-          ? await captureAssistantFile(
-              services,
-              {
-                data: Buffer.from(image.data, "base64"),
-                name: imageName(image),
-                mimeType: image.mimeType
-              },
-              [],
-              fileId
-            )
-          : attachmentRef(existing)
-      )
+      let attachment: AttachmentRef
+      if (existing === undefined) {
+        attachment = await captureAssistantFile(
+          services,
+          {
+            data: Buffer.from(image.data, "base64"),
+            name: imageName(image),
+            mimeType: image.mimeType
+          },
+          [],
+          fileId
+        )
+      } else {
+        attachment = attachmentRef(existing)
+      }
+      saved.set(node, attachment)
     } catch (cause) {
       console.error("Could not preserve tool image:", cause)
     }

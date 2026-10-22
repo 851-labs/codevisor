@@ -3,6 +3,7 @@ import {
   DEFAULT_SESSION_WAIT_UNTIL,
   MAX_SESSION_WAIT_TIMEOUT_MS,
   type EventEnvelope,
+  type QuestionPayload,
   type SessionSidebarState,
   type SessionSummary,
   type WaitedSession,
@@ -42,10 +43,10 @@ const waitedSession = async (
   db: CodevisorDatabaseService,
   session: SessionSummary
 ): Promise<WaitedSession> => {
-  const pendingQuestion =
-    session.actionRequiredKind === "question"
-      ? await run(db.getSessionPendingQuestion(session.id))
-      : undefined
+  let pendingQuestion: QuestionPayload | undefined
+  if (session.actionRequiredKind === "question") {
+    pendingQuestion = await run(db.getSessionPendingQuestion(session.id))
+  }
   return {
     id: session.id,
     sidebarState: sidebarStateOf(session),
@@ -113,7 +114,10 @@ export const waitForSessions = async (
     )
     return {
       sessions: await Promise.all(
-        current.flatMap((session) => (session === undefined ? [] : [waitedSession(db, session)]))
+        current.flatMap((session) => {
+          if (session === undefined) return []
+          return [waitedSession(db, session)]
+        })
       ),
       timedOut: !changed
     }

@@ -128,16 +128,12 @@ const holdQuestionRequest = (
     subjectId: session.key
   })
   return new Promise<unknown>((resolve, reject) => {
-    const timer =
-      autoResolutionMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            const pending = session.pendingQuestions.get(questionId)
-            if (pending === undefined) return
-            session.pendingQuestions.delete(questionId)
-            pending.resolve({ answers: {} })
-            void emitQuestionResolved(session, questionId, "autoResolved", questions, undefined)
-          }, autoResolutionMs)
+    const timer = scheduleAutoResolutionIfRequested(
+      session,
+      questionId,
+      questions,
+      autoResolutionMs
+    )
     timer?.unref?.()
     session.pendingQuestions.set(questionId, {
       questions,
@@ -162,6 +158,22 @@ const holdQuestionRequest = (
     })
     dismissQuestionOnAbort(session, questionId, signal)
   })
+}
+
+const scheduleAutoResolutionIfRequested = (
+  session: CodexSession,
+  questionId: string,
+  questions: ReadonlyArray<QuestionSpec>,
+  autoResolutionMs: number | undefined
+): ReturnType<typeof setTimeout> | undefined => {
+  if (autoResolutionMs === undefined) return undefined
+  return setTimeout(() => {
+    const pending = session.pendingQuestions.get(questionId)
+    if (pending === undefined) return
+    session.pendingQuestions.delete(questionId)
+    pending.resolve({ answers: {} })
+    void emitQuestionResolved(session, questionId, "autoResolved", questions, undefined)
+  }, autoResolutionMs)
 }
 
 const holdElicitationRequest = (

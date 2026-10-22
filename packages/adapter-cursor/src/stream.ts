@@ -43,6 +43,10 @@ export interface CursorPromptLegResult {
   readonly terminalError?: CursorTerminalError
 }
 
+const holdsCursorTerminalError = (state: CursorTurnState): boolean =>
+  state.pendingAgentText !== undefined &&
+  parseCursorTerminalError(state.pendingAgentText.text) !== undefined
+
 const contentText = (content: unknown): string =>
   isPlainRecord(content) && content.type === "text" && typeof content.text === "string"
     ? content.text
@@ -111,20 +115,16 @@ export class CursorStreamNormalizer {
           update,
           text: state.pendingAgentText.text + text
         }
-        return couldBeCursorTerminalError(state.pendingAgentText.text)
-          ? []
-          : this.flushPendingAgentText(sessionId, state)
+        if (couldBeCursorTerminalError(state.pendingAgentText.text)) return []
+        return this.flushPendingAgentText(sessionId, state)
       }
       if (couldBeCursorTerminalError(text)) {
         state.pendingAgentText = { notification, update, text }
         return []
       }
     }
-    const pending =
-      state.pendingAgentText !== undefined &&
-      parseCursorTerminalError(state.pendingAgentText.text) !== undefined
-        ? []
-        : this.flushPendingAgentText(sessionId, state)
+    let pending: ReadonlyArray<RuntimeEvent> = []
+    if (!holdsCursorTerminalError(state)) pending = this.flushPendingAgentText(sessionId, state)
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
       case "agent_thought_chunk": {

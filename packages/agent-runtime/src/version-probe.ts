@@ -57,7 +57,8 @@ export const makeVersionProber = (options: VersionProberOptions = {}): VersionPr
   const probeOne = (path: string, env: NodeJS.ProcessEnv, force: boolean): Promise<void> => {
     const existing = inflight.get(path)
     if (existing !== undefined) {
-      return force ? existing.then(() => probeOne(path, env, true)) : existing
+      if (force) return existing.then(() => probeOne(path, env, true))
+      return existing
     }
     const current = identity(path)
     const cached = cache.get(path)

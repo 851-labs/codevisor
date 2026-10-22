@@ -167,7 +167,8 @@ export const loadCatalog = async (
 ): Promise<Catalog> => {
   for (let attempt = 1; ; attempt += 1) {
     const plugins = list(await server.request("/api/plugin", { location: cwd }))
-    const catalog = plugins.length === 0 ? undefined : await readCatalog(server, cwd)
+    let catalog: Catalog | undefined
+    if (plugins.length !== 0) catalog = await readCatalog(server, cwd)
     if (catalog !== undefined) return catalog
     if (attempt >= CATALOG_ATTEMPTS) {
       const late = await readCatalog(server, cwd)

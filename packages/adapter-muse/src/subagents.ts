@@ -128,12 +128,12 @@ export const makeMuseSubagents = (options: MuseSubagentsOptions): MuseSubagents 
 
   return {
     observe,
-    drain: () =>
-      followed.size === 0
-        ? undefined
-        : Promise.all(
-            [...followed].map((sessionId) => read(sessionId, children.get(sessionId)!))
-          ).then(() => undefined),
+    drain: () => {
+      if (followed.size === 0) return undefined
+      return Promise.all(
+        [...followed].map((sessionId) => read(sessionId, children.get(sessionId)!))
+      ).then(() => undefined)
+    },
     stop: () => {
       stopTimer()
       followed.clear()

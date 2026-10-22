@@ -91,10 +91,10 @@ export const makeSharedProviderStore = (options: {
       : undefined
   }
   const records = async (harness: ProviderOAuthHarness, profile: string, shared = false) => {
+    let entries = [...(await store.entries())]
+    if (!shared) entries = [...entries, ...(await localEntries())]
     const keys = new Set(
-      [...(await store.entries()), ...(shared ? [] : await localEntries())]
-        .filter((entry) => entry.key.startsWith("provider:"))
-        .map((entry) => entry.key)
+      entries.filter((entry) => entry.key.startsWith("provider:")).map((entry) => entry.key)
     )
     const rows: SharedProviderRecord[] = []
     for (const key of keys) {

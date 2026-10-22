@@ -189,15 +189,14 @@ export const makeSimulatorDeviceSettings = (environment: SimulatorEnvironment) =
         udid,
         change.voiceOver ? "--enable" : "--disable"
       ])
-    const audio = [
-      ...(change.volume === undefined ? [] : ["--volume", String(Math.round(change.volume))]),
-      ...(change.audioOutput === undefined
-        ? []
-        : ["--output-device", await route(change.audioOutput, "outputDevices")]),
-      ...(change.audioInput === undefined
-        ? []
-        : ["--input-device", await route(change.audioInput, "inputDevices")])
-    ]
+    const audio: string[] =
+      change.volume === undefined ? [] : ["--volume", String(Math.round(change.volume))]
+    if (change.audioOutput !== undefined) {
+      audio.push("--output-device", await route(change.audioOutput, "outputDevices"))
+    }
+    if (change.audioInput !== undefined) {
+      audio.push("--input-device", await route(change.audioInput, "inputDevices"))
+    }
     if (audio.length > 0)
       await devicectl(["device", "settings", "audio", "--device", udid, ...audio])
   }

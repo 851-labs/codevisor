@@ -250,7 +250,8 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
       const time = now()
       let active = false
       for (const cursor of layer.cursors.values()) active = render(layer, cursor, time) || active
-      layer.frame = active ? requestAnimationFrame(layer.tick) : 0
+      if (active) layer.frame = requestAnimationFrame(layer.tick)
+      else layer.frame = 0
     }
     created.codevisorPointer = layer
     document.documentElement.append(created)

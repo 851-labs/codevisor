@@ -78,10 +78,10 @@ export const systemX11Commands = (display: number, xclip = "xclip"): X11Commands
           xclip,
           ["-selection", "clipboard", ...args],
           { env, encoding: "buffer", maxBuffer: MAXIMUM_CONTENT_BYTES + 1, timeout: 5000 },
-          (error, stdout, stderr) =>
-            error
-              ? reject(new Error(stderr.toString("utf8").trim() || error.message))
-              : resolve(stdout)
+          (error, stdout, stderr) => {
+            if (error) reject(new Error(stderr.toString("utf8").trim() || error.message))
+            else resolve(stdout)
+          }
         )
       ),
     spawn: (command, args) => spawn(command, [...args], { env, stdio: "pipe" })

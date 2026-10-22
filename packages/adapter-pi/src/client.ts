@@ -50,9 +50,10 @@ export const spawnPiClient: PiConnector = async (request) => {
     ...client,
     close: () => {
       client.close()
-      void (identity === undefined ? Promise.resolve() : stopProcessTree(pid, { identity })).catch(
-        () => child.kill()
-      )
+      let stopping: Promise<void>
+      if (identity === undefined) stopping = Promise.resolve()
+      else stopping = stopProcessTree(pid, { identity })
+      void stopping.catch(() => child.kill())
     }
   }
 }

@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { Schema } from "effect"
-import sharp from "sharp"
+import sharp, { type Sharp } from "sharp"
 
 import { makeBoundedFetch } from "./bounded-fetch.js"
 import { parseLinkPreviewMetadata } from "./link-preview-metadata.js"
@@ -91,9 +91,9 @@ export const renderPreviewImage = async (data: Uint8Array): Promise<RenderedImag
       withoutEnlargement: true
     })
     const stats = await resized.clone().stats()
-    const encoded = stats.isOpaque
-      ? resized.jpeg({ quality: 82, mozjpeg: true })
-      : resized.png({ compressionLevel: 9 })
+    let encoded: Sharp
+    if (stats.isOpaque) encoded = resized.jpeg({ quality: 82, mozjpeg: true })
+    else encoded = resized.png({ compressionLevel: 9 })
     const { data: output, info } = await encoded.toBuffer({ resolveWithObject: true })
     const { r, g, b } = stats.dominant
     return {
@@ -141,12 +141,12 @@ export const makeLinkPreviewStore = (options: LinkPreviewStoreOptions): LinkPrev
     if (metadata.refreshUrl !== undefined && metadata.imageUrl === undefined && hops < MAX_HOPS)
       return resolve(metadata.refreshUrl, hops + 1)
     const title = direct === undefined ? metadata.title : fileTitle(page.url)
-    const source =
-      direct ??
-      (metadata.imageUrl === undefined
-        ? undefined
-        : await fetchBounded(metadata.imageUrl, IMAGE_MAX_BYTES, "image/*"))
-    const rendered = source === undefined ? undefined : await renderPreviewImage(source.data)
+    let source = direct
+    if (direct === undefined && metadata.imageUrl !== undefined) {
+      source = await fetchBounded(metadata.imageUrl, IMAGE_MAX_BYTES, "image/*")
+    }
+    let rendered: RenderedImage | undefined
+    if (source !== undefined) rendered = await renderPreviewImage(source.data)
     if (title === undefined && rendered === undefined) return {}
     const imageFailed = metadata.imageUrl !== undefined && rendered === undefined
     const preview: LinkPreview = {
@@ -178,10 +178,13 @@ export const makeLinkPreviewStore = (options: LinkPreviewStoreOptions): LinkPrev
       const record = Schema.decodeUnknownSync(CacheRecord)(
         JSON.parse(await readFile(files.record, "utf8"))
       )
-      const image =
-        record.contentType === undefined
-          ? undefined
-          : { contentType: record.contentType, data: new Uint8Array(await readFile(files.image)) }
+      let image: LinkPreviewImage | undefined
+      if (record.contentType !== undefined) {
+        image = {
+          contentType: record.contentType,
+          data: new Uint8Array(await readFile(files.image))
+        }
+      }
       return {
         fetchedAt: record.fetchedAt,
         ...(record.preview === undefined ? {} : { preview: record.preview }),
@@ -230,14 +233,18 @@ export const makeLinkPreviewStore = (options: LinkPreviewStoreOptions): LinkPrev
     const entry = await readCache(key)
     if (entry === undefined) return refresh()
     const age = now() - entry.fetchedAt
-    if (entry.preview === undefined) return age < MISS_TTL_MS ? entry : refresh()
+    if (entry.preview === undefined) {
+      if (age < MISS_TTL_MS) return entry
+      return refresh()
+    }
     if (age >= (entry.imageFailed === true ? MISS_TTL_MS : HIT_TTL_MS)) background(refresh())
     return entry
   }
 
   const load = async (raw: string): Promise<Entry | undefined> => {
     const url = normalizePreviewUrl(raw)
-    return url === undefined ? undefined : cached(url)
+    if (url === undefined) return undefined
+    return cached(url)
   }
 
   return {

@@ -34,9 +34,8 @@ export const withShellIntegration = (
   const integrated = (() => {
     switch (basename(shell)) {
       case "bash":
-        return options.platform === "darwin" && shell === "/bin/bash"
-          ? undefined
-          : setupBash(args, env, resources)
+        if (options.platform === "darwin" && shell === "/bin/bash") return undefined
+        return setupBash(args, env, resources)
       case "zsh":
         return setupZsh(args, env, resources)
       case "fish":

@@ -102,19 +102,24 @@ const branchBase = async (
   requested: string | undefined,
   env: NodeJS.ProcessEnv | undefined
 ): Promise<{ readonly tree: string; readonly base: string }> => {
-  const base =
-    requested === undefined || requested.length === 0 ? await defaultBase(dir, env) : requested
+  let base: string | null
+  if (requested === undefined || requested.length === 0) base = await defaultBase(dir, env)
+  else base = requested
   if (base === null) {
     throw new GitReviewError(
       "unknown_base",
       "Codevisor couldn't find a default branch to compare against."
     )
   }
-  const mergeBase = base.startsWith("-")
-    ? undefined
-    : await runGit("merge-base", ["merge-base", "HEAD", `${base}^{commit}`], dir, env).catch(
-        () => undefined
-      )
+  let mergeBase: string | undefined
+  if (!base.startsWith("-")) {
+    mergeBase = await runGit(
+      "merge-base",
+      ["merge-base", "HEAD", `${base}^{commit}`],
+      dir,
+      env
+    ).catch(() => undefined)
+  }
   if (mergeBase === undefined) {
     throw new GitReviewError(
       "unknown_base",

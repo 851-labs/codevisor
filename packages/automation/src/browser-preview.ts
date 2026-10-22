@@ -128,20 +128,21 @@ const createBrowserPreviews = <Timer>(
   const watchInfo = (entry: Session<Timer>, runtime: BrowserRuntime | undefined): void => {
     if (entry.infoWatch?.runtime === runtime) return
     entry.infoWatch?.dispose()
-    entry.infoWatch =
-      runtime === undefined
-        ? undefined
-        : {
-            runtime,
-            dispose: runtime.connection.on("Target.targetInfoChanged", (params) => {
-              const info = recordOrUndefined(params.targetInfo)
-              if (info === undefined || info.targetId !== entry.targetId) return
-              publish(entry, {
-                title: typeof info.title === "string" ? info.title : "",
-                url: typeof info.url === "string" ? info.url : ""
-              })
-            })
-          }
+    if (runtime === undefined) {
+      entry.infoWatch = undefined
+      return
+    }
+    entry.infoWatch = {
+      runtime,
+      dispose: runtime.connection.on("Target.targetInfoChanged", (params) => {
+        const info = recordOrUndefined(params.targetInfo)
+        if (info === undefined || info.targetId !== entry.targetId) return
+        publish(entry, {
+          title: typeof info.title === "string" ? info.title : "",
+          url: typeof info.url === "string" ? info.url : ""
+        })
+      })
+    }
   }
 
   const refreshInfo = (entry: Session<Timer>): void => {

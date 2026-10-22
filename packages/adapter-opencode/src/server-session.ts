@@ -29,7 +29,11 @@ import {
 } from "./catalog.js"
 import { withCompletedDiffs, type ReadText } from "./file-diffs.js"
 import { record, type JsonRecord } from "./internal.js"
-import { makePermissionQuestions, permissionQuestion } from "./server-permissions.js"
+import {
+  makePermissionQuestions,
+  permissionQuestion,
+  type PermissionDecision
+} from "./server-permissions.js"
 import { prepareSubmission, promptBody, type Readable } from "./server-prompt.js"
 import type { OpenCodeServer } from "./server.js"
 import { skillReadUpdate, withSkillRead } from "./skill-tool.js"
@@ -167,9 +171,10 @@ export const openServerSession = (
     child: ChildSession | undefined
   ): Promise<void> => {
     const requestID = String(request.id)
-    const decision = permissionsGated(catalog, selection)
-      ? await questions.ask(permissionQuestion(request, tool, child), requestID)
-      : "once"
+    let decision: PermissionDecision | undefined = "once"
+    if (permissionsGated(catalog, selection)) {
+      decision = await questions.ask(permissionQuestion(request, tool, child), requestID)
+    }
     if (decision === undefined) return
     const owner = encodeURIComponent(String(request.sessionID))
     await server
@@ -179,10 +184,10 @@ export const openServerSession = (
       .catch(() => undefined)
   }
 
-  const diffs = async (update: unknown, metadata: JsonRecord | undefined) =>
-    metadata === undefined
-      ? (record(update) ?? {})
-      : withCompletedDiffs(record(update) ?? {}, metadata, cwd, options.readText)
+  const diffs = async (update: unknown, metadata: JsonRecord | undefined) => {
+    if (metadata === undefined) return record(update) ?? {}
+    return withCompletedDiffs(record(update) ?? {}, metadata, cwd, options.readText)
+  }
 
   const handleOutput = async (output: FoldOutput): Promise<void> => {
     switch (output._tag) {
@@ -190,11 +195,14 @@ export const openServerSession = (
         emitUpdate(await diffs(output.update, output.metadata))
         return
       case "child":
-        emitChild(
-          output.metadata === undefined
-            ? output.params
-            : { ...output.params, update: await diffs(output.params.update, output.metadata) }
-        )
+        if (output.metadata === undefined) {
+          emitChild(output.params)
+        } else {
+          emitChild({
+            ...output.params,
+            update: await diffs(output.params.update, output.metadata)
+          })
+        }
         return
       case "permission":
         void respondToPermission(output.request, output.tool, output.child)
@@ -383,9 +391,8 @@ export const openServerSession = (
       change = resolveChange(catalog, selection, configId, value)
     }
     selection = { ...selection, ...change }
-    await ("model" in change
-      ? server.request(`${path}/model`, { body: { model: change.model } })
-      : server.request(`${path}/agent`, { body: { agent: change.agent } }))
+    if ("model" in change) await server.request(`${path}/model`, { body: { model: change.model } })
+    else await server.request(`${path}/agent`, { body: { agent: change.agent } })
     return configOptions(catalog, selection)
   }
 

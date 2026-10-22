@@ -252,10 +252,9 @@ export const locatorBackendNodeIds = async (
 ): Promise<number[]> => {
   if (depth > 12) throw new Error("locator composition is too deeply nested")
   const locator = parseLocator(value, depth)
-  let roots =
-    inheritedRoots === undefined
-      ? [await mainDocumentBackendNodeId(runtime, page)]
-      : [...inheritedRoots]
+  let roots: number[]
+  if (inheritedRoots === undefined) roots = [await mainDocumentBackendNodeId(runtime, page)]
+  else roots = [...inheritedRoots]
   if (locator.frame !== undefined && locator.frame.length > 0) {
     roots = await resolveFrameRoots(runtime, page, roots, locator.frame)
   }

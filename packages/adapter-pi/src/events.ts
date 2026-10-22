@@ -230,7 +230,8 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
         return streaming(record(event.assistantMessageEvent))
       case "message_end": {
         const ended = record(event.message)
-        return ended.role === "assistant" ? finished(ended) : []
+        if (ended.role === "assistant") return finished(ended)
+        return []
       }
       case "tool_execution_start": {
         const id = String(event.toolCallId)

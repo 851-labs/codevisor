@@ -51,10 +51,10 @@ export const makeBrowserRuntimeFactory = (options: {
     if (backend === "extension") {
       connection = await options.connectExtension()
     } else {
-      const local =
-        backend === "builtin" && !fallbackReasons.has(context.sessionId)
-          ? await options.connectNative(context.sessionId)
-          : undefined
+      let local: BrowserHostConnection | undefined
+      if (backend === "builtin" && !fallbackReasons.has(context.sessionId)) {
+        local = await options.connectNative(context.sessionId)
+      }
       if (local?.connection) {
         connection = local.connection
         native = true
@@ -71,8 +71,13 @@ export const makeBrowserRuntimeFactory = (options: {
         )
         mkdirSync(profileDir, { recursive: true, mode: 0o700 })
         const launch = () => launchManagedBrowser(executablePath, profileDir)
-        const pendingLaunch = backend === "builtin" ? fallbackLaunch.then(launch, launch) : launch()
-        if (backend === "builtin") fallbackLaunch = pendingLaunch.catch(() => undefined)
+        let pendingLaunch: ReturnType<typeof launch>
+        if (backend === "builtin") {
+          pendingLaunch = fallbackLaunch.then(launch, launch)
+          fallbackLaunch = pendingLaunch.catch(() => undefined)
+        } else {
+          pendingLaunch = launch()
+        }
         const launched = await pendingLaunch
         connection = launched.connection
         processHandle = launched.processHandle

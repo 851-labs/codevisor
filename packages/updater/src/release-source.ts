@@ -167,13 +167,13 @@ export const fetchLatestServerRelease = async (options: {
   readonly target: string
   readonly fetch?: typeof globalThis.fetch | undefined
 }): Promise<ServerRelease | undefined> => {
-  const alphaRelease =
-    options.channel === "alpha"
-      ? await fetchAlphaServerRelease({
-          target: options.target,
-          fetch: options.fetch
-        }).catch(() => undefined)
-      : undefined
+  let alphaRelease: ServerRelease | undefined
+  if (options.channel === "alpha") {
+    alphaRelease = await fetchAlphaServerRelease({
+      target: options.target,
+      fetch: options.fetch
+    }).catch(() => undefined)
+  }
   try {
     const release = await fetchStableServerRelease({
       target: options.target,

@@ -169,7 +169,10 @@ export const makeAgentRows = (scope: () => string, rows: Set<string>): AgentRows
     if (edge === "started") return start(item)
     const run = spawns.get(item.itemId)
     const row = run?.rowId ?? item.itemId
-    if (!subagentFinished(item)) return answered.delete(row) ? reopen(run, row) : []
+    if (!subagentFinished(item)) {
+      if (answered.delete(row)) return reopen(run, row)
+      return []
+    }
     if (item.status === "inProgress" && answered.has(row)) return []
     answered.add(row)
     const result = text(item.result?.text) ?? text(item.result?.summary) ?? item.failureReason
