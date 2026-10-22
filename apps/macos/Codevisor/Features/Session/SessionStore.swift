@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CodevisorCore
+import CodevisorCoreMac
 import CodevisorUI
 import ACPKit
 
@@ -190,4 +191,147 @@ final class SessionStore {
   }
 
   @ObservationIgnored var ephemeralWorkspaces: [UUID: Workspace] = [:]
+
+  private var paneGroupFactory: PaneGroupFactory {
+    PaneGroupFactory(environment: environment, browserPanes: browserPanes, browserHost: self)
+  }
+
+  func centerPaneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
+    let workspace = workspace(for: session, project: project)
+    guard
+      let leafId = workspace.centerTabs.lazy.compactMap({
+        $0.root.groupId(containingChat: session.id)
+      }).first
+        ?? workspace.centerTree.allGroups.first?.id
+    else {
+      return paneGroupFactory.makeGroup(
+        workspace: self.workspace(for: session, project: project), session: session, project: project)
+    }
+    return centerGroup(leafId: leafId, workspace: workspace, session: session, project: project)
+  }
+
+  func workspace(for session: ChatSession, project: Project) -> Workspace {
+    let seed = WorkspaceSessionSeed(
+      sessionId: session.id,
+      initialName: session.worktreeName ?? project.name,
+      serverId: session.serverId,
+      projectId: project.id,
+      rootDirectory: session.cwd ?? project.folderURL.path,
+      worktreeName: session.worktreeName,
+      assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
+    )
+    if environment.workspaces.workspaceId(forSession: session.id) == nil,
+      environment.projectList.session(session.id, serverId: session.serverId) == nil
+    {
+      if let cached = ephemeralWorkspaces[session.id] { return cached }
+      let ephemeral = environment.workspaces.ephemeralWorkspace(for: seed)
+      ephemeralWorkspaces[session.id] = ephemeral
+      return ephemeral
+    }
+    return environment.workspaces.ensureWorkspace(
+      for: seed,
+      legacyGroups: environment.paneGroups
+    )
+  }
+
+  func centerGroup(
+    leafId: UUID,
+    workspace: Workspace,
+    session: ChatSession?,
+    project: Project
+  ) -> PaneGroupModel {
+    let key = CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
+    if let existing = centerLeafGroups[key] {
+      if let session, existing.sessionId == nil {
+        paneGroupFactory.adopt(session, project: project, workspace: workspace, into: existing)
+      }
+      return existing
+    }
+    let group = paneGroupFactory.makeGroup(
+      workspace: workspace, session: session, project: project, leafId: leafId)
+    centerLeafGroups[key] = group
+    return group
+  }
+
+  @discardableResult
+  func reconcileMountedPaneGroups(in workspace: Workspace) -> Bool {
+    var changed = false
+
+    let centerStates = Dictionary(
+      uniqueKeysWithValues: workspace.centerTabs.flatMap { tab in
+        tab.root.allGroups.map { ($0.id, $0.state) }
+      }
+    )
+    var removedKeys: [CenterLeafKey] = []
+    for (key, model) in centerLeafGroups where key.workspaceId == workspace.id {
+      if let state = centerStates[key.groupId] {
+        changed = model.reconcileExternalState(state) || changed
+      } else {
+        changed = model.reconcileExternalState(PaneGroupState()) || changed
+        removedKeys.append(key)
+      }
+    }
+    for key in removedKeys {
+      centerLeafGroups[key] = nil
+    }
+    pruneSubagentMirrors(in: workspace)
+    return changed
+  }
+
+  func evictCenterLeaf(workspaceId: UUID, leafId: UUID) {
+    centerLeafGroups[CenterLeafKey(workspaceId: workspaceId, groupId: leafId)] = nil
+  }
+
+  func localBrowserModel(paneId: UUID) -> ChromiumBrowserModel? {
+    browserPanes.model(paneId: paneId)
+  }
+
+  func localBrowserTitle(paneId: UUID) -> String? {
+    localBrowserModel(paneId: paneId)?.title
+  }
+
+  func canHostBackgroundBrowser(serverId: String, sessionId: String) -> Bool {
+    backgroundBrowserTarget(serverId: serverId, sessionId: sessionId) != nil
+  }
+
+  func createBackgroundBrowserTab(serverId: String, sessionId: String, url: String) -> ChromiumBrowserModel? {
+    guard let (session, project) = backgroundBrowserTarget(serverId: serverId, sessionId: sessionId) else {
+      return nil
+    }
+    return createBrowserTab(for: session, project: project, url: url)
+  }
+
+  func createBrowserTab(
+    for session: ChatSession, project: Project, url: String
+  ) -> ChromiumBrowserModel? {
+    var workspace = workspace(for: session, project: project)
+    let paneId = UUID()
+    let descriptor = PaneDescriptorState(
+      id: paneId, kind: .browser, name: "Browser", terminalKey: paneId.uuidString,
+      browserURL: BrowserLocation.sharedURL(url)?.absoluteString
+    )
+    let tabId = workspace.upsertCenterPane(descriptor, selecting: false)
+    environment.workspaces.save(workspace)
+    guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return nil }
+    let group = centerGroup(
+      leafId: tab.activeLeafId, workspace: workspace, session: session, project: project
+    )
+    guard let browser = group.pane(for: descriptor) as? BrowserPane else { return nil }
+    browser.model.automationInitialURL = url
+    environment.workspaceSync.publishPane(
+      descriptor, workspaceId: workspace.id,
+      client: environment.machines.client(for: session.serverId)
+    )
+    return browser.model
+  }
+
+  private func backgroundBrowserTarget(serverId: String, sessionId: String) -> (ChatSession, Project)? {
+    guard let id = UUID(uuidString: sessionId),
+      let session = environment.projectList.session(id, serverId: serverId),
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == serverId && $0.id == session.projectId
+      })
+    else { return nil }
+    return (session, project)
+  }
 }
