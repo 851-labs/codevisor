@@ -99,13 +99,15 @@ describe("OpenCode server sessions", () => {
   })
 
   it("pins a new session to the model it advertises, but leaves loaded sessions alone", async () => {
-    const s = setup((request) =>
-      request.path === "/api/session" && request.method === "POST"
-        ? { data: { id: "ses_new" } }
-        : request.path === "/api/session/ses_old"
-          ? { data: { id: "ses_old", location: { directory: "/work" } } }
-          : undefined
-    )
+    const s = setup((request) => {
+      if (request.path === "/api/session" && request.method === "POST") {
+        return { data: { id: "ses_new" } }
+      }
+      if (request.path === "/api/session/ses_old") {
+        return { data: { id: "ses_old", location: { directory: "/work" } } }
+      }
+      return undefined
+    })
     s.queue.push(event("server.connected", {}))
     const created = await s.sessions.create(s.launch())
     expect(
@@ -123,13 +125,15 @@ describe("OpenCode server sessions", () => {
   })
 
   it("loads a session from its own directory and refuses one from another project", async () => {
-    const s = setup((request) =>
-      request.path === "/api/session/ses_2"
-        ? { data: { id: "ses_2", location: { directory: "/work/" } } }
-        : request.path === "/api/session/ses_3"
-          ? { data: { id: "ses_3", location: { directory: "/other" } } }
-          : undefined
-    )
+    const s = setup((request) => {
+      if (request.path === "/api/session/ses_2") {
+        return { data: { id: "ses_2", location: { directory: "/work/" } } }
+      }
+      if (request.path === "/api/session/ses_3") {
+        return { data: { id: "ses_3", location: { directory: "/other" } } }
+      }
+      return undefined
+    })
     s.queue.push(event("server.connected", {}))
     const loaded = await s.sessions.load(s.launch(), "ses_2")
     expect(loaded.metadata.sessionId).toBe("ses_2")

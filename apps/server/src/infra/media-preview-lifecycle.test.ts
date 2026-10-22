@@ -179,7 +179,8 @@ it("reads a video's duration and reports probe failures", async () => {
 
 it("terminates timed-out PDF workers and surfaces worker failures", async () => {
   const { mediaPreview } = await import("./media-previews.js")
-  for (const mode of ["error", "exit", "timeout"]) {
+  const failures = { error: "worker error", exit: "exited (1)", timeout: "timed out" }
+  for (const [mode, failure] of Object.entries(failures)) {
     const started = Promise.withResolvers<void>()
     const worker = Object.assign(new EventEmitter(), { terminate: vi.fn() })
     mocks.worker.mockImplementation(() => {
@@ -189,9 +190,7 @@ it("terminates timed-out PDF workers and surfaces worker failures", async () => 
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
     try {
       const result = mediaPreview("pdf", "application/pdf", "/cache", mode)
-      const rejected = expect(result).rejects.toThrow(
-        mode === "error" ? "worker error" : mode === "exit" ? "exited (1)" : "timed out"
-      )
+      const rejected = expect(result).rejects.toThrow(failure)
       await started.promise
       if (mode === "error") worker.emit("error", new Error("worker error"))
       if (mode === "exit") worker.emit("exit", 1)

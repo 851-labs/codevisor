@@ -103,11 +103,19 @@ describe("CodexProvider", () => {
     const cli = "/bin/codex"
     const bundled = "/Applications/Codex.app/Contents/Resources/codex"
     const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
+    const locations = new Map([
+      ["codex", cli],
+      [bundled, bundled]
+    ])
+    const versions = new Map([
+      [cli, "codex-cli 0.143.0"],
+      [bundled, "codex-cli 0.144.0"]
+    ])
     const installed: ProviderEnvironment = {
       env: { PATH: "/bin" },
       envFor: () => Promise.resolve(installed.env),
       executableExists: (name) => name === "codex" || name === bundled,
-      locateExecutable: (name) => (name === "codex" ? cli : name === bundled ? bundled : undefined)
+      locateExecutable: (name) => locations.get(name)
     }
     const client = new FakeCodexClient()
     const spawns: Array<CodexSpawnRequest> = []
@@ -116,12 +124,7 @@ describe("CodexProvider", () => {
         spawns.push(request)
         return client
       },
-      versionReader: (command) =>
-        command === cli
-          ? "codex-cli 0.143.0"
-          : command === bundled
-            ? "codex-cli 0.144.0"
-            : undefined
+      versionReader: (command) => versions.get(command)
     })
 
     await run(provider.createSession(withFallback, "/tmp/project", async () => {}))
@@ -133,11 +136,15 @@ describe("CodexProvider", () => {
     const cli = "/bin/codex"
     const bundled = "/Applications/Codex.app/Contents/Resources/codex"
     const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
+    const locations = new Map([
+      ["codex", cli],
+      [bundled, bundled]
+    ])
     const installed: ProviderEnvironment = {
       env: { PATH: "/bin" },
       envFor: () => Promise.resolve(installed.env),
       executableExists: (name) => name === "codex" || name === bundled,
-      locateExecutable: (name) => (name === "codex" ? cli : name === bundled ? bundled : undefined)
+      locateExecutable: (name) => locations.get(name)
     }
     const client = new FakeCodexClient()
     const spawns: Array<CodexSpawnRequest> = []
@@ -147,11 +154,7 @@ describe("CodexProvider", () => {
         return client
       },
       versionReader: (command) =>
-        command === cli
-          ? "codex-cli 0.144.0"
-          : command === bundled
-            ? "codex-cli 0.144.0"
-            : undefined
+        command === cli || command === bundled ? "codex-cli 0.144.0" : undefined
     })
 
     await run(provider.createSession(withFallback, "/tmp/project", async () => {}))

@@ -1,6 +1,15 @@
 import { access, readdir } from "node:fs/promises"
 import { createServer } from "node:net"
 
+function hueSectionChannels(section, chroma, x) {
+  if (section < 1) return [chroma, x, 0]
+  if (section < 2) return [x, chroma, 0]
+  if (section < 3) return [0, chroma, x]
+  if (section < 4) return [0, x, chroma]
+  if (section < 5) return [x, 0, chroma]
+  return [chroma, 0, x]
+}
+
 export function colorFromHash(hash) {
   const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
   const saturation = 0.68
@@ -8,18 +17,7 @@ export function colorFromHash(hash) {
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
   const section = hue / 60
   const x = chroma * (1 - Math.abs((section % 2) - 1))
-  const [red, green, blue] =
-    section < 1
-      ? [chroma, x, 0]
-      : section < 2
-        ? [x, chroma, 0]
-        : section < 3
-          ? [0, chroma, x]
-          : section < 4
-            ? [0, x, chroma]
-            : section < 5
-              ? [x, 0, chroma]
-              : [chroma, 0, x]
+  const [red, green, blue] = hueSectionChannels(section, chroma, x)
   const match = lightness - chroma / 2
   const channels = [red + match, green + match, blue + match]
   const bytes = channels.map((channel) => Math.round(channel * 255))

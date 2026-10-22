@@ -145,9 +145,8 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
   const start = async (request: UpdateRunRequest): Promise<UpdateRunStarted> => {
     if (isBusy()) return join(request)
 
-    const server =
-      request.serverChannel === undefined ? undefined : await checkServer(request.serverChannel)
-    return launch(request, server)
+    if (request.serverChannel === undefined) return launch(request, undefined)
+    return launch(request, await checkServer(request.serverChannel))
   }
 
   const startServerUpdate = async (channel: ServerUpdateChannel): Promise<ServerUpdateAccepted> => {

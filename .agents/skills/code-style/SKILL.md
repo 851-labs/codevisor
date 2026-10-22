@@ -596,10 +596,37 @@ final class ConnectionStatus {
 }
 ```
 
-## Enforcement
+## Enforced by lint
 
-Lint enforces only file and type size today: oxlint `max-lines` (500) and
-SwiftLint `file_length`, `type_body_length`, and `file_name`. Every other
-rule is yours to apply while writing and to check while reviewing. The
-Swift compiler catches data races, but not heavy work left on the main
-actor.
+`bun run check` and the pre-commit hook fail on these:
+
+- **No nested ternaries** (rule 4): oxlint `no-nested-ternary`, with no
+  exemptions.
+- **No effect-choosing ternaries** (rule 4): `codevisor/no-effect-ternary`
+  fails a ternary with an `await`, `yield`, or assignment in a branch
+  (nested functions don't count), and a ternary whose value is discarded. It
+  doesn't judge calls, so `a ? f() : g()` is still yours to review.
+- **Named SQL** (rule 5): `codevisor/named-sql` fails a SQL string literal
+  passed straight to `.prepare()`, `.exec()`, `.run()`, or `.query()`. Tests,
+  test support, and the `packages/db` migration and upgrade files are
+  excluded by path in `.oxlintrc.json`.
+- **File size** (rule 13, S1): oxlint `max-lines` 500; SwiftLint
+  `file_length` 500 and `type_body_length` 400.
+- **Swift function length** (S3): SwiftLint `function_body_length` 50. The
+  functions that were already longer are grandfathered in
+  `.swiftlint-baseline.json`, which matches each one by its line count and
+  declaration line, so any change to either fails. Bring the function to 50
+  lines or fewer; if you only shrink it, run `bun run swift:lint:baseline` and
+  check that the diff only shortens entries. The rule skips computed
+  properties, so SwiftUI `body` (S4) isn't checked.
+- `file_name` for Swift, and no comments anywhere (`codevisor/no-comments`).
+
+The custom rules live in `scripts/lint`. Their exemptions are listed, with a
+reason for each, in `scripts/lint/exemptions.json`: each entry is a file plus
+the exempted code with whitespace collapsed. The rules fail when an entry no
+longer matches, so delete it when you fix the code. Add one only when a rewrite
+would change behavior.
+
+Every other rule is yours to apply while writing and to check while
+reviewing. The Swift compiler catches data races, but not heavy work left on
+the main actor.

@@ -400,9 +400,10 @@ describe("Muse chat", () => {
     })
     client.emit("turn/completed", { turnId, terminal: "completed" })
     await expect(finished).resolves.toEqual({ stopReason: "end_turn" })
-    const order = payloads(events).flatMap((payload) =>
-      payload.parentToolCallId === "a1" ? ["child"] : payload.turnState === "ended" ? ["ended"] : []
-    )
+    const order = payloads(events).flatMap((payload) => {
+      if (payload.parentToolCallId === "a1") return ["child"]
+      return payload.turnState === "ended" ? ["ended"] : []
+    })
     expect(order).toEqual(["child", "child", "ended"])
     expect(payloads(events).find((payload) => payload.toolCallId === "a1")?._meta).toEqual({
       codevisorSubagent: { taskId: `${SESSION}:subagent-1` }

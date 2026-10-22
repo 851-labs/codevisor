@@ -11,6 +11,10 @@ vi.mock("node:os", async (original) => ({
   homedir: () => home.path
 }))
 afterEach(() => vi.useRealTimers())
+const discoveryEnvironment = (mode: string, dataDir: string): NodeJS.ProcessEnv => {
+  if (mode === "configured") return { CODEX_HOME: join(dataDir, "custom") }
+  return mode === "home" ? { HOME: dataDir } : {}
+}
 it.each(["configured", "home", "fallback", "managed"])(
   "preserves existing native Codex threads with %s profile discovery",
   async (mode) => {
@@ -20,12 +24,7 @@ it.each(["configured", "home", "fallback", "managed"])(
     const f = fleet(),
       m = await f.machine("a", native("alice"), { environment: async () => env })
     home.path = m.dataDir
-    env =
-      mode === "configured"
-        ? { CODEX_HOME: join(m.dataDir, "custom") }
-        : mode === "home"
-          ? { HOME: m.dataDir }
-          : {}
+    env = discoveryEnvironment(mode, m.dataDir)
     const path =
       mode === "managed"
         ? join(m.dataDir, "harness-profiles", "codex", "original")

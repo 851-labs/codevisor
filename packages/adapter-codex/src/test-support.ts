@@ -287,26 +287,24 @@ export const setup = async (
   }
   const nextEvent = (matches: (event: RuntimeEvent) => boolean): Promise<RuntimeEvent> =>
     new Promise((resolve) => waiters.push({ matches, resolve }))
-  const created =
-    options.resume === undefined
-      ? await run(
-          provider.createSession(definition, "/tmp/project", emit, undefined, options.toolGateway)
-        )
-      : undefined
-  const loaded =
-    options.resume === undefined
-      ? undefined
-      : await run(
-          provider.loadSession(
-            definition,
-            options.resume,
-            "/tmp/project",
-            emit,
-            undefined,
-            options.toolGateway
-          )
-        )
-  return { client, created, events, loaded, nextEvent, provider, spawns }
+  const fixture = { client, events, nextEvent, provider, spawns }
+  if (options.resume === undefined) {
+    const created = await run(
+      provider.createSession(definition, "/tmp/project", emit, undefined, options.toolGateway)
+    )
+    return { ...fixture, created, loaded: undefined }
+  }
+  const loaded = await run(
+    provider.loadSession(
+      definition,
+      options.resume,
+      "/tmp/project",
+      emit,
+      undefined,
+      options.toolGateway
+    )
+  )
+  return { ...fixture, created: undefined, loaded }
 }
 
 export const UNIFIED_DIFF = [

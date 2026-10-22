@@ -55,7 +55,8 @@ const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArg
 )
 const reuseMacOSBuild = requestsMacOSBuildReuse(cliArguments)
 const includesIOS = !cliArguments.includes("--no-ios")
-const simulator = includesIOS ? await requireIOSSimulator(repoRoot) : undefined
+let simulator
+if (includesIOS) simulator = await requireIOSSimulator(repoRoot)
 sanitizeAmbientEnvironment(process.env)
 const instance = await resolveDevelopmentInstance(repoRoot, process.env)
 const {
@@ -117,9 +118,8 @@ const macOSProject = ["-project", "apps/macos/Codevisor.xcodeproj", "-scheme", "
 const prepareServers = async () => {
   await run("bun", ["run", "--cwd", "apps/server", "build"])
   await applyCloudDevMigrations({ cloudPersistPath, repoRoot, run })
-  const containerEngine = wantsContainers
-    ? await resolveContainerEngine(containerEnginePreference)
-    : undefined
+  let containerEngine
+  if (wantsContainers) containerEngine = await resolveContainerEngine(containerEnginePreference)
   if (wantsContainers && containerEngine === undefined) {
     console.warn("No usable container engine; the dev remote runs as a same-host process.")
   }

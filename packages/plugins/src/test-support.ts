@@ -15,6 +15,11 @@ import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-superviso
 import { PluginsError } from "./plugins-error.js"
 import { makePluginsManager, type PluginsManager } from "./plugins-manager.js"
 
+const errorStatus = (cause: unknown): number => {
+  if (!(cause instanceof PluginsError)) return 500
+  return cause.code === "notFound" ? 404 : 400
+}
+
 export const cleanups: Array<() => void | Promise<void>> = []
 
 afterEach(async () => {
@@ -347,8 +352,7 @@ export const makeOuterServer = async (
         }
       })
       .catch((cause: unknown) => {
-        const status = cause instanceof PluginsError ? (cause.code === "notFound" ? 404 : 400) : 500
-        response.writeHead(status, { "Content-Type": "application/json" })
+        response.writeHead(errorStatus(cause), { "Content-Type": "application/json" })
         response.end(JSON.stringify({ error: String(cause) }))
       })
   })

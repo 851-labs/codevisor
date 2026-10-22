@@ -433,12 +433,11 @@ describe("listPiAgentSessions", () => {
     expect(await listPiAgentSessions({ agentDir, fs: unreadable })).toEqual([])
     const odd: AgentSessionFileSystem = {
       ...fs,
-      statFile: async (path) =>
-        path.endsWith("kept.jsonl")
-          ? { mtimeMs: 0, isDirectory: true }
-          : path.endsWith("gone.jsonl")
-            ? undefined
-            : fs.statFile(path)
+      statFile: async (path) => {
+        if (path.endsWith("kept.jsonl")) return { mtimeMs: 0, isDirectory: true }
+        if (path.endsWith("gone.jsonl")) return undefined
+        return fs.statFile(path)
+      }
     }
     expect(await listPiAgentSessions({ agentDir, fs: odd })).toEqual([])
   })

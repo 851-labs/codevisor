@@ -7,14 +7,20 @@ const toolDirectives = [
   /^(\/\s*<reference\s+(?:types|path|lib)="[^"]+"\s*\/>)\s*$/
 ]
 
+function directiveText(comment, core) {
+  if (comment.type === "Block") return `/* ${core} */`
+  return core.startsWith("/") ? `//${core}` : `// ${core}`
+}
+
 function directive(comment) {
   for (const pattern of toolDirectives) {
     const match = pattern.exec(comment.value)
     if (match === null) continue
     const core = match[1]
-    const text =
-      comment.type === "Block" ? `/* ${core} */` : core.startsWith("/") ? `//${core}` : `// ${core}`
-    return { text, bare: comment.value.slice(match[0].length).trim() === "" }
+    return {
+      text: directiveText(comment, core),
+      bare: comment.value.slice(match[0].length).trim() === ""
+    }
   }
   return undefined
 }
@@ -51,51 +57,46 @@ function removalRange(text, [start, end]) {
   return [start, end + (after.length - after.trimStart().length)]
 }
 
-export default {
-  meta: { name: "codevisor" },
-  rules: {
-    "no-comments": {
-      meta: { fixable: "code" },
-      create(context) {
-        const { sourceCode } = context
-        const emptyContainers = new Map()
-        const location = (range) => ({
-          start: sourceCode.getLocFromIndex(range[0]),
-          end: sourceCode.getLocFromIndex(range[1])
-        })
-        const report = (range) =>
-          context.report({
-            loc: location(range),
-            message: "Comments are not allowed. Say it in the code, or delete it.",
-            fix: (fixer) => fixer.removeRange(removalRange(sourceCode.text, range))
-          })
-        return {
-          JSXExpressionContainer(node) {
-            if (node.expression.type === "JSXEmptyExpression") {
-              emptyContainers.set(node.range[0], node.range)
-            }
-          },
-          "Program:exit"() {
-            const covered = [...emptyContainers.values()]
-            for (const comment of sourceCode.getAllComments()) {
-              if (isAllowedComment(comment, context.filename)) continue
-              const tool = directive(comment)
-              if (tool?.bare) continue
-              if (tool !== undefined) {
-                context.report({
-                  loc: location(comment.range),
-                  message: "Tool directives cannot carry a reason. Keep only the directive.",
-                  fix: (fixer) => fixer.replaceTextRange(comment.range, tool.text)
-                })
-                continue
-              }
-              const container = covered.find(
-                ([start, end]) => start <= comment.range[0] && comment.range[1] <= end
-              )
-              if (container === undefined) report(comment.range)
-              else if (emptyContainers.delete(container[0])) report(container)
-            }
+export const noComments = {
+  meta: { fixable: "code" },
+  create(context) {
+    const { sourceCode } = context
+    const emptyContainers = new Map()
+    const location = (range) => ({
+      start: sourceCode.getLocFromIndex(range[0]),
+      end: sourceCode.getLocFromIndex(range[1])
+    })
+    const report = (range) =>
+      context.report({
+        loc: location(range),
+        message: "Comments are not allowed. Say it in the code, or delete it.",
+        fix: (fixer) => fixer.removeRange(removalRange(sourceCode.text, range))
+      })
+    return {
+      JSXExpressionContainer(node) {
+        if (node.expression.type === "JSXEmptyExpression") {
+          emptyContainers.set(node.range[0], node.range)
+        }
+      },
+      "Program:exit"() {
+        const covered = [...emptyContainers.values()]
+        for (const comment of sourceCode.getAllComments()) {
+          if (isAllowedComment(comment, context.filename)) continue
+          const tool = directive(comment)
+          if (tool?.bare) continue
+          if (tool !== undefined) {
+            context.report({
+              loc: location(comment.range),
+              message: "Tool directives cannot carry a reason. Keep only the directive.",
+              fix: (fixer) => fixer.replaceTextRange(comment.range, tool.text)
+            })
+            continue
           }
+          const container = covered.find(
+            ([start, end]) => start <= comment.range[0] && comment.range[1] <= end
+          )
+          if (container === undefined) report(comment.range)
+          else if (emptyContainers.delete(container[0])) report(container)
         }
       }
     }

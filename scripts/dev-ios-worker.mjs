@@ -76,10 +76,10 @@ if (
       "stop its owner or choose a different explicit port."
   )
 }
-const cloudPort =
-  externalCloudURL === undefined
-    ? (requestedCloudPort ?? (await findAvailablePort(preferredCloudPort, 41_000, 10_000)))
-    : undefined
+let cloudPort
+if (externalCloudURL === undefined) {
+  cloudPort = requestedCloudPort ?? (await findAvailablePort(preferredCloudPort, 41_000, 10_000))
+}
 const cloudURL = externalCloudURL ?? `http://localhost:${cloudPort}`
 const cloudPersistPath = layout.wrangler
 
@@ -97,21 +97,20 @@ console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (manag
 await bootstrapDevelopment(repoRoot, { environment: process.env, ghosttyKit: true })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
-const containerEngine = wantsContainers
-  ? await resolveContainerEngine(containerEnginePreference)
-  : undefined
+let containerEngine
+if (wantsContainers) containerEngine = await resolveContainerEngine(containerEnginePreference)
 if (wantsContainers && containerEngine === undefined) {
   console.warn("No usable container engine; the dev remote runs as a same-host process.")
 }
-const containerContext =
-  containerEngine === undefined
-    ? undefined
-    : await prepareDevContainers({
-        repoRoot,
-        containerRoot: join(layout.tmpRoot, "container"),
-        engine: containerEngine,
-        worktreeHash: instanceHash
-      })
+let containerContext
+if (containerEngine !== undefined) {
+  containerContext = await prepareDevContainers({
+    repoRoot,
+    containerRoot: join(layout.tmpRoot, "container"),
+    engine: containerEngine,
+    worktreeHash: instanceHash
+  })
+}
 
 let cloud
 if (externalCloudURL === undefined) {

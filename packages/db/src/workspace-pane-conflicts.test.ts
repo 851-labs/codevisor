@@ -67,12 +67,13 @@ describe("workspace pane conflicts", () => {
           select raise(abort, 'pane write aborted');
         end`)
       const resource = { resourceKind: "session", resourceId: session.id }
-      const effect =
-        operation === "upsertWorkspacePane"
-          ? db.upsertWorkspacePane(target.id, { ...request, ...resource })
-          : operation === "updateWorkspacePane"
-            ? db.updateWorkspacePane(target.id, request.id, resource)
-            : db.promoteWorkspacePaneToSession(target.id, request.id, session.id, "Converted")
+      const effects = {
+        upsertWorkspacePane: () => db.upsertWorkspacePane(target.id, { ...request, ...resource }),
+        updateWorkspacePane: () => db.updateWorkspacePane(target.id, request.id, resource),
+        promoteWorkspacePaneToSession: () =>
+          db.promoteWorkspacePaneToSession(target.id, request.id, session.id, "Converted")
+      }
+      const effect = effects[operation]()
       expect(await Effect.runPromise(Effect.flip(effect))).toMatchObject({
         _tag: "DatabaseError",
         operation,

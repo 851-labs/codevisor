@@ -78,14 +78,13 @@ describe("harness uninstall", () => {
         bin,
         { ...installableDefinition, id: "codex" },
         {
-          realpath: (path) =>
-            path === bin
-              ? `${root}/releases/1/bin/codex`
-              : path.endsWith("codex-code-mode-host")
-                ? companion === "owned"
-                  ? `${root}/releases/1/bin/codex-code-mode-host`
-                  : "/other/host"
-                : path,
+          realpath: (path) => {
+            if (path === bin) return `${root}/releases/1/bin/codex`
+            if (!path.endsWith("codex-code-mode-host")) return path
+            return companion === "owned"
+              ? `${root}/releases/1/bin/codex-code-mode-host`
+              : "/other/host"
+          },
           pathExists: (path) => companion !== "absent" && path.endsWith("codex-code-mode-host")
         }
       )

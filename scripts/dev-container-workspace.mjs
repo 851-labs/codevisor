@@ -64,9 +64,8 @@ export async function syncLinuxWorkspace(repoRoot, containerRoot) {
   const packageDirectories = await workspacePackageDirectories(repoRoot)
   const signature = await workspaceSignature(repoRoot, packageDirectories)
   const signaturePath = join(containerRoot, "app.signature")
-  const previous = (await pathExists(signaturePath))
-    ? await readFile(signaturePath, "utf8")
-    : undefined
+  let previous
+  if (await pathExists(signaturePath)) previous = await readFile(signaturePath, "utf8")
   if (previous === signature && (await pathExists(join(appRoot, "package.json")))) {
     return { appRoot, changed: false }
   }

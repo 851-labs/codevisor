@@ -39,7 +39,7 @@ const turboStep = (name) => ({
       return workspace !== undefined
     })
     if (inputs.length === 0) return undefined
-    const sorted = [...names].toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    const sorted = [...names].toSorted(byCodeUnit)
     return {
       inputs,
       args: sorted.map((workspaceName) => `--filter=...${workspaceName}`),
@@ -108,7 +108,13 @@ const checkSteps = [
     ".swift-format",
     "scripts/swift-format.sh"
   ]),
-  pathStep("swift:lint", "swift-style", ["**/*.swift", ".swiftlint.yml", "scripts/swift-lint.sh"]),
+  pathStep("swift:lint", "swift-style", [
+    "**/*.swift",
+    ".swiftlint.yml",
+    ".swiftlint-baseline.json",
+    "scripts/swift-lint.sh",
+    "scripts/swift-lint-baseline.mjs"
+  ]),
   pathStep(
     "swift:test",
     "swift",
@@ -212,6 +218,11 @@ export function xcodeSwiftProducts(projectFile) {
   return products.length === 0 ? undefined : products
 }
 
+export const byCodeUnit = (a, b) => {
+  if (a < b) return -1
+  return a > b ? 1 : 0
+}
+
 export function relativeImports(source) {
   return [...source.matchAll(/(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)].map(
     (match) => match[1]
@@ -222,21 +233,19 @@ function matchesAny(path, patterns) {
   return patterns.some((pattern) => globExpression(pattern).test(path))
 }
 
+const globParts = new Map([
+  ["**/", "(?:.*/)?"],
+  ["**", ".*"],
+  ["*", "[^/]*"]
+])
+
 const expressions = new Map()
 function globExpression(pattern) {
   let expression = expressions.get(pattern)
   if (expression === undefined) {
     const source = pattern
       .split(/(\*\*\/|\*\*|\*)/)
-      .map((part) =>
-        part === "**/"
-          ? "(?:.*/)?"
-          : part === "**"
-            ? ".*"
-            : part === "*"
-              ? "[^/]*"
-              : part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-      )
+      .map((part) => globParts.get(part) ?? part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
       .join("")
     expression = new RegExp(`^${source}$`)
     expressions.set(pattern, expression)

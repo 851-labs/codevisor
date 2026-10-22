@@ -46,12 +46,14 @@ export async function runSwiftTests(
   )
   for (const step of steps) {
     const selected = [...(step.selection ?? []), ...swiftTestingOnly, ...args]
-    const status =
-      step.bundles === undefined
-        ? swiftStatus(
-            run("swift", [...step.swift, ...selected], { cwd: repoRoot, stdio: "inherit" })
-          )
-        : await runBundles(step.bundles, selected, run)
+    let status
+    if (step.bundles === undefined) {
+      status = swiftStatus(
+        run("swift", [...step.swift, ...selected], { cwd: repoRoot, stdio: "inherit" })
+      )
+    } else {
+      status = await runBundles(step.bundles, selected, run)
+    }
     if (status !== 0) return status
   }
   return 0

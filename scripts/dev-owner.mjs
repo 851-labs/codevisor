@@ -21,8 +21,8 @@ const [kind, ...args] = process.argv.slice(2)
 parseDevelopmentRunnerArguments(args, {
   allowedArguments: kind === "ios" ? [] : ["--no-ios", "--reuse-macos-build"]
 })
-const simulator =
-  kind === "ios" || !args.includes("--no-ios") ? await requireIOSSimulator(repoRoot) : undefined
+let simulator
+if (kind === "ios" || !args.includes("--no-ios")) simulator = await requireIOSSimulator(repoRoot)
 const layout = developmentLayout(repoRoot)
 const claimPath = layout.runtime.manifest
 const claim = {

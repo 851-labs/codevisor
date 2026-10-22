@@ -1,0 +1,41 @@
+{
+  "codevisor/no-effect-ternary": [
+    {
+      "file": "apps/server/src/infra/tool-icons.ts",
+      "code": "isPublicHost(parsed.hostname) ? await imageAt(publicFaviconUrl(parsed.hostname)) : undefined",
+      "reason": "The a ?? (c ? await f() : undefined) shape: an if rewrite would change null handling unless written as ?? undefined (851-3031)."
+    },
+    {
+      "file": "apps/server/src/routes/project-repo-identity.ts",
+      "code": "isGitRepository ? await discoverRepoUrl(location.folderPath, env) : undefined",
+      "reason": "A let would lose the const narrowing of url that the remote check below relies on (851-3031)."
+    },
+    {
+      "file": "apps/server/src/routes/projects.ts",
+      "code": "existingDirectory(payload.folderPath) === undefined ? undefined : await discoverRepoUrl( payload.folderPath, await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env)) )",
+      "reason": "The a ?? (c ? undefined : await f()) shape: an if rewrite would change null handling unless written as ?? undefined (851-3031)."
+    },
+    {
+      "file": "packages/automation/resources/browser-extension/offscreen.js",
+      "code": "entry.mimeType.startsWith(\"text/\") ? { mimeType: entry.mimeType, text: await blob.text() } : { mimeType: entry.mimeType, blob }",
+      "reason": "Browser-extension clipboard code, outside the 851-3031 TypeScript classification and left as is by 851-3035."
+    },
+    {
+      "file": "packages/harness-manager/src/shared-oauth-providers.ts",
+      "code": "options.isDefault && options.env.HOME ? await jsonFile(join(options.env.HOME, \".claude.json\")) : undefined",
+      "reason": "The a ?? (c ? await f() : undefined) shape: an if rewrite changes null handling unless written as ?? undefined (851-3031)."
+    }
+  ],
+  "codevisor/named-sql": [
+    {
+      "file": "packages/adapter-antigravity/src/sessions.ts",
+      "code": "\"SELECT * FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 500\"",
+      "reason": "A one-off read of Antigravity's own database, not Codevisor's schema."
+    },
+    {
+      "file": "packages/db/src/sync-journal.ts",
+      "code": "`drop trigger ${quotedIdentifier(trigger.name)}`",
+      "reason": "The trigger name is only known at runtime, so the statement can't be a constant."
+    }
+  ]
+}

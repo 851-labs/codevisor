@@ -15,9 +15,13 @@ const revision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: upstream,
   encoding: "utf8"
 }).trim()
+const byCodeUnit = (a, b) => {
+  if (a < b) return -1
+  return a > b ? 1 : 0
+}
 const active = extensions.supported
   .filter((item) => !item.disabled && item.icon)
-  .toSorted((a, b) => (a.icon < b.icon ? -1 : a.icon > b.icon ? 1 : 0))
+  .toSorted((a, b) => byCodeUnit(a.icon, b.icon))
 const names = {}
 const suffixes = {}
 const languageNames = {}
@@ -47,7 +51,6 @@ for (const item of active) {
 const fileNames = { ...languageNames, ...names }
 const fileExtensions = { ...languageSuffixes, ...suffixes }
 delete fileExtensions.txt
-const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 const icons = [
   ...new Set([...Object.values(fileNames), ...Object.values(fileExtensions)])
 ].toSorted(byCodeUnit)

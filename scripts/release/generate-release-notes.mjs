@@ -39,17 +39,18 @@ if (records.length === 0) {
   throw new Error(`No release-note commits found in ${range}`)
 }
 
+function releaseNoteGroup(subject) {
+  if (/^(fix|perf)(\(|:|!)/i.test(subject)) return "Fixed"
+  return /^feat(\(|:|!)/i.test(subject) ? "Added" : "Changed"
+}
+
 const groups = { Added: [], Fixed: [], Changed: [] }
 for (const record of records) {
   const normalized = record.subject.replace(
     /^(feat|fix|refactor|perf|build|ci|docs|test|chore)(\([^)]*\))?!?:\s*/i,
     ""
   )
-  const group = /^(fix|perf)(\(|:|!)/i.test(record.subject)
-    ? "Fixed"
-    : /^feat(\(|:|!)/i.test(record.subject)
-      ? "Added"
-      : "Changed"
+  const group = releaseNoteGroup(record.subject)
   const short = record.sha.slice(0, 7)
   groups[group].push(
     `- ${normalized} ([${short}](https://github.com/${repository}/commit/${record.sha}))`

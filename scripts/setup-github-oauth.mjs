@@ -35,9 +35,8 @@ const mainRoot = (() => {
 const devVarsPath = join(mainRoot, "apps/cloud/.dev.vars")
 const outPath = options.prod ? resolve(repoRoot, options.out ?? "tmp/github-app.json") : devVarsPath
 
-const existing = options.prod
-  ? undefined
-  : await readFile(devVarsPath, "utf8").catch(() => undefined)
+let existing
+if (!options.prod) existing = await readFile(devVarsPath, "utf8").catch(() => undefined)
 if (existing !== undefined && /^\s*GITHUB_CLIENT_ID\s*=/m.test(existing)) {
   console.log(`GitHub credentials already configured in ${devVarsPath}`)
   console.log("Delete the GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET lines first to re-run setup.")

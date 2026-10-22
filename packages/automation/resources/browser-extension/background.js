@@ -25,6 +25,7 @@ const fileName = (path) =>
   String(path || "")
     .split(/[\\/]/)
     .at(-1) || "download"
+const downloadProgressStates = { complete: "completed", interrupted: "canceled" }
 
 const ensureOffscreenDocument = async () => {
   if (await chrome.offscreen.hasDocument()) return
@@ -292,8 +293,7 @@ class CodevisorConnection {
   sendDownloadProgress(id, state, path) {
     const sessionId = this.downloadSessions.get(id)
     if (sessionId === undefined) return
-    const normalized =
-      state === "complete" ? "completed" : state === "interrupted" ? "canceled" : "inProgress"
+    const normalized = downloadProgressStates[state] ?? "inProgress"
     this.send({
       method: "Browser.downloadProgress",
       sessionId,

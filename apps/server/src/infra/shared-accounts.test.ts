@@ -470,17 +470,16 @@ it("upgrades an existing Codevisor profile into managed refresh ownership withou
   const f = fleet(),
     bundle = native("alice")
   const m = await f.machine("a", undefined, {
-    discover: async (harness, _path, isDefault, managed) =>
-      harness !== "codex"
-        ? undefined
-        : isDefault
-          ? bundle
-          : {
-              ...bundle,
-              ownership: managed ? "managed" : "external",
-              refreshToken: "owned-grant",
-              expiresAt: 1
-            }
+    discover: async (harness, _path, isDefault, managed) => {
+      if (harness !== "codex") return undefined
+      if (isDefault) return bundle
+      return {
+        ...bundle,
+        ownership: managed ? "managed" : "external",
+        refreshToken: "owned-grant",
+        expiresAt: 1
+      }
+    }
   })
   await m.shared.reconcile()
   const id = sharedOAuthIdentity(bundle),

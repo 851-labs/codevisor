@@ -152,7 +152,8 @@ export class SocketReader<Frame extends { t: string }> {
       this.binaryMessages += 1
       const data: unknown = event.data
       this.#chain = this.#chain.then(async () => {
-        const buffer = data instanceof Blob ? await data.arrayBuffer() : data
+        let buffer = data
+        if (data instanceof Blob) buffer = await data.arrayBuffer()
         if (!(buffer instanceof ArrayBuffer)) throw new Error("unexpected binary message type")
         for (const envelope of decodeRelayEnvelopes(new Uint8Array(buffer))) {
           this.#envelopes.push({ ...envelope, payload: new Uint8Array(envelope.payload) })

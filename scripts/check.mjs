@@ -14,7 +14,7 @@ import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-import { planChecks, relativeImports, xcodeSwiftProducts } from "./check-plan.mjs"
+import { byCodeUnit, planChecks, relativeImports, xcodeSwiftProducts } from "./check-plan.mjs"
 import { developmentLayout } from "./dev-layout.mjs"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -47,7 +47,7 @@ function changedFiles(base) {
       ...splitPaths(git("diff", "--name-only", "--no-renames", "-z", base)),
       ...splitPaths(git("ls-files", "--others", "--exclude-standard", "-z"))
     ])
-  ].toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  ].toSorted(byCodeUnit)
 }
 
 function importClosure(entries) {
@@ -77,6 +77,11 @@ async function swiftManifest(packagePath) {
   }
 }
 
+async function changedSwiftManifests(files) {
+  if (!files.some((file) => file.startsWith("packages/swift/"))) return []
+  return Promise.all([swiftManifest("packages/swift"), swiftManifest("apps/screen-sharing-rig")])
+}
+
 async function gatherContext(files) {
   const workspaces = ["apps", "packages"].flatMap((parent) =>
     readdirSync(join(repoRoot, parent))
@@ -90,10 +95,7 @@ async function gatherContext(files) {
   const releaseScripts = readdirSync(join(repoRoot, "scripts/release"))
     .filter((name) => name.endsWith(".mjs"))
     .map((name) => `scripts/release/${name}`)
-  const swiftChanged = files.some((file) => file.startsWith("packages/swift/"))
-  const [swiftPackage, rigPackage] = swiftChanged
-    ? await Promise.all([swiftManifest("packages/swift"), swiftManifest("apps/screen-sharing-rig")])
-    : []
+  const [swiftPackage, rigPackage] = await changedSwiftManifests(files)
   return {
     workspaces,
     scriptInputs: {
@@ -133,11 +135,16 @@ function swiftPackageLinks() {
   return links
 }
 
+function fileState(stat) {
+  if (stat === undefined) return "deleted"
+  return stat.isFile() ? undefined : "not a file"
+}
+
 function fingerprint(entry, baseCommit) {
   const contents = new Map(
     entry.inputs.map((path) => {
       const stat = lstatSync(join(repoRoot, path), { throwIfNoEntry: false })
-      return [path, stat === undefined ? "deleted" : stat.isFile() ? undefined : "not a file"]
+      return [path, fileState(stat)]
     })
   )
   const files = [...contents].filter(([, content]) => content === undefined).map(([path]) => path)
@@ -155,6 +162,11 @@ function fingerprint(entry, baseCommit) {
 }
 
 const running = new Set()
+
+function stepStatus(code, signal) {
+  if (code === 0) return "passed"
+  return signal === "SIGTERM" ? "cancelled" : "failed"
+}
 
 function runStep(entry) {
   const [command, ...args] = entry.step.command(entry.args)
@@ -179,7 +191,7 @@ function runStep(entry) {
           ...entry,
           log,
           seconds: (performance.now() - startedAt) / 1000,
-          status: code === 0 ? "passed" : signal === "SIGTERM" ? "cancelled" : "failed"
+          status: stepStatus(code, signal)
         })
       )
     })
@@ -230,6 +242,11 @@ function printSummary(results, plan, startedAt) {
   console.log(`Total ${((performance.now() - startedAt) / 1000).toFixed(1)}s`)
 }
 
+async function readPassedState() {
+  if (!existsSync(statePath)) return {}
+  return JSON.parse(await readFile(statePath, "utf8"))
+}
+
 async function main() {
   const startedAt = performance.now()
   const options = parseCheckArguments(process.argv.slice(2))
@@ -237,7 +254,7 @@ async function main() {
   const files = changedFiles(baseCommit)
   const plan = planChecks({ files, all: options.all, context: await gatherContext(files) })
   await mkdir(logDirectory, { recursive: true })
-  const passed = existsSync(statePath) ? JSON.parse(await readFile(statePath, "utf8")) : {}
+  const passed = await readPassedState()
   const results = []
   const pending = []
   for (const entry of plan) {

@@ -135,7 +135,8 @@ describe("Apple Cloud authorization", () => {
       .setAudience(failure === "audience" ? "another-app" : clientId)
       .setIssuedAt()
       .setExpirationTime(failure === "expiry" ? "-1m" : "5m")
-    const key = failure === "signature" ? (await generateKeyPair("RS256")).privateKey : signingKey
+    let key = signingKey
+    if (failure === "signature") key = (await generateKeyPair("RS256")).privateKey
     const response = await browser.finish(state, await jwt.sign(key))
     expect(response.status).toBe(302)
     expect(response.headers.get("location")).toContain("error=")

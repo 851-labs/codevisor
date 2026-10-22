@@ -62,7 +62,8 @@ function deliveryFixture({ post = () => {}, membership } = {}) {
       assert.equal(options.query["filter[id]"], "build")
       assert.equal(options.query["filter[betaGroups]"], "group")
       counts.reads += 1
-      const present = membership ? await membership(counts.reads) : assigned
+      let present = assigned
+      if (membership) present = await membership(counts.reads)
       return { data: present ? [validBuild] : [] }
     }
     if (path === "builds") return buildResponse()

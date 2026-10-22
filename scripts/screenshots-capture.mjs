@@ -25,10 +25,10 @@ export async function createCapture(root, platform, options) {
 
   async function build(args, logfile, appearance = "light") {
     const log = await open(join(output, logfile), "w")
-    const capture =
-      platform === "macos" && args.includes("test-without-building")
-        ? await captureMacWindows(join(output, `${appearance}-window-captures`))
-        : undefined
+    let capture
+    if (platform === "macos" && args.includes("test-without-building")) {
+      capture = await captureMacWindows(join(output, `${appearance}-window-captures`))
+    }
     try {
       await runXcodebuild(root, platform, ["-jobs", "4", ...args], {
         layout,

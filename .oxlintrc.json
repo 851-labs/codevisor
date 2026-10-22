@@ -41,7 +41,10 @@
     "unicorn/require-module-specifiers": "error",
     "no-await-in-loop": "off",
     "oxc/no-map-spread": "off",
+    "no-nested-ternary": "error",
     "codevisor/no-comments": "error",
+    "codevisor/no-effect-ternary": "error",
+    "codevisor/named-sql": "error",
     "typescript/no-floating-promises": [
       "error",
       {
@@ -61,5 +64,21 @@
       }
     ]
   },
-  "jsPlugins": ["./scripts/lint/no-comments.mjs"]
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.mjs",
+        "**/test/**",
+        "**/test-support.ts",
+        "**/*-test-support.ts",
+        "packages/db/src/*migrations*.ts",
+        "packages/db/src/*upgrade*.ts"
+      ],
+      "rules": {
+        "codevisor/named-sql": "off"
+      }
+    }
+  ],
+  "jsPlugins": ["./scripts/lint/codevisor.mjs"]
 }

@@ -2,6 +2,7 @@ only_rules:
   - file_length
   - type_body_length
   - file_name
+  - function_body_length
   - custom_rules
 
 included:
@@ -31,6 +32,10 @@ file_length:
 type_body_length:
   warning: 400
   error: 800
+
+function_body_length:
+  warning: 50
+  error: 100
 
 file_name:
   severity: warning
