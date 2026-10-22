@@ -113,7 +113,16 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var positionApplicationDepth = 0
   var isApplyingPosition: Bool { positionApplicationDepth > 0 }
   var isHandlingUserInput = false
-  var isLiveScrolling = false
+  var isLiveScrolling = false {
+    didSet {
+      guard isLiveScrolling != oldValue else { return }
+      if isLiveScrolling {
+        TranscriptPointerTracking.scrollDidBegin(in: window)
+      } else {
+        TranscriptPointerTracking.scrollDidEnd(in: window)
+      }
+    }
+  }
   var userInputDeadline: TimeInterval = 0
   var lastDistanceFromBottom: CGFloat = 0
   var lastBottomState: Bool?

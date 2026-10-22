@@ -122,11 +122,14 @@
     }
 
     public override func cursorUpdate(with event: NSEvent) {
-      guard let point = unoccludedLocation(of: event) else { return }
+      guard !TranscriptPointerTracking.isScrolling(in: window), let point = unoccludedLocation(of: event) else {
+        return
+      }
       cursor(at: point).set()
     }
 
     public override func mouseMoved(with event: NSEvent) {
+      guard !TranscriptPointerTracking.isScrolling(in: window) else { return }
       guard let point = unoccludedLocation(of: event) else { return updateHoveredLink(nil) }
       cursor(at: point).set()
       updateHoveredLink(StaticTextHitTesting.linkRange(in: prepared, at: point))
@@ -220,10 +223,7 @@
     }
 
     private func unoccludedLocation(of event: NSEvent) -> NSPoint? {
-      guard let hit = window?.contentView?.hitTest(event.locationInWindow),
-        hit === self || hit.isDescendant(of: self)
-      else { return nil }
-      return convert(event.locationInWindow, from: nil)
+      TranscriptPointerTracking.unoccludedLocation(of: event, in: self)
     }
 
     private func forwardToLiveView(_ event: NSEvent, deliver: (SelectableTextKitView, NSEvent) -> Void) {

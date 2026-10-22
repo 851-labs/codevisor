@@ -73,25 +73,22 @@
     }
 
     open override func mouseMoved(with event: NSEvent) {
-      guard unoccludedLocation(of: event) != nil else { return }
+      guard !TranscriptPointerTracking.isScrolling(in: window), unoccludedLocation(of: event) != nil else { return }
       super.mouseMoved(with: event)
     }
 
     open override func cursorUpdate(with event: NSEvent) {
-      guard unoccludedLocation(of: event) != nil else { return }
+      guard !TranscriptPointerTracking.isScrolling(in: window), unoccludedLocation(of: event) != nil else { return }
       super.cursorUpdate(with: event)
     }
 
     func unoccludedLocation(of event: NSEvent) -> NSPoint? {
-      guard let hit = window?.contentView?.hitTest(event.locationInWindow),
-        hit === self || hit.isDescendant(of: self)
-      else { return nil }
-      return convert(event.locationInWindow, from: nil)
+      TranscriptPointerTracking.unoccludedLocation(of: event, in: self)
     }
 
     open override func updateTrackingAreas() {
       super.updateTrackingAreas()
-      guard !isPointerRefreshScheduled, let window,
+      guard !isPointerRefreshScheduled, let window, !TranscriptPointerTracking.isScrolling(in: window),
         visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
       else { return }
       isPointerRefreshScheduled = true

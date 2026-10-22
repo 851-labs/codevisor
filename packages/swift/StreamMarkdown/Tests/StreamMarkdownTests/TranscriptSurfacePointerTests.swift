@@ -63,7 +63,18 @@ struct TranscriptSurfacePointerTests {
     #expect(view.hoveredLinkRange == nil)
 
     cover.removeFromSuperview()
-    view.mouseMoved(with: move)
+    let laterMove = NSEvent.mouseEvent(
+      with: .mouseMoved,
+      location: point,
+      modifierFlags: [],
+      timestamp: 1,
+      windowNumber: window.windowNumber,
+      context: nil,
+      eventNumber: 0,
+      clickCount: 0,
+      pressure: 0
+    )!
+    view.mouseMoved(with: laterMove)
     #expect(view.hoveredLinkRange == linkRange)
   }
 }

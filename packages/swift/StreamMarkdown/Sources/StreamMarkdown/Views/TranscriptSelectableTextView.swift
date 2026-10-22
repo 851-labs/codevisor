@@ -61,12 +61,14 @@
     }
 
     public override func mouseMoved(with event: NSEvent) {
+      guard !TranscriptPointerTracking.isScrolling(in: window) else { return }
       super.mouseMoved(with: event)
       updateLinkHover(at: unoccludedLocation(of: event))
     }
 
     public override func mouseEntered(with event: NSEvent) {
       super.mouseEntered(with: event)
+      guard !TranscriptPointerTracking.isScrolling(in: window) else { return }
       updateLinkHover(at: unoccludedLocation(of: event))
     }
 
