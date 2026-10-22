@@ -1,16 +1,28 @@
-import { createHash } from "node:crypto"
-
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { CredentialSource } from "@codevisor/harness-manager"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
-import { openSyncLedger, type SyncLedger } from "./sync-ledger.js"
+import {
+  type CredentialSync,
+  fingerprint,
+  hasFailed,
+  liveCredential,
+  type LocalCredential,
+  openCredentialSync,
+  PROFILES_KEY,
+  profilesContent,
+  publishLocalCredential,
+  recordApplied,
+  recordFailure,
+  recordOverrides,
+  restoresLive
+} from "./credential-publish.js"
+import { keyedEntries, mergePending, type SyncLedger } from "./sync-ledger.js"
 
 export const CREDENTIALS_SYNC_NAMESPACE = "harness-credentials"
 const APPLIED_NAMESPACE = "local.credentials-applied"
 const OVERRIDES_NAMESPACE = "local.credential-overrides"
-const PROFILES_KEY = "profiles:opencode"
 
 export interface CredentialSyncDeps {
   readonly db: CodevisorDatabaseService
@@ -40,23 +52,15 @@ export const reconcileCredentials = async (
 ): Promise<CredentialSyncResult> => {
   const now = deps.now ?? Date.now
   const replica = await run(deps.db.getSyncEntries(CREDENTIALS_SYNC_NAMESPACE))
-  const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
+  const replicaByKey = keyedEntries(replica)
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
   const overrideEntries = await run(deps.db.getSyncEntries(OVERRIDES_NAMESPACE))
-  const previousOverrides = new Map(overrideEntries.map((entry) => [entry.key, entry.value]))
-  const ledger = openSyncLedger({
-    owner: deps,
-    now,
+  const sync = openCredentialSync(deps, now, {
     replica,
-    applied: appliedEntries,
-    sideEntries: overrideEntries
+    replicaByKey,
+    appliedEntries,
+    overrideEntries
   })
-
-  const published: Array<string> = []
-  const applied: Array<string> = []
-  const removed: Array<string> = []
-  const failed: Array<CredentialFailure> = []
-  const overrideWrites: Array<SyncEntryRecord> = []
 
   const sources = [...deps.sources]
   const profiles = replicaByKey.get(PROFILES_KEY)
@@ -64,164 +68,119 @@ export const reconcileCredentials = async (
     try {
       sources.push(...(await deps.profileSources(profilesContent(profiles))))
     } catch (cause) {
-      failed.push(failure(PROFILES_KEY, cause))
+      recordFailure(sync, PROFILES_KEY, cause)
     }
   }
 
   for (const source of sources) {
     const live = liveCredential(replicaByKey.get(source.id))
-    let local: string | undefined
-    let overrides: ReadonlyArray<string> = []
+    let local: LocalCredential
     try {
-      overrides = (await source.localOverrides?.()) ?? []
-      const previous = previousOverrides.get(source.id)
-      if (live !== undefined && overrideDropped(previous, overrides)) {
+      const overrides = (await source.localOverrides?.()) ?? []
+      const previous = sync.previousOverrides.get(source.id)
+      if (restoresLive(live, previous, overrides)) {
         await source.apply(live)
-        applied.push(source.id)
-        deps.onApplied?.(source.id)
+        recordApplied(deps, sync, source)
       }
-      local = await source.read(live)
-      if (overridesChanged(previous, overrides)) {
-        overrideWrites.push({ key: source.id, value: [...overrides], timestamp: ledger.stamp() })
-      }
+      local = { content: await source.read(live), overrides }
+      recordOverrides(sync, source, previous, overrides)
     } catch (cause) {
-      failed.push(failure(source.id, cause))
+      recordFailure(sync, source.id, cause)
       continue
     }
-
-    if (local === undefined) {
-      if (keepsReplicaWhenAbsent(ledger, source, overrides, live)) continue
-
-      ledger.retract(source.id)
-      ledger.applied.delete(source.id)
-      published.push(source.id)
-      continue
-    }
-
-    const localFingerprint = fingerprint(local)
-    const step = localCredentialStep(ledger, source.id, live, local, localFingerprint)
-    if (step === "skip") continue
-    if (step === "adopt") {
-      ledger.markApplied(source.id, () => localFingerprint)
-      continue
-    }
-
-    ledger.publish(source.id, local, () => localFingerprint)
-    published.push(source.id)
+    publishLocalCredential(sync, source, live, local)
   }
 
   let changedEntries: ReadonlyArray<SyncEntryRecord> = []
-  if (ledger.replicaWrites.length > 0) {
-    changedEntries = (
-      await run(deps.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, ledger.replicaWrites))
-    ).changed
-  }
+  const replicaMerge = mergePending(deps, CREDENTIALS_SYNC_NAMESPACE, sync.ledger.replicaWrites)
+  if (replicaMerge !== undefined) changedEntries = (await replicaMerge).changed
   const merged = await run(deps.db.getSyncEntries(CREDENTIALS_SYNC_NAMESPACE))
 
   const sourceById = new Map(sources.map((source) => [source.id, source]))
   for (const entry of merged) {
-    const source = sourceById.get(entry.key)
-    if (source === undefined || hasFailed(failed, source)) continue
+    const source = sourceToApply(sync, sourceById, entry.key)
+    if (source === undefined) continue
 
     if (entry.deleted === true) {
-      if (source.applyDelete === undefined || !ledger.applied.has(source.id)) continue
+      if (!canApplyDelete(sync.ledger, source)) continue
 
       try {
         await source.applyDelete()
       } catch (cause) {
-        failed.push(failure(source.id, cause))
+        recordFailure(sync, source.id, cause)
         continue
       }
-      ledger.markRemoved(source.id)
-      removed.push(source.id)
-      deps.onApplied?.(source.id)
+      recordRemoved(deps, sync, source)
       continue
     }
 
     const content = entry.value
-    if (typeof content !== "string") continue
-    if (ledger.applied.get(source.id) === fingerprint(content)) continue
+    if (!needsApply(sync.ledger, source, content)) continue
 
     try {
       await source.apply(content)
     } catch (cause) {
-      failed.push(failure(source.id, cause))
+      recordFailure(sync, source.id, cause)
       continue
     }
-    ledger.markApplied(source.id, () => fingerprint(content))
-    applied.push(source.id)
-    deps.onApplied?.(source.id)
+    recordReceived(deps, sync, source, content)
   }
 
-  if (ledger.appliedWrites.length > 0) {
-    await run(deps.db.mergeSyncEntries(APPLIED_NAMESPACE, ledger.appliedWrites))
-  }
-  if (overrideWrites.length > 0) {
-    await run(deps.db.mergeSyncEntries(OVERRIDES_NAMESPACE, overrideWrites))
-  }
-  return { status: { published, applied, removed, failed }, changedEntries }
+  const appliedMerge = mergePending(deps, APPLIED_NAMESPACE, sync.ledger.appliedWrites)
+  if (appliedMerge !== undefined) await appliedMerge
+  const overrideMerge = mergePending(deps, OVERRIDES_NAMESPACE, sync.overrideWrites)
+  if (overrideMerge !== undefined) await overrideMerge
+  return { status: credentialStatus(sync), changedEntries }
 }
 
-type LocalCredentialStep = "skip" | "adopt" | "publish"
-
-interface CredentialFailure {
-  readonly id: string
-  readonly reason: string
-}
+type DeletableSource = CredentialSource & { readonly applyDelete: () => Promise<void> }
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
-const fingerprint = (content: string): string => createHash("sha256").update(content).digest("hex")
-
-const profilesContent = (profiles: SyncEntryRecord): string | undefined =>
-  profiles.deleted === true ? undefined : String(profiles.value)
-
-const liveCredential = (entry: SyncEntryRecord | undefined): string | undefined => {
-  if (entry === undefined || entry.deleted === true) return undefined
-  return typeof entry.value === "string" ? entry.value : undefined
+const sourceToApply = (
+  sync: CredentialSync,
+  sourceById: ReadonlyMap<string, CredentialSource>,
+  key: string
+): CredentialSource | undefined => {
+  const source = sourceById.get(key)
+  if (source === undefined || hasFailed(sync.failed, source)) return undefined
+  return source
 }
 
-const overrideDropped = (previous: unknown, overrides: ReadonlyArray<string>): boolean =>
-  Array.isArray(previous) && previous.some((key) => !overrides.includes(String(key)))
+const canApplyDelete = (ledger: SyncLedger, source: CredentialSource): source is DeletableSource =>
+  source.applyDelete !== undefined && ledger.applied.has(source.id)
 
-const overridesChanged = (previous: unknown, overrides: ReadonlyArray<string>): boolean =>
-  JSON.stringify(previous ?? []) !== JSON.stringify(overrides)
-
-const keepsReplicaWhenAbsent = (
+const needsApply = (
   ledger: SyncLedger,
   source: CredentialSource,
-  overrides: ReadonlyArray<string>,
-  live: string | undefined
-): boolean =>
-  !source.tombstoneOnAbsence ||
-  overrides.length !== 0 ||
-  !ledger.applied.has(source.id) ||
-  live === undefined
+  content: unknown
+): content is string =>
+  typeof content === "string" && ledger.applied.get(source.id) !== fingerprint(content)
 
-const localCredentialStep = (
-  ledger: SyncLedger,
-  id: string,
-  live: string | undefined,
-  local: string,
-  localFingerprint: string
-): LocalCredentialStep => {
-  if (ledger.applied.get(id) === localFingerprint) return "skip"
-  if (replicaGoesFirst(ledger, id, live, local)) return "skip"
-  if (live === local) return "adopt"
-  return "publish"
+const recordRemoved = (
+  deps: CredentialSyncDeps,
+  sync: CredentialSync,
+  source: CredentialSource
+): void => {
+  sync.ledger.markRemoved(source.id)
+  sync.removed.push(source.id)
+  deps.onApplied?.(source.id)
 }
 
-const replicaGoesFirst = (
-  ledger: SyncLedger,
-  id: string,
-  live: string | undefined,
-  local: string
-): boolean => !ledger.applied.has(id) && live !== undefined && live !== local
+const recordReceived = (
+  deps: CredentialSyncDeps,
+  sync: CredentialSync,
+  source: CredentialSource,
+  content: string
+): void => {
+  sync.ledger.markApplied(source.id, () => fingerprint(content))
+  sync.applied.push(source.id)
+  deps.onApplied?.(source.id)
+}
 
-const hasFailed = (failed: ReadonlyArray<CredentialFailure>, source: CredentialSource): boolean =>
-  failed.some((failure) => failure.id === source.id)
-
-const failure = (id: string, cause: unknown): CredentialFailure => ({
-  id,
-  reason: cause instanceof Error ? cause.message : String(cause)
+const credentialStatus = (sync: CredentialSync): CredentialSyncStatus => ({
+  published: sync.published,
+  applied: sync.applied,
+  removed: sync.removed,
+  failed: sync.failed
 })

@@ -191,6 +191,49 @@ describe("config sync", () => {
     }
   )
 
+  it("keeps a local MCP that is edited while a remote removal is applied", async () => {
+    const { services: machineA } = await makeServices("server-race-a")
+    const { services: machineB } = await makeServices("server-race-b")
+    const mcpA = machineA.mcp
+    const mcpB = machineB.mcp
+    if (mcpA === undefined || mcpB === undefined) throw new Error("mcp unavailable")
+    const a = { db: machineA.db, mcp: mcpA, serverId: "server-race-a" }
+    const b = { db: machineB.db, mcp: mcpB, serverId: "server-race-b" }
+    const docsA = await mcpA.create({
+      authType: "bearer",
+      bearerToken: "token",
+      enabled: true,
+      name: "Docs",
+      transport: "http",
+      url: "https://docs.example.com/mcp"
+    })
+    const published = await reconcileMcps(a)
+    await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, published.changedEntries))
+    await reconcileMcps(b)
+
+    await mcpA.remove(docsA.id)
+    const removed = await reconcileMcps(a)
+    await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, removed.changedEntries))
+    let secretReads = 0
+    const editedMidPass = {
+      ...b,
+      mcp: {
+        ...mcpB,
+        staticSecrets: async (id: string) => {
+          const secrets = await mcpB.staticSecrets(id)
+          secretReads += 1
+          if (secretReads === 1) await mcpB.update(id, { bearerToken: "edited" })
+          return secrets
+        }
+      }
+    }
+    const kept = await reconcileMcps(editedMidPass)
+    expect(kept.status.removed).toEqual([])
+    const docsB = (await mcpB.list()).find((server) => server.name === "Docs")
+    expect((await mcpB.staticSecrets(docsB?.id ?? "")).bearerToken).toBe("edited")
+    expect((await reconcileMcps(b)).status.published).toEqual(["Docs"])
+  })
+
   it("publishes a machine readiness entry once per change, keyed by machine", async () => {
     const { services } = await makeServices("server-p")
     const deps = {

@@ -3,7 +3,7 @@ import { readPluginInstallReceipt } from "@codevisor/plugins"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
-import { openSyncLedger, type SyncLedger } from "./sync-ledger.js"
+import { keyedEntries, mergePending, openSyncLedger, type SyncLedger } from "./sync-ledger.js"
 
 export const PLUGINS_SYNC_NAMESPACE = "plugins"
 const APPLIED_NAMESPACE = "local.plugins-applied"
@@ -49,25 +49,18 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
   const locals = await deps.listPlugins()
   const localById = new Map(locals.map((plugin) => [plugin.id, plugin]))
   const replica = await run(deps.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
-  const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
+  const replicaByKey = keyedEntries(replica)
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
   const ledger = openSyncLedger({ owner: deps, replica, applied: appliedEntries })
-
-  const published = publishLocalPlugins(ledger, locals, replicaByKey)
-  ledger.retractUnlisted(localById, replicaByKey, published)
+  const sync = openPluginSync(ledger)
+  for (const plugin of locals) publishLocalPlugin(sync, plugin, replicaByKey)
+  ledger.retractUnlisted(localById, replicaByKey, sync.published)
 
   let changedEntries: ReadonlyArray<SyncEntryRecord> = []
-  if (ledger.replicaWrites.length > 0) {
-    changedEntries = (
-      await run(deps.db.mergeSyncEntries(PLUGINS_SYNC_NAMESPACE, ledger.replicaWrites))
-    ).changed
-  }
+  const replicaMerge = mergePending(deps, PLUGINS_SYNC_NAMESPACE, ledger.replicaWrites)
+  if (replicaMerge !== undefined) changedEntries = (await replicaMerge).changed
   const merged = await run(deps.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
 
-  const applied: Array<string> = []
-  const removed: Array<string> = []
-  const installed: Array<string> = []
-  const blocked: Array<PluginBlockage> = []
   for (const entry of merged) {
     if (entry.deleted === true) {
       if (!isAppliedLocal(ledger, localById, entry.key)) continue
@@ -75,11 +68,11 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
       try {
         await deps.removePlugin(entry.key)
       } catch (cause) {
-        blocked.push(blockage(entry.key, cause))
+        recordBlockage(sync, entry, cause)
         continue
       }
       ledger.markRemoved(entry.key)
-      removed.push(entry.key)
+      sync.removed.push(entry.key)
       continue
     }
 
@@ -93,10 +86,10 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
     if (local === undefined) {
       try {
         await deps.installFromSource(wanted.source)
-        installed.push(entry.key)
+        sync.installed.push(entry.key)
         if (!wanted.enabled) await deps.setEnabled(entry.key, false)
       } catch (cause) {
-        blocked.push(blockage(entry.key, cause))
+        recordBlockage(sync, entry, cause)
         continue
       }
     } else if (local.origin === undefined) {
@@ -105,16 +98,12 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
       await deps.setEnabled(entry.key, wanted.enabled)
     }
     ledger.markApplied(entry.key, () => fingerprint)
-    applied.push(entry.key)
+    sync.applied.push(entry.key)
   }
 
-  if (ledger.appliedWrites.length > 0) {
-    await run(deps.db.mergeSyncEntries(APPLIED_NAMESPACE, ledger.appliedWrites))
-  }
-  return {
-    status: { published, applied, removed, installed, blocked },
-    changedEntries
-  }
+  const appliedMerge = mergePending(deps, APPLIED_NAMESPACE, ledger.appliedWrites)
+  if (appliedMerge !== undefined) await appliedMerge
+  return { status: pluginStatus(sync), changedEntries }
 }
 
 interface PluginValue {
@@ -129,25 +118,51 @@ interface PluginBlockage {
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
-const publishLocalPlugins = (
-  ledger: SyncLedger,
-  locals: ReadonlyArray<LocalPluginState>,
+interface PluginSync {
+  readonly ledger: SyncLedger
+  readonly published: Array<string>
+  readonly applied: Array<string>
+  readonly removed: Array<string>
+  readonly installed: Array<string>
+  readonly blocked: Array<PluginBlockage>
+}
+
+const openPluginSync = (ledger: SyncLedger): PluginSync => ({
+  ledger,
+  published: [],
+  applied: [],
+  removed: [],
+  installed: [],
+  blocked: []
+})
+
+const recordBlockage = (sync: PluginSync, entry: SyncEntryRecord, cause: unknown): void => {
+  sync.blocked.push(blockage(entry.key, cause))
+}
+
+const pluginStatus = (sync: PluginSync): PluginSyncStatus => ({
+  published: sync.published,
+  applied: sync.applied,
+  removed: sync.removed,
+  installed: sync.installed,
+  blocked: sync.blocked
+})
+
+const publishLocalPlugin = (
+  sync: PluginSync,
+  plugin: LocalPluginState,
   replicaByKey: ReadonlyMap<string, SyncEntryRecord>
-): Array<string> => {
-  const published: Array<string> = []
-  for (const plugin of locals) {
-    if (plugin.origin === undefined) continue
+): void => {
+  if (plugin.origin === undefined) return
 
-    const replicaValue = livePluginValue(replicaByKey.get(plugin.id))
-    const value: PluginValue = { enabled: plugin.enabled, source: plugin.origin }
-    const fingerprint = JSON.stringify(value)
-    if (ledger.applied.get(plugin.id) === fingerprint) continue
-    if (replicaGoesFirst(ledger, plugin.id, replicaValue)) continue
+  const replicaValue = livePluginValue(replicaByKey.get(plugin.id))
+  const value: PluginValue = { enabled: plugin.enabled, source: plugin.origin }
+  const fingerprint = JSON.stringify(value)
+  if (sync.ledger.applied.get(plugin.id) === fingerprint) return
+  if (replicaGoesFirst(sync.ledger, plugin.id, replicaValue)) return
 
-    ledger.publish(plugin.id, value, () => fingerprint)
-    published.push(plugin.id)
-  }
-  return published
+  sync.ledger.publish(plugin.id, value, () => fingerprint)
+  sync.published.push(plugin.id)
 }
 
 const replicaGoesFirst = (

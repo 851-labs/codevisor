@@ -1,10 +1,6 @@
+import type { HarnessPreference } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import {
-  latestSyncTimestamp,
-  nextSyncTimestamp,
-  type SyncEntryRecord,
-  type SyncTimestampValue
-} from "@codevisor/sync"
+import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
 import {
@@ -12,10 +8,9 @@ import {
   HARNESSES_SYNC_NAMESPACE,
   readHarnessSettings
 } from "./harness-preferences.js"
+import { mergePending, openSyncStamps } from "./sync-ledger.js"
 
 export { HARNESSES_SYNC_NAMESPACE }
-
-const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
 export interface LocalHarnessState {
   readonly id: string
@@ -55,76 +50,138 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
   const locals = await deps.listHarnesses()
   const localById = new Map(locals.map((harness) => [harness.id, harness]))
   const replica = await run(deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))
+  const sync = openHarnessSync()
+  const promotions = promotedHarnesses(deps, now, replica, locals, sync)
 
-  const published: Array<string> = []
-  const applied: Array<string> = []
-  const installing: Array<string> = []
-  const blocked: Array<{ id: string; reason: string }> = []
-  let clock: SyncTimestampValue | undefined = latestSyncTimestamp(replica)
-  const stamp = (): SyncTimestampValue => {
-    clock = nextSyncTimestamp(deps.serverId, clock, now())
-    return clock
-  }
-  const authored = new Set(replica.map((entry) => entry.key))
-  const promotions: Array<SyncEntryRecord> = []
-  for (const local of locals) {
-    if (authored.has(local.id) || !local.installed || !local.enabled || !local.authenticated)
-      continue
-    promotions.push({
-      key: local.id,
-      value: {
-        ...(local.name === undefined ? {} : { name: local.name }),
-        ...(local.symbolName === undefined ? {} : { symbolName: local.symbolName }),
-        enabled: true,
-        installed: true,
-        uninstall: false
-      },
-      timestamp: stamp()
-    })
-    published.push(local.id)
-  }
-  const changedEntries: ReadonlyArray<SyncEntryRecord> =
-    promotions.length > 0
-      ? (await run(deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, promotions))).changed
-      : []
+  let changedEntries: ReadonlyArray<SyncEntryRecord> = []
+  const promotionMerge = mergePending(deps, HARNESSES_SYNC_NAMESPACE, promotions)
+  if (promotionMerge !== undefined) changedEntries = (await promotionMerge).changed
   const preferences = await readHarnessSettings(deps.db)
+
   for (const [id, settings] of preferences) {
     const local = localById.get(id)
     if (local === undefined) continue
+
     const wanted = effectiveHarnessPreference(settings)
-    if (wanted.enabled !== undefined && wanted.enabled !== local.enabled) {
+    if (changesEnabled(local, wanted)) {
       await deps.setEnabled(id, wanted.enabled)
-      applied.push(id)
+      sync.applied.push(id)
     }
-    if (
-      local.phase === "installing" ||
-      local.phase === "updating" ||
-      local.phase === "uninstalling"
-    )
-      continue
-    if (wanted.installed === true && !local.installed) {
+
+    const transition = harnessTransition(local, wanted)
+    if (transition === "install") {
       try {
         await deps.beginInstall(id)
-        installing.push(id)
+        sync.installing.push(id)
       } catch (cause) {
-        blocked.push({ id, reason: cause instanceof Error ? cause.message : String(cause) })
+        recordBlockage(sync, id, cause)
       }
-    } else if (wanted.installed === false && local.installed) {
+    } else if (transition === "uninstall") {
       try {
-        if (deps.beginUninstall === undefined)
-          throw new Error("Uninstall unavailable on this machine")
-        await deps.beginUninstall(id)
-        applied.push(id)
+        await startUninstall(deps, id)
+        sync.applied.push(id)
       } catch (cause) {
-        blocked.push({ id, reason: cause instanceof Error ? cause.message : String(cause) })
+        recordBlockage(sync, id, cause)
       }
-    } else if (wanted.enabled && local.installed && !local.authenticated) {
-      blocked.push({ id, reason: "Sign in required" })
+    } else if (transition === "signIn") {
+      sync.blocked.push({ id, reason: "Sign in required" })
     }
   }
 
-  return {
-    status: { published, applied, removed: [], installing, blocked },
-    changedEntries
-  }
+  return { status: harnessStatus(sync), changedEntries }
 }
+
+interface HarnessSync {
+  readonly published: Array<string>
+  readonly applied: Array<string>
+  readonly installing: Array<string>
+  readonly blocked: Array<HarnessBlockage>
+}
+
+interface HarnessBlockage {
+  readonly id: string
+  readonly reason: string
+}
+
+type HarnessTransition = "busy" | "install" | "uninstall" | "signIn" | "none"
+
+const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
+
+const openHarnessSync = (): HarnessSync => ({
+  published: [],
+  applied: [],
+  installing: [],
+  blocked: []
+})
+
+const promotedHarnesses = (
+  deps: HarnessSyncDeps,
+  now: () => number,
+  replica: ReadonlyArray<SyncEntryRecord>,
+  locals: ReadonlyArray<LocalHarnessState>,
+  sync: HarnessSync
+): Array<SyncEntryRecord> => {
+  const stamps = openSyncStamps(deps, replica, now)
+  const authored = new Set(replica.map((entry) => entry.key))
+  const promotions: Array<SyncEntryRecord> = []
+  for (const local of locals) {
+    if (!promotable(authored, local)) continue
+
+    promotions.push(stamps.entry(local.id, promotedValue(local)))
+    sync.published.push(local.id)
+  }
+  return promotions
+}
+
+const startUninstall = (deps: HarnessSyncDeps, id: string): Promise<void> => {
+  if (deps.beginUninstall === undefined) throw new Error("Uninstall unavailable on this machine")
+  return deps.beginUninstall(id)
+}
+
+const recordBlockage = (sync: HarnessSync, id: string, cause: unknown): void => {
+  sync.blocked.push(blockage(id, cause))
+}
+
+const harnessTransition = (
+  local: LocalHarnessState,
+  wanted: HarnessPreference
+): HarnessTransition => {
+  if (isBusy(local)) return "busy"
+  if (wanted.installed === true && !local.installed) return "install"
+  if (wanted.installed === false && local.installed) return "uninstall"
+  if (wanted.enabled && local.installed && !local.authenticated) return "signIn"
+  return "none"
+}
+
+const changesEnabled = (
+  local: LocalHarnessState,
+  wanted: HarnessPreference
+): wanted is HarnessPreference & { readonly enabled: boolean } =>
+  wanted.enabled !== undefined && wanted.enabled !== local.enabled
+
+const isBusy = (local: LocalHarnessState): boolean =>
+  local.phase === "installing" || local.phase === "updating" || local.phase === "uninstalling"
+
+const promotable = (authored: ReadonlySet<string>, local: LocalHarnessState): boolean =>
+  !authored.has(local.id) && local.installed && local.enabled && local.authenticated
+
+const promotedValue = (local: LocalHarnessState): object => ({
+  ...(local.name === undefined ? {} : { name: local.name }),
+  ...(local.symbolName === undefined ? {} : { symbolName: local.symbolName }),
+  enabled: true,
+  installed: true,
+  uninstall: false
+})
+
+const harnessStatus = (sync: HarnessSync): HarnessSyncStatus => ({
+  published: sync.published,
+  applied: sync.applied,
+  removed: [],
+  installing: sync.installing,
+  blocked: sync.blocked
+})
+
+const blockage = (id: string, cause: unknown): HarnessBlockage => ({
+  id,
+  reason: cause instanceof Error ? cause.message : String(cause)
+})

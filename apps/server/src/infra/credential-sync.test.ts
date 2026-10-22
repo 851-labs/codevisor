@@ -181,6 +181,24 @@ describe("credential sync", () => {
     expect((await reconcileCredentials(b.deps)).changedEntries).toEqual([])
   })
 
+  it("keeps the local credential when a sign-out arrives for a source that cannot delete", async () => {
+    const a = await makeMachine("cred-keep-a", 1_000)
+    const b = await makeMachine("cred-keep-b", 2_000)
+    a.codex.state.content = '{"OPENAI_API_KEY":"sk-c"}'
+    const seeded = await reconcileCredentials(a.deps)
+    await run(b.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, seeded.changedEntries))
+    const { applyDelete: _unused, ...withoutDelete } = b.codex.source
+    const deps = { ...b.deps, sources: [b.pi.source, withoutDelete] }
+    await reconcileCredentials(deps)
+
+    a.codex.state.content = undefined
+    const signedOut = await reconcileCredentials(a.deps)
+    await run(b.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, signedOut.changedEntries))
+    const kept = await reconcileCredentials(deps)
+    expect(kept.status).toMatchObject({ removed: [], failed: [] })
+    expect(b.codex.state.content).toBe('{"OPENAI_API_KEY":"sk-c"}')
+  })
+
   it("isolates apply and delete failures without baselining them", async () => {
     const a = await makeMachine("cred-apply-a", 1_000)
     const b = await makeMachine("cred-apply-b", 2_000)
