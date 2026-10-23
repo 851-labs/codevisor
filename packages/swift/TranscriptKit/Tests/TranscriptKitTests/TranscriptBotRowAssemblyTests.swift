@@ -58,6 +58,42 @@ struct TranscriptBotRowAssemblyTests {
     #expect(rows[2].content == .setupRequest(turn.setupRequests[0], inBotConversation: true))
   }
 
+  @Test func showsTheLatestTurnsStopInPlaceOfTheNoticeThatAnnouncedIt() throws {
+    let stopped = AssistantMessage(
+      turn: AssistantTurn(stopDetail: "You've hit your usage limit.", stopKind: "usageLimit"))
+    let conversation = TranscriptBotConversation(
+      messages: [
+        message("n0", .notice, "You've hit your usage limit.", at: 0),
+        message("b1", .bot, "On it.", at: 5),
+        message("n1", .notice, "You've hit your usage limit.", at: 6),
+      ],
+      isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.assistant(stopped)], conversation, sessionError: "Couldn't cancel the resume."),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(
+      rows.map(\.id) == [
+        .botTimestamp("n0"), .botMessage("n0"), .botMessage("b1"), .assistantChrome(stopped.id, .epilogue), .error,
+      ])
+  }
+
+  @Test func leavesAStopOutWhileTheLatestTurnIsStillWorking() throws {
+    let working = AssistantMessage(
+      turn: AssistantTurn(isGenerating: true, stopDetail: "You've hit your usage limit.", stopKind: "usageLimit"))
+    let conversation = TranscriptBotConversation(
+      messages: [message("n1", .notice, "You've hit your usage limit.", at: 0)], isWorking: true)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.assistant(working)], conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(rows.map(\.id) == [.botTimestamp("n1"), .botMessage("n1"), .botTyping])
+  }
+
   @Test func dropsThePendingRowOnceTheServerEchoesTheSend() throws {
     let echoed = message(pendingID.uuidString.lowercased(), .user, "yes", at: 0)
 
@@ -154,7 +190,8 @@ struct TranscriptBotRowAssemblyTests {
   private func input(
     settled: [ConversationItem] = [],
     pending: UserMessage? = nil,
-    _ conversation: TranscriptBotConversation
+    _ conversation: TranscriptBotConversation,
+    sessionError: String? = nil
   ) -> TranscriptProjectionInput {
     TranscriptProjectionInput(
       settledConversation: settled,
@@ -165,7 +202,7 @@ struct TranscriptBotRowAssemblyTests {
       waitingHarnessUpdateName: nil,
       isLoadingInitialHistory: false,
       serverWaitMessage: nil,
-      sessionErrorMessage: nil,
+      sessionErrorMessage: sessionError,
       status: .idle,
       botConversation: conversation
     )

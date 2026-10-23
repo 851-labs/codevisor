@@ -7,16 +7,16 @@ public enum UsageLimitResumeText {
     calendar: Calendar = .autoupdatingCurrent,
     locale: Locale = .autoupdatingCurrent
   ) -> String {
-    guard let resumesAt else { return "Resumes automatically when your limit resets" }
-    guard resumesAt > now else { return "Resuming shortly" }
+    guard let resumesAt else { return "Resumes automatically when your limit resets." }
+    guard resumesAt > now else { return "Resuming shortly." }
 
     let time = resumesAt.formatted(timeStyle(calendar: calendar, locale: locale))
-    if calendar.isDate(resumesAt, inSameDayAs: now) { return "Resumes automatically at \(time)" }
+    if calendar.isDate(resumesAt, inSameDayAs: now) { return "Resumes automatically at \(time)." }
     if isTomorrow(resumesAt, now: now, calendar: calendar) {
-      return "Resumes automatically tomorrow at \(time)"
+      return "Resumes automatically tomorrow at \(time)."
     }
     let day = resumesAt.formatted(dayStyle(calendar: calendar, locale: locale))
-    return "Resumes automatically on \(day) at \(time)"
+    return "Resumes automatically on \(day) at \(time)."
   }
 
   private static func isTomorrow(_ date: Date, now: Date, calendar: Calendar) -> Bool {

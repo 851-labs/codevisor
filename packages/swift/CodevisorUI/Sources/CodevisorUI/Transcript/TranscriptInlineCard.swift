@@ -43,6 +43,7 @@ public struct TranscriptInlineCard: View {
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
         NoticeCardText(title: title, detail: message, systemImage: systemImage, accent: .accentColor)
         NoticeCardActions(actions: actions, fillsWidth: true, controlSize: TranscriptInlineCardMetrics.controlSize)
+          .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)
       }
     case let .resolved(outcome):
       TranscriptInlineCardResolvedRow(systemImage: systemImage, title: title, outcome: outcome)

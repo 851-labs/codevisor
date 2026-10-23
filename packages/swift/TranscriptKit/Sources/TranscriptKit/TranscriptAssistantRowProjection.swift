@@ -160,6 +160,10 @@ enum TranscriptAssistantRowProjection {
     )
   }
 
+  static func appendStopDetail(_ message: AssistantMessage, to rows: inout [TranscriptPresentationRow]) {
+    appendChrome(message, slice: .epilogue, waitingOnBackgroundTask: nil, lifecycle: .settled, to: &rows)
+  }
+
   @discardableResult
   static func appendAssistantResponse(
     _ message: AssistantMessage,

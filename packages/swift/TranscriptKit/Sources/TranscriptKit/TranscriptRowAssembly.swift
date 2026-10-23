@@ -220,7 +220,7 @@ enum TranscriptRowAssembly {
     }
   }
 
-  private static func appendActivityAndErrors(
+  static func appendActivityAndErrors(
     _ input: TranscriptProjectionInput,
     to rows: inout [TranscriptPresentationRow]
   ) {

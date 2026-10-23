@@ -198,8 +198,8 @@ struct AssistantTurnBody: View {
   private func turnErrorRow(_ message: String) -> some View {
     if turn.stopKind == "usageLimit" {
       UsageLimitNotice(
-        message,
         autoResume: turn.autoResume,
+        inBotConversation: transcriptController?.presentsBotConversation == true,
         switchAccount: { [weak transcriptController] in
           guard let controller = transcriptController,
             let harnessId = controller.activeHarnessId

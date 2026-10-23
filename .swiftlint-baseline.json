@@ -3033,21 +3033,6 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 61 lines",
-      "location": {
-        "line": 9,
-        "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/TranscriptBotRowAssembly.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  static func assemble("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
       "location": {
         "line": 5,

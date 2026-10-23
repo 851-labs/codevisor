@@ -11,7 +11,8 @@ enum TranscriptBotRowAssembly {
     input: TranscriptProjectionInput,
     options: TranscriptProjectionOptions
   ) throws -> [TranscriptPresentationRow] {
-    let messages = conversation.messages
+    let stoppedTurn = stoppedLatestTurn(in: input)
+    let messages = withoutStopNotice(conversation.messages, for: stoppedTurn)
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(messages.count + 4)
     var previous: TranscriptBotMessage?
@@ -42,36 +43,39 @@ enum TranscriptBotRowAssembly {
       }
       previous = message
     }
-    if let pending = pendingMessage(input, conversation: conversation) {
-      rows.append(
-        .init(
-          id: .message(pending.id),
-          content: .optimistic(pending),
-          estimatedHeight: 44,
-          measurementRevision: TranscriptMessageRowMetrics.optimisticMeasurementRevision(for: pending),
-          spacingAfter: groupTailSpacing
-        ))
-    }
+    appendPendingMessage(input, conversation: conversation, to: &rows)
     for bubble in setupBubbles {
       rows.append(.setupRequest(bubble.request, inBotConversation: true, spacingAfter: groupTailSpacing))
+    }
+    if let stoppedTurn {
+      TranscriptAssistantRowProjection.appendStopDetail(stoppedTurn, to: &rows)
     }
     if conversation.isWorking {
       rows.append(.init(id: .botTyping, content: .botTyping, estimatedHeight: 38))
     }
-    if let message = input.activityMessage {
-      rows.append(
-        .init(
-          id: .connecting, content: .connecting(message), estimatedHeight: 32,
-          measurementRevision: message.hashValue))
-    }
-    if case let .failed(message) = input.status {
-      rows.append(.init(id: .statusError, content: .error(message), estimatedHeight: 56))
-    }
+    TranscriptRowAssembly.appendActivityAndErrors(input, to: &rows)
     if let requestedHeight = options.bottomSpacerHeight {
       let height = max(1, requestedHeight)
       rows.append(.init(id: .bottomSpacer, content: .bottomSpacer(height), estimatedHeight: height))
     }
     return rows
+  }
+
+  private static func stoppedLatestTurn(in input: TranscriptProjectionInput) -> AssistantMessage? {
+    let latest = input.activeItem ?? input.settledConversation.last(where: TranscriptAssistantRowProjection.isAssistant)
+    guard case let .assistant(message)? = latest, !message.turn.isGenerating, message.turn.stopDetail != nil else {
+      return nil
+    }
+    return message
+  }
+
+  private static func withoutStopNotice(
+    _ messages: [TranscriptBotMessage], for stoppedTurn: AssistantMessage?
+  ) -> [TranscriptBotMessage] {
+    guard let last = messages.last, last.sender == .notice, last.text == stoppedTurn?.turn.stopDetail else {
+      return messages
+    }
+    return Array(messages.dropLast())
   }
 
   private static func wasAsked(_ askedAt: Date?, before message: TranscriptBotMessage) -> Bool {
@@ -110,6 +114,22 @@ enum TranscriptBotRowAssembly {
       measurementRevision: message.text.hashValue ^ message.attachments.count,
       spacingAfter: spacing
     )
+  }
+
+  private static func appendPendingMessage(
+    _ input: TranscriptProjectionInput,
+    conversation: TranscriptBotConversation,
+    to rows: inout [TranscriptPresentationRow]
+  ) {
+    guard let pending = pendingMessage(input, conversation: conversation) else { return }
+    rows.append(
+      .init(
+        id: .message(pending.id),
+        content: .optimistic(pending),
+        estimatedHeight: 44,
+        measurementRevision: TranscriptMessageRowMetrics.optimisticMeasurementRevision(for: pending),
+        spacingAfter: groupTailSpacing
+      ))
   }
 
   private static func pendingMessage(
