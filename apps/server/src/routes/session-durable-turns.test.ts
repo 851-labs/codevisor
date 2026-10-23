@@ -7,7 +7,7 @@ import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { restartNotice } from "../restart-notice.js"
+import { queueRestartResumeOnce, restartNotice } from "../restart-notice.js"
 import {
   defaultServerConfig,
   makeEventFanout,
@@ -176,6 +176,8 @@ describe("durable session turns", () => {
     )
     await run(services.db.createPromptQueueItem(midTurn.id, "queued earlier"))
     const waiting = await seedSession("agent-waiting", "Monitor the deploy")
+    const recrashed = await seedSession("agent-recrashed", "Watch the logs")
+    await queueRestartResumeOnce(services, recrashed.id, restartNotice(["Watch the logs"]))
 
     const server = await run(
       startCodevisorServer(
@@ -185,13 +187,16 @@ describe("durable session turns", () => {
     )
     runningServers.push(server)
 
-    await waitFor(() => agents.prompts.length === 3)
+    await waitFor(() => agents.prompts.length === 4)
+    expect(agents.prompts.filter(([agent]) => agent === "agent-recrashed")).toEqual([
+      ["agent-recrashed", restartNotice(["Watch the logs"])]
+    ])
     expect(agents.prompts.filter(([agent]) => agent === "agent-mid-turn")).toEqual([
       ["agent-mid-turn", restartNotice(["Run the checks"])],
       ["agent-mid-turn", "queued earlier"]
     ])
     expect(agents.prompts).toContainEqual(["agent-waiting", restartNotice(["Monitor the deploy"])])
-    for (const session of [midTurn, waiting]) {
+    for (const session of [midTurn, waiting, recrashed]) {
       const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
       expect(page.backgroundTasks).toEqual([])
     }

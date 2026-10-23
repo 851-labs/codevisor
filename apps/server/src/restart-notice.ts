@@ -25,7 +25,18 @@ export const sessionTaskDescriptions = async (
   return taskDescriptions(page.backgroundTasks!)
 }
 
-export const queueSystemPromptFirst = async (
+export const queueRestartResumeOnce = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  text: string
+): Promise<void> => {
+  const queued = await run(services.db.listPromptQueue(sessionId))
+  if (queued.some(isRestartNotice)) return
+
+  await queueSystemPromptFirst(services, sessionId, text)
+}
+
+const queueSystemPromptFirst = async (
   services: CodevisorServerServices,
   sessionId: string,
   text: string

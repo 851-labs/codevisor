@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeFilePausedTurnStore, type PausedTurn } from "./paused-turns.js"
-import { queueSystemPromptFirst, restartNotice } from "./restart-notice.js"
+import { queueRestartResumeOnce, restartNotice } from "./restart-notice.js"
 import { drainPromptQueue } from "./routes/prompt-queue.js"
 import { makeEventFanout } from "./server-context.js"
 import {
@@ -186,7 +186,7 @@ describe("continuing a paused chat", () => {
   it("does not add a continue behind a restart notice crash recovery already queued", async () => {
     const chat = await makeChat()
     const notice = restartNotice(["Monitor CI"])
-    await queueSystemPromptFirst(chat.services, chat.session.id, notice)
+    await queueRestartResumeOnce(chat.services, chat.session.id, notice)
 
     await chat.continueChat(["Monitor CI"])
 

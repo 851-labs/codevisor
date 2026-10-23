@@ -1,5 +1,5 @@
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
-import { isRestartNotice, queueSystemPromptFirst, restartNotice } from "./restart-notice.js"
+import { queueRestartResumeOnce, restartNotice } from "./restart-notice.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
 import {
   failureMessage,
@@ -99,10 +99,7 @@ const queueResumeFirst = async (
   services: CodevisorServerServices,
   turn: PausedTurn
 ): Promise<void> => {
-  const queued = await run(services.db.listPromptQueue(turn.sessionId))
-  if (queued.some(isRestartNotice)) return
-
-  await queueSystemPromptFirst(services, turn.sessionId, resumePrompt(turn))
+  await queueRestartResumeOnce(services, turn.sessionId, resumePrompt(turn))
 }
 
 const resumePrompt = ({ stoppedTasks = [] }: PausedTurn): string =>

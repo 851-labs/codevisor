@@ -1,6 +1,6 @@
 import type { EventEnvelope, PromptQueueItem, SessionSummary, TranscriptPage } from "@codevisor/api"
 
-import { queueSystemPromptFirst, restartNotice, taskDescriptions } from "../restart-notice.js"
+import { queueRestartResumeOnce, restartNotice, taskDescriptions } from "../restart-notice.js"
 import {
   appendAndPublish,
   run,
@@ -143,7 +143,7 @@ const stopOrphanedTasks = async (
   page: TranscriptPage
 ): Promise<void> => {
   const stoppedTasks = taskDescriptions(page.backgroundTasks!)
-  await queueSystemPromptFirst(services, sessionId, restartNotice(stoppedTasks))
+  await queueRestartResumeOnce(services, sessionId, restartNotice(stoppedTasks))
   await clearBackgroundTasks(services, fanout, serverId, sessionId)
 }
 
