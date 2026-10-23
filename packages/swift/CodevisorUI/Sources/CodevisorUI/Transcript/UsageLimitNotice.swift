@@ -33,9 +33,9 @@ public struct UsageLimitNotice: View {
     return UsageLimitResumeText.detail(resumesAt: autoResume.resumesAt)
   }
 
-  private var actions: [ComposerNoticeCard.Action] {
-    let switchAccount = ComposerNoticeCard.Action("Switch Account", emphasis: .primary, perform: switchAccount)
+  private var actions: [TranscriptInlineCard.Action] {
+    let switchAccount = TranscriptInlineCard.Action("Switch Account", emphasis: .primary, perform: switchAccount)
     guard autoResume != nil else { return [switchAccount] }
-    return [ComposerNoticeCard.Action("Don't Resume", emphasis: .quiet, perform: cancelAutoResume), switchAccount]
+    return [TranscriptInlineCard.Action("Don't Resume", emphasis: .quiet, perform: cancelAutoResume), switchAccount]
   }
 }

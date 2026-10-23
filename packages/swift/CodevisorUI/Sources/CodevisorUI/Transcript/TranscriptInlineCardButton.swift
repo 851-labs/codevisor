@@ -1,9 +1,7 @@
 import SwiftUI
 
-struct NoticeCardButton: View {
-  let action: ComposerNoticeCard.Action
-  let fillsWidth: Bool
-  let controlSize: ControlSize
+struct TranscriptInlineCardButton: View {
+  let action: TranscriptInlineCard.Action
 
   var body: some View {
     if action.emphasis == .primary {
@@ -17,9 +15,8 @@ struct NoticeCardButton: View {
     Button(action: action.perform) {
       Text(action.title)
         .lineLimit(1)
-        .frame(maxWidth: fillsWidth ? .infinity : nil)
+        .frame(maxWidth: .infinity)
     }
-    .controlSize(controlSize)
-    .fixedSize(horizontal: !fillsWidth, vertical: false)
+    .controlSize(TranscriptInlineCardMetrics.controlSize)
   }
 }

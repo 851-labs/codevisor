@@ -2,7 +2,7 @@ import SwiftUI
 
 public struct TranscriptInlineCard: View {
   public enum State {
-    case pending(message: String, actions: [ComposerNoticeCard.Action])
+    case pending(message: String, actions: [Action])
     case resolved(Outcome)
   }
 
@@ -41,8 +41,8 @@ public struct TranscriptInlineCard: View {
     switch state {
     case let .pending(message, actions):
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
-        NoticeCardText(title: title, detail: message, systemImage: systemImage, accent: .accentColor)
-        NoticeCardActions(actions: actions, fillsWidth: true, controlSize: TranscriptInlineCardMetrics.controlSize)
+        TranscriptInlineCardText(systemImage: systemImage, title: title, message: message)
+        TranscriptInlineCardActions(actions: actions)
           .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)
       }
     case let .resolved(outcome):

@@ -46,9 +46,9 @@ public struct TranscriptSetupRequestCard: View {
     }
   }
 
-  private var actions: [ComposerNoticeCard.Action] {
-    let decline = ComposerNoticeCard.Action("Not Now", emphasis: .quiet, perform: onDecline)
+  private var actions: [TranscriptInlineCard.Action] {
+    let decline = TranscriptInlineCard.Action("Not Now", emphasis: .quiet, perform: onDecline)
     guard copy.canSetUpHere else { return [decline] }
-    return [decline, ComposerNoticeCard.Action(copy.setUpTitle, emphasis: .primary, perform: onSetUp)]
+    return [decline, TranscriptInlineCard.Action(copy.setUpTitle, emphasis: .primary, perform: onSetUp)]
   }
 }
