@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { isBrowserProxyRequest } from "./infra/browser-forward-proxy.js"
+import { routeAgents } from "./routes/agents.js"
 import { routeAutoResume } from "./routes/auto-resume-routes.js"
 import { routeBots } from "./routes/bots.js"
 import { routeBrowserState } from "./routes/browser-state.js"
@@ -127,6 +128,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   routePlugins,
   ({ services, request, response, url }) => routeSessionEvents(services, request, response, url),
   ({ routeState, request, response, url }) => routeAutoResume(routeState, request, response, url),
+  routeAgents,
   routeSessions,
   ({ services, request, response, url }) => routeFiles(services, request, response, url),
   ({ services, request, response, url }) => routeFs(services, request, response, url),

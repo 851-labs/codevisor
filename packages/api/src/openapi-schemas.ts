@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { AgentItem, AgentSearchResult, AgentStatus } from "./agents.js"
 import { AddBotProjectRequest, Bot, CreateBotRequest, UpdateBotRequest } from "./bots.js"
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
@@ -366,6 +367,9 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/skills/discover-remote": DiscoverRemoteSkillsResult,
   "DELETE /v1/skills/:name": SkillsList,
   "GET /v1/navigation": NavigationSnapshot,
+  "GET /v1/agents/:id": AgentStatus,
+  "GET /v1/agents/:id/search": AgentSearchResult,
+  "GET /v1/agents/:id/items/:itemId": AgentItem,
   "GET /v1/sessions": arrayOf(SessionSummary),
   "POST /v1/sessions": SessionSummary,
   "POST /v1/sessions/wait": WaitForSessionsResponse,

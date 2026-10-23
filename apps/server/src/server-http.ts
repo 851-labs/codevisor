@@ -231,7 +231,7 @@ export const parseRequestUrl = (request: IncomingMessage): URL => {
   return new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`)
 }
 
-const canonicalIdResources = new Set(["sessions", "projects", "workspaces", "worktrees"])
+const canonicalIdResources = new Set(["sessions", "agents", "projects", "workspaces", "worktrees"])
 
 const canonicalRouteCapture = (previousPatternPart: string | undefined, value: string): string =>
   previousPatternPart !== undefined && canonicalIdResources.has(previousPatternPart)
