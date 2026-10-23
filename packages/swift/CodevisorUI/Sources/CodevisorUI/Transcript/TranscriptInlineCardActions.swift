@@ -9,5 +9,6 @@ struct TranscriptInlineCardActions: View {
         TranscriptInlineCardButton(action: actions[index])
       }
     }
+    .fixedSize(horizontal: false, vertical: true)
   }
 }

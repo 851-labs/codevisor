@@ -11,13 +11,11 @@ public struct TranscriptInlineCard: View {
     case declined(String)
   }
 
-  private let systemImage: String
   private let title: String
   private let state: State
   private let inBotConversation: Bool
 
-  public init(systemImage: String, title: String, state: State, inBotConversation: Bool) {
-    self.systemImage = systemImage
+  public init(title: String, state: State, inBotConversation: Bool) {
     self.title = title
     self.state = state
     self.inBotConversation = inBotConversation
@@ -41,12 +39,12 @@ public struct TranscriptInlineCard: View {
     switch state {
     case let .pending(message, actions):
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
-        TranscriptInlineCardText(systemImage: systemImage, title: title, message: message)
+        TranscriptInlineCardText(title: title, message: message)
         TranscriptInlineCardActions(actions: actions)
           .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)
       }
     case let .resolved(outcome):
-      TranscriptInlineCardResolvedRow(systemImage: systemImage, title: title, outcome: outcome)
+      TranscriptInlineCardResolvedRow(title: title, outcome: outcome)
     }
   }
 

@@ -21,7 +21,6 @@ public struct UsageLimitNotice: View {
 
   public var body: some View {
     TranscriptInlineCard(
-      systemImage: "clock.fill",
       title: "Usage limit reached",
       state: .pending(message: message, actions: actions),
       inBotConversation: inBotConversation

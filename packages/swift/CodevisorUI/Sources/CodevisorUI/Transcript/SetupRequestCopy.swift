@@ -10,13 +10,6 @@ nonisolated struct SetupRequestCopy: Sendable {
 
   var headline: String { isPending ? title : resolvedTitle }
 
-  var symbol: String {
-    switch request.kind {
-    case .computerUse: "macwindow.and.cursorarrow"
-    case .chromeExtension, .chromeExtensionUpdate: "puzzlepiece.extension"
-    }
-  }
-
   var title: String {
     switch request.kind {
     case .computerUse: "Allow Computer Use"

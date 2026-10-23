@@ -27,7 +27,6 @@ public struct TranscriptSetupRequestCard: View {
 
   public var body: some View {
     TranscriptInlineCard(
-      systemImage: copy.symbol,
       title: copy.headline,
       state: state,
       inBotConversation: inBotConversation

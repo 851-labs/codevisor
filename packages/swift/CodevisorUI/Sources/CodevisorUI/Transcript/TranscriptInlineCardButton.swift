@@ -15,7 +15,7 @@ struct TranscriptInlineCardButton: View {
     Button(action: action.perform) {
       Text(action.title)
         .lineLimit(1)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .controlSize(TranscriptInlineCardMetrics.controlSize)
   }
