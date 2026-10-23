@@ -55,11 +55,20 @@ const finishTurn = async (
   sessionId: string,
   reply: string
 ) => {
-  await run(services.db.appendConversationItem(sessionId, "assistant", undefined, reply, false))
+  const turnId = `turn-${reply}`
+  await run(services.db.appendEvent("session.updated", sessionId, { turnState: "started", turnId }))
+  await run(
+    services.db.appendEvent("session.output", sessionId, {
+      sessionUpdate: "assistant_message_finalized",
+      markdown: reply,
+      turnId
+    })
+  )
   return run(
     services.db.appendEvent("session.updated", sessionId, {
       turnState: "ended",
-      stopReason: "end_turn"
+      stopReason: "end_turn",
+      turnId
     })
   )
 }

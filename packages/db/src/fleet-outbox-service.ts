@@ -6,7 +6,6 @@ import { parseJsonColumn, parseJsonObject } from "./json-column.js"
 import { insertPromptQueueItem } from "./prompt-queue-service.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
-import { renderableChatItemPredicate } from "./transcript-pages.js"
 
 export interface FleetMessage {
   readonly id: string
@@ -147,7 +146,7 @@ const pendingTurnRows = rowReader({
   revision: integer,
   stop_reason: nullable(text),
   ended_at: text,
-  transcript_boundary: nullable(integer),
+  turn_item_id: nullable(text),
   final_text: text
 })
 
@@ -156,7 +155,7 @@ const pendingTurnFromRow = (row: {
   readonly revision: number
   readonly stop_reason: string | null
   readonly ended_at: string
-  readonly transcript_boundary: number | null
+  readonly turn_item_id: string | null
   readonly final_text: string
 }): FleetPendingTurn => ({
   sessionId: row.session_id,
@@ -180,16 +179,9 @@ const fleetSql = {
             values (?, ?, ?, ?, ?, ?)
             on conflict(id) do nothing`,
   pendingTurns: `select fleet_pending_turns.*, coalesce((
-                   select (
-                     select substr(text, 1, 24000) from chat_parts
-                     where item_id = chat_items.id and kind = 'text' order by position limit 1
-                   )
-                   from chat_items
-                   where chat_items.session_id = fleet_pending_turns.session_id
-                     and role = 'assistant'
-                     and position <= fleet_pending_turns.transcript_boundary
-                     and ${renderableChatItemPredicate}
-                   order by position desc limit 1
+                   select substr(text, 1, 24000) from chat_parts
+                   where item_id = fleet_pending_turns.turn_item_id and kind = 'text'
+                   order by position limit 1
                  ), '') as final_text
                  from fleet_pending_turns order by session_id, revision`,
   deletePendingTurn: "delete from fleet_pending_turns where session_id = ? and revision = ?",

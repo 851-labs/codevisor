@@ -1,7 +1,11 @@
+import Database from "better-sqlite3"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { makeDatabase } from "./index.js"
+import { rowReader, text } from "./row-reader.js"
 import { run, tempDatabase } from "./test-support.js"
+
+const planRows = rowReader({ detail: text })
 
 const openDatabase = async () => {
   const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
@@ -105,34 +109,66 @@ describe("fleet outbox storage", () => {
   it("records each finished turn of a remote bot's child with its own reply and end time", async () => {
     const db = await openDatabase()
     const { child, plain } = await linkedChild(db)
-    const reply = (text: string) =>
-      run(db.appendConversationItem(child.id, "assistant", undefined, text, false))
-    const update = (sessionId: string, payload: Record<string, unknown>) =>
-      run(db.appendEvent("session.updated", sessionId, payload))
+    const event = (kind: "session.updated" | "session.output", payload: object) =>
+      run(db.appendEvent(kind, child.id, payload))
+    const turn = async (turnId: string, reply: string | undefined, end: object | undefined) => {
+      await event("session.updated", { turnState: "started", turnId })
+      if (reply !== undefined) {
+        await event("session.output", {
+          sessionUpdate: "assistant_message_finalized",
+          markdown: reply,
+          turnId
+        })
+      }
+      if (end === undefined) return undefined
+      return event("session.updated", { turnState: "ended", turnId, ...end })
+    }
 
-    await reply("FIRST REPORT")
-    await update(child.id, { turnState: "running" })
-    await update(child.id, { turnState: "ended", stopKind: "pausedForUpdate" })
-    const first = await update(child.id, { turnState: "ended", stopReason: "end_turn" })
-    await reply("SECOND REPORT")
-    const second = await update(child.id, { turnState: "ended" })
-    await reply("STILL STREAMING")
-    await update(plain.id, { turnState: "ended" })
+    await event("session.updated", { turnState: "ended", stopKind: "pausedForUpdate" })
+    const old = await turn("t-1", "OLD REPORT", { stopReason: "end_turn" })
+    const empty = await turn("t-2", undefined, {})
+    await turn("t-3", "STILL STREAMING", undefined)
+    await run(db.appendEvent("session.updated", plain.id, { turnState: "ended" }))
 
     expect(await run(db.listFleetPendingTurns)).toEqual([
       {
         sessionId: child.id,
-        revision: first.subjectRevision,
+        revision: old!.subjectRevision,
         stopReason: "end_turn",
-        endedAt: first.createdAt,
-        finalText: "FIRST REPORT"
+        endedAt: old!.createdAt,
+        finalText: "OLD REPORT"
       },
       {
         sessionId: child.id,
-        revision: second.subjectRevision,
-        endedAt: second.createdAt,
-        finalText: "SECOND REPORT"
+        revision: empty!.subjectRevision,
+        endedAt: empty!.createdAt,
+        finalText: ""
       }
+    ])
+  })
+
+  it("finds a machine's next message through an index, without scanning the outbox", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+    await run(db.close)
+    const sqlite = new Database(filename, { readonly: true })
+    onTestFinished(() => {
+      sqlite.close()
+    })
+
+    const plan = planRows
+      .all(
+        sqlite
+          .prepare(
+            `explain query plan select * from fleet_outbox
+             where machine_id = ? and created_at >= ? order by rowid limit 1`
+          )
+          .all("machine-b", "2100-01-01T00:00:00.000Z")
+      )
+      .map((row) => row.detail)
+
+    expect(plan).toEqual([
+      expect.stringContaining("USING INDEX fleet_outbox_machine (machine_id=?)")
     ])
   })
 

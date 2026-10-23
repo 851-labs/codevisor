@@ -10,9 +10,10 @@ export const migrations77: ReadonlyArray<Migration> = [
         revision integer not null,
         stop_reason text,
         ended_at text not null,
-        transcript_boundary integer,
+        turn_item_id text,
         primary key (session_id, revision)
       );
+      create index fleet_outbox_machine on fleet_outbox(machine_id);
     `
   }
 ]

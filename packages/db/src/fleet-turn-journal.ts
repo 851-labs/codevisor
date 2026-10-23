@@ -4,6 +4,20 @@ export const installFleetTurnJournal = (db: Database.Database): void => {
   db.exec(fleetTurnEndedTriggerSql)
 }
 
+const turnItemSql = `coalesce(
+        (
+          select item_id from chat_item_routes
+          where session_id = new.session_id
+            and route_key = 'turn:' || json_extract(new.payload, '$.turnId')
+        ),
+        (select current_item_id from session_chat_state where session_id = new.session_id),
+        (
+          select id from chat_items
+          where session_id = new.session_id and role = 'assistant' and status = 'streaming'
+          order by position desc limit 1
+        )
+      )`
+
 const fleetTurnEndedTriggerSql = `
   drop trigger if exists fleet_turn_ended;
   create trigger fleet_turn_ended after insert on session_events
@@ -18,12 +32,12 @@ const fleetTurnEndedTriggerSql = `
     )
   begin
     insert or ignore into fleet_pending_turns
-      (session_id, revision, stop_reason, ended_at, transcript_boundary)
+      (session_id, revision, stop_reason, ended_at, turn_item_id)
     values (
       new.session_id,
       new.revision,
       json_extract(new.payload, '$.stopReason'),
       new.created_at,
-      (select max(position) from chat_items where session_id = new.session_id)
+      ${turnItemSql}
     );
   end;`
