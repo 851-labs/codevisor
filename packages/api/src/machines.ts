@@ -54,17 +54,41 @@ export interface RemoteSessionRef {
 
 const REMOTE_SESSION_PREFIX = "remote:"
 const NO_REMOTE_SESSION = "none"
+const ESCAPED_NO_REMOTE_SESSION = "%6Eone"
 
 export const remoteSessionKey = (machineId: string, sessionId: string | undefined): string =>
-  `${REMOTE_SESSION_PREFIX}${machineId}:${sessionId ?? NO_REMOTE_SESSION}`
+  `${REMOTE_SESSION_PREFIX}${encodeKeyPart(machineId)}:${encodeSessionPart(sessionId)}`
 
 export const parseRemoteSessionKey = (key: string): RemoteSessionRef | undefined => {
   if (!key.startsWith(REMOTE_SESSION_PREFIX)) return undefined
-  const separator = key.lastIndexOf(":")
-  const machineId = key.slice(REMOTE_SESSION_PREFIX.length, separator)
-  const sessionId = key.slice(separator + 1)
-  if (machineId === "" || sessionId === "" || sessionId === NO_REMOTE_SESSION) return undefined
-  return { machineId, sessionId }
+  const parts = key.slice(REMOTE_SESSION_PREFIX.length).split(":")
+  const sessionPart = parts.pop()!
+  const machineId = legacyOrDecoded(parts)
+  if (machineId === undefined || machineId === "") return undefined
+  if (sessionPart === "" || sessionPart === NO_REMOTE_SESSION) return undefined
+  const sessionId = decodeKeyPart(sessionPart)
+  return sessionId === undefined ? undefined : { machineId, sessionId }
+}
+
+const encodeKeyPart = (value: string): string => encodeURIComponent(value)
+
+const encodeSessionPart = (sessionId: string | undefined): string => {
+  if (sessionId === undefined) return NO_REMOTE_SESSION
+  if (sessionId === NO_REMOTE_SESSION) return ESCAPED_NO_REMOTE_SESSION
+  return encodeKeyPart(sessionId)
+}
+
+const legacyOrDecoded = (machineParts: ReadonlyArray<string>): string | undefined => {
+  if (machineParts.length === 1) return decodeKeyPart(machineParts[0]!)
+  return machineParts.join(":")
+}
+
+const decodeKeyPart = (part: string): string | undefined => {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return undefined
+  }
 }
 
 export const GatewayInvokeRequest = Schema.Struct({
