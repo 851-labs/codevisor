@@ -10,7 +10,6 @@ import {
   gatewayChannelHandler,
   makePeerKeyPinStore,
   requestOverGatewayChannel,
-  type GatewayExchange,
   type IncomingChannel
 } from "./index.js"
 import {
@@ -40,7 +39,7 @@ export const presence = (peer: Peer, online = true): CloudMachinePresence => ({
 export const makePeer = (
   deviceId: string,
   options: {
-    handle?: (request: string, signal: AbortSignal) => Promise<GatewayExchange>
+    handle?: Parameters<typeof gatewayChannelHandler>[0]
     pins?: ReturnType<typeof makePeerKeyPinStore>
     handlers?: Record<string, (channel: IncomingChannel) => void>
   } = {}

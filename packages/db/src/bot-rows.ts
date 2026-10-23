@@ -3,6 +3,7 @@ import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
+import type { BotLink } from "./workspace-service-types.js"
 
 export interface BotRow {
   readonly id: string
@@ -123,6 +124,9 @@ export interface BotsService {
   ) => Effect.Effect<Bot, DatabaseError>
   readonly removeBotProject: (id: string, projectId: string) => Effect.Effect<Bot, DatabaseError>
   readonly findBotOwning: (query: BotOwnerQuery) => Effect.Effect<Bot | undefined, DatabaseError>
+  readonly findBotLinkForSession: (
+    sessionId: string
+  ) => Effect.Effect<BotLink | undefined, DatabaseError>
   readonly listBotWorkspaces: (
     botId: string
   ) => Effect.Effect<ReadonlyArray<Workspace>, DatabaseError>

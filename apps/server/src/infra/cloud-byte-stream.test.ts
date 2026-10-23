@@ -17,6 +17,7 @@ import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 class FakeChannel implements IncomingChannel {
   channelId = "channel-1"
   peerId = "app-1"
+  peer = { deviceId: "app-1", publicKey: "app-key" }
   channelType = "byte-stream"
   params: unknown = codevisorLoopbackParams()
   flowControlRequested = false

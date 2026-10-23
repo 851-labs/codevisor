@@ -1,9 +1,10 @@
-import type {
-  AttachmentRef,
-  EventEnvelope,
-  SessionEventType,
-  SessionSubscription,
-  SessionSummary
+import {
+  parseRemoteSessionKey,
+  type AttachmentRef,
+  type EventEnvelope,
+  type SessionEventType,
+  type SessionSubscription,
+  type SessionSummary
 } from "@codevisor/api"
 import type { ExecutionJobFinished } from "@codevisor/mcp"
 
@@ -17,6 +18,7 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { isUpdatePause } from "../update-pauses.js"
 import { conversationalBotForSession } from "./bot-turns.js"
+import { forwardSessionEvent, isLinkedRemoteChild } from "./fleet-session-events.js"
 import {
   erroredMessage,
   jobFinishedMessage,
@@ -29,6 +31,7 @@ import { makeSessionEventOutbox, type SessionEventOutbox } from "./session-event
 export interface SessionEventRouter {
   readonly listener: (event: EventEnvelope) => void
   readonly onJobFinished: (finished: ExecutionJobFinished) => void
+  readonly deliver: SessionEventOutbox["deliver"]
 }
 
 const finalAssistantText = async (
@@ -51,7 +54,7 @@ export const makeSessionEventRouter = (
 ): SessionEventRouter => {
   const outbox = makeSessionEventOutbox(services, fanout, routeState, serverId)
   const actionKinds = new Map<string, string | undefined>()
-  const publish = makePublisher(services, outbox)
+  const publish = makePublisher(services, outbox, serverId)
 
   const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {
     const target = await run(services.db.getSessionSummary(sessionId))
@@ -119,6 +122,7 @@ export const makeSessionEventRouter = (
   }
 
   return {
+    deliver: outbox.deliver,
     listener: (event) => {
       const payload = isRecord(event.payload) ? event.payload : {}
       void routeEvent(event, payload).catch(swallowError)
@@ -140,7 +144,7 @@ interface Recipient {
 type BuildMessage = (subscriptionId?: string) => SessionEventMessage
 
 const makePublisher =
-  (services: CodevisorServerServices, outbox: SessionEventOutbox) =>
+  (services: CodevisorServerServices, outbox: SessionEventOutbox, serverId: string) =>
   async (
     target: SessionSummary,
     type: SessionEventType,
@@ -153,8 +157,16 @@ const makePublisher =
       if (recipient.subscription?.once === true) {
         await run(services.db.deleteSessionSubscription(recipient.subscription.id))
       }
+      const message = build(recipient.subscription?.id)
+      const remote = parseRemoteSessionKey(recipient.subscriberId)
+      if (remote !== undefined) {
+        await forwardSessionEvent(services.machines, serverId, target, remote, message).catch(
+          swallowError
+        )
+        continue
+      }
       await outbox.deliver(recipient.subscriberId, {
-        message: build(recipient.subscription?.id),
+        message,
         sourceSessionId: target.id,
         ...(recipient.stale === undefined ? {} : { stale: recipient.stale })
       })
@@ -181,9 +193,18 @@ const botParentRecipients = async (
   type: SessionEventType
 ): Promise<ReadonlyArray<Recipient>> => {
   if (type !== "turn_ended" || target.parentSessionId === undefined) return []
-  const parentIsBot =
-    (await conversationalBotForSession(services, target.parentSessionId)) !== undefined
+  const parentIsBot = await parentIsBotFor(services, target, target.parentSessionId)
   return parentIsBot ? [{ subscriberId: target.parentSessionId }] : []
+}
+
+const parentIsBotFor = async (
+  services: CodevisorServerServices,
+  target: SessionSummary,
+  parentSessionId: string
+): Promise<boolean> => {
+  const remoteParent = parseRemoteSessionKey(parentSessionId)
+  if (remoteParent !== undefined) return isLinkedRemoteChild(services, target, remoteParent)
+  return (await conversationalBotForSession(services, parentSessionId)) !== undefined
 }
 
 const pingPong = (

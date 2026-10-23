@@ -71,6 +71,22 @@ describe("machine peers", () => {
     expect(bPins.get("a")).toBe(a.keys.publicKey)
   })
 
+  it("tells the target's gateway handler which device opened the channel and with which key", async () => {
+    const callers: unknown[] = []
+    const { a, b } = pair({
+      b: {
+        handle: async (_request, _signal, peer) => {
+          callers.push(peer)
+          return { status: 200, body: "ok" }
+        }
+      }
+    })
+
+    await gatewayRequest(a, b, "{}")
+
+    expect(callers).toEqual([{ deviceId: "a", publicKey: a.keys.publicKey }])
+  })
+
   it("refuses to open when the target is unknown, offline, outdated, itself, or unreachable", async () => {
     const { a, b } = pair()
     const reasonOf = (deviceId: string): string => {

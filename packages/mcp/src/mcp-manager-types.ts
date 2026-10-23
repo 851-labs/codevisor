@@ -37,6 +37,13 @@ export interface GatewayOrigin {
   readonly sessionId?: string
   readonly sessionTitle?: string
   readonly clientId?: string
+  readonly botId?: string
+  readonly botMachineId?: string
+}
+
+export interface RemoteGatewayCallOptions {
+  readonly signal?: AbortSignal
+  readonly botLink?: string
 }
 
 export interface GatewayCallContext {
@@ -147,7 +154,7 @@ export interface McpManager {
     origin: GatewayOrigin,
     path: string,
     args: unknown,
-    signal?: AbortSignal
+    options?: RemoteGatewayCallOptions
   ) => Promise<unknown>
   readonly closeSession: (sessionId: string) => Promise<void>
   readonly jobs: ExecutionJobs

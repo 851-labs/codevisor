@@ -134,6 +134,7 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var updatedAt: String?
   public var git: ServerWorkspaceGit?
   public var botId: String?
+  public var botMachineId: String?
 
   public init(
     id: String,
@@ -149,9 +150,11 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
     sidebarPosition: String? = nil,
     sidebarOrderRevision: Int? = nil,
     git: ServerWorkspaceGit? = nil,
-    botId: String? = nil
+    botId: String? = nil,
+    botMachineId: String? = nil
   ) {
     self.botId = botId
+    self.botMachineId = botMachineId
     self.sidebarPosition = sidebarPosition
     self.sidebarOrderRevision = sidebarOrderRevision
     self.id = id

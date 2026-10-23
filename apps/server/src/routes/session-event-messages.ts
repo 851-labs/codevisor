@@ -7,6 +7,8 @@ export interface SessionEventMessage {
 
 export const REPORT_LIMIT = 4_000
 
+const EVENT_OPENING = "<codevisor-event "
+
 export const attribute = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;")
 
@@ -62,11 +64,22 @@ export const jobFinishedMessage = (
   )
 })
 
+export const fromMachine = (
+  message: SessionEventMessage,
+  machine: { readonly id: string; readonly name: string }
+): SessionEventMessage => ({
+  key: message.key,
+  text: message.text.replace(
+    EVENT_OPENING,
+    `${EVENT_OPENING}machine="${attribute(machine.name)}" machineId="${attribute(machine.id)}" `
+  )
+})
+
 export const combinedEventText = (messages: ReadonlyArray<SessionEventMessage>): string =>
   messages.map((message) => message.text).join("\n\n")
 
 const eventBlock = (attributes: string, body: string): string =>
-  [`<codevisor-event ${attributes}>`, body, "</codevisor-event>"].join("\n")
+  [`${EVENT_OPENING}${attributes}>`, body, "</codevisor-event>"].join("\n")
 
 const subscriptionAttribute = (subscriptionId: string | undefined): string =>
   subscriptionId === undefined ? "" : ` subscriptionId="${attribute(subscriptionId)}"`

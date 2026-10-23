@@ -101,7 +101,8 @@ const featureRouteFamilies: ReadonlyArray<RouteFamily> = [
 ]
 
 const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
-  ({ services, request, response, url }) => routeGatewayInvoke(services, request, response, url),
+  ({ services, routeState, request, response, url }) =>
+    routeGatewayInvoke(services, routeState, request, response, url),
   ({ services, config, fanout, request, response, url }) =>
     routeProjects(services, config, fanout, request, response, url),
   ({ services, request, response, url }) => routeGitAuth(services, request, response, url),

@@ -37,7 +37,7 @@ const invokeApiTool = async (
   if (unconfirmed(spec, args)) throw confirmationRequired(spec)
   const url = requestUrl(getBaseUrl, spec, context, args)
 
-  const headers = bearerHeaders(await getBearerToken())
+  const headers = bearerHeaders(await getBearerToken(), context)
   const request = requestBody(spec, context, args, url)
   const response = await fetch(url, requestInit(spec, context, headers, request))
   if (!response.ok) throw await responseError(spec, response)

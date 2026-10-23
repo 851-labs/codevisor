@@ -213,3 +213,34 @@ describe("relative ages", () => {
     expect(relativeAge(iso, NOW)).toBe(expected)
   })
 })
+
+describe("calling machine identity", () => {
+  it("names a caller only when its device and key match a machine on the account", () => {
+    const { machineLink } = link({
+      machines: [
+        presence(),
+        presence({
+          deviceId: "device-box",
+          serverId: undefined,
+          name: "Box",
+          publicKey: "box-key"
+        }),
+        presence({ deviceId: "device-self", serverId: "machine-self", publicKey: "self-key" })
+      ]
+    })
+
+    expect(machineLink.machineIdOf({ deviceId: "device-laptop", publicKey: "key" })).toBe(
+      "machine-laptop"
+    )
+    expect(machineLink.machineIdOf({ deviceId: "device-box", publicKey: "box-key" })).toBe(
+      "cloud:device-box"
+    )
+    expect(
+      machineLink.machineIdOf({ deviceId: "device-laptop", publicKey: "other" })
+    ).toBeUndefined()
+    expect(machineLink.machineIdOf({ publicKey: "key" })).toBeUndefined()
+    expect(
+      machineLink.machineIdOf({ deviceId: "device-self", publicKey: "self-key" })
+    ).toBeUndefined()
+  })
+})

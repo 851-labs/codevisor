@@ -15,7 +15,7 @@ struct HomeSidebarContentBuilder {
     let nested = Set(botEntries.flatMap(\.workspaceIDs))
     let botProjects = Set(environment.projectList.projects.filter(\.isBot).map(\.id))
     return known(environment.navigationStore.workspaceEntries.sidebar).filter {
-      $0.botId == nil && !botProjects.contains($0.projectId) && !nested.contains($0.id)
+      !$0.belongsToSameMachineBot && !botProjects.contains($0.projectId) && !nested.contains($0.id)
     }
   }
 

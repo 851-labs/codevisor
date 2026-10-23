@@ -48,6 +48,7 @@ export type {
   WorkspaceMessageText
 } from "./workspace-media.js"
 export type {
+  BotLink,
   CreateWorkspaceWithSessionRecord,
   UpsertWorkspaceRecord
 } from "./workspace-service-types.js"

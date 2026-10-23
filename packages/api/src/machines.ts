@@ -35,9 +35,37 @@ export const MachineCallOrigin = Schema.Struct({
   machineName: Schema.String,
   sessionId: Schema.optional(Schema.String),
   sessionTitle: Schema.optional(Schema.String),
-  clientId: Schema.optional(Schema.String)
+  clientId: Schema.optional(Schema.String),
+  botId: Schema.optional(Schema.String),
+  botMachineId: Schema.optional(Schema.String)
 })
 export type MachineCallOrigin = typeof MachineCallOrigin.Type
+
+export const FLEET_CALLER_HEADER = "x-codevisor-fleet-caller"
+export const FLEET_SESSION_EVENT_PATH = "fleet.session_event"
+
+export const isFleetPath = (path: string): boolean => path.startsWith("fleet.")
+export const BOT_LINK_HEADER = "x-codevisor-bot-link"
+
+export interface RemoteSessionRef {
+  readonly machineId: string
+  readonly sessionId: string
+}
+
+const REMOTE_SESSION_PREFIX = "remote:"
+const NO_REMOTE_SESSION = "none"
+
+export const remoteSessionKey = (machineId: string, sessionId: string | undefined): string =>
+  `${REMOTE_SESSION_PREFIX}${machineId}:${sessionId ?? NO_REMOTE_SESSION}`
+
+export const parseRemoteSessionKey = (key: string): RemoteSessionRef | undefined => {
+  if (!key.startsWith(REMOTE_SESSION_PREFIX)) return undefined
+  const separator = key.lastIndexOf(":")
+  const machineId = key.slice(REMOTE_SESSION_PREFIX.length, separator)
+  const sessionId = key.slice(separator + 1)
+  if (machineId === "" || sessionId === "" || sessionId === NO_REMOTE_SESSION) return undefined
+  return { machineId, sessionId }
+}
 
 export const GatewayInvokeRequest = Schema.Struct({
   path: Schema.String,

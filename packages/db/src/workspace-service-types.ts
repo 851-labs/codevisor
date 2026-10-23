@@ -12,7 +12,12 @@ export type DeleteWorkspacePane = (
   paneId: string
 ) => Effect.Effect<void, DatabaseError>
 
-export type UpsertWorkspaceRecord = UpsertWorkspaceRequest & { readonly botId?: string }
+export interface BotLink {
+  readonly botId: string
+  readonly botMachineId?: string
+}
+
+export type UpsertWorkspaceRecord = UpsertWorkspaceRequest & Partial<BotLink>
 
 export type CreateWorkspaceWithSessionRecord = Omit<CreateWorkspaceRequest, "workspace"> & {
   readonly workspace: UpsertWorkspaceRecord

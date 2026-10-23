@@ -149,6 +149,7 @@ export interface CodevisorServerServices {
   readonly machineStats?: import("./infra/machine-stats.js").MachineStatsSampler
   readonly machines?: import("./infra/machine-link.js").MachineLink
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
+  readonly fleetTickets?: import("./infra/fleet-tickets.js").FleetTickets
   readonly usageLimits?: UsageLimitsCache
 }
 
@@ -182,6 +183,10 @@ export interface RouteState {
   readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
   autoResume?: AutoResumeScheduler
+  deliverSessionEvent?: (
+    subscriberId: string,
+    event: import("./routes/session-event-outbox.js").PendingSessionEvent
+  ) => Promise<void>
 }
 
 export class EventFanout {

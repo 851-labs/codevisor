@@ -14,6 +14,7 @@ const makeGated = (ready: () => boolean) => {
   const live = makeLiveChannel({
     channelId: "c-1",
     peerId: "app-1",
+    peer: { deviceId: "app-1", publicKey: appKeys.publicKey },
     channelType: "echo",
     params: undefined,
     cipher,

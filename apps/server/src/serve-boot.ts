@@ -14,6 +14,7 @@ import {
 } from "@codevisor/mcp"
 
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
+import { makeFleetTickets } from "./infra/fleet-tickets.js"
 import { makeMachineEnrollment } from "./infra/machine-enrollment.js"
 import { makeMachineLink } from "./infra/machine-link.js"
 import { machineReleaseChannel } from "./infra/release-channel.js"
@@ -306,7 +307,9 @@ export const startMachineNetwork = async (options: {
   readonly version: string | undefined
   readonly db: CodevisorDatabaseService
 }) => {
+  const fleetTickets = makeFleetTickets()
   const cloudBridgeOptions = {
+    fleetCallers: fleetTickets.callers,
     credentialsPath: join(dirname(options.databasePath), "cloud.json"),
     machineName: options.machineName,
     icon: options.icon,
@@ -344,5 +347,5 @@ export const startMachineNetwork = async (options: {
       ? {}
       : { installUrl: process.env["CODEVISOR_INSTALL_URL"] })
   })
-  return { cloudControl, machine, machineLink, machineEnrollment }
+  return { cloudControl, machine, machineLink, machineEnrollment, fleetTickets }
 }

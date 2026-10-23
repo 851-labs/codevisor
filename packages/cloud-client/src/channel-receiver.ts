@@ -174,6 +174,10 @@ export class ChannelReceiver {
     const live = makeLiveChannel({
       channelId: frame.channelId,
       peerId,
+      peer: {
+        publicKey: peerPublicKey,
+        ...(peerDeviceId === undefined ? {} : { deviceId: peerDeviceId })
+      },
       channelType: openPayload.channelType,
       params: openPayload.params,
       cipher,

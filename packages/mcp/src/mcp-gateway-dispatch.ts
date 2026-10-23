@@ -1,6 +1,7 @@
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 
+import { isFleetPath, remoteSessionKey } from "@codevisor/api"
 import type {
   AutomationProviderContext,
   AutomationToolProvider,
@@ -13,7 +14,12 @@ import { type CallToolResult, CallToolResultSchema } from "@modelcontextprotocol
 
 import type { makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import { isRecord } from "./mcp-guards.js"
-import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
+import type {
+  GatewayCallContext,
+  GatewayOrigin,
+  McpManagerConfig,
+  RemoteGatewayCallOptions
+} from "./mcp-manager-types.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
 import type { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import {
@@ -27,6 +33,7 @@ export interface GatewayInvokeOptions {
   readonly artifacts?: SandboxArtifactCollector
   readonly signal?: AbortSignal
   readonly deadline?: number
+  readonly botLink?: string
   readonly onBrowser?: () => void
   readonly onBrowserPage?: (url: string) => void
   readonly onComputerApp?: (app: ComputerUseApp) => void
@@ -63,6 +70,7 @@ interface AutomationCallContext {
   readonly projectId?: string | undefined
   readonly signal?: AbortSignal | undefined
   readonly deadline?: number | undefined
+  readonly botLink?: string | undefined
 }
 
 interface BrowserCaller {
@@ -283,9 +291,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   ): Promise<unknown> => {
     const remote = isRemoteOrigin(ctx.origin) ? ctx.origin : undefined
     const scopeKey =
-      remote === undefined
-        ? ctx.sessionId
-        : `remote:${remote.machineId}:${remote.sessionId ?? "none"}`
+      remote === undefined ? ctx.sessionId : remoteSessionKey(remote.machineId, remote.sessionId)
     if (scopeKey === undefined) throw new Error("Gateway calls need a calling session")
     const sessionId = remote === undefined ? ctx.sessionId : undefined
     const projectId = remote === undefined ? ctx.projectId : undefined
@@ -336,7 +342,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
           sessionId: scopeKey,
           ...(projectId === undefined ? {} : { projectId }),
           ...(options.signal === undefined ? {} : { signal: options.signal }),
-          ...(options.deadline === undefined ? {} : { deadline: options.deadline })
+          ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
+          ...(options.botLink === undefined ? {} : { botLink: options.botLink })
         },
         toolName,
         input,
@@ -362,9 +369,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     origin: GatewayOrigin,
     path: string,
     args: unknown,
-    signal?: AbortSignal
-  ): Promise<unknown> =>
-    invokeGatewayTool({ origin }, path, args, signal === undefined ? {} : { signal })
+    options: RemoteGatewayCallOptions = {}
+  ): Promise<unknown> => invokeGatewayTool({ origin }, path, args, options)
 
   const remoteBrowserUse = new Map<string, Map<string, GatewayOrigin>>()
 
@@ -388,6 +394,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     signal: AbortSignal | undefined
   ): Promise<unknown> => {
     const name = target.machineName ?? target.machine
+    if (isFleetPath(path)) throw new CodeExecutionToolError(`Unknown tool: ${path}`)
     if (config.remoteInvoker === undefined) {
       throw new CodeExecutionToolError(`${name} is unreachable: this server has no machine link`, {
         code: "machine_unavailable",

@@ -21,6 +21,7 @@ import {
 class FakeChannel implements IncomingChannel {
   channelId = "channel-1"
   peerId = "app-1"
+  peer = { deviceId: "app-1", publicKey: "app-key" }
   channelType = "http"
   params: unknown
   flowControlRequested: boolean

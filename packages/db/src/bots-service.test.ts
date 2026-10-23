@@ -165,6 +165,48 @@ describe("bots service", () => {
 })
 
 describe("bot workspaces", () => {
+  it("resolves a session's bot from its home, its local bot, or a bot on another machine", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { api } = await seedBot(db)
+    const chatIn = async (id: string, bot: { botId?: string; botMachineId?: string }) => {
+      await run(
+        db.createWorkspaceWithSession({
+          workspace: { id: `ws-${id}`, projectId: api.id, name: id, hasCustomName: false, ...bot },
+          session: { id, projectId: api.id, harnessId: "codex", title: id }
+        })
+      )
+    }
+    await chatIn("local-child", { botId: "bot-helper" })
+    await chatIn("remote-child", {
+      botId: "6D1F0C35-2A64-4F3E-9D0A-3B7F3C1C9A10",
+      botMachineId: "machine-b"
+    })
+    await chatIn("plain", {})
+    const retried = await run(
+      db.upsertWorkspace({
+        id: "ws-remote-child",
+        projectId: api.id,
+        name: "R",
+        hasCustomName: true
+      })
+    )
+
+    expect(await run(db.findBotLinkForSession("chat-helper"))).toEqual({ botId: "bot-helper" })
+    expect(await run(db.findBotLinkForSession("local-child"))).toEqual({ botId: "bot-helper" })
+    expect(await run(db.findBotLinkForSession("remote-child"))).toEqual({
+      botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10",
+      botMachineId: "machine-b"
+    })
+    expect(retried).toMatchObject({
+      botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10",
+      botMachineId: "machine-b"
+    })
+    expect(await run(db.findBotLinkForSession("plain"))).toBeUndefined()
+    expect(await run(db.findBotLinkForSession("missing"))).toBeUndefined()
+    expect(await run(db.listBotWorkspaces("6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10"))).toEqual([])
+  })
+
   it("attaches workspaces to a bot until the bot is deleted", async () => {
     useWorktreesRoot()
     const db = await openDatabase()

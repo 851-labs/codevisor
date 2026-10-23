@@ -1,9 +1,15 @@
 import type { ChannelCloseReason, RelayFrameHeader } from "@codevisor/api"
 import type { ChannelCipher } from "@codevisor/cloud-crypto"
 
+export interface ChannelPeer {
+  readonly deviceId?: string
+  readonly publicKey: string
+}
+
 export interface IncomingChannel {
   channelId: string
   peerId: string
+  peer: ChannelPeer
   channelType: string
   params: unknown
   flowControlRequested: boolean
@@ -41,6 +47,7 @@ export const SEALED_OVERHEAD_BYTES = 16
 export interface LiveChannelPort {
   channelId: string
   peerId: string
+  peer: ChannelPeer
   channelType: string
   params: unknown
   cipher: ChannelCipher
@@ -125,6 +132,7 @@ export const makeLiveChannel = (port: LiveChannelPort): LiveChannel => {
     channel: {
       channelId,
       peerId: port.peerId,
+      peer: port.peer,
       channelType: port.channelType,
       params: port.params,
       flowControlRequested: port.flowControl,

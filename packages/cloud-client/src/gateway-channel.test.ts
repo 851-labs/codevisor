@@ -191,6 +191,7 @@ describe("gateway responder over a scripted channel", () => {
     const channel: IncomingChannel = {
       channelId: "ch",
       peerId: "peer",
+      peer: { publicKey: "peer-key" },
       channelType: GATEWAY_CHANNEL_TYPE,
       params: undefined,
       flowControlRequested: false,

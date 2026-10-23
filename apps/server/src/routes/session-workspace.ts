@@ -9,6 +9,7 @@ import type {
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 
+import type { RemoteBotLink } from "../infra/fleet-tickets.js"
 import {
   appendAndPublish,
   assertLocationFolderExists,
@@ -35,7 +36,8 @@ const createServerSession = async (
   fanout: EventFanout,
   serverId: string,
   request: CreateSessionRequest,
-  project: Project
+  project: Project,
+  fleetBot: RemoteBotLink | undefined
 ): Promise<SessionSummary> => {
   const payload = await withStartPicks(services, request)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
@@ -66,7 +68,7 @@ const createServerSession = async (
     services.db.createWorkspaceWithSession({
       workspace: {
         ...workspaceOrder(payload),
-        ...(await botForParentSession(services, payload.parentSessionId)),
+        ...(await botForParentSession(services, serverId, payload.parentSessionId, fleetBot)),
         id: payload.workspaceId.toLowerCase(),
         projectId: project.id,
         name: payload.worktreeName ?? project.name,
@@ -94,7 +96,8 @@ export const createSessionIfMissing = async (
   routeState: RouteState,
   config: CodevisorServerConfig,
   rawPayload: CreateSessionRequest,
-  publishCreated = true
+  publishCreated = true,
+  fleetBot?: RemoteBotLink
 ): Promise<{ readonly session: SessionSummary; readonly created: boolean }> => {
   const payload: CreateSessionRequest =
     rawPayload.id === undefined ? rawPayload : { ...rawPayload, id: rawPayload.id.toLowerCase() }
@@ -111,7 +114,14 @@ export const createSessionIfMissing = async (
       if (existing !== undefined) return existing
     }
     const project = await getProjectOrFail(services.db, payload.projectId)
-    const session = await createServerSession(services, fanout, config.id, payload, project)
+    const session = await createServerSession(
+      services,
+      fanout,
+      config.id,
+      payload,
+      project,
+      fleetBot
+    )
     created = true
     if (publishCreated) {
       await appendAndPublish(services.db, fanout, "session.created", session.id, session)

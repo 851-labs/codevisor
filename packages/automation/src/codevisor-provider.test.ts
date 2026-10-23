@@ -1,3 +1,4 @@
+import { BOT_LINK_HEADER } from "@codevisor/api"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -160,6 +161,11 @@ describe("Codevisor MCP provider", () => {
     expect(requests[7]!.url.searchParams.get("showHidden")).toBe("true")
     expect(requests[0]!.init.headers).toBeInstanceOf(Headers)
     expect(requestHeaders(requests[0]!.init).get("authorization")).toBe("Bearer stable-token")
+    expect(requestHeaders(requests[0]!.init).has(BOT_LINK_HEADER)).toBe(false)
+    await provider.invoke({ ...callingContext, botLink: "verified-link" }, "sessions.create", {
+      harnessId: "codex"
+    })
+    expect(requestHeaders(requests.at(-1)!.init).get(BOT_LINK_HEADER)).toBe("verified-link")
     await expect(provider.invoke(callingContext, "workspaces.delete", {})).rejects.toThrow(
       "workspaces.delete requires workspaceId"
     )

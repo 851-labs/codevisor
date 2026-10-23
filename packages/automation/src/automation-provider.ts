@@ -14,6 +14,7 @@ export interface AutomationProviderContext {
   readonly agentLabel?: string | undefined
   readonly signal?: AbortSignal | undefined
   readonly deadline?: number | undefined
+  readonly botLink?: string | undefined
   readonly invokeBrowser?: (name: string, args: Record<string, unknown>) => Promise<unknown>
   readonly onApp?: (app: ComputerUseApp) => void
   readonly requestPermissions?: () => Promise<boolean>

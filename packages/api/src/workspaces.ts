@@ -20,7 +20,8 @@ export const Workspace = Schema.Struct({
   sidebarOrderRevision: Schema.optional(Schema.Number),
   labels: Schema.optional(Labels),
   git: Schema.optional(WorkspaceGit),
-  botId: Schema.optional(Schema.String)
+  botId: Schema.optional(Schema.String),
+  botMachineId: Schema.optional(Schema.String)
 })
 export type Workspace = typeof Workspace.Type
 

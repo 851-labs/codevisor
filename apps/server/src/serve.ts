@@ -229,17 +229,18 @@ export const runServe = (
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
     const iconGuess = guessMachineIcon()
-    const { cloudControl, machine, machineLink, machineEnrollment } = yield* Effect.promise(() =>
-      startMachineNetwork({
-        databasePath,
-        port,
-        serverId,
-        machineName,
-        icon: iconGuess,
-        version,
-        db
-      })
-    )
+    const { cloudControl, machine, machineLink, machineEnrollment, fleetTickets } =
+      yield* Effect.promise(() =>
+        startMachineNetwork({
+          databasePath,
+          port,
+          serverId,
+          machineName,
+          icon: iconGuess,
+          version,
+          db
+        })
+      )
     const icon = yield* Effect.promise(() => iconGuess)
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const gitEnvironment = shellEnv.current()
@@ -388,6 +389,7 @@ export const runServe = (
         machineStats: makeMachineStatsSampler(),
         machines: machineLink,
         machineEnrollment,
+        fleetTickets,
         usageLimits: makeUsageLimitsCache({
           store: makeUsageLimitsFileStore(join(dirname(databasePath), "usage-limits.json"))
         })

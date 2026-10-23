@@ -1,4 +1,4 @@
-import type { Bot } from "@codevisor/api"
+import type { Bot, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import {
@@ -14,6 +14,7 @@ import { botPath } from "./paths.js"
 import { workspaceFromRow } from "./row-mappers.js"
 import { workspaceRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
+import type { BotLink } from "./workspace-service-types.js"
 
 const botSelect = `
   select bots.*, sessions.harness_id as harness_id
@@ -141,6 +142,14 @@ export const makeBotsService = (
         if (row === undefined) return undefined
         return botFromRow(row)
       }),
+    findBotLinkForSession: (sessionId) =>
+      attempt("findBotLinkForSession", () => {
+        const workspace = sessionWorkspace(sqlite, sessionId)
+        if (workspace === undefined) return undefined
+        const home = owningBotRow(sqlite, null, { workspaceId: workspace.id })
+        if (home !== undefined) return { botId: home.id }
+        return workspaceBotLink(workspaceFromRow(workspace))
+      }),
     listBotWorkspaces: (botId) =>
       attempt("listBotWorkspaces", () => botWorkspaces(sqlite, botId).map(workspaceFromRow))
   }
@@ -171,6 +180,15 @@ const botProjects = (sqlite: ServiceContext["sqlite"], botId: string) =>
 const botWorkspaces = (sqlite: ServiceContext["sqlite"], botId: string) =>
   workspaceRows.all(sqlite.prepare(botSql.workspaces).all(canonicalUuid(botId)))
 
+const sessionWorkspace = (sqlite: ServiceContext["sqlite"], sessionId: string) =>
+  workspaceRows.maybe(sqlite.prepare(botSql.sessionWorkspace).get(canonicalUuid(sessionId)))
+
+const workspaceBotLink = (workspace: Workspace): BotLink | undefined => {
+  if (workspace.botId === undefined) return undefined
+  if (workspace.botMachineId === undefined) return { botId: workspace.botId }
+  return { botId: workspace.botId, botMachineId: workspace.botMachineId }
+}
+
 const touchBot = (sqlite: ServiceContext["sqlite"], id: string): void => {
   sqlite.prepare(botSql.touch).run(isoTimestamp(), id)
 }
@@ -194,6 +212,9 @@ const botSql = {
                    where bot_projects.bot_id = bots.id and bot_projects.project_id = @projectId collate nocase
                  )
                order by bots.created_at asc limit 1`,
+  sessionWorkspace: `select workspaces.* from workspaces
+                       join sessions on sessions.workspace_id = workspaces.id
+                       where sessions.id = ?`,
   workspaces: `select * from workspaces where bot_id = ? and is_archived = 0
                  order by sidebar_position, id`
 }

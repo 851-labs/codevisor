@@ -233,11 +233,22 @@ const callOrigin = (
 const titledOrigin = (deps: ExecuteToolDeps, origin: GatewayOrigin) => {
   let titled: Promise<GatewayOrigin> | undefined
   return (): Promise<GatewayOrigin> => {
-    titled ??= run(deps.config.db.getSessionSummary(origin.sessionId!)).then(
-      (session) => ({ ...origin, sessionTitle: session.title }),
-      () => origin
-    )
+    titled ??= describedOrigin(deps, origin)
     return titled
+  }
+}
+
+const describedOrigin = async (
+  deps: ExecuteToolDeps,
+  origin: GatewayOrigin
+): Promise<GatewayOrigin> => {
+  const sessionId = origin.sessionId!
+  const session = await run(deps.config.db.getSessionSummary(sessionId)).catch(() => undefined)
+  const bot = await run(deps.config.db.findBotLinkForSession(sessionId)).catch(() => undefined)
+  return {
+    ...origin,
+    ...(session === undefined ? {} : { sessionTitle: session.title }),
+    ...bot
   }
 }
 

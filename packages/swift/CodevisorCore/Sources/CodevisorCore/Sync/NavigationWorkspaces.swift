@@ -26,14 +26,21 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let projectId: UUID
   public let routingChatIds: [UUID]
   public let botId: UUID?
+  public let botMachineId: String?
 
-  public init(id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], botId: UUID? = nil) {
+  public init(
+    id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], botId: UUID? = nil,
+    botMachineId: String? = nil
+  ) {
     self.id = id
     self.serverId = serverId
     self.projectId = projectId
     self.routingChatIds = routingChatIds
     self.botId = botId
+    self.botMachineId = botMachineId
   }
+
+  public var belongsToSameMachineBot: Bool { botId != nil && botMachineId == nil }
 }
 
 @MainActor
@@ -76,7 +83,7 @@ public final class NavigationWorkspaces {
       .map { workspace in
         WorkspaceSidebarItem(
           id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-          routingChatIds: workspace.chatSessionIds, botId: workspace.botId)
+          routingChatIds: workspace.chatSessionIds, botId: workspace.botId, botMachineId: workspace.botMachineId)
       }
   }
 
@@ -86,7 +93,8 @@ public final class NavigationWorkspaces {
     func refreshed(_ current: WorkspaceSidebarItem) -> WorkspaceSidebarItem {
       WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-        routingChatIds: routed.isEmpty ? current.routingChatIds : routed, botId: current.botId)
+        routingChatIds: routed.isEmpty ? current.routingChatIds : routed, botId: current.botId,
+        botMachineId: current.botMachineId)
     }
     if let index = sidebar.firstIndex(where: { $0.id == workspace.id }) {
       let item = refreshed(sidebar[index])
@@ -122,7 +130,8 @@ public final class NavigationWorkspaces {
       let fallback = indexedChats[workspace.id].map { [$0] } ?? []
       return WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-        routingChatIds: routed.isEmpty ? fallback : routed, botId: workspace.botId)
+        routingChatIds: routed.isEmpty ? fallback : routed, botId: workspace.botId,
+        botMachineId: workspace.botMachineId)
     }
   }
 

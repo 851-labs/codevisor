@@ -2,7 +2,7 @@ import { isRecord } from "@codevisor/api"
 import type { ChannelCloseReason } from "@codevisor/api"
 
 import type { OutgoingChannel, OutgoingChannelEnd } from "./channel-opener.js"
-import type { ChannelHandler } from "./incoming-channel.js"
+import type { ChannelHandler, ChannelPeer } from "./incoming-channel.js"
 import { ChannelOpenError } from "./machine-peers.js"
 import type { CancelTimeout } from "./machine-socket.js"
 
@@ -148,7 +148,7 @@ export const requestOverGatewayChannel = (
 
 export const gatewayChannelHandler =
   (
-    handle: (request: string, signal: AbortSignal) => Promise<GatewayExchange>,
+    handle: (request: string, signal: AbortSignal, peer: ChannelPeer) => Promise<GatewayExchange>,
     log: (line: string) => void
   ): ChannelHandler =>
   (channel) => {
@@ -173,7 +173,7 @@ export const gatewayChannelHandler =
     const run = async (): Promise<void> => {
       let answer: GatewayExchange
       try {
-        answer = await handle(request, controller.signal)
+        answer = await handle(request, controller.signal, channel.peer)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         log(`Gateway channel request failed: ${message}`)

@@ -1,3 +1,4 @@
+import { FLEET_CALLER_HEADER } from "@codevisor/api"
 import {
   appendBodyChunk,
   chunkFrames,
@@ -13,10 +14,12 @@ import {
   PROXY_OUTBOUND_HIGH_WATER_BYTES,
   sanitizeRequestHeaders,
   gatewayChannelHandler,
-  type ChannelHandler
+  type ChannelHandler,
+  type ChannelPeer
 } from "@codevisor/cloud-client"
 import { WebSocket } from "ws"
 
+import { withTicket, type TicketBook } from "./fleet-tickets.js"
 import { rawDataBytes } from "./ws-raw-data.js"
 
 export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) => {
@@ -191,16 +194,21 @@ export const httpChannelHandler =
 
 export const gatewayLoopbackHandler = (
   localBaseUrl: string,
-  log: (line: string) => void
+  log: (line: string) => void,
+  callers: TicketBook<ChannelPeer> | undefined
 ): ChannelHandler =>
-  gatewayChannelHandler(async (request, signal) => {
-    const response = await fetch(`${localBaseUrl}/v1/gateway/invoke`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: request,
-      signal
-    })
-    return { status: response.status, body: await response.text() }
+  gatewayChannelHandler(async (request, signal, peer) => {
+    const post = async (headers: Record<string, string>) => {
+      const response = await fetch(`${localBaseUrl}/v1/gateway/invoke`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: request,
+        signal
+      })
+      return { status: response.status, body: await response.text() }
+    }
+    if (callers === undefined) return post({})
+    return withTicket(callers, peer, (ticket) => post({ [FLEET_CALLER_HEADER]: ticket }))
   }, log)
 
 export const wsChannelHandler =

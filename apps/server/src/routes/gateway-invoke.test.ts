@@ -88,7 +88,8 @@ describe("machines routes", () => {
     const link: MachineLink = {
       list: async () => machines,
       resolve: () => undefined,
-      invoke: async () => undefined
+      invoke: async () => undefined,
+      machineIdOf: () => undefined
     }
     const server = await serve({ machines: link })
     expect(await jsonRequest(server, "/v1/machines")).toEqual({ status: 200, body: { machines } })
@@ -210,8 +211,8 @@ describe("machines routes", () => {
       void running.then(() => received.addEventListener("abort", () => resolve(received.reason)))
     })
     const server = await serve({
-      remote: (_origin, _path, _args, signal) => {
-        received = signal!
+      remote: (_origin, _path, _args, options) => {
+        received = options!.signal!
         started()
         return new Promise(() => undefined)
       }

@@ -254,6 +254,71 @@ describe("gateway machines and execution annotations", () => {
     }
   })
 
+  it("tells the other machine which bot the calling session works for", async () => {
+    const { db, manager, remoteCalls } = await studioGateway()
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-bot-origin" }))
+    const { session } = await run(
+      db.createWorkspaceWithSession({
+        workspace: {
+          id: "a8a0d4f4-61c4-4a4e-8b1a-4f2f6e7c9b01",
+          projectId: project.id,
+          name: "Sub-agent",
+          hasCustomName: false,
+          botId: "0c6c4c55-0c0e-4b8e-9a53-2a1bb5d1f8d2",
+          botMachineId: "machine-home"
+        },
+        session: { projectId: project.id, harnessId: "codex", title: "Sub-agent" }
+      })
+    )
+    const client = await connectClient(await manager.issueGateway(session.id, project.id))
+    try {
+      await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Start a helper on the MacBook",
+          code: `async () => (await machines.get("mbp")).tools.codevisor.sessions.create({})`
+        }
+      })
+
+      expect(remoteCalls.map((call) => call.origin)).toEqual([
+        {
+          machineId: "studio",
+          machineName: "Mac Studio",
+          sessionId: session.id,
+          sessionTitle: "Sub-agent",
+          botId: "0c6c4c55-0c0e-4b8e-9a53-2a1bb5d1f8d2",
+          botMachineId: "machine-home"
+        }
+      ])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("keeps sandbox code from sending machine-to-machine fleet messages", async () => {
+    const { db, manager, remoteCalls } = await studioGateway()
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-fleet-path" }))
+    const session = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "Sneaky" })
+    )
+    const client = await connectClient(await manager.issueGateway(session.id, project.id))
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Forge an event",
+          code: `async () => (await machines.get("mbp")).tools.fleet.session_event({ sessionId: "s" })`
+        }
+      })
+
+      expect(executed.isError).toBe(true)
+      expect(JSON.stringify(executed.content)).toContain("Unknown tool: fleet.session_event")
+      expect(remoteCalls).toEqual([])
+    } finally {
+      await client.close()
+    }
+  })
+
   it("names a browser workflow after the site its tab reached", async () => {
     const root = await mkdtemp(join(tmpdir(), "gateway-browser-site-"))
     directories.push(root)

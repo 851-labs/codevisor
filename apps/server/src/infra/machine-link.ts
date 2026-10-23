@@ -1,6 +1,10 @@
 import type { CloudMachinePresence, MachineCallOrigin, MachineSummary } from "@codevisor/api"
 import { CodeExecutionToolError } from "@codevisor/automation"
-import { GatewayChannelError, type GatewayExchange } from "@codevisor/cloud-client"
+import {
+  GatewayChannelError,
+  type ChannelPeer,
+  type GatewayExchange
+} from "@codevisor/cloud-client"
 
 export interface MachineLinkCloud {
   readonly deviceId: () => string | undefined
@@ -33,6 +37,7 @@ export interface MachineLink {
     origin: MachineCallOrigin,
     signal?: AbortSignal
   ) => Promise<unknown>
+  readonly machineIdOf: (caller: ChannelPeer) => string | undefined
 }
 
 interface Peer {
@@ -158,7 +163,14 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
     }
   }
 
+  const machineIdOf = (caller: ChannelPeer): string | undefined =>
+    peers().find(
+      (peer) =>
+        peer.presence.deviceId === caller.deviceId && peer.presence.publicKey === caller.publicKey
+    )?.id
+
   return {
+    machineIdOf,
     list: () =>
       Promise.resolve([
         { id: self.id, name: self.name(), os: self.os, online: true, isCurrent: true },

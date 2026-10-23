@@ -19,6 +19,7 @@ import {
   requestOverGatewayChannel,
   serializePeerKeyPins,
   WS_CHANNEL_TYPE,
+  type ChannelPeer,
   type CloudSocket,
   type FetchLike,
   type GatewayExchange,
@@ -38,6 +39,7 @@ import {
   wsChannelHandler
 } from "./cloud-proxy-handlers.js"
 import { prepareMachineTunnel, tunnelKeyPath, tunnelPinsPath } from "./cloud-tunnel.js"
+import type { TicketBook } from "./fleet-tickets.js"
 
 export interface CloudBridgeOptions {
   readonly credentialsPath: string
@@ -50,6 +52,7 @@ export interface CloudBridgeOptions {
   readonly log: (line: string) => void
   readonly releaseChannel?: () => "stable" | "alpha" | undefined
   readonly fetchImpl?: FetchLike
+  readonly fleetCallers?: TicketBook<ChannelPeer>
 }
 
 export type CloudBridgeManagedBy = "app" | "external"
@@ -185,7 +188,11 @@ const makeBridge = async (
   const channelHandlers = {
     [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
     [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
-    [GATEWAY_CHANNEL_TYPE]: gatewayLoopbackHandler(options.localBaseUrl, options.log),
+    [GATEWAY_CHANNEL_TYPE]: gatewayLoopbackHandler(
+      options.localBaseUrl,
+      options.log,
+      options.fleetCallers
+    ),
     [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)
   }
   let connection: CloudMachineConnection | undefined

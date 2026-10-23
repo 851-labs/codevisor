@@ -79,7 +79,7 @@ export const routeWorkspaceCreate = async (
     services.db.createWorkspaceWithSession({
       workspace: {
         ...payload.workspace,
-        ...(await botForParentSession(services, payload.session.parentSessionId)),
+        ...(await botForParentSession(services, config.id, payload.session.parentSessionId)),
         id: workspaceId,
         projectId: project.id
       },

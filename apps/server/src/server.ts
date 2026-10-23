@@ -154,6 +154,7 @@ export const makeCodevisorServerApp = (
     makeUsageHoldReleaseListener(services, fanout, routeState, config.id)
   )
   const sessionEvents = makeSessionEventRouter(services, fanout, routeState, config.id)
+  routeState.deliverSessionEvent = sessionEvents.deliver
   const unsubscribeSessionEvents = fanout.subscribe(sessionEvents.listener)
   const unsubscribeJobEvents = services.mcp?.jobs.subscribe(sessionEvents.onJobFinished)
   void upgradeAllBotInstructions(services).catch(swallowError)

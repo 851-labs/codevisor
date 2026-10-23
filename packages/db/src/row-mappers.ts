@@ -160,8 +160,14 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     ...(labels === undefined ? {} : { labels }),
     ...(git === undefined ? {} : { git }),
-    ...(row.bot_id == null ? {} : { botId: row.bot_id })
+    ...workspaceBotFromRow(row)
   }
+}
+
+const workspaceBotFromRow = (row: WorkspaceRow): Pick<Workspace, "botId" | "botMachineId"> => {
+  if (row.bot_id != null) return { botId: row.bot_id }
+  if (row.remote_bot_id == null || row.remote_bot_machine_id == null) return {}
+  return { botId: row.remote_bot_id, botMachineId: row.remote_bot_machine_id }
 }
 
 export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
