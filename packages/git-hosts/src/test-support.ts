@@ -1,6 +1,15 @@
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -13,10 +22,22 @@ export const testTempDir = (prefix: string): string => {
   return root
 }
 
+const scriptTools = ["sleep"] as const
+
+const scriptToolsBin = (): string => {
+  const bin = testTempDir("codevisor-script-tools-")
+  for (const tool of scriptTools) {
+    const source = ["/bin", "/usr/bin"].map((directory) => join(directory, tool)).find(existsSync)
+    if (source === undefined) throw new Error(`No ${tool} for fake CLI scripts`)
+    symlinkSync(source, join(bin, tool))
+  }
+  return bin
+}
+
 export const isolatedEnv = (bin: string): NodeJS.ProcessEnv => {
   const home = testTempDir("codevisor-git-host-home-")
   return {
-    PATH: `${bin}:/usr/bin:/bin`,
+    PATH: `${bin}:${scriptToolsBin()}`,
     HOME: home,
     GH_CONFIG_DIR: join(home, "gh"),
     GLAB_CONFIG_DIR: join(home, "glab"),
