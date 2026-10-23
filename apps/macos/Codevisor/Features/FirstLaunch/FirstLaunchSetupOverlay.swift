@@ -6,7 +6,6 @@ struct FirstLaunchSetupOverlay: View {
   let setup: FirstLaunchSetup
   let landing: FirstLaunchLanding
   @State private var phase = FirstLaunchOverlayPhase.covering
-  @State private var size = CGSize.zero
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let composerStyle = ComposerCardStyle()
 
@@ -14,63 +13,57 @@ struct FirstLaunchSetupOverlay: View {
     ZStack {
       Color(nsColor: .windowBackgroundColor)
         .ignoresSafeArea()
-        .opacity(phase == .covering ? 1 : 0)
+        .opacity(phase.coversApp ? 1 : 0)
       if showsSetup {
-        setupView
-          .transition(.opacity)
+        FirstLaunchSetupView(
+          setup: setup,
+          phase: phase,
+          composerFrame: landing.composerFrame,
+          composerCornerRadius: composerStyle.cornerRadius
+        )
+        .transition(.opacity)
       }
     }
-    .onGeometryChange(for: CGSize.self) {
-      $0.size
-    } action: {
-      size = $0
-    }
+    .background(FirstLaunchKeyboard(isCovering: phase == .covering) { setup.getStarted() })
     .allowsHitTesting(phase == .covering)
     .animation(.smooth(duration: 0.35), value: setup.presentation == .visible)
     .onChange(of: setup.presentation) { _, presentation in leave(after: presentation) }
   }
 
-  private var setupView: some View {
-    FirstLaunchSetupView(
-      setup: setup,
-      stage: FirstLaunchStage(
-        style: style,
-        isLeaving: phase == .leaving,
-        targets: targets,
-        windowSize: size,
-        composerCornerRadius: composerStyle.cornerRadius
-      )
-    )
-  }
-
   private var showsSetup: Bool {
-    phase != .gone && (setup.presentation == .visible || phase == .leaving)
-  }
-
-  private var style: FirstLaunchDismissStyle {
-    .current(reduceMotion: reduceMotion)
-  }
-
-  private var targets: [FirstLaunchLandingTarget: CGRect] {
-    Dictionary(
-      uniqueKeysWithValues: [FirstLaunchLandingTarget.composer, .modelChip, .projectChip].compactMap { key in
-        target(key).map { (key, $0) }
-      })
-  }
-
-  private func target(_ key: FirstLaunchLandingTarget) -> CGRect? {
-    landing.frame(for: key)
+    phase != .gone && (setup.presentation == .visible || phase.isLeaving)
   }
 
   private func leave(after presentation: FirstLaunchPresentation) {
     guard phase == .covering, presentation == .dismissed || presentation == .handedOff else { return }
-    let showsFlourish = setup.wasShown && presentation == .dismissed
-    let animation = showsFlourish ? style.animation : FirstLaunchDismissStyle.crossfade.animation
-    if showsFlourish, style == .flyIntoComposer { landing.catchCard() }
-    withAnimation(animation) {
-      phase = .leaving
+    if setup.wasShown, presentation == .dismissed, !reduceMotion, landing.composerFrame != nil {
+      morphIntoComposer()
+    } else {
+      crossfade()
+    }
+  }
+
+  private func morphIntoComposer() {
+    withAnimation(Self.morph) {
+      phase = .morphing
+    } completion: {
+      withAnimation(Self.reveal) {
+        phase = .revealing
+      } completion: {
+        phase = .gone
+      }
+    }
+  }
+
+  private func crossfade() {
+    withAnimation(Self.crossfadeOut) {
+      phase = .crossfading
     } completion: {
       phase = .gone
     }
   }
+
+  private static let morph = Animation.smooth(duration: 0.45)
+  private static let reveal = Animation.easeOut(duration: 0.2)
+  private static let crossfadeOut = Animation.smooth(duration: 0.35)
 }

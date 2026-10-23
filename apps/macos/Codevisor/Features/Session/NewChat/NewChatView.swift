@@ -117,7 +117,7 @@ struct NewChatView: View {
                     focusChatId: preCreatedSession?.id,
                     glassNamespace: composerGlassNamespace
                   )
-                  .firstLaunchLandingTarget(.composer)
+                  .reportsFirstLaunchComposerFrame()
                   if showsRunPickers {
                     HStack(spacing: 4) {
                       if showsMachinePicker {
@@ -125,7 +125,6 @@ struct NewChatView: View {
                         runPickerDivider(between: .machine, and: .project)
                       }
                       projectPicker(controller)
-                        .firstLaunchLandingTarget(.projectChip)
                       if liveProject(for: controller).isGitRepository {
                         runPickerDivider(between: .project, and: .location)
                         runLocationPicker(controller)

@@ -4,30 +4,36 @@ import SwiftUI
 
 struct FirstLaunchSetupView: View {
   let setup: FirstLaunchSetup
-  let stage: FirstLaunchStage
-  @State private var frames = FirstLaunchFrames()
+  let phase: FirstLaunchOverlayPhase
+  let composerFrame: CGRect?
+  let composerCornerRadius: CGFloat
+  @State private var cardFrame: CGRect?
 
   var body: some View {
-    let move = FirstLaunchChoreography(stage: stage, frames: frames)
+    let morph = FirstLaunchMorph(
+      phase: phase,
+      cardFrame: cardFrame,
+      composerFrame: composerFrame,
+      composerCornerRadius: composerCornerRadius
+    )
     VStack(spacing: 22) {
       Image(nsImage: NSApp.applicationIconImage)
         .resizable()
         .frame(width: 72, height: 72)
         .shadow(color: .black.opacity(0.18), radius: 9, y: 5)
         .accessibilityHidden(true)
-        .modifier(measure { frames.icon = $0 })
-        .modifier(move.icon())
+        .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
       FirstLaunchSetupTitle(isFinished: setup.isComplete)
-        .modifier(move.chrome())
-      card(move)
+        .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
+      card(morph)
       FirstLaunchGetStartedButton(isReady: setup.canGetStarted) { setup.getStarted() }
-        .modifier(move.chrome())
+        .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Getting things set up")
   }
 
-  private func card(_ move: FirstLaunchChoreography) -> some View {
+  private func card(_ morph: FirstLaunchMorph) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       ForEach(FirstLaunchStep.allCases) { step in
         FirstLaunchStepRow(
@@ -36,19 +42,13 @@ struct FirstLaunchSetupView: View {
           details: setup.detailCandidates(for: step),
           count: step == .projects ? setup.visibleProjectCount : nil
         )
-        .modifier(measure { frames.rows[step] = $0 })
-        .modifier(move.row(step))
       }
     }
+    .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
     .padding(.horizontal, 20)
     .padding(.vertical, 16)
     .frame(width: 440)
-    .background { FirstLaunchCardGlass(shape: move.glass()) }
-    .modifier(measure { frames.card = $0 })
-    .modifier(move.card())
-  }
-
-  private func measure(_ report: @escaping (CGRect) -> Void) -> FirstLaunchMeasurement {
-    FirstLaunchMeasurement(isFrozen: stage.isLeaving, report: report)
+    .background { FirstLaunchCardGlass(shape: morph.glass) }
+    .modifier(FirstLaunchMeasurement(isFrozen: phase.isLeaving) { cardFrame = $0 })
   }
 }
