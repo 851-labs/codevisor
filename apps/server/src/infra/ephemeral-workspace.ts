@@ -40,7 +40,7 @@ export const remoteWorkspaceState = async (
   const workspace = workspacesIn(listed).find((candidate) => candidate.id === machine.workspaceId)
   if (workspace === undefined) return "missing"
 
-  return workspace.isArchived === true ? "archived" : "active"
+  return workspace.isArchived ? "archived" : "active"
 }
 
 const remoteProjectFor = async (
@@ -65,21 +65,34 @@ const remoteProjectFor = async (
 
 interface ListedWorkspace {
   readonly id: string
-  readonly isArchived?: unknown
+  readonly isArchived: boolean
 }
 
 const workspacesIn = (listed: unknown): ReadonlyArray<ListedWorkspace> => {
-  if (!Array.isArray(listed)) throw new Error("The ephemeral machine didn't list its workspaces")
-  return listed.filter(isListedWorkspace)
+  const items = Array.isArray(listed) ? listed : recordField(listed, "items")
+  if (!Array.isArray(items)) throw new Error("The ephemeral machine didn't list its workspaces")
+  return items.flatMap(listedWorkspace)
 }
 
-const isListedWorkspace = (item: unknown): item is ListedWorkspace =>
-  isRecord(item) && typeof item.id === "string"
+const listedWorkspace = (item: unknown): ReadonlyArray<ListedWorkspace> => {
+  const id = idIn(item, "workspaceId")
+  if (id === undefined) return []
+  return [{ id, isArchived: recordField(item, "isArchived") === true }]
+}
 
 const idOf = (project: unknown): string => {
-  if (isRecord(project) && typeof project.id === "string") return project.id
-  throw new Error("The ephemeral machine didn't return a project id")
+  const id = idIn(project, "projectId")
+  if (id === undefined) throw new Error("The ephemeral machine didn't return a project id")
+  return id
 }
+
+const idIn = (value: unknown, namedKey: string): string | undefined => {
+  const id = recordField(value, namedKey) ?? recordField(value, "id")
+  return typeof id === "string" ? id : undefined
+}
+
+const recordField = (value: unknown, key: string): unknown =>
+  isRecord(value) ? value[key] : undefined
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null

@@ -15,7 +15,8 @@ const idArgumentNames = {
   mcps: "mcpId",
   harnesses: "harnessId",
   "native-mcps": "removalId",
-  files: "fileId"
+  files: "fileId",
+  "ephemeral-machines": "ephemeralMachineId"
 } as const
 
 const isIdResource = (segment: string | undefined): segment is keyof typeof idArgumentNames =>

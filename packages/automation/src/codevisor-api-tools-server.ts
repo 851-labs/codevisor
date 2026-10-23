@@ -102,7 +102,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       "account and delete the provider machine. Its workspace's unpushed work is lost; confirm " +
       "with the user first.",
     "DELETE",
-    "/v1/ephemeral-machines/:ephemeralMachineId",
+    "/v1/ephemeral-machines/:id",
     { confirm: true }
   ),
   apiTool("server.update_status", "Check for a Codevisor server update.", "GET", "/v1/update", {
