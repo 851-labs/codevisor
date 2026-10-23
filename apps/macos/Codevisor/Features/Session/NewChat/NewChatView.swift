@@ -64,6 +64,7 @@ struct NewChatView: View {
   @State var isRunLocationMenuPresented = false
   @State var pendingSetupGroupID: ProjectGroup.ID?
   @State var projectSetup: ProjectMachineSetup?
+  @State var showsEphemeralMachineDialog = false
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
@@ -186,6 +187,7 @@ struct NewChatView: View {
     }
     .attachmentDropTarget(controller)
     .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
+    .modifier(ephemeralMachineDialog)
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {
         setUpController()

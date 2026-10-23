@@ -105,4 +105,17 @@ extension NewChatView {
   private var blocksComposerServerContent: Bool {
     environment.appUpdate.isUpdating
   }
+
+  var ephemeralMachineDialog: NewEphemeralMachineDialog {
+    NewEphemeralMachineDialog(
+      isPresented: $showsEphemeralMachineDialog,
+      projectId: ephemeralMachineProject?.id,
+      client: environment.machines.client(for: composerServerId)
+    )
+  }
+
+  private var ephemeralMachineProject: Project? {
+    guard let project = controller?.project else { return nil }
+    return project.isRunTargetPlaceholder || project.isScratch ? nil : project
+  }
 }

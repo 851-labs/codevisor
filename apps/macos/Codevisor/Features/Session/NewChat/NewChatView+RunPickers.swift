@@ -87,6 +87,10 @@ extension NewChatView {
       .favorites($favoriteMachineIDs)
       .labelsHidden()
       Autocomplete.Footer(id: "actions") {
+        Autocomplete.Action("New Ephemeral Machine…", systemImage: "cloud") {
+          showsEphemeralMachineDialog = true
+        }
+        .help("Start a throwaway machine for this project")
         Autocomplete.Action("Manage Machines…", systemImage: "gearshape.fill") {
           SettingsRouter.shared.showMachines()
           openSettings()

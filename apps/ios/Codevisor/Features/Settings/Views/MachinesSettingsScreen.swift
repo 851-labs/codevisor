@@ -107,7 +107,7 @@ struct MachinesSettingsScreen: View {
     )
     let keyChanged = presence.map { cloud.machinesWithChangedKeys.contains($0.deviceId) } ?? false
     return Label {
-      Text(machine.name)
+      MachineNameText(name: machine.name, ephemeral: presence?.ephemeral)
       if keyChanged {
         Text("\(Image(systemName: "exclamationmark.shield.fill")) Key Changed")
           .foregroundStyle(.orange)

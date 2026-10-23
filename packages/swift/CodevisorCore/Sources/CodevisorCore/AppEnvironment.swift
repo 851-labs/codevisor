@@ -159,7 +159,7 @@ public final class AppEnvironment {
     machines.onHarnessLifecycleChanged = { [weak self] in self?.noteHarnessLifecycle(onServer: $0) }
     machines.onHarnessAuthChanged = { [weak self] in self?.harnessCatalogDidChange(onServer: $0) }
     machines.onSyncChanged = { [weak self] in
-      self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries)
+      self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries, fromMachine: $0)
     }
     configSync.onNamespaceChanged = { [weak self] in self?.applySyncedNamespace($0) }
     configSync.startPeriodicSweep()

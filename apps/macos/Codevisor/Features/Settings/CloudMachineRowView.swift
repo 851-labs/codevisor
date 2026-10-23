@@ -21,7 +21,7 @@ struct CloudMachineRowView: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(presence.name)
-        Text("Codevisor Cloud")
+        Text(subtitle)
           .font(.callout)
           .foregroundStyle(.secondary)
       }
@@ -68,5 +68,9 @@ struct CloudMachineRowView: View {
       Button("Disconnect…", role: .destructive, action: onRemove)
     }
     .accessibilityElement(children: .combine)
+  }
+
+  private var subtitle: String {
+    presence.ephemeral?.label ?? "Codevisor Cloud"
   }
 }

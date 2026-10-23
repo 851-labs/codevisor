@@ -33,6 +33,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   public var appVersion: String?
   public var publicKey: String
   public var tunnel: CloudTunnelInfo?
+  public var ephemeral: CloudEphemeralOrigin?
   public var online: Bool
   public var lastSeenAt: String
 
@@ -46,6 +47,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
     appVersion: String? = nil,
     publicKey: String,
     tunnel: CloudTunnelInfo? = nil,
+    ephemeral: CloudEphemeralOrigin? = nil,
     online: Bool,
     lastSeenAt: String
   ) {
@@ -56,6 +58,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
     self.appVersion = appVersion
     self.publicKey = publicKey
     self.tunnel = tunnel
+    self.ephemeral = ephemeral
     self.online = online
     self.lastSeenAt = lastSeenAt
   }

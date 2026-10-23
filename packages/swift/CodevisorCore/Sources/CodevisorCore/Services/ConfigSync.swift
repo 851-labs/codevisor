@@ -89,6 +89,15 @@ public final class ConfigSync {
     return true
   }
 
+  public func applyRemoteChange(
+    namespace: String,
+    entries incoming: [ServerSyncEntry],
+    fromMachine machineId: String
+  ) {
+    guard syncs(with: machineId) else { return }
+    applyRemoteChange(namespace: namespace, entries: incoming)
+  }
+
   public func applyRemoteChange(namespace: String, entries incoming: [ServerSyncEntry]) {
     if apply(namespace: namespace, incoming: incoming) {
       pushEverywhere(namespace: namespace)
@@ -96,6 +105,7 @@ public final class ConfigSync {
   }
 
   public func synchronize(machineId: String, namespaces: [String] = ConfigSync.namespaces) async {
+    guard syncs(with: machineId) else { return }
     let client = machines.client(for: machineId)
     if namespaces.contains("harness-shared-accounts"),
       await machines.cloudProvider?.prepareAccountSync(on: client, machineId: machineId) == true
@@ -135,6 +145,7 @@ public final class ConfigSync {
   }
 
   public func synchronizeMachine(_ machineId: String) async {
+    guard syncs(with: machineId) else { return }
     let client = machines.client(for: machineId)
     await synchronize(machineId: machineId)
     _ = try? await client.reconcileMcpsSync()
@@ -161,8 +172,7 @@ public final class ConfigSync {
   }
 
   public func synchronizeAll() async {
-    for machine in machines.allMachines
-    where machines.connectionsById[machine.id]?.status?.isReachable == true {
+    for machine in syncedMachines {
       let client = machines.client(for: machine.id)
       await synchronize(machineId: machine.id)
       _ = try? await client.reconcileMcpsSync()
@@ -174,9 +184,7 @@ public final class ConfigSync {
   }
 
   public func synchronizeSkills() async {
-    let reachable = machines.allMachines.filter {
-      machines.connectionsById[$0.id]?.status?.isReachable == true
-    }
+    let reachable = syncedMachines
     let missing = await collectMissingSkillBlobs(from: reachable)
     guard !missing.isEmpty else { return }
     await ferryMissingSkillBlobs(missing, reachable: reachable)
@@ -234,8 +242,7 @@ public final class ConfigSync {
 
   private func pushEverywhere(namespace: String) {
     let entries = loadNamespace(namespace)
-    for machine in machines.allMachines
-    where machines.connectionsById[machine.id]?.status?.isReachable == true {
+    for machine in syncedMachines {
       let client = machines.client(for: machine.id)
       Task {
         guard
@@ -248,6 +255,16 @@ public final class ConfigSync {
     if namespace == Self.skillsNamespace {
       Task { await synchronizeSkills() }
     }
+  }
+
+  private var syncedMachines: [CodevisorMachine] {
+    machines.allMachines.filter {
+      machines.connectionsById[$0.id]?.status?.isReachable == true && syncs(with: $0.id)
+    }
+  }
+
+  private func syncs(with machineId: String) -> Bool {
+    !machines.isEphemeral(machineId)
   }
 
   private func reconcile(namespace: String, machineId: String) async {
