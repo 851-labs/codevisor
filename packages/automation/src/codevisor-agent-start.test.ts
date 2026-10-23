@@ -15,6 +15,55 @@ afterEach(() => {
 })
 
 describe("agents.start", () => {
+  it("removes the agent and its worktree when its first message can't be sent", async () => {
+    const requests = fakeServer({ caller }, [], { failing: ["POST /v1/sessions/child/prompt"] })
+
+    await expect(
+      call(local, "agents.start", { title: "Fix login", prompt: "Go", isolation: "worktree" })
+    ).rejects.toThrow("POST /v1/sessions/child/prompt broke")
+
+    expect(requests.map(({ method, path }) => `${method} ${path}`).slice(-2)).toEqual([
+      "DELETE /v1/sessions/child",
+      "DELETE /v1/projects/project-1/worktrees/tree-1"
+    ])
+  })
+
+  it("removes only the worktree when the agent can't be created", async () => {
+    const requests = fakeServer({ caller }, [], { failing: ["POST /v1/sessions"] })
+
+    await expect(
+      call(local, "agents.start", { title: "Fix login", prompt: "Go", isolation: "worktree" })
+    ).rejects.toThrow("POST /v1/sessions broke")
+
+    expect(requests.map(({ method, path }) => `${method} ${path}`).slice(-2)).toEqual([
+      "POST /v1/sessions",
+      "DELETE /v1/projects/project-1/worktrees/tree-1"
+    ])
+  })
+
+  it("names a cleanup failure that isn't an Error", async () => {
+    fakeServer({ caller }, [], {
+      failing: ["POST /v1/sessions"],
+      unreachable: ["DELETE /v1/projects/project-1/worktrees/tree-1"]
+    })
+
+    await expect(
+      call(local, "agents.start", { title: "Fix login", prompt: "Go", isolation: "worktree" })
+    ).rejects.toThrow("also failed: connection reset")
+  })
+
+  it("says so when cleaning up a partly started agent fails too", async () => {
+    fakeServer({ caller }, [], {
+      failing: ["POST /v1/sessions/caller/subscriptions", "DELETE /v1/sessions/child"]
+    })
+
+    await expect(
+      call(local, "agents.start", { title: "Fix login", prompt: "Go", isolation: "project" })
+    ).rejects.toThrow(
+      /subscriptions broke.*Cleaning up the partly started agent also failed: .*DELETE \/v1\/sessions\/child broke/
+    )
+  })
+
   it("creates a worktree, the agent on the caller's defaults, its first prompt, and the caller's subscription", async () => {
     const requests = fakeServer({ caller })
 
@@ -38,8 +87,8 @@ describe("agents.start", () => {
       "GET /v1/sessions/caller",
       "POST /v1/projects/project-1/worktrees",
       "POST /v1/sessions",
-      "POST /v1/sessions/child/prompt",
-      "POST /v1/sessions/caller/subscriptions"
+      "POST /v1/sessions/caller/subscriptions",
+      "POST /v1/sessions/child/prompt"
     ])
     expect(bodyOf(requests, "POST", "/v1/projects/project-1/worktrees")).toEqual({
       name: "Fix login"

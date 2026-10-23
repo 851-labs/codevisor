@@ -42,10 +42,25 @@ export const startAgent = async (tool: AgentToolContext, raw: unknown): Promise<
   const projectId = await resolveProjectId(tool, args.project, caller)
   const harnessId = harnessFor(args, caller)
 
-  const placement = await placementFor(tool, args, projectId, caller)
-  const agent = await createAgent(tool, args, { projectId, harnessId, placement, caller })
+  const rollback = makeRollback()
+  try {
+    return await startPlanned(tool, args, { projectId, harnessId, caller }, rollback)
+  } catch (cause) {
+    throw await rollback.undo(cause)
+  }
+}
+
+const startPlanned = async (
+  tool: AgentToolContext,
+  args: StartAgentArgs,
+  plan: Omit<AgentPlan, "placement">,
+  rollback: Rollback
+): Promise<StartedAgent> => {
+  const placement = await placementFor(tool, args, plan.projectId, plan.caller, rollback)
+  const agent = await createAgent(tool, args, { ...plan, placement })
+  rollback.push(() => tool.api("DELETE", `/v1/sessions/${encodeURIComponent(agent.id)}`))
+  const subscribed = await subscribeCaller(tool, agent.id, plan.caller)
   const delivery = await sendFirstPrompt(tool, agent.id, args.prompt)
-  const subscribed = await subscribeCaller(tool, agent.id, caller)
 
   return {
     agentId: agent.id,
@@ -107,17 +122,45 @@ const placementFor = async (
   tool: AgentToolContext,
   args: StartAgentArgs,
   projectId: string,
-  caller: AgentCaller
+  caller: AgentCaller,
+  rollback: Rollback
 ): Promise<Placement> => {
   if (args.isolation === "shared") return sharedPlacement(projectId, caller)
   if (args.isolation === "project") return { workspaceId: randomUUID() }
+  const worktrees = `/v1/projects/${encodeURIComponent(projectId)}/worktrees`
   const worktree = Schema.decodeUnknownSync(Worktree)(
-    await tool.api("POST", `/v1/projects/${encodeURIComponent(projectId)}/worktrees`, {
-      body: { name: args.title }
-    })
+    await tool.api("POST", worktrees, { body: { name: args.title } })
   )
+  rollback.push(() => tool.api("DELETE", `${worktrees}/${encodeURIComponent(worktree.id)}`))
   return { workspaceId: randomUUID(), worktreeName: worktree.name }
 }
+
+interface Rollback {
+  readonly push: (step: () => Promise<unknown>) => void
+  readonly undo: (cause: unknown) => Promise<unknown>
+}
+
+const makeRollback = (): Rollback => {
+  const steps: Array<() => Promise<unknown>> = []
+  return {
+    push: (step) => {
+      steps.push(step)
+    },
+    undo: async (cause) => {
+      try {
+        for (const step of steps.toReversed()) await step()
+        return cause
+      } catch (cleanup) {
+        return new Error(
+          `${messageOf(cause)} Cleaning up the partly started agent also failed: ${messageOf(cleanup)}`
+        )
+      }
+    }
+  }
+}
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
 
 const sharedPlacement = (projectId: string, caller: AgentCaller): Placement => {
   if (caller.workspaceId === undefined || caller.projectId !== projectId) {

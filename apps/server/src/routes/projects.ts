@@ -20,6 +20,7 @@ import {
   HttpFailure,
   localLocationOrFail,
   matchRoute,
+  matchRouteParams,
   readSchema,
   run,
   worktreeTrashRoot,
@@ -39,6 +40,8 @@ import { reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { createScratchProject } from "./project-scratch.js"
 import { routeProjectSetupSource, routeReadProjectEnvFiles } from "./project-setup-source.js"
 import { createProjectWorktree } from "./project-worktree-create.js"
+import { deleteUnusedProjectWorktree } from "./project-worktree-delete.js"
+import { routeParam } from "./route-params.js"
 
 export { probeProject } from "./project-probe.js"
 
@@ -116,6 +119,12 @@ export const routeProjects = async (
       request,
       response
     )
+  const worktreeRoute = matchRouteParams(url.pathname, "/v1/projects/:id/worktrees/:worktreeId")
+  if (worktreeRoute !== undefined && request.method === "DELETE") {
+    const projectWorktreeId = routeParam(worktreeRoute, "id")
+    const worktreeId = routeParam(worktreeRoute, "worktreeId")
+    return deleteUnusedProjectWorktree(services, serverId, projectWorktreeId, worktreeId, response)
+  }
   return false
 }
 
