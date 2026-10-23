@@ -1,5 +1,6 @@
 import type { EventEnvelope, PromptQueueItem, SessionSummary, TranscriptPage } from "@codevisor/api"
 
+import { queueSystemPromptFirst, restartNotice, taskDescriptions } from "../restart-notice.js"
 import {
   appendAndPublish,
   run,
@@ -49,7 +50,7 @@ const reconcileSession = async (
   if (hasOrphanedTurn && page.pendingQuestion !== undefined) {
     await cancelPersistedQuestion(services, fanout, serverId, session.id, page.pendingQuestion)
   }
-  if (hasOrphanedTasks) await clearBackgroundTasks(services, fanout, serverId, session.id)
+  if (hasOrphanedTasks) await stopOrphanedTasks(context, session.id, page)
   if (processingPrompts.length > 0) {
     await restorePromptMessages(context, session.id, processingPrompts)
   }
@@ -135,6 +136,16 @@ const cancelPersistedQuestion = (
     sessionUpdate: "question_resolved",
     serverId
   })
+
+const stopOrphanedTasks = async (
+  { services, fanout, serverId }: RecoveryContext,
+  sessionId: string,
+  page: TranscriptPage
+): Promise<void> => {
+  const stoppedTasks = taskDescriptions(page.backgroundTasks!)
+  await queueSystemPromptFirst(services, sessionId, restartNotice(stoppedTasks))
+  await clearBackgroundTasks(services, fanout, serverId, sessionId)
+}
 
 const clearBackgroundTasks = (
   services: CodevisorServerServices,

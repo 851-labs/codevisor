@@ -1,4 +1,5 @@
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
+import { isRestartNotice, queueSystemPromptFirst, restartNotice } from "./restart-notice.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
 import {
   failureMessage,
@@ -74,12 +75,13 @@ export const continueAfterUpdate = async (
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
-  { sessionId }: PausedTurn
+  turn: PausedTurn
 ): Promise<void> => {
+  const { sessionId } = turn
   forgetUpdatePause(services, sessionId)
   if (!(await canContinue(services, routeState, sessionId))) return
 
-  await queueContinueFirst(services, sessionId)
+  await queueResumeFirst(services, turn)
   void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
 }
 
@@ -93,19 +95,15 @@ const canContinue = async (
   return !(await sessionIsArchived(services, session))
 }
 
-const queueContinueFirst = async (
+const queueResumeFirst = async (
   services: CodevisorServerServices,
-  sessionId: string
+  turn: PausedTurn
 ): Promise<void> => {
-  const item = await run(
-    services.db.createPromptQueueItem(
-      sessionId,
-      UPDATE_CONTINUE_PROMPT,
-      [],
-      undefined,
-      undefined,
-      "system"
-    )
-  )
-  await run(services.db.reorderPromptQueue(sessionId, [item.id]))
+  const queued = await run(services.db.listPromptQueue(turn.sessionId))
+  if (queued.some(isRestartNotice)) return
+
+  await queueSystemPromptFirst(services, turn.sessionId, resumePrompt(turn))
 }
+
+const resumePrompt = ({ stoppedTasks = [] }: PausedTurn): string =>
+  stoppedTasks.length === 0 ? UPDATE_CONTINUE_PROMPT : restartNotice(stoppedTasks)

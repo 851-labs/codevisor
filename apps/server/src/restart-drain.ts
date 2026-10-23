@@ -1,8 +1,9 @@
-import type { RestartDrainState, SessionUpdateGate } from "@codevisor/api"
+import type { RestartDrainState, SessionUpdateGate, TranscriptPage } from "@codevisor/api"
 
 import { makePauseFinalizer } from "./pause-finalizer.js"
 import { allChats, sameScope, scopeIncludes, widenScope, type PauseScope } from "./pause-scope.js"
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
+import { taskDescriptions } from "./restart-notice.js"
 import type { RestartSnapshotStore } from "./restart-snapshot.js"
 import {
   appendAndPublish,
@@ -24,6 +25,7 @@ export const RESTART_GATE_HARNESS_NAME = "Codevisor"
 interface PauseTarget {
   readonly agentSessionId: string
   readonly turn: PausedTurn
+  readonly runningTasks: ReadonlyArray<string>
 }
 
 export interface RestartCoordinator {
@@ -135,9 +137,11 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const pauseTarget = async (sessionId: string): Promise<PauseTarget | undefined> => {
     try {
       const session = await run(services.db.getSessionSummary(sessionId))
+      const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
       return {
         agentSessionId: agentSessionIdOf(session),
-        turn: await pausedTurnOf(services, sessionId)
+        turn: pausedTurnOf(sessionId, page),
+        runningTasks: taskDescriptions(page.backgroundTasks!)
       }
     } catch (cause) {
       log(`Restart drain could not pause ${sessionId}: ${failureMessage(cause)}`)
@@ -145,11 +149,20 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     }
   }
 
-  const interruptTurn = async ({ agentSessionId, turn }: PauseTarget): Promise<void> => {
+  const interruptTurn = async (target: PauseTarget): Promise<void> => {
+    const { agentSessionId, turn } = target
     markPausingForUpdate(services, turn.sessionId)
-    await run(services.agents.cancel(agentSessionId)).catch((cause: unknown) => {
+    const outcome = await run(services.agents.cancel(agentSessionId)).catch((cause: unknown) => {
       log(`Restart drain could not interrupt ${turn.sessionId}: ${failureMessage(cause)}`)
+      return undefined
     })
+    if (outcome?.runtimeState === "retire") recordRetiredTasks(target)
+  }
+
+  const recordRetiredTasks = ({ turn, runningTasks }: PauseTarget): void => {
+    if (runningTasks.length === 0) return
+
+    pausedTurns.add([{ ...turn, stoppedTasks: runningTasks }])
   }
 
   const pauseLiveTurns = async (myGeneration: number, pauseScope: PauseScope): Promise<void> => {
@@ -189,7 +202,9 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
 
   const finalizer = makePauseFinalizer({
     services,
+    fanout,
     snapshot: deps.snapshot,
+    pausedTurns,
     heldSessionIds: () => [...turns.restartHeldSessions.keys()],
     destructive,
     log
@@ -337,12 +352,9 @@ const agentSessionIdOf = (session: {
     ? session.id
     : session.agentSessionId
 
-const pausedTurnOf = async (
-  services: CodevisorServerServices,
-  sessionId: string
-): Promise<PausedTurn> => {
+const pausedTurnOf = (sessionId: string, page: TranscriptPage): PausedTurn => {
   const pausedAt = new Date().toISOString()
-  const latest = (await run(services.db.getTranscriptPage(sessionId, undefined, 1))).items.at(-1)
+  const latest = page.items.at(-1)
   const turnId = latest?.isGenerating === true ? latest.turnId : undefined
   return {
     sessionId,

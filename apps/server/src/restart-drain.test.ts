@@ -12,15 +12,22 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "./changes-test-support.js"
+import { restartNotice } from "./restart-notice.js"
 import { pauseForUpdate, restartStatePaths } from "./restart-test-support.js"
 import { UPDATING_MESSAGE } from "./routes/prompt-delivery.js"
-import type { CodevisorServerUpdater, RunningCodevisorServer } from "./server.js"
+import {
+  defaultServerConfig,
+  startCodevisorServer,
+  type CodevisorServerUpdater,
+  type RunningCodevisorServer
+} from "./server.js"
 import {
   archiveSessionViaWorkspace,
   bodyId,
   jsonRequest,
   makeServices,
   run,
+  runningServers,
   startWithApp,
   tempDirs,
   waitFor,
@@ -211,6 +218,44 @@ describe("restart drain", () => {
     expect((await jsonRequest(restarted, "/v1/restart/drain")).body).toMatchObject({
       state: "idle"
     })
+  })
+
+  it("resumes a chat that was idle waiting on background tasks and tells it they stopped", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const paths = restartStatePaths()
+    const server = await startWithApp(services, undefined, paths)
+    const waiting = await openSession(server, "Waiting")
+    expect((await prompt(server, waiting, "start the monitor")).status).toBe(202)
+    await waitFor(async () => (await lastAssistant(server, waiting))?.isGenerating === false)
+    await run(
+      services.db.appendEvent("session.updated", waiting, {
+        backgroundTasks: [
+          { id: "monitor", description: "Monitor CI", status: "running", taskType: "monitor" }
+        ]
+      })
+    )
+
+    await pauseForUpdate(server)
+
+    expect(await run(services.db.getTranscriptPage(waiting, undefined, 1))).toMatchObject({
+      backgroundTasks: []
+    })
+    expect(JSON.parse(readFileSync(paths.pausedTurnsPath, "utf8"))).toEqual({
+      turns: [{ sessionId: waiting, pausedAt: expect.any(String), stoppedTasks: ["Monitor CI"] }]
+    })
+    await run(server.close)
+
+    runningServers.push(
+      await run(
+        startCodevisorServer(
+          services,
+          defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0, ...paths })
+        )
+      )
+    )
+    await waitFor(() => !existsSync(paths.pausedTurnsPath))
+    await waitFor(() => agents.prompts.length === 2)
+    expect(agents.prompts[1]).toEqual(["agent-codex-repo", restartNotice(["Monitor CI"])])
   })
 
   it("reloads snapshot sessions with held work but not idle, archived or missing ones", async () => {

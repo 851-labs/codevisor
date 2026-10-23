@@ -7,6 +7,7 @@ import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
+import { restartNotice } from "../restart-notice.js"
 import {
   defaultServerConfig,
   makeEventFanout,
@@ -21,7 +22,8 @@ import {
   runningServers,
   startWithApp,
   tempDirs,
-  listSubjectEvents
+  listSubjectEvents,
+  waitFor
 } from "../test-support.js"
 
 const isQuestionResolution = (payload: unknown): boolean =>
@@ -51,25 +53,6 @@ describe("durable session turns", () => {
       })
     )
 
-    const backgroundOnly = await run(
-      services.db.createSession({
-        projectId: project.id,
-        harnessId: "codex",
-        agentSessionId: "background-only-agent"
-      })
-    )
-    await run(
-      services.db.appendEvent("session.updated", backgroundOnly.id, {
-        backgroundTasks: [
-          {
-            id: "background-only-task",
-            description: "Run detached work",
-            status: "running",
-            taskType: "shell"
-          }
-        ]
-      })
-    )
     const archived = await run(
       services.db.createSession({
         projectId: project.id,
@@ -118,18 +101,6 @@ describe("durable session turns", () => {
         ]
       })
     )
-    await run(
-      services.db.appendEvent("session.updated", session.id, {
-        backgroundTasks: [
-          {
-            id: "orphaned-background-task",
-            description: "Run checks",
-            status: "running",
-            taskType: "shell"
-          }
-        ]
-      })
-    )
 
     const server = await run(
       startCodevisorServer(
@@ -142,10 +113,6 @@ describe("durable session turns", () => {
     expect(agents.loads).toEqual([])
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(page.pendingQuestion).toBeUndefined()
-    expect(page.backgroundTasks).toEqual([])
-    expect(
-      (await run(services.db.getTranscriptPage(backgroundOnly.id, undefined, 8))).backgroundTasks
-    ).toEqual([])
     expect(
       (await run(services.db.getTranscriptPage(archived.id, undefined, 8))).items.at(-1)
     ).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
@@ -179,6 +146,55 @@ describe("durable session turns", () => {
       (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
     ).toBe(200)
     expect(agents.loads).toEqual([["codex", "agent-before-crash", folder]])
+  })
+
+  it("tells agents whose background tasks died in a crash, once, ahead of their queued prompts", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-recovery-tasks-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const seedSession = async (agentSessionId: string, description: string) => {
+      const session = await run(
+        services.db.createSession({ projectId: project.id, harnessId: "codex", agentSessionId })
+      )
+      await run(
+        services.db.appendEvent("session.updated", session.id, {
+          backgroundTasks: [
+            { id: `${agentSessionId}-task`, description, status: "running", taskType: "shell" }
+          ]
+        })
+      )
+      return session
+    }
+    const midTurn = await seedSession("agent-mid-turn", "Run   the\nchecks")
+    await run(
+      services.db.appendEvent("session.updated", midTurn.id, {
+        initiatedBy: "user",
+        turnId: "crashed-turn",
+        turnState: "started"
+      })
+    )
+    await run(services.db.createPromptQueueItem(midTurn.id, "queued earlier"))
+    const waiting = await seedSession("agent-waiting", "Monitor the deploy")
+
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
+    )
+    runningServers.push(server)
+
+    await waitFor(() => agents.prompts.length === 3)
+    expect(agents.prompts.filter(([agent]) => agent === "agent-mid-turn")).toEqual([
+      ["agent-mid-turn", restartNotice(["Run the checks"])],
+      ["agent-mid-turn", "queued earlier"]
+    ])
+    expect(agents.prompts).toContainEqual(["agent-waiting", restartNotice(["Monitor the deploy"])])
+    for (const session of [midTurn, waiting]) {
+      const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
+      expect(page.backgroundTasks).toEqual([])
+    }
   })
 
   it("returns cancel success only after the durable transcript is terminal", async () => {

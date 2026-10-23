@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeFilePausedTurnStore, type PausedTurn } from "./paused-turns.js"
+import { queueSystemPromptFirst, restartNotice } from "./restart-notice.js"
 import { drainPromptQueue } from "./routes/prompt-queue.js"
 import { makeEventFanout } from "./server-context.js"
 import {
@@ -149,10 +150,11 @@ const makeChat = async () => {
   await run(services.db.createPromptQueueItem(session.id, "queued earlier"))
   const queuedTexts = async () =>
     (await run(services.db.listPromptQueue(session.id))).map((item) => item.text)
-  const continueChat = () =>
+  const continueChat = (stoppedTasks?: ReadonlyArray<string>) =>
     continueAfterUpdate(services, fanout, routeState, "server-a", {
       sessionId: session.id,
-      pausedAt
+      pausedAt,
+      ...(stoppedTasks === undefined ? {} : { stoppedTasks })
     })
   return { fanout, services, routeState, project, session, queuedTexts, continueChat }
 }
@@ -168,6 +170,27 @@ describe("continuing a paused chat", () => {
       ["continue", "system"],
       ["queued earlier", undefined]
     ])
+  })
+
+  it("tells a chat its background tasks stopped instead of just continuing", async () => {
+    const chat = await makeChat()
+
+    await chat.continueChat(["npm run dev", "Monitor CI"])
+
+    expect(await chat.queuedTexts()).toEqual([
+      restartNotice(["npm run dev", "Monitor CI"]),
+      "queued earlier"
+    ])
+  })
+
+  it("does not add a continue behind a restart notice crash recovery already queued", async () => {
+    const chat = await makeChat()
+    const notice = restartNotice(["Monitor CI"])
+    await queueSystemPromptFirst(chat.services, chat.session.id, notice)
+
+    await chat.continueChat(["Monitor CI"])
+
+    expect(await chat.queuedTexts()).toEqual([notice, "queued earlier"])
   })
 
   it("holds queued work for a chat until its continue fires", async () => {

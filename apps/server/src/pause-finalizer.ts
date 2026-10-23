@@ -1,6 +1,15 @@
 import { scopeIncludes, type PauseScope } from "./pause-scope.js"
+import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
+import { sessionTaskDescriptions } from "./restart-notice.js"
 import type { RestartSnapshotStore } from "./restart-snapshot.js"
-import { failureMessage, run, type CodevisorServerServices } from "./server-context.js"
+import {
+  appendAndPublish,
+  failureMessage,
+  run,
+  swallowError,
+  type CodevisorServerServices,
+  type EventFanout
+} from "./server-context.js"
 
 export interface PauseFinalizer {
   readonly finalize: (scope: PauseScope, isCurrent: () => boolean) => Promise<void>
@@ -8,14 +17,21 @@ export interface PauseFinalizer {
 
 export interface PauseFinalizerDeps {
   readonly services: CodevisorServerServices
+  readonly fanout: EventFanout
   readonly snapshot: RestartSnapshotStore
+  readonly pausedTurns: PausedTurnStore
   readonly heldSessionIds: () => ReadonlyArray<string>
   readonly destructive: (work: Promise<unknown>) => Promise<void>
   readonly log: (line: string) => void
 }
 
+interface StoppedTasks {
+  readonly sessionId: string
+  readonly tasks: ReadonlyArray<string>
+}
+
 export const makePauseFinalizer = (deps: PauseFinalizerDeps): PauseFinalizer => {
-  const { services, snapshot, destructive, log } = deps
+  const { services, snapshot, pausedTurns, destructive, log } = deps
 
   const closeSessions = async (
     agentSessionIds: ReadonlyArray<string>,
@@ -31,20 +47,42 @@ export const makePauseFinalizer = (deps: PauseFinalizerDeps): PauseFinalizer => 
     }
   }
 
-  const sessionsToResume = async (): Promise<ReadonlyArray<string>> => {
-    const ids = new Set<string>([
-      ...(await run(services.db.listSessionsRequiringResume)),
-      ...deps.heldSessionIds()
-    ])
-    return [...ids].toSorted()
+  const withHeldSessions = (required: ReadonlyArray<string>): ReadonlyArray<string> =>
+    [...new Set([...required, ...deps.heldSessionIds()])].toSorted()
+
+  const runningTasks = async (
+    sessionIds: ReadonlyArray<string>
+  ): Promise<ReadonlyArray<StoppedTasks>> => {
+    const found = await Promise.all(
+      sessionIds.map(async (sessionId) => ({
+        sessionId,
+        tasks: await sessionTaskDescriptions(services, sessionId)
+      }))
+    )
+    return found.filter((entry) => entry.tasks.length > 0)
+  }
+
+  const markStopped = async ({ sessionId, tasks }: StoppedTasks): Promise<void> => {
+    const paused = pausedTurns.read().find((turn) => turn.sessionId === sessionId)
+    pausedTurns.add([{ ...(paused ?? idleTurn(sessionId)), stoppedTasks: tasks }])
+    await appendAndPublish(services.db, deps.fanout, "session.updated", sessionId, {
+      backgroundTasks: []
+    }).catch(swallowError)
+  }
+
+  const markAllStopped = async (stopped: ReadonlyArray<StoppedTasks>): Promise<void> => {
+    for (const entry of stopped) await markStopped(entry)
   }
 
   const beforeRestart = async (isCurrent: () => boolean): Promise<void> => {
-    const resume = await sessionsToResume()
+    const required = await run(services.db.listSessionsRequiringResume)
+    const stopping = await runningTasks(required)
     if (!isCurrent()) return
 
+    const resume = withHeldSessions(required)
     snapshot.write(resume)
     await closeSessions(services.agents.loadedAgentSessionIds(), isCurrent)
+    if (isCurrent()) await markAllStopped(stopping)
     log(
       `Restart drain complete: ${resume.length} session${resume.length === 1 ? "" : "s"} will resume after the restart`
     )
@@ -77,3 +115,8 @@ export const makePauseFinalizer = (deps: PauseFinalizerDeps): PauseFinalizer => 
     }
   }
 }
+
+const idleTurn = (sessionId: string): PausedTurn => ({
+  sessionId,
+  pausedAt: new Date().toISOString()
+})

@@ -257,6 +257,69 @@ describe("restart coordinator", () => {
     coordinator.close()
   })
 
+  it("records which background tasks a pause stops, including ones a retired harness dropped", async () => {
+    const harness = await makeHarness()
+    const { sessions, turns, services } = harness
+    const project = (await run(services.db.listProjects))[0]!
+    const watcher = await run(
+      services.db.createSession({
+        agentSessionId: "agent-watcher",
+        harnessId: "codex",
+        projectId: project.id,
+        title: "Watcher"
+      })
+    )
+    const setTasks = (sessionId: string, descriptions: ReadonlyArray<string>) =>
+      run(
+        services.db.appendEvent("session.updated", sessionId, {
+          backgroundTasks: descriptions.map((description) => ({
+            id: description,
+            description,
+            status: "running",
+            taskType: "shell"
+          }))
+        })
+      )
+    await setTasks(sessions.live.id, ["npm run dev"])
+    await setTasks(watcher.id, ["Monitor CI"])
+    for (const sessionId of [sessions.live.id, sessions.fresh.id, watcher.id]) {
+      turns.activeTurnSessions.add(sessionId)
+    }
+    const retiring = new Map([
+      ["agent-live", sessions.live.id],
+      [sessions.fresh.id, sessions.fresh.id]
+    ])
+    const coordinator = harness.make({
+      cancel: (agentSessionId) =>
+        Effect.promise(async () => {
+          turns.activeTurnSessions.clear()
+          const retired = retiring.get(agentSessionId)
+          if (retired === undefined) return { runtimeState: "reusable" as const }
+          await setTasks(retired, [])
+          return { runtimeState: "retire" as const }
+        })
+    })
+
+    expect((await coordinator.begin()).state).toBe("drained")
+
+    expect(harness.pausedTurns.read()).toHaveLength(3)
+    expect(harness.pausedTurns.read()).toEqual(
+      expect.arrayContaining([
+        {
+          sessionId: sessions.live.id,
+          pausedAt: expect.any(String),
+          stoppedTasks: ["npm run dev"]
+        },
+        { sessionId: sessions.fresh.id, pausedAt: expect.any(String) },
+        { sessionId: watcher.id, pausedAt: expect.any(String), stoppedTasks: ["Monitor CI"] }
+      ])
+    )
+    expect(await run(services.db.getTranscriptPage(watcher.id, undefined, 1))).toMatchObject({
+      backgroundTasks: []
+    })
+    coordinator.close()
+  })
+
   it("tolerates harnesses that refuse to stop and closes them after the settle time", async () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
