@@ -113,58 +113,6 @@ struct AppEnvironmentTests {
     #expect(environment.pluginStateRevision(for: "local") == 0)
   }
 
-  @Test("Onboarding with a project folder adds the project without importing old chats")
-  func onboardingImportsProjectSessions() async {
-    let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
-
-    let project = await environment.finishOnboarding(
-      projectFolder: URL(fileURLWithPath: "/Users/me/src/website")
-    )
-
-    #expect(environment.settings.hasCompletedOnboarding)
-    #expect(!environment.settings.importExternalSessions)
-    #expect(!environment.projectList.showsImportedSessions)
-    #expect(environment.projectList.fleetSessions(in: project).isEmpty)
-  }
-
-  @Test("Onboarding with multiple folders adds every project and returns the first")
-  func onboardingAddsMultipleProjects() async {
-    let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
-
-    let first = await environment.finishOnboarding(projectFolders: [
-      URL(fileURLWithPath: "/Users/me/src/website"),
-      URL(fileURLWithPath: "/Users/me/src/Codevisor"),
-      URL(fileURLWithPath: "/Users/me/src/website"),
-    ])
-
-    #expect(environment.settings.hasCompletedOnboarding)
-    #expect(first?.folderURL.path == "/Users/me/src/website")
-    #expect(
-      environment.projectList.projects.map(\.folderURL.path).sorted()
-        == ["/Users/me/src/Codevisor", "/Users/me/src/website"])
-  }
-
-  @Test("Onboarding publishes completion after registering projects")
-  func onboardingPublishesCompletionLast() async {
-    let events = OnboardingCompletionEvents()
-    let settingsStore = OnboardingSettingsStore(events: events)
-    let environment = AppEnvironment(
-      configCache: ConfigOptionCache(store: InMemoryStore()),
-      settings: AppSettingsModel(store: settingsStore)
-    )
-    settingsStore.beforeCompletion = { [weak environment] in
-      MainActor.assumeIsolated {
-        if environment?.projectList.projects.isEmpty == false { events.record("projects registered") }
-      }
-    }
-
-    _ = await environment.finishOnboarding(projectFolders: [
-      URL(fileURLWithPath: "/Users/me/src/website")
-    ])
-
-    #expect(events.snapshot == ["projects registered", "onboarding completed"])
-  }
-
   @Test("Importable sessions are scoped to the folder and exclude known ones")
   func importableSessionsScopedToFolder() async {
     let environment = AppEnvironment.preview(seedProjects: [])
@@ -302,44 +250,5 @@ struct AppEnvironmentTests {
         if case .setWorkspaceArchived = entry.intent { return true }
         return false
       })
-  }
-}
-
-private final class OnboardingCompletionEvents: @unchecked Sendable {
-  private let lock = NSLock()
-  private var events: [String] = []
-
-  var snapshot: [String] { lock.withLock { events } }
-
-  func record(_ event: String) {
-    lock.withLock { events.append(event) }
-  }
-}
-
-private final class OnboardingSettingsStore: PersistenceStore, @unchecked Sendable {
-  private let backing = InMemoryStore()
-  private let events: OnboardingCompletionEvents
-  var beforeCompletion: (() -> Void)?
-
-  init(events: OnboardingCompletionEvents) {
-    self.events = events
-  }
-
-  func loadData(forKey key: String) -> Data? {
-    backing.loadData(forKey: key)
-  }
-
-  func saveData(_ data: Data, forKey key: String) throws {
-    try backing.saveData(data, forKey: key)
-    guard key == "settings",
-      let settings = try? JSONDecoder().decode(AppSettings.self, from: data),
-      settings.hasCompletedOnboarding
-    else { return }
-    beforeCompletion?()
-    events.record("onboarding completed")
-  }
-
-  func removeData(forKey key: String) throws {
-    try backing.removeData(forKey: key)
   }
 }

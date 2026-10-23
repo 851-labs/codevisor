@@ -17,8 +17,8 @@ Enforced at commit time by `scripts/check-typography.sh`.
 4. **Recurring sizes are tokens**, not call-site literals:
    - `Typography.IconSize` — `.compact`/`.disclosure` (10), `.chrome` (12),
      `.toolbar` (13), `.hero` (34) for `Image(systemName:)` glyphs.
-   - `Font.heroTitle` (36), `.stepTitle` (28), `.emptyStateTitle` (26),
-     `.tabLabel(weight:)` (11.5) for display/chrome text.
+   - `Font.emptyStateTitle` (26), `.tabLabel(weight:)` (11.5) for
+     display/chrome text.
 5. **Fixed frames around text or glyphs must scale on iOS** — use
    `.scaledFrame(width:height:relativeTo:)` instead of `.frame` so containers
    grow with Dynamic Type (no-op on macOS).

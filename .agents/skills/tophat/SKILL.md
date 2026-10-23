@@ -91,7 +91,7 @@ path affected by the change. For a CLI or backend-only change, exercise its
 actual command or API and inspect the observable result. Do not substitute
 mocked responses for the integration being verified.
 
-When a fresh dev app opens in onboarding and the change isn't about
+When a fresh iOS dev app opens in onboarding and the change isn't about
 onboarding itself, get through it quickly: sign in with "Use Development
 Account", and choose "Set Up Later" on every step that offers it. For basic
 tophatting, start chats with "No project" unless the change needs a specific

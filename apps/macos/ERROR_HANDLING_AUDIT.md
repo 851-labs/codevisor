@@ -33,7 +33,6 @@ User clicks/taps something, it fails, and *nothing happens*:
 | `Codevisor/Features/Session/AttachmentViews.swift:192` | `try? data.write(to:)` | Silent save failure |
 | `Codevisor/Features/Session/SessionController.swift:735/739` | `try?` read of dropped/picked attachment file | Unreadable file silently vanishes from composer (oversized files *do* surface) |
 | `Codevisor/Features/Updates/AppUpdateInstaller.swift:103` | `try? helper.run()` then `NSApp.terminate` | Relaunch helper fails → app quits after update and never comes back |
-| `Codevisor/Features/Onboarding/OnboardingView.swift:273` | `try? rescanHarnesses()` | "Rescan" button silently no-ops |
 | `CodevisorCore/ViewModels/SessionModel.swift:399` | `try? transport.setMode(...)`, then optimistic UI update | Mode picker shows new mode; server never switched |
 | `CodevisorCore/ViewModels/SessionModel.swift:577` | `try? setConfigOption(...)` on restore | UI shows model/effort selection agent didn't get |
 | `CodevisorCore/ViewModels/ProjectListModel.swift:498-518` | `try?` on all server-side deletes | Deleted project/session reappears on next refresh |

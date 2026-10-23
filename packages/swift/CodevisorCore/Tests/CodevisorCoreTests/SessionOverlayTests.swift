@@ -59,35 +59,15 @@ struct SessionOverlayTests {
     #expect(!AppSettingsModel(store: store).shareCrashReports)
   }
 
-  @Test("Importing creates projects by cwd and dedups")
-  func importing() {
-    let model = makeModel()
-    let imported = [
-      ImportedSession(
-        harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build")),
-      ImportedSession(harnessId: "codex", info: SessionInfo(sessionId: "b", cwd: "/Users/x/proj", title: "Fix")),
-      ImportedSession(
-        harnessId: "claude-code", info: SessionInfo(sessionId: "c", cwd: "/Users/x/other", title: "Docs")),
-    ]
-    model.importSessions(imported, serverId: "local")
-    model.importSessions(imported, serverId: "local")
-
-    #expect(model.projects.count == 2)
-    #expect(model.sessions.count == 3)
-    #expect(model.sessions.allSatisfy { $0.origin == .imported })
-    let proj = model.projects.first { $0.folderURL.path == "/Users/x/proj" }!
-    #expect(model.fleetSessions(in: proj).count == 2)
-  }
-
   @Test("Imported sessions and their projects hide when import is off")
-  func gating() {
-    let model = makeModel()
-    model.importSessions(
-      [
-        ImportedSession(
-          harnessId: "codex", info: SessionInfo(sessionId: "a", cwd: "/Users/x/proj", title: "Build"))
-      ], serverId: "local")
-    let proj = model.projects.first!
+  func gating() async {
+    let fixture = NavigationFixture()
+    let model = fixture.projectList
+    let proj = Project.fromFolder(URL(fileURLWithPath: "/Users/x/proj"), origin: .imported)
+    await fixture.install(
+      projects: [proj],
+      sessions: [ChatSession(projectId: proj.id, harnessId: "codex", title: "Build", origin: .imported)]
+    )
 
     model.showsImportedSessions = false
     #expect(model.fleetSessions(in: proj).isEmpty)
@@ -133,16 +113,6 @@ struct SessionOverlayTests {
     #expect(!environment.settings.hasCompletedOnboarding)
     #expect(!environment.settings.alphaUpdatesEnabled)
     #expect(!environment.appUpdate.allowsAlphaUpdates)
-  }
-
-  @Test("finishOnboarding with a project folder adds a project")
-  func onboardingAddsProject() async {
-    let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)
-    let folder = URL(fileURLWithPath: "/tmp/my-project")
-    let project = await environment.finishOnboarding(importExternalSessions: false, projectFolder: folder)
-    #expect(environment.settings.hasCompletedOnboarding)
-    #expect(project?.folderURL == folder)
-    #expect(environment.projectList.projects.contains { $0.folderURL == folder })
   }
 
   @Test("SessionImporter fetches across ready harnesses")

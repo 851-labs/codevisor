@@ -45,7 +45,6 @@ public final class ConfigOptionCache {
   @ObservationIgnored private var capabilityRefreshes: [CapabilityRefreshKey: CapabilityRefresh] = [:]
   @ObservationIgnored private var capabilityValidatedAt: [CapabilityRefreshKey: Date] = [:]
   private static let capabilityFreshnessInterval: TimeInterval = 5 * 60
-  @ObservationIgnored private var provisionalCapabilityServers: Set<String> = []
   private var harnessSkillsCache: [HarnessSkillsKey: SessionSkills] = [:]
   private var codevisorSkillsCache: [CodevisorSkillsScope: [ServerComposerSkill]] = [:]
   @ObservationIgnored private var codevisorSkillRefreshes: [CodevisorSkillsScope: CodevisorSkillsRefresh] = [:]
@@ -205,32 +204,11 @@ public final class ConfigOptionCache {
     capabilityValidatedAt[key] = Date()
   }
 
-  public func seedHarnesses(_ harnesses: [ServerHarness], forServer serverId: String) {
-    guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
-      return
-    }
-    let capabilities =
-      harnesses
-      .filter { $0.enabled && $0.isReady }
-      .map {
-        ServerHarnessCapability(
-          harness: $0,
-          modes: nil,
-          configOptions: [],
-          supportsGoals: nil
-        )
-      }
-    guard !capabilities.isEmpty else { return }
-    capabilitiesCache[serverId] = capabilities
-    provisionalCapabilityServers.insert(serverId)
-  }
-
   public func needsCapabilityWarm(forServer serverId: String) -> Bool {
-    capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId)
+    capabilitiesCache[serverId] == nil
   }
 
   public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
-    provisionalCapabilityServers.remove(serverId)
     capabilitiesCache[serverId] = capabilities.map(Self.withoutSkills)
     for capability in capabilities {
       cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
@@ -239,7 +217,6 @@ public final class ConfigOptionCache {
   }
 
   public func store(_ capability: ServerHarnessCapability, forServer serverId: String) {
-    provisionalCapabilityServers.remove(serverId)
     var capabilities = capabilitiesCache[serverId] ?? []
     let capability = Self.withoutSkills(capability)
     if let index = capabilities.firstIndex(where: { $0.harness.id == capability.harness.id }) {
@@ -263,9 +240,7 @@ public final class ConfigOptionCache {
     {
       return false
     }
-    guard capabilitiesCache[serverId] == nil || provisionalCapabilityServers.contains(serverId) else {
-      return false
-    }
+    guard capabilitiesCache[serverId] == nil else { return false }
     store(capabilities, forServer: serverId)
     return true
   }
@@ -293,7 +268,6 @@ public final class ConfigOptionCache {
     cache = [:]
     capabilitiesCache = [:]
     signInRequiredCache = [:]
-    provisionalCapabilityServers = []
     harnessSkillsCache = [:]
     codevisorSkillsCache = [:]
     for refresh in codevisorSkillRefreshes.values { refresh.task.cancel() }

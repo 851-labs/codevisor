@@ -198,12 +198,6 @@ public final class AppEnvironment {
     }
   }
 
-  public func importSessions(from serverId: String) async {
-    let imported = await sessionImporter(for: serverId).fetchAll()
-    projectList.importSessions(imported, serverId: serverId)
-    projectList.showsImportedSessions = settings.importExternalSessions
-  }
-
   public func importSessions(_ imported: [ImportedSession], into project: Project) {
     projectList.importSessions(imported, into: project)
     settings.setImportExternalSessions(true)
@@ -266,64 +260,16 @@ public final class AppEnvironment {
     DiagnosticsClient.shared.setEnabled(enabled)
   }
 
-  public func finishOnboarding(
-    importExternalSessions: Bool,
-    serverId: String = CodevisorMachine.local.id
-  ) async {
-    settings.setImportExternalSessions(importExternalSessions)
-    projectList.showsImportedSessions = importExternalSessions
-    if importExternalSessions {
-      await importSessions(from: serverId)
-    }
-    settings.completeOnboarding(importExternalSessions: importExternalSessions)
-  }
-
-  @discardableResult
-  public func finishOnboarding(
-    importExternalSessions: Bool,
-    projectFolder: URL?,
-    serverId: String = CodevisorMachine.local.id
-  ) async -> Project? {
-    let project = projectFolder.map { projectList.addProject(folderURL: $0, serverId: serverId) }
-    await finishOnboarding(importExternalSessions: importExternalSessions, serverId: serverId)
-    return project
-  }
-
-  @discardableResult
-  public func finishOnboarding(
-    projectFolders: [URL],
-    serverId: String = CodevisorMachine.local.id
-  ) async -> Project? {
-    var first: Project?
-    for folder in projectFolders {
-      let project = projectList.addProject(folderURL: folder, serverId: serverId)
-      if first == nil { first = project }
-    }
-    await finishOnboarding(importExternalSessions: false, serverId: serverId)
-    return first
-  }
-
-  @discardableResult
-  public func finishOnboarding(
-    projectFolder: URL,
-    serverId: String = CodevisorMachine.local.id
-  ) async -> Project {
-    await finishOnboarding(projectFolders: [projectFolder], serverId: serverId)!
-  }
-
   public static func preview(
     seedProjects: [Project] = AppEnvironment.sampleProjects,
     seedSessions: [ChatSession] = AppEnvironment.sampleSessions,
     seedCloudMachines: [CloudMachine] = [],
-    seedCapabilities: [ServerHarnessCapability] = [],
-    hasOnboarded: Bool = true
+    seedCapabilities: [ServerHarnessCapability] = []
   ) -> AppEnvironment {
     let settings = AppSettingsModel(store: InMemoryStore())
     let machineStore = InMemoryStore()
-    if hasOnboarded {
-      settings.completeOnboarding(importExternalSessions: false)
-      settings.setShareCrashReports(false)
-    }
+    settings.completeOnboarding(importExternalSessions: false)
+    settings.setShareCrashReports(false)
     let environment = AppEnvironment(
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: settings,

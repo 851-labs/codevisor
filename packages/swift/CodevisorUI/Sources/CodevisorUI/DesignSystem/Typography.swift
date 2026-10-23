@@ -26,8 +26,6 @@ public enum Typography {
   }
 
   public enum DisplaySize {
-    public static let heroTitle: CGFloat = 36
-    public static let stepTitle: CGFloat = 28
     public static let emptyStateTitle: CGFloat = 26
   }
 
@@ -35,14 +33,6 @@ public enum Typography {
 }
 
 extension Font {
-  public static let heroTitle = Font.system(
-    size: Typography.DisplaySize.heroTitle, weight: .bold
-  )
-
-  public static let stepTitle = Font.system(
-    size: Typography.DisplaySize.stepTitle, weight: .bold
-  )
-
   public static let emptyStateTitle = Font.system(
     size: Typography.DisplaySize.emptyStateTitle, weight: .semibold
   )

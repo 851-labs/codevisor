@@ -192,7 +192,7 @@ extension ProjectListModelTests {
           info: SessionInfo(
             sessionId: "ext-1", cwd: "/tmp/a", title: "Changed agent title", updatedAt: newTimestamp)
         )
-      ], serverId: "local")
+      ], into: project)
 
     let refreshed = model.fleetSessions(in: project).first!
     #expect(model.sessions.count == 1)
@@ -213,7 +213,7 @@ extension ProjectListModelTests {
           harnessId: "codex",
           info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", updatedAt: oldTimestamp)
         )
-      ], serverId: "local")
+      ], into: project)
     #expect(model.fleetSessions(in: project).first?.updatedAt == refreshed.updatedAt)
   }
 }

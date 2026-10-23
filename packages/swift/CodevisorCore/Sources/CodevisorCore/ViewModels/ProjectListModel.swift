@@ -274,26 +274,6 @@ public final class ProjectListModel {
   }()
   private static let wholeSecondImportTimestampFormatter = ISO8601DateFormatter()
 
-  public func importSessions(_ imported: [ImportedSession], serverId: String) {
-    for item in imported {
-      if let known = sessions.first(where: {
-        $0.serverId == serverId
-          && $0.harnessId == item.harnessId
-          && $0.agentSessionId == item.info.sessionId
-      }) {
-        reconcileImportedActivity(item, of: known)
-        continue
-      }
-      let project = findOrCreateProject(
-        folderURL: URL(fileURLWithPath: item.info.cwd),
-        serverId: serverId
-      )
-      let timestamp = Self.importTimestamp(item.info.updatedAt)
-      importSession(
-        item.chatSession(projectId: project.id, serverId: serverId, timestamp: timestamp))
-    }
-  }
-
   public func importSessions(_ imported: [ImportedSession], into project: Project) {
     for item in imported {
       if let known = sessions.first(where: {
@@ -327,15 +307,6 @@ public final class ProjectListModel {
     guard let value else { return nil }
     return fractionalImportTimestampFormatter.date(from: value)
       ?? wholeSecondImportTimestampFormatter.date(from: value)
-  }
-
-  private func findOrCreateProject(folderURL: URL, serverId: String) -> Project {
-    if let existing = projects.first(where: { $0.serverId == serverId && $0.folderURL == folderURL }) {
-      return existing
-    }
-    let project = Project.fromFolder(folderURL, serverId: serverId, origin: .imported)
-    enqueue(.upsertProject(project), serverId: serverId)
-    return project
   }
 
   func applyProjection(

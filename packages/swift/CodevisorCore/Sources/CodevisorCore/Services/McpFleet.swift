@@ -61,25 +61,6 @@ public enum McpFleet {
     return value["enabled"] == .bool(false)
   }
 
-  @discardableResult
-  public static func disableLocally(
-    _ sync: ConfigSync,
-    machines: MachineController,
-    name: String,
-    timeout: Duration = .seconds(60)
-  ) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + timeout
-    while true {
-      if let key = machines.syncKey(forMachineId: CodevisorMachine.local.id) {
-        setDisabled(sync, machineId: key, name: name, disabled: true)
-        return true
-      }
-      guard clock.now < deadline else { return false }
-      try? await Task.sleep(for: .milliseconds(500))
-    }
-  }
-
   public static func setDisabled(
     _ sync: ConfigSync,
     machineId: String,

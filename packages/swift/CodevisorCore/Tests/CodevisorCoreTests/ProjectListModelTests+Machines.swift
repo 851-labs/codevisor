@@ -108,21 +108,6 @@ extension ProjectListModelTests {
     #expect(model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" })
   }
 
-  @Test("Imports are filed under the machine they were discovered on, not the current selection")
-  func importTagsDiscoveryServer() {
-    let model = NavigationFixture().projectList
-    model.showsImportedSessions = true
-    model.importSessions(
-      [
-        ImportedSession(
-          harnessId: "codex", info: SessionInfo(sessionId: "r-1", cwd: "/srv/proj", title: "Remote"))
-      ], serverId: "remote-mac-mini")
-
-    #expect(!model.projects.isEmpty)
-    #expect(model.projects.allSatisfy { $0.serverId == "remote-mac-mini" })
-    #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
-  }
-
   @Test("Sessions imported into a project inherit the project's machine")
   func importIntoProjectInheritsProjectServer() {
     let model = NavigationFixture().projectList
