@@ -13,7 +13,8 @@ import { HELD_TURN_END_GRACE_MS } from "./turn-end-holds.js"
 const setUpRouter = async () => {
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
-  const router = makeSessionEventRouter(services, fanout, idleRouteState(), "server-a")
+  const routeState = idleRouteState()
+  const router = makeSessionEventRouter(services, fanout, routeState, "server-a")
   onTestFinished(fanout.subscribe(router.listener))
   const folder = mkdtempSync(join(tmpdir(), "codevisor-event-router-"))
   tempDirs.push(folder)
@@ -31,7 +32,7 @@ const setUpRouter = async () => {
     agents.prompts.flatMap(([, input]) =>
       typeof input === "string" && input.startsWith("<codevisor-event") ? [input] : []
     )
-  return { services, chat, emit, say, eventPrompts }
+  return { services, routeState, chat, emit, say, eventPrompts }
 }
 
 type Router = Awaited<ReturnType<typeof setUpRouter>>
@@ -122,6 +123,46 @@ describe("superseded held turn ends", () => {
     await waitFor(() => router.eventPrompts().length > 0)
 
     expect(router.eventPrompts()).toEqual([expect.stringContaining("\nFixed and done\n")])
+  })
+})
+
+describe("held turn ends waiting in the outbox", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it("drops a released turn end once the agent has started its next turn", async () => {
+    const router = await setUpRouter()
+    const watcher = await router.chat()
+    const worker = await router.chat()
+    await run(
+      router.services.db.createSessionSubscription({
+        subscriberSessionId: watcher,
+        targetSessionId: worker,
+        events: ["turn_ended"],
+        once: false
+      })
+    )
+    router.routeState.activeTurnSessions.add(watcher)
+    await router.emit(worker, { backgroundTasks: [shell] })
+    await turn(router, worker, "turn-1", "Started the tests")
+    await router.emit(worker, { backgroundTasks: [] })
+    await vi.advanceTimersByTimeAsync(HELD_TURN_END_GRACE_MS)
+
+    await router.emit(worker, { initiatedBy: "agent", turnId: "turn-2", turnState: "started" })
+    router.routeState.activeTurnSessions.delete(watcher)
+    await router.emit(watcher, { turnId: "w-1", turnState: "ended", stopReason: "end_turn" })
+    await router.say(worker, "assistant", "Tests passed")
+    await router.emit(worker, {
+      initiatedBy: "agent",
+      stopReason: "end_turn",
+      turnId: "turn-2",
+      turnState: "ended"
+    })
+    await waitFor(() => router.eventPrompts().length > 0)
+
+    expect(router.eventPrompts()).toEqual([expect.stringContaining("\nTests passed\n")])
   })
 })
 

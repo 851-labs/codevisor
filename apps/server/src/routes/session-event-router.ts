@@ -56,11 +56,19 @@ export const makeSessionEventRouter = (
   const actionKinds = new Map<string, string | undefined>()
   const publish = makePublisher(services, outbox)
 
-  const announceTurnEnd = async (sessionId: string, stopReason: string | undefined) => {
+  const announceTurnEnd = async (
+    sessionId: string,
+    stopReason: string | undefined,
+    stale?: () => boolean
+  ) => {
     const target = await run(services.db.getSessionSummary(sessionId))
     const finalText = await finalAssistantText(services, sessionId)
-    await publish(target, "turn_ended", (subscriptionId) =>
-      turnEndedMessage(target, stopReason, finalText, subscriptionId)
+    await publish(
+      target,
+      "turn_ended",
+      (subscriptionId) => turnEndedMessage(target, stopReason, finalText, subscriptionId),
+      [],
+      stale
     )
     outbox.forgetWake(sessionId)
   }
@@ -157,7 +165,8 @@ const makePublisher =
     target: SessionSummary,
     type: SessionEventType,
     build: BuildMessage,
-    extra: ReadonlyArray<Recipient> = []
+    extra: ReadonlyArray<Recipient> = [],
+    superseded?: () => boolean
   ): Promise<void> => {
     const recipients = await recipientsFor(services, target, type, extra)
     for (const recipient of recipients) {
@@ -165,10 +174,11 @@ const makePublisher =
       if (recipient.subscription?.once === true) {
         await run(services.db.deleteSessionSubscription(recipient.subscription.id))
       }
+      const stale = superseded ?? recipient.stale
       await outbox.deliver(recipient.subscriberId, {
         message: build(recipient.subscription?.id),
         sourceSessionId: target.id,
-        ...(recipient.stale === undefined ? {} : { stale: recipient.stale })
+        ...(stale === undefined ? {} : { stale })
       })
     }
   }
