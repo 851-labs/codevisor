@@ -17,7 +17,8 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { botForParentSession } from "./bot-guards.js"
+import { assertMayJoinWorkspace, botForParentSession } from "./bot-guards.js"
+import { assertRemoteParentVerified } from "./fleet-calls.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
 
@@ -39,6 +40,8 @@ export const routeWorkspaceCreate = async (
     throw new HttpFailure(409, "Chat and workspace must belong to the same project")
   }
   const workspaceId = payload.workspace.id.toLowerCase()
+  assertRemoteParentVerified(payload.session.parentSessionId, undefined)
+  await assertMayJoinWorkspace(services, workspaceId, payload.session.parentSessionId, undefined)
   const sessionId = (payload.session.id ?? randomUUID()).toLowerCase()
   const existing = await findSession(services.db, sessionId)
   let sessionPayload: CreateSessionRequest = {

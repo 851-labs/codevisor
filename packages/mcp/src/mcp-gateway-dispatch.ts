@@ -33,7 +33,7 @@ export interface GatewayInvokeOptions {
   readonly artifacts?: SandboxArtifactCollector
   readonly signal?: AbortSignal
   readonly deadline?: number
-  readonly botLink?: string
+  readonly remoteParent?: string
   readonly onBrowser?: () => void
   readonly onBrowserPage?: (url: string) => void
   readonly onComputerApp?: (app: ComputerUseApp) => void
@@ -70,7 +70,7 @@ interface AutomationCallContext {
   readonly projectId?: string | undefined
   readonly signal?: AbortSignal | undefined
   readonly deadline?: number | undefined
-  readonly botLink?: string | undefined
+  readonly remoteParent?: string | undefined
 }
 
 interface BrowserCaller {
@@ -343,7 +343,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
           ...(projectId === undefined ? {} : { projectId }),
           ...(options.signal === undefined ? {} : { signal: options.signal }),
           ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
-          ...(options.botLink === undefined ? {} : { botLink: options.botLink })
+          ...(options.remoteParent === undefined ? {} : { remoteParent: options.remoteParent })
         },
         toolName,
         input,

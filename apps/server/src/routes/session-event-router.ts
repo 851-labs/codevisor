@@ -18,7 +18,7 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { isUpdatePause } from "../update-pauses.js"
 import { conversationalBotForSession } from "./bot-turns.js"
-import { forwardSessionEvent, isLinkedRemoteChild } from "./fleet-session-events.js"
+import { fleetBotWake, forwardSessionEvent, type FleetBotWake } from "./fleet-session-events.js"
 import {
   erroredMessage,
   jobFinishedMessage,
@@ -139,6 +139,7 @@ interface Recipient {
   readonly subscriberId: string
   readonly subscription?: SessionSubscription
   readonly stale?: () => boolean
+  readonly fleet?: FleetBotWake
 }
 
 type BuildMessage = (subscriptionId?: string) => SessionEventMessage
@@ -158,11 +159,14 @@ const makePublisher =
         await run(services.db.deleteSessionSubscription(recipient.subscription.id))
       }
       const message = build(recipient.subscription?.id)
-      const remote = parseRemoteSessionKey(recipient.subscriberId)
-      if (remote !== undefined) {
-        await forwardSessionEvent(services.machines, serverId, target, remote, message).catch(
-          swallowError
-        )
+      if (recipient.fleet !== undefined) {
+        await forwardSessionEvent(
+          services.machines,
+          serverId,
+          target,
+          recipient.fleet,
+          message
+        ).catch(swallowError)
         continue
       }
       await outbox.deliver(recipient.subscriberId, {
@@ -192,19 +196,23 @@ const botParentRecipients = async (
   target: SessionSummary,
   type: SessionEventType
 ): Promise<ReadonlyArray<Recipient>> => {
-  if (type !== "turn_ended" || target.parentSessionId === undefined) return []
-  const parentIsBot = await parentIsBotFor(services, target, target.parentSessionId)
-  return parentIsBot ? [{ subscriberId: target.parentSessionId }] : []
+  const parentSessionId = target.parentSessionId
+  if (type !== "turn_ended" || parentSessionId === undefined) return []
+  if (parseRemoteSessionKey(parentSessionId) !== undefined) {
+    return fleetRecipients(services, target, parentSessionId)
+  }
+  const parentIsBot = (await conversationalBotForSession(services, parentSessionId)) !== undefined
+  return parentIsBot ? [{ subscriberId: parentSessionId }] : []
 }
 
-const parentIsBotFor = async (
+const fleetRecipients = async (
   services: CodevisorServerServices,
   target: SessionSummary,
   parentSessionId: string
-): Promise<boolean> => {
-  const remoteParent = parseRemoteSessionKey(parentSessionId)
-  if (remoteParent !== undefined) return isLinkedRemoteChild(services, target, remoteParent)
-  return (await conversationalBotForSession(services, parentSessionId)) !== undefined
+): Promise<ReadonlyArray<Recipient>> => {
+  const wake = await fleetBotWake(services, target)
+  if (wake === undefined) return []
+  return [{ subscriberId: parentSessionId, fleet: wake }]
 }
 
 const pingPong = (

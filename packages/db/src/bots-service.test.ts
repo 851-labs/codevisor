@@ -207,6 +207,52 @@ describe("bot workspaces", () => {
     expect(await run(db.listBotWorkspaces("6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10"))).toEqual([])
   })
 
+  it("keeps the parent recorded when a workspace was first linked to another machine's bot", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { api } = await seedBot(db)
+    const link = (parent: string | undefined, botId = "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10") =>
+      run(
+        db.upsertWorkspace({
+          id: "ws-linked",
+          projectId: api.id,
+          name: "Linked",
+          hasCustomName: false,
+          botId,
+          botMachineId: "machine-b",
+          ...(parent === undefined ? {} : { botParentSessionId: parent })
+        })
+      )
+    await run(
+      db.createWorkspaceWithSession({
+        workspace: { id: "ws-unrecorded", projectId: api.id, name: "U", hasCustomName: false },
+        session: { id: "unrecorded-chat", projectId: api.id, harnessId: "codex", title: "U" }
+      })
+    )
+    await run(
+      db.upsertWorkspace({
+        id: "ws-unrecorded",
+        projectId: api.id,
+        name: "U",
+        hasCustomName: false,
+        botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10",
+        botMachineId: "machine-b"
+      })
+    )
+
+    await link("remote:machine-b:bot-chat")
+    await link("remote:machine-b:other-chat", "a8a0d4f4-61c4-4a4e-8b1a-4f2f6e7c9b01")
+
+    expect(await run(db.findWorkspaceFleetBotLink("ws-linked"))).toEqual({
+      parentSessionId: "remote:machine-b:bot-chat",
+      bot: { botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10", botMachineId: "machine-b" }
+    })
+    expect(await run(db.findWorkspaceFleetBotLink("ws-unrecorded"))).toBeUndefined()
+    expect(await run(db.findFleetBotLink("unrecorded-chat"))).toBeUndefined()
+    expect(await run(db.findWorkspaceFleetBotLink("ws-missing"))).toBeUndefined()
+    expect(await run(db.findFleetBotLink("missing-chat"))).toBeUndefined()
+  })
+
   it("attaches workspaces to a bot until the bot is deleted", async () => {
     useWorktreesRoot()
     const db = await openDatabase()

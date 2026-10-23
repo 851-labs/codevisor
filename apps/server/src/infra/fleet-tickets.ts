@@ -9,19 +9,19 @@ export interface TicketBook<T> {
   readonly revoke: (ticket: string) => void
 }
 
-export interface RemoteBotLink {
+export interface VerifiedRemoteParent {
   readonly parentSessionId: string
-  readonly bot: BotLink
+  readonly bot?: BotLink
 }
 
 export interface FleetTickets {
   readonly callers: TicketBook<ChannelPeer>
-  readonly botLinks: TicketBook<RemoteBotLink>
+  readonly remoteParents: TicketBook<VerifiedRemoteParent>
 }
 
 export const makeFleetTickets = (): FleetTickets => ({
   callers: makeTicketBook(),
-  botLinks: makeTicketBook()
+  remoteParents: makeTicketBook()
 })
 
 export const withTicket = async <T, R>(

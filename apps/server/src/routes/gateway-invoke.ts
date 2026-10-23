@@ -95,10 +95,10 @@ export const routeGatewayInvoke = async (
     if (!response.writableFinished) controller.abort(new Error("the calling machine cancelled"))
   })
   try {
-    const result = await invokeForFleet(services, call.origin, (botLink) =>
+    const result = await invokeForFleet(services, call, (remoteParent) =>
       mcp.invokeRemoteGatewayCall(call.origin, path, body.args, {
         signal: controller.signal,
-        ...(botLink === undefined ? {} : { botLink })
+        ...(remoteParent === undefined ? {} : { remoteParent })
       })
     )
     writeJson(response, 200, { result: result ?? null })

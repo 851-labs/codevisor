@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import { BOT_LINK_HEADER, jsonSchema } from "@codevisor/api"
+import { REMOTE_PARENT_HEADER, jsonSchema } from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
@@ -30,7 +30,7 @@ export const requestUrl = (
 export const bearerHeaders = (token: string, context: AutomationProviderContext): Headers => {
   const headers = new Headers()
   headers.set("authorization", `Bearer ${token}`)
-  if (context.botLink !== undefined) headers.set(BOT_LINK_HEADER, context.botLink)
+  if (context.remoteParent !== undefined) headers.set(REMOTE_PARENT_HEADER, context.remoteParent)
   return headers
 }
 

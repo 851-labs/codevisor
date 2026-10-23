@@ -9,7 +9,7 @@ import type {
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 
-import type { RemoteBotLink } from "../infra/fleet-tickets.js"
+import type { VerifiedRemoteParent } from "../infra/fleet-tickets.js"
 import {
   appendAndPublish,
   assertLocationFolderExists,
@@ -24,7 +24,12 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
-import { botForParentSession } from "./bot-guards.js"
+import {
+  assertMayJoinWorkspace,
+  assertNotMovingIntoRemoteBot,
+  botForParentSession
+} from "./bot-guards.js"
+import { assertRemoteParentVerified } from "./fleet-calls.js"
 import { restoreSessionConfigSelections } from "./session-config-restore.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
@@ -37,8 +42,11 @@ const createServerSession = async (
   serverId: string,
   request: CreateSessionRequest,
   project: Project,
-  fleetBot: RemoteBotLink | undefined
+  remoteParent: VerifiedRemoteParent | undefined
 ): Promise<SessionSummary> => {
+  assertRemoteParentVerified(request.parentSessionId, remoteParent)
+  await assertMayJoinWorkspace(services, request.workspaceId, request.parentSessionId, remoteParent)
+
   const payload = await withStartPicks(services, request)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
   const { accountContext, harnessAccountId } = await resolveSessionAccount(services, payload)
@@ -68,7 +76,7 @@ const createServerSession = async (
     services.db.createWorkspaceWithSession({
       workspace: {
         ...workspaceOrder(payload),
-        ...(await botForParentSession(services, serverId, payload.parentSessionId, fleetBot)),
+        ...(await botForParentSession(services, serverId, payload.parentSessionId, remoteParent)),
         id: payload.workspaceId.toLowerCase(),
         projectId: project.id,
         name: payload.worktreeName ?? project.name,
@@ -97,7 +105,7 @@ export const createSessionIfMissing = async (
   config: CodevisorServerConfig,
   rawPayload: CreateSessionRequest,
   publishCreated = true,
-  fleetBot?: RemoteBotLink
+  remoteParent?: VerifiedRemoteParent
 ): Promise<{ readonly session: SessionSummary; readonly created: boolean }> => {
   const payload: CreateSessionRequest =
     rawPayload.id === undefined ? rawPayload : { ...rawPayload, id: rawPayload.id.toLowerCase() }
@@ -120,7 +128,7 @@ export const createSessionIfMissing = async (
       config.id,
       payload,
       project,
-      fleetBot
+      remoteParent
     )
     created = true
     if (publishCreated) {
@@ -146,6 +154,8 @@ export const applySessionUpdate = async (
   payload: UpdateSessionRequest
 ): Promise<SessionSummary> => {
   const before = await findSession(services.db, sessionId)
+  const destination = movedTo(payload, before)
+  if (destination !== undefined) await assertNotMovingIntoRemoteBot(services, destination)
   if (payload.workspaceId !== undefined && before !== undefined) {
     const project = await getProjectOrFail(services.db, payload.projectId ?? before.projectId)
     await ensureSessionWorkspace(
@@ -166,6 +176,14 @@ export const applySessionUpdate = async (
 
   await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
   return session
+}
+
+const movedTo = (
+  payload: UpdateSessionRequest,
+  before: SessionSummary | undefined
+): string | undefined => {
+  const destination = payload.workspaceId?.toLowerCase()
+  return destination === before?.workspaceId ? undefined : destination
 }
 
 type WorkspaceOrder = Pick<UpdateSessionRequest, "sidebarOrderHead" | "sidebarPosition">

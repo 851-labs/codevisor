@@ -50,5 +50,7 @@ export type {
 export type {
   BotLink,
   CreateWorkspaceWithSessionRecord,
-  UpsertWorkspaceRecord
+  RemoteBotLink,
+  UpsertWorkspaceRecord,
+  WorkspaceBotFields
 } from "./workspace-service-types.js"

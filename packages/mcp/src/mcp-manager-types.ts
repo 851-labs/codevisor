@@ -43,7 +43,7 @@ export interface GatewayOrigin {
 
 export interface RemoteGatewayCallOptions {
   readonly signal?: AbortSignal
-  readonly botLink?: string
+  readonly remoteParent?: string
 }
 
 export interface GatewayCallContext {

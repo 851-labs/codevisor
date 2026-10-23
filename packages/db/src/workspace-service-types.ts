@@ -17,7 +17,14 @@ export interface BotLink {
   readonly botMachineId?: string
 }
 
-export type UpsertWorkspaceRecord = UpsertWorkspaceRequest & Partial<BotLink>
+export interface RemoteBotLink {
+  readonly parentSessionId: string
+  readonly bot: Required<BotLink>
+}
+
+export type WorkspaceBotFields = Partial<BotLink> & { readonly botParentSessionId?: string }
+
+export type UpsertWorkspaceRecord = UpsertWorkspaceRequest & WorkspaceBotFields
 
 export type CreateWorkspaceWithSessionRecord = Omit<CreateWorkspaceRequest, "workspace"> & {
   readonly workspace: UpsertWorkspaceRecord

@@ -19,7 +19,7 @@ import {
 import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { withAutoResume } from "./auto-resume-routes.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
-import { verifiedBotLink } from "./fleet-calls.js"
+import { verifiedRemoteParent } from "./fleet-calls.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
@@ -118,7 +118,7 @@ const createSession = async ({
   config
 }: RouteContext): Promise<boolean> => {
   const payload = await readSchema(request, CreateSessionRequestSchema)
-  const fleetBot = verifiedBotLink(services, request, payload.parentSessionId)
+  const remoteParent = verifiedRemoteParent(services, request, payload.parentSessionId)
   const { session, created } = await createSessionIfMissing(
     services,
     fanout,
@@ -126,7 +126,7 @@ const createSession = async ({
     config,
     payload,
     true,
-    fleetBot
+    remoteParent
   )
   writeJson(response, created ? 201 : 200, session)
   return true

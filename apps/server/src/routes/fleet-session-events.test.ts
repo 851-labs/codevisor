@@ -33,7 +33,10 @@ const recordingLink = (current: ReadonlyArray<{ readonly name: string }>) => {
 }
 
 const child = { id: "child-1", title: "Fix the laptop" } as const
-const subscriber = { machineId: "machine-studio", sessionId: "bot-session" }
+const subscriber = {
+  subscriber: { machineId: "machine-studio", sessionId: "bot-session" },
+  bot: { botId: "bot-1", botMachineId: "machine-studio" }
+}
 const message = turnEndedMessage(child, "end_turn", "done")
 
 describe("forwarding session events to another machine", () => {
@@ -48,6 +51,7 @@ describe("forwarding session events to another machine", () => {
         path: "fleet.session_event",
         args: {
           sessionId: "bot-session",
+          botId: "bot-1",
           key: "turn_ended:child-1",
           text: message.text.replace(
             "<codevisor-event ",

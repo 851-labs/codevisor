@@ -45,7 +45,7 @@ export const FLEET_CALLER_HEADER = "x-codevisor-fleet-caller"
 export const FLEET_SESSION_EVENT_PATH = "fleet.session_event"
 
 export const isFleetPath = (path: string): boolean => path.startsWith("fleet.")
-export const BOT_LINK_HEADER = "x-codevisor-bot-link"
+export const REMOTE_PARENT_HEADER = "x-codevisor-remote-parent"
 
 export interface RemoteSessionRef {
   readonly machineId: string

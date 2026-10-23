@@ -22,6 +22,7 @@ export default defineConfig({
         "src/infra/mcp-oauth-test-support.ts",
         "src/routes/session-test-support.ts",
         "src/routes/bot-test-support.ts",
+        "src/routes/fleet-test-support.ts",
         "src/routes/gateway-test-support.ts",
         "src/routes/response-test-support.ts",
         "src/routes/project-setup-test-support.ts",
