@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { dirname, join } from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -121,6 +128,27 @@ describe("archived worktree artifacts", () => {
       readFileSync(join(restorePath, ".codevisor-restore-conflicts", "tmp", "shot.png"), "utf8")
     ).toBe("pixels")
     expect(existsSync(join(root, "elsewhere", "shot.png"))).toBe(false)
+  })
+
+  it.each([
+    { name: "the conflicts folder", link: ".codevisor-restore-conflicts" },
+    { name: "a folder inside it", link: ".codevisor-restore-conflicts/tmp" }
+  ])("refuses to set an artifact aside through a symlinked $name", async ({ link }) => {
+    const { root } = makeGitRepo()
+    const artifactsDir = join(root, "kept")
+    const restorePath = join(root, "restored")
+    const outside = join(root, "outside")
+    write(join(artifactsDir, "tmp", "shot.png"), "pixels")
+    write(join(restorePath, "tmp", "shot.png"), "restored")
+    mkdirSync(outside)
+    mkdirSync(dirname(join(restorePath, link)), { recursive: true })
+    symlinkSync(outside, join(restorePath, link))
+
+    await expect(returnKeptArtifacts(artifactsDir, restorePath)).rejects.toThrow(
+      "Refusing to restore artifacts through the symlink"
+    )
+    expect(readdirSync(outside)).toEqual([])
+    expect(readFileSync(join(artifactsDir, "tmp", "shot.png"), "utf8")).toBe("pixels")
   })
 
   it("fails instead of keeping nothing when it can't list the ignored files", async () => {

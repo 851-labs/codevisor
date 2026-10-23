@@ -1,6 +1,6 @@
 import { existsSync, type Dirent } from "node:fs"
 import { lstat, mkdir, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises"
-import { basename, dirname, join, relative } from "node:path"
+import { basename, dirname, join, relative, sep } from "node:path"
 
 import { runGit } from "./git.js"
 import { heavyGit as heavy, scratchIndexConfig as gitConfig } from "./working-state.js"
@@ -120,11 +120,27 @@ const moveAside = async (
   path: string
 ): Promise<string> => {
   const folder = join(worktreeDir, restoreConflictsFolder)
+  await refuseSymlinkedPath(worktreeDir, join(folder, path))
   await mkdir(folder, { recursive: true })
   await writeFile(join(folder, ".gitignore"), "*\n")
   const target = await unusedPath(join(folder, path))
+  await refuseSymlinkedPath(worktreeDir, target)
   await moveInto(join(artifactsDir, path), target)
   return relative(worktreeDir, target)
+}
+
+const refuseSymlinkedPath = async (root: string, target: string): Promise<void> => {
+  let current = root
+  for (const part of relative(root, target).split(sep)) {
+    current = join(current, part)
+    const stats = await lstat(current).catch(() => undefined)
+    if (stats === undefined) return
+    if (stats.isSymbolicLink()) {
+      throw new Error(
+        `Refusing to restore artifacts through the symlink ${relative(root, current)}`
+      )
+    }
+  }
 }
 
 const unusedPath = async (path: string, attempt = 1): Promise<string> => {
