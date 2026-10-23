@@ -47,10 +47,10 @@ describe("session event messages", () => {
 
   it("describes a plan approval wait without a question", () => {
     expect(waitingForUserMessage(target, "planApproval", undefined).text).toContain(
-      "The session is waiting for plan approval."
+      "The agent is waiting for plan approval."
     )
     expect(waitingForUserMessage(target, "question", undefined).text).toContain(
-      "The session is waiting for an answer."
+      "The agent is waiting for an answer."
     )
     expect(
       waitingForUserMessage(target, "question", {

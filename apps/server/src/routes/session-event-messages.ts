@@ -92,14 +92,17 @@ const bounded = (text: string, empty: string): string => {
 }
 
 const waitingBody = (kind: string, question: QuestionPayload | undefined): string => {
-  if (question === undefined) return `The session is waiting for ${kindLabel(kind)}.`
+  if (question === undefined) return `The agent is waiting for ${kindLabel(kind)}.`
   const asked = JSON.stringify({
     questionId: question.questionId,
     ...(question.message === undefined ? {} : { message: question.message }),
     questions: question.questions
   })
-  return `${bounded(asked, "")}\nAnswer it with sessions.question_answer.`
+  return `${bounded(asked, "")}\n${answerHint}`
 }
+
+const answerHint =
+  'Answer it with machines.current.agents.answer({ agentId, questionId, outcome: "answered", answers }), where answers maps each question\'s id to { answers: ["<chosen option>"] }, or send guidance with machines.current.agents.message({ agentId, text }).'
 
 const kindLabel = (kind: string): string =>
   kind === "planApproval" ? "plan approval" : "an answer"
