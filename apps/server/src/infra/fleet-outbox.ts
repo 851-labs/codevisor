@@ -4,23 +4,25 @@ import type { MachineCallOrigin } from "@codevisor/api"
 import type { CodevisorDatabaseService, FleetMessage } from "@codevisor/db"
 
 import { run } from "../server-context.js"
-import { isRecord } from "../unknown-values.js"
-import type { MachineLink } from "./machine-link.js"
+import { makeKeyedDrains } from "./keyed-drains.js"
+import { PeerAnswerError, type MachineLink } from "./machine-link.js"
 
 export interface FleetOutbox {
   readonly send: (
     machineId: string,
     path: string,
-    args: unknown,
+    args: Readonly<Record<string, unknown>>,
     origin: MachineCallOrigin
   ) => Promise<void>
   readonly flush: () => Promise<void>
+  readonly expire: () => Promise<void>
 }
 
 export interface FleetOutboxOptions {
   readonly db: CodevisorDatabaseService
   readonly machines: MachineLink
   readonly now: () => number
+  readonly attemptSignal?: () => AbortSignal
 }
 
 export interface FleetLink {
@@ -31,19 +33,24 @@ export interface FleetLink {
 export const FLEET_MESSAGE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
 export const FLEET_DELIVERY_MEMORY_MS = 30 * 24 * 60 * 60 * 1_000
 export const FLEET_OUTBOX_RETRY_MS = 30_000
+export const FLEET_ATTEMPT_TIMEOUT_MS = 60_000
 
 export const makeFleetOutbox = (options: FleetOutboxOptions): FleetOutbox => {
-  let chain = Promise.resolve()
-  const flush = (): Promise<void> => {
-    chain = chain.catch(() => undefined).then(() => drain(options))
-    return chain
-  }
+  const destinations = makeKeyedDrains((machineId) => drainDestination(options, machineId))
+  const expire = (): Promise<void> =>
+    run(options.db.deleteFleetMessagesBefore(expiryCutoff(options)))
   return {
     send: async (machineId, path, args, origin) => {
       await run(options.db.enqueueFleetMessage(newMessage(options, machineId, path, args, origin)))
-      await flush()
+      await destinations.drain(machineId)
     },
-    flush
+    flush: async () => {
+      await expire()
+      const queued = await run(options.db.listFleetMessages)
+      const machineIds = new Set(queued.map((message) => message.machineId))
+      await Promise.all([...machineIds].map(destinations.drain))
+    },
+    expire
   }
 }
 
@@ -66,7 +73,7 @@ const newMessage = (
   options: FleetOutboxOptions,
   machineId: string,
   path: string,
-  args: unknown,
+  args: Readonly<Record<string, unknown>>,
   origin: MachineCallOrigin
 ): FleetMessage => {
   const id = randomUUID()
@@ -74,39 +81,39 @@ const newMessage = (
     id,
     machineId,
     path,
-    args: { ...(isRecord(args) ? args : {}), deliveryId: id },
+    args: { ...args, deliveryId: id },
     origin,
     createdAt: new Date(options.now()).toISOString()
   }
 }
 
-const drain = async (options: FleetOutboxOptions): Promise<void> => {
-  const offline = new Set<string>()
-  for (const message of await run(options.db.listFleetMessages)) {
-    if (offline.has(message.machineId)) continue
-    const outcome = await deliver(options, message)
-    if (outcome === "offline") offline.add(message.machineId)
-    else await run(options.db.deleteFleetMessage(message.id))
+const drainDestination = async (options: FleetOutboxOptions, machineId: string) => {
+  for (const message of await run(options.db.listFleetMessagesFor(machineId))) {
+    if (!(await settled(options, message))) return
+    await run(options.db.deleteFleetMessage(message.id))
   }
 }
 
-type DeliveryOutcome = "delivered" | "refused" | "expired" | "offline"
-
-const deliver = async (
-  options: FleetOutboxOptions,
-  message: FleetMessage
-): Promise<DeliveryOutcome> => {
-  if (expired(options, message)) return "expired"
+const settled = async (options: FleetOutboxOptions, message: FleetMessage): Promise<boolean> => {
   try {
-    await options.machines.invoke(message.machineId, message.path, message.args, message.origin)
-    return "delivered"
+    const { machineId, path, args, origin } = message
+    await options.machines.invoke(machineId, path, args, origin, attemptSignal(options))
+    return true
   } catch (cause) {
-    return isUnavailable(cause) ? "offline" : "refused"
+    return refusedForGood(cause)
   }
 }
 
-const expired = (options: FleetOutboxOptions, message: FleetMessage): boolean =>
-  options.now() - Date.parse(message.createdAt) > FLEET_MESSAGE_MAX_AGE_MS
+const RETRYABLE_REFUSALS = new Set([408, 425, 429])
 
-const isUnavailable = (cause: unknown): boolean =>
-  isRecord(cause) && cause.code === "machine_unavailable"
+const refusedForGood = (cause: unknown): boolean =>
+  cause instanceof PeerAnswerError &&
+  cause.status >= 400 &&
+  cause.status < 500 &&
+  !RETRYABLE_REFUSALS.has(cause.status)
+
+const attemptSignal = (options: FleetOutboxOptions): AbortSignal =>
+  options.attemptSignal?.() ?? AbortSignal.timeout(FLEET_ATTEMPT_TIMEOUT_MS)
+
+const expiryCutoff = (options: FleetOutboxOptions): string =>
+  new Date(options.now() - FLEET_MESSAGE_MAX_AGE_MS).toISOString()

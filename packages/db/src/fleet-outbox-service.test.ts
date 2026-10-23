@@ -9,13 +9,13 @@ const openDatabase = async () => {
   return db
 }
 
-const message = (id: string, machineId: string) => ({
+const message = (id: string, machineId: string, createdAt = "2100-01-01T00:00:00.000Z") => ({
   id,
   machineId,
   path: "fleet.session_event",
   args: { deliveryId: id },
   origin: { machineId: "machine-a", machineName: "A", sessionId: "s-1" },
-  createdAt: "2100-01-01T00:00:00.000Z"
+  createdAt
 })
 
 describe("fleet outbox storage", () => {
@@ -31,6 +31,18 @@ describe("fleet outbox storage", () => {
       message("z-first", "machine-b"),
       message("m-third", "machine-b")
     ])
+  })
+
+  it("lists one machine's messages and expires old ones without touching newer ones", async () => {
+    const db = await openDatabase()
+    await run(db.enqueueFleetMessage(message("old", "machine-b", "2099-12-01T00:00:00.000Z")))
+    await run(db.enqueueFleetMessage(message("other", "machine-c")))
+    await run(db.enqueueFleetMessage(message("new", "machine-b")))
+
+    await run(db.deleteFleetMessagesBefore("2099-12-15T00:00:00.000Z"))
+
+    expect((await run(db.listFleetMessagesFor("machine-b"))).map((m) => m.id)).toEqual(["new"])
+    expect((await run(db.listFleetMessages)).map((m) => m.id)).toEqual(["other", "new"])
   })
 
   it("remembers each delivery id once until it is pruned", async () => {

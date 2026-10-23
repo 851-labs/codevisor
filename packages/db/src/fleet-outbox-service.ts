@@ -18,7 +18,11 @@ export interface FleetMessage {
 export interface FleetOutboxService {
   readonly enqueueFleetMessage: (message: FleetMessage) => Effect.Effect<void, DatabaseError>
   readonly listFleetMessages: Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
+  readonly listFleetMessagesFor: (
+    machineId: string
+  ) => Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
   readonly deleteFleetMessage: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly deleteFleetMessagesBefore: (createdAt: string) => Effect.Effect<void, DatabaseError>
   readonly recordFleetDelivery: (
     deliveryId: string,
     receivedAt: string
@@ -37,6 +41,14 @@ export const makeFleetOutboxService = (context: ServiceContext): FleetOutboxServ
     listFleetMessages: attempt("listFleetMessages", () =>
       fleetMessageRows.all(sqlite.prepare(fleetSql.list).all()).map(messageFromRow)
     ),
+    listFleetMessagesFor: (machineId) =>
+      attempt("listFleetMessagesFor", () =>
+        fleetMessageRows.all(sqlite.prepare(fleetSql.listFor).all(machineId)).map(messageFromRow)
+      ),
+    deleteFleetMessagesBefore: (createdAt) =>
+      attempt("deleteFleetMessagesBefore", () => {
+        sqlite.prepare(fleetSql.deleteBefore).run(createdAt)
+      }),
     deleteFleetMessage: (id) =>
       attempt("deleteFleetMessage", () => {
         sqlite.prepare(fleetSql.delete).run(id)
@@ -94,6 +106,8 @@ const fleetSql = {
   enqueue: `insert into fleet_outbox (id, machine_id, path, args, origin, created_at)
             values (?, ?, ?, ?, ?, ?)`,
   list: "select * from fleet_outbox order by rowid",
+  listFor: "select * from fleet_outbox where machine_id = ? order by rowid",
+  deleteBefore: "delete from fleet_outbox where created_at < ?",
   delete: "delete from fleet_outbox where id = ?",
   recordDelivery: `insert into fleet_deliveries (delivery_id, received_at) values (?, ?)
                    on conflict(delivery_id) do nothing`,

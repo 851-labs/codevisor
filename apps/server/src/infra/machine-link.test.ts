@@ -3,7 +3,12 @@ import { CodeExecutionToolError } from "@codevisor/automation"
 import { GatewayChannelError, type GatewayExchange } from "@codevisor/cloud-client"
 import { describe, expect, it } from "vitest"
 
-import { makeMachineLink, relativeAge, type MachineLinkCloud } from "./machine-link.js"
+import {
+  makeMachineLink,
+  PeerAnswerError,
+  relativeAge,
+  type MachineLinkCloud
+} from "./machine-link.js"
 
 const NOW = Date.parse("2100-01-01T12:00:00.000Z")
 const origin = { machineId: "machine-self", machineName: "Studio", sessionId: "s-1" }
@@ -159,6 +164,8 @@ describe("machine calls", () => {
     })
     const error = await failure(machineLink.invoke("machine-laptop", "x", {}, origin))
     expect({ message: error.message, code: error.code, details: error.details }).toEqual(nested)
+    expect(error).toBeInstanceOf(PeerAnswerError)
+    expect(error).toMatchObject({ status: 422 })
 
     const plain = link({
       cloud: async () => ({ status: 422, body: JSON.stringify({ error: { message: "bad" } }) })
@@ -173,9 +180,9 @@ describe("machine calls", () => {
     [{ status: 200, body: "{}" }, "Laptop answered HTTP 200"]
   ])("turns an unexpected answer into a tool error", async (answer, message) => {
     const { machineLink } = link({ cloud: async () => answer })
-    expect((await failure(machineLink.invoke("machine-laptop", "x", {}, origin))).message).toBe(
-      message
-    )
+    const error = await failure(machineLink.invoke("machine-laptop", "x", {}, origin))
+    expect(error.message).toBe(message)
+    expect(error).toMatchObject({ status: answer.status })
   })
 
   it("refuses unknown machines and calls to itself before sending anything", async () => {

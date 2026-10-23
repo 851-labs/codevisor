@@ -3,104 +3,189 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
+import { field } from "../unknown-values.js"
 import {
   FLEET_DELIVERY_MEMORY_MS,
   FLEET_MESSAGE_MAX_AGE_MS,
   fleetLinkFor,
   forgetOldFleetDeliveries,
-  makeFleetOutbox
+  makeFleetOutbox,
+  type FleetOutboxOptions
 } from "./fleet-outbox.js"
-import type { MachineLink } from "./machine-link.js"
+import { PeerAnswerError, type MachineLink } from "./machine-link.js"
 
 const NOW = Date.parse("2100-01-01T00:00:00.000Z")
 const origin = { machineId: "machine-laptop", machineName: "Laptop", sessionId: "s-1" }
 
-const linkAnswering = (answer: (machine: string) => unknown) => {
-  const sent: Array<{ readonly machine: string; readonly args: unknown }> = []
+interface Attempt {
+  readonly machine: string
+  readonly args: unknown
+  readonly signal: AbortSignal | undefined
+}
+
+const recordingLink = (answer: (attempt: Attempt) => Promise<unknown>) => {
+  const attempts: Attempt[] = []
   const machines: MachineLink = {
     list: async () => [],
     resolve: () => undefined,
     machineIdOf: () => undefined,
-    invoke: async (machine, _path, args) => {
-      sent.push({ machine, args })
-      const result = answer(machine)
-      if (result instanceof Error) throw result
-      return result
+    invoke: (machine, _path, args, _origin, signal) => {
+      const attempt = { machine, args, signal }
+      attempts.push(attempt)
+      return answer(attempt)
     }
   }
-  return { machines, sent }
+  return { machines, attempts }
 }
 
-const unavailable = () =>
-  new CodeExecutionToolError("offline", { code: "machine_unavailable", details: {} })
+const gate = () => {
+  let open!: () => void
+  const opened = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { open, opened }
+}
+
+const untilAborted = (attempt: Attempt): Promise<never> =>
+  new Promise((_resolve, reject) => {
+    attempt.signal!.addEventListener("abort", () => reject(new Error("deadline")))
+  })
+
+const outboxFor = async (
+  answer: (attempt: Attempt) => Promise<unknown>,
+  overrides: Partial<FleetOutboxOptions> = {}
+) => {
+  const { services } = await makeServices("outbox")
+  const { machines, attempts } = recordingLink(answer)
+  const deadlines: AbortController[] = []
+  const outbox = makeFleetOutbox({
+    db: services.db,
+    machines,
+    now: () => NOW,
+    attemptSignal: () => {
+      const deadline = new AbortController()
+      deadlines.push(deadline)
+      return deadline.signal
+    },
+    ...overrides
+  })
+  const queued = async () =>
+    (await run(services.db.listFleetMessages)).map((message) => message.args.n)
+  return { services, outbox, attempts, deadlines, queued }
+}
 
 describe("fleet outbox", () => {
-  it("delivers to reachable machines, keeps an offline machine's messages, and drops refusals", async () => {
-    const { services } = await makeServices("outbox-a")
-    const { machines, sent } = linkAnswering((machine) => {
-      if (machine === "machine-offline") return unavailable()
-      if (machine === "machine-refusing") return new Error("403 not that bot")
-      return null
+  it("drops only definitive refusals and retries everything else", async () => {
+    const failures: Record<string, unknown> = {
+      forbidden: new PeerAnswerError("not that bot", {}, 403),
+      conflict: new PeerAnswerError("archived", {}, 409),
+      crashed: new PeerAnswerError("boom", {}, 500),
+      gateway: new PeerAnswerError("bad gateway", {}, 502),
+      throttled: new PeerAnswerError("slow down", {}, 429),
+      offline: new CodeExecutionToolError("offline", { code: "machine_unavailable" }),
+      unknown: new Error("socket hang up")
+    }
+    const { outbox, queued } = await outboxFor(async (attempt) => {
+      throw failures[attempt.machine]
     })
-    const outbox = makeFleetOutbox({ db: services.db, machines, now: () => NOW })
 
-    await outbox.send("machine-offline", "fleet.session_event", { n: 1 }, origin)
-    await outbox.send("machine-offline", "fleet.session_event", { n: 2 }, origin)
-    await outbox.send("machine-refusing", "fleet.session_event", { n: 3 }, origin)
-    await outbox.send("machine-studio", "fleet.session_event", "not a record", origin)
+    for (const [n, machine] of Object.keys(failures).entries()) {
+      await outbox.send(machine, "fleet.session_event", { n }, origin)
+    }
 
-    const queued = await run(services.db.listFleetMessages)
-    expect(queued.map((message) => message.args)).toEqual([
-      { n: 1, deliveryId: queued[0]!.id },
-      { n: 2, deliveryId: queued[1]!.id }
-    ])
-    expect(sent.map((call) => call.machine)).toEqual([
-      "machine-offline",
-      "machine-offline",
-      "machine-offline",
-      "machine-refusing",
-      "machine-offline",
+    expect(await queued()).toEqual([2, 3, 4, 5, 6])
+  })
+
+  it("keeps delivering to other machines while one delivery stalls, until its deadline", async () => {
+    const stall = gate()
+    const { outbox, attempts, deadlines, queued } = await outboxFor((attempt) => {
+      if (attempt.machine !== "machine-stalled") return Promise.resolve(null)
+      stall.open()
+      return untilAborted(attempt)
+    })
+
+    const stalled = outbox.send("machine-stalled", "fleet.session_event", { n: 1 }, origin)
+    await stall.opened
+    await outbox.send("machine-studio", "fleet.session_event", { n: 2 }, origin)
+    const whileStalled = await queued()
+    deadlines[0]!.abort()
+    await stalled
+
+    expect(whileStalled).toEqual([1])
+    expect(attempts.map((attempt) => attempt.machine)).toEqual([
+      "machine-stalled",
       "machine-studio"
     ])
-    expect(sent.at(-1)?.args).toEqual({ deliveryId: expect.any(String) })
+    expect(await queued()).toEqual([1])
   })
 
-  it("drops messages older than the retry window without sending them", async () => {
-    const { services } = await makeServices("outbox-b")
+  it("expires old messages even while their destination is stalled", async () => {
     let now = NOW
-    const { machines, sent } = linkAnswering(() => unavailable())
-    const outbox = makeFleetOutbox({ db: services.db, machines, now: () => now })
-    await outbox.send("machine-offline", "fleet.session_event", {}, origin)
+    const attemptStarted = gate()
+    const { outbox, deadlines, queued } = await outboxFor(
+      (attempt) => {
+        attemptStarted.open()
+        return untilAborted(attempt)
+      },
+      { now: () => now }
+    )
+    const stalled = outbox.send("machine-stalled", "fleet.session_event", { n: 1 }, origin)
+    await attemptStarted.opened
 
     now = NOW + FLEET_MESSAGE_MAX_AGE_MS + 1
-    await outbox.flush()
+    await outbox.expire()
+    const afterExpiry = await queued()
+    deadlines[0]!.abort()
+    await stalled
 
-    expect(sent).toHaveLength(1)
-    expect(await run(services.db.listFleetMessages)).toEqual([])
+    expect(afterExpiry).toEqual([])
+    expect(await queued()).toEqual([])
   })
 
-  it("keeps flushing after a flush fails", async () => {
-    const { services } = await makeServices("outbox-c")
-    const { machines, sent } = linkAnswering(() => null)
+  it("delivers messages sent during a delivery in order, in the same drain", async () => {
+    const firstAnswer = gate()
+    const { outbox, attempts, queued } = await outboxFor(async (attempt) => {
+      if (field(attempt.args, "n") === 1) await firstAnswer.opened
+      return null
+    })
+
+    const sendingFirst = outbox.send("machine-studio", "fleet.session_event", { n: 1 }, origin)
+    const sendingSecond = outbox.send("machine-studio", "fleet.session_event", { n: 2 }, origin)
+    firstAnswer.open()
+    await Promise.all([sendingFirst, sendingSecond])
+
+    expect(attempts.map((attempt) => attempt.args)).toEqual([
+      expect.objectContaining({ n: 1 }),
+      expect.objectContaining({ n: 2 })
+    ])
+    expect(await queued()).toEqual([])
+  })
+
+  it("keeps draining after a pass fails", async () => {
+    const { services } = await makeServices("outbox-failing")
+    const { machines, attempts } = recordingLink(async () => null)
     let failures = 1
     const db = {
       ...services.db,
-      listFleetMessages: Effect.suspend(() =>
-        failures-- > 0 ? Effect.die(new Error("disk")) : services.db.listFleetMessages
-      )
+      listFleetMessagesFor: (machineId: string) =>
+        Effect.suspend(() =>
+          failures-- > 0
+            ? Effect.die(new Error("disk"))
+            : services.db.listFleetMessagesFor(machineId)
+        )
     }
     const outbox = makeFleetOutbox({ db, machines, now: () => NOW })
 
-    await expect(outbox.send("machine-studio", "fleet.session_event", {}, origin)).rejects.toThrow()
+    await outbox.send("machine-studio", "fleet.session_event", {}, origin)
     await outbox.flush()
 
-    expect(sent).toHaveLength(1)
+    expect(attempts).toHaveLength(1)
     expect(await run(services.db.listFleetMessages)).toEqual([])
   })
 
   it("links only servers that know their machines, and forgets old delivery ids", async () => {
-    const { services } = await makeServices("outbox-d")
-    const { machines } = linkAnswering(() => null)
+    const { services } = await makeServices("outbox-link")
+    const { machines } = recordingLink(async () => null)
     const old = new Date(NOW - FLEET_DELIVERY_MEMORY_MS - 1).toISOString()
     const recent = new Date(NOW).toISOString()
     await run(services.db.recordFleetDelivery("old", old))

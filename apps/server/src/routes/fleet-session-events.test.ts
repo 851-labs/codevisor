@@ -31,7 +31,8 @@ const recordingLink = (current: ReadonlyArray<{ readonly name: string }>) => {
       send: async (machine, path, args, origin) => {
         sent.push({ machine, path, args, origin })
       },
-      flush: async () => undefined
+      flush: async () => undefined,
+      expire: async () => undefined
     }
   }
   return { link, sent }

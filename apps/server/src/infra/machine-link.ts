@@ -102,20 +102,38 @@ const machineUnavailable = (
     phase
   })
 
+export class PeerAnswerError extends CodeExecutionToolError {
+  constructor(
+    message: string,
+    options: ConstructorParameters<typeof CodeExecutionToolError>[1],
+    readonly status: number
+  ) {
+    super(message, options)
+  }
+}
+
 const interpretPeerAnswer = (peer: Peer, answer: GatewayExchange): unknown => {
   const parsed = parseJson(answer.body)
   if (answer.status >= 200 && answer.status < 300 && isRecord(parsed) && "result" in parsed) {
     return parsed.result
   }
   if (isRecord(parsed) && isRecord(parsed.error) && typeof parsed.error.message === "string") {
-    throw toolError(
+    const { code, details } = parsed.error
+    throw new PeerAnswerError(
       parsed.error.message,
-      typeof parsed.error.code === "string" ? parsed.error.code : undefined,
-      isRecord(parsed.error.details) ? parsed.error.details : undefined
+      {
+        ...(typeof code === "string" ? { code } : {}),
+        ...(isRecord(details) ? { details } : {})
+      },
+      answer.status
     )
   }
   const detail = isRecord(parsed) && typeof parsed.error === "string" ? `: ${parsed.error}` : ""
-  throw toolError(`${peer.name} answered HTTP ${answer.status}${detail}`)
+  throw new PeerAnswerError(
+    `${peer.name} answered HTTP ${answer.status}${detail}`,
+    {},
+    answer.status
+  )
 }
 
 export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
