@@ -108,6 +108,7 @@ export const StartAgentRequest = Schema.Struct({
   project: Schema.optional(Schema.String),
   labels: Schema.optional(Labels),
   callerAgentId: Schema.optional(Schema.String),
+  remoteParentAgentId: Schema.optional(Schema.String),
   callerDefaults: Schema.optional(AgentCallerDefaults)
 })
 export type StartAgentRequest = typeof StartAgentRequest.Type

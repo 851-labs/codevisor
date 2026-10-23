@@ -51,7 +51,7 @@ const requestInit = async (
   method: HttpMethod,
   request: CodevisorApiRequest
 ): Promise<RequestInit> => {
-  const headers = bearerHeaders(await connection.getBearerToken())
+  const headers = bearerHeaders(await connection.getBearerToken(), context)
   if (request.body !== undefined) headers.set("content-type", "application/json")
   return {
     method,

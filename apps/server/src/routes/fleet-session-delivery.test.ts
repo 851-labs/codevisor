@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest"
 import { makeFleetOutbox } from "../infra/fleet-outbox.js"
 import { run, waitFor } from "../test-support.js"
 import {
-  createArgs,
-  createdSession,
+  startArgs,
+  startedSession,
   invokeAs,
   laptop,
   post,
@@ -30,7 +30,7 @@ const promptsMatching = (machine: FleetMachine, text: string) =>
   machine.agents.prompts.filter(([, input]) => typeof input === "string" && input.includes(text))
     .length
 
-const turnEndedFor = (sessionId: string) => `type="session.turn_ended" sessionId="${sessionId}"`
+const turnEndedFor = (sessionId: string) => `type="session.turn_ended" agentId="${sessionId}"`
 
 describe("fleet session events", () => {
   it("wakes only the bot named in the event, in that bot's own chat", async () => {
@@ -81,9 +81,6 @@ describe("fleet session events", () => {
 
   it("keeps a completion for an offline bot machine and delivers it once it is back", async () => {
     const { home, remote, botOrigin, setOffline } = await startFleet()
-    const child = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
-    )
     const outbox = makeFleetOutbox({
       db: remote.services.db,
       machines: remote.machines,
@@ -91,7 +88,15 @@ describe("fleet session events", () => {
     })
 
     setOffline(studio.id, true)
-    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "status" })
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("status"),
+        botOrigin
+      )
+    )
     await waitFor(async () => (await run(remote.services.db.listFleetMessages)).length === 1)
     await outbox.flush()
     const stillQueued = await run(remote.services.db.listFleetMessages)
@@ -107,9 +112,16 @@ describe("fleet session events", () => {
 
   it("sends a finished turn the server never got to forward, once, when it next runs", async () => {
     const { home, remote, botOrigin } = await startFleet()
-    const child = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("status"),
+        botOrigin
+      )
     )
+    await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) === 1)
     const sender = {
       serverId: laptop.id,
       fleet: {
@@ -134,8 +146,8 @@ describe("fleet session events", () => {
 
     expect(pendingBeforeRestart).toHaveLength(1)
     expect(await run(remote.services.db.listFleetMessages)).toEqual([])
-    await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) > 0)
-    expect(promptsMatching(home, turnEndedFor(child.id))).toBe(1)
+    await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) > 1)
+    expect(promptsMatching(home, turnEndedFor(child.id))).toBe(2)
   })
 
   it("refuses events for an archived bot so the sender stops retrying", async () => {

@@ -2,6 +2,7 @@ import {
   decode,
   FLEET_CALLER_HEADER,
   SessionSummary,
+  StartedAgent,
   Workspace,
   type MachineCallOrigin
 } from "@codevisor/api"
@@ -103,7 +104,22 @@ export const invokeAs = (caller: Member, target: FleetMachine, body: unknown): P
 
 export const resultOf = (body: unknown): unknown => (isRecord(body) ? body.result : undefined)
 
-export const createdSession = (result: unknown): SessionSummary => decode(SessionSummary)(result)
+export const startArgs = (prompt: string) => ({
+  project: "laptop-project",
+  harness: "codex",
+  title: "Fix the laptop",
+  isolation: "project",
+  prompt
+})
+
+export const startedSession = async (
+  machine: FleetMachine,
+  result: unknown
+): Promise<SessionSummary> => {
+  const { agentId } = decode(StartedAgent)(result)
+  const detail = (await jsonRequest(machine.server, `/v1/sessions/${agentId}`)).body
+  return decode(Schema.Struct({ session: SessionSummary }))(detail).session
+}
 
 export const workspaceOf = async (machine: FleetMachine, session: SessionSummary) =>
   decode(Schema.Array(Workspace))((await jsonRequest(machine.server, "/v1/workspaces")).body).find(

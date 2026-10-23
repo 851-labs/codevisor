@@ -14,7 +14,7 @@ const setUpRouter = async () => {
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
   const routeState = idleRouteState()
-  const router = makeSessionEventRouter(services, fanout, routeState, "server-a")
+  const router = makeSessionEventRouter(services, fanout, routeState, "server-a", async () => {})
   onTestFinished(fanout.subscribe(router.listener))
   const folder = mkdtempSync(join(tmpdir(), "codevisor-event-router-"))
   tempDirs.push(folder)

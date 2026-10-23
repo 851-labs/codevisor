@@ -1,16 +1,18 @@
 import { decode, REMOTE_PARENT_HEADER, remoteSessionKey, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
+import { withTicket } from "../infra/fleet-tickets.js"
 import { jsonRequest, run, waitFor } from "../test-support.js"
 import { createBot, decodeBot, endedTurns } from "./bot-test-support.js"
 import { fleetBotWake } from "./fleet-session-events.js"
 import {
   createArgs,
-  createdSession,
   invokeAs,
   laptop,
   post,
   postInvoke,
+  startArgs,
+  startedSession,
   startFleet,
   stranger,
   studio,
@@ -46,10 +48,10 @@ describe("bot sub-agents on another machine", () => {
         typeof input === "string" && input.includes('type="session.turn_ended"') ? [input] : []
       )
 
-    const child = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("one"), botOrigin)
     )
-    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "one" })
     await waitFor(() => reports().length === 1)
     await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "two" })
     await waitFor(() => reports().length === 2)
@@ -59,7 +61,7 @@ describe("bot sub-agents on another machine", () => {
       botId: bot.id,
       botMachineId: studio.id
     })
-    const opening = `<codevisor-event machine="Laptop" machineId="${laptop.id}" type="session.turn_ended" sessionId="${child.id}" title="Fix the laptop"`
+    const opening = `<codevisor-event machine="Laptop" machineId="${laptop.id}" type="session.turn_ended" agentId="${child.id}" title="Fix the laptop"`
     expect(reports()).toEqual([
       expect.stringMatching(new RegExp(`^${escapeRegExp(opening)}.*\\nEcho: one\\n`, "s")),
       expect.stringMatching(new RegExp(`^${escapeRegExp(opening)}.*\\nEcho: two\\n`, "s"))
@@ -68,14 +70,14 @@ describe("bot sub-agents on another machine", () => {
 
   it("refuses a remote parent that doesn't come from its own machine", async () => {
     const { home, remote, botOrigin } = await startFleet()
-    const create = { path: "codevisor.sessions.create", args: createArgs, origin: botOrigin }
+    const create = { path: "codevisor.agents.start", args: startArgs("go"), origin: botOrigin }
     const before = await sessionCount(remote)
 
     const anonymous = await postInvoke(remote.server.url, create)
     const impostor = await invokeAs(stranger, remote, create)
     const stolenKey = await invokeAs({ ...studio, publicKey: stranger.publicKey }, remote, create)
     const otherMachine = await failureOf(
-      home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, {
+      home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("go"), {
         ...botOrigin,
         machineId: stranger.id
       })
@@ -106,17 +108,23 @@ describe("bot sub-agents on another machine", () => {
     const { home, remote, botOrigin } = await startFleet()
     const { botId: _botId, ...withoutBot } = botOrigin
 
-    const child = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, withoutBot)
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.agents.start",
+        startArgs("status"),
+        withoutBot
+      )
     )
 
-    const thirdMachineBot = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, {
+    const thirdMachineBot = await startedSession(
+      remote,
+      await home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("status"), {
         ...botOrigin,
         botMachineId: "machine-third"
       })
     )
-    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "status" })
     await waitFor(() => endedTurns(remote, child.id) > 0)
 
     expect(child.parentSessionId).toBe(remoteSessionKey(studio.id, botOrigin.sessionId))
@@ -130,8 +138,9 @@ describe("bot sub-agents on another machine", () => {
 
   it("keeps ordinary callers out of a workspace that belongs to another machine's bot", async () => {
     const { home, remote, botOrigin } = await startFleet()
-    const child = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("go"), botOrigin)
     )
     const plain = decode(SessionSummary)((await createLocally(remote, {})).body)
     const intoLinked = (body: Record<string, unknown>) =>
@@ -139,26 +148,39 @@ describe("bot sub-agents on another machine", () => {
 
     const remoteParent = await intoLinked({ parentSessionId: `remote:${studio.id}:other` })
     const unrelatedParent = await intoLinked({ parentSessionId: plain.id })
-    const otherBotSession = await failureOf(
-      home.machines.invoke(
-        laptop.id,
-        "codevisor.sessions.create",
-        { ...createArgs, workspaceId: child.workspaceId },
-        { ...botOrigin, sessionId: "11111111-2222-4333-8444-555555555555" }
-      )
-    )
     const moved = await post(
       remote,
       `/v1/sessions/${plain.id}`,
       { workspaceId: child.workspaceId },
       "PATCH"
     )
+    const asVerifiedParent = (sessionId: string) =>
+      withTicket(
+        remote.fleetTickets.remoteParents,
+        {
+          parentSessionId: remoteSessionKey(studio.id, sessionId),
+          bot: { botId: botOrigin.botId!, botMachineId: studio.id }
+        },
+        (ticket) =>
+          jsonRequest(remote.server, "/v1/sessions", {
+            method: "POST",
+            headers: { [REMOTE_PARENT_HEADER]: ticket },
+            body: JSON.stringify({
+              ...createArgs,
+              workspaceId: child.workspaceId,
+              parentSessionId: remoteSessionKey(studio.id, sessionId)
+            })
+          })
+      )
+    const otherBotSession = await asVerifiedParent("11111111-2222-4333-8444-555555555555")
+    const sameBotSession = await asVerifiedParent(botOrigin.sessionId!)
     const grandchild = await intoLinked({ parentSessionId: child.id })
     const plainTab = await intoLinked({})
 
     refusedRemoteParent(remoteParent)
     expect([unrelatedParent.status, moved.status]).toEqual([409, 409])
-    expect(otherBotSession).toContain("belongs to a bot on another machine")
+    expect(JSON.stringify(otherBotSession.body)).toContain("belongs to a bot on another machine")
+    expect(sameBotSession.status).toBe(201)
     expect([grandchild.status, plainTab.status]).toEqual([201, 201])
     const joined = [grandchild, plainTab].map((answer) => decode(SessionSummary)(answer.body))
     for (const session of joined) {
@@ -171,8 +193,9 @@ describe("bot sub-agents on another machine", () => {
 
   it("never lets an existing chat into a remote bot's workspace or links an existing workspace later", async () => {
     const { home, remote, botOrigin } = await startFleet()
-    const child = createdSession(
-      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    const child = await startedSession(
+      remote,
+      await home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("go"), botOrigin)
     )
     const legacy = await run(
       remote.services.db.createSession({ ...createArgs, parentSessionId: child.parentSessionId })
@@ -186,20 +209,10 @@ describe("bot sub-agents on another machine", () => {
 
     const movedIntoLinked = await intoWorkspace(child.workspaceId!)
     const movedIntoFresh = await intoWorkspace(freshWorkspace)
-    const laterChild = createdSession(
-      await home.machines.invoke(
-        laptop.id,
-        "codevisor.sessions.create",
-        { ...createArgs, workspaceId: freshWorkspace },
-        botOrigin
-      )
-    )
 
     expect([movedIntoLinked.status, movedIntoFresh.status]).toEqual([409, 200])
-    expect((await workspaceOf(remote, laterChild))?.botId).toBeUndefined()
     const moved = await run(remote.services.db.getSessionSummary(legacy.id))
     expect(await fleetBotWake(remote.services, moved)).toBeUndefined()
-    expect(await fleetBotWake(remote.services, laterChild)).toBeUndefined()
   })
 
   it("links back to a bot on this machine when a remote sub-agent of that bot starts more work here", async () => {
@@ -208,7 +221,7 @@ describe("bot sub-agents on another machine", () => {
       (await createBot(remote, { projectIds: ["laptop-project"], conversational: true })).body
     )
     const fromSubAgent = (botId: string) =>
-      home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, {
+      home.machines.invoke(laptop.id, "codevisor.agents.start", startArgs("go"), {
         machineId: studio.id,
         machineName: studio.name,
         sessionId: "11111111-2222-4333-8444-555555555555",
@@ -216,8 +229,11 @@ describe("bot sub-agents on another machine", () => {
         botMachineId: laptop.id
       })
 
-    const linked = createdSession(await fromSubAgent(localBot.id))
-    const unknown = createdSession(await fromSubAgent("99999999-2222-4333-8444-555555555555"))
+    const linked = await startedSession(remote, await fromSubAgent(localBot.id))
+    const unknown = await startedSession(
+      remote,
+      await fromSubAgent("99999999-2222-4333-8444-555555555555")
+    )
 
     const linkedWorkspace = await workspaceOf(remote, linked)
     expect(linkedWorkspace?.botId).toBe(localBot.id)

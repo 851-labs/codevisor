@@ -1,114 +1,33 @@
 import { createHash } from "node:crypto"
 import { mkdtemp } from "node:fs/promises"
-import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { canonicalExecutionArgs } from "@codevisor/api"
-import {
-  CodeExecutionToolError,
-  computerUseTools,
-  makeBrowserUseProvider,
-  textToolResult,
-  type AutomationProviderContext
-} from "@codevisor/automation"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { makeBrowserUseProvider, textToolResult } from "@codevisor/automation"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
+import {
+  connectClient,
+  listenWithMachines,
+  studioGateway
+} from "./mcp-gateway-machines-test-support.js"
 import {
   cleanupMcpManagerTests,
   directories,
   executeResultValue,
   executionOf,
-  listen,
   run,
   testManager
 } from "./mcp-manager-test-support.js"
-import type { GatewayOrigin, McpManager } from "./mcp-manager-types.js"
-import { sdkTransport } from "./mcp-support.js"
+import type { GatewayOrigin } from "./mcp-manager-types.js"
 
 afterEach(cleanupMcpManagerTests)
 
 const PNG_PIXEL =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-
-const machineRoster = {
-  machines: [
-    { id: "studio", name: "Mac Studio", online: true, isCurrent: true },
-    { id: "mbp", name: "MacBook Pro", online: true, isCurrent: false }
-  ]
-}
-
-const listenWithMachines = async (manager: McpManager): Promise<void> => {
-  manager.setBaseUrl(
-    await listen(
-      createServer((request, response) => {
-        if (request.url === "/v1/machines") {
-          response.writeHead(200, { "content-type": "application/json" })
-          response.end(JSON.stringify(machineRoster))
-          return
-        }
-        void manager.handleGatewayRequest(request, response)
-      })
-    )
-  )
-}
-
-const studioGateway = async () => {
-  const remoteCalls: Array<{
-    machine: string
-    path: string
-    args: unknown
-    origin: GatewayOrigin
-  }> = []
-  const computerContexts: Array<AutomationProviderContext> = []
-  const { db, manager } = await testManager({
-    machine: { id: "studio", name: "Mac Studio" },
-    makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test"),
-    makeComputerProvider: () => ({
-      id: "computer",
-      tools: computerUseTools,
-      status: () => ({ available: true }),
-      ensureSetup: async () => {},
-      close: async () => {},
-      closeSession: async () => {},
-      invoke: async (context) => {
-        computerContexts.push(context)
-        return textToolResult(JSON.stringify({ apps: [] }))
-      }
-    }),
-    remoteInvoker: async (machine, path, args, origin) => {
-      remoteCalls.push({ machine, path, args, origin })
-      if (path === "xcode.test") {
-        throw new CodeExecutionToolError(
-          "lost connection to MacBook Pro mid-call; the tool may or may not have completed",
-          {
-            code: "machine_unavailable",
-            details: { machineId: "mbp", name: "MacBook Pro", phase: "in-flight" }
-          }
-        )
-      }
-      return { built: true }
-    }
-  })
-  await listenWithMachines(manager)
-  return { computerContexts, db, manager, remoteCalls }
-}
-
-const connectClient = async (issued: { url: string; bearerToken: string }) => {
-  const client = new Client({ name: "machines-test", version: "1" })
-  await client.connect(
-    sdkTransport(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      })
-    )
-  )
-  return client
-}
 
 describe("gateway machines and execution annotations", () => {
   it("routes machine-targeted calls to the machine link and streams what ran to the session", async () => {

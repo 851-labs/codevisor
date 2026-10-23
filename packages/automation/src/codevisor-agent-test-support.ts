@@ -1,3 +1,4 @@
+import { remoteSessionKey } from "@codevisor/api"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { vi } from "vitest"
 
@@ -147,7 +148,9 @@ export const question = {
 }
 
 export const local: AutomationProviderContext = { sessionId: "caller", projectId: "project-1" }
-export const remote: AutomationProviderContext = { sessionId: "remote:studio:caller" }
+export const remote: AutomationProviderContext = {
+  sessionId: remoteSessionKey("studio", "caller")
+}
 
 const provider = makeCodevisorProvider(
   () => "http://127.0.0.1:43210",

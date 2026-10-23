@@ -10,7 +10,7 @@ import {
 } from "@codevisor/api"
 import { Schema } from "effect"
 
-import { agentSummary, localCallerId } from "./codevisor-agent-caller.js"
+import { agentSummary, isRemoteScope, localCallerId } from "./codevisor-agent-caller.js"
 import { agentTool, type AgentTool, type AgentToolContext } from "./codevisor-agent-tool.js"
 import { apiTool } from "./codevisor-api-tool-spec.js"
 import { namedRecord } from "./codevisor-tool-shapes.js"
@@ -138,7 +138,7 @@ const sharesCallerWorkspace = async (
   tool: AgentToolContext,
   workspaceId: string
 ): Promise<boolean> => {
-  if (tool.context.sessionId.startsWith("remote:")) return false
+  if (isRemoteScope(tool.context.sessionId)) return false
   const caller = await agentSummary(tool, tool.context.sessionId)
   return caller.workspaceId?.toLowerCase() === workspaceId.toLowerCase()
 }

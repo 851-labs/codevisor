@@ -1,4 +1,4 @@
-import { REMOTE_PARENT_HEADER } from "@codevisor/api"
+import { REMOTE_PARENT_HEADER, remoteSessionKey } from "@codevisor/api"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -167,8 +167,10 @@ describe("Codevisor MCP provider", () => {
     expect(requests[0]!.init.headers).toBeInstanceOf(Headers)
     expect(requestHeaders(requests[0]!.init).get("authorization")).toBe("Bearer stable-token")
     expect(requestHeaders(requests[0]!.init).has(REMOTE_PARENT_HEADER)).toBe(false)
-    await provider.invoke({ ...callingContext, remoteParent: "verified-link" }, "sessions.create", {
-      harnessId: "codex"
+    await provider.invoke({ ...callingContext, remoteParent: "verified-link" }, "agents.start", {
+      prompt: "Go",
+      title: "Fix",
+      isolation: "project"
     })
     expect(requestHeaders(requests.at(-1)!.init).get(REMOTE_PARENT_HEADER)).toBe("verified-link")
     await expect(provider.invoke(callingContext, "workspaces.delete", {})).rejects.toThrow(
@@ -245,7 +247,7 @@ describe("Codevisor MCP provider", () => {
     expect(requestJson(requests[0]!.init)).toEqual({ text: "done", fromSessionId: "agent" })
   })
 
-  it("starts agents as the calling agent, but not on behalf of another machine's caller", async () => {
+  it("starts agents as the calling agent, or under another machine's caller key", async () => {
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {
       requests.push({ url, init })
@@ -258,7 +260,7 @@ describe("Codevisor MCP provider", () => {
     const start = { prompt: "Go", title: "Fix", isolation: "worktree", callerAgentId: "forged" }
 
     await provider.invoke({ sessionId: "agent" }, "agents.start", start)
-    await provider.invoke({ sessionId: "remote:mbp:agent" }, "agents.start", start)
+    await provider.invoke({ sessionId: remoteSessionKey("mbp", "agent") }, "agents.start", start)
 
     expect(requests.map((request) => request.url.pathname)).toEqual(["/v1/agents", "/v1/agents"])
     expect(requestJson(requests[0]!.init)).toEqual({
@@ -270,7 +272,8 @@ describe("Codevisor MCP provider", () => {
     expect(requestJson(requests[1]!.init)).toEqual({
       prompt: "Go",
       title: "Fix",
-      isolation: "worktree"
+      isolation: "worktree",
+      remoteParentAgentId: remoteSessionKey("mbp", "agent")
     })
   })
 

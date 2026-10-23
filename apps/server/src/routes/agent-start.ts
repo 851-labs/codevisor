@@ -9,6 +9,7 @@ import {
 } from "@codevisor/api"
 
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
+import { verifiedRemoteParent } from "./fleet-calls.js"
 import { allocateProjectWorktree } from "./project-worktree-create.js"
 import {
   defaultPromptDelivery,
@@ -40,6 +41,7 @@ export const startAgent = async (route: RouteContext): Promise<boolean> => {
 
 interface AgentCaller {
   readonly sessionId: string | undefined
+  readonly parentKey: string | undefined
   readonly projectId: string | undefined
   readonly workspaceId: string | undefined
   readonly worktreeName: string | undefined
@@ -65,14 +67,23 @@ const startPlanned = async (
   created: Array<() => Promise<unknown>>
 ): Promise<StartedAgent> => {
   const { services, fanout, routeState, config } = route
+  const remoteParent = verifiedRemoteParent(services, route.request, plan.caller.parentKey)
   const placement = await placementFor(route, request, plan, created)
-  const { session } = await createSessionIfMissing(services, fanout, routeState, config, {
-    projectId: plan.projectId,
-    harnessId: plan.harnessId,
-    title: request.title,
-    ...placement,
-    ...optionalFields(request, plan)
-  })
+  const { session } = await createSessionIfMissing(
+    services,
+    fanout,
+    routeState,
+    config,
+    {
+      projectId: plan.projectId,
+      harnessId: plan.harnessId,
+      title: request.title,
+      ...placement,
+      ...optionalFields(request, plan)
+    },
+    true,
+    remoteParent
+  )
   created.push(() => deleteServerSession(services, fanout, session.id))
 
   const subscribed = await subscribeCaller(route, plan.caller, session.id)
@@ -87,8 +98,9 @@ const callerOf = async (route: RouteContext, request: StartAgentRequest): Promis
   return localCaller(session)
 }
 
-const remoteCaller = ({ callerDefaults }: StartAgentRequest): AgentCaller => ({
+const remoteCaller = ({ callerDefaults, remoteParentAgentId }: StartAgentRequest): AgentCaller => ({
   sessionId: undefined,
+  parentKey: remoteParentAgentId,
   projectId: undefined,
   workspaceId: undefined,
   worktreeName: undefined,
@@ -98,6 +110,7 @@ const remoteCaller = ({ callerDefaults }: StartAgentRequest): AgentCaller => ({
 
 const localCaller = (session: SessionSummary): AgentCaller => ({
   sessionId: session.id,
+  parentKey: session.id,
   projectId: session.projectId,
   workspaceId: session.workspaceId,
   worktreeName: session.worktreeName,
@@ -170,7 +183,7 @@ const sharedPlacement = ({ caller, projectId }: AgentPlan): Placement => {
 const optionalFields = (request: StartAgentRequest, plan: AgentPlan) => {
   const configSelections = configSelectionsFor(request.model, plan.harnessId, plan.caller)
   return {
-    ...(plan.caller.sessionId === undefined ? {} : { parentSessionId: plan.caller.sessionId }),
+    ...(plan.caller.parentKey === undefined ? {} : { parentSessionId: plan.caller.parentKey }),
     ...(request.labels === undefined ? {} : { labels: request.labels }),
     ...(configSelections === undefined ? {} : { configSelections })
   }

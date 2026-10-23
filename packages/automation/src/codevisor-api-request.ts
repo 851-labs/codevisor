@@ -166,10 +166,17 @@ const bodyPayload = (
   if (spec.wrappedBody === true) return args.body
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
   if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
-  if (spec.name === "agents.start" && !isRemoteScope(context.sessionId)) {
-    return { ...payload, callerAgentId: context.sessionId }
-  }
+  if (spec.name === "agents.start") return startPayload(payload, context)
   return payload
+}
+
+const startPayload = (
+  payload: UnknownRecord,
+  context: AutomationProviderContext
+): UnknownRecord => {
+  if (isRemoteScope(context.sessionId))
+    return { ...payload, remoteParentAgentId: context.sessionId }
+  return { ...payload, callerAgentId: context.sessionId }
 }
 
 const definedArguments = (args: UnknownRecord, names: ReadonlyArray<string>): UnknownRecord =>
