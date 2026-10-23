@@ -9,6 +9,8 @@ import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js
 import { run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
+  drop trigger fleet_turn_ended;
+  drop table fleet_pending_turns;
   drop table fleet_deliveries;
   drop table fleet_outbox;
   alter table workspaces drop column remote_bot_parent_session_id;
@@ -112,7 +114,9 @@ describe("remote bot workspace upgrade", () => {
     expect(await run(db.findBotLinkForSession("child"))).toEqual({ botId: "bot-helper" })
     expect(await run(db.findFleetBotLink("child"))).toBeUndefined()
     expect(linked.workspace).toMatchObject({ botId: "bot-elsewhere", botMachineId: "machine-b" })
-    expect(await run(db.recordFleetDelivery("d-1", "2100-01-01T00:00:00.000Z"))).toBe(true)
+    const prompt = { deliveryId: "d-1", receivedAt: "2100-01-01T00:00:00.000Z", text: "t" }
+    expect(await run(db.acceptFleetPrompt({ ...prompt, sessionId: "chat-home" }))).toBe(true)
+    expect(await run(db.listFleetPendingTurns)).toEqual([])
     expect(await run(db.listFleetMessages)).toEqual([])
     expect(await run(db.findFleetBotLink("remote-child"))).toEqual({
       parentSessionId: "remote:machine-b:chat-b",

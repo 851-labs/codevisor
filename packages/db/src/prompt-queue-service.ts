@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import type { PromptQueueItem } from "@codevisor/api"
+import type { AttachmentRef, PromptOrigin, PromptQueueItem } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
@@ -9,6 +9,49 @@ import { listPromptQueueSync, promptQueueFromRow, serializeAttachments } from ".
 import { promptQueueRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+export interface NewPromptQueueItem {
+  readonly rawSessionId: string
+  readonly text: string
+  readonly attachments?: ReadonlyArray<AttachmentRef> | undefined
+  readonly id?: string | undefined
+  readonly clientId?: string | undefined
+  readonly origin?: PromptOrigin | undefined
+}
+
+export const insertPromptQueueItem = (
+  context: ServiceContext,
+  request: NewPromptQueueItem
+): PromptQueueItem => {
+  const { attachments, clientId, origin, text } = request
+  const sessionId = canonicalUuid(request.rawSessionId)
+  context.getSession(sessionId)
+  const now = isoTimestamp()
+  const item: PromptQueueItem = {
+    id: request.id ?? randomUUID(),
+    sessionId,
+    text,
+    createdAt: now,
+    updatedAt: now,
+    ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
+    ...(clientId === undefined ? {} : { clientId }),
+    ...(origin === "system" ? { origin } : {})
+  }
+  context.sqlite
+    .prepare(queueSql.insert)
+    .run(
+      item.id,
+      sessionId,
+      text,
+      now,
+      now,
+      serializeAttachments(attachments),
+      clientId ?? null,
+      origin ?? "user",
+      sessionId
+    )
+  return item
+}
 
 export const makePromptQueueService = (
   context: ServiceContext
@@ -28,35 +71,9 @@ export const makePromptQueueService = (
 
   return {
     createPromptQueueItem: (rawSessionId, text, attachments, id, clientId, origin) =>
-      attempt("createPromptQueueItem", () => {
-        const sessionId = canonicalUuid(rawSessionId)
-        getSession(sessionId)
-        const now = isoTimestamp()
-        const item: PromptQueueItem = {
-          id: id ?? randomUUID(),
-          sessionId,
-          text,
-          createdAt: now,
-          updatedAt: now,
-          ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
-          ...(clientId === undefined ? {} : { clientId }),
-          ...(origin === "system" ? { origin } : {})
-        }
-        sqlite
-          .prepare(queueSql.insert)
-          .run(
-            item.id,
-            sessionId,
-            text,
-            now,
-            now,
-            serializeAttachments(attachments),
-            clientId ?? null,
-            origin ?? "user",
-            sessionId
-          )
-        return item
-      }),
+      attempt("createPromptQueueItem", () =>
+        insertPromptQueueItem(context, { rawSessionId, text, attachments, id, clientId, origin })
+      ),
     listPromptQueue: (rawSessionId) =>
       attempt("listPromptQueue", () => {
         const sessionId = canonicalUuid(rawSessionId)

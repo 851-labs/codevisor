@@ -2,7 +2,7 @@ import { CodeExecutionToolError } from "@codevisor/automation"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { makeServices, run } from "../test-support.js"
+import { makeServices, run, waitFor } from "../test-support.js"
 import { field } from "../unknown-values.js"
 import {
   FLEET_DELIVERY_MEMORY_MS,
@@ -48,7 +48,9 @@ const gate = () => {
 
 const untilAborted = (attempt: Attempt): Promise<never> =>
   new Promise((_resolve, reject) => {
-    attempt.signal!.addEventListener("abort", () => reject(new Error("deadline")))
+    const signal = attempt.signal!
+    if (signal.aborted) reject(new Error("deadline"))
+    signal.addEventListener("abort", () => reject(new Error("deadline")))
   })
 
 const outboxFor = async (
@@ -58,20 +60,37 @@ const outboxFor = async (
   const { services } = await makeServices("outbox")
   const { machines, attempts } = recordingLink(answer)
   const deadlines: AbortController[] = []
+  let deadlinesPassed = false
   const outbox = makeFleetOutbox({
     db: services.db,
     machines,
     now: () => NOW,
     attemptSignal: () => {
       const deadline = new AbortController()
+      if (deadlinesPassed) deadline.abort()
       deadlines.push(deadline)
       return deadline.signal
     },
     ...overrides
   })
+  const passDeadlines = () => {
+    deadlinesPassed = true
+    for (const deadline of deadlines) deadline.abort()
+  }
   const queued = async () =>
     (await run(services.db.listFleetMessages)).map((message) => message.args.n)
-  return { services, outbox, attempts, deadlines, queued }
+  const enqueue = (machineId: string, args: Readonly<Record<string, unknown>>) =>
+    run(
+      services.db.enqueueFleetMessage({
+        id: `m-${String(args.n)}-${machineId}`,
+        machineId,
+        path: "fleet.session_event",
+        args,
+        origin,
+        createdAt: new Date(NOW).toISOString()
+      })
+    )
+  return { services, outbox, attempts, queued, enqueue, passDeadlines }
 }
 
 describe("fleet outbox", () => {
@@ -85,36 +104,39 @@ describe("fleet outbox", () => {
       offline: new CodeExecutionToolError("offline", { code: "machine_unavailable" }),
       unknown: new Error("socket hang up")
     }
-    const { outbox, queued } = await outboxFor(async (attempt) => {
+    const { outbox, queued, enqueue } = await outboxFor(async (attempt) => {
       throw failures[attempt.machine]
     })
 
-    for (const [n, machine] of Object.keys(failures).entries()) {
-      await outbox.send(machine, "fleet.session_event", { n }, origin)
-    }
+    for (const [n, machine] of Object.keys(failures).entries()) await enqueue(machine, { n })
+    await outbox.flush()
 
     expect(await queued()).toEqual([2, 3, 4, 5, 6])
   })
 
   it("keeps delivering to other machines while one delivery stalls, until its deadline", async () => {
     const stall = gate()
-    const { outbox, attempts, deadlines, queued } = await outboxFor((attempt) => {
+    const { outbox, attempts, queued, enqueue, passDeadlines } = await outboxFor((attempt) => {
       if (attempt.machine !== "machine-stalled") return Promise.resolve(null)
       stall.open()
       return untilAborted(attempt)
     })
 
-    const stalled = outbox.send("machine-stalled", "fleet.session_event", { n: 1 }, origin)
+    await enqueue("machine-stalled", { n: 1 })
+    const stalled = outbox.flush()
     await stall.opened
-    await outbox.send("machine-studio", "fleet.session_event", { n: 2 }, origin)
+    await enqueue("machine-studio", { n: 2 })
+    const alongside = outbox.flush()
+    await waitFor(async () => (await queued()).length === 1)
     const whileStalled = await queued()
-    deadlines[0]!.abort()
-    await stalled
+    passDeadlines()
+    await Promise.all([stalled, alongside])
 
     expect(whileStalled).toEqual([1])
     expect(attempts.map((attempt) => attempt.machine)).toEqual([
       "machine-stalled",
-      "machine-studio"
+      "machine-studio",
+      "machine-stalled"
     ])
     expect(await queued()).toEqual([1])
   })
@@ -122,37 +144,44 @@ describe("fleet outbox", () => {
   it("expires old messages even while their destination is stalled", async () => {
     let now = NOW
     const attemptStarted = gate()
-    const { outbox, deadlines, queued } = await outboxFor(
+    const { outbox, queued, enqueue, passDeadlines } = await outboxFor(
       (attempt) => {
         attemptStarted.open()
         return untilAborted(attempt)
       },
       { now: () => now }
     )
-    const stalled = outbox.send("machine-stalled", "fleet.session_event", { n: 1 }, origin)
+    await enqueue("machine-stalled", { n: 1 })
+    const stalled = outbox.flush()
     await attemptStarted.opened
 
     now = NOW + FLEET_MESSAGE_MAX_AGE_MS + 1
     await outbox.expire()
     const afterExpiry = await queued()
-    deadlines[0]!.abort()
+    passDeadlines()
     await stalled
 
     expect(afterExpiry).toEqual([])
     expect(await queued()).toEqual([])
   })
 
-  it("delivers messages sent during a delivery in order, in the same drain", async () => {
+  it("delivers messages queued during a delivery in order, in the same drain", async () => {
     const firstAnswer = gate()
-    const { outbox, attempts, queued } = await outboxFor(async (attempt) => {
-      if (field(attempt.args, "n") === 1) await firstAnswer.opened
+    const firstAttempt = gate()
+    const { outbox, attempts, queued, enqueue } = await outboxFor(async (attempt) => {
+      if (field(attempt.args, "n") !== 1) return null
+      firstAttempt.open()
+      await firstAnswer.opened
       return null
     })
 
-    const sendingFirst = outbox.send("machine-studio", "fleet.session_event", { n: 1 }, origin)
-    const sendingSecond = outbox.send("machine-studio", "fleet.session_event", { n: 2 }, origin)
+    await enqueue("machine-studio", { n: 1 })
+    const draining = outbox.flush()
+    await firstAttempt.opened
+    await enqueue("machine-studio", { n: 2 })
+    const joining = outbox.flush()
     firstAnswer.open()
-    await Promise.all([sendingFirst, sendingSecond])
+    await Promise.all([draining, joining])
 
     expect(attempts.map((attempt) => attempt.args)).toEqual([
       expect.objectContaining({ n: 1 }),
@@ -176,7 +205,17 @@ describe("fleet outbox", () => {
     }
     const outbox = makeFleetOutbox({ db, machines, now: () => NOW })
 
-    await outbox.send("machine-studio", "fleet.session_event", {}, origin)
+    await run(
+      services.db.enqueueFleetMessage({
+        id: "m",
+        machineId: "machine-studio",
+        path: "fleet.session_event",
+        args: {},
+        origin,
+        createdAt: new Date(NOW).toISOString()
+      })
+    )
+    await outbox.flush()
     await outbox.flush()
 
     expect(attempts).toHaveLength(1)
@@ -186,16 +225,24 @@ describe("fleet outbox", () => {
   it("links only servers that know their machines, and forgets old delivery ids", async () => {
     const { services } = await makeServices("outbox-link")
     const { machines } = recordingLink(async () => null)
-    const old = new Date(NOW - FLEET_DELIVERY_MEMORY_MS - 1).toISOString()
-    const recent = new Date(NOW).toISOString()
-    await run(services.db.recordFleetDelivery("old", old))
-    await run(services.db.recordFleetDelivery("recent", recent))
+    const project = await run(services.db.createProject({ folderPath: "/tmp/outbox-link" }))
+    const bot = await run(services.db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const accept = (deliveryId: string, receivedAt: number) =>
+      run(
+        services.db.acceptFleetPrompt({
+          deliveryId,
+          receivedAt: new Date(receivedAt).toISOString(),
+          sessionId: bot.id,
+          text: "t"
+        })
+      )
+    await accept("old", NOW - FLEET_DELIVERY_MEMORY_MS - 1)
+    await accept("recent", NOW)
 
     await forgetOldFleetDeliveries(services, NOW)
 
     expect(fleetLinkFor(services)).toBeUndefined()
     expect(fleetLinkFor({ ...services, machines })?.machines).toBe(machines)
-    expect(await run(services.db.recordFleetDelivery("old", recent))).toBe(true)
-    expect(await run(services.db.recordFleetDelivery("recent", recent))).toBe(false)
+    expect([await accept("old", NOW), await accept("recent", NOW)]).toEqual([true, false])
   })
 })

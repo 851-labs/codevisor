@@ -40,7 +40,7 @@ export * from "./rows.js"
 export * from "./service.js"
 
 export type { AutoResumeRecord, AutoResumeState } from "./auto-resume-service.js"
-export type { FleetMessage } from "./fleet-outbox-service.js"
+export type { FleetMessage, FleetPendingTurn, FleetPrompt } from "./fleet-outbox-service.js"
 
 export type {
   WorkspaceFileEdit,

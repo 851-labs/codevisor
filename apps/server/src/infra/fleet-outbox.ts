@@ -1,6 +1,3 @@
-import { randomUUID } from "node:crypto"
-
-import type { MachineCallOrigin } from "@codevisor/api"
 import type { CodevisorDatabaseService, FleetMessage } from "@codevisor/db"
 
 import { run } from "../server-context.js"
@@ -8,12 +5,6 @@ import { makeKeyedDrains } from "./keyed-drains.js"
 import { PeerAnswerError, type MachineLink } from "./machine-link.js"
 
 export interface FleetOutbox {
-  readonly send: (
-    machineId: string,
-    path: string,
-    args: Readonly<Record<string, unknown>>,
-    origin: MachineCallOrigin
-  ) => Promise<void>
   readonly flush: () => Promise<void>
   readonly expire: () => Promise<void>
 }
@@ -40,10 +31,6 @@ export const makeFleetOutbox = (options: FleetOutboxOptions): FleetOutbox => {
   const expire = (): Promise<void> =>
     run(options.db.deleteFleetMessagesBefore(expiryCutoff(options)))
   return {
-    send: async (machineId, path, args, origin) => {
-      await run(options.db.enqueueFleetMessage(newMessage(options, machineId, path, args, origin)))
-      await destinations.drain(machineId)
-    },
     flush: async () => {
       await expire()
       const queued = await run(options.db.listFleetMessages)
@@ -68,24 +55,6 @@ export const forgetOldFleetDeliveries = (
   now: number = Date.now()
 ): Promise<void> =>
   run(services.db.pruneFleetDeliveries(new Date(now - FLEET_DELIVERY_MEMORY_MS).toISOString()))
-
-const newMessage = (
-  options: FleetOutboxOptions,
-  machineId: string,
-  path: string,
-  args: Readonly<Record<string, unknown>>,
-  origin: MachineCallOrigin
-): FleetMessage => {
-  const id = randomUUID()
-  return {
-    id,
-    machineId,
-    path,
-    args: { ...args, deliveryId: id },
-    origin,
-    createdAt: new Date(options.now()).toISOString()
-  }
-}
 
 const drainDestination = async (options: FleetOutboxOptions, machineId: string) => {
   for (const message of await run(options.db.listFleetMessagesFor(machineId))) {

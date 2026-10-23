@@ -8,7 +8,6 @@ import {
 } from "@codevisor/api"
 import type { ExecutionJobFinished } from "@codevisor/mcp"
 
-import type { FleetLink } from "../infra/fleet-outbox.js"
 import {
   run,
   swallowError,
@@ -19,7 +18,6 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { isUpdatePause } from "../update-pauses.js"
 import { conversationalBotForSession } from "./bot-turns.js"
-import { fleetBotWake, forwardSessionEvent, type FleetBotWake } from "./fleet-session-events.js"
 import {
   erroredMessage,
   jobFinishedMessage,
@@ -32,10 +30,9 @@ import { makeSessionEventOutbox, type SessionEventOutbox } from "./session-event
 export interface SessionEventRouter {
   readonly listener: (event: EventEnvelope) => void
   readonly onJobFinished: (finished: ExecutionJobFinished) => void
-  readonly deliver: SessionEventOutbox["deliver"]
 }
 
-const finalAssistantText = async (
+export const finalAssistantText = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<{ readonly text: string; readonly attachments?: ReadonlyArray<AttachmentRef> }> => {
@@ -52,11 +49,11 @@ export const makeSessionEventRouter = (
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
-  fleet?: FleetLink
+  afterTurnEnded: () => Promise<void>
 ): SessionEventRouter => {
   const outbox = makeSessionEventOutbox(services, fanout, routeState, serverId)
   const actionKinds = new Map<string, string | undefined>()
-  const publish = makePublisher(services, outbox, serverId, fleet)
+  const publish = makePublisher(services, outbox)
 
   const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {
     const target = await run(services.db.getSessionSummary(sessionId))
@@ -109,6 +106,7 @@ export const makeSessionEventRouter = (
         await outbox.flushHeld(event.subjectId)
         return
       }
+      void afterTurnEnded().catch(swallowError)
       await onTurnEnded(event.subjectId, payload)
       return
     }
@@ -124,7 +122,6 @@ export const makeSessionEventRouter = (
   }
 
   return {
-    deliver: outbox.deliver,
     listener: (event) => {
       const payload = isRecord(event.payload) ? event.payload : {}
       void routeEvent(event, payload).catch(swallowError)
@@ -141,18 +138,12 @@ interface Recipient {
   readonly subscriberId: string
   readonly subscription?: SessionSubscription
   readonly stale?: () => boolean
-  readonly fleet?: FleetBotWake
 }
 
 type BuildMessage = (subscriptionId?: string) => SessionEventMessage
 
 const makePublisher =
-  (
-    services: CodevisorServerServices,
-    outbox: SessionEventOutbox,
-    serverId: string,
-    fleet: FleetLink | undefined
-  ) =>
+  (services: CodevisorServerServices, outbox: SessionEventOutbox) =>
   async (
     target: SessionSummary,
     type: SessionEventType,
@@ -165,15 +156,8 @@ const makePublisher =
       if (recipient.subscription?.once === true) {
         await run(services.db.deleteSessionSubscription(recipient.subscription.id))
       }
-      const message = build(recipient.subscription?.id)
-      if (recipient.fleet !== undefined) {
-        await forwardSessionEvent(fleet, serverId, target, recipient.fleet, message).catch(
-          swallowError
-        )
-        continue
-      }
       await outbox.deliver(recipient.subscriberId, {
-        message,
+        message: build(recipient.subscription?.id),
         sourceSessionId: target.id,
         ...(recipient.stale === undefined ? {} : { stale: recipient.stale })
       })
@@ -201,21 +185,9 @@ const botParentRecipients = async (
 ): Promise<ReadonlyArray<Recipient>> => {
   const parentSessionId = target.parentSessionId
   if (type !== "turn_ended" || parentSessionId === undefined) return []
-  if (parseRemoteSessionKey(parentSessionId) !== undefined) {
-    return fleetRecipients(services, target, parentSessionId)
-  }
+  if (parseRemoteSessionKey(parentSessionId) !== undefined) return []
   const parentIsBot = (await conversationalBotForSession(services, parentSessionId)) !== undefined
   return parentIsBot ? [{ subscriberId: parentSessionId }] : []
-}
-
-const fleetRecipients = async (
-  services: CodevisorServerServices,
-  target: SessionSummary,
-  parentSessionId: string
-): Promise<ReadonlyArray<Recipient>> => {
-  const wake = await fleetBotWake(services, target)
-  if (wake === undefined) return []
-  return [{ subscriberId: parentSessionId, fleet: wake }]
 }
 
 const pingPong = (

@@ -35,6 +35,7 @@ import { makeBotConversationListener } from "./routes/bot-conversation.js"
 import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
 import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
+import { fleetTurnSender } from "./routes/fleet-turns.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import { makeSessionEventRouter } from "./routes/session-event-router.js"
 import {
@@ -159,12 +160,20 @@ export const makeCodevisorServerApp = (
     makeUsageHoldReleaseListener(services, fanout, routeState, config.id)
   )
   const fleet = fleetLinkFor(services)
-  const sessionEvents = makeSessionEventRouter(services, fanout, routeState, config.id, fleet)
-  routeState.deliverSessionEvent = sessionEvents.deliver
-  void fleet?.outbox.flush().catch(swallowError)
+  const sendFleetTurns = fleetTurnSender(services, config.id, fleet)
+  const sessionEvents = makeSessionEventRouter(
+    services,
+    fanout,
+    routeState,
+    config.id,
+    sendFleetTurns
+  )
+  routeState.drainSessionQueue = (sessionId) =>
+    drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
+  void sendFleetTurns().catch(swallowError)
   /* v8 ignore next 4 */
   const fleetRetry = setInterval(() => {
-    void fleet?.outbox.flush().catch(swallowError)
+    void sendFleetTurns().catch(swallowError)
     void forgetOldFleetDeliveries(services).catch(swallowError)
   }, FLEET_OUTBOX_RETRY_MS)
   fleetRetry.unref()

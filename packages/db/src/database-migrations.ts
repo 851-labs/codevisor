@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 
 import { runBlockingDataUpgrades } from "./data-upgrades.js"
+import { installFleetTurnJournal } from "./fleet-turn-journal.js"
 import { markFirstRunProjectsPending } from "./machine-settings-service.js"
 import { migrations } from "./migrations.js"
 import { installNavigationJournal } from "./navigation-journal.js"
@@ -81,6 +82,7 @@ export const runDatabaseMigrations = (
     runBlockingDataUpgrades(sqlite, config)
     migrateProjectLocationState(sqlite)
     installNavigationJournal(sqlite)
+    installFleetTurnJournal(sqlite)
   } finally {
     sqlite.pragma("foreign_keys = ON")
   }

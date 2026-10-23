@@ -3,7 +3,8 @@ import type { Effect } from "effect"
 
 import { attempt, type DatabaseError } from "./errors.js"
 import { parseJsonColumn, parseJsonObject } from "./json-column.js"
-import { rowReader, text } from "./row-reader.js"
+import { insertPromptQueueItem } from "./prompt-queue-service.js"
+import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 
 export interface FleetMessage {
@@ -15,6 +16,19 @@ export interface FleetMessage {
   readonly createdAt: string
 }
 
+export interface FleetPrompt {
+  readonly deliveryId: string
+  readonly receivedAt: string
+  readonly sessionId: string
+  readonly text: string
+}
+
+export interface FleetPendingTurn {
+  readonly sessionId: string
+  readonly revision: number
+  readonly stopReason?: string
+}
+
 export interface FleetOutboxService {
   readonly enqueueFleetMessage: (message: FleetMessage) => Effect.Effect<void, DatabaseError>
   readonly listFleetMessages: Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
@@ -23,10 +37,12 @@ export interface FleetOutboxService {
   ) => Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
   readonly deleteFleetMessage: (id: string) => Effect.Effect<void, DatabaseError>
   readonly deleteFleetMessagesBefore: (createdAt: string) => Effect.Effect<void, DatabaseError>
-  readonly recordFleetDelivery: (
-    deliveryId: string,
-    receivedAt: string
-  ) => Effect.Effect<boolean, DatabaseError>
+  readonly acceptFleetPrompt: (prompt: FleetPrompt) => Effect.Effect<boolean, DatabaseError>
+  readonly listFleetPendingTurns: Effect.Effect<ReadonlyArray<FleetPendingTurn>, DatabaseError>
+  readonly promoteFleetTurn: (
+    turn: FleetPendingTurn,
+    message: FleetMessage | undefined
+  ) => Effect.Effect<void, DatabaseError>
   readonly pruneFleetDeliveries: (before: string) => Effect.Effect<void, DatabaseError>
 }
 
@@ -53,17 +69,37 @@ export const makeFleetOutboxService = (context: ServiceContext): FleetOutboxServ
       attempt("deleteFleetMessage", () => {
         sqlite.prepare(fleetSql.delete).run(id)
       }),
-    recordFleetDelivery: (deliveryId, receivedAt) =>
-      attempt(
-        "recordFleetDelivery",
-        () => sqlite.prepare(fleetSql.recordDelivery).run(deliveryId, receivedAt).changes > 0
-      ),
+    acceptFleetPrompt: (prompt) => attempt("acceptFleetPrompt", () => acceptOnce(context, prompt)),
+    listFleetPendingTurns: attempt("listFleetPendingTurns", () =>
+      pendingTurnRows.all(sqlite.prepare(fleetSql.pendingTurns).all()).map(pendingTurnFromRow)
+    ),
+    promoteFleetTurn: (turn, message) =>
+      attempt("promoteFleetTurn", () => {
+        sqlite.transaction(() => {
+          if (message !== undefined) sqlite.prepare(fleetSql.enqueue).run(...messageValues(message))
+          sqlite.prepare(fleetSql.deletePendingTurn).run(turn.sessionId, turn.revision)
+        })()
+      }),
     pruneFleetDeliveries: (before) =>
       attempt("pruneFleetDeliveries", () => {
         sqlite.prepare(fleetSql.pruneDeliveries).run(before)
       })
   }
 }
+
+const acceptOnce = (context: ServiceContext, prompt: FleetPrompt): boolean =>
+  context.sqlite.transaction(() => {
+    const receipt = context.sqlite
+      .prepare(fleetSql.recordDelivery)
+      .run(prompt.deliveryId, prompt.receivedAt)
+    if (receipt.changes === 0) return false
+    insertPromptQueueItem(context, {
+      rawSessionId: prompt.sessionId,
+      text: prompt.text,
+      origin: "system"
+    })
+    return true
+  })()
 
 const messageValues = (message: FleetMessage) =>
   [
@@ -93,6 +129,22 @@ interface FleetMessageRow {
   readonly created_at: string
 }
 
+const pendingTurnRows = rowReader({
+  session_id: text,
+  revision: integer,
+  stop_reason: nullable(text)
+})
+
+const pendingTurnFromRow = (row: {
+  readonly session_id: string
+  readonly revision: number
+  readonly stop_reason: string | null
+}): FleetPendingTurn => ({
+  sessionId: row.session_id,
+  revision: row.revision,
+  ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason })
+})
+
 const fleetMessageRows = rowReader<FleetMessageRow>({
   id: text,
   machine_id: text,
@@ -104,7 +156,10 @@ const fleetMessageRows = rowReader<FleetMessageRow>({
 
 const fleetSql = {
   enqueue: `insert into fleet_outbox (id, machine_id, path, args, origin, created_at)
-            values (?, ?, ?, ?, ?, ?)`,
+            values (?, ?, ?, ?, ?, ?)
+            on conflict(id) do nothing`,
+  pendingTurns: "select * from fleet_pending_turns order by session_id, revision",
+  deletePendingTurn: "delete from fleet_pending_turns where session_id = ? and revision = ?",
   list: "select * from fleet_outbox order by rowid",
   listFor: "select * from fleet_outbox where machine_id = ? order by rowid",
   deleteBefore: "delete from fleet_outbox where created_at < ?",

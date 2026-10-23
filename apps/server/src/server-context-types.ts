@@ -183,10 +183,7 @@ export interface RouteState {
   readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
   autoResume?: AutoResumeScheduler
-  deliverSessionEvent?: (
-    subscriberId: string,
-    event: import("./routes/session-event-outbox.js").PendingSessionEvent
-  ) => Promise<void>
+  drainSessionQueue?: (sessionId: string) => Promise<void>
 }
 
 export class EventFanout {

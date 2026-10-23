@@ -1,30 +1,21 @@
-import {
-  FLEET_SESSION_EVENT_PATH,
-  parseRemoteSessionKey,
-  remoteSessionKey,
-  type RemoteSessionRef,
-  type SessionSummary
-} from "@codevisor/api"
+import { parseRemoteSessionKey, type RemoteSessionRef, type SessionSummary } from "@codevisor/api"
 import type { BotLink } from "@codevisor/db"
 
-import type { FleetLink } from "../infra/fleet-outbox.js"
-import type { MachineLink } from "../infra/machine-link.js"
 import {
   HttpFailure,
   run,
+  sessionIsArchived,
   type CodevisorServerServices,
   type RouteState
 } from "../server-context.js"
 import { stringField } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import type { FleetCall } from "./fleet-calls.js"
-import { fromMachine, type SessionEventMessage } from "./session-event-messages.js"
 
 export interface FleetSessionEvent {
   readonly sessionId: string
   readonly botId: string
   readonly deliveryId: string
-  readonly key: string
   readonly text: string
 }
 
@@ -44,31 +35,6 @@ export const fleetBotWake = async (
   return { subscriber, bot: link.bot }
 }
 
-export const forwardSessionEvent = async (
-  fleet: FleetLink | undefined,
-  serverId: string,
-  source: Pick<SessionSummary, "id" | "title">,
-  wake: FleetBotWake,
-  message: SessionEventMessage
-): Promise<void> => {
-  if (fleet === undefined) return
-
-  const self = { id: serverId, name: await currentMachineName(fleet.machines, serverId) }
-  const attributed = fromMachine(message, self)
-  const event: Omit<FleetSessionEvent, "deliveryId"> = {
-    sessionId: wake.subscriber.sessionId,
-    botId: wake.bot.botId,
-    key: attributed.key,
-    text: attributed.text
-  }
-  await fleet.outbox.send(wake.subscriber.machineId, FLEET_SESSION_EVENT_PATH, event, {
-    machineId: self.id,
-    machineName: self.name,
-    sessionId: source.id,
-    sessionTitle: source.title
-  })
-}
-
 export const receiveSessionEvent = async (
   services: CodevisorServerServices,
   routeState: RouteState,
@@ -78,21 +44,24 @@ export const receiveSessionEvent = async (
   if (!call.verified) throw new HttpFailure(403, "Only machines on this account can send events")
   const event = parseFleetSessionEvent(args)
   if (event === undefined)
-    throw new HttpFailure(400, "Expected { sessionId, botId, deliveryId, key, text }")
+    throw new HttpFailure(400, "Expected { sessionId, botId, deliveryId, text }")
   const target = await run(services.db.getSessionSummary(event.sessionId)).catch(() => undefined)
   if (target === undefined) throw new HttpFailure(404, "No such session on this machine")
   if (!(await isBotHome(services, event))) {
     throw new HttpFailure(403, "Events only go to the bot that started the chat")
   }
+  if (await sessionIsArchived(services, target)) throw new HttpFailure(409, "That bot is archived")
 
-  const receivedAt = new Date().toISOString()
-  if (!(await run(services.db.recordFleetDelivery(event.deliveryId, receivedAt)))) return false
-
-  await routeState.deliverSessionEvent?.(event.sessionId, {
-    message: { key: event.key, text: event.text },
-    sourceSessionId: remoteSessionKey(call.origin.machineId, call.origin.sessionId)
-  })
-  return true
+  const accepted = await run(
+    services.db.acceptFleetPrompt({
+      deliveryId: event.deliveryId,
+      receivedAt: new Date().toISOString(),
+      sessionId: target.id,
+      text: event.text
+    })
+  )
+  if (accepted) void routeState.drainSessionQueue?.(target.id)
+  return accepted
 }
 
 const isBotHome = async (
@@ -103,16 +72,12 @@ const isBotHome = async (
   return bot?.id.toLowerCase() === event.botId.toLowerCase()
 }
 
-const currentMachineName = async (machines: MachineLink, serverId: string): Promise<string> =>
-  (await machines.list()).find((machine) => machine.isCurrent)?.name ?? serverId
-
 const parseFleetSessionEvent = (value: unknown): FleetSessionEvent | undefined => {
   const sessionId = stringField(value, "sessionId")
   const botId = stringField(value, "botId")
   const deliveryId = stringField(value, "deliveryId")
-  const key = stringField(value, "key")
   const text = stringField(value, "text")
-  if (sessionId === undefined || botId === undefined || deliveryId === undefined) return undefined
-  if (key === undefined || text === undefined) return undefined
-  return { sessionId, botId, deliveryId, key, text }
+  if (sessionId === undefined || botId === undefined) return undefined
+  if (deliveryId === undefined || text === undefined) return undefined
+  return { sessionId, botId, deliveryId, text }
 }

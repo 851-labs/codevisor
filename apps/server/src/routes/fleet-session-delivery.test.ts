@@ -20,6 +20,7 @@ import {
   studio,
   type FleetMachine
 } from "./fleet-test-support.js"
+import { sendFinishedFleetTurns } from "./fleet-turns.js"
 
 const origin = { machineId: laptop.id, machineName: laptop.name, sessionId: "child-1" }
 
@@ -102,6 +103,49 @@ describe("fleet session events", () => {
     expect(await run(remote.services.db.listFleetMessages)).toEqual([])
     await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) > 0)
     expect(promptsMatching(home, turnEndedFor(child.id))).toBe(1)
+  })
+
+  it("sends a finished turn the server never got to forward, once, when it next runs", async () => {
+    const { home, remote, botOrigin } = await startFleet()
+    const child = createdSession(
+      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    )
+    const sender = {
+      serverId: laptop.id,
+      fleet: {
+        machines: remote.machines,
+        outbox: makeFleetOutbox({
+          db: remote.services.db,
+          machines: remote.machines,
+          now: Date.now
+        })
+      }
+    }
+
+    await run(
+      remote.services.db.appendEvent("session.updated", child.id, {
+        turnState: "ended",
+        stopReason: "end_turn"
+      })
+    )
+    const pendingBeforeRestart = await run(remote.services.db.listFleetPendingTurns)
+    await sendFinishedFleetTurns(remote.services, sender)
+    await sendFinishedFleetTurns(remote.services, sender)
+
+    expect(pendingBeforeRestart).toHaveLength(1)
+    expect(await run(remote.services.db.listFleetMessages)).toEqual([])
+    await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) > 0)
+    expect(promptsMatching(home, turnEndedFor(child.id))).toBe(1)
+  })
+
+  it("refuses events for an archived bot so the sender stops retrying", async () => {
+    const { home, bot } = await startFleet()
+    await run(home.services.db.updateWorkspace(bot.workspaceId, { isArchived: true }))
+    const event = { sessionId: bot.sessionId, botId: bot.id, deliveryId: "d-a", text: "t" }
+
+    const answer = await invokeAs(laptop, home, eventBody(event))
+
+    expect(answer.status).toBe(409)
   })
 
   it("refuses unverified, replayed, misaddressed, and malformed events", async () => {
