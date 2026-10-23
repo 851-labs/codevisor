@@ -9,6 +9,8 @@ export const migrations77: ReadonlyArray<Migration> = [
         session_id text not null,
         revision integer not null,
         stop_reason text,
+        ended_at text not null,
+        final_text text not null,
         primary key (session_id, revision)
       );
     `

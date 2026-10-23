@@ -9,6 +9,27 @@ const openDatabase = async () => {
   return db
 }
 
+const linkedChild = async (db: Awaited<ReturnType<typeof openDatabase>>) => {
+  const project = await run(db.createProject({ folderPath: "/tmp/fleet-turns" }))
+  const parent = "remote2:machine-b:bot-chat"
+  const { session: child } = await run(
+    db.createWorkspaceWithSession({
+      workspace: {
+        id: "ws-linked",
+        projectId: project.id,
+        name: "Linked",
+        hasCustomName: false,
+        botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10",
+        botMachineId: "machine-b",
+        botParentSessionId: parent
+      },
+      session: { projectId: project.id, harnessId: "codex", parentSessionId: parent }
+    })
+  )
+  const plain = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+  return { child, plain }
+}
+
 const message = (id: string, machineId: string, createdAt = "2100-01-01T00:00:00.000Z") => ({
   id,
   machineId,
@@ -33,15 +54,18 @@ describe("fleet outbox storage", () => {
     ])
   })
 
-  it("lists one machine's messages and expires old ones without touching newer ones", async () => {
+  it("hands out a machine's next unexpired message and expires old ones", async () => {
     const db = await openDatabase()
     await run(db.enqueueFleetMessage(message("old", "machine-b", "2099-12-01T00:00:00.000Z")))
     await run(db.enqueueFleetMessage(message("other", "machine-c")))
     await run(db.enqueueFleetMessage(message("new", "machine-b")))
 
-    await run(db.deleteFleetMessagesBefore("2099-12-15T00:00:00.000Z"))
+    const cutoff = "2099-12-15T00:00:00.000Z"
+    const next = await run(db.nextFleetMessageFor("machine-b", cutoff))
+    await run(db.expireFleetBefore(cutoff))
 
-    expect((await run(db.listFleetMessagesFor("machine-b"))).map((m) => m.id)).toEqual(["new"])
+    expect(next?.id).toBe("new")
+    expect(await run(db.nextFleetMessageFor("machine-d", cutoff))).toBeUndefined()
     expect((await run(db.listFleetMessages)).map((m) => m.id)).toEqual(["other", "new"])
   })
 
@@ -78,46 +102,54 @@ describe("fleet outbox storage", () => {
     )
   })
 
-  it("records a remote bot child's finished turns with the event and promotes each once", async () => {
+  it("records each finished turn of a remote bot's child with its own reply and end time", async () => {
     const db = await openDatabase()
-    const project = await run(db.createProject({ folderPath: "/tmp/fleet-turns" }))
-    const parent = "remote2:machine-b:bot-chat"
-    const { session: child } = await run(
-      db.createWorkspaceWithSession({
-        workspace: {
-          id: "ws-linked",
-          projectId: project.id,
-          name: "Linked",
-          hasCustomName: false,
-          botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10",
-          botMachineId: "machine-b",
-          botParentSessionId: parent
-        },
-        session: { projectId: project.id, harnessId: "codex", parentSessionId: parent }
-      })
-    )
-    const plain = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const { child, plain } = await linkedChild(db)
+    const reply = (text: string) =>
+      run(db.appendConversationItem(child.id, "assistant", undefined, text, false))
     const update = (sessionId: string, payload: Record<string, unknown>) =>
       run(db.appendEvent("session.updated", sessionId, payload))
+
+    await reply("FIRST REPORT")
     await update(child.id, { turnState: "running" })
     await update(child.id, { turnState: "ended", stopKind: "pausedForUpdate" })
-    const ended = await update(child.id, { turnState: "ended", stopReason: "end_turn" })
-    const bare = await update(child.id, { turnState: "ended" })
+    const first = await update(child.id, { turnState: "ended", stopReason: "end_turn" })
+    await reply("SECOND REPORT")
+    const second = await update(child.id, { turnState: "ended" })
+    await reply("STILL STREAMING")
     await update(plain.id, { turnState: "ended" })
 
-    const pending = await run(db.listFleetPendingTurns)
-    await run(db.promoteFleetTurn(pending[0]!, message("turn-1", "machine-b")))
-    await run(db.enqueueFleetMessage(message("turn-1", "machine-c")))
-    await run(db.promoteFleetTurn(pending[0]!, undefined))
-    await run(db.promoteFleetTurn(pending[1]!, undefined))
+    expect(await run(db.listFleetPendingTurns)).toEqual([
+      {
+        sessionId: child.id,
+        revision: first.subjectRevision,
+        stopReason: "end_turn",
+        endedAt: first.createdAt,
+        finalText: "FIRST REPORT"
+      },
+      {
+        sessionId: child.id,
+        revision: second.subjectRevision,
+        endedAt: second.createdAt,
+        finalText: "SECOND REPORT"
+      }
+    ])
+  })
 
-    expect(pending).toEqual([
-      { sessionId: child.id, revision: ended.subjectRevision, stopReason: "end_turn" },
-      { sessionId: child.id, revision: bare.subjectRevision }
-    ])
+  it("promotes a pending turn once, never after its message was acknowledged, and expires old turns", async () => {
+    const db = await openDatabase()
+    const { child } = await linkedChild(db)
+    await run(db.appendEvent("session.updated", child.id, { turnState: "ended" }))
+    await run(db.appendEvent("session.updated", child.id, { turnState: "ended" }))
+    const [first, second] = await run(db.listFleetPendingTurns)
+
+    await run(db.promoteFleetTurn(first!, message("turn-1", "machine-b")))
+    await run(db.deleteFleetMessage("turn-1"))
+    await run(db.promoteFleetTurn(first!, message("turn-1", "machine-b")))
+    await run(db.expireFleetBefore("2999-01-01T00:00:00.000Z"))
+    await run(db.promoteFleetTurn(second!, message("turn-2", "machine-b")))
+
+    expect(await run(db.listFleetMessages)).toEqual([])
     expect(await run(db.listFleetPendingTurns)).toEqual([])
-    expect((await run(db.listFleetMessages)).map((m) => [m.id, m.machineId])).toEqual([
-      ["turn-1", "machine-b"]
-    ])
   })
 })

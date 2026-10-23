@@ -5,7 +5,6 @@ import type { FleetLink } from "../infra/fleet-outbox.js"
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { fleetBotWake, type FleetBotWake, type FleetSessionEvent } from "./fleet-session-events.js"
 import { fromMachine, turnEndedMessage } from "./session-event-messages.js"
-import { finalAssistantText } from "./session-event-router.js"
 
 export interface FleetSender {
   readonly serverId: string
@@ -25,6 +24,7 @@ export const sendFinishedFleetTurns = async (
   services: CodevisorServerServices,
   sender: FleetSender
 ): Promise<void> => {
+  await sender.fleet.outbox.expire()
   for (const turn of await run(services.db.listFleetPendingTurns)) {
     const message = await turnMessage(services, sender, turn)
     await run(services.db.promoteFleetTurn(turn, message))
@@ -43,7 +43,10 @@ const turnMessage = async (
   if (wake === undefined) return undefined
 
   const self = { id: sender.serverId, name: await machineName(sender) }
-  const text = await eventText(services, self, child, turn)
+  const text = fromMachine(
+    turnEndedMessage(child, turn.stopReason, turn.finalText.trim()),
+    self
+  ).text
   return fleetMessage(self, { child, wake, turn, text })
 }
 
@@ -57,16 +60,6 @@ interface FinishedTurn {
   readonly wake: FleetBotWake
   readonly turn: FleetPendingTurn
   readonly text: string
-}
-
-const eventText = async (
-  services: CodevisorServerServices,
-  self: SelfMachine,
-  child: SessionSummary,
-  turn: FleetPendingTurn
-): Promise<string> => {
-  const final = await finalAssistantText(services, child.id)
-  return fromMachine(turnEndedMessage(child, turn.stopReason, final.text), self).text
 }
 
 const fleetMessage = (self: SelfMachine, finished: FinishedTurn): FleetMessage => {
@@ -89,7 +82,7 @@ const fleetMessage = (self: SelfMachine, finished: FinishedTurn): FleetMessage =
       sessionId: child.id,
       sessionTitle: child.title
     },
-    createdAt: new Date().toISOString()
+    createdAt: turn.endedAt
   }
 }
 

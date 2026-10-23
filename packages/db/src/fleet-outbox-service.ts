@@ -27,16 +27,19 @@ export interface FleetPendingTurn {
   readonly sessionId: string
   readonly revision: number
   readonly stopReason?: string
+  readonly endedAt: string
+  readonly finalText: string
 }
 
 export interface FleetOutboxService {
   readonly enqueueFleetMessage: (message: FleetMessage) => Effect.Effect<void, DatabaseError>
   readonly listFleetMessages: Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
-  readonly listFleetMessagesFor: (
-    machineId: string
-  ) => Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
+  readonly nextFleetMessageFor: (
+    machineId: string,
+    notBefore: string
+  ) => Effect.Effect<FleetMessage | undefined, DatabaseError>
   readonly deleteFleetMessage: (id: string) => Effect.Effect<void, DatabaseError>
-  readonly deleteFleetMessagesBefore: (createdAt: string) => Effect.Effect<void, DatabaseError>
+  readonly expireFleetBefore: (createdAt: string) => Effect.Effect<void, DatabaseError>
   readonly acceptFleetPrompt: (prompt: FleetPrompt) => Effect.Effect<boolean, DatabaseError>
   readonly listFleetPendingTurns: Effect.Effect<ReadonlyArray<FleetPendingTurn>, DatabaseError>
   readonly promoteFleetTurn: (
@@ -57,13 +60,19 @@ export const makeFleetOutboxService = (context: ServiceContext): FleetOutboxServ
     listFleetMessages: attempt("listFleetMessages", () =>
       fleetMessageRows.all(sqlite.prepare(fleetSql.list).all()).map(messageFromRow)
     ),
-    listFleetMessagesFor: (machineId) =>
-      attempt("listFleetMessagesFor", () =>
-        fleetMessageRows.all(sqlite.prepare(fleetSql.listFor).all(machineId)).map(messageFromRow)
-      ),
-    deleteFleetMessagesBefore: (createdAt) =>
-      attempt("deleteFleetMessagesBefore", () => {
-        sqlite.prepare(fleetSql.deleteBefore).run(createdAt)
+    nextFleetMessageFor: (machineId, notBefore) =>
+      attempt("nextFleetMessageFor", () => {
+        const row = fleetMessageRows.maybe(
+          sqlite.prepare(fleetSql.nextFor).get(machineId, notBefore)
+        )
+        return row === undefined ? undefined : messageFromRow(row)
+      }),
+    expireFleetBefore: (createdAt) =>
+      attempt("expireFleetBefore", () => {
+        sqlite.transaction(() => {
+          sqlite.prepare(fleetSql.deleteBefore).run(createdAt)
+          sqlite.prepare(fleetSql.deletePendingTurnsBefore).run(createdAt)
+        })()
       }),
     deleteFleetMessage: (id) =>
       attempt("deleteFleetMessage", () => {
@@ -76,8 +85,11 @@ export const makeFleetOutboxService = (context: ServiceContext): FleetOutboxServ
     promoteFleetTurn: (turn, message) =>
       attempt("promoteFleetTurn", () => {
         sqlite.transaction(() => {
-          if (message !== undefined) sqlite.prepare(fleetSql.enqueue).run(...messageValues(message))
-          sqlite.prepare(fleetSql.deletePendingTurn).run(turn.sessionId, turn.revision)
+          const consumed = sqlite
+            .prepare(fleetSql.deletePendingTurn)
+            .run(turn.sessionId, turn.revision)
+          if (consumed.changes === 0 || message === undefined) return
+          sqlite.prepare(fleetSql.enqueue).run(...messageValues(message))
         })()
       }),
     pruneFleetDeliveries: (before) =>
@@ -132,17 +144,23 @@ interface FleetMessageRow {
 const pendingTurnRows = rowReader({
   session_id: text,
   revision: integer,
-  stop_reason: nullable(text)
+  stop_reason: nullable(text),
+  ended_at: text,
+  final_text: text
 })
 
 const pendingTurnFromRow = (row: {
   readonly session_id: string
   readonly revision: number
   readonly stop_reason: string | null
+  readonly ended_at: string
+  readonly final_text: string
 }): FleetPendingTurn => ({
   sessionId: row.session_id,
   revision: row.revision,
-  ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason })
+  ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
+  endedAt: row.ended_at,
+  finalText: row.final_text
 })
 
 const fleetMessageRows = rowReader<FleetMessageRow>({
@@ -161,8 +179,10 @@ const fleetSql = {
   pendingTurns: "select * from fleet_pending_turns order by session_id, revision",
   deletePendingTurn: "delete from fleet_pending_turns where session_id = ? and revision = ?",
   list: "select * from fleet_outbox order by rowid",
-  listFor: "select * from fleet_outbox where machine_id = ? order by rowid",
+  nextFor: `select * from fleet_outbox where machine_id = ? and created_at >= ?
+            order by rowid limit 1`,
   deleteBefore: "delete from fleet_outbox where created_at < ?",
+  deletePendingTurnsBefore: "delete from fleet_pending_turns where ended_at < ?",
   delete: "delete from fleet_outbox where id = ?",
   recordDelivery: `insert into fleet_deliveries (delivery_id, received_at) values (?, ?)
                    on conflict(delivery_id) do nothing`,

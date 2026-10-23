@@ -18,7 +18,7 @@ import { setupQuestionPresentation } from "./setup-questions.js"
 import { sessionSetupState } from "./setup-state.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
-const renderableChatItemPredicate = `(
+export const renderableChatItemPredicate = `(
   chat_items.status = 'streaming'
   or chat_items.has_details = 1
   or length(coalesce(chat_items.stop_reason, '')) > 0

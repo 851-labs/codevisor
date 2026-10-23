@@ -28,8 +28,7 @@ export const FLEET_ATTEMPT_TIMEOUT_MS = 60_000
 
 export const makeFleetOutbox = (options: FleetOutboxOptions): FleetOutbox => {
   const destinations = makeKeyedDrains((machineId) => drainDestination(options, machineId))
-  const expire = (): Promise<void> =>
-    run(options.db.deleteFleetMessagesBefore(expiryCutoff(options)))
+  const expire = (): Promise<void> => run(options.db.expireFleetBefore(expiryCutoff(options)))
   return {
     flush: async () => {
       await expire()
@@ -57,8 +56,9 @@ export const forgetOldFleetDeliveries = (
   run(services.db.pruneFleetDeliveries(new Date(now - FLEET_DELIVERY_MEMORY_MS).toISOString()))
 
 const drainDestination = async (options: FleetOutboxOptions, machineId: string) => {
-  for (const message of await run(options.db.listFleetMessagesFor(machineId))) {
-    if (!(await settled(options, message))) return
+  for (;;) {
+    const message = await run(options.db.nextFleetMessageFor(machineId, expiryCutoff(options)))
+    if (message === undefined || !(await settled(options, message))) return
     await run(options.db.deleteFleetMessage(message.id))
   }
 }

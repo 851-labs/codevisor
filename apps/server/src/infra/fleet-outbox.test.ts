@@ -165,6 +165,26 @@ describe("fleet outbox", () => {
     expect(await queued()).toEqual([])
   })
 
+  it("never sends a message that expired while the drain was busy with an earlier one", async () => {
+    let now = NOW
+    const expiredMidDrain = await outboxFor(
+      async () => {
+        now = NOW + FLEET_MESSAGE_MAX_AGE_MS + 1
+        return null
+      },
+      { now: () => now }
+    )
+    await expiredMidDrain.enqueue("machine-studio", { n: 1 })
+    await expiredMidDrain.enqueue("machine-studio", { n: 2 })
+
+    await expiredMidDrain.outbox.flush()
+
+    expect(expiredMidDrain.attempts.map((attempt) => field(attempt.args, "n"))).toEqual([1])
+    expect(await expiredMidDrain.queued()).toEqual([2])
+    await expiredMidDrain.outbox.expire()
+    expect(await expiredMidDrain.queued()).toEqual([])
+  })
+
   it("delivers messages queued during a delivery in order, in the same drain", async () => {
     const firstAnswer = gate()
     const firstAttempt = gate()
@@ -196,11 +216,11 @@ describe("fleet outbox", () => {
     let failures = 1
     const db = {
       ...services.db,
-      listFleetMessagesFor: (machineId: string) =>
+      nextFleetMessageFor: (machineId: string, notBefore: string) =>
         Effect.suspend(() =>
           failures-- > 0
             ? Effect.die(new Error("disk"))
-            : services.db.listFleetMessagesFor(machineId)
+            : services.db.nextFleetMessageFor(machineId, notBefore)
         )
     }
     const outbox = makeFleetOutbox({ db, machines, now: () => NOW })
