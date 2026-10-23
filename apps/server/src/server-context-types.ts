@@ -111,7 +111,9 @@ export interface CloudServerControl {
     inviteCode: string,
     options?: { readonly managedBy?: "app" | "external"; readonly machineName?: string }
   ) => Promise<string>
-  readonly invite?: () => Promise<import("@codevisor/cloud-client").MachineInvite>
+  readonly invite?: (
+    options?: import("@codevisor/cloud-client").MachineInviteOptions
+  ) => Promise<import("@codevisor/cloud-client").MachineInvite>
   readonly removePeer?: (deviceId: string) => Promise<void>
   readonly disconnect: () => Promise<{ readonly removedFromAccount: boolean }>
   readonly acceptDirect?: (socket: import("@codevisor/cloud-client").CloudSocket) => boolean
@@ -150,6 +152,7 @@ export interface CodevisorServerServices {
   readonly machines?: import("./infra/machine-link.js").MachineLink
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
   readonly fleetTickets?: import("./infra/fleet-tickets.js").FleetTickets
+  readonly ephemeralMachines?: import("./routes/ephemeral-machines.js").EphemeralMachinesService
   readonly usageLimits?: UsageLimitsCache
 }
 

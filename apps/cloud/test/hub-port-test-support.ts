@@ -41,6 +41,7 @@ export const machineRow = (overrides: Partial<MachineRow> = {}): MachineRow => (
   reported_icon: null,
   added_by_device_id: null,
   added_by_name: null,
+  ephemeral_provider: null,
   ...overrides
 })
 

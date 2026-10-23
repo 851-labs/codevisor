@@ -80,6 +80,9 @@
       "path": "../../packages/git-hosts"
     },
     {
+      "path": "../../packages/ephemeral-machines"
+    },
+    {
       "path": "../../packages/processes"
     }
   ]

@@ -266,7 +266,8 @@ export const machineInvite = sqliteTable(
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     redeemedAt: integer("redeemed_at"),
-    redeemedDeviceId: text("redeemed_device_id")
+    redeemedDeviceId: text("redeemed_device_id"),
+    ephemeralProvider: text("ephemeral_provider")
   },
   (table) => [index("machine_invite_user_expires").on(table.userId, table.expiresAt)]
 )

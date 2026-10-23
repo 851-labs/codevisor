@@ -6,6 +6,7 @@ import {
   HubPeerDevices,
   MachineTunnelAddr
 } from "./cloud-tunnel-protocol.js"
+import { EphemeralMachineOrigin } from "./ephemeral-machines.js"
 import { isRecord } from "./records.js"
 
 export * from "./cloud-channel-types.js"
@@ -44,6 +45,7 @@ export const CloudMachinePresence = Schema.Struct({
   machinePeers: Schema.optional(Schema.Boolean),
   tunnel: Schema.optional(CloudTunnelInfo),
   addedBy: Schema.optional(Schema.Struct({ deviceId: Schema.String, name: Schema.String })),
+  ephemeral: Schema.optional(EphemeralMachineOrigin),
   online: Schema.Boolean,
   lastSeenAt: Schema.String
 })

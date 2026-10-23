@@ -406,7 +406,8 @@ export const makeCloudServerControl = (
     connect: (serverUrl, sessionToken, registration) =>
       joinCloud({ serverUrl, sessionToken }, registration),
     connectWithInvite: (inviteCode, registration) => joinCloud({ inviteCode }, registration),
-    invite: async () => createMachineInvite(fetchImpl(), await storedCredentials()),
+    invite: async (inviteOptions) =>
+      createMachineInvite(fetchImpl(), await storedCredentials(), inviteOptions),
     removePeer: async (deviceId) =>
       removeMachinePeer(fetchImpl(), await storedCredentials(), deviceId),
     disconnect: async () => {

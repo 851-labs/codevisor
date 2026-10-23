@@ -17,6 +17,14 @@ export const endpoints = [
   "POST /v1/machines/invite",
   "POST /v1/machines/add",
   "DELETE /v1/machines/:machineId",
+  "GET /v1/ephemeral-providers",
+  "PUT /v1/ephemeral-providers/:id/credentials",
+  "DELETE /v1/ephemeral-providers/:id/credentials",
+  "GET /v1/ephemeral-machines",
+  "POST /v1/ephemeral-machines",
+  "DELETE /v1/ephemeral-machines/:id",
+  "GET /v1/projects/:id/ephemeral-options",
+  "PUT /v1/projects/:id/ephemeral-options",
   "POST /v1/gateway/invoke",
   "GET /v1/openapi.json",
   "GET /v1/update",
@@ -230,6 +238,20 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/machines/invite": "Create a one-time code that adds a new machine to the account",
   "POST /v1/machines/add": "Install Codevisor on a host over SSH and add it to the account",
   "DELETE /v1/machines/:machineId": "Remove another machine from the account",
+  "GET /v1/ephemeral-providers":
+    "List ephemeral machine providers, whether each has credentials, and their default options",
+  "PUT /v1/ephemeral-providers/:id/credentials":
+    "Save a provider's credentials (write-only; never returned)",
+  "DELETE /v1/ephemeral-providers/:id/credentials": "Forget a provider's credentials",
+  "GET /v1/ephemeral-machines": "List this machine's ephemeral machines and their setup state",
+  "POST /v1/ephemeral-machines":
+    "Start an ephemeral machine with a workspace for a project; setup continues in the background",
+  "DELETE /v1/ephemeral-machines/:id":
+    "Destroy an ephemeral machine and remove it from the account",
+  "GET /v1/projects/:id/ephemeral-options":
+    "Get a project's per-provider ephemeral machine options",
+  "PUT /v1/projects/:id/ephemeral-options":
+    "Set a project's per-provider ephemeral machine options",
   "POST /v1/gateway/invoke": "Run a gateway tool call from another machine's sandbox",
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/bots/:id/projects": "Add a project to a bot and check its repository out for the bot",
@@ -264,6 +286,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
 }
 
 export const noContent = new Set<Endpoint>([
+  "PUT /v1/ephemeral-providers/:id/credentials",
+  "DELETE /v1/ephemeral-providers/:id/credentials",
   "DELETE /v1/bots/:id",
   "DELETE /v1/projects/:id",
   "DELETE /v1/workspaces/:id",
@@ -302,6 +326,7 @@ export const created = new Set<Endpoint>([
 ])
 
 export const accepted = new Set<Endpoint>([
+  "POST /v1/ephemeral-machines",
   "POST /v1/update/apply",
   "POST /v1/updates/run",
   "POST /v1/restart/drain",

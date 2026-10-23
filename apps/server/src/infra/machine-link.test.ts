@@ -96,6 +96,15 @@ describe("machine list", () => {
   })
 })
 
+describe("ephemeral machines in the list", () => {
+  it("carry their provider and owner", async () => {
+    const ephemeral = { provider: "tart", ownerDeviceId: "device-self" }
+    const { machineLink } = link({ machines: [presence({ ephemeral })] })
+
+    expect((await machineLink.list())[1]).toMatchObject({ id: "machine-laptop", ephemeral })
+  })
+})
+
 describe("machine list without hub presence", () => {
   it("lists only this machine before the hub reports peers", async () => {
     const { machineLink } = link({ machines: undefined })

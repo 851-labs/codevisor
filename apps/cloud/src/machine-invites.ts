@@ -43,6 +43,7 @@ machineInviteRoutes.post("/api/machine/invites", async (c) => {
   const machines = await userHub(c.env, machine.userId, c.req.raw.cf).listMachines()
   const inviterName =
     machines.find((entry) => entry.deviceId === machine.deviceId)?.name ?? "another machine"
+  const ephemeralProvider = ephemeralProviderOf(await c.req.json<unknown>().catch(() => ({})))
   const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
   const expiresAt = now + INVITE_TTL_MS
   await c.env.DB.batch([
@@ -53,7 +54,8 @@ machineInviteRoutes.post("/api/machine/invites", async (c) => {
       machine.deviceId,
       inviterName,
       now,
-      expiresAt
+      expiresAt,
+      ephemeralProvider
     )
   ])
   c.header("Cache-Control", "no-store")
@@ -107,10 +109,11 @@ machineInviteRoutes.post(
         metadata: { deviceId: body.deviceId, publicKey: body.publicKey }
       }
     })
-    await userHub(c.env, invite.user_id, c.req.raw.cf).recordMachineOrigin(body.deviceId, {
-      deviceId: invite.created_by_device_id,
-      name: invite.created_by_name
-    })
+    await userHub(c.env, invite.user_id, c.req.raw.cf).recordMachineOrigin(
+      body.deviceId,
+      { deviceId: invite.created_by_device_id, name: invite.created_by_name },
+      invite.ephemeral_provider
+    )
     c.header("Cache-Control", "no-store")
     return c.json({ key: created.key })
   }
@@ -120,6 +123,18 @@ interface RedeemedInvite {
   user_id: string
   created_by_device_id: string
   created_by_name: string
+  ephemeral_provider: string | null
+}
+
+const PROVIDER_ID = /^[a-z0-9-]{1,32}$/
+
+const ephemeralProviderOf = (body: unknown): string | null => {
+  if (typeof body !== "object" || body === null || !("ephemeral" in body)) return null
+  const { ephemeral } = body
+  if (typeof ephemeral !== "object" || ephemeral === null || !("provider" in ephemeral)) return null
+  return typeof ephemeral.provider === "string" && PROVIDER_ID.test(ephemeral.provider)
+    ? ephemeral.provider
+    : null
 }
 
 const apiKeyMetadata = (env: CloudEnv, userId: string) =>
@@ -130,9 +145,10 @@ const apiKeyMetadataSql = "SELECT metadata FROM apikey WHERE reference_id = ?"
 const inviteSql = {
   deleteExpired: "DELETE FROM machine_invite WHERE user_id = ? AND expires_at <= ?",
   insert: `INSERT INTO machine_invite
-         (token_hash, user_id, created_by_device_id, created_by_name, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+         (token_hash, user_id, created_by_device_id, created_by_name, created_at, expires_at,
+          ephemeral_provider)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
   redeem: `UPDATE machine_invite SET redeemed_at = ?, redeemed_device_id = ?
        WHERE token_hash = ? AND redeemed_at IS NULL AND expires_at > ?
-       RETURNING user_id, created_by_device_id, created_by_name`
+       RETURNING user_id, created_by_device_id, created_by_name, ephemeral_provider`
 }

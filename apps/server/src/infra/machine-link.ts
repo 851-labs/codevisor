@@ -86,7 +86,8 @@ const summarize = (peer: Peer): MachineSummary => ({
   online: peer.presence.online,
   lastSeen: peer.presence.lastSeenAt,
   isCurrent: false,
-  ...(peer.presence.addedBy === undefined ? {} : { addedBy: peer.presence.addedBy.name })
+  ...(peer.presence.addedBy === undefined ? {} : { addedBy: peer.presence.addedBy.name }),
+  ...(peer.presence.ephemeral === undefined ? {} : { ephemeral: peer.presence.ephemeral })
 })
 
 const machineUnavailable = (

@@ -30,6 +30,7 @@
     "@codevisor/automation": "workspace:*",
     "@codevisor/cloud-client": "workspace:*",
     "@codevisor/db": "workspace:*",
+    "@codevisor/ephemeral-machines": "workspace:*",
     "@codevisor/git-hosts": "workspace:*",
     "@codevisor/harness-manager": "workspace:*",
     "@codevisor/mcp": "workspace:*",

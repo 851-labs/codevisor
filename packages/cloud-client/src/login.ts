@@ -236,14 +236,26 @@ export const decodeMachineInviteCode = (
   }
 }
 
+export interface MachineInviteOptions {
+  readonly ephemeral?: { readonly provider: string }
+}
+
+export const rewriteMachineInviteServer = (code: string, serverUrl: string): string => {
+  const invite = decodeMachineInviteCode(code)
+  if (invite === undefined) throw new CloudApiError("not a Codevisor machine invite code", 400)
+  return encodeMachineInviteCode(serverUrl, invite.token)
+}
+
 export const createMachineInvite = async (
   fetchImpl: FetchLike,
-  credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">
+  credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">,
+  options: MachineInviteOptions = {}
 ): Promise<MachineInvite> => {
   const serverUrl = credentials.serverUrl.replace(/\/+$/, "")
   const response = await fetchImpl(`${serverUrl}/api/machine/invites`, {
     method: "POST",
-    headers: { "x-api-key": credentials.apiKey }
+    headers: { "x-api-key": credentials.apiKey, "content-type": "application/json" },
+    body: JSON.stringify(options.ephemeral === undefined ? {} : { ephemeral: options.ephemeral })
   })
   const body = await readErrorJson(response)
   const token = optionalString(body.token)

@@ -101,9 +101,10 @@ export const removeHubMachine = (
 export const recordMachineOrigin = (
   sql: SqlStorage,
   deviceId: string,
-  addedBy: { readonly deviceId: string; readonly name: string }
+  addedBy: { readonly deviceId: string; readonly name: string },
+  ephemeralProvider: string | null = null
 ): void => {
-  sql.exec(machineOriginSql.upsert, deviceId, addedBy.deviceId, addedBy.name)
+  sql.exec(machineOriginSql.upsert, deviceId, addedBy.deviceId, addedBy.name, ephemeralProvider)
 }
 
 const machineSql = {
@@ -130,10 +131,12 @@ const machineSql = {
 }
 
 const machineOriginSql = {
-  upsert: `INSERT INTO machine_origins (device_id, added_by_device_id, added_by_name)
-     VALUES (?, ?, ?)
+  upsert: `INSERT INTO machine_origins
+       (device_id, added_by_device_id, added_by_name, ephemeral_provider)
+     VALUES (?, ?, ?, ?)
      ON CONFLICT(device_id) DO UPDATE SET
        added_by_device_id = excluded.added_by_device_id,
-       added_by_name = excluded.added_by_name`,
+       added_by_name = excluded.added_by_name,
+       ephemeral_provider = excluded.ephemeral_provider`,
   delete: "DELETE FROM machine_origins WHERE device_id = ?"
 }

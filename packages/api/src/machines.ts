@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { EphemeralMachineOrigin } from "./ephemeral-machines.js"
+
 export const MachineSummary = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -7,7 +9,8 @@ export const MachineSummary = Schema.Struct({
   online: Schema.Boolean,
   lastSeen: Schema.optional(Schema.String),
   isCurrent: Schema.Boolean,
-  addedBy: Schema.optional(Schema.String)
+  addedBy: Schema.optional(Schema.String),
+  ephemeral: Schema.optional(EphemeralMachineOrigin)
 })
 export type MachineSummary = typeof MachineSummary.Type
 

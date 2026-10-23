@@ -32,6 +32,7 @@ import { Effect } from "effect"
 
 import { agentProviderFactories } from "./agent-providers.js"
 import { FAILED_UPGRADE_GRACE_MS, type BootListener } from "./boot-listener.js"
+import { startEphemeralMachines } from "./ephemeral-boot.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
@@ -295,6 +296,19 @@ export const runServe = (
         console.log(`Skill migration failed: ${failureMessage(cause)}`)
       )
     const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
+    const ephemeralMachines = initializeOptionalServerFeature("Ephemeral machines", () =>
+      startEphemeralMachines({
+        db,
+        dataDir: dirname(databasePath),
+        serverId,
+        machineName: () => machine.name,
+        cloud: cloudControl,
+        enrollment: machineEnrollment,
+        link: machineLink,
+        syncBlobs,
+        env: process.env
+      })
+    )
     const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
       makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
     )
@@ -396,6 +410,7 @@ export const runServe = (
         machines: machineLink,
         machineEnrollment,
         fleetTickets,
+        ...(ephemeralMachines === undefined ? {} : { ephemeralMachines }),
         usageLimits: makeUsageLimitsCache({
           store: makeUsageLimitsFileStore(join(dirname(databasePath), "usage-limits.json"))
         })
@@ -442,6 +457,7 @@ export const runServe = (
     startupCompleted = true
     startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
+    ephemeralMachines?.start()
     void plugins
       ?.startAll()
       .catch((cause: unknown) =>

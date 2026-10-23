@@ -38,6 +38,7 @@ export * from "./client-ui.js"
 export * from "./codevisor-execution.js"
 export * from "./records.js"
 export * from "./machines.js"
+export * from "./ephemeral-machines.js"
 
 export * from "./workspace-position.js"
 

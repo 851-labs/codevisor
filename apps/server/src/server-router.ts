@@ -8,6 +8,7 @@ import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
 import { routeCloud } from "./routes/cloud.js"
+import { routeEphemeralMachines } from "./routes/ephemeral-machines.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFirstRun } from "./routes/first-run.js"
 import { routeFs } from "./routes/fs.js"
@@ -104,6 +105,7 @@ const featureRouteFamilies: ReadonlyArray<RouteFamily> = [
 const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, routeState, request, response, url }) =>
     routeGatewayInvoke(services, routeState, request, response, url),
+  routeEphemeralMachines,
   ({ services, config, fanout, request, response, url }) =>
     routeProjects(services, config, fanout, request, response, url),
   ({ services, request, response, url }) => routeGitAuth(services, request, response, url),

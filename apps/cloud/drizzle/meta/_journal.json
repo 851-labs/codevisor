@@ -57,6 +57,13 @@
       "when": 1790724186051,
       "tag": "0007_machine_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792790228491,
+      "tag": "0008_machine_invite_ephemeral",
+      "breakpoints": true
     }
   ]
 }

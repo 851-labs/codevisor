@@ -1,0 +1,1 @@
+ALTER TABLE `machine_invite` ADD `ephemeral_provider` text;

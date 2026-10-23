@@ -59,6 +59,62 @@ describe("machine invites", () => {
     expect(listed.find((m) => m.deviceId === inviter.deviceId)?.addedBy).toBeUndefined()
   })
 
+  it("marks a machine joined through an ephemeral invite with its provider and owner", async () => {
+    const session = await devLogin()
+    const inviter = await connectMachine(session, "mac-studio")
+    const minted = await SELF.fetch(`${BASE}/api/machine/invites`, {
+      method: "POST",
+      headers: { "x-api-key": inviter.apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ ephemeral: { provider: "e2b" } })
+    })
+    const plainToken = await inviteToken(inviter.apiKey)
+    const ephemeralId = crypto.randomUUID()
+    const plainId = crypto.randomUUID()
+
+    const { key } = await readJson(
+      await redeem((await readJson(minted, TokenBody)).token, "sandbox", ephemeralId),
+      KeyBody
+    )
+    const plain = await readJson(await redeem(plainToken, "vps", plainId), KeyBody)
+    await connectMachine(session, "sandbox", ephemeralId, { apiKey: key })
+    await connectMachine(session, "vps", plainId, { apiKey: plain.key })
+
+    const listed = await machines(session)
+    expect(listed.find((m) => m.deviceId === ephemeralId)?.ephemeral).toEqual({
+      provider: "e2b",
+      ownerDeviceId: inviter.deviceId
+    })
+    expect(listed.find((m) => m.deviceId === plainId)?.ephemeral).toBeUndefined()
+  })
+
+  it("ignores a malformed ephemeral marker", async () => {
+    const session = await devLogin()
+    const inviter = await connectMachine(session, "mac-studio")
+    const mint = (body: unknown) =>
+      SELF.fetch(`${BASE}/api/machine/invites`, {
+        method: "POST",
+        headers: { "x-api-key": inviter.apiKey, "content-type": "application/json" },
+        body: JSON.stringify(body)
+      })
+    const deviceIds: string[] = []
+    for (const body of [
+      { ephemeral: "e2b" },
+      { ephemeral: { provider: "../x" } },
+      { ephemeral: {} }
+    ]) {
+      const deviceId = crypto.randomUUID()
+      deviceIds.push(deviceId)
+      const { token } = await readJson(await mint(body), TokenBody)
+      const { key } = await readJson(await redeem(token, "box", deviceId), KeyBody)
+      await connectMachine(session, "box", deviceId, { apiKey: key })
+    }
+
+    const listed = await machines(session)
+    for (const deviceId of deviceIds) {
+      expect(listed.find((m) => m.deviceId === deviceId)?.ephemeral).toBeUndefined()
+    }
+  })
+
   it("refuses reused, expired, and bogus invites", async () => {
     const session = await devLogin()
     const inviter = await connectMachine(session, "mac-studio")

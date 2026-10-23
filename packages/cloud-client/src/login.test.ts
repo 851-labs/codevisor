@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 import {
   CloudApiError,
   createMachineInvite,
+  rewriteMachineInviteServer,
   decodeMachineInviteCode,
   discoverInstance,
   MACHINE_CLIENT_ID,
@@ -265,6 +266,21 @@ describe("machine invites", () => {
     })
     expect(credentials).toMatchObject({ serverUrl: "http://localhost:8787", apiKey: "new-key" })
     expect(credentials.secretKey).toBeTruthy()
+  })
+
+  it("marks an ephemeral invite in the request and can re-point a code at another cloud URL", async () => {
+    const minted = fetchStub(() => jsonResponse({ token, expiresAt: "2100-01-01T00:10:00.000Z" }))
+    const invite = await createMachineInvite(
+      minted.fetch,
+      { serverUrl: "http://localhost:8787", apiKey: "machine-key" },
+      { ephemeral: { provider: "tart" } }
+    )
+
+    expect(sentJson(minted.calls[0]?.init)).toEqual({ ephemeral: { provider: "tart" } })
+    expect(
+      decodeMachineInviteCode(rewriteMachineInviteServer(invite.code, "http://192.168.64.1:8787"))
+    ).toEqual({ serverUrl: "http://192.168.64.1:8787", token })
+    expect(() => rewriteMachineInviteServer("nope", "http://x")).toThrow(CloudApiError)
   })
 
   it("rejects malformed codes without a request", async () => {

@@ -45,7 +45,8 @@ export const HUB_MIGRATIONS: readonly string[] = [
    )`,
   `ALTER TABLE machines ADD COLUMN display_name TEXT;
    ALTER TABLE machines ADD COLUMN icon TEXT;
-   ALTER TABLE machines ADD COLUMN reported_icon TEXT`
+   ALTER TABLE machines ADD COLUMN reported_icon TEXT`,
+  `ALTER TABLE machine_origins ADD COLUMN ephemeral_provider TEXT`
 ]
 
 export interface MachineRow extends Record<string, SqlStorageValue> {
@@ -65,6 +66,7 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   reported_icon: string | null
   added_by_device_id: string | null
   added_by_name: string | null
+  ephemeral_provider: string | null
 }
 
 export const SocketAttachment = z.object({
@@ -101,13 +103,19 @@ export const machinePresence = (row: MachineRow, online: boolean): CloudMachineP
     ...(row.added_by_device_id == null || row.added_by_name == null
       ? {}
       : { addedBy: { deviceId: row.added_by_device_id, name: row.added_by_name } }),
+    ...ephemeralOrigin(row),
     online,
     lastSeenAt: row.last_seen_at
   }
 }
 
+const ephemeralOrigin = (row: MachineRow): Pick<CloudMachinePresence, "ephemeral"> =>
+  row.ephemeral_provider == null || row.added_by_device_id == null
+    ? {}
+    : { ephemeral: { provider: row.ephemeral_provider, ownerDeviceId: row.added_by_device_id } }
+
 const MACHINE_SELECT = `SELECT machines.*, machine_origins.added_by_device_id,
-    machine_origins.added_by_name
+    machine_origins.added_by_name, machine_origins.ephemeral_provider
   FROM machines LEFT JOIN machine_origins USING (device_id)`
 
 const machineSelectSql = {

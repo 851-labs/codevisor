@@ -7,7 +7,7 @@ import type {
   MachineInviteResponse,
   MachineSummary
 } from "@codevisor/api"
-import { CloudApiError } from "@codevisor/cloud-client"
+import { CloudApiError, type MachineInviteOptions } from "@codevisor/cloud-client"
 
 import { HttpFailure } from "../server-context.js"
 import type { MachineLink } from "./machine-link.js"
@@ -28,7 +28,9 @@ export interface SshRun {
 export interface MachineEnrollmentCloud {
   readonly deviceId: () => string | undefined
   readonly machines: () => ReadonlyArray<CloudMachinePresence> | undefined
-  readonly invite: () => Promise<{ readonly code: string; readonly expiresAt: string }>
+  readonly invite: (
+    options?: MachineInviteOptions
+  ) => Promise<{ readonly code: string; readonly expiresAt: string }>
   readonly removePeer: (deviceId: string) => Promise<void>
 }
 
@@ -47,7 +49,7 @@ export interface MachineEnrollmentOptions {
 }
 
 export interface MachineEnrollment {
-  readonly invite: () => Promise<MachineInviteResponse>
+  readonly invite: (options?: MachineInviteOptions) => Promise<MachineInviteResponse>
   readonly add: (request: AddMachineRequest, signal?: AbortSignal) => Promise<MachineSummary>
   readonly remove: (machine: string) => Promise<ReadonlyArray<MachineSummary>>
 }
@@ -176,9 +178,9 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
   const sleep = options.sleep ?? delay
   const now = options.now ?? Date.now
 
-  const invite = async (): Promise<MachineInviteResponse> => {
+  const invite = async (inviteOptions?: MachineInviteOptions): Promise<MachineInviteResponse> => {
     try {
-      return await cloud.invite()
+      return await cloud.invite(inviteOptions)
     } catch (cause) {
       throw cloudFailure(cause, "Creating a machine invite")
     }

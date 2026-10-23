@@ -117,8 +117,12 @@ export class UserHub extends DurableObject<CloudEnv> {
     return updateHubMachine(this.#notices(), deviceId, update)
   }
 
-  recordMachineOrigin(deviceId: string, addedBy: { deviceId: string; name: string }): void {
-    recordMachineOrigin(this.ctx.storage.sql, deviceId, addedBy)
+  recordMachineOrigin(
+    deviceId: string,
+    addedBy: { deviceId: string; name: string },
+    ephemeralProvider: string | null = null
+  ): void {
+    recordMachineOrigin(this.ctx.storage.sql, deviceId, addedBy, ephemeralProvider)
   }
 
   credentialCommand(id: string, owner: string, command: CredentialCommand) {
