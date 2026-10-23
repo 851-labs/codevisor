@@ -30,7 +30,7 @@ struct IOSPromptQueueAccessory: View {
           .font(.subheadline.weight(.medium))
           .foregroundStyle(.secondary)
         if let firstItem {
-          Text(firstItem.text)
+          Text(PromptQueuePreviewText.singleLine(firstItem.text))
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .lineLimit(1)

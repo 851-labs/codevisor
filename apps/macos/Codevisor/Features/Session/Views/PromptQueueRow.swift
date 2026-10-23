@@ -62,10 +62,10 @@ struct PromptQueueRow: View {
   }
 
   private var content: some View {
-    Text(item.text)
+    Text(PromptQueuePreviewText.singleLine(item.text))
       .font(.callout)
       .foregroundStyle(isBeingEdited ? .primary : .secondary)
-      .lineLimit(2)
+      .lineLimit(1)
       .truncationMode(.tail)
       .alignmentGuide(.queueRowFirstLine) { $0[.firstTextBaseline] - textCapCenter }
       .frame(maxWidth: .infinity, alignment: .leading)

@@ -53,12 +53,11 @@ struct IOSPromptQueueRow: View {
 
   private var message: some View {
     Button(action: actions.edit) {
-      Text(item.text)
+      Text(PromptQueuePreviewText.singleLine(item.text))
         .font(.body)
         .foregroundStyle(.primary)
-        .lineLimit(3)
+        .lineLimit(1)
         .truncationMode(.tail)
-        .multilineTextAlignment(.leading)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
