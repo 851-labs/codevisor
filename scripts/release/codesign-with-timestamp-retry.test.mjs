@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 
 const wrapper = fileURLToPath(new URL("./codesign-with-timestamp-retry.sh", import.meta.url))
 const unavailable = "The timestamp service is not available."
+const missingTimestamp = "A timestamp was expected but was not found."
 
 async function fakeTools(t, failures) {
   const bin = await mkdtemp(join(tmpdir(), "codevisor-codesign-retry-"))
@@ -58,6 +59,21 @@ test("an unavailable timestamp service is retried with backoff until codesign su
     "codesign --force --timestamp Fixture.framework"
   ])
   assert.match(stderr, /replacing existing signature/)
+})
+
+test("a timestamp missing from Apple's response is retried like an unavailable service", async (t) => {
+  const { status, log } = await sign(t, [
+    `Fixture.framework: ${missingTimestamp}`,
+    `Fixture.framework: ${unavailable}`
+  ])
+  assert.equal(status, 0)
+  assert.deepEqual(log, [
+    "codesign --force --timestamp Fixture.framework",
+    "sleep 15",
+    "codesign --force --timestamp Fixture.framework",
+    "sleep 30",
+    "codesign --force --timestamp Fixture.framework"
+  ])
 })
 
 test("a timestamp outage that outlasts every attempt fails with codesign's error", async (t) => {
