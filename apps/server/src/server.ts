@@ -12,6 +12,11 @@ import { startFirstRunProjectImport } from "./first-run-project-import.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { BrowserProxy } from "./infra/browser-proxy.js"
 import { ClientControlBroker } from "./infra/client-control.js"
+import {
+  fleetLinkFor,
+  FLEET_OUTBOX_RETRY_MS,
+  forgetOldFleetDeliveries
+} from "./infra/fleet-outbox.js"
 import { hasExistingListener } from "./infra/listener-probe.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
@@ -153,8 +158,16 @@ export const makeCodevisorServerApp = (
   const unsubscribeUsageHoldRelease = fanout.subscribe(
     makeUsageHoldReleaseListener(services, fanout, routeState, config.id)
   )
-  const sessionEvents = makeSessionEventRouter(services, fanout, routeState, config.id)
+  const fleet = fleetLinkFor(services)
+  const sessionEvents = makeSessionEventRouter(services, fanout, routeState, config.id, fleet)
   routeState.deliverSessionEvent = sessionEvents.deliver
+  void fleet?.outbox.flush().catch(swallowError)
+  /* v8 ignore next 4 */
+  const fleetRetry = setInterval(() => {
+    void fleet?.outbox.flush().catch(swallowError)
+    void forgetOldFleetDeliveries(services).catch(swallowError)
+  }, FLEET_OUTBOX_RETRY_MS)
+  fleetRetry.unref()
   const unsubscribeSessionEvents = fanout.subscribe(sessionEvents.listener)
   const unsubscribeJobEvents = services.mcp?.jobs.subscribe(sessionEvents.onJobFinished)
   void upgradeAllBotInstructions(services).catch(swallowError)
@@ -293,6 +306,7 @@ export const makeCodevisorServerApp = (
       browserProxy.close()
       clientControl.close()
       clearInterval(staleTurnSweep)
+      clearInterval(fleetRetry)
       restart.close()
       updateResume.close()
       attentionSettle.close()

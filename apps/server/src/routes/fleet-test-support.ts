@@ -5,6 +5,7 @@ import {
   Workspace,
   type MachineCallOrigin
 } from "@codevisor/api"
+import { CodeExecutionToolError } from "@codevisor/automation"
 import { Schema } from "effect"
 
 import { makeFleetTickets, withTicket, type FleetTickets } from "../infra/fleet-tickets.js"
@@ -47,7 +48,10 @@ export interface Answer {
   readonly body: unknown
 }
 
-type Fleet = Map<string, FleetMachine>
+interface Fleet {
+  readonly machines: Map<string, FleetMachine>
+  readonly offline: Set<string>
+}
 
 export const createArgs = {
   projectId: "laptop-project",
@@ -56,7 +60,7 @@ export const createArgs = {
 }
 
 export const startFleet = async () => {
-  const fleet: Fleet = new Map()
+  const fleet: Fleet = { machines: new Map(), offline: new Set() }
   const home = await setUpWith(() => startMachine(studio, fleet))
   await home.addProject("bot-project", "bot-repo")
   const remote = await setUpWith(() => startMachine(laptop, fleet))
@@ -70,7 +74,11 @@ export const startFleet = async () => {
     sessionId: bot.sessionId,
     botId: bot.id
   }
-  return { home, remote, bot, botOrigin }
+  const setOffline = (machineId: string, offline: boolean) => {
+    if (offline) fleet.offline.add(machineId)
+    else fleet.offline.delete(machineId)
+  }
+  return { home, remote, bot, botOrigin, setOffline }
 }
 
 export const postInvoke = async (
@@ -118,8 +126,10 @@ const startMachine = async (self: Member, fleet: Fleet): Promise<FleetMachine> =
           member.id === caller.deviceId &&
           member.publicKey === caller.publicKey
       )?.id,
-    invoke: (machine, path, args, origin) =>
-      callAs(self, fleet.get(machine)!, { path, args: args ?? null, origin })
+    invoke: (machine, path, args, origin) => {
+      if (fleet.offline.has(machine)) return Promise.reject(offlineError(machine))
+      return callAs(self, fleet.machines.get(machine)!, { path, args: args ?? null, origin })
+    }
   }
   const services = { ...made.services, machines, fleetTickets }
   const server = await run(
@@ -130,9 +140,15 @@ const startMachine = async (self: Member, fleet: Fleet): Promise<FleetMachine> =
   )
   runningServers.push(server)
   const machine = { agents: made.agents, server, services, fleetTickets, machines }
-  fleet.set(self.id, machine)
+  fleet.machines.set(self.id, machine)
   return machine
 }
+
+const offlineError = (machine: string): CodeExecutionToolError =>
+  new CodeExecutionToolError(`${machine} is offline`, {
+    code: "machine_unavailable",
+    details: { machineId: machine, phase: "before-send" }
+  })
 
 const callAs = async (caller: Member, target: FleetMachine, body: unknown): Promise<unknown> => {
   const answer = await invokeAs(caller, target, body)

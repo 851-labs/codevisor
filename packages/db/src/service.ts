@@ -43,6 +43,7 @@ import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
+import type { FleetOutboxService } from "./fleet-outbox-service.js"
 import type {
   FileStorageRecord,
   FileStorageState,
@@ -79,7 +80,12 @@ export interface CodevisorDatabaseConfig {
 }
 
 export interface CodevisorDatabaseService
-  extends SessionStateService, BotsService, SessionSubscriptionsService, AutoResumeService {
+  extends
+    SessionStateService,
+    BotsService,
+    SessionSubscriptionsService,
+    AutoResumeService,
+    FleetOutboxService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>

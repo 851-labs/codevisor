@@ -86,8 +86,8 @@ export const routeGatewayInvoke = async (
   const path = body.path
   const call = fleetCall(services, request, origin)
   if (path === FLEET_SESSION_EVENT_PATH) {
-    await receiveSessionEvent(services, routeState, call, body.args)
-    writeJson(response, 200, { result: null })
+    const delivered = await receiveSessionEvent(services, routeState, call, body.args)
+    writeJson(response, 200, { result: { delivered } })
     return true
   }
   const controller = new AbortController()

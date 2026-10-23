@@ -9,6 +9,8 @@ import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js
 import { run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
+  drop table fleet_deliveries;
+  drop table fleet_outbox;
   alter table workspaces drop column remote_bot_parent_session_id;
   alter table workspaces drop column remote_bot_machine_id;
   alter table workspaces drop column remote_bot_id;
@@ -81,7 +83,7 @@ const reopen = async (filename: string): Promise<CodevisorDatabaseService> => {
 }
 
 describe("remote bot workspace upgrade", () => {
-  it("keeps a populated v73 database's bots and workspaces and adds remote bot links", async () => {
+  it("keeps a populated v73 database's bots and workspaces and adds remote bot links and fleet delivery", async () => {
     useWorktreesRoot()
     const filename = tempDatabase()
     const repoId = await seedV73(filename)
@@ -110,6 +112,8 @@ describe("remote bot workspace upgrade", () => {
     expect(await run(db.findBotLinkForSession("child"))).toEqual({ botId: "bot-helper" })
     expect(await run(db.findFleetBotLink("child"))).toBeUndefined()
     expect(linked.workspace).toMatchObject({ botId: "bot-elsewhere", botMachineId: "machine-b" })
+    expect(await run(db.recordFleetDelivery("d-1", "2100-01-01T00:00:00.000Z"))).toBe(true)
+    expect(await run(db.listFleetMessages)).toEqual([])
     expect(await run(db.findFleetBotLink("remote-child"))).toEqual({
       parentSessionId: "remote:machine-b:chat-b",
       bot: { botId: "bot-elsewhere", botMachineId: "machine-b" }

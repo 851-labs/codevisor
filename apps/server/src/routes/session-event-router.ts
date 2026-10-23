@@ -8,6 +8,7 @@ import {
 } from "@codevisor/api"
 import type { ExecutionJobFinished } from "@codevisor/mcp"
 
+import type { FleetLink } from "../infra/fleet-outbox.js"
 import {
   run,
   swallowError,
@@ -50,11 +51,12 @@ export const makeSessionEventRouter = (
   services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
-  serverId: string
+  serverId: string,
+  fleet?: FleetLink
 ): SessionEventRouter => {
   const outbox = makeSessionEventOutbox(services, fanout, routeState, serverId)
   const actionKinds = new Map<string, string | undefined>()
-  const publish = makePublisher(services, outbox, serverId)
+  const publish = makePublisher(services, outbox, serverId, fleet)
 
   const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {
     const target = await run(services.db.getSessionSummary(sessionId))
@@ -145,7 +147,12 @@ interface Recipient {
 type BuildMessage = (subscriptionId?: string) => SessionEventMessage
 
 const makePublisher =
-  (services: CodevisorServerServices, outbox: SessionEventOutbox, serverId: string) =>
+  (
+    services: CodevisorServerServices,
+    outbox: SessionEventOutbox,
+    serverId: string,
+    fleet: FleetLink | undefined
+  ) =>
   async (
     target: SessionSummary,
     type: SessionEventType,
@@ -160,13 +167,9 @@ const makePublisher =
       }
       const message = build(recipient.subscription?.id)
       if (recipient.fleet !== undefined) {
-        await forwardSessionEvent(
-          services.machines,
-          serverId,
-          target,
-          recipient.fleet,
-          message
-        ).catch(swallowError)
+        await forwardSessionEvent(fleet, serverId, target, recipient.fleet, message).catch(
+          swallowError
+        )
         continue
       }
       await outbox.deliver(recipient.subscriberId, {

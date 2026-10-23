@@ -1,7 +1,7 @@
 import type { MachineCallOrigin } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import type { MachineLink } from "../infra/machine-link.js"
+import type { FleetLink } from "../infra/fleet-outbox.js"
 import { forwardSessionEvent } from "./fleet-session-events.js"
 import { turnEndedMessage } from "./session-event-messages.js"
 
@@ -14,19 +14,24 @@ interface SentEvent {
 
 const recordingLink = (current: ReadonlyArray<{ readonly name: string }>) => {
   const sent: SentEvent[] = []
-  const link: MachineLink = {
-    list: async () =>
-      current.map((machine) => ({
-        id: "machine-laptop",
-        name: machine.name,
-        online: true,
-        isCurrent: true
-      })),
-    resolve: () => undefined,
-    machineIdOf: () => undefined,
-    invoke: async (machine, path, args, origin) => {
-      sent.push({ machine, path, args, origin })
-      return null
+  const link: FleetLink = {
+    machines: {
+      list: async () =>
+        current.map((machine) => ({
+          id: "machine-laptop",
+          name: machine.name,
+          online: true,
+          isCurrent: true
+        })),
+      resolve: () => undefined,
+      machineIdOf: () => undefined,
+      invoke: async () => null
+    },
+    outbox: {
+      send: async (machine, path, args, origin) => {
+        sent.push({ machine, path, args, origin })
+      },
+      flush: async () => undefined
     }
   }
   return { link, sent }

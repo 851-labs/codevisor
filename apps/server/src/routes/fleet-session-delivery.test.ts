@@ -6,12 +6,30 @@ import {
 } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { waitFor } from "../test-support.js"
-import { invokeAs, laptop, post, postInvoke, startFleet } from "./fleet-test-support.js"
+import { makeFleetOutbox } from "../infra/fleet-outbox.js"
+import { run, waitFor } from "../test-support.js"
+import {
+  createArgs,
+  createdSession,
+  invokeAs,
+  laptop,
+  post,
+  postInvoke,
+  resultOf,
+  startFleet,
+  studio,
+  type FleetMachine
+} from "./fleet-test-support.js"
 
 const origin = { machineId: laptop.id, machineName: laptop.name, sessionId: "child-1" }
 
 const eventBody = (args: unknown) => ({ path: FLEET_SESSION_EVENT_PATH, args, origin })
+
+const promptsMatching = (machine: FleetMachine, text: string) =>
+  machine.agents.prompts.filter(([, input]) => typeof input === "string" && input.includes(text))
+    .length
+
+const turnEndedFor = (sessionId: string) => `type="session.turn_ended" sessionId="${sessionId}"`
 
 describe("fleet session events", () => {
   it("wakes only the bot named in the event, in that bot's own chat", async () => {
@@ -19,7 +37,13 @@ describe("fleet session events", () => {
     const plain = decode(SessionSummary)(
       (await post(home, "/v1/sessions", { projectId: "bot-project", harnessId: "codex" })).body
     )
-    const event = { sessionId: bot.sessionId, botId: bot.id, key: "k", text: "<codevisor-event/>" }
+    const event = {
+      sessionId: bot.sessionId,
+      botId: bot.id,
+      deliveryId: "d-1",
+      key: "k",
+      text: "<codevisor-event/>"
+    }
 
     const otherBot = await invokeAs(laptop, home, eventBody({ ...event, botId: plain.id }))
     const notTheBotsChat = await invokeAs(
@@ -30,12 +54,59 @@ describe("fleet session events", () => {
     const delivered = await invokeAs(laptop, home, eventBody(event))
 
     expect([otherBot.status, notTheBotsChat.status, delivered.status]).toEqual([403, 403, 200])
-    await waitFor(() => home.agents.prompts.some(([, input]) => input === "<codevisor-event/>"))
+    await waitFor(() => promptsMatching(home, "<codevisor-event/>") > 0)
+  })
+
+  it("wakes the bot once when the same event is delivered again", async () => {
+    const { home, bot } = await startFleet()
+    const event = {
+      sessionId: bot.sessionId,
+      botId: bot.id,
+      deliveryId: "d-once",
+      key: "k",
+      text: "<codevisor-event>once</codevisor-event>"
+    }
+
+    const first = await invokeAs(laptop, home, eventBody(event))
+    await waitFor(() => promptsMatching(home, "once") > 0)
+    const again = await invokeAs(laptop, home, eventBody(event))
+
+    expect([resultOf(first.body), resultOf(again.body)]).toEqual([
+      { delivered: true },
+      { delivered: false }
+    ])
+    expect(promptsMatching(home, "once")).toBe(1)
+  })
+
+  it("keeps a completion for an offline bot machine and delivers it once it is back", async () => {
+    const { home, remote, botOrigin, setOffline } = await startFleet()
+    const child = createdSession(
+      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    )
+    const outbox = makeFleetOutbox({
+      db: remote.services.db,
+      machines: remote.machines,
+      now: Date.now
+    })
+
+    setOffline(studio.id, true)
+    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "status" })
+    await waitFor(async () => (await run(remote.services.db.listFleetMessages)).length === 1)
+    await outbox.flush()
+    const stillQueued = await run(remote.services.db.listFleetMessages)
+    setOffline(studio.id, false)
+    await outbox.flush()
+    await outbox.flush()
+
+    expect(stillQueued).toHaveLength(1)
+    expect(await run(remote.services.db.listFleetMessages)).toEqual([])
+    await waitFor(() => promptsMatching(home, turnEndedFor(child.id)) > 0)
+    expect(promptsMatching(home, turnEndedFor(child.id))).toBe(1)
   })
 
   it("refuses unverified, replayed, misaddressed, and malformed events", async () => {
     const { home, bot } = await startFleet()
-    const event = { sessionId: bot.sessionId, botId: bot.id, key: "k", text: "t" }
+    const event = { sessionId: bot.sessionId, botId: bot.id, deliveryId: "d", key: "k", text: "t" }
     const replayed = home.fleetTickets.callers.issue({
       deviceId: laptop.id,
       publicKey: laptop.publicKey
@@ -53,11 +124,12 @@ describe("fleet session events", () => {
         "not an event",
         { sessionId: bot.sessionId },
         { ...event, botId: 4 },
+        { ...event, deliveryId: 4 },
         { ...event, text: 4 }
       ].map((args) => invokeAs(laptop, home, eventBody(args)))
     )
 
     expect([unverified.status, firstUse.status, secondUse.status]).toEqual([403, 404, 403])
-    expect(malformed.map((answer) => answer.status)).toEqual([400, 400, 400, 400])
+    expect(malformed.map((answer) => answer.status)).toEqual([400, 400, 400, 400, 400])
   })
 })

@@ -10,6 +10,7 @@ import { runDatabaseMigrations } from "./database-migrations.js"
 import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
 import { makeFilesService } from "./files-service.js"
+import { makeFleetOutboxService } from "./fleet-outbox-service.js"
 import { makeHarnessService } from "./harness-service.js"
 import { makeMachineSettingsService } from "./machine-settings-service.js"
 import { makeMcpService } from "./mcp-service.js"
@@ -58,6 +59,7 @@ export const createService = (
     ...makePromptQueueService(context),
     ...makeSessionSubscriptionsService(context),
     ...makeAutoResumeService(context),
+    ...makeFleetOutboxService(context),
     ...makeFilesService(context),
     ...makeWorkspaceMediaService(context),
     ...makeHarnessService(context),
