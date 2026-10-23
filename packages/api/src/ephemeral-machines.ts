@@ -38,13 +38,8 @@ export const EphemeralMachine = Schema.Struct({
 })
 export type EphemeralMachine = typeof EphemeralMachine.Type
 
-export const EphemeralMachinesResponse = Schema.Struct({
-  machines: Schema.Array(EphemeralMachine)
-})
+export const EphemeralMachinesResponse = Schema.Array(EphemeralMachine)
 export type EphemeralMachinesResponse = typeof EphemeralMachinesResponse.Type
-
-export const CreateEphemeralMachineResponse = Schema.Struct({ machine: EphemeralMachine })
-export type CreateEphemeralMachineResponse = typeof CreateEphemeralMachineResponse.Type
 
 export const DestroyEphemeralMachineResponse = Schema.Struct({ destroyed: Schema.String })
 export type DestroyEphemeralMachineResponse = typeof DestroyEphemeralMachineResponse.Type

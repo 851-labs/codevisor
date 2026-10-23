@@ -66,12 +66,12 @@ const dispatchMachines = async (
 ): Promise<boolean> => {
   const { request, response, url } = route
   if (isRoute(url, request, "/v1/ephemeral-machines", "GET")) {
-    writeJson(response, 200, { machines: await service.machines.list() })
+    writeJson(response, 200, await service.machines.list())
     return true
   }
   if (isRoute(url, request, "/v1/ephemeral-machines", "POST")) {
     const body = await readSchema(request, CreateEphemeralMachineRequest)
-    writeJson(response, 202, { machine: await service.machines.create(body) })
+    writeJson(response, 202, await service.machines.create(body))
     return true
   }
   const destroyId = methodRouteId(route, "DELETE", "/v1/ephemeral-machines/:id")

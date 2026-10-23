@@ -46,6 +46,7 @@ const recordIdNames: Readonly<Record<string, string>> = {
   agents: "agentId",
   bots: "botId",
   clients: "clientId",
+  "ephemeral-machines": "ephemeralMachineId",
   files: "fileId",
   harnesses: "harnessId",
   jobs: "jobId",

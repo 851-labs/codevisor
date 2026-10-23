@@ -17,8 +17,8 @@ import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import {
   CreateEphemeralMachineRequest,
-  CreateEphemeralMachineResponse,
   DestroyEphemeralMachineResponse,
+  EphemeralMachine,
   EphemeralMachinesResponse,
   EphemeralProjectOptions,
   EphemeralProjectOptionsResponse,
@@ -421,7 +421,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "DELETE /v1/machines/:machineId": MachinesResponse,
   "GET /v1/ephemeral-providers": EphemeralProvidersResponse,
   "GET /v1/ephemeral-machines": EphemeralMachinesResponse,
-  "POST /v1/ephemeral-machines": CreateEphemeralMachineResponse,
+  "POST /v1/ephemeral-machines": EphemeralMachine,
   "DELETE /v1/ephemeral-machines/:id": DestroyEphemeralMachineResponse,
   "GET /v1/projects/:id/ephemeral-options": EphemeralProjectOptionsResponse,
   "PUT /v1/projects/:id/ephemeral-options": EphemeralProjectOptionsResponse,

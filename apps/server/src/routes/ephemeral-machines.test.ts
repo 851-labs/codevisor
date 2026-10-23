@@ -114,9 +114,9 @@ describe("ephemeral machine routes", () => {
 
     expect(created).toMatchObject({
       status: 202,
-      body: { machine: { id: "id-1", state: "creating" } }
+      body: { id: "id-1", state: "creating" }
     })
-    expect(listed.body).toMatchObject({ machines: [{ id: "id-1", state: "ready" }] })
+    expect(listed.body).toMatchObject([{ id: "id-1", state: "ready" }])
     expect(destroyed).toEqual({ status: 200, body: { destroyed: "id-1" } })
     expect(harness.provider.machines.size).toBe(0)
   })

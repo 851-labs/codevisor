@@ -29,10 +29,6 @@ private struct CreateEphemeralMachineBody: Encodable {
   var projectId: String
 }
 
-private struct CreateEphemeralMachineResponse: Decodable {
-  var machine: ServerEphemeralMachine
-}
-
 extension CodevisorServerClient {
   public func ephemeralProviders() async throws -> [ServerEphemeralProvider] {
     let response: EphemeralProvidersResponse = try await get("/v1/ephemeral-providers")
@@ -40,11 +36,10 @@ extension CodevisorServerClient {
   }
 
   public func createEphemeralMachine(provider: String, projectId: UUID) async throws -> ServerEphemeralMachine {
-    let response: CreateEphemeralMachineResponse = try await send(
+    try await send(
       "/v1/ephemeral-machines",
       method: "POST",
       body: CreateEphemeralMachineBody(provider: provider, projectId: projectId.uuidString)
     )
-    return response.machine
   }
 }

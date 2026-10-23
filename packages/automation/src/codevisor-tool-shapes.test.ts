@@ -23,6 +23,16 @@ describe("Codevisor tool result shapes", () => {
     })
   })
 
+  it("names ephemeral machine ids after their resource in lists and single records", () => {
+    expect(shaped("/v1/ephemeral-machines", [{ id: "e1", state: "ready" }])).toEqual({
+      items: [{ ephemeralMachineId: "e1", state: "ready" }]
+    })
+    expect(shaped("/v1/ephemeral-machines", { id: "e2", state: "creating" })).toEqual({
+      ephemeralMachineId: "e2",
+      state: "creating"
+    })
+  })
+
   it("calls sessions agents everywhere in a result, however deeply nested", () => {
     expect(
       shaped("/v1/sessions/:id", {
