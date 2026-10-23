@@ -45,27 +45,6 @@ final class AppRuntime {
     if !environment.settings.hasCompletedOnboarding {
       environment.settings.completeOnboarding(importExternalSessions: false)
     }
-    if !AppPreview.isRunning {
-      let probes = ComputerUsePermissionProbes.live
-      let allGranted = probes.isAccessibilityGranted() && probes.isScreenRecordingGranted()
-      let needsReview = computerUsePermissionsGateNeeded(
-        hasCompletedOnboarding: environment.settings.hasCompletedOnboarding,
-        permissionsReviewedVersion: environment.settings.permissionsReviewedVersion,
-        setupSkipped: environment.settings.permissionsSetupSkipped,
-        reviewInProgress: environment.settings.permissionsReviewInProgress,
-        currentVersion: AppUpdateModel.bundleVersion(),
-        allGranted: allGranted
-      )
-      environment.requiresPermissionsReview = needsReview
-      if needsReview {
-        environment.settings.setPermissionsReviewInProgress(true)
-      } else if allGranted,
-        environment.settings.permissionsReviewedVersion
-          != AppUpdateModel.bundleVersion()
-      {
-        environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
-      }
-    }
     AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
     AnalyticsClient.shared.captureAppOpenedOnce()
     DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)

@@ -1,8 +1,5 @@
-import SwiftUI
-import AppKit
-import CodevisorCore
 import CodevisorCoreMac
-import CodevisorUI
+import SwiftUI
 
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
@@ -67,71 +64,4 @@ struct ComputerUsePermissionRowsView: View {
     .padding(10)
     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
   }
-}
-
-struct ComputerUsePermissionsGateView: View {
-  var onComplete: () -> Void
-  var onSkip: () -> Void
-
-  @State private var model = ComputerUsePermissionsModel(
-    probes: AppPreview.isRunning ? .granted : .live
-  )
-
-  var body: some View {
-    ZStack {
-      Color.black.opacity(0.28)
-        .ignoresSafeArea()
-        .onTapGesture {}
-
-      card
-    }
-  }
-
-  private var card: some View {
-    VStack(spacing: 16) {
-      Image(nsImage: NSApp.applicationIconImage)
-        .resizable()
-        .frame(width: 64, height: 64)
-        .shadow(color: .black.opacity(0.2), radius: 8, y: 5)
-        .accessibilityHidden(true)
-
-      VStack(spacing: 4) {
-        Text("Allow Computer Use")
-          .font(.title2.bold())
-        Text("Codevisor uses these to operate apps when you ask.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-
-      ComputerUsePermissionRowsView(model: model)
-
-      HStack {
-        Button("Set Up Later") { onSkip() }
-        Spacer()
-        Button("Continue") { onComplete() }
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut(.defaultAction)
-          .disabled(!model.allGranted)
-      }
-      .padding(.top, 4)
-    }
-    .padding(28)
-    .frame(width: 480)
-    .background(
-      RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .fill(.regularMaterial)
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .strokeBorder(Color.primary.opacity(0.08))
-    )
-    .shadow(color: .black.opacity(0.32), radius: 26, y: 12)
-  }
-}
-
-#Preview("Permissions gate") {
-  ComputerUsePermissionsGateView(onComplete: {}, onSkip: {})
-    .frame(width: 900, height: 640)
 }

@@ -134,7 +134,6 @@ extension OnboardingView {
   }
 
   private func skipComputerUse() {
-    environment.settings.setPermissionsSetupSkipped(true)
     Task {
       await McpFleet.disableLocally(
         environment.configSync,
@@ -182,8 +181,6 @@ extension OnboardingView {
       commitProjects()
       navigate(to: .computerUse, back: false)
     case .computerUse:
-      environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
-      environment.settings.setPermissionsSetupSkipped(false)
       navigate(to: .fullDiskAccess, back: false)
     case .fullDiskAccess:
       navigate(to: .analytics, back: false)

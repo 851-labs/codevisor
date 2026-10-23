@@ -7,7 +7,6 @@ struct ComputerUseSetupSheet: View {
   let request: TranscriptSetupRequest
   let controller: SessionController
 
-  @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Environment(\.controlActiveState) private var controlActiveState
   @State private var model = ComputerUsePermissionsModel(
@@ -60,10 +59,6 @@ struct ComputerUseSetupSheet: View {
   }
 
   private func complete() {
-    if model.allGranted {
-      environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
-      environment.settings.setPermissionsSetupSkipped(false)
-    }
     Task { await controller.completeSetupRequest(request.id) }
     dismiss()
   }

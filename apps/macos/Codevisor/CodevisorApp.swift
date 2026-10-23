@@ -158,32 +158,6 @@ struct RootView: View {
         else { return }
         openNotificationSession(sessionId, serverId: serverId)
       }
-      .task { await reconcileSkippedPermissions(environment: environment) }
-      .overlay {
-        if environment.requiresPermissionsReview {
-          ComputerUsePermissionsGateView {
-            environment.settings.setPermissionsReviewedVersion(
-              AppUpdateModel.bundleVersion()
-            )
-            environment.settings.setPermissionsSetupSkipped(false)
-            environment.settings.setPermissionsReviewInProgress(false)
-            environment.requiresPermissionsReview = false
-          } onSkip: {
-            environment.settings.setPermissionsSetupSkipped(true)
-            environment.settings.setPermissionsReviewInProgress(false)
-            Task {
-              await McpFleet.disableLocally(
-                environment.configSync,
-                machines: environment.machines,
-                name: "Computer Use"
-              )
-            }
-            environment.requiresPermissionsReview = false
-          }
-          .transition(.opacity)
-        }
-      }
-      .animation(.smooth(duration: 0.2), value: environment.requiresPermissionsReview)
       .task {
         if store == nil {
           let created = SessionStore(environment: environment)

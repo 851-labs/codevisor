@@ -89,21 +89,6 @@ private func canOpen(_ path: String) -> Bool {
   return true
 }
 
-public func computerUsePermissionsGateNeeded(
-  hasCompletedOnboarding: Bool,
-  permissionsReviewedVersion: String?,
-  setupSkipped: Bool,
-  reviewInProgress: Bool,
-  currentVersion: String,
-  allGranted: Bool
-) -> Bool {
-  guard hasCompletedOnboarding, !setupSkipped else { return false }
-  if reviewInProgress { return true }
-  if allGranted { return false }
-  guard let permissionsReviewedVersion else { return false }
-  return permissionsReviewedVersion != currentVersion
-}
-
 @MainActor
 @Observable
 public final class ComputerUsePermissionsModel {

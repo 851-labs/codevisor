@@ -5,10 +5,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public static let defaultNotificationSoundPath = "/System/Library/Sounds/Glass.aiff"
 
   public var hasCompletedOnboarding: Bool
-  public var permissionsReviewedVersion: String?
-  public var permissionsSetupSkipped: Bool
   public var onboardingStep: Int?
-  public var permissionsReviewInProgress: Bool
   public var importExternalSessions: Bool
   public var shareAnalytics: Bool
   public var shareCrashReports: Bool
@@ -23,10 +20,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
 
   public init(
     hasCompletedOnboarding: Bool = false,
-    permissionsReviewedVersion: String? = nil,
-    permissionsSetupSkipped: Bool = false,
     onboardingStep: Int? = nil,
-    permissionsReviewInProgress: Bool = false,
     importExternalSessions: Bool = false,
     shareAnalytics: Bool = false,
     shareCrashReports: Bool = false,
@@ -40,10 +34,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     actionRequiredSoundPath: String = AppSettings.defaultNotificationSoundPath
   ) {
     self.hasCompletedOnboarding = hasCompletedOnboarding
-    self.permissionsReviewedVersion = permissionsReviewedVersion
-    self.permissionsSetupSkipped = permissionsSetupSkipped
     self.onboardingStep = onboardingStep
-    self.permissionsReviewInProgress = permissionsReviewInProgress
     self.importExternalSessions = importExternalSessions
     self.shareAnalytics = shareAnalytics
     self.shareCrashReports = shareCrashReports
@@ -58,8 +49,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
   }
 
   private enum CodingKeys: String, CodingKey {
-    case hasCompletedOnboarding, permissionsReviewedVersion, permissionsSetupSkipped
-    case onboardingStep, permissionsReviewInProgress
+    case hasCompletedOnboarding, onboardingStep
     case importExternalSessions, shareAnalytics
     case shareCrashReports, alphaUpdatesEnabled
     case betaUpdatesEnabled
@@ -71,14 +61,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
-    permissionsReviewedVersion = try container.decodeIfPresent(String.self, forKey: .permissionsReviewedVersion)
-    permissionsSetupSkipped = try container.decodeIfPresent(Bool.self, forKey: .permissionsSetupSkipped) ?? false
     onboardingStep = try container.decodeIfPresent(Int.self, forKey: .onboardingStep)
-    permissionsReviewInProgress =
-      try container.decodeIfPresent(
-        Bool.self,
-        forKey: .permissionsReviewInProgress
-      ) ?? false
     importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
     shareAnalytics =
       try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
@@ -110,10 +93,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
-    try container.encodeIfPresent(permissionsReviewedVersion, forKey: .permissionsReviewedVersion)
-    try container.encode(permissionsSetupSkipped, forKey: .permissionsSetupSkipped)
     try container.encodeIfPresent(onboardingStep, forKey: .onboardingStep)
-    try container.encode(permissionsReviewInProgress, forKey: .permissionsReviewInProgress)
     try container.encode(importExternalSessions, forKey: .importExternalSessions)
     try container.encode(shareAnalytics, forKey: .shareAnalytics)
     try container.encode(shareCrashReports, forKey: .shareCrashReports)
@@ -166,10 +146,7 @@ public final class AppSettingsModel {
   }
 
   public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
-  public var permissionsReviewedVersion: String? { settings.permissionsReviewedVersion }
-  public var permissionsSetupSkipped: Bool { settings.permissionsSetupSkipped }
   public var onboardingStep: Int? { settings.onboardingStep }
-  public var permissionsReviewInProgress: Bool { settings.permissionsReviewInProgress }
   public var importExternalSessions: Bool { settings.importExternalSessions }
   public var shareAnalytics: Bool { settings.shareAnalytics }
   public var shareCrashReports: Bool { settings.shareCrashReports }
@@ -187,23 +164,8 @@ public final class AppSettingsModel {
     persist()
   }
 
-  public func setPermissionsReviewedVersion(_ version: String) {
-    settings.permissionsReviewedVersion = version
-    persist()
-  }
-
-  public func setPermissionsSetupSkipped(_ value: Bool) {
-    settings.permissionsSetupSkipped = value
-    persist()
-  }
-
   public func setOnboardingStep(_ step: Int?) {
     settings.onboardingStep = step
-    persist()
-  }
-
-  public func setPermissionsReviewInProgress(_ value: Bool) {
-    settings.permissionsReviewInProgress = value
     persist()
   }
 

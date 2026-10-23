@@ -20,7 +20,6 @@ public final class AppEnvironment {
   public let updateCenter: UpdateCenter
   public let configSync: ConfigSync
   public let bots: BotListModel
-  public var requiresPermissionsReview = false
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
