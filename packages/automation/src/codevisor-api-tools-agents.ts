@@ -1,4 +1,7 @@
 import {
+  AgentCallerDefaults,
+  AgentIsolation,
+  Labels,
   PromptDelivery,
   ReorderQueuedPromptsRequest,
   SetConfigRequest,
@@ -17,6 +20,17 @@ import {
   type CodevisorApiToolSpec
 } from "./codevisor-api-tool-spec.js"
 
+const StartAgentBody = Schema.Struct({
+  prompt: Schema.String,
+  title: Schema.String,
+  isolation: AgentIsolation,
+  harness: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  project: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels),
+  callerDefaults: Schema.optional(AgentCallerDefaults)
+})
+
 const MessageAgentBody = Schema.Struct({
   text: Schema.String,
   delivery: Schema.optional(PromptDelivery)
@@ -28,6 +42,13 @@ const AgentLabelsBody = Schema.Struct({
 })
 
 export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
+  apiTool(
+    "agents.start",
+    'Start another agent as a visible Codevisor chat and give it its first message, in one call. isolation picks its checkout: worktree (a new git worktree and workspace, for separate work that ends in its own branch or PR), shared (your own workspace and checkout, for a second opinion or a piece of your change), or project (the project folder in a new workspace). harness, model, reasoning, and project default to yours. You are subscribed to its events: its final reply arrives as a hidden <codevisor-event type="session.turn_ended"> message, so end your turn instead of waiting. labels (string key/value pairs) let you find it again with agents.list. If any step fails, Codevisor removes what this call created and returns the error.',
+    "POST",
+    "/v1/agents",
+    { body: StartAgentBody }
+  ),
   apiTool(
     "agents.message",
     "Send a follow-up message to an agent. An idle agent starts a turn with it. While it is working, delivery picks how it lands: steer (the default) adds it to the running turn, so the agent reads it at its next step; queue holds it until the turn and any earlier queued messages finish. delivered reports what happened: sent, steered, or queued. steerDeclined: true means the running turn couldn't take it (its harness can't steer, or is updating), so it was queued.",

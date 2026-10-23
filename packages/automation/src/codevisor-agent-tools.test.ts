@@ -27,7 +27,7 @@ const summary = (agentId: string) => ({
 })
 
 describe("agents.list", () => {
-  it("forwards its filters, resolving a project name to its id", async () => {
+  it("forwards its filters", async () => {
     const requests = fakeServer({}, [summary("a")])
 
     const listed = await call(local, "agents.list", {
@@ -40,7 +40,7 @@ describe("agents.list", () => {
     expect(listed).toEqual({ items: [summary("a")] })
     expect(requests.find((request) => request.path === "/v1/agents")?.query).toEqual({
       state: "working",
-      projectId: "project-1",
+      project: "Codevisor",
       parentAgentId: "caller",
       label: "role=worker"
     })
@@ -89,6 +89,19 @@ describe("agents.archive", () => {
     )
     await expect(call(local, "agents.archive", { agentId: "loose" })).rejects.toThrow(
       "has no workspace to archive"
+    )
+  })
+
+  it("passes on a failed archive with the tool name", async () => {
+    fakeServer({ caller, worker: session("worker", { workspaceId: "w" }) }, [], {
+      failing: ["POST /v1/agents/worker/archive"]
+    })
+
+    await expect(call(local, "agents.archive", { agentId: "worker" })).rejects.toThrow(
+      "POST /v1/agents/worker/archive broke"
+    )
+    await expect(call(local, "agents.archive", { agentId: "ghost" })).rejects.toThrow(
+      "Session not found"
     )
   })
 })

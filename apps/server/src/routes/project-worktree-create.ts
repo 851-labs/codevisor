@@ -50,6 +50,32 @@ export const createProjectWorktree = async (
   response: ServerResponse
 ): Promise<boolean> => {
   const payload = await readSchema(request, CreateWorktreeRequestSchema)
+  const { worktree } = await allocateProjectWorktree(
+    { services, config, fanout, serverId },
+    worktreeProjectId,
+    payload
+  )
+  writeJson(response, 201, worktree)
+  return true
+}
+
+export interface WorktreeServices {
+  readonly services: CodevisorServerServices
+  readonly config: CodevisorServerConfig
+  readonly fanout: EventFanout
+  readonly serverId: string
+}
+
+export interface AllocatedWorktree {
+  readonly worktree: Worktree
+  readonly rollBack: () => Promise<void>
+}
+
+export const allocateProjectWorktree = async (
+  { services, config, fanout, serverId }: WorktreeServices,
+  worktreeProjectId: string,
+  payload: CreateWorktreeRequest
+): Promise<AllocatedWorktree> => {
   const project = await getProjectOrFail(services.db, worktreeProjectId)
   const location = worktreeableLocation(serverId, project)
   if (!(await isGitWorkTree(location.folderPath))) throw notAGitRepository(location.folderPath)
@@ -65,11 +91,10 @@ export const createProjectWorktree = async (
     project.worktreeBase,
     environment
   )
-  return addUnusedWorktree({
+  const worktree = await addUnusedWorktree({
     services,
     config,
     fanout,
-    response,
     payload,
     project,
     location,
@@ -78,6 +103,25 @@ export const createProjectWorktree = async (
     environment,
     startPoint
   })
+  return {
+    worktree,
+    rollBack: () => rollBackNewWorktree(services, location.folderPath, worktree, environment)
+  }
+}
+
+const rollBackNewWorktree = async (
+  services: CodevisorServerServices,
+  repoDir: string,
+  worktree: Worktree,
+  environment: NodeJS.ProcessEnv
+): Promise<void> => {
+  const removed = await rollbackFailedWorktree(repoDir, worktree.path, worktree.branch, environment)
+  if (!removed) {
+    throw new Error(
+      `Left worktree ${worktree.name} in place: its checkout no longer matches the one this start created`
+    )
+  }
+  await run(services.db.deleteWorktree(worktree.id))
 }
 
 export const slugifyWorktreeName = (name: string | undefined): string | undefined => {
@@ -110,7 +154,6 @@ interface WorktreeAllocation {
   readonly services: CodevisorServerServices
   readonly config: CodevisorServerConfig
   readonly fanout: EventFanout
-  readonly response: ServerResponse
   readonly payload: CreateWorktreeRequest
   readonly project: Project
   readonly location: ProjectLocation
@@ -157,8 +200,8 @@ const locationGitEnvironment = (
 ): Promise<NodeJS.ProcessEnv> =>
   services.resolveGitEnvironment?.(location.folderPath) ?? Promise.resolve(process.env)
 
-const addUnusedWorktree = async (allocation: WorktreeAllocation): Promise<boolean> => {
-  const { services, config, fanout, response, payload, project, location, existing } = allocation
+const addUnusedWorktree = async (allocation: WorktreeAllocation): Promise<Worktree> => {
+  const { services, config, fanout, payload, project, location, existing } = allocation
   const { requested, environment, startPoint } = allocation
   for (let attempt = 0; attempt < maxWorktreeAttempts; attempt += 1) {
     const name = nextWorktreeName(config, requested, existing)
@@ -204,8 +247,7 @@ const addUnusedWorktree = async (allocation: WorktreeAllocation): Promise<boolea
       /* v8 ignore stop */
     }
     await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
-    writeJson(response, 201, worktree)
-    return true
+    return worktree
   }
   /* v8 ignore next */
   throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")

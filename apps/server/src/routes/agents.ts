@@ -14,6 +14,7 @@ import {
   searchAgentTranscript
 } from "./agent-debug.js"
 import { archiveAgent, listAgents, waitForAgents } from "./agent-lifecycle.js"
+import { startAgent } from "./agent-start.js"
 import { agentState } from "./agent-state.js"
 import { rejectSyncThrows, type RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
@@ -26,6 +27,7 @@ export const routeAgents = (route: RouteContext): Promise<boolean> =>
 const dispatchAgentRoute = (route: RouteContext): Promise<boolean> => {
   const { request, url } = route
   if (request.method === "GET" && url.pathname === "/v1/agents") return listAgents(route)
+  if (request.method === "POST" && url.pathname === "/v1/agents") return startAgent(route)
   if (request.method === "POST" && url.pathname === "/v1/agents/wait") return waitForAgents(route)
 
   const archiveId = matchRoute(url.pathname, "/v1/agents/:id/archive")

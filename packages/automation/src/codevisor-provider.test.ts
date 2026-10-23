@@ -245,6 +245,35 @@ describe("Codevisor MCP provider", () => {
     expect(requestJson(requests[0]!.init)).toEqual({ text: "done", fromSessionId: "agent" })
   })
 
+  it("starts agents as the calling agent, but not on behalf of another machine's caller", async () => {
+    const requests: Array<{ url: URL; init: RequestInit }> = []
+    stubFetch((url, init) => {
+      requests.push({ url, init })
+      return jsonResponse({ agentId: "child", title: "Fix", projectId: "p", subscribed: true })
+    })
+    const provider = makeCodevisorProvider(
+      () => "http://localhost:43210",
+      async () => "stable-token"
+    )
+    const start = { prompt: "Go", title: "Fix", isolation: "worktree", callerAgentId: "forged" }
+
+    await provider.invoke({ sessionId: "agent" }, "agents.start", start)
+    await provider.invoke({ sessionId: "remote:mbp:agent" }, "agents.start", start)
+
+    expect(requests.map((request) => request.url.pathname)).toEqual(["/v1/agents", "/v1/agents"])
+    expect(requestJson(requests[0]!.init)).toEqual({
+      prompt: "Go",
+      title: "Fix",
+      isolation: "worktree",
+      callerAgentId: "agent"
+    })
+    expect(requestJson(requests[1]!.init)).toEqual({
+      prompt: "Go",
+      title: "Fix",
+      isolation: "worktree"
+    })
+  })
+
   it("shortens waits to what is left of the execute budget and says so", async () => {
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {

@@ -255,6 +255,16 @@ const deleteSession = async (
   sessionId: string
 ): Promise<boolean> => {
   await assertNotOwnedByBot(services, { sessionId }, "delete this chat")
+  await deleteServerSession(services, fanout, sessionId)
+  writeJson(response, 204, undefined)
+  return true
+}
+
+export const deleteServerSession = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  sessionId: string
+): Promise<void> => {
   const workspaceId = workspaceOf(await allSessions(services), sessionId)
   await services.mcp?.closeSession(sessionId)
   await run(services.db.deleteSession(sessionId))
@@ -266,9 +276,6 @@ const deleteSession = async (
       id: workspaceId
     })
   }
-
-  writeJson(response, 204, undefined)
-  return true
 }
 
 const routeActions = async (route: RouteContext): Promise<boolean> => {

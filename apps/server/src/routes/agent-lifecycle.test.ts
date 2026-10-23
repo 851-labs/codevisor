@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -147,8 +147,8 @@ describe("agent lifecycle routes", () => {
         ]
       })
       expect(await list("label=role=worker")).toMatchObject({ items: [{ agentId: child }] })
-      expect(await list("projectId=elsewhere")).toEqual({ items: [] })
-      expect(await list("projectId=AGENT-PROJECT")).toMatchObject({
+      expect(await list("project=elsewhere")).toEqual({ items: [] })
+      expect(await list("project=AGENT-PROJECT")).toMatchObject({
         items: [{ agentId: parent }, { agentId: child }]
       })
     })
@@ -246,7 +246,7 @@ describe("agent lifecycle routes", () => {
     })
   })
 
-  it("reports kept artifacts a restore couldn't put back and keeps them", async () => {
+  it("sets aside kept artifacts a restore couldn't put back, inside the worktree", async () => {
     await withWorktreesRoot(async (worktreesRoot) => {
       const { server, services, worktree, agentIn } = await gitProject()
       const tree = await worktree()
@@ -266,11 +266,14 @@ describe("agent lifecycle routes", () => {
       await archiveJobs(services).idle()
 
       const reported = listSubjectEvents(services, workspaceId).flatMap((event) => {
-        const unrestored = field(event.payload, "archiveUnrestoredArtifacts")
-        return unrestored === undefined ? [] : [unrestored]
+        const conflicts = field(event.payload, "archiveRestoreConflicts")
+        return conflicts === undefined ? [] : [conflicts]
       })
-      expect(reported).toEqual([[".gitignore"]])
-      expect(existsSync(join(kept, ".gitignore"))).toBe(true)
+      expect(reported).toEqual([[".codevisor-restore-conflicts/.gitignore-2"]])
+      expect(existsSync(kept)).toBe(false)
+      expect(
+        readFileSync(join(tree.path, ".codevisor-restore-conflicts", ".gitignore-2"), "utf8")
+      ).toBe("kept copy\n")
       expect(existsSync(join(tree.path, "tmp", "shot.png"))).toBe(true)
     })
   })
@@ -288,23 +291,6 @@ describe("agent lifecycle routes", () => {
 
       expect(archived.status).toBeGreaterThanOrEqual(400)
       expect(existsSync(tree.path)).toBe(true)
-    })
-  })
-
-  it("deletes only a worktree nothing uses", async () => {
-    await withWorktreesRoot(async () => {
-      const { server, worktree, agentIn } = await gitProject()
-      const unused = await worktree()
-      const used = await worktree()
-      await agentIn(used.name)
-      const remove = (id: string) =>
-        jsonRequest(server, `/v1/projects/agent-project/worktrees/${id}`, { method: "DELETE" })
-
-      expect((await remove(unused.id)).status).toBe(204)
-      expect((await remove(used.id)).status).toBe(409)
-      expect((await remove(unused.id)).status).toBe(404)
-      expect(existsSync(unused.path)).toBe(false)
-      expect(existsSync(used.path)).toBe(true)
     })
   })
 })

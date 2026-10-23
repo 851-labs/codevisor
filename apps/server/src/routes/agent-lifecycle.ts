@@ -4,6 +4,7 @@ import {
   type AgentArchiveResult,
   type AgentState,
   type AgentSummary,
+  type Project,
   type SessionSummary,
   type WaitedAgent
 } from "@codevisor/api"
@@ -20,7 +21,7 @@ import type { RouteContext } from "./route-context.js"
 import { waitUntilSettled } from "./session-wait.js"
 
 export const listAgents = async ({ services, response, url }: RouteContext): Promise<boolean> => {
-  const filters = listFilters(url)
+  const filters = listFilters(url, await run(services.db.listProjects))
   const sessions = (await run(services.db.listSessions)).filter((session) =>
     listedSession(session, filters, url)
   )
@@ -85,15 +86,27 @@ interface ListFilters {
 
 const isAgentState = Schema.is(AgentStateSchema)
 
-const listFilters = (url: URL): ListFilters => {
+const listFilters = (url: URL, projects: ReadonlyArray<Project>): ListFilters => {
   const state = url.searchParams.get("state") ?? undefined
   if (state !== undefined && !isAgentState(state))
     throw new HttpFailure(400, `Unknown state: ${state}`)
   return {
     state,
-    projectId: url.searchParams.get("projectId")?.toLowerCase(),
+    projectId: projectIdNamed(url.searchParams.get("project") ?? undefined, projects),
     parentAgentId: url.searchParams.get("parentAgentId")?.toLowerCase()
   }
+}
+
+const projectIdNamed = (
+  project: string | undefined,
+  projects: ReadonlyArray<Project>
+): string | undefined => {
+  if (project === undefined) return undefined
+  const wanted = project.toLowerCase()
+  const found = projects.find(
+    (candidate) => candidate.id.toLowerCase() === wanted || candidate.name.toLowerCase() === wanted
+  )
+  return (found?.id ?? wanted).toLowerCase()
 }
 
 const listedSession = (session: SessionSummary, filters: ListFilters, url: URL): boolean =>

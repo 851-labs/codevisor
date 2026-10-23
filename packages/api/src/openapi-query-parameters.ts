@@ -12,7 +12,7 @@ const queryParameterBuilders: Partial<Record<Endpoint, QueryParameterBuilder>> =
   "GET /v1/plugins/registry": () => [stringQuery("q")],
   "GET /v1/agents": () => [
     stringQuery("state"),
-    stringQuery("projectId"),
+    stringQuery("project"),
     stringQuery("label"),
     stringQuery("parentAgentId")
   ],

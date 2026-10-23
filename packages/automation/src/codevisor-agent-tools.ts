@@ -11,7 +11,6 @@ import {
 import { Schema } from "effect"
 
 import { agentSummary, localCallerId } from "./codevisor-agent-caller.js"
-import { resolveProjectId, startAgent, StartAgentArgs } from "./codevisor-agent-start.js"
 import { agentTool, type AgentTool, type AgentToolContext } from "./codevisor-agent-tool.js"
 import { apiTool } from "./codevisor-api-tool-spec.js"
 import { namedRecord } from "./codevisor-tool-shapes.js"
@@ -49,12 +48,6 @@ const waitBudget = apiTool("agents.wait", "", "POST", "/v1/agents/wait", {
 })
 
 export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
-  agentTool(
-    "agents.start",
-    'Start another agent as a visible Codevisor chat and give it its first message, in one call. isolation picks its checkout: worktree (a new git worktree and workspace, for separate work that ends in its own branch or PR), shared (your own workspace and checkout, for a second opinion or a piece of your change), or project (the project folder in a new workspace). harness, model, reasoning, and project default to yours. You are subscribed to its events: its final reply arrives as a hidden <codevisor-event type="session.turn_ended"> message, so end your turn instead of waiting. labels (string key/value pairs) let you find it again with agents.list.',
-    StartAgentArgs,
-    startAgent
-  ),
   agentTool(
     "agents.list",
     "List agents on this machine, newest activity first, as slim summaries: agentId, title, state (working, waitingForUser, idle, errored), projectId, workspaceId, harness, labels, parentAgentId. Filter by state, project (id or name), label (key=value, or key for any value), or parentAgentId (the agents a given agent started). Pass next back for the next page.",
@@ -104,10 +97,14 @@ const listAgents = async (
   tool: AgentToolContext,
   args: typeof ListAgentsArgs.Type
 ): Promise<unknown> => {
-  const projectId = await listedProjectId(tool, args.project)
   const listed = Schema.decodeUnknownSync(AgentList)(
     await tool.api("GET", "/v1/agents", {
-      query: { state: args.state, projectId, label: args.label, parentAgentId: args.parentAgentId }
+      query: {
+        state: args.state,
+        project: args.project,
+        label: args.label,
+        parentAgentId: args.parentAgentId
+      }
     })
   )
   const offset = pageOffset(args.next)
@@ -116,14 +113,6 @@ const listAgents = async (
     items: listed.items.slice(offset, nextOffset),
     ...(nextOffset < listed.items.length ? { next: String(nextOffset) } : {})
   }
-}
-
-const listedProjectId = async (
-  tool: AgentToolContext,
-  project: string | undefined
-): Promise<string | undefined> => {
-  if (project === undefined) return undefined
-  return resolveProjectId(tool, project, {})
 }
 
 const pageOffset = (next: string | undefined): number => {

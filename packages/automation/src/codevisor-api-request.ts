@@ -2,6 +2,7 @@ import { REMOTE_PARENT_HEADER, jsonSchema } from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
+import { isRemoteScope } from "./codevisor-agent-caller.js"
 import type { QueryParameter } from "./codevisor-api-tool-spec.js"
 import type { CodevisorApiToolSpec } from "./codevisor-api-tools.js"
 import { callerDefault, pathArgumentName, pathParameterNames } from "./codevisor-tool-schema.js"
@@ -165,6 +166,9 @@ const bodyPayload = (
   if (spec.wrappedBody === true) return args.body
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
   if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
+  if (spec.name === "agents.start" && !isRemoteScope(context.sessionId)) {
+    return { ...payload, callerAgentId: context.sessionId }
+  }
   return payload
 }
 

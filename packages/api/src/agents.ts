@@ -89,3 +89,36 @@ export const AgentArchiveResult = Schema.Struct({
   keptArtifacts: Schema.Array(Schema.String)
 })
 export type AgentArchiveResult = typeof AgentArchiveResult.Type
+
+export const AgentIsolation = Schema.Literals(["worktree", "shared", "project"])
+export type AgentIsolation = typeof AgentIsolation.Type
+
+export const AgentCallerDefaults = Schema.Struct({
+  harness: Schema.String,
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
+})
+export type AgentCallerDefaults = typeof AgentCallerDefaults.Type
+
+export const StartAgentRequest = Schema.Struct({
+  prompt: Schema.String,
+  title: Schema.String,
+  isolation: AgentIsolation,
+  harness: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  project: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels),
+  callerAgentId: Schema.optional(Schema.String),
+  callerDefaults: Schema.optional(AgentCallerDefaults)
+})
+export type StartAgentRequest = typeof StartAgentRequest.Type
+
+export const StartedAgent = Schema.Struct({
+  agentId: Schema.String,
+  title: Schema.String,
+  projectId: Schema.String,
+  workspaceId: Schema.optional(Schema.String),
+  worktreeName: Schema.optional(Schema.String),
+  delivered: Schema.optional(Schema.String),
+  subscribed: Schema.Boolean
+})
+export type StartedAgent = typeof StartedAgent.Type
