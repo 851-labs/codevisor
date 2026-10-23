@@ -134,10 +134,10 @@ export const applyWorkspaceArchiveEffects = async (
   }
 
   const restored = await restoreWorkspaceWorktree(services, config.id, workspace)
-  if (restored.unrestoredArtifacts.length > 0) {
+  if (restored.restoreConflicts.length > 0) {
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
       ...restored.workspace,
-      archiveUnrestoredArtifacts: restored.unrestoredArtifacts
+      archiveRestoreConflicts: restored.restoreConflicts
     })
   }
   if (!restored.restoredFiles) {

@@ -219,7 +219,7 @@ export const archiveWorkspaceWorktree = async (
 export interface RestoredWorkspace {
   readonly workspace: Workspace
   readonly restoredFiles: boolean
-  readonly unrestoredArtifacts: ReadonlyArray<string>
+  readonly restoreConflicts: ReadonlyArray<string>
 }
 
 export const restoreWorkspaceWorktree = async (
@@ -229,13 +229,13 @@ export const restoreWorkspaceWorktree = async (
 ): Promise<RestoredWorkspace> =>
   withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
     const found = await findArchivedWorktreeFor(services, serverId, workspace)
-    if (found === undefined) return { workspace, restoredFiles: true, unrestoredArtifacts: [] }
+    if (found === undefined) return { workspace, restoredFiles: true, restoreConflicts: [] }
     const { rootDirectory, worktreeName, archived } = found
     if (archived === undefined) {
       const existing = (await run(services.db.listWorktrees(workspace.projectId))).find(
         (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
       )
-      return { workspace, restoredFiles: existing !== undefined, unrestoredArtifacts: [] }
+      return { workspace, restoredFiles: existing !== undefined, restoreConflicts: [] }
     }
 
     const project = await getProjectOrFail(services.db, workspace.projectId)
@@ -256,7 +256,7 @@ export const restoreWorkspaceWorktree = async (
       takenNames: taken,
       env: environment
     })
-    const unrestoredArtifacts = await returnKeptArtifacts(
+    const restoreConflicts = await returnKeptArtifacts(
       archivedArtifactsPath(archived.id),
       worktreePathBeside(workspace.projectId, rootDirectory, restored.name)
     )
@@ -279,7 +279,7 @@ export const restoreWorkspaceWorktree = async (
         await run(services.db.updateSession(session.id, { worktreeName: restored.name }))
       }
     }
-    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot, unrestoredArtifacts }
+    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot, restoreConflicts }
   })
 
 export interface WorkspaceGitCheckout {

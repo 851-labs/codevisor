@@ -82,23 +82,30 @@ describe("archived worktree artifacts", () => {
     expect(git(repo, "status", "--porcelain")).toBe("")
   })
 
-  it("keeps a colliding artifact in the store and reports it instead of deleting it", async () => {
-    const { root } = makeGitRepo()
+  it("sets a colliding artifact aside in an ignored folder of the worktree", async () => {
+    const { repo, root } = makeGitRepo()
     const artifactsDir = join(root, "kept")
-    const restorePath = join(root, "restored")
     write(join(artifactsDir, "notes.md"), "artifact\n")
     write(join(artifactsDir, "tmp", "shot.png"), "pixels")
-    write(join(restorePath, "notes.md"), "restored\n")
+    write(join(repo, "notes.md"), "restored\n")
+    git(repo, "add", "notes.md")
+    git(repo, "commit", "-m", "notes")
+    write(join(repo, ".codevisor-restore-conflicts", "notes.md"), "older conflict\n")
 
-    expect(await returnKeptArtifacts(artifactsDir, restorePath)).toEqual(["notes.md"])
+    expect(await returnKeptArtifacts(artifactsDir, repo)).toEqual([
+      ".codevisor-restore-conflicts/notes.md-2"
+    ])
 
-    expect(readFileSync(join(restorePath, "notes.md"), "utf8")).toBe("restored\n")
-    expect(readFileSync(join(restorePath, "tmp", "shot.png"), "utf8")).toBe("pixels")
-    expect(readFileSync(join(artifactsDir, "notes.md"), "utf8")).toBe("artifact\n")
-    expect(existsSync(join(artifactsDir, "tmp"))).toBe(false)
+    expect(readFileSync(join(repo, "notes.md"), "utf8")).toBe("restored\n")
+    expect(readFileSync(join(repo, ".codevisor-restore-conflicts", "notes.md-2"), "utf8")).toBe(
+      "artifact\n"
+    )
+    expect(readFileSync(join(repo, "tmp", "shot.png"), "utf8")).toBe("pixels")
+    expect(existsSync(artifactsDir)).toBe(false)
+    expect(git(repo, "status", "--porcelain", "--", ".codevisor-restore-conflicts")).toBe("")
   })
 
-  it("keeps an artifact whose destination is a symlink", async () => {
+  it("sets aside an artifact whose destination is a symlink without writing through it", async () => {
     const { root } = makeGitRepo()
     const artifactsDir = join(root, "kept")
     const restorePath = join(root, "restored")
@@ -107,8 +114,12 @@ describe("archived worktree artifacts", () => {
     mkdirSync(restorePath)
     symlinkSync(join(root, "elsewhere"), join(restorePath, "tmp"))
 
-    expect(await returnKeptArtifacts(artifactsDir, restorePath)).toEqual(["tmp"])
-    expect(readFileSync(join(artifactsDir, "tmp", "shot.png"), "utf8")).toBe("pixels")
+    expect(await returnKeptArtifacts(artifactsDir, restorePath)).toEqual([
+      ".codevisor-restore-conflicts/tmp"
+    ])
+    expect(
+      readFileSync(join(restorePath, ".codevisor-restore-conflicts", "tmp", "shot.png"), "utf8")
+    ).toBe("pixels")
     expect(existsSync(join(root, "elsewhere", "shot.png"))).toBe(false)
   })
 

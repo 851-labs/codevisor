@@ -1,6 +1,6 @@
 import { existsSync, type Dirent } from "node:fs"
-import { lstat, mkdir, readdir, rename, rm, rmdir } from "node:fs/promises"
-import { basename, dirname, join } from "node:path"
+import { lstat, mkdir, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises"
+import { basename, dirname, join, relative } from "node:path"
 
 import { runGit } from "./git.js"
 import { heavyGit as heavy, scratchIndexConfig as gitConfig } from "./working-state.js"
@@ -51,14 +51,18 @@ export const keepArtifacts = async (
   return kept
 }
 
+export const restoreConflictsFolder = ".codevisor-restore-conflicts"
+
 export const returnKeptArtifacts = async (
   artifactsDir: string,
   worktreeDir: string
 ): Promise<ReadonlyArray<string>> => {
   if (!existsSync(artifactsDir)) return []
-  const unrestored = await moveMissingEntries(artifactsDir, worktreeDir, "")
-  if (unrestored.length === 0) await rm(artifactsDir, { recursive: true, force: true })
-  return unrestored
+  const conflicts = await moveMissingEntries(artifactsDir, worktreeDir, "")
+  const setAside = []
+  for (const path of conflicts) setAside.push(await moveAside(artifactsDir, worktreeDir, path))
+  await rm(artifactsDir, { recursive: true, force: true })
+  return setAside
 }
 
 const listIgnoredPaths = (worktreeDir: string, env?: NodeJS.ProcessEnv): Promise<string> =>
@@ -81,12 +85,12 @@ const moveInto = async (source: string, target: string): Promise<void> => {
 const moveMissingEntries = async (
   from: string,
   to: string,
-  relative: string
+  under: string
 ): Promise<ReadonlyArray<string>> => {
   const entries = await readdir(from, { withFileTypes: true })
   const unrestored: Array<string> = []
   for (const entry of entries) {
-    const path = join(relative, entry.name)
+    const path = join(under, entry.name)
     unrestored.push(
       ...(await moveIfMissing(entry, join(from, entry.name), join(to, entry.name), path))
     )
@@ -108,6 +112,25 @@ const moveIfMissing = async (
   }
   if (entry.isDirectory() && existing.isDirectory()) return moveMissingEntries(source, target, path)
   return [path]
+}
+
+const moveAside = async (
+  artifactsDir: string,
+  worktreeDir: string,
+  path: string
+): Promise<string> => {
+  const folder = join(worktreeDir, restoreConflictsFolder)
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, ".gitignore"), "*\n")
+  const target = await unusedPath(join(folder, path))
+  await moveInto(join(artifactsDir, path), target)
+  return relative(worktreeDir, target)
+}
+
+const unusedPath = async (path: string, attempt = 1): Promise<string> => {
+  const candidate = attempt === 1 ? path : `${path}-${attempt}`
+  if ((await lstat(candidate).catch(() => undefined)) === undefined) return candidate
+  return unusedPath(path, attempt + 1)
 }
 
 const pruneRebuildable = async (path: string): Promise<void> => {
