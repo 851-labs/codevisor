@@ -171,12 +171,16 @@ user_systemctl() {
   fi
 }
 
-start_user_manager() {
-  loginctl enable-linger "$service_user"
+systemd_user_ready() {
+  if [ -z "$service_user" ]; then
+    systemctl --user show-environment >/dev/null 2>&1
+    return
+  fi
+  loginctl enable-linger "$service_user" >/dev/null 2>&1 || return 1
   attempts=0
   until user_systemctl show-environment >/dev/null 2>&1; do
     attempts=$((attempts + 1))
-    [ "$attempts" -lt 30 ] || fail "the systemd user manager for $service_user didn't start"
+    [ "$attempts" -lt 30 ] || return 1
     sleep 1
   done
 }
@@ -256,14 +260,14 @@ configure_server_service() {
     note "  codevisor start"
     note "Run it again after a reboot; it does not start automatically on macOS."
   elif [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1 ||
-    ! systemctl show --property=Version >/dev/null 2>&1; then
+    ! systemctl show --property=Version >/dev/null 2>&1 || ! systemd_user_ready; then
     say "codevisor-server $version installed"
     note "Start it with:"
     note "  $(service_user_command 'codevisor start')"
   else
+    service_running=1
     if [ -n "$service_user" ]; then
       remove_root_service
-      start_user_manager
     fi
     say "Setting up systemd service (user)"
     user_systemctl disable --now herdman-server.service >/dev/null 2>&1 || true
@@ -309,9 +313,13 @@ codevisor_cli() {
 
 finish_server_onboarding() {
   if [ -n "${CODEVISOR_INVITE:-}" ]; then
-    say "Joining your Codevisor account"
     invite="$CODEVISOR_INVITE"
     unset CODEVISOR_INVITE
+    if [ "$service_running" != "1" ]; then
+      say "Starting codevisor-server"
+      codevisor_cli start </dev/null
+    fi
+    say "Joining your Codevisor account"
     if [ -n "${CODEVISOR_MACHINE_NAME:-}" ]; then
       printf '%s\n' "$invite" |
         codevisor_cli auth login --invite - --name "$CODEVISOR_MACHINE_NAME"
@@ -344,6 +352,7 @@ install_server() {
   esac
 
   service_user=""
+  service_running=0
   service_home="$HOME"
   if [ "$(id -u)" = "0" ] && [ "$os" = "linux" ]; then
     resolve_service_user
@@ -430,7 +439,10 @@ main() {
 
   case "$(uname -s)" in
     Darwin)
-      if is_apple_silicon; then
+      if is_apple_silicon && [ "${CODEVISOR_INSTALL_SERVER:-}" = "1" ]; then
+        version=$(resolve_version)
+        install_server "$version" darwin
+      elif is_apple_silicon; then
         version=$(resolve_version)
         install_macos "$version"
       else

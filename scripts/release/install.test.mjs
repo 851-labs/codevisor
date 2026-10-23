@@ -125,6 +125,11 @@ const install = async (t, options = {}) => {
   const services = join(root, "services.log")
   writeFileSync(requests, "")
   writeFileSync(services, "")
+  if (options.loginctl !== undefined) {
+    writeFileSync(join(bin, "loginctl"), `#!/bin/sh\nset -eu\n${options.loginctl}\n`, {
+      mode: 0o755
+    })
+  }
   if (options.systemctl !== undefined) {
     writeFileSync(join(bin, "systemctl"), `#!/bin/sh\nset -eu\n${options.systemctl}\n`, {
       mode: 0o755
@@ -266,11 +271,30 @@ describe("install.sh", { concurrency: true }, () => {
     assert.equal(
       readFileSync(join(result.root, "cli.log"), "utf8"),
       [
+        "args=start",
+        "stdin=",
+        "env=",
         "args=auth login --invite - --name hetzner 1",
         "stdin=cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
         "env=",
         ""
       ].join("\n")
+    )
+  })
+
+  test("a systemd user manager that can't start installs without a service, then joins", async (t) => {
+    const result = await install(t, {
+      uid: 0,
+      cli: 'printf "args=%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
+      loginctl: 'echo "Failed to connect to bus: No such file or directory" >&2; exit 1',
+      env: { CODEVISOR_INVITE: "cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret" }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /Start it with:/)
+    assert.doesNotMatch(result.services, /restart codevisor-server\.service/)
+    assert.equal(
+      readFileSync(join(result.root, "cli.log"), "utf8"),
+      "args=start\nargs=auth login --invite -\n"
     )
   })
 
@@ -286,7 +310,7 @@ describe("install.sh", { concurrency: true }, () => {
     assert.equal(result.status, 0, result.stderr)
     assert.equal(
       readFileSync(join(result.root, "cli.log"), "utf8"),
-      "args=auth login --invite - --port 5000\n"
+      "args=start --port 5000\nargs=auth login --invite - --port 5000\n"
     )
   })
 
@@ -412,6 +436,23 @@ describe("install.sh", { concurrency: true }, () => {
       )
     })
   }
+
+  test("Apple silicon installs the headless darwin-arm64 server when asked", async (t) => {
+    const result = await install(t, {
+      platform: "Darwin",
+      architecture: "arm64",
+      env: { CODEVISOR_INSTALL_SERVER: "1" }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(
+      result.requests.map(({ url }) => url),
+      [
+        stableURL,
+        `${downloadBase}/v0.1.99/codevisor-server-darwin-arm64.tar.gz`,
+        `${downloadBase}/v0.1.99/codevisor-server-darwin-arm64.tar.gz.sha256`
+      ]
+    )
+  })
 
   test("Intel Mac installs the standalone darwin-x64 server once confirmed", async (t) => {
     const result = await install(t, {
