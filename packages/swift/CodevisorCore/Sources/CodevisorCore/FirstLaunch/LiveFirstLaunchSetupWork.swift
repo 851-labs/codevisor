@@ -23,7 +23,7 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
   }
 
   public func isNewInstall() async throws -> Bool {
-    try await feed.status { _ in true }.isNewInstall
+    try await environment.machines.client(for: machineId).firstRunStatus().isNewInstall
   }
 
   public func findHarnesses() async throws -> [String] {

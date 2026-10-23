@@ -6,19 +6,112 @@ import Testing
 @MainActor
 @Suite("First-launch setup screen")
 struct FirstLaunchSetupTests {
-  @Test("Never shows the screen when everything is ready within half a second")
-  func skipsWhenReadyQuickly() async {
-    let work = newInstall()
-    work.harnesses.resolve(["Claude Code"])
-    work.projects.resolve(["api", "web"])
+  @Test("Shows Starting Codevisor from the first frame, before the server answers")
+  func showsBeforeServerAnswers() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    let setup = FirstLaunchSetup(work: work, clock: clock)
+    #expect(setup.presentation == .visible)
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.running, .pending, .pending, .pending])
+
+    let running = Task { await setup.run() }
+    await clock.waitForSleep(.seconds(15))
+    #expect(setup.presentation == .visible)
+    #expect(setup.revealed(.server) == .running)
+
+    work.server.resolve(.failed)
+    await running.value
+  }
+
+  @Test("Carries on once the server confirms a new install")
+  func carriesOnForNewInstall() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    work.server.resolve(.ready)
+    work.harnesses.resolve([])
+    work.projects.resolve([])
     work.models.resolve(())
+    let setup = FirstLaunchSetup(work: work, clock: clock)
+    let running = Task { await setup.run() }
+    await clock.waitForSleep(.seconds(15))
+    #expect(setup.revealed(.server) == .running)
+
+    work.newInstall.resolve(true)
+    await awaitObserved { setup.revealed(.server) == .done }
+    await clock.waitForSleep(.milliseconds(400))
+    clock.advance(by: .milliseconds(400))
+    await running.value
+
+    #expect(setup.presentation == .visible)
+    #expect(setup.canGetStarted)
+  }
+
+  @Test("Leaves without Get Started when the server says this isn't a new install")
+  func leavesForExistingInstall() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    work.server.resolve(.ready)
+    let setup = FirstLaunchSetup(work: work, clock: clock)
+    let running = Task { await setup.run() }
+    await clock.waitForSleep(.seconds(15))
+    #expect(setup.presentation == .visible)
+
+    work.newInstall.resolve(false)
+    await running.value
+
+    #expect(setup.presentation == .notNeeded)
+    #expect(!setup.canGetStarted)
+    #expect(FirstLaunchStep.allCases.map { setup.outcomes[$0] } == [.running, nil, nil, nil])
+  }
+
+  @Test("Hands off to the startup view when the server doesn't answer within fifteen seconds")
+  func handsOffWithoutServerAnswer() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    let setup = FirstLaunchSetup(work: work, clock: clock)
+    let running = Task { await setup.run() }
+    await clock.waitForSleep(.seconds(15))
+    clock.advance(by: .seconds(15))
+
+    await awaitObserved { setup.presentation == .handedOff }
+    #expect(!setup.canGetStarted)
+    running.cancel()
+    await running.value
+  }
+
+  @Test("Keeps asking through unreadable answers, then hands off after fifteen seconds")
+  func keepsAskingThroughErrors() async {
+    let clock = TestClock()
+    let work = FirstLaunchFakeWork()
+    work.server.resolve(.ready)
+    work.newInstall.fail()
+    let setup = FirstLaunchSetup(work: work, clock: clock)
+    let running = Task { await setup.run() }
+    await clock.waitForSleep(.milliseconds(500))
+    clock.advance(by: .milliseconds(500))
+    await clock.waitForSleep(.milliseconds(500), count: 2)
+    #expect(setup.presentation == .visible)
+    #expect(setup.revealed(.server) == .running)
+
+    await clock.waitForSleep(.seconds(15))
+    clock.advance(by: .seconds(15))
+    await awaitObserved { setup.presentation == .handedOff }
+    #expect(!setup.canGetStarted)
+    running.cancel()
+    await running.value
+  }
+
+  @Test("Hands a failed server start to the startup failure view")
+  func handsOffServerFailure() async {
+    let work = FirstLaunchFakeWork()
     let setup = FirstLaunchSetup(work: work, clock: TestClock())
+    let running = Task { await setup.run() }
 
-    await setup.run()
+    work.server.resolve(.failed)
+    await running.value
 
-    #expect(setup.presentation == .dismissed)
-    #expect(!setup.wasShown)
-    #expect(setup.detailCandidates(for: .projects) == ["api and web", "api +1", "2 projects"])
+    #expect(setup.presentation == .handedOff)
+    #expect(!setup.canGetStarted)
   }
 
   @Test("Offers Get Started once the last check lands, and only dismisses when pressed")
@@ -27,7 +120,7 @@ struct FirstLaunchSetupTests {
     let work = readyExceptHarnesses()
     let setup = FirstLaunchSetup(work: work, clock: clock)
     let running = Task { await setup.run() }
-    await show(setup, clock: clock)
+    await confirmed(setup)
     setup.getStarted()
     #expect(setup.presentation == .visible)
 
@@ -52,12 +145,13 @@ struct FirstLaunchSetupTests {
     let clock = TestClock()
     let work = newInstall()
     var timing = FirstLaunchSetupTiming.standard
+    timing.serverAnswerTimeout = .seconds(20)
     timing.harnessesTimeout = .seconds(60)
     timing.projectsTimeout = .seconds(60)
     timing.modelsTimeout = .seconds(60)
     let setup = FirstLaunchSetup(work: work, timing: timing, clock: clock)
     let running = Task { await setup.run() }
-    await show(setup, clock: clock)
+    await confirmed(setup)
 
     await clock.waitForSleep(.seconds(15))
     clock.advance(by: .seconds(15))
@@ -72,92 +166,6 @@ struct FirstLaunchSetupTests {
     await running.value
   }
 
-  @Test("Hands a failed server start to the startup failure view without showing")
-  func handsOffServerFailure() async {
-    let clock = TestClock()
-    let work = FirstLaunchFakeWork()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
-    await clock.waitForSleep(.milliseconds(500))
-    clock.advance(by: .milliseconds(500))
-    #expect(setup.presentation == .waiting)
-
-    work.server.resolve(.failed)
-    await running.value
-
-    #expect(setup.presentation == .handedOff)
-    #expect(!setup.wasShown)
-    #expect(!setup.canGetStarted)
-  }
-
-  enum ServerAnswer: String, CaseIterable, Sendable {
-    case notNewBeforeHalfASecond, notNewAfterHalfASecond, unreadable
-  }
-
-  @Test("Never shows when the server says this isn't a new install", arguments: ServerAnswer.allCases)
-  func neverShowsOnExistingInstall(answer: ServerAnswer) async {
-    let clock = TestClock()
-    let work = FirstLaunchFakeWork()
-    work.server.resolve(.ready)
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
-    if answer == .notNewBeforeHalfASecond {
-      work.newInstall.resolve(false)
-    } else {
-      await clock.waitForSleep(.milliseconds(500))
-      clock.advance(by: .milliseconds(500))
-      await clock.waitForSleep(.seconds(15))
-      #expect(setup.presentation == .waiting)
-      if answer == .unreadable { work.newInstall.fail() } else { work.newInstall.resolve(false) }
-    }
-    await running.value
-
-    #expect(setup.presentation == .dismissed)
-    #expect(!setup.wasShown)
-    #expect(FirstLaunchStep.allCases.map { setup.outcomes[$0] } == [.running, nil, nil, nil])
-  }
-
-  @Test("Shows a new install only once the server confirms it")
-  func waitsForServerBeforeShowing() async {
-    let clock = TestClock()
-    let work = FirstLaunchFakeWork()
-    work.server.resolve(.ready)
-    work.harnesses.resolve([])
-    work.projects.resolve([])
-    work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
-    await clock.waitForSleep(.milliseconds(500))
-    clock.advance(by: .milliseconds(500))
-    await clock.waitForSleep(.seconds(15))
-    #expect(setup.presentation == .waiting)
-
-    work.newInstall.resolve(true)
-    await awaitObserved { setup.presentation == .visible }
-    #expect(setup.wasShown)
-    await clock.waitForSleep(.milliseconds(400))
-    clock.advance(by: .milliseconds(400))
-    await running.value
-    #expect(setup.canGetStarted)
-  }
-
-  @Test("Gives up without showing when the server never answers")
-  func givesUpWithoutServer() async {
-    let clock = TestClock()
-    let work = FirstLaunchFakeWork()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
-    await clock.waitForSleep(.milliseconds(500))
-    clock.advance(by: .milliseconds(500))
-    await clock.waitForSleep(.seconds(15))
-    clock.advance(by: .seconds(15))
-
-    await awaitObserved { setup.presentation == .dismissed }
-    #expect(!setup.wasShown)
-    running.cancel()
-    await running.value
-  }
-
   @Test("Skips steps that run past their time limits, keeping one spinner at a time")
   func skipsSlowSteps() async {
     let clock = TestClock()
@@ -167,10 +175,10 @@ struct FirstLaunchSetupTests {
     for limit in [Duration.seconds(5), .seconds(10), .seconds(12)] {
       await clock.waitForSleep(limit)
     }
-    await show(setup, clock: clock)
+    await confirmed(setup)
     #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
 
-    clock.advance(by: .milliseconds(4_500))
+    clock.advance(by: .seconds(5))
     await awaitObserved { setup.revealed(.harnesses) == .skipped }
     #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .running, .pending])
 
@@ -193,7 +201,7 @@ struct FirstLaunchSetupTests {
   func revealsInOrder() async {
     let work = newInstall()
     work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, clock: TestClock())
+    let setup = FirstLaunchSetup(work: work, timing: .instant, clock: TestClock())
     let running = Task { await setup.run() }
 
     work.projects.resolve(["api", "web"])
@@ -215,7 +223,7 @@ struct FirstLaunchSetupTests {
     work.models.resolve(())
     let setup = FirstLaunchSetup(work: work, clock: clock)
     let running = Task { await setup.run() }
-    await show(setup, clock: clock)
+    await confirmed(setup)
 
     work.reportProjectsAdded(["api", "web"])
     work.harnesses.resolve(["Codex"])
@@ -255,7 +263,7 @@ struct FirstLaunchSetupTests {
     work.harnesses.resolve(["Codex"])
     work.projects.fail()
     work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, clock: TestClock())
+    let setup = FirstLaunchSetup(work: work, timing: .instant, clock: TestClock())
 
     await setup.run()
 
@@ -277,10 +285,17 @@ struct FirstLaunchSetupTests {
     return work
   }
 
-  private func show(_ setup: FirstLaunchSetup, clock: TestClock) async {
-    await clock.waitForSleep(.milliseconds(500))
+  private func confirmed(_ setup: FirstLaunchSetup) async {
     await awaitObserved { setup.outcomes[.server] == .done }
-    clock.advance(by: .milliseconds(500))
-    await awaitObserved { setup.presentation == .visible }
+  }
+}
+
+extension FirstLaunchSetupTiming {
+  fileprivate static var instant: Self {
+    var timing = Self.standard
+    timing.revealPace = .zero
+    timing.catchUp = .zero
+    timing.settle = .zero
+    return timing
   }
 }

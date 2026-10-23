@@ -21,7 +21,7 @@ struct ServerFirstRunStatusTests {
       isNewInstall: true),
     Row(name: "scan finished on an earlier boot", status: .init(state: .done), isNewInstall: false),
     Row(name: "server that predates first runs", status: .init(state: .notApplicable), isNewInstall: false),
-    Row(name: "status that couldn't be read", status: .init(state: .failed), isNewInstall: false),
+    Row(name: "scan failed this boot before finding harnesses", status: .init(state: .failed), isNewInstall: true),
   ]
 
   @Test("Treats only a server still on its first run as a new install", arguments: rows)

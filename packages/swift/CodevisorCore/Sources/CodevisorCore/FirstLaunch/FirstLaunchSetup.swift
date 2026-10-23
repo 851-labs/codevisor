@@ -3,8 +3,7 @@ import Observation
 @MainActor
 @Observable
 public final class FirstLaunchSetup {
-  public private(set) var presentation: FirstLaunchPresentation = .waiting
-  public private(set) var wasShown = false
+  public private(set) var presentation: FirstLaunchPresentation = .visible
   public private(set) var canGetStarted = false
   private(set) var outcomes: [FirstLaunchStep: FirstLaunchStepOutcome] = [:]
   private var foundNames: [FirstLaunchStep: [String]] = [:]
@@ -70,12 +69,8 @@ public final class FirstLaunchSetup {
   }
 
   private func present() async {
-    guard await !settles(within: timing.skipWithin), await confirmsNewInstall() else {
-      finishWithoutShowing()
-      return
-    }
+    guard await confirmsNewInstall() else { return }
 
-    show()
     guard await settles(within: timing.maximumVisible) else {
       offerGetStarted()
       return
@@ -86,30 +81,25 @@ public final class FirstLaunchSetup {
     offerGetStarted()
   }
 
-  private func show() {
-    presentation = .visible
-    wasShown = true
-    changed()
-  }
-
-  private func finishWithoutShowing() {
-    guard presentation != .handedOff else { return }
-    presentation = .dismissed
-    changed()
-  }
-
   private func offerGetStarted() {
     guard presentation == .visible else { return }
     canGetStarted = true
   }
 
   private func confirmsNewInstall() async -> Bool {
-    if isNewInstall == nil, presentation == .waiting {
-      _ = await becomes(within: timing.maximumVisible) {
-        self.isNewInstall != nil || self.presentation != .waiting
+    if isNewInstall == nil, presentation == .visible {
+      let answered = await becomes(within: timing.serverAnswerTimeout) {
+        self.isNewInstall != nil || self.presentation != .visible
       }
+      if !answered { handOff() }
     }
-    return isNewInstall == true && presentation == .waiting
+    guard presentation == .visible else { return false }
+    guard isNewInstall == true else {
+      presentation = .notNeeded
+      changed()
+      return false
+    }
+    return true
   }
 
   private func settles(within limit: Duration) async -> Bool {
@@ -137,9 +127,9 @@ public final class FirstLaunchSetup {
       return
     }
 
-    isNewInstall = (try? await work.isNewInstall()) ?? false
+    isNewInstall = await askIfNewInstall()
     changed()
-    guard isNewInstall == true else { return }
+    guard isNewInstall == true, presentation == .visible else { return }
 
     set(.server, .done)
     async let harnesses: Void = runStep(.harnesses, within: timing.harnessesTimeout) { [work] in
@@ -157,6 +147,14 @@ public final class FirstLaunchSetup {
     } record: { _ in
     }
     _ = await (harnesses, projects, models)
+  }
+
+  private func askIfNewInstall() async -> Bool? {
+    while presentation == .visible, !Task.isCancelled {
+      if let answer = try? await work.isNewInstall() { return answer }
+      try? await sleep(timing.serverAnswerRetry)
+    }
+    return nil
   }
 
   private func runStep<Value: Sendable>(

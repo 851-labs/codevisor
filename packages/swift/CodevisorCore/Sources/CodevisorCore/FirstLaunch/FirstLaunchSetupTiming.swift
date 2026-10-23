@@ -1,5 +1,4 @@
 public struct FirstLaunchSetupTiming: Equatable, Sendable {
-  public var skipWithin: Duration
   public var maximumVisible: Duration
   public var settle: Duration
   public var harnessesTimeout: Duration
@@ -7,9 +6,10 @@ public struct FirstLaunchSetupTiming: Equatable, Sendable {
   public var modelsTimeout: Duration
   public var revealPace: Duration = .milliseconds(140)
   public var catchUp: Duration = .milliseconds(800)
+  public var serverAnswerTimeout: Duration = .seconds(15)
+  public var serverAnswerRetry: Duration = .milliseconds(500)
 
   public static let standard = FirstLaunchSetupTiming(
-    skipWithin: .milliseconds(500),
     maximumVisible: .seconds(15),
     settle: .milliseconds(400),
     harnessesTimeout: .seconds(5),
@@ -18,14 +18,12 @@ public struct FirstLaunchSetupTiming: Equatable, Sendable {
   )
 
   public init(
-    skipWithin: Duration,
     maximumVisible: Duration,
     settle: Duration,
     harnessesTimeout: Duration,
     projectsTimeout: Duration,
     modelsTimeout: Duration
   ) {
-    self.skipWithin = skipWithin
     self.maximumVisible = maximumVisible
     self.settle = settle
     self.harnessesTimeout = harnessesTimeout

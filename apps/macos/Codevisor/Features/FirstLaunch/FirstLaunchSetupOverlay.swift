@@ -14,29 +14,23 @@ struct FirstLaunchSetupOverlay: View {
       Color(nsColor: .windowBackgroundColor)
         .ignoresSafeArea()
         .opacity(phase.coversApp ? 1 : 0)
-      if showsSetup {
+      if phase != .gone {
         FirstLaunchSetupView(
           setup: setup,
           phase: phase,
           composerFrame: landing.composerFrame,
           composerCornerRadius: composerStyle.cornerRadius
         )
-        .transition(.opacity)
       }
     }
     .background(FirstLaunchKeyboard(isCovering: phase == .covering) { setup.getStarted() })
     .allowsHitTesting(phase == .covering)
-    .animation(.smooth(duration: 0.35), value: setup.presentation == .visible)
     .onChange(of: setup.presentation) { _, presentation in leave(after: presentation) }
   }
 
-  private var showsSetup: Bool {
-    phase != .gone && (setup.presentation == .visible || phase.isLeaving)
-  }
-
   private func leave(after presentation: FirstLaunchPresentation) {
-    guard phase == .covering, presentation == .dismissed || presentation == .handedOff else { return }
-    if setup.wasShown, presentation == .dismissed, !reduceMotion, landing.composerFrame != nil {
+    guard phase == .covering, presentation != .visible else { return }
+    if presentation == .dismissed, !reduceMotion, landing.composerFrame != nil {
       morphIntoComposer()
     } else {
       crossfade()

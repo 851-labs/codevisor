@@ -43,7 +43,7 @@ public struct ServerFirstRunStatus: Codable, Equatable, Sendable {
 
   public var isFinal: Bool { state != .running }
 
-  public var isNewInstall: Bool { state == .running || harnesses != nil }
+  public var isNewInstall: Bool { state == .running || state == .failed || harnesses != nil }
 
   public static func from(_ envelope: ServerEventEnvelope) -> ServerFirstRunStatus? {
     guard envelope.kind == eventKind, let data = try? JSONEncoder().encode(envelope.payload) else { return nil }
