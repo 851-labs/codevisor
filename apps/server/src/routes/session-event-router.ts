@@ -1,10 +1,11 @@
 import {
   parseRemoteSessionKey,
-  type AttachmentRef,
   type EventEnvelope,
   type SessionEventType,
   type SessionSubscription,
-  type SessionSummary
+  type SessionSummary,
+  type TranscriptBodyResource,
+  type TranscriptItem
 } from "@codevisor/api"
 import type { ExecutionJobFinished } from "@codevisor/mcp"
 
@@ -18,6 +19,7 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { isUpdatePause } from "../update-pauses.js"
 import { conversationalBotForSession } from "./bot-turns.js"
+import { hasLiveTurn } from "./prompt-queue.js"
 import {
   erroredMessage,
   jobFinishedMessage,
@@ -26,22 +28,21 @@ import {
   type SessionEventMessage
 } from "./session-event-messages.js"
 import { makeSessionEventOutbox, type SessionEventOutbox } from "./session-event-outbox.js"
+import { makeTurnEndHolds, stopReasonOf } from "./turn-end-holds.js"
 
 export interface SessionEventRouter {
   readonly listener: (event: EventEnvelope) => void
   readonly onJobFinished: (finished: ExecutionJobFinished) => void
 }
 
-const finalAssistantText = async (
+export const finalAssistantText = async (
   services: CodevisorServerServices,
   sessionId: string
-): Promise<{ readonly text: string; readonly attachments?: ReadonlyArray<AttachmentRef> }> => {
-  const page = await run(services.db.getTranscriptPage(sessionId, undefined, FINAL_TEXT_PAGE))
-  const item = [...page.items].toReversed().find((candidate) => candidate.role === "assistant")
-  return {
-    text: item?.text.trim() ?? "",
-    ...(item?.attachments === undefined ? {} : { attachments: item.attachments })
-  }
+): Promise<string> => {
+  const item = await lastAssistantItem(services, sessionId, undefined, FINAL_REPLY_PAGES)
+  if (item === undefined) return ""
+
+  return (await completeText(services, sessionId, item)).trim()
 }
 
 export const makeSessionEventRouter = (
@@ -55,14 +56,21 @@ export const makeSessionEventRouter = (
   const actionKinds = new Map<string, string | undefined>()
   const publish = makePublisher(services, outbox)
 
-  const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {
+  const announceTurnEnd = async (sessionId: string, stopReason: string | undefined) => {
     const target = await run(services.db.getSessionSummary(sessionId))
-    const stopReason = typeof payload.stopReason === "string" ? payload.stopReason : undefined
-    const final = await finalAssistantText(services, sessionId)
+    const finalText = await finalAssistantText(services, sessionId)
     await publish(target, "turn_ended", (subscriptionId) =>
-      turnEndedMessage(target, stopReason, final.text, subscriptionId)
+      turnEndedMessage(target, stopReason, finalText, subscriptionId)
     )
     outbox.forgetWake(sessionId)
+  }
+  const holds = makeTurnEndHolds(
+    announceTurnEnd,
+    (sessionId) => !hasLiveTurn(routeState, sessionId)
+  )
+
+  const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {
+    if (!holds.isHeld(sessionId)) await announceTurnEnd(sessionId, stopReasonOf(payload))
     await outbox.flushHeld(sessionId)
   }
 
@@ -124,6 +132,7 @@ export const makeSessionEventRouter = (
   return {
     listener: (event) => {
       const payload = isRecord(event.payload) ? event.payload : {}
+      holds.track(event, payload)
       void routeEvent(event, payload).catch(swallowError)
     },
     onJobFinished: (finished) => {
@@ -132,7 +141,9 @@ export const makeSessionEventRouter = (
   }
 }
 
-const FINAL_TEXT_PAGE = 8
+const FINAL_REPLY_PAGE = 32
+
+const FINAL_REPLY_PAGES = 4
 
 interface Recipient {
   readonly subscriberId: string
@@ -199,3 +210,48 @@ const pingPong = (
 
 const isTypedUserPrompt = (event: EventEnvelope, payload: Record<string, unknown>): boolean =>
   event.kind === "session.output" && payload.role === "user" && payload.origin !== "event"
+
+const lastAssistantItem = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  before: number | undefined,
+  pagesLeft: number
+): Promise<TranscriptItem | undefined> => {
+  const page = await run(services.db.getTranscriptPage(sessionId, before, FINAL_REPLY_PAGE))
+  const item = page.items.findLast((candidate) => candidate.role === "assistant")
+  if (item !== undefined || page.nextBefore === undefined || pagesLeft === 1) return item
+
+  return lastAssistantItem(services, sessionId, Number(page.nextBefore), pagesLeft - 1)
+}
+
+const completeText = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  item: TranscriptItem
+): Promise<string> => {
+  if (item.textResource === undefined) return item.text
+
+  return (await textBodyFrom(services, sessionId, item.textResource, 0)).join("")
+}
+
+const textBodyFrom = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  resource: TranscriptBodyResource,
+  position: number
+): Promise<ReadonlyArray<string>> => {
+  const page = await run(
+    services.db.getTranscriptBodyPage(
+      sessionId,
+      resource.itemId,
+      resource.entryKey,
+      "text",
+      position
+    )
+  )
+  /* v8 ignore next */
+  if (page === undefined) return []
+  if (page.nextPosition === undefined) return [page.text]
+
+  return [page.text, ...(await textBodyFrom(services, sessionId, resource, page.nextPosition))]
+}

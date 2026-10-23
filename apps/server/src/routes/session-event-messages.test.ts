@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   combinedEventText,
+  erroredMessage,
   jobFinishedMessage,
   REPORT_LIMIT,
   turnEndedMessage,
@@ -25,14 +26,23 @@ const job = (overrides: Partial<ExecutionJob>): ExecutionJob => ({
 })
 
 describe("session event messages", () => {
-  it("escapes attributes, truncates long replies, and keys events per target", () => {
-    const message = turnEndedMessage(target, undefined, "x".repeat(REPORT_LIMIT + 1), "sub-1")
+  it("escapes attributes, keeps the whole final reply, and keys events per target", () => {
+    const reply = "x".repeat(REPORT_LIMIT + 1)
+    const message = turnEndedMessage(target, undefined, reply, "sub-1")
 
     expect(message.key).toBe("turn_ended:s1")
-    expect(message.text.split("\n")[0]).toBe(
-      '<codevisor-event type="session.turn_ended" sessionId="s1" title="Fix &quot;login&quot; &lt;now>" subscriptionId="sub-1">'
-    )
-    expect(message.text).toContain("…(truncated)")
+    expect(message.text.split("\n")).toEqual([
+      '<codevisor-event type="session.turn_ended" agentId="s1" title="Fix &quot;login&quot; &lt;now>" subscriptionId="sub-1">',
+      reply,
+      "</codevisor-event>"
+    ])
+  })
+
+  it("truncates a long error report", () => {
+    const message = erroredMessage(target, "x".repeat(REPORT_LIMIT + 1))
+
+    expect(message.text).toContain(`${"x".repeat(REPORT_LIMIT)}\n…(truncated)`)
+    expect(message.text).not.toContain("x".repeat(REPORT_LIMIT + 1))
   })
 
   it("describes a plan approval wait without a question", () => {

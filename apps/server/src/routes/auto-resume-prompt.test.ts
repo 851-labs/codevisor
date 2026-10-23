@@ -8,7 +8,7 @@ describe("auto-resume prompt", () => {
   it("asks the agent to continue and reminds it of the user's last message", () => {
     expect(autoResumePrompt(session, "  Add a remember-me checkbox  ")).toBe(
       [
-        '<codevisor-event type="session.usage_limit_reset" sessionId="chat-1" title="Fix &quot;login&quot; &amp; &lt;signup>">',
+        '<codevisor-event type="session.usage_limit_reset" agentId="chat-1" title="Fix &quot;login&quot; &amp; &lt;signup>">',
         "The usage limit that stopped your last turn has reset. Continue the interrupted work from where you left off. Don't start over or repeat steps you already finished.",
         "",
         "The user's last message, for reference:",

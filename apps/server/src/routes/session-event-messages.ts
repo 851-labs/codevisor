@@ -22,8 +22,8 @@ export const turnEndedMessage = (
   return {
     key: `turn_ended:${target.id}`,
     text: eventBlock(
-      `type="session.turn_ended" sessionId="${attribute(target.id)}" title="${attribute(target.title)}"${stop}${subscriptionAttribute(subscriptionId)}`,
-      bounded(finalText, "(no final message)")
+      `type="session.turn_ended" agentId="${attribute(target.id)}" title="${attribute(target.title)}"${stop}${subscriptionAttribute(subscriptionId)}`,
+      orPlaceholder(finalText, "(no final message)")
     )
   }
 }
@@ -36,7 +36,7 @@ export const waitingForUserMessage = (
 ): SessionEventMessage => ({
   key: `waiting_for_user:${target.id}`,
   text: eventBlock(
-    `type="session.waiting_for_user" sessionId="${attribute(target.id)}" title="${attribute(target.title)}" kind="${attribute(kind)}"${subscriptionAttribute(subscriptionId)}`,
+    `type="session.waiting_for_user" agentId="${attribute(target.id)}" title="${attribute(target.title)}" kind="${attribute(kind)}"${subscriptionAttribute(subscriptionId)}`,
     waitingBody(kind, question)
   )
 })
@@ -48,7 +48,7 @@ export const erroredMessage = (
 ): SessionEventMessage => ({
   key: `errored:${target.id}`,
   text: eventBlock(
-    `type="session.errored" sessionId="${attribute(target.id)}" title="${attribute(target.title)}"${subscriptionAttribute(subscriptionId)}`,
+    `type="session.errored" agentId="${attribute(target.id)}" title="${attribute(target.title)}"${subscriptionAttribute(subscriptionId)}`,
     bounded(message, "(no error message)")
   )
 })
@@ -59,7 +59,7 @@ export const jobFinishedMessage = (
 ): SessionEventMessage => ({
   key: `job_finished:${job.jobId}`,
   text: eventBlock(
-    `type="execution.job_finished" jobId="${attribute(job.jobId)}" sessionId="${attribute(job.sessionId)}" state="${job.state}" description="${attribute(job.description)}"${subscriptionAttribute(subscriptionId)}`,
+    `type="execution.job_finished" jobId="${attribute(job.jobId)}" agentId="${attribute(job.sessionId)}" state="${job.state}" description="${attribute(job.description)}"${subscriptionAttribute(subscriptionId)}`,
     [bounded(jobOutcome(job), "(no result)"), `Full output: ${job.outputPath}`].join("\n")
   )
 })
@@ -84,9 +84,10 @@ const eventBlock = (attributes: string, body: string): string =>
 const subscriptionAttribute = (subscriptionId: string | undefined): string =>
   subscriptionId === undefined ? "" : ` subscriptionId="${attribute(subscriptionId)}"`
 
+const orPlaceholder = (text: string, empty: string): string => (text.length === 0 ? empty : text)
+
 const bounded = (text: string, empty: string): string => {
-  if (text.length === 0) return empty
-  if (text.length <= REPORT_LIMIT) return text
+  if (text.length <= REPORT_LIMIT) return orPlaceholder(text, empty)
   return `${text.slice(0, REPORT_LIMIT)}\n…(truncated)`
 }
 

@@ -215,7 +215,7 @@ describe("bot conversation edges", () => {
     )
   })
 
-  it("reports a child that ended without a reason or reply, and trims long replies", async () => {
+  it("reports a child that ended without a reason or reply, and long replies in full", async () => {
     const { running, bot } = await startBot()
     const quiet = await createChat(running, { parentSessionId: bot.sessionId })
     const chatty = await createChat(running, { parentSessionId: bot.sessionId, title: "Chatty" })
@@ -227,8 +227,10 @@ describe("bot conversation edges", () => {
     await waitFor(() => reports(running).length >= 2)
     expect(reports(running)).toEqual(
       expect.arrayContaining([
-        `<codevisor-event type="session.turn_ended" sessionId="${quiet}" title="Fix login">\n(no final message)\n</codevisor-event>`,
-        expect.stringMatching(/title="Chatty" stopReason="end_turn">\nEcho: x+\n…\(truncated\)\n/)
+        `<codevisor-event type="session.turn_ended" agentId="${quiet}" title="Fix login">\n(no final message)\n</codevisor-event>`,
+        expect.stringContaining(
+          `title="Chatty" stopReason="end_turn">\nEcho: ${"x".repeat(4_100)}\n</`
+        )
       ])
     )
     await cancel(running, quiet)

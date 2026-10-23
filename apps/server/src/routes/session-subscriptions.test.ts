@@ -15,7 +15,7 @@ import {
   startWithApp,
   waitFor
 } from "../test-support.js"
-import { setUp, type Running } from "./bot-test-support.js"
+import { endedTurns, setUp, type Running } from "./bot-test-support.js"
 
 const post = (running: Running, path: string, body: Record<string, unknown>) =>
   jsonRequest(running.server, path, { body: JSON.stringify(body), method: "POST" })
@@ -73,6 +73,35 @@ const hiddenEvents = async (running: Running, sessionId: string) =>
     .filter((item) => item.origin === "event")
     .map((item) => item.text)
 
+const shellTask = { id: "task-1", description: "npm test", status: "running", taskType: "shell" }
+
+const emitTasks = (running: Running, agentId: string, backgroundTasks: ReadonlyArray<unknown>) =>
+  running.agents.emit(agentId, {
+    kind: "session.updated",
+    subjectId: agentId,
+    payload: { backgroundTasks }
+  })
+
+const followUpTurnAfterTasks = async (running: Running, agentId: string, reply: string) => {
+  const turn = { initiatedBy: "agent", turnId: "follow-up" }
+  await running.agents.emit(agentId, {
+    kind: "session.updated",
+    subjectId: agentId,
+    payload: { ...turn, turnState: "started" }
+  })
+  await emitTasks(running, agentId, [])
+  await running.agents.emit(agentId, {
+    kind: "session.output",
+    subjectId: agentId,
+    payload: { role: "assistant", text: reply }
+  })
+  await running.agents.emit(agentId, {
+    kind: "session.updated",
+    subjectId: agentId,
+    payload: { ...turn, stopReason: "end_turn", turnState: "ended" }
+  })
+}
+
 describe("session event subscriptions", () => {
   it("wakes an idle subscriber with a hidden one-shot event and then forgets the subscription", async () => {
     const running = await startServer()
@@ -85,7 +114,7 @@ describe("session event subscriptions", () => {
 
     const delivered = eventPrompts(running)[0]!.input
     expect(delivered).toContain(
-      `<codevisor-event type="session.turn_ended" sessionId="${worker}" title="Fix login"`
+      `<codevisor-event type="session.turn_ended" agentId="${worker}" title="Fix login"`
     )
     expect(delivered).toContain(`subscriptionId="${subscription.id}"`)
     const held = decode(SessionSubscriptionList)(
@@ -111,8 +140,8 @@ describe("session event subscriptions", () => {
     const delivered = await hiddenEvents(running, watcher)
     expect(eventPrompts(running)).toHaveLength(1)
     expect(delivered).toHaveLength(1)
-    expect(delivered[0]).toContain(`sessionId="${first}" title="First"`)
-    expect(delivered[0]).toContain(`sessionId="${second}" title="Second"`)
+    expect(delivered[0]).toContain(`agentId="${first}" title="First"`)
+    expect(delivered[0]).toContain(`agentId="${second}" title="Second"`)
   })
 
   it("records delivered events as hidden transcript items, unlike prompts the user typed", async () => {
@@ -149,13 +178,14 @@ describe("session event subscriptions", () => {
     expect(await hiddenEvents(running, archived)).toEqual([])
   })
 
-  it("tells subscribers when a target starts waiting on a question", async () => {
+  it("tells subscribers when a target starts waiting on a question, even during background work", async () => {
     const running = await startServer()
     const watcher = await createChat(running, "Watcher")
     const worker = await createChat(running, "Fix login")
     await subscribe(running, watcher, { targetSessionId: worker, events: ["waiting_for_user"] })
     await holdTurn(running, worker)
     const workerAgent = running.agents.prompts.at(-1)![0]
+    await emitTasks(running, workerAgent, [shellTask])
 
     await running.agents.emit(workerAgent, {
       kind: "session.output",
@@ -172,11 +202,47 @@ describe("session event subscriptions", () => {
 
     const [event] = await hiddenEvents(running, watcher)
     expect(event).toContain(
-      `<codevisor-event type="session.waiting_for_user" sessionId="${worker}" title="Fix login" kind="question"`
+      `<codevisor-event type="session.waiting_for_user" agentId="${worker}" title="Fix login" kind="question"`
     )
     expect(event).toContain('"questionId":"q1"')
     expect(event).toContain("Answer it with sessions.question_answer.")
     await post(running, `/v1/sessions/${worker}/cancel`, {})
+  })
+
+  it("delivers a final reply far longer than the report limit in full", async () => {
+    const running = await startServer()
+    const watcher = await createChat(running, "Watcher")
+    const worker = await createChat(running, "Write the report")
+    await subscribe(running, watcher, { targetSessionId: worker })
+    const report = Array.from({ length: 3_000 }, (_, line) => `Finding ${line}.`).join("\n")
+
+    await prompt(running, worker, report)
+    await waitFor(() => eventPrompts(running).length === 1)
+
+    expect(eventPrompts(running)[0]!.input.split("\n").slice(1, -1).join("\n")).toBe(
+      `Echo: ${report}`
+    )
+  })
+
+  it("waits out a target's background work and reports only the follow-up turn", async () => {
+    const running = await startServer()
+    const watcher = await createChat(running, "Watcher")
+    const worker = await createChat(running, "Run the tests")
+    await subscribe(running, watcher, { targetSessionId: worker })
+    await holdTurn(running, worker)
+    const workerAgent = running.agents.prompts.at(-1)![0]
+    await emitTasks(running, workerAgent, [shellTask])
+    await post(running, `/v1/sessions/${worker}/cancel`, {})
+    await waitFor(() => endedTurns(running, worker) === 1)
+
+    await emitTasks(running, workerAgent, [])
+    await followUpTurnAfterTasks(running, workerAgent, "All 312 tests passed.")
+    await waitFor(async () => (await hiddenEvents(running, watcher)).length > 0)
+
+    const delivered = await hiddenEvents(running, watcher)
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0]).toContain('stopReason="end_turn"')
+    expect(delivered[0]).toContain("\nAll 312 tests passed.\n")
   })
 
   it("reports a target's error to subscribers that asked for errors", async () => {
@@ -189,7 +255,7 @@ describe("session event subscriptions", () => {
     await waitFor(() => eventPrompts(running).length === 1)
 
     expect(eventPrompts(running)[0]!.input).toContain(
-      `<codevisor-event type="session.errored" sessionId="${worker}" title="Fix login"`
+      `<codevisor-event type="session.errored" agentId="${worker}" title="Fix login"`
     )
     expect(eventPrompts(running)[0]!.input).toContain("prompt failed")
   })
@@ -280,7 +346,7 @@ describe("session event subscriptions", () => {
     expect(running.agents.prompts.map(([, input]) => input)).toEqual([
       "prompt until cancelled",
       "continue",
-      expect.stringContaining(`type="session.turn_ended" sessionId="${worker}"`)
+      expect.stringContaining(`type="session.turn_ended" agentId="${worker}"`)
     ])
     expect(eventPrompts(restarted)[0]!.input).toContain('stopReason="end_turn"')
   })

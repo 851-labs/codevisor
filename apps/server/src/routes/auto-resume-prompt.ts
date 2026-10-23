@@ -7,7 +7,7 @@ export const autoResumePrompt = (
   interruptedRequest: string | undefined
 ): string =>
   [
-    `<codevisor-event type="session.usage_limit_reset" sessionId="${attribute(session.id)}" title="${attribute(session.title)}">`,
+    `<codevisor-event type="session.usage_limit_reset" agentId="${attribute(session.id)}" title="${attribute(session.title)}">`,
     continueInstruction,
     ...requestReminder(interruptedRequest),
     "</codevisor-event>"
