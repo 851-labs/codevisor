@@ -10,6 +10,16 @@ public struct ServerFirstRunHarness: Codable, Equatable, Sendable {
   }
 }
 
+public struct ServerFirstRunProject: Codable, Equatable, Sendable {
+  public var id: String
+  public var name: String
+
+  public init(id: String, name: String) {
+    self.id = id
+    self.name = name
+  }
+}
+
 public struct ServerFirstRunStatus: Codable, Equatable, Sendable {
   public enum State: String, Codable, Sendable {
     case notApplicable
@@ -23,12 +33,12 @@ public struct ServerFirstRunStatus: Codable, Equatable, Sendable {
 
   public var state: State
   public var harnesses: [ServerFirstRunHarness]?
-  public var addedProjects: Int?
+  public var projects: [ServerFirstRunProject]?
 
-  public init(state: State, harnesses: [ServerFirstRunHarness]? = nil, addedProjects: Int? = nil) {
+  public init(state: State, harnesses: [ServerFirstRunHarness]? = nil, projects: [ServerFirstRunProject]? = nil) {
     self.state = state
     self.harnesses = harnesses
-    self.addedProjects = addedProjects
+    self.projects = projects
   }
 
   public var isFinal: Bool { state != .running }

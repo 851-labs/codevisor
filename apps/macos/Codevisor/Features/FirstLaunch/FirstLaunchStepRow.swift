@@ -5,7 +5,6 @@ struct FirstLaunchStepRow: View {
   let step: FirstLaunchStep
   let outcome: FirstLaunchStepOutcome
   let details: [String]
-  let count: Int?
 
   var body: some View {
     HStack(spacing: 10) {
@@ -15,7 +14,7 @@ struct FirstLaunchStepRow: View {
         .foregroundStyle(outcome == .pending ? .secondary : .primary)
         .layoutPriority(1)
       Spacer(minLength: 12)
-      FirstLaunchStepDetail(candidates: details, count: count)
+      FirstLaunchStepDetail(candidates: details)
         .frame(width: Self.detailWidth, alignment: .trailing)
     }
     .frame(height: Self.height)

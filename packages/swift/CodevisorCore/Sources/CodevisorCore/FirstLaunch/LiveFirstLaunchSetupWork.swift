@@ -29,23 +29,28 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     return try await installedHarnessNames()
   }
 
-  public func addRecentProjects(progress: @escaping @MainActor (Int) -> Void) async throws -> Int {
+  public func addRecentProjects(progress: @escaping @MainActor ([String]) -> Void) async throws -> [String] {
     var reported = 0
     while true {
-      let status = try await feed.status { $0.isFinal || ($0.addedProjects ?? 0) > reported }
-      reported = max(reported, status.addedProjects ?? 0)
-      progress(reported)
+      let status = try await feed.status { $0.isFinal || Self.projectNames(in: $0).count > reported }
+      let names = Self.projectNames(in: status)
+      reported = names.count
+      progress(names)
       guard status.isFinal else { continue }
-      return try finalProjectCount(status)
+      return try finalProjectNames(status)
     }
   }
 
-  private func finalProjectCount(_ status: ServerFirstRunStatus) throws -> Int {
+  private func finalProjectNames(_ status: ServerFirstRunStatus) throws -> [String] {
     switch status.state {
-    case .done: return status.addedProjects ?? 0
-    case .notApplicable: return 0
+    case .done: return Self.projectNames(in: status)
+    case .notApplicable: return []
     case .running, .failed: throw FirstLaunchStepFailure()
     }
+  }
+
+  private static func projectNames(in status: ServerFirstRunStatus) -> [String] {
+    status.projects?.map(\.name) ?? []
   }
 
   public func loadModels() async throws {

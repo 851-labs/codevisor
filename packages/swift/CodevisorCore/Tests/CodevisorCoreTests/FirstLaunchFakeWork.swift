@@ -4,10 +4,10 @@
 final class FirstLaunchFakeWork: FirstLaunchSetupWork {
   let server = FirstLaunchPendingResult<FirstLaunchServerStart>()
   let harnesses = FirstLaunchPendingResult<[String]>()
-  let projects = FirstLaunchPendingResult<Int>()
+  let projects = FirstLaunchPendingResult<[String]>()
   let models = FirstLaunchPendingResult<Void>()
-  private var projectProgress: (@MainActor (Int) -> Void)?
-  private var unreportedProjects: Int?
+  private var projectProgress: (@MainActor ([String]) -> Void)?
+  private var unreportedProjects: [String]?
 
   func startServer() async -> FirstLaunchServerStart {
     (try? await server.value()) ?? .failed
@@ -17,18 +17,18 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
     try await harnesses.value()
   }
 
-  func addRecentProjects(progress: @escaping @MainActor (Int) -> Void) async throws -> Int {
+  func addRecentProjects(progress: @escaping @MainActor ([String]) -> Void) async throws -> [String] {
     projectProgress = progress
     if let unreportedProjects { progress(unreportedProjects) }
     return try await projects.value()
   }
 
-  func reportProjectsAdded(_ count: Int) {
+  func reportProjectsAdded(_ names: [String]) {
     guard let projectProgress else {
-      unreportedProjects = count
+      unreportedProjects = names
       return
     }
-    projectProgress(count)
+    projectProgress(names)
   }
 
   func loadModels() async throws {

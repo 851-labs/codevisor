@@ -39,8 +39,7 @@ struct FirstLaunchSetupView: View {
         FirstLaunchStepRow(
           step: step,
           outcome: setup.revealed(step),
-          details: setup.detailCandidates(for: step),
-          count: step == .projects ? setup.visibleProjectCount : nil
+          details: setup.detailCandidates(for: step)
         )
       }
     }

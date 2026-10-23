@@ -6,8 +6,7 @@ public struct FirstLaunchSetupTiming: Equatable, Sendable {
   public var projectsTimeout: Duration
   public var modelsTimeout: Duration
   public var revealPace: Duration = .milliseconds(140)
-  public var harnessesCatchUp: Duration = .milliseconds(800)
-  public var projectsCatchUp: Duration = .milliseconds(800)
+  public var catchUp: Duration = .milliseconds(800)
 
   public static let standard = FirstLaunchSetupTiming(
     skipWithin: .milliseconds(500),

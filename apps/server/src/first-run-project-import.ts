@@ -1,4 +1,4 @@
-import type { FirstRunHarness, Harness } from "@codevisor/api"
+import type { FirstRunHarness, FirstRunProject, Harness } from "@codevisor/api"
 import { FIRST_RUN_PROJECTS_PENDING, FIRST_RUN_PROJECTS_SETTING } from "@codevisor/db"
 
 import { selectFirstRunProjects, type FirstRunProjectSelection } from "./first-run-projects.js"
@@ -57,19 +57,21 @@ export const importFirstRunProjects = async (
     excludedRoots: [config.dataDirectory],
     projectFolders: await localProjectFolders(services, serverId)
   })
-  for (const [index, project] of selection.added.toReversed().entries()) {
-    await addProject(services, fanout, { folderPath: project.path })
+  const added: Array<FirstRunProject> = []
+  for (const candidate of selection.added.toReversed()) {
+    const project = await addProject(services, fanout, { folderPath: candidate.path })
+    added.push({ id: project.id, name: project.name })
     await publishFirstRunStatus(services, fanout, {
       state: "running",
       harnesses: found,
-      addedProjects: index + 1
+      projects: [...added]
     })
   }
   await run(services.db.setMachineSetting(FIRST_RUN_PROJECTS_SETTING, firstRunProjectsDone))
   await publishFirstRunStatus(services, fanout, {
     state: "done",
     harnesses: found,
-    addedProjects: selection.added.length
+    projects: added
   })
 
   debugLog(

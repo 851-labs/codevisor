@@ -6,11 +6,9 @@ public final class FirstLaunchSetup {
   public private(set) var presentation: FirstLaunchPresentation = .waiting
   public private(set) var wasShown = false
   public private(set) var canGetStarted = false
-  public private(set) var visibleProjectCount = 0
   private(set) var outcomes: [FirstLaunchStep: FirstLaunchStepOutcome] = [:]
-  private var harnessNames: [String] = []
-  private var visibleHarnessCount = 0
-  private var addedProjects = 0
+  private var foundNames: [FirstLaunchStep: [String]] = [:]
+  private var visibleCounts: [FirstLaunchStep: Int] = [:]
 
   @ObservationIgnored private let work: any FirstLaunchSetupWork
   @ObservationIgnored private let timing: FirstLaunchSetupTiming
@@ -37,15 +35,11 @@ public final class FirstLaunchSetup {
 
   public func detailCandidates(for step: FirstLaunchStep) -> [String] {
     guard revealed(step) != .skipped else { return [] }
-    switch step {
-    case .harnesses: return FirstLaunchDetail.candidates(harnesses: visibleHarnessNames)
-    case .projects: return FirstLaunchDetail.candidates(projects: visibleProjectCount)
-    case .server, .models: return []
-    }
+    return FirstLaunchDetail.candidates(for: step, names: visibleNames(for: step))
   }
 
-  public var visibleHarnessNames: [String] {
-    Array(harnessNames.prefix(visibleHarnessCount))
+  public func visibleNames(for step: FirstLaunchStep) -> [String] {
+    Array(foundNames[step, default: []].prefix(visibleCount(step)))
   }
 
   public func getStarted() {
@@ -56,8 +50,8 @@ public final class FirstLaunchSetup {
 
   public func run() async {
     async let steps: Void = performSteps()
-    async let harnesses: Void = revealCount(of: .harnesses, catchingUpWithin: timing.harnessesCatchUp)
-    async let projects: Void = revealCount(of: .projects, catchingUpWithin: timing.projectsCatchUp)
+    async let harnesses: Void = revealNames(of: .harnesses)
+    async let projects: Void = revealNames(of: .projects)
     await present()
     _ = await (steps, harnesses, projects)
   }
@@ -133,12 +127,12 @@ public final class FirstLaunchSetup {
     async let harnesses: Void = runStep(.harnesses, within: timing.harnessesTimeout) { [work] in
       try await work.findHarnesses()
     } record: {
-      self.harnessNames = $0
+      self.record($0, for: .harnesses)
     }
     async let projects: Void = runStep(.projects, within: timing.projectsTimeout) { [work] in
-      try await work.addRecentProjects { self.recordAddedProjects($0) }
+      try await work.addRecentProjects { self.record($0, for: .projects) }
     } record: {
-      self.recordAddedProjects($0)
+      self.record($0, for: .projects)
     }
     async let models: Void = runStep(.models, within: timing.modelsTimeout) { [work] in
       try await work.loadModels()
@@ -176,7 +170,7 @@ public final class FirstLaunchSetup {
     ])
   }
 
-  private func revealCount(of step: FirstLaunchStep, catchingUpWithin budget: Duration) async {
+  private func revealNames(of step: FirstLaunchStep) async {
     var catchUpPace: Duration?
     while !isRevealFinished(step), !Task.isCancelled {
       guard mayReveal(step) else {
@@ -189,7 +183,7 @@ public final class FirstLaunchSetup {
       }
 
       if outcomes[step] == .done, catchUpPace == nil {
-        catchUpPace = min(timing.revealPace, budget / max(1, target(step) - visibleCount(step)))
+        catchUpPace = min(timing.revealPace, timing.catchUp / max(1, target(step) - visibleCount(step)))
       }
       try? await sleep(catchUpPace ?? timing.revealPace)
       revealOneMore(step)
@@ -209,11 +203,11 @@ public final class FirstLaunchSetup {
   }
 
   private func target(_ step: FirstLaunchStep) -> Int {
-    step == .harnesses ? harnessNames.count : addedProjects
+    foundNames[step, default: []].count
   }
 
   private func visibleCount(_ step: FirstLaunchStep) -> Int {
-    step == .harnesses ? visibleHarnessCount : visibleProjectCount
+    visibleCounts[step, default: 0]
   }
 
   private func revealAll(_ step: FirstLaunchStep) {
@@ -225,16 +219,13 @@ public final class FirstLaunchSetup {
   }
 
   private func setVisibleCount(_ count: Int, for step: FirstLaunchStep) {
-    if step == .harnesses {
-      visibleHarnessCount = count
-    } else {
-      visibleProjectCount = count
-    }
+    visibleCounts[step] = count
     changed()
   }
 
-  private func recordAddedProjects(_ count: Int) {
-    addedProjects = max(addedProjects, count)
+  private func record(_ names: [String], for step: FirstLaunchStep) {
+    guard names.count > target(step) else { return }
+    foundNames[step] = names
     changed()
   }
 

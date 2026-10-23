@@ -1,23 +1,19 @@
 import Foundation
 
 public enum FirstLaunchDetail {
-  public static func candidates(harnesses names: [String]) -> [String] {
-    guard !names.isEmpty else { return [] }
+  public static func candidates(for step: FirstLaunchStep, names: [String]) -> [String] {
+    guard !names.isEmpty, let count = countText(for: step, count: names.count) else { return [] }
     let shortened = (1..<names.count).reversed().map { shown in
       "\(names.prefix(shown).joined(separator: ", ")) +\(names.count - shown)"
     }
-    return [ListFormatter.localizedString(byJoining: names)] + shortened + [harnessCount(names.count)]
+    return [ListFormatter.localizedString(byJoining: names)] + shortened + [count]
   }
 
-  public static func candidates(projects count: Int) -> [String] {
-    switch count {
-    case 0: []
-    case 1: ["1 project"]
-    default: ["\(count) projects"]
+  private static func countText(for step: FirstLaunchStep, count: Int) -> String? {
+    switch step {
+    case .harnesses: count == 1 ? "1 harness" : "\(count) harnesses"
+    case .projects: count == 1 ? "1 project" : "\(count) projects"
+    case .server, .models: nil
     }
-  }
-
-  private static func harnessCount(_ count: Int) -> String {
-    count == 1 ? "1 harness" : "\(count) harnesses"
   }
 }

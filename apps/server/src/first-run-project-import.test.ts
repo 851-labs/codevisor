@@ -41,13 +41,16 @@ describe("first-run project import", () => {
     expect(machine.agents.environmentRefreshes).toHaveLength(1)
     expect(machine.createdEvents()).toHaveLength(2)
     expect(await machine.marker()).toBe("done")
+    const older = await machine.projectIn(machine.folders.older)
+    const recent = await machine.projectIn(machine.folders.recent)
     expect(machine.statusEvents()).toEqual([
       { state: "running" },
       { state: "running", harnesses: foundHarnesses },
-      { state: "running", harnesses: foundHarnesses, addedProjects: 1 },
-      { state: "running", harnesses: foundHarnesses, addedProjects: 2 },
-      { state: "done", harnesses: foundHarnesses, addedProjects: 2 }
+      { state: "running", harnesses: foundHarnesses, projects: [older] },
+      { state: "running", harnesses: foundHarnesses, projects: [older, recent] },
+      { state: "done", harnesses: foundHarnesses, projects: [older, recent] }
     ])
+    expect([older.name, recent.name]).toEqual(["older", "recent"])
     expect(machine.logs()).toEqual(
       expect.arrayContaining([
         `[first-run-projects] added ${machine.folders.recent} (1 chats, last ${machine.activity.recent})`,
@@ -160,7 +163,10 @@ describe("first-run project import", () => {
     expect((await jsonRequest(server, "/v1/first-run")).body).toEqual({
       state: "done",
       harnesses: foundHarnesses,
-      addedProjects: 2
+      projects: [
+        await machine.projectIn(machine.folders.older),
+        await machine.projectIn(machine.folders.recent)
+      ]
     })
 
     const restarted = await startWithApp({ ...machine.services }, machine.fanout)
@@ -239,6 +245,12 @@ const makeMachine = async (overrides: Partial<AgentRuntimeService> = {}) => {
         .map((event) => event.payload),
     logs: () => debug.mock.calls.map(([message]) => String(message)),
     marker: () => run(services.db.getMachineSetting(FIRST_RUN_PROJECTS_SETTING)),
+    projectIn: async (folder: string) => {
+      const project = (await run(services.db.listProjects)).find(
+        (candidate) => candidate.locations[0]!.folderPath === folder
+      )!
+      return { id: project.id, name: project.name }
+    },
     projectFolders: async () =>
       (await run(services.db.listProjects))
         .map((project) => project.locations[0]!.folderPath)

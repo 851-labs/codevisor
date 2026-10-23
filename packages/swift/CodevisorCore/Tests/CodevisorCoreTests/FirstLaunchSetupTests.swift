@@ -11,7 +11,7 @@ struct FirstLaunchSetupTests {
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
     work.harnesses.resolve(["Claude Code"])
-    work.projects.resolve(2)
+    work.projects.resolve(["api", "web"])
     work.models.resolve(())
     let setup = FirstLaunchSetup(work: work, clock: TestClock())
 
@@ -19,7 +19,7 @@ struct FirstLaunchSetupTests {
 
     #expect(setup.presentation == .dismissed)
     #expect(!setup.wasShown)
-    #expect(setup.detailCandidates(for: .projects) == ["2 projects"])
+    #expect(setup.detailCandidates(for: .projects) == ["api and web", "api +1", "2 projects"])
   }
 
   @Test("Offers Get Started once the last check lands, and only dismisses when pressed")
@@ -42,6 +42,8 @@ struct FirstLaunchSetupTests {
 
     #expect(setup.canGetStarted)
     #expect(setup.presentation == .visible)
+    #expect(setup.revealed(.projects) == .done)
+    #expect(setup.detailCandidates(for: .projects).isEmpty)
     setup.getStarted()
     #expect(setup.presentation == .dismissed)
   }
@@ -121,20 +123,20 @@ struct FirstLaunchSetupTests {
     let setup = FirstLaunchSetup(work: work, clock: TestClock())
     let running = Task { await setup.run() }
 
-    work.projects.resolve(6)
+    work.projects.resolve(["api", "web"])
     await awaitObserved { setup.outcomes[.projects] == .done && setup.outcomes[.models] == .done }
     #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
     #expect(setup.detailCandidates(for: .projects).isEmpty)
 
     work.harnesses.resolve(["Claude Code", "Codex"])
     await running.value
-    #expect(setup.visibleHarnessNames == ["Claude Code", "Codex"])
-    #expect(setup.detailCandidates(for: .projects) == ["6 projects"])
+    #expect(setup.visibleNames(for: .harnesses) == ["Claude Code", "Codex"])
+    #expect(setup.visibleNames(for: .projects) == ["api", "web"])
     #expect(setup.revealed(.models) == .done)
   }
 
-  @Test("Counts projects up from real progress, only once projects is the current step")
-  func countsProjectsUp() async {
+  @Test("Lists added projects one at a time from real progress, only once projects is the current step")
+  func listsProjectsOneAtATime() async {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
@@ -143,28 +145,32 @@ struct FirstLaunchSetupTests {
     let running = Task { await setup.run() }
     await show(setup, clock: clock)
 
-    work.reportProjectsAdded(2)
+    work.reportProjectsAdded(["api", "web"])
     work.harnesses.resolve(["Codex"])
     await clock.waitForSleep(.milliseconds(140))
-    #expect(setup.visibleProjectCount == 0)
+    #expect(setup.visibleNames(for: .projects).isEmpty)
     clock.advance(by: .milliseconds(140))
     await awaitObserved { setup.revealed(.harnesses) == .done }
 
     for count in 1...2 {
       await clock.waitForSleep(.milliseconds(140), count: count + 1)
       clock.advance(by: .milliseconds(140))
-      await awaitObserved { setup.visibleProjectCount == count }
+      await awaitObserved { setup.visibleNames(for: .projects).count == count }
     }
+    #expect(setup.visibleNames(for: .projects) == ["api", "web"])
     #expect(setup.revealed(.projects) == .running)
 
-    work.projects.resolve(4)
+    work.projects.resolve(["api", "web", "docs", "site"])
     await clock.waitForSleep(.milliseconds(140), count: 4)
     clock.advance(by: .milliseconds(140))
-    await awaitObserved { setup.visibleProjectCount == 3 }
+    await awaitObserved { setup.visibleNames(for: .projects) == ["api", "web", "docs"] }
     await clock.waitForSleep(.milliseconds(140), count: 5)
     clock.advance(by: .milliseconds(140))
     await awaitObserved { setup.revealed(.projects) == .done }
-    #expect(setup.detailCandidates(for: .projects) == ["4 projects"])
+    #expect(
+      setup.detailCandidates(for: .projects) == [
+        "api, web, docs, and site", "api, web, docs +1", "api, web +2", "api +3", "4 projects",
+      ])
 
     await clock.waitForSleep(.milliseconds(400))
     clock.advance(by: .milliseconds(400))
@@ -189,7 +195,7 @@ struct FirstLaunchSetupTests {
   private func readyExceptHarnesses() -> FirstLaunchFakeWork {
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
-    work.projects.resolve(0)
+    work.projects.resolve([])
     work.models.resolve(())
     return work
   }

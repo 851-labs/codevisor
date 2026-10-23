@@ -45,25 +45,26 @@ struct FirstLaunchRevealTests {
 
 @Suite("First-launch step details")
 struct FirstLaunchDetailTests {
-  @Test("Offers shorter harness summaries to fall back on instead of truncating")
-  func harnessCandidates() {
+  @Test(
+    "Lists found names with shorter summaries to fall back on instead of truncating",
+    arguments: [(FirstLaunchStep.harnesses, "harness", "harnesses"), (.projects, "project", "projects")]
+  )
+  func nameCandidates(step: FirstLaunchStep, singular: String, plural: String) {
     #expect(
-      FirstLaunchDetail.candidates(harnesses: ["Claude Code", "Codex", "Pi", "Muse Code"]) == [
+      FirstLaunchDetail.candidates(for: step, names: ["Claude Code", "Codex", "Pi", "Muse Code"]) == [
         "Claude Code, Codex, Pi, and Muse Code",
         "Claude Code, Codex, Pi +1",
         "Claude Code, Codex +2",
         "Claude Code +3",
-        "4 harnesses",
+        "4 \(plural)",
       ]
     )
-    #expect(FirstLaunchDetail.candidates(harnesses: ["Codex"]) == ["Codex", "1 harness"])
-    #expect(FirstLaunchDetail.candidates(harnesses: []).isEmpty)
+    #expect(FirstLaunchDetail.candidates(for: step, names: ["Codex"]) == ["Codex", "1 \(singular)"])
+    #expect(FirstLaunchDetail.candidates(for: step, names: []).isEmpty)
   }
 
-  @Test("Confirms found projects and says nothing when there were none")
-  func projectCandidates() {
-    #expect(FirstLaunchDetail.candidates(projects: 6) == ["6 projects"])
-    #expect(FirstLaunchDetail.candidates(projects: 1) == ["1 project"])
-    #expect(FirstLaunchDetail.candidates(projects: 0).isEmpty)
+  @Test("Has nothing to list for steps that find nothing", arguments: [FirstLaunchStep.server, .models])
+  func noCandidates(step: FirstLaunchStep) {
+    #expect(FirstLaunchDetail.candidates(for: step, names: ["Codex"]).isEmpty)
   }
 }
