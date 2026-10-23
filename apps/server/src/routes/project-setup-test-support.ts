@@ -1,6 +1,14 @@
 import { execFile, execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { createServer as createHttpServer } from "node:http"
 import { createServer, type Socket } from "node:net"
 import { tmpdir } from "node:os"
@@ -87,10 +95,22 @@ export const silentGitDaemon = async (): Promise<{
   return { url: `git://127.0.0.1:${String(address.port)}/widget.git`, connected }
 }
 
+const scriptTools = ["sleep", "touch"] as const
+
+const scriptToolsBin = (): string => {
+  const bin = tempDir("codevisor-script-tools-")
+  for (const tool of scriptTools) {
+    const source = ["/bin", "/usr/bin"].map((directory) => join(directory, tool)).find(existsSync)
+    if (source === undefined) throw new Error(`No ${tool} for fake CLI scripts`)
+    symlinkSync(source, join(bin, tool))
+  }
+  return bin
+}
+
 export const isolatedGitEnv = (bin = tempDir("codevisor-empty-bin-")): NodeJS.ProcessEnv => {
   const home = tempDir("codevisor-git-home-")
   return {
-    PATH: `${bin}:/usr/bin:/bin`,
+    PATH: `${bin}:${scriptToolsBin()}`,
     HOME: home,
     GH_CONFIG_DIR: join(home, "gh"),
     GIT_CONFIG_GLOBAL: "/dev/null",
