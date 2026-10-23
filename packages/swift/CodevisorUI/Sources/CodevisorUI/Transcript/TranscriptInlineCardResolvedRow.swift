@@ -1,19 +1,21 @@
 import SwiftUI
 
-struct SetupRequestResolvedRow: View {
-  let copy: SetupRequestCopy
+struct TranscriptInlineCardResolvedRow: View {
+  let systemImage: String
+  let title: String
+  let outcome: TranscriptInlineCard.Outcome
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: copy.symbol)
+      Image(systemName: systemImage)
         .font(.title3)
         .foregroundStyle(.secondary)
         .accessibilityHidden(true)
-      Text(copy.resolvedTitle)
+      Text(title)
         .font(.callout.weight(.semibold))
         .foregroundStyle(.secondary)
       Spacer(minLength: 8)
-      SetupRequestStatusIcon(state: copy.request.state)
+      TranscriptInlineCardStatusIcon(outcome: outcome)
     }
   }
 }

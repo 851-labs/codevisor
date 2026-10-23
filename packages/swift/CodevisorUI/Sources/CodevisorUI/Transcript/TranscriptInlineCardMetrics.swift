@@ -1,6 +1,6 @@
 import SwiftUI
 
-nonisolated enum SetupRequestCardMetrics {
+nonisolated enum TranscriptInlineCardMetrics {
   static let bubbleTrailingInset: CGFloat = 40
   static let actionSpacing: CGFloat = 12
   static let resolvedVerticalPadding: CGFloat = 8

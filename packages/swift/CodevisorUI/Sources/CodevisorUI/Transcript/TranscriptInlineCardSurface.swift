@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SetupRequestCardSurface: ViewModifier {
+struct TranscriptInlineCardSurface: ViewModifier {
   let inBotConversation: Bool
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize

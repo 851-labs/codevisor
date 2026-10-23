@@ -26,24 +26,24 @@ public struct TranscriptSetupRequestCard: View {
   }
 
   public var body: some View {
-    HStack(spacing: 0) {
-      SetupRequestContent(copy: copy, actions: actions)
-        .padding(.horizontal, ComposerCardStyle.contentPadding)
-        .padding(.vertical, verticalPadding)
-        .modifier(SetupRequestCardSurface(inBotConversation: inBotConversation))
-        .frame(maxWidth: SetupRequestCardMetrics.maxWidth, alignment: .leading)
-      Spacer(minLength: inBotConversation ? SetupRequestCardMetrics.bubbleTrailingInset : 0)
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel(copy.headline)
+    TranscriptInlineCard(
+      systemImage: copy.symbol,
+      title: copy.headline,
+      state: state,
+      inBotConversation: inBotConversation
+    )
   }
 
   private var copy: SetupRequestCopy {
     SetupRequestCopy(request: request, handoffMachineName: handoffMachineName, machineName: machineName)
   }
 
-  private var verticalPadding: CGFloat {
-    copy.isPending ? ComposerCardStyle.contentPadding : SetupRequestCardMetrics.resolvedVerticalPadding
+  private var state: TranscriptInlineCard.State {
+    switch request.state {
+    case .pending: .pending(message: copy.detail, actions: actions)
+    case .setUp: .resolved(.completed("Set up"))
+    case .declined: .resolved(.declined("Declined"))
+    }
   }
 
   private var actions: [ComposerNoticeCard.Action] {
