@@ -3,6 +3,7 @@
 @MainActor
 final class FirstLaunchFakeWork: FirstLaunchSetupWork {
   let server = FirstLaunchPendingResult<FirstLaunchServerStart>()
+  let newInstall = FirstLaunchPendingResult<Bool>()
   let harnesses = FirstLaunchPendingResult<[String]>()
   let projects = FirstLaunchPendingResult<[String]>()
   let models = FirstLaunchPendingResult<Void>()
@@ -11,6 +12,10 @@ final class FirstLaunchFakeWork: FirstLaunchSetupWork {
 
   func startServer() async -> FirstLaunchServerStart {
     (try? await server.value()) ?? .failed
+  }
+
+  func isNewInstall() async throws -> Bool {
+    try await newInstall.value()
   }
 
   func findHarnesses() async throws -> [String] {

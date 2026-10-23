@@ -9,6 +9,7 @@ public final class FirstLaunchSetup {
   private(set) var outcomes: [FirstLaunchStep: FirstLaunchStepOutcome] = [:]
   private var foundNames: [FirstLaunchStep: [String]] = [:]
   private var visibleCounts: [FirstLaunchStep: Int] = [:]
+  private var isNewInstall: Bool?
 
   @ObservationIgnored private let work: any FirstLaunchSetupWork
   @ObservationIgnored private let timing: FirstLaunchSetupTiming
@@ -65,11 +66,11 @@ public final class FirstLaunchSetup {
   }
 
   private var isSettled: Bool {
-    isComplete || presentation == .handedOff
+    isComplete || presentation == .handedOff || isNewInstall == false
   }
 
   private func present() async {
-    if await settles(within: timing.skipWithin) || presentation == .handedOff {
+    guard await !settles(within: timing.skipWithin), await confirmsNewInstall() else {
       finishWithoutShowing()
       return
     }
@@ -102,10 +103,23 @@ public final class FirstLaunchSetup {
     canGetStarted = true
   }
 
+  private func confirmsNewInstall() async -> Bool {
+    if isNewInstall == nil, presentation == .waiting {
+      _ = await becomes(within: timing.maximumVisible) {
+        self.isNewInstall != nil || self.presentation != .waiting
+      }
+    }
+    return isNewInstall == true && presentation == .waiting
+  }
+
   private func settles(within limit: Duration) async -> Bool {
+    await becomes(within: limit) { self.isSettled }
+  }
+
+  private func becomes(within limit: Duration, _ condition: @escaping @MainActor () -> Bool) async -> Bool {
     await FirstLaunchRace.first([
       { @MainActor in
-        await self.waitUntil { self.isSettled }
+        await self.waitUntil(condition)
         return true
       },
       { [sleep] in
@@ -122,6 +136,10 @@ public final class FirstLaunchSetup {
       handOff()
       return
     }
+
+    isNewInstall = (try? await work.isNewInstall()) ?? false
+    changed()
+    guard isNewInstall == true else { return }
 
     set(.server, .done)
     async let harnesses: Void = runStep(.harnesses, within: timing.harnessesTimeout) { [work] in
@@ -191,7 +209,8 @@ public final class FirstLaunchSetup {
   }
 
   private func isRevealFinished(_ step: FirstLaunchStep) -> Bool {
-    presentation == .handedOff || outcomes[step] == .skipped || (outcomes[step] == .done && !isCounting(step))
+    presentation == .handedOff || isNewInstall == false || outcomes[step] == .skipped
+      || (outcomes[step] == .done && !isCounting(step))
   }
 
   private func mayReveal(_ step: FirstLaunchStep) -> Bool {

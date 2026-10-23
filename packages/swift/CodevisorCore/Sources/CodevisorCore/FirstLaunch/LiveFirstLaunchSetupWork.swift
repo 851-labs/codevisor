@@ -22,6 +22,10 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
     }
   }
 
+  public func isNewInstall() async throws -> Bool {
+    try await feed.status { _ in true }.isNewInstall
+  }
+
   public func findHarnesses() async throws -> [String] {
     let status = try await feed.status { $0.harnesses != nil || $0.isFinal }
     if let harnesses = status.harnesses { return harnesses.map(\.name) }
