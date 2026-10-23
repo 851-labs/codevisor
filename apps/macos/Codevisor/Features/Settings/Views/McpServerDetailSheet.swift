@@ -34,7 +34,7 @@ struct McpServerDetailSheet: View {
               VStack(alignment: .leading, spacing: 2) {
                 Text(tool.title ?? tool.name)
                 if let description = tool.description {
-                  Text(description).font(.caption).foregroundStyle(.secondary)
+                  Text(description).font(.callout).foregroundStyle(.secondary)
                 }
               }
             }

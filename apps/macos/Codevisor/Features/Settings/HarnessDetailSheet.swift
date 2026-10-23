@@ -125,13 +125,13 @@ struct HarnessDetailSheet: View {
         Text(
           "Replaces \(app.appName) with the verified build from its own update feed. Safe while the app is running — it uses the new version after its next launch."
         )
-        .font(.caption)
+        .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
       }
       if let bundledAppError {
         Text(bundledAppError)
-          .font(.caption)
+          .font(.callout)
           .foregroundStyle(.orange)
           .fixedSize(horizontal: false, vertical: true)
       }

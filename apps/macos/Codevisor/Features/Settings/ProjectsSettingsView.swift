@@ -44,7 +44,7 @@ struct ProjectsSettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                   Text(group.name)
                   Text(group.repoKey ?? group.primary.folderURL.path)
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

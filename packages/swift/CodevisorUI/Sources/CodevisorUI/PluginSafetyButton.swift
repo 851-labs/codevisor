@@ -57,7 +57,7 @@ public struct PluginReportSheet: View {
           }
         } else {
           Section {
-            Text(name).font(.headline)
+            Text(name)
             Picker("Reason", selection: $reason) {
               ForEach(["Harmful content", "Privacy or security", "Spam or abuse", "Other"], id: \.self) { Text($0) }
             }

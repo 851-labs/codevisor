@@ -34,7 +34,7 @@ struct HarnessInstallHintRow: View {
       }
       if let failure = failureMessage {
         Text(failure)
-          .font(.caption)
+          .font(.callout)
           .foregroundStyle(.orange)
           .lineLimit(3)
           .fixedSize(horizontal: false, vertical: true)

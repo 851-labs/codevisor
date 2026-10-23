@@ -91,7 +91,7 @@ struct ProjectSettingsDetailView: View {
             Text(machineName(project.serverId))
             if !isReady(project.serverId) {
               Text("Offline")
-                .font(.caption)
+                .font(.callout)
                 .foregroundStyle(.secondary)
             }
           }

@@ -47,7 +47,6 @@ struct UpdateCenterView: View {
       HStack(alignment: .center, spacing: 16) {
         VStack(alignment: .leading, spacing: 3) {
           Text(summaryTitle)
-            .font(.headline)
           Text(summaryDetail)
             .font(.callout)
             .foregroundStyle(.secondary)

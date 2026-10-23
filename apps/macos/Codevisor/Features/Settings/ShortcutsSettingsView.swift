@@ -31,7 +31,7 @@ private struct ShortcutRow: View {
         Text(shortcut.title)
         if let context = shortcut.context {
           Text(context)
-            .font(.caption)
+            .font(.callout)
             .foregroundStyle(.secondary)
         }
       }
@@ -53,7 +53,7 @@ private struct ShortcutKeycapView: View {
 
   var body: some View {
     Text(display)
-      .font(.callout.weight(.medium))
+      .font(.callout)
       .monospacedDigit()
       .foregroundStyle(.primary)
       .padding(.horizontal, 6)

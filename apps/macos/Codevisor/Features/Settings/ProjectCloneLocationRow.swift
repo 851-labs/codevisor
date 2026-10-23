@@ -30,7 +30,7 @@ struct ProjectCloneLocationRow: View {
         Text(machine.name)
         if let errorMessage {
           Text(errorMessage)
-            .font(.caption)
+            .font(.callout)
             .foregroundStyle(.red)
         }
       }

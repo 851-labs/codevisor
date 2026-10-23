@@ -21,9 +21,8 @@ struct CloudMachineRowView: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(presence.name)
-          .fontWeight(.medium)
         Text("Codevisor Cloud")
-          .font(.caption)
+          .font(.callout)
           .foregroundStyle(.secondary)
       }
       Spacer(minLength: 12)
@@ -33,7 +32,7 @@ struct CloudMachineRowView: View {
             Image(systemName: "exclamationmark.shield.fill")
               .accessibilityHidden(true)
             Text("Key Changed")
-              .font(.caption)
+              .font(.callout)
           }
           .foregroundStyle(.orange)
         }

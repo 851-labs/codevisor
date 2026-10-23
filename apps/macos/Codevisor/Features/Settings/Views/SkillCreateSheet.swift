@@ -185,7 +185,7 @@ struct SkillRemoteImportSheet: View {
           .foregroundStyle(candidate.alreadyExists ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         if let description = candidate.description {
           Text(description)
-            .font(.caption)
+            .font(.callout)
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
@@ -193,7 +193,7 @@ struct SkillRemoteImportSheet: View {
       Spacer()
       if candidate.alreadyExists {
         Text("Already added")
-          .font(.caption)
+          .font(.callout)
           .foregroundStyle(.secondary)
       }
     }
