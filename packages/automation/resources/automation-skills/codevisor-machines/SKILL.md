@@ -61,6 +61,7 @@ Check `online` in `machines.list()` before starting long work on another machine
 ```
 
 - The host needs key-based SSH from this machine and `curl`. Provision the server (or add your key to it) first; `machines.add` never prompts for a password.
+- Codevisor never runs as root. Over `root@` SSH it runs as a `codevisor` account it creates, with passwordless `sudo`; over another account, as that account.
 - It takes a few minutes. Failures come back with the host's output: fix the cause (SSH access, firewall, a missing `curl`) and call it again.
 - When SSH isn't the way in (cloud-init user data, a web console, a container), use `machines.invite` for a one-time code (about 10 minutes, one use). Install with `CODEVISOR_INVITE=<code>` set (`curl -fsSL https://www.codevisor.dev/install.sh | CODEVISOR_INVITE=… sh`), or run `codevisor auth login --invite -` with the code on stdin. The code is a secret: don't show it to the user or leave it in files.
 - `machines.remove({ machineId, confirm })` removes another machine; confirm with the user first. A machine removes itself with `codevisor auth logout`.

@@ -112,6 +112,92 @@ systemd_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g'
 }
 
+create_codevisor_account() {
+  command -v useradd >/dev/null 2>&1 ||
+    fail "useradd is required to create the codevisor account; rerun with --user <account>"
+  say "Creating the codevisor account"
+  shell=$(command -v bash || printf '/bin/sh')
+  useradd --create-home --shell "$shell" --comment Codevisor codevisor
+  if command -v sudo >/dev/null 2>&1 && [ -d /etc/sudoers.d ]; then
+    (umask 0337 && printf 'codevisor ALL=(ALL) NOPASSWD:ALL\n' | tee /etc/sudoers.d/codevisor >/dev/null)
+    note "codevisor can use sudo without a password, so agents can administer this machine"
+  else
+    note "sudo isn't installed, so agents running as codevisor can't administer this machine"
+  fi
+}
+
+resolve_service_user() {
+  service_user="$requested_user"
+  if [ -z "$service_user" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    service_user="$SUDO_USER"
+  fi
+  if [ -z "$service_user" ]; then
+    service_user="codevisor"
+    getent passwd codevisor >/dev/null 2>&1 || create_codevisor_account
+  fi
+  [ "$service_user" != "root" ] ||
+    fail "Codevisor can't run as root because agents refuse to; pass --user <account>"
+  passwd_entry=$(getent passwd "$service_user") || fail "no account named $service_user"
+  service_uid=$(printf '%s' "$passwd_entry" | cut -d: -f3)
+  service_home=$(printf '%s' "$passwd_entry" | cut -d: -f6)
+  say "codevisor-server will run as $service_user"
+}
+
+as_service_user() {
+  if [ -z "$service_user" ]; then
+    "$@"
+  else
+    runuser -u "$service_user" -- env HOME="$service_home" USER="$service_user" LOGNAME="$service_user" "$@"
+  fi
+}
+
+service_user_command() {
+  if [ -z "$service_user" ] || [ "$service_user" = "${SUDO_USER:-}" ]; then
+    printf '%s' "$1"
+  else
+    printf "su - %s -c '%s'" "$service_user" "$1"
+  fi
+}
+
+write_service_user_file() {
+  as_service_user sh -c 'cat > "$1"' sh "$1"
+}
+
+user_systemctl() {
+  if [ -z "$service_user" ]; then
+    systemctl --user "$@"
+  else
+    as_service_user env XDG_RUNTIME_DIR="/run/user/$service_uid" systemctl --user "$@"
+  fi
+}
+
+start_user_manager() {
+  loginctl enable-linger "$service_user"
+  attempts=0
+  until user_systemctl show-environment >/dev/null 2>&1; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt 30 ] || fail "the systemd user manager for $service_user didn't start"
+    sleep 1
+  done
+}
+
+remove_root_service() {
+  systemctl disable --now herdman-server.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/herdman-server.service
+  [ -f /etc/systemd/system/codevisor-server.service ] || return 0
+  say "Removing the codevisor-server service that ran as root"
+  systemctl disable --now codevisor-server.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/codevisor-server.service
+  systemctl daemon-reload
+  for command in codevisor codevisor-server codevisor-terminal-proxy; do
+    case "$(readlink "/usr/local/bin/$command" 2>/dev/null)" in
+      /opt/codevisor/*) rm -f "/usr/local/bin/$command" ;;
+    esac
+  done
+  rm -rf /opt/codevisor
+  note "Its data stays in root's ~/.codevisor; sign this machine in again as $service_user"
+}
+
 download_server_archive() {
   say "Installing codevisor-server $version ($target)"
   say "Downloading $archive_url"
@@ -136,22 +222,24 @@ download_server_archive() {
 
 activate_server_runtime() {
   say "Extracting to $install_dir"
-  rm -rf "$install_dir"
-  mkdir -p "$install_dir"
-  tar -xzf "$archive" -C "$install_dir"
+  as_service_user rm -rf "$install_dir"
+  as_service_user mkdir -p "$install_dir"
+  as_service_user tar -xzf - -C "$install_dir" < "$archive"
 
-  mkdir -p "$bin_dir"
-  ln -sf "$install_dir/bin/codevisor" "$bin_dir/codevisor"
-  ln -sf "$install_dir/bin/codevisor-server" "$bin_dir/codevisor-server"
-  ln -sf "$install_dir/bin/codevisor-terminal-proxy" "$bin_dir/codevisor-terminal-proxy"
-  rm -f "$bin_dir/herdman-server" "$bin_dir/herdman-terminal-proxy"
+  as_service_user mkdir -p "$bin_dir"
+  as_service_user ln -sf "$install_dir/bin/codevisor" "$bin_dir/codevisor"
+  as_service_user ln -sf "$install_dir/bin/codevisor-server" "$bin_dir/codevisor-server"
+  as_service_user ln -sf "$install_dir/bin/codevisor-terminal-proxy" "$bin_dir/codevisor-terminal-proxy"
+  as_service_user rm -f "$bin_dir/herdman-server" "$bin_dir/herdman-terminal-proxy"
   say "Linked codevisor into $bin_dir"
-  case ":$PATH:" in
-    *":$bin_dir:"*) ;;
-    *) note "note: $bin_dir is not on your PATH" ;;
-  esac
+  if [ -z "$service_user" ]; then
+    case ":$PATH:" in
+      *":$bin_dir:"*) ;;
+      *) note "note: $bin_dir is not on your PATH" ;;
+    esac
+  fi
 
-  mkdir -p "$data_dir" "$logs_dir"
+  as_service_user mkdir -p "$data_dir" "$logs_dir"
 }
 
 configure_server_service() {
@@ -171,36 +259,18 @@ configure_server_service() {
     ! systemctl show --property=Version >/dev/null 2>&1; then
     say "codevisor-server $version installed"
     note "Start it with:"
-    note "  codevisor start"
-  elif [ "$(id -u)" = "0" ]; then
-    say "Setting up systemd service (system)"
-    systemctl disable --now herdman-server.service >/dev/null 2>&1 || true
-    rm -f /etc/systemd/system/herdman-server.service
-    cat > /etc/systemd/system/codevisor-server.service <<UNIT
-[Unit]
-Description=Codevisor ACP server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=$serve_cmd
-$data_environment
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-    systemctl daemon-reload
-    systemctl enable codevisor-server.service
-    systemctl restart codevisor-server.service
-    say "codevisor-server is running (systemctl status codevisor-server)"
+    note "  $(service_user_command 'codevisor start')"
   else
+    if [ -n "$service_user" ]; then
+      remove_root_service
+      start_user_manager
+    fi
     say "Setting up systemd service (user)"
-    systemctl --user disable --now herdman-server.service >/dev/null 2>&1 || true
-    rm -f "$HOME/.config/systemd/user/herdman-server.service"
-    mkdir -p "$HOME/.config/systemd/user"
-    cat > "$HOME/.config/systemd/user/codevisor-server.service" <<UNIT
+    user_systemctl disable --now herdman-server.service >/dev/null 2>&1 || true
+    unit_dir="$service_home/.config/systemd/user"
+    as_service_user rm -f "$unit_dir/herdman-server.service"
+    as_service_user mkdir -p "$unit_dir"
+    write_service_user_file "$unit_dir/codevisor-server.service" <<UNIT
 [Unit]
 Description=Codevisor ACP server
 After=network-online.target
@@ -214,21 +284,26 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 UNIT
-    systemctl --user daemon-reload
-    systemctl --user enable codevisor-server.service
-    systemctl --user restart codevisor-server.service
-    say "codevisor-server is running (systemctl --user status codevisor-server)"
-    note "To keep it running after you log out:"
-    note "  sudo loginctl enable-linger $USER"
+    user_systemctl daemon-reload
+    user_systemctl enable codevisor-server.service
+    user_systemctl restart codevisor-server.service
+    if [ -z "$service_user" ]; then
+      say "codevisor-server is running (systemctl --user status codevisor-server)"
+      note "To keep it running after you log out:"
+      note "  sudo loginctl enable-linger $USER"
+    else
+      say "codevisor-server is running as $service_user"
+      note "Manage it as that account, for example: $(service_user_command 'codevisor status')"
+    fi
   fi
 
 }
 
 codevisor_cli() {
   if [ -n "$explicit_port" ]; then
-    "$bin_dir/codevisor" "$@" --port "$explicit_port"
+    as_service_user "$bin_dir/codevisor" "$@" --port "$explicit_port"
   else
-    "$bin_dir/codevisor" "$@"
+    as_service_user "$bin_dir/codevisor" "$@"
   fi
 }
 
@@ -244,14 +319,14 @@ finish_server_onboarding() {
       printf '%s\n' "$invite" | codevisor_cli auth login --invite -
     fi
   elif [ "${CODEVISOR_NO_SETUP:-0}" = "1" ]; then
-    note "Finish onboarding later with: codevisor setup"
+    note "Finish onboarding later with: $(service_user_command 'codevisor setup')"
   elif [ -t 1 ] && [ -r /dev/tty ]; then
     say "Finishing setup"
     codevisor_cli setup < /dev/tty ||
-      note "Finish onboarding with: codevisor setup"
+      note "Finish onboarding with: $(service_user_command 'codevisor setup')"
   else
     say "Connect this machine to your Codevisor account"
-    note "Finish onboarding on this machine with: codevisor setup"
+    note "Finish onboarding on this machine with: $(service_user_command 'codevisor setup')"
     note "(It signs the machine in so it appears in your Codevisor apps.)"
   fi
 }
@@ -268,15 +343,22 @@ install_server() {
     *) fail "unsupported architecture: $(uname -m) (need x86_64 or arm64)" ;;
   esac
 
-  if [ "$(id -u)" = "0" ]; then
+  service_user=""
+  service_home="$HOME"
+  if [ "$(id -u)" = "0" ] && [ "$os" = "linux" ]; then
+    resolve_service_user
+  elif [ -n "$requested_user" ] && [ "$requested_user" != "$(id -un)" ]; then
+    fail "installing for $requested_user needs root; rerun the installer with sudo"
+  fi
+  if [ "$(id -u)" = "0" ] && [ -z "$service_user" ]; then
     install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-/opt/codevisor}}"
     bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-/usr/local/bin}}"
   else
-    install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-$HOME/.codevisor/server}}"
-    bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
+    install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-$service_home/.codevisor/server}}"
+    bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$service_home/.local/bin}}"
   fi
-  data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
-  logs_dir="${CODEVISOR_LOGS_DIR:-$HOME/.codevisor/logs}"
+  data_dir="${CODEVISOR_DATA_DIR:-$service_home/.codevisor/data}"
+  logs_dir="${CODEVISOR_LOGS_DIR:-$service_home/.codevisor/logs}"
   explicit_port="${CODEVISOR_PORT:-${HERDMAN_PORT:-}}"
   port="${explicit_port:-49361}"
 
@@ -330,6 +412,22 @@ stop_unsupported_mac_app() {
 }
 
 main() {
+  requested_user="${CODEVISOR_USER:-}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --user)
+        [ $# -ge 2 ] || fail "--user needs an account name"
+        requested_user="$2"
+        shift 2
+        ;;
+      --user=*)
+        requested_user="${1#--user=}"
+        shift
+        ;;
+      *) fail "unknown option: $1" ;;
+    esac
+  done
+
   case "$(uname -s)" in
     Darwin)
       if is_apple_silicon; then
@@ -350,4 +448,4 @@ main() {
   esac
 }
 
-main
+main "$@"

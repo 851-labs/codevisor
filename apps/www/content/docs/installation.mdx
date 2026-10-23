@@ -43,16 +43,41 @@ machines once signed in. Set `CODEVISOR_INSTALL_SERVER=1`
 to skip the confirmation, for example when no terminal is attached. Homebrew users can instead run
 `brew install 851-labs/tap/codevisor-server`.
 
-| Variable                     | Purpose                                           | Default                                          |
-| ---------------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| `CODEVISOR_VERSION`          | Install a specific release                        | Latest stable                                    |
-| `CODEVISOR_INSTALL_DIR`      | Runtime installation directory                    | `~/.codevisor/server` or `/opt/codevisor`        |
-| `CODEVISOR_BIN_DIR`          | Command symlink directory                         | `~/.local/bin` (`/usr/local/bin` as root, Linux) |
-| `CODEVISOR_PORT`             | Listening port, pinned                            | `49361`                                          |
-| `CODEVISOR_DATA_DIR`         | Server database and data dir                      | `~/.codevisor/data`                              |
-| `CODEVISOR_NO_SERVICE=1`     | Skip systemd setup                                | systemd enabled when available                   |
-| `CODEVISOR_NO_SETUP=1`       | Skip signing in during installation               | setup runs when a terminal is available          |
-| `CODEVISOR_INSTALL_SERVER=1` | Install the server on an Intel Mac without asking | asks for confirmation                            |
+| Variable                     | Purpose                                           | Default                                           |
+| ---------------------------- | ------------------------------------------------- | ------------------------------------------------- |
+| `CODEVISOR_VERSION`          | Install a specific release                        | Latest stable                                     |
+| `CODEVISOR_USER`             | Account the server runs as (same as `--user`)     | See [Installing with sudo](#installing-with-sudo) |
+| `CODEVISOR_INSTALL_DIR`      | Runtime installation directory                    | `~/.codevisor/server`                             |
+| `CODEVISOR_BIN_DIR`          | Command symlink directory                         | `~/.local/bin`                                    |
+| `CODEVISOR_PORT`             | Listening port, pinned                            | `49361`                                           |
+| `CODEVISOR_DATA_DIR`         | Server database and data dir                      | `~/.codevisor/data`                               |
+| `CODEVISOR_NO_SERVICE=1`     | Skip systemd setup                                | systemd enabled when available                    |
+| `CODEVISOR_NO_SETUP=1`       | Skip signing in during installation               | setup runs when a terminal is available           |
+| `CODEVISOR_INSTALL_SERVER=1` | Install the server on an Intel Mac without asking | asks for confirmation                             |
+
+## Installing with sudo
+
+The server never runs as root on Linux: agents such as Claude Code refuse to run with root
+privileges. When the installer runs as root, it picks an account and installs everything into that
+account's home, as if the account had run the installer itself:
+
+| Installer runs      | Server runs as                                             |
+| ------------------- | ---------------------------------------------------------- |
+| As a regular user   | That user                                                  |
+| Through `sudo`      | The account that ran `sudo`                                |
+| In a root shell     | A `codevisor` account it creates, with passwordless `sudo` |
+| With `--user alice` | `alice`                                                    |
+
+```bash
+curl -fsSL https://www.codevisor.dev/install.sh | sudo sh -s -- --user alice
+```
+
+It enables lingering for that account so the systemd user service keeps running without a login.
+Manage the server as that account, for example `su - codevisor -c 'codevisor status'`.
+
+Rerunning the installer as root on a machine that ran an older root installation removes the
+`codevisor-server` system service and `/opt/codevisor`. The old data stays in root's
+`~/.codevisor`; sign the machine in again with the new account.
 
 ## Without systemd
 
