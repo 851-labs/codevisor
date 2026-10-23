@@ -24,7 +24,17 @@ console.log(createHash('sha256').update(readFileSync(process.argv[2])).digest('h
 for (const [command, body] of Object.entries({
   uname:
     'case "$1" in -s) printf "%s\\n" "$TEST_PLATFORM";; -m) printf "%s\\n" "$TEST_ARCH";; *) exit 1;; esac',
-  id: 'printf "%s\\n" "$TEST_UID"',
+  id: 'case "${1:-}" in -un) printf "installer-test\\n";; *) printf "%s\\n" "$TEST_UID";; esac',
+  getent: 'grep "^$2:" "$TEST_ROOT/passwd"',
+  useradd: [
+    "for name; do :; done",
+    'printf "useradd %s\\n" "$*" >> "$TEST_SERVICES"',
+    'mkdir -p "$TEST_ROOT/home/$name"',
+    'printf "%s:x:1002:1002::%s:/bin/sh\\n" "$name" "$TEST_ROOT/home/$name" >> "$TEST_ROOT/passwd"'
+  ].join("\n"),
+  runuser: 'printf "as %s: %s\\n" "$2" "$*" >> "$TEST_ROOT/runuser.log"\nshift 3\nexec "$@"',
+  loginctl: 'printf "loginctl %s\\n" "$*" >> "$TEST_SERVICES"',
+  tee: 'printf "tee %s: %s\\n" "$*" "$(cat)" >> "$TEST_SERVICES"',
   systemctl: 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
   launchctl: 'printf "launchctl %s\\n" "$*" >> "$TEST_SERVICES"',
   osascript: "exit 0",
@@ -52,9 +62,9 @@ else writeFileSync(args[output + 1], body);
   { mode: 0o755 }
 )
 
-const runShell = (input, options) =>
+const runShell = (input, args, options) =>
   new Promise((resolve) => {
-    const child = spawn("/bin/sh", [], options)
+    const child = spawn("/bin/sh", ["-s", "--", ...args], options)
     let stdout = ""
     let stderr = ""
     child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk))
@@ -109,6 +119,8 @@ const install = async (t, options = {}) => {
     [`${downloadBase}/v${version}/Codevisor-arm64.dmg`]: { body: "fixture disk image" }
   }
   writeFileSync(join(root, "responses.json"), JSON.stringify(responses))
+  mkdirSync(join(root, "home", "alice"), { recursive: true })
+  writeFileSync(join(root, "passwd"), `alice:x:1001:1001::${join(root, "home", "alice")}:/bin/sh\n`)
   const requests = join(root, "requests.jsonl")
   const services = join(root, "services.log")
   writeFileSync(requests, "")
@@ -118,7 +130,7 @@ const install = async (t, options = {}) => {
       mode: 0o755
     })
   }
-  const result = await runShell(installer, {
+  const result = await runShell(installer, options.args ?? [], {
     detached: true,
     env: {
       PATH: `${bin}:${sharedCommands}:/usr/bin:/bin`,
@@ -150,16 +162,88 @@ const install = async (t, options = {}) => {
 }
 
 describe("install.sh", { concurrency: true }, () => {
-  for (const uid of [0, 1000]) {
-    test(`Linux uid ${uid} uses the same canonical home data directory`, async (t) => {
-      const result = await install(t, {
-        uid,
-        defaultDataDir: true,
-        env: { CODEVISOR_NO_SERVICE: "1" }
-      })
-      assert.equal(result.status, 0, result.stderr)
-      assert.ok(existsSync(join(result.root, ".codevisor", "data")))
-      assert.ok(existsSync(join(result.root, ".codevisor", "logs")))
+  test("Linux keeps server data in the installing account's home", async (t) => {
+    const result = await install(t, { defaultDataDir: true, env: { CODEVISOR_NO_SERVICE: "1" } })
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(existsSync(join(result.root, ".codevisor", "data")))
+    assert.ok(existsSync(join(result.root, ".codevisor", "logs")))
+    assert.equal(result.services, "")
+  })
+
+  test("through sudo, the invoking account runs a lingering user service", async (t) => {
+    const cli = 'printf "%s %s %s\\n" "$USER" "$HOME" "$*" >> "$TEST_ROOT/cli.log"'
+    const result = await install(t, {
+      uid: 0,
+      cli,
+      defaultDataDir: true,
+      env: {
+        SUDO_USER: "alice",
+        CODEVISOR_INVITE: "cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret"
+      }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    const home = join(result.root, "home", "alice")
+    assert.match(result.stdout, /codevisor-server will run as alice/)
+    assert.ok(existsSync(join(home, ".codevisor", "data")))
+    assert.match(
+      readFileSync(join(home, ".config", "systemd", "user", "codevisor-server.service"), "utf8"),
+      /--db ".*\/home\/alice\/\.codevisor\/data\/codevisor-server\.sqlite"/
+    )
+    assert.match(result.services, /^loginctl enable-linger alice$/m)
+    assert.match(result.services, /^--user restart codevisor-server\.service$/m)
+    assert.doesNotMatch(result.services, /useradd|tee/)
+    const runuser = readFileSync(join(result.root, "runuser.log"), "utf8")
+    assert.match(runuser, /as alice: .*XDG_RUNTIME_DIR=\/run\/user\/1001 systemctl --user restart/)
+    assert.doesNotMatch(runuser, /^as (?!alice:)/m)
+    assert.equal(
+      readFileSync(join(result.root, "cli.log"), "utf8"),
+      `alice ${home} auth login --invite -\n`
+    )
+  })
+
+  test("a root shell creates a codevisor account with passwordless sudo", async (t) => {
+    const result = await install(t, { uid: 0, defaultDataDir: true })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.services, /^useradd .*--create-home .* codevisor$/m)
+    assert.match(
+      result.services,
+      /^tee \/etc\/sudoers\.d\/codevisor: codevisor ALL=\(ALL\) NOPASSWD:ALL$/m
+    )
+    assert.match(result.services, /^loginctl enable-linger codevisor$/m)
+    assert.ok(existsSync(join(result.root, "home", "codevisor", ".codevisor", "data")))
+  })
+
+  test("--user picks the account over the invoking one", async (t) => {
+    const result = await install(t, {
+      uid: 0,
+      args: ["--user", "alice"],
+      env: { SUDO_USER: "bob", CODEVISOR_NO_SERVICE: "1" }
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /codevisor-server will run as alice/)
+    assert.match(result.stdout, /su - alice -c 'codevisor start'/)
+  })
+
+  for (const { name, args, uid, message } of [
+    { name: "root", args: ["--user", "root"], uid: 0, message: /can't run as root/ },
+    {
+      name: "a missing account",
+      args: ["--user=nobody"],
+      uid: 0,
+      message: /no account named nobody/
+    },
+    {
+      name: "another account without root",
+      args: ["--user", "alice"],
+      uid: 1000,
+      message: /needs root/
+    }
+  ]) {
+    test(`--user refuses ${name} before installing`, async (t) => {
+      const result = await install(t, { uid, args })
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, message)
+      assert.equal(existsSync(join(result.runtime, "old-runtime")), true)
       assert.equal(result.services, "")
     })
   }
