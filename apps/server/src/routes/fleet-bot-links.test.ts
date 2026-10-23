@@ -164,6 +164,39 @@ describe("bot sub-agents on another machine", () => {
     })
   })
 
+  it("never lets an existing chat into a remote bot's workspace or links an existing workspace later", async () => {
+    const { home, remote, botOrigin } = await startFleet()
+    const child = createdSession(
+      await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
+    )
+    const legacy = await run(
+      remote.services.db.createSession({ ...createArgs, parentSessionId: child.parentSessionId })
+    )
+    const intoWorkspace = (workspaceId: string) =>
+      post(remote, "/v1/workspaces", {
+        workspace: { id: workspaceId, projectId: "laptop-project", name: "W", hasCustomName: true },
+        session: { id: legacy.id, projectId: "laptop-project", harnessId: "codex" }
+      })
+    const freshWorkspace = "0b1c2d3e-4f50-4a6b-8c7d-8e9fa0b1c2d3"
+
+    const movedIntoLinked = await intoWorkspace(child.workspaceId!)
+    const movedIntoFresh = await intoWorkspace(freshWorkspace)
+    const laterChild = createdSession(
+      await home.machines.invoke(
+        laptop.id,
+        "codevisor.sessions.create",
+        { ...createArgs, workspaceId: freshWorkspace },
+        botOrigin
+      )
+    )
+
+    expect([movedIntoLinked.status, movedIntoFresh.status]).toEqual([409, 200])
+    expect((await workspaceOf(remote, laterChild))?.botId).toBeUndefined()
+    const moved = await run(remote.services.db.getSessionSummary(legacy.id))
+    expect(await fleetBotWake(remote.services, moved)).toBeUndefined()
+    expect(await fleetBotWake(remote.services, laterChild)).toBeUndefined()
+  })
+
   it("links back to a bot on this machine when a remote sub-agent of that bot starts more work here", async () => {
     const { home, remote } = await startFleet()
     const localBot = decodeBot(

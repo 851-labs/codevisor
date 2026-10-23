@@ -17,7 +17,11 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { assertMayJoinWorkspace, botForParentSession } from "./bot-guards.js"
+import {
+  assertMayJoinWorkspace,
+  assertNotMovingIntoRemoteBot,
+  botForParentSession
+} from "./bot-guards.js"
 import { assertRemoteParentVerified } from "./fleet-calls.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
@@ -44,6 +48,9 @@ export const routeWorkspaceCreate = async (
   await assertMayJoinWorkspace(services, workspaceId, payload.session.parentSessionId, undefined)
   const sessionId = (payload.session.id ?? randomUUID()).toLowerCase()
   const existing = await findSession(services.db, sessionId)
+  if (existing !== undefined && existing.workspaceId !== workspaceId) {
+    await assertNotMovingIntoRemoteBot(services, workspaceId)
+  }
   let sessionPayload: CreateSessionRequest = {
     ...payload.session,
     id: sessionId,

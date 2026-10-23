@@ -207,7 +207,7 @@ describe("bot workspaces", () => {
     expect(await run(db.listBotWorkspaces("6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10"))).toEqual([])
   })
 
-  it("keeps the parent recorded when a workspace was first linked to another machine's bot", async () => {
+  it("fixes a workspace's link to another machine's bot when the workspace is created", async () => {
     useWorktreesRoot()
     const db = await openDatabase()
     const { api } = await seedBot(db)
@@ -248,6 +248,8 @@ describe("bot workspaces", () => {
       bot: { botId: "6d1f0c35-2a64-4f3e-9d0a-3b7f3c1c9a10", botMachineId: "machine-b" }
     })
     expect(await run(db.findWorkspaceFleetBotLink("ws-unrecorded"))).toBeUndefined()
+    const unrecorded = (await run(db.listWorkspaces)).find((w) => w.id === "ws-unrecorded")
+    expect(unrecorded?.botId).toBeUndefined()
     expect(await run(db.findFleetBotLink("unrecorded-chat"))).toBeUndefined()
     expect(await run(db.findWorkspaceFleetBotLink("ws-missing"))).toBeUndefined()
     expect(await run(db.findFleetBotLink("missing-chat"))).toBeUndefined()

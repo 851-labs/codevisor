@@ -230,14 +230,6 @@ const workspaceSql = {
                  archived_at = excluded.archived_at,
                  labels = case when ? then excluded.labels else workspaces.labels end,
                  bot_id = coalesce(workspaces.bot_id, excluded.bot_id),
-                 remote_bot_id = coalesce(workspaces.remote_bot_id, excluded.remote_bot_id),
-                 remote_bot_machine_id = coalesce(
-                   workspaces.remote_bot_machine_id, excluded.remote_bot_machine_id
-                 ),
-                 remote_bot_parent_session_id = case
-                   when workspaces.remote_bot_id is null then excluded.remote_bot_parent_session_id
-                   else workspaces.remote_bot_parent_session_id
-                 end,
                  updated_at = ?`,
   update: `update workspaces set
                name = ?, has_custom_name = ?, root_directory = ?,
