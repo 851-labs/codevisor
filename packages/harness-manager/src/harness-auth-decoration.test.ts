@@ -176,6 +176,58 @@ describe("harness authentication decoration", () => {
     })
   })
 
+  it("settles on the account check already running without repeating finished checks", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-settle-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    await run(
+      db.saveHarnessAccount({
+        id: "gemini-account",
+        harnessId: "gemini",
+        profileKind: "default",
+        label: "Existing Gemini CLI account",
+        authState: "checking",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    const probe = Promise.withResolvers<void>()
+    const probeHarnessAuth = vi.fn(() =>
+      Effect.promise(async () => {
+        await probe.promise
+        return { state: "authenticated" as const, methods: [], canLogout: true }
+      })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: fakeAgentRuntime({ probeHarnessAuth }),
+      dataDir: directory,
+      db,
+      terminal: fakeTerminalManager(),
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+    const definition = harnessCatalog.find((candidate) => candidate.id === "gemini")!
+    const harness: Harness = {
+      id: definition.id,
+      name: definition.name,
+      symbolName: definition.symbolName,
+      source: "registry",
+      launchKind: "npx",
+      enabled: true,
+      readiness: { state: "ready", path: "/usr/local/bin/gemini" }
+    }
+
+    await manager.decorateHarnesses([harness])
+    const settling = manager.decorateHarnesses([harness], "settle")
+    probe.resolve()
+
+    expect((await settling)[0]).toMatchObject({ enabled: true, auth: { state: "authenticated" } })
+    await manager.decorateHarnesses([harness], "settle")
+    expect(probeHarnessAuth).toHaveBeenCalledOnce()
+  })
+
   it("does not block catalog decoration on a passive account probe", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-passive-"))
     directories.push(directory)
@@ -299,12 +351,12 @@ it("probes the selected shared account and publishes readiness when its credenti
     enabled: true,
     readiness: { state: "ready", path: "/fixture/codex" }
   }
-  expect((await manager.decorateHarnesses([harness], true))[0]).toMatchObject({
+  expect((await manager.decorateHarnesses([harness], "force"))[0]).toMatchObject({
     enabled: true,
     auth: { activeAccountId: "shared-selected", state: "authenticated" }
   })
   expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
-  await manager.decorateHarnesses([harness], true)
+  await manager.decorateHarnesses([harness], "force")
   expect(events).toHaveLength(2)
   stop()
 })

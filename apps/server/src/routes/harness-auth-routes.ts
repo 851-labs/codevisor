@@ -14,7 +14,7 @@ import {
 } from "../server-context.js"
 import { requireAuth } from "./harness-auth-services.js"
 import type { AuthRouteResult, AuthServices } from "./harness-auth-services.js"
-import { discoverHarnesses } from "./harnesses.js"
+import { discoverHarnesses, discoverSettledHarnesses } from "./harnesses.js"
 import { routeProviderAuth } from "./provider-auth-routes.js"
 import { isMethodRoute, methodRouteParams } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
@@ -105,6 +105,10 @@ const refreshAuth = async (
   { response, url }: RouteContext,
   services: AuthServices
 ): Promise<boolean> => {
+  if (url.searchParams.get("mode") === "settle") {
+    writeJson(response, 200, await discoverSettledHarnesses(services))
+    return true
+  }
   const harnessId = requestedHarnessId(url)
   await services.auth.refresh(harnessId)
   writeJson(

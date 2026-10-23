@@ -104,6 +104,10 @@ extension CodevisorServerClient {
     try await send("/v1/harnesses/auth/refresh", method: "POST", body: Optional<EmptyBody>.none)
   }
 
+  public func settleHarnessAuth() async throws -> [ServerHarness] {
+    try await send("/v1/harnesses/auth/refresh?mode=settle", method: "POST", body: Optional<EmptyBody>.none)
+  }
+
   public func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness {
     let encoded = harnessId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? harnessId
     let refreshed: [ServerHarness] = try await send(

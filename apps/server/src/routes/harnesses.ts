@@ -27,7 +27,8 @@ import type { RouteContext } from "./route-context.js"
 export {
   discoverCapabilities,
   discoverHarnesses,
-  discoverHarnessesFromStoredAuthState
+  discoverHarnessesFromStoredAuthState,
+  discoverSettledHarnesses
 } from "./harness-discovery.js"
 
 export const routeHarnesses = async (route: RouteContext): Promise<boolean> => {

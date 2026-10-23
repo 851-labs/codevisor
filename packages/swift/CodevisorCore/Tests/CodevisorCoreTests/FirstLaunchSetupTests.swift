@@ -88,7 +88,7 @@ struct FirstLaunchSetupTests {
     work.server.resolve(.ready)
     let setup = FirstLaunchSetup(work: work, clock: clock)
     let running = Task { await setup.run() }
-    for limit in [Duration.seconds(5), .seconds(6), .seconds(10)] {
+    for limit in [Duration.seconds(5), .seconds(10), .seconds(12)] {
       await clock.waitForSleep(limit)
     }
     await show(setup, clock: clock)
@@ -98,11 +98,11 @@ struct FirstLaunchSetupTests {
     await awaitObserved { setup.revealed(.harnesses) == .skipped }
     #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .running, .pending])
 
-    clock.advance(by: .seconds(1))
-    await awaitObserved { setup.outcomes[.models] == .skipped }
-    #expect(setup.revealed(.models) == .pending)
+    clock.advance(by: .seconds(5))
+    await awaitObserved { setup.revealed(.projects) == .skipped }
+    #expect(setup.revealed(.models) == .running)
 
-    clock.advance(by: .seconds(4))
+    clock.advance(by: .seconds(2))
     await awaitObserved { setup.isComplete }
     #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .skipped, .skipped])
     #expect(setup.detailCandidates(for: .harnesses).isEmpty)

@@ -72,11 +72,13 @@ export interface HarnessAuthManagerConfig {
   }
 }
 
+export type HarnessAuthRefresh = "passive" | "force" | "settle"
+
 export interface HarnessAuthManager {
   readonly sharedOpenCodeProfiles?: (content?: string) => Promise<ReadonlyArray<CredentialSource>>
   readonly decorateHarnesses: (
     harnesses: ReadonlyArray<Harness>,
-    force?: boolean
+    refresh?: HarnessAuthRefresh
   ) => Promise<ReadonlyArray<Harness>>
   readonly decorateHarnessesFromStoredState: (
     harnesses: ReadonlyArray<Harness>

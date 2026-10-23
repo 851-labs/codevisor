@@ -154,9 +154,9 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         { db: config.db, dataDir: config.dataDir, removeAccount: accounts.removeAccount },
         content
       ),
-    decorateHarnesses: async (harnesses, force) => {
+    decorateHarnesses: async (harnesses, refresh) => {
       await config.sharedAccounts?.()?.reconcile()
-      return decoration.decorateHarnesses(harnesses, force)
+      return decoration.decorateHarnesses(harnesses, refresh)
     },
     decorateHarnessesFromStoredState: decoration.decorateHarnessesFromStoredState,
     refresh: decoration.refresh,

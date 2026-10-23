@@ -81,7 +81,7 @@ describe("Pi harness authentication", () => {
       readiness: { state: "ready", path: "/usr/local/bin/pi" }
     }
 
-    const [decorated] = await manager.decorateHarnesses([harness], true)
+    const [decorated] = await manager.decorateHarnesses([harness], "force")
     expect(decorated?.enabled).toBe(false)
     expect(decorated?.auth?.loginMethods).toEqual([])
     await expect(manager.beginLogin(account.id)).rejects.toThrow(

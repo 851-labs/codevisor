@@ -4,7 +4,7 @@ import type { HarnessAccountRecord } from "@codevisor/db"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import type { HarnessAuthProbes } from "./harness-auth-probes.js"
 import { run } from "./harness-auth-support.js"
-import type { HarnessAuthManager } from "./harness-auth-types.js"
+import type { HarnessAuthManager, HarnessAuthRefresh } from "./harness-auth-types.js"
 
 export type HarnessAuthDecoration = Pick<
   HarnessAuthManager,
@@ -200,7 +200,7 @@ export const makeHarnessAuthDecoration = (
 
   const decorateHarnessesWithMode = async (
     harnesses: ReadonlyArray<Harness>,
-    mode: "passive" | "force" | "stored"
+    mode: HarnessAuthRefresh | "stored"
   ): Promise<ReadonlyArray<Harness>> =>
     Promise.all(
       harnesses.map(async (harness) => {
@@ -214,6 +214,8 @@ export const makeHarnessAuthDecoration = (
           fallback
         if (mode === "force") {
           await refreshAccount(account, true)
+        } else if (mode === "settle") {
+          await refreshAccount(account, false)
         } else if (mode === "passive") {
           void refreshAccount(account, false).catch(() => undefined)
         }
@@ -225,8 +227,8 @@ export const makeHarnessAuthDecoration = (
 
   return {
     authSnapshot,
-    decorateHarnesses: (harnesses, force = false) =>
-      decorateHarnessesWithMode(harnesses, force ? "force" : "passive"),
+    decorateHarnesses: (harnesses, authRefresh = "passive") =>
+      decorateHarnessesWithMode(harnesses, authRefresh),
     decorateHarnessesFromStoredState: (harnesses) => decorateHarnessesWithMode(harnesses, "stored"),
     refresh
   }

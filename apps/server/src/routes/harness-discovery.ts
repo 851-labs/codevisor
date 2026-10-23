@@ -112,7 +112,7 @@ const inspectHarnessCapability = async (
 
 const discoverHarnessesWithAuthMode = async (
   services: CodevisorServerServices,
-  authMode: "passive" | "force" | "stored",
+  authMode: "passive" | "force" | "settle" | "stored",
   harnessId?: string,
   includeLifecycle = false
 ): Promise<ReadonlyArray<Harness>> => {
@@ -128,7 +128,7 @@ const discoverHarnessesWithAuthMode = async (
   }
   if (services.auth === undefined) return harnesses
   if (authMode === "stored") return services.auth.decorateHarnessesFromStoredState(harnesses)
-  return services.auth.decorateHarnesses(harnesses, authMode === "force")
+  return services.auth.decorateHarnesses(harnesses, authMode)
 }
 
 export const discoverHarnesses = (
@@ -148,3 +148,8 @@ export const discoverHarnessesFromStoredAuthState = (
   services: CodevisorServerServices
 ): Promise<ReadonlyArray<Harness>> =>
   discoverHarnessesWithAuthMode(services, "stored", undefined, true)
+
+export const discoverSettledHarnesses = (
+  services: CodevisorServerServices
+): Promise<ReadonlyArray<Harness>> =>
+  discoverHarnessesWithAuthMode(services, "settle", undefined, true)

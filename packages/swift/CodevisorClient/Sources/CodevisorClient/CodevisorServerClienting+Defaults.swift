@@ -292,6 +292,7 @@ public extension CodevisorServerClienting {
   func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness] { try await listHarnesses() }
 
   func refreshHarnessAuth() async throws -> [ServerHarness] { try await listHarnesses() }
+  func settleHarnessAuth() async throws -> [ServerHarness] { try await listHarnesses() }
   func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness {
     guard let harness = try await refreshHarnessAuth().first(where: { $0.id == harnessId }) else {
       throw CodevisorServerClientError.invalidResponse

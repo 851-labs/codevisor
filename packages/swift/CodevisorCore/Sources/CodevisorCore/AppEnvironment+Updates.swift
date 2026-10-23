@@ -76,6 +76,12 @@ extension AppEnvironment {
     return refreshed
   }
 
+  public func settleHarnessAuthentication(onServer serverId: String) async throws -> [ServerHarness] {
+    let settled = try await machines.client(for: serverId).settleHarnessAuth()
+    harnessCatalogDidChange(onServer: serverId)
+    return settled
+  }
+
   public func refreshHarnessAuthentication(
     harnessId: String,
     onServer serverId: String

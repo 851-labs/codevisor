@@ -135,10 +135,14 @@ public final class ConfigOptionCache {
     return Date().timeIntervalSince(validatedAt) >= Self.capabilityFreshnessInterval
   }
 
-  public func warmCapabilities(forServer serverId: String, client: any CodevisorServerClienting) async throws {
-    _ = try await revalidateCapabilities(forServer: serverId, cwd: "") {
+  public func warmCapabilities(
+    forServer serverId: String,
+    client: any CodevisorServerClienting
+  ) async throws -> [ServerHarnessCapability] {
+    let warmed = try await revalidateCapabilities(forServer: serverId, cwd: "") {
       try await client.capabilities(cwd: "").harnesses
     }
+    return warmed ?? capabilities(forServer: serverId)
   }
 
   func revalidateCapabilities(

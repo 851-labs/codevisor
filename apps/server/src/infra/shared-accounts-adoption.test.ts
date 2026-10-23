@@ -136,14 +136,14 @@ describe("signing out on one machine", () => {
       enabled: true,
       readiness: { state: "ready" as const }
     }
-    await manager.decorateHarnesses([harness], true)
+    await manager.decorateHarnesses([harness], "force")
     const events: string[] = []
     manager.subscribe((event) => events.push(event.kind))
     expect(await manager.logout(id)).toMatchObject({ authState: "expired", canLogout: false })
     expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
 
     for (let i = 0; i < 3; i += 1) {
-      const [codex] = await manager.decorateHarnesses([harness], true)
+      const [codex] = await manager.decorateHarnesses([harness], "force")
       expect(codex?.auth?.accounts).toEqual([
         expect.objectContaining({ id, authState: "expired", canLogout: false })
       ])

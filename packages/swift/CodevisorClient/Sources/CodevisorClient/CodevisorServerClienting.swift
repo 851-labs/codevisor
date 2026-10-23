@@ -54,6 +54,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func updateBundledApp(harnessId: String) async throws
   func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness]
   func refreshHarnessAuth() async throws -> [ServerHarness]
+  func settleHarnessAuth() async throws -> [ServerHarness]
   func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness
   func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount]
   func createHarnessAccount(harnessId: String, label: String?) async throws -> ServerHarnessAccount

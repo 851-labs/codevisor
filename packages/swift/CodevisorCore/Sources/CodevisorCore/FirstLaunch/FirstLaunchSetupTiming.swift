@@ -15,7 +15,7 @@ public struct FirstLaunchSetupTiming: Equatable, Sendable {
     settle: .milliseconds(400),
     harnessesTimeout: .seconds(5),
     projectsTimeout: .seconds(10),
-    modelsTimeout: .seconds(6)
+    modelsTimeout: .seconds(12)
   )
 
   public init(

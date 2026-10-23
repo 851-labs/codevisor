@@ -1,4 +1,5 @@
 import CodevisorClient
+import Foundation
 import Observation
 
 @MainActor
@@ -48,11 +49,34 @@ public final class LiveFirstLaunchSetupWork: FirstLaunchSetupWork {
   }
 
   public func loadModels() async throws {
-    try await environment.configCache.warmCapabilities(
-      forServer: machineId,
-      client: environment.machines.client(for: machineId)
-    )
+    let preparation = Task { try await self.prepareModels() }
+    try await preparation.value
   }
+
+  private func prepareModels() async throws {
+    _ = try await environment.settleHarnessAuthentication(onServer: machineId)
+    _ = try await warmCapabilitiesSurvivingInvalidation()
+  }
+
+  private func warmCapabilitiesSurvivingInvalidation() async throws -> [ServerHarnessCapability] {
+    var attempt = 1
+    while true {
+      do {
+        return try await environment.configCache.warmCapabilities(
+          forServer: machineId,
+          client: environment.machines.client(for: machineId)
+        )
+      } catch  where Self.wasCancelledByInvalidation(error) && attempt < Self.warmAttempts && !Task.isCancelled {
+        attempt += 1
+      }
+    }
+  }
+
+  private static func wasCancelledByInvalidation(_ error: any Error) -> Bool {
+    error is CancellationError || (error as? URLError)?.code == .cancelled
+  }
+
+  private static let warmAttempts = 8
 
   private func installedHarnessNames() async throws -> [String] {
     try await environment.harnessService(for: machineId).allHarnesses()

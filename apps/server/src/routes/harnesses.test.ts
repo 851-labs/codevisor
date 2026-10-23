@@ -134,6 +134,14 @@ describe("harness routes", () => {
       body: [{ id: "codex" }]
     })
     expect(auth.refresh).toHaveBeenLastCalledWith("codex")
+    const refreshes = vi.mocked(auth.refresh).mock.calls.length
+    const decorate = vi.spyOn(auth, "decorateHarnesses")
+    const settled = await jsonRequest(server, "/v1/harnesses/auth/refresh?mode=settle", {
+      method: "POST"
+    })
+    expect(settled).toMatchObject({ status: 200, body: [{ id: "codex" }] })
+    expect(auth.refresh).toHaveBeenCalledTimes(refreshes)
+    expect(decorate).toHaveBeenCalledWith(expect.anything(), "settle")
     expect(
       (
         await jsonRequest(server, "/v1/harnesses/codex/accounts/account-1", {
