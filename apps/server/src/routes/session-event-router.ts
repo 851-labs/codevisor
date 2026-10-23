@@ -39,7 +39,7 @@ export const finalAssistantText = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<string> => {
-  const item = await lastAssistantItem(services, sessionId, undefined, FINAL_REPLY_PAGES)
+  const item = await lastAssistantItem(services, sessionId, undefined)
   if (item === undefined) return ""
 
   return (await completeText(services, sessionId, item)).trim()
@@ -143,8 +143,6 @@ export const makeSessionEventRouter = (
 
 const FINAL_REPLY_PAGE = 32
 
-const FINAL_REPLY_PAGES = 4
-
 interface Recipient {
   readonly subscriberId: string
   readonly subscription?: SessionSubscription
@@ -214,14 +212,13 @@ const isTypedUserPrompt = (event: EventEnvelope, payload: Record<string, unknown
 const lastAssistantItem = async (
   services: CodevisorServerServices,
   sessionId: string,
-  before: number | undefined,
-  pagesLeft: number
+  before: number | undefined
 ): Promise<TranscriptItem | undefined> => {
   const page = await run(services.db.getTranscriptPage(sessionId, before, FINAL_REPLY_PAGE))
   const item = page.items.findLast((candidate) => candidate.role === "assistant")
-  if (item !== undefined || page.nextBefore === undefined || pagesLeft === 1) return item
+  if (item !== undefined || page.nextBefore === undefined) return item
 
-  return lastAssistantItem(services, sessionId, Number(page.nextBefore), pagesLeft - 1)
+  return lastAssistantItem(services, sessionId, Number(page.nextBefore))
 }
 
 const completeText = async (

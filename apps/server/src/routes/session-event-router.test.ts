@@ -87,11 +87,54 @@ describe("held turn ends", () => {
   })
 })
 
+describe("superseded held turn ends", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it.each([
+    { name: "errors", kind: "session.error" as const, payload: { message: "boom" } },
+    {
+      name: "asks a question",
+      kind: "session.attention.updated" as const,
+      payload: { actionRequiredKind: "question" }
+    }
+  ])("never sends a stale turn end after the agent $name", async ({ kind, payload }) => {
+    const router = await setUpRouter()
+    const watcher = await router.chat()
+    const worker = await router.chat()
+    await run(
+      router.services.db.createSessionSubscription({
+        subscriberSessionId: watcher,
+        targetSessionId: worker,
+        events: ["turn_ended"],
+        once: false
+      })
+    )
+    await router.emit(worker, { backgroundTasks: [shell] })
+    await turn(router, worker, "turn-1", "Started the tests")
+    await router.emit(worker, { backgroundTasks: [] })
+
+    await router.emit(worker, payload, kind)
+    await vi.advanceTimersByTimeAsync(HELD_TURN_END_GRACE_MS * 2)
+    await turn(router, worker, "turn-2", "Fixed and done")
+    await waitFor(() => router.eventPrompts().length > 0)
+
+    expect(router.eventPrompts()).toEqual([expect.stringContaining("\nFixed and done\n")])
+  })
+})
+
 describe("final assistant text", () => {
   it.each([
     { name: "a reply older than one transcript page", replied: true, steers: 40, expected: "Done" },
     { name: "a transcript with no reply", replied: false, steers: 2, expected: "" },
-    { name: "a reply beyond the search window", replied: true, steers: 129, expected: "" }
+    {
+      name: "a reply behind more than four pages of steers",
+      replied: true,
+      steers: 129,
+      expected: "Done"
+    }
   ])("reads $name", async ({ replied, steers, expected }) => {
     const router = await setUpRouter()
     const session = await router.chat()

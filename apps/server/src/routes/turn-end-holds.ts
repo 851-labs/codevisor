@@ -12,12 +12,16 @@ export interface TurnEndHolds {
   readonly isHeld: (sessionId: string) => boolean
 }
 
+interface HeldTurnEnd {
+  readonly stopReason: string | undefined
+}
+
 export const makeTurnEndHolds = (
   release: ReleaseTurnEnd,
   isIdle: (sessionId: string) => boolean
 ): TurnEndHolds => {
   const working = new Set<string>()
-  const held = new Map<string, string | undefined>()
+  const held = new Map<string, HeldTurnEnd>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
   const disarm = (sessionId: string): void => {
@@ -28,12 +32,22 @@ export const makeTurnEndHolds = (
   const releaseAfterGrace = (sessionId: string): void => {
     const timer = setTimeout(() => {
       timers.delete(sessionId)
-      const stopReason = held.get(sessionId)
-      held.delete(sessionId)
-      void release(sessionId, stopReason).catch(swallowError)
+      void releaseIfStillHeld(sessionId).catch(swallowError)
     }, HELD_TURN_END_GRACE_MS)
     timer.unref()
     timers.set(sessionId, timer)
+  }
+
+  const releaseIfStillHeld = async (sessionId: string): Promise<void> => {
+    const hold = held.get(sessionId)!
+    if (!isIdle(sessionId)) return
+    await release(sessionId, hold.stopReason)
+    if (held.get(sessionId) === hold) held.delete(sessionId)
+  }
+
+  const drop = (sessionId: string): void => {
+    disarm(sessionId)
+    held.delete(sessionId)
   }
 
   const noteTasks = (sessionId: string, tasks: ReadonlyArray<unknown>): void => {
@@ -50,7 +64,7 @@ export const makeTurnEndHolds = (
   const noteTurnEnd = (sessionId: string, stopReason: string | undefined): void => {
     disarm(sessionId)
     if (working.has(sessionId)) {
-      held.set(sessionId, stopReason)
+      held.set(sessionId, { stopReason })
       return
     }
     held.delete(sessionId)
@@ -58,6 +72,7 @@ export const makeTurnEndHolds = (
 
   return {
     track: (event, payload) => {
+      if (supersedesTurnEnd(event, payload)) return drop(event.subjectId)
       if (event.kind !== "session.updated") return
 
       const sessionId = event.subjectId
@@ -71,6 +86,10 @@ export const makeTurnEndHolds = (
 
 export const stopReasonOf = (payload: Record<string, unknown>): string | undefined =>
   typeof payload.stopReason === "string" ? payload.stopReason : undefined
+
+const supersedesTurnEnd = (event: EventEnvelope, payload: Record<string, unknown>): boolean =>
+  event.kind === "session.error" ||
+  (event.kind === "session.attention.updated" && payload.actionRequiredKind !== undefined)
 
 const endsTurn = (payload: Record<string, unknown>): boolean =>
   payload.turnState === "ended" && !isUpdatePause(payload)
