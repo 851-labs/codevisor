@@ -7,7 +7,7 @@ import { withClampNote } from "./codevisor-wait-budget.js"
 import { isRecord, recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
 
 export const responseError = async (
-  spec: CodevisorApiToolSpec,
+  spec: Pick<CodevisorApiToolSpec, "name">,
   response: Response
 ): Promise<Error> => {
   const text = await response.text()

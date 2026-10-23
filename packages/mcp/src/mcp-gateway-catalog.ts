@@ -1,6 +1,7 @@
 import {
   CODEVISOR_BOT_TOOL_NAMES,
   CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
+  SANDBOX_GLOBALS,
   type AutomationToolProvider
 } from "@codevisor/automation"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
@@ -45,36 +46,84 @@ export const executeToolDescription = (inventory: string): string =>
     'Before writing code, call the `skills` tool with name "execute" for how to use this tool.'
   ].join("\n\n")
 
-const scoreCatalogTool = (
-  server: CatalogServer,
-  tool: Tool,
-  normalized: string,
-  terms: ReadonlyArray<string>
-): number => {
-  const serverName = server.name.toLowerCase()
-  const toolName = tool.name.toLowerCase()
-  const haystack =
-    `${server.name} ${tool.name} ${tool.title ?? ""} ${tool.description ?? ""}`.toLowerCase()
-  let score = normalized.length > 0 && haystack.includes(normalized) ? 40 : 0
-  for (const term of terms) {
-    if (serverName.includes(term)) score += 20
-    if (toolName.includes(term)) score += 12
+interface SearchQuery {
+  readonly normalized: string
+  readonly terms: ReadonlyArray<string>
+}
+
+interface ScoredText {
+  readonly group: string
+  readonly name: string
+  readonly haystack: string
+}
+
+const scoreText = (text: ScoredText, query: SearchQuery): number => {
+  const group = text.group.toLowerCase()
+  const name = text.name.toLowerCase()
+  const haystack = text.haystack.toLowerCase()
+  let score = query.normalized.length > 0 && haystack.includes(query.normalized) ? 40 : 0
+  for (const term of query.terms) {
+    if (group.includes(term)) score += 20
+    if (name.includes(term)) score += 12
     if (haystack.includes(term)) score += 4
   }
   return score
 }
 
-const catalogSearchItem = (server: CatalogServer, tool: Tool, score: number) => {
-  return {
-    path: `${server.id}.${tool.name}`,
-    server: server.id,
-    serverName: server.name,
-    name: tool.name,
-    title: tool.title,
-    description: tool.description,
-    score
-  }
+const toolSearchItem = (server: CatalogServer, tool: Tool, query: SearchQuery) => ({
+  kind: "tool" as const,
+  path: `${server.id}.${tool.name}`,
+  server: server.id,
+  serverName: server.name,
+  name: tool.name,
+  title: tool.title,
+  description: tool.description,
+  score: scoreText(
+    {
+      group: server.name,
+      name: tool.name,
+      haystack: `${server.name} ${tool.name} ${tool.title ?? ""} ${tool.description ?? ""}`
+    },
+    query
+  )
+})
+
+const skillSearchItem = (skill: SkillEntry, query: SearchQuery) => ({
+  kind: "skill" as const,
+  name: skill.name,
+  description: skill.summary,
+  next: `Read it: call the skills tool with name "${skill.name}".`,
+  score: scoreText(
+    { group: "skill", name: skill.name, haystack: `skill ${skill.name} ${skill.summary}` },
+    query
+  )
+})
+
+const globalSearchItem = (global: (typeof SANDBOX_GLOBALS)[number], query: SearchQuery) => ({
+  kind: "global" as const,
+  name: global.name,
+  signature: global.signature,
+  description: global.description,
+  score: scoreText(
+    {
+      group: "global",
+      name: global.name,
+      haystack: `${global.name} ${global.signature} ${global.description}`
+    },
+    query
+  )
+})
+
+const searchQuery = (query: string): SearchQuery => {
+  const normalized = query.trim().toLowerCase()
+  return { normalized, terms: normalized.split(/[^a-z0-9]+/).filter((term) => term.length > 1) }
 }
+
+const searchKey = (item: {
+  readonly kind: string
+  readonly name: string
+  readonly path?: string
+}): string => `${item.kind}:${item.path ?? item.name}`
 
 export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   const { automationProviders, config, connectUpstream, isSuppressed } = deps
@@ -202,22 +251,33 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   const searchCatalog = async (
     projectId: string | undefined,
     sessionId: string | undefined,
-    query: string,
+    text: string,
     limit = 12
   ) => {
-    const normalized = query.trim().toLowerCase()
-    const terms = normalized.split(/[^a-z0-9]+/).filter((term) => term.length > 1)
-    const ranked = (await allTools(projectId, sessionId))
-      .map(({ server, tool }) => {
-        return catalogSearchItem(server, tool, scoreCatalogTool(server, tool, normalized, terms))
-      })
-      .filter((item) => normalized.length === 0 || item.score > 0)
-      .toSorted((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+    const query = searchQuery(text)
+    const enabledIds = new Set(
+      (await enabledServers(projectId, sessionId)).map((server) => server.id)
+    )
+    const globals = SANDBOX_GLOBALS.filter(
+      (global) => global.gate === undefined || enabledIds.has(global.gate)
+    )
+    const candidates = [
+      ...(await allTools(projectId, sessionId)).map(({ server, tool }) =>
+        toolSearchItem(server, tool, query)
+      ),
+      ...(await sessionSkills(projectId, sessionId)).map((skill) => skillSearchItem(skill, query)),
+      ...globals.map((global) => globalSearchItem(global, query))
+    ]
+    const ranked = candidates
+      .filter((item) => query.normalized.length === 0 || item.score > 0)
+      .toSorted(
+        (left, right) => right.score - left.score || searchKey(left).localeCompare(searchKey(right))
+      )
     return {
       items: ranked.slice(0, Math.max(1, Math.min(limit, 50))),
       total: ranked.length,
       workflow:
-        "Choose a match, inspect it with tools.describe.tool({ path }), then call tools[path](args). Do not stop after discovery when the user asked for an action or answer."
+        "Choose a match. A tool: inspect it with machine.tools.describe.tool({ path }), then call machine.tools[path](args). A skill: read it with the skills tool. A global: use it as its signature shows. Do not stop after discovery when the user asked for an action or answer."
     }
   }
 

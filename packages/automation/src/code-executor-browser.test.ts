@@ -8,7 +8,7 @@ describe.sequential("Codevisor browser facade", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const tab = await tools.browser.tabs.new();
+        const tab = await machines.current.tools.browser.tabs.new();
         const { mouse, keyboard } = tab.playwright;
         await keyboard.press("r");
         await mouse.move(300, 300);
@@ -64,7 +64,7 @@ describe.sequential("Codevisor browser facade", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const browser = tools.browser;
+        const browser = machines.current.tools.browser;
         const tabs = await browser.tabs.list({ scope: "session" });
         const tab = tabs.find((candidate) => candidate.info.url.includes("excalidraw"));
         await tab.playwright.mouse.move(1, 2);
@@ -130,7 +130,7 @@ describe.sequential("Codevisor browser facade", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const browser = tools.browser;
+        const browser = machines.current.tools.browser;
         const [docs, issue] = await browser.tabs.list();
         const group = await browser.tabGroups.ensure({ tabs: [docs, issue], title: "Research", color: "blue" });
         await browser.tabGroups.add(group, ["13"]);
@@ -205,7 +205,7 @@ describe.sequential("Codevisor browser facade", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const browser = tools.browser;
+        const browser = machines.current.tools.browser;
         const tab = await browser.tabs.new();
         return browser.tabs.finalize({ keep: [tab, "tab-9"] });
       }`,
@@ -244,7 +244,7 @@ describe.sequential("Codevisor browser facade", () => {
       ["'tab-1'", "keep must be an array"]
     ] as const) {
       const result = await makeCodeExecutor().execute(
-        `async () => tools.browser.tabs.finalize({ keep: ${keep} })`,
+        `async () => machines.current.tools.browser.tabs.finalize({ keep: ${keep} })`,
         {
           invoke: async (call) => {
             calls.push(call.path)

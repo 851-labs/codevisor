@@ -63,7 +63,10 @@ describe("Codevisor native action parity", () => {
       mcpId: "codevisor",
       enabled: false
     })
-    await provider.invoke(context, "sessions.queue_reorder", { queueItemIds: ["second", "first"] })
+    await provider.invoke(context, "agents.debug.queue_reorder", {
+      agentId: "caller",
+      queueItemIds: ["second", "first"]
+    })
     expect(requests).toEqual([
       {
         path: "/v1/clients/window%2Fid/navigate",

@@ -68,7 +68,7 @@ const machine = async (
             name: "execute",
             arguments: {
               description: "Ask the tracker who we are",
-              code: `async () => tools["${id}.whoami"]({})`
+              code: `async () => machines.current.tools["${id}.whoami"]({})`
             }
           })
         ).content

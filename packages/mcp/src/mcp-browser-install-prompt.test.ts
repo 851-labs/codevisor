@@ -60,7 +60,7 @@ it("blocks the model's install request on the composer card and returns the user
       arguments: {
         description: "Ask to add the Chrome extension",
         timeout_ms: 600_000,
-        code: `async () => tools.browser.request_extension_install()`
+        code: `async () => machines.current.tools.browser.request_extension_install()`
       }
     })
     const question = await asked
@@ -111,7 +111,7 @@ it("asks for an extension update before using an outdated Chrome extension", asy
       arguments: {
         description: "Use the user's Chrome",
         timeout_ms: 600_000,
-        code: `async () => tools.browser.use_backend({ backend: "extension" })`
+        code: `async () => machines.current.tools.browser.use_backend({ backend: "extension" })`
       }
     })
     const question = await asked

@@ -62,7 +62,7 @@ export const jobLimitMessage = (timeoutMs: number, running: ReadonlyArray<string
   `execute reached timeout_ms ${timeoutMs} ${stillRunningClause(running)}, and this session ` +
   `already has ${MAX_RUNNING_JOBS_PER_SESSION} background jobs running, so it was stopped and its ` +
   "pending tool calls were cancelled. Check or cancel the running jobs with " +
-  "tools.codevisor.jobs.list() and tools.codevisor.jobs.cancel({ jobId })."
+  "machines.current.tools.codevisor.jobs.list() and machines.current.tools.codevisor.jobs.cancel({ jobId })."
 
 export const jobExpiredMessage = (): string =>
   `Background job ran for its ${EXECUTE_JOB_MAX_MS / 60_000}-minute limit; its pending tool calls were cancelled.`

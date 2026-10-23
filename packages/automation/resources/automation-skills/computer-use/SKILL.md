@@ -13,11 +13,11 @@ Use these tools for desktop interaction. **Do not use osascript, AppleScript, JX
 
 ## Persistent JavaScript
 
-Call `tools["computer.js"]({code})` through Codevisor's execute tool. These cells share one isolated JavaScript session. Top-level variables and helper functions persist; redeclaring a binding replaces its value. The outer execute function remains stateless.
+Call `machines.current.tools["computer.js"]({code})` through Codevisor's execute tool. These cells share one isolated JavaScript session. Top-level variables and helper functions persist; redeclaring a binding replaces its value. The outer execute function remains stateless.
 
 ```js
 ;async () =>
-  tools["computer.js"]({
+  machines.current.tools["computer.js"]({
     code: 'let music = await computer.getApp("com.apple.Music");'
   })
 ```
@@ -26,7 +26,7 @@ Call `tools["computer.js"]({code})` through Codevisor's execute tool. These cell
 
 ```js
 ;async () =>
-  tools["computer.js"]({
+  machines.current.tools["computer.js"]({
     code: 'await music.pressKey("super+n"); computer.write(await music.waitFor({role: "AXSheet"}));'
   })
 ```
@@ -55,7 +55,7 @@ Call `tools["computer.js"]({code})` through Codevisor's execute tool. These cell
 - `app.drag(from, to, options?)` accepts an element index or `{x, y}` at each endpoint.
 - `app.scroll(direction, {element_index?, pages?, delivery_mode?})` scrolls an element or selected window. Directions are up/down/left/right; pages may be fractional.
 
-The handle supplies the app, window, and latest observed snapshot to element/pointer actions. Low-level tools remain available under `tools["computer.method"]`; use `tools.describe.tool` for their schemas. Pass `snapshot_id` with low-level element or pixel actions. `get_app_state` and `wait_for` return observations; action tools return delivery metadata only.
+The handle supplies the app, window, and latest observed snapshot to element/pointer actions. Low-level tools remain available under `machines.current.tools["computer.method"]`; use `machines.current.tools.describe.tool` for their schemas. Pass `snapshot_id` with low-level element or pixel actions. `get_app_state` and `wait_for` return observations; action tools return delivery metadata only.
 
 ## Record and share a fix
 
@@ -92,7 +92,7 @@ Low-level equivalents are `computer.list_recording_targets`, `computer.start_rec
 ## Observations and input
 
 - Long lists show their visible rows, up to 50, followed by a line saying how many rows were left out. A very large or slow window is cut short with a note saying so. Use `app.find` to reach anything left out instead of scrolling through it, or `element_index` to read one part of the window.
-- The whole execute call has one budget, `timeout_ms` (default 120 seconds). A slow app can use most of it on one observation, so prefer `find` and `element_index` reads in large windows. `waitFor` shortens itself to fit the budget that is left and reports `clampedToMs`. If your code is still running when the budget runs out, the call returns a background job handle instead; check it with `tools.codevisor.jobs.wait({ jobId })` or wait for its `execution.job_finished` event.
+- The whole execute call has one budget, `timeout_ms` (default 120 seconds). A slow app can use most of it on one observation, so prefer `find` and `element_index` reads in large windows. `waitFor` shortens itself to fit the budget that is left and reports `clampedToMs`. If your code is still running when the budget runs out, the call returns a background job handle instead; check it with `machines.current.tools.codevisor.jobs.wait({ jobId })` or wait for its `execution.job_finished` event.
 - Read an observation before choosing a target. After an action changes the UI, observe again before choosing another element. Actions never take hidden screenshots or replace the element map.
 - `view: "auto"` focuses an open menu or dialog. Use `"window"` for the full window tree, or `"menu"`/`"dialog"` to inspect those surfaces explicitly. Open menus must be followed through to the intended item; do not reopen them just because an action result is uncertain.
 - `view: "menubar"` lists the app's menu bar commands on macOS, including closed menus and submenus. Clicking a listed menu item runs that command in the background without opening the menu or activating the app. A background app may not update which items are enabled until its menus are opened, so an item can stay disabled after you select its target. A disabled item is refused; use the element's context menu instead.

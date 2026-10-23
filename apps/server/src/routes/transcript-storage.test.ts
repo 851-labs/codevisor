@@ -9,12 +9,17 @@ import { expect, it } from "vitest"
 import { jsonRequest, run } from "../test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
-const TranscriptToolPage = Schema.StructWithRest(
-  Schema.Struct({
-    items: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String }))
-  }),
-  [Schema.Record(Schema.String, Schema.Unknown)]
-)
+const TranscriptToolPage = Schema.Struct({
+  items: Schema.Array(Schema.Struct({ itemId: Schema.String, text: Schema.String })),
+  next: Schema.optional(Schema.String)
+})
+
+const SearchToolPage = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({ itemId: Schema.String, kind: Schema.String, snippet: Schema.String })
+  ),
+  next: Schema.optional(Schema.String)
+})
 
 const jsonSchemaOf = ({ properties, required, ...rest }: Tool["inputSchema"]): JsonSchemaType => ({
   ...rest,
@@ -83,7 +88,7 @@ it("serves a navigation snapshot and validates bidirectional transcript and body
     ).toBe(200)
 })
 
-it("pages the agent transcript tools with the cursors the route returns", async () => {
+it("pages, searches, and reads an agent's transcript through the agent tools", async () => {
   const { server, services, workspace } = await setUpWorkspace()
   const session = await createFirstSession(server, workspace)
   for (const text of ["first", "second", "third"])
@@ -104,21 +109,50 @@ it("pages the agent transcript tools with the cursors the route returns", async 
     const parsed: unknown = JSON.parse(content.text)
     return parsed
   }
+  const agentId = session.id
   const transcript = async (args: Record<string, unknown>) =>
-    decode(TranscriptToolPage)(await call("sessions.transcript", args))
+    decode(TranscriptToolPage)(await call("agents.debug.transcript", { agentId, ...args }))
+  const search = async (args: Record<string, unknown>) =>
+    decode(SearchToolPage)(await call("agents.debug.search", { agentId, ...args }))
 
   const newest = await transcript({ limit: 2 })
   expect(newest.items.map((item) => item.text)).toEqual(["second", "third"])
-  expect(newest).toMatchObject({ hasMore: true, nextBefore: expect.any(String) })
-  const older = await transcript({ before: newest.nextBefore, limit: 2 })
+  const older = await transcript({ next: newest.next, limit: 2 })
   expect(older.items.map((item) => item.text)).toEqual(["first"])
-  expect(older.hasMore).toBe(false)
-  const newer = await transcript({ before: older.nextAfter, limit: 2 })
-  expect(newer.items.map((item) => item.text)).toEqual(["second", "third"])
+  expect(older.next).toBeUndefined()
 
-  const details = await call("sessions.transcript_details", {
-    itemId: older.items[0]!.id,
-    after: "latest"
+  const hits = await search({ query: "SEC" })
+  expect(hits.items).toEqual([expect.objectContaining({ kind: "user", snippet: "second" })])
+  const newestTwo = await search({ last: 2 })
+  expect(newestTwo.items.map((hit) => hit.snippet)).toEqual(["third", "second"])
+  const rest = await search({ last: 2, next: newestTwo.next })
+  expect(rest.items.map((hit) => hit.snippet)).toEqual(["first"])
+  expect(rest.next).toBeUndefined()
+  expect(await call("agents.debug.item", { agentId, itemId: hits.items[0]!.itemId })).toMatchObject(
+    {
+      kind: "user",
+      text: "second"
+    }
+  )
+  expect(await call("agents.status", { agentId })).toMatchObject({ agentId, state: "idle" })
+})
+
+it("rejects unknown agents, kinds, and limits on the agent routes", async () => {
+  const { server, workspace } = await setUpWorkspace()
+  const session = await createFirstSession(server, workspace)
+  const missing = "00000000-0000-4000-8000-000000000000"
+
+  expect((await jsonRequest(server, `/v1/agents/${missing}`)).status).toBe(404)
+  expect((await jsonRequest(server, `/v1/agents/${missing}/search`)).status).toBe(404)
+  expect((await jsonRequest(server, `/v1/agents/${missing}/items/item-1`)).status).toBe(404)
+  expect(
+    (await jsonRequest(server, `/v1/agents/${session.id}/search?kinds=user,thought`)).status
+  ).toBe(400)
+  expect((await jsonRequest(server, `/v1/agents/${session.id}/search?last=0`)).status).toBe(400)
+  expect(
+    await jsonRequest(server, `/v1/agents/${session.id}/search?last=500&kinds=user`)
+  ).toMatchObject({
+    status: 200,
+    body: { items: [] }
   })
-  expect(details).toMatchObject({ entries: [expect.objectContaining({ key: "message::first" })] })
 })

@@ -2,10 +2,13 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
+import { codevisorAgentTools } from "./codevisor-agent-tools.js"
+import { makeCodevisorApi, type CodevisorApiConnection } from "./codevisor-api-client.js"
 import { bearerHeaders, requestBody, requestInit, requestUrl } from "./codevisor-api-request.js"
 import { resourceResult, responseError, textResult } from "./codevisor-api-response.js"
 import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
 import { toolInputSchema } from "./codevisor-tool-schema.js"
+import { shapedToolResult } from "./codevisor-tool-shapes.js"
 import type { UnknownRecord } from "./unknown-values.js"
 
 export {
@@ -17,9 +20,10 @@ const tools: ReadonlyArray<Tool> = [
   {
     name: "context.current",
     description:
-      "Return the calling Codevisor session: sessionId, projectId, workspaceId, worktreeName (its git worktree, absent for the project folder), parentSessionId (the agent that created this one, if any), the machine it runs on, and clientId (the app window that sent the current prompt, absent for automations and agent-sent prompts).",
+      "Return where you are: agentId, projectId, workspaceId, worktreeName (your git worktree, absent for the project folder), parentAgentId (the agent that started you, if any), the machine you run on, and clientId (the app window that sent the current message, absent for automations and agent-sent messages).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
+  ...codevisorAgentTools.map((tool) => tool.definition),
   ...CODEVISOR_API_TOOLS.map((spec): Tool => ({
     name: spec.name,
     description: spec.description,
@@ -46,7 +50,28 @@ const invokeApiTool = async (
     const bytes = Buffer.from(await response.arrayBuffer())
     return resourceResult(url, response, bytes)
   }
-  return textResult(response, await response.text(), request.clampedToMs)
+  return textResult(response, shapedText(spec, await response.text()), request.clampedToMs)
+}
+
+const shapedText = (spec: CodevisorApiToolSpec, text: string): string => {
+  if (text.length === 0) return text
+  try {
+    return JSON.stringify(shapedToolResult(spec, JSON.parse(text)))
+  } catch {
+    return text
+  }
+}
+
+const invokeAgentTool = async (
+  connection: CodevisorApiConnection,
+  context: AutomationProviderContext,
+  toolName: string,
+  args: UnknownRecord
+): Promise<CallToolResult | undefined> => {
+  const tool = codevisorAgentTools.find((candidate) => candidate.definition.name === toolName)
+  if (tool === undefined) return undefined
+  const api = makeCodevisorApi(connection, context, toolName)
+  return textToolResult(JSON.stringify(await tool.run({ api, context }, args)))
 }
 
 const unconfirmed = (spec: CodevisorApiToolSpec, args: UnknownRecord): boolean =>
@@ -82,18 +107,25 @@ export const makeCodevisorProvider = (
       const extra = (await options.currentContext?.(context)) ?? {}
       return textToolResult(
         JSON.stringify({
-          sessionId: context.sessionId,
+          agentId: context.sessionId,
           ...(context.projectId === undefined ? {} : { projectId: context.projectId }),
           ...(extra.workspaceId === undefined ? {} : { workspaceId: extra.workspaceId }),
           ...(extra.worktreeName === undefined ? {} : { worktreeName: extra.worktreeName }),
-          ...(extra.parentSessionId === undefined
+          ...(extra.parentSessionId === undefined ? {} : { parentAgentId: extra.parentSessionId }),
+          ...(extra.machine === undefined
             ? {}
-            : { parentSessionId: extra.parentSessionId }),
-          ...(extra.machine === undefined ? {} : { machine: extra.machine }),
+            : { machine: { machineId: extra.machine.id, name: extra.machine.name } }),
           ...(extra.clientId === undefined ? {} : { clientId: extra.clientId })
         })
       )
     }
+    const agentResult = await invokeAgentTool(
+      { getBaseUrl, getBearerToken },
+      context,
+      toolName,
+      args
+    )
+    if (agentResult !== undefined) return agentResult
     const spec = CODEVISOR_API_TOOLS.find((candidate) => candidate.name === toolName)
     if (spec === undefined) throw new Error(`Unknown Codevisor tool: ${toolName}`)
     return invokeApiTool(getBaseUrl, getBearerToken, spec, context, args)

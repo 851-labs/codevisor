@@ -69,7 +69,7 @@ describe("recording attachment persistence", () => {
         name: "execute",
         arguments: {
           description: "Run test code",
-          code: 'async () => tools["computer.stop_recording"]({recording_id:"r"})'
+          code: 'async () => machines.current.tools["computer.stop_recording"]({recording_id:"r"})'
         }
       })
       expect(result.isError).not.toBe(true)

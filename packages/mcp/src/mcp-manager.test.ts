@@ -231,11 +231,11 @@ describe("MCP manager", () => {
           arguments: {
             description: "Run test code",
             code: `async () => {
-            const matches = await tools.search({ query: "project", limit: 1 });
-            const schema = await tools.describe.tool({ path: matches.items[0].path });
-            const called = await tools[matches.items[0].path]({ name: "Rails" });
-            const issues = await tools.search({ query: "issues", limit: 1 });
-            const issueCall = await tools[issues.items[0].path]({});
+            const matches = await machines.current.tools.search({ query: "project", limit: 1 });
+            const schema = await machines.current.tools.describe.tool({ path: matches.items[0].path });
+            const called = await machines.current.tools[matches.items[0].path]({ name: "Rails" });
+            const issues = await machines.current.tools.search({ query: "issues", limit: 1 });
+            const issueCall = await machines.current.tools[issues.items[0].path]({});
             return { called, issueCall, schema };
           }`
           }
@@ -247,7 +247,7 @@ describe("MCP manager", () => {
           name: "execute",
           arguments: {
             description: "Run test code",
-            code: `async () => tools["${created.id}.lookup_project"]({ binary: true })`
+            code: `async () => machines.current.tools["${created.id}.lookup_project"]({ binary: true })`
           }
         })
         expect(binaryCodeResult.content).toEqual(
@@ -265,11 +265,11 @@ describe("MCP manager", () => {
         expect(textBlocks).not.toContain("showToUser")
         expect(textBlocks).not.toContain(Buffer.from("gateway-binary-image").toString("base64"))
         for (const code of [
-          `async () => tools.describe.tool({})`,
-          `async () => tools.describe.tool("invalid")`,
-          `async () => tools.describe.tool({ path: "invalid" })`,
-          `async () => tools.describe.tool({ path: "${created.id}.missing_tool" })`,
-          `async () => tools["invalid"]({})`
+          `async () => machines.current.tools.describe.tool({})`,
+          `async () => machines.current.tools.describe.tool("invalid")`,
+          `async () => machines.current.tools.describe.tool({ path: "invalid" })`,
+          `async () => machines.current.tools.describe.tool({ path: "${created.id}.missing_tool" })`,
+          `async () => machines.current.tools["invalid"]({})`
         ]) {
           expect(
             (
@@ -284,7 +284,7 @@ describe("MCP manager", () => {
           name: "execute",
           arguments: {
             description: "Run test code",
-            code: `async () => tools["computer.select_text"]({
+            code: `async () => machines.current.tools["computer.select_text"]({
             app: "com.apple.Notes",
             element_index: 1,
             text: "story",
@@ -297,9 +297,9 @@ describe("MCP manager", () => {
           "computer.select_text does not accept `mode`"
         )
         for (const code of [
-          `async () => tools.search("issues")`,
-          `async () => tools.search({ query: 42, limit: "many" })`,
-          `async () => tools["${created.id}.lookup_project"]("primitive")`
+          `async () => machines.current.tools.search("issues")`,
+          `async () => machines.current.tools.search({ query: 42, limit: "many" })`,
+          `async () => machines.current.tools["${created.id}.lookup_project"]("primitive")`
         ]) {
           expect(
             (
@@ -318,7 +318,7 @@ describe("MCP manager", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: `async () => tools.describe.tool({ path: "${created.id}.lookup_project" })`
+                code: `async () => machines.current.tools.describe.tool({ path: "${created.id}.lookup_project" })`
               }
             })
           ).isError
@@ -329,7 +329,7 @@ describe("MCP manager", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: `async () => tools["${created.id}.lookup_project"]({})`
+                code: `async () => machines.current.tools["${created.id}.lookup_project"]({})`
               }
             })
           ).isError

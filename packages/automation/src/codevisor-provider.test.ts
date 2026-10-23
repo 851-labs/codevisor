@@ -65,7 +65,9 @@ describe("Codevisor MCP provider", () => {
         "worktrees.create",
         "workspaces.upsert",
         "workspaces.open_plugin_pane",
-        "sessions.prompt",
+        "agents.start",
+        "agents.message",
+        "agents.debug.search",
         "files.upload",
         "mcps.create",
         "skills.create",
@@ -84,12 +86,14 @@ describe("Codevisor MCP provider", () => {
       properties: { projectId: { type: "string" }, id: { anyOf: expect.any(Array) } }
     })
     expect(worktree.inputSchema.required).toBeUndefined()
-    const transcript = tools.find((tool) => tool.name === "sessions.transcript")!
-    expect(transcript.inputSchema).toMatchObject({
-      properties: {
-        sessionId: { description: "Session id. Defaults to the calling session." }
-      }
+    expect(names.filter((name) => name.startsWith("sessions."))).toEqual([])
+    const jobs = tools.find((tool) => tool.name === "jobs.list")!
+    expect(jobs.inputSchema).toMatchObject({
+      properties: { agentId: { description: "Agent id. Defaults to the calling agent." } }
     })
+    expect(jobs.inputSchema.required).toBeUndefined()
+    const search = tools.find((tool) => tool.name === "agents.debug.search")!
+    expect(search.inputSchema.required).toEqual(["agentId"])
     const capabilities = tools.find((tool) => tool.name === "server.capabilities")!
     expect(capabilities.inputSchema).toMatchObject({
       properties: {
@@ -103,12 +107,12 @@ describe("Codevisor MCP provider", () => {
     )
     expect(
       JSON.parse(textContent(await provider.invoke(callingContext, "context.current", {})))
-    ).toEqual({ sessionId: "calling session/id", projectId: "calling project/id" })
+    ).toEqual({ agentId: "calling session/id", projectId: "calling project/id" })
     expect(
       JSON.parse(
         textContent(await provider.invoke({ sessionId: "session-only" }, "context.current", {}))
       )
-    ).toEqual({ sessionId: "session-only" })
+    ).toEqual({ agentId: "session-only" })
     await expect(provider.invoke(callingContext, "missing.tool", {})).rejects.toThrow(
       "Unknown Codevisor tool"
     )
@@ -127,10 +131,11 @@ describe("Codevisor MCP provider", () => {
       async () => "stable-token"
     )
 
-    await provider.invoke(callingContext, "sessions.get", {})
+    await provider.invoke(callingContext, "jobs.list", {})
     await provider.invoke(callingContext, "projects.update", { name: "Renamed" })
     await provider.invoke(callingContext, "terminals.close_session", {})
-    await provider.invoke(callingContext, "sessions.transcript_details", {
+    await provider.invoke(callingContext, "agents.debug.item", {
+      agentId: "child/id",
       itemId: "item/id"
     })
     await provider.invoke(callingContext, "server.update_status", {
@@ -145,10 +150,10 @@ describe("Codevisor MCP provider", () => {
     })
 
     expect(requests.map(({ url }) => url.pathname)).toEqual([
-      "/v1/sessions/calling%20session%2Fid",
+      "/v1/sessions/calling%20session%2Fid/jobs",
       "/v1/projects/calling%20project%2Fid",
       "/v1/terminals/session/calling%20session%2Fid",
-      "/v1/sessions/calling%20session%2Fid/transcript/item%2Fid/details",
+      "/v1/agents/child%2Fid/items/item%2Fid",
       "/v1/update",
       "/v1/update",
       "/v1/update",
@@ -168,6 +173,9 @@ describe("Codevisor MCP provider", () => {
     expect(requestHeaders(requests.at(-1)!.init).get(REMOTE_PARENT_HEADER)).toBe("verified-link")
     await expect(provider.invoke(callingContext, "workspaces.delete", {})).rejects.toThrow(
       "workspaces.delete requires workspaceId"
+    )
+    await expect(provider.invoke(callingContext, "agents.status", {})).rejects.toThrow(
+      "agents.status requires agentId"
     )
   })
 
@@ -190,21 +198,6 @@ describe("Codevisor MCP provider", () => {
       clientId: "client",
       body: { page: "home" }
     })
-    await provider.invoke(callingContext, "sessions.create", {
-      id: "new-session",
-      harnessId: "codex"
-    })
-    await provider.invoke({ sessionId: "caller" }, "sessions.create", {
-      id: "explicit-session",
-      projectId: "explicit-project",
-      workspaceId: "existing-workspace",
-      parentSessionId: "explicit-parent",
-      harnessId: "codex"
-    })
-    await provider.invoke({ sessionId: "caller" }, "sessions.create", {
-      id: "unscoped-session",
-      harnessId: "codex"
-    })
     await provider.invoke(callingContext, "harnesses.install", { harnessId: "codex" })
     await provider.invoke(callingContext, "files.upload", {
       name: "hello.txt",
@@ -220,29 +213,12 @@ describe("Codevisor MCP provider", () => {
       sessionToken: "cloud-token"
     })
     expect(requestJson(requests[1]!.init)).toEqual({ page: "home" })
-    expect(requestJson(requests[2]!.init)).toMatchObject({
-      id: "new-session",
-      projectId: "calling project/id",
-      harnessId: "codex"
-    })
-    const created = expectRecord(requestJson(requests[2]!.init), "session body")
-    const unscoped = expectRecord(requestJson(requests[4]!.init), "session body")
-    expect(created.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(unscoped.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(unscoped.workspaceId).not.toBe(created.workspaceId)
-    expect(requestJson(requests[3]!.init)).toMatchObject({
-      projectId: "explicit-project",
-      workspaceId: "existing-workspace",
-      parentSessionId: "explicit-parent"
-    })
-    expect(unscoped).not.toHaveProperty("projectId")
-    expect(unscoped).toMatchObject({ parentSessionId: "caller" })
-    expect(requestJson(requests[5]!.init)).toEqual({})
-    expect(requestBytes(requests[6]!.init).toString()).toBe("hello")
-    expect(requests[6]!.url.searchParams.get("name")).toBe("hello.txt")
-    expect(requests[6]!.url.searchParams.has("mimeType")).toBe(false)
-    expect(requestHeaders(requests[6]!.init).get("content-type")).toBe("text/plain")
-    expect(requestHeaders(requests[7]!.init).get("content-type")).toBe("application/octet-stream")
+    expect(requestJson(requests[2]!.init)).toEqual({})
+    expect(requestBytes(requests[3]!.init).toString()).toBe("hello")
+    expect(requests[3]!.url.searchParams.get("name")).toBe("hello.txt")
+    expect(requests[3]!.url.searchParams.has("mimeType")).toBe(false)
+    expect(requestHeaders(requests[3]!.init).get("content-type")).toBe("text/plain")
+    expect(requestHeaders(requests[4]!.init).get("content-type")).toBe("application/octet-stream")
     await expect(provider.invoke(callingContext, "files.upload", {})).rejects.toThrow(
       "files.upload requires dataBase64"
     )
@@ -259,8 +235,8 @@ describe("Codevisor MCP provider", () => {
       async () => "stable-token"
     )
 
-    await provider.invoke({ sessionId: "agent" }, "sessions.prompt", {
-      sessionId: "bot",
+    await provider.invoke({ sessionId: "agent" }, "agents.message", {
+      agentId: "bot",
       text: "done",
       fromSessionId: "someone-else"
     })
@@ -281,10 +257,10 @@ describe("Codevisor MCP provider", () => {
     )
     const signal = new AbortController().signal
     const tight = { sessionId: "agent", deadline: performance.now() + 60_000, signal }
-    const roomy = { sessionId: "agent", deadline: performance.now() + 600_000 }
+    const roomy = { sessionId: "agent", deadline: performance.now() + 600_000, signal }
 
-    const clamped = await provider.invoke(tight, "sessions.wait", {
-      ids: ["child"],
+    const clamped = await provider.invoke(tight, "agents.wait", {
+      agentIds: ["child"],
       timeoutMs: 300_000
     })
     const untouched = await provider.invoke(roomy, "jobs.wait", { jobId: "j1", timeoutMs: 1_000 })
@@ -294,11 +270,12 @@ describe("Codevisor MCP provider", () => {
     expect(sentTimeout).toBeLessThanOrEqual(58_500)
     expect(requests[0]!.init.signal).toBe(signal)
     expect(JSON.parse(textContent(clamped))).toEqual({
-      sessions: [],
+      items: [],
       timedOut: true,
       clampedToMs: sentTimeout
     })
     expect(requests[1]!.url.pathname).toBe("/v1/jobs/j1/wait")
+    expect(requests[1]!.init.signal).toBe(signal)
     expect(requestJson(requests[1]!.init)).toEqual({ timeoutMs: 1_000 })
     expect(JSON.parse(textContent(untouched))).toEqual({ sessions: [], timedOut: true })
   })
@@ -445,7 +422,7 @@ describe("Codevisor MCP provider", () => {
     expect(limited.details).toBeUndefined()
   })
 
-  it("reports the calling workspace, machine, parent session, and origin client from context.current", async () => {
+  it("reports the calling workspace, machine, parent agent, and origin client from context.current", async () => {
     const seen: Array<AutomationProviderContext> = []
     const provider = makeCodevisorProvider(
       () => "http://localhost:43210",
@@ -467,12 +444,12 @@ describe("Codevisor MCP provider", () => {
     expect(
       JSON.parse(textContent(await provider.invoke(callingContext, "context.current", {})))
     ).toEqual({
-      sessionId: "calling session/id",
+      agentId: "calling session/id",
       projectId: "calling project/id",
       workspaceId: "workspace-1",
       worktreeName: "retry-fix",
-      parentSessionId: "parent-session",
-      machine: { id: "studio", name: "Mac Studio" },
+      parentAgentId: "parent-session",
+      machine: { machineId: "studio", name: "Mac Studio" },
       clientId: "window-2"
     })
     expect(seen).toEqual([callingContext])

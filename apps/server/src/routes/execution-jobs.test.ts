@@ -86,7 +86,7 @@ const waitOnChild = ({ client }: { readonly client: McpClient }, childId: string
     name: "execute",
     arguments: {
       description: "Wait for the helper",
-      code: `async () => tools.codevisor.sessions.wait({ ids: ["${childId}"], until: ["idle"], timeoutMs: 300000 })`,
+      code: `async () => machines.current.agents.wait({ agentIds: ["${childId}"], until: ["idle"], timeoutMs: 300000 })`,
       timeout_ms: BUDGET_MS
     }
   })
@@ -121,12 +121,12 @@ describe("background execute jobs", () => {
     await waitFor(async () => (await hiddenEvents(running, parent)).length === 1)
 
     expect(result.isError).toBeUndefined()
-    expect(handle).toMatchObject({ status: "running", running: ["codevisor.sessions.wait"] })
+    expect(handle).toMatchObject({ status: "running", running: ["codevisor.agents.wait"] })
     const [event] = await hiddenEvents(running, parent)
     expect(event).toContain(
-      `<codevisor-event type="execution.job_finished" jobId="${handle.jobId}" sessionId="${parent}" state="completed" description="Wait for the helper">`
+      `<codevisor-event type="execution.job_finished" jobId="${handle.jobId}" agentId="${parent}" state="completed" description="Wait for the helper">`
     )
-    expect(event).toContain(`Result: {"sessions":[{"id":"${child}"`)
+    expect(event).toContain(`Result: {"items":[{"agentId":"${child}","state":"idle"}]`)
     expect(event).toContain(`"timedOut":false}`)
     expect(event).toContain(`Full output: ${handle.outputPath}`)
   })

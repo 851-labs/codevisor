@@ -19,7 +19,7 @@ const bindingNames = (node: unknown): string[] => {
 
 const reserve = (name: string) => {
   if (
-    ["computer", "browser", "tools", "globalThis"].includes(name) ||
+    ["computer", "browser", "machines", "globalThis"].includes(name) ||
     name.startsWith("__codevisor")
   )
     throw new Error(`Reserved REPL binding: ${name}`)

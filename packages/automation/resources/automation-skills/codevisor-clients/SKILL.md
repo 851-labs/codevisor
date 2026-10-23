@@ -8,9 +8,9 @@ description: See and drive the Codevisor apps the user has open (macOS and iOS) 
 A **client** is one open Codevisor window: a macOS window or the iOS app. The user may have several open at once, on different devices.
 
 ```js
-;async () => clients.list()
-// [{ id, name, platform: "macos" | "ios", machine, online, isOrigin, lastActiveAt?,
-//    viewing: { workspaceId?, sessionId?, page?, panes? }, capabilities? }]
+;async () => machines.current.clients.list()
+// { items: [{ clientId, name, platform: "macos" | "ios", machine, online, isOrigin, lastActiveAt?,
+//    viewing: { workspaceId?, agentId?, page?, panes? }, capabilities? }] }
 ```
 
 - `isOrigin` marks the window that sent the message you're handling now. Automations and agents started by other agents have **no** origin, so don't assume one exists.
@@ -23,12 +23,12 @@ You decide which client to act on. Usually it's the origin, or the most recently
 
 ```js
 ;async () => {
-  const all = await clients.list()
+  const { items } = await machines.current.clients.list()
   const target =
-    all.find((c) => c.isOrigin) ??
-    all.sort((a, b) => (b.lastActiveAt ?? "").localeCompare(a.lastActiveAt ?? ""))[0]
+    items.find((c) => c.isOrigin) ??
+    items.sort((a, b) => (b.lastActiveAt ?? "").localeCompare(a.lastActiveAt ?? ""))[0]
   if (!target) return "No Codevisor window is open"
-  await target.navigate({ workspaceId, destination: { kind: "chat", id: sessionId } }) // show a chat
+  await target.navigate({ workspaceId, destination: { kind: "chat", id: agentId } }) // show a chat
   return target.context() // tabs, panes, and supported actions
 }
 ```
@@ -39,7 +39,7 @@ You decide which client to act on. Usually it's the origin, or the most recently
 - `c.layout({ action, … })`: new_tab, split, move, detach, resize, reorder_tabs, rename_tab. Panes are created in the background unless you pass `focus: true`.
 - `c.window({ action, … })`: focus, minimize, fullscreen, frame, sidebar.
 
-These wrap `tools.codevisor.clients.*`; use `tools.describe.tool` for full schemas. Clients on another machine: `(await machines.get("macbook")).clients.list()`.
+These wrap `machine.tools.codevisor.clients.*`; use `machine.tools.describe.tool` for full schemas. Clients on another machine: `(await machines.get("macbook")).clients.list()`.
 
 ## Disconnects
 

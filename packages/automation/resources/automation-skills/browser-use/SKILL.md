@@ -31,7 +31,7 @@ Prefer the persistent browser REPL for multi-step work. Discover `browser.js`, t
 
 ```js
 ;async () =>
-  tools["browser.js"]({
+  machines.current.tools["browser.js"]({
     code: `
   var tab = await browser.tabs.new();
   await tab.goto("https://example.com/");
@@ -40,7 +40,7 @@ Prefer the persistent browser REPL for multi-step work. Discover `browser.js`, t
   })
 ```
 
-Later cells reuse `tab`, locators, and helper functions. `browser` is already defined. Use `browser.write(value)` or a final expression to return results. `browser.reset` clears bindings while keeping tabs. Read `await browser.documentation()` for complete method signatures. Existing `tools.browser` scripts remain available, but their variables do not survive calls.
+Later cells reuse `tab`, locators, and helper functions. `browser` is already defined. Use `browser.write(value)` or a final expression to return results. `browser.reset` clears bindings while keeping tabs. Read `await browser.documentation()` for complete method signatures. Ordinary execute scripts can also use `machines.current.tools.browser`, but their variables do not survive calls.
 
 Each tab operation carries its explicit tab ID. Independent operations on different tabs can run concurrently; dependent actions must remain ordered. Never recover a closed tab by silently switching to another one.
 
@@ -48,7 +48,7 @@ Each tab operation carries its explicit tab ID. Independent operations on differ
 
 Treat creating a tab and taking over a user's tab as different operations.
 
-- Use the Browser object at `tools.browser`.
+- Use the Browser object at `machines.current.tools.browser`.
 - To open a URL, create a new tab with `browser.tabs.new()` and then call `tab.goto(url)`.
 - When the user asks for a new, separate, duplicate, or additional tab, always create one even if the URL is already open.
 - Before `browser.tabs.new()`, check `await browser.tabs.list({ scope: "session" })`: if an earlier attempt in this session already opened the page (`tab.info.url`), reuse that tab object instead of opening a duplicate. A failed script reports its still-open tabs in the error for this reason.
@@ -57,7 +57,7 @@ Treat creating a tab and taking over a user's tab as different operations.
 - If the selected tab is already at the requested URL, do not navigate to the same URL and reload it.
 
 ```js
-const browser = tools.browser
+const browser = machines.current.tools.browser
 const targetUrl = "https://example.com/"
 const tab = await browser.tabs.new()
 await tab.goto(targetUrl)
@@ -184,12 +184,13 @@ Use the control-specific method: `fill` for text, number, date, time, color, and
 The flat calls remain available for snapshot-ref and visual fallbacks:
 
 ```js
-await tools["browser.navigate"]({ url })
-await tools["browser.snapshot"]({})
-await tools["browser.click"]({ target: "e12", element: "Submit button" })
-await tools["browser.type"]({ target: "e18", text: "hello", submit: false })
-await tools["browser.press_key"]({ key: "Enter" })
-await tools["browser.screenshot"]({})
+const machine = machines.current
+await machine.tools["browser.navigate"]({ url })
+await machine.tools["browser.snapshot"]({})
+await machine.tools["browser.click"]({ target: "e12", element: "Submit button" })
+await machine.tools["browser.type"]({ target: "e18", text: "hello", submit: false })
+await machine.tools["browser.press_key"]({ key: "Enter" })
+await machine.tools["browser.screenshot"]({})
 ```
 
 - `tab.getAXState()`, `tab.click(ref)`, `tab.fill(ref, text)`, and `tab.pressKey(key)` provide a compact accessibility workflow. Refs are opaque and bound to the session, tab, and latest snapshot. Old refs reject.
@@ -209,7 +210,7 @@ When the user wants the page left open for them:
 
 ```js
 ;async () => {
-  const browser = tools.browser
+  const browser = machines.current.tools.browser
   const tab = await browser.tabs.new()
   await tab.goto("https://example.com/")
   const outcome = await browser.tabs.finalize({ keep: [{ tab, status: "handoff" }] })
@@ -221,7 +222,7 @@ For an inspection that leaves nothing behind, obtain the intended tab first and 
 
 ```js
 ;async () => {
-  const browser = tools.browser
+  const browser = machines.current.tools.browser
   const targetUrl = "https://example.com/"
   const tab = await browser.tabs.new()
   await tab.goto(targetUrl)

@@ -79,7 +79,7 @@ it("preserves browser cells and applies gateway upload validation and attachment
         name: "execute",
         arguments: {
           description: "Run test code",
-          code: `async () => tools["browser.js"]({code: ${JSON.stringify(code)}})`
+          code: `async () => machines.current.tools["browser.js"]({code: ${JSON.stringify(code)}})`
         }
       })
     expect((await execute("var retained = 41; retained")).isError).not.toBe(true)

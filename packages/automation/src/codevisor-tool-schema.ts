@@ -8,9 +8,10 @@ export const pathParameterNames = (path: string): ReadonlyArray<string> =>
   [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!)
 
 const idArgumentNames = {
+  agents: "agentId",
   projects: "projectId",
   workspaces: "workspaceId",
-  sessions: "sessionId",
+  sessions: "agentId",
   mcps: "mcpId",
   harnesses: "harnessId",
   "native-mcps": "removalId",
@@ -20,13 +21,31 @@ const idArgumentNames = {
 const isIdResource = (segment: string | undefined): segment is keyof typeof idArgumentNames =>
   segment !== undefined && Object.hasOwn(idArgumentNames, segment)
 
+export const callerDefault = (
+  spec: CodevisorApiToolSpec,
+  parameterName: string
+): "session" | "project" | undefined => {
+  if (spec.name.startsWith("agents.")) return undefined
+  if (parameterName === "sessionId") return "session"
+  if (parameterName !== "id") return undefined
+  if (spec.path.startsWith("/v1/sessions/:id")) return "session"
+  if (spec.path.startsWith("/v1/projects/:id")) return "project"
+  return undefined
+}
+
 export const pathArgumentName = (spec: CodevisorApiToolSpec, parameterName: string): string => {
   const resource = spec.path.split("/")[2]
   if (parameterName !== "id" || !isIdResource(resource)) return parameterName
   return idArgumentNames[resource]
 }
 
-const schemaProperties = (schema: JsonSchema): Record<string, object> =>
+const callerDefaultDescriptions = {
+  session: "Agent id. Defaults to the calling agent.",
+  project: "Project id. Defaults to the calling project.",
+  none: undefined
+} as const
+
+export const schemaProperties = (schema: JsonSchema): Record<string, object> =>
   Object.fromEntries(
     Object.entries(recordOrEmpty(schema.properties)).filter(
       (entry): entry is [string, UnknownRecord] => isRecord(entry[1])
@@ -40,21 +59,12 @@ export const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"]
 
   for (const parameterName of pathParameterNames(spec.path)) {
     const argumentName = pathArgumentName(spec, parameterName)
-    let description: string | undefined
-    if (parameterName === "id" && spec.path.startsWith("/v1/sessions/:id")) {
-      description = "Session id. Defaults to the calling session."
-    } else if (parameterName === "id" && spec.path.startsWith("/v1/projects/:id")) {
-      description = "Project id. Defaults to the calling project."
+    const defaulted = callerDefault(spec, parameterName)
+    properties[argumentName] = {
+      type: "string",
+      description: callerDefaultDescriptions[defaulted ?? "none"]
     }
-    properties[argumentName] = { type: "string", description }
-    if (parameterName === "sessionId") continue
-    if (
-      parameterName === "id" &&
-      (spec.path.startsWith("/v1/sessions/:id") || spec.path.startsWith("/v1/projects/:id"))
-    ) {
-      continue
-    }
-    required.add(argumentName)
+    if (defaulted === undefined) required.add(argumentName)
   }
 
   for (const parameter of spec.query ?? []) {
@@ -77,10 +87,7 @@ export const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"]
       required.add("body")
     } else {
       Object.assign(properties, schemaProperties(schema))
-      for (const name of isStringArray(schema.required) ? schema.required : []) {
-        if (spec.name === "sessions.create" && name === "projectId") continue
-        required.add(name)
-      }
+      for (const name of isStringArray(schema.required) ? schema.required : []) required.add(name)
       definitions = schema.$defs
     }
   }

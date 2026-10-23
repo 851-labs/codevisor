@@ -103,13 +103,22 @@ export const executeSkill: BuiltinSkill = {
       "# execute",
       [
         "## How it works",
-        'Pass an async arrow function of sandboxed JavaScript or TypeScript. It runs on this machine, or on the user\'s other machines through `machines`. The isolate itself has no filesystem, network, process environment, or credentials. Start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Call `status("…")` before slow steps so the user sees progress.'
+        'Pass an async arrow function of sandboxed JavaScript or TypeScript. The isolate itself has no filesystem, network, process environment, or credentials; everything goes through a machine. `const machine = machines.current` is the machine this chat runs on, and `await machines.get("macbook")` is another of the user\'s machines. Find a tool with `await machine.tools.search({ query: "<intent>" })`, inspect a match with `await machine.tools.describe.tool({ path })`, then call the exact returned path with `await machine.tools[path](args)` or `machine.tools.<server>.<tool>(args)`. Other agents go through `machine.agents` (read `codevisor-agents`). Call `status("…")` before slow steps so the user sees progress.',
+        [
+          "```js",
+          ";async () => {",
+          "  const machine = machines.current",
+          '  const hits = await machine.tools.search({ query: "open linear issues" })',
+          "  return hits.items",
+          "}",
+          "```"
+        ].join("\n")
       ].join("\n\n"),
       ["## The `description` argument", DESCRIPTION_GUIDANCE].join("\n\n"),
       [
         "## The `timeout_ms` argument and background jobs",
-        '`timeout_ms` (default 120000, maximum 600000) is how long the call waits for your code. Nothing is cancelled when it passes: the code keeps running as a background job, and the call returns `{ status: "running", jobId, running, progress, logs, outputPath, next }` instead of a result. Waits such as `codevisor.sessions.wait`, `codevisor.jobs.wait`, and Computer Use `waitFor` shorten themselves to fit the budget that is left and return `timedOut`, so your code can still return what it has.',
-        "When you get a job handle, prefer ending your turn: Codevisor sends you a hidden `<codevisor-event type=\"execution.job_finished\">` message with the job's result when it finishes, even if your harness would not otherwise wake up. To check sooner, call execute with `tools.codevisor.jobs.wait({ jobId })` (waits within that call's budget) or `tools.codevisor.jobs.get({ jobId })`; reading a finished result that way means no event is sent. `tools.codevisor.jobs.cancel({ jobId })` stops a job, and `tools.codevisor.jobs.list()` shows this session's jobs. `outputPath` is a log file with live `status()` text, console output, tool calls, and the final result. Jobs stop after 30 minutes and don't survive a server restart."
+        '`timeout_ms` (default 120000, maximum 600000) is how long the call waits for your code. Nothing is cancelled when it passes: the code keeps running as a background job, and the call returns `{ status: "running", jobId, running, progress, logs, outputPath, next }` instead of a result. Waits such as `machine.agents.wait`, `machine.tools.codevisor.jobs.wait`, and Computer Use `waitFor` shorten themselves to fit the budget that is left and return `timedOut`, so your code can still return what it has.',
+        "When you get a job handle, prefer ending your turn: Codevisor sends you a hidden `<codevisor-event type=\"execution.job_finished\">` message with the job's result when it finishes, even if your harness would not otherwise wake up. To check sooner, call execute with `machines.current.tools.codevisor.jobs.wait({ jobId })` (waits within that call's budget) or `machines.current.tools.codevisor.jobs.get({ jobId })`; reading a finished result that way means no event is sent. `machines.current.tools.codevisor.jobs.cancel({ jobId })` stops a job, and `machines.current.tools.codevisor.jobs.list()` shows your jobs. `outputPath` is a log file with live `status()` text, console output, tool calls, and the final result. Jobs stop after 30 minutes and don't survive a server restart."
       ].join("\n\n"),
       [
         "## Skills for each capability",

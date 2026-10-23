@@ -30,28 +30,52 @@ const legacy = [
 
 describe("bot instructions", () => {
   it("teach a conversational bot to message the user and wait for agent events, once", () => {
-    const upgraded = upgradeBotInstructions(legacy, "claude-code", true)
+    const upgraded = upgradeBotInstructions(legacy, true)
 
     expect(upgraded.indexOf("## Talking to the user")).toBeLessThan(
       upgraded.indexOf("## Repositories")
     )
     expect(upgraded).toContain(
-      '`sessions.create({ projectId, worktreeName, harnessId: "claude-code", title })`'
+      '1. `machines.current.agents.start({ project: projectId, isolation: "worktree", title, prompt })`'
     )
-    expect(upgraded).toContain("4. End your turn.")
-    expect(upgraded).not.toContain("sessions.wait")
-    expect(upgradeBotInstructions(upgraded, "claude-code", true)).toBe(upgraded)
+    expect(upgraded).toContain("2. End your turn.")
+    expect(upgraded).not.toContain("sessions.")
+    expect(upgraded).not.toContain("worktrees.create")
+    expect(upgradeBotInstructions(upgraded, true)).toBe(upgraded)
   })
 
-  it("keep a bot without conversation mode on its transcript and sessions.wait", () => {
-    const conversational = upgradeBotInstructions(legacy, "codex", true)
+  it("keep a bot without conversation mode on agents.status", () => {
+    const conversational = upgradeBotInstructions(legacy, true)
 
-    const plain = upgradeBotInstructions(conversational, "codex", false)
+    const plain = upgradeBotInstructions(conversational, false)
 
     expect(plain).not.toContain("## Talking to the user")
-    expect(plain).toContain("4. `sessions.wait` or `sessions.get` to follow up")
-    expect(plain).toContain('harnessId: "codex"')
-    expect(upgradeBotInstructions(legacy, "codex", false)).toBe(plain)
+    expect(plain).toContain("2. `machines.current.agents.status({ agentId })`")
+    expect(upgradeBotInstructions(legacy, false)).toBe(plain)
+  })
+
+  it("upgrade a bot written for the old messaging and event steps", () => {
+    const eventBot = [
+      "## Talking to the user",
+      "",
+      "The user chats with you like iMessage and only sees the messages you send with",
+      "`codevisor.messages.send` through the Codevisor MCP. Nothing else you write reaches them, not",
+      "even your final reply. Read the `codevisor-messages` skill before your first reply.",
+      "",
+      "## Delegating work",
+      "",
+      "1. `worktrees.create({ projectId })`",
+      '2. `sessions.create({ projectId, worktreeName, harnessId: "codex", title })`',
+      "3. `sessions.prompt({ sessionId, text })`",
+      "4. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result",
+      ""
+    ].join("\n")
+
+    const upgraded = upgradeBotInstructions(eventBot, true)
+
+    expect(upgraded).toContain("`machines.current.tools.codevisor.messages.send`")
+    expect(upgraded).not.toContain("sessions.")
+    expect(upgraded).toContain("with its complete final reply")
   })
 
   it("rewrite only the repository list, adding it before delegation when it is missing", () => {

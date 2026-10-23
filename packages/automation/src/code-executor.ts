@@ -18,7 +18,11 @@ import {
 } from "./code-executor-types.js"
 
 export * from "./code-executor-types.js"
-export { codevisorSandboxSignatures } from "./code-executor-globals.js"
+export {
+  codevisorSandboxSignatures,
+  SANDBOX_GLOBALS,
+  type SandboxGlobal
+} from "./code-executor-globals.js"
 
 const DEFAULT_ACTIVE_TIMEOUT_MS = 30_000
 const DEFAULT_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024

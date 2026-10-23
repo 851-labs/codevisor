@@ -8,7 +8,7 @@ import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, start, tempDirs } from "../test-support.js"
+import { start, tempDirs } from "../test-support.js"
 import { gatewayTransport } from "./gateway-test-support.js"
 import { field } from "./response-test-support.js"
 
@@ -124,7 +124,7 @@ describe("mcp routes", () => {
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await tools.search({ query: "missing" })'
+        code: 'async () => await machines.current.tools.search({ query: "missing" })'
       }
     })
     expect(searchedInCode.isError).not.toBe(true)
@@ -133,20 +133,20 @@ describe("mcp routes", () => {
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await tools.search({ query: "Codevisor sessions" })'
+        code: 'async () => await machines.current.tools.search({ query: "Codevisor agents list" })'
       }
     })
     expect(codevisorSearch.isError).not.toBe(true)
-    expect(JSON.stringify(codevisorSearch.content)).toContain("codevisor.sessions.list")
+    expect(JSON.stringify(codevisorSearch.content)).toContain("codevisor.agents.list")
     const codevisorProjects = await client.callTool({
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await tools["codevisor.projects.list"]({})'
+        code: 'async () => await machines.current.tools["codevisor.projects.list"]({})'
       }
     })
     expect(codevisorProjects.isError).not.toBe(true)
-    expect(JSON.stringify(codevisorProjects.content)).toContain('\\"result\\":[]')
+    expect(JSON.stringify(codevisorProjects.content)).toContain('\\"result\\":{\\"items\\":[]}')
     const controlledFolder = mkdtempSync(join(tmpdir(), "codevisor-mcp-control-"))
     tempDirs.push(controlledFolder)
     const controlled = await client.callTool({
@@ -154,46 +154,36 @@ describe("mcp routes", () => {
       arguments: {
         description: "Test workflow",
         code: `async () => {
-          const project = await tools["codevisor.projects.create"]({
+          const codevisor = machines.current.tools.codevisor;
+          const project = await codevisor.projects.create({
             id: "controlled-project",
             folderPath: ${JSON.stringify(controlledFolder)},
             name: "Controlled"
           });
-          const workspace = await tools["codevisor.workspaces.upsert"]({
+          const workspace = await codevisor.workspaces.upsert({
             workspaceId: "controlled-workspace",
-            projectId: project.id,
+            projectId: project.projectId,
             name: "Controlled workspace",
             hasCustomName: true
           });
-          const session = await tools["codevisor.sessions.create"]({
-            id: "controlled-session",
-            projectId: project.id,
-            workspaceId: workspace.id,
-            harnessId: "codex",
-            deferAgentSession: true
-          });
-          return { projectId: project.id, workspaceId: workspace.id, sessionId: session.id };
+          const listed = await codevisor.projects.list({});
+          return { projectId: project.projectId, workspaceId: workspace.workspaceId, listed: listed.items.map((item) => item.projectId) };
         }`
       }
     })
     expect(controlled.isError).not.toBe(true)
-    expect(JSON.stringify(controlled.content)).toContain("controlled-session")
-    expect(await jsonRequest(server, "/v1/sessions/controlled-session")).toMatchObject({
-      status: 200,
-      body: {
-        session: {
-          projectId: "controlled-project",
-          workspaceId: "controlled-workspace"
-        }
-      }
-    })
+    expect(JSON.stringify(controlled.content)).toContain(
+      '{\\"projectId\\":\\"controlled-project\\",\\"workspaceId\\":\\"controlled-workspace\\",\\"listed\\":[\\"controlled-project\\"]}'
+    )
     const codevisorTools = await services.mcp.tools("codevisor")
     expect(codevisorTools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "projects.create",
         "workspaces.upsert",
-        "sessions.create",
-        "sessions.prompt",
+        "agents.start",
+        "agents.message",
+        "agents.status",
+        "agents.debug.search",
         "mcps.create",
         "skills.create",
         "harnesses.list",
@@ -218,11 +208,11 @@ describe("mcp routes", () => {
       name: "execute",
       arguments: {
         description: "Test workflow",
-        code: 'async () => await tools["codevisor.projects.list"]({})'
+        code: 'async () => await machines.current.tools["codevisor.projects.list"]({})'
       }
     })
     expect(result.isError).not.toBe(true)
-    expect(JSON.stringify(result.content)).toContain('\\"result\\":[]')
+    expect(JSON.stringify(result.content)).toContain('\\"result\\":{\\"items\\":[]}')
     await client.close()
   })
 })

@@ -4,7 +4,6 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { codevisorSandboxSignatures } from "./code-executor.js"
-import { CODEVISOR_API_TOOLS } from "./codevisor-api-tools.js"
 import { makeCodevisorProvider } from "./codevisor-provider.js"
 
 const skillsRoot = join(import.meta.dirname, "..", "resources", "automation-skills")
@@ -13,26 +12,31 @@ const codevisorSkills = readdirSync(skillsRoot)
   .map((name) => ({ name, text: readFileSync(join(skillsRoot, name, "SKILL.md"), "utf8") }))
 
 const sandboxGlobals = ["machines.list", "machines.get", "clients.list"]
-const toolNames = new Set([
-  ...CODEVISOR_API_TOOLS.map((tool) => tool.name),
-  "context.current",
-  ...sandboxGlobals
-])
+const toolName = "[a-z_]+(?:\\.[a-z_]+)+"
+const providerTools = makeCodevisorProvider(
+  () => "http://unused",
+  async () => "unused"
+).tools
+const toolNames = new Set([...providerTools.map((tool) => tool.name), ...sandboxGlobals])
 const namespaces = new Set([...toolNames].map((name) => name.split(".")[0]))
 
 const referencedTools = (text: string): string[] => {
-  const viaTools = [...text.matchAll(/tools\.codevisor\.([a-z_]+\.[a-z_]+)/g)].map((m) => m[1]!)
-  const bare = [...text.matchAll(/`([a-z_]+\.[a-z_]+)\(/g)]
+  const viaTools = [...text.matchAll(new RegExp(`\\.tools\\.codevisor\\.(${toolName})`, "g"))].map(
+    (m) => m[1]!
+  )
+  const viaAgents = [...text.matchAll(/\.agents\.((?:debug\.)?[a-z_]+)\(/g)].map(
+    (m) => `agents.${m[1]!}`
+  )
+  const bare = [...text.matchAll(new RegExp(`\`(${toolName})\\(`, "g"))]
     .map((m) => m[1]!)
-    .filter((name) => namespaces.has(name.split(".")[0]))
-  return [...viaTools, ...bare]
+    .filter(
+      (name) => namespaces.has(name.split(".")[0]) && !/\.(tools|agents|clients)\./.test(name)
+    )
+  return [...viaTools, ...viaAgents, ...bare]
 }
 
 const argumentNames = new Map(
-  makeCodevisorProvider(
-    () => "http://unused",
-    async () => "unused"
-  ).tools.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties ?? {}))])
+  providerTools.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties ?? {}))])
 )
 
 const objectKeys = (text: string, start: number): string[] => {
@@ -60,8 +64,12 @@ const objectKeys = (text: string, start: number): string[] => {
 }
 
 const toolArguments = (text: string) =>
-  [...text.matchAll(/(?:tools\.codevisor\.|`)([a-z_]+\.[a-z_]+)\(\{/g)].flatMap((match) => {
-    const tool = match[1]!
+  [
+    ...text.matchAll(
+      new RegExp(`(\\.agents\\.|\\.tools\\.codevisor\\.|\`)(${toolName}|[a-z_]+)\\(\\{`, "g")
+    )
+  ].flatMap((match) => {
+    const tool = match[1] === ".agents." ? `agents.${match[2]!}` : match[2]!
     if (!argumentNames.has(tool)) return []
     return [{ tool, keys: objectKeys(text, match.index + match[0].length - 1) }]
   })
@@ -83,6 +91,18 @@ describe("managed Codevisor skills", () => {
   })
 
   it("only reference Codevisor tools that exist", () => {
+    const agents = codevisorSkills.find((skill) => skill.name === "codevisor-agents")!
+    expect(referencedTools(agents.text)).toEqual(
+      expect.arrayContaining([
+        "agents.start",
+        "agents.message",
+        "agents.debug.search",
+        "context.current"
+      ])
+    )
+    expect(toolArguments(agents.text).map(({ tool }) => tool)).toEqual(
+      expect.arrayContaining(["agents.start", "agents.status", "agents.answer"])
+    )
     for (const skill of codevisorSkills) {
       const missing = referencedTools(skill.text).filter((name) => !toolNames.has(name))
       expect({ skill: skill.name, missing }).toEqual({ skill: skill.name, missing: [] })
@@ -102,7 +122,9 @@ describe("managed Codevisor skills", () => {
     for (const declaration of [
       "declare const machines",
       "get(idOrName: string)",
-      "declare const clients",
+      "list(): Promise<{ items: Machine[] }>",
+      "agents: {",
+      "clients: { list(): Promise<{ items: Client[] }> }",
       "declare function status(",
       "declare class MachineUnavailableError",
       "declare class ClientUnavailableError"

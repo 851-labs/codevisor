@@ -19,6 +19,7 @@ import {
 import type { ExecutionJobs, ExecutionRun, RunOutcome } from "./mcp-gateway-jobs.js"
 import { makeExecutionSteps } from "./mcp-gateway-steps.js"
 import type { GatewayRuntime } from "./mcp-gateway.js"
+import { isRecord } from "./mcp-guards.js"
 import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { sandboxOutputContent } from "./mcp-sandbox-results.js"
 import { run, type UpstreamConnection } from "./mcp-support.js"
@@ -60,9 +61,9 @@ export const stillRunningText = (job: ExecutionJob): string =>
       `This call is still running in the background as job ${job.jobId}; nothing was cancelled. ` +
       `When it finishes, Codevisor sends you a hidden <codevisor-event type="execution.job_finished"> ` +
       "message with its result, so you can end your turn instead of waiting. To check sooner, run " +
-      `execute with tools.codevisor.jobs.wait({ jobId: "${job.jobId}" }) (it waits within that ` +
-      `call's budget) or tools.codevisor.jobs.get({ jobId: "${job.jobId}" }); ` +
-      `tools.codevisor.jobs.cancel({ jobId: "${job.jobId}" }) stops it. Live output is appended to outputPath.`
+      `execute with machines.current.tools.codevisor.jobs.wait({ jobId: "${job.jobId}" }) (it waits ` +
+      `within that call's budget) or machines.current.tools.codevisor.jobs.get({ jobId: "${job.jobId}" }); ` +
+      `machines.current.tools.codevisor.jobs.cancel({ jobId: "${job.jobId}" }) stops it. Live output is appended to outputPath.`
   })
 
 export const makeExecuteHandler =
@@ -156,7 +157,7 @@ const makeExecuteCall = (
         value = await deps.dispatch.invokeOnMachine(
           machine,
           path,
-          args,
+          await withCallerDefaults(deps, sessionId, path, args),
           await remoteOrigin(),
           execution.signal
         )
@@ -249,6 +250,28 @@ const describedOrigin = async (
     ...origin,
     ...(session === undefined ? {} : { sessionTitle: session.title }),
     ...bot
+  }
+}
+
+const remoteAgentStartPath = "codevisor.agents.start"
+
+const withCallerDefaults = async (
+  deps: ExecuteToolDeps,
+  sessionId: string,
+  path: string,
+  args: unknown
+): Promise<unknown> => {
+  if (path !== remoteAgentStartPath || !isRecord(args) || "callerDefaults" in args) return args
+  const caller = await run(deps.config.db.getSessionSummary(sessionId)).catch(() => undefined)
+  if (caller === undefined) return args
+  return {
+    ...args,
+    callerDefaults: {
+      harness: caller.harnessId,
+      ...(caller.configSelections === undefined
+        ? {}
+        : { configSelections: caller.configSelections })
+    }
   }
 }
 

@@ -28,7 +28,7 @@ export const targetProperties = {
 export const locatorProperty = {
   type: "object",
   description:
-    "Playwright-style locator created by tools.browser.tab.playwright or supplied as one exact locator descriptor.",
+    "Playwright-style locator created by machines.current.tools.browser.tab.playwright or supplied as one exact locator descriptor.",
   properties: {
     ref: { type: "string" },
     css: { type: "string" },

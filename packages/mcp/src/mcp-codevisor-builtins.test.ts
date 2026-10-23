@@ -11,6 +11,7 @@ import {
 } from "./mcp-automation-builtins.js"
 import {
   cleanupMcpManagerTests,
+  executeResultValue,
   listen,
   managers,
   run,
@@ -75,7 +76,7 @@ describe("Codevisor built-in tools", () => {
             name: "execute",
             arguments: {
               description: "Describe a bot tool",
-              code: `async () => tools.describe.tool({ path: ${JSON.stringify(path)} })`
+              code: `async () => machines.current.tools.describe.tool({ path: ${JSON.stringify(path)} })`
             }
           })
         ).isError !== true
@@ -102,7 +103,7 @@ describe("Codevisor built-in tools", () => {
     const tools = await manager.tools("codevisor")
     expect(tools).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ serverId: "codevisor", name: "sessions.create" })
+        expect.objectContaining({ serverId: "codevisor", name: "agents.start" })
       ])
     )
     expect((await manager.list()).find((server) => server.id === "codevisor")).toMatchObject({
@@ -142,6 +143,42 @@ describe("Codevisor built-in tools", () => {
     })
   })
 
+  it("finds skills and sandbox globals next to tools in search", async () => {
+    const { db, manager } = await testManager(providers)
+    manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
+    const project = await run(db.createProject({ folderPath: "/tmp/codevisor-search-test" }))
+    const session = await run(db.createSession({ harnessId: "codex", projectId: project.id }))
+    const gateway = await manager.issueGateway(session.id, project.id)
+    const client = new Client({ name: "codevisor-search-test", version: "1" })
+    try {
+      await client.connect(
+        sdkTransport(
+          new StreamableHTTPClientTransport(new URL(gateway.url), {
+            requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+          })
+        )
+      )
+      const searched = await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Search for agent tooling",
+          code: 'async () => (await machines.current.tools.search({ query: "start agents", limit: 50 })).items.map((item) => item.kind + ":" + (item.path ?? item.name))'
+        }
+      })
+
+      const found = executeResultValue(searched)
+      expect(found).toEqual(
+        expect.arrayContaining([
+          "tool:codevisor.agents.start",
+          "skill:codevisor-agents",
+          "global:machine.agents"
+        ])
+      )
+    } finally {
+      await client.close()
+    }
+  })
+
   it.each(["global", "machine", "project", "session"] as const)(
     "enforces a %s disable in discovery, descriptions, and direct calls on a live gateway",
     async (scope) => {
@@ -162,10 +199,14 @@ describe("Codevisor built-in tools", () => {
         )
         const execute = (code: string) =>
           client.callTool({ name: "execute", arguments: { description: "Run test code", code } })
-        const search = () => execute('async () => tools.search({ query: "sessions.create" })')
+        const search = () =>
+          execute('async () => machines.current.tools.search({ query: "agents.start" })')
         const describeTool = () =>
-          execute('async () => tools.describe.tool({ path: "codevisor.sessions.create" })')
-        const call = () => execute('async () => tools["codevisor.context.current"]({})')
+          execute(
+            'async () => machines.current.tools.describe.tool({ path: "codevisor.agents.start" })'
+          )
+        const call = () =>
+          execute('async () => machines.current.tools["codevisor.context.current"]({})')
         const inventory = async () => (await client.listTools()).tools[0]?.description
         const setEnabled = async (enabled: boolean) => {
           const changed = Promise.withResolvers<void>()
@@ -188,13 +229,13 @@ describe("Codevisor built-in tools", () => {
         }
 
         expect(await inventory()).toContain("\n- Codevisor")
-        expect(JSON.stringify((await search()).content)).toContain("codevisor.sessions.create")
+        expect(JSON.stringify((await search()).content)).toContain("codevisor.agents.start")
         expect((await describeTool()).isError).not.toBe(true)
         expect((await call()).isError).not.toBe(true)
 
         await setEnabled(false)
         expect(await inventory()).not.toContain("\n- Codevisor")
-        expect(JSON.stringify((await search()).content)).not.toContain("codevisor.sessions.create")
+        expect(JSON.stringify((await search()).content)).not.toContain("codevisor.agents.start")
         expect((await describeTool()).isError).toBe(true)
         expect(await call()).toMatchObject({
           isError: true,
@@ -205,7 +246,7 @@ describe("Codevisor built-in tools", () => {
 
         await setEnabled(true)
         expect(await inventory()).toContain("\n- Codevisor")
-        expect(JSON.stringify((await search()).content)).toContain("codevisor.sessions.create")
+        expect(JSON.stringify((await search()).content)).toContain("codevisor.agents.start")
         expect((await describeTool()).isError).not.toBe(true)
         expect((await call()).isError).not.toBe(true)
       } finally {

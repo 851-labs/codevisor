@@ -1,12 +1,10 @@
-import { randomUUID } from "node:crypto"
-
 import { REMOTE_PARENT_HEADER, jsonSchema } from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
 import type { QueryParameter } from "./codevisor-api-tool-spec.js"
 import type { CodevisorApiToolSpec } from "./codevisor-api-tools.js"
-import { pathArgumentName, pathParameterNames } from "./codevisor-tool-schema.js"
+import { callerDefault, pathArgumentName, pathParameterNames } from "./codevisor-tool-schema.js"
 import { budgetedWaitPayload } from "./codevisor-wait-budget.js"
 import { recordOrEmpty, type UnknownRecord } from "./unknown-values.js"
 
@@ -97,16 +95,13 @@ const contextDefault = (
   name: string,
   context: AutomationProviderContext
 ): string | undefined => {
-  if ((name === "id" && spec.path.startsWith("/v1/sessions/:id")) || name === "sessionId") {
-    return context.sessionId
-  }
-  if (name === "id" && spec.path.startsWith("/v1/projects/:id")) {
-    return context.projectId
-  }
+  const defaulted = callerDefault(spec, name)
+  if (defaulted === "session") return context.sessionId
+  if (defaulted === "project") return context.projectId
   return undefined
 }
 
-const loopbackBaseUrl = (value: string): URL => {
+export const loopbackBaseUrl = (value: string): URL => {
   const url = new URL(value)
   if (url.hostname === "0.0.0.0" || url.hostname === "::" || url.hostname === "[::]") {
     url.hostname = "127.0.0.1"
@@ -168,11 +163,8 @@ const bodyPayload = (
   args: UnknownRecord
 ): unknown => {
   if (spec.wrappedBody === true) return args.body
-  const createsSession = spec.name === "sessions.create"
-  const promptsSession = !createsSession && spec.name === "sessions.prompt"
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
-  if (createsSession) return sessionCreatePayload(payload, context)
-  if (promptsSession) return sessionPromptPayload(payload, context)
+  if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
   return payload
 }
 
@@ -183,27 +175,3 @@ const definedArguments = (args: UnknownRecord, names: ReadonlyArray<string>): Un
 
 const bodyPropertyNames = (schema: Schema.Constraint): ReadonlyArray<string> =>
   Object.keys(recordOrEmpty(jsonSchema(schema).properties))
-
-const sessionCreatePayload = (
-  payload: UnknownRecord,
-  context: AutomationProviderContext
-): UnknownRecord => ({
-  ...payload,
-  ...("projectId" in payload || context.projectId === undefined
-    ? {}
-    : { projectId: context.projectId }),
-  ...("parentSessionId" in payload || context.sessionId === undefined
-    ? {}
-    : { parentSessionId: context.sessionId }),
-  ...defaultWorkspaceId(payload)
-})
-
-const defaultWorkspaceId = (payload: UnknownRecord): UnknownRecord => {
-  if ("workspaceId" in payload) return {}
-  return { workspaceId: randomUUID() }
-}
-
-const sessionPromptPayload = (
-  payload: UnknownRecord,
-  context: AutomationProviderContext
-): UnknownRecord => ({ ...payload, fromSessionId: context.sessionId })

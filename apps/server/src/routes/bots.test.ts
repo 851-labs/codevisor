@@ -45,8 +45,8 @@ describe("bot routes", () => {
     expect(instructions).toContain(`\`api/\`: api (from \`${apiFolder}\``)
     expect(instructions).toContain("projectId `api-project`")
     expect(instructions).toContain("## Delegating work")
-    expect(instructions).not.toContain("`codevisor.messages.send`")
-    expect(instructions).toContain('harnessId: "codex"')
+    expect(instructions).not.toContain("`machines.current.tools.codevisor.messages.send`")
+    expect(instructions).toContain("`machines.current.agents.start({ project: projectId")
     expect(existsSync(join(root, "CLAUDE.md"))).toBe(false)
 
     const home = (await listProjects(running)).find((project) => project.id === bot.projectId)

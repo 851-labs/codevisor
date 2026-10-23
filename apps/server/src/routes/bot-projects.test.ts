@@ -52,7 +52,7 @@ describe("bot projects", () => {
     )
     const text = instructions(bot.rootPath)
     expect(text).toContain(`\`web/\`: web (from \`${webFolder}\`, projectId \`web-project\`)`)
-    expect(text).toContain("`bot.projects_add({ projectId })`")
+    expect(text).toContain("`machines.current.tools.codevisor.bot.projects_add({ projectId })`")
     expect(text.indexOf("`web/`")).toBeLessThan(text.indexOf("## Delegating work"))
     expect(
       listEvents(running.services).filter(

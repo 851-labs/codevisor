@@ -8,10 +8,10 @@ import {
 } from "./code-executor.js"
 
 const roster = {
-  machines: [
-    { id: "studio", name: "Mac Studio", online: true, isCurrent: true },
-    { id: "mbp-1", name: "MacBook Pro", online: true, isCurrent: false },
-    { id: "mbp-2", name: "MacBook Air", online: false, isCurrent: false }
+  items: [
+    { machineId: "studio", name: "Mac Studio", online: true, isCurrent: true },
+    { machineId: "mbp-1", name: "MacBook Pro", online: true, isCurrent: false },
+    { machineId: "mbp-2", name: "MacBook Air", online: false, isCurrent: false }
   ]
 }
 
@@ -54,7 +54,7 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
         }
         return {
           built, described, byId: byId.name, failures,
-          currentIsTools: current.tools === tools && machines.current.tools === tools,
+          local: await current.tools.xcode.build({ scheme: "Local" }),
           current: machines.current,
           listed: await machines.list()
         };
@@ -72,9 +72,9 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
         '"macbook" matches several machines: MacBook Pro (mbp-1), MacBook Air (mbp-2). Pass a machine id.',
         'No machine matches "nope". Machines: Mac Studio (studio), MacBook Pro (mbp-1), MacBook Air (mbp-2)'
       ],
-      currentIsTools: true,
-      current: { id: "studio", name: "Mac Studio", isCurrent: true },
-      listed: roster.machines
+      local: { ran: "xcode.build" },
+      current: { machineId: "studio", name: "Mac Studio", isCurrent: true },
+      listed: { items: roster.items }
     })
     expect(calls.find((call) => call.path === "xcode.build")).toEqual({
       path: "xcode.build",
@@ -96,39 +96,43 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
   it("lists clients with their origin and binds each client's controls to its id and machine", async () => {
     const { calls, result } = await execute(
       `async () => {
-        const local = await clients.list();
+        const local = (await machines.current.clients.list()).items;
         const origin = local.find((client) => client.isOrigin);
         await origin.navigate({ workspaceId: "w" });
         await origin.layout({ action: "new_tab" });
         await origin.openPage({ page: "home" });
         await origin.window({ action: "focus" });
         await origin.context();
-        const remote = await (await machines.get("mbp-1")).clients.list();
+        const remote = (await (await machines.get("mbp-1")).clients.list()).items;
         await remote[0].navigate({ workspaceId: "r" });
         return { local, remote };
       }`,
       (call) => {
         if (call.path === "codevisor.machines.list") return roster
         if (call.path === "codevisor.clients.list" && call.target === undefined) {
-          return [
-            { clientId: "window-1", name: "Studio main", platform: "macos" },
-            { clientId: "window-2", name: "Studio side", platform: "macos" }
-          ]
+          return {
+            items: [
+              { clientId: "window-1", name: "Studio main", platform: "macos" },
+              { clientId: "window-2", name: "Studio side", platform: "macos" },
+              "not a client"
+            ]
+          }
         }
         if (call.path === "codevisor.clients.list") {
-          return { clients: [{ id: "phone", name: "iPhone", platform: "ios", isOrigin: false }] }
+          return {
+            items: [{ clientId: "phone", name: "iPhone", platform: "ios", isOrigin: false }]
+          }
         }
         return {}
       }
     )
 
     expect(result.error).toBeUndefined()
-    const studio = { id: "studio", name: "Mac Studio" }
+    const studio = { machineId: "studio", name: "Mac Studio" }
     expect(result.result).toEqual({
       local: [
         {
           clientId: "window-1",
-          id: "window-1",
           name: "Studio main",
           platform: "macos",
           machine: studio,
@@ -136,7 +140,6 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
         },
         {
           clientId: "window-2",
-          id: "window-2",
           name: "Studio side",
           platform: "macos",
           machine: studio,
@@ -145,11 +148,11 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
       ],
       remote: [
         {
-          id: "phone",
+          clientId: "phone",
           name: "iPhone",
           platform: "ios",
           isOrigin: false,
-          machine: { id: "mbp-1", name: "MacBook Pro" }
+          machine: { machineId: "mbp-1", name: "MacBook Pro" }
         }
       ]
     })
@@ -173,8 +176,8 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
   it("searches every online machine and tags each match with its machine", async () => {
     const { calls, result } = await execute(
       `async () => ({
-        all: await tools.search({ query: "build", machines: "all", limit: 2 }),
-        local: await tools.search({ query: "build" })
+        all: await machines.current.tools.search({ query: "build", machines: "all", limit: 2 }),
+        local: await machines.current.tools.search({ query: "build" })
       })`,
       (call) => {
         if (call.path === "codevisor.machines.list") return roster
@@ -188,13 +191,18 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
     expect(result.error).toBeUndefined()
     expect(result.result).toEqual({
       all: {
-        items: [{ path: "local.build", score: 10, machine: { id: "studio", name: "Mac Studio" } }],
+        items: [
+          { path: "local.build", score: 10, machine: { machineId: "studio", name: "Mac Studio" } }
+        ],
         total: 1,
         unavailable: [
-          { machine: { id: "mbp-1", name: "MacBook Pro" }, error: "MacBook Pro search failed" },
-          { machine: { id: "mbp-2", name: "MacBook Air" }, error: "offline" }
+          {
+            machine: { machineId: "mbp-1", name: "MacBook Pro" },
+            error: "MacBook Pro search failed"
+          },
+          { machine: { machineId: "mbp-2", name: "MacBook Air" }, error: "offline" }
         ],
-        workflow: expect.stringContaining("machines.get(item.machine.id)")
+        workflow: expect.stringContaining("machines.get(item.machine.machineId)")
       },
       local: { items: [{ path: "local.build", score: 10 }], total: 1 }
     })
@@ -228,7 +236,7 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
         });
         const failures = [];
         for (const path of ["machine.lost", "client.closed", "coded.other", "plain.tool", "internal.bug"]) {
-          await tools[path]({}).catch((error) => failures.push(describe(error)));
+          await machines.current.tools[path]({}).catch((error) => failures.push(describe(error)));
         }
         return failures;
       }`,
@@ -291,12 +299,46 @@ describe.sequential("sandbox machines, clients, status, and typed errors", () =>
     ])
   })
 
+  it("exposes no bare tools or clients globals, only machine handles", async () => {
+    const { result } = await execute(
+      `async () => ({ tools: typeof tools, clients: typeof clients, machines: typeof machines })`,
+      () => undefined
+    )
+
+    expect(result.result).toEqual({ tools: "undefined", clients: "undefined", machines: "object" })
+  })
+
+  it("routes machine.agents calls to that machine's codevisor agent tools", async () => {
+    const { calls, result } = await execute(
+      `async () => {
+        const remote = await machines.get("mbp-1");
+        await machines.current.agents.start({ title: "t", prompt: "p", isolation: "worktree" });
+        await remote.agents.status({ agentId: "a" });
+        await remote.agents.debug.search({ agentId: "a", query: "error" });
+        return "ok";
+      }`,
+      (call) => (call.path === "codevisor.machines.list" ? roster : {})
+    )
+
+    expect(result.result).toBe("ok")
+    const remoteTarget = { machine: "mbp-1", machineName: "MacBook Pro" }
+    expect(
+      calls
+        .filter((call) => call.path !== "codevisor.machines.list")
+        .map(({ path, args, target }) => [path, args, target])
+    ).toEqual([
+      ["codevisor.agents.start", { title: "t", prompt: "p", isolation: "worktree" }, undefined],
+      ["codevisor.agents.status", { agentId: "a" }, remoteTarget],
+      ["codevisor.agents.debug.search", { agentId: "a", query: "error" }, remoteTarget]
+    ])
+  })
+
   it("forwards status() text to the host as the script runs", async () => {
     const statuses: Array<string> = []
     const { result } = await execute(
       `async () => {
         status("Listing issues");
-        await tools.linear.list_issues({});
+        await machines.current.tools.linear.list_issues({});
         status({ step: 2 });
         status();
         return "done";

@@ -1,6 +1,6 @@
 ---
 name: codevisor-messages
-description: How a Codevisor bot talks to the user. The user sees a chat like iMessage and only ever reads messages you send with tools.codevisor.messages.send, never your other output. Covers sending replies and files, keeping messages short, staying quiet when there is nothing to say, and reacting to Codevisor events such as a sub-agent finishing. Read before your first reply and whenever you're unsure whether or what to send.
+description: How a Codevisor bot talks to the user. The user sees a chat like iMessage and only ever reads messages you send with machines.current.tools.codevisor.messages.send, never your other output. Covers sending replies and files, keeping messages short, staying quiet when there is nothing to say, and reacting to Codevisor events such as a sub-agent finishing. Read before your first reply and whenever you're unsure whether or what to send.
 ---
 
 # Codevisor messages
@@ -11,14 +11,16 @@ You are a bot. The user talks to you in a chat that looks like iMessage. They se
 
 ```js
 ;async () =>
-  tools.codevisor.messages.send({ text: "On it. I'll start an agent on the flaky login test." })
+  machines.current.tools.codevisor.messages.send({
+    text: "On it. I'll start an agent on the flaky login test."
+  })
 ```
 
 Attach files by absolute path on this machine. Images show inline, and other files show as cards they can open:
 
 ```js
 ;async () =>
-  tools.codevisor.messages.send({
+  machines.current.tools.codevisor.messages.send({
     text: "Here's the new settings screen.",
     attachments: [{ path: "/tmp/settings.png" }]
   })
@@ -47,13 +49,13 @@ Attach files by absolute path on this machine. Images show inline, and other fil
 Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-event>`. For example, one arrives when an agent you started finishes a turn:
 
 ```
-<codevisor-event type="session.turn_ended" sessionId="…" title="Fix flaky login test" stopReason="end_turn">
+<codevisor-event type="session.turn_ended" agentId="…" title="Fix flaky login test" stopReason="end_turn">
 …the agent's last message…
 </codevisor-event>
 ```
 
-Messages another agent sends you with `sessions.prompt` arrive the same way, as `<codevisor-event type="session.message" from="…" title="…">`. They come from that agent, not the user, and the user doesn't see them. Pass along what matters with `messages.send`. Like the user's messages, they can reach you mid-task.
+Messages another agent sends you with `agents.message` arrive the same way, as `<codevisor-event type="session.message" from="…" title="…">`. They come from that agent, not the user, and the user doesn't see them. Pass along what matters with `messages.send`. Like the user's messages, they can reach you mid-task.
 
 When the user adds or removes one of your repositories, a `<codevisor-event type="bot.projects_changed">` tells you which one. It needs no reply.
 
-Use them instead of waiting. After you start or prompt an agent, end your turn rather than blocking on `sessions.wait`; the event arrives when the agent is done (for sessions you didn't start, `sessions.subscribe` first), so you stay free to answer the user in the meantime. To dig deeper, read the agent's transcript with `sessions.get`.
+Use them instead of waiting. After you start or message an agent, end your turn rather than blocking on `agents.wait`; the event carries the agent's complete final reply when it is done (for agents you didn't start, `agents.subscribe` first), so you stay free to answer the user in the meantime. `agents.status` reads the same reply later. See `codevisor-agents`.

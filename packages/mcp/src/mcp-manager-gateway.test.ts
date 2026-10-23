@@ -54,7 +54,7 @@ describe("MCP manager gateway", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: 'async () => tools.search({ query: "project" })'
+                code: 'async () => machines.current.tools.search({ query: "project" })'
               }
             })
           ).content
@@ -70,7 +70,7 @@ describe("MCP manager gateway", () => {
                 name: "execute",
                 arguments: {
                   description: "Run test code",
-                  code: 'async () => tools.search({ query: "issues" })'
+                  code: 'async () => machines.current.tools.search({ query: "issues" })'
                 }
               })
             ).content
@@ -82,7 +82,7 @@ describe("MCP manager gateway", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: 'async () => tools.search({ query: "project" })'
+                code: 'async () => machines.current.tools.search({ query: "project" })'
               }
             })
           ).isError
@@ -107,7 +107,7 @@ describe("MCP manager gateway", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: 'async () => tools.search({ query: "project" })'
+                code: 'async () => machines.current.tools.search({ query: "project" })'
               }
             })
           ).isError
@@ -229,10 +229,10 @@ describe("MCP manager gateway", () => {
           arguments: {
             description: "Run test code",
             code: `async () => {
-            const matches = await tools.search({ query: "note", limit: 5 });
+            const matches = await machines.current.tools.search({ query: "note", limit: 5 });
             const path = matches.items[0].path;
-            const schema = await tools.describe.tool({ path });
-            const result = await tools[path]({ text: "from code" });
+            const schema = await machines.current.tools.describe.tool({ path });
+            const result = await machines.current.tools[path]({ text: "from code" });
             return { matches, result, schema };
           }`
           }
@@ -254,7 +254,7 @@ describe("MCP manager gateway", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: `async () => tools["plugin.owner.notes."]({})`
+                code: `async () => machines.current.tools["plugin.owner.notes."]({})`
               }
             })
           ).isError
@@ -265,7 +265,7 @@ describe("MCP manager gateway", () => {
               name: "execute",
               arguments: {
                 description: "Run test code",
-                code: `async () => tools.describe.tool({ path: "plugin.owner.notes.missing" })`
+                code: `async () => machines.current.tools.describe.tool({ path: "plugin.owner.notes.missing" })`
               }
             })
           ).isError
@@ -381,7 +381,7 @@ describe("MCP manager gateway", () => {
         name: "execute",
         arguments: {
           description: "Run test code",
-          code: 'async () => tools["plugin.owner.notes.notes_add"]({})'
+          code: 'async () => machines.current.tools["plugin.owner.notes.notes_add"]({})'
         }
       })
       expect(executed.isError).toBe(true)
@@ -390,7 +390,7 @@ describe("MCP manager gateway", () => {
         name: "execute",
         arguments: {
           description: "Run test code",
-          code: 'async () => tools.describe.tool({ path: "plugin.owner.notes.notes_add" })'
+          code: 'async () => machines.current.tools.describe.tool({ path: "plugin.owner.notes.notes_add" })'
         }
       })
       expect(described.isError).toBe(true)

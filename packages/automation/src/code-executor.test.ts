@@ -14,7 +14,7 @@ describe.sequential("Codevisor code executor", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async (): Promise<number> => {
-        const response = await tools.browser.tabs({ window: "current" });
+        const response = await machines.current.tools.browser.tabs({ window: "current" });
         console.log("tabs", response.count);
         emit({ type: "text", text: "visible output" });
         return response.count + 1;
@@ -40,7 +40,7 @@ describe.sequential("Codevisor code executor", () => {
     const reached = Promise.withResolvers<void>()
     const release = Promise.withResolvers<unknown>()
     const execution = makeCodeExecutor().execute(
-      `async () => { console.log("before"); await tools.slow.call({}); console.warn("after"); }`,
+      `async () => { console.log("before"); await machines.current.tools.slow.call({}); console.warn("after"); }`,
       {
         invoke: async () => {
           reached.resolve()
@@ -73,11 +73,11 @@ describe.sequential("Codevisor code executor", () => {
     )
   })
 
-  it("provides a native-shaped Playwright locator facade on tools.browser.tab", async () => {
+  it("provides a native-shaped Playwright locator facade on machines.current.tools.browser.tab", async () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const submit = tools.browser.tab.playwright.getByRole("button", {
+        const submit = machines.current.tools.browser.tab.playwright.getByRole("button", {
           name: "Submit",
           exact: true
         });
@@ -118,7 +118,7 @@ describe.sequential("Codevisor code executor", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const page = tools.browser.tab.playwright;
+        const page = machines.current.tools.browser.tab.playwright;
         const row = page.locator(".row").filter({
           hasText: "Ada",
           has: page.getByRole("button", { name: "Edit" }),
@@ -128,7 +128,7 @@ describe.sequential("Codevisor code executor", () => {
         const count = await nested.count();
         const frameText = await page.frameLocator("iframe").locator("p").allTextContents();
         const value = await nested.evaluate((element, suffix) => element.textContent + suffix, "!");
-        const cdpCapability = await tools.browser.tab.capabilities.get("cdp");
+        const cdpCapability = await machines.current.tools.browser.tab.capabilities.get("cdp");
         const cdp = await cdpCapability.send("Runtime.evaluate", {
           expression: "1 + 1"
         });
@@ -177,7 +177,7 @@ describe.sequential("Codevisor code executor", () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
-        const browser = tools.browser;
+        const browser = machines.current.tools.browser;
         await browser.nameSession("compatibility test");
         const tab = await browser.tabs.new();
         await tab.goto("https://example.com/");
@@ -228,7 +228,7 @@ describe.sequential("Codevisor code executor", () => {
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const execution = makeCodeExecutor({ activeTimeoutMs: 1000, now: () => now }).execute(
-      `async () => (await tools.browser.choose({})).answer`,
+      `async () => (await machines.current.tools.browser.choose({})).answer`,
       {
         invoke: async () => {
           entered.resolve()
@@ -260,7 +260,7 @@ describe.sequential("Codevisor code executor", () => {
 
   it("lets sandbox code catch intentional tool errors without leaking defects", async () => {
     const visible = await makeCodeExecutor().execute(
-      `async () => tools.browser.click({}).catch(error => error.message)`,
+      `async () => machines.current.tools.browser.click({}).catch(error => error.message)`,
       {
         invoke: async () => {
           throw new CodeExecutionToolError("The click target is unavailable")
@@ -268,7 +268,7 @@ describe.sequential("Codevisor code executor", () => {
       }
     )
     const hidden = await makeCodeExecutor().execute(
-      `async () => tools.browser.click({}).catch(error => error.message)`,
+      `async () => machines.current.tools.browser.click({}).catch(error => error.message)`,
       {
         invoke: async () => {
           throw new Error("secret internal detail")
@@ -281,11 +281,14 @@ describe.sequential("Codevisor code executor", () => {
   })
 
   it("reports an uncaught tool error without the host's stack frames", async () => {
-    const result = await makeCodeExecutor().execute(`async () => tools.computer.click({})`, {
-      invoke: async () => {
-        throw new CodeExecutionToolError("That element is gone or changed")
+    const result = await makeCodeExecutor().execute(
+      `async () => machines.current.tools.computer.click({})`,
+      {
+        invoke: async () => {
+          throw new CodeExecutionToolError("That element is gone or changed")
+        }
       }
-    })
+    )
 
     expect(result.error).toBe("That element is gone or changed")
   })
@@ -294,7 +297,7 @@ describe.sequential("Codevisor code executor", () => {
     const controller = new AbortController()
     const entered = Promise.withResolvers<void>()
     const execution = makeCodeExecutor().execute(
-      `async () => tools.browser.choose({})`,
+      `async () => machines.current.tools.browser.choose({})`,
       {
         invoke: () => {
           entered.resolve()

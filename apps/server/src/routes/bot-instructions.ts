@@ -17,20 +17,30 @@ const BOT_MESSAGING_SECTION: ReadonlyArray<string> = [
   "## Talking to the user",
   "",
   "The user chats with you like iMessage and only sees the messages you send with",
-  "`codevisor.messages.send` through the Codevisor MCP. Nothing else you write reaches them, not",
+  "`machines.current.tools.codevisor.messages.send` through the Codevisor MCP. Nothing else you write reaches them, not",
   "even your final reply. Read the `codevisor-messages` skill before your first reply.",
   ""
 ]
 
-const WAIT_FOLLOW_UP_STEP = "4. `sessions.wait` or `sessions.get` to follow up"
+const START_STEP =
+  '1. `machines.current.agents.start({ project: projectId, isolation: "worktree", title, prompt })`'
 
-const LEGACY_CREATE_STEP = "2. `sessions.create({ projectId, worktreeName, title })`"
-
-const createStep = (harnessId: string): string =>
-  `2. \`sessions.create({ projectId, worktreeName, harnessId: "${harnessId}", title })\``
+const WAIT_FOLLOW_UP_STEP =
+  "2. `machines.current.agents.status({ agentId })` or `machines.current.agents.wait({ agentIds })` to follow up"
 
 const EVENT_FOLLOW_UP_STEP =
-  "4. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result"
+  "2. End your turn. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its complete final reply"
+
+const LEGACY_MESSAGING_LINE =
+  "`codevisor.messages.send` through the Codevisor MCP. Nothing else you write reaches them, not"
+
+const LEGACY_DELEGATION_STEPS: ReadonlyArray<RegExp> = [
+  /^1\. `worktrees\.create\(\{ projectId \}\)`$/m,
+  /^2\. `sessions\.create\(\{ projectId, worktreeName,.*\}\)`\n/m,
+  /^3\. `sessions\.prompt\(\{ sessionId, text \}\)`\n/m,
+  /^4\. `sessions\.wait` or `sessions\.get` to follow up$/m,
+  /^4\. End your turn\. When the agent finishes, Codevisor sends you a `<codevisor-event>` with its result$/m
+]
 
 const REPOSITORIES_HEADING = "## Repositories"
 
@@ -44,8 +54,8 @@ const repositoriesSection = (repositories: ReadonlyArray<BotRepository>): Readon
   ),
   "",
   "When a task needs a repository that isn't listed, add it with",
-  "`bot.projects_add({ projectId })`, using a projectId from `projects.list`. Remove one you no",
-  "longer need with `bot.projects_remove({ projectId })`.",
+  "`machines.current.tools.codevisor.bot.projects_add({ projectId })`, using a projectId from",
+  "`projects.list`. Remove one you no longer need with `bot.projects_remove({ projectId })`.",
   ""
 ]
 
@@ -94,24 +104,29 @@ const messagingSection = (conversational: boolean): ReadonlyArray<string> =>
 const followUpStep = (conversational: boolean): string =>
   conversational ? EVENT_FOLLOW_UP_STEP : WAIT_FOLLOW_UP_STEP
 
-export const upgradeBotInstructions = (
-  text: string,
-  harnessId: string,
-  conversational: boolean
-): string => {
+export const upgradeBotInstructions = (text: string, conversational: boolean): string => {
   const section = BOT_MESSAGING_SECTION.join("\n") + "\n"
-  const steps = text
-    .replace(
-      conversational ? WAIT_FOLLOW_UP_STEP : EVENT_FOLLOW_UP_STEP,
-      followUpStep(conversational)
-    )
-    .replace(LEGACY_CREATE_STEP, createStep(harnessId))
+  const steps = withCurrentDelegationSteps(text, conversational).replace(
+    conversational ? WAIT_FOLLOW_UP_STEP : EVENT_FOLLOW_UP_STEP,
+    followUpStep(conversational)
+  )
   if (!conversational) return steps.replace(section, "")
   if (steps.includes(BOT_MESSAGING_SECTION[0]!)) return steps
   const repositories = steps.indexOf("## Repositories")
   return repositories === -1
     ? `${steps.trimEnd()}\n\n${section}`
     : steps.slice(0, repositories) + section + steps.slice(repositories)
+}
+
+const withCurrentDelegationSteps = (text: string, conversational: boolean): string => {
+  const [worktreeStep, createStep, promptStep, waitStep, eventStep] = LEGACY_DELEGATION_STEPS
+  return text
+    .replace(LEGACY_MESSAGING_LINE, BOT_MESSAGING_SECTION[3]!)
+    .replace(worktreeStep!, START_STEP)
+    .replace(createStep!, "")
+    .replace(promptStep!, "")
+    .replace(waitStep!, followUpStep(conversational))
+    .replace(eventStep!, followUpStep(conversational))
 }
 
 export const upgradeAllBotInstructions = async (
@@ -122,7 +137,7 @@ export const upgradeAllBotInstructions = async (
     try {
       const current = readFileSync(path, "utf8")
       const upgraded = replaceRepositories(
-        upgradeBotInstructions(current, bot.harnessId, bot.conversational),
+        upgradeBotInstructions(current, bot.conversational),
         await botRepositories(services, bot)
       )
       if (upgraded !== current) writeFileSync(path, upgraded)
@@ -145,7 +160,6 @@ export const syncBotRepositories = async (
 
 export const botInstructions = (
   name: string,
-  harnessId: string,
   conversational: boolean,
   repositories: ReadonlyArray<BotRepository>
 ): string =>
@@ -160,13 +174,11 @@ export const botInstructions = (
     ...repositoriesSection(repositories),
     "## Delegating work",
     "",
-    "Give each task to a sub-agent in a workspace of its own with the Codevisor MCP, on an",
-    "isolated worktree of the repository it changes. Use the projectId above; this folder is",
-    "not a project you can branch from.",
+    "Give each task to a sub-agent in a workspace of its own with the Codevisor MCP's execute",
+    "tool, on an isolated worktree of the repository it changes. Use the projectId above; this",
+    "folder is not a project you can branch from.",
     "",
-    "1. `worktrees.create({ projectId })`",
-    createStep(harnessId),
-    "3. `sessions.prompt({ sessionId, text })`",
+    START_STEP,
     followUpStep(conversational),
     "",
     "Workspaces your sub-agents work in, and any they create, are listed under this bot in the",
@@ -177,13 +189,12 @@ export const botInstructions = (
 export const writeInstructions = (
   slug: string,
   name: string,
-  harnessId: string,
   conversational: boolean,
   repositories: ReadonlyArray<BotRepository>
 ) => {
   writeFileSync(
     join(botPath(slug), "AGENTS.md"),
-    botInstructions(name, harnessId, conversational, repositories)
+    botInstructions(name, conversational, repositories)
   )
 }
 

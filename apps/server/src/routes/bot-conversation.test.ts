@@ -35,7 +35,7 @@ describe("bot conversations", () => {
     const { running, bot } = await startBot()
     expect(bot.conversational).toBe(true)
     expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toContain(
-      "`codevisor.messages.send`"
+      "`machines.current.tools.codevisor.messages.send`"
     )
 
     await prompt(running, bot.sessionId, "hello", "client-1")
@@ -245,7 +245,7 @@ describe("bot conversations", () => {
     const report = running.agents.prompts.find(
       ([, input]) => typeof input === "string" && input.startsWith("<codevisor-event")
     )?.[1]
-    expect(report).toContain(`sessionId="${childId}" title="Fix login" stopReason="end_turn"`)
+    expect(report).toContain(`agentId="${childId}" title="Fix login" stopReason="end_turn"`)
     expect(report).toContain("Echo: fix it")
     await waitFor(() => endedTurns(running, bot.sessionId) === 1)
     expect(await transcript(running, bot.sessionId)).toEqual([])

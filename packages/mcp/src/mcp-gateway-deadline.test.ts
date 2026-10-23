@@ -88,7 +88,7 @@ describe("execute deadline", () => {
         name: "execute",
         arguments: {
           description: "Read Music",
-          code: 'async () => tools.computer.get_app_state({ app: "Music" })',
+          code: 'async () => machines.current.tools.computer.get_app_state({ app: "Music" })',
           timeout_ms: 5_000
         }
       })
@@ -124,7 +124,7 @@ describe("execute deadline", () => {
           name: "execute",
           arguments: {
             description: "List apps",
-            code: "async () => tools.computer.list_apps({})"
+            code: "async () => machines.current.tools.computer.list_apps({})"
           }
         })
       )

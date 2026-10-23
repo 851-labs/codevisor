@@ -136,8 +136,8 @@ describe("gateway machines and execution annotations", () => {
             phase: error.phase,
             machineName: error.machineName
           }));
-          const context = await tools.codevisor.context.current({});
-          return { built, lost, context, currentIsTools: machines.current.tools === tools };
+          const context = await machines.current.tools.codevisor.context.current({});
+          return { built, lost, context, bareTools: typeof tools };
         }`
       }
       const executed = await client.callTool({ name: "execute", arguments: args })
@@ -152,12 +152,12 @@ describe("gateway machines and execution annotations", () => {
           machineName: "MacBook Pro"
         },
         context: {
-          sessionId: session.id,
+          agentId: session.id,
           projectId: project.id,
-          machine: { id: "studio", name: "Mac Studio" },
+          machine: { machineId: "studio", name: "Mac Studio" },
           clientId: "window-1"
         },
-        currentIsTools: true
+        bareTools: "undefined"
       })
       const origin = {
         machineId: "studio",
@@ -356,10 +356,10 @@ describe("gateway machines and execution annotations", () => {
         arguments: {
           description: "Read the Linear issue",
           code: `async () => {
-            await tools.browser.navigate({ url: "https://linear.app/codevisor/issue/ABC-1" });
-            await tools.browser.snapshot({});
-            await tools.browser.screenshot({});
-            await tools.browser.tabs({ action: "list" });
+            await machines.current.tools.browser.navigate({ url: "https://linear.app/codevisor/issue/ABC-1" });
+            await machines.current.tools.browser.snapshot({});
+            await machines.current.tools.browser.screenshot({});
+            await machines.current.tools.browser.tabs({ action: "list" });
             return true;
           }`
         }
@@ -466,6 +466,51 @@ describe("gateway machines and execution annotations", () => {
     }
   })
 
+  it("starts an agent on another machine with the caller's harness and config", async () => {
+    const { db, manager, remoteCalls } = await studioGateway()
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-remote-start" }))
+    const session = await run(
+      db.createSession({
+        harnessId: "codex",
+        projectId: project.id,
+        title: "Plan it",
+        configSelections: { model: "gpt-6", reasoning: "high" }
+      })
+    )
+    const issued = await manager.issueGateway(session.id, project.id)
+    const client = await connectClient(issued)
+    try {
+      const start = {
+        title: "Build it",
+        prompt: "Build the app",
+        isolation: "worktree",
+        project: "app"
+      }
+      await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Start an agent on the MacBook",
+          code: `async () => (await machines.get("macbook")).agents.start(${JSON.stringify(start)})`
+        }
+      })
+
+      expect(remoteCalls.map(({ path, args }) => ({ path, args }))).toEqual([
+        {
+          path: "codevisor.agents.start",
+          args: {
+            ...start,
+            callerDefaults: {
+              harness: "codex",
+              configSelections: { model: "gpt-6", reasoning: "high" }
+            }
+          }
+        }
+      ])
+    } finally {
+      await client.close()
+    }
+  })
+
   it("runs calls from another machine under a scoped session labelled with the caller", async () => {
     const { computerContexts, manager } = await studioGateway()
     const origin: GatewayOrigin = {
@@ -483,8 +528,8 @@ describe("gateway machines and execution annotations", () => {
       agentLabel: "Fix the build (from MacBook Pro)"
     })
     expect(await manager.invokeRemoteGatewayCall(origin, "codevisor.context.current", {})).toEqual({
-      sessionId: "remote2:mbp:chat-7",
-      machine: { id: "studio", name: "Mac Studio" }
+      agentId: "remote2:mbp:chat-7",
+      machine: { machineId: "studio", name: "Mac Studio" }
     })
     await expect(
       manager.invokeRemoteGatewayCall(origin, "plugin.owner.notes.notes_add", {})

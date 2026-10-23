@@ -307,7 +307,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     }
     if (path === "describe.tool") {
       if (typeof input.path !== "string") {
-        throw new Error("tools.describe.tool expects { path: string }")
+        throw new Error("machine.tools.describe.tool expects { path: string }")
       }
       return describeCatalogPath(projectId, sessionId, input.path)
     }
