@@ -8,8 +8,9 @@ import { describe, expect, it } from "vitest"
 import { makeEventFanout } from "../server.js"
 import { makeServices, run, tempDirs } from "../test-support.js"
 import { readAgentItem, searchAgentTranscript } from "./agent-debug.js"
+import { agentState } from "./agent-state.js"
 import { pageRecordsNewestFirst } from "./agent-transcript.js"
-import { agentState, agentStatusOf } from "./agents.js"
+import { agentStatusOf } from "./agents.js"
 import { sessionEventSink } from "./session-events.js"
 
 const bigOutput = `${"build log line\n".repeat(6_000)}FAILED: 3 tests`

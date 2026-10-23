@@ -249,7 +249,7 @@ describe("Codevisor MCP provider", () => {
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {
       requests.push({ url, init })
-      return jsonResponse({ sessions: [], timedOut: true })
+      return jsonResponse({ items: [], timedOut: true })
     })
     const provider = makeCodevisorProvider(
       () => "http://localhost:43210",
@@ -277,7 +277,7 @@ describe("Codevisor MCP provider", () => {
     expect(requests[1]!.url.pathname).toBe("/v1/jobs/j1/wait")
     expect(requests[1]!.init.signal).toBe(signal)
     expect(requestJson(requests[1]!.init)).toEqual({ timeoutMs: 1_000 })
-    expect(JSON.parse(textContent(untouched))).toEqual({ sessions: [], timedOut: true })
+    expect(JSON.parse(textContent(untouched))).toEqual({ items: [], timedOut: true })
   })
 
   it("gates consent-marked tools on an explicit confirm argument", async () => {

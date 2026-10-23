@@ -23,7 +23,7 @@ export interface ArchiveJobs {
 }
 
 interface ArchiveJobQueue extends ArchiveJobs {
-  readonly enqueue: <A>(job: () => Promise<A>) => Promise<A | undefined>
+  readonly enqueue: <A>(job: () => Promise<A>) => Promise<A>
 }
 
 const queues = new WeakMap<CodevisorServerServices, ArchiveJobQueue>()
@@ -38,8 +38,8 @@ const makeQueue = (): ArchiveJobQueue => {
   }
   return {
     enqueue: (job) => {
-      const result = tail.then(job).catch(swallowError)
-      tail = result.then(swallowError)
+      const result = tail.then(job)
+      tail = result.then(swallowError, swallowError)
       track(tail)
       return result
     },
@@ -70,7 +70,18 @@ const findWorkspace = async (
     (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
   )
 
-export const enqueueWorkspaceArchive = async (
+export const enqueueWorkspaceArchive = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  config: CodevisorServerConfig,
+  workspace: Workspace,
+  runtime?: WorkspaceRuntime
+): Promise<ReadonlyArray<string>> =>
+  archiveWorkspaceAndWait(services, fanout, config, workspace, runtime).catch(
+    (): ReadonlyArray<string> => []
+  )
+
+export const archiveWorkspaceAndWait = (
   services: CodevisorServerServices,
   fanout: EventFanout,
   config: CodevisorServerConfig,
@@ -78,7 +89,7 @@ export const enqueueWorkspaceArchive = async (
   runtime?: WorkspaceRuntime
 ): Promise<ReadonlyArray<string>> => {
   const queue = queueFor(services)
-  const kept = await queue.enqueue(() =>
+  return queue.enqueue(() =>
     withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
       if ((await findWorkspace(services, workspace.id))?.isArchived === false) return []
       if (runtime !== undefined) await retireWorkspaceRuntime(services, runtime)
@@ -88,7 +99,6 @@ export const enqueueWorkspaceArchive = async (
       return archived.keptArtifacts
     })
   )
-  return kept ?? []
 }
 
 const publishKeptArtifacts = async (
@@ -124,6 +134,12 @@ export const applyWorkspaceArchiveEffects = async (
   }
 
   const restored = await restoreWorkspaceWorktree(services, config.id, workspace)
+  if (restored.unrestoredArtifacts.length > 0) {
+    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
+      ...restored.workspace,
+      archiveUnrestoredArtifacts: restored.unrestoredArtifacts
+    })
+  }
   if (!restored.restoredFiles) {
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
       ...restored.workspace,

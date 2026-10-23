@@ -1,6 +1,5 @@
 import {
   AgentItemKind,
-  type AgentState,
   type AgentStatus,
   type SessionSummary,
   type TranscriptPage
@@ -14,6 +13,8 @@ import {
   readAgentItem,
   searchAgentTranscript
 } from "./agent-debug.js"
+import { archiveAgent, listAgents, waitForAgents } from "./agent-lifecycle.js"
+import { agentState } from "./agent-state.js"
 import { rejectSyncThrows, type RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
 import { finalAssistantText } from "./session-event-router.js"
@@ -24,6 +25,11 @@ export const routeAgents = (route: RouteContext): Promise<boolean> =>
 
 const dispatchAgentRoute = (route: RouteContext): Promise<boolean> => {
   const { request, url } = route
+  if (request.method === "GET" && url.pathname === "/v1/agents") return listAgents(route)
+  if (request.method === "POST" && url.pathname === "/v1/agents/wait") return waitForAgents(route)
+
+  const archiveId = matchRoute(url.pathname, "/v1/agents/:id/archive")
+  if (archiveId !== undefined && request.method === "POST") return archiveAgent(route, archiveId)
   if (request.method !== "GET") return Promise.resolve(false)
 
   const statusId = matchRoute(url.pathname, "/v1/agents/:id")
@@ -93,19 +99,6 @@ export const agentStatusOf = (
   ...(lastReply.length === 0 ? {} : { lastReply }),
   ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
 })
-
-export const agentState = (
-  session: SessionSummary,
-  page: Pick<TranscriptPage, "pendingQuestion" | "backgroundTasks">
-): AgentState => {
-  if (session.sidebarState === "errored") return "errored"
-  if (page.pendingQuestion !== undefined || session.actionRequired === true) return "waitingForUser"
-  if (session.sidebarState === "inProgress" || hasLiveBackgroundTasks(page)) return "working"
-  return "idle"
-}
-
-const hasLiveBackgroundTasks = (page: Pick<TranscriptPage, "backgroundTasks">): boolean =>
-  (page.backgroundTasks ?? []).length > 0
 
 const knownAgent = async (
   db: RouteContext["services"]["db"],

@@ -45,6 +45,8 @@ export const jsonResponse = (body: unknown, status = 200): Response =>
 export interface FakeOptions {
   readonly bare?: boolean
   readonly projects?: ReadonlyArray<unknown>
+  readonly failing?: ReadonlyArray<string>
+  readonly unreachable?: ReadonlyArray<string>
 }
 
 export const fakeServer = (
@@ -61,6 +63,9 @@ export const fakeServer = (
       const method = String(init.method)
       const query = Object.fromEntries(input.searchParams)
       requests.push({ method, path, query, body })
+      if (options.unreachable?.includes(`${method} ${path}`) === true) {
+        return Promise.reject("connection reset")
+      }
       return respond({ method, path, query, body }, sessions, listed, options)
     })
   )
@@ -73,6 +78,9 @@ const respond = (
   listed: ReadonlyArray<unknown>,
   options: FakeOptions
 ): Response => {
+  if (options.failing?.includes(`${method} ${path}`) === true) {
+    return jsonResponse({ error: `${method} ${path} broke` }, 500)
+  }
   const detail = /^\/v1\/sessions\/([^/]+)$/.exec(path)
   if (method === "GET" && detail !== null) {
     const found = sessions[detail[1]!]
@@ -81,7 +89,25 @@ const respond = (
       : jsonResponse({ session: found })
   }
   if (method === "GET" && path === "/v1/projects") return jsonResponse(options.projects ?? projects)
-  if (method === "GET" && path === "/v1/sessions") return jsonResponse(listed)
+  if (method === "GET" && path === "/v1/agents") return jsonResponse({ items: listed })
+  if (method === "POST" && path === "/v1/agents/wait") {
+    return jsonResponse({
+      items: [
+        { agentId: "a", state: "working" },
+        { agentId: "b", state: "waitingForUser", pendingQuestion: question }
+      ],
+      timedOut: false
+    })
+  }
+  const archive = /^\/v1\/agents\/([^/]+)\/archive$/.exec(path)
+  if (method === "POST" && archive !== null) {
+    return jsonResponse({
+      agentId: archive[1],
+      workspaceId: `${archive[1]}-workspace`,
+      archived: true,
+      keptArtifacts: ["tmp/"]
+    })
+  }
   if (method === "POST" && path.endsWith("/worktrees")) {
     return jsonResponse({
       id: "tree-1",
@@ -105,15 +131,6 @@ const respond = (
     return jsonResponse({ accepted: true, sessionId: "child", delivered: "sent" })
   }
   if (path.includes("/subscriptions")) return subscriptionsResponse(method)
-  if (method === "POST" && path === "/v1/sessions/wait") {
-    return jsonResponse({
-      sessions: [
-        { id: "a", sidebarState: "inProgress" },
-        { id: "b", sidebarState: "idle", actionRequiredKind: "question", pendingQuestion: question }
-      ],
-      timedOut: false
-    })
-  }
   if (method === "GET" && path.endsWith("/transcript")) {
     return jsonResponse({
       items: [{ id: "item-1", ...transcriptItem }],

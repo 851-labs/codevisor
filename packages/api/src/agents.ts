@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { Labels } from "./labels.js"
 import { QuestionPayload } from "./session-updates.js"
 
 export const AgentState = Schema.Literals(["working", "waitingForUser", "idle", "errored"])
@@ -43,3 +44,48 @@ export const AgentItem = Schema.Struct({
   output: Schema.optional(Schema.Unknown)
 })
 export type AgentItem = typeof AgentItem.Type
+
+export const AgentSummary = Schema.Struct({
+  agentId: Schema.String,
+  title: Schema.String,
+  state: AgentState,
+  projectId: Schema.String,
+  harness: Schema.String,
+  workspaceId: Schema.optional(Schema.String),
+  worktreeName: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels),
+  parentAgentId: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String)
+})
+export type AgentSummary = typeof AgentSummary.Type
+
+export const AgentList = Schema.Struct({ items: Schema.Array(AgentSummary) })
+export type AgentList = typeof AgentList.Type
+
+export const WaitForAgentsRequest = Schema.Struct({
+  agentIds: Schema.Array(Schema.String),
+  until: Schema.optional(Schema.Array(AgentState)),
+  timeoutMs: Schema.optional(Schema.Number)
+})
+export type WaitForAgentsRequest = typeof WaitForAgentsRequest.Type
+
+export const WaitedAgent = Schema.Struct({
+  agentId: Schema.String,
+  state: AgentState,
+  pendingQuestion: Schema.optional(QuestionPayload)
+})
+export type WaitedAgent = typeof WaitedAgent.Type
+
+export const WaitForAgentsResponse = Schema.Struct({
+  items: Schema.Array(WaitedAgent),
+  timedOut: Schema.Boolean
+})
+export type WaitForAgentsResponse = typeof WaitForAgentsResponse.Type
+
+export const AgentArchiveResult = Schema.Struct({
+  agentId: Schema.String,
+  workspaceId: Schema.String,
+  archived: Schema.Boolean,
+  keptArtifacts: Schema.Array(Schema.String)
+})
+export type AgentArchiveResult = typeof AgentArchiveResult.Type

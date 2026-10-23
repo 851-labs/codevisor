@@ -1,11 +1,12 @@
 import {
+  AgentArchiveResult,
+  AgentList,
+  AgentState,
   DEFAULT_SESSION_WAIT_TIMEOUT_MS,
   SessionEventType,
   SessionSubscription,
-  SessionSummary,
   TranscriptPage,
-  WaitForSessionsResponse,
-  type SessionSidebarState
+  WaitForAgentsResponse
 } from "@codevisor/api"
 import { Schema } from "effect"
 
@@ -15,9 +16,6 @@ import { agentTool, type AgentTool, type AgentToolContext } from "./codevisor-ag
 import { apiTool } from "./codevisor-api-tool-spec.js"
 import { namedRecord } from "./codevisor-tool-shapes.js"
 import { budgetedWaitPayload } from "./codevisor-wait-budget.js"
-
-const AgentState = Schema.Literals(["working", "waitingForUser", "idle", "errored"])
-type AgentState = typeof AgentState.Type
 
 const ListAgentsArgs = Schema.Struct({
   state: Schema.optional(AgentState),
@@ -46,7 +44,7 @@ const TranscriptArgs = Schema.Struct({
 })
 
 const listPageSize = 50
-const waitBudget = apiTool("agents.wait", "", "POST", "/v1/sessions/wait", {
+const waitBudget = apiTool("agents.wait", "", "POST", "/v1/agents/wait", {
   budgetedWait: { field: "timeoutMs", defaultMs: DEFAULT_SESSION_WAIT_TIMEOUT_MS }
 })
 
@@ -65,7 +63,7 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   ),
   agentTool(
     "agents.archive",
-    "Archive the workspace of an agent you started once its work is merged or no longer needed. Its chats stop, its branch name is released, and its checkout is kept as a restorable snapshot; ignored files such as tmp/ screenshots are kept and come back on restore. Push or open the PR first if the branch should stay. Refuses an agent that shares your own workspace.",
+    "Archive the workspace of an agent you started once its work is merged or no longer needed, and wait until it is done. Its chats stop, its branch name is released, and its checkout is kept as a restorable snapshot; ignored files such as tmp/ screenshots are kept too, listed in keptArtifacts, and come back on restore. If the archive fails, this call fails and the checkout stays in place. Push or open the PR first if the branch should stay. Refuses an agent that shares your own workspace.",
     AgentIdArgs,
     (tool, args) => archiveAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
   ),
@@ -90,7 +88,7 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   ),
   agentTool(
     "agents.wait",
-    "Wait inside this call until any listed agent reaches one of the until states (default idle, waitingForUser, errored). Returns every listed agent's state and pendingQuestion, and timedOut when none matched in time. timeoutMs defaults to 60000, is capped at 300000, and shrinks to fit this execute call's budget (clampedToMs). For anything longer than a minute or two, end your turn and let the event arrive instead.",
+    "Wait inside this call until any listed agent reaches one of the until states (default idle, waitingForUser, errored). Returns every listed agent's state (an idle agent with live background tasks counts as working, and an idle one with queued messages hasn't settled) and pendingQuestion, and timedOut when none matched in time. timeoutMs defaults to 60000, is capped at 300000, and shrinks to fit this execute call's budget (clampedToMs). For anything longer than a minute or two, end your turn and let the event arrive instead.",
     WaitArgs,
     (tool, args) => waitForAgents(tool, Schema.decodeUnknownSync(WaitArgs)(args))
   ),
@@ -106,17 +104,18 @@ const listAgents = async (
   tool: AgentToolContext,
   args: typeof ListAgentsArgs.Type
 ): Promise<unknown> => {
-  const listed = Schema.decodeUnknownSync(Schema.Array(SessionSummary))(
-    await tool.api("GET", "/v1/sessions", {
-      query: { parentSessionId: args.parentAgentId, label: args.label }
+  const projectId = await listedProjectId(tool, args.project)
+  const listed = Schema.decodeUnknownSync(AgentList)(
+    await tool.api("GET", "/v1/agents", {
+      query: { state: args.state, projectId, label: args.label, parentAgentId: args.parentAgentId }
     })
   )
-  const projectId = await listedProjectId(tool, args.project)
-  const matching = listed.filter((session) => listedAgent(session, args.state, projectId))
   const offset = pageOffset(args.next)
-  const page = matching.slice(offset, offset + listPageSize).map(agentListItem)
   const nextOffset = offset + listPageSize
-  return { items: page, ...(nextOffset < matching.length ? { next: String(nextOffset) } : {}) }
+  return {
+    items: listed.items.slice(offset, nextOffset),
+    ...(nextOffset < listed.items.length ? { next: String(nextOffset) } : {})
+  }
 }
 
 const listedProjectId = async (
@@ -127,46 +126,11 @@ const listedProjectId = async (
   return resolveProjectId(tool, project, {})
 }
 
-const listedAgent = (
-  session: SessionSummary,
-  state: AgentState | undefined,
-  projectId: string | undefined
-): boolean =>
-  (state === undefined || summaryState(session) === state) &&
-  (projectId === undefined || session.projectId === projectId)
-
 const pageOffset = (next: string | undefined): number => {
   const offset = Number(next ?? 0)
   if (!Number.isSafeInteger(offset) || offset < 0)
     throw new Error("next must come from an earlier agents.list")
   return offset
-}
-
-const agentListItem = (session: SessionSummary) => ({
-  agentId: session.id,
-  title: session.title,
-  state: summaryState(session),
-  projectId: session.projectId,
-  harness: session.harnessId,
-  ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
-  ...(session.worktreeName === undefined ? {} : { worktreeName: session.worktreeName }),
-  ...(session.labels === undefined ? {} : { labels: session.labels }),
-  ...(session.parentSessionId === undefined ? {} : { parentAgentId: session.parentSessionId }),
-  ...(session.updatedAt === undefined ? {} : { updatedAt: session.updatedAt })
-})
-
-const summaryState = (
-  session: Pick<SessionSummary, "sidebarState" | "actionRequired">
-): AgentState => sidebarAgentState(session.sidebarState, session.actionRequired === true)
-
-const sidebarAgentState = (
-  sidebar: SessionSidebarState | undefined,
-  actionRequired: boolean
-): AgentState => {
-  if (sidebar === "errored") return "errored"
-  if (sidebar === "waitingForUser" || actionRequired) return "waitingForUser"
-  if (sidebar === "inProgress") return "working"
-  return "idle"
 }
 
 const archiveAgent = async (tool: AgentToolContext, agentId: string): Promise<unknown> => {
@@ -176,10 +140,9 @@ const archiveAgent = async (tool: AgentToolContext, agentId: string): Promise<un
   if (await sharesCallerWorkspace(tool, agent.workspaceId)) {
     throw new Error(`Agent ${agentId} shares your workspace; archiving it would archive you too`)
   }
-  await tool.api("PATCH", `/v1/workspaces/${encodeURIComponent(agent.workspaceId)}`, {
-    body: { isArchived: true }
-  })
-  return { agentId: agent.id, workspaceId: agent.workspaceId, archived: true }
+  return Schema.decodeUnknownSync(AgentArchiveResult)(
+    await tool.api("POST", `/v1/agents/${encodeURIComponent(agent.id)}/archive`)
+  )
 }
 
 const sharesCallerWorkspace = async (
@@ -235,37 +198,19 @@ const subscriptionItem = (subscription: SessionSubscription) => ({
   createdAt: subscription.createdAt
 })
 
-const untilStates: Readonly<Record<AgentState, ReadonlyArray<SessionSidebarState>>> = {
-  working: ["inProgress"],
-  waitingForUser: ["waitingForUser"],
-  idle: ["idle"],
-  errored: ["errored"]
-}
-
 const waitForAgents = async (
   tool: AgentToolContext,
   args: typeof WaitArgs.Type
 ): Promise<unknown> => {
-  const request = budgetedWaitPayload(waitBudget, waitBody(args), tool.context)
-  const waited = Schema.decodeUnknownSync(WaitForSessionsResponse)(
-    await tool.api("POST", "/v1/sessions/wait", { body: request.payload })
+  const request = budgetedWaitPayload(waitBudget, args, tool.context)
+  const waited = Schema.decodeUnknownSync(WaitForAgentsResponse)(
+    await tool.api("POST", "/v1/agents/wait", { body: request.payload })
   )
   return {
-    items: waited.sessions.map((session) => ({
-      agentId: session.id,
-      state: sidebarAgentState(session.sidebarState, session.actionRequiredKind !== undefined),
-      ...(session.pendingQuestion === undefined ? {} : { pendingQuestion: session.pendingQuestion })
-    })),
-    timedOut: waited.timedOut,
+    ...waited,
     ...(request.clampedToMs === undefined ? {} : { clampedToMs: request.clampedToMs })
   }
 }
-
-const waitBody = (args: typeof WaitArgs.Type) => ({
-  ids: args.agentIds,
-  ...(args.until === undefined ? {} : { until: args.until.flatMap((state) => untilStates[state]) }),
-  ...(args.timeoutMs === undefined ? {} : { timeoutMs: args.timeoutMs })
-})
 
 const transcript = async (
   tool: AgentToolContext,

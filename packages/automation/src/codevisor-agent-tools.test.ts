@@ -18,76 +18,30 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+const summary = (agentId: string) => ({
+  agentId,
+  title: `Agent ${agentId}`,
+  state: "idle",
+  projectId: "project-1",
+  harness: "claude-code"
+})
+
 describe("agents.list", () => {
-  const listed = [
-    session("a", {
-      sidebarState: "inProgress",
-      parentSessionId: "caller",
-      labels: { role: "worker" }
-    }),
-    session("b", {
-      sidebarState: "waitingForUser",
-      workspaceId: "w-b",
-      worktreeName: "b",
-      updatedAt: "now"
-    }),
-    session("c", { sidebarState: "idle", actionRequired: true, projectId: "other" }),
-    session("d", { sidebarState: "errored" }),
-    session("e", { sidebarState: "unread" })
-  ]
+  it("forwards its filters, resolving a project name to its id", async () => {
+    const requests = fakeServer({}, [summary("a")])
 
-  it("returns slim summaries filtered by state and project, forwarding parent and label filters", async () => {
-    const requests = fakeServer({}, listed)
-
-    const working = await call(local, "agents.list", {
+    const listed = await call(local, "agents.list", {
       state: "working",
+      project: "Codevisor",
       parentAgentId: "caller",
       label: "role=worker"
     })
-    const waiting = await call(local, "agents.list", {
-      state: "waitingForUser",
-      project: "Codevisor"
-    })
-    const all = await call(local, "agents.list", {})
 
-    expect(working).toEqual({
-      items: [
-        {
-          agentId: "a",
-          title: "Agent a",
-          state: "working",
-          projectId: "project-1",
-          harness: "claude-code",
-          labels: { role: "worker" },
-          parentAgentId: "caller"
-        }
-      ]
-    })
-    expect(waiting).toEqual({
-      items: [
-        {
-          agentId: "b",
-          title: "Agent b",
-          state: "waitingForUser",
-          projectId: "project-1",
-          harness: "claude-code",
-          workspaceId: "w-b",
-          worktreeName: "b",
-          updatedAt: "now"
-        }
-      ]
-    })
-    expect(all).toMatchObject({
-      items: [
-        { agentId: "a", state: "working" },
-        { agentId: "b", state: "waitingForUser" },
-        { agentId: "c", state: "waitingForUser" },
-        { agentId: "d", state: "errored" },
-        { agentId: "e", state: "idle" }
-      ]
-    })
-    expect(requests.find((request) => request.path === "/v1/sessions")?.query).toEqual({
-      parentSessionId: "caller",
+    expect(listed).toEqual({ items: [summary("a")] })
+    expect(requests.find((request) => request.path === "/v1/agents")?.query).toEqual({
+      state: "working",
+      projectId: "project-1",
+      parentAgentId: "caller",
       label: "role=worker"
     })
   })
@@ -95,7 +49,7 @@ describe("agents.list", () => {
   it("pages fifty at a time with next", async () => {
     fakeServer(
       {},
-      Array.from({ length: 51 }, (_, index) => session(`s${index}`))
+      Array.from({ length: 51 }, (_, index) => summary(`s${index}`))
     )
 
     const first = await call(local, "agents.list", {})
@@ -111,7 +65,7 @@ describe("agents.list", () => {
 })
 
 describe("agents.archive", () => {
-  it("archives a worker's workspace but refuses one shared with the caller or missing", async () => {
+  it("waits for the archive and reports what it kept, but refuses a shared or missing workspace", async () => {
     const requests = fakeServer({
       caller,
       worker: session("worker", { workspaceId: "worker-workspace" }),
@@ -122,11 +76,14 @@ describe("agents.archive", () => {
     const archived = await call(local, "agents.archive", { agentId: "worker" })
     const fromRemote = await call(remote, "agents.archive", { agentId: "helper" })
 
-    expect(archived).toEqual({ agentId: "worker", workspaceId: "worker-workspace", archived: true })
-    expect(fromRemote).toMatchObject({ archived: true })
-    expect(bodyOf(requests, "PATCH", "/v1/workspaces/worker-workspace")).toEqual({
-      isArchived: true
+    expect(archived).toEqual({
+      agentId: "worker",
+      workspaceId: "worker-workspace",
+      archived: true,
+      keptArtifacts: ["tmp/"]
     })
+    expect(fromRemote).toMatchObject({ archived: true })
+    expect(requests.some((request) => request.method === "PATCH")).toBe(false)
     await expect(call(local, "agents.archive", { agentId: "helper" })).rejects.toThrow(
       "shares your workspace"
     )
@@ -177,21 +134,21 @@ describe("agent subscriptions", () => {
 })
 
 describe("agents.wait", () => {
-  it("maps agent states to sidebar states and back, clamped to the execute budget", async () => {
+  it("sends agent states and ids, clamped to the execute budget", async () => {
     const requests = fakeServer({})
     const tight = { sessionId: "caller", deadline: performance.now() + 30_000 }
 
     const waited = await call(tight, "agents.wait", {
       agentIds: ["a", "b"],
-      until: ["working", "waitingForUser", "idle", "errored"],
+      until: ["working", "idle"],
       timeoutMs: 120_000
     })
     const roomy = await call(local, "agents.wait", { agentIds: ["a"] })
 
-    const sent = expectRecord(bodyOf(requests, "POST", "/v1/sessions/wait"), "wait body")
+    const sent = expectRecord(bodyOf(requests, "POST", "/v1/agents/wait"), "wait body")
     expect(sent).toEqual({
-      ids: ["a", "b"],
-      until: ["inProgress", "waitingForUser", "idle", "errored"],
+      agentIds: ["a", "b"],
+      until: ["working", "idle"],
       timeoutMs: expect.any(Number)
     })
     expect(sent.timeoutMs).toBeLessThan(30_000)
@@ -204,7 +161,7 @@ describe("agents.wait", () => {
       clampedToMs: sent.timeoutMs
     })
     expect(roomy).not.toHaveProperty("clampedToMs")
-    expect(requests.at(-1)?.body).toEqual({ ids: ["a"] })
+    expect(requests.at(-1)?.body).toEqual({ agentIds: ["a"] })
   })
 })
 

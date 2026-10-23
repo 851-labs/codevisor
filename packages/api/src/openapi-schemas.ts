@@ -1,6 +1,14 @@
 import { Schema } from "effect"
 
-import { AgentItem, AgentSearchResult, AgentStatus } from "./agents.js"
+import {
+  AgentArchiveResult,
+  AgentItem,
+  AgentList,
+  AgentSearchResult,
+  AgentStatus,
+  WaitForAgentsRequest,
+  WaitForAgentsResponse
+} from "./agents.js"
 import { AddBotProjectRequest, Bot, CreateBotRequest, UpdateBotRequest } from "./bots.js"
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
@@ -222,6 +230,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/skills/import-remote": ImportRemoteSkillRequest,
   "POST /v1/skills/discover-remote": DiscoverRemoteSkillsRequest,
   "POST /v1/sessions": CreateSessionRequest,
+  "POST /v1/agents/wait": WaitForAgentsRequest,
   "POST /v1/sessions/wait": WaitForSessionsRequest,
   "POST /v1/sessions/:id/subscriptions": CreateSessionSubscriptionRequest,
   "POST /v1/jobs/:jobId/wait": WaitForExecutionJobRequest,
@@ -367,7 +376,10 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/skills/discover-remote": DiscoverRemoteSkillsResult,
   "DELETE /v1/skills/:name": SkillsList,
   "GET /v1/navigation": NavigationSnapshot,
+  "GET /v1/agents": AgentList,
+  "POST /v1/agents/wait": WaitForAgentsResponse,
   "GET /v1/agents/:id": AgentStatus,
+  "POST /v1/agents/:id/archive": AgentArchiveResult,
   "GET /v1/agents/:id/search": AgentSearchResult,
   "GET /v1/agents/:id/items/:itemId": AgentItem,
   "GET /v1/sessions": arrayOf(SessionSummary),

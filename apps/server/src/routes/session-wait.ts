@@ -63,11 +63,34 @@ export const waitForSessions = async (
   request: WaitForSessionsRequest,
   signal: AbortSignal
 ): Promise<WaitForSessionsResponse> => {
-  const ids = [...new Set(request.ids.map((id) => id.toLowerCase()))]
-  if (ids.length === 0) throw new HttpFailure(400, "ids must name at least one session")
   const until = new Set(request.until ?? DEFAULT_SESSION_WAIT_UNTIL)
+  const waited = await waitUntilSettled(db, fanout, {
+    ids: request.ids,
+    timeoutMs: request.timeoutMs,
+    signal,
+    settled: (session) => settledIn(db, session, until),
+    describe: (session) => waitedSession(db, session)
+  })
+  return { sessions: waited.items, timedOut: waited.timedOut }
+}
+
+export interface SettleWait<A> {
+  readonly ids: ReadonlyArray<string>
+  readonly timeoutMs: number | undefined
+  readonly signal: AbortSignal
+  readonly settled: (session: SessionSummary) => Promise<boolean>
+  readonly describe: (session: SessionSummary) => Promise<A>
+}
+
+export const waitUntilSettled = async <A>(
+  db: CodevisorDatabaseService,
+  fanout: EventFanout,
+  wait: SettleWait<A>
+): Promise<{ readonly items: ReadonlyArray<A>; readonly timedOut: boolean }> => {
+  const ids = [...new Set(wait.ids.map((id) => id.toLowerCase()))]
+  if (ids.length === 0) throw new HttpFailure(400, "ids must name at least one session")
   const timeoutMs = Math.min(
-    Math.max(0, request.timeoutMs ?? DEFAULT_SESSION_WAIT_TIMEOUT_MS),
+    Math.max(0, wait.timeoutMs ?? DEFAULT_SESSION_WAIT_TIMEOUT_MS),
     MAX_SESSION_WAIT_TIMEOUT_MS
   )
   const known = new Set((await run(db.listSessions)).map((session) => session.id))
@@ -88,7 +111,7 @@ export const waitForSessions = async (
       .then(async () => {
         if (woken) return
         const session = await run(db.getSessionSummary(id)).catch(() => undefined)
-        if (session === undefined || (await settledIn(db, session, until))) {
+        if (session === undefined || (await wait.settled(session))) {
           changed = true
           wake()
         }
@@ -101,7 +124,7 @@ export const waitForSessions = async (
   const unsubscribe = fanout.subscribe((event) => {
     if (wakingKinds.has(event.kind) && ids.includes(event.subjectId)) void check(event.subjectId)
   })
-  signal.addEventListener("abort", wake)
+  wait.signal.addEventListener("abort", wake)
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     await Promise.all(ids.map(check))
@@ -113,17 +136,17 @@ export const waitForSessions = async (
       ids.map((id) => run(db.getSessionSummary(id)).catch(() => undefined))
     )
     return {
-      sessions: await Promise.all(
+      items: await Promise.all(
         current.flatMap((session) => {
           if (session === undefined) return []
-          return [waitedSession(db, session)]
+          return [wait.describe(session)]
         })
       ),
       timedOut: !changed
     }
   } finally {
     clearTimeout(timer)
-    signal.removeEventListener("abort", wake)
+    wait.signal.removeEventListener("abort", wake)
     unsubscribe()
   }
 }
