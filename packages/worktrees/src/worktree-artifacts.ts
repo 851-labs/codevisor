@@ -1,12 +1,33 @@
-import type { Dirent } from "node:fs"
-import { lstat, mkdir, readdir, rename, rm } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { existsSync, type Dirent } from "node:fs"
+import { lstat, mkdir, readdir, rename, rm, rmdir } from "node:fs/promises"
+import { basename, dirname, join } from "node:path"
 
 import { runGit } from "./git.js"
 import { heavyGit as heavy, scratchIndexConfig as gitConfig } from "./working-state.js"
 
-const rebuildablePattern =
-  /(^|\/)(node_modules|\.venv|venv|__pycache__|target|dist|build|\.build|DerivedData|\.cache|out|\.next|\.turbo|\.gradle|\.pytest_cache|coverage|\.DS_Store)(\/|$)/
+const rebuildableNames = [
+  "node_modules",
+  ".venv",
+  "venv",
+  "__pycache__",
+  "target",
+  "dist",
+  "build",
+  ".build",
+  "DerivedData",
+  ".cache",
+  "out",
+  ".next",
+  ".turbo",
+  ".gradle",
+  ".pytest_cache",
+  "coverage",
+  ".DS_Store"
+]
+
+const rebuildablePattern = new RegExp(
+  `(^|/)(${rebuildableNames.map((name) => name.replaceAll(".", "\\.")).join("|")})(/|$)`
+)
 
 export const meaningfulIgnoredPaths = (paths: ReadonlyArray<string>): ReadonlyArray<string> =>
   paths.filter((path) => !rebuildablePattern.test(path))
@@ -15,11 +36,8 @@ export const listKeptArtifacts = async (
   worktreeDir: string,
   env?: NodeJS.ProcessEnv
 ): Promise<ReadonlyArray<string>> => {
-  try {
-    return meaningfulIgnoredPaths(nulSeparated(await listIgnoredPaths(worktreeDir, env)))
-  } catch {
-    return []
-  }
+  if (!existsSync(worktreeDir)) return []
+  return meaningfulIgnoredPaths(nulSeparated(await listIgnoredPaths(worktreeDir, env)))
 }
 
 export const keepArtifacts = async (
@@ -29,15 +47,18 @@ export const keepArtifacts = async (
 ): Promise<ReadonlyArray<string>> => {
   const kept = await listKeptArtifacts(worktreeDir, env)
   for (const path of kept) await moveInto(join(worktreeDir, path), join(artifactsDir, path))
+  for (const path of kept) await pruneRebuildable(join(artifactsDir, path))
   return kept
 }
 
 export const returnKeptArtifacts = async (
   artifactsDir: string,
   worktreeDir: string
-): Promise<void> => {
-  await moveMissingEntries(artifactsDir, worktreeDir)
-  await rm(artifactsDir, { recursive: true, force: true })
+): Promise<ReadonlyArray<string>> => {
+  if (!existsSync(artifactsDir)) return []
+  const unrestored = await moveMissingEntries(artifactsDir, worktreeDir, "")
+  if (unrestored.length === 0) await rm(artifactsDir, { recursive: true, force: true })
+  return unrestored
 }
 
 const listIgnoredPaths = (worktreeDir: string, env?: NodeJS.ProcessEnv): Promise<string> =>
@@ -57,14 +78,44 @@ const moveInto = async (source: string, target: string): Promise<void> => {
   await rename(source, target)
 }
 
-const moveMissingEntries = async (from: string, to: string): Promise<void> => {
-  const entries = await readdir(from, { withFileTypes: true }).catch((): Array<Dirent> => [])
-  for (const entry of entries)
-    await moveIfMissing(entry, join(from, entry.name), join(to, entry.name))
+const moveMissingEntries = async (
+  from: string,
+  to: string,
+  relative: string
+): Promise<ReadonlyArray<string>> => {
+  const entries = await readdir(from, { withFileTypes: true })
+  const unrestored: Array<string> = []
+  for (const entry of entries) {
+    const path = join(relative, entry.name)
+    unrestored.push(
+      ...(await moveIfMissing(entry, join(from, entry.name), join(to, entry.name), path))
+    )
+  }
+  if (unrestored.length === 0) await rmdir(from)
+  return unrestored
 }
 
-const moveIfMissing = async (entry: Dirent, source: string, target: string): Promise<void> => {
+const moveIfMissing = async (
+  entry: Dirent,
+  source: string,
+  target: string,
+  path: string
+): Promise<ReadonlyArray<string>> => {
   const existing = await lstat(target).catch(() => undefined)
-  if (existing === undefined) return rename(source, target)
-  if (entry.isDirectory() && existing.isDirectory()) return moveMissingEntries(source, target)
+  if (existing === undefined) {
+    await moveInto(source, target)
+    return []
+  }
+  if (entry.isDirectory() && existing.isDirectory()) return moveMissingEntries(source, target, path)
+  return [path]
+}
+
+const pruneRebuildable = async (path: string): Promise<void> => {
+  const stats = await lstat(path)
+  if (!stats.isDirectory()) return
+  if (rebuildableNames.includes(basename(path))) {
+    await rm(path, { recursive: true, force: true })
+    return
+  }
+  for (const entry of await readdir(path)) await pruneRebuildable(join(path, entry))
 }

@@ -216,20 +216,26 @@ export const archiveWorkspaceWorktree = async (
   return { keptArtifacts, purged: trashed.purged }
 }
 
+export interface RestoredWorkspace {
+  readonly workspace: Workspace
+  readonly restoredFiles: boolean
+  readonly unrestoredArtifacts: ReadonlyArray<string>
+}
+
 export const restoreWorkspaceWorktree = async (
   services: CodevisorServerServices,
   serverId: string,
   workspace: Workspace
-): Promise<{ readonly workspace: Workspace; readonly restoredFiles: boolean }> =>
+): Promise<RestoredWorkspace> =>
   withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
     const found = await findArchivedWorktreeFor(services, serverId, workspace)
-    if (found === undefined) return { workspace, restoredFiles: true }
+    if (found === undefined) return { workspace, restoredFiles: true, unrestoredArtifacts: [] }
     const { rootDirectory, worktreeName, archived } = found
     if (archived === undefined) {
       const existing = (await run(services.db.listWorktrees(workspace.projectId))).find(
         (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
       )
-      return { workspace, restoredFiles: existing !== undefined }
+      return { workspace, restoredFiles: existing !== undefined, unrestoredArtifacts: [] }
     }
 
     const project = await getProjectOrFail(services.db, workspace.projectId)
@@ -250,7 +256,7 @@ export const restoreWorkspaceWorktree = async (
       takenNames: taken,
       env: environment
     })
-    await returnKeptArtifacts(
+    const unrestoredArtifacts = await returnKeptArtifacts(
       archivedArtifactsPath(archived.id),
       worktreePathBeside(workspace.projectId, rootDirectory, restored.name)
     )
@@ -273,7 +279,7 @@ export const restoreWorkspaceWorktree = async (
         await run(services.db.updateSession(session.id, { worktreeName: restored.name }))
       }
     }
-    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot }
+    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot, unrestoredArtifacts }
   })
 
 export interface WorkspaceGitCheckout {

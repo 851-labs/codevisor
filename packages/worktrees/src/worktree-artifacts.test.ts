@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -82,7 +82,7 @@ describe("archived worktree artifacts", () => {
     expect(git(repo, "status", "--porcelain")).toBe("")
   })
 
-  it("keeps the restored file when a kept artifact collides with it", async () => {
+  it("keeps a colliding artifact in the store and reports it instead of deleting it", async () => {
     const { root } = makeGitRepo()
     const artifactsDir = join(root, "kept")
     const restorePath = join(root, "restored")
@@ -90,11 +90,61 @@ describe("archived worktree artifacts", () => {
     write(join(artifactsDir, "tmp", "shot.png"), "pixels")
     write(join(restorePath, "notes.md"), "restored\n")
 
-    await returnKeptArtifacts(artifactsDir, restorePath)
+    expect(await returnKeptArtifacts(artifactsDir, restorePath)).toEqual(["notes.md"])
 
     expect(readFileSync(join(restorePath, "notes.md"), "utf8")).toBe("restored\n")
     expect(readFileSync(join(restorePath, "tmp", "shot.png"), "utf8")).toBe("pixels")
-    expect(existsSync(artifactsDir)).toBe(false)
+    expect(readFileSync(join(artifactsDir, "notes.md"), "utf8")).toBe("artifact\n")
+    expect(existsSync(join(artifactsDir, "tmp"))).toBe(false)
+  })
+
+  it("keeps an artifact whose destination is a symlink", async () => {
+    const { root } = makeGitRepo()
+    const artifactsDir = join(root, "kept")
+    const restorePath = join(root, "restored")
+    write(join(artifactsDir, "tmp", "shot.png"), "pixels")
+    mkdirSync(join(root, "elsewhere"))
+    mkdirSync(restorePath)
+    symlinkSync(join(root, "elsewhere"), join(restorePath, "tmp"))
+
+    expect(await returnKeptArtifacts(artifactsDir, restorePath)).toEqual(["tmp"])
+    expect(readFileSync(join(artifactsDir, "tmp", "shot.png"), "utf8")).toBe("pixels")
+    expect(existsSync(join(root, "elsewhere", "shot.png"))).toBe(false)
+  })
+
+  it("fails instead of keeping nothing when it can't list the ignored files", async () => {
+    const { root } = makeGitRepo()
+    const notARepo = join(root, "plain")
+    write(join(notARepo, ".env"), "SECRET=1\n")
+
+    await expect(
+      keepArtifacts(notARepo, join(root, "kept"), {
+        ...process.env,
+        GIT_DIR: join(root, "missing")
+      })
+    ).rejects.toThrow()
+    expect(readFileSync(join(notARepo, ".env"), "utf8")).toBe("SECRET=1\n")
+  })
+
+  it("fails a restore it can't read instead of reporting success", async () => {
+    const { root } = makeGitRepo()
+    write(join(root, "kept"), "not a folder")
+
+    await expect(returnKeptArtifacts(join(root, "kept"), join(root, "restored"))).rejects.toThrow()
+    expect(existsSync(join(root, "kept"))).toBe(true)
+  })
+
+  it("drops rebuildable folders nested inside a kept folder", async () => {
+    const { repo, root } = makeGitRepo()
+    const path = await makeWorktreeWithArtifacts(repo, root)
+    write(join(path, "tmp", "node_modules", "dep.js"), "dep\n")
+    write(join(path, "tmp", "notes", "build", "out.o"), "obj\n")
+
+    await keepArtifacts(path, join(root, "kept"))
+
+    expect(existsSync(join(root, "kept", "tmp", "shot.png"))).toBe(true)
+    expect(existsSync(join(root, "kept", "tmp", "node_modules"))).toBe(false)
+    expect(existsSync(join(root, "kept", "tmp", "notes", "build"))).toBe(false)
   })
 })
 
