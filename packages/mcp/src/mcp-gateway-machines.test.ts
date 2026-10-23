@@ -479,11 +479,11 @@ describe("gateway machines and execution annotations", () => {
       apps: []
     })
     expect(computerContexts.at(-1)).toMatchObject({
-      sessionId: "remote:mbp:chat-7",
+      sessionId: "remote2:mbp:chat-7",
       agentLabel: "Fix the build (from MacBook Pro)"
     })
     expect(await manager.invokeRemoteGatewayCall(origin, "codevisor.context.current", {})).toEqual({
-      sessionId: "remote:mbp:chat-7",
+      sessionId: "remote2:mbp:chat-7",
       machine: { id: "studio", name: "Mac Studio" }
     })
     await expect(

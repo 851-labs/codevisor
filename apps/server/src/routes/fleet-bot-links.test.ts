@@ -1,4 +1,4 @@
-import { decode, REMOTE_PARENT_HEADER, SessionSummary } from "@codevisor/api"
+import { decode, REMOTE_PARENT_HEADER, remoteSessionKey, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, waitFor } from "../test-support.js"
@@ -45,7 +45,7 @@ describe("bot sub-agents on another machine", () => {
     )
     await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "status" })
 
-    expect(child.parentSessionId).toBe(`remote:${studio.id}:${bot.sessionId}`)
+    expect(child.parentSessionId).toBe(remoteSessionKey(studio.id, bot.sessionId))
     expect(await workspaceOf(remote, child)).toMatchObject({
       botId: bot.id,
       botMachineId: studio.id
@@ -78,7 +78,7 @@ describe("bot sub-agents on another machine", () => {
     const direct = await jsonRequest(remote.server, "/v1/sessions", {
       method: "POST",
       headers: { [REMOTE_PARENT_HEADER]: "forged" },
-      body: JSON.stringify({ ...createArgs, parentSessionId: `remote:${studio.id}:x` })
+      body: JSON.stringify({ ...createArgs, parentSessionId: remoteSessionKey(studio.id, "x") })
     })
     const directWorkspace = await post(remote, "/v1/workspaces", {
       workspace: {
@@ -114,7 +114,7 @@ describe("bot sub-agents on another machine", () => {
     await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "status" })
     await waitFor(() => endedTurns(remote, child.id) > 0)
 
-    expect(child.parentSessionId).toBe(`remote:${studio.id}:${botOrigin.sessionId}`)
+    expect(child.parentSessionId).toBe(remoteSessionKey(studio.id, botOrigin.sessionId))
     expect((await workspaceOf(remote, child))?.botId).toBeUndefined()
     expect(await fleetBotWake(remote.services, child)).toBeUndefined()
     expect(await workspaceOf(remote, thirdMachineBot)).toMatchObject({

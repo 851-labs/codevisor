@@ -52,38 +52,42 @@ export interface RemoteSessionRef {
   readonly sessionId: string
 }
 
-const REMOTE_SESSION_PREFIX = "remote:"
-const NO_REMOTE_SESSION = "none"
-const ESCAPED_NO_REMOTE_SESSION = "%6Eone"
+const REMOTE_SESSION_PREFIX = "remote2:"
+const LEGACY_REMOTE_SESSION_PREFIX = "remote:"
+const LEGACY_NO_REMOTE_SESSION = "none"
 
 export const remoteSessionKey = (machineId: string, sessionId: string | undefined): string =>
-  `${REMOTE_SESSION_PREFIX}${encodeKeyPart(machineId)}:${encodeSessionPart(sessionId)}`
+  `${REMOTE_SESSION_PREFIX}${encodeURIComponent(machineId)}:${encodeURIComponent(sessionId ?? "")}`
 
 export const parseRemoteSessionKey = (key: string): RemoteSessionRef | undefined => {
-  if (!key.startsWith(REMOTE_SESSION_PREFIX)) return undefined
+  if (key.startsWith(REMOTE_SESSION_PREFIX)) return parseEncoded(key)
+  if (key.startsWith(LEGACY_REMOTE_SESSION_PREFIX)) return parseLegacy(key)
+  return undefined
+}
+
+const parseEncoded = (key: string): RemoteSessionRef | undefined => {
   const parts = key.slice(REMOTE_SESSION_PREFIX.length).split(":")
-  const sessionPart = parts.pop()!
-  const machineId = legacyOrDecoded(parts)
+  if (parts.length !== 2) return undefined
+  return remoteRef(decodePart(parts[0]!), decodePart(parts[1]!))
+}
+
+const parseLegacy = (key: string): RemoteSessionRef | undefined => {
+  const parts = key.slice(LEGACY_REMOTE_SESSION_PREFIX.length).split(":")
+  const sessionId = parts.pop()!
+  if (sessionId === LEGACY_NO_REMOTE_SESSION) return undefined
+  return remoteRef(parts.join(":"), sessionId)
+}
+
+const remoteRef = (
+  machineId: string | undefined,
+  sessionId: string | undefined
+): RemoteSessionRef | undefined => {
   if (machineId === undefined || machineId === "") return undefined
-  if (sessionPart === "" || sessionPart === NO_REMOTE_SESSION) return undefined
-  const sessionId = decodeKeyPart(sessionPart)
-  return sessionId === undefined ? undefined : { machineId, sessionId }
+  if (sessionId === undefined || sessionId === "") return undefined
+  return { machineId, sessionId }
 }
 
-const encodeKeyPart = (value: string): string => encodeURIComponent(value)
-
-const encodeSessionPart = (sessionId: string | undefined): string => {
-  if (sessionId === undefined) return NO_REMOTE_SESSION
-  if (sessionId === NO_REMOTE_SESSION) return ESCAPED_NO_REMOTE_SESSION
-  return encodeKeyPart(sessionId)
-}
-
-const legacyOrDecoded = (machineParts: ReadonlyArray<string>): string | undefined => {
-  if (machineParts.length === 1) return decodeKeyPart(machineParts[0]!)
-  return machineParts.join(":")
-}
-
-const decodeKeyPart = (part: string): string | undefined => {
+const decodePart = (part: string): string | undefined => {
   try {
     return decodeURIComponent(part)
   } catch {
