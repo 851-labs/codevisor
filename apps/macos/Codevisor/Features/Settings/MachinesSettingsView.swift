@@ -43,7 +43,6 @@ struct MachinesSettingsView: View {
         Text(
           "To add a machine, install Codevisor on it and run `codevisor auth login` to sign in to your Codevisor Cloud account."
         )
-        .font(.caption)
         .foregroundStyle(.secondary)
       }
 
@@ -57,7 +56,6 @@ struct MachinesSettingsView: View {
         }
       } footer: {
         Text("Connect to your machines directly over the local network when available.")
-          .font(.caption)
           .foregroundStyle(.secondary)
       }
     }
@@ -149,9 +147,8 @@ struct MachinesSettingsView: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(machine.name)
-          .fontWeight(.medium)
         Text(machine.baseURL.absoluteString)
-          .font(.caption)
+          .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .truncationMode(.middle)

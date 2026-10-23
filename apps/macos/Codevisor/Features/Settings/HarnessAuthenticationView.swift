@@ -141,7 +141,7 @@ struct HarnessAuthenticationView: View {
         HStack {
           Text(account.label)
           if !isShared, account.isActive, let scope = account.selectionScope {
-            Text(scope == "machine" ? "Override" : "Shared").font(.caption).foregroundStyle(.secondary)
+            Text(scope == "machine" ? "Override" : "Shared").font(.callout).foregroundStyle(.secondary)
           }
         }
         if let status = accountStatus(account) {

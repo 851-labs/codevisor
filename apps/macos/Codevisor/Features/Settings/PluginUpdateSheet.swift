@@ -49,7 +49,7 @@ struct PluginUpdateSheet: View {
   private var overview: some View {
     Section {
       VStack(alignment: .leading, spacing: 5) {
-        Text(plan.name).font(.headline)
+        Text(plan.name)
         Text("\(plan.current.version) → \(plan.candidate.version)")
           .font(.subheadline)
           .foregroundStyle(.secondary)
@@ -57,10 +57,10 @@ struct PluginUpdateSheet: View {
       LabeledContent("Plugin", value: plan.pluginId)
       VStack(alignment: .leading, spacing: 2) {
         Text("Resolved commit")
-          .font(.footnote)
+          .font(.callout)
           .foregroundStyle(.secondary)
         Text(verbatim: plan.resolvedCommit)
-          .font(.footnote.monospaced())
+          .font(.callout.monospaced())
           .textSelection(.enabled)
       }
       .padding(.vertical, 1)
@@ -97,10 +97,10 @@ struct PluginUpdateSheet: View {
           VStack(alignment: .leading, spacing: 3) {
             Text(requirement.name).font(.callout.monospaced())
             if let hint = requirement.installHint {
-              Text(hint).font(.footnote).foregroundStyle(.secondary)
+              Text(hint).font(.callout).foregroundStyle(.secondary)
             }
             if let rawUrl = requirement.helpUrl, let url = URL(string: rawUrl) {
-              Link("Setup instructions", destination: url).font(.footnote)
+              Link("Setup instructions", destination: url).font(.callout)
             }
           }
           .padding(.vertical, 1)
@@ -138,9 +138,9 @@ struct PluginUpdateSheet: View {
 
   private func commandRow(title: String, command: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text(title).font(.footnote).foregroundStyle(.secondary)
+      Text(title).font(.callout).foregroundStyle(.secondary)
       Text(verbatim: command)
-        .font(.footnote.monospaced())
+        .font(.callout.monospaced())
         .textSelection(.enabled)
     }
     .padding(.vertical, 1)

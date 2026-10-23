@@ -89,7 +89,7 @@ struct PluginInstallSheet: View {
     Section {
       VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-          Text(discovery.name).font(.headline)
+          Text(discovery.name)
           Text(discovery.version).font(.subheadline).foregroundStyle(.secondary)
         }
         if let description = discovery.description, !description.isEmpty {
@@ -99,7 +99,7 @@ struct PluginInstallSheet: View {
       .padding(.vertical, 2)
       if discovery.alreadyInstalled {
         Label("Already installed — installing updates it.", systemImage: "arrow.triangle.2.circlepath")
-          .font(.footnote)
+          .font(.callout)
           .foregroundStyle(.secondary)
       }
     }
@@ -115,7 +115,7 @@ struct PluginInstallSheet: View {
           VStack(alignment: .leading, spacing: 2) {
             Text(tool.name).font(.callout.monospaced())
             Text(tool.description)
-              .font(.footnote)
+              .font(.callout)
               .foregroundStyle(.secondary)
               .lineLimit(2)
           }
@@ -137,8 +137,8 @@ struct PluginInstallSheet: View {
 
   private func commandRow(title: String, command: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text(title).font(.footnote).foregroundStyle(.secondary)
-      Text(verbatim: command).font(.footnote.monospaced()).textSelection(.enabled)
+      Text(title).font(.callout).foregroundStyle(.secondary)
+      Text(verbatim: command).font(.callout.monospaced()).textSelection(.enabled)
     }
     .padding(.vertical, 1)
   }

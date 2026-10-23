@@ -4,7 +4,7 @@ public struct MachineConnectionBadge: View {
   let connection: MachineConnectionPresentation
   let font: Font
 
-  public init(_ connection: MachineConnectionPresentation, font: Font = .caption) {
+  public init(_ connection: MachineConnectionPresentation, font: Font = .callout) {
     self.connection = connection
     self.font = font
   }
