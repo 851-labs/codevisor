@@ -27,6 +27,8 @@ const refusedRemoteParent = (answer: Answer) => {
 const createLocally = async (machine: FleetMachine, body: Record<string, unknown>) =>
   post(machine, "/v1/sessions", { ...createArgs, ...body })
 
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 const failureOf = (pending: Promise<unknown>): Promise<string> =>
   pending.then(
     () => "",
@@ -37,28 +39,31 @@ const sessionCount = async (machine: FleetMachine) =>
   (await run(machine.services.db.listSessions)).length
 
 describe("bot sub-agents on another machine", () => {
-  it("links a session the bot creates on another machine and wakes the bot when it ends a turn", async () => {
+  it("links a session the bot creates on another machine and wakes the bot with each turn's own reply", async () => {
     const { home, remote, bot, botOrigin } = await startFleet()
+    const reports = () =>
+      home.agents.prompts.flatMap(([, input]) =>
+        typeof input === "string" && input.includes('type="session.turn_ended"') ? [input] : []
+      )
 
     const child = createdSession(
       await home.machines.invoke(laptop.id, "codevisor.sessions.create", createArgs, botOrigin)
     )
-    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "status" })
+    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "one" })
+    await waitFor(() => reports().length === 1)
+    await post(remote, `/v1/sessions/${child.id}/prompt`, { text: "two" })
+    await waitFor(() => reports().length === 2)
 
     expect(child.parentSessionId).toBe(remoteSessionKey(studio.id, bot.sessionId))
     expect(await workspaceOf(remote, child)).toMatchObject({
       botId: bot.id,
       botMachineId: studio.id
     })
-    await waitFor(() =>
-      home.agents.prompts.some(
-        ([, input]) =>
-          typeof input === "string" &&
-          input.startsWith(
-            `<codevisor-event machine="Laptop" machineId="${laptop.id}" type="session.turn_ended" sessionId="${child.id}" title="Fix the laptop"`
-          )
-      )
-    )
+    const opening = `<codevisor-event machine="Laptop" machineId="${laptop.id}" type="session.turn_ended" sessionId="${child.id}" title="Fix the laptop"`
+    expect(reports()).toEqual([
+      expect.stringMatching(new RegExp(`^${escapeRegExp(opening)}.*\\nEcho: one\\n`, "s")),
+      expect.stringMatching(new RegExp(`^${escapeRegExp(opening)}.*\\nEcho: two\\n`, "s"))
+    ])
   })
 
   it("refuses a remote parent that doesn't come from its own machine", async () => {
