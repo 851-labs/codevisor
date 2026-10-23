@@ -1,6 +1,7 @@
 import type { ArchivedWorktree, SessionSummary, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import {
+  archivedArtifactsPath,
   legacyWorktreeTrashRoot,
   worktreeNameAt,
   worktreePath,
@@ -10,8 +11,10 @@ import {
 import type { OwnedBranch } from "@codevisor/git-hosts"
 import {
   deleteSnapshot,
+  keepArtifacts,
   removeArchivedWorktreeFiles,
   restoreWorktree,
+  returnKeptArtifacts,
   snapshotWorktree,
   sweepWorktreeTrash
 } from "@codevisor/worktrees"
@@ -142,11 +145,11 @@ const directoryStillInUse = async (
   )
 
 export interface ArchivedWorkspaceWorktree {
-  readonly ignoredPaths: ReadonlyArray<string>
+  readonly keptArtifacts: ReadonlyArray<string>
   readonly purged: Promise<void>
 }
 
-const nothingArchived: ArchivedWorkspaceWorktree = { ignoredPaths: [], purged: Promise.resolve() }
+const nothingArchived: ArchivedWorkspaceWorktree = { keptArtifacts: [], purged: Promise.resolve() }
 
 export const archiveWorkspaceWorktree = async (
   services: CodevisorServerServices,
@@ -185,6 +188,11 @@ export const archiveWorkspaceWorktree = async (
       state: "pending"
     })
   )
+  const keptArtifacts = await keepArtifacts(
+    worktree.path,
+    archivedArtifactsPath(worktree.id),
+    environment
+  )
   const trashed = await removeArchivedWorktreeFiles(
     location.folderPath,
     worktree.path,
@@ -205,7 +213,7 @@ export const archiveWorkspaceWorktree = async (
     })
   )
   await run(services.db.deleteWorktree(worktree.id))
-  return { ignoredPaths: snapshot.ignoredPaths, purged: trashed.purged }
+  return { keptArtifacts, purged: trashed.purged }
 }
 
 export const restoreWorkspaceWorktree = async (
@@ -242,6 +250,10 @@ export const restoreWorkspaceWorktree = async (
       takenNames: taken,
       env: environment
     })
+    await returnKeptArtifacts(
+      archivedArtifactsPath(archived.id),
+      worktreePathBeside(workspace.projectId, rootDirectory, restored.name)
+    )
     await run(
       services.db.createWorktree(workspace.projectId, restored.name, restored.branch, archived.id)
     )

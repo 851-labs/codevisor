@@ -17,6 +17,7 @@ export {
 } from "./machine-settings-service.js"
 
 export {
+  archivedArtifactsPath,
   botPath,
   botsRoot,
   isBotFolder,

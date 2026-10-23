@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import {
+  archivedArtifactsPath,
   botPath,
   defaultCloneBaseFolder,
   isBotFolder,
@@ -87,6 +88,9 @@ describe("@codevisor/db", () => {
       expect(legacyWorktreeTrashRoot()).toBe(join(root, ".trash"))
       expect(worktreeTrashRoot()).toBe(join(root, ".trash.noindex"))
       expect(legacyWorktreeTrashRoot()).toBe(join(root, ".trash"))
+      expect(archivedArtifactsPath("worktree-1")).toBe(
+        join(root, ".archived-artifacts.noindex", "worktree-1")
+      )
     })
   })
 

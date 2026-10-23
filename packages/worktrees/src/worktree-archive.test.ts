@@ -9,7 +9,6 @@ import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
 import {
   chooseRestoreName,
   deleteSnapshot,
-  meaningfulIgnoredPaths,
   releaseBranch,
   removeArchivedWorktreeFiles,
   restoreWorktree,
@@ -89,7 +88,7 @@ describe("worktree archive snapshots", () => {
     expect(status).toContain("doomed.txt")
   })
 
-  it("never captures gitignored files but reports the meaningful ones", async () => {
+  it("never captures gitignored files in the snapshot", async () => {
     const { repo, root } = makeRepo()
     const path = await makeDirtyWorktree(repo, root, "ramen")
 
@@ -107,8 +106,6 @@ describe("worktree archive snapshots", () => {
 
     expect(existsSync(join(restorePath, "secret.env"))).toBe(false)
     expect(existsSync(join(restorePath, "node_modules"))).toBe(false)
-    expect(snapshot.ignoredPaths).toContain("secret.env")
-    expect(snapshot.ignoredPaths.some((ignored) => ignored.includes("node_modules"))).toBe(false)
   })
 
   it("suffixes the name when the original was reclaimed while archived", async () => {
@@ -329,22 +326,6 @@ describe("releaseBranch", () => {
   it("reports failure instead of throwing when the branch cannot be deleted", async () => {
     const { repo } = makeRepo()
     expect(await releaseBranch(repo, "codevisor/never-existed")).toBe(false)
-  })
-})
-
-describe("meaningfulIgnoredPaths", () => {
-  it("keeps files worth warning about and drops regenerable output", () => {
-    expect(
-      meaningfulIgnoredPaths([
-        ".env",
-        "node_modules/",
-        "apps/www/dist/",
-        "src/generated.local.json",
-        "target/debug/",
-        "tmp/.codevisor/data/",
-        "coverage/"
-      ])
-    ).toEqual([".env", "src/generated.local.json"])
   })
 })
 

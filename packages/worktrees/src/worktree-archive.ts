@@ -24,37 +24,6 @@ export interface WorktreeSnapshot {
   readonly parentSha: string
   readonly snapshotSha: string
   readonly snapshotRef: string
-  readonly ignoredPaths: ReadonlyArray<string>
-}
-
-const regenerablePattern =
-  /(^|\/)(node_modules|\.venv|venv|__pycache__|target|dist|build|out|tmp|\.next|\.turbo|\.gradle|\.pytest_cache|coverage|\.DS_Store)(\/|$)/
-
-export const meaningfulIgnoredPaths = (paths: ReadonlyArray<string>): ReadonlyArray<string> =>
-  paths.filter((path) => !regenerablePattern.test(path))
-
-const collectIgnoredPaths = async (
-  worktreeDir: string,
-  env?: NodeJS.ProcessEnv
-): Promise<ReadonlyArray<string>> => {
-  try {
-    const output = await runGit(
-      "list-ignored",
-      [...snapshotConfig, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
-      worktreeDir,
-      env,
-      heavy
-    )
-    return meaningfulIgnoredPaths(
-      output
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-    )
-  } catch {
-    /* v8 ignore next */
-    return []
-  }
 }
 
 const seedScratchIndex = async (
@@ -109,12 +78,7 @@ export const snapshotWorktree = async (
     )
     const snapshotRef = snapshotRefFor(worktreeId)
     await runGit("update-ref", ["update-ref", snapshotRef, snapshotSha], repoDir, env, heavy)
-    return {
-      parentSha,
-      snapshotSha,
-      snapshotRef,
-      ignoredPaths: await collectIgnoredPaths(worktreeDir, env)
-    }
+    return { parentSha, snapshotSha, snapshotRef }
   })
 }
 

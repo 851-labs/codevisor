@@ -23,7 +23,7 @@ export interface ArchiveJobs {
 }
 
 interface ArchiveJobQueue extends ArchiveJobs {
-  readonly enqueue: (job: () => Promise<void>) => Promise<void>
+  readonly enqueue: <A>(job: () => Promise<A>) => Promise<A | undefined>
 }
 
 const queues = new WeakMap<CodevisorServerServices, ArchiveJobQueue>()
@@ -38,9 +38,10 @@ const makeQueue = (): ArchiveJobQueue => {
   }
   return {
     enqueue: (job) => {
-      tail = tail.then(job).then(swallowError, swallowError)
+      const result = tail.then(job).catch(swallowError)
+      tail = result.then(swallowError)
       track(tail)
-      return tail
+      return result
     },
     track,
     jobsFinished: () => tail,
@@ -69,30 +70,40 @@ const findWorkspace = async (
     (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
   )
 
-export const enqueueWorkspaceArchive = (
+export const enqueueWorkspaceArchive = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   config: CodevisorServerConfig,
   workspace: Workspace,
   runtime?: WorkspaceRuntime
-): Promise<void> => {
+): Promise<ReadonlyArray<string>> => {
   const queue = queueFor(services)
-  return queue.enqueue(() =>
+  const kept = await queue.enqueue(() =>
     withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
-      if ((await findWorkspace(services, workspace.id))?.isArchived === false) return
+      if ((await findWorkspace(services, workspace.id))?.isArchived === false) return []
       if (runtime !== undefined) await retireWorkspaceRuntime(services, runtime)
       const archived = await archiveWorkspaceWorktree(services, config.id, workspace)
       queue.track(archived.purged)
-      if (archived.ignoredPaths.length === 0) return
-      const current = await findWorkspace(services, workspace.id)
-      if (current !== undefined) {
-        await appendAndPublish(services.db, fanout, "workspace.updated", current.id, {
-          ...current,
-          archiveDroppedIgnoredPaths: archived.ignoredPaths
-        })
-      }
+      await publishKeptArtifacts(services, fanout, workspace.id, archived.keptArtifacts)
+      return archived.keptArtifacts
     })
   )
+  return kept ?? []
+}
+
+const publishKeptArtifacts = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  workspaceId: string,
+  keptArtifacts: ReadonlyArray<string>
+): Promise<void> => {
+  if (keptArtifacts.length === 0) return
+  const current = await findWorkspace(services, workspaceId)
+  if (current === undefined) return
+  await appendAndPublish(services.db, fanout, "workspace.updated", current.id, {
+    ...current,
+    archiveKeptArtifacts: keptArtifacts
+  })
 }
 
 export const applyWorkspaceArchiveEffects = async (

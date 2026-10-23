@@ -52,6 +52,9 @@ export const worktreeTrashRoot = (): string => join(worktreesRoot(), ".trash.noi
 
 export const legacyWorktreeTrashRoot = (): string => join(worktreesRoot(), ".trash")
 
+export const archivedArtifactsPath = (worktreeId: string): string =>
+  join(worktreesRoot(), ".archived-artifacts.noindex", worktreeId)
+
 export const isScratchFolder = (folderPath: string): boolean =>
   dirname(folderPath) === scratchWorkspacesRoot() ||
   dirname(folderPath) === legacyScratchWorkspacesRoot()
