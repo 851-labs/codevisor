@@ -269,7 +269,21 @@ describe("bot sub-agents on another machine", () => {
       )
     )
 
+    const replayed = home.fleetTickets.callers.issue({
+      deviceId: laptop.id,
+      publicKey: laptop.publicKey
+    })
+    const replay = () =>
+      postInvoke(
+        home.server.url,
+        { path: FLEET_SESSION_EVENT_PATH, args: { ...event, sessionId: "nobody" }, origin },
+        { [FLEET_CALLER_HEADER]: replayed }
+      )
+    const firstUse = await replay()
+    const secondUse = await replay()
+
     expect([unverified.status, (await missing).status]).toEqual([403, 404])
+    expect([firstUse.status, secondUse.status]).toEqual([404, 403])
     expect(malformed.map((answer) => answer.status)).toEqual([400, 400, 400])
   })
 })

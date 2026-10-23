@@ -5,7 +5,7 @@ import type { BotLink } from "@codevisor/db"
 
 export interface TicketBook<T> {
   readonly issue: (value: T) => string
-  readonly read: (ticket: string | undefined) => T | undefined
+  readonly take: (ticket: string | undefined) => T | undefined
   readonly revoke: (ticket: string) => void
 }
 
@@ -47,7 +47,12 @@ const makeTicketBook = <T>(): TicketBook<T> => {
       issued.set(ticket, value)
       return ticket
     },
-    read: (ticket) => (ticket === undefined ? undefined : issued.get(ticket)),
+    take: (ticket) => {
+      if (ticket === undefined) return undefined
+      const value = issued.get(ticket)
+      issued.delete(ticket)
+      return value
+    },
     revoke: (ticket) => {
       issued.delete(ticket)
     }

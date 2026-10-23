@@ -39,7 +39,7 @@ export const verifiedBotLink = (
   request: IncomingMessage,
   parentSessionId: string | undefined
 ): RemoteBotLink | undefined => {
-  const link = services.fleetTickets?.botLinks.read(headerValue(request, BOT_LINK_HEADER))
+  const link = services.fleetTickets?.botLinks.take(headerValue(request, BOT_LINK_HEADER))
   if (link === undefined || link.parentSessionId !== parentSessionId) return undefined
   return link
 }
@@ -48,7 +48,7 @@ const callerMachineId = (
   services: CodevisorServerServices,
   request: IncomingMessage
 ): string | undefined => {
-  const caller = services.fleetTickets?.callers.read(headerValue(request, FLEET_CALLER_HEADER))
+  const caller = services.fleetTickets?.callers.take(headerValue(request, FLEET_CALLER_HEADER))
   if (caller === undefined) return undefined
   return services.machines?.machineIdOf(caller)
 }
