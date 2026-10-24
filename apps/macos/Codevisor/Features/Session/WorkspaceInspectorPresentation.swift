@@ -26,6 +26,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   static let usageRefreshInterval: Duration = .seconds(120)
 
+  private static var idealInspectorWidth: CGFloat {
+    #if DEBUG
+      AppStoreScreenshotData.inspectorWidth ?? 260
+    #else
+      260
+    #endif
+  }
+
   static let presentedKey = "workspace.inspectorPresented"
 
   @Environment(AppEnvironment.self) private var environment
@@ -54,7 +62,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       ) {
         if let store, let inspected {
           inspectorView(store, inspected)
-            .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
+            .inspectorColumnWidth(min: 220, ideal: Self.idealInspectorWidth, max: 400)
             .toolbar {
               ToolbarSpacer(.flexible)
               ToolbarItem {

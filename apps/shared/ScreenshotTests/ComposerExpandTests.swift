@@ -17,7 +17,6 @@
       XCUIDevice.shared.orientation = .portrait
       app = XCUIApplication()
       app.launchEnvironment["CODEVISOR_APP_STORE_SCREENSHOTS"] = "1"
-      app.launchEnvironment["CODEVISOR_SIDEBAR_SAMPLE"] = "1"
       app.launchEnvironment["CODEVISOR_SCREENSHOT_SCENE"] = "conversation"
       app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
       app.launch()

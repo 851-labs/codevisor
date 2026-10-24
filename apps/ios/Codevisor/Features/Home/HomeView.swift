@@ -164,6 +164,9 @@ struct HomeView: View {
     .environment(\.homeSidebarIsTiled, layoutMode == .split && detailLeadingInset > 1)
     .focusedSceneValue(\.homeCommandActions, homeCommandActions)
     .background(HostWindowReader { hostWindow.window = $0 })
+    #if DEBUG
+      .task { if AppStoreScreenshotData.opensNewChat { presentNewChat() } }
+    #endif
     .modifier(
       ClientControlModifier(
         name: UIDevice.current.name, platform: "ios",

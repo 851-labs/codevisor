@@ -169,7 +169,9 @@ extension NewChatView {
       get: { controller.wantsNewWorktree },
       set: { selectRunLocation(newWorktree: $0, controller: controller) }
     )
-    return RunPickerMenu(chipText: current.title, chipSymbol: current.symbol) {
+    return RunPickerMenu(
+      chipText: current.title, chipSymbol: current.symbol, isPresented: $isRunLocationMenuPresented
+    ) {
       Autocomplete.Picker("Run location", selection: selection, options: RunLocationOption.all) { option in
         Autocomplete.Choice(option.title, value: option.newWorktree, systemImage: option.symbol)
       }
