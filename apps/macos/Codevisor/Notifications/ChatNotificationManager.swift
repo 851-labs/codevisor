@@ -111,7 +111,8 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
   }
 
   func authorizationStatus() async -> UNAuthorizationStatus {
-    await center.notificationSettings().authorizationStatus
+    guard !AppPreview.isRunning else { return .authorized }
+    return await center.notificationSettings().authorizationStatus
   }
 
   @discardableResult
