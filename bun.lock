@@ -447,6 +447,9 @@
     "ffmpeg-static",
     "lefthook",
   ],
+  "patchedDependencies": {
+    "ffmpeg-static@5.3.0": "patches/ffmpeg-static@5.3.0.patch",
+  },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.1.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-NT2KqphUJ3w6EksUL51ZhJgIYgq/ZLGcBPkyMKgRSO5PMVwe9DnKKX+Htnvk6KHh6dUuh34UHK4gKp+4te1Mdg=="],
 
