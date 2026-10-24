@@ -1,0 +1,39 @@
+diff --git a/install.js b/install.js
+index 1d39b153d8fa7c7831558d65b1647fcc3c115b7a..dc57b20efc65baba8a0fb51384a28960a3f95455 100644
+--- a/install.js
++++ b/install.js
+@@ -59,8 +59,12 @@ if (proxyUrl) {
+ }
+ 
+ // https://advancedweb.hu/how-s3-signed-urls-work/
+-const normalizeS3Url = (url) => {
++const normalizeDownloadUrl = (url) => {
+   url = new URL(url)
++  if (url.hostname === 'release-assets.githubusercontent.com') {
++    url.search = ''
++    return url.href
++  }
+   if (url.hostname.slice(-17) !== '.s3.amazonaws.com') return url.href
+   const query = Array.from(url.searchParams.entries())
+     .filter(([key]) => key.slice(0, 6).toLowerCase() !== 'x-amz-')
+@@ -69,17 +73,17 @@ const normalizeS3Url = (url) => {
+   return url.href
+ }
+ strictEqual(
+-  normalizeS3Url('https://example.org/foo?bar'),
++  normalizeDownloadUrl('https://example.org/foo?bar'),
+   'https://example.org/foo?bar'
+ )
+ strictEqual(
+-  normalizeS3Url('https://github-production-release-asset-2e65be.s3.amazonaws.com/29458513/26341680-4231-11ea-8e36-ae454621d74a?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIWNJYAX4CSVEH53A%2F20200405%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20200405T225358Z&X-Amz-Expires=300&X-Amz-Signature=d6415097af04cf62ea9b69d3c1a421278e96bcb069afa48cf021ec3b6941bae4&X-Amz-SignedHeaders=host&actor_id=0&response-content-disposition=attachment%3B%20filename%3Ddarwin-x64&response-content-type=application%2Foctet-stream'),
++  normalizeDownloadUrl('https://github-production-release-asset-2e65be.s3.amazonaws.com/29458513/26341680-4231-11ea-8e36-ae454621d74a?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIWNJYAX4CSVEH53A%2F20200405%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20200405T225358Z&X-Amz-Expires=300&X-Amz-Signature=d6415097af04cf62ea9b69d3c1a421278e96bcb069afa48cf021ec3b6941bae4&X-Amz-SignedHeaders=host&actor_id=0&response-content-disposition=attachment%3B%20filename%3Ddarwin-x64&response-content-type=application%2Foctet-stream'),
+   'https://github-production-release-asset-2e65be.s3.amazonaws.com/29458513/26341680-4231-11ea-8e36-ae454621d74a?actor_id=0&response-content-disposition=attachment%3B%20filename%3Ddarwin-x64&response-content-type=application%2Foctet-stream'
+ )
+ 
+ const cache = new FileCache(envPaths(pkg.name).cache)
+ cache.getCacheKey = (url) => {
+-  return FileCache.prototype.getCacheKey(normalizeS3Url(url))
++  return FileCache.prototype.getCacheKey(normalizeDownloadUrl(url))
+ }
+ 
+ const isGzUrl = (url) => {
