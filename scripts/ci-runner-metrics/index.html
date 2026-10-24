@@ -430,6 +430,15 @@
           value: (r) => r.swap_used_gb,
           format: fmtGb,
           domain: (metas, max) => [0, Math.max(1, max * 1.15)]
+        },
+        {
+          id: "disk",
+          title: "Disk free",
+          unit: "GB",
+          hint: () => "Free space on the data volume; builds start failing when it runs out",
+          value: (r) => r.disk_free_gb,
+          format: (v) => `${Math.round(v)} GB`,
+          domain: (metas, max) => [0, Math.max(10, max * 1.15)]
         }
       ]
 
@@ -598,7 +607,7 @@
         const H = 3600,
           D = 86400
         const span = until - since
-        const target = Math.max(2, Math.floor(width / 110))
+        const target = Math.max(3, Math.floor(width / 90))
         const steps = [15 * 60, 30 * 60, H, 2 * H, 3 * H, 6 * H, 12 * H, D, 2 * D, 7 * D]
         const step = steps.find((s) => span / s <= target) || steps[steps.length - 1]
         const d = new Date(since * 1000)
@@ -1041,6 +1050,7 @@
           "Mem. available",
           "Swap",
           "Load",
+          "Disk free",
           "Busy"
         ]
         const out = []
@@ -1081,6 +1091,7 @@
                 el("td", {}, `${Math.round(avg(rs, (r) => r.mem_avail_pct))}%`),
                 el("td", {}, fmtGb(Math.max(...rs.map((r) => r.swap_used_gb)))),
                 el("td", {}, avg(rs, (r) => r.load1).toFixed(2)),
+                el("td", {}, `${Math.round(Math.min(...rs.map((r) => r.disk_free_gb)))} GB`),
                 el("td", {}, `${Math.round(avg(rs, (r) => r.busy) * 100)}%`)
               )
             )
