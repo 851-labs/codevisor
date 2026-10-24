@@ -3,10 +3,13 @@ import { RootProvider } from "fumadocs-ui/provider/tanstack"
 /// <reference types="vite/client" />
 
 import { Analytics } from "../components/analytics"
+import { fetchGitHubStars } from "../lib/github-stars"
 
 import appCss from "../styles/app.css?url"
 
 export const Route = createRootRoute({
+  loader: async () => ({ githubStars: await fetchGitHubStars() }),
+  staleTime: Number.POSITIVE_INFINITY,
   head: () => ({
     meta: [
       { charSet: "utf-8" },
