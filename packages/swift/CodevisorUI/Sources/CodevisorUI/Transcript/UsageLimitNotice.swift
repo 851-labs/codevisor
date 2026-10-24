@@ -6,13 +6,16 @@ public struct UsageLimitNotice: View {
   private let inBotConversation: Bool
   private let switchAccount: () -> Void
   private let cancelAutoResume: () -> Void
+  private let now: Date?
 
   public init(
     autoResume: SessionAutoResume?,
     inBotConversation: Bool,
+    now: Date? = nil,
     switchAccount: @escaping () -> Void,
     cancelAutoResume: @escaping () -> Void
   ) {
+    self.now = now
     self.autoResume = autoResume
     self.inBotConversation = inBotConversation
     self.switchAccount = switchAccount
@@ -29,7 +32,7 @@ public struct UsageLimitNotice: View {
 
   private var message: String {
     guard let autoResume else { return "Won't resume automatically." }
-    return UsageLimitResumeText.detail(resumesAt: autoResume.resumesAt)
+    return UsageLimitResumeText.detail(resumesAt: autoResume.resumesAt, now: now ?? .now)
   }
 
   private var actions: [TranscriptInlineCard.Action] {

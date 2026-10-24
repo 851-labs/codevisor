@@ -20,6 +20,7 @@ public final class UpdateCenter {
   private var refreshTaskIsForced = false
   public private(set) var isUpdatingAll = false
   public private(set) var lastRefreshedAt: Date?
+  @ObservationIgnored public var now: @MainActor () -> Date = { Date() }
   public internal(set) var updateAllNotice: String?
   private var harnessesByMachine: [String: [ServerHarness]] = [:]
   private var pluginUpdatesByMachine: [String: [ServerPluginUpdateStatus]] = [:]
@@ -261,7 +262,7 @@ public final class UpdateCenter {
         pluginUpdatesByMachine[machine.id] = plugins
       }
     }
-    lastRefreshedAt = Date()
+    lastRefreshedAt = now()
   }
 
   public var hasUpdateInFlight: Bool {

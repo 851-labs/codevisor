@@ -332,3 +332,15 @@ public final class SimulatorPaneModel {
     return error.localizedDescription
   }
 }
+
+#if DEBUG
+  extension SimulatorPaneModel {
+    public static func preview(
+      client: any SimulatorClienting, udid: String, connection: any SimulatorConnection
+    ) -> SimulatorPaneModel {
+      SimulatorPaneModel(
+        client: client, preferences: SimulatorPanePreferences(udid: udid), clock: ContinuousClock(),
+        makeConnection: { _ in connection })
+    }
+  }
+#endif

@@ -35,8 +35,13 @@ struct WorkspaceInspectorUsageSection: View {
   }
 }
 
+extension EnvironmentValues {
+  @Entry var inspectorNow: Date? = nil
+}
+
 private struct WorkspaceInspectorUsageWindowRow: View {
   let window: ServerHarnessUsageWindow
+  @Environment(\.inspectorNow) private var pinnedNow
 
   private var used: Double { min(max(window.usedPercent, 0), 100) }
 
@@ -50,7 +55,8 @@ private struct WorkspaceInspectorUsageWindowRow: View {
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
-      let pace = window.pace(now: context.date)
+      let now = pinnedNow ?? context.date
+      let pace = window.pace(now: now)
       VStack(alignment: .leading, spacing: 5) {
         HStack(alignment: .firstTextBaseline) {
           Text(window.label)
@@ -64,7 +70,7 @@ private struct WorkspaceInspectorUsageWindowRow: View {
           total: 100,
           markers: pace.map { [.init(color: $0.reservePercent >= 0 ? .green : .red, value: $0.expectedPercent)] } ?? []
         )
-        if let caption = Self.caption(pace: pace, resetsAt: resetsAt, now: context.date) {
+        if let caption = Self.caption(pace: pace, resetsAt: resetsAt, now: now) {
           Text(caption)
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -107,7 +113,7 @@ private struct WorkspaceInspectorUsageWindowRow: View {
 
   private static func moment(_ date: Date, now: Date) -> String {
     date.timeIntervalSince(now) < 86_400
-      ? date.formatted(.relative(presentation: .named))
+      ? Date.AnchoredRelativeFormatStyle(anchor: date, presentation: .named).format(now)
       : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
   }
 }

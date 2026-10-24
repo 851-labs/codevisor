@@ -61,6 +61,7 @@ struct NewChatView: View {
   @State private var appliedInitialProjectTarget: NewChatTarget?
   @State private var focus = TerminalFocusController()
   @State var hoveredRunPicker: RunPicker?
+  @State var isRunLocationMenuPresented = false
   @State var pendingSetupGroupID: ProjectGroup.ID?
   @State var projectSetup: ProjectMachineSetup?
   @ClientPreference("composer.favoriteMachines", default: [])
@@ -200,6 +201,13 @@ struct NewChatView: View {
       guard !requiresInitialProjectResolution else { return }
       setUpController()
     }
+    #if DEBUG
+      .task {
+        guard AppStoreScreenshotData.opensRunLocationMenu else { return }
+        try? await Task.sleep(for: .seconds(1))
+        isRunLocationMenuPresented = true
+      }
+    #endif
     .onChange(of: harnessCatalogRevision) { _, _ in
       guard let controller else { return }
       controller.invalidateHarnessCapabilities()

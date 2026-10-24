@@ -9,29 +9,41 @@
       ProcessInfo.processInfo.environment["CODEVISOR_APP_STORE_SCREENSHOTS"] == "1"
     }
 
+    static var opensNewChat: Bool {
+      isEnabled && ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_OPENS_NEW_CHAT"] == "1"
+    }
+
+    static var opensRunLocationMenu: Bool {
+      isEnabled && ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_OPENS_RUN_LOCATION_MENU"] == "1"
+    }
+
+    static var showsInspector: Bool {
+      isEnabled && ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_SHOWS_INSPECTOR"] == "1"
+    }
+
+    static var inspectorWidth: CGFloat? {
+      guard isEnabled else { return nil }
+      return ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_INSPECTOR_WIDTH"]
+        .flatMap(Double.init).map { CGFloat($0) }
+    }
+
     static var colorScheme: ColorScheme {
       ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_APPEARANCE"] == "dark" ? .dark : .light
     }
 
     @MainActor
     static func makeEnvironment() -> AppEnvironment {
-      let environment = AppEnvironment.preview(
-        seedProjects: [project], seedSessions: [session],
-        seedCloudMachines: [
-          CloudMachine(
-            deviceId: deviceID, name: "Studio Mac", os: "macOS", publicKey: "screenshots", online: true,
-            lastSeenAt: "2027-01-15T08:00:00.000Z")
-        ], seedCapabilities: capabilities
-      )
+      let environment = DemoEnvironment.make()
+      DemoEnvironment.seedNavigation(environment)
       environment.composerDefaults.rememberNewWorkspaceServer(serverId: machineID)
       environment.composerDefaults.rememberNewWorkspaceProject(serverId: machineID, projectId: projectID)
-      environment.composerDefaults.rememberHarnessSelection(serverId: machineID, harnessId: "claude-code")
+      environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+        serverId: machineID, projectId: projectID, createsWorktree: true)
+      environment.composerDefaults.rememberHarnessSelection(serverId: machineID, harnessId: session.harnessId)
       environment.composerDefaults.rememberConfigSelections(
-        in: .newWorkspace(serverId: machineID), harnessId: "claude-code",
-        configValues: ["model": "claude-sonnet-4-6"]
+        in: .newWorkspace(serverId: machineID), harnessId: session.harnessId,
+        configValues: ["model": DemoWorld.featuredModel.id]
       )
-      environment.configCache.store(capabilities, forServer: machineID)
-      environment.markNavigationCurrentForPreview(machineIds: [machineID])
       return environment
     }
 
@@ -39,189 +51,43 @@
     static func makeController() -> SessionController {
       SessionController.preview(
         project: project, model: .preview(conversation: conversation()),
-        harnesses: SessionController.previewHarnesses.filter { $0.id == "codex" }
+        harnesses: SessionController.previewHarnesses.filter { $0.id == session.harnessId }
       )
     }
 
-    static let projectID = id(1)
-    static let deviceID = "screenshot-studio"
-    static let machineID = CodevisorMachine.cloudIdPrefix + deviceID
-    static let sessionID = id(2)
+    static let project = DemoModels.project(DemoWorld.featuredProject)
+    static let session = DemoModels.featuredSession
+    static let projectID = project.id
+    static let machineID = project.serverId
+    static let machineName = DemoWorld.featuredProject.machine.name
+    static let sessionID = session.id
     static let paneID = id(3)
     static let assistantID = id(4)
-    static let date = Date(timeIntervalSince1970: 1_800_000_000)
-    static let title = "Build a focus timer"
-    static let project = Project(
-      id: projectID, serverId: machineID, name: "daylight", createdAt: date,
-      locations: [
-        ProjectLocation(id: "daylight", projectId: projectID, serverId: machineID, folderPath: "/projects/daylight")
-      ]
-    )
-    static let session = ChatSession(
-      id: sessionID, projectId: projectID, serverId: machineID, harnessId: "codex",
-      agentSessionId: "screenshot-session",
-      title: title, createdAt: date, updatedAt: date
-    )
+    static let browserPaneID = id(7)
+    static let date = DemoModels.date
+    static let title = session.title
 
-    static func id(_ value: Int) -> UUID {
-      UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value))!
-    }
-
-    static let capabilities = [
-      ServerHarnessCapability(
-        harness: SessionController.previewHarnesses[0],
-        modes: nil,
-        configOptions: [
-          SessionConfigOption(
-            id: "model", name: "Model", category: "model", currentValue: "claude-sonnet-4-6",
-            options: [SessionConfigSelectOption(value: "claude-sonnet-4-6", name: "Sonnet 4.6")]
-          )
-        ]
-      )
-    ]
+    static func id(_ value: Int) -> UUID { DemoModels.id(value) }
 
     static func conversation() -> [ConversationItem] {
       var turn = AssistantTurn(
-        isGenerating: false, stopReason: .endTurn, startedAt: date,
-        endedAt: date.addingTimeInterval(42)
+        isGenerating: false, stopReason: .endTurn, startedAt: date, endedAt: date.addingTimeInterval(42)
       )
       TranscriptReducer.apply(
         .toolCall(
           ToolCall(
-            toolCallId: "focus-timer", title: "Edited FocusTimer.tsx", kind: .edit, status: .completed,
-            content: [.diff(path: "src/FocusTimer.tsx", oldText: oldCode, newText: newCode)]
+            toolCallId: "skin-tones", title: DemoConversation.editTitle, kind: .edit, status: .completed,
+            content: [
+              .diff(
+                path: DemoConversation.editedFile, oldText: DemoConversation.before, newText: DemoConversation.after)
+            ]
           )), to: &turn
       )
-      TranscriptReducer.apply(
-        .agentMessageChunk(
-          .text(
-            """
-            The focus timer is ready to try.
-
-            ### A little more focus
-            Start a **25-minute session**, take a short break, and pick up where you left off.
-
-            - Pause and resume without resetting
-            - See your progress as the timer counts down
-            - Get a gentle reminder when it’s time to rest
-
-            ### Ready for your phone
-            The layout adapts to smaller screens, with large controls and support for dark mode.
-
-            All **12 tests pass**. The preview is running at **localhost:3000**.
-            """
-          )), to: &turn)
+      TranscriptReducer.apply(.agentMessageChunk(.text(DemoConversation.reply)), to: &turn)
       return [
-        .user(
-          UserMessage(
-            id: id(5),
-            text: "Add a focus timer to Daylight. Keep it simple, make it work on mobile, and run the tests.")),
+        .user(UserMessage(id: id(5), text: DemoConversation.prompt)),
         .assistant(AssistantMessage(id: assistantID, turn: turn)),
       ]
     }
-
-    static let oldCode = """
-      export function FocusTimer() {
-        const timer = useTimer(1500);
-        return (
-          <Timer value={timer.seconds}>
-            <Button onClick={timer.reset}>
-              Reset
-            </Button>
-          </Timer>
-        );
-      }
-      """
-    static let newCode = """
-      export function FocusTimer() {
-        const timer = useTimer(1500);
-        const label = timer.running
-          ? "Pause" : "Start focus";
-        return (
-          <Timer value={timer.seconds}>
-            <Button onClick={timer.toggle}>
-              {label}
-            </Button>
-          </Timer>
-        );
-      }
-      """
-
-    static let sections: [ScreenshotSidebarSection] = [
-      ScreenshotSidebarSection(
-        id: id(10), serverId: "studio", name: "daylight", machineName: "Studio Mac",
-        anchorSessionId: sessionID, status: .unread,
-        rows: [
-          row(11, title, .chat(harnessId: "codex", fallbackSymbolName: "sparkle"), status: .unread),
-          row(12, "Polish the mobile layout", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle")),
-          row(13, "Daylight — localhost:3000", .browser(favicon: nil)),
-          row(14, "Development server", .terminal),
-        ]
-      ),
-      ScreenshotSidebarSection(
-        id: id(20), serverId: "studio", name: "portfolio", machineName: "Studio Mac",
-        anchorSessionId: id(21), status: .inProgress,
-        rows: [
-          row(
-            22, "Refresh the home page", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle"),
-            status: .inProgress),
-          row(23, "Add project highlights", .chat(harnessId: "codex", fallbackSymbolName: "sparkle")),
-          row(24, "README.md", .document),
-        ]
-      ),
-      ScreenshotSidebarSection(
-        id: id(30), serverId: "linux", name: "api", machineName: "Linux Server",
-        anchorSessionId: id(31), status: .idle,
-        rows: [
-          row(32, "Add search to the API", .chat(harnessId: "codex", fallbackSymbolName: "sparkle")),
-          row(33, "Review the test coverage", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle")),
-          row(34, "Terminal", .terminal),
-        ]
-      ),
-    ]
-
-    private static func row(
-      _ value: Int, _ title: String, _ icon: ScreenshotSidebarTabRow.Icon, status: ScreenshotSessionStatus = .idle
-    ) -> ScreenshotSidebarTabRow {
-      ScreenshotSidebarTabRow(
-        id: id(value), title: title, icon: icon, status: status, chatSessionId: nil, renamableTabId: id(value))
-    }
-  }
-
-  enum ScreenshotSessionStatus: Int {
-    case idle, unread, inProgress
-
-    nonisolated var sidebarState: SessionSidebarState {
-      switch self {
-      case .idle: .idle
-      case .unread: .unread
-      case .inProgress: .inProgress
-      }
-    }
-  }
-
-  struct ScreenshotSidebarSection: Identifiable {
-    let id: UUID
-    let serverId: String
-    let name: String
-    let machineName: String?
-    let anchorSessionId: UUID
-    let status: ScreenshotSessionStatus
-    let rows: [ScreenshotSidebarTabRow]
-  }
-
-  struct ScreenshotSidebarTabRow: Identifiable {
-    enum Icon {
-      case chat(harnessId: String, fallbackSymbolName: String)
-      case browser(favicon: String?)
-      case terminal
-      case document
-    }
-    let id: UUID
-    let title: String
-    let icon: Icon
-    let status: ScreenshotSessionStatus
-    let chatSessionId: UUID?
-    let renamableTabId: UUID?
   }
 #endif

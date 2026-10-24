@@ -6,15 +6,20 @@ struct RunPickerMenu: View {
   let chipText: String
   let chipSymbol: String
   let entries: [Autocomplete.Entry]
+  var isPresented: Binding<Bool>?
 
-  init(chipText: String, chipSymbol: String, @Autocomplete.ContentBuilder content: () -> [Autocomplete.Entry]) {
+  init(
+    chipText: String, chipSymbol: String, isPresented: Binding<Bool>? = nil,
+    @Autocomplete.ContentBuilder content: () -> [Autocomplete.Entry]
+  ) {
     self.chipText = chipText
     self.chipSymbol = chipSymbol
+    self.isPresented = isPresented
     entries = content()
   }
 
   var body: some View {
-    Autocomplete.Menu {
+    Autocomplete.Menu(isPresented: isPresented) {
       entries
     } label: {
       PickerChip(text: chipText) {

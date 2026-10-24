@@ -2,6 +2,8 @@
   import SwiftUI
 
   enum AppStoreScreenshotPage {
+    static let copyButtonTitle = "Copy emoji"
+
     static var html: String {
       """
       <!doctype html>
@@ -9,65 +11,63 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-      <meta name="theme-color" content="\(AppStoreScreenshotData.colorScheme == .dark ? "#18251d" : "#f7f5ef")">
-      <title>Daylight</title>
+      <meta name="theme-color" content="\(AppStoreScreenshotData.colorScheme == .dark ? "#17161c" : "#fbfaf7")">
+      <title>emojis</title>
       <style>
       * { box-sizing: border-box; }
-      body { margin: 0; background: #f7f5ef; color: #24372c; font: 16px -apple-system, sans-serif; }
-      main { max-width: 850px; margin: auto; padding: 28px 24px 130px; }
-      nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 44px; }
-      nav strong { font-size: 23px; letter-spacing: -1px; }
-      .badge { color: #526e56; border: 1px solid #ced8ca; border-radius: 30px; padding: 7px 12px; font-size: 12px; }
-      .eyebrow { color: #66816c; font-size: 12px; letter-spacing: 2px; font-weight: 600; }
-      h1 { font: 46px Georgia, serif; letter-spacing: -2px; margin: 12px 0; }
-      .intro { line-height: 1.5; color: #718076; max-width: 340px; margin-bottom: 32px; }
-      .timer { text-align: center; background: #e5ebdd; border-radius: 26px; padding: 26px 16px; }
-      .timer p { font-size: 13px; margin: 0; color: #5c755e; }
-      .ring { width: 200px; height: 200px; border: 7px solid #bdcdb3; border-top-color: #536f4c;
-        border-right-color: #536f4c; border-radius: 50%; display: grid; place-content: center; margin: 24px auto; }
-      .time { font-size: 49px; letter-spacing: -2px; font-weight: 300; }
-      .ring span { font-size: 12px; color: #6d8066; margin-top: 6px; }
-      button { background: #304b34; color: white; border: 0; border-radius: 30px; padding: 15px 36px;
-        font: 15px -apple-system, sans-serif; }
-      .tasks { margin-top: 30px; }
-      h2 { font-size: 18px; font-weight: 500; }
-      .task { border-top: 1px solid #e0e3d8; padding: 17px 0; display: flex; align-items: center; gap: 12px; }
-      .check { border: 1px solid #aaba9d; border-radius: 50%; width: 21px; height: 21px; }
-      .done { background: #dce7d4; color: #526b4d; text-align: center; font-size: 14px; }
-      .muted { color: #81907e; text-decoration: line-through; }
+      body { margin: 0; background: #fbfaf7; color: #1f1d24; font: 16px -apple-system, sans-serif; }
+      main { max-width: 860px; margin: auto; padding: 28px 22px 120px; }
+      nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
+      nav strong { font-size: 22px; letter-spacing: -0.5px; }
+      .badge { color: #6b6676; border: 1px solid #e3e0e8; border-radius: 30px; padding: 7px 12px; font-size: 12px; }
+      h1 { font-size: 44px; letter-spacing: -1.5px; line-height: 1.05; margin: 0 0 12px; }
+      .intro { color: #6b6676; line-height: 1.5; max-width: 360px; margin: 0 0 28px; }
+      .picker { background: white; border: 1px solid #ece9f0; border-radius: 24px; padding: 18px;
+        box-shadow: 0 18px 40px -24px rgba(40, 30, 70, 0.35); }
+      .search { background: #f4f2f7; border-radius: 12px; padding: 11px 14px; color: #8d8898; font-size: 15px; }
+      .label { font-size: 12px; font-weight: 600; letter-spacing: 1px; color: #8d8898; margin: 18px 0 10px; }
+      .tones { display: flex; gap: 8px; }
+      .tone { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; }
+      .tone.on { border-color: #6d5bd0; box-shadow: 0 0 0 3px #e7e2fb; }
+      .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font-size: 30px; text-align: center; }
+      .grid span { padding: 8px 0; border-radius: 12px; }
+      .grid .on { background: #efeafd; }
+      button { margin-top: 18px; width: 100%; background: #6d5bd0; color: white; border: 0; border-radius: 14px;
+        padding: 14px; font: 600 15px -apple-system, sans-serif; }
       @media (min-width: 650px) {
-        main { max-width: 1000px; padding: 34px; display: grid; gap: 28px 34px;
-          grid-template-columns: 1fr 1fr; grid-template-areas: "nav nav" "hero timer" "tasks timer"; }
-        nav { grid-area: nav; margin-bottom: 18px; }
-        .hero { grid-area: hero; } h1 { font-size: 56px; }
-        .intro { font-size: 17px; margin-bottom: 0; }
-        .timer { grid-area: timer; padding: 36px 18px; align-self: center; }
-        .ring { width: 230px; height: 230px; margin: 30px auto; } .time { font-size: 60px; }
-        .tasks { grid-area: tasks; margin-top: 0; } .task { padding: 17px 0; }
+        main { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: center; padding: 34px; }
+        nav { grid-column: 1 / -1; margin-bottom: 8px; }
+        h1 { font-size: 56px; }
       }
-      body.dark { color-scheme: dark; background: #18251d; color: #e3e9db; }
-      .dark .intro, .dark .eyebrow, .dark .badge { color: #acbfa4; }
-      .dark .badge, .dark .task { border-color: #3d503c; }
-      .dark .timer { background: #293c2b; }
-      .dark .timer p, .dark .ring span { color: #b4c5aa; }
-      .dark .ring { border-color: #415a3a; border-top-color: #a8c197; border-right-color: #a8c197; }
-      .dark button { background: #c4d7b6; color: #21351e; }
-      .dark .done { background: #3e5536; color: #d3e3c8; }
-      .dark .muted { color: #9bac91; }
+      body.dark { color-scheme: dark; background: #17161c; color: #f1eff6; }
+      .dark .badge { border-color: #34313d; color: #a7a2b3; }
+      .dark .intro, .dark .label { color: #a7a2b3; }
+      .dark .picker { background: #211f28; border-color: #2f2c38; box-shadow: none; }
+      .dark .search { background: #2b2833; color: #8d8898; }
+      .dark .tone.on { border-color: #a898f5; box-shadow: 0 0 0 3px #3a3360; }
+      .dark .grid .on { background: #332d4f; }
+      .dark button { background: #a898f5; color: #17161c; }
       </style></head><body class="\(AppStoreScreenshotData.colorScheme == .dark ? "dark" : "light")"><main>
-      <nav><strong>☀ Daylight</strong><span class="badge">Your daily space</span></nav>
-      <section class="hero">
-      <div class="eyebrow">MAKE ROOM FOR WHAT MATTERS</div>
-      <h1>One thing at a time.</h1>
-      <p class="intro">A little structure. A little breathing room.<br>Find your focus and enjoy the work.</p>
+      <nav><strong>emojis</strong><span class="badge">3,790 emoji</span></nav>
+      <section>
+      <h1>Every emoji, in your tone.</h1>
+      <p class="intro">Pick a skin tone once and every hand, face, and wave follows. We remember it next time.</p>
       </section>
-      <section class="timer" aria-label="Focus timer"><p>FOCUS SESSION</p>
-      <div class="ring"><div class="time">25:00</div><span>Time to settle in</span></div>
-      <button>Start focus</button></section>
-      <section class="tasks"><h2>A little progress today</h2>
-      <div class="task"><span class="check done">✓</span><span class="muted">Make a little room to think</span></div>
-      <div class="task"><span class="check"></span>Bring your next idea to life</div>
-      <div class="task"><span class="check"></span>Step outside for a moment</div></section>
+      <section class="picker" aria-label="Emoji picker">
+      <div class="search">Search emoji</div>
+      <div class="label">SKIN TONE</div>
+      <div class="tones">
+      <span class="tone" style="background:#ffc93a"></span><span class="tone" style="background:#f7d7c4"></span>
+      <span class="tone" style="background:#e0b590"></span><span class="tone on" style="background:#b98a5f"></span>
+      <span class="tone" style="background:#8d5f3b"></span><span class="tone" style="background:#5c3d2a"></span>
+      </div>
+      <div class="label">PEOPLE</div>
+      <div class="grid">
+      <span class="on">👋🏽</span><span>👍🏽</span><span>🙌🏽</span><span>👏🏽</span><span>✌🏽</span><span>🤞🏽</span>
+      <span>💪🏽</span><span>🙏🏽</span><span>🤙🏽</span><span>👌🏽</span><span>🫶🏽</span><span>🤘🏽</span>
+      </div>
+      <button>\(copyButtonTitle)</button>
+      </section>
       </main></body></html>
       """
     }
