@@ -12,6 +12,10 @@
   --color-text: #f5f5f7;
   --color-muted: #86868b;
   --color-hairline: #2d2d2f;
+  --color-surface: #161714;
+  --color-raised: #1e1f1b;
+  --color-signal: #ffb547;
+  --color-go: #8fd18a;
 }
 
 html {
@@ -36,6 +40,85 @@ html:has(.marketing-shell),
 body:has(.marketing-shell) {
   background-color: var(--color-page);
   color-scheme: dark;
+}
+
+html:has(.landing) {
+  color-scheme: light dark;
+  --landing-card-radius: 18px;
+  --color-page: light-dark(#f5f5f7, #151517);
+  --color-surface: light-dark(#ffffff, #1c1c1e);
+  --color-raised: light-dark(#ececef, #262629);
+  --color-text: light-dark(#161618, #f0f0f2);
+  --color-muted: light-dark(#6e6e73, #8d8d93);
+  --color-hairline: light-dark(#e1e1e6, #27272b);
+  --color-signal: light-dark(#007aff, #0a84ff);
+  --color-go: light-dark(#1f8a4c, #3ccf7a);
+  background-color: var(--color-page);
+}
+
+.landing {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    system-ui,
+    sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.landing img,
+.landing .landing-noselect,
+.landing .landing-noselect *,
+.landing [aria-hidden="true"],
+.landing [aria-hidden="true"] * {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.landing a:has(img) {
+  -webkit-user-drag: none;
+}
+
+.landing ::selection {
+  background-color: light-dark(rgba(0, 122, 255, 0.22), rgba(10, 132, 255, 0.4));
+}
+
+.landing .landing-copy {
+  outline: none;
+}
+
+.landing .landing-copy:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+.landing-scroll-fade {
+  mask-image: linear-gradient(90deg, black calc(100% - 28px), transparent);
+}
+
+.landing-scroll-fade::-webkit-scrollbar {
+  display: none;
+}
+
+.landing-render img {
+  filter: drop-shadow(0 14px 28px light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.55)));
+}
+
+.landing-dark {
+  display: none !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .landing-light {
+    display: none !important;
+  }
+
+  .landing-dark {
+    display: block !important;
+  }
 }
 
 .legal-copy a {

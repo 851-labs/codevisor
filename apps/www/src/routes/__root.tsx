@@ -14,16 +14,17 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Codevisor — Every coding agent. One app." },
+      { title: "Codevisor — Run a whole crew of coding agents" },
       {
         name: "description",
         content:
-          "Codevisor runs Claude Code, Codex, Pi, and any ACP coding agent on your Macs and Linux servers — from native apps for Mac and iPhone."
+          "Codevisor is a native Mac and iPhone app for Claude Code, Codex, Pi, and any ACP coding agent. Run agents side by side in isolated worktrees, on every machine you own."
       },
       { property: "og:title", content: "Codevisor" },
       {
         property: "og:description",
-        content: "Every coding agent. One app. Native on Mac and iPhone, running on any machine."
+        content:
+          "Run a whole crew of coding agents. Native on Mac and iPhone, running on every machine you own."
       },
       { property: "og:type", content: "website" },
       { property: "og:url", content: "https://www.codevisor.dev" },
