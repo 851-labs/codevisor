@@ -13,7 +13,7 @@ const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)
 if (options.help) {
   console.log(
-    "Usage: bun run screenshots:ios [--device all|iphone] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]"
+    "Usage: bun run screenshots:ios [--device iphone|iphone-18-pro|ipad-pro-11] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]"
   )
   process.exit(0)
 }
@@ -37,7 +37,7 @@ if (
   selected.some(([, device]) => device.type !== simulator.deviceType)
 )
   throw new Error(
-    'Screenshot capture requires the worktree simulator to use iPhone 13 Pro Max and the requested runtime. Restart its owner with: bun run ios-simulator --device="iPhone 13 Pro Max"'
+    `Screenshot capture requires the worktree simulator to use ${selected[0][1].name} and the requested runtime. Restart its owner with: bun run ios-simulator --device="${selected[0][1].name}"`
   )
 await bootstrapDevelopment(root, { ghosttyKit: true })
 const bundle = `${iosDevelopmentBundleIdentifier(root)}.screenshots`
