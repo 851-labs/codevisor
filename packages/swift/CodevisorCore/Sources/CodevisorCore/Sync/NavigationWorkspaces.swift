@@ -78,7 +78,10 @@ public final class NavigationWorkspaces {
   static func archived(from projection: NavigationProjection) -> [WorkspaceSidebarItem] {
     projection.workspaces.filter(\.isArchived)
       .sorted { lhs, rhs in
-        lhs.createdAt != rhs.createdAt ? lhs.createdAt > rhs.createdAt : lhs.id.uuidString < rhs.id.uuidString
+        let lhsArchivedAt = lhs.archivedAt ?? lhs.createdAt
+        let rhsArchivedAt = rhs.archivedAt ?? rhs.createdAt
+        if lhsArchivedAt != rhsArchivedAt { return lhsArchivedAt > rhsArchivedAt }
+        return lhs.id.uuidString < rhs.id.uuidString
       }
       .map { workspace in
         WorkspaceSidebarItem(

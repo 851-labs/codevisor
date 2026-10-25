@@ -14,6 +14,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var selectedCenterTabId: UUID
   public var createdAt: Date
   public var isArchived: Bool
+  public var archivedAt: Date?
   public var isServerSynced: Bool
   public var git: ServerWorkspaceGit?
   public var botId: UUID?
@@ -23,7 +24,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
 
   private enum CodingKeys: String, CodingKey {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
-    case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived
+    case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived, archivedAt
     case isServerSynced, sidebarPosition, sidebarOrderRevision, botId, botMachineId
   }
 
@@ -52,6 +53,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     }
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
     isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
     botId = try container.decodeIfPresent(UUID.self, forKey: .botId)
     botMachineId = try container.decodeIfPresent(String.self, forKey: .botMachineId)
@@ -70,6 +72,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(selectedCenterTabId, forKey: .selectedCenterTabId)
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(isArchived, forKey: .isArchived)
+    try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
     try container.encode(isServerSynced, forKey: .isServerSynced)
     try container.encodeIfPresent(sidebarPosition, forKey: .sidebarPosition)
     try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
