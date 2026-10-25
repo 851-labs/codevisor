@@ -26,6 +26,7 @@ enum NavigationProjectionBuilder {
       worktreeName: worktreeName, serverId: machineId, projectId: projectId, centerTabs: [placeholder],
       createdAt: createdAt, isArchived: record.isArchived, isServerSynced: true)
     workspace.sidebarPosition = record.sidebarPosition
+    workspace.archivedAt = record.archivedAt.flatMap { try? ServerDateCoding.date(from: $0) }
     workspace.sidebarOrderRevision = record.sidebarOrderRevision ?? 0
     workspace.git = record.git
     workspace.botId = record.botId.flatMap(UUID.init(uuidString:))

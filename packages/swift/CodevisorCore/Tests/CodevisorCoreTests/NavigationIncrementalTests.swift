@@ -158,6 +158,39 @@ struct NavigationIncrementalTests {
     #expect(fixture.store.workspaceEntries.archived.map(\.id) == [archived.id])
   }
 
+  @Test("Archived chats follow archive time across updates, restoration, and rearchiving")
+  func archivedSidebarOrder() async {
+    let fixture = NavigationFixture()
+    var older = workspace("Older chat", chat: ChatSession(projectId: project.id, serverId: "m"))
+    older.createdAt = Date(timeIntervalSince1970: 100)
+    older.isArchived = true
+    var newer = workspace("Newer chat", chat: ChatSession(projectId: project.id, serverId: "m"))
+    newer.createdAt = Date(timeIntervalSince1970: 200)
+    newer.isArchived = true
+    await fixture.install(machineId: "m", projects: [project], workspaces: [older, newer])
+    #expect(fixture.store.workspaceEntries.archived.map(\.id) == [newer.id, older.id])
+
+    var olderRecord = WorkspaceSyncModel.serverWorkspace(from: older)
+    olderRecord.archivedAt = "2026-10-25T12:00:00.000Z"
+    var newerRecord = WorkspaceSyncModel.serverWorkspace(from: newer)
+    newerRecord.archivedAt = "2026-10-24T12:00:00.000Z"
+    #expect(
+      await fixture.store.apply(
+        .fixture(cursor: 2, workspaces: [newerRecord, olderRecord]), machineId: "m"))
+    #expect(fixture.store.workspaceEntries.archived.map(\.id) == [older.id, newer.id])
+
+    newerRecord.isArchived = false
+    newerRecord.archivedAt = nil
+    #expect(await fixture.store.apply(.fixture(cursor: 3, workspaces: [newerRecord]), machineId: "m"))
+    #expect(fixture.store.workspaceEntries.archived.map(\.id) == [older.id])
+    #expect(fixture.store.workspaceEntries.sidebar.map(\.id) == [newer.id])
+
+    newerRecord.isArchived = true
+    newerRecord.archivedAt = "2026-10-26T12:00:00.000Z"
+    #expect(await fixture.store.apply(.fixture(cursor: 4, workspaces: [newerRecord]), machineId: "m"))
+    #expect(fixture.store.workspaceEntries.archived.map(\.id) == [newer.id, older.id])
+  }
+
   @Test("An unrelated change leaves the sidebar list as it was")
   func sidebarStable() async {
     let (fixture, _, _, first, _) = await installTwo()

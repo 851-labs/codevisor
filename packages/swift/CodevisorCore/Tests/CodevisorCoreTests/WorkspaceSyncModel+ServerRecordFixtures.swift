@@ -11,6 +11,7 @@ extension WorkspaceSyncModel {
       hasCustomName: workspace.hasCustomName,
       rootDirectory: workspace.rootDirectory,
       isArchived: workspace.isArchived,
+      archivedAt: workspace.archivedAt.map(ServerDateCoding.string(from:)),
       createdAt: ServerDateCoding.string(from: workspace.createdAt),
       sidebarPosition: workspace.sidebarPosition,
       sidebarOrderRevision: workspace.sidebarOrderRevision > 0 ? workspace.sidebarOrderRevision : nil,
