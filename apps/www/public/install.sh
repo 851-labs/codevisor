@@ -372,7 +372,7 @@ install_server() {
   port="${explicit_port:-49361}"
 
   target="$os-$arch"
-  archive_url="$RELEASE_DOWNLOAD_BASE/v$version/codevisor-server-$target.tar.gz"
+  archive_url="${CODEVISOR_SERVER_ARCHIVE_BASE:-$RELEASE_DOWNLOAD_BASE/v$version}/codevisor-server-$target.tar.gz"
   archive="$tmp_dir/codevisor-server.tar.gz"
 
   download_server_archive

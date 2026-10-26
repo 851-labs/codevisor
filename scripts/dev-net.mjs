@@ -31,26 +31,30 @@ export function devRelayHost({ containerEngine, containerHostAddress }) {
   return "127.0.0.1"
 }
 
-export async function resolveDevNet({ instanceHash, netRoot, relayHost }) {
-  const slots = 1000 / RELAYS
+export async function resolveDevNet({ instanceHash, netRoot, relayHost, vmHost }) {
+  const hosts = relayHosts(relayHost, vmHost)
+  const slots = Math.floor(1000 / hosts.length)
   let slot = Number.parseInt(instanceHash.slice(0, 8), 16) % slots
   for (let attempt = 0; attempt < slots; attempt += 1, slot = (slot + 1) % slots) {
-    const base = 30_000 + slot * RELAYS * PORTS_PER_RELAY
-    const ports = Array.from({ length: RELAYS * PORTS_PER_RELAY }, (_, index) => base + index)
+    const base = 30_000 + slot * hosts.length * PORTS_PER_RELAY
+    const ports = Array.from({ length: hosts.length * PORTS_PER_RELAY }, (_, index) => base + index)
     if ((await Promise.all(ports.map((port) => isPortAvailable(port)))).every(Boolean)) {
-      const relays = Array.from({ length: RELAYS }, (_, index) => {
+      const relays = hosts.map(({ name, host, bind }, index) => {
         const [httpsPort, quic, router, internal, metrics] = ports.slice(
           index * PORTS_PER_RELAY,
           (index + 1) * PORTS_PER_RELAY
         )
         return {
-          name: `relay-${index + 1}`,
-          url: `https://${relayHost}:${httpsPort}`,
+          name,
+          host,
+          bind,
+          url: `https://${host}:${httpsPort}`,
           ports: { https: httpsPort, quic, router, internal, metrics }
         }
       })
       return {
         relayHost,
+        vmHost,
         relays,
         netRoot,
         caFile: join(netRoot, "ca.pem"),
@@ -59,6 +63,15 @@ export async function resolveDevNet({ instanceHash, netRoot, relayHost }) {
     }
   }
   throw new Error("No free port range for the dev tunnel relays")
+}
+
+const relayHosts = (relayHost, vmHost) => {
+  const shared = Array.from({ length: RELAYS }, (_, index) => ({
+    name: `relay-${index + 1}`,
+    host: relayHost
+  }))
+  if (vmHost === undefined) return shared
+  return [...shared, { name: "relay-vm", host: vmHost, bind: "0.0.0.0" }]
 }
 
 export const devRelayMap = (net) =>
@@ -84,7 +97,9 @@ function run(command, args, options = {}) {
 const certificateDigest = "-sha256"
 
 export async function ensureDevCertificates(net) {
-  const names = [...new Set(["localhost", "127.0.0.1", "::1", net.relayHost])]
+  const names = [
+    ...new Set(["localhost", "127.0.0.1", "::1", net.relayHost, net.vmHost].filter(Boolean))
+  ]
   const dir = net.netRoot
   await mkdir(dir, { recursive: true })
   const namesFile = join(dir, "cert-names.json")
@@ -172,16 +187,17 @@ export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, co
   for (const relay of net.relays) {
     const dir = join(net.netRoot, relay.name)
     await mkdir(join(dir, "acme-webroot"), { recursive: true })
+    const relayBind = relay.bind ?? bind
     const relayEnvironment = {
       ...process.env,
-      RELAY_HOSTNAME: net.relayHost,
+      RELAY_HOSTNAME: relay.host ?? net.relayHost,
       RELAY_CERT_PATH: join(net.netRoot, "relay.pem"),
       RELAY_KEY_PATH: join(net.netRoot, "relay.key"),
       RELAY_AUTHORIZE_URL: `http://127.0.0.1:${cloudPort}/api/relay/authorize`,
       RELAY_AUTHORIZE_TOKEN: net.authorizeToken,
       RELAY_HTTP_BIND_ADDR: `127.0.0.1:${relay.ports.internal}`,
-      RELAY_HTTPS_BIND_ADDR: `${bind}:${relay.ports.https}`,
-      RELAY_QUIC_BIND_ADDR: `${bind}:${relay.ports.quic}`,
+      RELAY_HTTPS_BIND_ADDR: `${relayBind}:${relay.ports.https}`,
+      RELAY_QUIC_BIND_ADDR: `${relayBind}:${relay.ports.quic}`,
       RELAY_METRICS_BIND_ADDR: `127.0.0.1:${relay.ports.metrics}`,
       RUST_LOG: process.env.CODEVISOR_DEV_RELAY_LOG ?? "warn"
     }
@@ -209,7 +225,7 @@ export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, co
       spawn("python3", [join(repoRoot, "apps/relay/port80-router.py")], {
         env: {
           ...relayEnvironment,
-          ROUTER_HOST: bind,
+          ROUTER_HOST: relayBind,
           ROUTER_PORT: String(relay.ports.router),
           ACME_WEBROOT: join(dir, "acme-webroot")
         },
@@ -276,14 +292,14 @@ export async function waitForDevRelays(
   return false
 }
 
-export async function prepareDevNet({ instanceHash, netRoot, containerContext }) {
+export async function prepareDevNet({ instanceHash, netRoot, containerContext, vmHost }) {
   const { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary } =
     await import("./net-artifact.mjs")
   const relayHost = devRelayHost({
     containerEngine: containerContext?.engine,
     containerHostAddress: containerContext?.hostAddress
   })
-  const net = await resolveDevNet({ instanceHash, netRoot, relayHost })
+  const net = await resolveDevNet({ instanceHash, netRoot, relayHost, vmHost })
   await ensureDevCertificates(net)
   await ensureNodeAddon()
   if (containerContext !== undefined) {

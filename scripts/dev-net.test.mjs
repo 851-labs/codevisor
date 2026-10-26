@@ -9,9 +9,11 @@ import test from "node:test"
 import { rootCertificates } from "node:tls"
 
 import {
+  devRelayMap,
   ensureDevCertificates,
   relayHealthUrl,
   relayHealthy,
+  resolveDevNet,
   waitForDevRelays
 } from "./dev-net.mjs"
 
@@ -116,6 +118,55 @@ test("dev relay certificates are signed with SHA-256 by any openssl", async () =
         `${file} must be signed with SHA-256`
       )
     }
+  } finally {
+    await rm(netRoot, { recursive: true, force: true })
+  }
+})
+
+test("a Tart VM gets its own relay, advertised on the address VMs can reach", async () => {
+  const shared = await resolveDevNet({
+    instanceHash: "0badc0de",
+    netRoot: "/tmp/unused",
+    relayHost: "192.168.64.1"
+  })
+  const withVms = await resolveDevNet({
+    instanceHash: "0badc0de",
+    netRoot: "/tmp/unused",
+    relayHost: "192.168.64.1",
+    vmHost: "192.168.10.200"
+  })
+
+  assert.deepEqual(
+    shared.relays.map(({ name, host }) => [name, host]),
+    [
+      ["relay-1", "192.168.64.1"],
+      ["relay-2", "192.168.64.1"]
+    ]
+  )
+  assert.deepEqual(
+    withVms.relays.map(({ name, host, bind }) => [name, host, bind]),
+    [
+      ["relay-1", "192.168.64.1", undefined],
+      ["relay-2", "192.168.64.1", undefined],
+      ["relay-vm", "192.168.10.200", "0.0.0.0"]
+    ]
+  )
+  assert.match(devRelayMap(withVms)[2].url, /^https:\/\/192\.168\.10\.200:\d+$/)
+})
+
+test("the relay certificate also names the VM-facing address", async () => {
+  const netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
+  try {
+    await ensureDevCertificates({ netRoot, relayHost: "192.168.64.1", vmHost: "192.168.10.200" })
+    const text = execFileSync(
+      "openssl",
+      ["x509", "-in", join(netRoot, "relay.pem"), "-noout", "-ext", "subjectAltName"],
+      {
+        encoding: "utf8"
+      }
+    )
+    assert.match(text, /IP Address:192\.168\.64\.1/)
+    assert.match(text, /IP Address:192\.168\.10\.200/)
   } finally {
     await rm(netRoot, { recursive: true, force: true })
   }

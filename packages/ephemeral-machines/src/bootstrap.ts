@@ -6,6 +6,7 @@ export interface BootstrapRequest {
   readonly inviteCode: string
   readonly machineName: string
   readonly installUrl?: string
+  readonly installEnvironment?: Readonly<Record<string, string>>
   readonly serverEnvironment?: Readonly<Record<string, string>>
   readonly timeoutMs?: number
 }
@@ -34,7 +35,7 @@ export const bootstrapScript = (request: BootstrapRequest): string =>
     "export CODEVISOR_NO_SETUP=1 CODEVISOR_NO_SERVICE=1 CODEVISOR_INSTALL_SERVER=1",
     'installer="$(mktemp)"',
     `curl -fsSL ${shellQuote(request.installUrl ?? DEFAULT_INSTALL_URL)} -o "$installer"`,
-    'sh "$installer"',
+    `${environmentAssignments(request.installEnvironment)}sh "$installer"`,
     ...serverStartLines(request.serverEnvironment),
     `as_server "$home/.local/bin/codevisor" auth login --invite - --name ${shellQuote(request.machineName)}`,
     ""

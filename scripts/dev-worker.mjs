@@ -18,6 +18,12 @@ import {
   resolveContainerEngine
 } from "./dev-containers.mjs"
 import {
+  devEphemeralEnvironment,
+  ensureDevServerArchive,
+  resolveDevVmHost,
+  serveDevEphemeralArtifacts
+} from "./dev-ephemeral.mjs"
+import {
   createDevelopmentAppIcon,
   createDevelopmentBrowserExtensionIcons,
   makeCommandRunner,
@@ -148,11 +154,22 @@ const [containerContext] = await Promise.all([
       })
 ])
 
+const vmHost = await resolveDevVmHost()
 const net = await prepareDevNet({
   instanceHash,
   netRoot: join(layout.tmpRoot, "net"),
-  containerContext
+  containerContext,
+  vmHost
 })
+const ephemeralArchiveRoot = join(layout.tmpRoot, "ephemeral")
+const ephemeralArchive =
+  vmHost === undefined
+    ? undefined
+    : ensureDevServerArchive({ repoRoot, archiveRoot: ephemeralArchiveRoot }).catch((error) => {
+        console.warn(
+          `Tart VMs won't get this build's server (${error instanceof Error ? error.message : error}).`
+        )
+      })
 const cloud = spawnCloudDev({
   cloud: {
     cloudExtraVariables: [...cloudExtraVariables, ...devNetCloudVariables(net)],
@@ -160,7 +177,7 @@ const cloud = spawnCloudDev({
     cloudPort,
     cloudUrl
   },
-  containerized: containerContext !== undefined,
+  listensBeyondLoopback: containerContext !== undefined || vmHost !== undefined,
   repoRoot,
   worktreeName
 })
@@ -212,6 +229,15 @@ const relays = await launchDevNet({
   cloudPort,
   containerized: containerContext !== undefined
 })
+let ephemeralArtifacts
+if ((await ephemeralArchive) !== undefined) {
+  ephemeralArtifacts = await serveDevEphemeralArtifacts({
+    repoRoot,
+    archiveRoot: ephemeralArchiveRoot,
+    host: vmHost
+  })
+  console.log(`  vms:      Tart VMs install this build from ${ephemeralArtifacts.url}`)
+}
 const developmentBrowserIconDirectory = await createDevelopmentBrowserExtensionIcons({
   appName,
   derivedDataPath,
@@ -232,7 +258,10 @@ const sharedEnvironment = {
   CODEVISOR_DEV_URL_SCHEME: urlScheme,
   VITE_CODEVISOR_DEV_URL_SCHEME: urlScheme,
   CODEVISOR_DEV_CLOUD_TOKEN: "",
-  ...(await devNetEnvironment(net))
+  ...(await devNetEnvironment(net)),
+  ...(ephemeralArtifacts === undefined
+    ? {}
+    : devEphemeralEnvironment({ artifactsUrl: ephemeralArtifacts.url, vmHost, cloudPort }))
 }
 const withoutCloudToken = (environment) => {
   const copy = { ...environment }
@@ -303,6 +332,7 @@ const stop = async (exitCode = 0) => {
   www.kill("SIGTERM")
   cloud.kill("SIGTERM")
   for (const relay of relays) relay.kill("SIGTERM")
+  ephemeralArtifacts?.server.close()
 
   await shutdownDevServers([
     [serverPort(), server],

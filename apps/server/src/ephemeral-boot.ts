@@ -135,7 +135,7 @@ const inviteFor = async (
   provider: EphemeralProviderId
 ): Promise<string> => {
   const { code } = await options.enrollment.invite({ ephemeral: { provider } })
-  const cloudUrl = options.env["CODEVISOR_EPHEMERAL_CLOUD_URL"]
+  const cloudUrl = developmentSettings(options.env)?.cloudUrl
   return cloudUrl === undefined ? code : rewriteMachineInviteServer(code, cloudUrl)
 }
 
@@ -148,19 +148,50 @@ const removeQuietly = async (options: EphemeralBootOptions, deviceId: string): P
   }
 }
 
-const bootstrapSettings = (env: NodeJS.ProcessEnv) => ({
-  ...(env["CODEVISOR_INSTALL_URL"] === undefined
-    ? {}
-    : { installUrl: env["CODEVISOR_INSTALL_URL"] }),
-  serverEnvironment: developmentServerEnvironment(env)
-})
+interface DevelopmentEphemeralSettings {
+  readonly instance: string
+  readonly artifactsUrl: string | undefined
+  readonly cloudUrl: string | undefined
+}
 
-const developmentServerEnvironment = (env: NodeJS.ProcessEnv): Record<string, string> => {
-  const caFile = env["CODEVISOR_NET_CA_FILE"]
+const developmentSettings = (env: NodeJS.ProcessEnv): DevelopmentEphemeralSettings | undefined => {
   const instance = env["CODEVISOR_DEV_INSTANCE_ID"]
+  if (instance === undefined) return undefined
+
+  return {
+    instance,
+    artifactsUrl: env["CODEVISOR_DEV_EPHEMERAL_ARTIFACTS_URL"],
+    cloudUrl: env["CODEVISOR_DEV_EPHEMERAL_CLOUD_URL"]
+  }
+}
+
+const bootstrapSettings = (env: NodeJS.ProcessEnv) => {
+  const development = developmentSettings(env)
+  if (development === undefined) return {}
+
+  return {
+    ...developmentInstaller(development.artifactsUrl),
+    serverEnvironment: developmentServerEnvironment(env, development.instance)
+  }
+}
+
+const developmentInstaller = (artifactsUrl: string | undefined) => {
+  if (artifactsUrl === undefined) return {}
+
+  return {
+    installUrl: `${artifactsUrl}/install.sh`,
+    installEnvironment: { CODEVISOR_SERVER_ARCHIVE_BASE: artifactsUrl, CODEVISOR_VERSION: "dev" }
+  }
+}
+
+const developmentServerEnvironment = (
+  env: NodeJS.ProcessEnv,
+  instance: string
+): Record<string, string> => {
+  const caFile = env["CODEVISOR_NET_CA_FILE"]
   return {
     ...(caFile === undefined ? {} : { CODEVISOR_NET_CA_PEM: readFileSync(caFile, "utf8") }),
-    ...(instance === undefined ? {} : { CODEVISOR_DEV_INSTANCE_ID: `${instance}-ephemeral` })
+    CODEVISOR_DEV_INSTANCE_ID: `${instance}-ephemeral`
   }
 }
 

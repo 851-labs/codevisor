@@ -30,17 +30,21 @@ describe("bootstrapMachine", () => {
     expect(run?.request.script).toContain(`auth login --invite - --name 'Ada'\\''s box'`)
   })
 
-  it("passes server environment to the start command only", () => {
+  it("passes installer environment to the installer and server environment to the start command", () => {
     const script = bootstrapScript({
       inviteCode: invite,
       machineName: "box",
       installUrl: "http://192.168.64.1:4000/install.sh",
+      installEnvironment: { CODEVISOR_SERVER_ARCHIVE_BASE: "http://192.168.64.1:4000" },
       serverEnvironment: { CODEVISOR_NET_CA_PEM: "-----BEGIN-----" }
     })
 
-    const startLine = script.split("\n").find((line) => line.includes(" start "))
-    expect(startLine).toBe(
+    const lines = script.split("\n")
+    expect(lines.find((line) => line.includes(" start "))).toBe(
       `as_server CODEVISOR_NET_CA_PEM='-----BEGIN-----' "$home/.local/bin/codevisor" start </dev/null`
+    )
+    expect(lines.find((line) => line.endsWith('sh "$installer"'))).toBe(
+      `CODEVISOR_SERVER_ARCHIVE_BASE='http://192.168.64.1:4000' sh "$installer"`
     )
     expect(script).toContain("curl -fsSL 'http://192.168.64.1:4000/install.sh' -o")
   })

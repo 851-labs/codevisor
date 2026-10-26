@@ -107,7 +107,7 @@ const install = async (t, options = {}) => {
   const digest = createHash("sha256").update(readFileSync(archive)).digest("hex")
   const checksum = join(root, "checksum")
   writeFileSync(checksum, `${digest}  codevisor-server-${target}.tar.gz\n`)
-  const archiveURL = `${downloadBase}/v${version}/codevisor-server-${target}.tar.gz`
+  const archiveURL = `${options.archiveBase ?? `${downloadBase}/v${version}`}/codevisor-server-${target}.tar.gz`
   const responses = {
     [stableURL]: {
       body: options.manifest ?? JSON.stringify({ version: "0.1.99", buildNumber: 422 }, null, 2),
@@ -437,22 +437,22 @@ describe("install.sh", { concurrency: true }, () => {
     })
   }
 
-  test("Apple silicon installs the headless darwin-arm64 server when asked", async (t) => {
-    const result = await install(t, {
-      platform: "Darwin",
-      architecture: "arm64",
-      env: { CODEVISOR_INSTALL_SERVER: "1" }
+  for (const archiveBase of [undefined, "http://192.0.2.10:8123"]) {
+    test(`Apple silicon installs the headless server from ${archiveBase ?? "the release"}`, async (t) => {
+      const result = await install(t, {
+        platform: "Darwin",
+        architecture: "arm64",
+        archiveBase,
+        env: { CODEVISOR_INSTALL_SERVER: "1", CODEVISOR_SERVER_ARCHIVE_BASE: archiveBase }
+      })
+      assert.equal(result.status, 0, result.stderr)
+      const archive = `${archiveBase ?? `${downloadBase}/v0.1.99`}/codevisor-server-darwin-arm64.tar.gz`
+      assert.deepEqual(
+        result.requests.map(({ url }) => url),
+        [stableURL, archive, `${archive}.sha256`]
+      )
     })
-    assert.equal(result.status, 0, result.stderr)
-    assert.deepEqual(
-      result.requests.map(({ url }) => url),
-      [
-        stableURL,
-        `${downloadBase}/v0.1.99/codevisor-server-darwin-arm64.tar.gz`,
-        `${downloadBase}/v0.1.99/codevisor-server-darwin-arm64.tar.gz.sha256`
-      ]
-    )
-  })
+  }
 
   test("Intel Mac installs the standalone darwin-x64 server once confirmed", async (t) => {
     const result = await install(t, {

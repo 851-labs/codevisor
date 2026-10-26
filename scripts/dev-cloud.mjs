@@ -56,14 +56,14 @@ export async function applyCloudDevMigrations({ cloudPersistPath, repoRoot, run 
   })
 }
 
-export function spawnCloudDev({ cloud, containerized, repoRoot, worktreeName }) {
+export function spawnCloudDev({ cloud, listensBeyondLoopback, repoRoot, worktreeName }) {
   return spawn(
     "bun",
     [
       "x",
       "wrangler",
       "dev",
-      ...(containerized ? ["--ip", "0.0.0.0"] : []),
+      ...(listensBeyondLoopback ? ["--ip", "0.0.0.0"] : []),
       "--port",
       String(cloud.cloudPort),
       "--persist-to",
