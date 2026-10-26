@@ -8,13 +8,9 @@ import os
 extension CodevisorGhosttyApp {
   static func buildConfig(systemIsDark: Bool?) -> ghostty_config_t {
     let cfg = ghostty_config_new()
-    #if DEBUG
-      if !AppStoreScreenshotData.isEnabled && BentoRender.outputDirectory == nil {
-        ghostty_config_load_default_files(cfg)
-      }
-    #else
+    if !AppPreview.rendersFixtures {
       ghostty_config_load_default_files(cfg)
-    #endif
+    }
     if let overrideFile = writeOverrideConfig(systemIsDark: systemIsDark) {
       ghostty_config_load_file(cfg, overrideFile)
     }

@@ -20,11 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    guard appInstanceLease != nil, !Self.rendersOnlyFixtures else { return }
+    guard appInstanceLease != nil else { return }
     Task { @MainActor in await AppRuntime.shared.startIfNeeded() }
   }
 
   func applicationWillFinishLaunching(_ notification: Notification) {
+    guard !AppPreview.rendersFixtures else { return }
     let bundleURL = Bundle.main.bundleURL
     do {
       if let lease = try AppInstanceLease.acquireDefault(for: bundleURL) {
@@ -49,14 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Log.updates.fault("launch: could not acquire the app instance lease: \(error)")
       NSApp.terminate(nil)
     }
-  }
-
-  private static var rendersOnlyFixtures: Bool {
-    #if DEBUG
-      AppStoreScreenshotData.isEnabled
-    #else
-      false
-    #endif
   }
 
   private func activateExistingInstance(from bundleURL: URL) -> Bool {
