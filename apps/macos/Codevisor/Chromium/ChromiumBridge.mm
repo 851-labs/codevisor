@@ -91,6 +91,7 @@ class DevToolsClient;
   BOOL _contextReady;
   BOOL _creating;
   BOOL _closed;
+  BOOL _hasCommittedPage;
   NSUInteger _faviconGeneration;
   BOOL _faviconRequested;
   NSString *_address;
@@ -555,6 +556,8 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     [view publish];
   }
   bool DoClose(CefRefPtr<CefBrowser> browser) override {
+    CVChromiumView *view = view_;
+    closedByPage_ = view && !view->_closed && !ChromiumRuntime::Shared().HasRequestedShutdown();
     NSView *child = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
     dispatch_async(dispatch_get_main_queue(), ^{ [child removeFromSuperview]; });
     return true;
@@ -562,9 +565,10 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
     CVChromiumView *view = view_;
     if (view) {
-      if (!view->_closed && view.pageClosed) {
-        void (^closed)(void) = [view.pageClosed copy];
-        dispatch_async(dispatch_get_main_queue(), closed);
+      if (!view->_closed && view.browserClosed) {
+        void (^closed)(BOOL) = [view.browserClosed copy];
+        BOOL closedByPage = closedByPage_;
+        dispatch_async(dispatch_get_main_queue(), ^{ closed(closedByPage); });
       }
       [view closeDevTools];
       if (view->_protocolObserver) view->_protocolObserver->Close();
@@ -592,6 +596,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     if (!frame->IsMain()) return;
     CVChromiumView *view = view_;
     if (!view) return;
+    if (frame->GetURL().ToString() != "about:blank") view->_hasCommittedPage = YES;
     ++view->_faviconGeneration;
     view->_faviconRequested = NO;
     if (view.faviconChanged) view.faviconChanged(nil);
@@ -694,13 +699,14 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     auto found = pendingPopups_.find(popupID);
     if (found != pendingPopups_.end()) {
       CVChromiumView *popup = found->second;
-      if (popup.pageClosed) popup.pageClosed();
+      if (popup.browserClosed) popup.browserClosed(YES);
       [popup closeBrowser]; pendingPopups_.erase(found);
     }
   }
   NSString *title_ = @"Browser";
   std::function<void()> created_;
  private:
+  bool closedByPage_ = false;
   __weak CVChromiumView *view_;
   const std::string host_, username_, password_;
   const int port_;
@@ -736,9 +742,9 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     _viewportScale = scale;
     if (self.viewportScaleChanged) self.viewportScaleChanged(scale);
   }
-  _browser->GetHost()->NotifyMoveOrResizeStarted();
 }
 - (BOOL)browserIsReady { return _browser && !_closed; }
+- (BOOL)hasCommittedPage { return _hasCommittedPage && !_closed; }
 - (BOOL)keepsRuntimeAwake { return !_closed; }
 - (void)sendProtocolMethod:(NSString *)method params:(NSData *)params sessionId:(NSString *)sessionId
                 completion:(void (^)(NSData *))completion {
@@ -913,10 +919,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   }
   [self splitView:_splitView resizeSubviewsWithOldSize:_splitView.bounds.size];
   _layingOutTools = NO;
-  if (_toolsBrowser) {
-    _toolsBrowser->GetHost()->NotifyMoveOrResizeStarted();
-    _toolsBrowser->GetHost()->SetAccessibilityState(STATE_ENABLED);
-  }
+  if (_toolsBrowser) _toolsBrowser->GetHost()->SetAccessibilityState(STATE_ENABLED);
   [NSUserDefaults.standardUserDefaults setObject:side forKey:@"browserDevToolsDockSide"];
   [self focusDevTools];
 }

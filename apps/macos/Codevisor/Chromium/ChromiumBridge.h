@@ -19,7 +19,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @interface CVChromiumView : NSView
 @property(nonatomic, copy, nullable) BOOL (^openLink)(NSString *url, CVBrowserLinkDestination destination);
 @property(nonatomic, copy, nullable) BOOL (^adoptPopup)(CVChromiumView *popup, NSString *url, CVBrowserLinkDestination destination);
-@property(nonatomic, copy, nullable) void (^pageClosed)(void);
+@property(nonatomic, copy, nullable) void (^browserClosed)(BOOL closedByPage);
 @property(nonatomic, copy, nullable) void (^stateChanged)(NSString *url, NSString *title, BOOL loading, BOOL back, BOOL forward);
 @property(nonatomic, copy, nullable) void (^zoomChanged)(NSInteger percent, BOOL canZoomOut, BOOL canZoomIn, BOOL canReset);
 @property(nonatomic, copy, nullable) void (^browserReady)(void);
@@ -31,6 +31,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
                  sessionId:(nullable NSString *)sessionId
                 completion:(void (^)(NSData *reply))completion NS_SWIFT_DISABLE_ASYNC;
 @property(nonatomic, readonly) BOOL browserIsReady;
+@property(nonatomic, readonly) BOOL hasCommittedPage;
 @property(nonatomic, readonly) BOOL hasOpenDevTools;
 @property(nonatomic, readonly) BOOL hasPageFocus;
 @property(nonatomic, copy, nullable) void (^loadFailed)(NSString *message);

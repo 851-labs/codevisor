@@ -3,14 +3,26 @@ import Foundation
 
 @MainActor
 public final class BrowserPaneSync {
+  public static let quickReturnInterval: TimeInterval = 30
   private let paneId: UUID
   private let client: any BrowserStateClienting
+  private let now: () -> TimeInterval
   private var publication: Task<Void, Never>?
   private var lastPublished: BrowserNavigation?
   private var visible = false
   private var activation = 0
   private var cookieGeneration = 0
-  public init(paneId: UUID, client: any BrowserStateClienting) { self.paneId = paneId; self.client = client }
+  private var hiddenAt: TimeInterval?
+  private var refreshesFromServer = true
+
+  public init(
+    paneId: UUID, client: any BrowserStateClienting,
+    now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+  ) {
+    self.paneId = paneId
+    self.client = client
+    self.now = now
+  }
 
   public func recordLoadedCookies(_ cookies: BrowserCookieSync?) {
     cookieGeneration = cookies?.generation ?? 0
@@ -19,6 +31,7 @@ public final class BrowserPaneSync {
   public func setVisible(_ value: Bool) -> Bool {
     guard visible != value else { return false }
     visible = value; activation += 1
+    if value { refreshesFromServer = !isQuickReturn } else { hiddenAt = now() }
     return value
   }
   public func cancelActivation() { activation += 1 }
@@ -28,6 +41,10 @@ public final class BrowserPaneSync {
   ) async {
     let token = activation
     await publication?.value
+    guard refreshesFromServer else {
+      if visible, activation == token { reloadForNewCookies(cookies, currentURL: currentURL, load: load) }
+      return
+    }
     do {
       try await cookies?.synchronize()
       let navigation = try await client.browserNavigation(paneId: paneId)
@@ -57,5 +74,19 @@ public final class BrowserPaneSync {
         then()
       } catch { if lastPublished == navigation { lastPublished = nil } }
     }
+  }
+
+  private var isQuickReturn: Bool {
+    guard let hiddenAt else { return false }
+    return now() - hiddenAt < Self.quickReturnInterval
+  }
+
+  private func reloadForNewCookies(
+    _ cookies: BrowserCookieSync?, currentURL: String?, load: @MainActor (String, Bool) -> Void
+  ) {
+    let generation = cookies?.generation ?? 0
+    guard generation != cookieGeneration, let currentURL else { return }
+    cookieGeneration = generation
+    load(currentURL, true)
   }
 }

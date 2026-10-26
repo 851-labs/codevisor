@@ -26,6 +26,7 @@ final class ChromiumBrowserModel {
   private(set) var canResetZoom = false
   private(set) var zoomPresentationRequest = 0
   private(set) var errorMessage: String?
+  private(set) var snapshot: Data?
   var addressFocusRequest = 0
   var viewport: ChromiumViewport?
   @ObservationIgnored private var synchronized = false
@@ -45,6 +46,7 @@ final class ChromiumBrowserModel {
   @ObservationIgnored private var needsBackgroundHost = false
   @ObservationIgnored private var isVisible = false
   @ObservationIgnored private var retentionRevision = 0
+  @ObservationIgnored private let freezer = ChromiumPageFreezer()
   @ObservationIgnored var onClose: (() -> Void)?
   @ObservationIgnored var onSelect: (() -> Void)?
 
@@ -134,9 +136,9 @@ final class ChromiumBrowserModel {
     view.adoptPopup = { [weak self] popup, address, destination in
       self?.onOpenLink?(address, destination.workspaceDestination, popup) ?? false
     }
-    view.pageClosed = { [weak self] in
+    view.browserClosed = { [weak self] closedByPage in
       guard let self, self.generation == token else { return }
-      self.onClose?()
+      self.browserClosed(byPage: closedByPage)
     }
     view.viewportScaleChanged = { [weak self, weak view] scale in
       Task { @MainActor [weak self, weak view] in
@@ -216,6 +218,11 @@ final class ChromiumBrowserModel {
     }
   }
 
+  private func browserClosed(byPage closedByPage: Bool) {
+    guard BrowserPageClosing.shared.closesTab(whenClosedByPage: closedByPage) else { return }
+    onClose?()
+  }
+
   func presentInWindow() {
     guard browserWindow == nil else { browserWindow?.showWindow(nil); return }
     let controller = ChromiumBrowserWindow(model: self)
@@ -241,7 +248,10 @@ final class ChromiumBrowserModel {
     needsBackgroundHost = true
     if readyError != nil { resetBrowser(keepingAutomationTarget: true) }
     if let view = webView { hostInBackgroundIfNeeded(view) }
-    if let view = webView, view.browserIsReady, synchronized { return view }
+    if let view = webView, view.browserIsReady, synchronized {
+      await freezer.thaw()
+      return view
+    }
     start()
     return try await withCheckedThrowingContinuation { readyWaiters.append($0) }
   }
@@ -306,6 +316,7 @@ final class ChromiumBrowserModel {
   func setVisible(_ visible: Bool) {
     if isVisible != visible { retentionRevision += 1; BrowserPageRetention.shared.touch(self) }
     isVisible = visible
+    updateFreezing()
     ChromiumProfiles.shared.setVisible(visible, paneId: paneId, machineId: machineId)
     guard paneSync.setVisible(visible) else { return }
     if webView == nil { start(); return }
@@ -317,6 +328,20 @@ final class ChromiumBrowserModel {
         if reload { self?.reload() } else { self?.webView?.navigate(address) }
       }
     }
+  }
+  private func updateFreezing() {
+    guard let webView else { return }
+    guard !isVisible else {
+      Task { await freezer.thaw() }
+      return
+    }
+    freezer.freezeLater(webView) { [weak self] in self?.protectsBrowserPage == false }
+  }
+  func captureSnapshot() async {
+    guard let view = webView, view.hasCommittedPage, let image = await ChromiumPageSnapshot.capture(view),
+      webView === view
+    else { return }
+    snapshot = image
   }
   func showDevTools() { webView?.showDevTools() }
   func focusAddress() { addressFocusRequest += 1 }
@@ -343,8 +368,10 @@ final class ChromiumBrowserModel {
     generation = UUID()
     loadTask?.cancel()
     loadTask = nil
+    freezer.cancel()
     ChromiumProfiles.shared.detach(webView, machineId: machineId)
     webView?.closeBrowser()
+    webView?.removeFromSuperview()
     webView = nil
     backgroundHost?.close()
     backgroundHost = nil
@@ -361,6 +388,7 @@ extension ChromiumBrowserModel: RetainedBrowserPage {
     guard !protectsBrowserPage, let view = webView else { return false }
     let activity = retentionRevision
     let token = generation
+    if snapshot == nil { await captureSnapshot() }
     let result = try? await view.cdp(
       "Runtime.evaluate", ["expression": BrowserPageActivity.canDiscardScript, "returnByValue": true])
     guard (result?["result"] as? [String: Any])?["value"] as? Bool == true,

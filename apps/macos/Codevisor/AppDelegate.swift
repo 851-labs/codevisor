@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorCore
 import CodevisorCoreMac
+import CodevisorUI
 import os
 
 @MainActor
@@ -117,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func shutDownBrowsersThenReply() {
     chromiumShutdownInProgress = true
+    BrowserPageClosing.shared.appWillClosePages()
     DispatchQueue.main.async {
       CVShutdownChromium {
         self.chromiumShutdownComplete = true

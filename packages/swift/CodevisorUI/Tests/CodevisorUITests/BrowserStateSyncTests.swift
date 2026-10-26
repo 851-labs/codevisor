@@ -21,7 +21,11 @@ private final class BrowserStateFixture: BrowserStateClienting {
     if let hook = beforeReply { beforeReply = nil; await hook() }
     return reply
   }
-  func browserNavigation(paneId: UUID) async throws -> BrowserNavigation? { navigation }
+  var navigationReads = 0
+  func browserNavigation(paneId: UUID) async throws -> BrowserNavigation? {
+    navigationReads += 1
+    return navigation
+  }
   func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws {
     publications.append(navigation); self.navigation = navigation
   }
@@ -169,7 +173,8 @@ struct BrowserStateSyncTests {
 
   @Test func navigationOnlyAdoptsOnPaneEntryAndCookiesArriveBeforeLoad() async throws {
     let server = BrowserStateFixture()
-    let sync = BrowserPaneSync(paneId: UUID(), client: server)
+    var elapsed = 0.0
+    let sync = BrowserPaneSync(paneId: UUID(), client: server, now: { elapsed })
     var local: [String: BrowserCookie] = [:]
     let cookies = BrowserCookieSync(
       client: server, read: { Array(local.values) },
@@ -184,6 +189,7 @@ struct BrowserStateSyncTests {
     #expect(!sync.setVisible(true))
     #expect(loads == ["https://example.test/first"])
     #expect(!sync.setVisible(false))
+    elapsed += BrowserPaneSync.quickReturnInterval
     #expect(sync.setVisible(true))
     server.change(cookie, key: cookie.key)
     await sync.activate(cookies: cookies, currentURL: "https://example.test/first", fallbackURL: nil) { url, _ in
@@ -222,7 +228,8 @@ struct BrowserStateSyncTests {
 
   @Test func openingAnAlreadyLoadedBackgroundPaneOnlyReloadsForNewCookies() async throws {
     let server = BrowserStateFixture()
-    let pane = BrowserPaneSync(paneId: UUID(), client: server)
+    var elapsed = 0.0
+    let pane = BrowserPaneSync(paneId: UUID(), client: server, now: { elapsed })
     var local: [String: BrowserCookie] = [:]
     let cookies = BrowserCookieSync(
       client: server, read: { Array(local.values) },
@@ -246,12 +253,45 @@ struct BrowserStateSyncTests {
     var rotated = cookie
     rotated.value = "updated-login"
     server.change(rotated, key: cookie.key)
+    elapsed += BrowserPaneSync.quickReturnInterval
     #expect(pane.setVisible(true))
     await pane.activate(cookies: cookies, currentURL: url, fallbackURL: nil) { url, reload in
       #expect(reload)
       #expect(local[cookie.key] == rotated)
       loads.append(url)
     }
+    #expect(loads == [url])
+  }
+
+  @Test func aQuickReturnToALiveTabSkipsTheServerButStillReloadsForNewCookies() async throws {
+    let server = BrowserStateFixture()
+    var elapsed = 0.0
+    let pane = BrowserPaneSync(paneId: UUID(), client: server, now: { elapsed })
+    let cookies = BrowserCookieSync(client: server, read: { [] }, apply: { _, _ in })
+    let url = "https://example.test/live"
+    server.navigation = BrowserNavigation(url: url, title: "Live")
+    var loads: [String] = []
+    _ = pane.setVisible(true)
+    await pane.activate(cookies: cookies, currentURL: url, fallbackURL: nil) { url, _ in loads.append(url) }
+    let reads = server.navigationReads
+
+    _ = pane.setVisible(false)
+    server.navigation = BrowserNavigation(url: "https://example.test/elsewhere", title: "Elsewhere")
+    elapsed += BrowserPaneSync.quickReturnInterval - 1
+    _ = pane.setVisible(true)
+    await pane.activate(cookies: cookies, currentURL: url, fallbackURL: nil) { url, _ in loads.append(url) }
+    #expect(server.navigationReads == reads)
+    #expect(loads.isEmpty)
+
+    _ = pane.setVisible(false)
+    server.change(cookie, key: cookie.key)
+    try await cookies.synchronize()
+    _ = pane.setVisible(true)
+    await pane.activate(cookies: cookies, currentURL: url, fallbackURL: nil) { url, reload in
+      #expect(reload)
+      loads.append(url)
+    }
+    #expect(server.navigationReads == reads)
     #expect(loads == [url])
   }
 }

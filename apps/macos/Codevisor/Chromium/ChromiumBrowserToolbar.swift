@@ -8,7 +8,6 @@ struct ChromiumBrowserAddressToolbarItem: ToolbarContent {
   var body: some ToolbarContent {
     ToolbarItem(placement: .principal) {
       ChromiumBrowserToolbar(model: model)
-        .id(model.paneId)
         .frame(width: width)
     }
     .sharedBackgroundVisibility(.hidden)
@@ -112,7 +111,7 @@ struct ChromiumBrowserToolbarContent: View {
           ChromiumBrowserZoomPopover(
             model: model, request: model.zoomPresentationRequest, editing: editing, loading: model.isLoading)
         }
-        browserButton("Responsive viewport", symbol: "iphone.and.ipad") {
+        browserButton("Responsive viewport", symbol: "ipad.and.iphone") {
           Task {
             if model.viewport == nil {
               try? await model.setViewport(ChromiumViewport().parameters)
@@ -126,6 +125,10 @@ struct ChromiumBrowserToolbarContent: View {
     }
     .frame(minWidth: 280, idealWidth: 600, maxWidth: 850)
     .onAppear { updateAddress() }
+    .onChange(of: model.paneId) { _, _ in
+      editing = false
+      updateAddress()
+    }
     .onChange(of: model.url) { _, _ in if !editing { updateAddress() } }
     .onChange(of: editing) { _, focused in
       if !focused { model.suggestions.dismiss(); updateAddress() }
