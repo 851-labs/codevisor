@@ -1,5 +1,5 @@
 type InstallMethod = "curl" | "brew"
-type InstallPlacement = "hero" | "footer"
+type InstallPlacement = "hero" | "footer" | "get-started-linux"
 
 type AnalyticsEvent =
   | { name: "$pageview"; properties: { pathname: string } }
