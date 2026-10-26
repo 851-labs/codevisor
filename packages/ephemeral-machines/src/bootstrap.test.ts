@@ -30,6 +30,30 @@ describe("bootstrapMachine", () => {
     expect(run?.request.script).toContain(`auth login --invite - --name 'Ada'\\''s box'`)
   })
 
+  it("streams the install's output as it runs, after a booting machine reports its boot", async () => {
+    const provider = makeFakeEphemeralProvider({
+      boots: true,
+      streams: true,
+      onExec: () => ({ exitCode: 0, stdout: "installed\n", stderr: "" })
+    })
+    const events: string[] = []
+    const created = await provider.create(
+      { name: "box", tags: { owner: "o", machine: "m" } },
+      { size: "small" },
+      { stage: (stage) => events.push(`stage ${stage}`), log: (line) => events.push(line) }
+    )
+
+    await bootstrapMachine(
+      provider,
+      created.providerMachineId,
+      { inviteCode: invite, machineName: "box" },
+      (stream, text) => events.push(`${stream} ${text}`)
+    )
+
+    expect(provider.provisionStages).toEqual(["create", "boot"])
+    expect(events).toEqual(["stage boot", "Booting fake-1", "stdout installed\n"])
+  })
+
   it("passes installer environment to the installer and server environment to the start command", () => {
     const script = bootstrapScript({
       inviteCode: invite,

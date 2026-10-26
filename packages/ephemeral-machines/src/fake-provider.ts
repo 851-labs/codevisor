@@ -31,6 +31,8 @@ export interface FakeProviderOptions {
   readonly platform?: MachinePlatform
   readonly onExec?: FakeExecHandler
   readonly resumable?: boolean
+  readonly boots?: boolean
+  readonly streams?: boolean
 }
 
 export interface FakeEphemeralProvider extends EphemeralProvider<FakeOptions> {
@@ -56,16 +58,24 @@ export const makeFakeEphemeralProvider = (
     id: options.id ?? "e2b",
     displayName: "Fake",
     options: FakeOptions,
+    provisionStages: options.boots === true ? ["create", "boot"] : ["create"],
+    streamsOutput: options.streams === true,
     machines,
     execs,
-    create: (spec, machineOptions) => {
+    create: (spec, machineOptions, progress) => {
       const providerMachineId = `fake-${machines.size + 1}`
       machines.set(providerMachineId, { spec, options: machineOptions, state: "running" })
+      if (options.boots === true) {
+        progress?.stage("boot")
+        progress?.log(`Booting ${providerMachineId}`)
+      }
       return Promise.resolve({ providerMachineId, platform: options.platform ?? "linux" })
     },
     exec: async (providerMachineId, request) => {
       execs.push({ providerMachineId, request })
-      return onExec(providerMachineId, request)
+      const result = await onExec(providerMachineId, request)
+      if (options.streams === true) request.onOutput?.("stdout", result.stdout)
+      return result
     },
     status: (providerMachineId) =>
       Promise.resolve({ state: machines.get(providerMachineId)?.state ?? "gone" }),

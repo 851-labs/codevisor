@@ -52,10 +52,14 @@ const runTart = (
     let stdout = ""
     let stderr = ""
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout = (stdout + chunk.toString("utf8")).slice(-outputLimitChars)
+      const text = chunk.toString("utf8")
+      stdout = (stdout + text).slice(-outputLimitChars)
+      options.onOutput?.("stdout", text)
     })
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString("utf8")).slice(-outputLimitChars)
+      const text = chunk.toString("utf8")
+      stderr = (stderr + text).slice(-outputLimitChars)
+      options.onOutput?.("stderr", text)
     })
     child.on("error", (cause) => resolve({ exitCode: 127, stdout, stderr: cause.message }))
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout, stderr }))

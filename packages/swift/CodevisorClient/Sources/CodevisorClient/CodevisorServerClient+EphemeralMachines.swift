@@ -12,6 +12,18 @@ public struct ServerEphemeralProvider: Decodable, Equatable, Sendable, Identifia
   }
 }
 
+public struct ServerEphemeralSetupStep: Decodable, Equatable, Sendable {
+  public var stage: String
+  public var startedAt: String
+  public var endedAt: String?
+
+  public init(stage: String, startedAt: String, endedAt: String? = nil) {
+    self.stage = stage
+    self.startedAt = startedAt
+    self.endedAt = endedAt
+  }
+}
+
 public struct ServerEphemeralMachine: Decodable, Equatable, Sendable, Identifiable {
   public var id: String
   public var provider: String
@@ -20,6 +32,8 @@ public struct ServerEphemeralMachine: Decodable, Equatable, Sendable, Identifiab
   public var deviceId: String?
   public var remoteProjectId: String?
   public var workspaceId: String?
+  public var plan: [String]?
+  public var steps: [ServerEphemeralSetupStep]?
   public var error: String?
 
   public init(
@@ -30,6 +44,8 @@ public struct ServerEphemeralMachine: Decodable, Equatable, Sendable, Identifiab
     deviceId: String? = nil,
     remoteProjectId: String? = nil,
     workspaceId: String? = nil,
+    plan: [String]? = nil,
+    steps: [ServerEphemeralSetupStep]? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -39,6 +55,8 @@ public struct ServerEphemeralMachine: Decodable, Equatable, Sendable, Identifiab
     self.deviceId = deviceId
     self.remoteProjectId = remoteProjectId
     self.workspaceId = workspaceId
+    self.plan = plan
+    self.steps = steps
     self.error = error
   }
 }
@@ -48,6 +66,7 @@ private struct EphemeralProvidersResponse: Decodable {
 }
 
 private struct CreateEphemeralMachineBody: Encodable {
+  var id: String
   var provider: String
   var projectId: String
   var workspaceId: String?
@@ -68,6 +87,7 @@ extension CodevisorServerClient {
   }
 
   public func createEphemeralMachine(
+    id: String,
     provider: String,
     projectId: UUID,
     workspaceId: UUID?
@@ -76,6 +96,7 @@ extension CodevisorServerClient {
       "/v1/ephemeral-machines",
       method: "POST",
       body: CreateEphemeralMachineBody(
+        id: id,
         provider: provider,
         projectId: projectId.uuidString,
         workspaceId: workspaceId?.uuidString

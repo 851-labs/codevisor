@@ -3,6 +3,8 @@ import { Effect, Schema } from "effect"
 import {
   EphemeralProviderError,
   type CreateSpec,
+  type OutputStream,
+  type ProvisionProgress,
   type EphemeralProvider,
   type EphemeralTags,
   type ExecResult,
@@ -24,6 +26,7 @@ export type TartOptions = typeof TartOptions.Type
 export interface TartRunOptions {
   readonly stdin?: string
   readonly timeoutMs?: number
+  readonly onOutput?: (stream: OutputStream, text: string) => void
 }
 
 export interface TartHost {
@@ -46,6 +49,8 @@ const defaultExecTimeoutMs = 10 * 60 * 1000
 const TartVm = Schema.Struct({ Name: Schema.String, State: Schema.String })
 type TartVm = typeof TartVm.Type
 const decodeTartVms = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(TartVm)))
+const silentProgress: ProvisionProgress = { stage: () => undefined, log: () => undefined }
+
 const decodeTartVmInfo = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ OS: Schema.optional(Schema.String) }))
 )
@@ -56,12 +61,15 @@ export const makeTartProvider = (host: TartHost): EphemeralProvider<TartOptions>
     id: "tart",
     displayName: "Tart",
     options: TartOptions,
-    create: async (spec, options) => {
+    provisionStages: ["create", "boot"],
+    streamsOutput: true,
+    create: async (spec, options, progress = silentProgress) => {
       await assertDiskRoom(host, options)
       const name = vmName(spec)
+      progress.log(`tart clone ${options.image} ${name}`)
       await tart.must(["clone", options.image, name])
       try {
-        return await bootClone(host, tart, name, options)
+        return await bootClone(host, tart, name, options, progress)
       } catch (cause) {
         await tart.remove(name)
         throw cause
@@ -70,13 +78,14 @@ export const makeTartProvider = (host: TartHost): EphemeralProvider<TartOptions>
     exec: (name, request) =>
       host.run(["exec", "-i", name, "sh", "-c", request.script], {
         stdin: request.stdin ?? "",
-        timeoutMs: request.timeoutMs ?? defaultExecTimeoutMs
+        timeoutMs: request.timeoutMs ?? defaultExecTimeoutMs,
+        ...(request.onOutput === undefined ? {} : { onOutput: request.onOutput })
       }),
     status: async (name) => ({
       state: stateFor((await tart.vms()).find((vm) => vm.Name === name))
     }),
     destroy: (name) => tart.remove(name),
-    resume: (name) => boot(host, tart, name),
+    resume: (name) => boot(host, tart, name, silentProgress),
     list: async (owner) => (await tart.vms()).flatMap((vm) => ownedMachine(vm.Name, owner)),
     gui: async (name) => ({ vncUrl: `vnc://${await tart.ip(name)}:5900` })
   }
@@ -109,20 +118,33 @@ const bootClone = async (
   host: TartHost,
   tart: TartCommands,
   name: string,
-  options: TartOptions
+  options: TartOptions,
+  progress: ProvisionProgress
 ): Promise<{ readonly providerMachineId: string; readonly platform: MachinePlatform }> => {
   const platform = await tart.platform(name)
   if (platform === "darwin") await assertMacOSSlot(tart)
 
-  await tart.must(["set", name, "--cpu", String(options.cpu), "--memory", memoryMiB(options)])
-  await boot(host, tart, name)
+  const settings = ["--cpu", String(options.cpu), "--memory", memoryMiB(options)]
+  progress.log(`tart set ${name} ${settings.join(" ")}`)
+  await tart.must(["set", name, ...settings])
+  progress.stage("boot")
+  await boot(host, tart, name, progress)
   return { providerMachineId: name, platform }
 }
 
-const boot = async (host: TartHost, tart: TartCommands, name: string): Promise<void> => {
+const boot = async (
+  host: TartHost,
+  tart: TartCommands,
+  name: string,
+  progress: ProvisionProgress
+): Promise<void> => {
+  progress.log(`tart run --no-graphics ${name}`)
   host.start(["run", "--no-graphics", name])
-  await tart.ip(name)
+  progress.log("Waiting for an IP address")
+  progress.log(`Got ${await tart.ip(name)}`)
+  progress.log("Waiting for the guest agent")
   await waitForGuestAgent(host, name)
+  progress.log("The guest agent is ready")
 }
 
 const assertDiskRoom = async (host: TartHost, options: TartOptions): Promise<void> => {

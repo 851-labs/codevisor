@@ -33,10 +33,20 @@ export interface ListedMachine {
   readonly tags: EphemeralTags
 }
 
+export type OutputStream = "stdout" | "stderr"
+
 export interface ExecRequest {
   readonly script: string
   readonly stdin?: string
   readonly timeoutMs?: number
+  readonly onOutput?: (stream: OutputStream, text: string) => void
+}
+
+export type ProvisionStage = "create" | "boot"
+
+export interface ProvisionProgress {
+  readonly stage: (stage: ProvisionStage) => void
+  readonly log: (line: string) => void
 }
 
 export interface ExecResult {
@@ -57,7 +67,9 @@ export interface EphemeralProvider<Options = unknown> {
   readonly id: EphemeralProviderId
   readonly displayName: string
   readonly options: Schema.Codec<Options, unknown>
-  create(spec: CreateSpec, options: Options): Promise<CreatedMachine>
+  readonly provisionStages: ReadonlyArray<ProvisionStage>
+  readonly streamsOutput: boolean
+  create(spec: CreateSpec, options: Options, progress?: ProvisionProgress): Promise<CreatedMachine>
   readonly exec: (providerMachineId: string, request: ExecRequest) => Promise<ExecResult>
   readonly status: (providerMachineId: string) => Promise<ProviderMachineStatus>
   readonly destroy: (providerMachineId: string) => Promise<void>

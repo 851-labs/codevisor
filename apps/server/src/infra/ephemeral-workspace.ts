@@ -14,12 +14,15 @@ export type RemoteWorkspaceState = "active" | "archived" | "missing"
 
 export const placeWorkspace = async (
   deps: EphemeralMachineDeps,
-  machine: EphemeralMachine & { readonly machineId: string }
+  machine: EphemeralMachine & { readonly machineId: string },
+  log: (line: string) => void
 ): Promise<PlacedWorkspace> => {
   const project = await deps.projects.get(machine.projectId)
   if (project === undefined) throw new Error(`No project ${machine.projectId} on this machine`)
 
+  log(project.repoUrl === undefined ? "Creating an empty project" : `Cloning ${project.repoUrl}`)
   const remoteProjectId = await remoteProjectFor(deps, machine.machineId, project)
+  log(`${project.name} is ready`)
   if (machine.workspaceId !== undefined)
     return { remoteProjectId, workspaceId: machine.workspaceId }
 

@@ -20,6 +20,7 @@ interface Vm {
 }
 
 const result = (stdout: string, exitCode = 0): ExecResult => ({ exitCode, stdout, stderr: "" })
+const ignoreOutput = () => undefined
 
 const fakeTart = (setup: {
   readonly vms?: Vm[]
@@ -175,11 +176,37 @@ describe("Tart provider", () => {
     })
 
     await provider.exec(name, { script: "id" })
-    await provider.exec(name, { script: "cat", stdin: "x", timeoutMs: 5 })
+    await provider.exec(name, { script: "cat", stdin: "x", timeoutMs: 5, onOutput: ignoreOutput })
 
     expect(calls).toEqual([
       { args: ["exec", "-i", name, "sh", "-c", "id"], stdin: "", timeoutMs: 600_000 },
-      { args: ["exec", "-i", name, "sh", "-c", "cat"], stdin: "x", timeoutMs: 5 }
+      {
+        args: ["exec", "-i", name, "sh", "-c", "cat"],
+        stdin: "x",
+        timeoutMs: 5,
+        onOutput: ignoreOutput
+      }
+    ])
+  })
+
+  it("reports what it runs while creating, and when booting starts", async () => {
+    const tart = fakeTart({})
+    const events: string[] = []
+
+    await makeTartProvider(tart.host).create(spec, options, {
+      stage: (stage) => events.push(`stage ${stage}`),
+      log: (line) => events.push(line)
+    })
+
+    expect(events).toEqual([
+      `tart clone ${options.image} ${name}`,
+      `tart set ${name} --cpu 4 --memory 8192`,
+      "stage boot",
+      `tart run --no-graphics ${name}`,
+      "Waiting for an IP address",
+      "Got 192.168.64.7",
+      "Waiting for the guest agent",
+      "The guest agent is ready"
     ])
   })
 

@@ -12,6 +12,7 @@ public extension CodevisorServerClienting {
   func destroyEphemeralMachine(id: String) async throws {}
 
   func createEphemeralMachine(
+    id: String,
     provider: String,
     projectId: UUID,
     workspaceId: UUID?

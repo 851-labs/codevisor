@@ -1,6 +1,12 @@
-import { EphemeralProviderError, type EphemeralProvider, type ExecResult } from "./provider.js"
+import {
+  EphemeralProviderError,
+  type EphemeralProvider,
+  type ExecResult,
+  type OutputStream
+} from "./provider.js"
 
 export const DEFAULT_INSTALL_URL = "https://www.codevisor.dev/install.sh"
+export const SIGN_IN_MARKER = "::codevisor-stage::signIn"
 
 export interface BootstrapRequest {
   readonly inviteCode: string
@@ -17,12 +23,14 @@ const outputTailLines = 30
 export const bootstrapMachine = async (
   provider: EphemeralProvider,
   providerMachineId: string,
-  request: BootstrapRequest
+  request: BootstrapRequest,
+  onOutput?: (stream: OutputStream, text: string) => void
 ): Promise<ExecResult> => {
   const result = await provider.exec(providerMachineId, {
     script: bootstrapScript(request),
     stdin: `${request.inviteCode}\n`,
-    timeoutMs: request.timeoutMs ?? bootstrapTimeoutMs
+    timeoutMs: request.timeoutMs ?? bootstrapTimeoutMs,
+    ...(onOutput === undefined ? {} : { onOutput })
   })
   if (result.exitCode !== 0) throw bootstrapFailure(provider, result, request.inviteCode)
 
@@ -36,6 +44,7 @@ export const bootstrapScript = (request: BootstrapRequest): string =>
     'installer="$(mktemp)"',
     `curl -fsSL ${shellQuote(request.installUrl ?? DEFAULT_INSTALL_URL)} -o "$installer"`,
     `${environmentAssignments(request.installEnvironment)}sh "$installer"`,
+    `printf '%s\\n' ${shellQuote(SIGN_IN_MARKER)}`,
     ...serverStartLines(request.serverEnvironment),
     `as_server "$home/.local/bin/codevisor" auth login --invite - --name ${shellQuote(request.machineName)}`,
     ""

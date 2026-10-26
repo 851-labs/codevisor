@@ -17,6 +17,11 @@ import {
 import { HttpFailure } from "../server-context.js"
 import { joinAccount, requireOwner, teardownMachine } from "./ephemeral-account.js"
 import { ephemeralRemote, type EphemeralRemote } from "./ephemeral-remote.js"
+import {
+  makeEphemeralSetupProgress,
+  type EphemeralSetupProgress,
+  type EphemeralSetupPublisher
+} from "./ephemeral-setup-log.js"
 import type { EphemeralRecordStore } from "./ephemeral-store.js"
 import type { OneWaySyncReport } from "./ephemeral-sync.js"
 import { isoNow, placeWorkspace, remoteWorkspaceState } from "./ephemeral-workspace.js"
@@ -46,7 +51,10 @@ export interface EphemeralMachineDeps {
 
 export interface EphemeralMachines {
   readonly list: () => Promise<ReadonlyArray<EphemeralMachine>>
-  readonly create: (request: CreateEphemeralMachineRequest) => Promise<EphemeralMachine>
+  readonly create: (
+    request: CreateEphemeralMachineRequest,
+    publish?: EphemeralSetupPublisher
+  ) => Promise<EphemeralMachine>
   readonly destroy: (id: string) => Promise<void>
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
@@ -86,16 +94,22 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
     await exclusively(id, () => teardownRecord(deps, machine))
   }
 
-  const create = async (request: CreateEphemeralMachineRequest): Promise<EphemeralMachine> => {
+  const create = async (
+    request: CreateEphemeralMachineRequest,
+    publish?: EphemeralSetupPublisher
+  ): Promise<EphemeralMachine> => {
     requireOwner(deps)
     const provider = await deps.providers.get(request.provider)
     const overrides = await mergedOptions(deps, request)
     const options = asBadRequest(() => decodeProviderOptions(provider, overrides))
     const machine = newRecord(deps, request, provider)
+    if ((await deps.records.get(machine.id)) !== undefined) {
+      throw new HttpFailure(409, `An ephemeral machine ${machine.id} already exists`)
+    }
     await deps.records.put(machine)
     track(
       pipelines,
-      exclusively(machine.id, () => runPipeline(deps, provider, machine, options))
+      exclusively(machine.id, () => runPipeline(deps, provider, machine, options, publish))
     )
     return machine
   }
@@ -131,27 +145,71 @@ const runPipeline = async (
   deps: EphemeralMachineDeps,
   provider: EphemeralProvider,
   initial: EphemeralMachine,
-  options: unknown
+  options: unknown,
+  publish: EphemeralSetupPublisher | undefined
 ): Promise<void> => {
-  let machine = initial
-  const advance = async (patch: Partial<EphemeralMachine>): Promise<void> => {
-    machine = { ...machine, ...patch }
-    await deps.records.put(machine)
-  }
+  const record = recordWriter(deps, initial)
+  const setup = makeEphemeralSetupProgress({
+    machineId: initial.id,
+    now: () => isoNow(deps),
+    publish,
+    persist: (steps) => {
+      record.advance({ steps }).catch(() => undefined)
+    }
+  })
   try {
-    const created = await provider.create(specFor(deps, machine), options)
-    await advance({ ...created, state: "bootstrapping" })
-    const joined = await joinAccount(deps, provider, { ...machine, ...created })
-    await advance({ ...joined, state: "syncing" })
-    const report = await deps.sync(ephemeralRemote(provider, created.providerMachineId))
-    deps.log(`Ephemeral ${machine.id}: pushed ${report.entries} sync entries one way`)
-    await advance({ state: "cloning" })
-    await advance({ ...(await placeWorkspace(deps, { ...machine, ...joined })), state: "ready" })
+    await provision(deps, provider, record, setup, options)
   } catch (cause) {
-    await teardownMachine(deps, provider, machine).catch(() => undefined)
-    await advance({ state: "failed", error: messageOf(cause) })
+    await teardownMachine(deps, provider, record.current()).catch(() => undefined)
+    await record.advance({ state: "failed", error: messageOf(cause) })
   }
 }
+
+const provision = async (
+  deps: EphemeralMachineDeps,
+  provider: EphemeralProvider,
+  record: RecordWriter,
+  setup: EphemeralSetupProgress,
+  options: unknown
+): Promise<void> => {
+  setup.stage("create")
+  setup.log(`Creating a ${provider.displayName} machine`)
+  const created = await provider.create(specFor(deps, record.current()), options, setup)
+  await record.advance({ ...created, state: "bootstrapping" })
+  setup.stage("install")
+  const joined = await joinAccount(deps, provider, { ...record.current(), ...created }, setup)
+  await record.advance({ ...joined, state: "syncing" })
+  setup.stage("sync")
+  const report = await deps.sync(ephemeralRemote(provider, created.providerMachineId))
+  setup.log(`Pushed ${report.entries} settings`)
+  deps.log(`Ephemeral ${initialId(record)}: pushed ${report.entries} sync entries one way`)
+  await record.advance({ state: "cloning" })
+  setup.stage("clone")
+  const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, setup.log)
+  setup.finish()
+  await record.advance({ ...placed, state: "ready" })
+}
+
+interface RecordWriter {
+  readonly current: () => EphemeralMachine
+  readonly advance: (patch: Partial<EphemeralMachine>) => Promise<void>
+}
+
+const recordWriter = (deps: EphemeralMachineDeps, initial: EphemeralMachine): RecordWriter => {
+  let machine = initial
+  let written: Promise<void> = Promise.resolve()
+  return {
+    current: () => machine,
+    advance: (patch) => {
+      machine = { ...machine, ...patch }
+      const snapshot = machine
+      written = written.catch(() => undefined).then(() => deps.records.put(snapshot))
+      return written
+    }
+  }
+}
+
+const initialId = (record: RecordWriter): string => record.current().id
 
 type PlacedMachine = EphemeralMachine & {
   readonly providerMachineId: string
@@ -276,7 +334,7 @@ const newRecord = (
   request: CreateEphemeralMachineRequest,
   provider: EphemeralProvider
 ): EphemeralMachine => {
-  const id = deps.newId()
+  const id = request.id?.toLowerCase() ?? deps.newId()
   return {
     id,
     provider: request.provider,
@@ -284,6 +342,7 @@ const newRecord = (
     projectId: request.projectId,
     state: "creating",
     createdAt: isoNow(deps),
+    plan: [...provider.provisionStages, "install", "signIn", "sync", "clone"],
     ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId.toLowerCase() })
   }
 }

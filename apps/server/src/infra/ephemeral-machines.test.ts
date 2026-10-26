@@ -35,7 +35,13 @@ describe("creating an ephemeral machine", () => {
         machineId: JOINED_SERVER,
         remoteProjectId: "remote-project",
         workspaceId: "id-2",
-        workspaceOpenedAt: "2026-10-23T00:00:00.000Z"
+        workspaceOpenedAt: "2026-10-23T00:00:00.000Z",
+        plan: ["create", "install", "signIn", "sync", "clone"],
+        steps: ["create", "install", "signIn", "sync", "clone"].map((stage) => ({
+          stage,
+          startedAt: "2026-10-23T00:00:00.000Z",
+          endedAt: "2026-10-23T00:00:00.000Z"
+        }))
       }
     ])
     expect(harness.provider.machines.get("fake-1")?.spec.tags).toEqual({

@@ -1,6 +1,7 @@
 import type { CloudMachinePresence, Project } from "@codevisor/api"
 import {
   makeFakeEphemeralProvider,
+  SIGN_IN_MARKER,
   type ExecRequest,
   type ExecResult,
   type FakeEphemeralProvider
@@ -42,6 +43,8 @@ export interface EphemeralHarnessOptions {
   readonly project?: Partial<Project>
   readonly joinWithoutServerId?: boolean
   readonly resumable?: boolean
+  readonly boots?: boolean
+  readonly streams?: boolean
 }
 
 const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
@@ -70,14 +73,16 @@ export const ephemeralHarness = async (options: EphemeralHarnessOptions = {}) =>
   }
   const fake: FakeEphemeralProvider = makeFakeEphemeralProvider({
     onExec,
-    ...(options.resumable === true ? { resumable: true } : {})
+    ...(options.resumable === true ? { resumable: true } : {}),
+    ...(options.boots === true ? { boots: true } : {}),
+    ...(options.streams === true ? { streams: true } : {})
   })
   const provider: FakeEphemeralProvider = {
     ...fake,
-    create: (spec, machineOptions) =>
+    create: (spec, machineOptions, progress) =>
       controls.createFails
         ? Promise.reject(new Error("quota exceeded"))
-        : fake.create(spec, machineOptions),
+        : fake.create(spec, machineOptions, progress),
     list: (owner) =>
       controls.listFails ? Promise.reject(new Error("401 from provider")) : fake.list(owner)
   }
@@ -179,7 +184,7 @@ const bootstrapRun = (
       ephemeral: { provider: "e2b", ownerDeviceId: OWNER }
     })
   )
-  return ok("joined")
+  return ok(`installed\n${SIGN_IN_MARKER}\njoined\n`)
 }
 
 const remoteTool = (

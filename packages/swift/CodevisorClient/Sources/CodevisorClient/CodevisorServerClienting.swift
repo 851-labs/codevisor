@@ -180,6 +180,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func ephemeralMachines() async throws -> [ServerEphemeralMachine]
   func destroyEphemeralMachine(id: String) async throws
   func createEphemeralMachine(
+    id: String,
     provider: String, projectId: UUID, workspaceId: UUID?
   ) async throws -> ServerEphemeralMachine
   func readProjectEnvFiles(projectId: UUID, paths: [String]) async throws -> [ServerProjectEnvFileContent]

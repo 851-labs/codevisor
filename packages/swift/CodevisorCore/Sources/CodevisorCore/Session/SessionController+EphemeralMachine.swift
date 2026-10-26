@@ -27,48 +27,56 @@ extension SessionController {
     guard let serverClient else {
       return "Ephemeral machines need the Codevisor server. Start it and try again."
     }
-    let steps = EphemeralSetupSteps(target: target, projectName: project.name)
-    status = .connecting(steps.status(.starting))
-    var createdId: String?
+    let machineId = UUID().uuidString.lowercased()
+    let tracker = EphemeralSetupTracker(
+      controller: self, steps: ephemeralSteps(for: target), showsPhases: showsSetupPhases)
+    status = .connecting(tracker.steps.status(.create))
+    let follow = followEphemeralLog(machineId, client: serverClient, tracker: tracker)
+    defer { follow.cancel() }
     do {
-      let created = try await serverClient.createEphemeralMachine(
-        provider: target.providerId,
-        projectId: project.id,
-        workspaceId: hostWorkspaceId
-      )
-      createdId = created.id
-      let ready = try await awaitEphemeralMachine(
-        created.id, client: serverClient, steps: steps, showsSetupPhases: showsSetupPhases)
-      try await adoptEphemeralMachine(ready, target: target)
+      _ = try await serverClient.createEphemeralMachine(
+        id: machineId, provider: target.providerId, projectId: project.id, workspaceId: hostWorkspaceId)
+      let ready = try await awaitEphemeralMachine(machineId, client: serverClient, tracker: tracker)
+      try await adoptEphemeralMachine(ready, target: target, tracker: tracker)
       return nil
     } catch {
-      if let createdId { try? await serverClient.destroyEphemeralMachine(id: createdId) }
+      try? await serverClient.destroyEphemeralMachine(id: machineId)
       return serverErrorMessage(error)
+    }
+  }
+
+  private func ephemeralSteps(for target: EphemeralTarget) -> EphemeralSetupSteps {
+    EphemeralSetupSteps(target: target, projectName: project.name, agentName: selectedHarness?.name ?? "the agent")
+  }
+
+  private func followEphemeralLog(
+    _ machineId: String,
+    client: any CodevisorServerClienting,
+    tracker: EphemeralSetupTracker
+  ) -> Task<Void, Never> {
+    let log = EphemeralSetupLogLine.liveLog(client, machineId: machineId)
+    return Task { [weak tracker] in
+      for await line in log { tracker?.append(line) }
     }
   }
 
   private func awaitEphemeralMachine(
     _ id: String,
     client: any CodevisorServerClienting,
-    steps: EphemeralSetupSteps,
-    showsSetupPhases: Bool
+    tracker: EphemeralSetupTracker
   ) async throws -> ServerEphemeralMachine {
-    var current: EphemeralSetupStage?
     let deadline = ContinuousClock.now + .seconds(30 * 60)
     while ContinuousClock.now < deadline {
       let machine = try await ephemeralMachine(id, client: client)
       if let failure = Self.ephemeralFailure(machine) {
-        failEphemeralStage(current, message: failure, showsSetupPhases: showsSetupPhases)
+        tracker.failCurrent(failure)
         throw EphemeralMachineSetupError(message: failure)
       }
-      let next = EphemeralSetupStage(serverState: machine.state)
-      applyEphemeralTransitions(
-        EphemeralSetupSteps.transitions(from: current, to: next), steps: steps, showsSetupPhases: showsSetupPhases)
-      current = next ?? current
+      tracker.apply(machine)
       if machine.state == "ready" { return machine }
       try await Task.sleep(for: .seconds(1))
     }
-    throw EphemeralMachineSetupError(message: "The \(steps.target.machineNoun) took too long to start")
+    throw EphemeralMachineSetupError(message: "The \(tracker.steps.target.machineNoun) took too long to start")
   }
 
   private func ephemeralMachine(
@@ -89,55 +97,74 @@ extension SessionController {
     }
   }
 
-  private func applyEphemeralTransitions(
-    _ transitions: [EphemeralSetupTransition],
-    steps: EphemeralSetupSteps,
-    showsSetupPhases: Bool
-  ) {
-    for transition in transitions {
-      switch transition {
-      case let .begin(stage):
-        status = .connecting(steps.status(stage))
-        if showsSetupPhases { beginSetupPhase(steps.phase(stage)) }
-      case let .succeed(stage):
-        mutateSetupPhase(id: EphemeralSetupSteps.phaseId(stage)) { $0.succeed() }
-      }
-    }
-  }
-
-  private func failEphemeralStage(_ stage: EphemeralSetupStage?, message: String, showsSetupPhases: Bool) {
-    guard showsSetupPhases, let stage else { return }
-    mutateSetupPhase(id: EphemeralSetupSteps.phaseId(stage)) { $0.fail(message: message) }
-  }
-
-  private func adoptEphemeralMachine(_ machine: ServerEphemeralMachine, target: EphemeralTarget) async throws {
+  private func adoptEphemeralMachine(
+    _ machine: ServerEphemeralMachine,
+    target: EphemeralTarget,
+    tracker: EphemeralSetupTracker
+  ) async throws {
     guard let deviceId = machine.deviceId, let remoteProjectId = machine.remoteProjectId, let machines else {
       throw EphemeralMachineSetupError(message: "The \(target.machineNoun) didn't report where its project is")
     }
-    let machineId = CodevisorMachine.cloudIdPrefix + deviceId
-    status = .connecting("Connecting to \(target.machineNoun)…")
+    tracker.begin(.connect)
     let (remote, client) = try await reachProject(
-      remoteProjectId, on: machineId, machines: machines, target: target)
+      remoteProjectId, on: CodevisorMachine.cloudIdPrefix + deviceId, machines: machines, target: target)
+    tracker.succeed(.connect)
     let agent = currentComposerSelectionIntent()
     relocateSession(to: remote)
     ephemeralTarget = nil
+    tracker.begin(.agent)
     await retarget(to: remote, serverClient: client)
-    try await restoreAgent(agent, target: target)
+    try await restoreAgent(agent, target: target, tracker: tracker)
+    tracker.succeed(.agent)
   }
 
-  private func restoreAgent(_ agent: ComposerSelectionIntent?, target: EphemeralTarget) async throws {
+  private func restoreAgent(
+    _ agent: ComposerSelectionIntent?,
+    target: EphemeralTarget,
+    tracker: EphemeralSetupTracker
+  ) async throws {
     guard let agent else { return }
-    let deadline = ContinuousClock.now + .seconds(120)
+    let deadline = ContinuousClock.now + .seconds(180)
+    var lastDetail: String?
     while !harnesses.contains(where: { $0.id == agent.harnessId }) {
       guard ContinuousClock.now < deadline else {
         throw EphemeralMachineSetupError(message: "The chosen agent isn't ready on the \(target.machineNoun)")
       }
+      let probe = await agentCapability(agent.harnessId)
+      if let capability = probe.ready {
+        adoptHarnessCapability(capability)
+        break
+      }
+      if let detail = probe.detail, detail != lastDetail {
+        tracker.note(detail, in: .agent)
+        lastDetail = detail
+      }
       try await Task.sleep(for: .seconds(1))
-      await refreshHarnessCapabilities()
     }
+    tracker.note("\(tracker.steps.agentName) is ready", in: .agent)
     clearAutomaticSelection()
     selectedHarnessId = agent.harnessId
     pendingConfiguration.replaceValues(carriedConfigValues(agent), for: agent.harnessId)
+  }
+
+  private func agentCapability(_ harnessId: String) async -> (ready: ServerHarnessCapability?, detail: String?) {
+    guard let serverClient,
+      let response = try? await serverClient.capabilities(cwd: capabilityCwd, harnessId: harnessId),
+      let capability = response.harnesses.first(where: { $0.harness.id == harnessId })
+    else { return (nil, "Waiting for the agent list") }
+    if capability.harness.enabled, capability.harness.isReady { return (capability, nil) }
+    return (nil, Self.agentWaitingReason(capability.harness))
+  }
+
+  private static func agentWaitingReason(_ harness: ServerHarness) -> String {
+    guard harness.isReady else {
+      return "Waiting for \(harness.name) to install (\(harness.readiness.detail ?? harness.readiness.state))"
+    }
+    switch harness.auth?.resolvedState {
+    case .unauthenticated, .expired: return "\(harness.name) isn't signed in on this machine"
+    case .checking, nil: return "Checking \(harness.name)'s sign-in"
+    default: return "\(harness.name) isn't enabled on this machine"
+    }
   }
 
   private func carriedConfigValues(_ agent: ComposerSelectionIntent) -> [String: String] {

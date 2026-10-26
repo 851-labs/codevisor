@@ -18,8 +18,9 @@ import {
   type EphemeralCredentialStore
 } from "../infra/ephemeral-credentials.js"
 import { asBadRequest, type EphemeralMachines } from "../infra/ephemeral-machines.js"
+import type { EphemeralSetupPublisher } from "../infra/ephemeral-setup-log.js"
 import type { EphemeralRecordStore } from "../infra/ephemeral-store.js"
-import { HttpFailure, readSchema, writeJson } from "../server-context.js"
+import { appendAndPublish, HttpFailure, readSchema, writeJson } from "../server-context.js"
 import { isRoute, methodRouteId, type RouteContext } from "./route-context.js"
 
 export interface EphemeralMachinesService {
@@ -71,7 +72,7 @@ const dispatchMachines = async (
   }
   if (isRoute(url, request, "/v1/ephemeral-machines", "POST")) {
     const body = await readSchema(request, CreateEphemeralMachineRequest)
-    writeJson(response, 202, await service.machines.create(body))
+    writeJson(response, 202, await service.machines.create(body, setupPublisher(route)))
     return true
   }
   const destroyId = methodRouteId(route, "DELETE", "/v1/ephemeral-machines/:id")
@@ -145,3 +146,9 @@ const providerId = (value: string): EphemeralProviderId => {
 
 const isProjectOptionsPath = (url: URL): boolean =>
   url.pathname.startsWith("/v1/projects/") && url.pathname.endsWith("/ephemeral-options")
+
+const setupPublisher =
+  (route: RouteContext): EphemeralSetupPublisher =>
+  async (log) => {
+    await appendAndPublish(route.services.db, route.fanout, "ephemeral.setup", log.machineId, log)
+  }

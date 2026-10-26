@@ -20,6 +20,31 @@ export const EphemeralMachineState = Schema.Literals([
 ])
 export type EphemeralMachineState = typeof EphemeralMachineState.Type
 
+export const EphemeralSetupStage = Schema.Literals([
+  "create",
+  "boot",
+  "install",
+  "signIn",
+  "sync",
+  "clone"
+])
+export type EphemeralSetupStage = typeof EphemeralSetupStage.Type
+
+export const EphemeralSetupStep = Schema.Struct({
+  stage: EphemeralSetupStage,
+  startedAt: Schema.String,
+  endedAt: Schema.optional(Schema.String)
+})
+export type EphemeralSetupStep = typeof EphemeralSetupStep.Type
+
+export const EphemeralSetupLog = Schema.Struct({
+  machineId: Schema.String,
+  stage: EphemeralSetupStage,
+  stream: Schema.Literals(["stdout", "stderr"]),
+  line: Schema.String
+})
+export type EphemeralSetupLog = typeof EphemeralSetupLog.Type
+
 export const EphemeralMachine = Schema.Struct({
   id: Schema.String,
   provider: EphemeralProviderKind,
@@ -35,6 +60,8 @@ export const EphemeralMachine = Schema.Struct({
   remoteProjectId: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
   workspaceOpenedAt: Schema.optional(Schema.String),
+  plan: Schema.optional(Schema.Array(EphemeralSetupStage)),
+  steps: Schema.optional(Schema.Array(EphemeralSetupStep)),
   error: Schema.optional(Schema.String)
 })
 export type EphemeralMachine = typeof EphemeralMachine.Type
@@ -46,6 +73,7 @@ export const DestroyEphemeralMachineResponse = Schema.Struct({ destroyed: Schema
 export type DestroyEphemeralMachineResponse = typeof DestroyEphemeralMachineResponse.Type
 
 export const CreateEphemeralMachineRequest = Schema.Struct({
+  id: Schema.optional(Schema.String),
   provider: EphemeralProviderKind,
   projectId: Schema.String,
   name: Schema.optional(Schema.String),

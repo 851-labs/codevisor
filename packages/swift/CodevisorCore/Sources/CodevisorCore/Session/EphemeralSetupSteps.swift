@@ -1,61 +1,75 @@
+import CodevisorClient
 import Foundation
 
-public enum EphemeralSetupStage: Int, CaseIterable, Sendable {
-  case starting
-  case syncing
-  case cloning
+public enum EphemeralSetupStage: String, CaseIterable, Sendable {
+  case create
+  case boot
+  case install
+  case signIn
+  case sync
+  case clone
+  case connect
+  case agent
 
-  public init?(serverState: String) {
-    switch serverState {
-    case "creating", "bootstrapping": self = .starting
-    case "syncing": self = .syncing
-    case "cloning": self = .cloning
-    default: return nil
-    }
-  }
+  static let appStages: [EphemeralSetupStage] = [.connect, .agent]
 }
 
-public enum EphemeralSetupTransition: Equatable, Sendable {
-  case begin(EphemeralSetupStage)
-  case succeed(EphemeralSetupStage)
+public enum EphemeralSetupUpdate: Equatable, Sendable {
+  case begin(EphemeralSetupStage, startedAt: Date)
+  case succeed(EphemeralSetupStage, durationMs: Double)
 }
 
 public struct EphemeralSetupSteps: Sendable {
   public let target: EphemeralTarget
   public let projectName: String
+  public var agentName: String
 
-  public init(target: EphemeralTarget, projectName: String) {
+  public init(target: EphemeralTarget, projectName: String, agentName: String = "the agent") {
     self.target = target
     self.projectName = projectName
+    self.agentName = agentName
   }
 
   public static func phaseId(_ stage: EphemeralSetupStage) -> String {
-    "ephemeral-\(stage)"
+    "ephemeral-\(stage.rawValue)"
   }
 
-  public static func transitions(
-    from current: EphemeralSetupStage?,
-    to next: EphemeralSetupStage?
-  ) -> [EphemeralSetupTransition] {
-    let last = next ?? EphemeralSetupStage.cloning
-    let first = current.map(\.rawValue) ?? -1
-    guard last.rawValue > first || next == nil else { return [] }
-
-    var transitions: [EphemeralSetupTransition] = current.map { [.succeed($0)] } ?? []
-    for stage in EphemeralSetupStage.allCases where stage.rawValue > first && stage.rawValue <= last.rawValue {
-      transitions.append(.begin(stage))
-      if stage != next { transitions.append(.succeed(stage)) }
+  public static func updates(
+    steps: [ServerEphemeralSetupStep],
+    begun: Set<EphemeralSetupStage>,
+    finished: Set<EphemeralSetupStage>
+  ) -> [EphemeralSetupUpdate] {
+    steps.flatMap { step -> [EphemeralSetupUpdate] in
+      guard let stage = EphemeralSetupStage(rawValue: step.stage), let startedAt = date(step.startedAt)
+      else { return [] }
+      var updates: [EphemeralSetupUpdate] = []
+      if !begun.contains(stage) { updates.append(.begin(stage, startedAt: startedAt)) }
+      if !finished.contains(stage), let endedAt = step.endedAt.flatMap(date) {
+        updates.append(.succeed(stage, durationMs: endedAt.timeIntervalSince(startedAt) * 1000))
+      }
+      return updates
     }
-    return transitions
   }
 
-  public func phase(_ stage: EphemeralSetupStage) -> SessionSetupPhase {
+  public static func upcoming(plan: [String]?, begun: Set<EphemeralSetupStage>) -> [EphemeralSetupStage] {
+    let planned = (plan ?? []).compactMap(EphemeralSetupStage.init(rawValue:)) + EphemeralSetupStage.appStages
+    return planned.filter { !begun.contains($0) }
+  }
+
+  public func phase(
+    _ stage: EphemeralSetupStage,
+    startedAt: Date = Date(),
+    isPending: Bool = false
+  ) -> SessionSetupPhase {
     let titles = titles(for: stage)
     return SessionSetupPhase(
       id: Self.phaseId(stage),
       activeTitle: titles.active,
       completedTitle: titles.completed,
-      failedTitle: titles.failed
+      failedTitle: titles.failed,
+      upcomingTitle: titles.upcoming,
+      startedAt: startedAt,
+      isPending: isPending
     )
   }
 
@@ -63,14 +77,31 @@ public struct EphemeralSetupSteps: Sendable {
     "\(titles(for: stage).active)…"
   }
 
-  private func titles(for stage: EphemeralSetupStage) -> (active: String, completed: String, failed: String) {
+  private typealias Titles = (active: String, completed: String, failed: String, upcoming: String)
+
+  private func titles(for stage: EphemeralSetupStage) -> Titles {
     switch stage {
-    case .starting:
-      ("Starting \(target.machineNoun)", "Started \(target.machineNoun)", "Could not start \(target.machineNoun)")
-    case .syncing:
-      ("Syncing your setup", "Synced your setup", "Could not sync your setup")
-    case .cloning:
-      ("Cloning \(projectName)", "Cloned \(projectName)", "Could not clone \(projectName)")
+    case .create: titled("Creating", "Created", "create", target.machineNoun)
+    case .boot: titled("Booting", "Booted", "boot", target.machineNoun)
+    case .install: titled("Installing", "Installed", "install", "Codevisor")
+    case .signIn: titled("Signing in to", "Signed in to", "sign in to", "Codevisor")
+    case .sync: titled("Syncing", "Synced", "sync", "your setup")
+    case .clone: titled("Cloning", "Cloned", "clone", projectName)
+    case .connect: titled("Connecting to", "Connected to", "connect to", target.machineNoun)
+    case .agent: titled("Preparing", "Prepared", "prepare", agentName)
     }
+  }
+
+  private func titled(_ active: String, _ completed: String, _ verb: String, _ object: String) -> Titles {
+    (
+      "\(active) \(object)", "\(completed) \(object)", "Could not \(verb) \(object)",
+      "\(verb.prefix(1).uppercased())\(verb.dropFirst()) \(object)"
+    )
+  }
+
+  private static func date(_ text: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.date(from: text) ?? ISO8601DateFormatter().date(from: text)
   }
 }

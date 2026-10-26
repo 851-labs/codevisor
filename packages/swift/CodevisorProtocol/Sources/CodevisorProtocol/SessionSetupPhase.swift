@@ -15,6 +15,7 @@ public struct SessionSetupLogLine: Identifiable, Equatable, Sendable {
 
 public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   public enum Outcome: Equatable, Sendable {
+    case pending
     case running
     case succeeded
     case failed(String)
@@ -24,7 +25,8 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   public let activeTitle: String
   public let completedTitle: String
   public let failedTitle: String
-  public let startedAt: Date
+  public let upcomingTitle: String
+  public private(set) var startedAt: Date
   public private(set) var endedAt: Date?
   public private(set) var outcome: Outcome
   public private(set) var logs: [SessionSetupLogLine]
@@ -36,18 +38,22 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
     activeTitle: String,
     completedTitle: String,
     failedTitle: String,
-    startedAt: Date = Date()
+    upcomingTitle: String? = nil,
+    startedAt: Date = Date(),
+    isPending: Bool = false
   ) {
     self.id = id
     self.activeTitle = activeTitle
     self.completedTitle = completedTitle
     self.failedTitle = failedTitle
+    self.upcomingTitle = upcomingTitle ?? activeTitle
     self.startedAt = startedAt
     endedAt = nil
-    outcome = .running
+    outcome = isPending ? .pending : .running
     logs = []
   }
 
+  public var isPending: Bool { outcome == .pending }
   public var isRunning: Bool { outcome == .running }
   public var isSucceeded: Bool { outcome == .succeeded }
 
@@ -58,6 +64,12 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
 
   public var duration: TimeInterval? {
     endedAt.map { $0.timeIntervalSince(startedAt) }
+  }
+
+  public mutating func start(at date: Date = Date()) {
+    guard outcome == .pending else { return }
+    startedAt = date
+    outcome = .running
   }
 
   public mutating func appendLog(stream: String, line: String) {

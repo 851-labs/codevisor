@@ -37,6 +37,8 @@ export const makeE2bProvider = (client: E2bClient): EphemeralProvider<E2bOptions
   id: "e2b",
   displayName: "E2B",
   options: E2bOptions,
+  provisionStages: ["create"],
+  streamsOutput: false,
   create: async (spec, options) => {
     const sandbox = await client.create(options.template, {
       timeoutMs: options.timeoutMinutes * millisecondsPerMinute,

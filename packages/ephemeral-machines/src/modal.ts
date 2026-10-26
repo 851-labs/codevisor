@@ -57,6 +57,8 @@ export const makeModalProvider = (
   id: "modal",
   displayName: "Modal",
   options: ModalOptions,
+  provisionStages: ["create"],
+  streamsOutput: false,
   create: async (spec, options) => {
     const timeoutMs = options.timeoutMinutes * millisecondsPerMinute
     const sandboxId = await client.create({ ...options, timeoutMs, tags: tagsToRecord(spec.tags) })

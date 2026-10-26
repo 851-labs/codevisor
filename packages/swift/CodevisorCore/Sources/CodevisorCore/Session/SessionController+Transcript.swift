@@ -37,13 +37,7 @@ extension SessionController {
       settledConversation: settledConversation,
       pendingUserMessage: pendingUserMessage,
       activeItem: activeItem,
-      setupPhases: setupPhases
-        + (model?.persistedSetupPhases ?? []).filter { persisted in
-          !setupPhases.contains {
-            $0.id == persisted.id
-              || ($0.id == SessionSetupPhase.worktreePhaseId && persisted.id.hasPrefix("worktree.setup:"))
-          }
-        },
+      setupPhases: SessionSetupPhases.merging(live: setupPhases, persisted: model?.persistedSetupPhases ?? []),
       waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
       waitingHarnessUpdateName: waitingHarnessUpdateName,
       isLoadingInitialHistory: isLoadingInitialHistory,

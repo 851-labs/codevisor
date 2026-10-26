@@ -46,6 +46,15 @@ struct SessionSetupPhaseView: View {
       } else {
         header(showsChevron: false)
       }
+      if phase.isRunning, !isExpanded, let latest = phase.logs.last?.text {
+        Text(latest)
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .padding(.top, 3)
+          .transaction { $0.animation = nil }
+      }
 
       TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetail) {
         VStack(alignment: .leading, spacing: 8) {
@@ -83,7 +92,7 @@ struct SessionSetupPhaseView: View {
         isExpanded = true
       case .succeeded:
         isExpanded = false
-      case .running:
+      case .running, .pending:
         break
       }
     }
@@ -107,6 +116,9 @@ struct SessionSetupPhaseView: View {
   @ViewBuilder
   private var label: some View {
     switch phase.outcome {
+    case .pending:
+      Text(phase.upcomingTitle)
+        .foregroundStyle(.tertiary)
     case .running:
       HStack(spacing: 6) {
         Text("\(phase.activeTitle)…")
