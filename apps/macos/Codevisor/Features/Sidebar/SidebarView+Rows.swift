@@ -8,7 +8,7 @@ extension SidebarView {
 
   func sidebarRowsState() -> SidebarRows.State {
     SidebarRows.State(
-      bots: botsEnabled ? botEntries.map(SidebarRows.Bot.init) : nil, canCreateBots: canCreateBots,
+      bots: nil, canCreateBots: canCreateBots,
       groups: workspaceGroups,
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(

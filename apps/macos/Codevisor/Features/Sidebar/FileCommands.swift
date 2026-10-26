@@ -60,18 +60,27 @@ extension FocusedValues {
 struct FileCommands: Commands {
   @FocusedValue(\.filePane) private var file
   @FocusedValue(\.transcriptFind) private var chatFind
+  @FocusedValue(\.botListActions) private var botActions
 
   var body: some Commands {
     CommandGroup(replacing: .newItem) {
-      NewChatMenuItem()
-      NewProjectMenuItem()
-      NewTabMenuItem()
+      if botActions != nil {
+        NewBotMenuItem()
 
-      Divider()
+        Divider()
 
-      CloseWindowMenuItem()
-      CloseTabMenuItems()
-      ArchiveWorkspaceMenuItem()
+        CloseWindowMenuItem()
+      } else {
+        NewChatMenuItem()
+        NewProjectMenuItem()
+        NewTabMenuItem()
+
+        Divider()
+
+        CloseWindowMenuItem()
+        CloseTabMenuItems()
+        ArchiveWorkspaceMenuItem()
+      }
     }
     CommandGroup(replacing: .saveItem) {
       if let file, !file.isBrowsing {

@@ -1,3 +1,4 @@
+import AppKit
 import CodevisorCore
 import CodevisorUI
 import Foundation
@@ -9,6 +10,9 @@ extension SessionStore {
   ) -> Bool {
     guard popup != nil || BrowserLocation.navigationURL(url) != nil else { return false }
     var workspace = workspace(for: session, project: project)
+    if WorkspaceLayoutPolicy.isSinglePane(workspace, environment: environment) {
+      return openExternally(url)
+    }
     let paneId = UUID()
     let pane = PaneDescriptorState(
       id: paneId, kind: .browser, name: "Browser", terminalKey: paneId.uuidString,
@@ -35,5 +39,11 @@ extension SessionStore {
       browser.model.presentInWindow()
     }
     return true
+  }
+
+  private func openExternally(_ url: String) -> Bool {
+    guard let target = BrowserLocation.navigationURL(url) else { return false }
+
+    return NSWorkspace.shared.open(target)
   }
 }

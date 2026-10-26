@@ -16,8 +16,8 @@ extension SidebarView {
     botsEnabled ? environment.botSidebarEntries : []
   }
 
-  var botNestedWorkspaceIDs: Set<UUID> {
-    Set(botEntries.flatMap(\.workspaceIDs))
+  var botHomeWorkspaceIDs: Set<UUID> {
+    Set(botEntries.map(\.bot.workspaceId))
   }
 
   func isBotSelected(_ bot: Bot) -> Bool {

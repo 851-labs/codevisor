@@ -21,7 +21,12 @@ extension SessionContainerView {
     model.requestSelectedPaneFocus()
   }
 
+  var isSinglePane: Bool {
+    WorkspaceLayoutPolicy.isSinglePane(selectedWorkspace, environment: environment)
+  }
+
   func addCenterTab() {
+    guard !isSinglePane else { return }
     var workspace = selectedWorkspace
     var state = PaneGroupState()
     let pane = state.addNewTabPane()
@@ -51,8 +56,19 @@ extension SessionContainerView {
     environment.workspaceSync.moveTab(tabId, before: successorId, inWorkspace: selectedWorkspace.id)
   }
 
+  func singlePaneChatLeaf(in workspace: Workspace) -> (id: UUID, state: PaneGroupState)? {
+    guard isSinglePane, let session else { return nil }
+
+    for tab in workspace.centerTabs {
+      if let id = tab.root.groupId(containingChat: session.id), let state = tab.root.group(id: id) {
+        return (id, state)
+      }
+    }
+    return nil
+  }
+
   func showsCenterTabBar(in workspace: Workspace) -> Bool {
-    workspace.centerTabs.count > 1
+    !isSinglePane && workspace.centerTabs.count > 1
   }
 
   func centerTabItems(in workspace: Workspace) -> [PaneTabStripItem] {

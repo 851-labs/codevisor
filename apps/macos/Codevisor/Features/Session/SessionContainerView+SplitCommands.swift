@@ -26,6 +26,7 @@ extension SessionContainerView {
   }
 
   func handleWorkspaceCommand(_ command: PaneGroupCommand) -> Bool {
+    if isSinglePane, !Self.isWorkspaceStep(command) { return true }
     switch command {
     case .newTab:
       addCenterTab()
@@ -86,8 +87,35 @@ extension SessionContainerView {
     splitLeaf(activeLeafId ?? tab.activeLeafId, edge: edge)
   }
 
+  func layoutActions(in workspace: Workspace) -> WorkspaceLayoutActions? {
+    guard !isSinglePane else { return nil }
+
+    return WorkspaceLayoutActions(
+      workspaceId: workspace.id,
+      newTab: addCenterTab,
+      closeSplit: closeActiveLeaf,
+      closeTab: { closeCenterTab(selectedWorkspace.selectedCenterTabId) },
+      reopenClosedPane: reopenClosedPane,
+      previousTab: { stepTab(offset: -1) },
+      nextTab: { stepTab(offset: 1) },
+      previousTabInWorkspace: { selectRelativeCenterTab(offset: -1) },
+      nextTabInWorkspace: { selectRelativeCenterTab(offset: 1) },
+      previousSplit: { focusRelativeSplit(offset: -1) },
+      nextSplit: { focusRelativeSplit(offset: 1) },
+      split: splitActiveLeaf,
+      focus: focusAdjacentLeaf
+    )
+  }
+
+  private static func isWorkspaceStep(_ command: PaneGroupCommand) -> Bool {
+    switch command {
+    case .previousWorkspace, .nextWorkspace: true
+    default: false
+    }
+  }
+
   func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
-    guard openingSplit == nil else { return }
+    guard openingSplit == nil, !isSinglePane else { return }
     var workspace = selectedWorkspace
     guard
       let tabIndex = workspace.centerTabs.firstIndex(where: {
@@ -155,7 +183,7 @@ extension SessionContainerView {
     canvasSize: CGSize
   ) -> Bool {
     let workspace = selectedWorkspace
-    guard let current = workspace.selectedCenterTab?.root,
+    guard !isSinglePane, let current = workspace.selectedCenterTab?.root,
       canvasSize.width > 0,
       canvasSize.height > 0
     else { return false }
