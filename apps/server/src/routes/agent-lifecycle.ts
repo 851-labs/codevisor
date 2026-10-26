@@ -14,7 +14,7 @@ import { Schema } from "effect"
 import { archiveWorkspaceAndWait } from "../archive-jobs.js"
 import { appendAndPublish, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { captureWorkspaceRuntime } from "../server-workspace-effects.js"
-import { agentState } from "./agent-state.js"
+import { agentState, harnessIsLoaded } from "./agent-state.js"
 import { assertNotOwnedByBot } from "./bot-guards.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import type { RouteContext } from "./route-context.js"
@@ -25,7 +25,7 @@ export const listAgents = async ({ services, response, url }: RouteContext): Pro
   const sessions = (await run(services.db.listSessions)).filter((session) =>
     listedSession(session, filters, url)
   )
-  const items = await Promise.all(sessions.map((session) => agentSummary(services.db, session)))
+  const items = await Promise.all(sessions.map((session) => agentSummary(services, session)))
   writeJson(response, 200, {
     items: items.filter((item) => filters.state === undefined || item.state === filters.state)
   })
@@ -46,8 +46,8 @@ export const waitForAgents = async ({
     ids: payload.agentIds,
     timeoutMs: payload.timeoutMs,
     signal: abort.signal,
-    settled: (session) => settledIn(services.db, session, until),
-    describe: (session) => waitedAgent(services.db, session)
+    settled: (session) => settledIn(services, session, until),
+    describe: (session) => waitedAgent(services, session)
   })
   writeJson(response, 200, waited)
   return true
@@ -118,12 +118,12 @@ const matchesOptional = (value: string | undefined, wanted: string | undefined):
   wanted === undefined || value?.toLowerCase() === wanted
 
 const agentSummary = async (
-  db: CodevisorDatabaseService,
+  services: RouteContext["services"],
   session: SessionSummary
 ): Promise<AgentSummary> => ({
   agentId: session.id,
   title: session.title,
-  state: await currentState(db, session),
+  state: await currentState(services, session),
   projectId: session.projectId,
   harness: session.harnessId,
   ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
@@ -134,19 +134,23 @@ const agentSummary = async (
 })
 
 const currentState = async (
-  db: CodevisorDatabaseService,
+  services: RouteContext["services"],
   session: SessionSummary
 ): Promise<AgentState> =>
-  agentState(session, await run(db.getTranscriptPage(session.id, undefined, 1)))
+  agentState(
+    session,
+    await run(services.db.getTranscriptPage(session.id, undefined, 1)),
+    harnessIsLoaded(services.agents, session)
+  )
 
 const settledIn = async (
-  db: CodevisorDatabaseService,
+  services: RouteContext["services"],
   session: SessionSummary,
   until: ReadonlySet<AgentState>
 ): Promise<boolean> => {
-  const state = await currentState(db, session)
+  const state = await currentState(services, session)
   if (!until.has(state)) return false
-  return state !== "idle" || !(await hasQueuedPrompts(db, session.id))
+  return state !== "idle" || !(await hasQueuedPrompts(services.db, session.id))
 }
 
 const hasQueuedPrompts = async (db: CodevisorDatabaseService, agentId: string): Promise<boolean> =>
@@ -154,13 +158,13 @@ const hasQueuedPrompts = async (db: CodevisorDatabaseService, agentId: string): 
   (await run(db.listProcessingPromptQueue(agentId))).length > 0
 
 const waitedAgent = async (
-  db: CodevisorDatabaseService,
+  services: RouteContext["services"],
   session: SessionSummary
 ): Promise<WaitedAgent> => {
-  const page = await run(db.getTranscriptPage(session.id, undefined, 1))
+  const page = await run(services.db.getTranscriptPage(session.id, undefined, 1))
   return {
     agentId: session.id,
-    state: agentState(session, page),
+    state: agentState(session, page, harnessIsLoaded(services.agents, session)),
     ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
   }
 }

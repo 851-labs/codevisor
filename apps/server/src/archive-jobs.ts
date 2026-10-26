@@ -14,6 +14,7 @@ import {
   type RetiredTurnState,
   type WorkspaceRuntime
 } from "./server-workspace-effects.js"
+import { clearStoppedTasks } from "./stopped-tasks.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
 export interface ArchiveJobs {
@@ -92,13 +93,24 @@ export const archiveWorkspaceAndWait = (
   return queue.enqueue(() =>
     withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
       if ((await findWorkspace(services, workspace.id))?.isArchived === false) return []
-      if (runtime !== undefined) await retireWorkspaceRuntime(services, runtime)
+      if (runtime !== undefined) await retireRuntime(services, fanout, config.id, runtime)
       const archived = await archiveWorkspaceWorktree(services, config.id, workspace)
       queue.track(archived.purged)
       await publishKeptArtifacts(services, fanout, workspace.id, archived.keptArtifacts)
       return archived.keptArtifacts
     })
   )
+}
+
+const retireRuntime = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  runtime: WorkspaceRuntime
+): Promise<void> => {
+  await retireWorkspaceRuntime(services, runtime)
+  for (const session of runtime.sessions)
+    await clearStoppedTasks(services, fanout, serverId, session.id)
 }
 
 const publishKeptArtifacts = async (

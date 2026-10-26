@@ -8,6 +8,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { clearStoppedTasks } from "../stopped-tasks.js"
 import { transcriptOrigin } from "./prompt-origin.js"
 
 type RecoveryContext = {
@@ -40,6 +41,7 @@ const reconcileSession = async (
   const { services, fanout, serverId } = context
   if (await sessionIsArchived(services, session)) {
     await run(services.db.closeStaleAssistantChatItems(session.id))
+    await clearStoppedTasks(services, fanout, serverId, session.id)
     return
   }
   const snapshot = await inspectSession(services, session.id)
@@ -144,19 +146,8 @@ const stopOrphanedTasks = async (
 ): Promise<void> => {
   const stoppedTasks = taskDescriptions(page.backgroundTasks!)
   await queueRestartResumeOnce(services, sessionId, restartNotice(stoppedTasks))
-  await clearBackgroundTasks(services, fanout, serverId, sessionId)
+  await clearStoppedTasks(services, fanout, serverId, sessionId)
 }
-
-const clearBackgroundTasks = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
-  sessionId: string
-): Promise<EventEnvelope> =>
-  appendAndPublish(services.db, fanout, "session.updated", sessionId, {
-    backgroundTasks: [],
-    serverId
-  })
 
 const restorePromptMessage = (
   services: CodevisorServerServices,

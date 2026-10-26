@@ -16,6 +16,7 @@ const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) =>
   execFileAsync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd })
 const shell = { id: "task-1", description: "Monitor CI", status: "running", taskType: "shell" }
+const subagent = { id: "task-2", description: "Review", status: "running", taskType: "subagent" }
 
 const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-agent-worktrees-"))
@@ -105,6 +106,67 @@ describe("agent lifecycle routes", () => {
     })
     expect((await wait(["working"])).body).toMatchObject({ timedOut: false })
     expect((await jsonRequest(server, "/v1/agents?state=busy")).status).toBe(400)
+  })
+
+  it("reads an agent as idle once its harness closes, though its tasks are still on record", async () => {
+    const { server, services } = await start()
+    const project = idOf(
+      (
+        await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({
+            folderPath: mkdtempSync(join(tmpdir(), "codevisor-agent-closed-"))
+          }),
+          method: "POST"
+        })
+      ).body
+    )
+    const agentId = idOf(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({ projectId: project, harnessId: "codex" }),
+          method: "POST"
+        })
+      ).body
+    )
+    await run(services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell] }))
+    const { agentSessionId } = await run(services.db.getSessionSummary(agentId))
+
+    await run(services.agents.closeAgentSession(agentSessionId!))
+
+    expect((await jsonRequest(server, "/v1/agents?state=working")).body).toEqual({ items: [] })
+    expect((await jsonRequest(server, `/v1/agents/${agentId}`)).body).toMatchObject({
+      state: "idle"
+    })
+    expect(
+      (
+        await jsonRequest(server, "/v1/agents/wait", {
+          body: JSON.stringify({ agentIds: [agentId], timeoutMs: 0 }),
+          method: "POST"
+        })
+      ).body
+    ).toEqual({ items: [{ agentId, state: "idle" }], timedOut: false })
+  })
+
+  it("clears an archived agent's background tasks so it doesn't read as working", async () => {
+    await withWorktreesRoot(async () => {
+      const { server, services, worktree, agentIn } = await gitProject()
+      const agentId = await agentIn((await worktree()).name)
+      await run(
+        services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell, subagent] })
+      )
+      expect((await jsonRequest(server, `/v1/agents/${agentId}`)).body).toMatchObject({
+        state: "working"
+      })
+
+      await jsonRequest(server, `/v1/agents/${agentId}/archive`, { method: "POST" })
+
+      expect(
+        (await run(services.db.getTranscriptPage(agentId, undefined, 1))).backgroundTasks
+      ).toEqual([])
+      expect((await jsonRequest(server, "/v1/agents")).body).toMatchObject({
+        items: [{ agentId, state: "idle" }]
+      })
+    })
   })
 
   it("lists slim summaries filtered by project, parent, and label", async () => {

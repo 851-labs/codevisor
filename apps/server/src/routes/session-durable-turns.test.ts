@@ -178,6 +178,8 @@ describe("durable session turns", () => {
     const waiting = await seedSession("agent-waiting", "Monitor the deploy")
     const recrashed = await seedSession("agent-recrashed", "Watch the logs")
     await queueRestartResumeOnce(services, recrashed.id, restartNotice(["Watch the logs"]))
+    const archived = await seedSession("agent-archived", "Build the app")
+    await archiveSessionViaWorkspace(services, project.id, archived.id)
 
     const server = await run(
       startCodevisorServer(
@@ -196,7 +198,8 @@ describe("durable session turns", () => {
       ["agent-mid-turn", "queued earlier"]
     ])
     expect(agents.prompts).toContainEqual(["agent-waiting", restartNotice(["Monitor the deploy"])])
-    for (const session of [midTurn, waiting, recrashed]) {
+    expect(await run(services.db.listPromptQueue(archived.id))).toEqual([])
+    for (const session of [midTurn, waiting, recrashed, archived]) {
       const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
       expect(page.backgroundTasks).toEqual([])
     }
