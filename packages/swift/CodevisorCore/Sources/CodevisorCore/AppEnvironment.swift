@@ -75,10 +75,7 @@ public final class AppEnvironment {
     self.projectList = ProjectListModel()
     projectList.navigationStore = navigationStore
     self.attentionCoordinator = SessionAttentionCoordinator(projectList: projectList)
-    self.workspaceSync = WorkspaceSyncModel(
-      repository: workspaces,
-      projectList: projectList
-    )
+    self.workspaceSync = WorkspaceSyncModel(repository: workspaces, projectList: projectList)
     workspaceSync.navigationStore = navigationStore
     navigationStore.attach(projectList: projectList, repository: workspaces)
     self.configCache = configCache
