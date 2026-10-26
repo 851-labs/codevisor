@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url"
 import { parseArgs, promisify } from "node:util"
 
 import { developmentLayout } from "./dev-layout.mjs"
-import { describeExit, waitForExit } from "./dev-shared.mjs"
+import { delay, describeExit, waitForExit } from "./dev-shared.mjs"
+import { restoresHiddenApps, run } from "./screenshots-lib.mjs"
 
 const execute = promisify(execFile)
 const screenshotBundleIdentifier = "com.851labs.Codevisor.Screenshots"
@@ -38,10 +39,11 @@ if (options.help) {
   process.exit(0)
 }
 
-if (!options["skip-build"]) await run("bun", ["scripts/build-native.mjs", "macos"])
+if (!options["skip-build"]) await run("bun", ["scripts/build-native.mjs", "macos"], { cwd: root })
 const output = resolve(root, options.output)
 await mkdir(output, { recursive: true })
 const scratch = await mkdtemp(join(tmpdir(), "codevisor-bento-notifications-"))
+const hiddenApps = restoresHiddenApps(scratch)
 try {
   const app = await prepareScreenshotApp(scratch)
   const capture = join(scratch, "capture")
@@ -54,14 +56,19 @@ try {
   ])
   const child = spawn(join(app, "Contents/MacOS/Codevisor"), ["-AppleLocale", "en_US@hours=h23"], {
     cwd: root,
-    env: { ...process.env, CODEVISOR_BENTO_NOTIFICATIONS: scratch, CODEVISOR_DEMO_REPO: root },
+    env: {
+      ...process.env,
+      ...hiddenApps.environment,
+      CODEVISOR_BENTO_NOTIFICATIONS: scratch,
+      CODEVISOR_DEMO_REPO: root
+    },
     stdio: "inherit"
   })
   try {
     const status = await waitForReady(join(scratch, "ready"))
     if (!status.startsWith("posted")) throw new Error(`Notifications were not posted: ${status}`)
     console.log(`App status: ${status}`)
-    await sleep(bannerSettleSeconds)
+    await delay(bannerSettleSeconds * 1000)
     console.log((await execute(capture, [output])).stdout.trim())
   } finally {
     await writeFile(join(scratch, "done"), "")
@@ -69,6 +76,7 @@ try {
     if (exit.code !== 0) console.error(`The app exited with ${describeExit(exit)}`)
   }
 } finally {
+  hiddenApps.restore()
   await rm(scratch, { recursive: true, force: true })
 }
 
@@ -76,7 +84,7 @@ async function waitForReady(file) {
   for (let elapsed = 0; elapsed < readyTimeoutSeconds * 10; elapsed++) {
     const status = await readFile(file, "utf8").catch(() => "")
     if (status !== "") return status
-    await sleep(0.1)
+    await delay(100)
   }
   throw new Error(`The app did not post within ${readyTimeoutSeconds} seconds`)
 }
@@ -112,14 +120,4 @@ async function prepareScreenshotApp(workDirectory) {
   }
   await execute("codesign", ["--force", "--deep", "--sign", "-", app])
   return app
-}
-
-function sleep(seconds) {
-  return new Promise((wake) => setTimeout(wake, seconds * 1000))
-}
-
-async function run(command, args) {
-  const child = spawn(command, args, { cwd: root, stdio: "inherit" })
-  const exit = await waitForExit(child)
-  if (exit.code !== 0) throw new Error(`${command} exited with ${describeExit(exit)}`)
 }

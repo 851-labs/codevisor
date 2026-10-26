@@ -5,6 +5,8 @@ import { join, resolve } from "node:path"
 import process from "node:process"
 import { parseArgs, promisify } from "node:util"
 
+import { delay } from "./dev-shared.mjs"
+
 const execute = promisify(execFile)
 const image = "codevisor-bento-linux"
 const label = "codevisor-bento=1"
@@ -47,7 +49,7 @@ try {
     const installed = await succeeds("docker", ["exec", container, "test", "-x", installedBinary])
     return installed && !(await succeeds("docker", ["exec", container, "pgrep", "-x", "sh"]))
   })
-  await sleep(settleSeconds)
+  await delay(settleSeconds * 1000)
   const launched = (await ghosttyProcesses()).filter((pid) => !before.includes(pid))
   const window = await windowOf(launched, scratch)
   const file = join(output, "linux-install-dark@2x.png")
@@ -141,11 +143,7 @@ async function waitFor(what, check) {
   for (let elapsed = 0; elapsed < waitSeconds; elapsed++) {
     const result = await check()
     if (result) return result
-    await sleep(1)
+    await delay(1000)
   }
   throw new Error(`Timed out waiting for ${what}`)
-}
-
-function sleep(seconds) {
-  return new Promise((wake) => setTimeout(wake, seconds * 1000))
 }

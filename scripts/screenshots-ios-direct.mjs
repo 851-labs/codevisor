@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile } from "node:child_process"
 import { copyFile, mkdir, mkdtemp, open, readFile, realpath } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,9 +6,15 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import { developmentLayout, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER } from "./dev-layout.mjs"
-import { describeExit, waitForExit } from "./dev-shared.mjs"
-import { devices, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
-import { pngDimensions, scenes, selectedAppearances } from "./screenshots-lib.mjs"
+import { delay } from "./dev-shared.mjs"
+import {
+  devices,
+  parseOptions,
+  prepareThrowawaySimulator,
+  selectRuntime,
+  simctl
+} from "./screenshots-ios-lib.mjs"
+import { pngDimensions, run, scenes, selectedAppearances } from "./screenshots-lib.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const execute = promisify(execFile)
@@ -32,11 +38,12 @@ data only. Landscape devices (the iPad) rotate through a UI test, since simctl c
 
 const selectedDevice = devices[options.device]
 if (selectedDevice === undefined) throw new Error("Pick one device with --device")
-const statusBarTime = new Date(2001, 7, 8, 14, 5).toISOString()
 const displayName = "INFOPLIST_KEY_CFBundleDisplayName=Codevisor"
 const isLandscape = selectedDevice.orientation === "landscape"
 const buildSettings = [displayName]
-await run("bun", ["scripts/build-native.mjs", "ios", ...buildSettings])
+await run("bun", ["scripts/build-native.mjs", "ios", ...buildSettings], {
+  cwd: root
+})
 const runtime = await compatibleRuntime(selectedDevice)
 const simulatorId = await simctl(
   "create",
@@ -64,10 +71,7 @@ try {
 }
 
 async function prepareDevice(udid) {
-  await boot(udid)
-  await simctl("spawn", udid, "defaults", "write", "-g", "AppleICUForce24HourTime", "-bool", "YES")
-  await simctl("shutdown", udid)
-  await boot(udid)
+  await prepareThrowawaySimulator(udid)
   await simctl("install", udid, appBundle())
   await simctl(
     "spawn",
@@ -79,32 +83,13 @@ async function prepareDevice(udid) {
     "-bool",
     "YES"
   )
-  await simctl(
-    "status_bar",
-    udid,
-    "override",
-    "--dataNetwork",
-    "wifi",
-    "--wifiMode",
-    "active",
-    "--wifiBars",
-    "3",
-    "--batteryState",
-    "discharging",
-    "--batteryLevel",
-    "100"
-  )
-  await simctl("status_bar", udid, "override", "--time", statusBarTime)
-}
-
-async function boot(udid) {
-  await simctl("boot", udid)
-  await simctl("bootstatus", udid, "-b")
 }
 
 async function warmUp(udid) {
-  await execute("xcrun", launchArguments(udid), { env: sceneEnvironment(warmUpScene, "light") })
-  await sleep(settleSeconds[warmUpScene])
+  await execute("xcrun", launchArguments(udid), {
+    env: sceneEnvironment(warmUpScene, "light")
+  })
+  await delay(settleSeconds[warmUpScene] * 1000)
   await simctl("terminate", udid, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER).catch(() => {})
 }
 
@@ -116,7 +101,7 @@ async function capture(udid, scene, appearance, file) {
   }
   await execute("xcrun", launchArguments(udid), { env: environment })
   await waitForFile(readyFile)
-  await sleep(settleSeconds[scene] ?? defaultSettleSeconds)
+  await delay((settleSeconds[scene] ?? defaultSettleSeconds) * 1000)
   await simctl("io", udid, "screenshot", file)
   await simctl("terminate", udid, IOS_DEVELOPMENT_BUNDLE_IDENTIFIER).catch(() => {})
   pngDimensions(await readFile(file), selectedDevice)
@@ -131,7 +116,7 @@ async function waitForFile(path) {
       )
     )
       return
-    await sleep(0.1)
+    await delay(100)
   }
   throw new Error(`The app did not report ready within ${readyTimeoutSeconds} seconds`)
 }
@@ -251,20 +236,4 @@ async function compatibleRuntime(device) {
 function appBundle() {
   const products = join(developmentLayout(root).build.ios.derivedData, "Build/Products")
   return join(products, "Debug-iphonesimulator/Codevisor.app")
-}
-
-async function simctl(...args) {
-  return (
-    await execute("xcrun", ["simctl", ...args], { maxBuffer: 16 * 1024 * 1024 })
-  ).stdout.trim()
-}
-
-function sleep(seconds) {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
-}
-
-async function run(command, args) {
-  const child = spawn(command, args, { cwd: root, stdio: "inherit" })
-  const exit = await waitForExit(child)
-  if (exit.code !== 0) throw new Error(`${command} exited with ${describeExit(exit)}`)
 }

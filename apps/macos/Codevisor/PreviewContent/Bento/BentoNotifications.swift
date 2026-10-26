@@ -20,9 +20,8 @@
         let environment = demoEnvironment()
         let manager = ChatNotificationManager.shared
         manager.attach(to: environment)
-        var hidden: [NSRunningApplication] = []
         if await manager.requestAuthorization() {
-          hidden = hideOtherApps()
+          ScreenshotOtherApps.hide()
           NSApp.hide(nil)
           try? await Task.sleep(for: postingGap)
           if NSApp.isActive {
@@ -39,7 +38,7 @@
           try? await Task.sleep(for: pollInterval)
         }
         events.forEach { manager.clearNotifications(for: $0.sessionId) }
-        hidden.forEach { $0.unhide() }
+        ScreenshotOtherApps.restore()
         withExtendedLifetime(environment) { exit(0) }
       }
       application.run()
@@ -53,15 +52,6 @@
       environment.settings.setSystemNotificationsEnabled(true)
       environment.settings.setNotificationSoundsEnabled(false)
       return environment
-    }
-
-    @MainActor
-    private static func hideOtherApps() -> [NSRunningApplication] {
-      let visible = NSWorkspace.shared.runningApplications.filter {
-        $0.activationPolicy == .regular && !$0.isHidden && $0 != NSRunningApplication.current
-      }
-      visible.forEach { $0.hide() }
-      return visible
     }
 
     @MainActor

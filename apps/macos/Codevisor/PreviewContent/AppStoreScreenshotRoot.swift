@@ -136,7 +136,7 @@ import CodevisorUI
         let window = NSApp.windows.first(where: { $0.accessibilityIdentifier() == "marketing-window" })
       else { return }
       if MarketingDesktop.isEnabled {
-        MarketingDesktop.hideOtherApps()
+        ScreenshotOtherApps.hide()
       } else {
         MarketingBackdrop.show(behind: window)
       }
@@ -190,29 +190,12 @@ import CodevisorUI
     }
 
     private static let inset: CGFloat = 40
-    private static var hidden: [NSRunningApplication] = []
-    private static var termination: DispatchSourceSignal?
 
     static func frame(on screen: NSScreen) -> NSRect {
       let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
       var desktop = screen.frame
       desktop.size.height -= menuBarHeight
       return desktop.insetBy(dx: inset, dy: inset)
-    }
-
-    static func hideOtherApps() {
-      hidden = NSWorkspace.shared.runningApplications.filter {
-        $0.activationPolicy == .regular && !$0.isHidden && $0 != NSRunningApplication.current
-      }
-      hidden.forEach { $0.hide() }
-      signal(SIGTERM, SIG_IGN)
-      let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-      source.setEventHandler {
-        hidden.forEach { $0.unhide() }
-        exit(0)
-      }
-      source.resume()
-      termination = source
     }
   }
 

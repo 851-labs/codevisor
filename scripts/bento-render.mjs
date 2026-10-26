@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile } from "node:child_process"
 import { access, copyFile, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -8,7 +8,8 @@ import { parseArgs, promisify } from "node:util"
 
 import { prepareSimulator } from "./bento-simulator.mjs"
 import { developmentLayout } from "./dev-layout.mjs"
-import { describeExit, waitForExit } from "./dev-shared.mjs"
+import { isPortAvailable } from "./dev-shared.mjs"
+import { run } from "./screenshots-lib.mjs"
 
 const usage = `Usage: bun run bento:render [--output directory] [--cards mcp-machines,accounts,…] [--skip-build]
 
@@ -38,11 +39,12 @@ const execute = promisify(execFile)
 const terminalCard = "ghostty-terminal"
 const simulatorCard = "simulator-pane"
 const terminalHome = join(root, "tmp/bento-terminal/home")
+const terminalPort = 3000
 const windowCards = new Set(["inspector-window"])
 const selectedCards = options.cards?.split(",")
 const appCards = selectedCards?.filter((card) => !windowCards.has(card))
 
-if (!options["skip-build"]) await run("bun", ["scripts/build-native.mjs", "macos"])
+if (!options["skip-build"]) await run("bun", ["scripts/build-native.mjs", "macos"], { cwd: root })
 if (appCards === undefined || appCards.length > 0) {
   const showsTerminal = appCards === undefined || appCards.includes(terminalCard)
   const showsSimulator = appCards === undefined || appCards.includes(simulatorCard)
@@ -53,10 +55,13 @@ if (appCards === undefined || appCards.length > 0) {
     if (showsTerminal) terminal = await prepareTerminalHome()
     if (showsSimulator) simulator = await prepareSimulator(root)
     await run(appExecutable(), ["-AppleLocale", "en_US@hours=h23"], {
-      ...renderEnvironment(),
-      ...terminal,
-      ...simulator?.environment,
-      TMPDIR: scratchTemp
+      cwd: root,
+      env: {
+        ...renderEnvironment(),
+        ...terminal,
+        ...simulator?.environment,
+        TMPDIR: scratchTemp
+      }
     })
   } finally {
     if (showsTerminal) await execute("pkill", ["-f", terminalHome]).catch(() => {})
@@ -66,6 +71,10 @@ if (appCards === undefined || appCards.length > 0) {
 }
 
 async function prepareTerminalHome() {
+  if (!(await isPortAvailable(terminalPort)))
+    throw new Error(
+      `The ghostty-terminal card shows Vite on localhost:${terminalPort}; free that port and render again`
+    )
   const project = join(terminalHome, "emojis")
   await mkdir(project, { recursive: true })
   await writeFile(
@@ -83,7 +92,7 @@ async function prepareTerminalHome() {
   )
   await writeFile(
     join(project, "vite.config.js"),
-    "export default { clearScreen: false, server: { port: 3000, strictPort: true } }\n"
+    `export default { clearScreen: false, server: { port: ${terminalPort}, strictPort: true } }\n`
   )
   await writeFile(
     join(project, "index.html"),
@@ -107,13 +116,11 @@ if (selectedCards === undefined || selectedCards.includes("inspector-window")) {
 async function renderInspectorWindow() {
   const scratch = await mkdtemp(join(tmpdir(), "codevisor-bento-window-"))
   try {
-    await run("bun", [
-      "scripts/screenshots-macos-direct.mjs",
-      "--inspector",
-      "--skip-build",
-      "--output",
-      scratch
-    ])
+    await run(
+      "bun",
+      ["scripts/screenshots-macos-direct.mjs", "--inspector", "--skip-build", "--output", scratch],
+      { cwd: root }
+    )
     await mkdir(resolve(root, options.output), { recursive: true })
     for (const appearance of ["light", "dark"]) {
       const name = `inspector-window-${appearance}@2x.png`
@@ -138,10 +145,4 @@ function renderEnvironment() {
     CODEVISOR_DEMO_REPO: root,
     ...(appCards === undefined ? {} : { CODEVISOR_BENTO_CARDS: appCards.join(",") })
   }
-}
-
-async function run(command, args, env = process.env) {
-  const child = spawn(command, args, { cwd: root, env, stdio: "inherit" })
-  const exit = await waitForExit(child)
-  if (exit.code !== 0) throw new Error(`${command} exited with ${describeExit(exit)}`)
 }

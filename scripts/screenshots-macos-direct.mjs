@@ -6,10 +6,12 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import { developmentLayout } from "./dev-layout.mjs"
-import { describeExit, waitForExit } from "./dev-shared.mjs"
+import { delay, waitForExit } from "./dev-shared.mjs"
 import {
   parseCaptureOptions,
   pngDimensions,
+  restoresHiddenApps,
+  run,
   scenes,
   selectedAppearances
 } from "./screenshots-lib.mjs"
@@ -69,7 +71,8 @@ client runtime, a server, or touches another Codevisor's data.`)
   process.exit(0)
 }
 
-if (!process.argv.includes(skipBuildFlag)) await run("bun", ["scripts/build-native.mjs", "macos"])
+if (!process.argv.includes(skipBuildFlag))
+  await run("bun", ["scripts/build-native.mjs", "macos"], { cwd: root })
 for (const appearance of selectedAppearances(options)) {
   if (showsDesktop && appearance !== (await systemAppearance())) {
     throw new Error(`Switch the system appearance to ${appearance} before capturing the desktop`)
@@ -96,19 +99,24 @@ for (const appearance of selectedAppearances(options)) {
 async function capture(scene, appearance, file) {
   const scratch = await mkdtemp(join(tmpdir(), "codevisor-screenshot-"))
   const windowFile = join(scratch, "window")
+  const hiddenApps = showsDesktop ? restoresHiddenApps(scratch) : undefined
   const app = spawn(appExecutable(), launchArguments(), {
-    env: sceneEnvironment(scene, appearance, windowFile),
+    env: {
+      ...sceneEnvironment(scene, appearance, windowFile),
+      ...hiddenApps?.environment
+    },
     stdio: "ignore"
   })
   try {
     const windowId = await waitForWindow(windowFile)
-    await sleep(settleSeconds[scene] ?? defaultSettleSeconds)
+    await delay((settleSeconds[scene] ?? defaultSettleSeconds) * 1000)
     const target = showsDesktop ? ["-D", "1"] : ["-o", "-l", windowId]
     await execute("/usr/sbin/screencapture", ["-x", ...target, file])
     pngDimensions(await readFile(file), window)
   } finally {
     app.kill("SIGTERM")
     await waitForExit(app)
+    hiddenApps?.restore()
     await rm(scratch, { recursive: true, force: true })
   }
 }
@@ -123,7 +131,12 @@ async function systemAppearance() {
 
 function capturedWindow() {
   if (showsDesktop) {
-    return { name: "main display of a 14-inch MacBook Pro", width: 1512, height: 982, scales: [2] }
+    return {
+      name: "main display of a 14-inch MacBook Pro",
+      width: 1512,
+      height: 982,
+      scales: [2]
+    }
   }
   if (isFullscreen) {
     return {
@@ -191,8 +204,13 @@ function sceneEnvironment(scene, appearance, windowFile) {
     CODEVISOR_SCREENSHOT_APPEARANCE: appearance,
     CODEVISOR_SCREENSHOT_WINDOW_FILE: windowFile,
     ...(showsDesktop
-      ? { CODEVISOR_SCREENSHOT_DESKTOP: "1", CODEVISOR_SCREENSHOT_INSPECTOR_WIDTH: "320" }
-      : { CODEVISOR_SCREENSHOT_WINDOW_SIZE: `${window.width}x${window.height}` }),
+      ? {
+          CODEVISOR_SCREENSHOT_DESKTOP: "1",
+          CODEVISOR_SCREENSHOT_INSPECTOR_WIDTH: "320"
+        }
+      : {
+          CODEVISOR_SCREENSHOT_WINDOW_SIZE: `${window.width}x${window.height}`
+        }),
     CODEVISOR_SCREENSHOT_OPENS_RUN_LOCATION_MENU: showsWorktreePicker ? "1" : "0",
     CODEVISOR_SCREENSHOT_SHOWS_INSPECTOR: showsInspector ? "1" : "0"
   }
@@ -202,17 +220,7 @@ async function waitForWindow(windowFile) {
   for (let elapsed = 0; elapsed < windowTimeoutSeconds * 10; elapsed++) {
     const windowId = await readFile(windowFile, "utf8").catch(() => "")
     if (windowId !== "") return windowId.trim()
-    await sleep(0.1)
+    await delay(100)
   }
   throw new Error(`The screenshot window did not appear within ${windowTimeoutSeconds} seconds`)
-}
-
-function sleep(seconds) {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
-}
-
-async function run(command, args) {
-  const child = spawn(command, args, { cwd: root, stdio: "inherit" })
-  const exit = await waitForExit(child)
-  if (exit.code !== 0) throw new Error(`${command} exited with ${describeExit(exit)}`)
 }

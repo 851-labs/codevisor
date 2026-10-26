@@ -1,4 +1,13 @@
-import { basename, isAbsolute, resolve } from "node:path"
+import { spawn, spawnSync } from "node:child_process"
+import { readFileSync, rmSync } from "node:fs"
+import { basename, isAbsolute, join, resolve } from "node:path"
+import process from "node:process"
+import { fileURLToPath } from "node:url"
+
+import { describeExit, waitForExit } from "./dev-shared.mjs"
+
+const unhideScript = fileURLToPath(new URL("screenshots-unhide-apps.swift", import.meta.url))
+const exitCodes = { SIGINT: 130, SIGTERM: 143 }
 
 export const scenes = ["01-projects", "02-conversation", "03-new-chat", "04-browser"]
 export const appearances = ["light", "dark"]
@@ -86,4 +95,44 @@ body{margin:32px;background:#f5f5f7;color:#1d1d1f;font:15px system-ui}h1{font-si
 main{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px}
 a{color:inherit;text-decoration:none}img{width:100%;height:560px;object-fit:contain;object-position:top;background:white;border:1px solid #ddd;border-radius:12px}p{line-height:1.5}
 </style><h1>Codevisor marketing screenshots</h1><p>Actual app captures with offline demo content. Click an image for the full-resolution PNG.</p><main>${cards}</main></html>`
+}
+
+export async function run(command, args, { cwd, env = process.env } = {}) {
+  const child = spawn(command, args, { cwd, env, stdio: "inherit" })
+  const exit = await waitForExit(child)
+  if (exit.code !== 0) throw new Error(`${command} exited with ${describeExit(exit)}`)
+}
+
+export function restoresHiddenApps(directory) {
+  const file = join(directory, "hidden-apps")
+  const interrupted = (signal) => {
+    restore()
+    process.exit(exitCodes[signal])
+  }
+  for (const signal of Object.keys(exitCodes)) process.on(signal, interrupted)
+  process.on("exit", restore)
+  return {
+    environment: { CODEVISOR_SCREENSHOT_HIDDEN_APPS_FILE: file },
+    restore() {
+      restore()
+      for (const signal of Object.keys(exitCodes)) process.off(signal, interrupted)
+      process.off("exit", restore)
+    }
+  }
+
+  function restore() {
+    let pids
+    try {
+      pids = readFileSync(file, "utf8")
+        .split("\n")
+        .filter((pid) => pid !== "")
+    } catch {
+      return
+    }
+    rmSync(file, { force: true })
+    if (pids.length > 0)
+      spawnSync("xcrun", ["swift", unhideScript, ...pids], {
+        stdio: "inherit"
+      })
+  }
 }

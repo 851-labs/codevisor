@@ -1,15 +1,19 @@
 import { execFile, spawn } from "node:child_process"
-import { mkdtemp, open, readFile, writeFile } from "node:fs/promises"
+import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { devices, selectRuntime } from "./screenshots-ios-lib.mjs"
+import { delay, describeExit, waitForExit } from "./dev-shared.mjs"
+import {
+  devices,
+  prepareThrowawaySimulator,
+  selectRuntime,
+  simctl
+} from "./screenshots-ios-lib.mjs"
 
 const execute = promisify(execFile)
 const device = devices["iphone-18-pro"]
-const statusBarTime = new Date(2001, 7, 8, 14, 5).toISOString()
-const pagePort = 3000
 const pageRenderSeconds = 8
 const pageRequestTimeoutSeconds = 20
 const pageAttempts = 3
@@ -18,16 +22,20 @@ const pageSource = "apps/shared/Screenshots/AppStoreScreenshotPage.swift"
 
 export async function prepareSimulator(root) {
   const scratch = await mkdtemp(join(tmpdir(), "codevisor-bento-simulator-"))
-  const { runtimes } = JSON.parse(await simctl("list", "runtimes", "--json"))
-  const runtime = selectRuntime(runtimes, [device])
   const requests = join(scratch, "requests.log")
-  const requestLog = await open(requests, "w")
-  const page = spawn(
-    "python3",
-    ["-m", "http.server", String(pagePort), "--bind", "127.0.0.1", "--directory", scratch],
-    { stdio: ["ignore", "ignore", requestLog.fd] }
-  )
+  let requestLog
+  let server
+  let prepared
   try {
+    const { runtimes } = JSON.parse(await simctl("list", "runtimes", "--json"))
+    const runtime = selectRuntime(runtimes, [device])
+    requestLog = await open(requests, "w")
+    server = spawn(
+      "python3",
+      ["-u", "-m", "http.server", "0", "--bind", "127.0.0.1", "--directory", scratch],
+      { stdio: ["ignore", "pipe", requestLog.fd] }
+    )
+    const port = await listeningPort(server)
     const html = await emojisPage(root)
     const screens = {}
     const settings = {}
@@ -38,8 +46,8 @@ export async function prepareSimulator(root) {
       screens[appearance] = join(scratch, `screen-${appearance}.png`)
       fixture = await withSimulator(runtime, async (udid) => {
         await simctl("ui", udid, "appearance", appearance)
-        await openPage(udid, `warm-up-${appearance}.html`, requests)
-        await openPage(udid, `${appearance}.html`, requests)
+        await openPage(udid, port, `warm-up-${appearance}.html`, requests)
+        await openPage(udid, port, `${appearance}.html`, requests)
         await simctl("io", udid, "screenshot", screens[appearance])
         const { stdout } = await execute("bun", ["scripts/bento-simulator-fixture.mjs", udid], {
           cwd: root,
@@ -51,17 +59,40 @@ export async function prepareSimulator(root) {
     }
     const file = join(scratch, "fixture.json")
     await writeFile(file, JSON.stringify({ ...fixture, settings, screens }))
-    return { environment: { CODEVISOR_BENTO_SIMULATOR_FIXTURE: file }, scratch }
+    prepared = {
+      environment: { CODEVISOR_BENTO_SIMULATOR_FIXTURE: file },
+      scratch
+    }
+    return prepared
   } finally {
-    page.kill("SIGTERM")
-    await requestLog.close()
+    if (server !== undefined) {
+      server.kill("SIGTERM")
+      await waitForExit(server)
+    }
+    await requestLog?.close()
+    if (prepared === undefined) await rm(scratch, { recursive: true, force: true })
   }
+}
+
+function listeningPort(server) {
+  return new Promise((resolve, reject) => {
+    let output = ""
+    server.stdout.on("data", (chunk) => {
+      output += chunk
+      const port = / port (\d+)/.exec(output)?.[1]
+      if (port !== undefined) resolve(Number(port))
+    })
+    server.once("error", reject)
+    server.once("exit", (code, signal) =>
+      reject(new Error(`The page server exited with ${describeExit({ code, signal })}`))
+    )
+  })
 }
 
 async function withSimulator(runtime, work) {
   const udid = await simctl("create", device.name, device.type, runtime.identifier)
   try {
-    await prepareDevice(udid)
+    await prepareThrowawaySimulator(udid)
     return await work(udid)
   } finally {
     await simctl("shutdown", udid).catch(() => {})
@@ -69,41 +100,18 @@ async function withSimulator(runtime, work) {
   }
 }
 
-async function openPage(udid, path, requests) {
+async function openPage(udid, port, path, requests) {
   for (let attempt = 0; attempt < pageAttempts; attempt++) {
-    await simctl("openurl", udid, `http://localhost:${pagePort}/${path}`).catch(() => {})
+    await simctl("openurl", udid, `http://localhost:${port}/${path}`).catch(() => {})
     for (let waited = 0; waited < pageRequestTimeoutSeconds; waited++) {
-      await sleep(1)
+      await delay(1000)
       if ((await readFile(requests, "utf8")).includes(`GET /${path}`)) {
-        await sleep(pageRenderSeconds)
+        await delay(pageRenderSeconds * 1000)
         return
       }
     }
   }
   throw new Error(`Safari never requested ${path} on the throwaway simulator`)
-}
-
-async function prepareDevice(udid) {
-  await boot(udid)
-  await simctl("spawn", udid, "defaults", "write", "-g", "AppleICUForce24HourTime", "-bool", "YES")
-  await simctl("shutdown", udid)
-  await boot(udid)
-  await simctl(
-    "status_bar",
-    udid,
-    "override",
-    "--dataNetwork",
-    "wifi",
-    "--wifiMode",
-    "active",
-    "--wifiBars",
-    "3",
-    "--batteryState",
-    "discharging",
-    "--batteryLevel",
-    "100"
-  )
-  await simctl("status_bar", udid, "override", "--time", statusBarTime)
 }
 
 async function emojisPage(root) {
@@ -124,19 +132,4 @@ async function emojisPage(root) {
     if (html.includes(String.raw`\(`)) throw new Error(`Unexpected interpolation in ${pageSource}`)
     return html.trim()
   }
-}
-
-async function boot(udid) {
-  await simctl("boot", udid)
-  await simctl("bootstatus", udid, "-b")
-}
-
-async function simctl(...args) {
-  return (
-    await execute("xcrun", ["simctl", ...args], { maxBuffer: 16 * 1024 * 1024 })
-  ).stdout.trim()
-}
-
-function sleep(seconds) {
-  return new Promise((wake) => setTimeout(wake, seconds * 1000))
 }
