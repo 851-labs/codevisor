@@ -48,6 +48,11 @@ extension SidebarView {
     }
   }
 
+  var paletteDestinations: SidebarPaletteDestinations {
+    SidebarPaletteDestinations(
+      groups: workspaceGroups, bots: botEntries.map(\.bot), rowContent: rowContent, activate: { activate($0) })
+  }
+
   private func activate(_ stop: SidebarStop) {
     switch stop {
     case .newChat:

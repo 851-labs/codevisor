@@ -139,9 +139,9 @@
         .onChange(of: hovering) { _, hovering in
           guard !disabled else { return }
           if hovering {
-            host.highlight.hover(item.id)
+            host.hover(item.id)
           } else if !isScrolling || host.highlight.source == .pointer {
-            host.highlight.endHover(item.id)
+            host.endHover(item.id)
           }
         }
         .background {

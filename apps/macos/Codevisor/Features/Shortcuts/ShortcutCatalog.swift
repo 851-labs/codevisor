@@ -27,6 +27,7 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case focusSplitAbove
   case focusSplitBelow
 
+  case commandPalette
   case toggleDebugOverlay
 
   case browserZoomIn
@@ -97,6 +98,52 @@ struct ShortcutDefinition: Identifiable, Sendable {
 enum ShortcutCatalog {
   static func definition(for id: ShortcutID) -> ShortcutDefinition {
     switch id {
+    case .newChat, .newProject, .archiveWorkspace:
+      chatDefinition(for: id)
+    case .newTab, .closeSplit, .closeTab, .reopenClosedPane, .selectTab, .previousTab, .nextTab,
+      .previousTabInWorkspace, .nextTabInWorkspace, .previousWorkspace, .nextWorkspace:
+      tabDefinition(for: id)
+    case .previousSplit, .nextSplit, .splitLeft, .splitRight, .splitUp, .splitDown, .focusSplitLeft, .focusSplitRight,
+      .focusSplitAbove, .focusSplitBelow:
+      splitDefinition(for: id)
+    case .commandPalette, .toggleDebugOverlay:
+      viewDefinition(for: id)
+    case .browserZoomIn, .browserZoomOut, .browserResetZoom:
+      browserDefinition(for: id)
+    case .composerSend, .composerQueue, .composerNewline, .composerDismissSuggestions:
+      composerDefinition(for: id)
+    case .questionPickerMove, .questionPickerSelectByNumber, .questionPickerToggle, .questionPickerSubmit,
+      .questionPickerDismiss:
+      questionPickerDefinition(for: id)
+    }
+  }
+
+  static func combo(for id: ShortcutID) -> ShortcutCombo? {
+    definition(for: id).combo
+  }
+
+  static func title(for id: ShortcutID) -> String {
+    definition(for: id).title
+  }
+
+  static func display(for id: ShortcutID) -> String {
+    definition(for: id).displayString ?? ""
+  }
+
+  static var all: [ShortcutDefinition] {
+    ShortcutID.allCases.map { definition(for: $0) }
+  }
+
+  static var listedByCategory: [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
+    let listable = all.filter { $0.displayString != nil }
+    return ShortcutCategory.allCases.compactMap { category in
+      let shortcuts = listable.filter { $0.category == category }
+      return shortcuts.isEmpty ? nil : (category, shortcuts)
+    }
+  }
+
+  private static func chatDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
     case .newChat:
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
     case .newProject:
@@ -105,7 +152,13 @@ enum ShortcutCatalog {
       ShortcutDefinition(
         .archiveWorkspace, "Archive Workspace", ShortcutCombo("a", [.command, .shift]), category: .chats,
         context: "Archives the workspace on screen")
+    default:
+      preconditionFailure("\(id) is not a chat shortcut")
+    }
+  }
 
+  private static func tabDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
     case .newTab:
       ShortcutDefinition(.newTab, "New Tab", ShortcutCombo("t", .command), category: .tabsAndSplits)
     case .closeSplit:
@@ -151,6 +204,13 @@ enum ShortcutCatalog {
       ShortcutDefinition(
         .nextWorkspace, "Next Workspace", ShortcutCombo(.downArrow, [.command, .option]),
         category: .tabsAndSplits)
+    default:
+      preconditionFailure("\(id) is not a tab shortcut")
+    }
+  }
+
+  private static func splitDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
     case .previousSplit:
       ShortcutDefinition(.previousSplit, "Previous Split", ShortcutCombo("[", .command), category: .tabsAndSplits)
     case .nextSplit:
@@ -172,11 +232,27 @@ enum ShortcutCatalog {
       ShortcutDefinition(.focusSplitAbove, "Focus Split Above", nil, category: .tabsAndSplits)
     case .focusSplitBelow:
       ShortcutDefinition(.focusSplitBelow, "Focus Split Below", nil, category: .tabsAndSplits)
+    default:
+      preconditionFailure("\(id) is not a split shortcut")
+    }
+  }
 
+  private static func viewDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
+    case .commandPalette:
+      ShortcutDefinition(
+        .commandPalette, "Command Palette…", ShortcutCombo("k", .command), category: .view,
+        context: "Runs commands and jumps to workspaces")
     case .toggleDebugOverlay:
       ShortcutDefinition(
         .toggleDebugOverlay, "Toggle Debug Overlay", ShortcutCombo("`", .command), category: .view)
+    default:
+      preconditionFailure("\(id) is not a view shortcut")
+    }
+  }
 
+  private static func browserDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
     case .browserZoomIn:
       ShortcutDefinition(
         .browserZoomIn, "Zoom In", ShortcutCombo("=", .command),
@@ -189,7 +265,13 @@ enum ShortcutCatalog {
       ShortcutDefinition(
         .browserResetZoom, "Reset Zoom", ShortcutCombo("0", .command), category: .browser,
         context: "While browsing")
+    default:
+      preconditionFailure("\(id) is not a browser shortcut")
+    }
+  }
 
+  private static func composerDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
     case .composerSend:
       ShortcutDefinition(
         .composerSend, "Send Message", ShortcutCombo(.return),
@@ -211,7 +293,13 @@ enum ShortcutCatalog {
         .composerDismissSuggestions, "Dismiss Suggestions", ShortcutCombo(.escape),
         category: .composer, context: "While the suggestion list is open"
       )
+    default:
+      preconditionFailure("\(id) is not a composer shortcut")
+    }
+  }
 
+  private static func questionPickerDefinition(for id: ShortcutID) -> ShortcutDefinition {
+    switch id {
     case .questionPickerMove:
       ShortcutDefinition(
         .questionPickerMove, "Move Between Options", nil,
@@ -233,30 +321,8 @@ enum ShortcutCatalog {
     case .questionPickerDismiss:
       ShortcutDefinition(
         .questionPickerDismiss, "Dismiss Without Answering", ShortcutCombo(.escape), category: .questionPicker)
-    }
-  }
-
-  static func combo(for id: ShortcutID) -> ShortcutCombo? {
-    definition(for: id).combo
-  }
-
-  static func title(for id: ShortcutID) -> String {
-    definition(for: id).title
-  }
-
-  static func display(for id: ShortcutID) -> String {
-    definition(for: id).displayString ?? ""
-  }
-
-  static var all: [ShortcutDefinition] {
-    ShortcutID.allCases.map { definition(for: $0) }
-  }
-
-  static var listedByCategory: [(category: ShortcutCategory, shortcuts: [ShortcutDefinition])] {
-    let listable = all.filter { $0.displayString != nil }
-    return ShortcutCategory.allCases.compactMap { category in
-      let shortcuts = listable.filter { $0.category == category }
-      return shortcuts.isEmpty ? nil : (category, shortcuts)
+    default:
+      preconditionFailure("\(id) is not a questionPicker shortcut")
     }
   }
 }

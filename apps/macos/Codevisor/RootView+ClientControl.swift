@@ -68,6 +68,14 @@ extension RootView {
     panelLayout.docksSidebar ? !sidebarCollapsed : panelLayout.activeDrawer == .leading
   }
 
+  func setSidebarVisible(_ visible: Bool) {
+    if panelLayout.docksSidebar {
+      sidebarCollapsed = !visible
+    } else if visible != clientSidebarVisible {
+      panelLayout.toggleDrawer(.leading)
+    }
+  }
+
   func requireClientReady() throws {
     guard environment.settings.hasCompletedOnboarding else { throw ClientControlError("Complete onboarding first") }
     guard clientWindow.window?.attachedSheet == nil else {
@@ -83,11 +91,7 @@ extension RootView {
     case .window(let request):
       if request.action == "sidebar" {
         guard let visible = request.visible else { throw ClientControlError("Missing sidebar visibility") }
-        if panelLayout.docksSidebar {
-          sidebarCollapsed = !visible
-        } else if visible != clientSidebarVisible {
-          panelLayout.toggleDrawer(.leading)
-        }
+        setSidebarVisible(visible)
       } else {
         try await clientWindow.perform(request)
       }

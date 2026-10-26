@@ -12,6 +12,7 @@ struct SidebarActions: Equatable {
   let newProject: @MainActor () -> Void
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
   var archiveWorkspace: (@MainActor () -> Void)? = nil
+  var paletteDestinations: (@MainActor () -> [CommandPaletteItem])? = nil
 
   static func == (lhs: SidebarActions, rhs: SidebarActions) -> Bool { true }
 }
@@ -80,7 +81,7 @@ struct FileCommands: Commands {
       }
     }
     CommandGroup(after: .textEditing) {
-      if let file, !file.isBrowsing, file.document.snapshot?.content != nil {
+      if let file, file.isEditingText {
         Button("Find in File…") {
           file.showsFind = true
           file.editor.preview = false

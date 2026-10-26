@@ -156,6 +156,60 @@
       #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
     }
 
+    private struct LongList: View {
+      var body: some View {
+        Autocomplete.Suggestions {
+          for index in 0..<40 { Autocomplete.Action("Item \(index)", id: index) {} }
+        }
+        .autocompleteStyle(.init(metrics: Options(maximumHeight: 200).metrics, itemHighlight: .fill(.yellow)))
+        .environment(\.colorScheme, .light)
+        .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+        .background(.white)
+        .fixedSize()
+      }
+    }
+
+    private func highlightCenterY(in view: NSView) throws -> CGFloat {
+      let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+      view.cacheDisplay(in: view.bounds, to: rep)
+      let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+      let rows = (0..<rep.pixelsHigh).filter { y in
+        guard let color = rep.colorAt(x: rep.pixelsWide / 2, y: y)?.usingColorSpace(.sRGB) else { return false }
+        return color.redComponent > 0.8 && color.greenComponent > 0.65 && color.blueComponent < 0.5
+      }
+      let top = try #require(rows.first)
+      let bottom = try #require(rows.last)
+      return CGFloat(top + bottom + 1) / 2 / scale
+    }
+
+    @Test("Arrowing through a long list keeps the highlighted row centered in the visible results")
+    func keyboardScrollingCentersHighlight() throws {
+      _ = NSApplication.shared
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 600, height: 600),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = NSHostingView(rootView: LongList())
+      defer {
+        window.contentView = nil
+        window.close()
+      }
+      let view = try #require(window.contentView)
+      settle(view)
+      let field = try #require(find(NSSearchField.self, in: view))
+      let coordinator = try #require(field.delegate as? Autocomplete.InputField.Coordinator)
+      for _ in 0..<20 {
+        _ = coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:)))
+      }
+      settle(view)
+
+      let scrollView = try #require(find(NSScrollView.self, in: view))
+      let viewport = scrollView.convert(scrollView.bounds, to: view)
+      let viewportCenterY = view.isFlipped ? viewport.midY : view.bounds.height - viewport.midY
+      let rowHeight = Autocomplete.Metrics.xcodeMenu.itemHeight
+      #expect(abs(try highlightCenterY(in: view) - viewportCenterY) <= rowHeight / 2)
+    }
+
     @Test("The last row gains concentric corners after scrolling to the end of a capped list")
     func scrollingToBottom() throws {
       let options = SelectionStore(Options(fontSize: 24, maximumHeight: 160))

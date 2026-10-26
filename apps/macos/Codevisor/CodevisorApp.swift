@@ -47,6 +47,7 @@ struct CodevisorApp: App {
       if let environment = runtime.environment {
         AppUpdateCommands(environment: environment)
         FileCommands()
+        CommandPaletteCommands()
         WorkspaceLayoutCommands()
         BrowserCommands()
         SimulatorCommands()
@@ -112,6 +113,7 @@ struct RootView: View {
   @State private var requiresInitialNewChatProjectResolution = false
   @State private var quickLook = QuickLookController.withAlerts()
   @State var panelLayout = AdaptivePanelLayout()
+  @State private var commandPalette = CommandPalette()
 
   var body: some View {
     mainSplit
@@ -132,6 +134,11 @@ struct RootView: View {
       )
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
       .overlay { ErrorBannerLayer() }
+      .overlay { CommandPaletteOverlay(palette: commandPalette, store: store) }
+      .focusedSceneValue(\.commandPalette, commandPalette)
+      .focusedSceneValue(
+        \.sidebarVisibility, SidebarVisibilityToggle(isVisible: clientSidebarVisible, setVisible: setSidebarVisible)
+      )
       .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
       .onChange(of: selection) { _, newValue in
         panelLayout.dismissDrawer()

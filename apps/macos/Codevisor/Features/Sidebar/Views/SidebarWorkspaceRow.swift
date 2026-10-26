@@ -149,7 +149,7 @@ struct SidebarWorkspaceRowLabel: View {
 
   var body: some View {
     HStack(spacing: 7) {
-      leadingIcon
+      SidebarWorkspaceLeadingIcon(icon: icon, store: store)
       VStack(alignment: .leading, spacing: 2) {
         Text(Self.title(for: name))
           .lineLimit(1)
@@ -165,24 +165,6 @@ struct SidebarWorkspaceRowLabel: View {
     }
     .foregroundStyle(.primary)
     .accessibilityElement(children: .combine)
-  }
-
-  @ViewBuilder
-  private var leadingIcon: some View {
-    switch icon {
-    case let .chat(session):
-      ChatSessionLeadingIcon(
-        session: session, store: store, activityColor: .secondary, iconSize: SidebarRowIcon.size
-      )
-      .foregroundStyle(.secondary)
-    case .workingTerminal:
-      AgentStatusIndicator(status: .working)
-        .frame(width: 18)
-    case .workspace:
-      Image(systemName: EntitySystemSymbol.workspace)
-        .frame(width: 18)
-        .foregroundStyle(.secondary)
-    }
   }
 }
 

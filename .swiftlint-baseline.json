@@ -693,21 +693,6 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 133 lines",
-      "location": {
-        "line": 98,
-        "file": "apps/macos/Codevisor/Features/Shortcuts/ShortcutCatalog.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  static func definition(for id: ShortcutID) -> ShortcutDefinition {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
       "location": {
         "line": 16,

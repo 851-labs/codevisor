@@ -205,7 +205,8 @@ struct SidebarView: View {
             newChat: { selection = .newChat(nil) },
             newProject: { startAddProject() },
             stepWorkspace: { stepWorkspace($0) },
-            archiveWorkspace: { archiveSelectedWorkspace() }
+            archiveWorkspace: { archiveSelectedWorkspace() },
+            paletteDestinations: { paletteDestinations.items }
           )
           : nil
       )
