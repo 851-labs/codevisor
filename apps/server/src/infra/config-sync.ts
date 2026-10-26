@@ -11,7 +11,6 @@ import {
   mcpUpdate,
   parseSyncedValue,
   syncedValue,
-  type StaticMcpSecrets,
   type SyncedMcpValue,
   withCredential,
   withHeldCredential,
@@ -64,10 +63,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   for (const [name, server] of Array.from(localByName)) {
     const existing = replicaByKey.get(name)
     const wanted = replicatedMcp(existing)
-    let credential: HeldCredential
-    if (server.authType === "oauth") credential = await deps.mcp.oauthCredential(server.id)
-    const secrets = await deps.mcp.staticSecrets(server.id)
-    const value = withCredential(syncedValue(server, secrets), credential)
+    const value = await localSyncedValue(deps, server)
     const step = localMcpStep(sync.ledger, name, value, wanted)
     if (step === "skip") continue
     if (step === "adopt") {
@@ -95,8 +91,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
     if (entry.deleted === true) {
       if (local === undefined) continue
 
-      const secrets = await deps.mcp.staticSecrets(local.id)
-      if (!isUnchangedMcp(sync.ledger, name, local, secrets)) continue
+      if (!isUnchangedMcp(sync.ledger, name, await localSyncedValue(deps, local))) continue
 
       await deps.mcp.remove(local.id)
       recordRemoved(sync, name)
@@ -208,12 +203,15 @@ const publishMcp = (sync: McpSync, key: string, value: SyncedMcpValue, previous:
   sync.published.push(key)
 }
 
-const isUnchangedMcp = (
-  ledger: SyncLedger,
-  name: string,
-  local: McpServer,
-  secrets: StaticMcpSecrets
-): boolean => ledger.applied.get(name) === fingerprint(syncedValue(local, secrets))
+const localSyncedValue = async (deps: McpSyncDeps, server: McpServer): Promise<SyncedMcpValue> => {
+  let credential: HeldCredential
+  if (server.authType === "oauth") credential = await deps.mcp.oauthCredential(server.id)
+  const secrets = await deps.mcp.staticSecrets(server.id)
+  return withCredential(syncedValue(server, secrets), credential)
+}
+
+const isUnchangedMcp = (ledger: SyncLedger, name: string, value: SyncedMcpValue): boolean =>
+  ledger.applied.get(name) === fingerprint(value)
 
 const holdsOAuth = (local: McpServer | undefined, received: SyncedMcpValue): local is McpServer =>
   local !== undefined && received.authType === "oauth"

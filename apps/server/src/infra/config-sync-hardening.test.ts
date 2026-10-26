@@ -146,6 +146,50 @@ describe("config sync hardening", () => {
   )
 
   it(
+    "removes OAuth copies that hold a sign-in, and stale replays don't bring them back",
+    { timeout: 30_000 },
+    async () => {
+      const a = await makeMachine("oauth-res-a", 6_000_000)
+      const b = await makeMachine("oauth-res-b", 6_000_100)
+      for (const name of ["Signed In", "Signed Out"]) {
+        await b.mcp.create({
+          authType: "oauth",
+          enabled: true,
+          name,
+          transport: "http",
+          url: `https://${name === "Signed In" ? "in" : "out"}.example/mcp`
+        })
+        await b.mcp.setOAuthCredential((await serverNamed(b, name)).id, credentialReference("b"))
+      }
+      await b.mcp.setOAuthCredential((await serverNamed(b, "Signed Out")).id, null)
+      const seeded = await reconcileMcps(b)
+      await gossip(seeded, a)
+      expect([...(await reconcileMcps(a)).status.applied].toSorted()).toEqual([
+        "Signed In",
+        "Signed Out"
+      ])
+
+      await a.mcp.remove((await serverNamed(a, "Signed In")).id)
+      await a.mcp.remove((await serverNamed(a, "Signed Out")).id)
+      const deleted = await reconcileMcps(a)
+      await gossip(deleted, b)
+      expect([...(await reconcileMcps(b)).status.removed].toSorted()).toEqual([
+        "Signed In",
+        "Signed Out"
+      ])
+
+      await gossip(seeded, a)
+      await gossip(seeded, b)
+      for (const machine of [a, b]) {
+        expect((await reconcileMcps(machine)).changedEntries).toEqual([])
+        const names = (await machine.mcp.list()).map((server) => server.name)
+        expect(names).not.toContain("Signed In")
+        expect(names).not.toContain("Signed Out")
+      }
+    }
+  )
+
+  it(
     "keeps a synced sign-in when an older machine writes the entry without one",
     { timeout: 30_000 },
     async () => {
