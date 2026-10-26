@@ -29,7 +29,8 @@ public struct HarnessFailureNotice: View {
     TranscriptInlineCard(
       title: title,
       state: .pending(message: detail, actions: actions),
-      inBotConversation: inBotConversation
+      inBotConversation: inBotConversation,
+      tone: .error
     )
   }
 

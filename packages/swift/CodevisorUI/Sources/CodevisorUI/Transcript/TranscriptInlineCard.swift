@@ -6,6 +6,11 @@ public struct TranscriptInlineCard: View {
     case resolved(Outcome)
   }
 
+  public enum Tone: Sendable {
+    case neutral
+    case error
+  }
+
   public enum Outcome: Equatable, Sendable {
     case completed(String)
     case declined(String)
@@ -14,11 +19,13 @@ public struct TranscriptInlineCard: View {
   private let title: String
   private let state: State
   private let inBotConversation: Bool
+  private let tone: Tone
 
-  public init(title: String, state: State, inBotConversation: Bool) {
+  public init(title: String, state: State, inBotConversation: Bool, tone: Tone = .neutral) {
     self.title = title
     self.state = state
     self.inBotConversation = inBotConversation
+    self.tone = tone
   }
 
   public var body: some View {
@@ -39,7 +46,7 @@ public struct TranscriptInlineCard: View {
     switch state {
     case let .pending(message, actions):
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
-        TranscriptInlineCardText(title: title, message: message)
+        TranscriptInlineCardText(title: title, message: message, tone: tone)
         if !actions.isEmpty {
           TranscriptInlineCardActions(actions: actions)
             .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)
