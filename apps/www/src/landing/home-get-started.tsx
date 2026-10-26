@@ -62,7 +62,7 @@ const SHOW_LINUX_TERMINAL = false
 
 const XSERVE_PLACEMENT = SHOW_LINUX_TERMINAL
   ? "top-[-6px] left-[19px]"
-  : "top-6 left-1/2 -translate-x-1/2"
+  : "top-[-10px] left-1/2 -translate-x-1/2"
 
 function LinuxComposition() {
   return (
