@@ -61,8 +61,8 @@ function CopyCommand({ command }: { command: string }) {
 const SHOW_LINUX_TERMINAL = false
 
 const XSERVE_PLACEMENT = SHOW_LINUX_TERMINAL
-  ? "top-[-6px] left-[19px]"
-  : "top-[-10px] left-1/2 -translate-x-1/2"
+  ? "top-[-6px] left-[19px] w-[232px]"
+  : "top-[-2px] left-1/2 w-[247px] -translate-x-1/2"
 
 function LinuxComposition() {
   return (
@@ -74,7 +74,7 @@ function LinuxComposition() {
         width={1024}
         height={843}
         loading="lazy"
-        className={`absolute h-auto w-[232px] max-w-none ${XSERVE_PLACEMENT}`}
+        className={`absolute h-auto max-w-none ${XSERVE_PLACEMENT}`}
       />
       {SHOW_LINUX_TERMINAL && (
         <img
