@@ -9,10 +9,10 @@
         configCache: ConfigOptionCache(store: InMemoryStore()),
         settings: settings(),
         appUpdate: appUpdate(),
-        machineClientFactory: { DemoServerClient(machine: DemoModels.machine(forMachineId: $0.id)) }
+        machineClientFactory: { DemoServerClient(machine: DemoModels.machine(forMachineId: $0.id)) },
+        now: { DemoWorld.now }
       )
       environment.machines.cloudProvider = DemoCloudMachines()
-      environment.updateCenter.now = { DemoWorld.now }
       seedMcpReadiness(environment)
       return environment
     }

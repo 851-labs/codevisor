@@ -36,6 +36,7 @@ public final class AppEnvironment {
   var mcpStateRevisions: [String: UInt64] = [:]
   var pluginUpdateRevisions: [String: UInt64] = [:]
   private let clientDataResetter: (any ClientDataResetting)?
+  public let now: @MainActor () -> Date
 
   public init(
     navigationPersistence: any PersistenceStore = InMemoryStore(),
@@ -51,8 +52,10 @@ public final class AppEnvironment {
     localServer: (any LocalServerControlling)? = nil,
     appUpdate: AppUpdateModel? = nil,
     harnessService: (any HarnessServicing)? = nil,
-    machineClientFactory: MachineController.ClientFactory? = nil
+    machineClientFactory: MachineController.ClientFactory? = nil,
+    now: @escaping @MainActor () -> Date = { Date() }
   ) {
+    self.now = now
     self.harnessServiceOverride = harnessService
     self.paneGroups = paneGroups
     self.transcriptCache = transcriptCache
@@ -91,7 +94,7 @@ public final class AppEnvironment {
       localServer: localServer,
       clientFactory: machineClientFactory
     )
-    updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate)
+    updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines)
     updateCenter.listedHarnessIds = { [configSync] in

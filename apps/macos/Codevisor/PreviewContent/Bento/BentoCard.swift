@@ -94,7 +94,6 @@
       BentoCard(name: "inspector-usage", width: inspectorWidth) {
         AnyView(
           WorkspaceInspectorUsageSection(limits: DemoServerRecords.usageLimits, isExpanded: .constant(true))
-            .environment(\.inspectorNow, DemoWorld.now)
             .padding(.vertical, 10))
       },
       BentoCard(name: "inspector-context", width: inspectorWidth) {
@@ -112,7 +111,7 @@
     @MainActor
     private static var usageLimitNotice: some View {
       UsageLimitNotice(
-        autoResume: SessionAutoResume(resumesAt: usageLimitReset), inBotConversation: false, now: DemoWorld.now,
+        autoResume: SessionAutoResume(resumesAt: usageLimitReset), inBotConversation: false,
         switchAccount: {},
         cancelAutoResume: {})
     }

@@ -32,7 +32,6 @@ import CodevisorUI
       .modifier(ThemedRoot())
       .environment(fixture.environment)
       .environment(panelLayout)
-      .environment(\.inspectorNow, DemoWorld.now)
       .preferredColorScheme(AppStoreScreenshotData.colorScheme)
       .background(MarketingWindowConfiguration())
       .task {
@@ -51,7 +50,10 @@ import CodevisorUI
 
     @ViewBuilder private var content: some View {
       if AppStoreScreenshotData.showsInspector {
-        splitView.modifier(WorkspaceInspectorPresentation(store: fixture.store, selection: inspectedSelection))
+        splitView.modifier(
+          WorkspaceInspectorPresentation(
+            store: fixture.store, selection: inspectedSelection,
+            idealInspectorWidth: AppStoreScreenshotData.inspectorWidth ?? 260))
       } else {
         splitView
       }

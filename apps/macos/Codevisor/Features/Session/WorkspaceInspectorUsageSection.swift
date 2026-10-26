@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorCore
 import SwiftUI
 
 struct WorkspaceInspectorUsageSection: View {
@@ -35,13 +36,9 @@ struct WorkspaceInspectorUsageSection: View {
   }
 }
 
-extension EnvironmentValues {
-  @Entry var inspectorNow: Date? = nil
-}
-
 private struct WorkspaceInspectorUsageWindowRow: View {
   let window: ServerHarnessUsageWindow
-  @Environment(\.inspectorNow) private var pinnedNow
+  @Environment(AppEnvironment.self) private var environment: AppEnvironment?
 
   private var used: Double { min(max(window.usedPercent, 0), 100) }
 
@@ -55,7 +52,7 @@ private struct WorkspaceInspectorUsageWindowRow: View {
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
-      let now = pinnedNow ?? context.date
+      let now = environment?.now() ?? context.date
       let pace = window.pace(now: now)
       VStack(alignment: .leading, spacing: 5) {
         HStack(alignment: .firstTextBaseline) {
