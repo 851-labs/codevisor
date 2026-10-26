@@ -18,7 +18,7 @@ export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})
 
 export const swiftTestingOnly = ["--disable-xctest"]
 
-const packagePath = "packages/swift"
+const swiftPackagePath = "packages/swift"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 
@@ -32,10 +32,10 @@ export async function runSwiftTests(
     }
   }
   const steps = [
-    { swift: ["build", "--build-tests", "--package-path", packagePath] },
-    { bundles: packagePath, selection: ["--skip", mainSerialExecutorFilter] },
+    { swift: ["build", "--build-tests", "--package-path", swiftPackagePath] },
+    { bundles: swiftPackagePath, selection: ["--skip", mainSerialExecutorFilter] },
     {
-      swift: ["test", "--package-path", packagePath, "--skip-build"],
+      swift: ["test", "--package-path", swiftPackagePath, "--skip-build"],
       selection: ["--filter", mainSerialExecutorFilter]
     }
   ]
@@ -151,7 +151,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (net.status !== 0) process.exitCode = net.status ?? 1
   else {
     const store = developmentLayout(repoRoot).build.swiftArtifactStore
-    await prepareSwiftPackage({ repoRoot, packagePath, store })
+    await prepareSwiftPackage({ repoRoot, packagePath: swiftPackagePath, store })
     process.exitCode = await runSwiftTests(process.argv.slice(2))
   }
 }
