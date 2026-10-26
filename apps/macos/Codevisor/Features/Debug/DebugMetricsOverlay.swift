@@ -19,7 +19,7 @@ struct DebugMetricsOverlayModifier: ViewModifier {
       }
       .focusedSceneValue(
         \.debugOverlayToggle,
-        DebugOverlayToggleAction(id: actionID) { model.toggle() }
+        DebugOverlayToggleAction(id: actionID, isVisible: model.isVisible) { model.toggle() }
       )
   }
 }
@@ -244,10 +244,11 @@ private final class DisplayFrameProbeView: NSView {
 
 struct DebugOverlayToggleAction: Equatable {
   let id: UUID
+  let isVisible: Bool
   let toggle: @MainActor () -> Void
 
   static func == (lhs: DebugOverlayToggleAction, rhs: DebugOverlayToggleAction) -> Bool {
-    lhs.id == rhs.id
+    lhs.id == rhs.id && lhs.isVisible == rhs.isVisible
   }
 }
 

@@ -208,7 +208,7 @@
           .onChange(of: host.highlight.highlighted) { _, target in
             guard let target, host.highlight.source == .keyboard else { return }
             if let focusedRow, focusedRow.itemID != target { self.focusedRow = .item(target) }
-            if snapshot.resultItems.contains(where: { $0.id == target }) { proxy.scrollTo(target) }
+            if snapshot.resultItems.contains(where: { $0.id == target }) { proxy.scrollTo(target, anchor: .center) }
             host.announce()
           }
           .accessibilityElement(children: .contain)

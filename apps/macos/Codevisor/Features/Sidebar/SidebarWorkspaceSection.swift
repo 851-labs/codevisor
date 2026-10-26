@@ -119,13 +119,17 @@ struct SidebarRowContent {
     SidebarRowSubtitle.make(
       details: rowDetails,
       title: workspace.name,
-      projectName: ProjectGroup.grouping(list.projects).first {
-        $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
-      }?.name,
+      projectName: projectName(for: workspace),
       branch: store?.gitLookups.branch(for: workspace),
       worktreeName: workspace.worktreeName,
       groupNamesProject: grouping == .project && isUnderGroupHeading(workspace, isPinned: isPinned)
     )
+  }
+
+  func projectName(for workspace: Workspace) -> String? {
+    ProjectGroup.grouping(list.projects).first {
+      $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
+    }?.name
   }
 
   func pullRequest(for workspace: Workspace) -> ServerGitPullRequest? {

@@ -18,8 +18,30 @@
       @ObservationIgnored weak var resultsView: NSView?
       @ObservationIgnored private var announcement: DispatchWorkItem?
       @ObservationIgnored private var previousQuery = ""
+      @ObservationIgnored private let pointerLocation: () -> CGPoint
+      @ObservationIgnored private var pointerAtKeyboardMove: CGPoint?
 
-      init(navigation: Navigation = .menu) { highlight = Highlight(navigation: navigation) }
+      init(navigation: Navigation = .menu, pointerLocation: @escaping () -> CGPoint = { NSEvent.mouseLocation }) {
+        highlight = Highlight(navigation: navigation)
+        self.pointerLocation = pointerLocation
+      }
+
+      func hover(_ id: NodeID) {
+        guard pointerMovedSinceKeyboardMove() else { return }
+        highlight.hover(id)
+      }
+
+      func endHover(_ id: NodeID) {
+        guard pointerMovedSinceKeyboardMove() else { return }
+        highlight.endHover(id)
+      }
+
+      private func pointerMovedSinceKeyboardMove() -> Bool {
+        guard let parked = pointerAtKeyboardMove else { return true }
+        guard pointerLocation() != parked else { return false }
+        pointerAtKeyboardMove = nil
+        return true
+      }
 
       func update(snapshot: Snapshot, query: String, isEnabled: Bool, navigation: Navigation) {
         self.snapshot = snapshot
@@ -55,6 +77,7 @@
           return activate(target)
         }
         guard !snapshot.eligibleIDs.isEmpty else { return false }
+        pointerAtKeyboardMove = pointerLocation()
         return highlight.handle(command, targets: snapshot.eligibleIDs, accept: { _ = self.activate($0) }, dismiss: {})
       }
 

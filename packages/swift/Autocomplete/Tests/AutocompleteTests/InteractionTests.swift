@@ -101,6 +101,31 @@
       #expect(accepted == 9999)
     }
 
+    @Test("Rows scrolled under a resting pointer keep the keyboard highlight until the pointer moves")
+    func restingPointerAfterArrows() {
+      var pointer = CGPoint(x: 10, y: 10)
+      let host = Autocomplete.Host(pointerLocation: { pointer })
+      let snapshot = configure(host) {
+        Autocomplete.Action("A") {}
+        Autocomplete.Action("B") {}
+        Autocomplete.Action("C") {}
+      }
+      let ids = snapshot.eligibleIDs
+      host.hover(ids[0])
+      #expect(host.highlight.highlighted == ids[0])
+
+      #expect(host.handle(.moveDown))
+      host.endHover(ids[0])
+      host.hover(ids[2])
+      #expect(host.highlight.highlighted == ids[1])
+      #expect(host.highlight.source == .keyboard)
+
+      pointer = CGPoint(x: 10, y: 40)
+      host.hover(ids[2])
+      #expect(host.highlight.highlighted == ids[2])
+      #expect(host.highlight.source == .pointer)
+    }
+
     @Test("Unhandled commands propagate from engine and native text delegate")
     func commandDisposition() {
       let host = Autocomplete.Host()

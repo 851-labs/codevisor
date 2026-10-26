@@ -58,13 +58,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
             .toolbar {
               ToolbarSpacer(.flexible)
               ToolbarItem {
-                Button {
-                  if panelLayout.docksInspector {
-                    isPresented.toggle()
-                  } else {
-                    panelLayout.toggleDrawer(.trailing)
-                  }
-                } label: {
+                Button(action: toggleInspector) {
                   Label(isVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing")
                 }
                 .help(isVisible ? "Hide Inspector" : "Show Inspector")
@@ -96,6 +90,28 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         guard case let .session(_, sessionId) = selection, let inspected = inspectedWorkspace else { return }
         lastOpenedChats[inspected.workspace.id] = sessionId
       }
+      .focusedSceneValue(\.workspaceInspector, inspected == nil ? nil : actions(isVisible: isVisible))
+  }
+
+  private func actions(isVisible: Bool) -> WorkspaceInspectorActions {
+    WorkspaceInspectorActions(isVisible: isVisible, toggle: toggleInspector, show: showInspector)
+  }
+
+  private func toggleInspector() {
+    if panelLayout.docksInspector {
+      isPresented.toggle()
+    } else {
+      panelLayout.toggleDrawer(.trailing)
+    }
+  }
+
+  private func showInspector(_ destination: WorkspaceInspectorTab) {
+    tab = destination
+    if panelLayout.docksInspector {
+      isPresented = true
+    } else if panelLayout.activeDrawer != .trailing {
+      panelLayout.toggleDrawer(.trailing)
+    }
   }
 
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {

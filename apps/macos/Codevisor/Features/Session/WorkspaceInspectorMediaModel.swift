@@ -15,6 +15,15 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
     case .files: "Files"
     }
   }
+
+  var systemImage: String {
+    switch self {
+    case .info: "info.circle"
+    case .media: "photo.on.rectangle"
+    case .links: "link"
+    case .files: "folder"
+    }
+  }
 }
 
 @MainActor

@@ -1,0 +1,196 @@
+import CodevisorCore
+import CodevisorUI
+import SwiftUI
+
+struct CommandPaletteCatalog {
+  var sidebar: SidebarActions?
+  var composerFocus: NewChatComposerFocus?
+  var layout: WorkspaceLayoutActions?
+  var file: FilePaneModel?
+  var chatFind: TranscriptFindModel?
+  var browser: ChromiumBrowserModel?
+  var debugOverlay: DebugOverlayToggleAction?
+  var sidebarVisibility: SidebarVisibilityToggle?
+  var inspector: WorkspaceInspectorActions?
+  var developerMode = false
+  let openSettings: @MainActor () -> Void
+
+  private static let splitEdges: [SplitEdge] = [.leading, .trailing, .top, .bottom]
+
+  var sections: [CommandPaletteSection] {
+    [
+      CommandPaletteSection(title: "Chats", items: chatCommands),
+      CommandPaletteSection(title: "Tabs & Splits", items: layoutCommands),
+      CommandPaletteSection(title: "Find", items: findCommands),
+      CommandPaletteSection(title: "Browser", items: browserCommands),
+      CommandPaletteSection(title: "View", items: sidebarCommands + inspectorCommands),
+      CommandPaletteSection(title: "App", items: appCommands),
+      CommandPaletteSection(title: "Developer", items: developerCommands),
+      CommandPaletteSection(title: "Workspaces", items: sidebar?.paletteDestinations?() ?? []),
+    ].filter { !$0.items.isEmpty }
+  }
+
+  private var chatCommands: [CommandPaletteItem] {
+    guard let sidebar else { return [] }
+
+    let items = [
+      CommandPaletteItem(.newChat, systemImage: "square.and.pencil") {
+        sidebar.newChat()
+        composerFocus?.focus()
+      },
+      CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: sidebar.newProject),
+    ]
+    guard layout != nil, let archive = sidebar.archiveWorkspace else { return items }
+    return items + [CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: archive)]
+  }
+
+  private var layoutCommands: [CommandPaletteItem] {
+    guard let layout else { return [] }
+
+    return [
+      CommandPaletteItem(.newTab, systemImage: "plus.square.on.square", perform: layout.newTab),
+      CommandPaletteItem(.closeTab, systemImage: "xmark.square", perform: layout.closeTab),
+      CommandPaletteItem(.closeSplit, systemImage: "xmark.rectangle", perform: layout.closeSplit),
+      CommandPaletteItem(.reopenClosedPane, systemImage: "arrow.uturn.backward", perform: layout.reopenClosedPane),
+      CommandPaletteItem(
+        .previousTabInWorkspace, systemImage: "arrow.left.square", perform: layout.previousTabInWorkspace),
+      CommandPaletteItem(.nextTabInWorkspace, systemImage: "arrow.right.square", perform: layout.nextTabInWorkspace),
+      CommandPaletteItem(
+        .previousSplit, systemImage: "rectangle.lefthalf.inset.filled.arrow.left", perform: layout.previousSplit),
+      CommandPaletteItem(
+        .nextSplit, systemImage: "rectangle.righthalf.inset.filled.arrow.right", perform: layout.nextSplit),
+    ]
+      + Self.splitEdges.map { edge in
+        CommandPaletteItem(.split(towards: edge), systemImage: Self.splitSymbol(edge)) { layout.split(edge) }
+      }
+      + Self.splitEdges.map { edge in
+        CommandPaletteItem(.focusSplit(towards: edge), systemImage: Self.focusSymbol(edge)) { layout.focus(edge) }
+      }
+  }
+
+  private static func splitSymbol(_ edge: SplitEdge) -> String {
+    switch edge {
+    case .leading, .trailing: "rectangle.split.2x1"
+    case .top, .bottom: "rectangle.split.1x2"
+    }
+  }
+
+  private static func focusSymbol(_ edge: SplitEdge) -> String {
+    switch edge {
+    case .leading: "rectangle.lefthalf.inset.filled"
+    case .trailing: "rectangle.righthalf.inset.filled"
+    case .top: "rectangle.tophalf.inset.filled"
+    case .bottom: "rectangle.bottomhalf.inset.filled"
+    }
+  }
+
+  private var findCommands: [CommandPaletteItem] {
+    if let file, file.isEditingText { return fileCommands(file) }
+    guard let chatFind else { return [] }
+
+    return [
+      CommandPaletteItem(
+        "Find in Chat…", systemImage: "magnifyingglass", shortcut: KeyboardShortcut("f"), perform: chatFind.present)
+    ]
+  }
+
+  private func fileCommands(_ file: FilePaneModel) -> [CommandPaletteItem] {
+    let find = CommandPaletteItem("Find in File…", systemImage: "magnifyingglass", shortcut: KeyboardShortcut("f")) {
+      file.showsFind = true
+      file.editor.preview = false
+    }
+    let goToLine = CommandPaletteItem(
+      "Go to Line…", systemImage: "text.line.first.and.arrowtriangle.forward",
+      shortcut: KeyboardShortcut("g", modifiers: .control)
+    ) {
+      file.showsGoToLine = true
+    }
+    guard file.canSave else { return [find, goToLine] }
+
+    let save = CommandPaletteItem("Save", systemImage: "square.and.arrow.down", shortcut: KeyboardShortcut("s")) {
+      Task { await file.document.save() }
+    }
+    return [save, find, goToLine]
+  }
+
+  private var browserCommands: [CommandPaletteItem] {
+    guard let browser else { return [] }
+
+    let page = [
+      CommandPaletteItem(
+        "Open Location", systemImage: "globe", shortcut: KeyboardShortcut("l"), perform: browser.focusAddress),
+      CommandPaletteItem(
+        "Developer Tools", systemImage: "hammer", shortcut: KeyboardShortcut("i", modifiers: [.command, .option]),
+        perform: browser.showDevTools),
+      CommandPaletteItem("Reload Page", systemImage: "arrow.clockwise", shortcut: KeyboardShortcut("r")) {
+        browser.reload()
+      },
+      CommandPaletteItem(
+        "Reload Page Ignoring Cache", systemImage: "arrow.clockwise.circle",
+        shortcut: KeyboardShortcut("r", modifiers: [.command, .shift])
+      ) {
+        browser.reload(ignoringCache: true)
+      },
+    ]
+    return page + zoomCommands(browser)
+  }
+
+  private func zoomCommands(_ browser: ChromiumBrowserModel) -> [CommandPaletteItem] {
+    let zoomIn = CommandPaletteItem(.browserZoomIn, systemImage: "plus.magnifyingglass") { browser.zoom(.zoomIn) }
+    let zoomOut = CommandPaletteItem(.browserZoomOut, systemImage: "minus.magnifyingglass") { browser.zoom(.zoomOut) }
+    let reset = CommandPaletteItem(.browserResetZoom, systemImage: "1.magnifyingglass") { browser.zoom(.reset) }
+    return (browser.canZoomIn ? [zoomIn] : []) + (browser.canZoomOut ? [zoomOut] : [])
+      + (browser.canResetZoom ? [reset] : [])
+  }
+
+  private var sidebarCommands: [CommandPaletteItem] {
+    guard let sidebarVisibility else { return [] }
+
+    let title = sidebarVisibility.isVisible ? "Hide Sidebar" : "Show Sidebar"
+    return [
+      CommandPaletteItem(
+        id: "toggleSidebar", title: title, icon: .symbol("sidebar.leading"), searchTerms: ["Toggle Sidebar"]
+      ) {
+        sidebarVisibility.setVisible(!sidebarVisibility.isVisible)
+      }
+    ]
+  }
+
+  private var inspectorCommands: [CommandPaletteItem] {
+    guard let inspector else { return [] }
+
+    let title = inspector.isVisible ? "Hide Inspector" : "Show Inspector"
+    let toggle = CommandPaletteItem(
+      id: "toggleInspector", title: title, icon: .symbol("sidebar.trailing"), searchTerms: ["Toggle Inspector"],
+      perform: inspector.toggle)
+    let tabs = WorkspaceInspectorTab.allCases.map { tab in
+      CommandPaletteItem(
+        id: "inspector:\(tab.rawValue)", title: "Show \(tab.title) Inspector", icon: .symbol(tab.systemImage)
+      ) { inspector.show(tab) }
+    }
+    return [toggle] + tabs
+  }
+
+  private var developerCommands: [CommandPaletteItem] {
+    guard developerMode, let debugOverlay else { return [] }
+
+    let title = debugOverlay.isVisible ? "Hide Debug Overlay" : "Show Debug Overlay"
+    return [
+      CommandPaletteItem(
+        id: ShortcutID.toggleDebugOverlay.rawValue, title: title, icon: .symbol("gauge.with.dots.needle.50percent"),
+        shortcut: ShortcutCatalog.combo(for: .toggleDebugOverlay)?.keyboardShortcut,
+        searchTerms: [ShortcutCatalog.title(for: .toggleDebugOverlay)], perform: debugOverlay.toggle)
+    ]
+  }
+
+  private var appCommands: [CommandPaletteItem] {
+    let settings = CommandPaletteItem(
+      id: "settings", title: "Settings…", icon: .symbol("gearshape"), shortcut: KeyboardShortcut(","),
+      searchTerms: ["Preferences"], perform: openSettings)
+    let updates = CommandPaletteItem("Check for Updates…", systemImage: "arrow.down.circle") {
+      SettingsRouter.shared.showUpdates()
+      openSettings()
+    }
+    return [settings, updates]
+  }
+}

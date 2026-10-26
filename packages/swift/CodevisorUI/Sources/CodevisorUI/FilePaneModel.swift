@@ -66,6 +66,7 @@ public final class FilePaneModel {
   }
 
   public var isBrowsing: Bool { path.hasSuffix("/") }
+  public var isEditingText: Bool { !isBrowsing && document.snapshot?.content != nil }
   public var displayPath: String { explorer.relativePath(path) }
   public var title: String { isBrowsing ? "Open File" : document.name }
   public var canSave: Bool {
