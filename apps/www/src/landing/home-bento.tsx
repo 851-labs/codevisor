@@ -79,89 +79,6 @@ function Label({ children, large = false }: { children: ReactNode; large?: boole
 export function FeatureBento() {
   return (
     <div className="mt-10 grid grid-cols-1 gap-3 md:grid-flow-row-dense md:auto-rows-[minmax(250px,auto)] md:grid-cols-6">
-      <Card className="min-h-[440px] p-6 sm:px-8 md:col-span-4 md:row-span-2 md:min-h-[540px]">
-        <Label large>Sync your tools across machines</Label>
-        <BentoImage
-          name="settings-mcps-window"
-          alt="Codevisor Settings with MCPs selected: Linear, Notion, and Sentry, each turned on for This Mac, Mac Studio, and VPS"
-          width={892}
-          height={724}
-          className="absolute top-[76px] left-[-10px] w-[535px] max-w-none md:top-[39px] md:left-[-16px] md:w-[758px]"
-        />
-      </Card>
-
-      <Card className="min-h-[280px] p-6 md:col-span-2">
-        <Label>Automatic token rotation</Label>
-        <BentoImage
-          name="settings-accounts-window"
-          alt="Codevisor's Claude Code Accounts sheet: alexandru@emojis.com in use, pondorasti@gmail.com ready to use, and Add Account"
-          width={892}
-          height={724}
-          className="absolute top-[47px] left-[-78px] w-[491px] max-w-none md:top-[49px]"
-        />
-      </Card>
-
-      <Card className="flex min-h-[250px] flex-col pt-6 md:col-span-2">
-        <Label>Native notifications</Label>
-        <div className="relative mt-5 min-h-[170px] flex-1">
-          <BentoImage
-            name="notifications"
-            alt="macOS notification banners from Codevisor: Chat finished for Add emoji search, and Action required for Wire up the rack view"
-            width={440}
-            height={175}
-            className="absolute inset-0 h-full w-full object-cover object-[30%_45%]"
-          />
-        </div>
-      </Card>
-
-      <Card className="flex flex-col p-6 sm:px-8 md:col-span-4">
-        <div className="flex flex-1 items-center justify-center pb-6">
-          <Render
-            name="chrome-extension"
-            width={460}
-            height={296}
-            alt="The Connect Chrome sheet: open Chrome's Extensions page, then drag Codevisor.zip into Chrome"
-          />
-        </div>
-        <Label>Browser Use in your own Chrome</Label>
-      </Card>
-
-      <Card className="flex flex-col p-6 md:col-span-2">
-        <div className="flex flex-1 items-center justify-center pb-5">
-          <Render
-            name="worktree-picker"
-            width={345}
-            height={182}
-            className="overflow-hidden rounded-xl border border-hairline"
-            alt="The new chat Run in menu with New worktree selected, under the This Mac, emojis, and New worktree chips"
-          />
-        </div>
-        <Label>A worktree for every chat</Label>
-      </Card>
-
-      <Card className="flex flex-col p-6 sm:px-7 md:col-span-3 md:h-[345px]">
-        <Label>Computer Use</Label>
-        <div className="mt-5 flex flex-1 items-end justify-center md:-mb-10">
-          <Render
-            name="computer-use"
-            width={460}
-            height={301}
-            alt="The Allow Computer Use sheet with Accessibility and Screen Recording both granted"
-          />
-        </div>
-      </Card>
-
-      <Card className="min-h-[318px] p-6 sm:px-7 md:col-span-3 md:h-[345px] md:min-h-0">
-        <Label>Completion Sounds</Label>
-        <BentoImage
-          name="settings-sounds-window"
-          alt="Codevisor Settings with Notifications selected: Play sounds on, Glass for Chat finished, Hero for Action required"
-          width={892}
-          height={724}
-          className="absolute bottom-[-163px] left-[-10px] w-[535px] max-w-none md:bottom-[-155px] md:left-[-7px] md:w-[556px]"
-        />
-      </Card>
-
       <Card className="min-h-[440px] p-6 sm:px-8 md:col-span-4 md:row-span-2">
         <Label large>iOS Simulator</Label>
         <BentoImage
@@ -257,6 +174,89 @@ export function FeatureBento() {
             <IPhonePro src="iphone-projects" alt="" />
           </div>
         </div>
+      </Card>
+
+      <Card className="min-h-[440px] p-6 sm:px-8 md:col-span-4 md:row-span-2 md:min-h-[540px]">
+        <Label large>Sync your tools across machines</Label>
+        <BentoImage
+          name="settings-mcps-window"
+          alt="Codevisor Settings with MCPs selected: Linear, Notion, and Sentry, each turned on for This Mac, Mac Studio, and VPS"
+          width={892}
+          height={724}
+          className="absolute top-[76px] left-[-10px] w-[535px] max-w-none md:top-[39px] md:left-[-16px] md:w-[758px]"
+        />
+      </Card>
+
+      <Card className="min-h-[280px] p-6 md:col-span-2">
+        <Label>Automatic token rotation</Label>
+        <BentoImage
+          name="settings-accounts-window"
+          alt="Codevisor's Claude Code Accounts sheet: alexandru@emojis.com in use, pondorasti@gmail.com ready to use, and Add Account"
+          width={892}
+          height={724}
+          className="absolute top-[47px] left-[-78px] w-[491px] max-w-none md:top-[49px]"
+        />
+      </Card>
+
+      <Card className="flex min-h-[250px] flex-col pt-6 md:col-span-2">
+        <Label>Native notifications</Label>
+        <div className="relative mt-5 min-h-[170px] flex-1">
+          <BentoImage
+            name="notifications"
+            alt="macOS notification banners from Codevisor: Chat finished for Add emoji search, and Action required for Wire up the rack view"
+            width={440}
+            height={175}
+            className="absolute inset-0 h-full w-full object-cover object-[30%_45%]"
+          />
+        </div>
+      </Card>
+
+      <Card className="flex flex-col p-6 sm:px-8 md:col-span-4">
+        <div className="flex flex-1 items-center justify-center pb-6">
+          <Render
+            name="chrome-extension"
+            width={460}
+            height={296}
+            alt="The Connect Chrome sheet: open Chrome's Extensions page, then drag Codevisor.zip into Chrome"
+          />
+        </div>
+        <Label>Browser Use in your own Chrome</Label>
+      </Card>
+
+      <Card className="flex flex-col p-6 md:col-span-2">
+        <div className="flex flex-1 items-center justify-center pb-5">
+          <Render
+            name="worktree-picker"
+            width={345}
+            height={182}
+            className="overflow-hidden rounded-xl border border-hairline"
+            alt="The new chat Run in menu with New worktree selected, under the This Mac, emojis, and New worktree chips"
+          />
+        </div>
+        <Label>A worktree for every chat</Label>
+      </Card>
+
+      <Card className="flex flex-col p-6 sm:px-7 md:col-span-3 md:h-[345px]">
+        <Label>Computer Use</Label>
+        <div className="mt-5 flex flex-1 items-end justify-center md:-mb-10">
+          <Render
+            name="computer-use"
+            width={460}
+            height={301}
+            alt="The Allow Computer Use sheet with Accessibility and Screen Recording both granted"
+          />
+        </div>
+      </Card>
+
+      <Card className="min-h-[318px] p-6 sm:px-7 md:col-span-3 md:h-[345px] md:min-h-0">
+        <Label>Completion Sounds</Label>
+        <BentoImage
+          name="settings-sounds-window"
+          alt="Codevisor Settings with Notifications selected: Play sounds on, Glass for Chat finished, Hero for Action required"
+          width={892}
+          height={724}
+          className="absolute bottom-[-163px] left-[-10px] w-[535px] max-w-none md:bottom-[-155px] md:left-[-7px] md:w-[556px]"
+        />
       </Card>
     </div>
   )
