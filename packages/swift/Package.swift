@@ -30,9 +30,7 @@ let package = Package(
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
     .library(name: "ScreenSharingWebRTC", targets: ["ScreenSharingWebRTC"]),
-    .library(name: "ScreenSharingTesting", targets: ["ScreenSharingTesting"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
-    .library(name: "CGVirtualDisplayPrivate", targets: ["CGVirtualDisplayPrivate"]),
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),

@@ -30,7 +30,7 @@ final class ScreenSharingSenderRecovery {
           "sourceIdleState",
           monitor.resubmissionCount >= ScreenSharingSourceIdleMonitor.maximumQuickResubmissions
             ? "re-offering the latest capture at the slow bounded rate" : "re-offering the latest capture")
-        frameSender.refreshLatest(reason: "reoffer")
+        frameSender.refreshLatest()
       },
       notify: { [weak videoRefresh] latestTimestampNs in
         guard videoRefresh?.send(.sourceIdle(latestTimestampNs: latestTimestampNs)) == true else {

@@ -12,7 +12,7 @@ rsync -az --delete \
   --exclude .git --exclude node_modules --exclude tmp --exclude dist --exclude .build \
   --exclude '*.tsbuildinfo' --exclude coverage \
   --exclude .repos --exclude .codevisor --exclude DerivedData --exclude .turbo \
-  --exclude apps/macos --exclude apps/ios --exclude apps/screen-sharing-rig \
+  --exclude apps/macos --exclude apps/ios \
   --exclude packages/swift --exclude '*.xcodeproj' \
   "$repo_root/" "$target:$source_dir/"
 

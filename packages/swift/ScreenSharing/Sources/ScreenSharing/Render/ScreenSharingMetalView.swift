@@ -13,10 +13,6 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     get { coordinator.onPresented }
     set { coordinator.onPresented = newValue }
   }
-  public var onFramePresented: ((ScreenSharingPresentedFrame) -> Void)? {
-    get { coordinator.onFramePresented }
-    set { coordinator.onFramePresented = newValue }
-  }
   public var isStopped: Bool { coordinator.stopped }
   package let coordinator: ScreenSharingRenderCoordinator
   private let encoder: ScreenSharingMetalEncoder
@@ -28,14 +24,12 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
 
   public init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool = false,
-    maximumDrawableCount: Int = 3, unsyncedPresentation: Bool = false, offMainPreparation: Bool = false,
-    deliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
+    maximumDrawableCount: Int = 3, offMainPreparation: Bool = false
   ) throws {
     guard (2...3).contains(maximumDrawableCount) else {
       throw ScreenSharingError.invalid("Drawable count must be two or three.")
     }
     #if !os(macOS)
-      guard !unsyncedPresentation else { throw ScreenSharingError.invalid("Unsynced presentation requires macOS.") }
       guard !offMainPreparation else { throw ScreenSharingError.invalid("Off-main preparation requires macOS.") }
     #endif
     guard !offMainPreparation || renderOnArrival else {
@@ -47,10 +41,8 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     self.mailbox = mailbox
     self.metrics = metrics
     self.renderOnArrival = renderOnArrival
-    let coordinator = ScreenSharingRenderCoordinator(
+    coordinator = ScreenSharingRenderCoordinator(
       mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, redrawsOnDemand: offMainPreparation)
-    coordinator.audit = deliveryAudit
-    self.coordinator = coordinator
     let pipelines = try ScreenSharingMetalEncoder.Pipelines(device: device, shader: Self.shader)
     encoder = try ScreenSharingMetalEncoder(device: device, commandQueue: queue, pipelines: pipelines)
     let workerEncoder: ScreenSharingMetalEncoder? =
@@ -70,14 +62,12 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       layer?.isOpaque = true
       if let metalLayer = layer as? CAMetalLayer {
         metalLayer.maximumDrawableCount = maximumDrawableCount
-        metalLayer.displaySyncEnabled = !unsyncedPresentation
       }
       if let workerEncoder {
         guard let metalLayer = layer as? CAMetalLayer else {
           throw ScreenSharingError.unavailable("The view has no Metal layer.")
         }
-        let worker = ScreenSharingMetalPreparer(
-          layer: metalLayer, encoder: workerEncoder, metrics: metrics, audit: deliveryAudit)
+        let worker = ScreenSharingMetalPreparer(layer: metalLayer, encoder: workerEncoder, metrics: metrics)
         preparer = worker
         offMainWorker = worker
         autoResizeDrawable = false
@@ -88,7 +78,6 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       _ = workerEncoder
     #endif
     metrics.label("maximumDrawableCount", String(maximumDrawableCount))
-    metrics.label("displaySync", unsyncedPresentation ? "disabled experiment" : "enabled")
     metrics.label("frameSelection", "before drawable acquisition")
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
     metrics.label(
@@ -190,7 +179,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
         geometry: .init(
           clearColor: SIMD4(clear.red, clear.green, clear.blue, clear.alpha), drawableSize: size))
     } else {
-      renderFrame(surface: nil)
+      renderFrame()
     }
   }
 
@@ -203,35 +192,13 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     #endif
   }
 
-  public func draw(displayLinkDrawable drawable: any CAMetalDrawable) {
-    let pass = MTLRenderPassDescriptor()
-    pass.colorAttachments[0].texture = drawable.texture
-    pass.colorAttachments[0].loadAction = .clear
-    pass.colorAttachments[0].storeAction = .store
-    pass.colorAttachments[0].clearColor = clearColor
-    renderFrame(surface: Surface(drawable: drawable, pass: pass))
-  }
-
-  private func renderFrame(surface: Surface?) {
+  private func renderFrame() {
     guard !coordinator.stopped else { return }
     metrics.event("renderDriveInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
     guard let (frame, isNewFrame) = coordinator.select() else { return }
-    let audit = isNewFrame ? coordinator.audit : nil
     guard let textures = encoder.textures(for: frame) else { metrics.increment("renderDrops"); return }
-    if surface == nil { showDynamicRange(textures.dynamicRange) }
-    let target: Surface?
-    if let surface {
-      target = surface
-    } else {
-      if let audit { audit.record(.acquisitionBegin, frame.deliveryAuditIdentity, rtpTimestamp: frame.rtpTimestamp) }
-      target = acquireSurface()
-      if let audit {
-        audit.record(
-          .acquisitionEnd, frame.deliveryAuditIdentity, rtpTimestamp: frame.rtpTimestamp, valueNs: target == nil ? 0 : 1
-        )
-      }
-    }
-    guard let target else {
+    showDynamicRange(textures.dynamicRange)
+    guard let target = acquireSurface() else {
       metrics.increment("renderDrops")
       if isNewFrame { coordinator.deferPresentation() }
       return
@@ -332,17 +299,12 @@ final class TextureFrame: @unchecked Sendable {
     private let layer: CAMetalLayer
     private let encoder: ScreenSharingMetalEncoder
     private let metrics: ScreenSharingMetrics
-    private let audit: ScreenSharingFrameDeliveryAudit?
     private var layerDynamicRange = ScreenSharingDynamicRange.standard
 
-    init(
-      layer: CAMetalLayer, encoder: ScreenSharingMetalEncoder, metrics: ScreenSharingMetrics,
-      audit: ScreenSharingFrameDeliveryAudit? = nil
-    ) {
+    init(layer: CAMetalLayer, encoder: ScreenSharingMetalEncoder, metrics: ScreenSharingMetrics) {
       self.layer = layer
       self.encoder = encoder
       self.metrics = metrics
-      self.audit = audit
     }
 
     func prepare(
@@ -351,14 +313,10 @@ final class TextureFrame: @unchecked Sendable {
     ) {
       let encoder = encoder
       let metrics = metrics
-      let audit = request.isNewFrame ? audit : nil
-      let identity = request.auditIdentity
-      let rtp = request.frame.rtpTimestamp
       queue.async {
         let layer = self.layer
         let prepared: ScreenSharingPreparedSubmission? = autoreleasepool {
           let started = ScreenSharingMetrics.nowNs
-          if let audit { audit.record(.preparationBegin, identity, rtpTimestamp: rtp, atNs: audit.now()) }
           metrics.observe("renderPreparationQueueWait", milliseconds: Double(started - request.queuedAtNs) / 1_000_000)
           guard let textures = encoder.textures(for: request.frame) else { return nil }
           let range = textures.dynamicRange
@@ -373,13 +331,8 @@ final class TextureFrame: @unchecked Sendable {
             metrics.increment("drawableSizeUpdatesOnWorker")
           }
           let acquisitionStarted = ScreenSharingMetrics.nowNs
-          if let audit { audit.record(.acquisitionBegin, identity, rtpTimestamp: rtp, atNs: audit.now()) }
           let drawable = layer.nextDrawable()
           let acquisitionEnded = ScreenSharingMetrics.nowNs
-          if let audit {
-            audit.record(
-              .acquisitionEnd, identity, rtpTimestamp: rtp, valueNs: drawable == nil ? 0 : 1, atNs: audit.now())
-          }
           metrics.observe(
             "drawableAcquisition", milliseconds: Double(acquisitionEnded - acquisitionStarted) / 1_000_000)
           guard let drawable else {

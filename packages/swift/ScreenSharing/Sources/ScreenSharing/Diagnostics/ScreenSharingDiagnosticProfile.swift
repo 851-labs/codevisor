@@ -2,7 +2,7 @@ import Foundation
 
 public struct ScreenSharingDiagnosticProfile: Equatable, Sendable {
   public static let environmentKey = "CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE"
-  public static let paced15WorkerName = "paced15-worker"
+  static let paced15WorkerName = "paced15-worker"
 
   public let name: String
   public let playoutDelayMinMs: Int

@@ -7,10 +7,7 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   private var samples: [String: [Double]] = [:]
   private var indices: [String: Int] = [:]
   private var previousEvents: [String: Int64] = [:]
-  private var traces: [String: [String]] = [:]
-  private var tracing = false
   private let capacity = 1800
-  private let traceCapacity = 64
 
   public init() {}
   public static var nowNs: Int64 { Int64(DispatchTime.now().uptimeNanoseconds) }
@@ -30,17 +27,6 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   public func counter(_ name: String) -> Int { lock.withLock { counterValues[name, default: 0] } }
   public func label(_ name: String) -> String? { lock.withLock { labelValues[name] } }
   public func counters() -> [String: Int] { lock.withLock { counterValues } }
-
-  public func enableTracing() { lock.withLock { tracing = true } }
-
-  public func trace(_ name: String, _ entry: @autoclosure () -> String) {
-    guard lock.withLock({ tracing }) else { return }
-    let value = entry()
-    lock.withLock {
-      if traces[name, default: []].count == traceCapacity { traces[name]?.removeFirst() }
-      traces[name, default: []].append(value)
-    }
-  }
 
   public func observe(_ name: String, milliseconds: Double) {
     guard milliseconds.isFinite, milliseconds >= 0 else { return }
@@ -69,7 +55,6 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     public let counters: [String: Int]
     public let labels: [String: String]
     public let timings: [String: Timing]
-    public let traces: [String: [String]]?
   }
 
   public struct Timing: Codable, Sendable {
@@ -80,12 +65,10 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   }
 
   public func snapshot() -> Snapshot {
-    let (counters, labels, samples, traces) = lock.withLock {
-      (counterValues, labelValues, samples.mapValues { $0.withUnsafeBufferPointer(Array.init) }, traces)
+    let (counters, labels, samples) = lock.withLock {
+      (counterValues, labelValues, samples.mapValues { $0.withUnsafeBufferPointer(Array.init) })
     }
-    return Snapshot(
-      counters: counters, labels: labels, timings: samples.mapValues(Self.timing),
-      traces: traces.isEmpty ? nil : traces)
+    return Snapshot(counters: counters, labels: labels, timings: samples.mapValues(Self.timing))
   }
 
   private static func timing(_ values: [Double]) -> Timing {

@@ -88,19 +88,6 @@ struct RFBClientLoopbackTests {
     #expect(harness.server.received.prefix(2) == [.setPixelFormat(.bgra32), .setEncodings([16, -223])])
   }
 
-  @Test func pipeliningKeepsSeveralRequestsOutstanding() async throws {
-    let harness = try await Harness(setup: { await $0.setRequestPipelining(depth: 3, beforeApplying: true) })
-    defer { harness.stop() }
-    _ = await harness.nextUpdate()
-    let incremental = RFBClientMessage.framebufferUpdateRequest(
-      incremental: true, RFBRectangle(x: 0, y: 0, width: 64, height: 48))
-    #expect(await awaitPolled { harness.server.received.filter { $0 == incremental }.count == 3 })
-    harness.server.enqueue([.raw(RFBRectangle(x: 0, y: 0, width: 8, height: 8))])
-    let next = await harness.nextUpdate()
-    #expect(next?.update.latency != nil)
-    #expect(await awaitPolled { harness.server.received.filter { $0 == incremental }.count == 4 })
-  }
-
   @Test func rawCopyRectAndZRLEUpdatesLandInTheFramebuffer() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
@@ -109,7 +96,6 @@ struct RFBClientLoopbackTests {
     harness.server.enqueue([.raw(RFBRectangle(x: 0, y: 0, width: 8, height: 8))])
     let raw = await harness.nextUpdate()
     #expect(raw?.pixel(x: 7, y: 7) == [1, 2, 3])
-    #expect(raw?.update.encodingCounts == [RFBEncoding.raw.rawValue: 1], "what the server sent, for vnc-sample --trace")
     #expect(raw?.pixel(x: 8, y: 8) == [0, 0, 0])
     harness.server.enqueue([.copy(RFBRectangle(x: 20, y: 20, width: 8, height: 8), fromX: 0, fromY: 0)])
     let copied = await harness.nextUpdate()
@@ -125,7 +111,6 @@ struct RFBClientLoopbackTests {
     ])
     let again = await harness.nextUpdate()
     #expect(again?.update.rectangles.count == 2)
-    #expect(again?.update.encodingCounts == [RFBEncoding.zrle.rawValue: 2])
     #expect(again?.pixel(x: 10, y: 10) == [4, 5, 6])
   }
 

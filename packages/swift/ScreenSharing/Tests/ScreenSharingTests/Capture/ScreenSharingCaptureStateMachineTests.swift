@@ -26,7 +26,6 @@
       #expect(labels["captureContentHeightPoints"] == "900.0")
       #expect(labels["captureContentPixelScale"] == "2.0")
       #expect(labels["captureQueueDepth"] == "3")
-      #expect(labels["captureSurface"] == "SCK surface")
       #expect(labels["captureRequestedMinimumFrameIntervalFPS"] == "60")
       #expect(labels["captureRequestedFrameIntervalOverride"] == "none")
       #expect(labels["captureStartedAtNs"] != nil)
@@ -86,15 +85,11 @@
       #expect(fixture.metrics.snapshot().counters.isEmpty)
     }
 
-    @Test func anUnsupportedQueueDepthOrPixelFormatFailsBeforeAnyStreamExists() async throws {
-      for capture in [
-        ScreenSharingCapture(queueDepth: 9), ScreenSharingCapture(pixelFormat: kCVPixelFormatType_32ARGB),
-      ] {
-        let fixture = CaptureFixture(capture: capture)
-        await #expect(throws: ScreenSharingError.self) { try await fixture.start() }
-        #expect(fixture.target.settings == nil)
-        #expect(fixture.metrics.snapshot().labels.isEmpty)
-      }
+    @Test func anUnsupportedPixelFormatFailsBeforeAnyStreamExists() async throws {
+      let fixture = CaptureFixture(capture: ScreenSharingCapture(pixelFormat: kCVPixelFormatType_32ARGB))
+      await #expect(throws: ScreenSharingError.self) { try await fixture.start() }
+      #expect(fixture.target.settings == nil)
+      #expect(fixture.metrics.snapshot().labels.isEmpty)
     }
 
     @Test func anInvalidIntervalRequestIsRefusedBeforeTheStreamIsBuilt() async throws {

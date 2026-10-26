@@ -194,29 +194,6 @@ import Testing
     if inForce != "default" { #expect(entries.allSatisfy { $0 == inForce }) }
   }
 
-  @Test func theProbeOptionsSelectionCoversEveryExistingTrialCombination() throws {
-    typealias Selection = ScreenSharingFieldTrials.Selection
-    let none = Selection.probeOptions(jitterWindowFrames: nil, lowLatencyPlayout: false, playoutDelayBoundsMs: nil)
-    #expect(none.trials.isEmpty && none.name == "default")
-    #expect(
-      Selection.probeOptions(jitterWindowFrames: nil, lowLatencyPlayout: true, playoutDelayBoundsMs: nil).trials
-        == ["WebRTC-ForcePlayoutDelay": "min_ms:0,max_ms:0"])
-    for bounds in [(min: 1, max: 15), (min: 1, max: 35), (min: 0, max: 500)] {
-      #expect(
-        Selection.probeOptions(jitterWindowFrames: nil, lowLatencyPlayout: false, playoutDelayBoundsMs: bounds).trials
-          == ["WebRTC-ForcePlayoutDelay": "min_ms:\(bounds.min),max_ms:\(bounds.max)"])
-    }
-    let jitter = Selection.probeOptions(
-      jitterWindowFrames: 90, lowLatencyPlayout: false, playoutDelayBoundsMs: nil)
-    #expect(jitter.trials == ["WebRTC-JitterEstimatorConfig": "max_frame_size_percentile:0.95,frame_size_window:90"])
-    let both = Selection.probeOptions(jitterWindowFrames: 90, lowLatencyPlayout: true, playoutDelayBoundsMs: nil)
-    #expect(both.trials.count == 2 && both.trials["WebRTC-ForcePlayoutDelay"] == "min_ms:0,max_ms:0")
-    #expect(both.name == "probe options")
-    #expect(
-      Selection.probeOptions(jitterWindowFrames: nil, lowLatencyPlayout: false, playoutDelayBoundsMs: (min: 1, max: 15))
-        .installs(ScreenSharingDiagnosticProfile.paced15Worker.trialSelection))
-  }
-
   @Test @MainActor func theBootstrapPinsASelectionAndLabelsOnlyWhatIsInstalled() throws {
     let recorder = Recorder()
     let trials = ScreenSharingFieldTrials(apply: { recorder.record($0) })
@@ -306,7 +283,6 @@ private final class EventLog: @unchecked Sendable {
     #expect(labels["renderPreparation"] == "off-main serial worker")
     #expect(labels["drawableAcquisitionPath"] == "CAMetalLayer.nextDrawable on render worker, default timeout")
     #expect(labels["maximumDrawableCount"] == "2")
-    #expect(labels["displaySync"] == "enabled")
     #expect(labels["frameSelection"] == "before drawable acquisition")
     worker.stop()
     #expect(profiled.snapshot().labels["rendererStopped"] == "true")

@@ -18,32 +18,27 @@ export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})
 
 export const swiftTestingOnly = ["--disable-xctest"]
 
-export const swiftTestPackages = ["packages/swift", "apps/screen-sharing-rig"]
+const packagePath = "packages/swift"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 
 export async function runSwiftTests(
   args = [],
-  { run = spawnSync, runBundles = runTestBundles } = {},
-  packagePaths = swiftTestPackages
+  { run = spawnSync, runBundles = runTestBundles } = {}
 ) {
   for (const arg of args) {
     if (/^--(?:filter|skip|package-path|specifier)(?:=|$)/.test(arg) || arg === "-s") {
       throw new Error(`Test selection is managed by swift:test; cannot forward ${arg}`)
     }
   }
-  const steps = packagePaths.flatMap((packagePath) =>
-    packagePath === "packages/swift"
-      ? [
-          { swift: ["build", "--build-tests", "--package-path", packagePath] },
-          { bundles: packagePath, selection: ["--skip", mainSerialExecutorFilter] },
-          {
-            swift: ["test", "--package-path", packagePath, "--skip-build"],
-            selection: ["--filter", mainSerialExecutorFilter]
-          }
-        ]
-      : [{ swift: ["test", "--package-path", packagePath] }]
-  )
+  const steps = [
+    { swift: ["build", "--build-tests", "--package-path", packagePath] },
+    { bundles: packagePath, selection: ["--skip", mainSerialExecutorFilter] },
+    {
+      swift: ["test", "--package-path", packagePath, "--skip-build"],
+      selection: ["--filter", mainSerialExecutorFilter]
+    }
+  ]
   for (const step of steps) {
     const selected = [...(step.selection ?? []), ...swiftTestingOnly, ...args]
     let status
@@ -148,21 +143,7 @@ function runBundle(helper, bundle, args, env) {
   })
 }
 
-export function parseSwiftTestArguments(argv) {
-  const only = argv.filter((arg) => arg.startsWith("--only=")).map((arg) => arg.slice(7))
-  for (const packagePath of only) {
-    if (!swiftTestPackages.includes(packagePath)) {
-      throw new Error(`Unknown Swift test package ${packagePath}`)
-    }
-  }
-  return {
-    args: argv.filter((arg) => !arg.startsWith("--only=")),
-    packagePaths: only.length > 0 ? only : swiftTestPackages
-  }
-}
-
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { args, packagePaths } = parseSwiftTestArguments(process.argv.slice(2))
   const net = spawnSync("node", ["scripts/net-artifact.mjs", "ensure-swift"], {
     cwd: repoRoot,
     stdio: "inherit"
@@ -170,9 +151,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (net.status !== 0) process.exitCode = net.status ?? 1
   else {
     const store = developmentLayout(repoRoot).build.swiftArtifactStore
-    for (const packagePath of packagePaths) {
-      await prepareSwiftPackage({ repoRoot, packagePath, store })
-    }
-    process.exitCode = await runSwiftTests(args, {}, packagePaths)
+    await prepareSwiftPackage({ repoRoot, packagePath, store })
+    process.exitCode = await runSwiftTests(process.argv.slice(2))
   }
 }

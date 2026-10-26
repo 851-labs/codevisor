@@ -10,7 +10,6 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
   private let idleMonitor: ScreenSharingSourceIdleMonitor
   private let lock = NSLock()
   private var active = true
-  private var captureSuspended = false
   private var refreshFrames = ScreenSharingRefreshFrameStore()
   private var expectedSize: (width: Int, height: Int)?
   private var onActivity: (@Sendable () -> Void)?
@@ -29,7 +28,7 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
 
   public func push(_ frame: ScreenSharingVideoFrame) {
     let activated: (@Sendable () -> Void)? = lock.withLock {
-      guard active, !captureSuspended else { return nil }
+      guard active else { return nil }
       if let expectedSize,
         CVPixelBufferGetWidth(frame.pixelBuffer) != expectedSize.width
           || CVPixelBufferGetHeight(frame.pixelBuffer) != expectedSize.height
@@ -66,21 +65,16 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
     }
   }
 
-  func refreshLatest(reason: String = "request") {
+  func refreshLatest() {
     lock.withLock {
       guard active else { return }
       let now = CMTimeConvertScale(
         CMClockGetTime(CMClockGetHostTimeClock()), timescale: 1_000_000_000, method: .default)
       guard let frame = refreshFrames.refresh(nowNs: now.value) else { return }
       metrics.increment("refreshFrames")
-      metrics.trace(
-        "refreshSubmission",
-        "\(ScreenSharingMetrics.nowNs) \(reason) ts=\(frame.timestampNs) id=\(frame.sourceTimestampNs ?? -1)")
       submit(frame)
     }
   }
-
-  public func suspendCaptureDelivery() { lock.withLock { captureSuspended = true } }
 
   func stop() {
     let released = lock.withLock {

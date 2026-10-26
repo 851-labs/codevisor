@@ -18,7 +18,10 @@ struct ScreenSharingReceiverRecoveryTests {
     static let requesterInterval = Duration.milliseconds(100)
     var audit: ScreenSharingDeliveryAudit { codecFactory.deliveryAudit }
 
-    init(grace: Duration?, graceExtensions: Int?) {
+    init(
+      grace: Duration = ScreenSharingDeliveryVerifier.defaultGrace,
+      graceExtensions: Int = ScreenSharingDeliveryVerifier.defaultGraceExtensions
+    ) {
       let clock = clock
       let origin = clock.now
       let metrics = metrics
@@ -124,10 +127,10 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(harness.clock.pendingCount == 0)
   }
 
-  @Test func theProductGraceAndExtensionDefaultsApplyWhenTheOptionsAreAbsent() async {
+  @Test func theProductGraceAndExtensionDefaultsApply() async {
     let grace = ScreenSharingDeliveryVerifier.defaultGrace
     let allowed = ScreenSharingDeliveryVerifier.defaultGraceExtensions
-    let harness = Harness(grace: nil, graceExtensions: nil)
+    let harness = Harness()
     harness.audit.decoded(sourceTimestampNs: 100, nowNs: 1)
     harness.recovery.handle(.sourceIdle(latestTimestampNs: 900))
     await harness.clock.waitForSleep(grace)

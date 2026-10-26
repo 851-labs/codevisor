@@ -8,10 +8,8 @@ final class ScreenSharingPeerRenderer: NSObject, RTCVideoRenderer, @unchecked Se
   private var active = true
   let mailbox: ScreenSharingFrameMailbox
   let metrics: ScreenSharingMetrics
-  private let audit: ScreenSharingFrameDeliveryAudit?
-  init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, audit: ScreenSharingFrameDeliveryAudit? = nil)
-  {
-    self.mailbox = mailbox; self.metrics = metrics; self.audit = audit
+  init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) {
+    self.mailbox = mailbox; self.metrics = metrics
   }
   func setSize(_ size: CGSize) {}
   func stop() {
@@ -24,20 +22,11 @@ final class ScreenSharingPeerRenderer: NSObject, RTCVideoRenderer, @unchecked Se
       guard active, let frame, let native = frame.buffer as? RTCCVPixelBuffer, frame.rotation == ._0 else { return }
       metrics.increment("receivedFrames")
       metrics.event("receiverCallbackInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
-      var identity: ScreenSharingFrameDeliveryAudit.Identity?
-      if let audit {
-        identity = ScreenSharingFrameDeliveryAudit.readIdentity(from: native.pixelBuffer)
-        audit.record(.rtcRendererCallback, identity, rtpTimestamp: UInt32(bitPattern: frame.timeStamp))
-      }
-      let replaced = mailbox.put(
+      mailbox.put(
         ScreenSharingVideoFrame(
           pixelBuffer: native.pixelBuffer, timestampNs: frame.timeStampNs,
           rtpTimestamp: UInt32(bitPattern: frame.timeStamp), receivedAtSeconds: CACurrentMediaTime(),
-          sourceTimestampNs: ScreenSharingFrameIdentity.sourceTimestampNs(of: native.pixelBuffer),
-          deliveryAuditIdentity: identity))
-      if let audit, let replaced {
-        audit.record(.mailboxReplaced, replaced.deliveryAuditIdentity, rtpTimestamp: replaced.rtpTimestamp)
-      }
+          sourceTimestampNs: ScreenSharingFrameIdentity.sourceTimestampNs(of: native.pixelBuffer)))
     }
   }
 }

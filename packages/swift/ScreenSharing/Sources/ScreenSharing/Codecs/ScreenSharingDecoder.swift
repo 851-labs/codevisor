@@ -12,13 +12,10 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     let refreshSignal: ScreenSharingRefreshSignal?
     let refreshGeneration: UInt64?
     let sourceTimestampNs: Int64?
-    let audit: ScreenSharingFrameDeliveryAudit?
-    let auditIdentity: ScreenSharingFrameDeliveryAudit.Identity?
 
     init(
       _ frame: ScreenSharingEncodedFrame, metrics: ScreenSharingMetrics, pixelFormat: OSType,
       refreshSignal: ScreenSharingRefreshSignal?, sourceTimestampNs: Int64?,
-      audit: ScreenSharingFrameDeliveryAudit?, auditIdentity: ScreenSharingFrameDeliveryAudit.Identity?,
       output: @escaping @Sendable (ScreenSharingVideoFrame) -> Void
     ) {
       self.frame = frame
@@ -28,8 +25,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       self.refreshSignal = refreshSignal
       self.refreshGeneration = frame.isKeyFrame ? refreshSignal?.keyframeGeneration : nil
       self.sourceTimestampNs = sourceTimestampNs
-      self.audit = audit
-      self.auditIdentity = auditIdentity
     }
   }
 
@@ -41,16 +36,13 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
   private let output: @Sendable (ScreenSharingVideoFrame) -> Void
   private var refreshSignal: ScreenSharingRefreshSignal?
   public let metrics: ScreenSharingMetrics
-  private let audit: ScreenSharingFrameDeliveryAudit?
 
   public init(
     metrics: ScreenSharingMetrics, codec: ScreenSharingVideoCodec = .h264,
-    deliveryAudit: ScreenSharingFrameDeliveryAudit? = nil,
     output: @escaping @Sendable (ScreenSharingVideoFrame) -> Void
   ) {
     self.metrics = metrics
     self.codec = codec
-    self.audit = deliveryAudit
     self.output = output
   }
 
@@ -58,9 +50,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
 
   package func useRefreshSignal(_ signal: ScreenSharingRefreshSignal) { refreshSignal = signal }
 
-  public func decode(
-    _ frame: ScreenSharingEncodedFrame, auditIdentity: ScreenSharingFrameDeliveryAudit.Identity? = nil
-  ) throws {
+  public func decode(_ frame: ScreenSharingEncodedFrame) throws {
     if refreshSignal?.consumeDecoderReset() == true { stop() }
     let received = try NALUnitBitstream.nalUnits(frame.data)
     if codec != .h264 {
@@ -78,7 +68,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     let types = codec == .h264 ? [7, 8] : [32, 33, 34]
     let parameters = types.compactMap { wanted in units.first { type($0) == wanted } }
     if parameters.count == types.count, parameterSets != parameters {
-      try configure(parameters: parameters, auditIdentity: auditIdentity, rtpTimestamp: frame.rtpTimestamp)
+      try configure(parameters: parameters)
     }
     guard let session, let format else {
       throw ScreenSharingError.invalid("Waiting for a \(codec.payloadName) keyframe.")
@@ -113,7 +103,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     let context = Unmanaged.passRetained(
       Context(
         frame, metrics: metrics, pixelFormat: codec.decodedPixelFormat(dynamicRange), refreshSignal: refreshSignal,
-        sourceTimestampNs: sourceTimestampNs, audit: audit, auditIdentity: auditIdentity, output: output))
+        sourceTimestampNs: sourceTimestampNs, output: output))
     let status = VTDecompressionSessionDecodeFrame(
       session, sampleBuffer: sample, flags: [], frameRefcon: context.toOpaque(), infoFlagsOut: nil)
     if status != noErr {
@@ -133,9 +123,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     parameterSets = []
   }
 
-  private func configure(
-    parameters: [Data], auditIdentity: ScreenSharingFrameDeliveryAudit.Identity? = nil, rtpTimestamp: UInt32 = 0
-  ) throws {
+  private func configure(parameters: [Data]) throws {
     var description: CMFormatDescription?
     let retained = parameters.map { $0 as NSData }
     let pointers = retained.map { $0.bytes.assumingMemoryBound(to: UInt8.self) }
@@ -169,7 +157,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       throw ScreenSharingError.invalid("Unsupported decoded dimensions.")
     }
     stop()
-    audit?.decoderConfigured(auditIdentity, rtpTimestamp: rtpTimestamp)
     var callback = VTDecompressionOutputCallbackRecord(
       decompressionOutputCallback: { _, sourceContext, status, flags, image, _, _ in
         guard let sourceContext else { return }
@@ -188,10 +175,6 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
         context.metrics.observe(
           "decode", milliseconds: Double(ScreenSharingMetrics.nowNs - context.startedNs) / 1_000_000)
         context.metrics.label("decodedPixelFormat", String(CVPixelBufferGetPixelFormatType(image)))
-        if let audit = context.audit {
-          ScreenSharingFrameDeliveryAudit.stamp(context.auditIdentity, on: image)
-          audit.record(.vtOutput, context.auditIdentity, rtpTimestamp: context.frame.rtpTimestamp)
-        }
         context.output(
           ScreenSharingVideoFrame(
             pixelBuffer: image, timestampNs: context.frame.timestampNs, rtpTimestamp: context.frame.rtpTimestamp,

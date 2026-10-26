@@ -169,11 +169,9 @@ public struct RFBUpdate: Sendable, Equatable {
   public var desktopSize: RFBDesktopSizeResult?
   public var byteCount = 0
   public var latency: Duration?
-  public var transferDuration: Duration?
   public var linkBytes = 0
   public var linkDuration: Duration = .zero
   public var jpegRectangles = 0
-  public var encodingCounts: [Int32: Int] = [:]
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }
 
   public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {

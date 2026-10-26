@@ -18,22 +18,6 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
       trials["WebRTC-ForcePlayoutDelay"].map { "WebRTC-ForcePlayoutDelay \($0)" }
     }
     public func installs(_ other: Selection) -> Bool { trials == other.trials }
-
-    public static func probeOptions(
-      jitterWindowFrames: Int?, lowLatencyPlayout: Bool, playoutDelayBoundsMs: (min: Int, max: Int)?,
-      pacingFactor: Double? = nil
-    ) -> Selection {
-      var trials: [String: String] = [:]
-      if let window = jitterWindowFrames {
-        trials["WebRTC-JitterEstimatorConfig"] = "max_frame_size_percentile:0.95,frame_size_window:\(window)"
-      }
-      if lowLatencyPlayout { trials["WebRTC-ForcePlayoutDelay"] = "min_ms:0,max_ms:0" }
-      if let bounds = playoutDelayBoundsMs {
-        trials["WebRTC-ForcePlayoutDelay"] = "min_ms:\(bounds.min),max_ms:\(bounds.max)"
-      }
-      if let pacingFactor { trials["WebRTC-Video-Pacing"] = "factor:\(pacingFactor)" }
-      return Selection(name: trials.isEmpty ? "default" : "probe options", trials: trials)
-    }
   }
 
   private enum State {
@@ -60,7 +44,7 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
   }
 
   @discardableResult
-  public func install(_ selection: Selection) throws -> Selection {
+  func install(_ selection: Selection) throws -> Selection {
     let inForce = applyOrWaitForFirst(selection)
     guard inForce.installs(selection) else {
       throw ScreenSharingError.invalid(

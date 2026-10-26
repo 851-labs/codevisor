@@ -102,8 +102,7 @@ run parallel read-only discovery lanes:
 - TypeScript packages (`packages/*` except `packages/swift`), watching for
   adapter-local replays across `adapter-*`;
 - Swift (`packages/swift`, `apps/macos`, `apps/ios`, `apps/shared`);
-- other apps and tooling (`apps/cloud`, `apps/screen-sharing-rig`, `apps/www`,
-  `scripts/`);
+- other apps and tooling (`apps/cloud`, `apps/www`, `scripts/`);
 - a cross-cutting pattern sweep: assertion-free tests, self-comparisons,
   source greps, and exported symbols whose only non-local references are in
   tests.

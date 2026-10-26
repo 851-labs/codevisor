@@ -86,8 +86,7 @@ struct ScreenSharingHDRRenderTests {
       func prepare(_ buffer: CVPixelBuffer) async {
         let request = ScreenSharingPreparationRequest(
           frame: ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: 1), isNewFrame: true,
-          geometry: .init(clearColor: SIMD4(1, 1, 1, 1), drawableSize: CGSize(width: 8, height: 8)), queuedAtNs: 0,
-          auditIdentity: nil)
+          geometry: .init(clearColor: SIMD4(1, 1, 1, 1), drawableSize: CGSize(width: 8, height: 8)), queuedAtNs: 0)
         await withCheckedContinuation { continuation in worker.prepare(request) { _ in continuation.resume() } }
       }
       await prepare(try HDRFixture.flat(format: ScreenSharingDynamicRange.highCapturePixelFormat, luma: 0.5))

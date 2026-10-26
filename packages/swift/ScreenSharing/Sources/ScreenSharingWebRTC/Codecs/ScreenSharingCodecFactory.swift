@@ -4,42 +4,20 @@ import VideoToolbox
 import ScreenSharing
 
 final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVideoDecoderFactory {
-  let recoveryCheck = ScreenSharingDecoderRecoveryCheck()
-  let encoderDropCheck = ScreenSharingEncoderDropCheck()
   let refreshSignal = ScreenSharingRefreshSignal()
   let encoderRefreshRequest = ScreenSharingEncoderRefreshRequest()
-  let sourceIdleMonitor: ScreenSharingSourceIdleMonitor
+  let sourceIdleMonitor = ScreenSharingSourceIdleMonitor()
   let deliveryAudit = ScreenSharingDeliveryAudit()
-  let frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?
   let metrics: ScreenSharingMetrics
-  let useLowLatencyRateControl: Bool
-  let disableLookAhead: Bool
-  let maximumPendingFrames: Int
-  let staticCodecRate: Bool
-  let completeEachFrame: Bool
-  let prioritizeSpeed: Bool
-  let keyframeIntervalSeconds: Int
   let codecs: [ScreenSharingVideoCodec]
   var codec: ScreenSharingVideoCodec { codecs[0] }
 
   init(
-    metrics: ScreenSharingMetrics, useLowLatencyRateControl: Bool = true, codec: ScreenSharingVideoCodec = .h264,
-    fallbackCodecs: [ScreenSharingVideoCodec] = [],
-    disableLookAhead: Bool = false, maximumPendingFrames: Int = 2, staticCodecRate: Bool = false,
-    completeEachFrame: Bool = false, prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2,
-    sourceIdleThresholdNs: Int64 = ScreenSharingSourceIdleMonitor.defaultThresholdNs,
-    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
+    metrics: ScreenSharingMetrics, codec: ScreenSharingVideoCodec = .h264,
+    fallbackCodecs: [ScreenSharingVideoCodec] = []
   ) {
-    self.metrics = metrics; self.useLowLatencyRateControl = useLowLatencyRateControl
+    self.metrics = metrics
     codecs = Self.decodable(Self.negotiable(primary: codec, fallbacks: fallbackCodecs))
-    sourceIdleMonitor = ScreenSharingSourceIdleMonitor(thresholdNs: sourceIdleThresholdNs)
-    self.frameDeliveryAudit = frameDeliveryAudit
-    self.disableLookAhead = disableLookAhead
-    self.maximumPendingFrames = maximumPendingFrames
-    self.staticCodecRate = staticCodecRate
-    self.completeEachFrame = completeEachFrame
-    self.prioritizeSpeed = prioritizeSpeed
-    self.keyframeIntervalSeconds = keyframeIntervalSeconds
   }
 
   static func negotiable(
@@ -58,10 +36,8 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     return usable.isEmpty ? [.h264] : usable
   }
 
-  static func rateControl(
-    for codec: ScreenSharingVideoCodec, lowLatencyRequested: Bool, prioritizeSpeed: Bool
-  ) -> (lowLatency: Bool, prioritizeSpeed: Bool) {
-    guard codec == .hevc444, lowLatencyRequested else { return (lowLatencyRequested, prioritizeSpeed) }
+  static func rateControl(for codec: ScreenSharingVideoCodec) -> (lowLatency: Bool, prioritizeSpeed: Bool) {
+    guard codec == .hevc444 else { return (true, false) }
     return (false, true)
   }
 
@@ -79,22 +55,15 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   func createEncoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoEncoder)? {
     guard let codec = codec(for: info) else { return nil }
     metrics.label("videoCodec", codec.rawValue)
-    let rateControl = Self.rateControl(
-      for: codec, lowLatencyRequested: useLowLatencyRateControl, prioritizeSpeed: prioritizeSpeed)
     return ScreenSharingRTCEncoder(
-      metrics: metrics, useLowLatencyRateControl: rateControl.lowLatency, codec: codec,
-      disableLookAhead: disableLookAhead, maximumPendingFrames: maximumPendingFrames, staticCodecRate: staticCodecRate,
-      completeEachFrame: completeEachFrame, prioritizeSpeed: rateControl.prioritizeSpeed,
-      keyframeIntervalSeconds: keyframeIntervalSeconds, dropCheck: encoderDropCheck,
-      refreshRequest: encoderRefreshRequest, idleMonitor: sourceIdleMonitor)
+      metrics: metrics, codec: codec, refreshRequest: encoderRefreshRequest, idleMonitor: sourceIdleMonitor)
   }
 
   func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
     guard let codec = codec(for: info) else { return nil }
     metrics.label("videoCodec", codec.rawValue)
     return ScreenSharingRTCDecoder(
-      metrics: metrics, codec: codec, recoveryCheck: recoveryCheck, refreshSignal: refreshSignal,
-      deliveryAudit: deliveryAudit, frameAudit: frameDeliveryAudit)
+      metrics: metrics, codec: codec, refreshSignal: refreshSignal, deliveryAudit: deliveryAudit)
   }
 }
 
@@ -103,36 +72,21 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   private let lock = NSLock()
   private var callback: RTCVideoEncoderCallback?
   private var encoder: ScreenSharingEncoder?
-  private let useLowLatencyRateControl: Bool
-  private let disableLookAhead: Bool
-  private let maximumPendingFrames: Int
-  private let staticCodecRate: Bool
-  private let completeEachFrame: Bool
-  private let prioritizeSpeed: Bool
-  private let keyframeIntervalSeconds: Int
   private let codec: ScreenSharingVideoCodec
-  private let dropCheck: ScreenSharingEncoderDropCheck
   private let refreshRequest: ScreenSharingEncoderRefreshRequest
   private let idleMonitor: ScreenSharingSourceIdleMonitor
+  private static let maximumPendingFrames = 3
+  private static let keyframeIntervalSeconds = 60
   var resolutionAlignment: Int { 2 }
   var applyAlignmentToAllSimulcastLayers: Bool { true }
   var supportsNativeHandle: Bool { true }
 
   init(
-    metrics: ScreenSharingMetrics, useLowLatencyRateControl: Bool, codec: ScreenSharingVideoCodec,
-    disableLookAhead: Bool, maximumPendingFrames: Int, staticCodecRate: Bool, completeEachFrame: Bool,
-    prioritizeSpeed: Bool, keyframeIntervalSeconds: Int, dropCheck: ScreenSharingEncoderDropCheck,
+    metrics: ScreenSharingMetrics, codec: ScreenSharingVideoCodec,
     refreshRequest: ScreenSharingEncoderRefreshRequest, idleMonitor: ScreenSharingSourceIdleMonitor
   ) {
-    self.metrics = metrics; self.useLowLatencyRateControl = useLowLatencyRateControl
+    self.metrics = metrics
     self.codec = codec
-    self.disableLookAhead = disableLookAhead
-    self.maximumPendingFrames = maximumPendingFrames
-    self.staticCodecRate = staticCodecRate
-    self.completeEachFrame = completeEachFrame
-    self.prioritizeSpeed = prioritizeSpeed
-    self.keyframeIntervalSeconds = keyframeIntervalSeconds
-    self.dropCheck = dropCheck
     self.refreshRequest = refreshRequest
     self.idleMonitor = idleMonitor
   }
@@ -157,15 +111,13 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   private func makeEncoder(
     _ configuration: ScreenSharingVideoConfiguration, dynamicRange: ScreenSharingDynamicRange
   ) throws -> ScreenSharingEncoder {
+    let rateControl = ScreenSharingCodecFactory.rateControl(for: codec)
     let encoder = try ScreenSharingEncoder(
-      configuration: configuration, metrics: metrics, useLowLatencyRateControl: useLowLatencyRateControl,
-      codec: codec,
-      disableLookAhead: disableLookAhead, maximumPendingFrames: maximumPendingFrames,
-      completeEachFrame: completeEachFrame, prioritizeSpeed: prioritizeSpeed,
-      keyframeIntervalSeconds: keyframeIntervalSeconds, dynamicRange: dynamicRange
+      configuration: configuration, metrics: metrics, useLowLatencyRateControl: rateControl.lowLatency, codec: codec,
+      maximumPendingFrames: Self.maximumPendingFrames, prioritizeSpeed: rateControl.prioritizeSpeed,
+      keyframeIntervalSeconds: Self.keyframeIntervalSeconds, dynamicRange: dynamicRange
     )
     encoder.onFrame { [weak self] frame in self?.deliver(frame) }
-    encoder.useDropCheck(dropCheck)
     return encoder
   }
 
@@ -197,11 +149,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
     }
     do {
       let refresh = refreshRequest.consume()
-      let requestedKey = frameTypes.contains(where: { $0.intValue == RTCFrameType.videoFrameKey.rawValue })
-      metrics.trace(
-        "encoderInput",
-        "\(ScreenSharingMetrics.nowNs) ts=\(frame.timeStampNs) id=\(identity) latch=\(refresh) webrtcKey=\(requestedKey)"
-      )
       try encoder.encode(
         ScreenSharingVideoFrame(
           pixelBuffer: native.pixelBuffer, timestampNs: frame.timeStampNs,
@@ -214,11 +161,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   func release() -> Int { encoder?.stop(); encoder = nil; return 0 }
 
   func setBitrate(_ bitrateKbit: UInt32, framerate: UInt32) -> Int32 {
-    if staticCodecRate {
-      metrics.increment("encoderRateUpdatesHeld")
-      metrics.label("encoderRateUpdatePolicy", "initial rate experiment")
-      return 0
-    }
     do {
       let bitrate = max(1, Int(bitrateKbit)) * 1000
       let framesPerSecond = min(60, max(1, Int(framerate)))
@@ -267,30 +209,26 @@ private final class ScreenSharingHEVCInfo: NSObject, RTCCodecSpecificInfo {}
 private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @unchecked Sendable {
   let metrics: ScreenSharingMetrics
   private let codec: ScreenSharingVideoCodec
-  private let recoveryCheck: ScreenSharingDecoderRecoveryCheck
   private let refreshSignal: ScreenSharingRefreshSignal
   private let deliveryAudit: ScreenSharingDeliveryAudit
-  private let frameAudit: ScreenSharingFrameDeliveryAudit?
   private let lock = NSLock()
   private var callback: RTCVideoDecoderCallback?
   private var decoder: ScreenSharingDecoder?
 
   init(
-    metrics: ScreenSharingMetrics, codec: ScreenSharingVideoCodec, recoveryCheck: ScreenSharingDecoderRecoveryCheck,
-    refreshSignal: ScreenSharingRefreshSignal, deliveryAudit: ScreenSharingDeliveryAudit,
-    frameAudit: ScreenSharingFrameDeliveryAudit?
+    metrics: ScreenSharingMetrics, codec: ScreenSharingVideoCodec, refreshSignal: ScreenSharingRefreshSignal,
+    deliveryAudit: ScreenSharingDeliveryAudit
   ) {
-    self.metrics = metrics; self.codec = codec; self.recoveryCheck = recoveryCheck
+    self.metrics = metrics; self.codec = codec
     self.refreshSignal = refreshSignal
     self.deliveryAudit = deliveryAudit
-    self.frameAudit = frameAudit
   }
   func implementationName() -> String { "CodevisorVideoToolbox\(codec.payloadName)" }
   func setCallback(_ callback: @escaping RTCVideoDecoderCallback) { lock.withLock { self.callback = callback } }
 
   func startDecode(withNumberOfCores numberOfCores: Int32) -> Int {
     decoder?.stop()
-    decoder = ScreenSharingDecoder(metrics: metrics, codec: codec, deliveryAudit: frameAudit) { [weak self] frame in
+    decoder = ScreenSharingDecoder(metrics: metrics, codec: codec) { [weak self] frame in
       guard let self else { return }
       if let sourceTimestampNs = frame.sourceTimestampNs {
         self.deliveryAudit.decoded(sourceTimestampNs: sourceTimestampNs)
@@ -312,37 +250,13 @@ private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @uncheck
     renderTimeMs: Int64
   ) -> Int {
     guard let decoder, image.rotation == ._0 else { return -1 }
-    switch recoveryCheck.inspect(
-      keyFrame: image.frameType == .videoFrameKey, nowNs: ScreenSharingMetrics.nowNs)
-    {
-    case .accept: break
-    case .reset:
-      decoder.stop()
-      metrics.increment("injectedDecoderResets")
-      metrics.trace("decoderInput", "\(ScreenSharingMetrics.nowNs) rtp=\(image.timeStamp) key=false action=reset")
-      refreshSignal.request()
-      return -1
-    case .rejectDelta:
-      metrics.increment("recoveryDeltaFramesRejected")
-      metrics.trace("decoderInput", "\(ScreenSharingMetrics.nowNs) rtp=\(image.timeStamp) key=false action=rejectDelta")
-      refreshSignal.request()
-      return -1
-    case .recovered(let milliseconds):
-      metrics.increment("recoveryKeyframesReceived")
-      metrics.observe("decoderResetToRecoveryKeyframe", milliseconds: milliseconds)
-      metrics.trace("decoderInput", "\(ScreenSharingMetrics.nowNs) rtp=\(image.timeStamp) key=true action=recovered")
-    }
-    if image.frameType == .videoFrameKey {
-      metrics.trace("decoderInput", "\(ScreenSharingMetrics.nowNs) rtp=\(image.timeStamp) key=true action=accept")
-    }
     metrics.event("decoderInputInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
-    let auditIdentity = frameAudit?.decoderInput(rtpTimestamp: image.timeStamp)
     do {
       try decoder.decode(
         ScreenSharingEncodedFrame(
           data: image.buffer, timestampNs: renderTimeMs * 1_000_000, rtpTimestamp: image.timeStamp,
           width: Int(image.encodedWidth), height: Int(image.encodedHeight),
-          isKeyFrame: image.frameType == .videoFrameKey), auditIdentity: auditIdentity)
+          isKeyFrame: image.frameType == .videoFrameKey))
       return 0
     } catch {
       decoder.stop()

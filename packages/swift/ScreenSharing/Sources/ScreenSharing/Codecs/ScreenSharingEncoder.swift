@@ -21,14 +21,12 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private var pending: [Int64: Pending] = [:]
   private var pendingHighWater = 0
   private var keyframeRequest = ScreenSharingKeyframeRequest()
-  private var dropCheck: ScreenSharingEncoderDropCheck?
   private var session: VTCompressionSession?
   private var output: (@Sendable (ScreenSharingEncodedFrame) -> Void)?
   private let configuration: ScreenSharingVideoConfiguration
   private let codec: ScreenSharingVideoCodec
   public let dynamicRange: ScreenSharingDynamicRange
   private let maximumPendingFrames: Int
-  private let completeEachFrame: Bool
   private var currentBitrate: Int
   private var currentFPS: Int
   public let metrics: ScreenSharingMetrics
@@ -42,8 +40,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   public init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     useLowLatencyRateControl requestedLowLatency: Bool = true, codec: ScreenSharingVideoCodec = .h264,
-    disableLookAhead: Bool = false, maximumPendingFrames: Int = 2, completeEachFrame: Bool = false,
-    prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2,
+    maximumPendingFrames: Int = 2, prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2,
     dynamicRange: ScreenSharingDynamicRange = .standard
   ) throws {
     self.configuration = configuration
@@ -61,8 +58,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       throw ScreenSharingError.invalid("Keyframe interval must be bounded to 1...60 seconds.")
     }
     self.maximumPendingFrames = maximumPendingFrames
-    self.completeEachFrame = completeEachFrame
-    metrics.label("encoderCompletion", completeEachFrame ? "synchronous drain experiment" : "callback")
     metrics.label("encoderMaximumPendingFrames", String(maximumPendingFrames))
     metrics.label("encoderInitialBitrate", String(configuration.bitrate))
     metrics.label("encoderInitialFPS", String(configuration.framesPerSecond))
@@ -116,17 +111,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
           codec == .h264 ? kVTProfileLevel_H264_Baseline_AutoLevel : kVTProfileLevel_HEVC_Main_AutoLevel)
       }
       try property(kVTCompressionPropertyKey_ExpectedFrameRate, configuration.framesPerSecond as CFNumber)
-      if disableLookAhead {
-        guard !useLowLatencyRateControl else {
-          throw ScreenSharingError.invalid("Lookahead is controlled by the low-latency encoder.")
-        }
-        #if os(macOS)
-          try property(kVTCompressionPropertyKey_SuggestedLookAheadFrameCount, 0 as CFNumber)
-          metrics.label("encoderSuggestedLookAheadFrames", "0")
-        #else
-          throw ScreenSharingError.unavailable("The lookahead experiment requires macOS.")
-        #endif
-      }
       try property(kVTCompressionPropertyKey_AverageBitRate, configuration.bitrate as CFNumber)
       try property(
         kVTCompressionPropertyKey_MaxKeyFrameInterval,
@@ -165,10 +149,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     lock.withLock { output = callback }
   }
 
-  package func useDropCheck(_ check: ScreenSharingEncoderDropCheck) {
-    lock.withLock { dropCheck = check }
-  }
-
   @discardableResult
   public func encode(_ frame: ScreenSharingVideoFrame, forceKeyFrame: Bool = false) throws -> Bool {
     metrics.increment("encoderInputFrames")
@@ -196,14 +176,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     }
     guard let metadata else {
       metrics.increment("encoderBackpressureDrops")
-      metrics.trace("encoderAdmission", "\(ScreenSharingMetrics.nowNs) ts=\(frame.timestampNs) dropped=backpressure")
       return false
     }
     if metadata.keyframeAttempt != nil { metrics.increment("encoderForcedKeyframesSubmitted") }
-    metrics.trace(
-      "encoderAdmission",
-      "\(ScreenSharingMetrics.nowNs) ts=\(frame.timestampNs) id=\(metadata.sourceTimestampNs) force=\(forceKeyFrame) attempt=\(metadata.keyframeAttempt != nil)"
-    )
     let submitted = ScreenSharingMetrics.nowNs
     let status = VTCompressionSessionEncodeFrame(
       session, imageBuffer: frame.pixelBuffer,
@@ -220,14 +195,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       _ = lock.withLock { pending.removeValue(forKey: frame.timestampNs) }
       finishKeyframeAttempt(metadata, producedKeyFrame: false)
       try check(status, "Encode frame")
-    }
-    if completeEachFrame {
-      let started = ScreenSharingMetrics.nowNs
-      try check(
-        VTCompressionSessionCompleteFrames(
-          session, untilPresentationTimeStamp: CMTime(value: frame.timestampNs, timescale: 1_000_000_000)),
-        "Complete encoded frame")
-      metrics.observe("encoderDrain", milliseconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000)
     }
     return true
   }
@@ -277,17 +244,11 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     _ = lock.withLock { pending.removeValue(forKey: metadata.timestampNs) }
     if flags.contains(.frameDropped), status == noErr {
       metrics.increment("encoderDroppedFrames")
-      metrics.trace("encoderOutput", "\(callbackStarted) ts=\(metadata.timestampNs) result=vtDropped")
       return
     }
     guard status == noErr, let buffer, CMSampleBufferDataIsReady(buffer) else {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", "VideoToolbox callback status: \(status)")
-      return
-    }
-    if metadata.keyframeAttempt != nil, lock.withLock({ dropCheck })?.consume() == true {
-      metrics.increment("injectedEncoderKeyframeDrops")
-      metrics.trace("encoderOutput", "\(callbackStarted) ts=\(metadata.timestampNs) result=discarded")
       return
     }
     let timestamp = metadata.timestampNs
@@ -349,10 +310,6 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
           width: configuration.width, height: configuration.height, isKeyFrame: keyFrame,
           sourceTimestampNs: metadata.sourceTimestampNs))
       producedKeyFrame = keyFrame && callback != nil
-      metrics.trace(
-        "encoderOutput",
-        "\(callbackStarted) ts=\(timestamp) id=\(metadata.sourceTimestampNs) key=\(keyFrame) delivered=\(callback != nil)"
-      )
     } catch { metrics.increment("encodeErrors"); metrics.label("lastEncodeError", error.localizedDescription) }
   }
 

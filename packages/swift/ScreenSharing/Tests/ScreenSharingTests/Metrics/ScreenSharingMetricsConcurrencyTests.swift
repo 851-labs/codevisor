@@ -6,7 +6,6 @@ import Testing
 struct ScreenSharingMetricsConcurrencyTests {
   @Test func everyRecorderOnEveryQueueIsCountedExactlyOnce() async throws {
     let metrics = ScreenSharingMetrics()
-    metrics.enableTracing()
     let recorders = 16
     let perRecorder = 100
     let parked = TestSignal()
@@ -23,7 +22,6 @@ struct ScreenSharingMetricsConcurrencyTests {
             metrics.observe("encodeMs", milliseconds: Double(index % 10))
             metrics.event("cadence", atNanoseconds: Int64(index + 1) * 1_000_000)
             metrics.label("lastRecorder", "recorder-\(recorder)")
-            metrics.trace("boundary", "recorder-\(recorder)-\(index)")
           }
         }
       }
@@ -39,7 +37,6 @@ struct ScreenSharingMetricsConcurrencyTests {
     #expect(encode.maximumMs == 9)
     let label = try #require(snapshot.labels["lastRecorder"])
     #expect((0..<recorders).map { "recorder-\($0)" }.contains(label))
-    #expect(try #require(snapshot.traces?["boundary"]).count == 64)
   }
 
   @Test func theValueReturnedByIncrementIsUniquePerCaller() async {
@@ -117,34 +114,5 @@ struct ScreenSharingMetricsConcurrencyTests {
     metrics.event("other", atNanoseconds: 19_000_000)
     #expect(metrics.snapshot().timings["other"]?.count == 1 && metrics.snapshot().timings["other"]?.p50Ms == 10)
     #expect(metrics.snapshot().timings["cadence"]?.count == 4)
-  }
-
-  @Test func aDisabledTraceCostsNothingAndAnEnabledOneKeepsOnlyTheNewestEntries() throws {
-    let metrics = ScreenSharingMetrics()
-    let built = TestSignal()
-    metrics.trace(
-      "boundary",
-      {
-        built.signal()
-        return "never built"
-      }())
-    #expect(built.value == 0)
-    #expect(metrics.snapshot().traces == nil)
-
-    metrics.enableTracing()
-    var evaluated = 0
-    for index in 1...100 {
-      metrics.trace(
-        "boundary",
-        {
-          evaluated += 1
-          return "entry-\(index)"
-        }())
-    }
-    #expect(evaluated == 100, "each enabled trace builds its entry exactly once")
-    let traces = try #require(metrics.snapshot().traces?["boundary"])
-    #expect(traces.count == 64)
-    #expect(traces.first == "entry-37")
-    #expect(traces.last == "entry-100")
   }
 }

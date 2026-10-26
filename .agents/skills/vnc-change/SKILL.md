@@ -1,6 +1,6 @@
 ---
 name: vnc-change
-description: Validate every VNC change with the four-layer test method before calling it done. Use when working on the VNC client or server path (RFB/VNC code in packages/swift/ScreenSharing, RFBWebSocketTransport, the server's VNC socket route, scripts/vnc-desktop.sh, RFBLoopbackServer), on any Linear issue under 851-2308 "Great VNC experience", or when asked to pick up or finish VNC backlog work.
+description: Validate every VNC change with the layered test method before calling it done. Use when working on the VNC client or server path (RFB/VNC code in packages/swift/ScreenSharing, RFBWebSocketTransport, the server's VNC socket route, scripts/vnc-desktop.sh, RFBLoopbackServer), on any Linear issue under 851-2308 "Great VNC experience", or when asked to pick up or finish VNC backlog work.
 ---
 
 # VNC change
@@ -26,28 +26,21 @@ This skill is the checklist for validating a VNC change.
    test clock for network behaviour.
 2. Implement the client side and the reference server's side together. The
    parity test must stay green.
-3. If only a real server shows the behaviour, record it with the wire
-   recorder and add the L1 fixture.
+3. If only a real server shows the behaviour, record it through
+   `RFBRecordingTransport` and add the L1 fixture.
 
 ## Prove it
 
-1. Run every layer; each must pass:
-   - L1/L2: the VNC Swift suites and the rig package's tests:
+1. Run the L1/L2 VNC Swift suites; they must pass:
 
-     ```sh
-     swift test --package-path packages/swift --filter 'RFB|VNC|ScreenSharingDiagnostics|ScreenSharingViewerEndpoint'
-     swift test --package-path apps/screen-sharing-rig
-     ```
+   ```sh
+   swift test --package-path packages/swift --filter 'RFB|VNC|ScreenSharingDiagnostics|ScreenSharingViewerEndpoint'
+   ```
 
-   - L3: `bun run vnc:interop` (needs OrbStack running: `orbctl start`).
-   - L4: `bun run vnc:tophat` (needs Accessibility permission for the
-     terminal).
-2. Check the results: acceptance criteria met, metric target met. For
-   performance work, compare `screen-sharing-rig vnc-bench` runs from main
-   and the branch; no metric outside the issue's scope may get worse.
-3. For UI-visible changes also follow the `tophat` skill. Launch the rig in
-   the background and capture only its window; never capture the rest of the
-   user's screen.
+2. Check the results: acceptance criteria met, metric target met; no metric
+   outside the issue's scope may get worse.
+3. For UI-visible changes also follow the `tophat` skill. Capture only the
+   app's window; never capture the rest of the user's screen.
 
 ## Land it
 
@@ -60,7 +53,6 @@ This skill is the checklist for validating a VNC change.
 
 - a gate fails for a reason outside the issue, or an unrelated metric
   regresses;
-- L3 can't run (no container runtime or image) or Contabo is unreachable and
-  the target needs it;
+- Contabo is unreachable and the target needs it;
 - the target can only be met by weakening a test, threshold or baseline;
 - the issue needs a product decision.

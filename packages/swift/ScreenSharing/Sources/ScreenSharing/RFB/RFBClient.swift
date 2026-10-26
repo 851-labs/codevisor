@@ -11,12 +11,6 @@ public actor RFBClient {
   private var closed = false
   private let now: @Sendable () -> ContinuousClock.Instant
   private var requestsSentAt: [ContinuousClock.Instant] = []
-  public var requestDepth = 1
-  public var requestsBeforeApplying = false
-  public func setRequestPipelining(depth: Int, beforeApplying: Bool) {
-    requestDepth = max(1, depth)
-    requestsBeforeApplying = beforeApplying
-  }
   private var continuous = false
   private var continuousConfirmed = false
   private var serverFences = false
@@ -83,11 +77,8 @@ public actor RFBClient {
       switch try await stream.u8() {
       case 0:
         let answered = requestsSentAt.isEmpty ? nil : requestsSentAt.removeFirst()
-        if !continuous, requestsBeforeApplying { try await topUpRequests() }
-        let started = ContinuousClock.now
         stream.startTiming()
         var update = try await readFramebufferUpdate()
-        update.transferDuration = started.duration(to: .now)
         let link = stream.stopTiming()
         update.linkBytes = link.bytes
         update.linkDuration = link.duration
@@ -95,7 +86,7 @@ public actor RFBClient {
         if let answered { update.latency = answered.duration(to: now()) }
         onUpdate(framebuffer, update)
         if !continuous {
-          if !requestsBeforeApplying { try await topUpRequests() }
+          try await requestNextUpdate()
         } else if update.resized {
           try await send(.enableContinuousUpdates(enable: true, fullFrame))
         }
@@ -171,8 +162,9 @@ public actor RFBClient {
     try await send(.framebufferUpdateRequest(incremental: incremental, fullFrame))
   }
 
-  private func topUpRequests() async throws {
-    while requestsSentAt.count < requestDepth { try await request(incremental: true) }
+  private func requestNextUpdate() async throws {
+    guard requestsSentAt.isEmpty else { return }
+    try await request(incremental: true)
   }
 
   private var fullFrame: RFBRectangle {
@@ -188,13 +180,11 @@ public actor RFBClient {
     var pointer: RFBPoint?
     var desktopSize: RFBDesktopSizeResult?
     var jpegRectangles = 0
-    var encodingCounts: [Int32: Int] = [:]
     for _ in 0..<count {
       let x = Int(try await stream.u16()), y = Int(try await stream.u16())
       let width = Int(try await stream.u16()), height = Int(try await stream.u16())
       let rect = RFBRectangle(x: x, y: y, width: width, height: height)
       let encoding = try await stream.s32()
-      encodingCounts[encoding, default: 0] += 1
       switch RFBEncoding(rawValue: encoding) {
       case .raw:
         try framebuffer.validate(rect)
@@ -250,7 +240,6 @@ public actor RFBClient {
     update.pointer = pointer
     update.desktopSize = desktopSize
     update.jpegRectangles = jpegRectangles
-    update.encodingCounts = encodingCounts
     return update
   }
 }
