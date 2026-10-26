@@ -26,7 +26,7 @@ extension SessionStore {
     if let popup {
       browser.model.adoptPopup(popup)
     } else {
-      browser.model.automationInitialURL = url
+      browser.model.openAsNewTab(url)
       Task { _ = try? await browser.model.readyView() }
     }
     environment.workspaceSync.publishPane(

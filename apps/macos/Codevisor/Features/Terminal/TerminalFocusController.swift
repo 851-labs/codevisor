@@ -270,11 +270,23 @@ final class TerminalFocusController {
       NSApp.modalWindow == nil,
       !(window.firstResponder is Ghostty.SurfaceView)
     else { return false }
-    guard let command = ShortcutCatalog.paneCommand(for: event) else { return false }
+    guard let command = ShortcutCatalog.paneCommand(for: event),
+      !Self.browserPageNavigates(command, responder: window.firstResponder)
+    else { return false }
     if workspaceCommandHandler?(command) == true { return true }
     guard let centerGroup else { return false }
     centerGroup.handleCommand(command)
     return true
+  }
+
+  private static func browserPageNavigates(_ command: PaneGroupCommand, responder: NSResponder?) -> Bool {
+    switch command {
+    case .previousSplit, .nextSplit:
+      guard let view = responder as? NSView else { return false }
+      return sequence(first: view, next: \.superview).contains { $0 is CVChromiumView }
+    default:
+      return false
+    }
   }
 
   func stopTypeToFocus() {

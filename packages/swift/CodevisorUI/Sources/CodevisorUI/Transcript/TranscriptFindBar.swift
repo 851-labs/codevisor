@@ -4,10 +4,12 @@
 
   public struct TranscriptFindBar: View {
     private let model: TranscriptFindModel
+    private let prompt: String
     @FocusState private var isFocused: Bool
 
-    public init(model: TranscriptFindModel) {
+    public init(model: TranscriptFindModel, prompt: String = "Find in chat") {
       self.model = model
+      self.prompt = prompt
     }
 
     public var body: some View {
@@ -66,13 +68,13 @@
 
     private var queryField: some View {
       TextField(
-        "Find in chat",
+        prompt,
         text: Binding(get: { model.query }, set: { model.updateQuery($0) })
       )
       .textFieldStyle(.plain)
       .autocorrectionDisabled()
       .focused($isFocused)
-      .accessibilityLabel("Find in chat")
+      .accessibilityLabel(prompt)
       .onKeyPress(.return, phases: [.down, .repeat]) { press in
         if press.modifiers.contains(.shift) {
           model.findPrevious()

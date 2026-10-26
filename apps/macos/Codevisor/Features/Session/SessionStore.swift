@@ -330,7 +330,7 @@ final class SessionStore {
       leafId: tab.activeLeafId, workspace: workspace, session: session, project: project
     )
     guard let browser = group.pane(for: descriptor) as? BrowserPane else { return nil }
-    browser.model.automationInitialURL = url
+    browser.model.openAsNewTab(url)
     environment.workspaceSync.publishPane(
       descriptor, workspaceId: workspace.id,
       client: environment.machines.client(for: session.serverId)

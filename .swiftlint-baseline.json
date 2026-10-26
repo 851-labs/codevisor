@@ -405,21 +405,6 @@
     }
   },
   {
-    "text": "  private func wireView(_ view: CVChromiumView, token: UUID, adopted: Bool = false) {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/macos/Codevisor/Chromium/ChromiumBrowserModel.swift",
-        "line": 125
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 95 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  private func handleDrop(_ providers: [NSItemProvider]) -> Bool {",
     "violation": {
       "location": {

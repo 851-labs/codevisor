@@ -81,6 +81,7 @@ function fixture() {
   downstream.url = pageURL
   const response = new FakeServerResponse(downstream)
   const track = vi.fn()
+  const failed = vi.fn()
   vi.mocked(request).mockReturnValue(upstream)
   vi.mocked(connect).mockReturnValue(upstreamSocket)
   const target = { host: "127.0.0.1", port: 3000, url: new URL(pageURL) }
@@ -91,21 +92,26 @@ function fixture() {
     downstream,
     response,
     track,
-    http: () => forwardBrowserHTTP(downstream, response, target, track),
+    failed,
+    http: () => forwardBrowserHTTP(downstream, response, target, track, failed),
     upgrade: (head = Buffer.alloc(0)) =>
       forwardBrowserUpgrade(downstream, client, head, target, track)
   }
 }
 
 it.each([false, true])("handles HTTP upstream failure after headers=%s", (headersSent) => {
-  const { http, upstream, response } = fixture()
+  const { http, upstream, response, failed } = fixture()
   http()
   Object.defineProperty(response, "headersSent", { value: headersSent })
-  upstream.emit("error", new Error("reset"))
-  if (headersSent) expect(response.destroyed).toBe(true)
-  else {
+  const error = new Error("reset")
+  upstream.emit("error", error)
+  if (headersSent) {
+    expect(response.destroyed).toBe(true)
+    expect(failed).not.toHaveBeenCalled()
+  } else {
     expect(response.heads).toEqual([[502, { "Content-Length": "0", Connection: "close" }]])
     expect(response.endings).toBe(1)
+    expect(failed).toHaveBeenCalledWith(error)
   }
 })
 
@@ -116,7 +122,10 @@ it("bounds HTTP connection setup and cancels its deadline after connecting", () 
   upstream.emit("socket", socket)
   expect(track).toHaveBeenCalledWith(socket)
   socket.onTimeout!()
-  expect(upstream.destroyError).toEqual(new Error("Proxy connection timed out"))
+  expect(upstream.destroyError).toMatchObject({
+    message: "Proxy connection timed out",
+    code: "ETIMEDOUT"
+  })
   socket.emit("connect")
   expect(socket.onTimeout).toBeUndefined()
 })

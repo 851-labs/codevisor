@@ -58,6 +58,7 @@ extension PaneGroupModel {
     if Self.requiresNewLivePane(previous: previous, next: converted) {
       discardLivePane(id: id)
     }
+    if previous.kind == .newTab, converted.kind == .browser { ChromiumBrowserModels.shared.expectNewTab(id) }
     persist()
     if publishChange { onPaneChanged?(converted) }
     pane(for: converted).visibilityChanged(true)

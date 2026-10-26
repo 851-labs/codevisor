@@ -11,12 +11,21 @@ final class ChromiumBrowserModels {
 
   private var models: [UUID: ChromiumBrowserModel] = [:]
   private var holders: [UUID: [Holder]] = [:]
+  private var newTabs: [UUID: Bool] = [:]
 
   func acquire(_ paneId: UUID, make: () -> ChromiumBrowserModel) -> ChromiumBrowserModel {
     if let existing = models[paneId] { return existing }
     let created = make()
     models[paneId] = created
+    if let focusesAddress = newTabs.removeValue(forKey: paneId) {
+      created.openAsNewTab()
+      if focusesAddress { created.address.focus() }
+    }
     return created
+  }
+
+  func expectNewTab(_ paneId: UUID, focusingAddress: Bool = false) {
+    newTabs[paneId] = focusingAddress
   }
 
   func wire(_ pane: BrowserPane) {
@@ -34,7 +43,11 @@ final class ChromiumBrowserModels {
       return
     }
     holders[pane.id] = nil
-    models.removeValue(forKey: pane.id)?.teardown()
+    guard let model = models.removeValue(forKey: pane.id) else { return }
+    model.teardown()
+    if !models.values.contains(where: { $0.machineId == model.machineId }) {
+      ChromiumSpareBrowsers.shared.discard(machineId: model.machineId)
+    }
   }
 
   private func others(than pane: BrowserPane) -> [Holder] {

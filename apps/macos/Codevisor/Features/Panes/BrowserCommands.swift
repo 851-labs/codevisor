@@ -18,7 +18,7 @@ struct BrowserCommands: Commands {
   var body: some Commands {
     if let page {
       CommandMenu("Browser") {
-        Button("Open Location") { page.focusAddress() }
+        Button("Open Location") { page.address.focus() }
           .keyboardShortcut("l", modifiers: .command)
         Button("Developer Tools") { page.showDevTools() }
           .keyboardShortcut("i", modifiers: [.command, .option])
@@ -28,11 +28,11 @@ struct BrowserCommands: Commands {
           .keyboardShortcut("r", modifiers: [.command, .shift])
         Divider()
         ShortcutButton(.browserZoomIn) { page.zoom(.zoomIn) }
-          .disabled(!page.canZoomIn)
+          .disabled(!page.pageZoom.canZoomIn)
         ShortcutButton(.browserZoomOut) { page.zoom(.zoomOut) }
-          .disabled(!page.canZoomOut)
+          .disabled(!page.pageZoom.canZoomOut)
         ShortcutButton(.browserResetZoom) { page.zoom(.reset) }
-          .disabled(!page.canResetZoom)
+          .disabled(!page.pageZoom.canReset)
       }
     }
   }

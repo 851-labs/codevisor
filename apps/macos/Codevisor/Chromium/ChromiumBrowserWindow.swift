@@ -47,7 +47,7 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
       }
       guard modifiers == .command else { return event }
       switch event.charactersIgnoringModifiers?.lowercased() {
-      case "l": self.model.focusAddress()
+      case "l": self.model.address.focus()
       case "r": self.model.reload()
       case "w": window.performClose(nil)
       default: return event
@@ -73,10 +73,7 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
       item.view = NSHostingView(rootView: ChromiumBrowserNavigationButtons(model: model))
     } else if identifier == address {
       let host = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
-      host.focusAddress = { [weak model] in model?.focusAddress() }
-      host.reload = { [weak model] in model?.reload(ignoringCache: $0) }
-      host.zoom = { [weak model] in model?.zoom($0) }
-      host.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
+      host.model = model
       host.translatesAutoresizingMaskIntoConstraints = false
       NSLayoutConstraint.activate([
         host.widthAnchor.constraint(greaterThanOrEqualToConstant: 280),

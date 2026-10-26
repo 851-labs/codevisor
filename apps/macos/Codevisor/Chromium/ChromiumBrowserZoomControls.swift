@@ -9,21 +9,21 @@ struct ChromiumBrowserZoomControls: View {
   var body: some View {
     HStack(spacing: 0) {
       zoomButton("Zoom Out (⌘−)", symbol: "minus", command: .zoomOut)
-        .disabled(!model.canZoomOut)
+        .disabled(!model.pageZoom.canZoomOut)
       Button {
         model.zoom(.reset)
       } label: {
-        Text("\(model.zoomPercent)%")
+        Text("\(model.pageZoom.percent)%")
           .font(.system(size: NSFont.systemFontSize, weight: .medium).monospacedDigit())
-          .contentTransition(.numericText(value: Double(model.zoomPercent)))
-          .animation(Motion.quick(reduceMotion: reduceMotion), value: model.zoomPercent)
+          .contentTransition(.numericText(value: Double(model.pageZoom.percent)))
+          .animation(Motion.quick(reduceMotion: reduceMotion), value: model.pageZoom.percent)
           .frame(width: 50, height: 30)
       }
       .buttonStyle(ZoomButtonStyle(shape: Capsule()))
       .help("Reset Zoom (⌘0)")
-      .accessibilityLabel("Zoom \(model.zoomPercent)%, reset zoom")
+      .accessibilityLabel("Zoom \(model.pageZoom.percent)%, reset zoom")
       zoomButton("Zoom In (⌘+)", symbol: "plus", command: .zoomIn)
-        .disabled(!model.canZoomIn)
+        .disabled(!model.pageZoom.canZoomIn)
     }
     .padding(3)
     .fixedSize()

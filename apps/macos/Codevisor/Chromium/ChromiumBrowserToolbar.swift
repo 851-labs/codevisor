@@ -29,10 +29,10 @@ struct ChromiumBrowserNavigationButtons: View {
 
   var body: some View {
     ControlGroup {
-      Button("Back", systemImage: "chevron.left") { model.webView?.goBack() }
+      Button("Back", systemImage: "chevron.left") { model.goBack() }
         .disabled(!model.canGoBack)
         .help("Back")
-      Button("Forward", systemImage: "chevron.right") { model.webView?.goForward() }
+      Button("Forward", systemImage: "chevron.right") { model.goForward() }
         .disabled(!model.canGoForward)
         .help("Forward")
     }
@@ -45,19 +45,13 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
 
   func makeNSView(context: Context) -> ChromiumToolbarHost {
     let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
-    view.focusAddress = { [weak model] in model?.focusAddress() }
-    view.reload = { [weak model] in model?.reload(ignoringCache: $0) }
-    view.zoom = { [weak model] in model?.zoom($0) }
-    view.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
+    view.model = model
     view.sizingOptions = [.intrinsicContentSize]
     return view
   }
 
   func updateNSView(_ nsView: ChromiumToolbarHost, context: Context) {
-    nsView.focusAddress = { [weak model] in model?.focusAddress() }
-    nsView.reload = { [weak model] in model?.reload(ignoringCache: $0) }
-    nsView.zoom = { [weak model] in model?.zoom($0) }
-    nsView.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
+    nsView.model = model
     nsView.rootView = ChromiumBrowserToolbarContent(model: model)
   }
 
@@ -74,6 +68,7 @@ struct ChromiumBrowserToolbarContent: View {
   @Bindable var model: ChromiumBrowserModel
   @State private var address = ""
   @State private var editing = false
+  @State private var editedAddress: ChromiumAddressFocus?
   @State private var focusRequest = 0
 
   var body: some View {
@@ -95,11 +90,11 @@ struct ChromiumBrowserToolbarContent: View {
             }
           )
           .padding(.leading, 14)
-          if model.canResetZoom {
+          if model.pageZoom.canReset {
             browserButton(
-              "Zoom: \(model.zoomPercent)%",
-              symbol: model.zoomPercent < 100 ? "minus.magnifyingglass" : "plus.magnifyingglass"
-            ) { model.showZoomControls() }
+              "Zoom: \(model.pageZoom.percent)%",
+              symbol: model.pageZoom.percent < 100 ? "minus.magnifyingglass" : "plus.magnifyingglass"
+            ) { model.pageZoom.present() }
           }
           browserButton(model.isLoading ? "Stop" : "Reload", symbol: model.isLoading ? "xmark" : "arrow.clockwise") {
             if model.isLoading { model.stop() } else { model.reload() }
@@ -109,7 +104,7 @@ struct ChromiumBrowserToolbarContent: View {
         .glassEffect(.regular.interactive(), in: .capsule)
         .background {
           ChromiumBrowserZoomPopover(
-            model: model, request: model.zoomPresentationRequest, editing: editing, loading: model.isLoading)
+            model: model, request: model.pageZoom.presentationRequest, editing: editing, loading: model.isLoading)
         }
         browserButton("Responsive viewport", symbol: "ipad.and.iphone") {
           Task {
@@ -120,25 +115,43 @@ struct ChromiumBrowserToolbarContent: View {
             }
           }
         }
+        ChromiumDownloadsButton(downloads: model.downloads)
       }
       .frame(maxWidth: .infinity)
     }
     .frame(minWidth: 280, idealWidth: 600, maxWidth: 850)
-    .onAppear { updateAddress() }
+    .onAppear {
+      updateAddress()
+      if model.address.takeRequest() { beginEditing() }
+    }
     .onChange(of: model.paneId) { _, _ in
+      editedAddress?.isEditing = false
+      editedAddress = nil
       editing = false
       updateAddress()
+      if model.address.takeRequest() { beginEditing() }
     }
     .onChange(of: model.url) { _, _ in if !editing { updateAddress() } }
     .onChange(of: editing) { _, focused in
+      editedAddress?.isEditing = false
+      editedAddress = focused ? model.address : nil
+      model.address.isEditing = focused
       if !focused { model.suggestions.dismiss(); updateAddress() }
     }
-    .onDisappear { model.suggestions.dismiss() }
-    .onChange(of: model.addressFocusRequest) { _, _ in beginEditing() }
+    .onDisappear {
+      model.suggestions.dismiss()
+      editedAddress?.isEditing = false
+      editedAddress = nil
+    }
+    .onChange(of: model.address.request) { _, _ in
+      if model.address.takeRequest() { beginEditing() }
+    }
   }
   private func beginEditing() {
     if !editing { address = model.url?.absoluteString ?? "" }
     editing = true
+    editedAddress = model.address
+    model.address.isEditing = true
     model.suggestions.dismiss()
     focusRequest += 1
   }

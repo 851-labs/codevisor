@@ -1,11 +1,9 @@
 import AppKit
+import CodevisorUI
 import SwiftUI
 
 final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
-  var focusAddress: (() -> Void)?
-  var reload: ((Bool) -> Void)?
-  var zoom: ((BrowserZoomCommand) -> Void)?
-  var pageHasFocus: (() -> Bool)?
+  weak var model: ChromiumBrowserModel?
   private var keyMonitor: Any?
 
   override func viewDidMoveToWindow() {
@@ -20,28 +18,25 @@ final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
 
   func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
     guard let window, window.isKeyWindow, window.attachedSheet == nil,
-      NSApp.modalWindow == nil, event.window === window
+      NSApp.modalWindow == nil, event.window === window, let model,
+      model.webView?.hasPageFocus == true || toolbarHasFocus
     else { return event }
-    if let command = ShortcutCatalog.browserZoomCommand(for: event),
-      pageHasFocus?() == true || toolbarHasFocus
-    {
-      zoom?(command)
+    if let command = ShortcutCatalog.browserZoomCommand(for: event) {
+      model.zoom(command)
       return nil
     }
     let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    if event.charactersIgnoringModifiers?.lowercased() == "r",
-      modifiers == .command || modifiers == [.command, .shift],
-      pageHasFocus?() == true || toolbarHasFocus,
-      let reload
-    {
-      reload(modifiers.contains(.shift))
-      return nil
+    switch (event.charactersIgnoringModifiers?.lowercased(), modifiers) {
+    case ("r", .command): model.reload()
+    case ("r", [.command, .shift]): model.reload(ignoringCache: true)
+    case ("l", .command): model.address.focus()
+    case ("f", .command): model.find.present()
+    case ("g", .command): model.find.findNext()
+    case ("g", [.command, .shift]): model.find.findPrevious()
+    case ("[", .command): model.goBack()
+    case ("]", .command): model.goForward()
+    default: return event
     }
-    guard
-      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-      event.charactersIgnoringModifiers?.lowercased() == "l"
-    else { return event }
-    focusAddress?()
     return nil
   }
 

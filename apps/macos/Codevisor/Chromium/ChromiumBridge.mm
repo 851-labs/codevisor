@@ -3,12 +3,15 @@
 #import "ChromiumRuntime.h"
 #include "include/cef_client.h"
 #include "include/cef_devtools_message_observer.h"
+#include "include/cef_download_handler.h"
+#include "include/cef_find_handler.h"
 #include "include/cef_parser.h"
 #include "include/cef_resource_bundle.h"
 #include "include/cef_request_context_handler.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include <map>
+#include <mutex>
 #include <functional>
 #include <vector>
 #include <set>
@@ -92,6 +95,8 @@ class DevToolsClient;
   BOOL _creating;
   BOOL _closed;
   BOOL _hasCommittedPage;
+  BOOL _clearsHistoryOnCommit;
+  int _findIdentifier;
   NSUInteger _faviconGeneration;
   BOOL _faviconRequested;
   NSString *_address;
@@ -452,13 +457,13 @@ class ContextHandler final : public CefRequestContextHandler {
     auto value = CefValue::Create(); value->SetDictionary(proxy);
     CefString error;
     if (!context->SetPreference("proxy", value, error)) {
-      if (view.loadFailed) view.loadFailed(@"Couldn’t configure the workspace proxy.");
+      if (view.loadFailed) view.loadFailed(0, @"Couldn’t configure the workspace proxy.", @"");
       return;
     }
     auto rtcPolicy = CefValue::Create();
     rtcPolicy->SetString("disable_non_proxied_udp");
     if (!context->SetPreference("webrtc.ip_handling_policy", rtcPolicy, error)) {
-      if (view.loadFailed) view.loadFailed(@"Couldn’t configure browser network isolation.");
+      if (view.loadFailed) view.loadFailed(0, @"Couldn’t configure browser network isolation.", @"");
       return;
     }
     view->_contextReady = YES;
@@ -487,17 +492,82 @@ bool IsWebLink(NSString *address) {
 }
 }
 
+@interface CVChromiumDownload ()
+- (instancetype)initWithIdentifier:(uint32_t)identifier path:(NSString *)path received:(int64_t)received
+                             total:(int64_t)total state:(CVChromiumDownloadState)state;
+@end
+@implementation CVChromiumDownload
+- (instancetype)initWithIdentifier:(uint32_t)identifier path:(NSString *)path received:(int64_t)received
+                             total:(int64_t)total state:(CVChromiumDownloadState)state {
+  if ((self = [super init])) { _identifier = identifier; _path = [path copy]; _receivedBytes = received; _totalBytes = total; _state = state; }
+  return self;
+}
+@end
+
+namespace {
+void (^downloadObserver)(CVChromiumDownload *) = nil;
+std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> downloadCallbacks;
+std::map<uint32_t, NSString *> downloadPaths;
+NSMutableSet<NSString *> *ReservedDownloadPaths() {
+  static NSMutableSet<NSString *> *paths = [NSMutableSet set];
+  return paths;
+}
+NSString *ReserveDownloadPath(NSString *suggestedName) {
+  NSString *name = [[suggestedName.lastPathComponent componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/:"]] componentsJoinedByString:@"-"];
+  if (name.length == 0 || [name hasPrefix:@"."]) name = [@"download" stringByAppendingString:name];
+  NSString *folder = [NSFileManager.defaultManager URLsForDirectory:NSDownloadsDirectory inDomains:NSUserDomainMask].firstObject.path ?: NSTemporaryDirectory();
+  NSString *base = name.stringByDeletingPathExtension, *extension = name.pathExtension;
+  for (NSInteger copy = 0;; ++copy) {
+    NSString *candidate = copy == 0 ? name : [NSString stringWithFormat:@"%@ (%ld)%@%@", base, (long)copy, extension.length ? @"." : @"", extension];
+    NSString *path = [folder stringByAppendingPathComponent:candidate];
+    if ([ReservedDownloadPaths() containsObject:path] || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
+    [ReservedDownloadPaths() addObject:path];
+    return path;
+  }
+}
+void PublishDownload(CefRefPtr<CefDownloadItem> item, CefRefPtr<CefDownloadItemCallback> callback) {
+  uint32_t identifier = item->GetId();
+  NSString *path = String(item->GetFullPath());
+  if (path.length) downloadPaths[identifier] = path;
+  else if (downloadPaths.contains(identifier)) path = downloadPaths[identifier];
+  else return;
+  CVChromiumDownloadState state = item->IsComplete() ? CVChromiumDownloadStateComplete
+      : item->IsCanceled() ? CVChromiumDownloadStateCanceled
+      : item->IsInterrupted() ? CVChromiumDownloadStateFailed : CVChromiumDownloadStateInProgress;
+  if (state == CVChromiumDownloadStateInProgress) {
+    downloadCallbacks[identifier] = callback;
+  } else {
+    downloadCallbacks.erase(identifier);
+    downloadPaths.erase(identifier);
+    [ReservedDownloadPaths() removeObject:path];
+  }
+  if (downloadObserver) {
+    downloadObserver([[CVChromiumDownload alloc] initWithIdentifier:identifier path:path
+        received:item->GetReceivedBytes() total:item->GetTotalBytes() state:state]);
+  }
+}
+}
+
+void CVObserveChromiumDownloads(void (^observer)(CVChromiumDownload *)) { downloadObserver = [observer copy]; }
+void CVCancelChromiumDownload(uint32_t identifier) {
+  auto found = downloadCallbacks.find(identifier);
+  if (found != downloadCallbacks.end()) found->second->Cancel();
+}
+
 class BrowserClient final : public CefClient, public CefLifeSpanHandler,
                             public CefDisplayHandler, public CefLoadHandler,
-                            public CefRequestHandler, public CefContextMenuHandler {
+                            public CefRequestHandler, public CefContextMenuHandler,
+                            public CefFindHandler, public CefDownloadHandler {
  public:
   explicit BrowserClient(CVChromiumView *view) : view_(view), host_(view->_proxyHost.UTF8String ?: ""),
-      port_((int)view->_proxyPort), username_(view->_username.UTF8String ?: ""), password_(view->_password.UTF8String ?: "") {}
+      username_(view->_username.UTF8String ?: ""), password_(view->_password.UTF8String ?: ""), port_((int)view->_proxyPort) {}
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
+  CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
+  CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   void OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> menu) override {
     if (!params->GetLinkUrl().empty()) {
       int index = 0;
@@ -596,7 +666,13 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     if (!frame->IsMain()) return;
     CVChromiumView *view = view_;
     if (!view) return;
-    if (frame->GetURL().ToString() != "about:blank") view->_hasCommittedPage = YES;
+    if (frame->GetURL().ToString() != "about:blank") {
+      view->_hasCommittedPage = YES;
+      if (view->_clearsHistoryOnCommit) {
+        view->_clearsHistoryOnCommit = NO;
+        frame->GetBrowser()->GetHost()->ExecuteDevToolsMethod(0, "Page.resetNavigationHistory", nullptr);
+      }
+    }
     ++view->_faviconGeneration;
     view->_faviconRequested = NO;
     if (view.faviconChanged) view.faviconChanged(nil);
@@ -625,16 +701,55 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     });
   }
   void OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, ErrorCode code,
-                   const CefString& text, const CefString&) override {
+                   const CefString& text, const CefString& url) override {
     CVChromiumView *view = view_;
-    if (frame->IsMain() && code != ERR_ABORTED && view.loadFailed) view.loadFailed(String(text));
+    if (frame->IsMain() && code != ERR_ABORTED && view.loadFailed) view.loadFailed(code, String(text), String(url));
+  }
+  void OnFindResult(CefRefPtr<CefBrowser>, int identifier, int count, const CefRect&, int activeMatch, bool finished) override {
+    CVChromiumView *view = view_;
+    if (!view || identifier < view->_findIdentifier) return;
+    view->_findIdentifier = identifier;
+    if (view.findResult) view.findResult(count, activeMatch, finished);
+  }
+  bool OnBeforeDownload(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem>, const CefString& suggestedName,
+                        CefRefPtr<CefBeforeDownloadCallback> callback) override {
+    callback->Continue(String(ReserveDownloadPath(String(suggestedName))), false);
+    return true;
+  }
+  void OnDownloadUpdated(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem> item,
+                         CefRefPtr<CefDownloadItemCallback> callback) override {
+    PublishDownload(item, callback);
   }
   bool GetAuthCredentials(CefRefPtr<CefBrowser>, const CefString&, bool isProxy,
                           const CefString& host, int port, const CefString&, const CefString&,
                           CefRefPtr<CefAuthCallback> callback) override {
     if (isProxy) {
-      if (host.ToString() == host_ && port == port_) callback->Continue(username_, password_);
-      else callback->Cancel();
+      if (host.ToString() != host_ || port != port_) { callback->Cancel(); return true; }
+      std::string username, password;
+      bool rejected;
+      {
+        std::lock_guard<std::mutex> lock(credentialsLock_);
+        username = username_; password = password_;
+        rejected = credentialsOffered_;
+        credentialsOffered_ = true;
+      }
+      if (!rejected) { callback->Continue(username, password); return true; }
+      CefRefPtr<BrowserClient> client = this;
+      __weak CVChromiumView *weakView = view_;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        CVChromiumView *view = weakView;
+        if (!view || view->_closed || !view.proxyCredentialsRejected) { callback->Cancel(); return; }
+        view.proxyCredentialsRejected(String(CefString(username)), String(CefString(password)), ^(NSString *freshUsername, NSString *freshPassword) {
+          if (!freshUsername || !freshPassword || (String(freshUsername).ToString() == username && String(freshPassword).ToString() == password)) {
+            callback->Cancel();
+            return;
+          }
+          client->UpdateProxyCredentials(freshUsername, freshPassword);
+          CVChromiumView *current = weakView;
+          if (current) { current->_username = [freshUsername copy]; current->_password = [freshPassword copy]; }
+          callback->Continue(String(freshUsername), String(freshPassword));
+        });
+      });
       return true;
     }
     __weak CVChromiumView *weakView = view_;
@@ -703,12 +818,21 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
       [popup closeBrowser]; pendingPopups_.erase(found);
     }
   }
+  void UpdateProxyCredentials(NSString *username, NSString *password) {
+    std::lock_guard<std::mutex> lock(credentialsLock_);
+    username_ = username.UTF8String ?: "";
+    password_ = password.UTF8String ?: "";
+    credentialsOffered_ = false;
+  }
   NSString *title_ = @"Browser";
   std::function<void()> created_;
  private:
   bool closedByPage_ = false;
   __weak CVChromiumView *view_;
-  const std::string host_, username_, password_;
+  const std::string host_;
+  std::mutex credentialsLock_;
+  std::string username_, password_;
+  bool credentialsOffered_ = false;
   const int port_;
   std::map<int, CVChromiumView *> pendingPopups_;
   IMPLEMENT_REFCOUNTING(BrowserClient);
@@ -808,7 +932,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     return;
   }
   _started = YES;
-  if (!ChromiumRuntime::Shared().Initialize()) { if (self.loadFailed) self.loadFailed(@"Couldn’t start Chromium."); return; }
+  if (!ChromiumRuntime::Shared().Initialize()) { if (self.loadFailed) self.loadFailed(0, @"Couldn’t start Chromium.", @""); return; }
   CefRequestContextSettings settings;
   settings.persist_session_cookies = true;
   NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
@@ -831,7 +955,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   _client = new BrowserClient(self);
   if (!CefBrowserHost::CreateBrowser(info, _client, String(_address), settings, nullptr, _context)) {
     _creating = NO;
-    if (self.loadFailed) self.loadFailed(@"Couldn’t create the browser page.");
+    if (self.loadFailed) self.loadFailed(0, @"Couldn’t create the browser page.", @"");
   }
 }
 - (void)publish {
@@ -855,13 +979,17 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (void)zoomIn { [self zoom:CEF_ZOOM_COMMAND_IN]; }
 - (void)zoomOut { [self zoom:CEF_ZOOM_COMMAND_OUT]; }
 - (void)resetZoom { [self zoom:CEF_ZOOM_COMMAND_RESET]; }
-- (void)navigate:(NSString *)address { _address = [address copy]; if (_browser) _browser->GetMainFrame()->LoadURL(String(address)); }
+- (void)navigate:(NSString *)address { _address = [address copy]; if (!_hasCommittedPage) _clearsHistoryOnCommit = YES; if (_browser) _browser->GetMainFrame()->LoadURL(String(address)); }
 - (void)reload { if (_browser) _browser->Reload(); }
 - (void)reloadIgnoringCache { if (_browser) _browser->ReloadIgnoreCache(); }
 - (void)stop { if (_browser) _browser->StopLoad(); }
 - (void)goBack { if (_browser && _browser->CanGoBack()) _browser->GoBack(); }
 - (void)goForward { if (_browser && _browser->CanGoForward()) _browser->GoForward(); }
 - (void)focusPage { if (_browser) _browser->GetHost()->SetFocus(true); }
+- (void)find:(NSString *)text forward:(BOOL)forward findNext:(BOOL)findNext {
+  if (_browser && !_closed) _browser->GetHost()->Find(String(text), forward, false, findNext);
+}
+- (void)stopFinding { if (_browser && !_closed) _browser->GetHost()->StopFinding(true); }
 - (void)showDevTools {
   if (!_browser || _closed || _toolsCreating) return;
   if (_toolsBrowser) { [self focusDevTools]; return; }
@@ -1003,7 +1131,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (void)closeBrowser {
   if (_closed) return;
   _closed = YES;
-  self.stateChanged = nil; self.loadFailed = nil; self.faviconChanged = nil;
+  self.stateChanged = nil; self.loadFailed = nil; self.faviconChanged = nil; self.findResult = nil;
   [self closeDevTools];
   if (_browser) _browser->GetHost()->CloseBrowser(true);
   else {

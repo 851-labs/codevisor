@@ -44,7 +44,8 @@ export function forwardBrowserHTTP(
   request: IncomingMessage,
   response: ServerResponse,
   target: BrowserForwardTarget,
-  track: (socket: Socket) => void
+  track: (socket: Socket) => void,
+  failed: (error: Error) => void
 ): void {
   const upstream = httpRequest({
     hostname: target.host,
@@ -57,7 +58,11 @@ export function forwardBrowserHTTP(
   track(request.socket)
   upstream.once("socket", (socket) => {
     track(socket)
-    socket.setTimeout(15_000, () => upstream.destroy(new Error("Proxy connection timed out")))
+    socket.setTimeout(15_000, () =>
+      upstream.destroy(
+        Object.assign(new Error("Proxy connection timed out"), { code: "ETIMEDOUT" })
+      )
+    )
     socket.once("connect", () => socket.setTimeout(0))
   })
   const cancel = () => upstream.destroy()
@@ -66,9 +71,13 @@ export function forwardBrowserHTTP(
     request.off("aborted", cancel)
     if (!response.writableFinished) cancel()
   })
-  upstream.on("error", () => {
-    if (response.headersSent) response.destroy()
-    else response.writeHead(502, { "Content-Length": "0", Connection: "close" }).end()
+  upstream.on("error", (error) => {
+    if (response.headersSent) {
+      response.destroy()
+      return
+    }
+    failed(error)
+    response.writeHead(502, { "Content-Length": "0", Connection: "close" }).end()
   })
   upstream.once("response", (incoming) => {
     response.writeHead(incoming.statusCode ?? 502, browserForwardHeaders(incoming.headers))

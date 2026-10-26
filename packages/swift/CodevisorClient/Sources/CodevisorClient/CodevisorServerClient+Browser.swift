@@ -18,11 +18,24 @@ extension CodevisorServerClient {
   }
 }
 
+extension CodevisorServerClient {
+  public func browserProxyFailure(authority: String) async throws -> String? {
+    var components = URLComponents()
+    components.queryItems = [URLQueryItem(name: "authority", value: authority)]
+    let result: ProxyFailureResponse = try await get(
+      "/v1/browser/proxy-failure?\(components.percentEncodedQuery ?? "")")
+    return result.failure
+  }
+}
+
 public extension CodevisorServerClienting {
   func browserProxySession() async throws -> ServerBrowserProxySession {
     throw URLError(.unsupportedURL)
   }
+  func browserProxyFailure(authority: String) async throws -> String? { throw URLError(.unsupportedURL) }
 }
+
+private struct ProxyFailureResponse: Decodable { var failure: String? }
 
 private struct CookieExchange: Encodable { var mutations: [BrowserCookieMutation] }
 private struct NavigationResponse: Decodable { var navigation: BrowserNavigation? }

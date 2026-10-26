@@ -78,6 +78,7 @@ final class ChromiumProfiles {
     sync.start()
     return sync
   }
+  func cookieSync(machineId: String) -> BrowserCookieSync? { syncs[machineId] }
   func detach(_ view: CVChromiumView?, machineId: String) {
     views[machineId] = views[machineId]?.filter { $0.view != nil && $0.view !== view }
     if views[machineId]?.isEmpty != false { syncs[machineId]?.stop() }

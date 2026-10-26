@@ -52,8 +52,11 @@ public final class TranscriptFindModel {
   }
 
   public func publish(_ results: TranscriptFindResults) {
-    if matchCount != results.count { matchCount = results.count }
-    let number = results.currentIndex.map { $0 + 1 }
+    publish(count: results.count, currentNumber: results.currentIndex.map { $0 + 1 })
+  }
+
+  public func publish(count: Int, currentNumber number: Int?) {
+    if matchCount != count { matchCount = count }
     if currentMatchNumber != number { currentMatchNumber = number }
   }
 

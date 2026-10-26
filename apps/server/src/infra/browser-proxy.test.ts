@@ -181,6 +181,38 @@ describe("browser connection proxy", () => {
     expect(result.cookie).toEqual(["session=website; HttpOnly"])
   })
 
+  it("remembers why a forwarded HTTP request couldn't reach its site", async () => {
+    const closed = createTCPServer()
+    const closedPort = await listen(closed)
+    await new Promise<void>((resolve) => closed.close(() => resolve()))
+    cleanups.pop()
+    const proxy = new BrowserProxy()
+    cleanups.push(() => proxy.close())
+    const server = createServer((req, res) => proxy.handleHTTP(req, res))
+    const port = await listen(server)
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: "127.0.0.1",
+          port,
+          path: `http://127.0.0.1:${closedPort}/`,
+          agent: false,
+          headers: {
+            "Proxy-Authorization": `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
+          }
+        },
+        (res) => {
+          res.resume()
+          res.on("end", () => resolve(res.statusCode!))
+        }
+      )
+      req.on("error", reject)
+      req.end()
+    })
+    expect(status).toBe(502)
+    expect(proxy.failure(`127.0.0.1:${closedPort}`)).toBe("refused")
+  })
+
   it("carries upgraded WebSockets as opaque bytes", async () => {
     const { WebSocketServer, WebSocket } = await import("ws")
     const upstream = createServer()
@@ -202,10 +234,10 @@ describe("browser connection proxy", () => {
   })
 })
 
-function lifecycleFixture() {
+function lifecycleFixture(now?: () => number) {
   const upstream = new FakeSocket()
   const downstream = new FakeSocket()
-  const proxy = new BrowserProxy(1, () => upstream)
+  const proxy = new BrowserProxy(1, () => upstream, now)
   const auth = `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
   const req = new IncomingMessage(downstream)
   req.url = "localhost:3000"
@@ -224,13 +256,41 @@ describe("browser proxy connection lifecycle", () => {
     expect(downstream.destroyed).toBe(true)
   })
 
-  it.each(["timeout", "error"])("reports a connection %s without opening a tunnel", (event) => {
-    const { proxy, upstream, downstream, req } = lifecycleFixture()
+  it.each([
+    ["timeout", undefined, "timeout"],
+    ["error", "ENOTFOUND", "dns"],
+    ["error", "ECONNREFUSED", "refused"],
+    ["error", "EHOSTUNREACH", "unreachable"],
+    ["error", "EPIPE", "failed"]
+  ])("reports a connection %s (%s) without opening a tunnel", (event, code, failure) => {
+    let now = 1_000
+    const { proxy, upstream, downstream, req } = lifecycleFixture(() => now)
     proxy.handleConnect(req, downstream, Buffer.alloc(0))
     if (event === "timeout") upstream.onTimeout!()
-    else upstream.emit("error", new Error("refused"))
+    else upstream.emit("error", Object.assign(new Error("failed"), { code }))
     expect(downstream.endings).toEqual([expect.stringContaining("502")])
     expect(upstream.destroyed).toBe(true)
+    expect(proxy.failure("LOCALHOST:3000")).toBe(failure)
+    expect(proxy.failure("localhost:3001")).toBeUndefined()
+    now += 60_001
+    expect(proxy.failure("localhost:3000")).toBeUndefined()
+    proxy.close()
+  })
+
+  it("remembers only the most recent failing targets", () => {
+    let upstream = new FakeSocket()
+    const proxy = new BrowserProxy(1_000, () => (upstream = new FakeSocket()))
+    const authorization = `Basic ${Buffer.from(`${proxy.session.username}:${proxy.session.password}`).toString("base64")}`
+    for (let port = 1; port <= 129; port++) {
+      const req = new IncomingMessage(new FakeSocket())
+      req.url = `example.com:${port}`
+      req.headers = { "proxy-authorization": authorization }
+      proxy.handleConnect(req, new FakeSocket(), Buffer.alloc(0))
+      upstream.emit("error", Object.assign(new Error("not found"), { code: "ENOTFOUND" }))
+    }
+    expect(proxy.failure("example.com:1")).toBeUndefined()
+    expect(proxy.failure("example.com:2")).toBe("dns")
+    expect(proxy.failure("example.com:129")).toBe("dns")
     proxy.close()
   })
 

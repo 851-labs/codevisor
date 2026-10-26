@@ -32,6 +32,32 @@ export const browserProxyTarget = (authority: string | undefined) => {
   return { host, port }
 }
 
+export type BrowserProxyFailure = "dns" | "refused" | "timeout" | "unreachable" | "failed"
+
+export const browserProxyFailure = (error: Error | undefined): BrowserProxyFailure => {
+  const code = error === undefined ? "ETIMEDOUT" : (error as NodeJS.ErrnoException).code
+  switch (code) {
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+    case "EAI_FAIL":
+    case "EAI_NONAME":
+      return "dns"
+    case "ECONNREFUSED":
+      return "refused"
+    case "ETIMEDOUT":
+      return "timeout"
+    case "EHOSTUNREACH":
+    case "ENETUNREACH":
+    case "ENETDOWN":
+      return "unreachable"
+    default:
+      return "failed"
+  }
+}
+
+const failureLifetimeMs = 60_000
+const maximumFailures = 128
+
 export class BrowserProxy {
   readonly session = {
     username: "codevisor-browser",
@@ -41,6 +67,7 @@ export class BrowserProxy {
     `Basic ${Buffer.from(`${this.session.username}:${this.session.password}`).toString("base64")}`
   )
   private readonly sockets = new Set<Socket>()
+  private readonly failures = new Map<string, { failure: BrowserProxyFailure; at: number }>()
   private closed = false
 
   constructor(
@@ -49,8 +76,28 @@ export class BrowserProxy {
       host: string
       port: number
       allowHalfOpen: true
-    }) => Socket = connect
+    }) => Socket = connect,
+    private readonly now: () => number = Date.now
   ) {}
+
+  failure(authority: string): BrowserProxyFailure | undefined {
+    const target = browserProxyTarget(authority)
+    const recorded = target && this.failures.get(`${target.host}:${target.port}`)
+    if (!recorded || this.now() - recorded.at > failureLifetimeMs) return undefined
+    return recorded.failure
+  }
+
+  private recordFailure = (
+    target: { host: string; port: number },
+    error: Error | undefined
+  ): void => {
+    const key = `${target.host}:${target.port}`
+    this.failures.delete(key)
+    this.failures.set(key, { failure: browserProxyFailure(error), at: this.now() })
+    if (this.failures.size > maximumFailures) {
+      this.failures.delete(this.failures.keys().next().value!)
+    }
+  }
 
   private authorized(request: IncomingMessage): boolean {
     const supplied = Buffer.from(request.headers["proxy-authorization"] ?? "")
@@ -94,7 +141,9 @@ export class BrowserProxy {
         .end()
       return
     }
-    forwardBrowserHTTP(request, response, target, this.track)
+    forwardBrowserHTTP(request, response, target, this.track, (error) =>
+      this.recordFailure(target, error)
+    )
   }
 
   handleUpgrade(request: IncomingMessage, socket: Socket, head: Buffer): void {
@@ -137,12 +186,16 @@ export class BrowserProxy {
     this.sockets.add(socket)
     this.sockets.add(upstream)
     let connected = false
-    const fail = () => {
+    const fail = (error?: Error) => {
       upstream.destroy()
-      if (connected) socket.destroy()
-      else socket.end("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+      if (connected) {
+        socket.destroy()
+        return
+      }
+      this.recordFailure(target, error)
+      socket.end("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
     }
-    upstream.setTimeout(15_000, fail)
+    upstream.setTimeout(15_000, () => fail())
     upstream.on("error", fail)
     socket.on("error", () => upstream.destroy())
     socket.on("close", () => {

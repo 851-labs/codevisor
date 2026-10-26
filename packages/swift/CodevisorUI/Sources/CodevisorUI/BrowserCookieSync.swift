@@ -30,6 +30,7 @@ public final class BrowserCookieSync {
     timer = poll(immediately: true)
   }
   public func stop() { timer?.cancel(); timer = nil }
+  public var isCurrent: Bool { baseline != nil && timer != nil }
 
   public func setVisible(_ visible: Bool) {
     let interval = visible ? Self.visiblePollInterval : Self.hiddenPollInterval

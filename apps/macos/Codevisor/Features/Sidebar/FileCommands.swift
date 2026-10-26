@@ -61,6 +61,7 @@ struct FileCommands: Commands {
   @FocusedValue(\.filePane) private var file
   @FocusedValue(\.transcriptFind) private var chatFind
   @FocusedValue(\.botListActions) private var botActions
+  @FocusedValue(\.browserPage) private var browser
 
   var body: some Commands {
     CommandGroup(replacing: .newItem) {
@@ -105,6 +106,13 @@ struct FileCommands: Commands {
         Button("Find Next") { chatFind.findNext() }
           .keyboardShortcut("g", modifiers: .command)
         Button("Find Previous") { chatFind.findPrevious() }
+          .keyboardShortcut("g", modifiers: [.command, .shift])
+      } else if let browser {
+        Button("Find on Page…") { browser.find.present() }
+          .keyboardShortcut("f", modifiers: .command)
+        Button("Find Next") { browser.find.findNext() }
+          .keyboardShortcut("g", modifiers: .command)
+        Button("Find Previous") { browser.find.findPrevious() }
           .keyboardShortcut("g", modifiers: [.command, .shift])
       }
     }

@@ -15,6 +15,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func browserFavicon(sha256: String) async throws -> Data?
   func publishBrowserFavicon(sha256: String, png: Data) async throws
   func browserProxySession() async throws -> ServerBrowserProxySession
+  func browserProxyFailure(authority: String) async throws -> String?
   func health() async throws -> ServerHealth
   func info() async throws -> ServerInfo
   func cloudRegistration() async throws -> ServerCloudRegistration

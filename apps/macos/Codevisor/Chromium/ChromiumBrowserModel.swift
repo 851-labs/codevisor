@@ -2,7 +2,6 @@ import AppKit
 import CodevisorClient
 import CodevisorCore
 import CodevisorUI
-import CryptoKit
 import Observation
 
 @MainActor
@@ -20,20 +19,17 @@ final class ChromiumBrowserModel {
   private(set) var isLoading = false
   private(set) var canGoBack = false
   private(set) var canGoForward = false
-  private(set) var zoomPercent = 100
-  private(set) var canZoomOut = false
-  private(set) var canZoomIn = false
-  private(set) var canResetZoom = false
-  private(set) var zoomPresentationRequest = 0
-  private(set) var errorMessage: String?
+  let pageZoom = ChromiumPageZoom()
+  private(set) var pageError: BrowserPageError?
+  @ObservationIgnored let finder = ChromiumPageFinder()
+  var find: TranscriptFindModel { finder.model }
+  @ObservationIgnored let downloads = ChromiumDownloads.shared
   private(set) var snapshot: Data?
-  var addressFocusRequest = 0
+  let address = ChromiumAddressFocus()
   var viewport: ChromiumViewport?
   @ObservationIgnored private var synchronized = false
-  @ObservationIgnored private var readyError: Error?
-  @ObservationIgnored private var userNavigation = false
-  @ObservationIgnored var automationInitialURL: String?
-  @ObservationIgnored private var readyWaiters: [CheckedContinuation<CVChromiumView, Error>] = []
+  @ObservationIgnored private let readiness = ChromiumPageReadiness()
+  @ObservationIgnored private let firstPage = ChromiumFirstPage()
   @ObservationIgnored var onNavigate: ((String, String) -> Void)?
   @ObservationIgnored let favicons: BrowserFaviconSharing
   @ObservationIgnored private let client: any CodevisorServerClienting
@@ -43,7 +39,7 @@ final class ChromiumBrowserModel {
   @ObservationIgnored private var cookieSync: BrowserCookieSync?
   @ObservationIgnored private let paneSync: BrowserPaneSync
   @ObservationIgnored private var activationTask: Task<Void, Never>?
-  @ObservationIgnored private var backgroundHost: NSWindow?
+  @ObservationIgnored private let backgroundHost = ChromiumBackgroundHost()
   @ObservationIgnored private var needsBackgroundHost = false
   @ObservationIgnored private var isVisible = false
   @ObservationIgnored private var retentionRevision = 0
@@ -66,48 +62,126 @@ final class ChromiumBrowserModel {
     let provider = BrowserSearchProvider(client: client, resolveBaseURL: resolveBaseURL)
     suggestions = BrowserSuggestions(profile: machineId, fetch: provider.suggestions)
     url = BrowserLocation.navigationURL(initialURL ?? "https://www.google.com/")
+    finder.page = { [weak self] in self?.webView }
   }
 
   func start() {
     guard webView == nil, loadTask == nil else { return }
     BrowserPageRetention.shared.touch(self)
     isLoading = true
-    errorMessage = nil
+    pageError = nil
     let token = UUID()
     generation = token
-    loadTask = Task { [weak self] in
-      guard let self else { return }
-      defer { if generation == token { loadTask = nil } }
-      do {
-        let info = try await client.info()
-        guard info.features?.contains("browser-http-proxy-v1") == true,
-          info.features?.contains("browser-state-v1") == true
-        else {
-          throw BrowserError.serverUpdateRequired
-        }
-        let credential = try await client.browserProxySession()
-        guard let endpoint = await resolveBaseURL(), let host = endpoint.host,
-          ["http", "https"].contains(endpoint.scheme)
-        else { throw URLError(.notConnectedToInternet) }
-        try Task.checkCancellation()
-        guard generation == token else { return }
-        let profile = SHA256.hash(data: Data(machineId.utf8)).map { String(format: "%02x", $0) }.joined()
-        let view = CVChromiumView(
-          profile: profile, proxyHost: host, proxyPort: endpoint.port ?? (endpoint.scheme == "https" ? 443 : 80),
-          proxyTLS: endpoint.scheme == "https", username: credential.username, password: credential.password,
-          address: "about:blank"
-        )
-        wireView(view, token: token)
-        webView = view
-        ChromiumAutomationBridge.shared.register(self)
-        if needsBackgroundHost { hostInBackgroundIfNeeded(view) }
-      } catch {
-        guard !Task.isCancelled, generation == token else { return }
-        completeReady(.failure(error))
-        errorMessage = error.localizedDescription
-        isLoading = false
-      }
+    firstPage.begin(paneId: paneId, client: client)
+    if firstPage.knowsAddress, let spare = ChromiumSpareBrowsers.shared.take(machineId: machineId) {
+      openInSpare(spare.view, connection: spare.connection, token: token)
+    } else {
+      loadTask = Task { [weak self] in await self?.launch(token: token) }
     }
+  }
+
+  @ObservationIgnored var hasShownPage = false
+  @ObservationIgnored private var restartsOnRetry = false
+
+  private var opensBeforeCookieSync: Bool {
+    firstPage.knowsAddress && ChromiumProfiles.shared.cookieSync(machineId: machineId)?.isCurrent == true
+  }
+
+  private func openInSpare(_ view: CVChromiumView, connection: ChromiumBrowserConnection, token: UUID) {
+    install(view, token: token)
+    cookieSync = ChromiumProfiles.shared.cookieSync(machineId: machineId)
+    view.navigate(firstPage.immediateAddress(current: url))
+    pageOpened(view, token: token)
+    loadTask = Task { [weak self] in await self?.confirmSpare(connection, token: token) }
+  }
+
+  private func confirmSpare(_ connection: ChromiumBrowserConnection, token: UUID) async {
+    defer { if generation == token { loadTask = nil } }
+    let stale = await ChromiumSpareBrowsers.shared.isStale(
+      connection, machineId: machineId, client: client, resolveBaseURL: resolveBaseURL)
+    guard stale, generation == token else { return }
+
+    resetBrowser()
+    start()
+  }
+
+  private func launch(token: UUID) async {
+    defer { if generation == token { loadTask = nil } }
+    do {
+      let connection = try await ChromiumBrowserConnections.shared.connection(
+        machineId: machineId, client: client, resolveBaseURL: resolveBaseURL)
+      try Task.checkCancellation()
+      guard generation == token else { return }
+
+      try await open(with: connection, token: token)
+      ChromiumSpareBrowsers.shared.prepare(machineId: machineId, connection: connection, client: client)
+    } catch {
+      guard !Task.isCancelled, generation == token else { return }
+      readiness.complete(.failure(error))
+      pageError = .opening(error.localizedDescription)
+      isLoading = false
+    }
+  }
+
+  private func open(with connection: ChromiumBrowserConnection, token: UUID) async throws {
+    if let spare = ChromiumSpareBrowsers.shared.take(machineId: machineId, connection: connection)?.view {
+      install(spare, token: token)
+      cookieSync = ChromiumProfiles.shared.cookieSync(machineId: machineId)
+      try await openFirstPage(in: spare, token: token)
+      return
+    }
+    let address = opensBeforeCookieSync ? firstPage.immediateAddress(current: url) : nil
+    firstPage.opening = address
+    install(connection.makeView(machineId: machineId, address: address ?? "about:blank"), token: token)
+  }
+
+  private func install(_ view: CVChromiumView, token: UUID) {
+    hasShownPage = false
+    wireView(view, token: token)
+    webView = view
+    ChromiumAutomationBridge.shared.register(self)
+    if needsBackgroundHost { backgroundHost.host(view) }
+  }
+
+  private func openFirstPage(in view: CVChromiumView, token: UUID) async throws {
+    if cookieSync?.isCurrent == true {
+      let address = await firstPage.address(current: url)
+      guard generation == token else { return }
+      view.navigate(address)
+      pageOpened(view, token: token)
+      return
+    }
+    async let address = firstPage.address(current: url)
+    try await cookieSync?.synchronize()
+    let target = await address
+    guard generation == token else { return }
+    view.navigate(target)
+    markReady(view)
+  }
+
+  private func continueOpening(_ view: CVChromiumView, from opened: String, token: UUID) {
+    firstPage.opening = nil
+    if firstPage.followsUser, let wanted = url?.absoluteString, wanted != opened { view.navigate(wanted) }
+    pageOpened(view, token: token)
+  }
+
+  private func pageOpened(_ view: CVChromiumView, token: UUID) {
+    markReady(view)
+    let loaded = cookieSync?.generation ?? 0
+    Task { [weak self] in
+      _ = try? await self?.cookieSync?.synchronize()
+      guard let self, generation == token, let current = cookieSync?.generation, current != loaded else { return }
+      paneSync.recordLoadedCookies(cookieSync)
+      webView?.reload()
+    }
+  }
+
+  private func markReady(_ view: CVChromiumView) {
+    synchronized = true
+    firstPage.newTabURL = nil
+    paneSync.recordLoadedCookies(cookieSync)
+    readiness.complete(.success(view))
+    ChromiumAutomationBridge.shared.register(self)
   }
 
   @ObservationIgnored var onOpenLink: ((String, BrowserLinkDestination, CVChromiumView?) -> Bool)?
@@ -116,111 +190,72 @@ final class ChromiumBrowserModel {
   func adoptPopup(_ view: CVChromiumView) {
     BrowserPageRetention.shared.touch(self)
     isLoading = true
+    firstPage.newTabURL = nil
+    hasShownPage = false
     wireView(view, token: generation, adopted: true)
     webView = view
     ChromiumAutomationBridge.shared.register(self)
-    hostInBackgroundIfNeeded(view)
+    backgroundHost.host(view)
   }
 
   private func wireView(_ view: CVChromiumView, token: UUID, adopted: Bool = false) {
-    view.zoomChanged = { [weak self] percent, canZoomOut, canZoomIn, canReset in
-      Task { @MainActor [weak self] in
-        guard let self, self.generation == token else { return }
-        self.zoomPercent = percent
-        self.canZoomOut = canZoomOut
-        self.canZoomIn = canZoomIn
-        self.canResetZoom = canReset
-      }
+    ChromiumPageEvents.connect(view, to: self, token: token, adopted: adopted)
+    ChromiumBrowserConnections.shared.renewCredentials(of: view, machineId: machineId, client: client)
+  }
+
+  func isCurrent(_ token: UUID) -> Bool { generation == token }
+
+  func applyState(address: String, title: String, loading: Bool, back: Bool, forward: Bool) {
+    if let current = URL(string: address), ["http", "https"].contains(current.scheme) {
+      url = current
+      hasLoadedPage = true
     }
-    view.openLink = { [weak self] address, destination in
-      self?.onOpenLink?(address, destination.workspaceDestination, nil) ?? false
-    }
-    view.adoptPopup = { [weak self] popup, address, destination in
-      self?.onOpenLink?(address, destination.workspaceDestination, popup) ?? false
-    }
-    view.browserClosed = { [weak self] closedByPage in
-      guard let self, self.generation == token else { return }
-      self.browserClosed(byPage: closedByPage)
-    }
-    view.viewportScaleChanged = { [weak self, weak view] scale in
-      Task { @MainActor [weak self, weak view] in
-        guard let self, let view, self.generation == token, let viewport = self.viewport else { return }
-        var metrics = viewport.parameters
-        metrics["scale"] = scale
-        metrics["dontSetVisibleSize"] = true
-        _ = try? await view.cdp("Emulation.setDeviceMetricsOverride", metrics)
-      }
-    }
-    view.stateChanged = { [weak self] address, title, loading, back, forward in
-      Task { @MainActor [weak self] in
-        guard let self, self.generation == token else { return }
-        if let current = URL(string: address), ["http", "https"].contains(current.scheme) {
-          self.url = current
-          self.hasLoadedPage = true
-        }
-        self.title = title.isEmpty ? (self.url?.host ?? "Browser") : title
-        self.browserWindow?.window?.title = self.title
-        self.isLoading = loading
-        if loading { self.paneSync.cancelActivation() }
-        self.canGoBack = back
-        self.canGoForward = forward
-        if !loading, let location = BrowserLocation.sharedURL(address) {
-          BrowserHistory.shared.record(url: address, title: self.title, profile: self.machineId)
-          self.paneSync.publish(url: location.absoluteString, title: self.title, cookies: self.cookieSync) {
-            [weak self] in
-            self?.navigated(to: location.absoluteString)
-          }
-        }
-      }
-    }
-    view.loadFailed = { [weak self] message in
-      Task { @MainActor [weak self] in
-        guard let self, self.generation == token else { return }
-        self.errorMessage = "Couldn’t load this page through \(self.machineName). \(message)"
-        self.isLoading = false
-        if self.webView?.browserIsReady != true {
-          self.completeReady(.failure(ChromiumProtocolError(message)))
-        }
-      }
-    }
-    view.faviconChanged = { [weak self] data in
-      Task { @MainActor [weak self] in
-        guard let self, self.generation == token else { return }
-        self.updateFavicon(data)
-      }
-    }
-    view.browserReady = { [weak self, weak view] in
-      Task { @MainActor [weak self, weak view] in
-        guard let self, let view, self.generation == token else { return }
-        do {
-          self.cookieSync = ChromiumProfiles.shared.attach(view, machineId: self.machineId, client: self.client)
-          if adopted {
-            self.synchronized = true
-            self.paneSync.recordLoadedCookies(self.cookieSync)
-            self.completeReady(.success(view))
-            ChromiumAutomationBridge.shared.register(self)
-            return
-          }
-          try await self.cookieSync?.synchronize()
-          let saved = try await self.client.browserNavigation(paneId: self.paneId)
-          guard self.generation == token else { return }
-          self.synchronized = true
-          self.paneSync.recordLoadedCookies(self.cookieSync)
-          view.navigate(
-            self.automationInitialURL ?? (self.userNavigation ? self.url?.absoluteString : saved?.url) ?? self.url?
-              .absoluteString ?? "https://www.google.com/")
-          self.automationInitialURL = nil
-          self.completeReady(.success(view))
-          ChromiumAutomationBridge.shared.register(self)
-        } catch {
-          self.errorMessage = "Couldn’t synchronize browser state. \(error.localizedDescription)";
-          self.completeReady(.failure(error))
-        }
-      }
+    self.title = title.isEmpty ? (url?.host ?? "Browser") : title
+    browserWindow?.window?.title = self.title
+    isLoading = loading
+    if loading { paneSync.cancelActivation() }
+    if loading, let failed = pageError?.url, failed != address { pageError = nil }
+    canGoBack = back
+    canGoForward = forward
+    guard !loading, let location = BrowserLocation.sharedURL(address) else { return }
+
+    BrowserHistory.shared.record(url: address, title: self.title, profile: machineId)
+    paneSync.publish(url: location.absoluteString, title: self.title, cookies: cookieSync) { [weak self] in
+      self?.navigated(to: location.absoluteString)
     }
   }
 
-  private func browserClosed(byPage closedByPage: Bool) {
+  func pageFailed(code: Int, message: String, address: String, token: UUID) async {
+    isLoading = false
+    guard webView?.browserIsReady == true else {
+      pageError = .opening(message)
+      readiness.complete(.failure(ChromiumProtocolError(message)))
+      return
+    }
+    let error = await ChromiumLoadFailure.pageError(
+      code: code, description: message, address: address, machine: machineName, client: client)
+    guard generation == token else { return }
+
+    restartsOnRetry = ChromiumLoadFailure.restartsBrowser(code: code)
+    pageError = error
+  }
+
+  func browserBecameReady(_ view: CVChromiumView, token: UUID, adopted: Bool) async {
+    cookieSync = ChromiumProfiles.shared.attach(view, machineId: machineId, client: client)
+    if adopted { return markReady(view) }
+    do {
+      if let opened = firstPage.opening {
+        continueOpening(view, from: opened, token: token)
+      } else {
+        try await openFirstPage(in: view, token: token)
+      }
+    } catch {
+      pageError = .opening("Couldn’t synchronize browser state. \(error.localizedDescription)")
+      readiness.complete(.failure(error))
+    }
+  }
+
+  func browserClosed(byPage closedByPage: Bool) {
     guard BrowserPageClosing.shared.closesTab(whenClosedByPage: closedByPage) else { return }
     onClose?()
   }
@@ -239,7 +274,7 @@ final class ChromiumBrowserModel {
     previous?.detach()
   }
 
-  private func updateFavicon(_ png: Data?) {
+  func updateFavicon(_ png: Data?) {
     favicon = png.flatMap { NSImage(data: $0) }
     guard let png, let page = url.flatMap({ BrowserLocation.sharedURL($0.absoluteString) })?.absoluteString
     else { return }
@@ -261,63 +296,50 @@ final class ChromiumBrowserModel {
 
   func readyView() async throws -> CVChromiumView {
     needsBackgroundHost = true
-    if readyError != nil { resetBrowser(keepingAutomationTarget: true) }
-    if let view = webView { hostInBackgroundIfNeeded(view) }
+    if readiness.failure != nil { resetBrowser(keepingAutomationTarget: true) }
+    if let view = webView { backgroundHost.host(view) }
     if let view = webView, view.browserIsReady, synchronized {
       await freezer.thaw()
       return view
     }
     start()
-    return try await withCheckedThrowingContinuation { readyWaiters.append($0) }
-  }
-
-  private func hostInBackgroundIfNeeded(_ view: CVChromiumView) {
-    guard view.window == nil else { return }
-    if backgroundHost == nil {
-      let window = NSWindow(
-        contentRect: view.bounds, styleMask: .borderless, backing: .buffered, defer: false)
-      window.isReleasedWhenClosed = false
-      window.isExcludedFromWindowsMenu = true
-      backgroundHost = window
-    }
-    backgroundHost?.contentView?.addSubview(view)
-  }
-  private func completeReady(_ result: Result<CVChromiumView, Error>) {
-    if case .failure(let error) = result { readyError = error }
-    let waiters = readyWaiters; readyWaiters = []
-    for waiter in waiters { waiter.resume(with: result) }
+    if let view = webView, view.browserIsReady, synchronized { return view }
+    return try await readiness.wait()
   }
 
   func submitAddress(_ address: String) {
     guard let target = BrowserLocation.addressBarURL(address) else {
-      errorMessage = "Enter a search term or an HTTP or HTTPS address."
+      pageError = BrowserPageError(title: "Can’t Open Address", message: "Enter a search term or a web address.")
       return
     }
-    userNavigation = true
+    firstPage.followsUser = true
     suggestions.dismiss()
     activationTask?.cancel()
     paneSync.cancelActivation()
     url = target
-    errorMessage = nil
+    pageError = nil
     isLoading = true
     if let webView, synchronized { webView.navigate(target.absoluteString) } else { start() }
   }
 
   func reload(ignoringCache: Bool = false) {
-    if ignoringCache, synchronized, let webView, webView.browserIsReady {
-      errorMessage = nil
-      webView.reloadIgnoringCache()
-      return
-    }
-    if errorMessage != nil { resetBrowser() }
-    errorMessage = nil
-    if let webView {
-      if ignoringCache { webView.reloadIgnoringCache() } else { webView.reload() }
-    } else {
-      start()
-    }
+    if pageError != nil, !synchronized || restartsOnRetry { resetBrowser() }
+    pageError = nil
+    guard let webView else { return start() }
+    if ignoringCache { webView.reloadIgnoringCache() } else { webView.reload() }
   }
   func stop() { webView?.stop(); isLoading = false }
+  func goBack() {
+    guard canGoBack else { return }
+    pageError = nil
+    webView?.goBack()
+  }
+  func goForward() {
+    guard canGoForward else { return }
+    pageError = nil
+    webView?.goForward()
+  }
+
   func zoom(_ command: BrowserZoomCommand) {
     guard let webView, webView.browserIsReady else { return }
     switch command {
@@ -325,9 +347,8 @@ final class ChromiumBrowserModel {
     case .zoomOut: webView.zoomOut()
     case .reset: webView.resetZoom()
     }
-    showZoomControls()
+    pageZoom.present()
   }
-  func showZoomControls() { zoomPresentationRequest += 1 }
   func setVisible(_ visible: Bool) {
     if isVisible != visible { retentionRevision += 1; BrowserPageRetention.shared.touch(self) }
     isVisible = visible
@@ -359,7 +380,7 @@ final class ChromiumBrowserModel {
     snapshot = image
   }
   func showDevTools() { webView?.showDevTools() }
-  func focusAddress() { addressFocusRequest += 1 }
+  func openAsNewTab(_ address: String? = nil) { firstPage.newTabURL = address ?? url?.absoluteString }
   func teardown() {
     returnToWorkspace()
     isVisible = false
@@ -372,13 +393,10 @@ final class ChromiumBrowserModel {
     favicons.onShare = nil
   }
   private func resetBrowser(keepingAutomationTarget: Bool = false) {
-    zoomPercent = 100
-    canZoomOut = false
-    canZoomIn = false
-    canResetZoom = false
+    pageZoom.reset()
     synchronized = false
-    completeReady(.failure(ChromiumProtocolError("Browser closed")))
-    readyError = nil
+    readiness.complete(.failure(ChromiumProtocolError("Browser closed")))
+    readiness.forgetFailure()
     if !keepingAutomationTarget { ChromiumAutomationBridge.shared.unregister(paneId) }
     activationTask?.cancel()
     generation = UUID()
@@ -389,8 +407,7 @@ final class ChromiumBrowserModel {
     webView?.closeBrowser()
     webView?.removeFromSuperview()
     webView = nil
-    backgroundHost?.close()
-    backgroundHost = nil
+    backgroundHost.close()
   }
 }
 
@@ -411,26 +428,7 @@ extension ChromiumBrowserModel: RetainedBrowserPage {
       generation == token, retentionRevision == activity, !protectsBrowserPage
     else { return false }
     resetBrowser()
-    userNavigation = false
+    firstPage.followsUser = false
     return true
-  }
-}
-
-private enum BrowserError: LocalizedError {
-  case serverUpdateRequired
-  var errorDescription: String? { "Update the Codevisor server on this machine to use Chromium browser panes." }
-}
-
-extension CVBrowserLinkDestination {
-  var workspaceDestination: BrowserLinkDestination {
-    switch self {
-    case .foregroundTab: .foregroundTab
-    case .window: .window
-    case .splitRight: .split(.trailing)
-    case .splitLeft: .split(.leading)
-    case .splitAbove: .split(.top)
-    case .splitBelow: .split(.bottom)
-    default: .backgroundTab
-    }
   }
 }

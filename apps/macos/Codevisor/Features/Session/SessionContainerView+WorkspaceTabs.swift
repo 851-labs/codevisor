@@ -29,7 +29,11 @@ extension SessionContainerView {
     guard !isSinglePane else { return }
     var workspace = selectedWorkspace
     var state = PaneGroupState()
-    let pane = state.addNewTabPane()
+    var pane = state.addNewTabPane()
+    if activeBrowserModel != nil, let browser = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: nil) {
+      ChromiumBrowserModels.shared.expectNewTab(browser.id, focusingAddress: true)
+      pane = browser
+    }
     let tab = WorkspaceTab(root: .leaf(state))
     workspace.centerTabs.append(tab)
     environment.workspaces.save(workspace)

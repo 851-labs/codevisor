@@ -29,6 +29,7 @@ final class BrowserPane: Pane {
     AnyView(ChromiumBrowserPaneView(model: model))
   }
   func focus() {
+    guard !model.address.keepsFocus else { return }
     model.webView?.focusPage()
   }
   func visibilityChanged(_ visible: Bool) { model.setVisible(visible) }

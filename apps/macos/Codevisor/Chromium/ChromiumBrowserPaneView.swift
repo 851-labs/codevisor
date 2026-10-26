@@ -5,6 +5,7 @@ struct ChromiumBrowserPaneView: View {
   @Bindable var model: ChromiumBrowserModel
   var isDetachedWindow = false
   @State private var hostClaim = 0
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   var body: some View {
     VStack(spacing: 0) {
       if model.viewport != nil { ChromiumViewportControls(model: model) }
@@ -13,13 +14,16 @@ struct ChromiumBrowserPaneView: View {
         if let view = model.webView {
           ChromiumContent(view: view, model: model, isDetachedWindow: isDetachedWindow, claim: hostClaim)
         }
-        if let error = model.errorMessage {
+        if let error = model.pageError {
           ContentUnavailableView {
-            Label("Couldn’t Load Page", systemImage: "network.slash")
+            Label(error.title, systemImage: error.systemImage)
           } description: {
-            Text(error)
+            Text(error.message)
           } actions: {
-            Button("Try Again") { model.reload() }
+            HStack {
+              if model.canGoBack { Button("Go Back") { model.goBack() } }
+              Button("Try Again") { model.reload() }
+            }
           }
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .background(.background)
@@ -28,6 +32,17 @@ struct ChromiumBrowserPaneView: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .overlay(alignment: .topTrailing) {
+        if model.find.isPresented {
+          TranscriptFindBar(model: model.find, prompt: "Find on page")
+            .background(.background, in: .capsule)
+            .frame(width: 340)
+            .padding(.top, 12)
+            .padding(.trailing, 16)
+            .transition(.opacity.combined(with: .offset(y: -6)))
+        }
+      }
+      .animation(Motion.quick(reduceMotion: reduceMotion), value: model.find.isPresented)
     }
     .onAppear {
       if !isDetachedWindow { model.returnToWorkspace() }
@@ -112,10 +127,12 @@ final class ChromiumHostView: NSView {
   private func revealAfterPaint(_ view: CVChromiumView) {
     reveal?.cancel()
     view.alphaValue = 0
-    reveal = Task { [weak view] in
-      if let view { await ChromiumPagePaint.waitUntilPainted(view) }
+    let firstShowing = model?.hasShownPage == false
+    reveal = Task { [weak view, weak model] in
+      if let view { await ChromiumPagePaint.waitUntilPainted(view, firstShowing: firstShowing) }
       guard !Task.isCancelled else { return }
       view?.alphaValue = 1
+      model?.hasShownPage = true
     }
   }
 }

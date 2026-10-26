@@ -153,7 +153,7 @@ struct CommandPaletteCatalog {
 
     let page = [
       CommandPaletteItem(
-        "Open Location", systemImage: "globe", shortcut: KeyboardShortcut("l"), perform: browser.focusAddress),
+        "Open Location", systemImage: "globe", shortcut: KeyboardShortcut("l"), perform: browser.address.focus),
       CommandPaletteItem(
         "Developer Tools", systemImage: "hammer", shortcut: KeyboardShortcut("i", modifiers: [.command, .option]),
         perform: browser.showDevTools),
@@ -174,8 +174,8 @@ struct CommandPaletteCatalog {
     let zoomIn = CommandPaletteItem(.browserZoomIn, systemImage: "plus.magnifyingglass") { browser.zoom(.zoomIn) }
     let zoomOut = CommandPaletteItem(.browserZoomOut, systemImage: "minus.magnifyingglass") { browser.zoom(.zoomOut) }
     let reset = CommandPaletteItem(.browserResetZoom, systemImage: "1.magnifyingglass") { browser.zoom(.reset) }
-    return (browser.canZoomIn ? [zoomIn] : []) + (browser.canZoomOut ? [zoomOut] : [])
-      + (browser.canResetZoom ? [reset] : [])
+    return (browser.pageZoom.canZoomIn ? [zoomIn] : []) + (browser.pageZoom.canZoomOut ? [zoomOut] : [])
+      + (browser.pageZoom.canReset ? [reset] : [])
   }
 
   private var sidebarCommands: [CommandPaletteItem] {

@@ -81,6 +81,11 @@ describe("browser proxy session", () => {
       })
       expect(response.status).toBe(501)
       await response.text()
+      const failure = await fetch(
+        `http://127.0.0.1:${address.port}/v1/browser/proxy-failure?authority=example.com:443`
+      )
+      expect(failure.status).toBe(501)
+      await failure.text()
       expect(await proxyRequest(address.port)).toBe(501)
     } finally {
       await new Promise<void>((resolve) => http.close(() => resolve()))
@@ -108,5 +113,22 @@ describe("browser proxy session", () => {
     ).toBe(403)
     const response = await fetch(`${server.url}/v1/browser/proxy-session`, { method: "POST" })
     expect(response.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("reports why the proxy last failed to reach a site, to native clients only", async () => {
+    const { server } = await start()
+    const failure = await jsonRequest(server, "/v1/browser/proxy-failure?authority=example.com:443")
+    expect(failure).toMatchObject({ status: 200, body: { failure: null } })
+    expect(await jsonRequest(server, "/v1/browser/proxy-failure")).toMatchObject({
+      status: 200,
+      body: { failure: null }
+    })
+    expect(
+      (
+        await jsonRequest(server, "/v1/browser/proxy-failure?authority=example.com:443", {
+          headers: { Origin: "http://localhost:3000" }
+        })
+      ).status
+    ).toBe(403)
   })
 })

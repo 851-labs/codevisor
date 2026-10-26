@@ -55,6 +55,7 @@ interface ServerIdentity {
 
 const proxySessionRouteFor = ({ request, url }: RouteContext): RouteHandler | undefined => {
   if (isMethodRoute(request, url, "POST", "/v1/browser/proxy-session")) return writeProxySession
+  if (isMethodRoute(request, url, "GET", "/v1/browser/proxy-failure")) return writeProxyFailure
   return undefined
 }
 
@@ -92,6 +93,15 @@ const writeProxySession = ({ routeState, request, response }: RouteContext): voi
 
   response.setHeader("Cache-Control", "no-store")
   writeJson(response, 201, routeState.browserProxy.session)
+}
+
+const writeProxyFailure = ({ routeState, request, response, url }: RouteContext): void => {
+  if (request.headers.origin !== undefined) throw new HttpFailure(403, "Native clients only")
+  if (routeState.browserProxy === undefined) throw new HttpFailure(501, "Browser proxy unavailable")
+
+  const authority = url.searchParams.get("authority") ?? ""
+  response.setHeader("Cache-Control", "no-store")
+  writeJson(response, 200, { failure: routeState.browserProxy.failure(authority) ?? null })
 }
 
 const writeEventCursor = ({ services, response }: RouteContext): Promise<void> =>
