@@ -1,40 +1,23 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-import {
-  checkoutBaseline,
-  expandBaseline,
-  portableBaseline,
-  writeBaseline
-} from "./swift-lint-baseline.mjs"
+import { baselineFile, lint, supportsRelativeBaselines, writeBaseline } from "./swift-lint.mjs"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 const swiftlintMissing = spawnSync("swiftlint", ["version"]).error !== undefined
 const needsSwiftLint = { skip: swiftlintMissing && "SwiftLint is not installed" }
 
-const violation = (file) => ({
-  violation: { reason: "too long", location: { file, line: 3, character: 1 } },
-  text: "func long() {"
-})
-
-test("a baseline written in one checkout applies in another", () => {
-  const written = portableBaseline(
-    [violation("file:///work/a/packages/B.swift"), violation("file:///work/a/apps/A.swift")],
-    "/work/a"
-  )
-  assert.deepEqual(
-    written.map((entry) => entry.violation.location.file),
-    ["apps/A.swift", "packages/B.swift"]
-  )
-  assert.deepEqual(
-    checkoutBaseline(written, "/work/b").map((entry) => entry.violation.location.file),
-    ["file:///work/b/apps/A.swift", "file:///work/b/packages/B.swift"]
-  )
+test("only SwiftLint releases that write relative baseline paths are accepted", () => {
+  for (const version of ["0.65.1", "0.65.2", "0.66.0", "0.100.0", "1.0.0", "0.65.1\n"]) {
+    assert.ok(supportsRelativeBaselines(version), version)
+  }
+  for (const version of ["0.65.0", "0.64.9", "0.9.0", "0.65"]) {
+    assert.ok(!supportsRelativeBaselines(version), version)
+  }
 })
 
 const swiftFunction = (name, bodyLines) =>
@@ -47,24 +30,20 @@ const swiftFunction = (name, bodyLines) =>
   ].join("\n")
 
 function swiftPackage(t) {
-  const root = mkdtempSync(join(tmpdir(), "codevisor-swiftlint-"))
+  const scratch = join(repoRoot, "tmp")
+  mkdirSync(scratch, { recursive: true })
+  const root = mkdtempSync(join(scratch, "swiftlint-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   copyFileSync(join(repoRoot, ".swiftlint.yml"), join(root, ".swiftlint.yml"))
   mkdirSync(join(root, "packages"))
-  writeFileSync(join(root, ".swiftlint-baseline.json"), "[]")
+  writeFileSync(join(root, baselineFile), "[]")
   return {
     write: (...functions) =>
       writeFileSync(
         join(root, "packages/Example.swift"),
         `enum Example {\n${functions.join("\n\n")}\n}\n`
       ),
-    lint: () => {
-      const expanded = join(root, "expanded.json")
-      expandBaseline(root, expanded)
-      return spawnSync("swiftlint", ["lint", "--quiet", "--strict", "--baseline", expanded], {
-        cwd: root
-      }).status
-    },
+    lint: () => lint(root, "ignore"),
     root
   }
 }
@@ -82,6 +61,8 @@ test("the baseline keeps old long functions but fails grown or new ones", needsS
   swift.write(swiftFunction("long", 60))
   assert.notEqual(swift.lint(), 0)
   assert.equal(writeBaseline(swift.root), 1)
+  const [entry] = JSON.parse(readFileSync(join(swift.root, baselineFile), "utf8"))
+  assert.equal(entry.violation.location.file, "packages/Example.swift")
   assert.equal(swift.lint(), 0)
   swift.write(swiftFunction("long", 61))
   assert.notEqual(swift.lint(), 0)

@@ -112,8 +112,7 @@ const checkSteps = [
     "**/*.swift",
     ".swiftlint.yml",
     ".swiftlint-baseline.json",
-    "scripts/swift-lint.sh",
-    "scripts/swift-lint-baseline.mjs"
+    "scripts/swift-lint.mjs"
   ]),
   pathStep(
     "swift:test",
