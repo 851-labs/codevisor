@@ -143,6 +143,15 @@ export async function containerHostAddress(engine) {
   return gateway
 }
 
+const MAX_CONTAINER_NAME_LENGTH = 63
+
+export const devContainerName = (serverName, worktreeHash) => {
+  const suffix = `-${worktreeHash.slice(0, 10)}`
+  const slug = serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const prefix = `codevisor-dev-${slug}`.slice(0, MAX_CONTAINER_NAME_LENGTH - suffix.length)
+  return `${prefix.replace(/-+$/, "")}${suffix}`
+}
+
 export const wantsContainerDesktop = (environment = process.env) =>
   environment.CODEVISOR_DEV_CONTAINER_DESKTOP === "1"
 
@@ -336,7 +345,7 @@ export async function launchDevRemoteServer({
   } = containerContext
   const binary = engine === "apple" ? "container" : "docker"
   const toContainerPath = (hostPath) => hostPath.replace(remoteRootHost, "/codevisor-data")
-  const containerName = `codevisor-dev-${serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${worktreeHash.slice(0, 10)}`
+  const containerName = devContainerName(serverName, worktreeHash)
   const env = {}
   for (const [key, value] of Object.entries(environment)) {
     if (!key.startsWith("CODEVISOR_") && !key.startsWith("HERDMAN_")) continue

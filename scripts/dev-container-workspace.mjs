@@ -34,9 +34,7 @@ const workspaceSignature = async (repoRoot, packageDirectories) => {
   const hash = createHash("sha256")
   for (const name of ROOT_KEEP) {
     const path = join(repoRoot, name)
-    if (!(await pathExists(path))) continue
-    hash.update(name)
-    hash.update(await readFile(path))
+    if (await pathExists(path)) await hashTree(hash, path, name)
   }
   for (const directory of packageDirectories.toSorted()) {
     hash.update(directory)
@@ -47,6 +45,17 @@ const workspaceSignature = async (repoRoot, packageDirectories) => {
     }
   }
   return hash.digest("hex")
+}
+
+const hashTree = async (hash, path, name) => {
+  hash.update(name)
+  if (!(await stat(path)).isDirectory()) {
+    hash.update(await readFile(path))
+    return
+  }
+  for (const entry of (await readdir(path)).toSorted()) {
+    await hashTree(hash, join(path, entry), join(name, entry))
+  }
 }
 
 const newestMtime = async (path) => {
@@ -71,6 +80,7 @@ export async function syncLinuxWorkspace(repoRoot, containerRoot) {
   }
   await mkdir(appRoot, { recursive: true })
   for (const name of ROOT_KEEP) {
+    await rm(join(appRoot, name), { recursive: true, force: true })
     await copyIfPresent(join(repoRoot, name), join(appRoot, name))
   }
   for (const directory of packageDirectories) {

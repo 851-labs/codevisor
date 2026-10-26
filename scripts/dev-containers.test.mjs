@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -7,6 +7,7 @@ import test from "node:test"
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
 import {
   alignDevCloudCredentialUrl,
+  devContainerName,
   sweepStaleContainers,
   devRemoteHomeMounts
 } from "./dev-containers.mjs"
@@ -106,6 +107,39 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test("syncLinuxWorkspace mirrors dependency patches and resyncs when one changes", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-devc-patches-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await makeFakeRepo(root)
+  await mkdir(join(root, "patches"))
+  await writeFile(join(root, "patches/dep@1.0.0.patch"), "patch-v1")
+  const containerRoot = join(root, "tmp/container")
+
+  const first = await syncLinuxWorkspace(root, containerRoot)
+  const unchanged = await syncLinuxWorkspace(root, containerRoot)
+  assert.equal(first.changed, true)
+  assert.equal(unchanged.changed, false)
+  assert.equal(await readFile(join(first.appRoot, "patches/dep@1.0.0.patch"), "utf8"), "patch-v1")
+
+  await rm(join(root, "patches/dep@1.0.0.patch"))
+  await writeFile(join(root, "patches/dep@2.0.0.patch"), "patch-v2")
+  const repatched = await syncLinuxWorkspace(root, containerRoot)
+  assert.equal(repatched.changed, true)
+  assert.deepEqual(await readdir(join(repatched.appRoot, "patches")), ["dep@2.0.0.patch"])
+})
+
+test("devContainerName fits the 63-character container ID limit for long worktree names", () => {
+  const hash = "21b435c091ffffff"
+
+  assert.equal(
+    devContainerName("Dev Cloud (main)", hash),
+    "codevisor-dev-dev-cloud-main-21b435c091"
+  )
+  const long = devContainerName("Dev Cloud (fix-dev-macos-crash-from-patches-835)", hash)
+  assert.ok(long.length <= 63)
+  assert.match(long, /^codevisor-dev-dev-cloud-fix-[a-z0-9-]*[a-z0-9]-21b435c091$/)
 })
 
 test("alignDevCloudCredentialUrl preserves credentials while changing the runner route", async () => {
