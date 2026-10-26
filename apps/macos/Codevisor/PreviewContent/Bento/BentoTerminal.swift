@@ -101,6 +101,7 @@
 
     private static var running: [BentoLocalShell] = []
     private var isClosed = false
+    private var isMasterClosed = false
     private let pid: pid_t
     private let master: Int32
     private let reader: DispatchSourceRead
@@ -133,6 +134,10 @@
       reader.setEventHandler { [weak self] in
         MainActor.assumeIsolated { self?.drain() }
       }
+      reader.setCancelHandler { [weak self, master] in
+        Darwin.close(master)
+        MainActor.assumeIsolated { self?.isMasterClosed = true }
+      }
       reader.resume()
       Self.running.append(self)
     }
@@ -147,10 +152,12 @@
     }
 
     func write(_ bytes: [UInt8]) {
+      guard !isMasterClosed else { return }
       bytes.withUnsafeBufferPointer { _ = Darwin.write(master, $0.baseAddress, $0.count) }
     }
 
     func resize(cols: Int, rows: Int) {
+      guard !isMasterClosed else { return }
       var size = winsize(ws_row: UInt16(rows), ws_col: UInt16(cols), ws_xpixel: 0, ws_ypixel: 0)
       _ = ioctl(master, TIOCSWINSZ, &size)
     }
@@ -159,15 +166,23 @@
       guard !isClosed else { return }
       isClosed = true
       onOutput = nil
-      reader.cancel()
       type(Self.interrupt)
+      reader.cancel()
       kill(-pid, SIGHUP)
       var status: Int32 = 0
-      for _ in 0..<Self.exitPolls where waitpid(pid, &status, WNOHANG) == 0 {
+      var isReaped = false
+      for _ in 0..<Self.exitPolls {
+        isReaped = waitpid(pid, &status, WNOHANG) != 0
+        if isReaped { break }
         usleep(Self.exitPollInterval)
       }
       kill(-pid, SIGKILL)
-      Darwin.close(master)
+      guard !isReaped else { return }
+      let pid = pid
+      DispatchQueue.global().async {
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
+      }
     }
 
     private func drain() {

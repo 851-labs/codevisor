@@ -31,14 +31,15 @@
     private var fullBounds: CGRect { CGRect(x: 0, y: 0, width: image.width, height: image.height) }
 
     private func sectionBounds(_ section: Int) throws -> CGRect {
-      let boxes = boxRuns()
+      let column = rightmostVisibleColumn() - Self.insetPastRoundedCorners
+      guard column >= 0 else { throw BentoCaptureError.sectionNotFound(section) }
+      let boxes = boxRuns(atColumn: column)
       guard boxes.indices.contains(section) else { throw BentoCaptureError.sectionNotFound(section) }
       let top = section == 0 ? 0 : boxes[section - 1].upperBound
       return CGRect(x: 0, y: top, width: image.width, height: boxes[section].upperBound - top)
     }
 
-    private func boxRuns() -> [Range<Int>] {
-      let column = rightmostVisibleColumn() - Self.insetPastRoundedCorners
+    private func boxRuns(atColumn column: Int) -> [Range<Int>] {
       var runs: [Range<Int>] = []
       var start: Int?
       for y in 0...image.height {
