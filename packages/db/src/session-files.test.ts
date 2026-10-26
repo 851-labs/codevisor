@@ -3,12 +3,13 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 import type { FileMetadata } from "@codevisor/api"
-import { afterEach, describe, expect, it } from "vitest"
+import Database from "better-sqlite3"
+import { afterEach, describe, expect, it, onTestFinished } from "vitest"
 
 import { makeAttachmentStore, type AttachmentStore } from "./attachment-store.js"
 import { removeUnreferencedAttachments } from "./attachment-sweep.js"
-import type { CodevisorDatabaseService } from "./index.js"
-import { memoryDatabase, run } from "./test-support.js"
+import { makeDatabase, type CodevisorDatabaseService } from "./index.js"
+import { memoryDatabase, run, tempDatabase } from "./test-support.js"
 
 const directories: Array<string> = []
 
@@ -41,6 +42,19 @@ const storeFile = async (
   )
 }
 
+const rewindToV78 = (filename: string): void => {
+  const sqlite = new Database(filename)
+  try {
+    sqlite.exec(`
+      drop table session_files;
+      alter table files drop column purge_with_chats;
+      delete from schema_migrations where id >= 79;
+    `)
+  } finally {
+    sqlite.close()
+  }
+}
+
 const sendFiles = (
   db: CodevisorDatabaseService,
   sessionId: string,
@@ -70,6 +84,26 @@ describe("chat-owned files", () => {
     expect(await run(db.getFileMetadata(own.id))).toBeUndefined()
     expect(await run(db.getFileMetadata(shared.id))).toEqual(shared)
     expect(await run(db.getFileMetadata(draft.id))).toEqual(draft)
+  })
+
+  it("never purges a file stored before chats owned their files", async () => {
+    const filename = tempDatabase()
+    const store = temporaryStore()
+    const before = await run(makeDatabase({ filename, serverId: "local" }))
+    const old = await storeFile(before, store, "old")
+    await run(before.close)
+    rewindToV78(filename)
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    onTestFinished(() => run(db.close))
+    const project = await run(db.createProject({ folderPath: "/tmp/session-files-legacy" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const fresh = await storeFile(db, store, "fresh")
+    await sendFiles(db, session.id, [old, fresh])
+
+    await run(db.deleteSession(session.id))
+
+    expect(await run(db.getFileMetadata(old.id))).toEqual(old)
+    expect(await run(db.getFileMetadata(fresh.id))).toBeUndefined()
   })
 
   it("removes stored bytes and named copies no file refers to", async () => {

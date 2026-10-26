@@ -56,7 +56,7 @@ const sessionFileSql = {
   link: `insert or ignore into session_files (session_id, file_id)
            select ?, id from files where id = ?`,
   owned: "select file_id from session_files where session_id = ?",
-  deleteUnowned: `delete from files
-           where id = ? and not exists (select 1 from session_files where file_id = ?)`,
+  deleteUnowned: `delete from files where id = ? and purge_with_chats = 1
+           and not exists (select 1 from session_files where file_id = ?)`,
   storedFiles: "select id, sha256 from files"
 }

@@ -66,7 +66,6 @@ describe("file delivery", () => {
 
   it("keeps valid deliverables when other links are missing or point to directories", async () => {
     const f = await fixture()
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
     writeFileSync(join(f.folder, "valid.png"), "valid")
     await f.output({
       sessionUpdate: "agent_message_chunk",
@@ -77,9 +76,7 @@ describe("file delivery", () => {
     })
     await f.end()
     expect((await f.item()).attachments).toMatchObject([{ name: "valid.png" }])
-    expect((await f.item()).text).toContain("![Missing](./missing.png)")
-    expect(errors).toHaveBeenCalledWith(expect.stringContaining("not a regular file"))
-    expect(errors).toHaveBeenCalledWith(expect.stringContaining("ENOENT"))
+    expect((await f.item()).text).toContain("![Missing](./missing.png)\n![Directory](./)")
   })
 
   it("reports missing generated image data without leaving the turn streaming", async () => {
@@ -106,6 +103,23 @@ describe("file delivery", () => {
         })
       })
     )
+  })
+
+  it("keeps the link when storing a deliverable fails", async () => {
+    const f = await fixture()
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    writeFileSync(join(f.folder, "clip.mp4"), "clip")
+    vi.spyOn(f.services.attachments, "putStream").mockImplementationOnce(async (source) => {
+      for await (const chunk of source) expect(chunk.length).toBeGreaterThan(0)
+      throw new Error("disk full")
+    })
+    await f.output({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "[Clip](./clip.mp4)" }
+    })
+    await f.end()
+    expect((await f.item()).text).toBe("[Clip](./clip.mp4)")
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("disk full"))
   })
 
   it("handles storage failures even when the storage provider rejects without an Error", async () => {

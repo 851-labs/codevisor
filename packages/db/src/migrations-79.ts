@@ -11,6 +11,8 @@ export const migrations79: ReadonlyArray<Migration> = [
         primary key (session_id, file_id)
       );
       create index session_files_file on session_files(file_id);
+      alter table files add column purge_with_chats integer not null default 1;
+      update files set purge_with_chats = 0;
     `
   }
 ]

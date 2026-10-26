@@ -10,6 +10,7 @@ import { run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
   drop table session_files;
+  alter table files drop column purge_with_chats;
   drop table browser_favicons;
   drop trigger fleet_turn_ended;
   drop table fleet_pending_turns;

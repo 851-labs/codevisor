@@ -8,6 +8,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
+import { capturablePath } from "./capture-scope.js"
 import {
   localArtifactPath,
   markdownFileReferences,
@@ -134,7 +135,9 @@ export const captureMarkdownFiles = async (
   let markdown = source
   for (const reference of [...markdownFileReferences(source)].toReversed()) {
     if (!shouldCaptureFile(reference)) continue
-    const path = localArtifactPath(reference.target, cwd)
+    const target = localArtifactPath(reference.target, cwd)
+    if (target === undefined) continue
+    const path = await capturablePath(target, cwd)
     if (path === undefined) continue
     try {
       const file = await captureAssistantFile(services, { path }, attachments)

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto"
-import { rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
+import { jsonRequest, listSubjectEvents, run, tempDirs, waitFor } from "../test-support.js"
 import { createBot, decodeBot, endedTurns, setUp, type Running } from "./bot-test-support.js"
 
 const decodePage = decode(BotConversationPage)
@@ -125,6 +126,10 @@ describe("bot conversation edges", () => {
       text: "here",
       attachments: [{ path: join(bot.rootPath, "absent.txt") }]
     })
+    const folder = await send(running, bot.sessionId, {
+      text: "here",
+      attachments: [{ path: bot.rootPath }]
+    })
     const renamed = await send(running, bot.sessionId, {
       text: "",
       attachments: [{ path: file, name: "Release notes.txt" }]
@@ -134,6 +139,8 @@ describe("bot conversation edges", () => {
       422, 422, 422, 200
     ])
     expect(JSON.stringify(absent.body)).toContain("Could not attach")
+    expect(folder.status).toBe(422)
+    expect(JSON.stringify(folder.body)).toContain("not a regular file")
     expect((await conversation(running, bot.sessionId)).messages).toMatchObject([
       { sender: "bot", text: "", attachments: [{ name: "Release notes.txt" }] }
     ])
@@ -150,6 +157,31 @@ describe("bot conversation edges", () => {
     const fileId = message?.attachments?.[0]?.fileId
     expect(message?.text).toBe(`Look ![Shot](https://attachments.codevisor.invalid/${fileId})`)
     expect(await (await fetch(`${running.server.url}/v1/files/${fileId}`)).text()).toBe("pixels")
+  })
+
+  it("captures only files inside the bot's folder or a temp folder, leaving other paths as text", async () => {
+    const { running, bot } = await startBot()
+    const scratch = mkdtempSync(join(tmpdir(), "codevisor-capture-scope-"))
+    tempDirs.push(scratch)
+    writeFileSync(join(scratch, "allowed.png"), "temp pixels")
+    symlinkSync("/etc/hosts", join(bot.rootPath, "leak.png"))
+    const refused = [
+      "![Absolute](/etc/hosts)",
+      "![Home](~/../../etc/hosts)",
+      "![Symlink](leak.png)",
+      "![Traversal](../../../../../../../../../../etc/hosts)"
+    ]
+
+    await send(running, bot.sessionId, {
+      text: [...refused, `![Allowed](${join(scratch, "allowed.png")})`].join("\n")
+    })
+
+    const [message] = (await conversation(running, bot.sessionId)).messages
+    const fileId = message?.attachments?.[0]?.fileId
+    expect(message?.attachments?.map((file) => file.name)).toEqual(["allowed.png"])
+    expect(message?.text).toBe(
+      [...refused, `![Allowed](https://attachments.codevisor.invalid/${fileId})`].join("\n")
+    )
   })
 
   it("tells the user why the bot couldn't reply, and leaves other chats alone", async () => {
