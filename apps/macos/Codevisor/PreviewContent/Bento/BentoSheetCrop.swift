@@ -56,7 +56,9 @@
       let alpha = Double(pixel[pixel.startIndex + 3])
       let remaining = max(0, alpha - Double(scrimAlpha)) / (Double(opaque) - Double(scrimAlpha))
       let scale = alpha == 0 ? 0 : remaining * Double(opaque) / alpha
-      return pixel.prefix(3).map { UInt8(min(Double(opaque), Double($0) * scale)) } + [UInt8(remaining * Double(opaque))]
+      return pixel.prefix(3).map { UInt8(min(Double(opaque), Double($0) * scale)) } + [
+        UInt8(remaining * Double(opaque))
+      ]
     }
 
     private static func context(

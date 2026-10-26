@@ -166,10 +166,11 @@
         "memory": capacity(hardware.memory), "disk": capacity(hardware.disk),
       ]
       if let gpuLoad = hardware.gpuLoad {
-        stats["gpu"] = [
-          "model": hardware.chip, "cores": hardware.gpuCores as Any, "usedPercent": gpuLoad.last ?? 0,
-          "history": loadSamples(gpuLoad),
-        ] as [String: Any]
+        stats["gpu"] =
+          [
+            "model": hardware.chip, "cores": hardware.gpuCores as Any, "usedPercent": gpuLoad.last ?? 0,
+            "history": loadSamples(gpuLoad),
+          ] as [String: Any]
       }
       return decode(stats)
     }
@@ -261,7 +262,9 @@
     private static func loadSamples(_ load: [Double]) -> [[String: Any]] {
       load.enumerated().map { index, percent in
         let age = Double(load.count - 1 - index) * DemoWorld.loadSampleInterval
-        return ["at": ISO8601DateFormatter().string(from: DemoWorld.now.addingTimeInterval(-age)), "usedPercent": percent]
+        return [
+          "at": ISO8601DateFormatter().string(from: DemoWorld.now.addingTimeInterval(-age)), "usedPercent": percent,
+        ]
       }
     }
 
