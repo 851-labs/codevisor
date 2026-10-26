@@ -13,8 +13,8 @@ struct SessionTurnStop {
     return Self(stopReason: stopReason, outcome: outcome, detail: detail, kind: kind, retryable: retryable)
   }
 
-  static func failed(_ detail: String, retryable: Bool = false) -> Self {
-    Self(stopReason: nil, outcome: .failed, detail: detail, retryable: retryable)
+  static func failed(_ detail: String, kind: String? = nil, retryable: Bool = false) -> Self {
+    Self(stopReason: nil, outcome: .failed, detail: detail, kind: kind, retryable: retryable)
   }
 
   func close(_ turn: inout AssistantTurn, endedAt: Date) {

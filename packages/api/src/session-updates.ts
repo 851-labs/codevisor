@@ -22,6 +22,8 @@ export type TurnInitiator = typeof TurnInitiator.Type
 export const TurnStopKind = Schema.Literals([
   "usageLimit",
   "authRequired",
+  "forbidden",
+  "harnessFailed",
   "interrupted",
   "pausedForUpdate"
 ])

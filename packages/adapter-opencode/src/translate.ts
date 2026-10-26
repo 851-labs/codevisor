@@ -37,6 +37,7 @@ export interface Tokens {
 export interface TurnErrorInfo {
   readonly type: string
   readonly message: string
+  readonly status?: number
 }
 
 export interface TurnState {
@@ -117,9 +118,13 @@ export const totalTokens = (tokens: Tokens): number =>
 
 const errorInfo = (value: unknown): TurnErrorInfo | undefined => {
   const error = record(value)
-  return typeof error?.type === "string"
-    ? { type: error.type, message: typeof error.message === "string" ? error.message : "" }
-    : undefined
+  if (typeof error?.type !== "string") return undefined
+
+  return {
+    type: error.type,
+    message: typeof error.message === "string" ? error.message : "",
+    ...(typeof error.status === "number" ? { status: error.status } : {})
+  }
 }
 
 const without = <K, V>(map: ReadonlyMap<K, V>, key: K): Map<K, V> => {

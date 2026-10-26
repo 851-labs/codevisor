@@ -4,8 +4,6 @@ import { turnLifecycleEvent, type AcpPromptResult } from "@codevisor/adapter-acp
 import {
   adapterPromise,
   normalizePromptInput,
-  resetTimeIn,
-  usageLimitStop,
   type AgentSessionHandle,
   type AgentSessionMetadata,
   type HarnessAccountContext,
@@ -53,7 +51,7 @@ import {
   type TrackedTool,
   type TurnState
 } from "./translate.js"
-import { isOpenCodeUsageLimitMessage } from "./usage-limits.js"
+import { failedTurnResult } from "./turn-failures.js"
 
 export interface OpenCodeSessionInfo {
   readonly id: string
@@ -322,13 +320,7 @@ export const openServerSession = (
     }
     const { terminal, turn } = await outcome
     const error = terminal === "interrupted" ? undefined : turnFailure(turn)
-    if (error?.type === "provider.auth") return { stopReason: "end_turn", stopKind: "authRequired" }
-    if (error !== undefined && isOpenCodeUsageLimitMessage(error.message))
-      return {
-        stopReason: "end_turn",
-        ...usageLimitStop(error.message, resetTimeIn(error.message))
-      }
-    if (error !== undefined) throw new Error(error.message || "OpenCode prompt failed")
+    if (error !== undefined) return failedTurnResult(error)
     await sendUsage(turn)
     return { stopReason: current.cancelled ? "cancelled" : stopReason(turn, terminal) }
   }

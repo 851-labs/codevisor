@@ -80,7 +80,8 @@ enum ServerSessionEventDecoder {
           errorMessage(from: event.payload),
           retryable: event.payload["retryable"]?.boolValue == true,
           chatItemId: event.payload["chatItemId"]?.stringValue
-            .flatMap(UUID.init(uuidString:))
+            .flatMap(UUID.init(uuidString:)),
+          stopKind: event.payload["stopKind"]?.stringValue
         )
       ]
     case "session.authRequired":

@@ -201,6 +201,7 @@ describe("CodexProvider", () => {
     expect(events.at(-1)?.payload).toMatchObject({
       retryable: true,
       stopDetail: "The server is overloaded.",
+      stopKind: "harnessFailed",
       turnState: "ended"
     })
   })
@@ -342,7 +343,7 @@ describe("CodexProvider", () => {
     expect(events.at(-1)?.payload).toMatchObject({ stopKind: "authRequired", turnState: "ended" })
   })
 
-  it("keeps an unexplained failure as-is while the ChatGPT account is still signed in", async () => {
+  it("ends an unexplained failure as a harness failure while the ChatGPT account is signed in", async () => {
     const { client, created, events } = await setup()
     client.account = { account: { type: "chatgpt" }, requiresOpenaiAuth: true }
     const turnRequested = client.nextRequest("turn/start")
@@ -361,8 +362,11 @@ describe("CodexProvider", () => {
       }
     })
     await prompt
-    expect(events.at(-1)?.payload).toMatchObject({ stopDetail: "boom", turnState: "ended" })
-    expect(payloadOf(events.at(-1)).stopKind).toBeUndefined()
+    expect(events.at(-1)?.payload).toMatchObject({
+      stopDetail: "boom",
+      stopKind: "harnessFailed",
+      turnState: "ended"
+    })
   })
 
   it("labels a retryable HTTP 429 as temporary request throttling", async () => {

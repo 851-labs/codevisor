@@ -195,6 +195,42 @@ describe("sdkConnection.prompt", () => {
 
   it.each([
     {
+      name: "Claude's organization block",
+      error: acp.RequestError.internalError(
+        { errorKind: "oauth_org_not_allowed" },
+        "Your organization has disabled Claude subscription access for Claude Code"
+      ),
+      stopDetail: "Your organization has disabled Claude subscription access for Claude Code"
+    },
+    {
+      name: "an HTTP 403 in the error data",
+      error: acp.RequestError.internalError(
+        { codexErrorInfo: { responseStreamConnectionFailed: {} }, httpStatusCode: 403 },
+        "Request blocked"
+      ),
+      stopDetail: "Request blocked"
+    },
+    {
+      name: "a 403 error code",
+      error: new acp.RequestError(403, "The caller does not have permission"),
+      stopDetail: "The caller does not have permission"
+    },
+    {
+      name: "a region block",
+      error: acp.RequestError.internalError(
+        undefined,
+        "User location is not supported in your region for the API use."
+      ),
+      stopDetail: "User location is not supported in your region for the API use."
+    }
+  ])("ends the turn as forbidden for $name", async ({ error, stopDetail }) => {
+    expect(await promptRejectedWith(error)).toEqual(
+      Result.succeed({ stopDetail, stopKind: "forbidden", stopReason: "end_turn" })
+    )
+  })
+
+  it.each([
+    {
       name: "a plain rate limit",
       error: new acp.RequestError(429, "Rate limit exceeded. Try again later.")
     },

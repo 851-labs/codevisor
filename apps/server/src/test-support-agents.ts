@@ -264,6 +264,9 @@ export const makeAgents = (): AgentRuntimeService & {
         if (text === "prompt fails") {
           throw new Error("prompt failed")
         }
+        if (text === "prompt forbidden") {
+          throw new Error("API Error: 403 Your organization has disabled access")
+        }
         if (text === "token expired") {
           throw new Error("authentication token expired")
         }

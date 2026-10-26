@@ -140,8 +140,6 @@ const turnNotice = (event: EventEnvelope): string | undefined => {
 }
 
 const stopNotice = (payload: Record<string, unknown>): string | undefined => {
-  if (typeof payload.stopKind !== "string") return undefined
-
   return typeof payload.stopDetail === "string" ? payload.stopDetail : undefined
 }
 

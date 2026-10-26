@@ -149,8 +149,9 @@ final class TranscriptDetailsLoader {
       turn.stopKind = stopKind
       turn.retryable = retryable
       turn.isGenerating = false
-    case let .failed(message, retryable, _):
+    case let .failed(message, retryable, _, stopKind):
       turn.stopDetail = message
+      turn.stopKind = stopKind
       turn.retryable = retryable
       turn.isGenerating = false
     case let .authenticationRequired(message):

@@ -7,6 +7,7 @@ import {
   resultMessage,
   resultWith,
   run,
+  sdkMessage,
   startTestSession,
   streamEvent,
   systemMessage
@@ -174,27 +175,53 @@ describe("ClaudeProvider", () => {
     const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
     expect(endedPayload?.stopDetail).toBe(errorText)
     expect(endedPayload?.retryable).toBe(true)
+    expect(endedPayload?.stopKind).toBe("harnessFailed")
     expect(retryingEvents()).toHaveLength(3)
   })
 
-  it("surfaces a permanent API error immediately, with no retry", async () => {
-    const { fake, events, created } = await startTestSession()
+  it.each(["success", "error_during_execution"] as const)(
+    "surfaces a permanent API error immediately, despite a %s result",
+    async (subtype) => {
+      const { fake, events, created } = await startTestSession()
 
-    const promptPromise = run(created.handle.prompt("do work"))
+      const promptPromise = run(created.handle.prompt("do work"))
+      await fake.nextPrompt()
+
+      fake.push(assistantErrorMessage("model_not_found"))
+      fake.push(resultMessage(subtype))
+      const result = await promptPromise
+      expect(result.stopReason).toBe("end_turn")
+
+      expect(
+        fake.userMessages.filter((message) => message.message.content === "Please continue.")
+      ).toHaveLength(0)
+      const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
+      expect(endedPayload?.stopDetail).toBe("The selected model is unavailable.")
+      expect(endedPayload?.stopKind).toBe("harnessFailed")
+      expect(events.some((event) => event.kind === "session.error")).toBe(false)
+    }
+  )
+
+  it("ends a 403 organization rejection as forbidden, with Claude's reason, despite a successful result", async () => {
+    const { fake, events, created } = await startTestSession()
+    const promptPromise = run(created.handle.prompt("hello"))
     await fake.nextPrompt()
 
-    fake.push(assistantErrorMessage("model_not_found"))
-    fake.push(resultMessage("error_during_execution"))
-    const result = await promptPromise
-    expect(result.stopReason).toBe("end_turn")
+    const detail =
+      "Your organization has disabled Claude subscription access for Claude Code · Use an Anthropic API key instead, or ask your admin to enable access"
+    fake.push(sdkMessage({ ...assistantApiErrorMessage(detail), error: "oauth_org_not_allowed" }))
+    fake.push(
+      sdkMessage({ ...resultWith({ is_error: true, result: detail }), api_error_status: 403 })
+    )
+    await promptPromise
 
-    expect(
-      fake.userMessages.filter((message) => message.message.content === "Please continue.")
-    ).toHaveLength(0)
-    const endedPayload = events.map(payloadOf).find((payload) => payload.turnState === "ended")
-    expect(endedPayload?.stopDetail).toBe("The selected model is unavailable.")
-    expect(endedPayload?.stopKind).toBeUndefined()
-    expect(events.some((event) => event.kind === "session.error")).toBe(false)
+    expect(events.map(payloadOf).find((payload) => payload.turnState === "ended")).toMatchObject({
+      stopReason: "end_turn",
+      stopKind: "forbidden",
+      stopDetail: detail
+    })
+    expect(fake.userMessages).toHaveLength(1)
+    expect(events.some((event) => payloadOf(event).retrying !== undefined)).toBe(false)
   })
 
   it("ends a signed-out turn as needing sign-in", async () => {

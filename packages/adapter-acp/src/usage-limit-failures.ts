@@ -50,8 +50,8 @@ const isClaudeUsageLimit = (failure: AcpRequestFailure): boolean =>
   dataField(failure, "errorKind") === "rate_limit" &&
   claudeUsageLimitText.test(failure.message)
 
-const dataField = (failure: AcpRequestFailure, key: string): unknown =>
+export const dataField = (failure: AcpRequestFailure, key: string): unknown =>
   isRecord(failure.data) ? failure.data[key] : undefined
 
-const userFacingDetail = (message: string): string =>
+export const userFacingDetail = (message: string): string =>
   message.replace(internalErrorPrefix, "").replace(geminiTip, "").trim()

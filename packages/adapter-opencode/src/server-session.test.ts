@@ -206,10 +206,35 @@ describe("OpenCode server session turns", () => {
     expect(limit.result).toMatchObject({
       success: { stopKind: "usageLimit", resetsAt: expect.any(String) }
     })
-    const broken = await failing({ type: "provider.api", message: "Model exploded" })
-    expect(broken.result).toMatchObject({ failure: { message: "Model exploded" } })
     const refused = await failing({ type: "provider.content-filter", message: "" })
     expect(refused.result).toMatchObject({ success: { stopReason: "refusal" } })
+  })
+
+  it.each([
+    [
+      "a 403 OpenCode reports as an auth error",
+      { type: "provider.auth", message: "Your organization has disabled access", status: 403 },
+      { stopKind: "forbidden", stopDetail: "Your organization has disabled access" }
+    ],
+    [
+      "a provider permission error",
+      { type: "provider.invalid-request", message: "permission_error: Request not allowed" },
+      { stopKind: "forbidden", stopDetail: "permission_error: Request not allowed" }
+    ],
+    [
+      "a provider server error",
+      { type: "provider.internal", message: "Model exploded", status: 500 },
+      { stopKind: "harnessFailed", stopDetail: "Model exploded" }
+    ],
+    [
+      "an error without a message",
+      { type: "unknown", message: "" },
+      { stopKind: "harnessFailed", stopDetail: "OpenCode prompt failed" }
+    ]
+  ])("ends the turn with the failure kind for %s", async (_, error, stop) => {
+    const failed = await failing(error)
+    expect(failed.result).toMatchObject({ success: { stopReason: "end_turn", ...stop } })
+    expect(failed.ended[0]).toMatchObject(stop)
   })
 
   it("fails the running turn and later prompts once the event stream ends", async () => {

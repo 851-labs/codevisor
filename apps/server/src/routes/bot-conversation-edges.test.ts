@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, waitFor } from "../test-support.js"
+import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
 import { createBot, decodeBot, endedTurns, setUp, type Running } from "./bot-test-support.js"
 
 const decodePage = decode(BotConversationPage)
@@ -153,37 +153,57 @@ describe("bot conversation edges", () => {
     ])
   })
 
-  it("posts a stopped turn's reason but none of the bot's own reply", async () => {
+  it.each([
+    ["prompt fails", "harnessFailed"],
+    ["prompt forbidden", "forbidden"],
+    ["token expired", "authRequired"]
+  ])("marks a harness that throws on %j as %s", async (text, stopKind) => {
     const { running, bot } = await startBot()
-    const image = await storeImage(running)
-    const agentSessionId = await holdTurn(running, bot.sessionId)
 
-    await running.agents.emit(agentSessionId, {
-      kind: "session.output",
-      subjectId: agentSessionId,
-      payload: {
-        sessionUpdate: "agent_message_chunk",
-        messageId: "reply-1",
-        content: {
-          type: "text",
-          text: `Here it is ![shot](https://attachments.codevisor.invalid/${image.fileId})`
-        }
-      }
-    })
-    await endTurn(running, agentSessionId, { stopReason: "end_turn" })
-    await endTurn(running, agentSessionId, {
-      stopReason: "refusal",
-      stopKind: "usageLimit",
-      stopDetail: "You've hit your usage limit"
-    })
+    await prompt(running, bot.sessionId, { text })
 
-    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
-    expect(await transcript(running, bot.sessionId)).toEqual([
-      ["user", "prompt until cancelled"],
-      ["notice", "You've hit your usage limit"]
-    ])
-    await cancel(running, bot.sessionId)
+    const failure = () =>
+      listSubjectEvents(running.services, bot.sessionId).find(
+        (event) => event.kind === "session.error"
+      )
+    await waitFor(() => failure() !== undefined)
+    expect(failure()?.payload).toMatchObject({ stopKind })
   })
+
+  it.each([undefined, "usageLimit"])(
+    "posts a stopped turn's reason with stop kind %s but none of the bot's own reply",
+    async (stopKind) => {
+      const { running, bot } = await startBot()
+      const image = await storeImage(running)
+      const agentSessionId = await holdTurn(running, bot.sessionId)
+
+      await running.agents.emit(agentSessionId, {
+        kind: "session.output",
+        subjectId: agentSessionId,
+        payload: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "reply-1",
+          content: {
+            type: "text",
+            text: `Here it is ![shot](https://attachments.codevisor.invalid/${image.fileId})`
+          }
+        }
+      })
+      await endTurn(running, agentSessionId, { stopReason: "end_turn" })
+      await endTurn(running, agentSessionId, {
+        stopReason: "refusal",
+        ...(stopKind === undefined ? {} : { stopKind }),
+        stopDetail: "You've hit your usage limit"
+      })
+
+      await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
+      expect(await transcript(running, bot.sessionId)).toEqual([
+        ["user", "prompt until cancelled"],
+        ["notice", "You've hit your usage limit"]
+      ])
+      await cancel(running, bot.sessionId)
+    }
+  )
 
   it("shows the files a user sends and replays a resent message only once", async () => {
     const { running, bot } = await startBot()

@@ -57,7 +57,7 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
   case retrying(RetryStatus)
   case updateGate(waiting: Bool, harnessName: String)
   case autoResume(SessionAutoResume?)
-  case failed(String, retryable: Bool = false, chatItemId: UUID? = nil)
+  case failed(String, retryable: Bool = false, chatItemId: UUID? = nil, stopKind: String? = nil)
   case authenticationRequired(String)
   case backgroundTasks([BackgroundTaskInfo])
   case runtimeState(SessionRuntimeState)

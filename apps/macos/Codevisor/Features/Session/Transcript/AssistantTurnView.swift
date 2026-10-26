@@ -231,6 +231,15 @@ struct AssistantTurnView: View {
         actionTitle: "Sign In",
         action: openHarnessAccountSettings
       )
+    } else if let failure = turn.harnessFailure {
+      HarnessFailureNotice(
+        failure: failure,
+        detail: message,
+        harnessName: transcriptController?.activeHarnessName,
+        inBotConversation: transcriptController?.presentsBotConversation == true,
+        retry: retryAction,
+        switchAccount: openHarnessAccountSettings
+      )
     } else if let transcriptController,
       transcriptController.canRetryTurn(turnID)
     {
@@ -242,6 +251,11 @@ struct AssistantTurnView: View {
     } else {
       ChatErrorRow(message)
     }
+  }
+
+  private var retryAction: (() -> Void)? {
+    guard let transcriptController, transcriptController.canRetryTurn(turnID) else { return nil }
+    return { Task { await transcriptController.retryTurn(turnID) } }
   }
 
   private func openHarnessAccountSettings() {

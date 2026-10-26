@@ -61,6 +61,7 @@ const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessag
   let isErrorReply: boolean
   if (typeof assistantError === "string") {
     isErrorReply = recordStructuredAssistantError(session, assistantError, usageLimitText)
+    session.lastErrorText = messageProse(message.message.content)
   } else {
     isErrorReply = recordUnstructuredAssistantError(session, message, usageLimitText)
   }

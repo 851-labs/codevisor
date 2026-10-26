@@ -141,6 +141,12 @@ extension SessionController {
     harnesses.first { $0.id == selectedHarnessId }
   }
 
+  public var activeHarnessName: String? {
+    guard let activeHarnessId else { return nil }
+    let reported = harnesses.first { $0.id == activeHarnessId }?.name
+    return HarnessRegistry.displayName(for: activeHarnessId, reported: reported)
+  }
+
   public var isConnecting: Bool {
     if case .connecting = status { return true }
     return false
@@ -198,7 +204,7 @@ extension SessionController {
       return false
     }).flatMap { item in
       guard case let .assistant(message) = item else { return nil }
-      return message.id == id && message.turn.retryable
+      return message.id == id && (message.turn.retryable || message.turn.harnessFailure != nil)
     } ?? false
   }
 

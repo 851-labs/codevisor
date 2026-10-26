@@ -72,7 +72,9 @@ enum TranscriptBotRowAssembly {
   private static func withoutStopNotice(
     _ messages: [TranscriptBotMessage], for stoppedTurn: AssistantMessage?
   ) -> [TranscriptBotMessage] {
-    guard let last = messages.last, last.sender == .notice, last.text == stoppedTurn?.turn.stopDetail else {
+    guard let detail = stoppedTurn?.turn.stopDetail, let last = messages.last, last.sender == .notice,
+      last.text.hasSuffix(detail)
+    else {
       return messages
     }
     return Array(messages.dropLast())

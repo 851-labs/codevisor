@@ -1,4 +1,4 @@
-import { AgentRuntimeError } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, harnessFailureKind } from "@codevisor/agent-runtime"
 import type {
   AttachmentRef,
   ConnectedClient,
@@ -457,7 +457,7 @@ const runPromptInBackground = async (
     }
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
       message: failureMessage(cause),
-      ...(signedOut ? { stopKind: "authRequired" } : {}),
+      stopKind: signedOut ? "authRequired" : harnessFailureKind({ message: failureMessage(cause) }),
       serverId
     })
   }

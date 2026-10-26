@@ -1,3 +1,4 @@
+import { harnessFailureKind } from "@codevisor/agent-runtime"
 import type { TurnStopKind } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
@@ -63,12 +64,20 @@ export const codexErrorDetails = (
         serializedInfo
       ) ||
       /\b(overload(?:ed)?|server (?:is )?busy|rate.?limit|429|503)\b/i.test(message))
-  return {
-    message,
-    retryable,
-    ...(usageLimitExceeded ? { stopKind: "usageLimit" as const } : {})
-  }
+  return { message, retryable, ...failureStopKind(signal, message) }
 }
+
+const failureStopKind = (
+  signal: ReturnType<typeof codexErrorSignal>,
+  message: string
+): { stopKind?: TurnStopKind } => {
+  if (signal.kind === "usageLimitExceeded") return { stopKind: "usageLimit" }
+  if (deniesAccess(signal, message)) return { stopKind: "forbidden" }
+  return {}
+}
+
+const deniesAccess = (signal: ReturnType<typeof codexErrorSignal>, message: string): boolean =>
+  harnessFailureKind({ message, status: signal.statusCode, code: signal.kind }) === "forbidden"
 
 const codexRetryMessage = (
   signal: ReturnType<typeof codexErrorSignal>,

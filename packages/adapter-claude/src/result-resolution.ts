@@ -1,7 +1,8 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import { usageLimitStop } from "@codevisor/agent-runtime"
+import { harnessFailureStop, usageLimitStop } from "@codevisor/agent-runtime"
 import type { TurnStopKind } from "@codevisor/api"
 
+import { recordOf } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 import {
   rejectedUsageLimitDetail,
@@ -17,6 +18,12 @@ const PERMANENT_ASSISTANT_ERRORS = new Set([
   "billing_error",
   "invalid_request",
   "model_not_found"
+])
+
+const LIMIT_SUBTYPES = new Set([
+  "error_max_turns",
+  "error_max_budget_usd",
+  "error_max_structured_output_retries"
 ])
 
 const TRANSIENT_ASSISTANT_ERRORS = new Set(["overloaded", "rate_limit", "server_error", "unknown"])
@@ -53,15 +60,38 @@ export const classifyResult = (
   const lastError = session.lastAssistantError ?? ""
   const usageLimit = usageLimitResolution(session, message, subtype, lastError)
   if (usageLimit !== undefined) return usageLimit
-  if (lastError === "authentication_failed" && (message.is_error || subtype !== "success")) {
-    return {
-      kind: "end",
-      stopReason: "end_turn",
-      stopDetail: describeStop(subtype, lastError),
-      stopKind: "authRequired"
-    }
+  if (PERMANENT_ASSISTANT_ERRORS.has(lastError)) {
+    return permanentErrorResolution(session, message, subtype, lastError)
   }
   return recoveryResolution(session, subtype, stopReasonRaw, lastError)
+}
+
+const permanentErrorResolution = (
+  session: ClaudeSession,
+  message: SDKMessage & { type: "result" },
+  subtype: string,
+  lastError: string
+): TurnResolution => {
+  const failure = {
+    message: permanentErrorDetail(session, subtype, lastError),
+    status: apiErrorStatus(message),
+    code: lastError
+  }
+  return { kind: "end", stopReason: "end_turn", ...harnessFailureStop(failure) }
+}
+
+const apiErrorStatus = (message: SDKMessage & { type: "result" }): number | undefined => {
+  const status = recordOf(message).api_error_status
+  return typeof status === "number" ? status : undefined
+}
+
+const permanentErrorDetail = (
+  session: ClaudeSession,
+  subtype: string,
+  lastError: string
+): string => {
+  if (lastError === "authentication_failed") return describeStop(subtype, lastError)
+  return session.lastErrorText ?? describeStop(subtype, lastError)
 }
 
 const resolveUsageLimitDetail = (
@@ -114,10 +144,8 @@ const recoveryResolution = (
     (subtype === "success" && TRUNCATION_STOP_REASONS.has(stopReasonRaw)) ||
     lastError === "max_output_tokens"
   const turnLimit = subtype === "error_max_turns"
-  const permanentError = subtype !== "success" && PERMANENT_ASSISTANT_ERRORS.has(lastError)
   const transient =
-    !permanentError &&
-    (subtype === "error_during_execution" || TRANSIENT_ASSISTANT_ERRORS.has(lastError))
+    subtype === "error_during_execution" || TRANSIENT_ASSISTANT_ERRORS.has(lastError)
 
   const recovery = boundedRecovery(session, truncated, turnLimit, transient)
   if (recovery !== undefined) return recovery
@@ -166,6 +194,7 @@ const terminalResolution = (
     kind: "end",
     stopReason: subtype === "error_max_turns" ? "max_turn_requests" : "end_turn",
     ...(transient ? { retryable: true } : {}),
+    ...(LIMIT_SUBTYPES.has(subtype) ? {} : { stopKind: "harnessFailed" }),
     stopDetail:
       transient && session.lastErrorText !== undefined
         ? session.lastErrorText

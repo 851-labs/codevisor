@@ -148,11 +148,24 @@ const announceTurnEnd = (session: CodexSession, ending: TurnEnding): void => {
     .then(() =>
       confirmSignedOut(session, ending.status, ending.reportedError, ending.sharedAuthRejected)
     )
+    .then((terminalError) => classifiedFailure(ending, terminalError))
     .then((terminalError) => emitTurnEnded(session, ending, terminalError))
     .then((terminalError) => {
       settlePendingPrompt(session, ending, terminalError)
     })
 }
+
+const classifiedFailure = (ending: TurnEnding, error: TurnError): TurnError => {
+  if (!unclassifiedFailure(ending, error)) return error
+
+  return { ...error, stopKind: "harnessFailed" }
+}
+
+const unclassifiedFailure = (
+  ending: TurnEnding,
+  error: TurnError
+): error is NonNullable<TurnError> =>
+  error !== undefined && error.stopKind === undefined && ending.stopReason === "end_turn"
 
 const emitTurnEnded = async (
   session: CodexSession,

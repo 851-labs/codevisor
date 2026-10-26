@@ -86,8 +86,8 @@ extension SessionModel {
     case let .finished(stopReason, stopDetail, stopKind, retryable, chatItemId):
       let stop = SessionTurnStop.finished(stopReason, detail: stopDetail, kind: stopKind, retryable: retryable)
       finishTurn(stop, chatItemId: chatItemId)
-    case let .failed(message, retryable, chatItemId):
-      applyFailure(message, retryable: retryable, chatItemId: chatItemId)
+    case let .failed(message, retryable, chatItemId, stopKind):
+      applyFailure(message, kind: stopKind, retryable: retryable, chatItemId: chatItemId)
     case let .authenticationRequired(message):
       requireAuthentication(message)
     case let .retrying(retry):
@@ -143,9 +143,9 @@ extension SessionModel {
     if !activeTurnContinues { endTurn() }
   }
 
-  private func applyFailure(_ message: String, retryable: Bool, chatItemId: UUID?) {
+  private func applyFailure(_ message: String, kind: String?, retryable: Bool, chatItemId: UUID?) {
     errorMessage = message
-    finishTurn(.failed(message, retryable: retryable), chatItemId: chatItemId)
+    finishTurn(.failed(message, kind: kind, retryable: retryable), chatItemId: chatItemId)
   }
 
   private func requireAuthentication(_ message: String) {

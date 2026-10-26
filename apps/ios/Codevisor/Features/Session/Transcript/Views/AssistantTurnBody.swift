@@ -200,14 +200,7 @@ struct AssistantTurnBody: View {
       UsageLimitNotice(
         autoResume: turn.autoResume,
         inBotConversation: transcriptController?.presentsBotConversation == true,
-        switchAccount: { [weak transcriptController] in
-          guard let controller = transcriptController,
-            let harnessId = controller.activeHarnessId
-          else { return }
-          HarnessSignInRequest(
-            serverId: controller.project.serverId, harnessId: harnessId
-          ).post()
-        },
+        switchAccount: requestHarnessSignIn,
         cancelAutoResume: { [weak transcriptController] in
           Task { await transcriptController?.cancelAutoResume() }
         }
@@ -219,14 +212,16 @@ struct AssistantTurnBody: View {
       ChatErrorRow(
         message,
         actionTitle: "Sign In",
-        action: { [weak transcriptController] in
-          guard let controller = transcriptController,
-            let harnessId = controller.activeHarnessId
-          else { return }
-          HarnessSignInRequest(
-            serverId: controller.project.serverId, harnessId: harnessId
-          ).post()
-        }
+        action: requestHarnessSignIn
+      )
+    } else if let failure = turn.harnessFailure {
+      HarnessFailureNotice(
+        failure: failure,
+        detail: message,
+        harnessName: transcriptController?.activeHarnessName,
+        inBotConversation: transcriptController?.presentsBotConversation == true,
+        retry: retryAction,
+        switchAccount: requestHarnessSignIn
       )
     } else if let transcriptController,
       transcriptController.canRetryTurn(turnId)
@@ -239,6 +234,16 @@ struct AssistantTurnBody: View {
     } else {
       ChatErrorRow(message)
     }
+  }
+
+  private var retryAction: (() -> Void)? {
+    guard let transcriptController, transcriptController.canRetryTurn(turnId) else { return nil }
+    return { Task { await transcriptController.retryTurn(turnId) } }
+  }
+
+  private func requestHarnessSignIn() {
+    guard let transcriptController, let harnessId = transcriptController.activeHarnessId else { return }
+    HarnessSignInRequest(serverId: transcriptController.project.serverId, harnessId: harnessId).post()
   }
 
   private var imageActions: MarkdownImageActions {

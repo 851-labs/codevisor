@@ -69,6 +69,36 @@ extension SessionModelTests {
     #expect(model.errorMessage == "The provider connection failed.")
   }
 
+  @Test("A harness failure keeps its kind on the failed turn")
+  func harnessFailureKindSurfacesOnTurn() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    client.echoOnPrompt = false
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+
+    await model.send("do work")
+    client.emit(
+      ServerEventEnvelope(
+        id: 1, serverId: "local", kind: "session.error",
+        subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
+        payload: .object([
+          "message": .string("API Error: 403 Your organization has disabled access"),
+          "stopKind": .string("forbidden"),
+        ])
+      ))
+    await settleUntil { model.isSending == false }
+
+    guard case let .assistant(message) = model.conversation.last else {
+      Issue.record("expected assistant")
+      return
+    }
+    #expect(message.turn.stopDetail == "API Error: 403 Your organization has disabled access")
+    #expect(message.turn.harnessFailure == .forbidden)
+  }
+
   @Test("A restored-runtime failure preserves history and its recovery kind")
   func restoredRuntimeFailurePreservesHistory() async {
     let sessionId = UUID()

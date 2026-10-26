@@ -40,8 +40,10 @@ public struct TranscriptInlineCard: View {
     case let .pending(message, actions):
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
         TranscriptInlineCardText(title: title, message: message)
-        TranscriptInlineCardActions(actions: actions)
-          .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)
+        if !actions.isEmpty {
+          TranscriptInlineCardActions(actions: actions)
+            .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)
+        }
       }
     case let .resolved(outcome):
       TranscriptInlineCardResolvedRow(title: title, outcome: outcome)

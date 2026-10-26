@@ -14,6 +14,7 @@ import {
 import { isRecord } from "@codevisor/api"
 import type { SessionConfigOption } from "@codevisor/api"
 
+import { forbiddenPromptStop } from "./access-failures.js"
 import {
   normalizeAcpConfigOptions,
   sessionMetadata,
@@ -257,9 +258,11 @@ export const sdkConnection = (
           if (isAuthenticationRequired(cause)) {
             return { stopReason: "end_turn", stopKind: "authRequired" as const }
           }
-          const usageLimit = usageLimitPromptStop(cause, options.customization?.isUsageLimitFailure)
-          if (usageLimit === undefined) throw cause
-          return usageLimit
+          const stop =
+            usageLimitPromptStop(cause, options.customization?.isUsageLimitFailure) ??
+            forbiddenPromptStop(cause)
+          if (stop === undefined) throw cause
+          return stop
         } finally {
           const remaining = (prompting.get(sessionId) ?? 1) - 1
           if (remaining === 0) prompting.delete(sessionId)
