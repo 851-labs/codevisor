@@ -6,6 +6,8 @@ export { formatStars, GITHUB_REPO_URL }
 
 export const DISCORD_INVITE_URL = "https://discord.gg/WzX6BpfaRH"
 export const DOWNLOAD_URL = "/download/macos"
+export const DOWNLOAD_SECTION_ID = "download"
+export const DOWNLOAD_SECTION_URL = `/#${DOWNLOAD_SECTION_ID}`
 
 export function useGitHubStars(): number | null {
   return useLoaderData({ from: "__root__" }).githubStars

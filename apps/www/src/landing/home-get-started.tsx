@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 
-import { DOWNLOAD_URL } from "../components/header-kit"
+import { DOWNLOAD_SECTION_ID, DOWNLOAD_URL } from "../components/header-kit"
 import { captureAnalytics } from "../lib/analytics"
 import { DEVICE_SHADOW, IPhonePro, MacBookPro } from "./home-devices"
 import { SectionHead } from "./section-head"
@@ -138,7 +138,7 @@ function AppleGlyph() {
 
 export function GetStarted() {
   return (
-    <section id="everywhere" className="scroll-mt-14 px-5 py-20 sm:px-8">
+    <section id={DOWNLOAD_SECTION_ID} className="scroll-mt-14 px-5 py-20 sm:px-8">
       <SectionHead eyebrow="Get started" title="Runs wherever you work." />
       <div className="mt-10 grid gap-3 md:grid-cols-3">
         <PlatformCard

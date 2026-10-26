@@ -2,7 +2,7 @@ import {
   DISCORD_INVITE_URL,
   DISCORD_LABEL,
   DiscordMark,
-  DOWNLOAD_URL,
+  DOWNLOAD_SECTION_URL,
   formatStars,
   GITHUB_REPO_URL,
   GitHubMark,
@@ -48,7 +48,7 @@ export function SiteNav() {
             )}
           </a>
           <a
-            href={DOWNLOAD_URL}
+            href={DOWNLOAD_SECTION_URL}
             className="rounded-full bg-text px-3 py-1 font-medium text-black transition-opacity hover:opacity-90"
           >
             Download

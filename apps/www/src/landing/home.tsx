@@ -2,7 +2,7 @@ import {
   DISCORD_INVITE_URL,
   DISCORD_LABEL,
   DiscordMark,
-  DOWNLOAD_URL,
+  DOWNLOAD_SECTION_URL,
   formatStars,
   GITHUB_REPO_URL,
   GitHubMark,
@@ -110,7 +110,7 @@ function Header() {
           <DiscordMark className="size-4" />
         </a>
         <a
-          href={DOWNLOAD_URL}
+          href={DOWNLOAD_SECTION_URL}
           className="rounded-full bg-[light-dark(#161618,#f4f4f6)] px-4 py-1.5 font-semibold text-[light-dark(#ffffff,#111111)] transition-opacity hover:opacity-85"
         >
           Download
@@ -134,7 +134,7 @@ function Hero() {
       </p>
       <div className="mt-9 flex justify-center">
         <a
-          href={DOWNLOAD_URL}
+          href={DOWNLOAD_SECTION_URL}
           className="inline-flex h-12 items-center rounded-full bg-[light-dark(#161618,#f4f4f6)] px-7 text-[16px] font-semibold text-[light-dark(#ffffff,#111111)] transition-opacity hover:opacity-85"
         >
           Download
