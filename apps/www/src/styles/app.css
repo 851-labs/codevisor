@@ -51,7 +51,7 @@ html:has(.landing) {
   --color-text: light-dark(#161618, #f0f0f2);
   --color-muted: light-dark(#6e6e73, #8d8d93);
   --color-hairline: light-dark(#e1e1e6, #27272b);
-  --color-signal: light-dark(#007aff, #0a84ff);
+  --color-signal: #007aff;
   --color-go: light-dark(#1f8a4c, #3ccf7a);
   background-color: var(--color-page);
 }
@@ -83,7 +83,7 @@ html:has(.landing) {
 }
 
 .landing ::selection {
-  background-color: light-dark(rgba(0, 122, 255, 0.22), rgba(10, 132, 255, 0.4));
+  background-color: light-dark(rgba(0, 122, 255, 0.22), rgba(0, 122, 255, 0.4));
 }
 
 .landing .landing-copy {
