@@ -24,6 +24,8 @@ describe("Cursor terminal errors", () => {
 
   it("holds only possible leading sentinels", () => {
     expect(couldBeCursorTerminalError("\n\nError: Retriable")).toBe(true)
+    expect(couldBeCursorTerminalError("\n\nError: [unauth")).toBe(true)
+    expect(couldBeCursorTerminalError("\n\nPlease sign")).toBe(true)
     expect(couldBeCursorTerminalError("Error: RetriableError: [unavailable] Error")).toBe(true)
     expect(couldBeCursorTerminalError("This text mentions RetriableError safely.")).toBe(false)
     expect(parseCursorTerminalError("This text mentions RetriableError safely.")).toBeUndefined()

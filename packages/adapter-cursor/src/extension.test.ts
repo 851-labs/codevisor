@@ -182,6 +182,7 @@ describe("Cursor ACP recovery", () => {
     await expect(pending).resolves.toEqual({
       retryable: true,
       stopDetail: "Cursor is temporarily unavailable.",
+      stopKind: "harnessFailed",
       stopReason: "end_turn"
     })
     expect(base.prompts).toEqual(["Do the work", CONTINUE_PROMPT, CONTINUE_PROMPT, CONTINUE_PROMPT])
@@ -224,13 +225,42 @@ describe("Cursor ACP recovery", () => {
     }
   })
 
-  it("does not retry a non-retriable Cursor terminal error", async () => {
+  it.each([
+    {
+      name: "a non-retriable error",
+      text: "Error: NonRetriableError: Invalid request",
+      stop: { stopDetail: "Invalid request", stopKind: "harnessFailed" }
+    },
+    {
+      name: "a permission error",
+      text: "Error: NonRetriableError: [permission_denied] Forbidden",
+      stop: { stopDetail: "[permission_denied] Forbidden", stopKind: "forbidden" }
+    },
+    {
+      name: "a settings notice",
+      text: "\n\nCheck your settings to continue",
+      stop: { stopDetail: "Check your settings to continue", stopKind: "harnessFailed" }
+    },
+    {
+      name: "a sign-in notice",
+      text: "\n\nPlease sign in to continue",
+      stop: { stopKind: "authRequired" }
+    },
+    {
+      name: "a rejected credential",
+      text: "\n\nError: [unauthenticated] Backend rejected authentication. Verify this is a User API Key for the same endpoint/environment, then rerun with --debug for request-level auth logs.",
+      stop: { stopKind: "authRequired" }
+    }
+  ])("ends the turn without retrying on $name", async ({ text, stop }) => {
     const { base, connection, events } = makeHarness([
-      (emit) => emit(agentChunk("Error: NonRetriableError: Authentication failed"))
+      (emit) => {
+        emit(agentChunk(text.slice(0, 9)))
+        emit(agentChunk(text.slice(9)))
+      }
     ])
 
     await expect(Effect.runPromise(connection.prompt(SESSION_ID, "Do the work"))).resolves.toEqual({
-      stopDetail: "Authentication failed",
+      ...stop,
       stopReason: "end_turn"
     })
     expect(base.prompts).toEqual(["Do the work"])
@@ -239,7 +269,7 @@ describe("Cursor ACP recovery", () => {
   })
 })
 
-describe("Cursor usage limits", () => {
+describe("Cursor account notices", () => {
   it.each(["Upgrade your plan to continue", "Add a payment method to continue"])(
     "ends the turn at the account's usage limit when Cursor only says %s",
     async (notice) => {
@@ -257,6 +287,20 @@ describe("Cursor usage limits", () => {
       expect(outputText(events)).toBe("")
     }
   )
+
+  it("streams a reply that only starts like a sign-in notice", async () => {
+    const { connection, events } = makeHarness([
+      (emit) => {
+        emit(agentChunk("Please sign in to continue"))
+        emit(agentChunk(" with the deploy, then rerun it."))
+      }
+    ])
+
+    await expect(
+      Effect.runPromise(connection.prompt(SESSION_ID, "How do I deploy?"))
+    ).resolves.toEqual({ stopReason: "end_turn" })
+    expect(outputText(events)).toBe("Please sign in to continue with the deploy, then rerun it.")
+  })
 
   it("streams a reply that only starts like a usage-limit notice", async () => {
     const { connection, events } = makeHarness([

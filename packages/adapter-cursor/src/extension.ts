@@ -4,9 +4,10 @@ import {
   runtimeEventFromNotification,
   type AcpAgentConnection,
   type AcpConnectionExtensionContext,
+  type AcpPromptResult,
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
-import { usageLimitStop, type RuntimeEvent } from "@codevisor/agent-runtime"
+import { harnessFailureStop, usageLimitStop, type RuntimeEvent } from "@codevisor/agent-runtime"
 import { isPlainRecord } from "@codevisor/api"
 import type { SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
@@ -25,6 +26,7 @@ import {
   type CursorAskQuestionResponse,
   type CursorCreatePlanResponse
 } from "./cursor.js"
+import type { CursorTerminalError } from "./errors.js"
 import { record } from "./internal.js"
 import { CursorStreamNormalizer } from "./stream.js"
 import {
@@ -103,6 +105,25 @@ class CursorRecoveryController {
   }
 }
 
+const endsTurn = (error: CursorTerminalError, transientRetries: number): boolean =>
+  error.kind !== "retriable" || transientRetries >= CURSOR_MAX_TRANSIENT_RETRIES
+
+const terminalStop = (error: CursorTerminalError): AcpPromptResult => {
+  if (error.kind === "usage_limit") {
+    return { stopReason: "end_turn", ...usageLimitStop(error.message) }
+  }
+  if (error.kind === "auth_required") return { stopReason: "end_turn", stopKind: "authRequired" }
+  if (error.kind === "retriable") {
+    return {
+      retryable: true,
+      stopDetail: error.message,
+      stopKind: "harnessFailed",
+      stopReason: "end_turn"
+    }
+  }
+  return { stopReason: "end_turn", ...harnessFailureStop({ message: error.message }) }
+}
+
 const emitAll = (
   emit: (event: RuntimeEvent) => void,
   events: ReadonlyArray<RuntimeEvent>
@@ -144,21 +165,9 @@ const extendCursorConnection = (
           normalizer.cancelTurn(sessionId)
           return { stopReason: "cancelled" }
         }
-        if (terminalError.kind === "usage_limit") {
+        if (endsTurn(terminalError, transientRetries)) {
           emitAll(emit, normalizer.completeTurn(sessionId))
-          return { stopReason: "end_turn", ...usageLimitStop(terminalError.message) }
-        }
-        if (terminalError.kind !== "retriable") {
-          emitAll(emit, normalizer.completeTurn(sessionId))
-          return { stopDetail: terminalError.message, stopReason: "end_turn" }
-        }
-        if (transientRetries >= CURSOR_MAX_TRANSIENT_RETRIES) {
-          emitAll(emit, normalizer.completeTurn(sessionId))
-          return {
-            retryable: true,
-            stopDetail: terminalError.message,
-            stopReason: "end_turn"
-          }
+          return terminalStop(terminalError)
         }
 
         transientRetries += 1

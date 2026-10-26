@@ -4,6 +4,7 @@ export type CursorTerminalErrorKind =
   | "action_required"
   | "cancelled"
   | "usage_limit"
+  | "auth_required"
 
 export interface CursorTerminalError {
   readonly kind: CursorTerminalErrorKind
@@ -19,12 +20,19 @@ const ERROR_NAMES = [
   "CancelledError"
 ] as const
 
-const ERROR_PREFIXES = ERROR_NAMES.map((name) => `Error: ${name}:`)
+const UNAUTHENTICATED_PREFIX = "Error: [unauthenticated]"
 
-const USAGE_LIMIT_NOTICES = ["Upgrade your plan to continue", "Add a payment method to continue"]
+const ERROR_PREFIXES = [...ERROR_NAMES.map((name) => `Error: ${name}:`), UNAUTHENTICATED_PREFIX]
+
+const ACTION_NOTICES: ReadonlyMap<string, CursorTerminalErrorKind> = new Map([
+  ["Upgrade your plan to continue", "usage_limit"],
+  ["Add a payment method to continue", "usage_limit"],
+  ["Please sign in to continue", "auth_required"],
+  ["Check your settings to continue", "action_required"]
+])
 
 export const couldBeCursorTerminalError = (text: string): boolean =>
-  couldBeErrorSentinel(text.trimStart()) || couldBeUsageLimitNotice(text.trim())
+  couldBeErrorSentinel(text.trimStart()) || couldBeActionNotice(text.trim())
 
 const cursorErrorMessage = (kind: CursorTerminalErrorKind, detail: string): string => {
   const coded = /^\[([^\]]+)\]\s*(.*)$/s.exec(detail)
@@ -52,7 +60,7 @@ export const parseCursorTerminalError = (text: string): CursorTerminalError | un
     /^\s*Error:\s*(RetriableError|NonRetriableError|ActionRequiredError|CancelledError):\s*(.*?)\s*$/s.exec(
       text
     )
-  if (match === null) return usageLimitNotice(text)
+  if (match === null) return unauthenticatedError(text) ?? actionNotice(text)
   const name = match[1]
   const rawDetail = match[2] ?? ""
   const kind = terminalErrorKind(name)
@@ -67,11 +75,19 @@ export const parseCursorTerminalError = (text: string): CursorTerminalError | un
 const couldBeErrorSentinel = (candidate: string): boolean =>
   ERROR_PREFIXES.some((prefix) => prefix.startsWith(candidate) || candidate.startsWith(prefix))
 
-const couldBeUsageLimitNotice = (candidate: string): boolean =>
-  USAGE_LIMIT_NOTICES.some((notice) => notice.startsWith(candidate))
+const couldBeActionNotice = (candidate: string): boolean =>
+  [...ACTION_NOTICES.keys()].some((notice) => notice.startsWith(candidate))
 
-const usageLimitNotice = (text: string): CursorTerminalError | undefined => {
+const unauthenticatedError = (text: string): CursorTerminalError | undefined => {
+  const detail = text.trim()
+  if (!detail.startsWith(UNAUTHENTICATED_PREFIX)) return undefined
+  const rawDetail = detail.slice(UNAUTHENTICATED_PREFIX.length).trim()
+  return { kind: "auth_required", message: rawDetail, rawDetail, retryable: false }
+}
+
+const actionNotice = (text: string): CursorTerminalError | undefined => {
   const notice = text.trim()
-  if (!USAGE_LIMIT_NOTICES.includes(notice)) return undefined
-  return { kind: "usage_limit", message: notice, rawDetail: notice, retryable: false }
+  const kind = ACTION_NOTICES.get(notice)
+  if (kind === undefined) return undefined
+  return { kind, message: notice, rawDetail: notice, retryable: false }
 }
