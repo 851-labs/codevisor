@@ -4,8 +4,7 @@ import Testing
 
 struct ScreenSharingMachineSettingsTests {
   static let original = ScreenSharingMachineSettings(
-    name: "tuftlord", connection: "VNC", address: "tuftlord.local:5900",
-    signIn: .init(userName: "tuftlord", hasSavedPassword: true), dynamicResolution: true,
+    name: "tuftlord", connection: "VNC", address: "tuftlord.local:5900", dynamicResolution: true,
     displays: [.init(id: "a", name: "Built-in"), .init(id: "b", name: "Studio Display")], preferredDisplayId: "a")
 
   @Test func anUntouchedDraftChangesNothing() {
@@ -49,34 +48,5 @@ struct ScreenSharingMachineSettingsTests {
     draft.settings.sound = .init(enabled: true, volume: 1)
     #expect(draft.changes(from: withSound).isEmpty)
     #expect(ScreenSharingMachineSettingsDraft(Self.original).changes(from: Self.original).sound == nil)
-  }
-
-  @Test func signInChangesReconnect() {
-    var draft = ScreenSharingMachineSettingsDraft(Self.original)
-    draft.settings.signIn?.userName = "  admin "
-    #expect(draft.changes(from: Self.original) == .init(userName: "admin"))
-    draft = ScreenSharingMachineSettingsDraft(Self.original)
-    draft.changingPassword = true
-    #expect(draft.changes(from: Self.original).isEmpty, "Change… with nothing typed keeps the saved one")
-    draft.newPassword = "secret"
-    #expect(draft.changes(from: Self.original) == .init(password: .replace("secret")))
-    #expect(draft.changes(from: Self.original).reconnects)
-    draft = ScreenSharingMachineSettingsDraft(Self.original)
-    draft.forgettingPassword = true
-    #expect(draft.changes(from: Self.original) == .init(password: .forget))
-  }
-
-  @Test func forgettingWhatIsntSavedAndSignInWithoutASectionChangeNothing() {
-    var unsaved = Self.original
-    unsaved.signIn?.hasSavedPassword = false
-    var draft = ScreenSharingMachineSettingsDraft(unsaved)
-    draft.forgettingPassword = true
-    #expect(draft.changes(from: unsaved).isEmpty)
-    var app = Self.original
-    app.signIn = nil
-    draft = ScreenSharingMachineSettingsDraft(app)
-    draft.newPassword = "ignored"
-    draft.changingPassword = true
-    #expect(draft.changes(from: app).isEmpty, "a machine without its own sign-in has nothing to change")
   }
 }

@@ -7,14 +7,6 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
   }
 
-  public struct SignIn: Equatable, Sendable {
-    public var userName: String
-    public var hasSavedPassword: Bool
-    public init(userName: String, hasSavedPassword: Bool) {
-      self.userName = userName; self.hasSavedPassword = hasSavedPassword
-    }
-  }
-
   public struct Sound: Equatable, Sendable {
     public var enabled: Bool
     public var volume: Double
@@ -24,7 +16,6 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var name: String
   public var connection: String
   public var address: String?
-  public var signIn: SignIn?
   public var dynamicResolution: Bool?
   public var dynamicResolutionNote: String?
   public var highDynamicRange: Bool?
@@ -35,48 +26,37 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var sound: Sound?
 
   public init(
-    name: String, connection: String, address: String? = nil, signIn: SignIn? = nil, dynamicResolution: Bool? = nil,
+    name: String, connection: String, address: String? = nil, dynamicResolution: Bool? = nil,
     displays: [Display] = [], preferredDisplayId: String? = nil, lastConnected: Date? = nil, sound: Sound? = nil
   ) {
     self.sound = sound
-    self.name = name; self.connection = connection; self.address = address; self.signIn = signIn
+    self.name = name; self.connection = connection; self.address = address
     self.dynamicResolution = dynamicResolution; self.displays = displays
     self.preferredDisplayId = preferredDisplayId; self.lastConnected = lastConnected
   }
 }
 
 public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
-  public enum Password: Equatable, Sendable {
-    case keep, forget
-    case replace(String)
-  }
-
   public var dynamicResolution: Bool?
   public var highDynamicRange: Bool?
   public var preferredDisplayId: String?
-  public var userName: String?
-  public var password: Password = .keep
   public var sound: ScreenSharingMachineSettings.Sound?
 
   public init(
     dynamicResolution: Bool? = nil, highDynamicRange: Bool? = nil, preferredDisplayId: String? = nil,
-    userName: String? = nil, password: Password = .keep, sound: ScreenSharingMachineSettings.Sound? = nil
+    sound: ScreenSharingMachineSettings.Sound? = nil
   ) {
     self.sound = sound
     self.highDynamicRange = highDynamicRange
     self.dynamicResolution = dynamicResolution; self.preferredDisplayId = preferredDisplayId
-    self.userName = userName; self.password = password
   }
 
   public var isEmpty: Bool { self == Self() }
-  public var reconnects: Bool { preferredDisplayId != nil || userName != nil || password != .keep }
+  public var reconnects: Bool { preferredDisplayId != nil }
 }
 
 public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
   public var settings: ScreenSharingMachineSettings
-  public var newPassword = ""
-  public var changingPassword = false
-  public var forgettingPassword = false
 
   public init(_ settings: ScreenSharingMachineSettings) { self.settings = settings }
 
@@ -94,15 +74,6 @@ public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
       changes.preferredDisplayId = display
     }
     if let sound = settings.sound, sound != original.sound { changes.sound = sound }
-    if let signIn = settings.signIn, let before = original.signIn {
-      let userName = signIn.userName.trimmingCharacters(in: .whitespaces)
-      if userName != before.userName { changes.userName = userName }
-      if forgettingPassword {
-        changes.password = before.hasSavedPassword ? .forget : .keep
-      } else if changingPassword, !newPassword.isEmpty {
-        changes.password = .replace(newPassword)
-      }
-    }
     return changes
   }
 }
@@ -131,7 +102,6 @@ public struct ScreenSharingMachineSettingsSheet: View {
           LabeledContent("Reached through", value: draft.settings.connection)
           if let address = draft.settings.address { LabeledContent("Address", value: address) }
         }
-        if draft.settings.signIn != nil { signIn }
         display
         if draft.settings.sound != nil { sound }
       }
@@ -140,43 +110,6 @@ public struct ScreenSharingMachineSettingsSheet: View {
     }
     .frame(width: 480)
     .fixedSize(horizontal: false, vertical: true)
-  }
-
-  private var signIn: some View {
-    Section {
-      TextField(
-        "User name",
-        text: Binding(
-          get: { draft.settings.signIn?.userName ?? "" }, set: { draft.settings.signIn?.userName = $0 }))
-      LabeledContent("Password") {
-        HStack {
-          Text(passwordState).foregroundStyle(.secondary)
-          if !draft.changingPassword, !draft.forgettingPassword {
-            Button("Change…") { draft.changingPassword = true }
-            if original.signIn?.hasSavedPassword == true {
-              Button("Forget") { draft.forgettingPassword = true }
-            }
-          } else {
-            Button("Keep") {
-              draft.changingPassword = false; draft.forgettingPassword = false; draft.newPassword = ""
-            }
-          }
-        }
-      }
-      if draft.changingPassword {
-        SecureField("New password", text: $draft.newPassword)
-      }
-    } header: {
-      Text("Sign-in")
-    } footer: {
-      Text("The password is kept in the Keychain and is never shown.").foregroundStyle(.secondary)
-    }
-  }
-
-  private var passwordState: String {
-    if draft.forgettingPassword { return "Will be forgotten" }
-    if draft.changingPassword { return "Replacing" }
-    return original.signIn?.hasSavedPassword == true ? "Saved" : "Asked when connecting"
   }
 
   private var sound: some View {
@@ -249,7 +182,6 @@ public struct ScreenSharingMachineSettingsSheet: View {
         dismiss()
       }
       .keyboardShortcut(.defaultAction)
-      .disabled(draft.changingPassword && draft.newPassword.isEmpty)
     }
     .padding(.horizontal, 20).padding(.bottom, 20).padding(.top, 4)
   }
