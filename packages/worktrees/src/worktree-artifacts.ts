@@ -37,7 +37,9 @@ export const listKeptArtifacts = async (
   env?: NodeJS.ProcessEnv
 ): Promise<ReadonlyArray<string>> => {
   if (!existsSync(worktreeDir)) return []
-  return meaningfulIgnoredPaths(nulSeparated(await listIgnoredPaths(worktreeDir, env)))
+  return topMostPaths(
+    meaningfulIgnoredPaths(nulSeparated(await listIgnoredPaths(worktreeDir, env)))
+  )
 }
 
 export const keepArtifacts = async (
@@ -46,8 +48,17 @@ export const keepArtifacts = async (
   env?: NodeJS.ProcessEnv
 ): Promise<ReadonlyArray<string>> => {
   const kept = await listKeptArtifacts(worktreeDir, env)
-  for (const path of kept) await moveInto(join(worktreeDir, path), join(artifactsDir, path))
-  for (const path of kept) await pruneRebuildable(join(artifactsDir, path))
+  const moved: Array<string> = []
+  try {
+    for (const path of kept) {
+      await moveInto(join(worktreeDir, path), join(artifactsDir, path))
+      moved.push(path)
+    }
+    for (const path of kept) await pruneRebuildable(join(artifactsDir, path))
+  } catch (error) {
+    await putBack(moved, artifactsDir, worktreeDir)
+    throw error
+  }
   return kept
 }
 
@@ -76,6 +87,36 @@ const listIgnoredPaths = (worktreeDir: string, env?: NodeJS.ProcessEnv): Promise
 
 const nulSeparated = (output: string): ReadonlyArray<string> =>
   output.split("\0").filter((path) => path.length > 0)
+
+const topMostPaths = (paths: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const topMost: Array<string> = []
+  for (const path of paths.toSorted()) {
+    if (!isInside(path, topMost.at(-1))) topMost.push(path)
+  }
+  return topMost
+}
+
+const isInside = (path: string, folder: string | undefined): boolean =>
+  folder !== undefined && folder.endsWith("/") && path.startsWith(folder)
+
+const putBack = async (
+  moved: ReadonlyArray<string>,
+  artifactsDir: string,
+  worktreeDir: string
+): Promise<void> => {
+  await Promise.allSettled(
+    moved.map((path) => moveInto(join(artifactsDir, path), join(worktreeDir, path)))
+  )
+  await removeEmptyFolders(artifactsDir)
+}
+
+const removeEmptyFolders = async (path: string): Promise<void> => {
+  if (!existsSync(path)) return
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    if (entry.isDirectory()) await removeEmptyFolders(join(path, entry.name))
+  }
+  await rmdir(path).catch(() => undefined)
+}
 
 const moveInto = async (source: string, target: string): Promise<void> => {
   await mkdir(dirname(target), { recursive: true })

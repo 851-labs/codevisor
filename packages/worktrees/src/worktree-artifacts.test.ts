@@ -34,13 +34,14 @@ const write = (path: string, contents: string): void => {
 const makeWorktreeWithArtifacts = async (repo: string, root: string): Promise<string> => {
   const path = join(root, "bento")
   await addWorktree(repo, path, "codevisor/bento")
-  write(join(path, ".gitignore"), "tmp/\nnode_modules/\n*.local\n")
+  write(join(path, ".gitignore"), "tmp/\nnode_modules/\n*.local\nsdk/Sources/Generated/\n")
   write(join(path, "src", "app.ts"), "app\n")
   git(path, "add", ".gitignore", "src/app.ts")
   git(path, "commit", "-m", "add sources")
   write(join(path, "tmp", "shot.png"), "pixels")
   write(join(path, "src", "settings.local"), "local\n")
   write(join(path, "node_modules", "junk.js"), "junk\n")
+  write(join(path, "sdk", "Sources", "Generated", "ffi.swift"), "ffi\n")
   return path
 }
 
@@ -51,7 +52,7 @@ describe("archived worktree artifacts", () => {
     const artifactsDir = join(root, ".archived-artifacts.noindex", "wt-bento")
 
     const snapshot = await snapshotWorktree(repo, path, "wt-bento")
-    expect(await keepArtifacts(path, artifactsDir)).toEqual(["src/settings.local", "tmp/"])
+    expect(await keepArtifacts(path, artifactsDir)).toEqual(["sdk/", "src/settings.local", "tmp/"])
     const trashed = await removeArchivedWorktreeFiles(repo, path, "codevisor/bento", {
       trashRoot: join(root, ".trash"),
       worktreeId: "wt-bento"
@@ -75,6 +76,9 @@ describe("archived worktree artifacts", () => {
     expect(readFileSync(join(restorePath, "tmp", "shot.png"), "utf8")).toBe("pixels")
     expect(readFileSync(join(restorePath, "src", "settings.local"), "utf8")).toBe("local\n")
     expect(readFileSync(join(restorePath, "src", "app.ts"), "utf8")).toBe("app\n")
+    expect(
+      readFileSync(join(restorePath, "sdk", "Sources", "Generated", "ffi.swift"), "utf8")
+    ).toBe("ffi\n")
     expect(existsSync(join(restorePath, "node_modules"))).toBe(false)
     expect(existsSync(artifactsDir)).toBe(false)
   })
@@ -171,6 +175,33 @@ describe("archived worktree artifacts", () => {
 
     await expect(returnKeptArtifacts(join(root, "kept"), join(root, "restored"))).rejects.toThrow()
     expect(existsSync(join(root, "kept"))).toBe(true)
+  })
+
+  it("puts every moved artifact back and fails when one can't be kept", async () => {
+    const { repo, root } = makeGitRepo()
+    const path = await makeWorktreeWithArtifacts(repo, root)
+    const artifactsDir = join(root, "kept")
+    write(join(artifactsDir, "tmp"), "blocks the folder\n")
+
+    await expect(keepArtifacts(path, artifactsDir)).rejects.toThrow()
+
+    expect(readFileSync(join(path, "sdk", "Sources", "Generated", "ffi.swift"), "utf8")).toBe(
+      "ffi\n"
+    )
+    expect(readFileSync(join(path, "src", "settings.local"), "utf8")).toBe("local\n")
+    expect(readFileSync(join(path, "tmp", "shot.png"), "utf8")).toBe("pixels")
+    expect(readdirSync(artifactsDir)).toEqual(["tmp"])
+  })
+
+  it("leaves the worktree untouched when it can't create the artifacts folder", async () => {
+    const { repo, root } = makeGitRepo()
+    const path = await makeWorktreeWithArtifacts(repo, root)
+    write(join(root, "blocked"), "not a folder\n")
+
+    await expect(keepArtifacts(path, join(root, "blocked", "kept"))).rejects.toThrow()
+
+    expect(readFileSync(join(path, "src", "settings.local"), "utf8")).toBe("local\n")
+    expect(readFileSync(join(root, "blocked"), "utf8")).toBe("not a folder\n")
   })
 
   it("drops rebuildable folders nested inside a kept folder", async () => {
