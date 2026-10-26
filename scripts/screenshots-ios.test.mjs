@@ -7,7 +7,7 @@ import { pngDimensions, scenes, screenshotAttachments } from "./screenshots-lib.
 test("options stay rooted in this checkout and reject missing or unknown arguments", () => {
   assert.equal(parseOptions([], "/checkout").output, "/checkout/tmp/screenshots/ios")
   assert.equal(parseOptions([], "/checkout").device, "iphone")
-  assert.equal(parseOptions(["--device", "all"], "/checkout").device, "all")
+  assert.equal(parseOptions(["--device", "ipad-pro-11"], "/checkout").device, "ipad-pro-11")
   assert.deepEqual(
     parseOptions(
       ["--device", "iphone", "--output", "captures", "--runtime", "iOS 27.0"],
@@ -22,6 +22,7 @@ test("options stay rooted in this checkout and reject missing or unknown argumen
   )
   for (const args of [
     ["--device", "ipad"],
+    ["--device", "all"],
     ["--device", "mac"],
     ["--output"],
     ["--device", "--output"],
@@ -95,7 +96,10 @@ test("export requires the exact dimensions for each App Store screenshot slot", 
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes)
   bytes.writeUInt32BE(1284, 16)
   bytes.writeUInt32BE(2778, 20)
-  assert.deepEqual(pngDimensions(bytes, devices.iphone), { width: 1284, height: 2778 })
+  assert.deepEqual(pngDimensions(bytes, devices.iphone), {
+    width: 1284,
+    height: 2778
+  })
   for (const [width, height] of [
     [2064, 2752],
     [1320, 2868],
