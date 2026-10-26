@@ -18,7 +18,7 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
 
   var detail: String {
     switch self {
-    case .bots: "Adds a Bots section to the sidebar for long-lived agents that work across several projects."
+    case .bots: "Adds a Chat mode to the sidebar for long-lived bots that work across several projects."
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
     }
   }

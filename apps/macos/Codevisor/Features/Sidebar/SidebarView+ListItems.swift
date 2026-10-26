@@ -5,9 +5,9 @@ import SwiftUI
 
 extension SidebarView {
   var listedSidebarItems: [WorkspaceSidebarItem] {
-    let nested = botNestedWorkspaceIDs
+    let botHomes = botHomeWorkspaceIDs
     return environment.navigationStore.workspaceEntries.sidebar.filter {
-      environment.machines.machine(for: $0.serverId) != nil && !nested.contains($0.id)
+      environment.machines.machine(for: $0.serverId) != nil && !botHomes.contains($0.id)
     }
   }
 

@@ -96,27 +96,7 @@ struct SessionContainerView: View {
       .focusedSceneValue(\.browserPage, activeBrowserModel)
       .focusedSceneValue(\.filePane, activeFileModel)
       .focusedSceneValue(\.simulatorPane, activeSimulatorModel)
-      .focusedSceneValue(
-        \.workspaceLayoutActions,
-        WorkspaceLayoutActions(
-          workspaceId: workspace.id,
-          newTab: addCenterTab,
-          closeSplit: closeActiveLeaf,
-          closeTab: {
-            let workspace = selectedWorkspace
-            closeCenterTab(workspace.selectedCenterTabId)
-          },
-          reopenClosedPane: reopenClosedPane,
-          previousTab: { stepTab(offset: -1) },
-          nextTab: { stepTab(offset: 1) },
-          previousTabInWorkspace: { selectRelativeCenterTab(offset: -1) },
-          nextTabInWorkspace: { selectRelativeCenterTab(offset: 1) },
-          previousSplit: { focusRelativeSplit(offset: -1) },
-          nextSplit: { focusRelativeSplit(offset: 1) },
-          split: splitActiveLeaf,
-          focus: focusAdjacentLeaf
-        )
-      )
+      .focusedSceneValue(\.workspaceLayoutActions, layoutActions(in: workspace))
       .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
       .environment(
         \.openSubagent,
@@ -207,6 +187,7 @@ struct SessionContainerView: View {
   var contentColumn: some View {
     let workspace = selectedWorkspace
     let showsTabBar = showsCenterTabBar(in: workspace)
+    let chatLeaf = singlePaneChatLeaf(in: workspace)
     return VStack(spacing: 0) {
       if showsTabBar {
         WorkspaceTabBar(
@@ -222,12 +203,12 @@ struct SessionContainerView: View {
       }
       SessionScreen(
         controller: controller,
-        centerGroup: activeCenterModel(in: workspace),
+        centerGroup: chatLeaf.map { configuredCenterModel(leafId: $0.id) } ?? activeCenterModel(in: workspace),
         focus: sessionFocus,
         onWorkspaceCommand: handleWorkspaceCommand,
-        centerTree: liveCenterTree ?? workspace.centerTree,
+        centerTree: chatLeaf.map { .group(id: $0.id, state: $0.state) } ?? liveCenterTree ?? workspace.centerTree,
         primaryLeafId: session.flatMap { workspace.centerTree.groupId(containingChat: $0.id) },
-        activeLeafId: activeLeafId,
+        activeLeafId: chatLeaf?.id ?? activeLeafId,
         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
         centerPaneTitle: paneTitle,
         sessionStore: store,
@@ -245,7 +226,7 @@ struct SessionContainerView: View {
       )
     }
     .overlay(alignment: .top) {
-      if !showsTabBar {
+      if !showsTabBar && !isSinglePane {
         Color.separatorColor
           .frame(height: 1)
           .frame(maxWidth: .infinity)

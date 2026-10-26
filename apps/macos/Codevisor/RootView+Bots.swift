@@ -9,12 +9,10 @@ extension RootView {
         store: store,
         serverId: serverId,
         sessionId: bot.sessionId,
-        onFocusedChatChanged: { chatId in
-          guard chatId != bot.sessionId else { return }
-          selection = .session(serverId: serverId, id: chatId)
-        },
+        onFocusedChatChanged: { _ in },
         onDisposition: { _ in }
       )
+      .modifier(BotConversationChrome(bot: bot))
     } else {
       ContentUnavailableView(
         "Bot Unavailable",

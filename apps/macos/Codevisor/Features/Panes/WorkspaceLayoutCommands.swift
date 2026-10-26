@@ -56,6 +56,7 @@ struct WorkspaceLayoutCommands: Commands {
   @FocusedValue(\.workspaceLayoutActions) private var actions
   @FocusedValue(\.workspaceTabCycling) private var tabCycling
   @FocusedValue(\.sidebarActions) private var sidebarActions
+  @FocusedValue(\.botListActions) private var botActions
 
   var body: some Commands {
     CommandGroup(after: .sidebar) {
@@ -92,26 +93,35 @@ struct WorkspaceLayoutCommands: Commands {
     }
 
     CommandGroup(before: .windowArrangement) {
-      ShortcutButton(.previousTab) { stepTab(-1) }
-        .disabled(actions == nil && sidebarActions == nil)
-      ShortcutButton(.nextTab) { stepTab(1) }
-        .disabled(actions == nil && sidebarActions == nil)
-      ShortcutButton(.previousTabInWorkspace) {
-        if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
+      if botActions == nil {
+        tabAndWorkspaceItems
+      } else {
+        BotStepMenuItems()
       }
-      .disabled(actions == nil && tabCycling == nil)
-      ShortcutButton(.nextTabInWorkspace) {
-        if let actions { actions.nextTabInWorkspace() } else { tabCycling?.next() }
-      }
-      .disabled(actions == nil && tabCycling == nil)
-
-      Divider()
-
-      ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace?(-1) }
-        .disabled(sidebarActions?.stepWorkspace == nil)
-      ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace?(1) }
-        .disabled(sidebarActions?.stepWorkspace == nil)
     }
+  }
+
+  @ViewBuilder
+  private var tabAndWorkspaceItems: some View {
+    ShortcutButton(.previousTab) { stepTab(-1) }
+      .disabled(actions == nil && sidebarActions == nil)
+    ShortcutButton(.nextTab) { stepTab(1) }
+      .disabled(actions == nil && sidebarActions == nil)
+    ShortcutButton(.previousTabInWorkspace) {
+      if let actions { actions.previousTabInWorkspace() } else { tabCycling?.previous() }
+    }
+    .disabled(actions == nil && tabCycling == nil)
+    ShortcutButton(.nextTabInWorkspace) {
+      if let actions { actions.nextTabInWorkspace() } else { tabCycling?.next() }
+    }
+    .disabled(actions == nil && tabCycling == nil)
+
+    Divider()
+
+    ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace?(-1) }
+      .disabled(sidebarActions?.stepWorkspace == nil)
+    ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace?(1) }
+      .disabled(sidebarActions?.stepWorkspace == nil)
   }
 
   private func stepTab(_ offset: Int) {

@@ -46,6 +46,7 @@ extension SessionContainerView {
   }
 
   func openBotTranscript(_ bot: Bot) {
+    guard !isSinglePane else { return }
     var workspace = selectedWorkspace
     if let existing = workspace.allPanes.first(where: {
       $0.kind == .transcript && $0.ownerChatSessionId == bot.sessionId

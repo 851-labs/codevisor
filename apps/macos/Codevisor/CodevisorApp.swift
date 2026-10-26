@@ -109,6 +109,7 @@ struct RootView: View {
   static let sidebarCollapsedKey = "sidebar.collapsed"
   @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
+  @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State private var quickLook = QuickLookController.withAlerts()
@@ -187,6 +188,7 @@ struct RootView: View {
           await environment.bootstrapCloud()
         }
       }
+      .modifier(SidebarModeSelectionMemory(selection: $selection))
       .modifier(UpdateCenterUpkeep())
       .modifier(ChromiumBrowserHostSync())
       .modifier(ServerDataUpgradePresentation())
@@ -196,8 +198,9 @@ struct RootView: View {
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
     guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
+    let bot = botsEnabled ? environment.bots.bot(forSession: sessionId, serverId: serverId) : nil
     store?.selectChat(session)
-    if botsEnabled, let bot = environment.bots.bot(forSession: sessionId, serverId: serverId) {
+    if let bot {
       selection = .bot(serverId: serverId, id: bot.id)
     } else {
       selection = .session(serverId: serverId, id: sessionId)
@@ -222,7 +225,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      SidebarView(selection: $selection, store: store)
+      RootSidebar(selection: $selection, store: store)
         .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
     } detail: {
       Group {
@@ -232,15 +235,20 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
+      .toolbar {
+        if SidebarMode.active(sidebarMode, botsEnabled: botsEnabled) == .chat {
+          ToolbarItem(placement: .navigation) { BotComposeToolbarButton() }
+        }
+      }
     }
-    .modifier(WorkspaceInspectorPresentation(store: store, selection: selection))
+    .modifier(WorkspaceInspectorPresentation(store: store, selection: inspectedSelection))
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
         edge: .leading,
         width: min(270, panelLayout.windowWidth - 16)
       ) {
-        SidebarView(selection: $selection, store: store, publishesSceneActions: false)
+        RootSidebar(selection: $selection, store: store, publishesSceneActions: false, isDrawer: true)
       }
     }
     .onChange(of: clientSidebarVisible, initial: true) { _, visible in
@@ -249,6 +257,11 @@ struct RootView: View {
     .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
       store?.isSidebarVisible = clientSidebarVisible
     }
+  }
+
+  private var inspectedSelection: SidebarSelection? {
+    if case .bot = selection { return nil }
+    return selection
   }
 
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -356,7 +369,16 @@ struct RootView: View {
     }
   }
 
+  @ViewBuilder
   private func newChat(_ store: SessionStore, target: NewChatTarget?) -> some View {
+    if SidebarMode.active(sidebarMode, botsEnabled: botsEnabled) == .chat {
+      BotListEmptyDetail()
+    } else {
+      newChatView(store, target: target)
+    }
+  }
+
+  private func newChatView(_ store: SessionStore, target: NewChatTarget?) -> some View {
     NewChatView(
       store: store,
       selection: $selection,

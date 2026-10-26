@@ -6,6 +6,7 @@ extension SessionContainerView {
   func openSubagent(
     parentSessionId: UUID, toolCallId: String, title: String, placement: OpenSubagentAction.Placement
   ) {
+    guard !isSinglePane else { return }
     var workspace = selectedWorkspace
     if let existing = workspace.allPanes.first(where: {
       $0.kind == .subagent && $0.ownerChatSessionId == parentSessionId && $0.subagentToolCallId == toolCallId
