@@ -34,21 +34,29 @@ export const providerOAuthSupported = (
   )
 }
 
-const OPENCODE_CONSOLE = "https://opencode.ai/console"
+export const OPENCODE_CONSOLE = "https://opencode.ai/console"
+const RETIRED_OPENCODE_CONSOLE = "https://console.opencode.ai"
+
+export const openCodeConsoleServer = (server: unknown): string | undefined => {
+  if (server === undefined) return OPENCODE_CONSOLE
+  if (typeof server !== "string") return undefined
+  const origin = server.replace(/\/+$/, "")
+  return origin === OPENCODE_CONSOLE || origin === RETIRED_OPENCODE_CONSOLE
+    ? OPENCODE_CONSOLE
+    : undefined
+}
+
+export const assertTrustedOpenCodeConsole = (providerId: string, credential: unknown): void => {
+  if (providerId !== "opencode") return
+  const server = recordOrEmpty(recordOrEmpty(credential).metadata).server
+  if (openCodeConsoleServer(server) === undefined)
+    throw new Error(
+      `OpenCode Console sign-ins must come from ${OPENCODE_CONSOLE}. Codevisor won't share one from ${String(server)}.`
+    )
+}
 
 const isOpenCodeConsole = (harnessId: string, providerId: string | undefined): boolean =>
   harnessId === "opencode" && providerId === "opencode"
-
-const openCodeConsoleTokenEndpoint = (bundle: SharedTokenBundle): string | undefined => {
-  const server = string(recordOrEmpty(bundle.credential?.metadata).server) ?? OPENCODE_CONSOLE
-  try {
-    const url = new URL(server)
-    if (url.protocol !== "https:") return undefined
-    return `${url.origin}${url.pathname.replace(/\/+$/, "")}/auth/device/token`
-  } catch {
-    return undefined
-  }
-}
 
 export const providerTokenEndpoint = (providerId: string): string | undefined => {
   if (providerId === "openai") return "https://auth.openai.com/oauth/token"
@@ -99,6 +107,11 @@ export const parseProviderOAuth = (
   const expiresAt = credentialExpiry(durable, grok, credential)
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined
   const account = isOpenCodeConsole(harnessId, providerId) ? recordOrEmpty(credential.metadata) : {}
+  if (
+    isOpenCodeConsole(harnessId, providerId) &&
+    openCodeConsoleServer(account.server) === undefined
+  )
+    return undefined
   const accessIdentity = claims(accessToken)
   const identity = grok
     ? { ...claims(string(credential.id_token) ?? ""), ...accessIdentity }
@@ -157,9 +170,9 @@ const requestRefresh = async (
     signal: AbortSignal.timeout(15_000)
   } satisfies RequestInit
   if (isOpenCodeConsole(bundle.harnessId, bundle.providerId)) {
-    const endpoint = openCodeConsoleTokenEndpoint(bundle)
-    if (!endpoint) throw new SharedCredentialError("reauthenticate")
-    return request(endpoint, {
+    const server = openCodeConsoleServer(recordOrEmpty(bundle.credential?.metadata).server)
+    if (!server) throw new SharedCredentialError("reauthenticate")
+    return request(`${server}/auth/device/token`, {
       ...init,
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({

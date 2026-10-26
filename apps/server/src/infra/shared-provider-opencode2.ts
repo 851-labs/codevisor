@@ -11,7 +11,11 @@ import {
   type SeededOpenCodeCredential
 } from "@codevisor/adapter-opencode"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
-import type { SharedCredentialVault, SharedTokenBundle } from "@codevisor/harness-manager"
+import {
+  openCodeConsoleServer,
+  type SharedCredentialVault,
+  type SharedTokenBundle
+} from "@codevisor/harness-manager"
 
 import { asRecord, field, recordField } from "../unknown-values.js"
 import type { SharedProviderStore } from "./shared-provider-store.js"
@@ -42,15 +46,21 @@ export const refreshedThroughCodevisor = (providerId: string): boolean =>
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
-const CONSOLE_METADATA = ["server", "accountID", "email", "orgID", "orgName"]
+const CONSOLE_METADATA = ["accountID", "email", "orgID", "orgName"]
 
-const consoleMetadata = (metadata: Readonly<Record<string, unknown>>): Record<string, string> =>
-  Object.fromEntries(
-    CONSOLE_METADATA.flatMap((key) => {
+const consoleMetadata = (
+  metadata: Readonly<Record<string, unknown>>
+): Record<string, string> | undefined => {
+  const server = openCodeConsoleServer(metadata.server)
+  if (server === undefined) return undefined
+  return Object.fromEntries([
+    ["server", server],
+    ...CONSOLE_METADATA.flatMap((key) => {
       const value = text(metadata[key])
       return value === undefined ? [] : [[key, value]]
     })
-  )
+  ])
+}
 
 export const seededOAuthCredential = (
   token: SharedTokenBundle,
@@ -81,8 +91,10 @@ export const seededOAuthCredential = (
     const accountID = text(field(token.credential, "accountId")) ?? token.organizationId
     return oauth("chatgpt-browser", refresh, accountID ? { accountID } : {})
   }
-  if (token.providerId === "opencode")
-    return oauth("device", refresh, consoleMetadata(recordField(token.credential, "metadata")))
+  if (token.providerId === "opencode") {
+    const metadata = consoleMetadata(recordField(token.credential, "metadata"))
+    return metadata === undefined ? undefined : oauth("device", refresh, metadata)
+  }
   return oauth("device", refresh, {})
 }
 

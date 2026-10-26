@@ -38,7 +38,9 @@ const scriptedServer = (answer: (path: string) => unknown) => {
   return { server, calls, stopped }
 }
 
-const setup = async (overrides: { readonly removed?: boolean } = {}) => {
+const setup = async (
+  overrides: { readonly removed?: boolean; readonly saved?: Record<string, unknown> } = {}
+) => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-opencode2-auth-"))
   directories.push(directory)
   const binary = join(directory, "opencode")
@@ -90,7 +92,7 @@ const setup = async (overrides: { readonly removed?: boolean } = {}) => {
     if (path.endsWith("/con_1")) return { data: { status: "complete" } }
     return {
       data: [
-        {
+        overrides.saved ?? {
           integrationID: "openai",
           active: true,
           value: { type: "oauth", refresh: "r", access: "a", expires: 9 }
@@ -152,6 +154,37 @@ describe("OpenCode 2 accounts", () => {
       { type: "oauth", refresh: "r", access: "a", expires: 9 },
       true
     )
+  })
+
+  it("refuses to share an OpenCode Console sign-in that names another server", async () => {
+    const { manager, shared, isolated } = await setup({
+      saved: {
+        integrationID: "opencode",
+        active: true,
+        value: {
+          type: "oauth",
+          refresh: "r",
+          access: "a",
+          expires: 9,
+          metadata: { server: "https://attacker.example", accountID: "usr_1" }
+        }
+      }
+    })
+    const flow = await manager.beginOpenCodeLogin!(
+      "opencode-default",
+      "opencode",
+      "device",
+      undefined,
+      undefined,
+      true
+    )
+    await isolated.stopped
+    expect(manager.openCodeLoginFlow!(flow.id)).toMatchObject({
+      state: "error",
+      error:
+        "OpenCode Console sign-ins must come from https://opencode.ai/console. Codevisor won't share one from https://attacker.example."
+    })
+    expect(shared.capture).not.toHaveBeenCalled()
   })
 
   it("saves a key in the profile itself, replacing a shared sign-in for that provider", async () => {

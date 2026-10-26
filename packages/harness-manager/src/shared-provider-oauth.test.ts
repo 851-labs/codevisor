@@ -6,6 +6,8 @@ import { recordOrEmpty } from "./json-values.js"
 import type { SharedTokenBundle } from "./shared-credential-types.js"
 import { refreshSharedOAuth } from "./shared-oauth-providers.js"
 import {
+  assertTrustedOpenCodeConsole,
+  openCodeConsoleServer,
   parseProviderOAuth,
   providerCredential,
   providerOAuthSupported,
@@ -339,18 +341,53 @@ describe("shared provider OAuth contracts", () => {
         client_id: "opencode-cli"
       })
     )
-    const selfHosted = {
-      ...zen,
-      credential: { metadata: { server: "https://console.example.test/" } }
-    }
-    await refreshProviderOAuth(selfHosted, request, 0)
-    expect(request.mock.calls[1]![0]).toBe("https://console.example.test/auth/device/token")
-    for (const server of ["http://console.example.test", "not a url"])
+    await refreshProviderOAuth(
+      { ...zen, credential: { metadata: { server: "https://console.opencode.ai/" } } },
+      request,
+      0
+    )
+    expect(request.mock.calls[1]![0]).toBe("https://opencode.ai/console/auth/device/token")
+    await refreshProviderOAuth({ ...zen, credential: {} }, request, 0)
+    expect(request.mock.calls[2]![0]).toBe("https://opencode.ai/console/auth/device/token")
+    for (const server of ["https://attacker.example", "http://opencode.ai/console", 7])
       await expect(
         refreshProviderOAuth({ ...zen, credential: { metadata: { server } } }, request, 0)
       ).rejects.toThrow("Sign in again")
-    await refreshProviderOAuth({ ...zen, credential: {} }, request, 0)
-    expect(request.mock.calls[2]![0]).toBe("https://opencode.ai/console/auth/device/token")
     expect(request).toHaveBeenCalledTimes(3)
+  })
+  it("trusts only the OpenCode Console itself, refusing to capture a sign-in from any other server", () => {
+    for (const server of [
+      undefined,
+      "https://opencode.ai/console",
+      "https://opencode.ai/console/",
+      "https://console.opencode.ai"
+    ])
+      expect(openCodeConsoleServer(server)).toBe("https://opencode.ai/console")
+    for (const server of [
+      "https://attacker.example",
+      "https://attacker.example/auth/device/token",
+      "https://opencode.ai.attacker.example/console",
+      "https://opencode.ai/console/../admin",
+      "https://console.opencode.ai/elsewhere",
+      "http://opencode.ai/console",
+      "https://10.0.0.1/console",
+      "",
+      null
+    ])
+      expect(openCodeConsoleServer(server)).toBeUndefined()
+
+    const forged = {
+      type: "oauth",
+      refresh: "console-refresh",
+      access: "console-access",
+      expires: 3_600_000,
+      metadata: { server: "https://attacker.example", accountID: "usr_1" }
+    }
+    expect(parseProviderOAuth("opencode", "opencode", forged, "managed")).toBeUndefined()
+    expect(() => assertTrustedOpenCodeConsole("opencode", forged)).toThrow(
+      "OpenCode Console sign-ins must come from https://opencode.ai/console. Codevisor won't share one from https://attacker.example."
+    )
+    expect(() => assertTrustedOpenCodeConsole("openai", forged)).not.toThrow()
+    expect(() => assertTrustedOpenCodeConsole("opencode", { metadata: {} })).not.toThrow()
   })
 })

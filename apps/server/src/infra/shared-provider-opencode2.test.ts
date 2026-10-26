@@ -95,7 +95,21 @@ describe("OpenCode 2 seeded credentials", () => {
         }
       }
     })
-    expect(seededOAuthCredential(bundle("opencode"), "cap")?.value).not.toHaveProperty("metadata")
+    expect(seededOAuthCredential(bundle("opencode"), "cap")?.value).toMatchObject({
+      metadata: { server: "https://opencode.ai/console" }
+    })
+    expect(
+      seededOAuthCredential(
+        bundle("opencode", {
+          metadata: { server: "https://console.opencode.ai/", orgID: "org_1" }
+        }),
+        "cap"
+      )?.value
+    ).toMatchObject({ metadata: { server: "https://opencode.ai/console", orgID: "org_1" } })
+    for (const server of ["https://attacker.example", "https://internal.corp/console"])
+      expect(
+        seededOAuthCredential(bundle("opencode", { metadata: { server, orgID: "org_1" } }), "cap")
+      ).toBeUndefined()
     expect(seededOAuthCredential(bundle("openai"), undefined)).toBeUndefined()
     expect(seededOAuthCredential(bundle("anthropic"), "cap")).toBeUndefined()
   })

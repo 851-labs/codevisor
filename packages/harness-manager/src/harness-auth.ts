@@ -28,7 +28,7 @@ import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 import type { OpenCodeProfile } from "./opencode-auth.js"
 import { makePiAuthManager } from "./pi-auth.js"
 import { reconcileSharedOpenCodeProfiles } from "./shared-opencode-profiles.js"
-import { providerOAuthSupported } from "./shared-provider-oauth.js"
+import { assertTrustedOpenCodeConsole, providerOAuthSupported } from "./shared-provider-oauth.js"
 
 export type {
   HarnessAuthEvent,
@@ -278,6 +278,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         ...(captured
           ? {
               capture: async (credential) => {
+                assertTrustedOpenCodeConsole(providerId, credential)
                 if (
                   !(await providers.capture("opencode", accountId, providerId, credential, shared))
                 )
