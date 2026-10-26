@@ -438,6 +438,10 @@ extension CloudAccountController: CloudMachineProviding {
 
   public var isCloudRosterVerified: Bool { isRosterVerified }
 
+  public func refreshCloudMachines() async {
+    await refreshMachines()
+  }
+
   public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
     guard hubConnection() != nil, verifiedMachineKey(for: machine) != nil else {
       return nil

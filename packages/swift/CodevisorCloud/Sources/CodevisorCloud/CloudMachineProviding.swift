@@ -15,6 +15,7 @@ public protocol CloudMachineProviding: AnyObject {
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool
   func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute?
   func adoptDirectMachine(using client: any CodevisorServerClienting, name: String) async throws -> String
+  func refreshCloudMachines() async
 }
 
 public extension CloudMachineProviding {
@@ -23,6 +24,7 @@ public extension CloudMachineProviding {
   func loopbackRevision(for machine: CloudMachine) -> UInt64 { 0 }
   func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool { false }
   func registerLocalMachineIfNeeded() {}
+  func refreshCloudMachines() async {}
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool { false }
   func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute? { nil }
   func adoptDirectMachine(using _: any CodevisorServerClienting, name _: String) async throws -> String {

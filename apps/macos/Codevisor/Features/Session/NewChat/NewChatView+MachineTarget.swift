@@ -106,16 +106,22 @@ extension NewChatView {
     environment.appUpdate.isUpdating
   }
 
-  var ephemeralMachineDialog: NewEphemeralMachineDialog {
-    NewEphemeralMachineDialog(
-      isPresented: $showsEphemeralMachineDialog,
-      projectId: ephemeralMachineProject?.id,
-      client: environment.machines.client(for: composerServerId)
-    )
-  }
-
-  private var ephemeralMachineProject: Project? {
-    guard let project = controller?.project else { return nil }
-    return project.isRunTargetPlaceholder || project.isScratch ? nil : project
+  func relocateWhenEphemeralMachineIsReady(_ controller: SessionController) {
+    controller.onEphemeralMachineReady = { [weak controller, weak store = store] previous, relocated, project in
+      EphemeralSessionRelocation.relocate(
+        previous,
+        to: relocated,
+        project: project,
+        projectList: environment.projectList,
+        workspaces: environment.workspaces
+      )
+      guard let controller, let store else { return }
+      controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
+        projectList?.setAgentSessionId(agentSessionId, for: relocated.id, serverId: relocated.serverId)
+      }
+      store.reregister(controller, from: previous, to: relocated)
+      store.selectChat(relocated)
+      selection = .session(serverId: relocated.serverId, id: relocated.id)
+    }
   }
 }

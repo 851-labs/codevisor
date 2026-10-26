@@ -177,7 +177,11 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func projectSetupSource(projectId: UUID) async throws -> ServerProjectSetupSource
   func ephemeralProviders() async throws -> [ServerEphemeralProvider]
-  func createEphemeralMachine(provider: String, projectId: UUID) async throws -> ServerEphemeralMachine
+  func ephemeralMachines() async throws -> [ServerEphemeralMachine]
+  func destroyEphemeralMachine(id: String) async throws
+  func createEphemeralMachine(
+    provider: String, projectId: UUID, workspaceId: UUID?
+  ) async throws -> ServerEphemeralMachine
   func readProjectEnvFiles(projectId: UUID, paths: [String]) async throws -> [ServerProjectEnvFileContent]
   func publishProjectRemote(projectId: UUID, url: String, initialize: Bool) async throws -> ServerProject
   func setUpProjectFromGit(_ request: ServerProjectSetupRequest) async throws -> ServerProject

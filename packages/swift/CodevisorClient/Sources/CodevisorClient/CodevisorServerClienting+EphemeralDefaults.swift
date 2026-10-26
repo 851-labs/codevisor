@@ -5,7 +5,17 @@ public extension CodevisorServerClienting {
     []
   }
 
-  func createEphemeralMachine(provider: String, projectId: UUID) async throws -> ServerEphemeralMachine {
+  func ephemeralMachines() async throws -> [ServerEphemeralMachine] {
+    []
+  }
+
+  func destroyEphemeralMachine(id: String) async throws {}
+
+  func createEphemeralMachine(
+    provider: String,
+    projectId: UUID,
+    workspaceId: UUID?
+  ) async throws -> ServerEphemeralMachine {
     throw CodevisorServerClientError.invalidResponse
   }
 }

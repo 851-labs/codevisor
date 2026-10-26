@@ -82,6 +82,10 @@ extension SessionController {
     acceptFirstSend(prompt)
     isSubmitting = false
 
+    guard
+      await createRequestedEphemeralMachine(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
+    else { return nil }
+
     guard await createRequestedWorktree(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
     else { return nil }
 

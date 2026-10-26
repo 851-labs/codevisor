@@ -44,7 +44,7 @@ const dispatch = async (
 ): Promise<boolean> => {
   const { request, response, url } = route
   if (isRoute(url, request, "/v1/ephemeral-providers", "GET")) {
-    writeJson(response, 200, { providers: await providerSummaries(service.credentials) })
+    writeJson(response, 200, { providers: await providerSummaries(service) })
     return true
   }
   const credentialsFor = methodRouteId(route, "PUT", "/v1/ephemeral-providers/:id/credentials")
@@ -115,18 +115,18 @@ const saveCredentials = async (
   return true
 }
 
-const providerSummaries = (
-  credentials: EphemeralCredentialStore
-): Promise<ReadonlyArray<EphemeralProviderSummary>> =>
-  Promise.all(
-    EPHEMERAL_PROVIDER_IDS.map(async (id) => ({
-      id,
-      displayName: EPHEMERAL_PROVIDER_CATALOG[id].displayName,
-      configured: await credentials.isConfigured(id),
-      credentialKeys: EPHEMERAL_CREDENTIAL_KEYS[id],
-      defaults: defaultsFor(id)
-    }))
-  )
+const providerSummaries = async (
+  service: EphemeralMachinesService
+): Promise<ReadonlyArray<EphemeralProviderSummary>> => {
+  const configured = new Set(await service.machines.configuredProviders())
+  return EPHEMERAL_PROVIDER_IDS.map((id) => ({
+    id,
+    displayName: EPHEMERAL_PROVIDER_CATALOG[id].displayName,
+    configured: configured.has(id),
+    credentialKeys: EPHEMERAL_CREDENTIAL_KEYS[id],
+    defaults: defaultsFor(id)
+  }))
+}
 
 const defaultsFor = (id: EphemeralProviderId): Readonly<Record<string, unknown>> =>
   decodeProviderOptions(EPHEMERAL_PROVIDER_CATALOG[id], {})

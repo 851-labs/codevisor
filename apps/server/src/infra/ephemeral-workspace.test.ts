@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest"
+
+import { ephemeralHarness } from "./ephemeral-test-support.js"
+
+const clientWorkspaceId = "A1B2C3D4-0000-4000-8000-00000000000A"
+const request = {
+  provider: "e2b" as const,
+  projectId: "project-1",
+  name: "Spike box",
+  workspaceId: clientWorkspaceId
+}
+const unopenedGraceMs = 60 * 60 * 1000
+
+const placedForClient = async () => {
+  const harness = await ephemeralHarness()
+  await harness.machines.create(request)
+  await harness.machines.settled()
+  return harness
+}
+
+const advanceTo = async (
+  harness: Awaited<ReturnType<typeof placedForClient>>,
+  sinceCreate: number
+) => {
+  const createdAt = Date.parse((await harness.machines.list())[0]?.createdAt ?? "")
+  await harness.deps.clock.sleep(createdAt + sinceCreate - harness.deps.clock.now())
+}
+
+describe("a workspace the client opens itself", () => {
+  it("isn't created on the ephemeral machine, so the client's first chat opens it", async () => {
+    const harness = await placedForClient()
+
+    expect(harness.toolCalls.map((call) => call.tool)).toEqual(["codevisor.projects.clone"])
+    expect((await harness.machines.list())[0]).toMatchObject({
+      state: "ready",
+      workspaceId: clientWorkspaceId.toLowerCase()
+    })
+    expect((await harness.machines.list())[0]?.workspaceOpenedAt).toBeUndefined()
+  })
+
+  it("keeps the machine until the workspace opens, then watches it whatever its id's case", async () => {
+    const harness = await placedForClient()
+    await harness.machines.watch()
+    expect(harness.provider.machines.size).toBe(1)
+
+    harness.workspaces.push({ id: clientWorkspaceId, isArchived: false })
+    await harness.machines.watch()
+    expect((await harness.machines.list())[0]?.workspaceOpenedAt).toBe(
+      new Date(harness.deps.clock.now()).toISOString()
+    )
+
+    const workspace = harness.workspaces[0]
+    if (workspace !== undefined) workspace.isArchived = true
+    await harness.machines.watch()
+    expect(await harness.machines.list()).toEqual([])
+  })
+
+  it("tears the machine down when nobody opens its workspace within an hour", async () => {
+    const harness = await placedForClient()
+    await advanceTo(harness, unopenedGraceMs - 1)
+    await harness.machines.watch()
+    expect(harness.provider.machines.size).toBe(1)
+
+    await advanceTo(harness, unopenedGraceMs)
+    await harness.machines.watch()
+
+    expect(harness.logs).toContain(
+      "Destroying ephemeral machine Spike box (id-1): nobody opened its workspace"
+    )
+    expect(await harness.machines.list()).toEqual([])
+  })
+})

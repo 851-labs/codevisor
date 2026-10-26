@@ -148,15 +148,19 @@ const removeQuietly = async (options: EphemeralBootOptions, deviceId: string): P
   }
 }
 
-const bootstrapSettings = (env: NodeJS.ProcessEnv) => {
+const bootstrapSettings = (env: NodeJS.ProcessEnv) => ({
+  ...(env["CODEVISOR_INSTALL_URL"] === undefined
+    ? {}
+    : { installUrl: env["CODEVISOR_INSTALL_URL"] }),
+  serverEnvironment: developmentServerEnvironment(env)
+})
+
+const developmentServerEnvironment = (env: NodeJS.ProcessEnv): Record<string, string> => {
   const caFile = env["CODEVISOR_NET_CA_FILE"]
+  const instance = env["CODEVISOR_DEV_INSTANCE_ID"]
   return {
-    ...(env["CODEVISOR_INSTALL_URL"] === undefined
-      ? {}
-      : { installUrl: env["CODEVISOR_INSTALL_URL"] }),
-    ...(caFile === undefined
-      ? {}
-      : { serverEnvironment: { CODEVISOR_NET_CA_PEM: readFileSync(caFile, "utf8") } })
+    ...(caFile === undefined ? {} : { CODEVISOR_NET_CA_PEM: readFileSync(caFile, "utf8") }),
+    ...(instance === undefined ? {} : { CODEVISOR_DEV_INSTANCE_ID: `${instance}-ephemeral` })
   }
 }
 

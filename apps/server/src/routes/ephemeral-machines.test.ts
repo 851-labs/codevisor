@@ -52,13 +52,18 @@ describe("ephemeral provider credentials", () => {
       providers: [
         { id: "e2b", displayName: "E2B", configured: true, credentialKeys: ["apiKey"] },
         { id: "modal", configured: false, credentialKeys: ["tokenId", "tokenSecret"] },
-        { id: "tart", configured: true, credentialKeys: [] }
+        { id: "tart", configured: false, credentialKeys: [] }
       ]
     })
     for (const seen of [providers.body, machines.body, stored, logged]) {
       expect(JSON.stringify(seen)).not.toContain(secretValue)
     }
     expect(await credentials.read("e2b")).toEqual({ apiKey: secretValue })
+    expect(await credentials.read("tart")).toEqual({})
+    expect([
+      await credentials.isConfigured("e2b"),
+      await credentials.isConfigured("modal")
+    ]).toEqual([true, false])
   })
 
   it("rejects incomplete keys, keys for Tart and unknown providers, and can be cleared", async () => {

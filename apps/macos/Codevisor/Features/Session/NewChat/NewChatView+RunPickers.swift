@@ -13,6 +13,16 @@ extension NewChatView {
     case project(ProjectGroup.ID)
   }
 
+  enum MachinePickerTarget: Hashable {
+    case machine(CodevisorMachine.ID)
+    case ephemeral(String)
+
+    var machineId: CodevisorMachine.ID? {
+      if case let .machine(id) = self { return id }
+      return nil
+    }
+  }
+
   enum RunLocationPickerTarget: Hashable {
     case projectDirectory
     case newWorktree
@@ -49,7 +59,9 @@ extension NewChatView {
     )
   }
 
-  var showsMachinePicker: Bool { environment.machines.allMachines.count > 1 }
+  var showsMachinePicker: Bool {
+    environment.machines.allMachines.count > 1 || !ephemeralTargets.targets.isEmpty
+  }
 
   func liveProject(for controller: SessionController) -> Project {
     environment.projectList.projects.first {
@@ -59,38 +71,36 @@ extension NewChatView {
 
   func machinePicker(_ controller: SessionController) -> some View {
     let machines = environment.machines.allMachines
-    let selectedServerId = controller.project.serverId
-    let selectedMachine = environment.machines.machine(for: selectedServerId)
-    let selection = Binding(
-      get: { controller.project.serverId },
-      set: { id in
-        guard let machine = environment.machines.machine(for: id) else { return }
-        selectTargetMachine(machine, controller: controller)
-      }
-    )
+    let selectedMachine = environment.machines.machine(for: controller.project.serverId)
+    let ephemeral = controller.ephemeralTarget
+    let selection = machineSelection(controller)
+    let chipText = ephemeral?.pickerTitle ?? selectedMachine?.name ?? "Machine"
     return RunPickerMenu(
-      chipText: selectedMachine?.name ?? "Machine",
-      chipSymbol: (selectedMachine?.icon ?? .fallback).systemImage
+      chipText: chipText,
+      chipSymbol: ephemeral?.systemImage ?? (selectedMachine?.icon ?? .fallback).systemImage
     ) {
-      Autocomplete.Picker("Machines", selection: selection, options: machines) { machine in
-        Autocomplete.Choice(machine.name, value: machine.id) {
-          if case .waiting = environment.machines.availability(for: machine.id) {
-            ProgressView().controlSize(.small)
-          } else {
-            Image(systemName: machine.icon.systemImage)
+      Autocomplete.Picker("Machines", selection: selection) {
+        for machine in machines {
+          Autocomplete.Choice(machine.name, value: MachinePickerTarget.machine(machine.id)) {
+            if case .waiting = environment.machines.availability(for: machine.id) {
+              ProgressView().controlSize(.small)
+            } else {
+              Image(systemName: machine.icon.systemImage)
+            }
+          } label: {
+            Text(machine.name)
           }
-        } label: {
-          Text(machine.name)
+          .disabled(environment.machines.availability(for: machine.id) != .ready)
         }
-        .disabled(environment.machines.availability(for: machine.id) != .ready)
+        for target in ephemeralTargets.targets {
+          Autocomplete.Choice(
+            target.pickerTitle, value: MachinePickerTarget.ephemeral(target.providerId), systemImage: target.systemImage
+          )
+        }
       }
-      .favorites($favoriteMachineIDs)
+      .favorites(machineFavorites)
       .labelsHidden()
       Autocomplete.Footer(id: "actions") {
-        Autocomplete.Action("New Ephemeral Machine…", systemImage: "cloud") {
-          showsEphemeralMachineDialog = true
-        }
-        .help("Start a throwaway machine for this project")
         Autocomplete.Action("Manage Machines…", systemImage: "gearshape.fill") {
           SettingsRouter.shared.showMachines()
           openSettings()
@@ -103,7 +113,33 @@ extension NewChatView {
     .onHover { trackHover(.machine, $0) }
     .help("Choose which machine this chat runs on")
     .accessibilityLabel("Machine")
-    .accessibilityValue(selectedMachine?.name ?? "Machine")
+    .accessibilityValue(chipText)
+  }
+
+  private func machineSelection(_ controller: SessionController) -> Binding<MachinePickerTarget> {
+    Binding(
+      get: { controller.ephemeralTarget.map { .ephemeral($0.providerId) } ?? .machine(controller.project.serverId) },
+      set: { selectMachineTarget($0, controller: controller) }
+    )
+  }
+
+  private var machineFavorites: Binding<[MachinePickerTarget]> {
+    Binding(
+      get: { favoriteMachineIDs.map { .machine($0) } },
+      set: { favoriteMachineIDs = $0.compactMap(\.machineId) }
+    )
+  }
+
+  private func selectMachineTarget(_ target: MachinePickerTarget, controller: SessionController) {
+    switch target {
+    case let .machine(id):
+      controller.ephemeralTarget = nil
+      guard let machine = environment.machines.machine(for: id) else { return }
+      selectTargetMachine(machine, controller: controller)
+    case let .ephemeral(providerId):
+      controller.ephemeralTarget = .provider(providerId)
+      relocateWhenEphemeralMachineIsReady(controller)
+    }
   }
 
   func projectPicker(_ controller: SessionController) -> some View {

@@ -7,6 +7,7 @@ export const EPHEMERAL_WORKSPACE_LABEL = "codevisor-ephemeral"
 export interface PlacedWorkspace {
   readonly remoteProjectId: string
   readonly workspaceId: string
+  readonly workspaceOpenedAt?: string
 }
 
 export type RemoteWorkspaceState = "active" | "archived" | "missing"
@@ -19,6 +20,9 @@ export const placeWorkspace = async (
   if (project === undefined) throw new Error(`No project ${machine.projectId} on this machine`)
 
   const remoteProjectId = await remoteProjectFor(deps, machine.machineId, project)
+  if (machine.workspaceId !== undefined)
+    return { remoteProjectId, workspaceId: machine.workspaceId }
+
   const workspaceId = deps.newId()
   await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.upsert", {
     workspaceId,
@@ -27,21 +31,24 @@ export const placeWorkspace = async (
     hasCustomName: true,
     labels: { [EPHEMERAL_WORKSPACE_LABEL]: machine.id }
   })
-  return { remoteProjectId, workspaceId }
+  return { remoteProjectId, workspaceId, workspaceOpenedAt: isoNow(deps) }
 }
 
 export const remoteWorkspaceState = async (
   deps: EphemeralMachineDeps,
   machine: EphemeralMachine & { readonly machineId: string }
 ): Promise<RemoteWorkspaceState> => {
-  const listed = await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.list", {
-    label: `${EPHEMERAL_WORKSPACE_LABEL}=${machine.id}`
-  })
-  const workspace = workspacesIn(listed).find((candidate) => candidate.id === machine.workspaceId)
+  const listed = await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.list", {})
+  const workspace = workspacesIn(listed).find((candidate) =>
+    sameId(candidate.id, machine.workspaceId)
+  )
   if (workspace === undefined) return "missing"
 
   return workspace.isArchived ? "archived" : "active"
 }
+
+export const isoNow = (deps: EphemeralMachineDeps): string =>
+  new Date(deps.clock.now()).toISOString()
 
 const remoteProjectFor = async (
   deps: EphemeralMachineDeps,
@@ -90,6 +97,9 @@ const idIn = (value: unknown, namedKey: string): string | undefined => {
   const id = recordField(value, namedKey) ?? recordField(value, "id")
   return typeof id === "string" ? id : undefined
 }
+
+const sameId = (left: string, right: string | undefined): boolean =>
+  left.toLowerCase() === right?.toLowerCase()
 
 const recordField = (value: unknown, key: string): unknown =>
   isRecord(value) ? value[key] : undefined

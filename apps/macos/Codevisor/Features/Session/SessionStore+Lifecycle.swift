@@ -27,6 +27,11 @@ extension SessionStore {
     controller.onDraftChange = nil
   }
 
+  func reregister(_ controller: SessionController, from previous: ChatSession, to relocated: ChatSession) {
+    controllers[SessionKey(previous)] = nil
+    register(controller, for: relocated)
+  }
+
   func restoreDraftPersistence(_ controller: SessionController) {
     draftsByServer[controller.project.serverId] = controller
     enableDraftPersistence(

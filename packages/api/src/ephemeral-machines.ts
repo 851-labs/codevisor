@@ -34,6 +34,7 @@ export const EphemeralMachine = Schema.Struct({
   machineId: Schema.optional(Schema.String),
   remoteProjectId: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
+  workspaceOpenedAt: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String)
 })
 export type EphemeralMachine = typeof EphemeralMachine.Type
@@ -48,6 +49,7 @@ export const CreateEphemeralMachineRequest = Schema.Struct({
   provider: EphemeralProviderKind,
   projectId: Schema.String,
   name: Schema.optional(Schema.String),
+  workspaceId: Schema.optional(Schema.String),
   options: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
 })
 export type CreateEphemeralMachineRequest = typeof CreateEphemeralMachineRequest.Type

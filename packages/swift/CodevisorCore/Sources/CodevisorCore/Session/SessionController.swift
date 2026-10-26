@@ -136,6 +136,12 @@ final public class SessionController {
   public internal(set) var worktreeName: String?
   public internal(set) var sessionCwdOverride: String?
   public var onWorktreeCreated: ((ServerWorktree) -> Void)?
+  public var ephemeralTarget: EphemeralTarget? {
+    didSet {
+      if ephemeralTarget != nil { wantsNewWorktree = false }
+    }
+  }
+  public var onEphemeralMachineReady: ((ChatSession, ChatSession, Project) -> Void)?
   public internal(set) var setupPhases: [SessionSetupPhase] = [] {
     didSet {
       if setupPhases != oldValue { transcriptProjectionRevision &+= 1 }

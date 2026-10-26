@@ -64,7 +64,7 @@ struct NewChatView: View {
   @State var isRunLocationMenuPresented = false
   @State var pendingSetupGroupID: ProjectGroup.ID?
   @State var projectSetup: ProjectMachineSetup?
-  @State var showsEphemeralMachineDialog = false
+  @State var ephemeralTargets = EphemeralTargetCatalog()
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
@@ -127,7 +127,7 @@ struct NewChatView: View {
                         runPickerDivider(between: .machine, and: .project)
                       }
                       projectPicker(controller)
-                      if liveProject(for: controller).isGitRepository {
+                      if liveProject(for: controller).isGitRepository, controller.ephemeralTarget == nil {
                         runPickerDivider(between: .project, and: .location)
                         runLocationPicker(controller)
                       }
@@ -187,7 +187,9 @@ struct NewChatView: View {
     }
     .attachmentDropTarget(controller)
     .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
-    .modifier(ephemeralMachineDialog)
+    .task(id: composerServerId) {
+      await ephemeralTargets.load(from: environment.machines.client(for: composerServerId))
+    }
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {
         setUpController()

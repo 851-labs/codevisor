@@ -19,7 +19,7 @@ import { joinAccount, requireOwner, teardownMachine } from "./ephemeral-account.
 import { ephemeralRemote, type EphemeralRemote } from "./ephemeral-remote.js"
 import type { EphemeralRecordStore } from "./ephemeral-store.js"
 import type { OneWaySyncReport } from "./ephemeral-sync.js"
-import { placeWorkspace, remoteWorkspaceState } from "./ephemeral-workspace.js"
+import { isoNow, placeWorkspace, remoteWorkspaceState } from "./ephemeral-workspace.js"
 
 export interface EphemeralMachineDeps {
   readonly records: EphemeralRecordStore
@@ -51,7 +51,10 @@ export interface EphemeralMachines {
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
   readonly settled: () => Promise<void>
+  readonly configuredProviders: () => Promise<ReadonlyArray<EphemeralProviderId>>
 }
+
+const unopenedWorkspaceGraceMs = 60 * 60 * 1000
 
 const inProgress: ReadonlySet<EphemeralMachine["state"]> = new Set([
   "creating",
@@ -117,6 +120,7 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
         )
       }
     },
+    configuredProviders: deps.providers.configured,
     settled: async () => {
       await Promise.all(pipelines)
     }
@@ -194,9 +198,28 @@ const endedReason = async (
     return `its ${machine.provider} machine ended`
   }
   const state = await remoteWorkspaceState(deps, machine).catch(() => "unreachable" as const)
+  if (state === "active") await noteWorkspaceOpened(deps, machine)
   if (state === "archived") return "its workspace was archived"
-  if (state === "missing") return "its workspace is gone"
+  if (state === "missing") return missingWorkspaceReason(deps, machine)
   return undefined
+}
+
+const noteWorkspaceOpened = async (
+  deps: EphemeralMachineDeps,
+  machine: PlacedMachine
+): Promise<void> => {
+  if (machine.workspaceOpenedAt !== undefined) return
+
+  await deps.records.put({ ...machine, workspaceOpenedAt: isoNow(deps) })
+}
+
+const missingWorkspaceReason = (
+  deps: EphemeralMachineDeps,
+  machine: PlacedMachine
+): string | undefined => {
+  if (machine.workspaceOpenedAt !== undefined) return "its workspace is gone"
+  if (deps.clock.now() - Date.parse(machine.createdAt) < unopenedWorkspaceGraceMs) return undefined
+  return "nobody opened its workspace"
 }
 
 const teardownRecord = async (
@@ -260,7 +283,8 @@ const newRecord = (
     name: request.name?.trim() || `${provider.displayName} ${id.slice(0, 8)}`,
     projectId: request.projectId,
     state: "creating",
-    createdAt: new Date(deps.clock.now()).toISOString()
+    createdAt: isoNow(deps),
+    ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId.toLowerCase() })
   }
 }
 

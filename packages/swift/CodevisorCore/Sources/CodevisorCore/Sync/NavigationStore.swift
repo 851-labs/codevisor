@@ -131,6 +131,11 @@ public final class NavigationStore {
 
   public var pendingIntents: [NavigationOutboxEntry] { outbox.entries }
 
+  func withdrawExpectedSession(_ sessionId: UUID, machineId: String) {
+    guard outbox.retireExpectedSessions(machineId: machineId, listed: [sessionId]) else { return }
+    rebuild()
+  }
+
   func publishTabOrder(of workspace: Workspace) {
     guard workspace.isServerSynced else { return }
     var records = NavigationRecords(caches.caches[workspace.serverId])
