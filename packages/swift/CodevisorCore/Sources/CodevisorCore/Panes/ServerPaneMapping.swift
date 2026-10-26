@@ -108,11 +108,16 @@ private nonisolated struct PaneFormat: Sendable {
 
   private static let browser = PaneFormat(
     paneTypes: ["browser"],
-    fields: { PaneFields(paneType: "browser", metadata: metadataJSON(BrowserPaneMetadata(url: $0.browserURL))) },
+    fields: { pane in
+      PaneFields(
+        paneType: "browser",
+        metadata: metadataJSON(BrowserPaneMetadata(url: pane.browserURL, favicon: pane.browserFavicon)))
+    },
     descriptor: { record, id in
-      PaneDescriptorState(
+      let browser = metadata(BrowserPaneMetadata.self, of: record)
+      return PaneDescriptorState(
         id: id, kind: .browser, name: record.title,
-        terminalKey: id.uuidString, browserURL: metadata(BrowserPaneMetadata.self, of: record)?.url)
+        terminalKey: id.uuidString, browserURL: browser?.url, browserFavicon: browser?.favicon)
     }
   )
 
@@ -188,7 +193,10 @@ private nonisolated struct PaneFormat: Sendable {
     }
   )
 
-  private struct BrowserPaneMetadata: Codable { var url: String? }
+  private struct BrowserPaneMetadata: Codable {
+    var url: String?
+    var favicon: String?
+  }
 
   private struct LegacyTerminalMetadata: Decodable { var attachOnly: Bool? }
 

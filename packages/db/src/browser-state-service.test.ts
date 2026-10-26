@@ -1,6 +1,7 @@
 import { browserCookieKey, type BrowserCookie } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
+import { maxStoredBrowserFavicons } from "./browser-favicon-service.js"
 import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
@@ -14,6 +15,7 @@ const cookie: BrowserCookie = {
   sameSite: "lax"
 }
 const key = browserCookieKey(cookie)
+const faviconHash = (index: number) => index.toString(16).padStart(64, "0")
 
 describe("shared browser state", () => {
   it("merges independent changes and preserves logout tombstones across restart", async () => {
@@ -24,7 +26,11 @@ describe("shared browser state", () => {
       const preferences = { ...cookie, name: "theme", value: "dark" }
       const merged = await run(
         db.exchangeBrowserCookies([
-          { key: browserCookieKey(preferences), expectedRevision: 0, cookie: preferences }
+          {
+            key: browserCookieKey(preferences),
+            expectedRevision: 0,
+            cookie: preferences
+          }
         ])
       )
       expect(merged.entries).toHaveLength(2)
@@ -63,7 +69,11 @@ describe("shared browser state", () => {
         vi.setSystemTime(new Date("2026-01-01T00:01:00Z"))
         const next = await run(
           db.exchangeBrowserCookies([
-            { key, expectedRevision: first.revision, cookie: { ...cookie, expires } }
+            {
+              key,
+              expectedRevision: first.revision,
+              cookie: { ...cookie, expires }
+            }
           ])
         )
         expect(next.entries[0]?.cookie).toBeNull()
@@ -116,13 +126,39 @@ describe("shared browser state", () => {
       await expect(
         run(
           db.exchangeBrowserCookies(
-            Array.from({ length: 20_001 }, () => ({ key, expectedRevision: 0, cookie }))
+            Array.from({ length: 20_001 }, () => ({
+              key,
+              expectedRevision: 0,
+              cookie
+            }))
           )
         )
       ).rejects.toThrow("Too many cookie changes")
       expect((await run(db.exchangeBrowserCookies([]))).entries).toEqual([])
     } finally {
       await run(db.close)
+    }
+  })
+  it("keeps the most recently used favicons within the storage limit", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    try {
+      for (let index = 0; index < maxStoredBrowserFavicons; index += 1) {
+        vi.setSystemTime(index)
+        await run(db.putBrowserFavicon(faviconHash(index), Buffer.from([index % 256])))
+      }
+      vi.setSystemTime(maxStoredBrowserFavicons)
+      expect(await run(db.getBrowserFavicon(faviconHash(0)))).toEqual(Buffer.from([0]))
+      vi.setSystemTime(maxStoredBrowserFavicons + 1)
+      await run(db.putBrowserFavicon(faviconHash(maxStoredBrowserFavicons), Buffer.from([1])))
+      expect(await run(db.getBrowserFavicon(faviconHash(0)))).toEqual(Buffer.from([0]))
+      expect(await run(db.getBrowserFavicon(faviconHash(1)))).toBeUndefined()
+      expect(await run(db.getBrowserFavicon(faviconHash(maxStoredBrowserFavicons)))).toEqual(
+        Buffer.from([1])
+      )
+    } finally {
+      await run(db.close)
+      vi.useRealTimers()
     }
   })
 })

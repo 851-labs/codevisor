@@ -440,6 +440,8 @@ export interface CodevisorDatabaseService
     paneId: string,
     navigation: BrowserNavigation
   ) => Effect.Effect<void, DatabaseError>
+  readonly getBrowserFavicon: (sha256: string) => Effect.Effect<Buffer | undefined, DatabaseError>
+  readonly putBrowserFavicon: (sha256: string, data: Buffer) => Effect.Effect<void, DatabaseError>
   readonly getMachineSetting: (key: string) => Effect.Effect<string | undefined, DatabaseError>
   readonly setMachineSetting: (
     key: string,

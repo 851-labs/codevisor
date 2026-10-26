@@ -33,6 +33,7 @@ export const BrowserCookieExchange = Schema.Struct({
 })
 export const BrowserNavigation = Schema.Struct({ url: Schema.String, title: Schema.String })
 export type BrowserNavigation = typeof BrowserNavigation.Type
+export const BrowserFaviconUpload = Schema.Struct({ data: Schema.String })
 
 export const browserCookieKey = (cookie: Pick<BrowserCookie, "domain" | "path" | "name">): string =>
   JSON.stringify([cookie.domain.replace(/^\./, "").toLowerCase(), cookie.path, cookie.name])

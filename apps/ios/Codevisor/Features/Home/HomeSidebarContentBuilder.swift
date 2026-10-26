@@ -194,7 +194,7 @@ struct HomeSidebarContentBuilder {
     case .terminal:
       .terminal
     case .browser:
-      .browser(favicon: BrowserPaneCache.shared.favicon(paneId: pane.id))
+      .browser(favicon: pane.browserFavicon)
     case .plugin:
       .plugin(pluginId: pane.pluginId ?? "", paneType: pane.pluginPaneType)
     case .document:

@@ -21,14 +21,14 @@ struct HomeSidebarTabIcon: View {
       case .terminal:
         symbol("terminal")
       case let .browser(favicon):
-        if let favicon {
-          Image(uiImage: favicon)
+        BrowserFaviconImage(reference: favicon, client: faviconClient) { image in
+          image
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .accessibilityHidden(true)
-        } else {
+        } placeholder: {
           symbol("globe")
         }
       case let .plugin(pluginId, paneType):
@@ -56,6 +56,12 @@ struct HomeSidebarTabIcon: View {
         symbol("square.dashed")
       }
     }
+  }
+
+  private var faviconClient: (any BrowserFaviconClienting)? {
+    guard environment.machines.machine(for: serverId) != nil else { return nil }
+
+    return environment.machines.client(for: serverId)
   }
 
   private func symbol(_ name: String) -> some View {

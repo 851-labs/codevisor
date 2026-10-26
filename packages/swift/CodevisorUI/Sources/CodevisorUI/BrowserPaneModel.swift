@@ -24,7 +24,7 @@ public final class BrowserPaneModel: NSObject {
     didSet { reloadIfContentModeWasGuessed() }
   }
   @ObservationIgnored private var contentModeWasGuessed = false
-  @ObservationIgnored public var onFaviconChange: ((CGImage?) -> Void)?
+  @ObservationIgnored public let favicons: BrowserFaviconSharing
   @ObservationIgnored public var onOpenLink: ((URL) -> Void)?
   @ObservationIgnored public var onCreatePopup: ((WKWebViewConfiguration, URL?) -> WKWebView?)?
   @ObservationIgnored public var onClose: (() -> Void)?
@@ -58,6 +58,7 @@ public final class BrowserPaneModel: NSObject {
     self.machineId = machineId
     self.machineName = machineName
     self.client = client
+    favicons = BrowserFaviconSharing(client: client)
     self.resolveBaseURL = resolveBaseURL
     self.recoverConnection = recoverConnection
     let provider = BrowserSearchProvider(client: client, resolveBaseURL: resolveBaseURL)
@@ -65,7 +66,7 @@ public final class BrowserPaneModel: NSObject {
     self.requestedURL = Self.navigationURL(initialURL ?? "https://www.google.com/")
     self.url = requestedURL
     super.init()
-    faviconLoader.onChange = { [weak self] image in self?.onFaviconChange?(image) }
+    faviconLoader.onChange = { [weak self] image in self?.saveFavicon(image) }
   }
 
   public static func navigationURL(_ input: String) -> URL? {
@@ -208,10 +209,17 @@ public final class BrowserPaneModel: NSObject {
     suggestions.dismiss()
     releasePage()
     onNavigate = nil
-    onFaviconChange = nil
+    favicons.onShare = nil
     onOpenLink = nil
     onCreatePopup = nil
     onClose = nil
+  }
+
+  private func saveFavicon(_ image: CGImage?) {
+    guard let image, let page = url.flatMap({ BrowserLocation.sharedURL($0.absoluteString) })?.absoluteString
+    else { return }
+
+    favicons.iconLoaded(image: image, page: page)
   }
 
   private func releasePage() {
@@ -307,8 +315,13 @@ public final class BrowserPaneModel: NSObject {
     paneSync.publish(
       url: location.absoluteString, title: title, cookies: BrowserWebsiteProfile.sync(machineId: machineId)
     ) { [weak self] in
-      self?.onNavigate?(location.absoluteString, self?.title ?? "Browser")
+      self?.navigated(to: location.absoluteString)
     }
+  }
+
+  private func navigated(to page: String) {
+    onNavigate?(page, title)
+    favicons.pageLoaded(page)
   }
 
   public func connectionDidChange() async {

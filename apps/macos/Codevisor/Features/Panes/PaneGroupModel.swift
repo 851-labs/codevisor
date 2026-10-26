@@ -220,15 +220,21 @@ final class PaneGroupModel: Identifiable {
       model.onClose = { [weak self] in self?.closePane(id: id) }
       model.onSelect = { [weak self] in self?.select(id: id) }
       model.onNavigate = { [weak self] url, title in
-        guard let self, let index = self.state.panes.firstIndex(where: { $0.id == id }),
-          self.state.panes[index].browserURL != url || self.state.panes[index].name != title
-        else { return }
-        self.state.panes[index].browserURL = url
-        self.state.panes[index].name = title
-        self.persist()
-        self.onPaneChanged?(self.state.panes[index])
+        self?.updateBrowserPane(id) { BrowserPaneUpdate.navigated($0, to: url, title: title) }
+      }
+      model.favicons.onShare = { [weak self] reference, page in
+        self?.updateBrowserPane(id) { BrowserPaneUpdate.favicon(reference, savedFor: page, on: $0) }
       }
     }
+  }
+
+  private func updateBrowserPane(_ id: UUID, _ update: (PaneDescriptorState) -> PaneDescriptorState?) {
+    guard let index = state.panes.firstIndex(where: { $0.id == id }), let updated = update(state.panes[index])
+    else { return }
+
+    state.panes[index] = updated
+    persist()
+    onPaneChanged?(updated)
   }
 
   func wireChatHost(_ chat: ChatPane, paneId: UUID) {

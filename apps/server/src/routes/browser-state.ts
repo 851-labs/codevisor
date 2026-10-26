@@ -9,6 +9,7 @@ import {
   writeJson,
   type CodevisorServerServices
 } from "../server-context.js"
+import { routeBrowserFavicon } from "./browser-favicons.js"
 
 export const routeBrowserState = async (
   services: CodevisorServerServices,
@@ -25,6 +26,8 @@ export const routeBrowserState = async (
     writeJson(response, 200, await run(services.db.exchangeBrowserCookies(mutations)))
     return true
   }
+  const favicon = /^\/v1\/browser\/state\/favicons\/([0-9a-f]{64})$/.exec(url.pathname)
+  if (favicon && (await routeBrowserFavicon(services, request, response, favicon[1]!))) return true
   const match = /^\/v1\/browser\/state\/panes\/([a-zA-Z0-9-]{1,80})$/.exec(url.pathname)
   if (match) {
     const paneId = match[1]!.toLowerCase()

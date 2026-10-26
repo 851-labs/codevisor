@@ -75,6 +75,16 @@ extension WorkspaceScreen {
     return initialComposerFocusRequest
   }
 
+  private func updateBrowserPane(_ id: UUID, _ update: (PaneDescriptorState) -> PaneDescriptorState?) {
+    var state = panes
+    guard let index = state.panes.firstIndex(where: { $0.id == id }), let updated = update(state.panes[index])
+    else { return }
+
+    state.panes[index] = updated
+    paneBinding.wrappedValue = state
+    publishPane(updated)
+  }
+
   func browserPaneModel(for pane: PaneDescriptorState) -> BrowserPaneModel {
     let machines = environment.machines
     let serverId = resolvedServerId
@@ -91,14 +101,10 @@ extension WorkspaceScreen {
         })
     }
     model.onNavigate = { url, title in
-      var state = panes
-      guard let index = state.panes.firstIndex(where: { $0.id == pane.id }),
-        state.panes[index].browserURL != url || state.panes[index].name != title
-      else { return }
-      state.panes[index].browserURL = url
-      state.panes[index].name = title
-      paneBinding.wrappedValue = state
-      publishPane(state.panes[index])
+      updateBrowserPane(pane.id) { BrowserPaneUpdate.navigated($0, to: url, title: title) }
+    }
+    model.favicons.onShare = { reference, page in
+      updateBrowserPane(pane.id) { BrowserPaneUpdate.favicon(reference, savedFor: page, on: $0) }
     }
     model.onOpenLink = { url in
       openBrowserLink(from: pane.id, url: url, configuration: nil)

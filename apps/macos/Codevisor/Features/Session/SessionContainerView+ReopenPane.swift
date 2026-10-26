@@ -75,7 +75,7 @@ extension SessionContainerView {
     case .browser:
       return PaneDescriptorState(
         id: paneId, kind: .browser, name: closed.name,
-        terminalKey: paneId.uuidString, browserURL: closed.browserURL)
+        terminalKey: paneId.uuidString, browserURL: closed.browserURL, browserFavicon: closed.browserFavicon)
     case .screenSharing:
       return PaneDescriptorState(
         id: paneId, kind: .screenSharing, name: closed.name,

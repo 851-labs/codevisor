@@ -27,6 +27,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var pluginPaneType: String?
   public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
+  public var browserFavicon: String?
   public var documentPath: String?
   public var review: ReviewPanePreferences?
   public var simulator: SimulatorPanePreferences?
@@ -44,6 +45,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     pluginPaneType: String? = nil,
     documentPath: String? = nil,
     browserURL: String? = nil,
+    browserFavicon: String? = nil,
     screenSharing: ScreenSharingPanePreferences? = nil,
     review: ReviewPanePreferences? = nil,
     simulator: SimulatorPanePreferences? = nil,
@@ -61,6 +63,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.pluginPaneType = pluginPaneType
     self.documentPath = documentPath
     self.browserURL = browserURL
+    self.browserFavicon = browserFavicon
     self.screenSharing = screenSharing
     self.review = review
     self.simulator = simulator
@@ -82,6 +85,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
       documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
       browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL),
+      browserFavicon: try container.decodeIfPresent(String.self, forKey: .browserFavicon),
       screenSharing: try container.decodeIfPresent(ScreenSharingPanePreferences.self, forKey: .screenSharing),
       review: try container.decodeIfPresent(ReviewPanePreferences.self, forKey: .review),
       simulator: try container.decodeIfPresent(SimulatorPanePreferences.self, forKey: .simulator),

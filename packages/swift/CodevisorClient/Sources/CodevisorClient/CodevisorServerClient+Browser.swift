@@ -26,6 +26,8 @@ public extension CodevisorServerClienting {
 
 private struct CookieExchange: Encodable { var mutations: [BrowserCookieMutation] }
 private struct NavigationResponse: Decodable { var navigation: BrowserNavigation? }
+private struct FaviconUpload: Encodable { var data: Data }
+private struct FaviconResponse: Decodable { var favicon: Data? }
 
 extension CodevisorServerClient {
   public func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot {
@@ -39,6 +41,14 @@ extension CodevisorServerClient {
     let _: EmptyResponse = try await send(
       "/v1/browser/state/panes/\(paneId.uuidString.lowercased())", method: "PUT", body: navigation)
   }
+  public func browserFavicon(sha256: String) async throws -> Data? {
+    let result: FaviconResponse = try await get("/v1/browser/state/favicons/\(sha256)")
+    return result.favicon
+  }
+  public func publishBrowserFavicon(sha256: String, png: Data) async throws {
+    let _: EmptyResponse = try await send(
+      "/v1/browser/state/favicons/\(sha256)", method: "PUT", body: FaviconUpload(data: png))
+  }
 }
 private struct EmptyResponse: Decodable {}
 public extension CodevisorServerClienting {
@@ -49,4 +59,6 @@ public extension CodevisorServerClienting {
   func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws {
     throw URLError(.unsupportedURL)
   }
+  func browserFavicon(sha256: String) async throws -> Data? { throw URLError(.unsupportedURL) }
+  func publishBrowserFavicon(sha256: String, png: Data) async throws { throw URLError(.unsupportedURL) }
 }

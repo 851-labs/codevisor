@@ -35,6 +35,7 @@ final class ChromiumBrowserModel {
   @ObservationIgnored var automationInitialURL: String?
   @ObservationIgnored private var readyWaiters: [CheckedContinuation<CVChromiumView, Error>] = []
   @ObservationIgnored var onNavigate: ((String, String) -> Void)?
+  @ObservationIgnored let favicons: BrowserFaviconSharing
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
@@ -60,6 +61,7 @@ final class ChromiumBrowserModel {
     self.machineId = machineId
     self.machineName = machineName
     self.client = client
+    favicons = BrowserFaviconSharing(client: client)
     self.resolveBaseURL = resolveBaseURL
     let provider = BrowserSearchProvider(client: client, resolveBaseURL: resolveBaseURL)
     suggestions = BrowserSuggestions(profile: machineId, fetch: provider.suggestions)
@@ -166,7 +168,7 @@ final class ChromiumBrowserModel {
           BrowserHistory.shared.record(url: address, title: self.title, profile: self.machineId)
           self.paneSync.publish(url: location.absoluteString, title: self.title, cookies: self.cookieSync) {
             [weak self] in
-            self?.onNavigate?(location.absoluteString, self?.title ?? "Browser")
+            self?.navigated(to: location.absoluteString)
           }
         }
       }
@@ -184,7 +186,7 @@ final class ChromiumBrowserModel {
     view.faviconChanged = { [weak self] data in
       Task { @MainActor [weak self] in
         guard let self, self.generation == token else { return }
-        self.favicon = data.flatMap { NSImage(data: $0) }
+        self.updateFavicon(data)
       }
     }
     view.browserReady = { [weak self, weak view] in
@@ -235,6 +237,19 @@ final class ChromiumBrowserModel {
     let previous = browserWindow
     browserWindow = nil
     previous?.detach()
+  }
+
+  private func updateFavicon(_ png: Data?) {
+    favicon = png.flatMap { NSImage(data: $0) }
+    guard let png, let page = url.flatMap({ BrowserLocation.sharedURL($0.absoluteString) })?.absoluteString
+    else { return }
+
+    favicons.iconLoaded(png: png, page: page)
+  }
+
+  private func navigated(to page: String) {
+    onNavigate?(page, title)
+    favicons.pageLoaded(page)
   }
 
   func windowClosed() {
@@ -354,6 +369,7 @@ final class ChromiumBrowserModel {
     suggestions.dismiss()
     resetBrowser()
     onNavigate = nil
+    favicons.onShare = nil
   }
   private func resetBrowser(keepingAutomationTarget: Bool = false) {
     zoomPercent = 100

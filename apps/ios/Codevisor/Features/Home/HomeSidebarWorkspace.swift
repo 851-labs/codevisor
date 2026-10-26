@@ -47,7 +47,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
   enum Icon: Equatable {
     case chat(harnessId: String, fallbackSymbolName: String)
     case terminal
-    case browser(favicon: UIImage?)
+    case browser(favicon: String?)
     case plugin(pluginId: String, paneType: String?)
     case document
     case screenSharing

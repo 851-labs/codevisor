@@ -3,18 +3,14 @@ import UIKit
 import WebKit
 
 @MainActor
-@Observable
 final class BrowserPaneCache {
   static let shared = BrowserPaneCache()
-  @ObservationIgnored private var models: [UUID: BrowserPaneModel] = [:]
-  private var favicons: [UUID: UIImage] = [:]
-  @ObservationIgnored private var faviconOrder: [UUID] = []
-  @ObservationIgnored private var order: [UUID] = []
+  private var models: [UUID: BrowserPaneModel] = [:]
+  private var order: [UUID] = []
   private init() {}
 
   func model(for id: UUID, make: () -> BrowserPaneModel) -> BrowserPaneModel {
     let model = models[id] ?? make()
-    model.onFaviconChange = { [weak self] image in self?.storeFavicon(image, paneId: id) }
     models[id] = model
     order.removeAll { $0 == id }
     order.append(id)
@@ -27,7 +23,6 @@ final class BrowserPaneCache {
   }
 
   func remove(paneId: UUID) {
-    storeFavicon(nil, paneId: paneId)
     evictModel(paneId: paneId)
   }
 
@@ -38,14 +33,5 @@ final class BrowserPaneCache {
 
   func localTitle(paneId: UUID) -> String? {
     models[paneId]?.title
-  }
-
-  func favicon(paneId: UUID) -> UIImage? { favicons[paneId] }
-
-  private func storeFavicon(_ image: CGImage?, paneId: UUID) {
-    favicons[paneId] = image.map { UIImage(cgImage: $0) }
-    faviconOrder.removeAll { $0 == paneId }
-    if image != nil { faviconOrder.append(paneId) }
-    while faviconOrder.count > 128 { favicons.removeValue(forKey: faviconOrder.removeFirst()) }
   }
 }

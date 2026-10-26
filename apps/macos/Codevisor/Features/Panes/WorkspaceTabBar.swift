@@ -77,6 +77,8 @@ extension PaneTabIcon {
       browserFavicon: descriptor.flatMap {
         $0.kind == .browser ? store.localBrowserModel(paneId: $0.id)?.favicon : nil
       },
+      browserFaviconReference: descriptor?.browserFavicon,
+      browserFaviconClient: environment.machines.client(for: serverId),
       pluginId: descriptor?.pluginId,
       pluginPaneType: descriptor?.pluginPaneType,
       pluginIconClient: environment.machines.client(for: serverId),

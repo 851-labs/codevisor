@@ -22,7 +22,7 @@ struct BrowserPaneStateTests {
     let id = UUID()
     let browser = PaneDescriptorState(
       id: id, kind: .browser, name: "Dev app", terminalKey: id.uuidString,
-      browserURL: "http://localhost:3000/app?q=1#section")
+      browserURL: "http://localhost:3000/app?q=1#section", browserFavicon: String(repeating: "a", count: 64))
     let record = ServerPaneMapping.record(
       from: browser, workspaceId: UUID(), createdAt: Date(timeIntervalSince1970: 0))
     #expect(record.paneType == "browser")

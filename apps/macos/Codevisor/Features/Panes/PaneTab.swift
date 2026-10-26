@@ -139,6 +139,8 @@ struct PaneTab: View {
 struct PaneTabIcon: View {
   let kind: PaneKind
   var browserFavicon: NSImage? = nil
+  var browserFaviconReference: String? = nil
+  var browserFaviconClient: (any BrowserFaviconClienting)? = nil
   var pluginId: String? = nil
   var pluginPaneType: String? = nil
   var pluginIconClient: (any CodevisorServerClienting)? = nil
@@ -156,11 +158,13 @@ struct PaneTabIcon: View {
       AgentStatusIndicator(status: terminalStatus)
         .frame(width: 18)
     } else if kind == .browser, let browserFavicon {
-      Image(nsImage: browserFavicon)
-        .resizable()
-        .scaledToFit()
-        .frame(width: 14, height: 14)
-        .accessibilityHidden(true)
+      favicon(Image(nsImage: browserFavicon))
+    } else if kind == .browser {
+      BrowserFaviconImage(reference: browserFaviconReference, client: browserFaviconClient) { image in
+        favicon(image)
+      } placeholder: {
+        Image(systemName: systemImage)
+      }
     } else if kind == .plugin, let pluginId, let pluginIconClient {
       PluginIconView(
         pluginId: pluginId,
@@ -179,6 +183,14 @@ struct PaneTabIcon: View {
     } else {
       Image(systemName: systemImage)
     }
+  }
+
+  private func favicon(_ image: Image) -> some View {
+    image
+      .resizable()
+      .scaledToFit()
+      .frame(width: 14, height: 14)
+      .accessibilityHidden(true)
   }
 
   private var systemImage: String {

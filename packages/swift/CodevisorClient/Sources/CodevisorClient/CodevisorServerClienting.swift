@@ -2,7 +2,7 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClienting {
+public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconClienting, SimulatorClienting {
   func sharedHarnessAccount(
     harnessId: String, request: ServerSharedHarnessAccountRequest
   ) async throws -> ServerSharedHarnessAccountResponse
@@ -12,6 +12,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot
   func browserNavigation(paneId: UUID) async throws -> BrowserNavigation?
   func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws
+  func browserFavicon(sha256: String) async throws -> Data?
+  func publishBrowserFavicon(sha256: String, png: Data) async throws
   func browserProxySession() async throws -> ServerBrowserProxySession
   func health() async throws -> ServerHealth
   func info() async throws -> ServerInfo
