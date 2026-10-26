@@ -58,6 +58,12 @@ function CopyCommand({ command }: { command: string }) {
   )
 }
 
+const SHOW_LINUX_TERMINAL = false
+
+const XSERVE_PLACEMENT = SHOW_LINUX_TERMINAL
+  ? "top-[-6px] left-[19px]"
+  : "top-6 left-1/2 -translate-x-1/2"
+
 function LinuxComposition() {
   return (
     <>
@@ -68,17 +74,19 @@ function LinuxComposition() {
         width={1024}
         height={843}
         loading="lazy"
-        className="absolute top-[-6px] left-[19px] h-auto w-[232px] max-w-none"
+        className={`absolute h-auto w-[232px] max-w-none ${XSERVE_PLACEMENT}`}
       />
-      <img
-        draggable={false}
-        src="/bento/linux-install-dark.webp"
-        alt="A Ghostty terminal on a Linux server running the Codevisor install script, ending with Finish onboarding later with codevisor setup"
-        width={808}
-        height={516}
-        loading="lazy"
-        className="absolute top-[40px] left-[135px] h-auto w-[606px] max-w-none drop-shadow-[0_16px_28px_rgba(0,0,0,0.4)]"
-      />
+      {SHOW_LINUX_TERMINAL && (
+        <img
+          draggable={false}
+          src="/bento/linux-install-dark.webp"
+          alt="A Ghostty terminal on a Linux server running the Codevisor install script, ending with Finish onboarding later with codevisor setup"
+          width={808}
+          height={516}
+          loading="lazy"
+          className="absolute top-[40px] left-[135px] h-auto w-[606px] max-w-none drop-shadow-[0_16px_28px_rgba(0,0,0,0.4)]"
+        />
+      )}
     </>
   )
 }
