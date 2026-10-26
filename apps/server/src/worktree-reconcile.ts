@@ -1,15 +1,12 @@
 import { existsSync } from "node:fs"
 
 import type { Project } from "@codevisor/api"
-import { archivedArtifactsPath } from "@codevisor/db"
 import {
   deleteSnapshot,
-  keepArtifacts,
   listSnapshotRefWorktreeIds,
   pruneWorktreeRegistrations,
   releaseBranch,
-  removeArchivedWorktreeFiles,
-  trashDirectory
+  removeArchivedWorktreeFiles
 } from "@codevisor/worktrees"
 
 import { archiveJobs, enqueueWorkspaceArchive } from "./archive-jobs.js"
@@ -64,7 +61,6 @@ const finishPendingArchives = async (
         await pruneWorktreeRegistrations(repoDir, environment)
         await releaseBranch(repoDir, archived.branch, environment)
       } else {
-        await keepArtifacts(worktree.path, archivedArtifactsPath(archived.id), environment)
         const trashed = await removeArchivedWorktreeFiles(repoDir, worktree.path, archived.branch, {
           trashRoot: worktreeTrashRoot(),
           worktreeId: archived.id,
@@ -127,7 +123,7 @@ const pruneOrphanSnapshots = async (
     await pruneWorktreeRegistrations(repoDir, environment)
     for (const worktreeId of await listSnapshotRefWorktreeIds(repoDir, environment)) {
       if (known.has(worktreeId.toLowerCase())) continue
-      await discardSnapshot(services, repoDir, worktreeId, environment)
+      await deleteSnapshot(repoDir, worktreeId, environment)
     }
   }
 }
@@ -165,21 +161,7 @@ export const discardProjectWorktrees = async (
   }
   for (const archived of await run(services.db.listArchivedWorktrees(project.id))) {
     if (archived.serverId !== serverId) continue
-    await discardSnapshot(services, location.folderPath, archived.id, environment)
+    await deleteSnapshot(location.folderPath, archived.id, environment)
   }
   await pruneWorktreeRegistrations(location.folderPath, environment)
-}
-
-const discardSnapshot = async (
-  services: CodevisorServerServices,
-  repoDir: string,
-  worktreeId: string,
-  environment: NodeJS.ProcessEnv
-): Promise<void> => {
-  await deleteSnapshot(repoDir, worktreeId, environment)
-  const trashed = await trashDirectory(archivedArtifactsPath(worktreeId), {
-    trashRoot: worktreeTrashRoot(),
-    id: `artifacts-${worktreeId}`
-  })
-  archiveJobs(services).track(trashed.purged)
 }

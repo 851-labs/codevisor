@@ -1,16 +1,15 @@
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { AgentArchiveResult, decode, Worktree } from "@codevisor/api"
+import { decode, Worktree } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { archiveJobs } from "../archive-jobs.js"
-import { jsonRequest, listSubjectEvents, run, start, tempDirs } from "../test-support.js"
-import { field, idOf } from "./response-test-support.js"
+import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+import { idOf } from "./response-test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) =>
@@ -18,12 +17,12 @@ const git = (args: ReadonlyArray<string>, cwd: string) =>
 const shell = { id: "task-1", description: "Monitor CI", status: "running", taskType: "shell" }
 const subagent = { id: "task-2", description: "Review", status: "running", taskType: "subagent" }
 
-const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
+const withWorktreesRoot = async <A>(body: () => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-agent-worktrees-"))
   tempDirs.push(worktreesRoot)
   process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
   try {
-    return await body(worktreesRoot)
+    return await body()
   } finally {
     delete process.env["CODEVISOR_WORKTREES_ROOT"]
   }
@@ -288,55 +287,18 @@ describe("agent lifecycle routes", () => {
     ).toBe(422)
   })
 
-  it("waits for an archive and reports the artifacts it kept", async () => {
-    await withWorktreesRoot(async (worktreesRoot) => {
+  it("waits for the archive to remove the checkout before answering", async () => {
+    await withWorktreesRoot(async () => {
       const { server, worktree, agentIn } = await gitProject()
       const tree = await worktree()
       const agentId = await agentIn(tree.name)
-      mkdirSync(join(tree.path, "tmp"))
-      writeFileSync(join(tree.path, "tmp", "shot.png"), "pixels")
 
       const archived = await jsonRequest(server, `/v1/agents/${agentId}/archive`, {
         method: "POST"
       })
 
-      expect(archived.body).toMatchObject({ agentId, archived: true, keptArtifacts: ["tmp/"] })
+      expect(archived.body).toEqual({ agentId, workspaceId: expect.any(String), archived: true })
       expect(existsSync(tree.path)).toBe(false)
-      expect(
-        existsSync(join(worktreesRoot, ".archived-artifacts.noindex", tree.id, "tmp", "shot.png"))
-      ).toBe(true)
-    })
-  })
-
-  it("sets aside kept artifacts a restore couldn't put back, inside the worktree", async () => {
-    await withWorktreesRoot(async (worktreesRoot) => {
-      const { server, services, worktree, agentIn } = await gitProject()
-      const tree = await worktree()
-      const agentId = await agentIn(tree.name)
-      mkdirSync(join(tree.path, "tmp"))
-      writeFileSync(join(tree.path, "tmp", "shot.png"), "pixels")
-      const { workspaceId } = decode(AgentArchiveResult)(
-        (await jsonRequest(server, `/v1/agents/${agentId}/archive`, { method: "POST" })).body
-      )
-      const kept = join(worktreesRoot, ".archived-artifacts.noindex", tree.id)
-      writeFileSync(join(kept, ".gitignore"), "kept copy\n")
-
-      await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
-        body: JSON.stringify({ isArchived: false }),
-        method: "PATCH"
-      })
-      await archiveJobs(services).idle()
-
-      const reported = listSubjectEvents(services, workspaceId).flatMap((event) => {
-        const conflicts = field(event.payload, "archiveRestoreConflicts")
-        return conflicts === undefined ? [] : [conflicts]
-      })
-      expect(reported).toEqual([[".codevisor-restore-conflicts/.gitignore-2"]])
-      expect(existsSync(kept)).toBe(false)
-      expect(
-        readFileSync(join(tree.path, ".codevisor-restore-conflicts", ".gitignore-2"), "utf8")
-      ).toBe("kept copy\n")
-      expect(existsSync(join(tree.path, "tmp", "shot.png"))).toBe(true)
     })
   })
 

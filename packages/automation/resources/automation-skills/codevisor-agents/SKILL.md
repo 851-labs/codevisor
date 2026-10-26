@@ -119,7 +119,7 @@ To give guidance instead of picking an answer, send it with `agents.message`.
 - To review work, start another agent on the same project with `labels: { role: "reviewer", for: agentId }` and point it at the PR or branch.
 - `agents.debug.branch_diff({ agentId })` gives a quick size of an agent's changes.
 - `agents.archive({ agentId })` archives the agent's workspace. Archive only agents you started, once their work is merged or no longer needed.
-  - It waits until the archive is done. It keeps a restorable snapshot, and ignored files such as `tmp/` screenshots are kept (listed in `keptArtifacts`) and come back on restore.
+  - It waits until the archive is done. It keeps a restorable snapshot of tracked and untracked files and deletes everything else in the checkout folder, ignored files included. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
   - It refuses an agent that shares your own workspace.
 

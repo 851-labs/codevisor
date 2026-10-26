@@ -20,6 +20,7 @@ import { integer, rowReader } from "./row-reader.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { projectSessionAttention, projectSessionSidebarState } from "./session-attention.js"
+import { linkSessionFiles } from "./session-files.js"
 import { setupQuestionPresentation } from "./setup-questions.js"
 import { projectSetupState } from "./setup-state.js"
 import { readSyncBatch, trimSyncJournal, type SyncBatch } from "./sync-journal.js"
@@ -178,6 +179,7 @@ const projectSessionViews = (
 ): void => {
   projectSessionAttention(sqlite, sessionEvent)
   projectSessionSidebarState(sqlite, event.subjectId, event.createdAt)
+  linkSessionFiles(sqlite, event.subjectId, event.encoded)
   if (event.kind === "session.output") touchSession(sqlite, event)
 }
 

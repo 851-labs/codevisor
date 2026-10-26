@@ -4,9 +4,17 @@ import StreamMarkdown
 
 extension AttachmentImageStore {
   public var markdownImageLoader: MarkdownImageLoader {
+    imageLoader(resolving: markdownImagePreviewFile)
+  }
+
+  public var documentImageLoader: MarkdownImageLoader {
+    imageLoader(resolving: documentImagePreviewFile)
+  }
+
+  private func imageLoader(resolving previewFile: @escaping @Sendable (String) -> PreviewFile?) -> MarkdownImageLoader {
     MarkdownImageLoader(id: namespace) { [weak self] source in
       guard let self else { return nil }
-      if let file = markdownImagePreviewFile(source) {
+      if let file = previewFile(source) {
         guard let preview = await image(for: file) else { return nil }
         return MarkdownImage(image: preview.image, id: "\(namespace):\(file.id):\(preview.version)")
       }
@@ -17,10 +25,14 @@ extension AttachmentImageStore {
 
 public func markdownImagePreviewFile(_ source: String) -> PreviewFile? {
   if let file = markdownAttachmentFile(source) { return file }
-  if let url = URL(string: source), url.scheme == "https", url.host == "attachments.codevisor.invalid" {
-    let id = String(url.path.dropFirst())
-    guard !id.isEmpty, !id.contains("/") else { return nil }
-    return PreviewFile(source: .attachment(fileId: id), name: "Image", mimeType: "image/png", kind: .image)
+  guard let url = URL(string: source), url.scheme == "https", url.host == "attachments.codevisor.invalid" else {
+    return nil
   }
-  return markdownLocalFilePath(source).map { PreviewFile(serverPath: $0) }
+  let id = String(url.path.dropFirst())
+  guard !id.isEmpty, !id.contains("/") else { return nil }
+  return PreviewFile(source: .attachment(fileId: id), name: "Image", mimeType: "image/png", kind: .image)
+}
+
+public func documentImagePreviewFile(_ source: String) -> PreviewFile? {
+  markdownImagePreviewFile(source) ?? markdownLocalFilePath(source).map { PreviewFile(serverPath: $0) }
 }

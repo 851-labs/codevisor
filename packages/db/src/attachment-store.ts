@@ -75,16 +75,22 @@ const syncDirectory = async (path: string): Promise<void> => {
   }
 }
 
-const safePathSegment = (value: string): string =>
+export const attachmentObjectsRoot = (root: string): string => join(root, "objects", "sha256")
+
+export const attachmentCopiesRoot = (root: string): string => join(root, "files")
+
+export const isAttachmentSha256 = (value: string): boolean => sha256Pattern.test(value)
+
+export const safePathSegment = (value: string): string =>
   value.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "_") || "file"
 
 export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
   const root = join(dataDir, "attachments")
-  const objectsRoot = join(root, "objects", "sha256")
+  const objectsRoot = attachmentObjectsRoot(root)
   const stagingRoot = join(root, "staging")
 
   const objectPath = (sha256: string): string => {
-    if (!sha256Pattern.test(sha256)) {
+    if (!isAttachmentSha256(sha256)) {
       throw new AttachmentStoreError(`Invalid attachment SHA-256: ${sha256}`)
     }
     return join(objectsRoot, sha256.slice(0, 2), sha256)
@@ -202,7 +208,7 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
   }
 
   const materialize = async (metadata: FileMetadata): Promise<string> => {
-    const directory = join(root, "files", safePathSegment(metadata.id))
+    const directory = join(attachmentCopiesRoot(root), safePathSegment(metadata.id))
     const path = join(directory, safePathSegment(metadata.name))
     await mkdir(directory, { recursive: true })
     try {

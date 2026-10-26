@@ -21,6 +21,13 @@ struct AssistantMarkdownAttachmentsTests {
     sizeBytes: 42,
     kind: .file
   )
+  private let outside = Attachment(
+    fileId: "outside",
+    name: "outside.txt",
+    mimeType: "text/plain",
+    sizeBytes: 7,
+    kind: .file
+  )
 
   @Test("Canonical links become attachment segments and ordinary links stay Markdown")
   func segments() {
@@ -44,30 +51,11 @@ struct AssistantMarkdownAttachmentsTests {
       ])
   }
 
-  @Test("Local links stay Markdown while local images become previews")
+  @Test("Local links and images stay Markdown; only the chat's own files become previews")
   func localFiles() {
-    let absolute = PreviewFile(serverPath: "/tmp/screen shot.png")
-    let result = assistantMarkdownSegments(
-      "Made [Report](./output/report.pdf) and ![Screenshot](</tmp/screen shot.png>). [Web](https://example.com).",
-      attachments: []
-    )
-    #expect(
-      result == [
-        .markdown("Made [Report](./output/report.pdf) and "),
-        .file(absolute, label: "Screenshot"),
-        .markdown(". [Web](https://example.com)."),
-      ])
-  }
-
-  @Test("Streaming leaves local image syntax in Markdown until the turn completes")
-  func streamingLocalFiles() {
-    let markdown = "Made ![Report](./output/report.pdf)"
-    #expect(
-      assistantMarkdownSegments(
-        markdown,
-        attachments: [],
-        includeServerPaths: false
-      ) == [.markdown(markdown)])
+    let markdown =
+      "Made [Report](./output/report.pdf) and ![Screenshot](</tmp/screen shot.png>). [Web](https://example.com)."
+    #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
   }
 
   @Test("Streaming defers unreferenced terminal attachments")
@@ -77,14 +65,12 @@ struct AssistantMarkdownAttachmentsTests {
       assistantMarkdownSegments(
         markdown,
         attachments: [recording],
-        includeServerPaths: false,
         includeUnreferencedAttachments: false
       ) == [.markdown(markdown)])
     #expect(
       assistantMarkdownSegments(
         markdown,
         attachments: [recording],
-        includeServerPaths: false,
         includeUnreferencedAttachments: true
       ) == [
         .markdown(markdown),
@@ -138,17 +124,17 @@ struct AssistantMarkdownAttachmentsTests {
       > [Literal](./inside.txt)
       > ```
 
-      ![Preview](./outside.txt)
+      ![Preview](https://attachments.codevisor.invalid/outside)
       """#
     #expect(
-      assistantMarkdownSegments(quoted, attachments: []) == [
+      assistantMarkdownSegments(quoted, attachments: [outside]) == [
         .markdown(
           #"""
           > ```
           > [Literal](./inside.txt)
           > ```
           """# + "\n\n"),
-        .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview"),
+        .file(PreviewFile(attachment: outside), label: "Preview"),
       ])
 
     let unclosed = #"""
@@ -165,7 +151,7 @@ struct AssistantMarkdownAttachmentsTests {
 
           [Indented](./block.txt)
 
-      Open ![Preview](./outside.txt).
+      Open ![Preview](https://attachments.codevisor.invalid/outside).
       """#
     let beforePreview = #"""
       Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
@@ -175,9 +161,9 @@ struct AssistantMarkdownAttachmentsTests {
       Open
       """# + " "
     #expect(
-      assistantMarkdownSegments(markdown, attachments: []) == [
+      assistantMarkdownSegments(markdown, attachments: [outside]) == [
         .markdown(beforePreview),
-        .file(PreviewFile(serverPath: "./outside.txt"), label: "Preview"),
+        .file(PreviewFile(attachment: outside), label: "Preview"),
         .markdown("."),
       ])
   }

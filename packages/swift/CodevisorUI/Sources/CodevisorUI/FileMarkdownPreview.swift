@@ -34,7 +34,7 @@ struct FileMarkdownPreview: View {
           return try await client.filePreview(path: resolved, sessionId: nil)
         }
       }, version: { _ in nil })
-    imageLoader = MarkdownImageLoader(id: images.namespace) { await images.markdownImageLoader.image(for: $0) }
+    imageLoader = MarkdownImageLoader(id: images.namespace) { await images.documentImageLoader.image(for: $0) }
   }
 
   var body: some View {

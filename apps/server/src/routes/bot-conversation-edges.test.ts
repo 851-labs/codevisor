@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { writeFileSync } from "node:fs"
+import { rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
@@ -137,6 +137,19 @@ describe("bot conversation edges", () => {
     expect((await conversation(running, bot.sessionId)).messages).toMatchObject([
       { sender: "bot", text: "", attachments: [{ name: "Release notes.txt" }] }
     ])
+  })
+
+  it("keeps a file the bot embeds in its message text as the chat's own copy", async () => {
+    const { running, bot } = await startBot()
+    writeFileSync(join(bot.rootPath, "shot.png"), "pixels")
+
+    await send(running, bot.sessionId, { text: "Look ![Shot](shot.png)" })
+    rmSync(join(bot.rootPath, "shot.png"))
+
+    const [message] = (await conversation(running, bot.sessionId)).messages
+    const fileId = message?.attachments?.[0]?.fileId
+    expect(message?.text).toBe(`Look ![Shot](https://attachments.codevisor.invalid/${fileId})`)
+    expect(await (await fetch(`${running.server.url}/v1/files/${fileId}`)).text()).toBe("pixels")
   })
 
   it("tells the user why the bot couldn't reply, and leaves other chats alone", async () => {

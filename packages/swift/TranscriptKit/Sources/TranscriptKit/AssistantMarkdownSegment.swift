@@ -201,7 +201,6 @@ public func markdownLocalFilePath(_ target: String) -> String? {
 public func assistantMarkdownSegments(
   _ markdown: String,
   attachments: [Attachment],
-  includeServerPaths: Bool = true,
   includeUnreferencedAttachments: Bool = true
 ) -> [AssistantMarkdownSegment] {
   let byID = Dictionary(uniqueKeysWithValues: attachments.map { ($0.fileId, $0) })
@@ -234,8 +233,6 @@ public func assistantMarkdownSegments(
       file = PreviewFile(attachment: attachment)
       referenced.insert(attachment.fileId)
       if !isImage, markdownAttachmentFile(target) != nil { continue }
-    } else if includeServerPaths, isImage, let path = markdownLocalFilePath(target) {
-      file = PreviewFile(serverPath: path)
     } else {
       continue
     }

@@ -4,7 +4,7 @@ import Foundation
 public struct ReadFileOutput: Sendable, Equatable {
   public enum Content: Sendable, Equatable {
     case text(String)
-    case media
+    case media(PreviewFile?)
   }
 
   public let path: String
@@ -14,7 +14,7 @@ public struct ReadFileOutput: Sendable, Equatable {
 extension ToolCall {
   public var readFileOutput: ReadFileOutput? {
     guard kind == .read, status != .failed, let path = readFilePath else { return nil }
-    if Self.isMedia(path: path) { return ReadFileOutput(path: path, content: .media) }
+    if Self.isMedia(path: path) { return ReadFileOutput(path: path, content: .media(capturedFile)) }
     guard status == .completed, let text = readFileText else { return nil }
     return ReadFileOutput(path: path, content: .text(Self.fileText(text)))
   }
@@ -23,6 +23,33 @@ extension ToolCall {
     let input = ["file_path", "filePath", "path"].lazy.compactMap { self.rawInput?[$0]?.stringValue }.first
     let path = input ?? locations?.first?.path
     return path.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  private var capturedFile: PreviewFile? {
+    rawOutput.flatMap(Self.firstCapturedFile)
+  }
+
+  private static func firstCapturedFile(in json: JSONValue) -> PreviewFile? {
+    switch json {
+    case let .object(object):
+      if let file = object["attachment"].flatMap(capturedFile(attachment:)) { return file }
+      return object.keys.sorted().lazy.compactMap { object[$0].flatMap(firstCapturedFile) }.first
+    case let .array(items):
+      return items.lazy.compactMap(firstCapturedFile).first
+    default:
+      return nil
+    }
+  }
+
+  private static func capturedFile(attachment: JSONValue) -> PreviewFile? {
+    guard case let .string(fileId) = attachment["fileId"], !fileId.isEmpty else { return nil }
+    let mimeType = attachment["mimeType"]?.stringValue ?? "application/octet-stream"
+    return PreviewFile(
+      source: .attachment(fileId: fileId),
+      name: attachment["name"]?.stringValue ?? "File",
+      mimeType: mimeType,
+      kind: mimeType.hasPrefix("image/") ? .image : .file
+    )
   }
 
   private var readFileText: String? {

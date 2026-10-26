@@ -10,7 +10,6 @@ import Database from "better-sqlite3"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { archiveJobs } from "./archive-jobs.js"
 import { defaultServerConfig } from "./server-config.js"
 import { sweepTrashedWorktrees, worktreeTrashRoot } from "./server-workspace-effects.js"
 import { makeEventFanout } from "./server.js"
@@ -29,16 +28,6 @@ const withWorktreesRoot = async <A>(body: () => Promise<A>): Promise<A> => {
   } finally {
     vi.unstubAllEnvs()
   }
-}
-
-const keptFolder = (worktreeId: string): string =>
-  join(process.env["CODEVISOR_WORKTREES_ROOT"]!, ".archived-artifacts.noindex", worktreeId)
-
-const keepArtifact = (worktreeId: string): string => {
-  const artifact = join(keptFolder(worktreeId), "tmp", "shot.png")
-  mkdirSync(dirname(artifact), { recursive: true })
-  writeFileSync(artifact, "pixels")
-  return artifact
 }
 
 const setUpProject = async () => {
@@ -76,9 +65,6 @@ describe("worktree archive reconciliation", () => {
     await withWorktreesRoot(async () => {
       const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("sushi")
-      writeFileSync(join(worktree.path, ".gitignore"), "tmp/\n")
-      mkdirSync(join(worktree.path, "tmp"))
-      writeFileSync(join(worktree.path, "tmp", "shot.png"), "pixels")
 
       await run(
         services.db.createArchivedWorktree({
@@ -98,7 +84,6 @@ describe("worktree archive reconciliation", () => {
       await reconcileWorktreeArchives(services, fanout, config)
 
       expect(existsSync(worktree.path)).toBe(false)
-      expect(existsSync(join(keptFolder(worktree.id), "tmp", "shot.png"))).toBe(true)
       expect(
         (await run(services.db.listArchivedWorktrees("git-project"))).find(
           (archived) => archived.id === worktree.id
@@ -155,15 +140,10 @@ describe("worktree archive reconciliation", () => {
         })
       )
       await git(["update-ref", snapshotRefFor("orphan-worktree"), parentSha], repoFolder)
-      const keptArtifact = keepArtifact(kept.id)
-      const orphanArtifact = keepArtifact("orphan-worktree")
 
       await reconcileWorktreeArchives(services, fanout, config)
-      await archiveJobs(services).idle()
 
       expect([...(await listSnapshotRefWorktreeIds(repoFolder))]).toEqual([kept.id])
-      expect(existsSync(keptArtifact)).toBe(true)
-      expect(existsSync(orphanArtifact)).toBe(false)
     })
   })
 
@@ -221,15 +201,10 @@ describe("worktree archive reconciliation", () => {
         (candidate) => candidate.id === "git-project"
       )!
 
-      const artifact = keepArtifact(archived.id)
-
       await discardProjectWorktrees(services, config.id, project)
-      await archiveJobs(services).idle()
 
       expect(existsSync(live.path)).toBe(false)
       expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([])
-      expect(existsSync(artifact)).toBe(false)
-      expect(existsSync(keptFolder(archived.id))).toBe(false)
       const branches = (
         await git(["for-each-ref", "--format=%(refname)", "refs/heads/"], repoFolder)
       ).stdout

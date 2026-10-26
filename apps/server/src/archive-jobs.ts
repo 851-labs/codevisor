@@ -77,10 +77,8 @@ export const enqueueWorkspaceArchive = (
   config: CodevisorServerConfig,
   workspace: Workspace,
   runtime?: WorkspaceRuntime
-): Promise<ReadonlyArray<string>> =>
-  archiveWorkspaceAndWait(services, fanout, config, workspace, runtime).catch(
-    (): ReadonlyArray<string> => []
-  )
+): Promise<void> =>
+  archiveWorkspaceAndWait(services, fanout, config, workspace, runtime).catch(swallowError)
 
 export const archiveWorkspaceAndWait = (
   services: CodevisorServerServices,
@@ -88,16 +86,14 @@ export const archiveWorkspaceAndWait = (
   config: CodevisorServerConfig,
   workspace: Workspace,
   runtime?: WorkspaceRuntime
-): Promise<ReadonlyArray<string>> => {
+): Promise<void> => {
   const queue = queueFor(services)
   return queue.enqueue(() =>
     withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
-      if ((await findWorkspace(services, workspace.id))?.isArchived === false) return []
+      if ((await findWorkspace(services, workspace.id))?.isArchived === false) return
       if (runtime !== undefined) await retireRuntime(services, fanout, config.id, runtime)
       const archived = await archiveWorkspaceWorktree(services, config.id, workspace)
       queue.track(archived.purged)
-      await publishKeptArtifacts(services, fanout, workspace.id, archived.keptArtifacts)
-      return archived.keptArtifacts
     })
   )
 }
@@ -111,21 +107,6 @@ const retireRuntime = async (
   await retireWorkspaceRuntime(services, runtime)
   for (const session of runtime.sessions)
     await clearStoppedTasks(services, fanout, serverId, session.id)
-}
-
-const publishKeptArtifacts = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  workspaceId: string,
-  keptArtifacts: ReadonlyArray<string>
-): Promise<void> => {
-  if (keptArtifacts.length === 0) return
-  const current = await findWorkspace(services, workspaceId)
-  if (current === undefined) return
-  await appendAndPublish(services.db, fanout, "workspace.updated", current.id, {
-    ...current,
-    archiveKeptArtifacts: keptArtifacts
-  })
 }
 
 export const applyWorkspaceArchiveEffects = async (
@@ -146,12 +127,6 @@ export const applyWorkspaceArchiveEffects = async (
   }
 
   const restored = await restoreWorkspaceWorktree(services, config.id, workspace)
-  if (restored.restoreConflicts.length > 0) {
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
-      ...restored.workspace,
-      archiveRestoreConflicts: restored.restoreConflicts
-    })
-  }
   if (!restored.restoredFiles) {
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
       ...restored.workspace,

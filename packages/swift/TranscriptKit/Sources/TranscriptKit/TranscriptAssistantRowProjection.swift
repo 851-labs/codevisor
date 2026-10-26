@@ -181,7 +181,6 @@ enum TranscriptAssistantRowProjection {
     let segments = assistantMarkdownSegments(
       markdown,
       attachments: message.turn.attachments,
-      includeServerPaths: true,
       includeUnreferencedAttachments: true
     )
     var responseRows: [TranscriptPresentationRow] = []

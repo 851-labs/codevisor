@@ -79,8 +79,7 @@ describe("agents.archive", () => {
     expect(archived).toEqual({
       agentId: "worker",
       workspaceId: "worker-workspace",
-      archived: true,
-      keptArtifacts: ["tmp/"]
+      archived: true
     })
     expect(fromRemote).toMatchObject({ archived: true })
     expect(requests.some((request) => request.method === "PATCH")).toBe(false)

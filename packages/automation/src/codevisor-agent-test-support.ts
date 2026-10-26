@@ -98,8 +98,7 @@ const respond = (
     return jsonResponse({
       agentId: archive[1],
       workspaceId: `${archive[1]}-workspace`,
-      archived: true,
-      keptArtifacts: ["tmp/"]
+      archived: true
     })
   }
   if (path.includes("/subscriptions")) return subscriptionsResponse(method)

@@ -11,11 +11,11 @@ struct ReadFileBodyView: View {
 
   var body: some View {
     switch read.content {
-    case .media:
-      let file = PreviewFile(serverPath: read.path)
-      if let thumbnail {
-        thumbnail(file)
+    case let .media(captured):
+      if let captured, let thumbnail {
+        thumbnail(captured)
       } else {
+        let file = captured ?? PreviewFile(serverPath: read.path)
         Label(file.name, systemImage: file.kind == .image ? "photo" : "doc")
           .font(.caption)
           .foregroundStyle(.secondary)

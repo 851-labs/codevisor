@@ -65,13 +65,8 @@ export const archiveAgent = async (
   const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
   await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
   const runtime = await captureWorkspaceRuntime(services, routeState, workspace)
-  const keptArtifacts = await archiveWorkspaceAndWait(services, fanout, config, workspace, runtime)
-  const result: AgentArchiveResult = {
-    agentId: session.id,
-    workspaceId,
-    archived: true,
-    keptArtifacts
-  }
+  await archiveWorkspaceAndWait(services, fanout, config, workspace, runtime)
+  const result: AgentArchiveResult = { agentId: session.id, workspaceId, archived: true }
   writeJson(response, 200, result)
   return true
 }

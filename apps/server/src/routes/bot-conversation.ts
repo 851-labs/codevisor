@@ -17,6 +17,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
+import { captureMarkdownFiles } from "./assistant-artifacts.js"
 import { captureAssistantFile } from "./assistant-files.js"
 import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import { hasLiveTurn } from "./prompt-queue.js"
@@ -91,10 +92,12 @@ export const routeBotConversation = async (
         throw new HttpFailure(422, `Could not attach ${input.path}: ${failureMessage(cause)}`)
       }
     }
+    const { cwd } = await run(services.db.getSessionSummary(messagesSessionId))
+    const captured = await captureMarkdownFiles(services, text, cwd, attachments)
     const message = await postBotMessage(services, fanout, messagesSessionId, {
       sender: "bot",
-      text,
-      ...(attachments.length === 0 ? {} : { attachments })
+      text: captured.markdown,
+      ...(captured.attachments.length === 0 ? {} : { attachments: captured.attachments })
     })
     writeJson(response, 200, { sent: true, messageId: message.id })
     return true

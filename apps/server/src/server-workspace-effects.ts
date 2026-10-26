@@ -1,7 +1,6 @@
 import type { ArchivedWorktree, SessionSummary, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import {
-  archivedArtifactsPath,
   legacyWorktreeTrashRoot,
   worktreeNameAt,
   worktreePath,
@@ -11,10 +10,8 @@ import {
 import type { OwnedBranch } from "@codevisor/git-hosts"
 import {
   deleteSnapshot,
-  keepArtifacts,
   removeArchivedWorktreeFiles,
   restoreWorktree,
-  returnKeptArtifacts,
   snapshotWorktree,
   sweepWorktreeTrash
 } from "@codevisor/worktrees"
@@ -145,11 +142,10 @@ const directoryStillInUse = async (
   )
 
 export interface ArchivedWorkspaceWorktree {
-  readonly keptArtifacts: ReadonlyArray<string>
   readonly purged: Promise<void>
 }
 
-const nothingArchived: ArchivedWorkspaceWorktree = { keptArtifacts: [], purged: Promise.resolve() }
+const nothingArchived: ArchivedWorkspaceWorktree = { purged: Promise.resolve() }
 
 export const archiveWorkspaceWorktree = async (
   services: CodevisorServerServices,
@@ -188,11 +184,6 @@ export const archiveWorkspaceWorktree = async (
       state: "pending"
     })
   )
-  const keptArtifacts = await keepArtifacts(
-    worktree.path,
-    archivedArtifactsPath(worktree.id),
-    environment
-  )
   const trashed = await removeArchivedWorktreeFiles(
     location.folderPath,
     worktree.path,
@@ -213,13 +204,12 @@ export const archiveWorkspaceWorktree = async (
     })
   )
   await run(services.db.deleteWorktree(worktree.id))
-  return { keptArtifacts, purged: trashed.purged }
+  return { purged: trashed.purged }
 }
 
 export interface RestoredWorkspace {
   readonly workspace: Workspace
   readonly restoredFiles: boolean
-  readonly restoreConflicts: ReadonlyArray<string>
 }
 
 export const restoreWorkspaceWorktree = async (
@@ -229,13 +219,13 @@ export const restoreWorkspaceWorktree = async (
 ): Promise<RestoredWorkspace> =>
   withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
     const found = await findArchivedWorktreeFor(services, serverId, workspace)
-    if (found === undefined) return { workspace, restoredFiles: true, restoreConflicts: [] }
+    if (found === undefined) return { workspace, restoredFiles: true }
     const { rootDirectory, worktreeName, archived } = found
     if (archived === undefined) {
       const existing = (await run(services.db.listWorktrees(workspace.projectId))).find(
         (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
       )
-      return { workspace, restoredFiles: existing !== undefined, restoreConflicts: [] }
+      return { workspace, restoredFiles: existing !== undefined }
     }
 
     const project = await getProjectOrFail(services.db, workspace.projectId)
@@ -256,10 +246,6 @@ export const restoreWorkspaceWorktree = async (
       takenNames: taken,
       env: environment
     })
-    const restoreConflicts = await returnKeptArtifacts(
-      archivedArtifactsPath(archived.id),
-      worktreePathBeside(workspace.projectId, rootDirectory, restored.name)
-    )
     await run(
       services.db.createWorktree(workspace.projectId, restored.name, restored.branch, archived.id)
     )
@@ -279,7 +265,7 @@ export const restoreWorkspaceWorktree = async (
         await run(services.db.updateSession(session.id, { worktreeName: restored.name }))
       }
     }
-    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot, restoreConflicts }
+    return { workspace: updated, restoredFiles: restored.restoredFromSnapshot }
   })
 
 export interface WorkspaceGitCheckout {

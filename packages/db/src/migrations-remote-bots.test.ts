@@ -9,6 +9,7 @@ import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js
 import { run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
+  drop table session_files;
   drop table browser_favicons;
   drop trigger fleet_turn_ended;
   drop table fleet_pending_turns;

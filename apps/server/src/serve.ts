@@ -11,6 +11,7 @@ import {
   makeDatabase,
   resolveServerIdentity,
   migrateAttachmentBlobs,
+  removeUnreferencedAttachments,
   worktreesRoot
 } from "@codevisor/db"
 import { makeGitHosts } from "@codevisor/git-hosts"
@@ -204,6 +205,11 @@ export const runServe = (
       catch: (cause) =>
         cause instanceof Error ? cause : new Error(`Attachment migration failed: ${String(cause)}`)
     })
+    yield* Effect.promise(() =>
+      removeUnreferencedAttachments(db, attachments).catch((cause: unknown) =>
+        console.error(`Could not remove unreferenced attachments: ${String(cause)}`)
+      )
+    )
     const updater =
       version === undefined
         ? undefined

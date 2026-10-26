@@ -14,6 +14,7 @@ import {
 } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+import { storedFileReferences } from "./session-files.js"
 
 const storageStateRows = rowReader({ storage_state: fileStorageState })
 
@@ -31,6 +32,7 @@ export const makeFilesService = (
   | "fileStorageCounts"
   | "markFileStorageDual"
   | "markFileStorageDisk"
+  | "storedFileReferences"
 > => {
   const { sqlite } = context
 
@@ -106,6 +108,7 @@ export const makeFilesService = (
           }
         }
       }),
+    storedFileReferences: attempt("storedFileReferences", () => storedFileReferences(sqlite)),
     markFileStorageDisk: (id) =>
       attempt("markFileStorageDisk", () => {
         const result = sqlite.prepare(fileSql.markDisk).run(id)

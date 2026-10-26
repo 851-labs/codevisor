@@ -5,6 +5,7 @@ export {
   type AttachmentStore,
   type StoredAttachmentObject
 } from "./attachment-store.js"
+export { removeUnreferencedAttachments } from "./attachment-sweep.js"
 
 export * from "./errors.js"
 
@@ -17,7 +18,6 @@ export {
 } from "./machine-settings-service.js"
 
 export {
-  archivedArtifactsPath,
   botPath,
   botsRoot,
   isBotFolder,

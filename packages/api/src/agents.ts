@@ -85,8 +85,7 @@ export type WaitForAgentsResponse = typeof WaitForAgentsResponse.Type
 export const AgentArchiveResult = Schema.Struct({
   agentId: Schema.String,
   workspaceId: Schema.String,
-  archived: Schema.Boolean,
-  keptArtifacts: Schema.Array(Schema.String)
+  archived: Schema.Boolean
 })
 export type AgentArchiveResult = typeof AgentArchiveResult.Type
 

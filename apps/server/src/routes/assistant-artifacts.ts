@@ -47,10 +47,34 @@ export const promoteAssistantArtifacts = async (
     attachments.push(attachmentRef(metadata))
   }
   const session = await run(services.db.getSessionSummary(sessionId))
-  let markdown = item.text
-  for (const reference of [...references].toReversed()) {
+  const captured = await captureMarkdownFiles(services, item.text, session.cwd, attachments)
+  if (captured.attachments.length === 0) return false
+  await appendAndPublish(services.db, fanout, "session.output", sessionId, {
+    sessionUpdate: "assistant_message_finalized",
+    markdown: captured.markdown,
+    ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
+    attachments: captured.attachments,
+    serverId
+  })
+  return true
+}
+
+export interface CapturedMarkdown {
+  readonly markdown: string
+  readonly attachments: ReadonlyArray<AttachmentRef>
+}
+
+export const captureMarkdownFiles = async (
+  services: CodevisorServerServices,
+  source: string,
+  cwd: string | undefined,
+  existing: ReadonlyArray<AttachmentRef>
+): Promise<CapturedMarkdown> => {
+  const attachments = [...existing]
+  let markdown = source
+  for (const reference of [...markdownFileReferences(source)].toReversed()) {
     if (!shouldCaptureFile(reference)) continue
-    const path = localArtifactPath(reference.target, session.cwd)
+    const path = localArtifactPath(reference.target, cwd)
     if (path === undefined) continue
     try {
       const file = await captureAssistantFile(services, { path }, attachments)
@@ -67,13 +91,5 @@ export const promoteAssistantArtifacts = async (
       )
     }
   }
-  if (attachments.length === 0) return false
-  await appendAndPublish(services.db, fanout, "session.output", sessionId, {
-    sessionUpdate: "assistant_message_finalized",
-    markdown,
-    ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
-    attachments,
-    serverId
-  })
-  return true
+  return { markdown, attachments }
 }

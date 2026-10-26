@@ -46,14 +46,21 @@ struct ReadFileOutputTests {
       outputOnly.readFileOutput == ReadFileOutput(path: "/repo/x.ts", content: .text("const x = 1\nexport { x }")))
   }
 
-  @Test("Images, video, and PDFs show from their path, never their base64")
+  @Test("Media reads show the chat's stored copy, never the file at its path or its base64")
   func media() {
     let image = read(
       ["file_path": "/repo/shot.png"],
-      output: .array([["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": "iVBOR"]]]))
-    #expect(image.readFileOutput == ReadFileOutput(path: "/repo/shot.png", content: .media))
-    #expect(read(["path": "/repo/demo.mov"], status: .inProgress).readFileOutput?.content == .media)
-    #expect(read(["filePath": "/repo/spec.pdf"]).readFileOutput?.content == .media)
+      output: .array([
+        [
+          "type": "image", "source": ["type": "base64", "media_type": "image/png", "data": ""],
+          "attachment": ["fileId": "tool-image-1", "name": "Tool image.png", "mimeType": "image/png"],
+        ]
+      ]))
+    let stored = PreviewFile(
+      source: .attachment(fileId: "tool-image-1"), name: "Tool image.png", mimeType: "image/png", kind: .image)
+    #expect(image.readFileOutput == ReadFileOutput(path: "/repo/shot.png", content: .media(stored)))
+    #expect(read(["path": "/repo/demo.mov"], status: .inProgress).readFileOutput?.content == .media(nil))
+    #expect(read(["filePath": "/repo/spec.pdf"]).readFileOutput?.content == .media(nil))
     #expect(read(["file_path": "/repo/a.ts"], output: "1\tx").readFileOutput?.content == .text("x"))
     #expect(read(["file_path": "/repo/i.svg"], output: "1\t<svg/>").readFileOutput?.content == .text("<svg/>"))
   }

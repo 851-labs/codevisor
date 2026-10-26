@@ -5,23 +5,23 @@ import Testing
 
 @Suite("Assistant table images")
 struct AssistantMarkdownTableImagesTests {
-  @Test("Image tables stay intact while streaming and after completion", arguments: [false, true])
-  func tableSegments(includeServerPaths: Bool) {
+  private let cat = TranscriptKit.Attachment(
+    fileId: "cat", name: "cat.png", mimeType: "image/png", sizeBytes: 10, kind: .image)
+
+  @Test("Image tables stay intact")
+  func tableSegments() {
     let markdown = "| Sign in | Create account |\n| --- | --- |\n| ![Sign in](./sign-in.png) | ![](./create.png) |"
-    #expect(
-      assistantMarkdownSegments(markdown, attachments: [], includeServerPaths: includeServerPaths) == [
-        .markdown(markdown)
-      ])
+    #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
   }
 
   @Test("Header images, nested tables, Unicode, and CRLF preserve parser-owned boundaries")
   func tableBoundaries() {
     let markdown =
-      "前文 🐈\r\n\r\n> | ![](./header.png) | Two |\r\n> | --- | --- |\r\n> | ![猫](./cat.png) | x |\r\n\r\n![Outside](./cat.png)"
+      "前文 🐈\r\n\r\n> | ![](./header.png) | Two |\r\n> | --- | --- |\r\n> | ![猫](./cat.png) | x |\r\n\r\n![Outside](https://attachments.codevisor.invalid/cat)"
     let before = String(markdown.prefix(upTo: markdown.range(of: "![Outside]")!.lowerBound))
     #expect(
-      assistantMarkdownSegments(markdown, attachments: []) == [
-        .markdown(before), .file(PreviewFile(serverPath: "./cat.png"), label: "Outside"),
+      assistantMarkdownSegments(markdown, attachments: [cat]) == [
+        .markdown(before), .file(PreviewFile(attachment: cat), label: "Outside"),
       ])
     let parsed = MarkdownParser().parseWithTableRanges(markdown)
     #expect(parsed.tableRanges.count == 1)
@@ -43,10 +43,10 @@ struct AssistantMarkdownTableImagesTests {
 
   @Test("Only real tables protect embeds; inline pipes still permit standalone previews")
   func inlinePipes() {
-    let markdown = "Before | ![Shot](./shot.png) | after"
+    let markdown = "Before | ![Shot](https://attachments.codevisor.invalid/cat) | after"
     #expect(
-      assistantMarkdownSegments(markdown, attachments: []) == [
-        .markdown("Before | "), .file(PreviewFile(serverPath: "./shot.png"), label: "Shot"), .markdown(" | after"),
+      assistantMarkdownSegments(markdown, attachments: [cat]) == [
+        .markdown("Before | "), .file(PreviewFile(attachment: cat), label: "Shot"), .markdown(" | after"),
       ])
   }
 

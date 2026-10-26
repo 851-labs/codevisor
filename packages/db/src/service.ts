@@ -57,6 +57,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { StoredFileReferences } from "./session-files.js"
 import type { SessionStateService } from "./session-state-types.js"
 import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
@@ -300,6 +301,7 @@ export interface CodevisorDatabaseService
   >
   readonly markFileStorageDual: (id: string) => Effect.Effect<void, DatabaseError>
   readonly markFileStorageDisk: (id: string) => Effect.Effect<void, DatabaseError>
+  readonly storedFileReferences: Effect.Effect<StoredFileReferences, DatabaseError>
   readonly listPromptQueue: (
     sessionId: string
   ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>

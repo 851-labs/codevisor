@@ -56,7 +56,7 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   ),
   agentTool(
     "agents.archive",
-    "Archive the workspace of an agent you started once its work is merged or no longer needed, and wait until it is done. Its chats stop, its branch name is released, and its checkout is kept as a restorable snapshot; ignored files such as tmp/ screenshots are kept too, listed in keptArtifacts, and come back on restore. If the archive fails, this call fails and the checkout stays in place. Push or open the PR first if the branch should stay. Refuses an agent that shares your own workspace.",
+    "Archive the workspace of an agent you started once its work is merged or no longer needed, and wait until it is done. Its chats stop, its branch name is released, and its tracked and untracked files are kept as a restorable snapshot. Everything else in its checkout folder, ignored files included, is deleted; files already sent in a chat stay with that chat. If the archive fails, this call fails and the checkout stays in place. Push or open the PR first if the branch should stay. Refuses an agent that shares your own workspace.",
     AgentIdArgs,
     (tool, args) => archiveAgent(tool, Schema.decodeUnknownSync(AgentIdArgs)(args).agentId)
   ),

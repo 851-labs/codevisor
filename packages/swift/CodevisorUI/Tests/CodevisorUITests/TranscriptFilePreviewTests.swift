@@ -73,7 +73,7 @@ struct TranscriptFilePreviewTests {
     #expect(FileTextPreview(data: patch) == .text(FileTextExcerpt(data: patch)!))
   }
 
-  @Test("Bot messages lift every embed and attachment out of the bubble, once each")
+  @Test("Bot messages lift the chat's own files out of the bubble, once each, and leave local paths as text")
   func botMessageContent() {
     let diff = Attachment(fileId: "d", name: "fix.diff", mimeType: "text/x-diff", sizeBytes: 10, kind: .file)
     let image = Attachment(fileId: "i", name: "shot.png", mimeType: "image/png", sizeBytes: 10, kind: .image)
@@ -82,7 +82,7 @@ struct TranscriptFilePreviewTests {
       text: "Here:\n\n![](App.swift)\n\n![](https://attachments.codevisor.invalid/i)\n\nDone.",
       attachments: [diff, image])
     let content = TranscriptBotMessageContent(message)
-    #expect(content.text == "Here:\n\n\n\n\n\nDone.")
-    #expect(content.files.map(\.name) == ["App.swift", "shot.png", "fix.diff"])
+    #expect(content.text == "Here:\n\n![](App.swift)\n\n\n\nDone.")
+    #expect(content.files.map(\.name) == ["shot.png", "fix.diff"])
   }
 }

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -21,7 +21,9 @@ const decodeRooted = decode(
   Schema.Struct({ isArchived: Schema.Boolean, rootDirectory: Schema.String })
 )
 const decodeChatCwd = decode(Schema.Struct({ session: Schema.Struct({ cwd: Schema.String }) }))
-const decodeKeptArtifacts = decode(Schema.UndefinedOr(Schema.Array(Schema.String)))
+
+const filesUnder = (root: string): ReadonlyArray<string> =>
+  readdirSync(root, { recursive: true, encoding: "utf8" })
 
 const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-worktrees-"))
@@ -175,20 +177,20 @@ describe("project worktree archive routes", () => {
         2
       )
       writeFileSync(join(ignoredTree.path, ".gitignore"), ".env\ntmp/\nnode_modules/\n")
+      writeFileSync(join(ignoredTree.path, "notes.txt"), "untracked\n")
       writeFileSync(join(ignoredTree.path, ".env"), "SECRET=1\n")
-      mkdirSync(join(ignoredTree.path, "tmp"))
-      writeFileSync(join(ignoredTree.path, "tmp", "shot.png"), "pixels")
+      mkdirSync(join(ignoredTree.path, "tmp", "shots"), { recursive: true })
+      writeFileSync(join(ignoredTree.path, "tmp", "shots", "leftover.png"), "pixels")
       mkdirSync(join(ignoredTree.path, "node_modules"))
-      writeFileSync(join(ignoredTree.path, "node_modules", "junk.js"), "junk\n")
+      writeFileSync(join(ignoredTree.path, "node_modules", "leftover.js"), "junk\n")
+      mkdirSync(join(ignoredTree.path, "vendor"))
+      writeFileSync(join(ignoredTree.path, "vendor", ".gitignore"), "*\n")
+      writeFileSync(join(ignoredTree.path, "vendor", "leftover.bin"), "bytes\n")
       await setArchived("ignored-ws", true)
-      const keptFolder = join(worktreesRoot, ".archived-artifacts.noindex", ignoredTree.id)
-      expect(readFileSync(join(keptFolder, "tmp", "shot.png"), "utf8")).toBe("pixels")
-      expect(existsSync(join(keptFolder, "node_modules"))).toBe(false)
-      expect(
-        listSubjectEvents(services, "ignored-ws").map((event) =>
-          decodeKeptArtifacts(field(event.payload, "archiveKeptArtifacts"))
-        )
-      ).toContainEqual([".env", "tmp/"])
+      await archiveJobs(services).idle()
+      expect(existsSync(ignoredTree.path)).toBe(false)
+      expect(filesUnder(worktreesRoot).filter((path) => path.includes("leftover"))).toEqual([])
+      expect(filesUnder(worktreesRoot).filter((path) => path.endsWith(".env"))).toEqual([])
 
       const squatter = decodeWorktree(
         (
@@ -203,9 +205,11 @@ describe("project worktree archive routes", () => {
       expect(suffixed.rootDirectory).not.toBe(squatter.path)
       expect(suffixed.rootDirectory).not.toBe(ignoredTree.path)
       expect(existsSync(suffixed.rootDirectory)).toBe(true)
-      expect(readFileSync(join(suffixed.rootDirectory, "tmp", "shot.png"), "utf8")).toBe("pixels")
-      expect(readFileSync(join(suffixed.rootDirectory, ".env"), "utf8")).toBe("SECRET=1\n")
-      expect(existsSync(keptFolder)).toBe(false)
+      expect(readdirSync(suffixed.rootDirectory).toSorted()).toEqual([
+        ".git",
+        ".gitignore",
+        "notes.txt"
+      ])
       for (const chatId of ignoredChats) {
         const chat = decodeChatCwd((await jsonRequest(server, `/v1/sessions/${chatId}`)).body)
         expect(chat.session.cwd).toBe(suffixed.rootDirectory)

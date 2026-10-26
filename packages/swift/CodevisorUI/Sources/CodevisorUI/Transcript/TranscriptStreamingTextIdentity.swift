@@ -33,7 +33,6 @@ public enum TranscriptStreamingTextIdentity {
       let segments = assistantMarkdownSegments(
         markdown,
         attachments: turn.attachments,
-        includeServerPaths: true,
         includeUnreferencedAttachments: !turn.isGenerating
       )
       for (index, segment) in segments.enumerated() {

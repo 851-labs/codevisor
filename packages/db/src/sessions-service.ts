@@ -14,6 +14,7 @@ import { sessionRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionAttentionService } from "./session-attention-service.js"
+import { deleteSessionWithFiles } from "./session-files.js"
 
 export const insertSessionRow = (
   context: ServiceContext,
@@ -124,7 +125,7 @@ export const makeSessionsService = (
         const id = canonicalUuid(rawId)
         sqlite.transaction(() => {
           sqlite.prepare(sessionSql.deletePanes).run(id)
-          sqlite.prepare(sessionSql.delete).run(id)
+          deleteSessionWithFiles(sqlite, id, () => sqlite.prepare(sessionSql.delete).run(id))
         })()
       })
   }
