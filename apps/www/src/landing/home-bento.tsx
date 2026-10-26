@@ -163,7 +163,7 @@ export function FeatureBento() {
       </Card>
 
       <Card className="min-h-[440px] p-6 sm:px-8 md:col-span-4 md:row-span-2">
-        <Label large>iOS Simulator in a pane</Label>
+        <Label large>iOS Simulator</Label>
         <BentoImage
           name="simulator-pane"
           alt="Codevisor's Simulator pane with an iPhone 18 Pro showing the emojis skin tone picker in Safari, and Device Settings open with Appearance set to Light"

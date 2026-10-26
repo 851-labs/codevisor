@@ -15,6 +15,8 @@ import { GetStarted } from "./home-get-started"
 import { Worktrees } from "./home-worktrees"
 import { SectionHead } from "./section-head"
 
+const SHOW_WORKTREES = false
+
 export function Home() {
   return (
     <div className="landing min-h-screen overflow-x-clip bg-page text-text">
@@ -25,7 +27,7 @@ export function Home() {
         <Header />
         <main>
           <Hero />
-          <Worktrees />
+          {SHOW_WORKTREES && <Worktrees />}
           <Features />
           <GetStarted />
         </main>
