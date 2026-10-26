@@ -4,12 +4,7 @@ import { basename, join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-import {
-  mainSerialExecutorFilter,
-  mainSerialExecutorSuites,
-  parseSwiftTestArguments,
-  runSwiftTests
-} from "./test-swift.mjs"
+import { mainSerialExecutorFilter, mainSerialExecutorSuites, runSwiftTests } from "./test-swift.mjs"
 
 const testRoots = ["../packages/swift", "../apps/macos/Tests/Transcript"].map((path) =>
   fileURLToPath(new URL(path, import.meta.url))
@@ -38,8 +33,7 @@ test("every Swift suite that changes the global executor is isolated", () => {
 })
 
 test("Swift tests use Swift Testing, because swift:test runs them without XCTest", () => {
-  const rig = fileURLToPath(new URL("../apps/screen-sharing-rig/Tests", import.meta.url))
-  const xcTests = [...testRoots, rig]
+  const xcTests = testRoots
     .flatMap(testSources)
     .filter((path) => /^\s*(?:@testable\s+)?import\s+XCTest\b/m.test(readFileSync(path, "utf8")))
   assert.deepEqual(xcTests, [])
@@ -65,14 +59,13 @@ const recorder = (failAt = 0, status = 17) => {
 test("test selections are complementary and unrelated suites cannot enter the isolated process", async () => {
   const { calls, run, runBundles } = recorder()
   assert.equal(await runSwiftTests(["--build-system", "native"], { run, runBundles }), 0)
-  const [build, bundles, isolated, rig] = calls
-  assert.equal(calls.length, 4)
+  const [build, bundles, isolated] = calls
+  assert.equal(calls.length, 3)
   assert.deepEqual(build.slice(0, 2), ["build", "--build-tests"])
   assert.ok(build.includes("--build-system"))
   assert.equal(bundles[bundles.indexOf("--skip") + 1], mainSerialExecutorFilter)
   assert.equal(isolated[isolated.indexOf("--filter") + 1], mainSerialExecutorFilter)
   assert.ok(isolated.includes("--skip-build"))
-  assert.ok(!rig.includes("--skip") && !rig.includes("--filter"))
   const pattern = new RegExp(mainSerialExecutorFilter)
   for (const suite of mainSerialExecutorSuites) {
     assert.ok(pattern.test(`CodevisorCoreMacTests.${suite}/example()`))
@@ -85,29 +78,11 @@ test("test selections are complementary and unrelated suites cannot enter the is
 })
 
 test("a failure in any step stops the command and preserves its exit status", async () => {
-  for (const failAt of [1, 2, 3, 4]) {
+  for (const failAt of [1, 2, 3]) {
     const { calls, run, runBundles } = recorder(failAt)
     assert.equal(await runSwiftTests([], { run, runBundles }), 17)
     assert.equal(calls.length, failAt)
   }
   const killed = { run: () => ({ status: null, signal: "SIGTERM" }), runBundles: async () => 0 }
   assert.equal(await runSwiftTests([], killed), 1)
-})
-
-test("--only narrows a run to the chosen packages and keeps the isolated pass", async () => {
-  const { args, packagePaths } = parseSwiftTestArguments(["--only=apps/screen-sharing-rig", "-v"])
-  assert.deepEqual(args, ["-v"])
-  const rig = recorder()
-  await runSwiftTests(args, rig, packagePaths)
-  assert.deepEqual(rig.calls, [
-    ["test", "--package-path", "apps/screen-sharing-rig", "--disable-xctest", "-v"]
-  ])
-  const kit = recorder()
-  await runSwiftTests([], kit, ["packages/swift"])
-  assert.equal(kit.calls.length, 3)
-  assert.ok(kit.calls[2].includes("--filter"))
-  assert.throws(
-    () => parseSwiftTestArguments(["--only=packages/other"]),
-    /Unknown Swift test package/
-  )
 })

@@ -138,19 +138,6 @@ public class ScreenSharingPeer {
     return values ?? [:]
   }
 
-  public func startRtcEventLog(path: String, maxSizeBytes: Int64) -> Bool {
-    guard !closed else { return false }
-    return transport.withDiagnosticConnection {
-      $0.startRtcEventLog(withFilePath: path, maxSizeInBytes: maxSizeBytes)
-    } ?? false
-  }
-
-  @discardableResult
-  public func stopRtcEventLog() -> Bool {
-    guard !closed else { return false }
-    return transport.withDiagnosticConnection { $0.stopRtcEventLog() } != nil
-  }
-
   public func close() {
     guard !closed else { return }
     closed = true
@@ -230,13 +217,12 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
 
   static func make<Result: Sendable>(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
-    options: ScreenSharingPeerOptions, connectivity: ScreenSharingICEConfiguration?,
-    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil, role: @escaping Role<Result>
+    options: ScreenSharingPeerOptions, connectivity: ScreenSharingICEConfiguration?, role: @escaping Role<Result>
   ) async throws -> (ScreenSharingPeerStaging, Result) {
     try await ScreenSharingPeerTransport.build { transport in
       let staged = try ScreenSharingPeerStaging(
         configuration: configuration, metrics: metrics, options: options, connectivity: connectivity,
-        frameDeliveryAudit: frameDeliveryAudit, transport: transport)
+        transport: transport)
       return (staged, try role(staged.factory, staged.connection, staged.codecFactory, transport))
     }
   }
@@ -247,19 +233,13 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
   private init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     options: ScreenSharingPeerOptions, connectivity: ScreenSharingICEConfiguration?,
-    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?, transport: ScreenSharingPeerTransport
+    transport: ScreenSharingPeerTransport
   ) throws {
     self.metrics = metrics
     self.transport = transport
     ScreenSharingPeer.bootstrapTrials(publishingInto: metrics)
     codecFactory = ScreenSharingCodecFactory(
-      metrics: metrics, useLowLatencyRateControl: options.useLowLatencyRateControl, codec: options.codec,
-      fallbackCodecs: options.fallbackCodecs,
-      disableLookAhead: options.disableLookAhead, maximumPendingFrames: options.maximumPendingFrames,
-      staticCodecRate: options.staticCodecRate, completeEachFrame: options.completeEachFrame,
-      prioritizeSpeed: options.prioritizeSpeed, keyframeIntervalSeconds: options.keyframeIntervalSeconds,
-      sourceIdleThresholdNs: options.sourceIdleThresholdNs ?? ScreenSharingSourceIdleMonitor.defaultThresholdNs,
-      frameDeliveryAudit: frameDeliveryAudit)
+      metrics: metrics, codec: options.codec, fallbackCodecs: options.fallbackCodecs)
     factory = RTCPeerConnectionFactory(encoderFactory: codecFactory, decoderFactory: codecFactory)
     delegate = ScreenSharingPeerDelegate()
     let rtcConfiguration = RTCConfiguration()

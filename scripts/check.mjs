@@ -77,9 +77,9 @@ async function swiftManifest(packagePath) {
   }
 }
 
-async function changedSwiftManifests(files) {
-  if (!files.some((file) => file.startsWith("packages/swift/"))) return []
-  return Promise.all([swiftManifest("packages/swift"), swiftManifest("apps/screen-sharing-rig")])
+async function changedSwiftManifest(files) {
+  if (!files.some((file) => file.startsWith("packages/swift/"))) return undefined
+  return swiftManifest("packages/swift")
 }
 
 async function gatherContext(files) {
@@ -95,7 +95,7 @@ async function gatherContext(files) {
   const releaseScripts = readdirSync(join(repoRoot, "scripts/release"))
     .filter((name) => name.endsWith(".mjs"))
     .map((name) => `scripts/release/${name}`)
-  const [swiftPackage, rigPackage] = await changedSwiftManifests(files)
+  const swiftPackage = await changedSwiftManifest(files)
   return {
     workspaces,
     scriptInputs: {
@@ -104,9 +104,6 @@ async function gatherContext(files) {
       "scripts/release": importClosure(releaseScripts)
     },
     swiftPackage,
-    rigProducts: rigPackage?.targets.flatMap((target) =>
-      target.dependencies.flatMap((dependency) => dependency.product?.[0] ?? [])
-    ),
     swiftLinks: swiftPackageLinks(),
     iosProducts: xcodeSwiftProducts(
       readFileSync(join(repoRoot, "apps/ios/Codevisor.xcodeproj/project.pbxproj"), "utf8")

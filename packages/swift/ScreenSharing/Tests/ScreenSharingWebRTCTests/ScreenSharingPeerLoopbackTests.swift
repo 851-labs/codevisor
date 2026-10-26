@@ -92,7 +92,6 @@ struct ScreenSharingPeerLoopbackTests {
     #expect(!harness.sender.controlChannel.isAvailable && !harness.receiver.controlChannel.isAvailable)
     #expect(await harness.sender.transport.inspect { $0 == nil })
     #expect(await harness.receiver.transport.inspect { $0 == nil })
-    #expect(!harness.sender.stopRtcEventLog() && !harness.receiver.stopRtcEventLog())
   }
 
   @Test func theNegotiatedControlChannelCarriesMessagesInOrderInBothDirections() async throws {
@@ -230,21 +229,6 @@ struct ScreenSharingPeerLoopbackTests {
     await #expect(throws: (any Error).self) { try await peer.makeDescription(offer: false) }
     await #expect(throws: (any Error).self) { try await peer.accept(offer) }
     #expect(await peer.statistics().isEmpty)
-  }
-
-  @Test func theEventLogIsStartedAndStoppedOnceAndNeverAfterClose() async throws {
-    let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let peer = try await ScreenSharingReceiver(
-      configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: ScreenSharingMetrics())
-    defer { peer.close() }
-    #expect(peer.startRtcEventLog(path: directory.appendingPathComponent("rtc.log").path, maxSizeBytes: 1 << 20))
-    #expect(peer.stopRtcEventLog())
-    peer.close()
-    #expect(!peer.startRtcEventLog(path: directory.appendingPathComponent("late.log").path, maxSizeBytes: 1 << 20))
-    #expect(!peer.stopRtcEventLog())
-    #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("late.log").path))
   }
 
   struct ConnectionShape: Sendable, Equatable {

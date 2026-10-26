@@ -4,9 +4,9 @@ import Testing
 struct ScreenSharingPresentationMetricsTests {
   @Test func skippedDrawablesAndRedrawsDoNotCountAsNewPresentedFrames() {
     let metrics = ScreenSharingMetrics()
-    #expect(!metrics.recordPresentation(isNewFrame: true, presentedAt: 0, submittedAt: 1, receivedAt: 0.5))
-    #expect(!metrics.recordPresentation(isNewFrame: false, presentedAt: 2, submittedAt: 1, receivedAt: 0.5))
-    #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 1.75, receivedAt: 1.5))
+    metrics.recordPresentation(isNewFrame: true, presentedAt: 0, submittedAt: 1, receivedAt: 0.5)
+    metrics.recordPresentation(isNewFrame: false, presentedAt: 2, submittedAt: 1, receivedAt: 0.5)
+    metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 1.75, receivedAt: 1.5)
     let result = metrics.snapshot()
     #expect(result.counters["presentationCallbacks"] == 2)
     #expect(result.counters["unpresentedDrawables"] == 1)
@@ -17,7 +17,7 @@ struct ScreenSharingPresentationMetricsTests {
 
   @Test func aPresentationTimeBeforeSubmissionCountsTheFrameAndDiscardsTheInterval() {
     let metrics = ScreenSharingMetrics()
-    #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 1, submittedAt: 2, receivedAt: 0.5))
+    metrics.recordPresentation(isNewFrame: true, presentedAt: 1, submittedAt: 2, receivedAt: 0.5)
     let result = metrics.snapshot()
     #expect(result.counters["presentedFrames"] == 1)
     #expect(result.timings["submissionToPresentation"] == nil, "a negative latency would poison the percentiles")
@@ -28,7 +28,7 @@ struct ScreenSharingPresentationMetricsTests {
   @Test(arguments: [Double.nan, .infinity, -.infinity, -1, -0.0, 0])
   func aTimeThatCannotBeAPresentationIsAnUnpresentedDrawable(presentedAt: Double) {
     let metrics = ScreenSharingMetrics()
-    #expect(!metrics.recordPresentation(isNewFrame: true, presentedAt: presentedAt, submittedAt: 1, receivedAt: 0.5))
+    metrics.recordPresentation(isNewFrame: true, presentedAt: presentedAt, submittedAt: 1, receivedAt: 0.5)
     let result = metrics.snapshot()
     #expect(result.counters["presentationCallbacks"] == 1)
     #expect(result.counters["unpresentedDrawables"] == 1)
@@ -38,7 +38,7 @@ struct ScreenSharingPresentationMetricsTests {
 
   @Test func aRedrawLeavesTheAccountingUntouched() {
     let metrics = ScreenSharingMetrics()
-    #expect(!metrics.recordPresentation(isNewFrame: false, presentedAt: 2, submittedAt: 1, receivedAt: 0.5))
+    metrics.recordPresentation(isNewFrame: false, presentedAt: 2, submittedAt: 1, receivedAt: 0.5)
     let result = metrics.snapshot()
     #expect(result.counters.isEmpty)
     #expect(result.timings.isEmpty)
@@ -47,7 +47,7 @@ struct ScreenSharingPresentationMetricsTests {
   @Test func theSameFrameTimestampPresentedTwiceIsTwoFramesAndTwoSamples() {
     let metrics = ScreenSharingMetrics()
     for _ in 0..<2 {
-      #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 1.9, receivedAt: 1.8))
+      metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 1.9, receivedAt: 1.8)
     }
     let result = metrics.snapshot()
     #expect(result.counters["presentedFrames"] == 2)
@@ -58,7 +58,7 @@ struct ScreenSharingPresentationMetricsTests {
 
   @Test func aFrameWithoutAReceiveTimeStillTimesItsSubmission() {
     let metrics = ScreenSharingMetrics()
-    #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 3, submittedAt: 2, receivedAt: nil))
+    metrics.recordPresentation(isNewFrame: true, presentedAt: 3, submittedAt: 2, receivedAt: nil)
     let result = metrics.snapshot()
     #expect(result.timings["submissionToPresentation"]?.p50Ms == 1000)
     #expect(result.timings["receiverCallbackToPresentation"] == nil)
@@ -66,7 +66,7 @@ struct ScreenSharingPresentationMetricsTests {
 
   @Test func aZeroLengthLatencyIsRecordedRatherThanDropped() {
     let metrics = ScreenSharingMetrics()
-    #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 2, receivedAt: 2))
+    metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 2, receivedAt: 2)
     let result = metrics.snapshot()
     #expect(result.timings["submissionToPresentation"]?.count == 1)
     #expect(result.timings["submissionToPresentation"]?.p50Ms == 0)
@@ -79,10 +79,9 @@ struct ScreenSharingPresentationMetricsTests {
       (10, 9.9), (9.5, 9.6), (10.2, 10.0), (10.1, 10.15), (10.4, 10.1),
     ]
     for presentation in presentations {
-      #expect(
-        metrics.recordPresentation(
-          isNewFrame: true, presentedAt: presentation.presentedAt, submittedAt: presentation.submittedAt,
-          receivedAt: nil))
+      metrics.recordPresentation(
+        isNewFrame: true, presentedAt: presentation.presentedAt, submittedAt: presentation.submittedAt,
+        receivedAt: nil)
     }
     let result = metrics.snapshot()
     #expect(result.counters["presentedFrames"] == 5)

@@ -45,19 +45,16 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
   public let rtpTimestamp: UInt32
   public let receivedAtSeconds: Double?
   public let sourceTimestampNs: Int64?
-  public let deliveryAuditIdentity: ScreenSharingFrameDeliveryAudit.Identity?
 
   public init(
     pixelBuffer: CVPixelBuffer, timestampNs: Int64, rtpTimestamp: UInt32 = 0,
-    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil,
-    deliveryAuditIdentity: ScreenSharingFrameDeliveryAudit.Identity? = nil
+    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil
   ) {
     self.pixelBuffer = pixelBuffer
     self.timestampNs = timestampNs
     self.rtpTimestamp = rtpTimestamp
     self.receivedAtSeconds = receivedAtSeconds
     self.sourceTimestampNs = sourceTimestampNs
-    self.deliveryAuditIdentity = deliveryAuditIdentity
   }
 }
 
@@ -92,16 +89,14 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
 
   public init() {}
 
-  @discardableResult
-  public func put(_ value: ScreenSharingVideoFrame) -> ScreenSharingVideoFrame? {
-    let (notify, replaced) = lock.withLock {
+  public func put(_ value: ScreenSharingVideoFrame) {
+    let notify = lock.withLock {
       let previous = frame
       if previous != nil { replacements += 1 }
       frame = value
-      return (previous == nil ? onAvailable : nil, previous)
+      return previous == nil ? onAvailable : nil
     }
     notify?()
-    return replaced
   }
 
   public func onFrameAvailable(_ callback: (@Sendable () -> Void)?) {

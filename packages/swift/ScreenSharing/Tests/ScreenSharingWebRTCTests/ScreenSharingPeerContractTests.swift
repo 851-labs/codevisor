@@ -91,21 +91,7 @@ struct ScreenSharingPeerContractTests {
 
   @Test func peerOptionsCarryTheProductDefaults() throws {
     let options = ScreenSharingPeerOptions()
-    #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264] && options.useLowLatencyRateControl)
-    #expect(!options.disableLookAhead && !options.staticCodecRate && !options.completeEachFrame)
-    #expect(!options.prioritizeSpeed && options.maintainSourceRate)
-    #expect(options.maximumPendingFrames == 3 && options.keyframeIntervalSeconds == 60)
-    #expect(options.transportCeilingBps == nil && options.sourceIdleThresholdNs == nil)
-    #expect(options.deliveryGrace == nil && options.deliveryGraceExtensions == nil)
-  }
-
-  @Test func aDiagnosticTransportCeilingMustCoverTheBitrateAndStayUnderHalfAGigabit() throws {
-    let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 480, bitrate: 4_000_000)
-    #expect(try configuration.validatingTransportCeiling(nil) == nil)
-    #expect(try configuration.validatingTransportCeiling(4_000_000) == 4_000_000)
-    #expect(try configuration.validatingTransportCeiling(500_000_000) == 500_000_000)
-    #expect(throws: ScreenSharingError.self) { try configuration.validatingTransportCeiling(3_999_999) }
-    #expect(throws: ScreenSharingError.self) { try configuration.validatingTransportCeiling(500_000_001) }
+    #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264])
   }
 
   @Test func statisticsKeepTheNegotiatedPairItsCandidatesAndTheAllowedFieldsOnly() {
@@ -206,20 +192,5 @@ struct ScreenSharingPeerContractTests {
     renderer.renderFrame(try frame(identity: 40, rotation: ._0, timeStampNs: 40))
     #expect(!mailbox.isHolding)
     #expect(metrics.snapshot().counters["receivedFrames"] == 3)
-  }
-
-  @Test func theOptionalPacingTrialIsIndependentOfPlayoutAndProvenanceIsNotPartOfCompatibility() {
-    typealias Selection = ScreenSharingFieldTrials.Selection
-    let paced = Selection.probeOptions(
-      jitterWindowFrames: nil, lowLatencyPlayout: false, playoutDelayBoundsMs: nil, pacingFactor: 4)
-    #expect(paced.trials == ["WebRTC-Video-Pacing": "factor:4.0"] && paced.name == "probe options")
-    #expect(paced.playoutExperimentLabel == nil)
-    let both = Selection.probeOptions(
-      jitterWindowFrames: nil, lowLatencyPlayout: true, playoutDelayBoundsMs: nil, pacingFactor: 4)
-    #expect(both.trials["WebRTC-Video-Pacing"] == "factor:4.0")
-    #expect(both.playoutExperimentLabel == "WebRTC-ForcePlayoutDelay min_ms:0,max_ms:0")
-    let renamed = Selection(name: "renamed", trials: paced.trials)
-    #expect(paced.installs(renamed) && renamed.installs(paced) && paced != renamed)
-    #expect(!paced.installs(both))
   }
 }

@@ -12,7 +12,7 @@
       return ScreenSharingCapture.streamConfiguration(
         video,
         interval: try ScreenSharingCaptureIntervalRequest(videoFramesPerSecond: 60, overrideFramesPerSecond: nil),
-        queueDepth: 3, pixelFormat: kCVPixelFormatType_32BGRA, showsCursor: false, capturesAudio: false,
+        pixelFormat: kCVPixelFormatType_32BGRA, showsCursor: false, capturesAudio: false,
         dynamicRange: range)
     }
 

@@ -11,9 +11,6 @@ public final class ScreenSharingSender: ScreenSharingPeer {
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     options: ScreenSharingPeerOptions = .init(), connectivity: ScreenSharingICEConfiguration? = nil
   ) async throws {
-    let transportCeilingBps = try configuration.validatingTransportCeiling(options.transportCeilingBps)
-    if let ceiling = transportCeilingBps { metrics.label("transportCeiling", "\(ceiling) bps") }
-    metrics.label("sourceAdaptation", options.maintainSourceRate ? "never adapt" : "maintain resolution")
     let (staged, frameSender) = try await ScreenSharingPeerStaging.make(
       configuration: configuration, metrics: metrics, options: options, connectivity: connectivity
     ) { factory, connection, codecFactory, transport in
@@ -33,8 +30,7 @@ public final class ScreenSharingSender: ScreenSharingPeer {
       if let directionError { throw directionError }
       let parameters = transceiver.sender.parameters
       parameters.degradationPreference = NSNumber(
-        value: (options.maintainSourceRate
-          ? RTCDegradationPreference.maintainFramerateAndResolution : .maintainResolution).rawValue)
+        value: RTCDegradationPreference.maintainFramerateAndResolution.rawValue)
       for encoding in parameters.encodings {
         encoding.maxBitrateBps = NSNumber(value: configuration.bitrate)
         encoding.maxFramerate = NSNumber(value: configuration.framesPerSecond)
@@ -42,7 +38,7 @@ public final class ScreenSharingSender: ScreenSharingPeer {
       transceiver.sender.parameters = parameters
       connection.setBweMinBitrateBps(
         100_000, currentBitrateBps: NSNumber(value: configuration.bitrate),
-        maxBitrateBps: NSNumber(value: transportCeilingBps ?? configuration.bitrate))
+        maxBitrateBps: NSNumber(value: configuration.bitrate))
       return frameSender
     }
     self.frameSender = frameSender

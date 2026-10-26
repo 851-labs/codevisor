@@ -40,7 +40,6 @@ const context = {
     "scripts/release": ["scripts/chromium-artifact.mjs"]
   },
   swiftPackage,
-  rigProducts: ["Sharing", "ExternalProduct"],
   iosProducts: ["UI", "Core"],
   swiftLinks: [{ link: "packages/swift/Transcript/Sources", target: "apps/macos/Transcript" }]
 }
@@ -99,22 +98,11 @@ test("a Swift module change runs only the builds that link it", () => {
   const changes = {
     "packages/swift/UI/Button.swift": [...swiftChecks, "swift:build:ios"],
     "packages/swift/UI/Vendor/grammar.c": ["swift:test"],
-    "packages/swift/Sharing/Sources/Sharing/Peer.swift": [
-      ...swiftChecks,
-      "swift:test (screen-sharing-rig)"
-    ],
-    "packages/swift/Core/Sources/Core/Model.swift": [
-      ...swiftChecks,
-      "swift:test (screen-sharing-rig)",
-      "swift:build:ios"
-    ],
+    "packages/swift/Sharing/Sources/Sharing/Peer.swift": swiftChecks,
+    "packages/swift/Core/Sources/Core/Model.swift": [...swiftChecks, "swift:build:ios"],
     "packages/swift/Core/Tests/CoreTests/ModelTests.swift": swiftChecks,
     "packages/swift/README.md": ["swift:test"],
-    "packages/swift/Package.resolved": [
-      "swift:test",
-      "swift:test (screen-sharing-rig)",
-      "swift:build:ios"
-    ]
+    "packages/swift/Package.resolved": ["swift:test", "swift:build:ios"]
   }
   for (const [file, checks] of Object.entries(changes)) {
     assert.deepEqual(Object.keys(planned([file])), checks, file)
@@ -127,9 +115,8 @@ test("app sources and native inputs run the Swift builds that consume them", () 
     "scripts/xcodebuild.mjs": ["swift:build:ios"],
     "apps/macos/Transcript/Row.swift": ["swift:format:check", "swift:lint", "swift:test"],
     "apps/macos/Settings/Pane.swift": ["swift:format:check", "swift:lint"],
-    "apps/screen-sharing-rig/Package.resolved": ["swift:test (screen-sharing-rig)"],
-    "scripts/swift-artifacts.mjs": ["swift:test", "swift:test (screen-sharing-rig)"],
-    "packages/net/src/lib.rs": ["swift:test", "swift:test (screen-sharing-rig)", "swift:build:ios"]
+    "scripts/swift-artifacts.mjs": ["swift:test"],
+    "packages/net/src/lib.rs": ["swift:test", "swift:build:ios"]
   }
   for (const [file, checks] of Object.entries(changes)) {
     assert.deepEqual(Object.keys(planned([file])), checks, file)
@@ -138,10 +125,10 @@ test("app sources and native inputs run the Swift builds that consume them", () 
 
 test("without the Swift manifest or a build's products, every packages/swift change counts", () => {
   const file = "packages/swift/Core/Tests/CoreTests/ModelTests.swift"
-  for (const missing of [{ swiftPackage: undefined }, { rigProducts: undefined }]) {
+  for (const missing of [{ swiftPackage: undefined }, { iosProducts: undefined }]) {
     const checks = planChecks({ files: [file], context: { ...context, ...missing } })
     assert.ok(
-      checks.some(({ step, run }) => step.name === "swift:test (screen-sharing-rig)" && run),
+      checks.some(({ step, run }) => step.name === "swift:build:ios" && run),
       JSON.stringify(Object.keys(missing))
     )
   }

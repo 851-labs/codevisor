@@ -10,7 +10,6 @@ final class ScreenSharingPeerTransport: @unchecked Sendable {
   private var remote: (track: RTCVideoTrack, renderer: any RTCVideoRenderer)?
   private var closing = false
   private let lock = NSLock()
-  private var diagnosticConnection: RTCPeerConnection?
   private var finished = false
   private var waiters: [CheckedContinuation<Void, Never>] = []
 
@@ -37,12 +36,6 @@ final class ScreenSharingPeerTransport: @unchecked Sendable {
     dispatchPrecondition(condition: .onQueue(queue))
     self.factory = factory
     self.connection = connection
-    lock.withLock { diagnosticConnection = connection }
-  }
-
-  func withDiagnosticConnection<Result>(_ body: (RTCPeerConnection) -> Result) -> Result? {
-    guard let connection = lock.withLock({ diagnosticConnection }) else { return nil }
-    return body(connection)
   }
 
   func retain(_ object: AnyObject) {
@@ -106,7 +99,6 @@ final class ScreenSharingPeerTransport: @unchecked Sendable {
   }
 
   func close(after channels: [any ScreenSharingQueuedChannel]) {
-    lock.withLock { diagnosticConnection = nil }
     let group = DispatchGroup()
     for channel in channels { channel.afterQueuedWork(in: group) }
     queue.async { [self] in closing = true }

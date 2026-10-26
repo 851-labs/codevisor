@@ -9,7 +9,6 @@ included:
   - apps/ios
   - apps/macos
   - apps/pixelbook
-  - apps/screen-sharing-rig
   - apps/shared
   - packages
 
@@ -41,7 +40,6 @@ file_name:
   severity: warning
   excluded_paths:
     - /apps/pixelbook/
-    - /apps/screen-sharing-rig/
 
 custom_rules:
   no_comments:

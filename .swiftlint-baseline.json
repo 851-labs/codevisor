@@ -768,306 +768,6 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines",
-      "location": {
-        "line": 131,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingDiagnostics/ProbeOwnedWorkloadWindow.swift",
-        "character": 11
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  private func takeObservation(_ label: String) -> [String: Any] {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
-      "location": {
-        "line": 93,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingDiagnostics/SyntheticSource.swift",
-        "character": 13
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    private func draw() {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 104 lines",
-      "location": {
-        "line": 53,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/FrameClockCommand.swift",
-        "character": 12
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    static func run("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
-      "location": {
-        "line": 7,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeArguments.swift",
-        "character": 3
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  init(_ arguments: [String]) throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 66 lines",
-      "location": {
-        "line": 32,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeCodecCheck.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  static func run(configuration: ScreenSharingVideoConfiguration, report: URL?, caseName: String?) throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 95 lines",
-      "location": {
-        "line": 119,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeCodecCheck.swift",
-        "character": 3
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  func run(images: URL?) throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 322 lines",
-      "location": {
-        "line": 84,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeCommand.swift",
-        "character": 5
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    func run() async throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
-      "location": {
-        "line": 8,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeDesktopWorkload.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  static func run(options: ProbeOptions) async throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 85 lines",
-      "location": {
-        "line": 12,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeDiagnostics.swift",
-        "character": 3
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  init("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 100 lines or less excluding comments and whitespace: currently spans 444 lines",
-      "location": {
-        "line": 7,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeOptions+Parsing.swift",
-        "character": 3
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  init(arguments: [String]) throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 331 lines",
-      "location": {
-        "line": 11,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeRunner+Measurement.swift",
-        "character": 5
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    func measure() async throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 93 lines",
-      "location": {
-        "line": 55,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/Probe/ProbeWindowObservation.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  static func run(options: Options) async throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 118 lines",
-      "location": {
-        "line": 139,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/RigRunner+Host.swift",
-        "character": 13
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    private func startSourceUnwatched(in session: RigSession) async throws {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 71 lines",
-      "location": {
-        "line": 52,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/RigRunner+Viewer.swift",
-        "character": 5
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    func connectViewer(base: URL) async throws -> RigSession {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
-      "location": {
-        "line": 27,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/RigViewerControlCheck.swift",
-        "character": 5
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    func run(responses: () async -> Int?) async throws -> RigControlCheckResponse {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 70 lines",
-      "location": {
-        "line": 11,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/ScreenSharingRigApp.swift",
-        "character": 12
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    static func main() {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 69 lines",
-      "location": {
-        "line": 82,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRig/VNCSampleCommand.swift",
-        "character": 12
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    static func sample("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 71 lines",
-      "location": {
-        "line": 128,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRigKit/RigConfiguration.swift",
-        "character": 17
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  public static func parse(_ data: Data) throws -> RigConfiguration {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
-      "location": {
-        "line": 5,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRigKit/RigHUDFormatter.swift",
-        "character": 17
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  public static func lines("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 91 lines",
-      "location": {
-        "line": 64,
-        "file": "apps/screen-sharing-rig/Sources/ScreenSharingRigKit/RigTuning.swift",
-        "character": 17
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  public static func parse(_ object: [String: Any]) throws -> RigTuning {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
       "location": {
         "line": 8,
@@ -2495,37 +2195,37 @@
       "ruleName": "Function Body Length",
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
       "location": {
-        "line": 61,
+        "line": 53,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingDecoder.swift",
         "character": 10
       },
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length"
     },
-    "text": "  public func decode("
+    "text": "  public func decode(_ frame: ScreenSharingEncodedFrame) throws {"
   },
   {
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 108 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 103 lines",
       "location": {
-        "line": 136,
+        "line": 126,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingDecoder.swift",
         "character": 11
       },
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length"
     },
-    "text": "  private func configure("
+    "text": "  private func configure(parameters: [Data]) throws {"
   },
   {
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 100 lines or less excluding comments and whitespace: currently spans 111 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
       "location": {
-        "line": 42,
+        "line": 40,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
         "character": 10
       },
@@ -2538,24 +2238,9 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 75 lines",
       "location": {
-        "line": 173,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  public func encode(_ frame: ScreenSharingVideoFrame, forceKeyFrame: Bool = false) throws -> Bool {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 85 lines",
-      "location": {
-        "line": 271,
+        "line": 238,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
         "character": 11
       },
@@ -2563,21 +2248,6 @@
       "ruleIdentifier": "function_body_length"
     },
     "text": "  private func didEncode(metadata: Pending, status: OSStatus, flags: VTEncodeInfoFlags, buffer: CMSampleBuffer?) {"
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
-      "location": {
-        "line": 230,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Diagnostics/ScreenSharingFrameDeliveryAudit.swift",
-        "character": 10
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  public func snapshot() -> Snapshot {"
   },
   {
     "violation": {
@@ -2598,9 +2268,9 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 71 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 68 lines",
       "location": {
-        "line": 72,
+        "line": 66,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/RFB/RFBClient.swift",
         "character": 10
       },
@@ -2613,9 +2283,9 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 72 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 69 lines",
       "location": {
-        "line": 182,
+        "line": 174,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/RFB/RFBClient.swift",
         "character": 11
       },
@@ -2643,9 +2313,9 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 65 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
       "location": {
-        "line": 29,
+        "line": 25,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Render/ScreenSharingMetalView.swift",
         "character": 10
       },
@@ -2653,36 +2323,6 @@
       "ruleIdentifier": "function_body_length"
     },
     "text": "  public init("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
-      "location": {
-        "line": 348,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Render/ScreenSharingMetalView.swift",
-        "character": 5
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "    func prepare("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
-      "location": {
-        "line": 216,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Render/ScreenSharingRenderCoordinator.swift",
-        "character": 11
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  private func submit("
   },
   {
     "violation": {
@@ -2748,7 +2388,7 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 81 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
       "location": {
         "line": 12,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharingWebRTC/Endpoints/ScreenSharingReceiverRecovery.swift",
@@ -2758,21 +2398,6 @@
       "ruleIdentifier": "function_body_length"
     },
     "text": "  init("
-  },
-  {
-    "violation": {
-      "severity": "error",
-      "ruleName": "Function Body Length",
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 53 lines",
-      "location": {
-        "line": 247,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharingWebRTC/Peer/ScreenSharingPeer.swift",
-        "character": 11
-      },
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length"
-    },
-    "text": "  private init("
   },
   {
     "violation": {

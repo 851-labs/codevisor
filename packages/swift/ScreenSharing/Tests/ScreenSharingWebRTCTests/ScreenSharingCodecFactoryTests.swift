@@ -63,14 +63,12 @@ struct ScreenSharingCodecFactoryTests {
     #expect(decoder.implementationName() == "CodevisorVideoToolbox\(codec.payloadName)")
   }
 
-  @Test func eachAdapterIsANewInstanceOverSharedDiagnosticState() throws {
+  @Test func eachAdapterIsANewInstance() throws {
     let factory = ScreenSharingCodecFactory(metrics: ScreenSharingMetrics())
     let info = try #require(factory.supportedCodecs().first)
     let first = try #require(factory.createEncoder(info))
     let second = try #require(factory.createEncoder(info))
     #expect(first !== second)
-    #expect(!factory.encoderDropCheck.consume())
-    #expect(factory.recoveryCheck.inspect(keyFrame: false, nowNs: 0) == .accept)
   }
 }
 
@@ -125,10 +123,9 @@ struct ScreenSharingCodecFallbackTests {
 
   @Test func fourFourFourTradesLowLatencyForTheEncodersSpeedPreference() {
     let map = ScreenSharingCodecFactory.rateControl
-    #expect(map(.hevc444, true, false) == (false, true))
-    #expect(map(.hevc444, false, false) == (false, false), "an explicit standard-rate experiment stays as it is")
-    #expect(map(.hevc, true, false) == (true, false))
-    #expect(map(.h264, false, true) == (false, true))
+    #expect(map(.hevc444) == (false, true))
+    #expect(map(.hevc) == (true, false))
+    #expect(map(.h264) == (true, false))
     let factory = ScreenSharingCodecFactory(metrics: ScreenSharingMetrics(), codec: .hevc444)
     #expect(factory.createEncoder(RTCVideoCodecInfo(name: "H265", parameters: ["profile-id": "4"])) != nil)
   }

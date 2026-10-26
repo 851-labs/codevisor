@@ -6,19 +6,15 @@ import ScreenSharing
 @MainActor
 public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewingSession {
   public let mailbox: ScreenSharingFrameMailbox
-  public let frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?
   private let renderer: ScreenSharingPeerRenderer
   private let recovery: ScreenSharingReceiverRecovery
 
   public init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
-    options: ScreenSharingPeerOptions = .init(), connectivity: ScreenSharingICEConfiguration? = nil,
-    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
+    options: ScreenSharingPeerOptions = .init(), connectivity: ScreenSharingICEConfiguration? = nil
   ) async throws {
-    self.frameDeliveryAudit = frameDeliveryAudit
     let (staged, _) = try await ScreenSharingPeerStaging.make(
-      configuration: configuration, metrics: metrics, options: options, connectivity: connectivity,
-      frameDeliveryAudit: frameDeliveryAudit
+      configuration: configuration, metrics: metrics, options: options, connectivity: connectivity
     ) { _, connection, _, _ in
       let transceiver = RTCRtpTransceiverInit()
       transceiver.direction = .recvOnly
@@ -28,11 +24,10 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     }
     let mailbox = ScreenSharingFrameMailbox()
     self.mailbox = mailbox
-    let renderer = ScreenSharingPeerRenderer(mailbox: mailbox, metrics: metrics, audit: frameDeliveryAudit)
+    let renderer = ScreenSharingPeerRenderer(mailbox: mailbox, metrics: metrics)
     self.renderer = renderer
     recovery = ScreenSharingReceiverRecovery(
-      metrics: metrics, codecFactory: staged.codecFactory, videoRefresh: staged.videoRefresh,
-      grace: options.deliveryGrace, graceExtensions: options.deliveryGraceExtensions)
+      metrics: metrics, codecFactory: staged.codecFactory, videoRefresh: staged.videoRefresh)
     super.init(staged: staged)
     delegate.onVideoTrack = { [transport] track in transport.attach(track, renderer: renderer) }
     codecFactory.refreshSignal.request()
@@ -195,7 +190,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     stopAudio()
   }
 
-  public var audioVolume: Float = 1 {
+  private var audioVolume: Float = 1 {
     didSet { audioPlayer?.setVolume(audioVolume) }
   }
 
@@ -274,23 +269,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     }
   }
 
-  public func simulateDecoderLoss(
-    afterFrames: Int, droppingRecoveryKeyframeFrom sender: ScreenSharingSender? = nil,
-    idlingCaptureFrom idleSender: ScreenSharingSender? = nil
-  ) {
-    let dropCheck = sender?.codecFactory.encoderDropCheck
-    let idleCapture = idleSender?.frameSender
-    let idleMetrics = idleSender?.metrics
-    codecFactory.recoveryCheck.arm(afterFrames: afterFrames) {
-      dropCheck?.arm()
-      idleCapture?.suspendCaptureDelivery()
-      idleMetrics?.increment("captureDeliveryStoppedAtDecoderReset")
-    }
-    sender?.metrics.label("encoderRecoveryExperiment", "discard one forced output after decoder reset")
-    idleMetrics?.label("sourceIdleExperiment", "capture delivery stops at decoder reset")
-    metrics.label("decoderRecoveryExperiment", "discard reference state after \(afterFrames) input frames")
-  }
-
   override func handleRefresh(_ message: ScreenSharingVideoRefreshMessage) {
     recovery.handle(message)
   }
@@ -311,7 +289,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
 
   override func didClose() {
     mailbox.clear()
-    frameDeliveryAudit?.close()
   }
 }
 

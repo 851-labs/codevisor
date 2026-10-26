@@ -119,21 +119,7 @@ const checkSteps = [
     "swift:test",
     "swift",
     (context) => ["packages/swift/**", ...nativeInputs, ...swiftTestScript(context)],
-    ["node", "scripts/test-swift.mjs", "--only=packages/swift"]
-  ),
-  swiftStep(
-    "swift:test (screen-sharing-rig)",
-    ["node", "scripts/test-swift.mjs", "--only=apps/screen-sharing-rig"],
-    {
-      products: (context) => context.rigProducts,
-      patterns: (context) => [
-        "apps/screen-sharing-rig/Package.*",
-        "apps/screen-sharing-rig/Sources/**",
-        "apps/screen-sharing-rig/Tests/**",
-        ...nativeInputs,
-        ...swiftTestScript(context)
-      ]
-    }
+    ["node", "scripts/test-swift.mjs"]
   ),
   swiftStep("swift:build:ios", ["bun", "run", "swift:build:ios"], {
     lane: "swift-ios",

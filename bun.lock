@@ -40,9 +40,6 @@
         "wrangler": "4.120.0",
       },
     },
-    "apps/screen-sharing-rig": {
-      "name": "@codevisor/screen-sharing-rig",
-    },
     "apps/server": {
       "name": "@codevisor/server",
       "bin": {
@@ -648,8 +645,6 @@
     "@codevisor/plugins": ["@codevisor/plugins@workspace:packages/plugins"],
 
     "@codevisor/processes": ["@codevisor/processes@workspace:packages/processes"],
-
-    "@codevisor/screen-sharing-rig": ["@codevisor/screen-sharing-rig@workspace:apps/screen-sharing-rig"],
 
     "@codevisor/server": ["@codevisor/server@workspace:apps/server"],
 

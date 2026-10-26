@@ -25,10 +25,6 @@
     "@codevisor/cloud#test:coverage": {
       "dependsOn": ["^build"],
       "outputs": []
-    },
-    "@codevisor/screen-sharing-rig#test:coverage": {
-      "dependsOn": ["^build"],
-      "outputs": []
     }
   }
 }

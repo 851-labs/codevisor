@@ -22,7 +22,6 @@ package struct ScreenSharingPreparationRequest: Sendable {
   package let isNewFrame: Bool
   package let geometry: ScreenSharingRenderGeometry
   package let queuedAtNs: Int64
-  package let auditIdentity: ScreenSharingFrameDeliveryAudit.Identity?
 }
 
 package struct ScreenSharingPreparedSubmission: Sendable {
@@ -55,20 +54,14 @@ package final class ScreenSharingRenderCoordinator {
   package var onPresented: ((UInt32) -> Void)? {
     didSet { if stopped { onPresented = nil } }
   }
-  package var onFramePresented: ((ScreenSharingPresentedFrame) -> Void)? {
-    didSet { if stopped { onFramePresented = nil } }
-  }
   package private(set) var inFlight = false
   package var preparationToken: Int? { pending?.token }
   private struct PendingPreparation {
     let token: Int
     let rtpTimestamp: UInt32
     let receivedAt: Double?
-    let sourceTimestampNs: Int64?
     let isNewFrame: Bool
-    let auditIdentity: ScreenSharingFrameDeliveryAudit.Identity?
   }
-  package var audit: ScreenSharingFrameDeliveryAudit?
   private var pending: PendingPreparation?
   private let redrawsOnDemand: Bool
   private var redrawHopPending = false
@@ -130,9 +123,6 @@ package final class ScreenSharingRenderCoordinator {
     needsRedraw = false
     let isNewFrame = incoming != nil || owedPresentation
     owedPresentation = false
-    if let audit, incoming != nil {
-      audit.record(.selection, frame.deliveryAuditIdentity, rtpTimestamp: frame.rtpTimestamp)
-    }
     return (frame, isNewFrame)
   }
 
@@ -160,8 +150,7 @@ package final class ScreenSharingRenderCoordinator {
     occupancy += 1
     submit(
       submission, retaining: retained, rtpTimestamp: frame.rtpTimestamp, receivedAt: frame.receivedAtSeconds,
-      sourceTimestampNs: frame.sourceTimestampNs, isNewFrame: isNewFrame, submittedAt: submittedAt,
-      auditIdentity: frame.deliveryAuditIdentity)
+      isNewFrame: isNewFrame, submittedAt: submittedAt)
     return true
   }
 
@@ -172,13 +161,10 @@ package final class ScreenSharingRenderCoordinator {
     occupancy += 1
     let token = occupancy
     pending = .init(
-      token: token, rtpTimestamp: frame.rtpTimestamp, receivedAt: frame.receivedAtSeconds,
-      sourceTimestampNs: frame.sourceTimestampNs, isNewFrame: isNewFrame, auditIdentity: frame.deliveryAuditIdentity)
+      token: token, rtpTimestamp: frame.rtpTimestamp, receivedAt: frame.receivedAtSeconds, isNewFrame: isNewFrame)
     let hop = hop
     preparer.prepare(
-      .init(
-        frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs,
-        auditIdentity: frame.deliveryAuditIdentity)
+      .init(frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs)
     ) { [weak self] prepared in
       hop { self?.finishPreparation(token: token, prepared) }
     }
@@ -188,10 +174,6 @@ package final class ScreenSharingRenderCoordinator {
   package func finishPreparation(token: Int, _ prepared: ScreenSharingPreparedSubmission?) {
     guard let pending, pending.token == token, occupancy == token else { return }
     self.pending = nil
-    if let audit {
-      audit.record(
-        .preparedReceipt, pending.auditIdentity, rtpTimestamp: pending.rtpTimestamp, valueNs: prepared == nil ? 0 : 1)
-    }
     guard !stopped else {
       inFlight = false
       return
@@ -209,30 +191,23 @@ package final class ScreenSharingRenderCoordinator {
     }
     submit(
       prepared.submission, retaining: prepared.retained, rtpTimestamp: pending.rtpTimestamp,
-      receivedAt: pending.receivedAt, sourceTimestampNs: pending.sourceTimestampNs, isNewFrame: pending.isNewFrame,
-      submittedAt: CACurrentMediaTime(), auditIdentity: pending.auditIdentity)
+      receivedAt: pending.receivedAt, isNewFrame: pending.isNewFrame, submittedAt: CACurrentMediaTime())
   }
 
   private func submit(
     _ submission: any ScreenSharingRenderSubmission, retaining retained: AnyObject & Sendable,
-    rtpTimestamp: UInt32, receivedAt: Double?, sourceTimestampNs: Int64?, isNewFrame: Bool, submittedAt: Double,
-    auditIdentity: ScreenSharingFrameDeliveryAudit.Identity? = nil
+    rtpTimestamp: UInt32, receivedAt: Double?, isNewFrame: Bool, submittedAt: Double
   ) {
     let metrics = metrics
     let hop = hop
     let renderOnArrival = renderOnArrival
     let mine = occupancy
     let startedNs = ScreenSharingMetrics.nowNs
-    let audit = audit
     if isNewFrame, let receivedAt {
       metrics.observe("receiverCallbackToSubmission", milliseconds: (submittedAt - receivedAt) * 1000)
     }
-    if let audit, isNewFrame { audit.record(.submission, auditIdentity, rtpTimestamp: rtpTimestamp) }
-    submission.onCompleted { [weak self, retained, audit, auditIdentity] completed in
+    submission.onCompleted { [weak self, retained] completed in
       withExtendedLifetime(retained) {}
-      if let audit, isNewFrame {
-        audit.record(.gpuCompletionCallback, auditIdentity, rtpTimestamp: rtpTimestamp, valueNs: completed ? 1 : 0)
-      }
       if completed {
         if isNewFrame { metrics.increment("renderedFrames") }
         metrics.observe(
@@ -247,28 +222,13 @@ package final class ScreenSharingRenderCoordinator {
         self.requestDraw()
       }
     }
-    submission.onPresented {
-      [
-        weak self, metrics, hop, isNewFrame, submittedAt, receivedAt, sourceTimestampNs, rtpTimestamp, audit,
-        auditIdentity
-      ]
-      presentedTime in
-      if let audit, isNewFrame {
-        audit.record(
-          .presentedResult, auditIdentity, rtpTimestamp: rtpTimestamp,
-          valueNs: presentedTime.isFinite && presentedTime > 0 ? Int64(presentedTime * 1_000_000_000) : 0)
-      }
-      let timed = metrics.recordPresentation(
+    submission.onPresented { [weak self] presentedTime in
+      metrics.recordPresentation(
         isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: receivedAt)
       guard isNewFrame else { return }
       hop {
         guard let self, !self.stopped else { return }
         self.onPresented?(rtpTimestamp)
-        guard timed else { return }
-        self.onFramePresented?(
-          ScreenSharingPresentedFrame(
-            presentedAtSeconds: presentedTime, submittedAtSeconds: submittedAt, receivedAtSeconds: receivedAt,
-            sourceTimestampNs: sourceTimestampNs, rtpTimestamp: rtpTimestamp))
       }
     }
     submission.commit()
@@ -291,26 +251,6 @@ package final class ScreenSharingRenderCoordinator {
     needsRedraw = false
     onFrameSize = nil
     onPresented = nil
-    onFramePresented = nil
     metrics.label("rendererStopped", "true")
-  }
-}
-
-public struct ScreenSharingPresentedFrame: Equatable, Sendable {
-  public let presentedAtSeconds: Double
-  public let submittedAtSeconds: Double
-  public let receivedAtSeconds: Double?
-  public let sourceTimestampNs: Int64?
-  public let rtpTimestamp: UInt32
-
-  public init(
-    presentedAtSeconds: Double, submittedAtSeconds: Double, receivedAtSeconds: Double?, sourceTimestampNs: Int64?,
-    rtpTimestamp: UInt32
-  ) {
-    self.presentedAtSeconds = presentedAtSeconds
-    self.submittedAtSeconds = submittedAtSeconds
-    self.receivedAtSeconds = receivedAtSeconds
-    self.sourceTimestampNs = sourceTimestampNs
-    self.rtpTimestamp = rtpTimestamp
   }
 }
