@@ -90,6 +90,7 @@ mkdir -p \
 
 cp "$repo_root/package.json" "$runtime_dir/package.json"
 cp "$repo_root/bun.lock" "$runtime_dir/bun.lock"
+cp -R "$repo_root/patches" "$runtime_dir/patches"
 cp "$repo_root/apps/server/package.json" "$runtime_dir/apps/server/package.json"
 cp -R "$repo_root/apps/server/dist" "$runtime_dir/apps/server/dist"
 
