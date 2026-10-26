@@ -78,10 +78,12 @@ public struct HarnessProviderPrompt: Identifiable, Equatable, Sendable {
   public let placeholder: String?
   public let options: [Option]
   public let condition: Condition?
+  public let isRequired: Bool
+  public let defaultValue: String?
 
   public init(
     id: String, kind: Kind, message: String, placeholder: String? = nil, options: [Option] = [],
-    condition: Condition? = nil
+    condition: Condition? = nil, isRequired: Bool = true, defaultValue: String? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -89,6 +91,8 @@ public struct HarnessProviderPrompt: Identifiable, Equatable, Sendable {
     self.placeholder = placeholder
     self.options = options
     self.condition = condition
+    self.isRequired = isRequired
+    self.defaultValue = defaultValue
   }
 
   public func isShown(given answers: [String: String]) -> Bool {
@@ -231,7 +235,8 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
                     value: option.value,
                     label: option.hint.map { "\(option.label) — \($0)" } ?? option.label)
                 },
-                condition: prompt.when.map { .init(key: $0.key, equals: $0.op == "eq", value: $0.value) })
+                condition: prompt.when.map { .init(key: $0.key, equals: $0.op == "eq", value: $0.value) },
+                isRequired: prompt.required ?? true, defaultValue: prompt.defaultValue)
             })
         },
         credential: provider.credentialType.map { type in

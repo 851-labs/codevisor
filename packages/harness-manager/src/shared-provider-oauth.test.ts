@@ -41,6 +41,7 @@ describe("shared provider OAuth contracts", () => {
     expect(providerOAuthSupported("grok-build", "xai")).toBe(true)
     expect(providerOAuthSupported("grok-build", "custom")).toBe(false)
     expect(providerOAuthSupported("opencode", "xai")).toBe(true)
+    expect(providerOAuthSupported("opencode", "opencode")).toBe(true)
     expect(providerOAuthSupported("opencode", "custom")).toBe(false)
     expect(providerTokenEndpoint("xai")).toBe("https://auth.x.ai/oauth2/token")
     expect(providerTokenEndpoint("custom")).toBeUndefined()
@@ -293,5 +294,63 @@ describe("shared provider OAuth contracts", () => {
     for (const token of tokens)
       await expect(refreshProviderOAuth(token)).rejects.toThrow("Sign in again")
     expect(request).toHaveBeenCalledTimes(7)
+  })
+  it("shares an OpenCode Console sign-in as its user and organization, refreshing at its own Console", async () => {
+    const consoleCredential = {
+      type: "oauth",
+      refresh: "console-refresh",
+      access: "console-access",
+      expires: 3_600_000,
+      accountId: "usr_1",
+      metadata: {
+        server: "https://opencode.ai/console",
+        accountID: "usr_1",
+        email: "dev@example.test",
+        orgID: "org_1",
+        orgName: "Example"
+      }
+    }
+    const zen = parseProviderOAuth("opencode", "opencode", consoleCredential, "managed")!
+    expect(zen).toMatchObject({
+      subject: "usr_1",
+      organizationId: "org_1",
+      email: "dev@example.test",
+      refreshToken: "console-refresh"
+    })
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        access_token: "fresh",
+        refresh_token: "rotated",
+        expires_in: 600,
+        org_id: "org_1"
+      })
+    )
+    expect(await refreshProviderOAuth(zen, request, 1_000)).toMatchObject({
+      accessToken: "fresh",
+      refreshToken: "rotated",
+      expiresAt: 601_000
+    })
+    const [url, init] = request.mock.calls[0]!
+    expect(url).toBe("https://opencode.ai/console/auth/device/token")
+    expect(init?.body).toBe(
+      JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: "console-refresh",
+        client_id: "opencode-cli"
+      })
+    )
+    const selfHosted = {
+      ...zen,
+      credential: { metadata: { server: "https://console.example.test/" } }
+    }
+    await refreshProviderOAuth(selfHosted, request, 0)
+    expect(request.mock.calls[1]![0]).toBe("https://console.example.test/auth/device/token")
+    for (const server of ["http://console.example.test", "not a url"])
+      await expect(
+        refreshProviderOAuth({ ...zen, credential: { metadata: { server } } }, request, 0)
+      ).rejects.toThrow("Sign in again")
+    await refreshProviderOAuth({ ...zen, credential: {} }, request, 0)
+    expect(request.mock.calls[2]![0]).toBe("https://opencode.ai/console/auth/device/token")
+    expect(request).toHaveBeenCalledTimes(3)
   })
 })

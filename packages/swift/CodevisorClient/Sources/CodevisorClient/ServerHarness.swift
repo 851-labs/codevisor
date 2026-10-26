@@ -365,6 +365,8 @@ public struct ServerOpenCodeAuthPrompt: Codable, Equatable, Identifiable, Sendab
   public var message: String
   public var placeholder: String?
   public var options: [ServerOpenCodeAuthPromptOption]
+  public var required: Bool?
+  public var defaultValue: String?
   public var when: ServerOpenCodeAuthPromptCondition?
   public var id: String { key }
 }

@@ -11,6 +11,7 @@ private final class FakeProviderBackend: HarnessProviderBackend {
   var statuses: [HarnessProviderSignIn] = []
   var failure: (any Error)?
   private(set) var calls: [String] = []
+  private(set) var signInInputs: [[String: String]] = []
 
   func providers() async throws -> [HarnessProvider] { try catalog.get() }
 
@@ -18,6 +19,7 @@ private final class FakeProviderBackend: HarnessProviderBackend {
     _ provider: HarnessProvider, method: HarnessProviderMethod, inputs: [String: String], apiKey: String?
   ) async throws -> HarnessProviderSignIn {
     calls.append("signIn \(provider.id) \(method.id) \(inputs) \(apiKey ?? "-")")
+    signInInputs.append(inputs)
     if let failure { throw failure }
     return started.removeFirst()
   }
@@ -157,6 +159,30 @@ struct HarnessProviderAccountsTests {
     await draft.submit()
     #expect(backend.calls.first?.hasPrefix("signIn p m") == true)
     #expect(draft.isComplete)
+  }
+
+  @Test("Prompts start at their default, optional ones may stay blank, and only shown answers are sent")
+  func optionalPrompts() async {
+    let instance = HarnessProviderPrompt(
+      id: "instanceUrl", kind: .text, message: "Instance", isRequired: false, defaultValue: "https://gitlab.com")
+    let role = HarnessProviderPrompt(id: "role", kind: .text, message: "Role", isRequired: false)
+    let tier = HarnessProviderPrompt(
+      id: "tier", kind: .select, message: "Tier",
+      options: [.init(value: "free", label: "Free"), .init(value: "paid", label: "Paid")], defaultValue: "paid")
+    let seat = HarnessProviderPrompt(
+      id: "seat", kind: .text, message: "Seat", condition: .init(key: "tier", equals: true, value: "free"))
+    let method = HarnessProviderMethod(
+      id: "pkce", label: "Browser", kind: .providerAccount, prompts: [instance, role, tier, seat])
+    let provider = HarnessProvider(id: "gitlab", name: "GitLab", methods: [method], credential: nil)
+    let backend = FakeProviderBackend()
+    backend.started = [.init(id: "s1", state: .complete)]
+    let draft = HarnessProviderSignInDraft(providers: [provider], providerId: nil, backend: backend)
+    #expect(draft.inputs == ["instanceUrl": "https://gitlab.com", "tier": "paid"])
+    #expect(draft.canSubmit)
+    draft.inputs["seat"] = "unseen"
+    draft.inputs["role"] = "  "
+    await draft.submit()
+    #expect(backend.signInInputs == [["instanceUrl": "https://gitlab.com", "tier": "paid"]])
   }
 
   @Test("Saving a key finishes at once, and a refused sign-in says why")

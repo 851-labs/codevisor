@@ -257,6 +257,8 @@ export const OpenCodeAuthPrompt = Schema.Struct({
   message: Schema.String,
   placeholder: Schema.optional(Schema.String),
   options: Schema.Array(OpenCodeAuthPromptOption),
+  required: Schema.optional(Schema.Boolean),
+  defaultValue: Schema.optional(Schema.String),
   when: Schema.optional(OpenCodeAuthPromptCondition)
 })
 export type OpenCodeAuthPrompt = typeof OpenCodeAuthPrompt.Type

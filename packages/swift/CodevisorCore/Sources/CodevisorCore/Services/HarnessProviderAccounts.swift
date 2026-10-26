@@ -130,7 +130,7 @@ import Observation
     }
     guard let method else { return false }
     if method.kind == .apiKey && apiKey.trimmed.isEmpty { return false }
-    return visiblePrompts.allSatisfy { !(inputs[$0.id] ?? "").trimmed.isEmpty }
+    return visiblePrompts.allSatisfy { !$0.isRequired || !(inputs[$0.id] ?? "").trimmed.isEmpty }
   }
 
   public func submit() async {
@@ -148,8 +148,16 @@ import Observation
     await perform(key == nil ? "Starting sign-in…" : "Saving…") {
       apply(
         try await backend.signIn(
-          provider, method: method, inputs: visiblePrompts.isEmpty ? [:] : inputs, apiKey: key))
+          provider, method: method, inputs: answeredInputs, apiKey: key))
     }
+  }
+
+  private var answeredInputs: [String: String] {
+    Dictionary(
+      uniqueKeysWithValues: visiblePrompts.compactMap { prompt in
+        let value = (inputs[prompt.id] ?? "").trimmed
+        return value.isEmpty ? nil : (prompt.id, value)
+      })
   }
 
   public func follow() async {
@@ -204,8 +212,12 @@ import Observation
   private func resetInputs() {
     inputs = [:]
     apiKey = ""
-    for prompt in method?.prompts ?? [] where prompt.kind == .select {
-      inputs[prompt.id] = prompt.options.first?.value ?? ""
+    for prompt in method?.prompts ?? [] {
+      if let value = prompt.defaultValue {
+        inputs[prompt.id] = value
+      } else if prompt.kind == .select {
+        inputs[prompt.id] = prompt.options.first?.value ?? ""
+      }
     }
   }
 }

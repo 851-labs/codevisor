@@ -62,6 +62,40 @@ describe("OpenCode 2 seeded credentials", () => {
       integrationID: "github-copilot",
       value: { methodID: "device", refresh: "access", metadata: { enterpriseUrl: "ghe.test" } }
     })
+    expect(
+      seededOAuthCredential(
+        bundle("opencode", {
+          metadata: {
+            server: "https://opencode.ai/console",
+            accountID: "usr_1",
+            email: "dev@example.test",
+            orgID: "org_1",
+            orgName: "Example",
+            refresh: "leaked",
+            seats: 3
+          }
+        }),
+        "cap"
+      )
+    ).toEqual({
+      id: "codevisor-opencode",
+      integrationID: "opencode",
+      value: {
+        type: "oauth",
+        methodID: "device",
+        refresh: "codevisor:cap",
+        access: "access",
+        expires: 5_000_000,
+        metadata: {
+          server: "https://opencode.ai/console",
+          accountID: "usr_1",
+          email: "dev@example.test",
+          orgID: "org_1",
+          orgName: "Example"
+        }
+      }
+    })
+    expect(seededOAuthCredential(bundle("opencode"), "cap")?.value).not.toHaveProperty("metadata")
     expect(seededOAuthCredential(bundle("openai"), undefined)).toBeUndefined()
     expect(seededOAuthCredential(bundle("anthropic"), "cap")).toBeUndefined()
   })

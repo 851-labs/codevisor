@@ -9,16 +9,36 @@ const FormField = Schema.Struct({
   type: optionalString,
   placeholder: optionalString,
   hidden: Schema.optionalKey(Schema.Boolean),
+  required: Schema.optionalKey(Schema.Boolean),
+  default: Schema.optionalKey(Schema.Unknown),
   options: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({ value: optionalString, label: optionalString, description: optionalString })
     )
   ),
   when: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ key: optionalString, op: optionalString, value: optionalString }))
+    Schema.Array(
+      Schema.Struct({
+        key: optionalString,
+        op: optionalString,
+        value: Schema.optionalKey(Schema.Unknown)
+      })
+    )
   )
 })
 type FormField = typeof FormField.Type
+
+const scalarText = (value: unknown): string | undefined =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? String(value)
+    : undefined
+
+const BOOLEAN_OPTIONS = [
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" }
+]
+
+const ANSWERABLE_TYPES = new Set(["string", "boolean", "number", "integer"])
 
 export const OpenCodeIntegration = Schema.Struct({
   id: Schema.String,
@@ -49,21 +69,29 @@ const connectionCredentialType = (active: OpenCodeConnection | undefined) => {
   return "api"
 }
 
+const fieldOptions = (field: FormField): Array<OpenCodeAuthPrompt["options"][number]> => {
+  if (field.type === "boolean") return BOOLEAN_OPTIONS
+  return (field.options ?? []).flatMap((option) =>
+    option.value === undefined
+      ? []
+      : [
+          {
+            value: option.value,
+            label: option.label ?? option.value,
+            ...(option.description === undefined ? {} : { hint: option.description })
+          }
+        ]
+  )
+}
+
 const prompts = (form: ReadonlyArray<FormField> = []): Array<OpenCodeAuthPrompt> =>
   form.flatMap((field): Array<OpenCodeAuthPrompt> => {
     if (field.hidden === true || field.key === undefined) return []
-    const options = (field.options ?? []).flatMap((option) =>
-      option.value === undefined
-        ? []
-        : [
-            {
-              value: option.value,
-              label: option.label ?? option.value,
-              ...(option.description === undefined ? {} : { hint: option.description })
-            }
-          ]
-    )
+    if (field.type !== undefined && !ANSWERABLE_TYPES.has(field.type)) return []
+    const options = fieldOptions(field)
     const when = field.when?.[0]
+    const whenValue = scalarText(when?.value)
+    const defaultValue = scalarText(field.default)
     return [
       {
         type: options.length > 0 ? "select" : "text",
@@ -71,14 +99,41 @@ const prompts = (form: ReadonlyArray<FormField> = []): Array<OpenCodeAuthPrompt>
         message: field.title ?? field.key,
         ...(field.placeholder === undefined ? {} : { placeholder: field.placeholder }),
         options,
+        required: field.required === true,
+        ...(defaultValue === undefined ? {} : { defaultValue }),
         ...(when?.key !== undefined &&
         (when.op === "eq" || when.op === "neq") &&
-        when.value !== undefined
-          ? { when: { key: when.key, op: when.op, value: when.value } }
+        whenValue !== undefined
+          ? { when: { key: when.key, op: when.op, value: whenValue } }
           : {})
       }
     ]
   })
+
+const answerValue = (field: FormField | undefined, text: string): string | number | boolean => {
+  if (field?.type === "boolean") return text === "true"
+  if (field?.type === "number" || field?.type === "integer") return Number(text)
+  return text
+}
+
+export const openCodeFormAnswer = (
+  integrations: ReadonlyArray<OpenCodeIntegration>,
+  integrationID: string,
+  methodID: string,
+  inputs: Readonly<Record<string, string>> = {}
+): Record<string, string | number | boolean> | undefined => {
+  const methods = integrations.find((integration) => integration.id === integrationID)?.methods
+  const method = methods?.find((candidate) =>
+    methodID === OPENCODE_KEY_METHOD ? candidate.type === "key" : candidate.id === methodID
+  )
+  const entries = Object.entries(inputs).flatMap(([key, raw]) => {
+    const text = raw.trim()
+    if (text.length === 0) return []
+    const field = method?.form?.find((candidate) => candidate.key === key)
+    return [[key, answerValue(field, text)] as const]
+  })
+  return entries.length === 0 ? undefined : Object.fromEntries(entries)
+}
 
 export const openCodeProvidersFromIntegrations = (
   integrations: ReadonlyArray<OpenCodeIntegration>

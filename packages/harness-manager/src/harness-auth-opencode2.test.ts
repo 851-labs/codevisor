@@ -59,7 +59,7 @@ const setup = async (overrides: { readonly removed?: boolean } = {}) => {
       canLogout: false
     })
   )
-  const control = scriptedServer(() => undefined)
+  const control = scriptedServer((path) => (path === "/api/integration" ? { data: [] } : undefined))
   const accounts = {
     providers: vi.fn(async () => [
       { id: "openai", name: "OpenAI", methods: [] },

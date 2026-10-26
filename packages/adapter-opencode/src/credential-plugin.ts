@@ -1,6 +1,7 @@
 export const OPENCODE_MANAGED_METHODS: ReadonlyArray<readonly [string, string]> = [
   ["openai", "chatgpt-browser"],
-  ["xai", "device"]
+  ["xai", "device"],
+  ["opencode", "device"]
 ]
 
 const plugin = String.raw`

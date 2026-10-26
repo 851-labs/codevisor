@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { OpenCodeAuthFlow } from "@codevisor/api"
 import { Schema } from "effect"
 
+import { OPENCODE_KEY_METHOD, OpenCodeIntegration, openCodeFormAnswer } from "./integrations.js"
 import { record, responseData, responseList } from "./internal.js"
 import type { OpenCodeServer } from "./server.js"
 
@@ -41,6 +42,8 @@ const storedCredentials = responseList(
   })
 )
 
+const integrations = responseList(OpenCodeIntegration)
+
 interface Flow {
   value: OpenCodeAuthFlow
   readonly hold: OpenCodeServerHold
@@ -58,7 +61,10 @@ export const authFileCredential = (value: Record<string, unknown>): Record<strin
     access: value.access,
     expires: value.expires,
     ...(typeof metadata.accountID === "string" ? { accountId: metadata.accountID } : {}),
-    ...(typeof metadata.enterpriseUrl === "string" ? { enterpriseUrl: metadata.enterpriseUrl } : {})
+    ...(typeof metadata.enterpriseUrl === "string"
+      ? { enterpriseUrl: metadata.enterpriseUrl }
+      : {}),
+    ...(Object.keys(metadata).length === 0 ? {} : { metadata })
   }
 }
 
@@ -131,11 +137,16 @@ export const makeOpenCode2Logins = (
       const base = { id, accountId: request.accountId, providerId: request.providerId }
       const integration = `/api/integration/${encodeURIComponent(request.providerId)}`
       try {
-        await hold.server.request("/api/integration", { location })
+        const answer = openCodeFormAnswer(
+          integrations(await hold.server.request("/api/integration", { location })),
+          request.providerId,
+          request.apiKey === undefined ? request.methodId : OPENCODE_KEY_METHOD,
+          request.inputs
+        )
         if (request.apiKey !== undefined) {
           await hold.server.request(`${integration}/connect/key`, {
             location,
-            body: { key: request.apiKey, ...(request.inputs ? { answer: request.inputs } : {}) }
+            body: { key: request.apiKey, ...(answer ? { answer } : {}) }
           })
           await hold.release()
           return { ...base, state: "complete" }
@@ -143,16 +154,13 @@ export const makeOpenCode2Logins = (
         const attempt = attemptStart(
           await hold.server.request(`${integration}/connect/oauth`, {
             location,
-            body: {
-              methodID: request.methodId,
-              ...(request.inputs ? { answer: request.inputs } : {})
-            }
+            body: { methodID: request.methodId, ...(answer ? { answer } : {}) }
           })
         )
         const flow: Flow = {
           value: {
             ...base,
-            state: "running",
+            state: attempt.mode === "code" ? "waiting" : "running",
             authorization: {
               url: attempt.url,
               method: attempt.mode,
@@ -182,6 +190,7 @@ export const makeOpenCode2Logins = (
           location: flow.location,
           body: { code }
         })
+        if (!flow.ended) flow.value = { ...flow.value, state: "running" }
       } catch (cause) {
         await finish(flow, { ...flow.value, state: "error", error: message(cause) })
       }

@@ -210,7 +210,7 @@ struct HarnessProviderSignInSheet: View {
         .privacySensitive()
         .onSubmit { submit() }
     case .text:
-      TextField(prompt.placeholder ?? prompt.message, text: text)
+      TextField(prompt.message, text: text, prompt: prompt.placeholder.map(Text.init))
         .onSubmit { submit() }
         #if os(iOS)
           .textInputAutocapitalization(.never)

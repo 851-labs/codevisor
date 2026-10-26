@@ -269,6 +269,11 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
       methods: [{ id: "0", type: "oauth", label: "ChatGPT", prompts: [] }]
     },
     {
+      id: "opencode",
+      name: "OpenCode Console",
+      methods: [{ id: "device", type: "oauth", label: "OpenCode Console account", prompts: [] }]
+    },
+    {
       id: "custom",
       name: "Custom",
       credentialType: "oauth",
@@ -284,6 +289,7 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
   ).toMatchObject({
     openCodeProviders: [
       { id: "openai", credentialType: "oauth" },
+      { id: "opencode", methods: [{ id: "device", type: "oauth" }] },
       { id: "custom", methods: [{ id: "1", type: "api" }] }
     ]
   })

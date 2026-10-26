@@ -29,7 +29,25 @@ export const providerOAuthSupported = (
       (provider) => provider.id === providerId && provider.auth.oauth !== undefined
     )
   if (harness === "grok-build") return providerId === "xai"
-  return ["openai", "xai", "github-copilot", "github-copilot-enterprise"].includes(providerId)
+  return ["openai", "xai", "opencode", "github-copilot", "github-copilot-enterprise"].includes(
+    providerId
+  )
+}
+
+const OPENCODE_CONSOLE = "https://opencode.ai/console"
+
+const isOpenCodeConsole = (harnessId: string, providerId: string | undefined): boolean =>
+  harnessId === "opencode" && providerId === "opencode"
+
+const openCodeConsoleTokenEndpoint = (bundle: SharedTokenBundle): string | undefined => {
+  const server = string(recordOrEmpty(bundle.credential?.metadata).server) ?? OPENCODE_CONSOLE
+  try {
+    const url = new URL(server)
+    if (url.protocol !== "https:") return undefined
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}/auth/device/token`
+  } catch {
+    return undefined
+  }
 }
 
 export const providerTokenEndpoint = (providerId: string): string | undefined => {
@@ -80,22 +98,25 @@ export const parseProviderOAuth = (
   if (!accessToken || !refresh || refresh.startsWith(MANAGED_REFRESH_PREFIX)) return undefined
   const expiresAt = credentialExpiry(durable, grok, credential)
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined
+  const account = isOpenCodeConsole(harnessId, providerId) ? recordOrEmpty(credential.metadata) : {}
   const accessIdentity = claims(accessToken)
   const identity = grok
     ? { ...claims(string(credential.id_token) ?? ""), ...accessIdentity }
     : accessIdentity
   const auth = recordOrEmpty(identity["https://api.openai.com/auth"])
   const subject =
+    string(account.accountID) ??
     string(auth.chatgpt_user_id) ??
     string(identity.sub) ??
     string(credential.user_id) ??
     `grant:${createHash("sha256").update(refresh).digest("hex")}`
   const organizationId =
+    string(account.orgID) ??
     (grok ? (string(identity.principal_id) ?? string(identity.principalId)) : undefined) ??
     string(credential.accountId) ??
     string(auth.chatgpt_account_id) ??
     string(credential.organization_id)
-  const email = string(credential.email) ?? string(identity.email)
+  const email = string(credential.email) ?? string(account.email) ?? string(identity.email)
   const { refresh: _refresh, refresh_token: _grokRefresh, ...metadata } = credential
   return {
     harnessId,
@@ -125,6 +146,45 @@ export const providerCredential = (
   expires: bundle.expiresAt
 })
 
+const requestRefresh = async (
+  bundle: SharedTokenBundle,
+  refreshToken: string,
+  request: typeof fetch
+): Promise<Response> => {
+  const init = {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000)
+  } satisfies RequestInit
+  if (isOpenCodeConsole(bundle.harnessId, bundle.providerId)) {
+    const endpoint = openCodeConsoleTokenEndpoint(bundle)
+    if (!endpoint) throw new SharedCredentialError("reauthenticate")
+    return request(endpoint, {
+      ...init,
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: "opencode-cli"
+      })
+    })
+  }
+  const endpoint = providerTokenEndpoint(String(bundle.providerId))
+  if (!endpoint) throw new SharedCredentialError("reauthenticate")
+  return request(endpoint, {
+    ...init,
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id:
+        bundle.providerId === "openai"
+          ? "app_EMoamEEZ73f0CkXaXp7hrann"
+          : "b1a00492-073a-47ea-816f-4c329264a828"
+    }).toString()
+  })
+}
+
 export const refreshProviderOAuth = async (
   bundle: SharedTokenBundle,
   request: typeof fetch = fetch,
@@ -150,22 +210,7 @@ export const refreshProviderOAuth = async (
       credential
     }
   }
-  const endpoint = providerTokenEndpoint(bundle.providerId)
-  if (!endpoint) throw new SharedCredentialError("reauthenticate")
-  const response = await request(endpoint, {
-    method: "POST",
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: bundle.refreshToken,
-      client_id:
-        bundle.providerId === "openai"
-          ? "app_EMoamEEZ73f0CkXaXp7hrann"
-          : "b1a00492-073a-47ea-816f-4c329264a828"
-    }).toString()
-  })
+  const response = await requestRefresh(bundle, bundle.refreshToken, request)
   if (!response.ok) throw new SharedCredentialError("reauthenticate")
   const value = recordOrEmpty(await response.json())
   const accessToken = string(value.access_token)

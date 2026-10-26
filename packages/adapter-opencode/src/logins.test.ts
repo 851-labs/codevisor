@@ -21,7 +21,21 @@ const hold = (answers: (path: string, init?: { readonly method?: string }) => un
     subscribe: vi.fn(),
     stop: vi.fn(),
     request: vi.fn(async (path: string, init?: { readonly method?: string }) => {
-      if (path === "/api/integration") return { data: [] }
+      if (path === "/api/integration")
+        return {
+          data: [
+            {
+              id: "openai",
+              methods: [
+                {
+                  id: "chatgpt-headless",
+                  type: "oauth",
+                  form: [{ key: "seats", type: "integer" }]
+                }
+              ]
+            }
+          ]
+        }
       calls.push([path, init])
       const answer = answers(path, init)
       if (answer instanceof Error) throw answer
@@ -83,7 +97,7 @@ describe("OpenCode 2 sign-in", () => {
       accountId: "default",
       providerId: "openai",
       methodId: "chatgpt-headless",
-      inputs: { plan: "plus" },
+      inputs: { plan: "plus", seats: "3", region: " " },
       capture
     })
     expect(flow).toMatchObject({
@@ -92,7 +106,10 @@ describe("OpenCode 2 sign-in", () => {
     })
     expect(h.calls[0]).toEqual([
       "/api/integration/openai/connect/oauth",
-      { location: "/home", body: { methodID: "chatgpt-headless", answer: { plan: "plus" } } }
+      {
+        location: "/home",
+        body: { methodID: "chatgpt-headless", answer: { plan: "plus", seats: 3 } }
+      }
     ])
     await h.released
     expect(logins.flow(flow.id)?.state).toBe("complete")
@@ -101,7 +118,8 @@ describe("OpenCode 2 sign-in", () => {
       refresh: "r",
       access: "a",
       expires: 5,
-      accountId: "acct"
+      accountId: "acct",
+      metadata: { accountID: "acct" }
     })
     expect(waits).toEqual([1_000, 1_000])
   })
@@ -165,8 +183,8 @@ describe("OpenCode 2 sign-in", () => {
       providerId: "openai",
       methodId: "chatgpt-browser"
     })
-    expect(flow.authorization?.method).toBe("code")
-    await logins.answer(flow.id, "the-code")
+    expect(flow).toMatchObject({ state: "waiting", authorization: { method: "code" } })
+    expect(await logins.answer(flow.id, "the-code")).toMatchObject({ state: "running" })
     expect(h.calls.at(-1)).toEqual([
       `${statusPath}/complete`,
       { location: "/home", body: { code: "the-code" } }
@@ -217,7 +235,14 @@ describe("OpenCode 2 sign-in", () => {
         expires: 1,
         metadata: { enterpriseUrl: "ghe.test" }
       })
-    ).toEqual({ type: "oauth", refresh: "r", access: "a", expires: 1, enterpriseUrl: "ghe.test" })
+    ).toEqual({
+      type: "oauth",
+      refresh: "r",
+      access: "a",
+      expires: 1,
+      enterpriseUrl: "ghe.test",
+      metadata: { enterpriseUrl: "ghe.test" }
+    })
     expect(authFileCredential({ refresh: "r", access: "a", expires: 1 })).toEqual({
       type: "oauth",
       refresh: "r",
