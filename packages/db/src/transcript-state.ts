@@ -166,6 +166,24 @@ const makeTranscriptTextMetadata = (
   }
 }
 
+const rewriteTranscriptText = (
+  db: Database.Database,
+  event: SessionEventRow,
+  itemId: string | undefined,
+  payload: JsonRecord
+): void => {
+  const { entryKey, markdown } = payload
+  if (itemId === undefined || typeof entryKey !== "string" || typeof markdown !== "string") return
+  const prior = transcriptEntryPayload(db, itemId, entryKey)
+  if (prior === undefined) return
+
+  const metadata = parseJsonObject(prior)
+  const parent = typeof metadata.parentToolCallId === "string" ? metadata.parentToolCallId : ""
+  const generation = Number(metadata.generation) + 1
+  save(db, event, itemId, entryKey, "text", parent, { ...metadata, generation })
+  appendTranscriptText(db, itemId, entryKey, markdown, true)
+}
+
 const upsertTranscriptTextHead = (
   db: Database.Database,
   itemId: string,
@@ -224,6 +242,10 @@ export const projectTranscriptState = (
 ): void => {
   updateSessionState(db, event, payload)
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
+  if (update === "assistant_text_rewritten") {
+    rewriteTranscriptText(db, event, itemId, payload)
+    return
+  }
   if (itemId === undefined) {
     mergeSessionMetadata(db, event, payload, update)
     return

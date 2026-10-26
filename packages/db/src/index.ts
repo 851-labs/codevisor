@@ -6,6 +6,7 @@ export {
   type StoredAttachmentObject
 } from "./attachment-store.js"
 export { removeUnreferencedAttachments } from "./attachment-sweep.js"
+export type { OpenAssistantText } from "./assistant-texts.js"
 
 export * from "./errors.js"
 

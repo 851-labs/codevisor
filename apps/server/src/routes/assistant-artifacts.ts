@@ -1,4 +1,5 @@
 import type { AttachmentRef } from "@codevisor/api"
+import type { OpenAssistantText } from "@codevisor/db"
 
 import {
   appendAndPublish,
@@ -32,6 +33,13 @@ export const promoteAssistantArtifacts = async (
   serverId: string,
   sessionId: string
 ): Promise<boolean> => {
+  await captureAssistantTexts(
+    services,
+    fanout,
+    serverId,
+    sessionId,
+    await run(services.db.listOpenAssistantTexts(sessionId))
+  )
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, 8))
   const item = [...page.items]
     .toReversed()
@@ -46,18 +54,70 @@ export const promoteAssistantArtifacts = async (
     if (metadata === undefined) continue
     attachments.push(attachmentRef(metadata))
   }
-  const session = await run(services.db.getSessionSummary(sessionId))
-  const captured = await captureMarkdownFiles(services, item.text, session.cwd, attachments)
-  if (captured.attachments.length === 0) return false
+  if (attachments.length === 0) return false
   await appendAndPublish(services.db, fanout, "session.output", sessionId, {
     sessionUpdate: "assistant_message_finalized",
-    markdown: captured.markdown,
+    markdown: item.text,
     ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
-    attachments: captured.attachments,
+    attachments,
     serverId
   })
   return true
 }
+
+export const withClosedTextCapture = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  apply: () => Promise<void>
+): Promise<void> => {
+  const before = await run(services.db.listOpenAssistantTexts(sessionId))
+  await apply()
+  if (before.length === 0) return
+
+  const after = await run(services.db.listOpenAssistantTexts(sessionId))
+  const closed = before.filter((text) => !after.some((open) => sameText(open, text)))
+  await captureAssistantTexts(services, fanout, serverId, sessionId, closed)
+}
+
+const captureAssistantTexts = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  texts: ReadonlyArray<OpenAssistantText>
+): Promise<void> => {
+  if (texts.length === 0) return
+
+  const { cwd } = await run(services.db.getSessionSummary(sessionId))
+  for (const text of texts) {
+    const source = await run(services.db.readAssistantText(text.itemId, text.entryKey))
+    const existing = await itemAttachments(services, sessionId, text.itemId)
+    const captured = await captureMarkdownFiles(services, source, cwd, existing)
+    if (captured.markdown === source) continue
+    await appendAndPublish(services.db, fanout, "session.output", sessionId, {
+      sessionUpdate: "assistant_text_rewritten",
+      itemId: text.itemId,
+      entryKey: text.entryKey,
+      markdown: captured.markdown,
+      attachments: captured.attachments.filter((file) => captured.markdown.includes(file.fileId)),
+      serverId
+    })
+  }
+}
+
+const itemAttachments = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  itemId: string
+): Promise<ReadonlyArray<AttachmentRef>> => {
+  const page = await run(services.db.getTranscriptPage(sessionId, undefined, 8))
+  return page.items.find((item) => item.id === itemId)?.attachments ?? []
+}
+
+const sameText = (left: OpenAssistantText, right: OpenAssistantText): boolean =>
+  left.itemId === right.itemId && left.entryKey === right.entryKey
 
 export interface CapturedMarkdown {
   readonly markdown: string

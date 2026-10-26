@@ -39,6 +39,7 @@ import type { SyncEntryRecord } from "@codevisor/sync"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 
+import type { OpenAssistantText } from "./assistant-texts.js"
 import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
 import { createService } from "./create-service.js"
@@ -203,6 +204,13 @@ export interface CodevisorDatabaseService
   ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>
   readonly listSessionsRequiringResume: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly getSessionDetail: (id: string) => Effect.Effect<SessionDetail, DatabaseError>
+  readonly listOpenAssistantTexts: (
+    sessionId: string
+  ) => Effect.Effect<ReadonlyArray<OpenAssistantText>, DatabaseError>
+  readonly readAssistantText: (
+    itemId: string,
+    entryKey: string
+  ) => Effect.Effect<string, DatabaseError>
   readonly getTranscriptPage: (
     sessionId: string,
     before: number | string | undefined,

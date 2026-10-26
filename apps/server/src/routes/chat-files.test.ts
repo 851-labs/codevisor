@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest"
 import { archiveJobs } from "../archive-jobs.js"
 import { makeEventFanout } from "../server.js"
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
-import { idOf } from "./response-test-support.js"
+import { field, idOf } from "./response-test-support.js"
 import { sessionEventSink } from "./session-events.js"
 
 const execFileAsync = promisify(execFile)
@@ -70,36 +70,58 @@ const writeFile = (path: string, contents: string): void => {
   writeFileSync(path, contents)
 }
 
+const text = (value: string) => ({
+  sessionUpdate: "agent_message_chunk",
+  content: { type: "text", text: value }
+})
+
+const storedFileIds = (texts: ReadonlyArray<string>): ReadonlyArray<string> =>
+  texts.flatMap((value) =>
+    [...value.matchAll(/attachments\.codevisor\.invalid\/([A-Za-z0-9-]+)/g)].map(
+      (match) => match[1]!
+    )
+  )
+
 describe("chat files", () => {
-  it("keeps files an agent linked from its worktree after the worktree is archived", async () => {
+  it("keeps files linked between tool calls and in the reply after the worktree is archived", async () => {
     await withWorktreesRoot(async () => {
       const { server, services, tree, workspaceId, chatId } = await chatInWorktree()
       writeFile(join(tree.path, ".gitignore"), "build/\n")
       writeFile(join(tree.path, "build", "shot.png"), "pixels")
       writeFile(join(tree.path, "notes", "report.pdf"), "%PDF report")
-      const sink = sessionEventSink(services, await run(makeEventFanout), "server-a", chatId)
+      const fanout = await run(makeEventFanout)
+      const patches: Array<string> = []
+      fanout.subscribe((event) => {
+        const patched = field(event.payload, "text")
+        if (typeof patched === "string") patches.push(patched)
+      })
+      const sink = sessionEventSink(services, fanout, "server-a", chatId)
+      const output = (payload: Record<string, unknown>) =>
+        sink({ kind: "session.output", subjectId: chatId, payload })
       await sink({
         kind: "session.updated",
         subjectId: chatId,
         payload: { initiatedBy: "user", turnId: "turn-1", turnState: "started" }
       })
-      await sink({
-        kind: "session.output",
-        subjectId: chatId,
-        payload: {
-          sessionUpdate: "agent_message_chunk",
-          content: {
-            type: "text",
-            text: `![Shot](build/shot.png) and [Report](${join(tree.path, "notes", "report.pdf")})`
-          }
-        }
+      await output(text("Before the check: ![Shot](build/shot.png)"))
+      await output({
+        sessionUpdate: "tool_call",
+        toolCallId: "check",
+        title: "Run",
+        kind: "execute"
       })
+
+      const [shotId] = storedFileIds(patches)
+      expect(patches.at(-1)).toBe(
+        `Before the check: ![Shot](https://attachments.codevisor.invalid/${shotId})`
+      )
+
+      await output(text(`Done: [Report](${join(tree.path, "notes", "report.pdf")})`))
       await sink({
         kind: "session.updated",
         subjectId: chatId,
         payload: { initiatedBy: "user", turnId: "turn-1", turnState: "ended" }
       })
-
       await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
         body: JSON.stringify({ isArchived: true }),
         method: "PATCH"
@@ -108,19 +130,14 @@ describe("chat files", () => {
 
       expect(existsSync(tree.path)).toBe(false)
       const page = await run(services.db.getTranscriptPage(chatId, undefined, 8))
-      const reply = page.items.find((item) => item.role === "assistant")
-      expect(reply?.text).not.toContain(tree.path)
-      expect(reply?.text).not.toContain("build/shot.png")
+      expect(page.items.find((item) => item.role === "assistant")?.text).not.toContain(tree.path)
       const stored = await Promise.all(
-        (reply?.attachments ?? []).map(async (file) => {
-          const response = await fetch(`${server.url}/v1/files/${file.fileId}`)
-          return [file.name, await response.text()]
+        [...new Set(storedFileIds(patches))].map(async (fileId) => {
+          const response = await fetch(`${server.url}/v1/files/${fileId}`)
+          return response.text()
         })
       )
-      expect(Object.fromEntries(stored)).toEqual({
-        "shot.png": "pixels",
-        "report.pdf": "%PDF report"
-      })
+      expect(stored).toEqual(["pixels", "%PDF report"])
     })
   })
 })

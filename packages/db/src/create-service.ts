@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { Effect } from "effect"
 
+import { makeAssistantTextsService } from "./assistant-texts.js"
 import { makeAuthService } from "./auth-service.js"
 import { makeAutoResumeService } from "./auto-resume-service.js"
 import { makeBotMessagesService } from "./bot-messages-service.js"
@@ -55,6 +56,7 @@ export const createService = (
     ...makeWorkspaceCreationService(context),
     ...makeSessionsService(context),
     ...makeTranscriptService(context),
+    ...makeAssistantTextsService(context),
     ...makeStreamingReconciliationService(context),
     ...makeEventsService(context),
     ...makePromptQueueService(context),

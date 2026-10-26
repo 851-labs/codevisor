@@ -114,8 +114,9 @@ const makeTranscriptEventPatch = (
 ): JsonRecord => {
   const metadata = parseJsonObject(row.payload)
   const final = payload.sessionUpdate === "assistant_message_finalized"
-  const rawText = (final ? payloadMarkdown(payload) : payloadText(payload)) ?? ""
-  const offset = final ? 0 : row.text_length - rawText.length
+  const replaced = final || payload.sessionUpdate === "assistant_text_rewritten"
+  const rawText = (replaced ? payloadMarkdown(payload) : payloadText(payload)) ?? ""
+  const offset = replaced ? 0 : row.text_length - rawText.length
   const text = prefix(rawText, 24_000)
   return {
     ...metadata,
@@ -139,17 +140,32 @@ export const textPatchForEvent = (
   revision: number,
   payload: JsonRecord
 ): JsonRecord | undefined => {
-  if (
-    payload.sessionUpdate !== "agent_message_chunk" &&
-    payload.sessionUpdate !== "assistant_message_finalized" &&
-    payload.role !== "assistant"
-  )
-    return undefined
-  const parent = typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : ""
-  const row = readTranscriptPatchHead(db, itemId, parent, revision)
+  const row = patchedEntryRow(db, itemId, revision, payload)
   if (row === undefined) return undefined
   return makeTranscriptEventPatch(db, itemId, revision, payload, row)
 }
+
+const patchedEntryRow = (
+  db: Database.Database,
+  itemId: string,
+  revision: number,
+  payload: JsonRecord
+): PatchHeadRow | undefined => {
+  if (payload.sessionUpdate === "assistant_text_rewritten") {
+    return patchHeadRows.maybe(
+      db.prepare(rewrittenEntrySql).get(itemId, payload.entryKey, revision)
+    )
+  }
+  if (!isStreamedText(payload)) return undefined
+
+  const parent = typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : ""
+  return readTranscriptPatchHead(db, itemId, parent, revision)
+}
+
+const isStreamedText = (payload: JsonRecord): boolean =>
+  payload.sessionUpdate === "agent_message_chunk" ||
+  payload.sessionUpdate === "assistant_message_finalized" ||
+  payload.role === "assistant"
 
 const textLengthSql = (replace: boolean): string =>
   `update transcript_entries set text_length = ${replace ? "?" : "text_length + ?"} where item_id = ? and entry_key = ?`
@@ -164,6 +180,9 @@ const textChunkSql = {
   entryChunks:
     "select text from transcript_text_chunks where item_id = ? and entry_key = ? order by position"
 }
+
+const rewrittenEntrySql = `select entry_key, payload, text_length, position from transcript_entries
+    where item_id = ? and entry_key = ? and revision = ?`
 
 const patchHeadSql = `select e.entry_key, e.payload, e.text_length, e.position from transcript_heads h
     join transcript_entries e on e.item_id = h.item_id and e.entry_key = h.entry_key

@@ -25,7 +25,7 @@ import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import { nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
 import { setupQuestionPresentation } from "./setup-questions.js"
-import { recordToolMedia } from "./tool-media-projection.js"
+import { recordTextMedia, recordToolMedia } from "./tool-media-projection.js"
 
 const attachmentsRows = rowReader({ attachments: nullable(text) })
 
@@ -286,6 +286,8 @@ export const projectChatOutput = (
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
   if (update === "assistant_message_finalized" && typeof payload.markdown === "string") {
     return finalizeAssistantMessage(sqlite, event, payload, payload.markdown, sessionId)
+  } else if (update === "assistant_text_rewritten") {
+    return rewrittenTextItem(sqlite, event, payload, sessionId)
   } else {
     const conversation = conversationEventPayload(payload)
     if (conversation?.role === "user" || conversation?.role === "system") {
@@ -296,6 +298,20 @@ export const projectChatOutput = (
       return projectWorkedDetail(sqlite, event, payload, sessionId, update)
     }
   }
+}
+
+const rewrittenTextItem = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord,
+  sessionId: string
+): string | undefined => {
+  if (typeof payload.itemId !== "string") return undefined
+  const itemId = idRows.maybe(
+    sqlite.prepare(chatItemSql.inSession).get(payload.itemId, sessionId)
+  )?.id
+  if (itemId !== undefined) recordTextMedia(sqlite, event, payload, itemId)
+  return itemId
 }
 
 const hasTranscriptEntry = (sqlite: Database.Database, itemId: string, key: string): boolean =>
@@ -320,6 +336,7 @@ const chatItemAttachments = (
   )
 
 const chatItemSql = {
+  inSession: "select id from chat_items where id = ? and session_id = ?",
   finalizeMessage: `update chat_items set attachments = ?, message_id = coalesce(?, message_id),
            updated_at = ?, revision = revision + 1 where id = ?`,
   userByMessage:

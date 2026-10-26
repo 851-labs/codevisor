@@ -215,7 +215,9 @@ export const drainPromptQueue = async (
         return
       }
       await coalesceReleasedWakeUps(services, sessionId)
-      const item = await run(services.db.claimPromptQueueItem(sessionId))
+      const item = await onSteerChain(sessionId, () =>
+        run(services.db.claimPromptQueueItem(sessionId))
+      )
       if (item === undefined) {
         await publishPromptQueue(services.db, fanout, sessionId)
         return

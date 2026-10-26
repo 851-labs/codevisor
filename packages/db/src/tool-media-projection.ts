@@ -33,6 +33,18 @@ export const recordToolMedia = (
   for (const fileId of fileIds) insert.run(itemId, event.created_at, fileId)
 }
 
+export const recordTextMedia = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord,
+  itemId: string
+): void => {
+  if (!isAttachmentRefs(payload.attachments)) return
+
+  const insert = sqlite.prepare(toolMediaSql)
+  for (const file of payload.attachments) insert.run(itemId, event.created_at, file.fileId)
+}
+
 const toolMediaSql = `insert or ignore into chat_item_media (item_id, file_id, created_at)
       select ?, id, ? from files
       where id = ? and (mime_type like 'image/%' or mime_type like 'video/%')`

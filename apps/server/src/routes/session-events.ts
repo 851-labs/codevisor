@@ -15,7 +15,7 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { withUpdatePauseStop } from "../update-pauses.js"
-import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
+import { promoteAssistantArtifacts, withClosedTextCapture } from "./assistant-artifacts.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
 import { echoesHiddenPrompt } from "./hidden-prompt-titles.js"
@@ -64,20 +64,10 @@ export const sessionEventSink =
       return observeUsageLimits(services, sessionId, observation).catch(() => undefined)
     }
     const payload = objectPayload(event.payload)
-    if (event.kind === "session.output" && payload.kind === "image_generation") {
-      return persistGeneratedImage(services, event).then((persisted) =>
-        materializeRuntimeEvent(services.db, fanout, serverId, persisted, sessionId)
-      )
-    }
     if (event.kind === "session.output") {
-      const deliver = async (output: RuntimeEvent): Promise<void> => {
-        for (const next of executionAnnotator(services).annotate(sessionId, output)) {
-          await materializeRuntimeEvent(services.db, fanout, serverId, next, sessionId)
-        }
-      }
-      const images = toolImageCandidates(payload)
-      if (images.size > 0) return persistToolImages(services, event, payload, images).then(deliver)
-      return deliver(event)
+      return withClosedTextCapture(services, fanout, serverId, sessionId, () =>
+        materializeOutput(services, fanout, serverId, sessionId, event, payload)
+      )
     }
     if (event.kind === "session.updated" && payload.turnState === "ended") {
       executionAnnotator(services).endSession(sessionId)
@@ -109,6 +99,27 @@ export const sessionEventSink =
     }
     return materializeRuntimeEvent(services.db, fanout, serverId, event, sessionId)
   }
+
+const materializeOutput = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  event: RuntimeEvent,
+  payload: Readonly<Record<string, unknown>>
+): Promise<void> => {
+  if (payload.kind === "image_generation") {
+    const persisted = await persistGeneratedImage(services, event)
+    return materializeRuntimeEvent(services.db, fanout, serverId, persisted, sessionId)
+  }
+
+  let output = event
+  const images = toolImageCandidates(payload)
+  if (images.size > 0) output = await persistToolImages(services, event, payload, images)
+  for (const next of executionAnnotator(services).annotate(sessionId, output)) {
+    await materializeRuntimeEvent(services.db, fanout, serverId, next, sessionId)
+  }
+}
 
 export const materializeRuntimeEvent = async (
   db: CodevisorDatabaseService,
