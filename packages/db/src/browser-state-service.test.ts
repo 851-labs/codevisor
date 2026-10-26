@@ -1,4 +1,5 @@
 import { browserCookieKey, type BrowserCookie } from "@codevisor/api"
+import Database from "better-sqlite3"
 import { describe, expect, it, vi } from "vitest"
 
 import { maxStoredBrowserFavicons } from "./browser-favicon-service.js"
@@ -16,6 +17,21 @@ const cookie: BrowserCookie = {
 }
 const key = browserCookieKey(cookie)
 const faviconHash = (index: number) => index.toString(16).padStart(64, "0")
+
+const seedFavicons = (filename: string, count: number): void => {
+  const sqlite = new Database(filename)
+  try {
+    const insert = sqlite.prepare(
+      "insert into browser_favicons (sha256, data, used_at) values (?, ?, ?)"
+    )
+    sqlite.transaction(() => {
+      for (let index = 0; index < count; index += 1)
+        insert.run(faviconHash(index), Buffer.from([index % 256]), index)
+    })()
+  } finally {
+    sqlite.close()
+  }
+}
 
 describe("shared browser state", () => {
   it("merges independent changes and preserves logout tombstones across restart", async () => {
@@ -141,18 +157,18 @@ describe("shared browser state", () => {
   })
   it("keeps the most recently used favicons within the storage limit", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const filename = tempDatabase()
+    await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
+    seedFavicons(filename, maxStoredBrowserFavicons)
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
     try {
-      for (let index = 0; index < maxStoredBrowserFavicons; index += 1) {
-        vi.setSystemTime(index)
-        await run(db.putBrowserFavicon(faviconHash(index), Buffer.from([index % 256])))
-      }
       vi.setSystemTime(maxStoredBrowserFavicons)
       expect(await run(db.getBrowserFavicon(faviconHash(0)))).toEqual(Buffer.from([0]))
       vi.setSystemTime(maxStoredBrowserFavicons + 1)
       await run(db.putBrowserFavicon(faviconHash(maxStoredBrowserFavicons), Buffer.from([1])))
       expect(await run(db.getBrowserFavicon(faviconHash(0)))).toEqual(Buffer.from([0]))
       expect(await run(db.getBrowserFavicon(faviconHash(1)))).toBeUndefined()
+      expect(await run(db.getBrowserFavicon(faviconHash(2)))).toEqual(Buffer.from([2]))
       expect(await run(db.getBrowserFavicon(faviconHash(maxStoredBrowserFavicons)))).toEqual(
         Buffer.from([1])
       )
