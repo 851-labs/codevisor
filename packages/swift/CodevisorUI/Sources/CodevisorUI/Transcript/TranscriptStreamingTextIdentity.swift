@@ -33,7 +33,8 @@ public enum TranscriptStreamingTextIdentity {
       let segments = assistantMarkdownSegments(
         markdown,
         attachments: turn.attachments,
-        includeUnreferencedAttachments: !turn.isGenerating
+        includeUnreferencedAttachments: !turn.isGenerating,
+        localImagesPendingCapture: turn.isGenerating
       )
       for (index, segment) in segments.enumerated() {
         guard case let .markdown(value) = segment, !value.isEmpty else { continue }

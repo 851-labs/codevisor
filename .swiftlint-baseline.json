@@ -2613,7 +2613,7 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 55 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
       "location": {
         "line": 201,
         "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/AssistantMarkdownSegment.swift",
@@ -2628,7 +2628,7 @@
     "violation": {
       "severity": "error",
       "ruleName": "Function Body Length",
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 97 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
       "location": {
         "line": 164,
         "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/TranscriptAssistantRowProjection.swift",

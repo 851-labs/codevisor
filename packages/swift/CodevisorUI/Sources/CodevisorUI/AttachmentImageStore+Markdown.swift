@@ -4,15 +4,18 @@ import StreamMarkdown
 
 extension AttachmentImageStore {
   public var markdownImageLoader: MarkdownImageLoader {
-    imageLoader(resolving: markdownImagePreviewFile)
+    imageLoader(resolving: markdownImagePreviewFile, isPending: isPendingMarkdownImage)
   }
 
   public var documentImageLoader: MarkdownImageLoader {
-    imageLoader(resolving: documentImagePreviewFile)
+    imageLoader(resolving: documentImagePreviewFile, isPending: { _ in false })
   }
 
-  private func imageLoader(resolving previewFile: @escaping @Sendable (String) -> PreviewFile?) -> MarkdownImageLoader {
-    MarkdownImageLoader(id: namespace) { [weak self] source in
+  private func imageLoader(
+    resolving previewFile: @escaping @Sendable (String) -> PreviewFile?,
+    isPending: @escaping @Sendable (String) -> Bool
+  ) -> MarkdownImageLoader {
+    MarkdownImageLoader(id: namespace, isPending: isPending) { [weak self] source in
       guard let self else { return nil }
       if let file = previewFile(source) {
         guard let preview = await image(for: file) else { return nil }
@@ -31,6 +34,10 @@ public func markdownImagePreviewFile(_ source: String) -> PreviewFile? {
   let id = String(url.path.dropFirst())
   guard !id.isEmpty, !id.contains("/") else { return nil }
   return PreviewFile(source: .attachment(fileId: id), name: "Image", mimeType: "image/png", kind: .image)
+}
+
+public func isPendingMarkdownImage(_ source: String) -> Bool {
+  markdownImagePreviewFile(source) == nil && markdownLocalFilePath(source) != nil
 }
 
 public func documentImagePreviewFile(_ source: String) -> PreviewFile? {

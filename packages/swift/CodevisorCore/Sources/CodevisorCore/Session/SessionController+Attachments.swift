@@ -14,6 +14,7 @@ extension SessionController {
     switch source {
     case let .attachment(fileId): return try await serverClient.filePreview(id: fileId)
     case let .serverPath(path): return try await serverClient.filePreview(path: path, sessionId: serverSession?.id)
+    case .pendingCapture: throw SessionControllerError.fileNotCapturedYet
     }
   }
 
@@ -27,6 +28,8 @@ extension SessionController {
         throw SessionControllerError.serverUnavailable
       }
       return try await serverClient.fileData(sessionId: sessionId, path: path)
+    case .pendingCapture:
+      throw SessionControllerError.fileNotCapturedYet
     }
   }
 
@@ -40,6 +43,8 @@ extension SessionController {
         throw SessionControllerError.serverUnavailable
       }
       return try await serverClient.filePrefix(sessionId: sessionId, path: path, length: length)
+    case .pendingCapture:
+      throw SessionControllerError.fileNotCapturedYet
     }
   }
 
@@ -56,6 +61,8 @@ extension SessionController {
         throw SessionControllerError.serverUnavailable
       }
       return try await serverClient.fileVersion(sessionId: sessionId, path: path)
+    case .pendingCapture:
+      throw SessionControllerError.fileNotCapturedYet
     }
   }
 

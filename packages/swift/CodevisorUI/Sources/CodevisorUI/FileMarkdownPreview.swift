@@ -21,6 +21,7 @@ struct FileMarkdownPreview: View {
               target, relativeTo: (path as NSString).deletingLastPathComponent)
           else { throw URLError(.badURL) }
           return try await client.documentData(path: resolved)
+        case .pendingCapture: throw URLError(.fileDoesNotExist)
         }
       },
       fetchPreview: { source in
@@ -32,6 +33,7 @@ struct FileMarkdownPreview: View {
               target, relativeTo: (path as NSString).deletingLastPathComponent)
           else { throw URLError(.badURL) }
           return try await client.filePreview(path: resolved, sessionId: nil)
+        case .pendingCapture: throw URLError(.fileDoesNotExist)
         }
       }, version: { _ in nil })
     imageLoader = MarkdownImageLoader(id: images.namespace) { await images.documentImageLoader.image(for: $0) }

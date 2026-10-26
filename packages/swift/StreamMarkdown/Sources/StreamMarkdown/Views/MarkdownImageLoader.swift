@@ -32,11 +32,19 @@ enum MarkdownImageResource: Hashable, Sendable {
 public final class MarkdownImageLoader: Sendable {
   public let id: String
   private let fetch: @MainActor @Sendable (String) async -> MarkdownImage?
+  private let pending: @Sendable (String) -> Bool
 
-  public init(id: String, fetch: @escaping @MainActor @Sendable (String) async -> MarkdownImage?) {
+  public init(
+    id: String,
+    isPending: @escaping @Sendable (String) -> Bool = { _ in false },
+    fetch: @escaping @MainActor @Sendable (String) async -> MarkdownImage?
+  ) {
     self.id = id
+    self.pending = isPending
     self.fetch = fetch
   }
+
+  public func isPending(_ source: String) -> Bool { pending(source) }
 
   @MainActor public func image(for source: String) async -> MarkdownImage? { await fetch(source) }
 
@@ -116,6 +124,7 @@ final class MarkdownTableImages {
     }
     resources = resources.filter { sources.contains($0.key) }
     let pending = sources.filter {
+      if loader.isPending($0) { return false }
       if case .loaded = resources[$0] { return false }
       return true
     }.sorted()

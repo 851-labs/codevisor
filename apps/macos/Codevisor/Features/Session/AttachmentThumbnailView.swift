@@ -61,6 +61,7 @@ struct AttachmentThumbnailView: View {
       }
     }
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
+      guard !file.isPendingCapture else { return resolveFallbackGeometry() }
       guard file.hasVisualPreview, let attachmentImages else { return }
       if let cached = await attachmentImages.cachedPreview(for: file) {
         guard !Task.isCancelled else { return }
@@ -168,7 +169,7 @@ struct AttachmentThumbnailView: View {
   }
 
   private func preview() {
-    guard !isLoadingPreview else { return }
+    guard !file.isPendingCapture, !isLoadingPreview else { return }
     quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
   }
 }

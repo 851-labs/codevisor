@@ -397,6 +397,7 @@ public enum DraftModelAvailability: Equatable, Sendable {
 
 public enum SessionControllerError: Error {
   case serverUnavailable
+  case fileNotCapturedYet
 }
 
 #if DEBUG

@@ -83,7 +83,7 @@ private struct AttachmentContextMenu: ViewModifier {
   func body(content: Content) -> some View {
     content
       .contextMenu {
-        if let openInNewTab {
+        if let openInNewTab, !file.isPendingCapture {
           Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle", action: openInNewTab)
         }
         if let attachmentImages, offersFileActions {

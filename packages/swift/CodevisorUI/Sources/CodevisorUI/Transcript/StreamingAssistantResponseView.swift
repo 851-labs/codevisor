@@ -106,7 +106,8 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
     let segments = assistantMarkdownSegments(
       markdown,
       attachments: attachments,
-      includeUnreferencedAttachments: true
+      includeUnreferencedAttachments: true,
+      localImagesPendingCapture: isGenerating
     )
     let mount = animationMount.resolve(
       streamID: responseStreamID,

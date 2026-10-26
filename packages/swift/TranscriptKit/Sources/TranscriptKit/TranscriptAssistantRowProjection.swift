@@ -181,7 +181,8 @@ enum TranscriptAssistantRowProjection {
     let segments = assistantMarkdownSegments(
       markdown,
       attachments: message.turn.attachments,
-      includeUnreferencedAttachments: true
+      includeUnreferencedAttachments: true,
+      localImagesPendingCapture: message.turn.isGenerating
     )
     var responseRows: [TranscriptPresentationRow] = []
     var ordinal = 0

@@ -55,6 +55,17 @@ struct MarkdownTableImageTests {
         == "[Image unavailable]")
   }
 
+  @Test("Images the loader marks pending stay loading instead of unavailable")
+  func pendingImages() async {
+    let images = MarkdownTableImages()
+    let loader = MarkdownImageLoader(id: "pending", isPending: { $0.hasPrefix("./") }) { _ in nil }
+
+    await images.load(sources: ["./shot.png", "https://example.com/gone.png"], using: loader)
+
+    #expect(images.resources["./shot.png"] == nil)
+    #expect(images.resources["https://example.com/gone.png"] == .unavailable)
+  }
+
   @Test("Nested image links preserve their click destination")
   func linkedImage() throws {
     let text = MarkdownParser().parseInline("[![Screenshot](./shot.png)](https://example.com/details)")

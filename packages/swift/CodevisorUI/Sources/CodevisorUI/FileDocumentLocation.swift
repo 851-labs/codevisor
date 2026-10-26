@@ -22,7 +22,7 @@ public enum FileDocumentLocation {
 
   public static func target(for file: PreviewFile) -> String {
     switch file.source {
-    case let .serverPath(path): return path
+    case let .serverPath(path), let .pendingCapture(path): return path
     case let .attachment(fileId):
       var components = URLComponents(string: "https://attachments.codevisor.invalid/")!
       components.path = "/" + fileId

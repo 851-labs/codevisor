@@ -58,6 +58,21 @@ struct AssistantMarkdownAttachmentsTests {
     #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
   }
 
+  @Test("While the turn streams, local images hold a pending card until the chat's copy arrives")
+  func pendingLocalImages() {
+    let markdown = "Made ![Screenshot](</tmp/screen shot.png>) and [Report](./output/report.pdf)."
+    let pending = PreviewFile(pendingCapture: "/tmp/screen shot.png")
+    #expect(
+      assistantMarkdownSegments(markdown, attachments: [], localImagesPendingCapture: true) == [
+        .markdown("Made "),
+        .file(pending, label: "Screenshot"),
+        .markdown(" and [Report](./output/report.pdf)."),
+      ])
+    #expect(pending.isPendingCapture)
+    #expect(pending.kind == .image)
+    #expect(pending.name == "screen shot.png")
+  }
+
   @Test("Streaming defers unreferenced terminal attachments")
   func streamingUnreferencedAttachments() {
     let markdown = "The response is still growing"

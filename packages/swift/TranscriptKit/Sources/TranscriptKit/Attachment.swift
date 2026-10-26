@@ -28,11 +28,13 @@ public struct PreviewFile: Identifiable, Sendable, Equatable {
   public enum Source: Sendable, Equatable, Hashable {
     case attachment(fileId: String)
     case serverPath(String)
+    case pendingCapture(String)
 
     public var cacheKey: String {
       switch self {
       case let .attachment(fileId): "attachment:\(fileId)"
       case let .serverPath(path): "server-path:\(path)"
+      case let .pendingCapture(path): "pending-capture:\(path)"
       }
     }
   }
@@ -44,11 +46,21 @@ public struct PreviewFile: Identifiable, Sendable, Equatable {
 
   public var id: String { source.cacheKey }
 
+  public var isPendingCapture: Bool {
+    if case .pendingCapture = source { return true }
+    return false
+  }
+
   public init(source: Source, name: String, mimeType: String, kind: Attachment.Kind) {
     self.source = source
     self.name = name
     self.mimeType = mimeType
     self.kind = kind
+  }
+
+  public init(pendingCapture path: String) {
+    let named = PreviewFile(serverPath: path)
+    self.init(source: .pendingCapture(path), name: named.name, mimeType: named.mimeType, kind: .image)
   }
 
   public init(attachment: Attachment) {
