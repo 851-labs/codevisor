@@ -176,7 +176,7 @@ export function FeatureBento() {
         </div>
       </Card>
 
-      <Card className="min-h-[440px] p-6 sm:px-8 md:col-span-4 md:row-span-2 md:min-h-[540px]">
+      <Card className="min-h-[440px] p-6 sm:px-8 md:col-span-4 md:col-start-3 md:row-span-2 md:min-h-[540px]">
         <Label large>Sync your tools across machines</Label>
         <BentoImage
           name="settings-mcps-window"
@@ -187,7 +187,7 @@ export function FeatureBento() {
         />
       </Card>
 
-      <Card className="min-h-[280px] p-6 md:col-span-2">
+      <Card className="min-h-[280px] p-6 md:col-span-2 md:col-start-1">
         <Label>Automatic token rotation</Label>
         <BentoImage
           name="settings-accounts-window"
@@ -198,7 +198,7 @@ export function FeatureBento() {
         />
       </Card>
 
-      <Card className="flex min-h-[250px] flex-col pt-6 md:col-span-2">
+      <Card className="flex min-h-[250px] flex-col pt-6 md:col-span-2 md:col-start-1">
         <Label>Native notifications</Label>
         <div className="relative mt-5 min-h-[170px] flex-1">
           <BentoImage
