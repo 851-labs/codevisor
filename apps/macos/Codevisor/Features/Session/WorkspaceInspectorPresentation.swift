@@ -40,6 +40,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var lastOpenedChats: [UUID: UUID] = [:]
   let store: SessionStore?
   let selection: SidebarSelection?
+  var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {
     let inspected = inspectedWorkspace
@@ -54,7 +55,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       ) {
         if let store, let inspected {
           inspectorView(store, inspected)
-            .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
+            .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
             .toolbar {
               ToolbarSpacer(.flexible)
               ToolbarItem {

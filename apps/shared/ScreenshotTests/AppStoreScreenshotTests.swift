@@ -13,14 +13,13 @@ final class AppStoreScreenshotTests: XCTestCase {
     #endif
     let appearance = ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_APPEARANCE"] ?? "light"
     for (scene, name, marker) in [
-      ("projects", "01-projects", "portfolio"),
-      ("conversation", "02-conversation", "The focus timer is ready to try."),
-      ("new-chat", "03-new-chat", "portfolio"),
-      ("browser", "04-browser", "Start focus"),
+      ("projects", "01-projects", "MacRack"),
+      ("conversation", "02-conversation", "Skin tones are in the picker."),
+      ("new-chat", "03-new-chat", "MacRack"),
+      ("browser", "04-browser", "Copy emoji"),
     ] {
       let app = XCUIApplication()
       app.launchEnvironment["CODEVISOR_APP_STORE_SCREENSHOTS"] = "1"
-      app.launchEnvironment["CODEVISOR_SIDEBAR_SAMPLE"] = "1"
       app.launchEnvironment["CODEVISOR_SCREENSHOT_SCENE"] = scene
       app.launchEnvironment["CODEVISOR_SCREENSHOT_APPEARANCE"] = appearance
       app.launchArguments = [
@@ -51,8 +50,8 @@ final class AppStoreScreenshotTests: XCTestCase {
           XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
           let machinePicker = app.buttons["newChat.machinePicker"]
           XCTAssertTrue(machinePicker.waitForExistence(timeout: 10))
-          XCTAssertEqual(machinePicker.value as? String, "Studio Mac")
-          XCTAssertEqual(app.buttons["newChat.projectPicker"].value as? String, "daylight")
+          XCTAssertEqual(machinePicker.value as? String, "This Mac")
+          XCTAssertEqual(app.buttons["newChat.projectPicker"].value as? String, "emojis")
           XCTAssertEqual(app.buttons["Model"].value as? String, "Sonnet 4.6")
           XCTAssertFalse(app.buttons["Continue"].exists, "Keyboard tutorial must not cover the capture")
         } else {
@@ -75,6 +74,31 @@ final class AppStoreScreenshotTests: XCTestCase {
       add(screenshot)
     }
   }
+
+  #if os(iOS)
+    func testCaptureLandscapeConversation() throws {
+      try XCTSkipUnless(ProcessInfo.processInfo.environment["CODEVISOR_CAPTURE_LANDSCAPE"] == "1")
+      XCUIDevice.shared.orientation = .landscapeLeft
+      let app = XCUIApplication()
+      app.launchEnvironment["CODEVISOR_APP_STORE_SCREENSHOTS"] = "1"
+      app.launchEnvironment["CODEVISOR_SCREENSHOT_SCENE"] = "conversation"
+      app.launchEnvironment["CODEVISOR_SCREENSHOT_APPEARANCE"] =
+        ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_APPEARANCE"] ?? "light"
+      app.launchArguments = [
+        "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+      ]
+      app.launch()
+      defer { app.terminate() }
+      let reply = app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label CONTAINS %@", "Skin tones are in the picker.")).firstMatch
+      XCTAssertTrue(reply.waitForExistence(timeout: 30), "Missing the featured conversation")
+      Thread.sleep(forTimeInterval: 2)
+      let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+      screenshot.name = "landscape-conversation"
+      screenshot.lifetime = .keepAlways
+      add(screenshot)
+    }
+  #endif
 
   #if os(macOS)
     private func captureWindow(_ element: XCUIElement) async throws -> XCTAttachment {

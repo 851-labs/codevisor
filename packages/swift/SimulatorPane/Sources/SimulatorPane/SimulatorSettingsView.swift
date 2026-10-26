@@ -1,8 +1,12 @@
 import CodevisorClient
 import SwiftUI
 
-struct SimulatorSettingsView: View {
+public struct SimulatorSettingsView: View {
   let model: SimulatorPaneModel
+
+  public init(model: SimulatorPaneModel) {
+    self.model = model
+  }
 
   static let contentSizes = [
     "extra-small", "small", "medium", "large", "extra-large", "extra-extra-large", "extra-extra-extra-large",
@@ -20,7 +24,7 @@ struct SimulatorSettingsView: View {
     ("freeway-drive", "Freeway Drive"),
   ]
 
-  var body: some View {
+  public var body: some View {
     Group {
       if let settings = model.settings {
         Form {

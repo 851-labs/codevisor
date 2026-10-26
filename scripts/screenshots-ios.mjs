@@ -13,7 +13,7 @@ const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)
 if (options.help) {
   console.log(
-    "Usage: bun run screenshots:ios [--device all|iphone] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]"
+    "Usage: bun run screenshots:ios [--device iphone|iphone-18-pro|ipad-pro-11] [--output directory] [--runtime 'iOS 27.0'] [--appearance all|light|dark]"
   )
   process.exit(0)
 }
@@ -23,21 +23,16 @@ if (process.platform !== "darwin")
 const simulator = await requireIOSSimulator(root)
 const { output, command, build, exportImages, finish } = await createCapture(root, "ios", options)
 const simctl = (...args) => command("xcrun", ["simctl", ...args])
-const selected = Object.entries(devices).filter(
-  ([key]) => options.device === "all" || options.device === key
-)
-const { runtimes } = JSON.parse(await simctl("list", "runtimes", "--json"))
-const runtime = selectRuntime(
-  runtimes,
-  selected.map(([, device]) => device),
-  options.runtime ?? simulator.runtimeIdentifier
-)
-if (
-  runtime.identifier !== simulator.runtimeIdentifier ||
-  selected.some(([, device]) => device.type !== simulator.deviceType)
-)
+const device = devices[options.device]
+if (device.orientation === "landscape")
   throw new Error(
-    'Screenshot capture requires the worktree simulator to use iPhone 13 Pro Max and the requested runtime. Restart its owner with: bun run ios-simulator --device="iPhone 13 Pro Max"'
+    `The UI-test capture only runs in portrait. Capture ${device.name} with: bun run screenshots:ios:direct --device ${options.device}`
+  )
+const { runtimes } = JSON.parse(await simctl("list", "runtimes", "--json"))
+const runtime = selectRuntime(runtimes, [device], options.runtime ?? simulator.runtimeIdentifier)
+if (runtime.identifier !== simulator.runtimeIdentifier || device.type !== simulator.deviceType)
+  throw new Error(
+    `Screenshot capture requires the worktree simulator to use ${device.name} and the requested runtime. Restart its owner with: bun run ios-simulator --device="${device.name}"`
   )
 await bootstrapDevelopment(root, { ghosttyKit: true })
 const bundle = `${iosDevelopmentBundleIdentifier(root)}.screenshots`
@@ -74,53 +69,51 @@ await build(
   "build.log"
 )
 try {
-  for (const [key, device] of selected) {
-    console.log(`Capturing ${device.name} (${runtime.name})…`)
-    await simctl(
-      "spawn",
-      simulator.udid,
-      "defaults",
-      "write",
-      "com.apple.keyboard.preferences",
-      "DidShowContinuousPathIntroduction",
-      "-bool",
-      "YES"
+  console.log(`Capturing ${device.name} (${runtime.name})…`)
+  await simctl(
+    "spawn",
+    simulator.udid,
+    "defaults",
+    "write",
+    "com.apple.keyboard.preferences",
+    "DidShowContinuousPathIntroduction",
+    "-bool",
+    "YES"
+  )
+  await simctl(
+    "status_bar",
+    simulator.udid,
+    "override",
+    "--time",
+    new Date(2026, 8, 14, 9, 41).toISOString(),
+    "--dataNetwork",
+    "wifi",
+    "--wifiMode",
+    "active",
+    "--wifiBars",
+    "3",
+    "--batteryState",
+    "discharging",
+    "--batteryLevel",
+    "100"
+  )
+  for (const appearance of selectedAppearances(options)) {
+    console.log(`Capturing ${options.device} · ${appearance}…`)
+    await simctl("ui", simulator.udid, "appearance", appearance)
+    const result = join(output, `${options.device}-${appearance}.xcresult`)
+    await build(
+      [
+        ...baseArguments,
+        "-destination",
+        `platform=iOS Simulator,id=${simulator.udid}`,
+        "-resultBundlePath",
+        result,
+        "test-without-building"
+      ],
+      `${options.device}-${appearance}.log`,
+      appearance
     )
-    await simctl(
-      "status_bar",
-      simulator.udid,
-      "override",
-      "--time",
-      new Date(2026, 8, 14, 9, 41).toISOString(),
-      "--dataNetwork",
-      "wifi",
-      "--wifiMode",
-      "active",
-      "--wifiBars",
-      "3",
-      "--batteryState",
-      "discharging",
-      "--batteryLevel",
-      "100"
-    )
-    for (const appearance of selectedAppearances(options)) {
-      console.log(`Capturing ${key} · ${appearance}…`)
-      await simctl("ui", simulator.udid, "appearance", appearance)
-      const result = join(output, `${key}-${appearance}.xcresult`)
-      await build(
-        [
-          ...baseArguments,
-          "-destination",
-          `platform=iOS Simulator,id=${simulator.udid}`,
-          "-resultBundlePath",
-          result,
-          "test-without-building"
-        ],
-        `${key}-${appearance}.log`,
-        appearance
-      )
-      await exportImages(result, key, device, appearance)
-    }
+    await exportImages(result, options.device, device, appearance)
   }
 } finally {
   await cleanup()

@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillFinishLaunching(_ notification: Notification) {
+    guard !AppPreview.rendersFixtures else { return }
     let bundleURL = Bundle.main.bundleURL
     do {
       if let lease = try AppInstanceLease.acquireDefault(for: bundleURL) {

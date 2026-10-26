@@ -47,8 +47,8 @@
         HomeSidebarSampleData.resetPreferencesIfRequested()
       }
 
-      @State private var entries = AppStoreScreenshotData.isEnabled ? AppStoreScreenshotData.homeEntries : listed
-      @State private var archivedEntries = AppStoreScreenshotData.isEnabled ? [] : archived
+      @State private var entries = listed
+      @State private var archivedEntries = archived
       @State private var selected: HomeSidebarSelection?
       @State private var handler = HomeSidebarActionHandler(HomeSidebarActions())
       @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedIDs: [String]
@@ -139,8 +139,6 @@
     static let machines: [String: HomeSidebarRowMachine] = [
       studio: HomeSidebarRowMachine(name: "Studio Mac", systemImage: "macstudio"),
       linux: HomeSidebarRowMachine(name: "Linux Box", systemImage: "server.rack"),
-      "studio": HomeSidebarRowMachine(name: "Studio Mac", systemImage: "macstudio"),
-      "linux": HomeSidebarRowMachine(name: "Linux Server", systemImage: "server.rack"),
     ]
 
     static let codevisorProject = Project(id: id(901), serverId: studio, name: "codevisor")

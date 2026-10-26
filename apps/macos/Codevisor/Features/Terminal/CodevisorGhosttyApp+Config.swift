@@ -8,7 +8,9 @@ import os
 extension CodevisorGhosttyApp {
   static func buildConfig(systemIsDark: Bool?) -> ghostty_config_t {
     let cfg = ghostty_config_new()
-    ghostty_config_load_default_files(cfg)
+    if !AppPreview.rendersFixtures {
+      ghostty_config_load_default_files(cfg)
+    }
     if let overrideFile = writeOverrideConfig(systemIsDark: systemIsDark) {
       ghostty_config_load_file(cfg, overrideFile)
     }

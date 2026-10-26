@@ -1,3 +1,4 @@
+import CodevisorCore
 import SwiftUI
 import TranscriptKit
 
@@ -6,6 +7,7 @@ public struct UsageLimitNotice: View {
   private let inBotConversation: Bool
   private let switchAccount: () -> Void
   private let cancelAutoResume: () -> Void
+  @Environment(AppEnvironment.self) private var environment: AppEnvironment?
 
   public init(
     autoResume: SessionAutoResume?,
@@ -29,7 +31,7 @@ public struct UsageLimitNotice: View {
 
   private var message: String {
     guard let autoResume else { return "Won't resume automatically." }
-    return UsageLimitResumeText.detail(resumesAt: autoResume.resumesAt)
+    return UsageLimitResumeText.detail(resumesAt: autoResume.resumesAt, now: environment?.now() ?? .now)
   }
 
   private var actions: [TranscriptInlineCard.Action] {

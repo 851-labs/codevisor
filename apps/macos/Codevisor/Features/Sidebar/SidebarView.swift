@@ -52,7 +52,7 @@ struct SidebarView: View {
   private var sidebarContent: some View {
     VStack(spacing: 0) {
       VStack(alignment: .leading, spacing: 1) {
-        if CodevisorAppVariant.isDevelopment {
+        if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
           SidebarDevelopmentWorktreeRow()
         }
 

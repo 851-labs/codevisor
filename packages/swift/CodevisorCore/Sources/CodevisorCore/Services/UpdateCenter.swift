@@ -20,6 +20,7 @@ public final class UpdateCenter {
   private var refreshTaskIsForced = false
   public private(set) var isUpdatingAll = false
   public private(set) var lastRefreshedAt: Date?
+  @ObservationIgnored private let now: @MainActor () -> Date
   public internal(set) var updateAllNotice: String?
   private var harnessesByMachine: [String: [ServerHarness]] = [:]
   private var pluginUpdatesByMachine: [String: [ServerPluginUpdateStatus]] = [:]
@@ -31,8 +32,10 @@ public final class UpdateCenter {
     appUpdate: AppUpdateModel,
     store: (any PersistenceStore)? = nil,
     updateRunPollInterval: Duration = .seconds(3),
-    updateRunPollAttempts: Int = 1_200
+    updateRunPollAttempts: Int = 1_200,
+    now: @escaping @MainActor () -> Date = { Date() }
   ) {
+    self.now = now
     self.machines = machines
     self.appUpdate = appUpdate
     self.store = store ?? machines.persistenceStore
@@ -261,7 +264,7 @@ public final class UpdateCenter {
         pluginUpdatesByMachine[machine.id] = plugins
       }
     }
-    lastRefreshedAt = Date()
+    lastRefreshedAt = now()
   }
 
   public var hasUpdateInFlight: Bool {
