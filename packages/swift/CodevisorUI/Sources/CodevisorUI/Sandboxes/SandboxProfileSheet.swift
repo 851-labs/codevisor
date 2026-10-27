@@ -6,7 +6,7 @@ public struct SandboxProfileSheet: View {
   @State private var draft: SandboxProfileDraft
   @State private var status: String?
   @State private var isAddingProvider = false
-  @State private var editingProvider: SandboxProviderDraft?
+  @State private var isManagingProviders = false
   private let model: SandboxSettingsModel
   private let client: any CodevisorServerClienting
 
@@ -20,14 +20,15 @@ public struct SandboxProfileSheet: View {
     NavigationStack {
       SandboxSheetPage(
         title: draft.isNew ? "Add Profile" : "Edit Profile", confirmTitle: draft.isNew ? "Add Profile" : "Save",
-        canConfirm: draft.canSave, status: status, onCancel: { dismiss() }, onConfirm: save
+        canConfirm: draft.canSave && selectedProviderId != nil, status: status, onCancel: { dismiss() },
+        onConfirm: save
       ) {
         Form {
           SandboxSheetError(message: model.errorMessage)
           Section {
             SandboxProviderSelect(
               model: model, selection: selectedProviderId, onSelect: choose,
-              onAdd: { isAddingProvider = true }, onEdit: edit)
+              onAdd: { isAddingProvider = true }, onManage: { isManagingProviders = true })
           }
           if let vendor = draft.vendor, selectedProviderId != nil {
             SandboxProfileFields(draft: $draft, vendor: vendor, model: model)
@@ -44,8 +45,8 @@ public struct SandboxProfileSheet: View {
     .sheet(isPresented: $isAddingProvider) {
       SandboxProviderSheet(draft: SandboxProviderDraft(), model: model, client: client, onSaved: choose)
     }
-    .sheet(item: $editingProvider) { provider in
-      SandboxProviderSheet(draft: provider, model: model, client: client, onSaved: { _ in })
+    .sheet(isPresented: $isManagingProviders) {
+      SandboxManageProvidersSheet(model: model, client: client, onAdded: choose)
     }
   }
 
@@ -56,10 +57,6 @@ public struct SandboxProfileSheet: View {
   private func choose(_ provider: ServerSandboxProvider) {
     guard let vendor = model.vendor(provider.vendor) else { return }
     draft.choose(provider, vendor: vendor)
-  }
-
-  private func edit(_ provider: ServerSandboxProvider) {
-    editingProvider = SandboxProviderDraft(vendor: model.vendor(provider.vendor), provider: provider)
   }
 
   private func save() {

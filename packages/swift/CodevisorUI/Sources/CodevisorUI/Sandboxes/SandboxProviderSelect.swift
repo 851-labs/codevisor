@@ -6,7 +6,7 @@ struct SandboxProviderSelect: View {
   let selection: String?
   let onSelect: (ServerSandboxProvider) -> Void
   let onAdd: () -> Void
-  let onEdit: (ServerSandboxProvider) -> Void
+  let onManage: () -> Void
 
   var body: some View {
     SandboxSelect(
@@ -20,14 +20,11 @@ struct SandboxProviderSelect: View {
       selection: selection,
       onSelect: { id in model.provider(id).map(onSelect) }
     ) {
-      Divider()
-      Button("Add Provider…", systemImage: "plus", action: onAdd)
-      if !model.providers.isEmpty {
-        Menu("Edit Provider", systemImage: "pencil") {
-          ForEach(model.providers) { provider in
-            Button(model.title(of: provider)) { onEdit(provider) }
-          }
-        }
+      if model.providers.isEmpty {
+        Button("Add Provider…", systemImage: "plus", action: onAdd)
+      } else {
+        Divider()
+        Button("Manage Providers…", systemImage: "gearshape", action: onManage)
       }
     }
   }
