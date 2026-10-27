@@ -17,6 +17,7 @@ struct ComposerCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
   @Environment(\.clientControlId) private var clientControlId
+  @Environment(\.showsComposerModelMenu) private var showsModelMenu
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
   @State private var selection = NSRange(location: 0, length: 0)
   @State private var slashSelection = 0
@@ -203,7 +204,9 @@ private extension ComposerCard {
           )
         } else {
           attachButton
-          ModelConfigMenu(controller: controller)
+          if showsModelMenu {
+            ModelConfigMenu(controller: controller)
+          }
           if controller.hasPlanMode, controller.isPlanModeOn {
             ModeChip(
               label: "Plan",

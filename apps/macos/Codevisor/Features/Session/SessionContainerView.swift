@@ -225,6 +225,7 @@ struct SessionContainerView: View {
         },
         onCenterTreeLiveChanged: { tree in liveCenterTree = tree }
       )
+      .environment(\.showsComposerModelMenu, !isSinglePane)
     }
     .overlay(alignment: .top) {
       if !showsTabBar && !isSinglePane {

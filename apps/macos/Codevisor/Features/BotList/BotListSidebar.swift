@@ -26,7 +26,9 @@ struct BotListSidebar: View {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
       }
-      .modifier(SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection))
+      .modifier(
+        SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection, store: store)
+      )
       .focusedSceneValue(\.botListActions, publishesSceneActions ? actions : nil)
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }

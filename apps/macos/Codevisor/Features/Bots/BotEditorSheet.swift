@@ -11,9 +11,15 @@ struct BotEditorSheet: View {
 
   @Environment(\.dismiss) private var dismiss
   @State private var editor: BotEditorModel
+  private let environment: AppEnvironment
+  private let store: SessionStore?
   let onSaved: (Bot) -> Void
 
-  init(target: BotEditorTarget, environment: AppEnvironment, onSaved: @escaping (Bot) -> Void) {
+  init(
+    target: BotEditorTarget, environment: AppEnvironment, store: SessionStore?, onSaved: @escaping (Bot) -> Void
+  ) {
+    self.environment = environment
+    self.store = store
     self.onSaved = onSaved
     _editor = State(initialValue: BotEditorModel(target: target, environment: environment))
   }
@@ -39,7 +45,9 @@ struct BotEditorSheet: View {
         .disabled(editor.editedBot != nil)
       }
       projectsSection
-      if editor.editedBot == nil {
+      if let bot = editor.editedBot {
+        editedBotModelSection(bot)
+      } else {
         modelSection
         conversationSection
       }
@@ -197,6 +205,24 @@ struct BotEditorSheet: View {
           .foregroundStyle(.secondary)
       }
     }
+  }
+
+  @ViewBuilder
+  private func editedBotModelSection(_ bot: Bot) -> some View {
+    if let controller = sessionController(for: bot) {
+      BotSessionModelSection(controller: controller, harnessId: bot.harnessId)
+        .task { await controller.connectIfNeeded() }
+    }
+  }
+
+  private func sessionController(for bot: Bot) -> SessionController? {
+    guard let store,
+      let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId),
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == bot.serverId && $0.id == session.projectId
+      })
+    else { return nil }
+    return store.controller(for: session, project: project)
   }
 
   private func modelBinding(_ models: BotModelSelection) -> Binding<ModelChoice> {
