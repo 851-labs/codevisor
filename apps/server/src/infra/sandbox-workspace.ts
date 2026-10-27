@@ -18,14 +18,11 @@ export type RemoteWorkspace =
 
 export const placeWorkspace = async (
   deps: SandboxDeps,
-  machine: Sandbox & { readonly machineId: string },
-  log: (line: string) => void
+  machine: Sandbox & { readonly machineId: string }
 ): Promise<PlacedWorkspace> => {
   const project = (await deps.projects.get(machine.projectId)) ?? requestedProject(machine)
 
-  log(project.repoUrl === undefined ? "Creating an empty project" : `Cloning ${project.repoUrl}`)
   const remoteProjectId = await remoteProjectFor(deps, machine.machineId, project)
-  log(`${project.name} is ready`)
   if (machine.restoresWorkspace === true && machine.workspaceId !== undefined) {
     return restoreWorkspace(deps, machine, remoteProjectId, machine.workspaceId)
   }

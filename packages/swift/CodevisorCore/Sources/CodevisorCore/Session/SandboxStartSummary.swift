@@ -18,22 +18,22 @@ public struct SandboxStartSummary: Equatable, Sendable {
     return .running
   }
 
+  public var shownSteps: [SessionSetupPhase] { steps.filter { !$0.isPending } }
+
   public var startedAt: Date {
     (steps.first { !$0.isPending } ?? steps[0]).startedAt
   }
 
   public var duration: TimeInterval? {
-    guard state == .succeeded, let end = steps.compactMap(\.endedAt).max() else { return nil }
+    guard state != .running, let end = steps.compactMap(\.endedAt).max() else { return nil }
     return end.timeIntervalSince(startedAt)
   }
-
-  public var currentStep: SessionSetupPhase? { steps.first(where: \.isRunning) }
 
   public var title: String {
     switch state {
     case .running: "Starting sandbox"
     case .succeeded: SetupDuration.completed("Started sandbox", after: duration)
-    case .failed: "Couldn't start sandbox"
+    case .failed: SetupDuration.stopped("Sandbox failed", after: duration)
     }
   }
 }

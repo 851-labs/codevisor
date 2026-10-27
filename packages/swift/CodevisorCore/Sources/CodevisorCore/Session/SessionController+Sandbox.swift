@@ -16,6 +16,17 @@ extension SessionController {
     return false
   }
 
+  public var sandboxStartFailure: String? {
+    guard case let .failed(message) = status, SessionSetupGroup.failedSandboxStart(in: setupPhases) else {
+      return nil
+    }
+    return message
+  }
+
+  public func retrySandboxStart() {
+    requestSubmit()
+  }
+
   private func sandboxFailure(_ target: SandboxTarget, showsSetupPhases: Bool) async -> String? {
     if project.isScratch || project.isRunTargetPlaceholder {
       return "Choose a project to run on a \(target.machineNoun)."
@@ -148,7 +159,6 @@ extension SessionController {
       }
       try await Task.sleep(for: .seconds(1))
     }
-    tracker.note("\(tracker.steps.agentName) is ready", in: .agent)
     clearAutomaticSelection()
     selectedHarnessId = agent.harnessId
     pendingConfiguration.replaceValues(carriedConfigValues(agent), for: agent.harnessId)

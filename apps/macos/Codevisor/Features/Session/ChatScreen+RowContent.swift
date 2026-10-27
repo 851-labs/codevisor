@@ -12,7 +12,13 @@ extension ChatScreen {
 
   @ViewBuilder
   func errorBanner(_ message: String) -> some View {
-    if message == serverUnreachableErrorMessage {
+    if message == controller.sandboxStartFailure {
+      SandboxStartFailureNotice(
+        message: message,
+        inBotConversation: controller.presentsBotConversation,
+        retry: controller.retrySandboxStart
+      )
+    } else if message == serverUnreachableErrorMessage {
       ChatErrorRow(
         message,
         actionTitle: "Restart",

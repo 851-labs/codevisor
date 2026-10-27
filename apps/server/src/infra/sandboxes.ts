@@ -242,7 +242,6 @@ const provision = async (
   const options = await prepared(provider, planned, setup)
   checkpoint()
   setup.stage("create")
-  setup.log(`Creating a ${provider.definition.sandboxNoun}`)
   const { preinstalled = false, ...created } = await provider.create(
     specFor(deps, record.current()),
     options,
@@ -262,12 +261,11 @@ const provision = async (
   setup.stage("sync")
   const remote = sandboxRemote(provider, created.providerMachineId)
   const report = await deps.sync(remote, planned.harnessId)
-  setup.log(`Pushed ${report.entries} settings`)
   deps.log(`Sandbox ${initialId(record)}: pushed ${report.entries} sync entries one way`)
   await record.advance({ state: "cloning" })
   checkpoint()
   setup.stage("clone")
-  const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, setup.log)
+  const placed = await placeWorkspace(deps, { ...record.current(), ...joined })
   setup.finish()
   await record.advance({ ...placed, state: "ready" })
   return remote

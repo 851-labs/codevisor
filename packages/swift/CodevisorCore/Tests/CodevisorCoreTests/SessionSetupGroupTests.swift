@@ -31,21 +31,27 @@ struct SessionSetupGroupTests {
 
     #expect([running.state, started.state] == [.running, .succeeded])
     #expect(running.title == "Starting sandbox")
-    #expect(running.currentStep?.id == "sandbox-create")
+    #expect(running.shownSteps.map(\.id) == ["sandbox-create", "sandbox-boot"])
     #expect(started.title == "Started sandbox in 1m 34s")
     #expect(started.startedAt == start)
   }
 
-  @Test("A failed step marks the whole start as failed")
+  @Test("A failed step fails the whole start, which then reads how long it tried")
   func failed() throws {
     var boot = steps.phase(.boot, startedAt: start)
-    boot.fail(message: "This Mac already runs 2 macOS VMs", at: start.addingTimeInterval(1))
+    boot.fail(message: "This Mac already runs 2 macOS VMs", at: start.addingTimeInterval(75))
+    var quick = steps.phase(.create, startedAt: start)
+    quick.fail(message: "quota exceeded", at: start)
+    let clone = steps.phase(.clone, isPending: true)
 
-    let summary = try #require(SandboxStartSummary(steps: [boot]))
+    let summary = try #require(SandboxStartSummary(steps: [boot, clone]))
 
     #expect(summary.state == .failed)
-    #expect(summary.title == "Couldn't start sandbox")
-    #expect(summary.duration == nil)
+    #expect(summary.title == "Sandbox failed after 1m 15s")
+    #expect(summary.shownSteps.map(\.id) == ["sandbox-boot"])
+    #expect(SandboxStartSummary(steps: [quick])?.title == "Sandbox failed")
+    #expect(SessionSetupGroup.failedSandboxStart(in: [SessionSetupPhase.worktree(startedAt: start), boot]))
+    #expect(!SessionSetupGroup.failedSandboxStart(in: [steps.phase(.create, startedAt: start)]))
     #expect(SandboxStartSummary(steps: []) == nil)
   }
 

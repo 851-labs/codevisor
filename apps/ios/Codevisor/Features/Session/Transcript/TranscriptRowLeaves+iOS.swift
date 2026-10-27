@@ -88,7 +88,13 @@ private struct SessionErrorRow: View {
   let rowID: TranscriptVirtualRow.ID
 
   var body: some View {
-    if rowID == .statusError {
+    if rowID == .statusError, message == controller.sandboxStartFailure {
+      SandboxStartFailureNotice(
+        message: message,
+        inBotConversation: controller.presentsBotConversation,
+        retry: controller.retrySandboxStart
+      )
+    } else if rowID == .statusError {
       ChatErrorRow(
         message,
         actionTitle: "Retry",

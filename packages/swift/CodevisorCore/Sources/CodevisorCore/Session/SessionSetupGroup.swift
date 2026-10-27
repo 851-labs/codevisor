@@ -19,6 +19,10 @@ public enum SessionSetupGroup: Equatable, Identifiable, Sendable {
     return [.sandbox(summary)] + others
   }
 
+  public static func failedSandboxStart(in phases: [SessionSetupPhase]) -> Bool {
+    SandboxStartSummary(steps: phases.filter(isSandboxStep))?.state == .failed
+  }
+
   private static func isSandboxStep(_ phase: SessionSetupPhase) -> Bool {
     phase.id.hasPrefix(SandboxSetupSteps.phaseIdPrefix)
   }

@@ -12,7 +12,7 @@ struct SessionSetupView: View {
       ForEach(SessionSetupGroup.grouping(phases)) { group in
         switch group {
         case let .phase(phase): SessionSetupPhaseView(phase: phase)
-        case let .sandbox(summary): SandboxStartDisclosure(summary: summary) { SessionSetupPhaseView(phase: $0) }
+        case let .sandbox(summary): SandboxStartDisclosure(summary: summary)
         }
       }
     }

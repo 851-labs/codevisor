@@ -138,15 +138,11 @@ describe("sandbox setup progress", () => {
     expect(machine?.steps?.map(({ stage }) => stage)).toEqual(machine?.plan)
     expect(logs.every(({ machineId }) => machineId === "client-id")).toBe(true)
     expect(logs.map(({ stage, line }) => `${stage}: ${line}`)).toEqual([
-      "create: Creating a fake sandbox",
       "boot: Booting fake-1",
       "install: installed",
       "signIn: joined",
       "signIn: Waiting for Spike box to join your account",
-      "signIn: Spike box joined your account",
-      "sync: Pushed 0 settings",
-      "clone: Cloning https://github.com/851-labs/codevisor.git",
-      "clone: codevisor is ready"
+      "signIn: Spike box joined your account"
     ])
     await expect(harness.machines.create({ ...request, id: "client-id" })).rejects.toMatchObject({
       status: 409

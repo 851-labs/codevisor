@@ -10,6 +10,11 @@ public enum SetupDuration {
     return "\(title) in \(text(Int(duration.rounded())))"
   }
 
+  public static func stopped(_ title: String, after duration: TimeInterval?) -> String {
+    guard let duration, duration >= 1 else { return title }
+    return "\(title) after \(text(Int(duration.rounded())))"
+  }
+
   public static func elapsed(since start: Date, to now: Date) -> String {
     text(max(0, Int(now.timeIntervalSince(start))))
   }
