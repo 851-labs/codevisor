@@ -17,7 +17,7 @@ struct ComposerCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
   @Environment(\.clientControlId) private var clientControlId
-  @Environment(\.showsComposerModelMenu) private var showsModelMenu
+  @Environment(\.usesSlimComposer) private var usesSlimComposer
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
   @State private var selection = NSRange(location: 0, length: 0)
   @State private var slashSelection = 0
@@ -61,18 +61,14 @@ struct ComposerCard: View {
           chatId: focusChatId
         )
         .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+      } else if isSlimLayout {
+        slimContent
       } else {
         standardContent
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
     }
-    .padding(ComposerCardStyle.contentPadding)
-    .clipShape(cardStyle.shape)
-    .composerGlassSurface(
-      shape: cardStyle.shape,
-      id: .composer,
-      in: glassNamespace
-    )
+    .modifier(ComposerCardChrome(isEnabled: !isSlimLayout, shape: cardStyle.shape, namespace: glassNamespace))
     .overlay(alignment: .top) {
       ZStack(alignment: .top) {
         if controller.composerQuestion == nil, showsSlashCommandPopup {
@@ -139,101 +135,125 @@ struct ComposerCard: View {
 }
 
 private extension ComposerCard {
+  private var isSlimLayout: Bool {
+    usesSlimComposer && controller.composerQuestion == nil && !controller.isEditingQueuedPrompt
+      && !controller.isGoalEditing
+  }
+
+  private var slimContent: some View {
+    ComposerSlimBar(
+      field: editorStack, action: slimAction, glassNamespace: glassNamespace, onAttach: pickFiles,
+      onStop: { Task { await controller.stop() } }, onSend: submitOrAcceptSlash)
+  }
+
+  private var slimAction: ComposerSlimAction {
+    if controller.canStop, !hasComposerDraft { return .stop(isCancelling: controller.isCancelling) }
+    let isBusy = isAcceptingSubmission || controller.isResolvingQuestion
+    return .send(isEnabled: sendAvailability.isEnabled, isBusy: isBusy, help: sendAvailability.help)
+  }
+
   private var standardContent: some View {
     VStack(alignment: .leading, spacing: 10) {
-      VStack(alignment: .leading, spacing: 4) {
-        if controller.isGoalEditing {
-          ComposerModeLabel(systemImage: "target", title: "Edit goal")
-        }
-        if !controller.composerAttachments.isEmpty {
-          ComposerAttachmentRow(controller: controller)
-        }
-
-        ZStack(alignment: .topLeading) {
-          ChatInputEditor(
-            text: $controller.composerText,
-            calculatedHeight: $editorHeight,
-            selection: $selection,
-            topBleed: editorTopBleed,
-            onSubmit: submitOrAcceptSlash,
-            onQueueSubmit: submitToQueue,
-            onKeyCommand: handleKeyCommand,
-            onPasteAttachments: handlePastedAttachments,
-            onTextViewReady: { textView in
-              sendSource.textView = textView
-              onTextViewReady?(textView)
-            }
-          )
-          .frame(height: editorHeight + editorTopBleed)
-          .writingToolsAffordanceVisibility(.hidden)
-          .onChange(of: controller.editingQueuedPromptID) { _, _ in
-            selection = NSRange(location: (controller.composerText as NSString).length, length: 0)
-          }
-          .disabled(
-            isAcceptingSubmission
-              || controller.isResolvingQuestion
-              || isAppUpdateInProgress
-          )
-
-          if controller.composerText.isEmpty, !isAcceptingSubmission {
-            Text(controller.composerPlaceholder)
-              .foregroundStyle(.tertiary)
-              .padding(.top, 6 + editorTopBleed)
-              .allowsHitTesting(false)
-          }
-        }
-        .padding(.top, -editorTopBleed)
-      }
+      editorStack
 
       HStack(spacing: 10) {
-        if controller.isGoalEditing {
-          Text("esc to cancel")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-          Spacer(minLength: 0)
-          HStack(spacing: 4) {
-            goalEditBackButton
-            sendButton
-          }
-        } else if controller.isEditingQueuedPrompt {
-          attachButton
-          ComposerQueueEditControls(
-            canSave: hasComposerDraft && !isAcceptingSubmission,
-            onCancel: controller.cancelEditingQueuedPrompt,
-            onSave: saveQueueEdit
-          )
-        } else {
-          attachButton
-          if showsModelMenu {
-            ModelConfigMenu(controller: controller)
-          }
-          if controller.hasPlanMode, controller.isPlanModeOn {
-            ModeChip(
-              label: "Plan",
-              systemImage: "map",
-              isRemoveDisabled: controller.isPlanModeUpdatePending
-            ) {
-              Task { await controller.togglePlanMode() }
-            }
-          }
-          if controller.canEditGoal, controller.isGoalComposerArmed {
-            ModeChip(label: "Goal", systemImage: "target") {
-              withAnimation(.snappy(duration: 0.15)) { controller.exitGoalComposer() }
-            }
-          }
-          Spacer(minLength: 0)
-          HStack(spacing: 4) {
-            if controller.canStop { stopButton }
-            if showsSendButton { sendButton }
-          }
-        }
+        controlsRow
       }
       .font(.callout)
     }
   }
 
+  private var editorStack: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      if controller.isGoalEditing {
+        ComposerModeLabel(systemImage: "target", title: "Edit goal")
+      }
+      if !controller.composerAttachments.isEmpty {
+        ComposerAttachmentRow(controller: controller)
+      }
+
+      ZStack(alignment: .topLeading) {
+        ChatInputEditor(
+          text: $controller.composerText,
+          calculatedHeight: $editorHeight,
+          selection: $selection,
+          topBleed: editorTopBleed,
+          onSubmit: submitOrAcceptSlash,
+          onQueueSubmit: submitToQueue,
+          onKeyCommand: handleKeyCommand,
+          onPasteAttachments: handlePastedAttachments,
+          onTextViewReady: { textView in
+            sendSource.textView = textView
+            onTextViewReady?(textView)
+          }
+        )
+        .frame(height: editorHeight + editorTopBleed)
+        .writingToolsAffordanceVisibility(.hidden)
+        .onChange(of: controller.editingQueuedPromptID) { _, _ in
+          selection = NSRange(location: (controller.composerText as NSString).length, length: 0)
+        }
+        .disabled(
+          isAcceptingSubmission
+            || controller.isResolvingQuestion
+            || isAppUpdateInProgress
+        )
+
+        if controller.composerText.isEmpty, !isAcceptingSubmission {
+          Text(controller.composerPlaceholder)
+            .foregroundStyle(.tertiary)
+            .padding(.top, 6 + editorTopBleed)
+            .allowsHitTesting(false)
+        }
+      }
+      .padding(.top, -editorTopBleed)
+    }
+  }
+
+  @ViewBuilder
+  private var controlsRow: some View {
+    if controller.isGoalEditing {
+      Text("esc to cancel")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+      Spacer(minLength: 0)
+      HStack(spacing: 4) {
+        goalEditBackButton
+        sendButton
+      }
+    } else if controller.isEditingQueuedPrompt {
+      attachButton
+      ComposerQueueEditControls(
+        canSave: hasComposerDraft && !isAcceptingSubmission,
+        onCancel: controller.cancelEditingQueuedPrompt,
+        onSave: saveQueueEdit
+      )
+    } else {
+      attachButton
+      ModelConfigMenu(controller: controller)
+      if controller.hasPlanMode, controller.isPlanModeOn {
+        ModeChip(
+          label: "Plan",
+          systemImage: "map",
+          isRemoveDisabled: controller.isPlanModeUpdatePending
+        ) {
+          Task { await controller.togglePlanMode() }
+        }
+      }
+      if controller.canEditGoal, controller.isGoalComposerArmed {
+        ModeChip(label: "Goal", systemImage: "target") {
+          withAnimation(.snappy(duration: 0.15)) { controller.exitGoalComposer() }
+        }
+      }
+      Spacer(minLength: 0)
+      HStack(spacing: 4) {
+        if controller.canStop { stopButton }
+        if showsSendButton { sendButton }
+      }
+    }
+  }
+
   private var editorTopBleed: CGFloat {
-    controller.isGoalEditing || !controller.composerAttachments.isEmpty
+    controller.isGoalEditing || !controller.composerAttachments.isEmpty || isSlimLayout
       ? 0
       : ComposerCardStyle.contentPadding
   }
@@ -316,41 +336,18 @@ private extension ComposerCard {
         .background(Circle().fill(Color.secondary.opacity(0.16)))
         .help(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
     } else {
-      let hasSubmittableContent =
-        controller.isGoalComposerArmed
-        ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        : hasComposerDraft || !visibleSlashMatches.isEmpty
-      let isBlockedByCapabilities =
-        hasSubmittableContent
-        && controller.isConnectingToHarness
-      let isEnabled =
-        !isAppUpdateInProgress
-        && controller.isServerReady
-        && !controller.isPausedForUpdate
-        && (controller.isGoalComposerArmed
-          ? hasSubmittableContent
-            && (controller.isConnected || controller.selectedHarness != nil)
-            && !controller.isConnecting
-            && !controller.isConnectingToHarness
-            && !controller.requiresModelSelection
-          : !controller.isConnectingToHarness
-            && (controller.canSend || !visibleSlashMatches.isEmpty))
       ComposerSubmitButton(
-        isEnabled: isEnabled,
-        help: submitHelp(isBlockedByCapabilities: isBlockedByCapabilities),
-        accessibilityLabel: "Send"
+        isEnabled: sendAvailability.isEnabled, help: sendAvailability.help, accessibilityLabel: "Send"
       ) {
         submitOrAcceptSlash()
       }
     }
   }
 
-  private func submitHelp(isBlockedByCapabilities: Bool) -> String {
-    if isAppUpdateInProgress { return "Updating… you can send once the update finishes." }
-    if controller.isPausedForUpdate { return "\(controller.updatingName) is updating" }
-    if isBlockedByCapabilities { return "Connecting to harness…" }
-    if controller.isConnecting { return "Connecting… you can send once the agent is ready." }
-    return controller.requiresModelSelection ? "Select a model" : "Send (↩)"
+  private var sendAvailability: ComposerSendAvailability {
+    ComposerSendAvailability(
+      controller: controller, hasDraft: hasComposerDraft, hasSlashMatches: !visibleSlashMatches.isEmpty,
+      isAppUpdateInProgress: isAppUpdateInProgress)
   }
 
   private var slashToken: ComposerSlashToken? {
