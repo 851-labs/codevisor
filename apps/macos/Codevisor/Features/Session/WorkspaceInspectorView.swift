@@ -198,6 +198,12 @@ struct WorkspaceInspectorView: View {
   private var info: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 10) {
+        if showsDebugSection && showsBotTranscript {
+          WorkspaceInspectorCard(title: "Debug", isExpanded: expansion("Debug")) {
+            botTranscriptRow
+          }
+        }
+
         if let pullRequest {
           WorkspaceInspectorCard(title: "Pull Request", isExpanded: expansion("Pull Request")) {
             row(.pullRequest(pullRequest.url)) {
@@ -238,12 +244,6 @@ struct WorkspaceInspectorView: View {
           WorkspaceInspectorContextSection(
             context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage,
             isExpanded: expansion("Context"))
-        }
-
-        if showsDebugSection && showsBotTranscript {
-          WorkspaceInspectorCard(title: "Debug", isExpanded: expansion("Debug")) {
-            botTranscriptRow
-          }
         }
       }
       .padding(.vertical, 10)
