@@ -29,6 +29,13 @@ export const CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES: ReadonlySet<string> = new 
   "messages.send"
 ])
 
+export const CODEVISOR_SANDBOX_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "machines.list_sandbox_profiles",
+  "machines.create_sandbox",
+  "machines.list_sandboxes",
+  "machines.destroy_sandbox"
+])
+
 export const CODEVISOR_BOT_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
   "bot.projects_add",

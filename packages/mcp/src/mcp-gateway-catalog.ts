@@ -1,6 +1,8 @@
+import { SANDBOXES_FEATURE_FLAG, sandboxesFlagOn } from "@codevisor/api"
 import {
   CODEVISOR_BOT_TOOL_NAMES,
   CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
+  CODEVISOR_SANDBOX_TOOL_NAMES,
   SANDBOX_GLOBALS,
   type AutomationToolProvider
 } from "@codevisor/automation"
@@ -183,11 +185,19 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     return bot.conversational ? "conversational" : "plain"
   }
 
-  const hiddenCodevisorTools = async (sessionId: string): Promise<ReadonlySet<string>> => {
+  const hiddenBotTools = async (sessionId: string): Promise<ReadonlySet<string>> => {
     const kind = await botChatKind(sessionId)
     if (kind === "conversational") return new Set()
     return kind === "plain" ? CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES : CODEVISOR_BOT_TOOL_NAMES
   }
+
+  const hiddenSandboxTools = async (): Promise<ReadonlySet<string>> => {
+    const entries = await run(config.db.getSyncEntries(SANDBOXES_FEATURE_FLAG.namespace))
+    return sandboxesFlagOn(entries) ? new Set() : CODEVISOR_SANDBOX_TOOL_NAMES
+  }
+
+  const hiddenCodevisorTools = async (sessionId: string): Promise<ReadonlySet<string>> =>
+    new Set([...(await hiddenBotTools(sessionId)), ...(await hiddenSandboxTools())])
 
   const providerTools = async (
     provider: AutomationToolProvider,

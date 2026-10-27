@@ -13,7 +13,7 @@ struct ComposerMachineMenu: UIViewRepresentable {
   let onMachine: (CodevisorMachine) -> Void
   let onSandbox: (SandboxProfileChoice) -> Void
   let onManageMachines: () -> Void
-  let onManageSandboxes: () -> Void
+  let onManageSandboxes: (() -> Void)?
 
   func makeUIView(context: Context) -> UIButton {
     let button = UIButton(type: .system)
@@ -43,13 +43,7 @@ struct ComposerMachineMenu: UIViewRepresentable {
     ) { _ in
       onManageMachines()
     }
-    let manageSandboxes = UIAction(
-      title: "Manage Sandboxes…",
-      image: UIImage(systemName: "shippingbox")
-    ) { _ in
-      onManageSandboxes()
-    }
-    let managementMenu = UIMenu(options: .displayInline, children: [manage, manageSandboxes])
+    let managementMenu = UIMenu(options: .displayInline, children: [manage] + manageSandboxesAction)
     let preferences = UIMenuDisplayPreferences()
     preferences.maximumNumberOfTitleLines = 1
     managementMenu.displayPreferences = preferences
@@ -58,6 +52,14 @@ struct ComposerMachineMenu: UIViewRepresentable {
       UIMenu(options: [.displayInline, .singleSelection], children: choices),
       UIMenu(options: .displayInline, children: sandboxActions),
     ])
+  }
+
+  private var manageSandboxesAction: [UIAction] {
+    guard let onManageSandboxes else { return [] }
+
+    return [
+      UIAction(title: "Manage Sandboxes…", image: UIImage(systemName: "shippingbox")) { _ in onManageSandboxes() }
+    ]
   }
 
   private var sandboxActions: [UIAction] {

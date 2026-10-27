@@ -16,6 +16,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     [.developer],
   ]
 
+  static func visibleGroups(sandboxesEnabled: Bool) -> [[SettingsTab]] {
+    sidebarGroups.map { group in group.filter { $0 != .sandboxes || sandboxesEnabled } }
+  }
+
   var id: String { rawValue }
 
   var title: String {

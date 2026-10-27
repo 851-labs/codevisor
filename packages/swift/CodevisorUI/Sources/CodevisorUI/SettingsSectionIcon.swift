@@ -35,7 +35,7 @@ public enum SettingsSectionIcon: Sendable {
     switch self {
     case .account: .blue
     case .machines: .indigo
-    case .sandboxes: .teal
+    case .sandboxes: .orange
     case .projects: .cyan
     case .general, .shortcuts: .gray
     case .updates: .green

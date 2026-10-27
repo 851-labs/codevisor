@@ -13,7 +13,8 @@ import type { UnknownRecord } from "./unknown-values.js"
 
 export {
   CODEVISOR_BOT_TOOL_NAMES,
-  CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES
+  CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
+  CODEVISOR_SANDBOX_TOOL_NAMES
 } from "./codevisor-api-tools.js"
 
 const tools: ReadonlyArray<Tool> = [

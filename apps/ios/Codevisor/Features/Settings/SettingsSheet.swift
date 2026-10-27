@@ -26,6 +26,7 @@ struct SettingsSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @ClientPreference(SandboxesFeature.preferenceKey, default: false) private var sandboxesEnabled
   @State private var path: [SettingsDestination]
   @State private var selection: SettingsDestination?
   @State private var showsEmailFallback = false
@@ -147,8 +148,10 @@ struct SettingsSheet: View {
       NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
         sectionLabel("Machines", icon: .machines)
       }
-      NavigationLink(value: SettingsDestination.section("sandboxes")) {
-        sectionLabel("Sandboxes", icon: .sandboxes)
+      if sandboxesEnabled {
+        NavigationLink(value: SettingsDestination.section("sandboxes")) {
+          sectionLabel("Sandboxes", icon: .sandboxes)
+        }
       }
       NavigationLink(value: SettingsDestination.section("projects")) {
         sectionLabel("Projects", icon: .projects)

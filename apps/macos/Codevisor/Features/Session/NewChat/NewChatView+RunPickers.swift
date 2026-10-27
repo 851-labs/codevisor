@@ -121,11 +121,13 @@ extension NewChatView {
         openSettings()
       }
       .help("Open Machine Settings")
-      Autocomplete.Action("Manage Sandboxes…", systemImage: "shippingbox") {
-        SettingsRouter.shared.showSandboxes()
-        openSettings()
+      if sandboxesEnabled {
+        Autocomplete.Action("Manage Sandboxes…", systemImage: "shippingbox") {
+          SettingsRouter.shared.showSandboxes()
+          openSettings()
+        }
+        .help("Open Sandbox Settings")
       }
-      .help("Open Sandbox Settings")
     }
   }
 

@@ -19,7 +19,7 @@ struct SandboxProfileCatalogTests {
       availability: [.init(profileId: "studio", disabledReason: "This Mac already runs 2 macOS VMs")])
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(from: composer) { $0 == "server-studio" ? studio : nil }
+    await catalog.load(from: composer, enabled: true) { $0 == "server-studio" ? studio : nil }
 
     #expect(catalog.choices.map(\.target.pickerTitle) == ["New Ubuntu Sandbox", "New Studio VM", "New Laptop VM"])
     #expect(
@@ -33,8 +33,24 @@ struct SandboxProfileCatalogTests {
   func unreachableComposer() async {
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(from: CatalogFakeServerClient(failing: true)) { _ in nil }
+    await catalog.load(from: CatalogFakeServerClient(failing: true), enabled: true) { _ in nil }
 
+    #expect(catalog.choices.isEmpty)
+  }
+
+  @Test("With the Sandboxes flag off it offers nothing and asks no server")
+  func flagOff() async {
+    let composer = CatalogFakeServerClient(profiles: tartProfiles)
+    let catalog = SandboxProfileCatalog()
+    await catalog.load(from: composer, enabled: true) { _ in nil }
+    let whileOn = catalog.choices.count
+
+    await catalog.load(from: CatalogFakeServerClient(failing: true), enabled: false) { _ in
+      Issue.record("A disabled catalog shouldn't reach any Mac")
+      return nil
+    }
+
+    #expect(whileOn == 2)
     #expect(catalog.choices.isEmpty)
   }
 

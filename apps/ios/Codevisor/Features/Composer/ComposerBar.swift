@@ -26,6 +26,7 @@ struct ComposerBar: View {
 
   var cardStyle = ComposerCardStyle()
 
+  @ClientPreference(SandboxesFeature.preferenceKey, default: false) var sandboxesEnabled
   @State var text = ""
   @State var selection = NSRange(location: 0, length: 0)
   @State var pendingTextEdit: ComposerTextEdit?

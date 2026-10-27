@@ -47,10 +47,15 @@ extension ComposerBar {
   private var sandboxPicks: ComposerSandboxPicks {
     let machines = environment.machines
     let serverId = controller.project.serverId
+    let enabled = sandboxesEnabled
     return ComposerSandboxPicks(
+      enabled: enabled,
       selectedProfileId: controller.sandboxTarget?.profileId,
-      load: { catalog in
-        await catalog.load(from: machines.client(for: serverId)) { machines.client(forServerId: $0) }
+      load: { [controller] catalog in
+        await catalog.load(from: machines.client(for: serverId), enabled: enabled) {
+          machines.client(forServerId: $0)
+        }
+        if !enabled { controller.sandboxTarget = nil }
       },
       onPick: selectSandbox,
       onManage: { settingsDestination = .section("sandboxes") }

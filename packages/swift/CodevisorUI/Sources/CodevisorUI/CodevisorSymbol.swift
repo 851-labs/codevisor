@@ -21,7 +21,8 @@ public enum CodevisorSymbol: String {
   }
 
   public static func sandboxVendor(_ vendorId: String?) -> Image {
-    symbolName("sandbox-vendor", vendorId).map { Image($0, bundle: .module) } ?? Image(systemName: "shippingbox")
+    symbolName("sandbox-vendor", symbolVendor(vendorId)).map { Image($0, bundle: .module) }
+      ?? Image(systemName: "shippingbox")
   }
 
   #if os(macOS)
@@ -30,10 +31,14 @@ public enum CodevisorSymbol: String {
     }
   #else
     public static func sandboxVendorImage(_ vendorId: String?) -> UIImage? {
-      symbolName("sandbox-vendor", vendorId).flatMap { UIImage(named: $0, in: .module, with: nil) }
+      symbolName("sandbox-vendor", symbolVendor(vendorId)).flatMap { UIImage(named: $0, in: .module, with: nil) }
         ?? UIImage(systemName: "shippingbox")
     }
   #endif
+
+  private static func symbolVendor(_ vendorId: String?) -> String? {
+    vendorId == "tart-orchard" ? "tart" : vendorId
+  }
 
   private static func symbolName(_ family: String, _ id: String?) -> String? {
     guard let id, !id.isEmpty else { return nil }

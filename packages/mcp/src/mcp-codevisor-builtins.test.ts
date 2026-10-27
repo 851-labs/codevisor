@@ -98,6 +98,58 @@ describe("Codevisor built-in tools", () => {
     expect(await view(agent.id)).toEqual({ skill: false, send: false, add: false, remove: false })
   })
 
+  it("offers sandbox tools only once the Sandboxes developer flag is on", async () => {
+    const { db, manager } = await testManager(providers)
+    manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-sandbox-flag" }))
+    const agent = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "Agent" })
+    )
+    const canDescribe = async (path: string) => {
+      const issued = await manager.issueGateway(agent.id, project.id)
+      const client = new Client({ name: "sandbox-tools-test", version: "1" })
+      await client.connect(
+        sdkTransport(
+          new StreamableHTTPClientTransport(new URL(issued.url), {
+            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+          })
+        )
+      )
+      try {
+        const result = await client.callTool({
+          name: "execute",
+          arguments: {
+            description: "Describe a sandbox tool",
+            code: `async () => machines.current.tools.describe.tool({ path: ${JSON.stringify(path)} })`
+          }
+        })
+        return result.isError !== true
+      } finally {
+        await client.close()
+      }
+    }
+    const turnOn = (value: boolean) =>
+      run(
+        db.mergeSyncEntries("client-preferences", [
+          {
+            key: "featureFlags.sandboxes",
+            value,
+            timestamp: { wallMs: value ? 2 : 1, counter: 0, deviceId: "mac" }
+          }
+        ])
+      )
+
+    const before = await canDescribe("codevisor.machines.create_sandbox")
+    await turnOn(false)
+    const off = await canDescribe("codevisor.machines.list_sandboxes")
+    await turnOn(true)
+    const on = await canDescribe("codevisor.machines.create_sandbox")
+    const listed = (await manager.tools("codevisor")).map((tool) => tool.name)
+
+    expect([before, off, on]).toEqual([false, false, true])
+    expect(listed).toContain("machines.destroy_sandbox")
+  })
+
   it("lists its tools in settings and preserves a disabled provider across restarts", async () => {
     const { db, manager, directory } = await testManager(providers)
     const tools = await manager.tools("codevisor")

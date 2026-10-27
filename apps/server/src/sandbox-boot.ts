@@ -29,6 +29,7 @@ import type { MachineLink } from "./infra/machine-link.js"
 import { FIRST_AGENT_WAIT, pushRemainingAgents } from "./infra/sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./infra/sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./infra/sandbox-connections.js"
+import { sandboxWorkPending } from "./infra/sandbox-feature.js"
 import {
   appBundleOf,
   STABLE_SERVER_MANIFEST_URL,
@@ -111,11 +112,14 @@ export const startSandboxes = (
     newId: randomUUID,
     log: (line) => console.log(line)
   })
+  const check = async (): Promise<void> => {
+    if (!(await sandboxWorkPending(options.db, records))) return
+
+    await machines.sweep()
+    await machines.watch()
+  }
   const tick = (): void => {
-    void machines
-      .sweep()
-      .then(() => machines.watch())
-      .catch((cause: unknown) => console.log(`Sandbox check failed: ${String(cause)}`))
+    void check().catch((cause: unknown) => console.log(`Sandbox check failed: ${String(cause)}`))
   }
   const catalog: SandboxCatalogDeps = {
     settings,
