@@ -18,7 +18,7 @@ struct ComposerQuestionPicker: View {
       chrome: .composer,
       actions: QuestionPickerActions(
         submit: { resolve { await controller.answerQuestion(answers: draft.answers) } },
-        skip: { resolve { await controller.cancelQuestion() } },
+        dismiss: { resolve { await controller.cancelQuestion() } },
         answerDirectly: { spec, label in
           resolve { await controller.answerQuestion(answers: [spec.id: QuestionAnswerEntry(answers: [label])]) }
         }

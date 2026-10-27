@@ -56,11 +56,16 @@ private struct PendingTranscriptQuestion: View {
     let id = request.questionId
     return QuestionPickerActions(
       submit: { Task { await controller.submitTranscriptQuestion(id) } },
-      skip: { Task { await controller.skipTranscriptQuestion(id) } },
+      dismiss: focusComposer,
       answerDirectly: { spec, label in
         Task { await controller.answerTranscriptQuestion(id, with: [spec.id: QuestionAnswerEntry(answers: [label])]) }
       }
     )
+  }
+
+  private func focusComposer() {
+    guard let focus, let chatId = controller.serverSession?.id else { return }
+    focus.focusComposerText(forChat: chatId)
   }
 
   private func typeIntoComposer(_ event: NSEvent) {

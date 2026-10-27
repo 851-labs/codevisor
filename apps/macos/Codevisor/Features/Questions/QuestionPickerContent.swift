@@ -22,7 +22,7 @@ struct QuestionPickerContent: View {
     VStack(alignment: .leading, spacing: 10) {
       if let question = draft.question {
         QuestionPickerMessage(message: draft.request.message, page: draft.page)
-        QuestionPickerHeader(draft: draft, question: question, chrome: chrome, onSkip: actions.skip)
+        QuestionPickerHeader(draft: draft, question: question, chrome: chrome, onDismiss: actions.dismiss)
         QuestionOptionList(
           draft: draft,
           question: question,
@@ -31,18 +31,16 @@ struct QuestionPickerContent: View {
           focusTargets: focusTargets,
           onSubmit: advanceOrSubmit
         )
-        if !draft.isOtherSelected(question), draft.showsNoteField(question) {
-          QuestionNotesEditor(
-            draft: draft, question: question, placeholder: "Add a note for the agent",
+        if asksForPlanFeedback(question) {
+          QuestionAnswerEditor(
+            draft: draft, question: question, placeholder: "What should change? (optional)",
             focusTargets: focusTargets, onSubmit: advanceOrSubmit
           )
           .padding(.horizontal, 10)
           .padding(.vertical, 4)
           .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.1)))
         }
-        QuestionPickerFooter(draft: draft, question: question, chrome: chrome, actions: actions) {
-          focusTargets.focusNotesWhenReady()
-        }
+        QuestionPickerFooter(draft: draft, question: question, actions: actions)
       }
     }
     .disabled(isResolving)
@@ -53,7 +51,9 @@ struct QuestionPickerContent: View {
       invalidateRowMeasurement?()
     }
     .onChange(of: draft.selections) { _, _ in invalidateRowMeasurement?() }
-    .onChange(of: draft.revealedNotes) { _, _ in invalidateRowMeasurement?() }
+    .onChange(of: asksForPlanFeedback) { _, asks in
+      if asks { focusTargets.focusAnswerEditorWhenReady() }
+    }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Agent question")
   }
@@ -88,9 +88,17 @@ struct QuestionPickerContent: View {
       actions: actions,
       isResolving: isResolving,
       highlighted: $highlighted,
-      focusNotes: focusTargets.focusNotes,
+      focusAnswerEditor: focusTargets.focusAnswerEditor,
       advanceOrSubmit: advanceOrSubmit
     )
+  }
+
+  private var asksForPlanFeedback: Bool {
+    draft.question.map(asksForPlanFeedback) ?? false
+  }
+
+  private func asksForPlanFeedback(_ question: QuestionSpec) -> Bool {
+    question.id == QuestionRequest.exitPlanModeId && draft.isSelected(QuestionRequest.keepPlanningLabel, in: question)
   }
 
   private func advanceOrSubmit() {

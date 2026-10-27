@@ -43,7 +43,7 @@ struct QuestionOptionList: View {
           infoKey: "\(question.id)/other"
         ) {
           choose(QuestionDraft.otherToken, at: question.options.count)
-          focusTargets.focusNotesWhenReady()
+          focusTargets.focusAnswerEditorWhenReady()
         }
       }
     }
@@ -151,7 +151,7 @@ private struct QuestionOtherAnswerRow: View {
       .buttonStyle(.plain)
       .accessibilityLabel("Other")
       .accessibilityAddTraits(.isSelected)
-      QuestionNotesEditor(
+      QuestionAnswerEditor(
         draft: draft, question: question, placeholder: "Type your answer",
         focusTargets: focusTargets, onSubmit: onSubmit
       )
@@ -162,7 +162,7 @@ private struct QuestionOtherAnswerRow: View {
     .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08)))
     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1))
     .contentShape(RoundedRectangle(cornerRadius: 6))
-    .onTapGesture { focusTargets.focusNotes() }
+    .onTapGesture { focusTargets.focusAnswerEditor() }
   }
 }
 

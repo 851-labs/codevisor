@@ -3,7 +3,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-struct QuestionNotesEditor: View {
+struct QuestionAnswerEditor: View {
   let draft: QuestionDraft
   let question: QuestionSpec
   let placeholder: String
@@ -16,16 +16,16 @@ struct QuestionNotesEditor: View {
   var body: some View {
     ZStack(alignment: .topLeading) {
       ChatInputEditor(
-        text: Binding(get: { draft.note(for: question) }, set: { draft.setNote($0, for: question) }),
+        text: Binding(get: { draft.typedAnswer(for: question) }, set: { draft.setTypedAnswer($0, for: question) }),
         calculatedHeight: $height,
         minHeight: 24,
         maxHeight: 120,
         onSubmit: onSubmit,
         onKeyCommand: dismissToPicker,
-        onTextViewReady: focusTargets.attachNotesEditor
+        onTextViewReady: focusTargets.attachAnswerEditor
       )
       .frame(height: height)
-      if draft.note(for: question).isEmpty {
+      if draft.typedAnswer(for: question).isEmpty {
         Text(placeholder)
           .foregroundStyle(.tertiary)
           .padding(.top, 6)

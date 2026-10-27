@@ -95,6 +95,7 @@ struct SessionTranscriptView: View {
         controller: controller,
         presentationRole: presentationRole
       )
+      .modifier(QuestionSheetPresentation(controller: controller))
       .onAppear { [controller] in
         followsLatest = controller.scrollState?.followMode.followsLatest ?? true
         isAtBottom = controller.scrollState?.isAtBottom ?? true

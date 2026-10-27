@@ -3,31 +3,31 @@ import AppKit
 @MainActor
 final class QuestionPickerFocusTargets {
   weak var picker: QuestionPickerKeyView?
-  weak var notesEditor: SubmittingTextView?
-  private var focusesNotesWhenReady = false
+  weak var answerEditor: SubmittingTextView?
+  private var focusesAnswerEditorWhenReady = false
 
   func focusPicker() {
     guard let picker else { return }
     picker.window?.makeFirstResponder(picker)
   }
 
-  func focusNotes() {
-    guard let notesEditor, let window = notesEditor.window else {
-      focusesNotesWhenReady = true
+  func focusAnswerEditor() {
+    guard let answerEditor, let window = answerEditor.window else {
+      focusesAnswerEditorWhenReady = true
       return
     }
-    window.makeFirstResponder(notesEditor)
+    window.makeFirstResponder(answerEditor)
   }
 
-  func focusNotesWhenReady() {
-    focusesNotesWhenReady = true
+  func focusAnswerEditorWhenReady() {
+    focusesAnswerEditorWhenReady = true
   }
 
-  func attachNotesEditor(_ textView: SubmittingTextView) {
-    notesEditor = textView
+  func attachAnswerEditor(_ textView: SubmittingTextView) {
+    answerEditor = textView
     textView.onWindowChanged = { [weak self, weak textView] in
-      guard let self, let textView, self.focusesNotesWhenReady, let window = textView.window else { return }
-      self.focusesNotesWhenReady = false
+      guard let self, let textView, self.focusesAnswerEditorWhenReady, let window = textView.window else { return }
+      self.focusesAnswerEditorWhenReady = false
       window.makeFirstResponder(textView)
     }
   }

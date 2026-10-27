@@ -28,10 +28,6 @@ extension SessionController {
     return draft
   }
 
-  public func revealTranscriptQuestion() {
-    transcriptQuestionRevealSignal &+= 1
-  }
-
   public func submitTranscriptQuestion(_ id: String) async {
     guard let draft = questionDrafts[id], transcriptQuestion?.questionId == id, draft.isSubmittable else { return }
     await resolveTranscriptQuestion { await $0.answerQuestion(answers: draft.answers) }
@@ -40,11 +36,6 @@ extension SessionController {
   public func answerTranscriptQuestion(_ id: String, with answers: [String: QuestionAnswerEntry]) async {
     guard transcriptQuestion?.questionId == id else { return }
     await resolveTranscriptQuestion { await $0.answerQuestion(answers: answers) }
-  }
-
-  public func skipTranscriptQuestion(_ id: String) async {
-    guard transcriptQuestion?.questionId == id else { return }
-    await resolveTranscriptQuestion { await $0.cancelQuestion() }
   }
 
   private func resolveTranscriptQuestion(_ resolve: (SessionModel) async -> Void) async {

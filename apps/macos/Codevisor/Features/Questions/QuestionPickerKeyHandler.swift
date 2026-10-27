@@ -9,7 +9,7 @@ struct QuestionPickerKeyHandler {
   let actions: QuestionPickerActions
   let isResolving: Bool
   @Binding var highlighted: Int
-  let focusNotes: () -> Void
+  let focusAnswerEditor: () -> Void
   let advanceOrSubmit: () -> Void
 
   func handle(_ key: QuestionPickerKey) -> Bool {
@@ -23,7 +23,7 @@ struct QuestionPickerKeyHandler {
     case .right: draft.move(by: 1)
     case .space: draft.toggle(token(question, at: highlighted), in: question)
     case .enter: enter(question)
-    case .escape: actions.skip()
+    case .escape: actions.dismiss()
     case let .digit(digit): return choose(digit, in: question)
     }
     return true
@@ -47,8 +47,8 @@ struct QuestionPickerKeyHandler {
 
   private func enter(_ question: QuestionSpec) {
     if question.multiSelect != true { draft.select(token(question, at: highlighted), in: question) }
-    guard !draft.isOtherSelected(question) || !draft.trimmedNote(question).isEmpty else {
-      focusNotes()
+    guard !draft.isOtherSelected(question) || !draft.trimmedTypedAnswer(question).isEmpty else {
+      focusAnswerEditor()
       return
     }
     advanceOrSubmit()

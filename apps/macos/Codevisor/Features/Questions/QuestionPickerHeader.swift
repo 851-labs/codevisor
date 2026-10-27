@@ -7,7 +7,7 @@ struct QuestionPickerHeader: View {
   let draft: QuestionDraft
   let question: QuestionSpec
   let chrome: QuestionPickerChrome
-  let onSkip: () -> Void
+  let onDismiss: () -> Void
 
   var body: some View {
     switch chrome {
@@ -15,15 +15,11 @@ struct QuestionPickerHeader: View {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         QuestionTitle(text: question.question, weight: .medium)
         Spacer(minLength: 0)
-        QuestionDismissButton(action: onSkip)
+        QuestionDismissButton(action: onDismiss)
       }
     case .transcript:
       VStack(alignment: .leading, spacing: 4) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          QuestionPageCaption(draft: draft, question: question)
-          Spacer(minLength: 0)
-          QuestionSkipButton(action: onSkip)
-        }
+        QuestionPageCaption(draft: draft, question: question)
         QuestionTitle(text: question.question, weight: .semibold)
       }
     }
@@ -56,19 +52,6 @@ private struct QuestionPageCaption: View {
     let header = question.header.map { " · \($0)" } ?? ""
     guard draft.pageCount > 1 else { return "Question\(header)" }
     return "Question \(draft.page + 1) of \(draft.pageCount)\(header)"
-  }
-}
-
-private struct QuestionSkipButton: View {
-  let action: () -> Void
-
-  var body: some View {
-    Button("Skip", action: action)
-      .buttonStyle(.plain)
-      .font(.callout)
-      .foregroundStyle(.secondary)
-      .help("Skip this question (Esc). Or just type a reply in the message box.")
-      .accessibilityHint("Keyboard shortcut: Escape")
   }
 }
 
