@@ -40,7 +40,11 @@ describe("bootstrapMachine", () => {
     const created = await provider.create(
       { name: "box", tags: { owner: "o", machine: "m" } },
       { size: "small" },
-      { stage: (stage) => events.push(`stage ${stage}`), log: (line) => events.push(line) }
+      {
+        stage: (stage) => events.push(`stage ${stage}`),
+        log: (line) => events.push(line),
+        output: () => undefined
+      }
     )
 
     await bootstrapMachine(
@@ -52,6 +56,49 @@ describe("bootstrapMachine", () => {
 
     expect(provider.provisionStages).toEqual(["create", "boot"])
     expect(events).toEqual(["stage boot", "Booting fake-1", "stdout installed\n"])
+  })
+
+  it("lets a fake provider prepare an image first and create machines that already have Codevisor", async () => {
+    const provider = makeFakeEphemeralProvider({ prepares: true })
+    const events: string[] = []
+    const progress = {
+      stage: (stage: string) => events.push(`stage ${stage}`),
+      log: (line: string) => events.push(line),
+      output: () => undefined
+    }
+    const plan = await provider.plan?.({ size: "small" })
+
+    await provider.prepare?.(
+      { size: "small" },
+      { stages: ["create"], preinstalled: true },
+      progress
+    )
+    await provider.prepare?.(
+      { size: "small" },
+      plan ?? { stages: [], preinstalled: false },
+      progress
+    )
+    const created = await provider.create(
+      { name: "box", tags: { owner: "o", machine: "m" } },
+      { size: "small" }
+    )
+
+    expect(plan).toEqual({ stages: ["image", "create"], preinstalled: true })
+    expect(events).toEqual(["stage image", "Preparing the fake image"])
+    expect(created.preinstalled).toBe(true)
+  })
+
+  it("opens the app after starting the server when the machine has one", () => {
+    expect(startServerScript()).toContain(
+      'if [ -x "$home/.codevisor/open-app" ]; then "$home/.codevisor/open-app"; fi'
+    )
+  })
+
+  it("skips the installer on a machine whose image already has Codevisor", () => {
+    const script = bootstrapScript({ inviteCode: invite, machineName: "box", preinstalled: true })
+
+    expect(script).not.toContain("installer")
+    expect(script.split("\n")[1]).toBe("printf '%s\\n' '::codevisor-stage::signIn'")
   })
 
   it("passes installer environment to the installer and server environment to the start command", () => {

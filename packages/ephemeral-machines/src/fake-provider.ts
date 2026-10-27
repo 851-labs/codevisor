@@ -7,7 +7,10 @@ import type {
   ExecRequest,
   ExecResult,
   MachinePlatform,
-  ProviderMachineState
+  ProviderMachineState,
+  ProvisionPlan,
+  ProvisionProgress,
+  ProvisionStage
 } from "./provider.js"
 
 export const FakeOptions = Schema.Struct({
@@ -33,6 +36,7 @@ export interface FakeProviderOptions {
   readonly resumable?: boolean
   readonly boots?: boolean
   readonly streams?: boolean
+  readonly prepares?: boolean
 }
 
 export interface FakeEphemeralProvider extends EphemeralProvider<FakeOptions> {
@@ -53,12 +57,15 @@ export const makeFakeEphemeralProvider = (
     if (machine !== undefined) machine.state = "running"
     return Promise.resolve()
   }
+  const provisionStages: ReadonlyArray<ProvisionStage> =
+    options.boots === true ? ["create", "boot"] : ["create"]
   return {
     ...(options.resumable === true ? { resume } : {}),
+    ...(options.prepares === true ? preparesImage(provisionStages) : {}),
     id: options.id ?? "e2b",
     displayName: "Fake",
     options: FakeOptions,
-    provisionStages: options.boots === true ? ["create", "boot"] : ["create"],
+    provisionStages,
     streamsOutput: options.streams === true,
     machines,
     execs,
@@ -69,7 +76,11 @@ export const makeFakeEphemeralProvider = (
         progress?.stage("boot")
         progress?.log(`Booting ${providerMachineId}`)
       }
-      return Promise.resolve({ providerMachineId, platform: options.platform ?? "linux" })
+      return Promise.resolve({
+        providerMachineId,
+        platform: options.platform ?? "linux",
+        ...(options.prepares === true ? { preinstalled: true } : {})
+      })
     },
     exec: async (providerMachineId, request) => {
       execs.push({ providerMachineId, request })
@@ -91,3 +102,19 @@ export const makeFakeEphemeralProvider = (
       )
   }
 }
+
+const preparesImage = (provisionStages: ReadonlyArray<ProvisionStage>) => ({
+  plan: (): Promise<ProvisionPlan> =>
+    Promise.resolve({ stages: ["image", ...provisionStages], preinstalled: true }),
+  prepare: (
+    machineOptions: FakeOptions,
+    plan: ProvisionPlan,
+    progress: ProvisionProgress
+  ): Promise<FakeOptions> => {
+    if (plan.stages.includes("image")) {
+      progress.stage("image")
+      progress.log("Preparing the fake image")
+    }
+    return Promise.resolve(machineOptions)
+  }
+})

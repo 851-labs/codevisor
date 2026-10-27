@@ -3,6 +3,21 @@ import ApplicationServices
 import Foundation
 
 extension ComputerUseBridge {
+  private func closeSession(_ sessionID: String) -> [String: Any] {
+    ComputerUseSyntheticActivation.shared.release(sessionID: sessionID)
+    ComputerUseForeground.shared.cancel(sessionID: sessionID)
+    _ = lock.withLock { snapshots.removeValue(forKey: sessionID) }
+    lock.withLock {
+      latestSnapshotIDs = latestSnapshotIDs.filter { !$0.key.hasPrefix(sessionID + ":app:") }
+      windowIDBySession = windowIDBySession.filter { !$0.key.hasPrefix(sessionID + ":app:") }
+      lastActionUptimes = lastActionUptimes.filter { !$0.key.hasPrefix(sessionID + ":app:") }
+      nextElementIndices.removeValue(forKey: sessionID)
+    }
+    ComputerUsePresentation.end(sessionID: sessionID)
+    recordings.end(sessionID: sessionID)
+    return textResult("closed")
+  }
+
   func handle(_ message: [String: Any], budget: ComputerUseReadBudget = .unlimited) throws -> [String: Any] {
     let type = message["type"] as? String
     if type == "screenSharing" {
@@ -15,6 +30,9 @@ extension ComputerUseBridge {
       }
       return response
     }
+    if type == "primeLocalNetwork" {
+      return textResult(LocalNetworkPrimer.prime() ? "asked the local network" : "could not reach the local network")
+    }
     let sessionID = message["sessionId"] as? String ?? ""
     let agentLabel = message["agentLabel"] as? String
     if type == "finishTurn" {
@@ -23,20 +41,7 @@ extension ComputerUseBridge {
       ComputerUsePresentation.finishTurn(sessionID: sessionID)
       return textResult("turn finished")
     }
-    if type == "closeSession" {
-      ComputerUseSyntheticActivation.shared.release(sessionID: sessionID)
-      ComputerUseForeground.shared.cancel(sessionID: sessionID)
-      _ = lock.withLock { snapshots.removeValue(forKey: sessionID) }
-      lock.withLock {
-        latestSnapshotIDs = latestSnapshotIDs.filter { !$0.key.hasPrefix(sessionID + ":app:") }
-        windowIDBySession = windowIDBySession.filter { !$0.key.hasPrefix(sessionID + ":app:") }
-        lastActionUptimes = lastActionUptimes.filter { !$0.key.hasPrefix(sessionID + ":app:") }
-        nextElementIndices.removeValue(forKey: sessionID)
-      }
-      ComputerUsePresentation.end(sessionID: sessionID)
-      recordings.end(sessionID: sessionID)
-      return textResult("closed")
-    }
+    if type == "closeSession" { return closeSession(sessionID) }
     guard type == "tool", let tool = message["tool"] as? String else {
       throw BridgeError("Unsupported helper request")
     }

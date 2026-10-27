@@ -101,6 +101,27 @@ describe("ephemeral setup progress", () => {
     expect((await harness.machines.list())[0]?.state).toBe("ready")
   })
 
+  it("prepares the image first and skips installing on a machine whose image already has Codevisor", async () => {
+    const harness = await ephemeralHarness({ prepares: true, streams: true })
+    const logs: EphemeralSetupLog[] = []
+    const publish = (log: EphemeralSetupLog) => {
+      logs.push(log)
+      return Promise.resolve()
+    }
+
+    await harness.machines.create(request, publish)
+    await harness.machines.settled()
+
+    const machine = (await harness.machines.list())[0]
+    expect(machine?.plan).toEqual(["image", "create", "signIn", "sync", "clone"])
+    expect(machine?.steps?.map(({ stage }) => stage)).toEqual(machine?.plan)
+    expect(logs[0]).toMatchObject({ stage: "image", line: "Preparing the fake image" })
+    const bootstrap = harness.provider.execs.find((exec) =>
+      exec.request.script.includes("auth login --invite")
+    )
+    expect(bootstrap?.request.script).not.toContain("installer")
+  })
+
   it("publishes what each stage prints, in order, for the machine the client named", async () => {
     const harness = await ephemeralHarness({ boots: true, streams: true })
     const logs: EphemeralSetupLog[] = []

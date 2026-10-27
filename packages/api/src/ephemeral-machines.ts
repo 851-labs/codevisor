@@ -21,6 +21,7 @@ export const EphemeralMachineState = Schema.Literals([
 export type EphemeralMachineState = typeof EphemeralMachineState.Type
 
 export const EphemeralSetupStage = Schema.Literals([
+  "image",
   "create",
   "boot",
   "install",

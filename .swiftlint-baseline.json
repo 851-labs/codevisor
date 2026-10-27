@@ -1595,9 +1595,9 @@
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/Server/ComputerUseBridge+Dispatch.swift",
-        "line": 6
+        "line": 21
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 138 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 128 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

@@ -17,6 +17,7 @@ extension AppEnvironment {
     let localServer = LocalCodevisorServer(
       client: serverClient,
       allowsDevelopmentLaunch: CodevisorAppVariant.isDevelopment,
+      adoptsStandaloneServer: StandaloneServerPreference.isEnabled,
       computerUseBridge: ComputerUseBridge(
         supportDirectory: CodevisorAppVariant.serverDataDirectoryURL()
       )

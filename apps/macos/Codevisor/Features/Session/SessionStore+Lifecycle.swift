@@ -30,6 +30,7 @@ extension SessionStore {
   func reregister(_ controller: SessionController, from previous: ChatSession, to relocated: ChatSession) {
     controllers[SessionKey(previous)] = nil
     register(controller, for: relocated)
+    detachCenterLeaves(for: relocated)
   }
 
   func restoreDraftPersistence(_ controller: SessionController) {

@@ -23,6 +23,38 @@ struct LocalCodevisorServerStartupPathTests {
     #expect(server.startupProgress?.state == "ready")
   }
 
+  @Test("On a machine set up with a standalone server, adopts it instead of stopping a different version")
+  func adoptsStandaloneServer() async throws {
+    let runtime = try StartupRuntime(version: "0.2.0")
+    defer { runtime.remove() }
+    let client = FakeLocalServerClient(healthResults: [.success(.running(version: "dev"))])
+    var launches = 0
+    let server = runtime.server(client: client, adoptsStandaloneServer: true) { _ in
+      launches += 1
+      return Process()
+    }
+
+    #expect(await server.ensureRunning() == .alreadyRunning)
+    #expect(launches == 0)
+    #expect(client.shutdownRequests == 0)
+  }
+
+  @Test("On a machine set up with a standalone server, waits for it rather than launching its own")
+  func waitsForStandaloneServer() async throws {
+    let runtime = try StartupRuntime(version: "0.2.0")
+    defer { runtime.remove() }
+    var launches = 0
+    let server = runtime.server(
+      client: FakeLocalServerClient(healthResults: [.failure(TestError())]), adoptsStandaloneServer: true
+    ) { _ in
+      launches += 1
+      return Process()
+    }
+
+    #expect(await server.ensureRunning() == .unavailable("Waiting for this Mac's Codevisor server to start"))
+    #expect(launches == 0)
+  }
+
   @Test("Keeps the server this app launched when ensureRunning runs again")
   func keepsOwnBootOnSecondEnsure() async throws {
     let runtime = try StartupRuntime(version: "0.2.0")
@@ -211,6 +243,7 @@ private struct StartupRuntime {
   func server(
     client: FakeLocalServerClient,
     allowsDevelopmentLaunch: Bool = false,
+    adoptsStandaloneServer: Bool = false,
     healthPollAttempts: Int = 3,
     launcher: @escaping LocalCodevisorServer.Launcher = { _ in Process() },
     shutdownProbe: (@MainActor () async -> Bool)? = { true }
@@ -218,6 +251,7 @@ private struct StartupRuntime {
     LocalCodevisorServer(
       client: client,
       allowsDevelopmentLaunch: allowsDevelopmentLaunch,
+      adoptsStandaloneServer: adoptsStandaloneServer,
       entrypoint: entrypoint,
       databasePath: directory.appendingPathComponent("db.sqlite").path,
       logURL: directory.appendingPathComponent("server.log"),

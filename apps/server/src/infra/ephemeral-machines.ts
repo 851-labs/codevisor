@@ -11,7 +11,8 @@ import {
   type ProviderMachineState,
   type BootstrapRequest,
   type EphemeralProvider,
-  type EphemeralProviderId
+  type EphemeralProviderId,
+  type ProvisionPlan
 } from "@codevisor/ephemeral-machines"
 
 import { HttpFailure } from "../server-context.js"
@@ -102,14 +103,17 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
     const provider = await deps.providers.get(request.provider)
     const overrides = await mergedOptions(deps, request)
     const options = asBadRequest(() => decodeProviderOptions(provider, overrides))
-    const machine = newRecord(deps, request, provider)
+    const plan = await planFor(provider, options)
+    const machine = newRecord(deps, request, provider, plan)
     if ((await deps.records.get(machine.id)) !== undefined) {
       throw new HttpFailure(409, `An ephemeral machine ${machine.id} already exists`)
     }
     await deps.records.put(machine)
     track(
       pipelines,
-      exclusively(machine.id, () => runPipeline(deps, provider, machine, options, publish))
+      exclusively(machine.id, () =>
+        runPipeline(deps, provider, machine, { options, plan }, publish)
+      )
     )
     return machine
   }
@@ -141,11 +145,16 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
   }
 }
 
+interface PlannedProvision {
+  readonly options: unknown
+  readonly plan: ProvisionPlan
+}
+
 const runPipeline = async (
   deps: EphemeralMachineDeps,
   provider: EphemeralProvider,
   initial: EphemeralMachine,
-  options: unknown,
+  planned: PlannedProvision,
   publish: EphemeralSetupPublisher | undefined
 ): Promise<void> => {
   const record = recordWriter(deps, initial)
@@ -158,7 +167,7 @@ const runPipeline = async (
     }
   })
   try {
-    await provision(deps, provider, record, setup, options)
+    await provision(deps, provider, record, setup, planned)
   } catch (cause) {
     await teardownMachine(deps, provider, record.current()).catch(() => undefined)
     await record.advance({ state: "failed", error: messageOf(cause) })
@@ -170,14 +179,24 @@ const provision = async (
   provider: EphemeralProvider,
   record: RecordWriter,
   setup: EphemeralSetupProgress,
-  options: unknown
+  planned: PlannedProvision
 ): Promise<void> => {
+  const options = await prepared(provider, planned, setup)
   setup.stage("create")
   setup.log(`Creating a ${provider.displayName} machine`)
-  const created = await provider.create(specFor(deps, record.current()), options, setup)
+  const { preinstalled = false, ...created } = await provider.create(
+    specFor(deps, record.current()),
+    options,
+    setup
+  )
   await record.advance({ ...created, state: "bootstrapping" })
-  setup.stage("install")
-  const joined = await joinAccount(deps, provider, { ...record.current(), ...created }, setup)
+  if (!preinstalled) setup.stage("install")
+  const joined = await joinAccount(
+    deps,
+    provider,
+    { ...record.current(), ...created },
+    { setup, preinstalled }
+  )
   await record.advance({ ...joined, state: "syncing" })
   setup.stage("sync")
   const report = await deps.sync(ephemeralRemote(provider, created.providerMachineId))
@@ -188,6 +207,18 @@ const provision = async (
   const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, setup.log)
   setup.finish()
   await record.advance({ ...placed, state: "ready" })
+}
+
+const planFor = async (provider: EphemeralProvider, options: unknown): Promise<ProvisionPlan> =>
+  (await provider.plan?.(options)) ?? { stages: provider.provisionStages, preinstalled: false }
+
+const prepared = async (
+  provider: EphemeralProvider,
+  planned: PlannedProvision,
+  setup: EphemeralSetupProgress
+): Promise<unknown> => {
+  if (provider.prepare === undefined) return planned.options
+  return provider.prepare(planned.options, planned.plan, setup)
 }
 
 interface RecordWriter {
@@ -332,7 +363,8 @@ const mergedOptions = async (
 const newRecord = (
   deps: EphemeralMachineDeps,
   request: CreateEphemeralMachineRequest,
-  provider: EphemeralProvider
+  provider: EphemeralProvider,
+  plan: ProvisionPlan
 ): EphemeralMachine => {
   const id = request.id?.toLowerCase() ?? deps.newId()
   return {
@@ -342,7 +374,13 @@ const newRecord = (
     projectId: request.projectId,
     state: "creating",
     createdAt: isoNow(deps),
-    plan: [...provider.provisionStages, "install", "signIn", "sync", "clone"],
+    plan: [
+      ...plan.stages,
+      ...(plan.preinstalled ? [] : ["install" as const]),
+      "signIn",
+      "sync",
+      "clone"
+    ],
     ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId.toLowerCase() })
   }
 }

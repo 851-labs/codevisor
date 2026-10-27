@@ -261,7 +261,12 @@ const sharedEnvironment = {
   ...(await devNetEnvironment(net)),
   ...(ephemeralArtifacts === undefined
     ? {}
-    : devEphemeralEnvironment({ artifactsUrl: ephemeralArtifacts.url, vmHost, cloudPort }))
+    : devEphemeralEnvironment({
+        artifactsUrl: ephemeralArtifacts.url,
+        vmHost,
+        cloudPort,
+        appBundle
+      }))
 }
 const withoutCloudToken = (environment) => {
   const copy = { ...environment }

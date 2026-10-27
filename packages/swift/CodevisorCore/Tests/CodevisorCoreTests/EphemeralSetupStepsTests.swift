@@ -42,13 +42,14 @@ struct EphemeralSetupStepsTests {
     let steps = EphemeralSetupSteps(target: .provider("tart"), projectName: "hello-world", agentName: "OpenCode")
     let phases = EphemeralSetupStage.allCases.map { steps.phase($0) }
 
-    #expect(phases.map(\.id).first == "ephemeral-create")
+    #expect(phases.map(\.id).first == "ephemeral-image")
     #expect(
       phases.map(\.activeTitle) == [
-        "Creating Tart VM", "Booting Tart VM", "Installing Codevisor", "Signing in to Codevisor",
-        "Syncing your setup", "Cloning hello-world", "Connecting to Tart VM", "Preparing OpenCode",
+        "Preparing the macOS image", "Creating Tart VM", "Booting Tart VM",
+        "Installing Codevisor", "Signing in to Codevisor", "Syncing your setup",
+        "Cloning hello-world", "Connecting to Tart VM", "Preparing OpenCode",
       ])
-    #expect(phases.map(\.failedTitle).first == "Could not create Tart VM")
+    #expect(phases.map(\.failedTitle).first == "Could not prepare the macOS image")
     #expect(steps.phase(.signIn).completedTitle == "Signed in to Codevisor")
     #expect(steps.phase(.signIn, isPending: true).upcomingTitle == "Sign in to Codevisor")
     #expect(steps.status(.clone) == "Cloning hello-world…")
@@ -57,9 +58,9 @@ struct EphemeralSetupStepsTests {
   @Test("Upcoming steps follow the machine's plan, then the app's own steps")
   func upcomingSteps() {
     let upcoming = EphemeralSetupSteps.upcoming(
-      plan: ["create", "install", "signIn", "sync", "clone"], begun: [.create, .install])
+      plan: ["image", "create", "boot", "signIn", "sync", "clone"], begun: [.image])
 
-    #expect(upcoming == [.signIn, .sync, .clone, .connect, .agent])
+    #expect(upcoming == [.create, .boot, .signIn, .sync, .clone, .connect, .agent])
   }
 
   @Test("The machine's own record of the clone folds into the Clone step instead of trailing the list")

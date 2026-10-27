@@ -1,77 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import type { ExecResult } from "./provider.js"
-import { makeTartProvider, vmName, type TartHost, type TartOptions } from "./tart.js"
+import { fakeTart, result } from "./tart-test-support.js"
+import { makeTartProvider, vmName, type TartOptions } from "./tart.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const name = vmName(spec)
 const options: TartOptions = {
   image: "ghcr.io/cirruslabs/macos-sonoma-base:latest",
+  baseImage: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
   cpu: 4,
   memoryGiB: 8,
   minFreeDiskGiB: 40
 }
-const gib = 1024 ** 3
-
-interface Vm {
-  readonly Name: string
-  State: string
-  readonly OS: string
-}
-
-const result = (stdout: string, exitCode = 0): ExecResult => ({ exitCode, stdout, stderr: "" })
 const ignoreOutput = () => undefined
-
-const fakeTart = (setup: {
-  readonly vms?: Vm[]
-  readonly freeGiB?: number
-  readonly cloneOS?: string
-  readonly agentFailures?: number
-  readonly failing?: string
-}) => {
-  const vms = setup.vms ?? []
-  const commands: string[] = []
-  const sleeps: number[] = []
-  let agentFailures = setup.agentFailures ?? 0
-  const respond = (args: ReadonlyArray<string>): ExecResult => {
-    const [command, first] = args
-    if (command === setup.failing) return { exitCode: 1, stdout: "", stderr: `${command} broke\n` }
-    if (command === "clone")
-      vms.push({ Name: args[2] ?? "", State: "stopped", OS: setup.cloneOS ?? "darwin" })
-    if (command === "list")
-      return result(JSON.stringify(vms.map(({ Name, State }) => ({ Name, State }))))
-    if (command === "get")
-      return result(JSON.stringify({ OS: vms.find((vm) => vm.Name === first)?.OS }))
-    if (command === "ip") return result("192.168.64.7\n")
-    if (command === "delete")
-      vms.splice(
-        vms.findIndex((vm) => vm.Name === first),
-        1
-      )
-    if (command === "exec" && args.at(-1) === "true" && agentFailures > 0) {
-      agentFailures -= 1
-      return result("", 1)
-    }
-    return result("")
-  }
-  const host: TartHost = {
-    run: (args) => {
-      commands.push(args.join(" "))
-      return Promise.resolve(respond(args))
-    },
-    start: (args) => {
-      commands.push(`start ${args.join(" ")}`)
-      const vm = vms.find((candidate) => candidate.Name === args.at(-1))
-      if (vm !== undefined) vm.State = "running"
-    },
-    freeDiskBytes: () => Promise.resolve((setup.freeGiB ?? 90) * gib),
-    sleep: (ms) => {
-      sleeps.push(ms)
-      return Promise.resolve()
-    }
-  }
-  return { host, vms, commands, sleeps }
-}
 
 describe("Tart provider", () => {
   it("clones, sizes, boots headless and waits for the guest agent", async () => {
@@ -79,7 +20,7 @@ describe("Tart provider", () => {
 
     const created = await makeTartProvider(tart.host).create(spec, options)
 
-    expect(created).toEqual({ providerMachineId: name, platform: "darwin" })
+    expect(created).toEqual({ providerMachineId: name, platform: "darwin", preinstalled: false })
     expect(tart.commands).toEqual([
       `clone ${options.image} ${name}`,
       `get ${name} --format json`,
@@ -129,7 +70,8 @@ describe("Tart provider", () => {
 
     expect(await makeTartProvider(tart.host).create(spec, options)).toEqual({
       providerMachineId: name,
-      platform: "linux"
+      platform: "linux",
+      preinstalled: false
     })
   })
 
@@ -195,7 +137,8 @@ describe("Tart provider", () => {
 
     await makeTartProvider(tart.host).create(spec, options, {
       stage: (stage) => events.push(`stage ${stage}`),
-      log: (line) => events.push(line)
+      log: (line) => events.push(line),
+      output: ignoreOutput
     })
 
     expect(events).toEqual([

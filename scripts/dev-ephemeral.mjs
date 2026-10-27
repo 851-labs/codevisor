@@ -57,9 +57,10 @@ export async function serveDevEphemeralArtifacts({ repoRoot, archiveRoot, host }
   return { server, url: `http://${host}:${server.address().port}` }
 }
 
-export const devEphemeralEnvironment = ({ artifactsUrl, vmHost, cloudPort }) => ({
+export const devEphemeralEnvironment = ({ artifactsUrl, vmHost, cloudPort, appBundle }) => ({
   CODEVISOR_DEV_EPHEMERAL_ARTIFACTS_URL: artifactsUrl,
-  CODEVISOR_DEV_EPHEMERAL_CLOUD_URL: `http://${vmHost}:${cloudPort}`
+  CODEVISOR_DEV_EPHEMERAL_CLOUD_URL: `http://${vmHost}:${cloudPort}`,
+  CODEVISOR_EPHEMERAL_APP_PATH: appBundle
 })
 
 export async function serverInputsKey(repoRoot, target) {

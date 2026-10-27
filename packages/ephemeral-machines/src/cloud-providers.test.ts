@@ -218,7 +218,7 @@ describe("provider catalog", () => {
         timeoutMinutes: 1440
       },
       Tart: {
-        image: "ghcr.io/cirruslabs/macos-sonoma-base:latest",
+        baseImage: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
         cpu: 4,
         memoryGiB: 8,
         minFreeDiskGiB: 40

@@ -13,7 +13,8 @@ import {
   modalSdkClient,
   tartCliHost,
   type EphemeralProvider,
-  type EphemeralProviderId
+  type EphemeralProviderId,
+  type TartImages
 } from "@codevisor/ephemeral-machines"
 import { loadEncryptionKey } from "@codevisor/mcp"
 import type { BlobStore } from "@codevisor/sync"
@@ -22,6 +23,12 @@ import {
   makeEphemeralCredentialStore,
   type ProviderCredentials
 } from "./infra/ephemeral-credentials.js"
+import {
+  appBundleOf,
+  STABLE_SERVER_MANIFEST_URL,
+  tartImages,
+  type TartImageSettings
+} from "./infra/ephemeral-image.js"
 import { configuredProviderIds, makeEphemeralMachines } from "./infra/ephemeral-machines.js"
 import { makeEphemeralRecordStore } from "./infra/ephemeral-store.js"
 import { pushOneWaySync } from "./infra/ephemeral-sync.js"
@@ -53,10 +60,11 @@ export const startEphemeralMachines = (
   )
   const records = makeEphemeralRecordStore(options.db)
   const tartBinary = options.env["CODEVISOR_TART_PATH"] ?? "tart"
+  const images = tartImages(imageSettings(options.env))
   const machines = makeEphemeralMachines({
     records,
     providers: {
-      get: async (id) => providerFor(id, await credentials.read(id), tartBinary),
+      get: async (id) => providerFor(id, await credentials.read(id), { tartBinary, images }),
       configured: async () =>
         (await configuredProviderIds(credentials.isConfigured)).filter(
           (id) => id !== "tart" || tartAvailable(tartBinary)
@@ -106,10 +114,15 @@ export const startEphemeralMachines = (
   }
 }
 
+interface TartSettings {
+  readonly tartBinary: string
+  readonly images: TartImages
+}
+
 const providerFor = (
   id: EphemeralProviderId,
   credentials: ProviderCredentials | undefined,
-  tartBinary: string
+  tart: TartSettings
 ): EphemeralProvider => {
   if (credentials === undefined) {
     throw new HttpFailure(409, `Add your ${id} credentials before creating an ephemeral machine`)
@@ -123,7 +136,7 @@ const providerFor = (
       })
     )
   }
-  return makeTartProvider(tartCliHost(tartBinary))
+  return makeTartProvider(tartCliHost(tart.tartBinary), tart.images)
 }
 
 const tartAvailable = (binary: string): boolean =>
@@ -172,6 +185,21 @@ const bootstrapSettings = (env: NodeJS.ProcessEnv) => {
   return {
     ...developmentInstaller(development.artifactsUrl),
     serverEnvironment: developmentServerEnvironment(env, development.instance)
+  }
+}
+
+const imageSettings = (env: NodeJS.ProcessEnv): TartImageSettings => {
+  const appPath = env["CODEVISOR_EPHEMERAL_APP_PATH"] ?? appBundleOf(process.execPath)
+  const development = developmentSettings(env)
+  if (development?.artifactsUrl === undefined) {
+    return { appPath, serverIdentityUrl: STABLE_SERVER_MANIFEST_URL }
+  }
+
+  return {
+    appPath,
+    serverIdentityUrl: `${development.artifactsUrl}/codevisor-server-darwin-arm64.tar.gz.sha256`,
+    ...developmentInstaller(development.artifactsUrl),
+    developmentInstance: `${development.instance}-ephemeral`
   }
 }
 

@@ -45,6 +45,7 @@ export interface EphemeralHarnessOptions {
   readonly resumable?: boolean
   readonly boots?: boolean
   readonly streams?: boolean
+  readonly prepares?: boolean
 }
 
 const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
@@ -75,7 +76,8 @@ export const ephemeralHarness = async (options: EphemeralHarnessOptions = {}) =>
     onExec,
     ...(options.resumable === true ? { resumable: true } : {}),
     ...(options.boots === true ? { boots: true } : {}),
-    ...(options.streams === true ? { streams: true } : {})
+    ...(options.streams === true ? { streams: true } : {}),
+    ...(options.prepares === true ? { prepares: true } : {})
   })
   const provider: FakeEphemeralProvider = {
     ...fake,

@@ -12,11 +12,16 @@ export interface JoinedMachine {
 const joinTimeoutMs = 3 * 60 * 1000
 const joinPollMs = 1000
 
+export interface JoinSetup {
+  readonly setup: EphemeralSetupProgress
+  readonly preinstalled: boolean
+}
+
 export const joinAccount = async (
   deps: EphemeralMachineDeps,
   provider: EphemeralProvider,
   machine: EphemeralMachine & { readonly providerMachineId: string },
-  setup: EphemeralSetupProgress
+  { setup, preinstalled }: JoinSetup
 ): Promise<JoinedMachine> => {
   const owner = requireOwner(deps)
   const before = presentDeviceIds(deps)
@@ -25,7 +30,7 @@ export const joinAccount = async (
   const result = await bootstrapMachine(
     provider,
     machine.providerMachineId,
-    { inviteCode, machineName: machine.name, ...deps.bootstrap },
+    { inviteCode, machineName: machine.name, ...deps.bootstrap, preinstalled },
     setup.output
   )
   if (!provider.streamsOutput) replayOutput(setup, result)

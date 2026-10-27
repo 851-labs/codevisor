@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { mkdir, statfs } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
 import type { ExecResult } from "./provider.js"
@@ -27,6 +27,8 @@ export const tartCliHost = (binary = "tart"): TartHost => {
       child.on("error", () => undefined)
       child.unref()
     },
+    copyIn: (vm, source, destination) =>
+      copyIntoVm(binary, environment, { vm, source, destination }),
     freeDiskBytes: async () => {
       const home = process.env.TART_HOME ?? join(homedir(), ".tart")
       await mkdir(home, { recursive: true })
@@ -65,4 +67,42 @@ const runTart = (
     child.on("close", (code) => resolve({ exitCode: code ?? 1, stdout, stderr }))
     child.stdin.on("error", () => undefined)
     child.stdin.end(options.stdin ?? "")
+  })
+
+interface CopyRequest {
+  readonly vm: string
+  readonly source: string
+  readonly destination: string
+}
+
+const guestUnpack = 'sudo rm -rf "$1/$2" && sudo tar -C "$1" -xf -'
+
+const copyIntoVm = (
+  binary: string,
+  environment: NodeJS.ProcessEnv,
+  request: CopyRequest
+): Promise<ExecResult> =>
+  new Promise((resolve) => {
+    const name = basename(request.source)
+    const archive = spawn("tar", ["-C", dirname(request.source), "-cf", "-", name], {
+      env: { ...environment, COPYFILE_DISABLE: "1" },
+      stdio: ["ignore", "pipe", "pipe"]
+    })
+    const unpack = spawn(
+      binary,
+      ["exec", "-i", request.vm, "sh", "-c", guestUnpack, "sh", request.destination, name],
+      { env: environment, stdio: ["pipe", "pipe", "pipe"] }
+    )
+    let stderr = ""
+    const collect = (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString("utf8")).slice(-outputLimitChars)
+    }
+    archive.stderr.on("data", collect)
+    unpack.stderr.on("data", collect)
+    unpack.stdout.resume()
+    unpack.stdin.on("error", () => undefined)
+    archive.stdout.pipe(unpack.stdin)
+    archive.on("error", (cause) => resolve({ exitCode: 127, stdout: "", stderr: cause.message }))
+    unpack.on("error", (cause) => resolve({ exitCode: 127, stdout: "", stderr: cause.message }))
+    unpack.on("close", (code) => resolve({ exitCode: code ?? 1, stdout: "", stderr }))
   })

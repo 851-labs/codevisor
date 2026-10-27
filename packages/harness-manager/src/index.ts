@@ -1,4 +1,5 @@
 export * from "./harness-lifecycle.js"
+export { installCommand } from "./harness-lifecycle-support.js"
 export * from "./harness-auth.js"
 export * from "./opencode-auth.js"
 export * from "./pi-auth.js"

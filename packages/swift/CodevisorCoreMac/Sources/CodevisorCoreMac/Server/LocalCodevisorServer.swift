@@ -25,6 +25,7 @@ private enum RunningServerAdoption {
   case ownBoot
   case managedService
   case developmentServer
+  case standaloneServer
 }
 
 @MainActor
@@ -40,6 +41,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
   private let nodeExecutable: URL
   let databasePath: String
   private let allowsDevelopmentLaunch: Bool
+  private let adoptsStandaloneServer: Bool
   let startupStatusURL: URL
   let startupStallTimeout: Duration
   let startupMaximumDuration: Duration
@@ -96,6 +98,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
   public init(
     client: any CodevisorServerClienting,
     allowsDevelopmentLaunch: Bool = false,
+    adoptsStandaloneServer: Bool = false,
     config: CodevisorServerConfig = .localDefault,
     entrypoint: URL? = LocalCodevisorServer.defaultEntrypoint(),
     nodeExecutable: URL = LocalCodevisorServer.defaultNodeExecutable(),
@@ -116,6 +119,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
   ) {
     self.client = client
     self.allowsDevelopmentLaunch = allowsDevelopmentLaunch
+    self.adoptsStandaloneServer = adoptsStandaloneServer
     self.startupStatusURL =
       startupStatusURL
       ?? URL(fileURLWithPath: databasePath).deletingLastPathComponent().appendingPathComponent("server-startup.json")
@@ -163,6 +167,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
     if let failure = await prepareManagedService(&clock) { return failure }
     if let settled = await adoptOrStopAnsweringServer(&clock) { return settled }
     if let process, process.isRunning { return await waitForOwnedProcess(process) }
+    if adoptsStandaloneServer { return fail("Waiting for this Mac's Codevisor server to start") }
     guard let entrypoint else { return fail("Codevisor server entrypoint was not found") }
 
     migrateLegacyDataIfDefault(&clock)
@@ -233,6 +238,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
       return .managedService
     }
     if allowsDevelopmentLaunch, bundledServerVersion() == nil, health.appOwned != true { return .developmentServer }
+    if adoptsStandaloneServer, health.appOwned != true { return .standaloneServer }
     return nil
   }
 
@@ -242,7 +248,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
       startUpdateRequestMonitor()
       markAlreadyRunning()
       lifecycleLog.note("ensureRunning: adopting the running managed server")
-    case .ownBoot, .developmentServer:
+    case .ownBoot, .developmentServer, .standaloneServer:
       markAlreadyRunning()
     }
     return state

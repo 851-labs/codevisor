@@ -19,6 +19,7 @@ export interface CreatedMachine {
   readonly providerMachineId: string
   readonly platform: MachinePlatform
   readonly expiresAt?: string
+  readonly preinstalled?: boolean
 }
 
 export type ProviderMachineState = "starting" | "running" | "stopped" | "gone"
@@ -42,11 +43,17 @@ export interface ExecRequest {
   readonly onOutput?: (stream: OutputStream, text: string) => void
 }
 
-export type ProvisionStage = "create" | "boot"
+export type ProvisionStage = "image" | "create" | "boot"
 
 export interface ProvisionProgress {
   readonly stage: (stage: ProvisionStage) => void
   readonly log: (line: string) => void
+  readonly output: (stream: OutputStream, text: string) => void
+}
+
+export interface ProvisionPlan {
+  readonly stages: ReadonlyArray<ProvisionStage>
+  readonly preinstalled: boolean
 }
 
 export interface ExecResult {
@@ -69,6 +76,8 @@ export interface EphemeralProvider<Options = unknown> {
   readonly options: Schema.Codec<Options, unknown>
   readonly provisionStages: ReadonlyArray<ProvisionStage>
   readonly streamsOutput: boolean
+  plan?(options: Options): Promise<ProvisionPlan>
+  prepare?(options: Options, plan: ProvisionPlan, progress: ProvisionProgress): Promise<Options>
   create(spec: CreateSpec, options: Options, progress?: ProvisionProgress): Promise<CreatedMachine>
   readonly exec: (providerMachineId: string, request: ExecRequest) => Promise<ExecResult>
   readonly status: (providerMachineId: string) => Promise<ProviderMachineStatus>

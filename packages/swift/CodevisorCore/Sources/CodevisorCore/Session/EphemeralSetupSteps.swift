@@ -2,6 +2,7 @@ import CodevisorClient
 import Foundation
 
 public enum EphemeralSetupStage: String, CaseIterable, Sendable {
+  case image
   case create
   case boot
   case install
@@ -81,6 +82,7 @@ public struct EphemeralSetupSteps: Sendable {
 
   private func titles(for stage: EphemeralSetupStage) -> Titles {
     switch stage {
+    case .image: titled("Preparing", "Prepared", "prepare", "the macOS image")
     case .create: titled("Creating", "Created", "create", target.machineNoun)
     case .boot: titled("Booting", "Booted", "boot", target.machineNoun)
     case .install: titled("Installing", "Installed", "install", "Codevisor")

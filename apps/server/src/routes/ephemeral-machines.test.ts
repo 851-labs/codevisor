@@ -155,7 +155,13 @@ describe("ephemeral machine routes", () => {
         {
           defaults: { image: "debian:bookworm-slim", cpu: 2, memoryMiB: 4096, timeoutMinutes: 1440 }
         },
-        { defaults: { image: "ghcr.io/cirruslabs/macos-sonoma-base:latest", cpu: 4, memoryGiB: 8 } }
+        {
+          defaults: {
+            baseImage: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
+            cpu: 4,
+            memoryGiB: 8
+          }
+        }
       ]
     })
   })
