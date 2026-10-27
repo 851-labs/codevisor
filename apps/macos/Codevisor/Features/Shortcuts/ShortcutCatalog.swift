@@ -245,7 +245,7 @@ enum ShortcutCatalog {
         context: "Runs commands and jumps to workspaces")
     case .toggleDebugOverlay:
       ShortcutDefinition(
-        .toggleDebugOverlay, "Toggle Debug Overlay", ShortcutCombo("`", .command), category: .view)
+        .toggleDebugOverlay, "Toggle Debug Overlay", nil, category: .view)
     default:
       preconditionFailure("\(id) is not a view shortcut")
     }

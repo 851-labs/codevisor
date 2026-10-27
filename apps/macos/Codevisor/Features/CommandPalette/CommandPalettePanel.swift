@@ -14,7 +14,7 @@ struct CommandPalettePanel: View {
   var body: some View {
     Autocomplete.Suggestions(query: $palette.query, focus: inputFocus, onCancel: palette.dismiss) {
       for section in palette.sections {
-        Autocomplete.Section(section.title) {
+        Autocomplete.Section(section.title, id: section.id) {
           for item in section.items {
             action(for: item)
           }

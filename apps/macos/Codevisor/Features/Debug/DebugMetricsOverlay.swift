@@ -29,15 +29,9 @@ private struct DebugMetricsOverlay: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        Label("Performance", systemImage: "gauge.with.dots.needle.50percent")
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.72))
-        Spacer()
-        Text("\(ShortcutCatalog.display(for: .toggleDebugOverlay)) to hide")
-          .font(.system(size: Typography.minimumTextSize, weight: .medium, design: .monospaced))
-          .foregroundStyle(.white.opacity(0.6))
-      }
+      Label("Performance", systemImage: "gauge.with.dots.needle.50percent")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.72))
 
       HStack(spacing: 8) {
         PrimaryMetric(
