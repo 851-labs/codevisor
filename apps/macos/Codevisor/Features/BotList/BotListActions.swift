@@ -3,6 +3,7 @@ import SwiftUI
 
 struct BotListActions: Equatable {
   let newBot: (@MainActor () -> Void)?
+  let newProject: @MainActor () -> Void
   let stepBot: @MainActor (Int) -> Void
   let editBot: @MainActor (Bot) -> Void
 

@@ -7,6 +7,7 @@ struct BotListSidebar: View {
   var store: SessionStore? = nil
   var publishesSceneActions = true
   @State private var botEditor: BotEditorTarget?
+  @State private var showingAddProject = false
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
 
@@ -29,6 +30,9 @@ struct BotListSidebar: View {
       .modifier(
         SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection, store: store)
       )
+      .sheet(isPresented: $showingAddProject) {
+        NewProjectSheet(serverId: environment.defaultComposerServerId) { _ in }
+      }
       .focusedSceneValue(\.botListActions, publishesSceneActions ? actions : nil)
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
@@ -69,7 +73,9 @@ struct BotListSidebar: View {
   }
 
   private var actions: BotListActions {
-    BotListActions(newBot: canCreateBots ? newBot : nil, stepBot: step, editBot: { botEditor = .edit($0) })
+    BotListActions(
+      newBot: canCreateBots ? newBot : nil, newProject: { showingAddProject = true }, stepBot: step,
+      editBot: { botEditor = .edit($0) })
   }
 
   private func newBot() {

@@ -146,8 +146,11 @@ struct SidebarRowContent {
   }
 
   func machineName(forServer serverId: String) -> String? {
-    let machine = environment.machines.machine(for: serverId)
-    return machine.map { $0.isLocal ? "This Mac" : $0.name }
+    environment.machines.machine(for: serverId).map(Self.machineName)
+  }
+
+  static func machineName(_ machine: CodevisorMachine) -> String {
+    machine.isLocal ? "This Mac" : machine.name
   }
 
   private func isUnderGroupHeading(_ workspace: Workspace, isPinned: Bool) -> Bool {

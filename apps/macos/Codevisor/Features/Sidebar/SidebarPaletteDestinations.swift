@@ -3,12 +3,11 @@ import CodevisorUI
 
 struct SidebarPaletteDestinations {
   let groups: [SidebarWorkspaceGroup]
-  let bots: [Bot]
   let rowContent: SidebarRowContent
-  let activate: @MainActor (SidebarView.SidebarStop) -> Void
+  let activate: @MainActor (SidebarWorkspaceListItem) -> Void
 
   var items: [CommandPaletteItem] {
-    bots.map(botItem) + workspaces.map(workspaceItem)
+    workspaces.map(workspaceItem)
   }
 
   private var workspaces: [SidebarWorkspaceListItem] {
@@ -27,13 +26,7 @@ struct SidebarPaletteDestinations {
       id: "workspace:\(workspace.id)", title: title,
       subtitle: details.isEmpty ? nil : details.joined(separator: " · "),
       icon: .workspace(rowContent.icon(for: item)), searchTerms: details
-    ) { activate(.workspace(item)) }
-  }
-
-  private func botItem(_ bot: Bot) -> CommandPaletteItem {
-    CommandPaletteItem(id: "bot:\(bot.id)", title: bot.name, icon: .symbol(bot.symbolName)) {
-      activate(.bot(bot))
-    }
+    ) { activate(item) }
   }
 
   private func remoteMachineName(for workspace: Workspace) -> String? {

@@ -43,10 +43,6 @@ extension SidebarView {
     )
   }
 
-  func machineName(forServer serverId: String) -> String? {
-    rowContent.machineName(forServer: serverId)
-  }
-
   func rowSubtitle(for workspace: Workspace) -> String? {
     rowContent.subtitle(for: workspace, isPinned: isPinned(workspace))
   }
@@ -85,47 +81,16 @@ extension SidebarView {
     rowContent.icon(for: item)
   }
 
+  var navigator: SidebarWorkspaceNavigator {
+    SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
+  }
+
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
-    switch selection {
-    case let .session(serverId, sessionId):
-      guard serverId == workspace.serverId else { return false }
-      return environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
-    case let .workspace(serverId, id):
-      return serverId == workspace.serverId && id == workspace.id
-    case .archivedWorkspace, .bot, .newChat, .none:
-      return false
-    }
+    navigator.routesSelectedSession(workspace)
   }
 
   func activateWorkspace(_ item: SidebarWorkspaceListItem) {
-    guard let tab = item.workspace.selectedCenterTab ?? item.workspace.centerTabs.first else { return }
-    activateTab(tab, in: item)
-  }
-
-  func activateTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
-    let workspace = item.workspace
-    guard store?.selectDestination(.tab(tab.id), in: workspace.id) == true else { return }
-    apply(
-      workspace.selectionRoute(
-        activatedChatSessionId: routableChat(in: tab, serverId: workspace.serverId)?.id,
-        routingSessionId: item.routingSession?.id,
-        selectionAlreadyRoutesWorkspace: routesSelectedSession(workspace)
-      ))
-  }
-
-  func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
-    list.routableChat(in: tab, serverId: serverId)
-  }
-
-  private func apply(_ route: WorkspaceSelectionRoute?) {
-    switch route {
-    case let .session(serverId, id):
-      selection = .session(serverId: serverId, id: id)
-    case let .workspace(serverId, id):
-      selection = .workspace(serverId: serverId, id: id)
-    case nil:
-      break
-    }
+    navigator.activate(item)
   }
 
   func addTab(in item: SidebarWorkspaceListItem) {

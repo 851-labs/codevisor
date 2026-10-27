@@ -5,7 +5,6 @@ import SwiftUI
 extension SidebarView {
   enum SidebarStop {
     case newChat
-    case bot(Bot)
     case workspace(SidebarWorkspaceListItem)
     case archived(Workspace)
   }
@@ -36,8 +35,6 @@ extension SidebarView {
     switch stop {
     case .newChat:
       isNewChatSelected
-    case let .bot(bot):
-      selection == .bot(serverId: bot.serverId, id: bot.id)
     case let .workspace(item):
       routesSelectedSession(item.workspace)
     case let .archived(workspace):
@@ -45,18 +42,10 @@ extension SidebarView {
     }
   }
 
-  var paletteDestinations: SidebarPaletteDestinations {
-    SidebarPaletteDestinations(
-      groups: workspaceGroups, bots: botsEnabled ? environment.bots.bots : [], rowContent: rowContent,
-      activate: { activate($0) })
-  }
-
   private func activate(_ stop: SidebarStop) {
     switch stop {
     case .newChat:
       selection = .newChat(nil)
-    case let .bot(bot):
-      selection = .bot(serverId: bot.serverId, id: bot.id)
     case let .workspace(item):
       revealRequest.rowID = item.workspace.id
       activateWorkspace(item)
