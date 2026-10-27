@@ -18,13 +18,19 @@ export const endpoints = [
   "POST /v1/machines/add",
   "DELETE /v1/machines/:machineId",
   "GET /v1/sandbox-providers",
-  "PUT /v1/sandbox-providers/:id/credentials",
-  "DELETE /v1/sandbox-providers/:id/credentials",
+  "GET /v1/sandbox-accounts",
+  "POST /v1/sandbox-accounts",
+  "PUT /v1/sandbox-accounts/:id",
+  "DELETE /v1/sandbox-accounts/:id",
+  "GET /v1/sandbox-profiles",
+  "POST /v1/sandbox-profiles",
+  "PUT /v1/sandbox-profiles/:id",
+  "DELETE /v1/sandbox-profiles/:id",
+  "GET /v1/sandbox-profiles/availability",
   "GET /v1/sandboxes",
   "POST /v1/sandboxes",
   "DELETE /v1/sandboxes/:id",
-  "GET /v1/projects/:id/sandbox-options",
-  "PUT /v1/projects/:id/sandbox-options",
+  "POST /v1/sandboxes/:id/workspace",
   "POST /v1/gateway/invoke",
   "GET /v1/openapi.json",
   "GET /v1/update",
@@ -239,16 +245,22 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/machines/add": "Install Codevisor on a host over SSH and add it to the account",
   "DELETE /v1/machines/:machineId": "Remove another machine from the account",
   "GET /v1/sandbox-providers":
-    "List sandbox providers, whether each has credentials, and their default options",
-  "PUT /v1/sandbox-providers/:id/credentials":
-    "Save a provider's credentials (write-only; never returned)",
-  "DELETE /v1/sandbox-providers/:id/credentials": "Forget a provider's credentials",
+    "List sandbox providers with their account and profile fields, and what this machine can run",
+  "GET /v1/sandbox-accounts": "List sandbox provider accounts, without their secrets",
+  "POST /v1/sandbox-accounts": "Sign in to a sandbox provider; the credentials are checked first",
+  "PUT /v1/sandbox-accounts/:id": "Change a sandbox provider account; blank secrets are kept",
+  "DELETE /v1/sandbox-accounts/:id": "Remove a sandbox provider account no profile uses",
+  "GET /v1/sandbox-profiles": "List sandbox profiles",
+  "POST /v1/sandbox-profiles": "Create a sandbox profile for a provider account and image",
+  "PUT /v1/sandbox-profiles/:id": "Change a sandbox profile",
+  "DELETE /v1/sandbox-profiles/:id": "Delete a sandbox profile",
+  "GET /v1/sandbox-profiles/availability":
+    "Say which sandbox profiles this machine can start now, with a reason for the others",
+  "POST /v1/sandboxes/:id/workspace": "Give a sandbox started before the first send its workspace",
   "GET /v1/sandboxes": "List this machine's sandboxes and their setup state",
   "POST /v1/sandboxes":
-    "Start a sandbox with a workspace for a project; setup continues in the background",
+    "Start a sandbox from a profile with a workspace for a project; setup continues in the background",
   "DELETE /v1/sandboxes/:id": "Destroy a sandbox and remove it from the account",
-  "GET /v1/projects/:id/sandbox-options": "Get a project's per-provider sandbox options",
-  "PUT /v1/projects/:id/sandbox-options": "Set a project's per-provider sandbox options",
   "POST /v1/gateway/invoke": "Run a gateway tool call from another machine's sandbox",
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/bots/:id/projects": "Add a project to a bot and check its repository out for the bot",
@@ -283,8 +295,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
 }
 
 export const noContent = new Set<Endpoint>([
-  "PUT /v1/sandbox-providers/:id/credentials",
-  "DELETE /v1/sandbox-providers/:id/credentials",
+  "DELETE /v1/sandbox-accounts/:id",
+  "DELETE /v1/sandbox-profiles/:id",
   "DELETE /v1/bots/:id",
   "DELETE /v1/projects/:id",
   "DELETE /v1/workspaces/:id",
@@ -300,6 +312,8 @@ export const noContent = new Set<Endpoint>([
 ])
 
 export const created = new Set<Endpoint>([
+  "POST /v1/sandbox-accounts",
+  "POST /v1/sandbox-profiles",
   "POST /v1/machines/invite",
   "POST /v1/machines/add",
   "POST /v1/auth/pairing-token",

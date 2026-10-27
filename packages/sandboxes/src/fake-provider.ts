@@ -1,5 +1,4 @@
-import { Effect, Schema } from "effect"
-
+import { secretField, textField, type SandboxFieldValues } from "./fields.js"
 import type {
   CreateSpec,
   SandboxProvider,
@@ -10,17 +9,26 @@ import type {
   ProviderMachineState,
   ProvisionPlan,
   ProvisionProgress,
-  ProvisionStage
+  ProvisionStage,
+  SandboxProviderDefinition
 } from "./provider.js"
 
-export const FakeOptions = Schema.Struct({
-  size: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed("small")))
+export const fakeDefinition = (
+  id: SandboxProviderId = "e2b",
+  platform: MachinePlatform = "linux"
+): SandboxProviderDefinition => ({
+  id,
+  displayName: "Fake",
+  sandboxNoun: "fake sandbox",
+  platform,
+  tested: true,
+  accountFields: [secretField("apiKey", "API key")],
+  profileFields: [textField("size", "Size", { default: "small" })]
 })
-export type FakeOptions = typeof FakeOptions.Type
 
 export interface FakeMachine {
   readonly spec: CreateSpec
-  readonly options: FakeOptions
+  readonly options: SandboxFieldValues
   state: ProviderMachineState
 }
 
@@ -39,7 +47,7 @@ export interface FakeProviderOptions {
   readonly prepares?: boolean
 }
 
-export interface FakeSandboxProvider extends SandboxProvider<FakeOptions> {
+export interface FakeSandboxProvider extends SandboxProvider {
   readonly machines: Map<string, FakeMachine>
   readonly execs: Array<{ readonly providerMachineId: string; readonly request: ExecRequest }>
 }
@@ -60,9 +68,7 @@ export const makeFakeSandboxProvider = (options: FakeProviderOptions = {}): Fake
   return {
     ...(options.resumable === true ? { resume } : {}),
     ...(options.prepares === true ? preparesImage(provisionStages) : {}),
-    id: options.id ?? "e2b",
-    displayName: "Fake",
-    options: FakeOptions,
+    definition: fakeDefinition(options.id, options.platform),
     provisionStages,
     streamsOutput: options.streams === true,
     machines,
@@ -105,10 +111,10 @@ const preparesImage = (provisionStages: ReadonlyArray<ProvisionStage>) => ({
   plan: (): Promise<ProvisionPlan> =>
     Promise.resolve({ stages: ["image", ...provisionStages], preinstalled: true }),
   prepare: (
-    machineOptions: FakeOptions,
+    machineOptions: SandboxFieldValues,
     plan: ProvisionPlan,
     progress: ProvisionProgress
-  ): Promise<FakeOptions> => {
+  ): Promise<SandboxFieldValues> => {
     if (plan.stages.includes("image")) {
       progress.stage("image")
       progress.log("Preparing the fake image")

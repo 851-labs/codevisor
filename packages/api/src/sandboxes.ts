@@ -1,6 +1,13 @@
 import { Schema } from "effect"
 
-export const SandboxProviderKind = Schema.Literals(["e2b", "modal", "tart"])
+export const SandboxProviderKind = Schema.Literals([
+  "tart",
+  "tart-orchard",
+  "e2b",
+  "modal",
+  "vercel",
+  "daytona"
+])
 export type SandboxProviderKind = typeof SandboxProviderKind.Type
 
 export const SandboxOrigin = Schema.Struct({
@@ -51,6 +58,11 @@ export const Sandbox = Schema.Struct({
   provider: SandboxProviderKind,
   name: Schema.String,
   projectId: Schema.String,
+  projectName: Schema.optional(Schema.String),
+  repoUrl: Schema.optional(Schema.String),
+  profileId: Schema.optional(Schema.String),
+  profileName: Schema.optional(Schema.String),
+  accountId: Schema.optional(Schema.String),
   state: SandboxState,
   createdAt: Schema.String,
   providerMachineId: Schema.optional(Schema.String),
@@ -76,46 +88,109 @@ export type DestroySandboxResponse = typeof DestroySandboxResponse.Type
 
 export const CreateSandboxRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
-  provider: SandboxProviderKind,
+  profileId: Schema.String,
   projectId: Schema.String,
+  projectName: Schema.optional(Schema.String),
+  repoUrl: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
   defersWorkspace: Schema.optional(Schema.Boolean),
-  harnessId: Schema.optional(Schema.String),
-  options: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
+  harnessId: Schema.optional(Schema.String)
 })
 export type CreateSandboxRequest = typeof CreateSandboxRequest.Type
 
 export const ClaimSandboxWorkspaceRequest = Schema.Struct({ workspaceId: Schema.String })
 export type ClaimSandboxWorkspaceRequest = typeof ClaimSandboxWorkspaceRequest.Type
 
-export const SandboxProviderSummary = Schema.Struct({
+export const SandboxFieldValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
+export type SandboxFieldValue = typeof SandboxFieldValue.Type
+
+export const SandboxFieldValues = Schema.Record(Schema.String, SandboxFieldValue)
+export type SandboxFieldValues = typeof SandboxFieldValues.Type
+
+export const SandboxField = Schema.Struct({
+  key: Schema.String,
+  label: Schema.String,
+  type: Schema.Literals(["string", "secret", "url", "number", "boolean", "choice", "machine"]),
+  required: Schema.Boolean,
+  default: Schema.optional(SandboxFieldValue),
+  choices: Schema.optional(
+    Schema.Array(Schema.Struct({ value: Schema.String, label: Schema.String }))
+  ),
+  placeholder: Schema.optional(Schema.String),
+  help: Schema.optional(Schema.String),
+  min: Schema.optional(Schema.Number),
+  max: Schema.optional(Schema.Number),
+  capability: Schema.optional(Schema.String)
+})
+export type SandboxField = typeof SandboxField.Type
+
+export const SandboxProviderInfo = Schema.Struct({
   id: SandboxProviderKind,
   displayName: Schema.String,
-  configured: Schema.Boolean,
-  credentialKeys: Schema.Array(Schema.String),
-  defaults: Schema.Record(Schema.String, Schema.Unknown)
+  sandboxNoun: Schema.String,
+  platform: Schema.Literals(["linux", "darwin"]),
+  tested: Schema.Boolean,
+  accountFields: Schema.Array(SandboxField),
+  profileFields: Schema.Array(SandboxField)
 })
-export type SandboxProviderSummary = typeof SandboxProviderSummary.Type
+export type SandboxProviderInfo = typeof SandboxProviderInfo.Type
 
 export const SandboxProvidersResponse = Schema.Struct({
-  providers: Schema.Array(SandboxProviderSummary)
+  providers: Schema.Array(SandboxProviderInfo),
+  capabilities: Schema.Array(Schema.String)
 })
 export type SandboxProvidersResponse = typeof SandboxProvidersResponse.Type
 
-export const SaveSandboxCredentialsRequest = Schema.Struct({
-  values: Schema.Record(Schema.String, Schema.String)
+export const SandboxAccount = Schema.Struct({
+  id: Schema.String,
+  provider: SandboxProviderKind,
+  label: Schema.optional(Schema.String),
+  identity: Schema.optional(Schema.String),
+  values: SandboxFieldValues,
+  secretsSet: Schema.Array(Schema.String),
+  createdAt: Schema.String
 })
-export type SaveSandboxCredentialsRequest = typeof SaveSandboxCredentialsRequest.Type
+export type SandboxAccount = typeof SandboxAccount.Type
 
-export const SandboxProjectOptions = Schema.Record(
-  Schema.String,
-  Schema.Record(Schema.String, Schema.Unknown)
-)
-export type SandboxProjectOptions = typeof SandboxProjectOptions.Type
+export const SandboxAccountsResponse = Schema.Struct({ accounts: Schema.Array(SandboxAccount) })
+export type SandboxAccountsResponse = typeof SandboxAccountsResponse.Type
 
-export const SandboxProjectOptionsResponse = Schema.Struct({
-  projectId: Schema.String,
-  options: SandboxProjectOptions
+export const SaveSandboxAccountRequest = Schema.Struct({
+  provider: SandboxProviderKind,
+  label: Schema.optional(Schema.String),
+  values: Schema.Record(Schema.String, Schema.Unknown)
 })
-export type SandboxProjectOptionsResponse = typeof SandboxProjectOptionsResponse.Type
+export type SaveSandboxAccountRequest = typeof SaveSandboxAccountRequest.Type
+
+export const SandboxProfile = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  provider: SandboxProviderKind,
+  accountId: Schema.optional(Schema.String),
+  values: SandboxFieldValues,
+  createdAt: Schema.String
+})
+export type SandboxProfile = typeof SandboxProfile.Type
+
+export const SandboxProfilesResponse = Schema.Struct({ profiles: Schema.Array(SandboxProfile) })
+export type SandboxProfilesResponse = typeof SandboxProfilesResponse.Type
+
+export const SaveSandboxProfileRequest = Schema.Struct({
+  name: Schema.String,
+  provider: SandboxProviderKind,
+  accountId: Schema.optional(Schema.String),
+  values: Schema.Record(Schema.String, Schema.Unknown)
+})
+export type SaveSandboxProfileRequest = typeof SaveSandboxProfileRequest.Type
+
+export const SandboxProfileAvailability = Schema.Struct({
+  profileId: Schema.String,
+  disabledReason: Schema.optional(Schema.String)
+})
+export type SandboxProfileAvailability = typeof SandboxProfileAvailability.Type
+
+export const SandboxAvailabilityResponse = Schema.Struct({
+  profiles: Schema.Array(SandboxProfileAvailability)
+})
+export type SandboxAvailabilityResponse = typeof SandboxAvailabilityResponse.Type

@@ -1,18 +1,19 @@
-import type { Schema } from "effect"
+import { DAYTONA_DEFINITION } from "./daytona.js"
+import { E2B_DEFINITION } from "./e2b.js"
+import { MODAL_DEFINITION } from "./modal.js"
+import type { SandboxProviderDefinition, SandboxProviderId } from "./provider.js"
+import { TART_ORCHARD_DEFINITION } from "./tart-orchard.js"
+import { TART_DEFINITION } from "./tart.js"
+import { VERCEL_DEFINITION } from "./vercel.js"
 
-import { E2bOptions } from "./e2b.js"
-import { ModalOptions } from "./modal.js"
-import type { SandboxProviderId } from "./provider.js"
-import { TartOptions } from "./tart.js"
+export const SANDBOX_PROVIDER_DEFINITIONS: ReadonlyArray<SandboxProviderDefinition> = [
+  TART_DEFINITION,
+  TART_ORCHARD_DEFINITION,
+  E2B_DEFINITION,
+  MODAL_DEFINITION,
+  VERCEL_DEFINITION,
+  DAYTONA_DEFINITION
+]
 
-export interface SandboxProviderEntry {
-  readonly id: SandboxProviderId
-  readonly displayName: string
-  readonly options: Schema.Codec<Readonly<Record<string, unknown>>, unknown>
-}
-
-export const SANDBOX_PROVIDER_CATALOG: Readonly<Record<SandboxProviderId, SandboxProviderEntry>> = {
-  e2b: { id: "e2b", displayName: "E2B", options: E2bOptions },
-  modal: { id: "modal", displayName: "Modal", options: ModalOptions },
-  tart: { id: "tart", displayName: "Tart", options: TartOptions }
-}
+export const sandboxDefinition = (id: SandboxProviderId): SandboxProviderDefinition | undefined =>
+  SANDBOX_PROVIDER_DEFINITIONS.find((definition) => definition.id === id)

@@ -148,6 +148,7 @@ final public class SessionController {
     }
   }
   @ObservationIgnored var sandboxPrewarm: SandboxPrewarm?
+  @ObservationIgnored public var serverClientForMachine: ((String) -> (any CodevisorServerClienting)?)?
   public var onSandboxReady: ((ChatSession, ChatSession, Project) -> Void)?
   public internal(set) var setupPhases: [SessionSetupPhase] = [] {
     didSet {

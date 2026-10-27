@@ -64,7 +64,7 @@ struct NewChatView: View {
   @State var isRunLocationMenuPresented = false
   @State var pendingSetupGroupID: ProjectGroup.ID?
   @State var projectSetup: ProjectMachineSetup?
-  @State var sandboxTargets = SandboxTargetCatalog()
+  @State var sandboxProfiles = SandboxProfileCatalog()
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
@@ -188,7 +188,8 @@ struct NewChatView: View {
     .attachmentDropTarget(controller)
     .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
     .task(id: composerServerId) {
-      await sandboxTargets.load(from: environment.machines.client(for: composerServerId))
+      let machines = environment.machines
+      await sandboxProfiles.load(from: machines.client(for: composerServerId)) { machines.client(forServerId: $0) }
     }
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {

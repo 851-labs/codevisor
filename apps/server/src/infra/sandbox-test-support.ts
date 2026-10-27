@@ -4,11 +4,16 @@ import {
   SIGN_IN_MARKER,
   type ExecRequest,
   type ExecResult,
-  type FakeSandboxProvider
+  type FakeSandboxProvider,
+  type SandboxAdapter,
+  type SandboxField
 } from "@codevisor/sandboxes"
 
 import { makeServices } from "../test-support.js"
 import { pushRemainingAgents } from "./sandbox-agents.js"
+import type { SandboxCatalogDeps } from "./sandbox-catalog.js"
+import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
+import { makeSandboxSettings } from "./sandbox-settings.js"
 import { makeSandboxRecordStore } from "./sandbox-store.js"
 import { pushOneWaySync } from "./sandbox-sync.js"
 import { makeSandboxes, type SandboxDeps } from "./sandboxes.js"
@@ -47,6 +52,10 @@ export interface SandboxHarnessOptions {
   readonly boots?: boolean
   readonly streams?: boolean
   readonly prepares?: boolean
+  readonly extraProfileFields?: ReadonlyArray<SandboxField>
+  readonly verify?: SandboxAdapter["verify"]
+  readonly availability?: () => Promise<string | undefined>
+  readonly runsHere?: boolean
 }
 
 const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
@@ -82,6 +91,11 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   })
   const provider: FakeSandboxProvider = {
     ...fake,
+    definition: {
+      ...fake.definition,
+      profileFields: [...fake.definition.profileFields, ...(options.extraProfileFields ?? [])]
+    },
+    ...(options.availability === undefined ? {} : { availability: options.availability }),
     create: (spec, machineOptions, progress) =>
       controls.createFails
         ? Promise.reject(new Error("quota exceeded"))
@@ -90,6 +104,16 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       controls.listFails ? Promise.reject(new Error("401 from provider")) : fake.list(owner)
   }
   const records = makeSandboxRecordStore(services.db)
+  const settings = makeSandboxSettings(services.db, "server-owner", () => clock)
+  await settings.putAccount(FAKE_ACCOUNT)
+  await settings.putProfile(FAKE_PROFILE)
+  const adapter: SandboxAdapter = {
+    definition: provider.definition,
+    connect: () => provider,
+    ...(options.verify === undefined ? {} : { verify: options.verify })
+  }
+  const adapters = makeSandboxAdapters([adapter], () => options.runsHere ?? true)
+  const connections = makeSandboxConnections(adapters, settings)
   const project: Project = {
     id: "project-1",
     name: "codevisor",
@@ -101,10 +125,9 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   }
   const deps: SandboxDeps = {
     records,
-    providers: {
-      get: () => Promise.resolve(provider),
-      configured: () => Promise.resolve(["e2b"])
-    },
+    connections,
+    profiles: { get: settings.profile },
+    serverId: "server-owner",
     account: {
       ownerDeviceId: () => ("owner" in options ? options.owner : OWNER),
       presences: () => presences,
@@ -146,9 +169,21 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     newId: sequentialIds(),
     log: (line) => logs.push(line)
   }
+  const catalog: SandboxCatalogDeps = {
+    settings,
+    adapters,
+    connections,
+    serverId: "server-owner",
+    sandboxesUsing: async (accountId) =>
+      (await records.list()).filter((record) => record.accountId === accountId).length,
+    newId: sequentialIds(),
+    now: () => clock
+  }
   return {
     services,
     deps,
+    catalog,
+    settings,
     provider,
     records,
     presences,
@@ -160,6 +195,23 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     controls,
     machines: makeSandboxes(deps)
   }
+}
+
+export const FAKE_ACCOUNT = {
+  id: "account-1",
+  provider: "e2b" as const,
+  label: "Team",
+  values: { apiKey: "e2b_secret" },
+  createdAt: "2026-10-01T00:00:00.000Z"
+}
+
+export const FAKE_PROFILE = {
+  id: "profile-1",
+  name: "Ubuntu Sandbox",
+  provider: "e2b" as const,
+  accountId: "account-1",
+  values: { size: "small" },
+  createdAt: "2026-10-01T00:00:00.000Z"
 }
 
 export const presence = (

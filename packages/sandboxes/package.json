@@ -15,11 +15,15 @@
     "test:coverage": "vitest run src --coverage"
   },
   "dependencies": {
+    "@daytona/sdk": "0.226.1",
+    "@vercel/sandbox": "3.9.0",
     "e2b": "2.59.0",
     "effect": "4.0.0-beta.92",
-    "modal": "0.11.1"
+    "modal": "0.11.1",
+    "ws": "8.18.3"
   },
   "devDependencies": {
+    "@types/ws": "8.18.1",
     "vitest": "4.1.6"
   }
 }

@@ -1,13 +1,33 @@
-import { Effect, Schema } from "effect"
-
-import type { SandboxProvider, ExecResult } from "./provider.js"
+import { numberField, numberValue, secretField, stringValue, textField } from "./fields.js"
+import type {
+  ExecResult,
+  SandboxAdapter,
+  SandboxProvider,
+  SandboxProviderDefinition
+} from "./provider.js"
 import { listedMachine, ownerFilter, tagsToRecord } from "./tags.js"
 
-export const E2bOptions = Schema.Struct({
-  template: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed("base"))),
-  timeoutMinutes: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(60)))
-})
-export type E2bOptions = typeof E2bOptions.Type
+export const E2B_DEFINITION: SandboxProviderDefinition = {
+  id: "e2b",
+  displayName: "E2B",
+  sandboxNoun: "E2B sandbox",
+  platform: "linux",
+  tested: true,
+  accountFields: [
+    secretField("apiKey", "API key", {
+      required: true,
+      placeholder: "e2b_…",
+      help: "Create one in the E2B dashboard under API Keys."
+    })
+  ],
+  profileFields: [
+    textField("template", "Template", {
+      default: "base",
+      help: "An E2B template name or ID. Each template is its own profile."
+    }),
+    numberField("timeoutMinutes", "Lifetime (minutes)", { default: 60, min: 5, max: 1440 })
+  ]
+}
 
 export interface E2bSandboxInfo {
   readonly sandboxId: string
@@ -33,15 +53,22 @@ export interface E2bClient {
 const defaultExecTimeoutMs = 10 * 60 * 1000
 const millisecondsPerMinute = 60 * 1000
 
-export const makeE2bProvider = (client: E2bClient): SandboxProvider<E2bOptions> => ({
-  id: "e2b",
-  displayName: "E2B",
-  options: E2bOptions,
+export const e2bAdapter = (connectClient: (apiKey: string) => E2bClient): SandboxAdapter => ({
+  definition: E2B_DEFINITION,
+  connect: (account) => makeE2bProvider(connectClient(stringValue(account, "apiKey"))),
+  verify: async (account) => {
+    await connectClient(stringValue(account, "apiKey")).list(ownerFilter("codevisor-verify"))
+    return {}
+  }
+})
+
+export const makeE2bProvider = (client: E2bClient): SandboxProvider => ({
+  definition: E2B_DEFINITION,
   provisionStages: ["create"],
   streamsOutput: false,
   create: async (spec, options) => {
-    const sandbox = await client.create(options.template, {
-      timeoutMs: options.timeoutMinutes * millisecondsPerMinute,
+    const sandbox = await client.create(stringValue(options, "template"), {
+      timeoutMs: numberValue(options, "timeoutMinutes", 60) * millisecondsPerMinute,
       metadata: tagsToRecord(spec.tags)
     })
     return { providerMachineId: sandbox.sandboxId, platform: "linux", ...expiry(sandbox) }

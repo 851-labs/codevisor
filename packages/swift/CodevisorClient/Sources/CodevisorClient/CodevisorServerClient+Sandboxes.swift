@@ -1,17 +1,5 @@
 import Foundation
 
-public struct ServerSandboxProvider: Decodable, Equatable, Sendable, Identifiable {
-  public var id: String
-  public var displayName: String
-  public var configured: Bool
-
-  public init(id: String, displayName: String, configured: Bool) {
-    self.id = id
-    self.displayName = displayName
-    self.configured = configured
-  }
-}
-
 public struct ServerSandboxSetupStep: Decodable, Equatable, Sendable {
   public var stage: String
   public var startedAt: String
@@ -29,6 +17,8 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var provider: String
   public var name: String
   public var state: String
+  public var profileId: String?
+  public var profileName: String?
   public var deviceId: String?
   public var remoteProjectId: String?
   public var workspaceId: String?
@@ -41,6 +31,8 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     provider: String,
     name: String,
     state: String,
+    profileId: String? = nil,
+    profileName: String? = nil,
     deviceId: String? = nil,
     remoteProjectId: String? = nil,
     workspaceId: String? = nil,
@@ -52,6 +44,8 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     self.provider = provider
     self.name = name
     self.state = state
+    self.profileId = profileId
+    self.profileName = profileName
     self.deviceId = deviceId
     self.remoteProjectId = remoteProjectId
     self.workspaceId = workspaceId
@@ -61,14 +55,66 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   }
 }
 
-private struct SandboxProvidersResponse: Decodable {
-  var providers: [ServerSandboxProvider]
+private struct SandboxAccountsResponse: Decodable {
+  var accounts: [ServerSandboxAccount]
+}
+
+private struct SandboxProfilesResponse: Decodable {
+  var profiles: [ServerSandboxProfile]
+}
+
+private struct SandboxAvailabilityResponse: Decodable {
+  var profiles: [ServerSandboxAvailability]
 }
 
 extension CodevisorServerClient {
-  public func sandboxProviders() async throws -> [ServerSandboxProvider] {
-    let response: SandboxProvidersResponse = try await get("/v1/sandbox-providers")
-    return response.providers
+  public func sandboxProviders() async throws -> ServerSandboxProviders {
+    try await get("/v1/sandbox-providers")
+  }
+
+  public func sandboxAccounts() async throws -> [ServerSandboxAccount] {
+    let response: SandboxAccountsResponse = try await get("/v1/sandbox-accounts")
+    return response.accounts
+  }
+
+  public func createSandboxAccount(_ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount {
+    try await send("/v1/sandbox-accounts", method: "POST", body: request)
+  }
+
+  public func updateSandboxAccount(
+    id: String,
+    _ request: ServerSandboxAccountRequest
+  ) async throws -> ServerSandboxAccount {
+    try await send("/v1/sandbox-accounts/\(pathComponent(id))", method: "PUT", body: request)
+  }
+
+  public func deleteSandboxAccount(id: String) async throws {
+    try await sendNoResponse("/v1/sandbox-accounts/\(pathComponent(id))", method: "DELETE")
+  }
+
+  public func sandboxProfiles() async throws -> [ServerSandboxProfile] {
+    let response: SandboxProfilesResponse = try await get("/v1/sandbox-profiles")
+    return response.profiles
+  }
+
+  public func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile {
+    try await send("/v1/sandbox-profiles", method: "POST", body: request)
+  }
+
+  public func updateSandboxProfile(
+    id: String,
+    _ request: ServerSandboxProfileRequest
+  ) async throws -> ServerSandboxProfile {
+    try await send("/v1/sandbox-profiles/\(pathComponent(id))", method: "PUT", body: request)
+  }
+
+  public func deleteSandboxProfile(id: String) async throws {
+    try await sendNoResponse("/v1/sandbox-profiles/\(pathComponent(id))", method: "DELETE")
+  }
+
+  public func sandboxAvailability() async throws -> [ServerSandboxAvailability] {
+    let response: SandboxAvailabilityResponse = try await get("/v1/sandbox-profiles/availability")
+    return response.profiles
   }
 
   public func sandboxes() async throws -> [ServerSandbox] {

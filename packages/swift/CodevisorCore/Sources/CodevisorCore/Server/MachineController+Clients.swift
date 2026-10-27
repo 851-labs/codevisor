@@ -24,6 +24,14 @@ extension MachineController {
     return await effectiveHTTPBaseURL(forMachineId: machineId)
   }
 
+  public func machineId(forServerId serverId: String) -> String? {
+    allMachines.first { connectionsById[$0.id]?.status?.serverId == serverId }?.id
+  }
+
+  public func client(forServerId serverId: String) -> (any CodevisorServerClienting)? {
+    machineId(forServerId: serverId).map { client(for: $0) }
+  }
+
   func clientIfKnown(for machineId: String) -> (any CodevisorServerClienting)? {
     guard machine(for: machineId) != nil else { return nil }
     return client(for: machineId)

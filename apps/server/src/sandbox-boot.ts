@@ -5,15 +5,20 @@ import { setTimeout as delay } from "node:timers/promises"
 
 import { CloudApiError, rewriteMachineInviteServer } from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { loadEncryptionKey } from "@codevisor/mcp"
 import {
+  daytonaAdapter,
+  daytonaSdkClient,
+  e2bAdapter,
   e2bSdkClient,
-  makeE2bProvider,
-  makeModalProvider,
-  makeTartProvider,
+  modalAdapter,
   modalSdkClient,
+  tartAdapter,
   tartCliHost,
-  type SandboxProvider,
+  tartOrchardAdapter,
+  tartOrchardApiClient,
+  vercelAdapter,
+  vercelSdkClient,
+  type SandboxAdapter,
   type SandboxProviderId,
   type TartImages
 } from "@codevisor/sandboxes"
@@ -22,22 +27,21 @@ import type { BlobStore } from "@codevisor/sync"
 import type { MachineEnrollment } from "./infra/machine-enrollment.js"
 import type { MachineLink } from "./infra/machine-link.js"
 import { FIRST_AGENT_WAIT, pushRemainingAgents } from "./infra/sandbox-agents.js"
-import {
-  makeSandboxCredentialStore,
-  type ProviderCredentials
-} from "./infra/sandbox-credentials.js"
+import type { SandboxCatalogDeps } from "./infra/sandbox-catalog.js"
+import { makeSandboxAdapters, makeSandboxConnections } from "./infra/sandbox-connections.js"
 import {
   appBundleOf,
   STABLE_SERVER_MANIFEST_URL,
   tartImages,
   type TartImageSettings
 } from "./infra/sandbox-image.js"
+import { makeSandboxSettings } from "./infra/sandbox-settings.js"
 import { makeSandboxRecordStore } from "./infra/sandbox-store.js"
 import { pushOneWaySync } from "./infra/sandbox-sync.js"
-import { configuredProviderIds, makeSandboxes } from "./infra/sandboxes.js"
+import { makeSandboxes } from "./infra/sandboxes.js"
 import type { SandboxesService } from "./routes/sandboxes.js"
 import type { CloudServerControl } from "./server-context-types.js"
-import { HttpFailure, run } from "./server-context.js"
+import { run } from "./server-context.js"
 
 const watchIntervalMs = 30 * 1000
 
@@ -56,21 +60,20 @@ export interface SandboxBootOptions {
 export const startSandboxes = (
   options: SandboxBootOptions
 ): SandboxesService & { readonly start: () => void } => {
-  const credentials = makeSandboxCredentialStore(options.db, () =>
-    loadEncryptionKey(options.dataDir)
-  )
   const records = makeSandboxRecordStore(options.db)
+  const settings = makeSandboxSettings(options.db, options.serverId)
   const tartBinary = options.env["CODEVISOR_TART_PATH"] ?? "tart"
-  const images = tartImages(imageSettings(options.env))
+  const tartHere = tartAvailable(tartBinary)
+  const adapters = makeSandboxAdapters(
+    sandboxAdapters({ tartBinary, images: tartImages(imageSettings(options.env)) }),
+    (id) => id !== "tart" || tartHere
+  )
+  const connections = makeSandboxConnections(adapters, settings)
   const machines = makeSandboxes({
     records,
-    providers: {
-      get: async (id) => providerFor(id, await credentials.read(id), { tartBinary, images }),
-      configured: async () =>
-        (await configuredProviderIds(credentials.isConfigured)).filter(
-          (id) => id !== "tart" || tartAvailable(tartBinary)
-        )
-    },
+    connections,
+    profiles: { get: settings.profile },
+    serverId: options.serverId,
     account: {
       ownerDeviceId: options.cloud.deviceId,
       presences: () => options.cloud.machines() ?? [],
@@ -110,10 +113,19 @@ export const startSandboxes = (
       .then(() => machines.watch())
       .catch((cause: unknown) => console.log(`Sandbox check failed: ${String(cause)}`))
   }
+  const catalog: SandboxCatalogDeps = {
+    settings,
+    adapters,
+    connections,
+    serverId: options.serverId,
+    sandboxesUsing: async (accountId) =>
+      (await records.list()).filter((record) => record.accountId === accountId).length,
+    newId: randomUUID,
+    now: Date.now
+  }
   return {
-    machines,
-    credentials,
-    records,
+    sandboxes: machines,
+    catalog,
     start: () => {
       tick()
       setInterval(tick, watchIntervalMs).unref()
@@ -126,25 +138,14 @@ interface TartSettings {
   readonly images: TartImages
 }
 
-const providerFor = (
-  id: SandboxProviderId,
-  credentials: ProviderCredentials | undefined,
-  tart: TartSettings
-): SandboxProvider => {
-  if (credentials === undefined) {
-    throw new HttpFailure(409, `Add your ${id} credentials before creating a sandbox`)
-  }
-  if (id === "e2b") return makeE2bProvider(e2bSdkClient(credentials["apiKey"] ?? ""))
-  if (id === "modal") {
-    return makeModalProvider(
-      modalSdkClient({
-        tokenId: credentials["tokenId"] ?? "",
-        tokenSecret: credentials["tokenSecret"] ?? ""
-      })
-    )
-  }
-  return makeTartProvider(tartCliHost(tart.tartBinary), tart.images)
-}
+const sandboxAdapters = (tart: TartSettings): ReadonlyArray<SandboxAdapter> => [
+  tartAdapter(tartCliHost(tart.tartBinary), tart.images),
+  tartOrchardAdapter(tartOrchardApiClient),
+  e2bAdapter(e2bSdkClient),
+  modalAdapter(modalSdkClient),
+  vercelAdapter(vercelSdkClient),
+  daytonaAdapter(daytonaSdkClient)
+]
 
 const tartAvailable = (binary: string): boolean =>
   process.platform === "darwin" &&

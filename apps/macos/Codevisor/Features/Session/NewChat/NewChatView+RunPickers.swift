@@ -60,7 +60,7 @@ extension NewChatView {
   }
 
   var showsMachinePicker: Bool {
-    environment.machines.allMachines.count > 1 || !sandboxTargets.targets.isEmpty
+    environment.machines.allMachines.count > 1 || !sandboxProfiles.choices.isEmpty
   }
 
   func liveProject(for controller: SessionController) -> Project {
@@ -92,14 +92,16 @@ extension NewChatView {
           }
           .disabled(environment.machines.availability(for: machine.id) != .ready)
         }
-        for target in sandboxTargets.targets {
-          Autocomplete.Choice(
-            target.pickerTitle, value: MachinePickerTarget.sandbox(target.providerId), systemImage: target.systemImage
-          )
-        }
       }
       .favorites(machineFavorites)
       .labelsHidden()
+      if !sandboxProfiles.choices.isEmpty {
+        Autocomplete.Picker("Sandboxes", selection: selection) {
+          for choice in sandboxProfiles.choices {
+            sandboxChoice(choice)
+          }
+        }
+      }
       Autocomplete.Footer(id: "actions") {
         Autocomplete.Action("Manage Machines…", systemImage: "gearshape.fill") {
           SettingsRouter.shared.showMachines()
@@ -116,9 +118,20 @@ extension NewChatView {
     .accessibilityValue(chipText)
   }
 
+  private func sandboxChoice(_ choice: SandboxProfileChoice) -> Autocomplete.Choice<MachinePickerTarget> {
+    Autocomplete.Choice(choice.target.pickerTitle, value: MachinePickerTarget.sandbox(choice.id)) {
+      Image(systemName: choice.target.systemImage)
+    } label: {
+      SandboxChoiceLabel(choice: choice)
+    }
+    .disabled(!choice.isEnabled)
+    .help(choice.disabledReason ?? "Start a new sandbox from this profile")
+    .favoritable(false)
+  }
+
   private func machineSelection(_ controller: SessionController) -> Binding<MachinePickerTarget> {
     Binding(
-      get: { controller.sandboxTarget.map { .sandbox($0.providerId) } ?? .machine(controller.project.serverId) },
+      get: { controller.sandboxTarget.map { .sandbox($0.profileId) } ?? .machine(controller.project.serverId) },
       set: { selectMachineTarget($0, controller: controller) }
     )
   }
@@ -136,8 +149,11 @@ extension NewChatView {
       controller.sandboxTarget = nil
       guard let machine = environment.machines.machine(for: id) else { return }
       selectTargetMachine(machine, controller: controller)
-    case let .sandbox(providerId):
-      controller.sandboxTarget = .provider(providerId)
+    case let .sandbox(profileId):
+      guard let choice = sandboxProfiles.choices.first(where: { $0.id == profileId }), choice.isEnabled else { return }
+      let machines = environment.machines
+      controller.serverClientForMachine = { machines.client(forServerId: $0) }
+      controller.sandboxTarget = choice.target
       relocateWhenSandboxIsReady(controller)
     }
   }

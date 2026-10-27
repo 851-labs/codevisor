@@ -17,8 +17,7 @@ export const placeWorkspace = async (
   machine: Sandbox & { readonly machineId: string },
   log: (line: string) => void
 ): Promise<PlacedWorkspace> => {
-  const project = await deps.projects.get(machine.projectId)
-  if (project === undefined) throw new Error(`No project ${machine.projectId} on this machine`)
+  const project = (await deps.projects.get(machine.projectId)) ?? requestedProject(machine)
 
   log(project.repoUrl === undefined ? "Creating an empty project" : `Cloning ${project.repoUrl}`)
   const remoteProjectId = await remoteProjectFor(deps, machine.machineId, project)
@@ -53,10 +52,22 @@ export const remoteWorkspaceState = async (
 
 export const isoNow = (deps: SandboxDeps): string => new Date(deps.clock.now()).toISOString()
 
+type ProjectSource = Pick<Project, "name" | "repoUrl" | "worktreeBase" | "defaultRunLocation">
+
+const requestedProject = (machine: Sandbox): ProjectSource => {
+  if (machine.projectName === undefined) {
+    throw new Error(`No project ${machine.projectId} on this machine`)
+  }
+  return {
+    name: machine.projectName,
+    ...(machine.repoUrl === undefined ? {} : { repoUrl: machine.repoUrl })
+  }
+}
+
 const remoteProjectFor = async (
   deps: SandboxDeps,
   machineId: string,
-  project: Project
+  project: ProjectSource
 ): Promise<string> => {
   if (project.repoUrl === undefined) {
     return idOf(await deps.remoteTools.call(machineId, "codevisor.projects.create_scratch", {}))

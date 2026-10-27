@@ -8,8 +8,13 @@ extension SessionController {
     guard sandboxPrewarm?.key != wanted else { return }
 
     abandonSandboxPrewarm()
-    guard let wanted, let serverClient else { return }
-    sandboxPrewarm = SandboxPrewarm(key: wanted, harnessId: selectedHarnessId, client: serverClient)
+    guard let wanted, let client = sandboxClient(for: wanted.target) else { return }
+    sandboxPrewarm = SandboxPrewarm(key: wanted, project: project, harnessId: selectedHarnessId, client: client)
+  }
+
+  func sandboxClient(for target: SandboxTarget) -> (any CodevisorServerClienting)? {
+    guard let host = target.hostMachineId else { return serverClient }
+    return serverClientForMachine?(host)
   }
 
   public func abandonSandboxPrewarm() {
@@ -27,7 +32,7 @@ extension SessionController {
       return prewarm
     }
     abandonSandboxPrewarm()
-    return SandboxPrewarm(key: key, harnessId: selectedHarnessId, client: client)
+    return SandboxPrewarm(key: key, project: project, harnessId: selectedHarnessId, client: client)
   }
 
   private func prewarmKey(for target: SandboxTarget?) -> SandboxPrewarm.Key? {

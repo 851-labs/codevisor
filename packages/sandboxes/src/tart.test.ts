@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest"
 
 import { fakeTart, result } from "./tart-test-support.js"
-import { makeTartProvider, vmName, type TartOptions } from "./tart.js"
+import {
+  DEFAULT_TART_BASE_IMAGE,
+  makeTartProvider,
+  TART_DEFINITION,
+  tartAdapter,
+  tartOptions,
+  vmName
+} from "./tart.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const name = vmName(spec)
-const options: TartOptions = {
-  image: "ghcr.io/cirruslabs/macos-sonoma-base:latest",
-  baseImage: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
+const preparedImage = "ghcr.io/cirruslabs/macos-sonoma-base:latest"
+const options = {
+  preparedImage,
+  image: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
   cpu: 4,
-  memoryGiB: 8,
-  minFreeDiskGiB: 40
+  memoryGiB: 8
 }
 const ignoreOutput = () => undefined
 
@@ -22,7 +29,7 @@ describe("Tart provider", () => {
 
     expect(created).toEqual({ providerMachineId: name, platform: "darwin", preinstalled: false })
     expect(tart.commands).toEqual([
-      `clone ${options.image} ${name}`,
+      `clone ${preparedImage} ${name}`,
       `get ${name} --format json`,
       "list --source local --format json",
       `set ${name} --cpu 4 --memory 8192`,
@@ -39,7 +46,7 @@ describe("Tart provider", () => {
     const tart = fakeTart({ freeGiB: 39.5 })
 
     await expect(makeTartProvider(tart.host).create(spec, options)).rejects.toThrow(
-      "Only 39.5 GB of disk is free; Tart needs at least 40 GB to start a VM"
+      "Only 39.5 GB of disk is free on this Mac; a Tart VM needs 40 GB"
     )
     expect(tart.commands).toEqual([])
   })
@@ -53,10 +60,30 @@ describe("Tart provider", () => {
     })
 
     await expect(makeTartProvider(tart.host).create(spec, options)).rejects.toThrow(
-      "macOS allows only 2 macOS VMs running at once on this Mac; stop one first"
+      "The limit of 2 macOS VMs per Mac has been reached"
     )
     expect(tart.vms.map((vm) => vm.Name)).toEqual(["a", "b"])
     expect(tart.commands.slice(-2)).toEqual([`stop ${name}`, `delete ${name}`])
+  })
+
+  it("tells the picker why a profile can't start a VM right now", async () => {
+    const twoRunning = [
+      { Name: "a", State: "running", OS: "darwin" },
+      { Name: "b", State: "running", OS: "darwin" }
+    ]
+    const linux = { image: "ghcr.io/cirruslabs/ubuntu:latest", cpu: 2, memoryGiB: 4 }
+    const busy = makeTartProvider(fakeTart({ vms: twoRunning }).host)
+
+    expect(await busy.availability?.(options)).toBe(
+      "The limit of 2 macOS VMs per Mac has been reached"
+    )
+    expect(await busy.availability?.(linux)).toBeUndefined()
+    expect(await makeTartProvider(fakeTart().host).availability?.(options)).toBeUndefined()
+    expect(await makeTartProvider(fakeTart({ freeGiB: 39.5 }).host).availability?.(linux)).toBe(
+      "Only 39.5 GB of disk is free on this Mac; a Tart VM needs 40 GB"
+    )
+    expect(tartAdapter(fakeTart().host).connect({}).definition).toBe(TART_DEFINITION)
+    expect(tartOptions({}).baseImage).toBe(DEFAULT_TART_BASE_IMAGE)
   })
 
   it("lets a Linux image start beside two macOS VMs", async () => {
@@ -102,7 +129,7 @@ describe("Tart provider", () => {
     const tart = fakeTart({ failing: "clone" })
 
     await expect(makeTartProvider(tart.host).create(spec, options)).rejects.toThrow(
-      `tart clone ${options.image} ${name} failed (exit 1): clone broke`
+      `tart clone ${preparedImage} ${name} failed (exit 1): clone broke`
     )
   })
 
@@ -142,7 +169,7 @@ describe("Tart provider", () => {
     })
 
     expect(events).toEqual([
-      `tart clone ${options.image} ${name}`,
+      `tart clone ${preparedImage} ${name}`,
       `tart set ${name} --cpu 4 --memory 8192`,
       "stage boot",
       `tart run --no-graphics ${name}`,

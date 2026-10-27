@@ -10,10 +10,13 @@ export default defineConfig({
       exclude: [
         "**/dist/**",
         "**/*.test.ts",
+        "src/daytona-sdk.ts",
         "src/e2b-sdk.ts",
         "src/modal-sdk.ts",
         "src/tart-cli.ts",
-        "src/tart-test-support.ts"
+        "src/tart-orchard-api.ts",
+        "src/tart-test-support.ts",
+        "src/vercel-sdk.ts"
       ],
       provider: "v8",
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

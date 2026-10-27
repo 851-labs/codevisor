@@ -4,7 +4,7 @@ import { sandboxHarness } from "./sandbox-test-support.js"
 
 const clientWorkspaceId = "A1B2C3D4-0000-4000-8000-00000000000A"
 const request = {
-  provider: "e2b" as const,
+  profileId: "profile-1",
   projectId: "project-1",
   name: "Spike box",
   workspaceId: clientWorkspaceId
@@ -68,5 +68,25 @@ describe("a workspace the client opens itself", () => {
       "Destroying sandbox Spike box (id-1): nobody opened its workspace"
     )
     expect(await harness.machines.list()).toEqual([])
+  })
+})
+
+describe("a project this machine doesn't have", () => {
+  it("clones the repository the client named, or starts an empty project without one", async () => {
+    const harness = await sandboxHarness()
+    const elsewhere = { ...request, projectId: "on-the-laptop", projectName: "hello-world" }
+
+    await harness.machines.create({
+      ...elsewhere,
+      repoUrl: "https://github.com/octocat/Hello-World.git"
+    })
+    await harness.machines.create({ ...elsewhere, workspaceId: undefined })
+    await harness.machines.settled()
+
+    expect(harness.toolCalls.map(({ tool, args }) => [tool, args["url"], args["name"]])).toEqual([
+      ["codevisor.projects.clone", "https://github.com/octocat/Hello-World.git", "hello-world"],
+      ["codevisor.projects.create_scratch", undefined, undefined],
+      ["codevisor.workspaces.upsert", undefined, "Spike box"]
+    ])
   })
 })

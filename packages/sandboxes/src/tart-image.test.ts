@@ -2,17 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import type { ProvisionPlan, ProvisionProgress } from "./provider.js"
 import { fakeTart, result } from "./tart-test-support.js"
-import {
-  IMAGE_PREFIX,
-  makeTartProvider,
-  vmName,
-  type TartImageRecipe,
-  type TartOptions
-} from "./tart.js"
+import { IMAGE_PREFIX, makeTartProvider, vmName, type TartImageRecipe } from "./tart.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const baseImage = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
-const options: TartOptions = { baseImage, cpu: 4, memoryGiB: 8, minFreeDiskGiB: 40 }
+const options = { image: baseImage, cpu: 4, memoryGiB: 8 }
 const recipe: TartImageRecipe = {
   appPath: "/Builds/Debug/Codevisor (dev).app",
   fingerprint: "app-1+server-1",
@@ -44,7 +38,7 @@ const images = (value: TartImageRecipe = recipe) => ({ recipe: () => Promise.res
 const imageNameOf = async (tart: ReturnType<typeof fakeTart>): Promise<string> => {
   const provider = makeTartProvider(tart.host, images())
   const prepared = await provider.prepare?.(options, withImage, recorder().progress)
-  return prepared?.image ?? ""
+  return String(prepared?.["preparedImage"] ?? "")
 }
 
 describe("Tart macOS image", () => {
@@ -74,7 +68,7 @@ describe("Tart macOS image", () => {
     const { events, progress } = recorder()
 
     const prepared = await provider.prepare?.(options, withImage, progress)
-    const image = prepared?.image ?? ""
+    const image = prepared?.["preparedImage"] ?? ""
     const created = await provider.create(spec, prepared ?? options)
 
     const building = `${image}-building`
@@ -109,7 +103,7 @@ describe("Tart macOS image", () => {
       provider.prepare?.(options, withImage, second.progress)
     ])
 
-    expect(next?.image).toBe(first?.image)
+    expect(next?.["preparedImage"]).toBe(first?.["preparedImage"])
     expect(
       tart.commands.filter((command) => command.startsWith(`clone ${baseImage}`))
     ).toHaveLength(1)
@@ -156,21 +150,28 @@ describe("Tart macOS image", () => {
     expect(tart.vms).toEqual([])
   })
 
-  it("keeps cloning the base image when there is no app to install, or when the project names an image", async () => {
+  it("keeps cloning the profile's image when there is no app to install, it isn't macOS, or it's already prepared", async () => {
     const tart = fakeTart({})
     const bare = makeTartProvider(tart.host, { recipe: () => Promise.resolve(undefined) })
-    const pinned = { ...options, image: "my-image" }
+    const pinned = { ...options, preparedImage: "my-image" }
     const prepared = makeTartProvider(tart.host, images())
     const preparedName = `${IMAGE_PREFIX}0123456789abcdef`
 
     expect(await bare.plan?.(options)).toEqual({ stages: ["create", "boot"], preinstalled: false })
-    expect((await bare.prepare?.(options, withImage, recorder().progress))?.image).toBe(baseImage)
+    expect((await bare.prepare?.(options, withImage, recorder().progress))?.["preparedImage"]).toBe(
+      baseImage
+    )
     expect(await prepared.plan?.(pinned)).toEqual({
       stages: ["create", "boot"],
       preinstalled: false
     })
     expect(await prepared.prepare?.(pinned, withImage, recorder().progress)).toEqual(pinned)
-    expect((await prepared.plan?.({ ...options, image: preparedName }))?.preinstalled).toBe(true)
+    expect((await prepared.plan?.({ ...options, preparedImage: preparedName }))?.preinstalled).toBe(
+      true
+    )
+    expect(
+      await prepared.plan?.({ ...options, image: "ghcr.io/cirruslabs/ubuntu:latest" })
+    ).toEqual({ stages: ["create", "boot"], preinstalled: false })
     expect(await makeTartProvider(tart.host).plan?.(options)).toEqual({
       stages: ["create", "boot"],
       preinstalled: false

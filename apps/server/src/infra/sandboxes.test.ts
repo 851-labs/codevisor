@@ -1,10 +1,16 @@
+import { machineField } from "@codevisor/sandboxes"
 import { describe, expect, it } from "vitest"
 
 import { HttpFailure } from "../server-context.js"
-import { sandboxHarness, JOINED_DEVICE, JOINED_SERVER, OWNER } from "./sandbox-test-support.js"
-import { configuredProviderIds } from "./sandboxes.js"
+import {
+  FAKE_PROFILE,
+  JOINED_DEVICE,
+  JOINED_SERVER,
+  OWNER,
+  sandboxHarness
+} from "./sandbox-test-support.js"
 
-const request = { provider: "e2b" as const, projectId: "project-1", name: "Spike box" }
+const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
 
 const ready = async () => {
   const harness = await sandboxHarness()
@@ -24,9 +30,12 @@ describe("creating a sandbox", () => {
     expect(await harness.machines.list()).toEqual([
       {
         id: "id-1",
-        provider: "e2b",
         name: "Spike box",
         projectId: "project-1",
+        provider: "e2b",
+        profileId: "profile-1",
+        profileName: "Ubuntu Sandbox",
+        accountId: "account-1",
         state: "ready",
         createdAt: "2026-10-23T00:00:00.000Z",
         providerMachineId: "fake-1",
@@ -70,38 +79,55 @@ describe("creating a sandbox", () => {
     expect((await harness.machines.list())[0]?.remoteProjectId).toBe("remote-scratch")
   })
 
-  it("names the machine after the provider when no name is given", async () => {
+  it("names the sandbox after its profile when no name is given", async () => {
     const harness = await sandboxHarness()
 
-    const started = await harness.machines.create({ provider: "e2b", projectId: "project-1" })
+    const started = await harness.machines.create({
+      profileId: "profile-1",
+      projectId: "project-1"
+    })
     await harness.machines.settled()
 
-    expect(started.name).toBe("Fake id-1")
+    expect(started.name).toBe("Ubuntu Sandbox id-1")
   })
 
-  it("applies per-project provider options under request overrides", async () => {
+  it("starts with the profile's options as they are when the sandbox starts", async () => {
     const harness = await sandboxHarness()
-    await harness.records.setProjectOptions("project-1", { e2b: { size: "large" } })
 
     await harness.machines.create(request)
-    await harness.machines.create({ ...request, options: { size: "huge" } })
+    await harness.settings.putProfile({ ...FAKE_PROFILE, values: { size: "large" } })
+    await harness.machines.create(request)
     await harness.machines.settled()
 
     expect([...harness.provider.machines.values()].map((machine) => machine.options)).toEqual([
-      { size: "large" },
-      { size: "huge" }
+      { size: "small" },
+      { size: "large" }
     ])
   })
 
-  it("rejects invalid options as a bad request before creating anything", async () => {
-    const harness = await sandboxHarness()
+  it("rejects a missing profile, invalid profile options and a profile for another Mac", async () => {
+    const harness = await sandboxHarness({
+      extraProfileFields: [machineField("machineId", "Mac", "tart")]
+    })
+    await harness.settings.putProfile({ ...FAKE_PROFILE, id: "bad", values: { size: 7 } })
+    await harness.settings.putProfile({
+      ...FAKE_PROFILE,
+      id: "elsewhere",
+      name: "Studio VM",
+      values: { machineId: "server-studio" }
+    })
 
-    const failure = await harness.machines
-      .create({ ...request, options: { size: 7 } })
-      .catch((cause: unknown) => cause)
+    const failures = await Promise.all(
+      ["missing", "bad", "elsewhere"].map((profileId) =>
+        harness.machines.create({ ...request, profileId }).catch((cause: unknown) => cause)
+      )
+    )
 
-    expect(failure).toBeInstanceOf(HttpFailure)
-    expect(failure).toMatchObject({ status: 400 })
+    expect(failures).toEqual([
+      new HttpFailure(404, "No sandbox profile missing"),
+      new HttpFailure(400, "Size must be text"),
+      new HttpFailure(409, "Studio VM runs on another Mac")
+    ])
     expect(harness.provider.machines.size).toBe(0)
   })
 
@@ -277,7 +303,7 @@ describe("sweeping orphans", () => {
     expect([...harness.provider.machines.values()].map((machine) => machine.spec.name)).toEqual([
       "other"
     ])
-    expect(harness.logs).toEqual(["Destroying orphaned Fake machine fake-1"])
+    expect(harness.logs).toEqual(["Destroying orphaned Fake sandbox fake-1"])
   })
 
   it("fails and tears down records a restart interrupted, and leaves ready ones alone", async () => {
@@ -291,6 +317,7 @@ describe("sweeping orphans", () => {
     await harness.records.put({
       id: "half",
       provider: "e2b",
+      accountId: "account-1",
       name: "half",
       projectId: "project-1",
       state: "bootstrapping",
@@ -388,76 +415,6 @@ describe("edges of the pipeline", () => {
     await harness.machines.watch()
 
     expect((await harness.machines.list())[0]?.state).toBe("ready")
-  })
-
-  it("lists only providers that have credentials", async () => {
-    const configured = await configuredProviderIds((id) => Promise.resolve(id !== "modal"))
-
-    expect(configured).toEqual(["e2b", "tart"])
-  })
-})
-
-describe("teardown robustness", () => {
-  it("runs one teardown when two watch ticks overlap", async () => {
-    const harness = await ready()
-    harness.workspaces.splice(0)
-
-    await Promise.all([harness.machines.watch(), harness.machines.watch()])
-
-    expect(harness.removed).toEqual([JOINED_DEVICE])
-    expect(await harness.machines.list()).toEqual([])
-  })
-
-  it("only watches machines that finished setting up", async () => {
-    const harness = await sandboxHarness({ bootstrapExit: 1 })
-    await harness.machines.create(request)
-    await harness.machines.settled()
-
-    await harness.machines.watch()
-
-    expect(harness.toolCalls).toEqual([])
-    expect((await harness.machines.list())[0]?.state).toBe("failed")
-  })
-
-  it("still records the failure when tearing down a failed setup fails too", async () => {
-    const harness = await sandboxHarness({ project: { id: "elsewhere" } })
-    harness.controls.removeFails = true
-
-    await harness.machines.create(request)
-    await harness.machines.settled()
-
-    expect((await harness.machines.list())[0]).toMatchObject({
-      state: "failed",
-      error: "No project project-1 on this machine"
-    })
-  })
-
-  it("marks an interrupted record failed even when its teardown can't reach the cloud", async () => {
-    const harness = await sandboxHarness()
-    harness.controls.removeFails = true
-    await harness.records.put({
-      id: "half",
-      provider: "e2b",
-      name: "half",
-      projectId: "project-1",
-      state: "syncing",
-      createdAt: "2026-10-23T00:00:00.000Z",
-      deviceId: "device-half"
-    })
-
-    await harness.machines.sweep()
-
-    expect((await harness.machines.list())[0]?.state).toBe("failed")
-  })
-
-  it("keeps a failure message for errors that aren't Error objects", async () => {
-    const harness = await sandboxHarness()
-    harness.controls.answer = () => Promise.reject("clone exploded")
-
-    await harness.machines.create(request)
-    await harness.machines.settled()
-
-    expect((await harness.machines.list())[0]?.error).toBe("clone exploded")
   })
 })
 

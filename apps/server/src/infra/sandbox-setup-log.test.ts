@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 import { makeSandboxSetupProgress } from "./sandbox-setup-log.js"
 import { sandboxHarness } from "./sandbox-test-support.js"
 
-const request = { provider: "e2b" as const, projectId: "project-1", name: "Spike box" }
+const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
 
 const settled = () => new Promise((resolve) => setImmediate(resolve))
 
@@ -138,7 +138,7 @@ describe("sandbox setup progress", () => {
     expect(machine?.steps?.map(({ stage }) => stage)).toEqual(machine?.plan)
     expect(logs.every(({ machineId }) => machineId === "client-id")).toBe(true)
     expect(logs.map(({ stage, line }) => `${stage}: ${line}`)).toEqual([
-      "create: Creating a Fake machine",
+      "create: Creating a fake sandbox",
       "boot: Booting fake-1",
       "install: installed",
       "signIn: joined",

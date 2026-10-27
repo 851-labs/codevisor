@@ -7,7 +7,7 @@ import {
   startServerScript
 } from "./bootstrap.js"
 import { makeFakeSandboxProvider } from "./fake-provider.js"
-import { decodeProviderOptions, defaultProviderOptions } from "./options.js"
+import { readAccountValues, readProfileOptions } from "./options.js"
 import { SandboxProviderError, isSandboxProviderId } from "./provider.js"
 
 const invite = "cvi1.aHR0cDovL2Nsb3Vk.secret-token"
@@ -150,21 +150,19 @@ describe("startServerScript", () => {
   })
 })
 
-describe("provider options", () => {
-  it("fills defaults and keeps overrides", () => {
-    const provider = makeFakeSandboxProvider()
+describe("profile options", () => {
+  it("fills defaults and keeps what the profile sets", () => {
+    const { definition } = makeFakeSandboxProvider()
 
-    expect(defaultProviderOptions(provider)).toEqual({ size: "small" })
-    expect(decodeProviderOptions(provider, { size: "large" })).toEqual({ size: "large" })
-    expect(decodeProviderOptions(provider, null)).toEqual({ size: "small" })
+    expect(readProfileOptions(definition, {})).toEqual({ size: "small" })
+    expect(readProfileOptions(definition, { size: "large" })).toEqual({ size: "large" })
+    expect(readAccountValues(definition, { apiKey: " key " })).toEqual({ apiKey: "key" })
   })
 
-  it("rejects overrides of the wrong type with the provider's name", () => {
-    const provider = makeFakeSandboxProvider()
+  it("rejects values of the wrong type with the field's label", () => {
+    const { definition } = makeFakeSandboxProvider()
 
-    expect(() => decodeProviderOptions(provider, { size: 3 })).toThrow(
-      /^Fake options are invalid: .*Expected string, got 3/
-    )
+    expect(() => readProfileOptions(definition, { size: 3 })).toThrow("Size must be text")
   })
 
   it("recognizes provider ids", () => {
@@ -219,6 +217,6 @@ describe("fake provider", () => {
       { size: "small" }
     )
 
-    expect([provider.id, created.platform]).toEqual(["e2b", "linux"])
+    expect([provider.definition.id, created.platform]).toEqual(["e2b", "linux"])
   })
 })

@@ -1,27 +1,12 @@
-import { Schema } from "effect"
+import { readFields, type SandboxFieldValues } from "./fields.js"
+import type { SandboxProviderDefinition } from "./provider.js"
 
-import { SandboxProviderError, type SandboxProvider } from "./provider.js"
+export const readProfileOptions = (
+  definition: SandboxProviderDefinition,
+  raw: Readonly<Record<string, unknown>>
+): SandboxFieldValues => readFields(definition.profileFields, raw)
 
-export type OptionsSource<Options> = Pick<
-  SandboxProvider<Options>,
-  "id" | "displayName" | "options"
->
-
-export const decodeProviderOptions = <Options>(
-  provider: OptionsSource<Options>,
-  overrides: unknown
-): Options => {
-  try {
-    return Schema.decodeUnknownSync(provider.options)(overrides ?? {})
-  } catch (cause) {
-    throw new SandboxProviderError(
-      provider.id,
-      `${provider.displayName} options are invalid: ${firstLine(cause)}`
-    )
-  }
-}
-
-export const defaultProviderOptions = <Options>(provider: OptionsSource<Options>): Options =>
-  decodeProviderOptions(provider, {})
-
-const firstLine = (cause: unknown): string => String(cause).replace(/\n[\s\S]*$/, "")
+export const readAccountValues = (
+  definition: SandboxProviderDefinition,
+  raw: Readonly<Record<string, unknown>>
+): SandboxFieldValues => readFields(definition.accountFields, raw)

@@ -1,6 +1,13 @@
-import type { Schema } from "effect"
+import type { SandboxField, SandboxFieldValues } from "./fields.js"
 
-export const SANDBOX_PROVIDER_IDS = ["e2b", "modal", "tart"] as const
+export const SANDBOX_PROVIDER_IDS = [
+  "tart",
+  "tart-orchard",
+  "e2b",
+  "modal",
+  "vercel",
+  "daytona"
+] as const
 export type SandboxProviderId = (typeof SANDBOX_PROVIDER_IDS)[number]
 
 export type MachinePlatform = "linux" | "darwin"
@@ -70,15 +77,36 @@ export interface SnapshotRef {
   readonly snapshotId: string
 }
 
-export interface SandboxProvider<Options = unknown> {
+export interface SandboxProviderDefinition {
   readonly id: SandboxProviderId
   readonly displayName: string
-  readonly options: Schema.Codec<Options, unknown>
+  readonly sandboxNoun: string
+  readonly platform: MachinePlatform
+  readonly tested: boolean
+  readonly accountFields: ReadonlyArray<SandboxField>
+  readonly profileFields: ReadonlyArray<SandboxField>
+}
+
+export interface SandboxAccountIdentity {
+  readonly identity?: string
+}
+
+export interface SandboxProvider {
+  readonly definition: SandboxProviderDefinition
   readonly provisionStages: ReadonlyArray<ProvisionStage>
   readonly streamsOutput: boolean
-  plan?(options: Options): Promise<ProvisionPlan>
-  prepare?(options: Options, plan: ProvisionPlan, progress: ProvisionProgress): Promise<Options>
-  create(spec: CreateSpec, options: Options, progress?: ProvisionProgress): Promise<CreatedMachine>
+  availability?(options: SandboxFieldValues): Promise<string | undefined>
+  plan?(options: SandboxFieldValues): Promise<ProvisionPlan>
+  prepare?(
+    options: SandboxFieldValues,
+    plan: ProvisionPlan,
+    progress: ProvisionProgress
+  ): Promise<SandboxFieldValues>
+  create(
+    spec: CreateSpec,
+    options: SandboxFieldValues,
+    progress?: ProvisionProgress
+  ): Promise<CreatedMachine>
   readonly exec: (providerMachineId: string, request: ExecRequest) => Promise<ExecResult>
   readonly status: (providerMachineId: string) => Promise<ProviderMachineStatus>
   readonly destroy: (providerMachineId: string) => Promise<void>
@@ -86,6 +114,12 @@ export interface SandboxProvider<Options = unknown> {
   readonly resume?: (providerMachineId: string) => Promise<void>
   readonly gui?: (providerMachineId: string) => Promise<GuiEndpoint>
   readonly snapshot?: (providerMachineId: string) => Promise<SnapshotRef>
+}
+
+export interface SandboxAdapter {
+  readonly definition: SandboxProviderDefinition
+  readonly connect: (account: SandboxFieldValues) => SandboxProvider
+  readonly verify?: (account: SandboxFieldValues) => Promise<SandboxAccountIdentity>
 }
 
 export class SandboxProviderError extends Error {

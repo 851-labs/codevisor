@@ -39,7 +39,7 @@ struct SandboxSetupStepsTests {
 
   @Test("Phases and status lines name the machine, the project and the agent")
   func titles() {
-    let steps = SandboxSetupSteps(target: .provider("tart"), projectName: "hello-world", agentName: "OpenCode")
+    let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world", agentName: "OpenCode")
     let phases = SandboxSetupStage.allCases.map { steps.phase($0) }
 
     #expect(phases.map(\.id).first == "sandbox-image")
@@ -65,7 +65,7 @@ struct SandboxSetupStepsTests {
 
   @Test("The machine's own record of the clone folds into the Clone step instead of trailing the list")
   func cloneCoversProjectSetup() {
-    let steps = SandboxSetupSteps(target: .provider("tart"), projectName: "hello-world")
+    let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world")
     let live = [steps.phase(.clone), steps.phase(.connect)]
     let project = SessionSetupPhase(
       id: "project.setup:p1", activeTitle: "Setting up project", completedTitle: "Set up project",
@@ -82,11 +82,24 @@ struct SandboxSetupStepsTests {
         == ["worktree", "project.setup:p1"])
   }
 
-  @Test("Each provider has a picker title, and unknown ones still read sensibly")
-  func pickerTitles() {
-    let titles = ["tart", "e2b", "modal", "acme"].map { SandboxTarget.provider($0).pickerTitle }
+  @Test("A profile's picker row is New plus its name, and a Tart profile runs on its Mac")
+  func profileTargets() {
+    let tart = ServerSandboxProviderInfo(
+      id: "tart", displayName: "Tart", sandboxNoun: "Tart VM", platform: "darwin", tested: true,
+      accountFields: [], profileFields: [ServerSandboxField(key: "machineId", label: "Mac", type: .machine)])
+    let profile = ServerSandboxProfile(
+      id: "p1", name: "macOS 27 Tart VM", provider: "tart", values: ["machineId": .string("server-studio")])
 
-    #expect(titles == ["New Tart VM", "New E2B Sandbox", "New Modal Sandbox", "New acme machine"])
+    let target = SandboxTarget(profile: profile, provider: tart)
+    let unknown = SandboxTarget(
+      profile: ServerSandboxProfile(id: "p2", name: "Ubuntu", provider: "acme"), provider: nil)
+
+    #expect(target.pickerTitle == "New macOS 27 Tart VM")
+    #expect(target.machineNoun == "Tart VM")
+    #expect(target.hostMachineId == "server-studio")
+    #expect(target.systemImage == "desktopcomputer")
+    #expect([unknown.machineNoun, unknown.systemImage] == ["sandbox", "shippingbox"])
+    #expect(unknown.hostMachineId == nil)
   }
 
   @Test("A relocated workspace keeps its id, tabs and order but moves machine and project")
@@ -108,4 +121,9 @@ struct SandboxSetupStepsTests {
     #expect(moved.centerTabs == original.centerTabs)
     #expect(moved.sidebarPosition == original.sidebarPosition)
   }
+}
+
+extension SandboxTarget {
+  static let tartVM = SandboxTarget(
+    profileId: "profile-tart", profileName: "macOS VM", providerId: "tart", machineNoun: "Tart VM")
 }

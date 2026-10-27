@@ -92,8 +92,8 @@ const bootstrapFailure = (
   inviteCode: string
 ): SandboxProviderError =>
   new SandboxProviderError(
-    provider.id,
-    `Installing Codevisor on the ${provider.displayName} machine failed (exit ${result.exitCode}):\n${outputTail(result, inviteCode)}`
+    provider.definition.id,
+    `Installing Codevisor on the ${provider.definition.displayName} machine failed (exit ${result.exitCode}):\n${outputTail(result, inviteCode)}`
   )
 
 const outputTail = (result: ExecResult, inviteCode: string): string =>

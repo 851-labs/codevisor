@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { run } from "../server-context.js"
 import { sandboxHarness } from "./sandbox-test-support.js"
 
-const request = { provider: "e2b" as const, projectId: "project-1", name: "Spike box" }
+const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
 const stamp = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "owner" })
 
 const isHarnessPush = (curl: ExecRequest): boolean =>

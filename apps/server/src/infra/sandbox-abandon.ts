@@ -1,6 +1,7 @@
 import type { Sandbox } from "@codevisor/api"
 
 import { teardownMachine } from "./sandbox-account.js"
+import { connectionOf } from "./sandbox-profile-record.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
 export interface Abandonments {
@@ -27,7 +28,7 @@ export const makeAbandonments = (): Abandonments => {
 export const forgetAbandoned = async (deps: SandboxDeps, machine: Sandbox): Promise<void> => {
   deps.log(`Destroying sandbox ${machine.name} (${machine.id}): nobody used it`)
   if (stillStanding(machine)) {
-    await teardownMachine(deps, await deps.providers.get(machine.provider), machine)
+    await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
   }
   await deps.records.remove(machine.id)
 }

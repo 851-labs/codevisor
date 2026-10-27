@@ -78,13 +78,21 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     { confirm: true }
   ),
   apiTool(
+    "machines.list_sandbox_profiles",
+    "List the user's sandbox profiles (id, name, provider such as tart, e2b or modal, and options " +
+      "like the image). Pass a profile's id to machines.create_sandbox().",
+    "GET",
+    "/v1/sandbox-profiles"
+  ),
+  apiTool(
     "machines.create_sandbox",
-    "Start a throwaway cloud machine (provider e2b, modal or tart) for one project, owned by a new " +
-      "workspace on it: Codevisor installs itself there, joins the account, copies this machine's " +
-      "harnesses, skills, MCPs and sign-ins over one way, clones the project and creates the " +
-      "workspace. Archiving that workspace destroys the machine. Returns at once with state " +
-      "`creating`; follow it with machines.list_sandboxes() (a few minutes; `ready` has " +
-      "`machineId` and `workspaceId`). It costs the user money while it runs.",
+    "Start a throwaway sandbox from one of the user's sandbox profiles (id from " +
+      "machines.list_sandbox_profiles()) for one project, owned by a new workspace on it: " +
+      "Codevisor installs itself there, joins the account, copies this machine's harnesses, " +
+      "skills, MCPs and sign-ins over one way, clones the project and creates the workspace. " +
+      "Archiving that workspace destroys the sandbox. Returns at once with state `creating`; " +
+      "follow it with machines.list_sandboxes() (a few minutes; `ready` has `machineId` and " +
+      "`workspaceId`). It costs the user money while it runs.",
     "POST",
     "/v1/sandboxes",
     { body: CreateSandboxRequest }

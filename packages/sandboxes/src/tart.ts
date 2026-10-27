@@ -1,8 +1,16 @@
-import { Effect, Schema } from "effect"
-
+import {
+  machineField,
+  numberField,
+  numberValue,
+  optionalString,
+  textField,
+  type SandboxFieldValues
+} from "./fields.js"
 import type {
   CreateSpec,
+  SandboxAdapter,
   SandboxProvider,
+  SandboxProviderDefinition,
   SandboxTags,
   ListedMachine,
   MachinePlatform,
@@ -21,6 +29,8 @@ import {
   assertDiskRoom,
   assertMacOSSlot,
   boot,
+  diskShortfall,
+  macOSSlotsFull,
   silentProgress,
   sizeVm,
   tartCommands,
@@ -34,16 +44,54 @@ export { IMAGE_PREFIX, type TartImageRecipe, type TartImages } from "./tart-imag
 
 export const DEFAULT_TART_BASE_IMAGE = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
 
-export const TartOptions = Schema.Struct({
-  image: Schema.optional(Schema.String),
-  baseImage: Schema.String.pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed(DEFAULT_TART_BASE_IMAGE))
-  ),
-  cpu: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(4))),
-  memoryGiB: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(8))),
-  minFreeDiskGiB: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(40)))
+export const TART_CAPABILITY = "tart"
+
+export const TART_DEFINITION: SandboxProviderDefinition = {
+  id: "tart",
+  displayName: "Tart",
+  sandboxNoun: "Tart VM",
+  platform: "darwin",
+  tested: true,
+  accountFields: [],
+  profileFields: [
+    machineField("machineId", "Mac", TART_CAPABILITY, {
+      required: true,
+      help: "The Apple silicon Mac that runs this profile's VMs."
+    }),
+    textField("image", "Image", {
+      default: DEFAULT_TART_BASE_IMAGE,
+      help: "A Tart image. macOS images get Codevisor and its permissions built in on first use."
+    }),
+    numberField("cpu", "CPUs", { default: 4, min: 1, max: 32 }),
+    numberField("memoryGiB", "Memory (GiB)", { default: 8, min: 2, max: 128 })
+  ]
+}
+
+export interface TartOptions {
+  readonly image?: string
+  readonly baseImage: string
+  readonly cpu: number
+  readonly memoryGiB: number
+  readonly minFreeDiskGiB: number
+}
+
+export const tartOptions = (values: SandboxFieldValues): TartOptions => {
+  const image = optionalString(values, PREPARED_IMAGE_KEY)
+  return {
+    ...(image === undefined ? {} : { image }),
+    baseImage: optionalString(values, "image") ?? DEFAULT_TART_BASE_IMAGE,
+    cpu: numberValue(values, "cpu", 4),
+    memoryGiB: numberValue(values, "memoryGiB", 8),
+    minFreeDiskGiB: numberValue(values, "minFreeDiskGiB", 40)
+  }
+}
+
+export const tartAdapter = (host: TartHost, images: TartImages = noImages): SandboxAdapter => ({
+  definition: TART_DEFINITION,
+  connect: () => makeTartProvider(host, images)
 })
-export type TartOptions = typeof TartOptions.Type
+
+const PREPARED_IMAGE_KEY = "preparedImage"
 
 const vmPrefix = "codevisor_"
 const defaultExecTimeoutMs = 10 * 60 * 1000
@@ -54,29 +102,40 @@ const noImages: TartImages = { recipe: () => Promise.resolve(undefined) }
 export const makeTartProvider = (
   host: TartHost,
   images: TartImages = noImages
-): SandboxProvider<TartOptions> => {
+): SandboxProvider => {
   const tart = tartCommands(host)
   const imageFor = async (options: TartOptions): Promise<PreparedImage | undefined> => {
-    if (options.image !== undefined) return undefined
+    if (options.image !== undefined || !/macos/i.test(options.baseImage)) return undefined
     const recipe = await images.recipe()
     return recipe === undefined ? undefined : preparedImage(options.baseImage, recipe)
   }
   return {
-    id: "tart",
-    displayName: "Tart",
-    options: TartOptions,
+    definition: TART_DEFINITION,
     provisionStages: bootStages,
     streamsOutput: true,
-    plan: async (options) => planFor(tart, options, await imageFor(options)),
-    prepare: async (options, plan, progress) => {
+    availability: async (values) => {
+      const options = tartOptions(values)
+      if (looksLikeMacOS(options)) {
+        const full = await macOSSlotsFull(tart)
+        if (full !== undefined) return full
+      }
+      return diskShortfall(host, options)
+    },
+    plan: async (values) => {
+      const options = tartOptions(values)
+      return planFor(tart, options, await imageFor(options))
+    },
+    prepare: async (values, plan, progress) => {
+      const options = tartOptions(values)
       const image = await imageFor(options)
-      if (image === undefined) return { ...options, image: options.image ?? options.baseImage }
+      if (image === undefined) return withPreparedImage(values, options.image ?? options.baseImage)
 
       if (plan.stages.includes("image")) progress.stage("image")
       await ensureImage(host, tart, image, options, progress)
-      return { ...options, image: image.name }
+      return withPreparedImage(values, image.name)
     },
-    create: async (spec, options, progress = silentProgress) => {
+    create: async (spec, values, progress = silentProgress) => {
+      const options = tartOptions(values)
       await assertDiskRoom(host, options)
       const image = options.image ?? options.baseImage
       const name = vmName(spec)
@@ -105,6 +164,14 @@ export const makeTartProvider = (
     gui: async (name) => ({ vncUrl: `vnc://${await tart.ip(name)}:5900` })
   }
 }
+
+const withPreparedImage = (values: SandboxFieldValues, image: string): SandboxFieldValues => ({
+  ...values,
+  [PREPARED_IMAGE_KEY]: image
+})
+
+const looksLikeMacOS = (options: TartOptions): boolean =>
+  /macos/i.test(options.baseImage) || isPreparedImage(options.image ?? "")
 
 const planFor = async (
   tart: TartCommands,

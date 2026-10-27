@@ -169,14 +169,19 @@ import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
 import {
+  ClaimSandboxWorkspaceRequest,
   CreateSandboxRequest,
   DestroySandboxResponse,
   Sandbox,
+  SandboxAccount,
+  SandboxAccountsResponse,
+  SandboxAvailabilityResponse,
   SandboxesResponse,
-  SandboxProjectOptions,
-  SandboxProjectOptionsResponse,
+  SandboxProfile,
+  SandboxProfilesResponse,
   SandboxProvidersResponse,
-  SaveSandboxCredentialsRequest
+  SaveSandboxAccountRequest,
+  SaveSandboxProfileRequest
 } from "./sandboxes.js"
 import { PutSyncRequest, SyncDocument } from "./sync.js"
 
@@ -253,9 +258,12 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/sessions/:id/subscriptions": CreateSessionSubscriptionRequest,
   "POST /v1/jobs/:jobId/wait": WaitForExecutionJobRequest,
   "POST /v1/machines/add": AddMachineRequest,
-  "PUT /v1/sandbox-providers/:id/credentials": SaveSandboxCredentialsRequest,
+  "POST /v1/sandbox-accounts": SaveSandboxAccountRequest,
+  "PUT /v1/sandbox-accounts/:id": SaveSandboxAccountRequest,
+  "POST /v1/sandbox-profiles": SaveSandboxProfileRequest,
+  "PUT /v1/sandbox-profiles/:id": SaveSandboxProfileRequest,
   "POST /v1/sandboxes": CreateSandboxRequest,
-  "PUT /v1/projects/:id/sandbox-options": SandboxProjectOptions,
+  "POST /v1/sandboxes/:id/workspace": ClaimSandboxWorkspaceRequest,
   "POST /v1/gateway/invoke": GatewayInvokeRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
   "PATCH /v1/sessions/:id": UpdateSessionRequest,
@@ -420,11 +428,17 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/machines/add": AddMachineResponse,
   "DELETE /v1/machines/:machineId": MachinesResponse,
   "GET /v1/sandbox-providers": SandboxProvidersResponse,
+  "GET /v1/sandbox-accounts": SandboxAccountsResponse,
+  "POST /v1/sandbox-accounts": SandboxAccount,
+  "PUT /v1/sandbox-accounts/:id": SandboxAccount,
+  "GET /v1/sandbox-profiles": SandboxProfilesResponse,
+  "POST /v1/sandbox-profiles": SandboxProfile,
+  "PUT /v1/sandbox-profiles/:id": SandboxProfile,
+  "GET /v1/sandbox-profiles/availability": SandboxAvailabilityResponse,
   "GET /v1/sandboxes": SandboxesResponse,
   "POST /v1/sandboxes": Sandbox,
   "DELETE /v1/sandboxes/:id": DestroySandboxResponse,
-  "GET /v1/projects/:id/sandbox-options": SandboxProjectOptionsResponse,
-  "PUT /v1/projects/:id/sandbox-options": SandboxProjectOptionsResponse,
+  "POST /v1/sandboxes/:id/workspace": Sandbox,
   "POST /v1/gateway/invoke": GatewayInvokeResponse,
   "GET /v1/sessions/:id": SessionDetail,
   "GET /v1/sessions/:id/usage-limits": HarnessUsageLimits,

@@ -176,7 +176,16 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func createDirectory(path: String) async throws -> String
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func projectSetupSource(projectId: UUID) async throws -> ServerProjectSetupSource
-  func sandboxProviders() async throws -> [ServerSandboxProvider]
+  func sandboxProviders() async throws -> ServerSandboxProviders
+  func sandboxAccounts() async throws -> [ServerSandboxAccount]
+  func createSandboxAccount(_ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount
+  func updateSandboxAccount(id: String, _ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount
+  func deleteSandboxAccount(id: String) async throws
+  func sandboxProfiles() async throws -> [ServerSandboxProfile]
+  func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile
+  func updateSandboxProfile(id: String, _ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile
+  func deleteSandboxProfile(id: String) async throws
+  func sandboxAvailability() async throws -> [ServerSandboxAvailability]
   func sandboxes() async throws -> [ServerSandbox]
   func destroySandbox(id: String) async throws
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox

@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest"
 
-import { SANDBOX_PROVIDER_CATALOG } from "./catalog.js"
-import { makeE2bProvider, type E2bClient, type E2bSandboxInfo } from "./e2b.js"
-import { makeModalProvider, type ModalClient, type ModalCreateRequest } from "./modal.js"
-import { defaultProviderOptions } from "./options.js"
+import { SANDBOX_PROVIDER_DEFINITIONS, sandboxDefinition } from "./catalog.js"
+import {
+  E2B_DEFINITION,
+  e2bAdapter,
+  makeE2bProvider,
+  type E2bClient,
+  type E2bSandboxInfo
+} from "./e2b.js"
+import { fieldDefaults } from "./fields.js"
+import {
+  makeModalProvider,
+  modalAdapter,
+  MODAL_DEFINITION,
+  type ModalClient,
+  type ModalCreateRequest
+} from "./modal.js"
+import { readProfileOptions } from "./options.js"
 import type { ExecResult } from "./provider.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
@@ -60,7 +73,7 @@ describe("E2B provider", () => {
   })
 
   it("defaults to the base template and the Hobby plan's one hour cap", () => {
-    expect(defaultProviderOptions(makeE2bProvider(fakeE2b().client))).toEqual({
+    expect(readProfileOptions(E2B_DEFINITION, {})).toEqual({
       template: "base",
       timeoutMinutes: 60
     })
@@ -146,7 +159,7 @@ describe("Modal provider", () => {
   it("creates a tagged sandbox and computes its expiry from the lifetime", async () => {
     const { client, calls } = fakeModal({})
     const provider = makeModalProvider(client, () => start)
-    const options = defaultProviderOptions(provider)
+    const options = readProfileOptions(MODAL_DEFINITION, {})
 
     const created = await provider.create(spec, options)
 
@@ -199,30 +212,80 @@ describe("Modal provider", () => {
   })
 })
 
+describe("provider adapters", () => {
+  it("connect with the account's tokens and check them with a harmless list", async () => {
+    const tokens: unknown[] = []
+    const e2b = e2bAdapter((apiKey) => {
+      tokens.push(apiKey)
+      return fakeE2b().client
+    })
+    const modal = modalAdapter((pair) => {
+      tokens.push(pair)
+      return fakeModal({}).client
+    })
+
+    expect(await e2b.verify?.({ apiKey: "e2b_1" })).toEqual({})
+    expect(await modal.verify?.({ tokenId: "ak-1", tokenSecret: "as-1" })).toEqual({})
+    expect(e2b.connect({ apiKey: "e2b_2" }).definition).toBe(E2B_DEFINITION)
+    expect(modal.connect({ tokenId: "ak-2", tokenSecret: "as-2" }).definition).toBe(
+      MODAL_DEFINITION
+    )
+    expect(tokens).toEqual([
+      "e2b_1",
+      { tokenId: "ak-1", tokenSecret: "as-1" },
+      "e2b_2",
+      { tokenId: "ak-2", tokenSecret: "as-2" }
+    ])
+  })
+})
+
 describe("provider catalog", () => {
-  it("lists every provider with the defaults a project can override", () => {
-    const defaults = Object.fromEntries(
-      Object.values(SANDBOX_PROVIDER_CATALOG).map((entry) => [
-        entry.displayName,
-        defaultProviderOptions(entry)
+  it("lists each provider's profile defaults and keeps its tokens secret", () => {
+    const summary = Object.fromEntries(
+      SANDBOX_PROVIDER_DEFINITIONS.map((definition) => [
+        definition.displayName,
+        {
+          defaults: fieldDefaults(definition.profileFields),
+          secrets: definition.accountFields.filter((field) => field.type === "secret").length
+        }
       ])
     )
 
-    expect(defaults).toEqual({
-      E2B: { template: "base", timeoutMinutes: 60 },
-      Modal: {
-        image: "debian:bookworm-slim",
-        setupCommands: [expect.stringContaining("apt-get install")],
-        cpu: 2,
-        memoryMiB: 4096,
-        timeoutMinutes: 1440
-      },
+    expect(summary).toEqual({
       Tart: {
-        baseImage: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
-        cpu: 4,
-        memoryGiB: 8,
-        minFreeDiskGiB: 40
+        defaults: { image: "ghcr.io/cirruslabs/macos-tahoe-base:latest", cpu: 4, memoryGiB: 8 },
+        secrets: 0
+      },
+      "Tart Orchard": {
+        defaults: {
+          image: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
+          cpu: 4,
+          memoryGiB: 8,
+          username: "admin",
+          password: "admin"
+        },
+        secrets: 1
+      },
+      E2B: { defaults: { template: "base", timeoutMinutes: 60 }, secrets: 1 },
+      Modal: {
+        defaults: { image: "debian:bookworm-slim", cpu: 2, memoryGiB: 4, timeoutMinutes: 1440 },
+        secrets: 1
+      },
+      "Vercel Sandbox": {
+        defaults: { image: "vercel/sandbox/universal", vcpus: "2", timeoutMinutes: 45 },
+        secrets: 1
+      },
+      Daytona: {
+        defaults: {
+          image: "debian:bookworm-slim",
+          cpu: 2,
+          memoryGiB: 4,
+          diskGiB: 10,
+          timeoutMinutes: 0
+        },
+        secrets: 1
       }
     })
+    expect(sandboxDefinition("e2b")).toBe(E2B_DEFINITION)
   })
 })

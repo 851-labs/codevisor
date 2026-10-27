@@ -10,14 +10,14 @@ final class SandboxPrewarm {
 
   let key: Key
   let machineId: String
-  private let client: any CodevisorServerClienting
+  let client: any CodevisorServerClienting
   private var creation: Task<Result<Void, any Error>, Never>?
   private var follow: Task<Void, Never>?
   private var buffered: [SandboxSetupLogLine] = []
   private weak var tracker: SandboxSetupTracker?
   private static let bufferLimit = 2000
 
-  init(key: Key, harnessId: String?, client: any CodevisorServerClienting) {
+  init(key: Key, project: Project, harnessId: String?, client: any CodevisorServerClienting) {
     self.key = key
     self.client = client
     machineId = UUID().uuidString.lowercased()
@@ -26,8 +26,8 @@ final class SandboxPrewarm {
       for await line in log { self?.receive(line) }
     }
     let request = ServerSandboxRequest(
-      id: machineId, provider: key.target.providerId, projectId: key.projectId,
-      workspaceId: nil, harnessId: harnessId)
+      id: machineId, profileId: key.target.profileId, projectId: key.projectId,
+      projectName: project.name, repoUrl: project.repoUrl, workspaceId: nil, harnessId: harnessId)
     creation = Task { await Self.create(request, client: client) }
   }
 

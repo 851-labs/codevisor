@@ -24,28 +24,35 @@ extension SessionController {
   }
 
   private func startSandbox(_ target: SandboxTarget, showsSetupPhases: Bool) async -> String? {
-    guard let serverClient else {
-      return "Sandboxes need the Codevisor server. Start it and try again."
+    guard let creator = sandboxClient(for: target) else {
+      return unreachableHostMessage(for: target)
     }
-    guard let prewarm = takeSandboxPrewarm(for: target, client: serverClient) else {
+    guard let prewarm = takeSandboxPrewarm(for: target, client: creator) else {
       return "Choose a project to run on a \(target.machineNoun)."
     }
     let tracker = SandboxSetupTracker(
       controller: self, steps: sandboxSteps(for: target), showsPhases: showsSetupPhases)
     status = .connecting(tracker.steps.status(.create))
     defer { prewarm.finish() }
+    let client = prewarm.client
     do {
       try await prewarm.created()
-      tracker.apply(try await sandbox(prewarm.machineId, client: serverClient))
+      tracker.apply(try await sandbox(prewarm.machineId, client: client))
       prewarm.attach(tracker)
-      let ready = try await awaitSandbox(prewarm.machineId, client: serverClient, tracker: tracker)
-      try await adoptSandbox(
-        try await claimWorkspace(ready, client: serverClient), target: target, tracker: tracker)
+      let ready = try await awaitSandbox(prewarm.machineId, client: client, tracker: tracker)
+      try await adoptSandbox(try await claimWorkspace(ready, client: client), target: target, tracker: tracker)
       return nil
     } catch {
-      try? await serverClient.destroySandbox(id: prewarm.machineId)
+      try? await client.destroySandbox(id: prewarm.machineId)
       return serverErrorMessage(error)
     }
+  }
+
+  private func unreachableHostMessage(for target: SandboxTarget) -> String {
+    guard target.hostMachineId != nil else {
+      return "Sandboxes need the Codevisor server. Start it and try again."
+    }
+    return "The Mac that runs \(target.profileName) isn't connected. Open Codevisor there and try again."
   }
 
   private func claimWorkspace(

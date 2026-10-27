@@ -12,10 +12,10 @@ struct SandboxPrewarmTests {
     let client = PrewarmFakeServerClient()
     let controller = makeController(client: client)
 
-    controller.sandboxTarget = .provider("tart")
+    controller.sandboxTarget = .tartVM
     let request = await client.nextCreate()
 
-    #expect(request.provider == "tart")
+    #expect(request.profileId == "profile-tart")
     #expect(request.projectId == controller.project.id)
     #expect(request.workspaceId == nil)
     #expect(controller.sandboxPrewarm?.machineId == request.id)
@@ -25,7 +25,7 @@ struct SandboxPrewarmTests {
   func abandoningDestroys() async {
     let client = PrewarmFakeServerClient()
     let controller = makeController(client: client)
-    controller.sandboxTarget = .provider("tart")
+    controller.sandboxTarget = .tartVM
     let created = await client.nextCreate()
 
     controller.sandboxTarget = nil
@@ -38,10 +38,10 @@ struct SandboxPrewarmTests {
   func sendAdoptsPrewarm() async throws {
     let client = PrewarmFakeServerClient()
     let controller = makeController(client: client)
-    controller.sandboxTarget = .provider("tart")
+    controller.sandboxTarget = .tartVM
     let created = await client.nextCreate()
 
-    let adopted = try #require(controller.takeSandboxPrewarm(for: .provider("tart"), client: client))
+    let adopted = try #require(controller.takeSandboxPrewarm(for: .tartVM, client: client))
 
     #expect(adopted.machineId == created.id)
     #expect(controller.sandboxPrewarm == nil)
@@ -52,12 +52,12 @@ struct SandboxPrewarmTests {
   func firstSendKeepsPrewarm() async throws {
     let client = PrewarmFakeServerClient()
     let controller = makeController(client: client)
-    controller.sandboxTarget = .provider("tart")
+    controller.sandboxTarget = .tartVM
     let created = await client.nextCreate()
 
     controller.hasSentFirst = true
     controller.project = controller.project
-    let adopted = try #require(controller.takeSandboxPrewarm(for: .provider("tart"), client: client))
+    let adopted = try #require(controller.takeSandboxPrewarm(for: .tartVM, client: client))
 
     #expect(adopted.machineId == created.id)
     #expect(client.createCount == 1)
@@ -68,10 +68,10 @@ struct SandboxPrewarmTests {
     let client = PrewarmFakeServerClient()
     let controller = makeController(client: client, scratch: true)
 
-    controller.sandboxTarget = .provider("tart")
+    controller.sandboxTarget = .tartVM
 
     #expect(controller.sandboxPrewarm == nil)
-    #expect(controller.takeSandboxPrewarm(for: .provider("tart"), client: client) == nil)
+    #expect(controller.takeSandboxPrewarm(for: .tartVM, client: client) == nil)
   }
 
   private func makeController(client: PrewarmFakeServerClient, scratch: Bool = false) -> SessionController {
@@ -115,7 +115,7 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
     lock.withLock { creates += 1 }
     createdContinuation.yield(request)
-    return ServerSandbox(id: request.id, provider: request.provider, name: "Tart", state: "creating")
+    return ServerSandbox(id: request.id, provider: "tart", name: "Tart", state: "creating")
   }
 
   func destroySandbox(id: String) async throws {

@@ -1,191 +1,281 @@
-import { randomBytes } from "node:crypto"
-
+import { machineField } from "@codevisor/sandboxes"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { makeSandboxCredentialStore } from "../infra/sandbox-credentials.js"
-import { sandboxHarness } from "../infra/sandbox-test-support.js"
-import { run } from "../server-context.js"
+import { FAKE_PROFILE, sandboxHarness } from "../infra/sandbox-test-support.js"
 import { jsonRequest, startWithApp } from "../test-support.js"
 
-const secretValue = "sk-e2b-very-secret-value-0123456789"
+const secretValue = "e2b_very-secret-value-0123456789"
 
-const startSandboxServer = async () => {
-  const harness = await sandboxHarness()
-  const key = randomBytes(32)
-  const credentials = makeSandboxCredentialStore(harness.services.db, () => key)
+type HarnessOptions = Parameters<typeof sandboxHarness>[0]
+
+const startSandboxServer = async (options: HarnessOptions = {}) => {
+  const harness = await sandboxHarness(options)
   const server = await startWithApp({
     ...harness.services,
-    sandboxes: { machines: harness.machines, credentials, records: harness.records }
+    sandboxes: { sandboxes: harness.machines, catalog: harness.catalog }
   })
-  return { harness, credentials, server }
+  return { harness, server }
 }
 
-const put = (body: unknown): RequestInit => ({ method: "PUT", body: JSON.stringify(body) })
+const send = (method: string, body: unknown): RequestInit => ({
+  method,
+  body: JSON.stringify(body)
+})
+
+const account = (values: Record<string, unknown>, label = "Team") => ({
+  provider: "e2b",
+  label,
+  values
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe("sandbox provider credentials", () => {
-  it("are write-only: saved keys never come back from any endpoint, log or stored value", async () => {
+describe("sandbox provider accounts", () => {
+  it("checks credentials before saving, and never hands the secret back or logs it", async () => {
     const logged: string[] = []
     for (const level of ["log", "error", "warn", "info"] as const) {
       vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
         logged.push(args.map(String).join(" "))
       })
     }
-    const { harness, credentials, server } = await startSandboxServer()
+    const checked: unknown[] = []
+    const { server } = await startSandboxServer({
+      verify: (values) => {
+        checked.push(values)
+        return Promise.resolve({ identity: "dylan@851.sh" })
+      }
+    })
 
     const saved = await jsonRequest(
       server,
-      "/v1/sandbox-providers/e2b/credentials",
-      put({ values: { apiKey: ` ${secretValue} ` } })
+      "/v1/sandbox-accounts",
+      send("POST", account({ apiKey: ` ${secretValue} ` }, " Work "))
     )
-    const providers = await jsonRequest(server, "/v1/sandbox-providers")
-    const machines = await jsonRequest(server, "/v1/sandboxes")
-    const stored = await run(
-      harness.services.db.getMachineSetting("ephemeral-provider-credentials:e2b")
-    )
+    const listed = await jsonRequest(server, "/v1/sandbox-accounts")
 
-    expect(saved.status).toBe(204)
-    expect(providers.body).toMatchObject({
-      providers: [
-        { id: "e2b", displayName: "E2B", configured: true, credentialKeys: ["apiKey"] },
-        { id: "modal", configured: false, credentialKeys: ["tokenId", "tokenSecret"] },
-        { id: "tart", configured: false, credentialKeys: [] }
+    expect(saved).toMatchObject({
+      status: 201,
+      body: {
+        provider: "e2b",
+        label: "Work",
+        identity: "dylan@851.sh",
+        values: {},
+        secretsSet: ["apiKey"]
+      }
+    })
+    expect(listed.body).toMatchObject({
+      accounts: [
+        { id: "account-1", label: "Team" },
+        { label: "Work", secretsSet: ["apiKey"] }
       ]
     })
-    for (const seen of [providers.body, machines.body, stored, logged]) {
+    expect(checked).toEqual([{ apiKey: secretValue }])
+    for (const seen of [saved.body, listed.body, logged]) {
       expect(JSON.stringify(seen)).not.toContain(secretValue)
     }
-    expect(await credentials.read("e2b")).toEqual({ apiKey: secretValue })
-    expect(await credentials.read("tart")).toEqual({})
-    expect([
-      await credentials.isConfigured("e2b"),
-      await credentials.isConfigured("modal")
-    ]).toEqual([true, false])
   })
 
-  it("rejects incomplete keys, keys for Tart and unknown providers, and can be cleared", async () => {
-    const { server } = await startSandboxServer()
-    const path = "/v1/sandbox-providers/modal/credentials"
+  it("refuses credentials the provider rejects, and keeps a saved secret an edit leaves blank", async () => {
+    const { harness, server } = await startSandboxServer({
+      verify: (values) =>
+        values["apiKey"] === "wrong"
+          ? Promise.reject(new Error("invalid key"))
+          : Promise.resolve({})
+    })
 
-    const incomplete = await jsonRequest(
+    const rejected = await jsonRequest(
       server,
-      path,
-      put({ values: { tokenId: "id", tokenSecret: " " } })
+      "/v1/sandbox-accounts",
+      send("POST", account({ apiKey: "wrong" }))
     )
-    const absent = await jsonRequest(
+    const missing = await jsonRequest(server, "/v1/sandbox-accounts", send("POST", account({})))
+    const renamed = await jsonRequest(
       server,
-      "/v1/sandbox-providers/e2b/credentials",
-      put({ values: {} })
+      "/v1/sandbox-accounts/account-1",
+      send("PUT", account({ apiKey: "" }, "Renamed"))
     )
-    const tart = await jsonRequest(
+
+    expect(rejected).toMatchObject({
+      status: 400,
+      body: { error: "Fake didn't accept these credentials: invalid key" }
+    })
+    expect(missing.status).toBe(201)
+    expect(renamed).toMatchObject({
+      status: 200,
+      body: { label: "Renamed", secretsSet: ["apiKey"] }
+    })
+    expect((await harness.settings.account("account-1"))?.values).toEqual({ apiKey: "e2b_secret" })
+  })
+
+  it("won't remove an account that a profile or a running sandbox still uses", async () => {
+    const { harness, server } = await startSandboxServer()
+    const remove = () => jsonRequest(server, "/v1/sandbox-accounts/account-1", { method: "DELETE" })
+
+    const usedByProfile = await remove()
+    await jsonRequest(server, "/v1/sandbox-profiles/profile-1", { method: "DELETE" })
+    await harness.records.put({
+      id: "running",
+      name: "running",
+      projectId: "project-1",
+      provider: "e2b",
+      accountId: "account-1",
+      state: "ready",
+      createdAt: "2026-10-23T00:00:00.000Z"
+    })
+    const usedBySandbox = await remove()
+    await harness.records.remove("running")
+    const removed = await remove()
+
+    expect(usedByProfile).toMatchObject({
+      status: 409,
+      body: { error: "Ubuntu Sandbox uses this account; change or delete that profile first" }
+    })
+    expect(usedBySandbox).toMatchObject({
+      status: 409,
+      body: { error: "A sandbox is still running on this account" }
+    })
+    expect(removed.status).toBe(204)
+    expect(await harness.settings.accounts()).toEqual([])
+  })
+})
+
+describe("sandbox profiles", () => {
+  it("creates, edits and deletes profiles checked against their provider's fields", async () => {
+    const { server } = await startSandboxServer()
+    const profile = { name: " Big Sandbox ", provider: "e2b", accountId: "account-1", values: {} }
+
+    const created = await jsonRequest(server, "/v1/sandbox-profiles", send("POST", profile))
+    const edited = await jsonRequest(
       server,
-      "/v1/sandbox-providers/tart/credentials",
-      put({ values: {} })
+      "/v1/sandbox-profiles/id-1",
+      send("PUT", { ...profile, values: { size: "large" } })
     )
-    const unknown = await jsonRequest(
-      server,
-      "/v1/sandbox-providers/aws/credentials",
-      put({ values: {} })
+    const failures = await Promise.all(
+      [
+        { ...profile, name: " " },
+        { ...profile, accountId: "nope" },
+        { ...profile, values: { size: 3 } }
+      ].map(
+        async (body) => (await jsonRequest(server, "/v1/sandbox-profiles", send("POST", body))).body
+      )
     )
-    await jsonRequest(server, path, put({ values: { tokenId: "id", tokenSecret: "s" } }))
-    const cleared = await jsonRequest(server, path, { method: "DELETE" })
+    const deleted = await jsonRequest(server, "/v1/sandbox-profiles/profile-1", {
+      method: "DELETE"
+    })
+    const listed = await jsonRequest(server, "/v1/sandbox-profiles")
+
+    expect(created).toMatchObject({
+      status: 201,
+      body: { id: "id-1", name: "Big Sandbox", values: { size: "small" } }
+    })
+    expect(edited).toMatchObject({ status: 200, body: { id: "id-1", values: { size: "large" } } })
+    expect(failures).toEqual([
+      { error: "Name is required" },
+      { error: "Choose a Fake account" },
+      { error: "Size must be text" }
+    ])
+    expect(deleted.status).toBe(204)
+    expect(listed.body).toMatchObject({ profiles: [{ id: "id-1", name: "Big Sandbox" }] })
+  })
+
+  it("says why this machine can't start a profile right now", async () => {
+    const { harness, server } = await startSandboxServer({
+      extraProfileFields: [machineField("machineId", "Mac", "tart")],
+      availability: () => Promise.resolve("The limit of 2 macOS VMs per Mac has been reached")
+    })
+    await harness.settings.putProfile({ ...FAKE_PROFILE, id: "orphan", accountId: "gone" })
+    await harness.settings.putProfile({
+      ...FAKE_PROFILE,
+      id: "studio",
+      values: { machineId: "server-studio" }
+    })
+    await harness.settings.putProfile({ ...FAKE_PROFILE, id: "newer", provider: "vercel" })
+
+    const availability = await jsonRequest(server, "/v1/sandbox-profiles/availability")
+
+    expect(availability.body).toEqual({
+      profiles: [
+        { profileId: "newer", disabledReason: "Update Codevisor to use vercel sandboxes" },
+        { profileId: "orphan", disabledReason: "Its Fake account was removed" },
+        {
+          profileId: "profile-1",
+          disabledReason: "The limit of 2 macOS VMs per Mac has been reached"
+        },
+        { profileId: "studio", disabledReason: "Runs on another Mac" }
+      ]
+    })
+  })
+
+  it("lists each provider's fields and what this machine can host", async () => {
+    const { server } = await startSandboxServer({
+      extraProfileFields: [machineField("machineId", "Mac", "tart")]
+    })
+
     const providers = await jsonRequest(server, "/v1/sandbox-providers")
 
-    expect(incomplete).toMatchObject({ status: 400, body: { error: "Missing tokenSecret" } })
-    expect(absent).toMatchObject({ status: 400, body: { error: "Missing apiKey" } })
-    expect(tart.status).toBe(400)
-    expect(unknown.status).toBe(404)
-    expect(cleared.status).toBe(204)
     expect(providers.body).toMatchObject({
-      providers: [{}, { id: "modal", configured: false }, {}]
+      providers: [
+        {
+          id: "e2b",
+          displayName: "Fake",
+          accountFields: [{ key: "apiKey", type: "secret" }],
+          profileFields: [
+            { key: "size", default: "small" },
+            { key: "machineId", type: "machine" }
+          ]
+        }
+      ],
+      capabilities: ["tart"]
     })
   })
 })
 
 describe("sandbox routes", () => {
-  it("creates, lists and destroys sandboxes", async () => {
+  it("starts sandboxes from a profile, lists and destroys them", async () => {
     const { harness, server } = await startSandboxServer()
 
-    const created = await jsonRequest(server, "/v1/sandboxes", {
-      method: "POST",
-      body: JSON.stringify({ provider: "e2b", projectId: "project-1", name: "box" })
-    })
+    const created = await jsonRequest(
+      server,
+      "/v1/sandboxes",
+      send("POST", { profileId: "profile-1", projectId: "project-1", name: "box" })
+    )
     await harness.machines.settled()
     const listed = await jsonRequest(server, "/v1/sandboxes")
     const destroyed = await jsonRequest(server, "/v1/sandboxes/id-1", { method: "DELETE" })
 
-    expect(created).toMatchObject({
-      status: 202,
-      body: { id: "id-1", state: "creating" }
-    })
-    expect(listed.body).toMatchObject([{ id: "id-1", state: "ready" }])
+    expect(created).toMatchObject({ status: 202, body: { id: "id-1", state: "creating" } })
+    expect(listed.body).toMatchObject([{ id: "id-1", state: "ready", profileId: "profile-1" }])
     expect(destroyed).toEqual({ status: 200, body: { destroyed: "id-1" } })
     expect(harness.provider.machines.size).toBe(0)
   })
 
-  it("hands a machine started before the first send to the chat's workspace", async () => {
+  it("hands a sandbox started before the first send to the chat's workspace", async () => {
     const { harness, server } = await startSandboxServer()
-    await jsonRequest(server, "/v1/sandboxes", {
-      method: "POST",
-      body: JSON.stringify({ provider: "e2b", projectId: "project-1", defersWorkspace: true })
-    })
+    await jsonRequest(
+      server,
+      "/v1/sandboxes",
+      send("POST", { profileId: "profile-1", projectId: "project-1", defersWorkspace: true })
+    )
     await harness.machines.settled()
 
-    const claimed = await jsonRequest(server, "/v1/sandboxes/id-1/workspace", {
-      method: "POST",
-      body: JSON.stringify({ workspaceId: "workspace-1" })
-    })
+    const claimed = await jsonRequest(
+      server,
+      "/v1/sandboxes/id-1/workspace",
+      send("POST", { workspaceId: "workspace-1" })
+    )
 
     expect(claimed).toMatchObject({ status: 200, body: { id: "id-1", workspaceId: "workspace-1" } })
-  })
-
-  it("stores per-project provider options after checking them against each provider's schema", async () => {
-    const { server } = await startSandboxServer()
-    const path = "/v1/projects/project-1/sandbox-options"
-
-    const empty = await jsonRequest(server, path)
-    const saved = await jsonRequest(server, path, put({ e2b: { template: "codevisor-4gb" } }))
-    const invalid = await jsonRequest(server, path, put({ modal: { cpu: "lots" } }))
-    const read = await jsonRequest(server, path)
-
-    expect(empty.body).toEqual({ projectId: "project-1", options: {} })
-    expect(saved.status).toBe(200)
-    expect(invalid.status).toBe(400)
-    expect(read.body).toEqual({
-      projectId: "project-1",
-      options: { e2b: { template: "codevisor-4gb" } }
-    })
-  })
-
-  it("reports the defaults each provider fills in", async () => {
-    const { server } = await startSandboxServer()
-
-    const providers = await jsonRequest(server, "/v1/sandbox-providers")
-
-    expect(providers.body).toMatchObject({
-      providers: [
-        { defaults: { template: "base", timeoutMinutes: 60 } },
-        {
-          defaults: { image: "debian:bookworm-slim", cpu: 2, memoryMiB: 4096, timeoutMinutes: 1440 }
-        },
-        {
-          defaults: {
-            baseImage: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
-            cpu: 4,
-            memoryGiB: 8
-          }
-        }
-      ]
-    })
   })
 
   it("leaves other methods on sandbox paths to the rest of the router", async () => {
     const { server } = await startSandboxServer()
 
     expect((await jsonRequest(server, "/v1/sandboxes/id-1", { method: "PATCH" })).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/sandbox-accounts/a", { method: "PATCH" })).status).toBe(
+      404
+    )
   })
 
   it("answers 501 when the server has no sandbox support", async () => {
@@ -193,6 +283,6 @@ describe("sandbox routes", () => {
     const bare = await startWithApp(harness.services)
 
     expect((await jsonRequest(bare, "/v1/sandboxes")).status).toBe(501)
-    expect((await jsonRequest(bare, "/v1/projects/p/sandbox-options")).status).toBe(501)
+    expect((await jsonRequest(bare, "/v1/sandbox-profiles")).status).toBe(501)
   })
 })

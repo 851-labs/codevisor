@@ -100,24 +100,32 @@ export const boot = async (
 }
 
 export const assertDiskRoom = async (host: TartHost, sizing: TartSizing): Promise<void> => {
-  const freeGiB = (await host.freeDiskBytes()) / bytesPerGiB
-  if (freeGiB >= sizing.minFreeDiskGiB) return
-
-  throw new SandboxProviderError(
-    "tart",
-    `Only ${freeGiB.toFixed(1)} GB of disk is free; Tart needs at least ${sizing.minFreeDiskGiB} GB to start a VM`
-  )
+  const shortfall = await diskShortfall(host, sizing)
+  if (shortfall !== undefined) throw new SandboxProviderError("tart", shortfall)
 }
 
 export const assertMacOSSlot = async (tart: TartCommands): Promise<void> => {
-  const running = (await tart.vms()).filter((vm) => vm.State === "running")
-  const macOS = await Promise.all(running.map((vm) => tart.platform(vm.Name)))
-  if (macOS.filter((platform) => platform === "darwin").length < MAX_RUNNING_MACOS_VMS) return
+  const full = await macOSSlotsFull(tart)
+  if (full !== undefined) throw new SandboxProviderError("tart", full)
+}
 
-  throw new SandboxProviderError(
-    "tart",
-    `macOS allows only ${MAX_RUNNING_MACOS_VMS} macOS VMs running at once on this Mac; stop one first`
-  )
+export const diskShortfall = async (
+  host: TartHost,
+  sizing: TartSizing
+): Promise<string | undefined> => {
+  const freeGiB = (await host.freeDiskBytes()) / bytesPerGiB
+  if (freeGiB >= sizing.minFreeDiskGiB) return undefined
+
+  return `Only ${freeGiB.toFixed(1)} GB of disk is free on this Mac; a Tart VM needs ${sizing.minFreeDiskGiB} GB`
+}
+
+export const macOSSlotsFull = async (tart: TartCommands): Promise<string | undefined> => {
+  const running = (await tart.vms()).filter((vm) => vm.State === "running")
+  const platforms = await Promise.all(running.map((vm) => tart.platform(vm.Name)))
+  if (platforms.filter((platform) => platform === "darwin").length < MAX_RUNNING_MACOS_VMS) {
+    return undefined
+  }
+  return `The limit of ${MAX_RUNNING_MACOS_VMS} macOS VMs per Mac has been reached`
 }
 
 const waitForGuestAgent = async (host: TartHost, name: string): Promise<void> => {

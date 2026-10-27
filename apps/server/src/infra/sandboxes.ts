@@ -1,10 +1,16 @@
-import type { CloudMachinePresence, CreateSandboxRequest, Sandbox, Project } from "@codevisor/api"
+import type {
+  CloudMachinePresence,
+  CreateSandboxRequest,
+  Sandbox,
+  SandboxProfile,
+  Project
+} from "@codevisor/api"
 import {
-  decodeProviderOptions,
-  SANDBOX_PROVIDER_IDS,
+  readProfileOptions,
   startServerScript,
   type ProviderMachineState,
   type BootstrapRequest,
+  type SandboxFieldValues,
   type SandboxProvider,
   type SandboxProviderId,
   type ProvisionPlan
@@ -13,6 +19,9 @@ import {
 import { HttpFailure } from "../server-context.js"
 import { forgetAbandoned, makeAbandonments, type Abandonments } from "./sandbox-abandon.js"
 import { joinAccount, requireOwner, teardownMachine } from "./sandbox-account.js"
+import { runsElsewhere } from "./sandbox-catalog.js"
+import type { SandboxConnection, SandboxConnections } from "./sandbox-connections.js"
+import { connectionOf, profileOrMissing, profileRecordFields } from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
 import {
   makeSandboxSetupProgress,
@@ -25,10 +34,9 @@ import { isoNow, placeWorkspace, remoteWorkspaceState } from "./sandbox-workspac
 
 export interface SandboxDeps {
   readonly records: SandboxRecordStore
-  readonly providers: {
-    readonly get: (id: SandboxProviderId) => Promise<SandboxProvider>
-    readonly configured: () => Promise<ReadonlyArray<SandboxProviderId>>
-  }
+  readonly connections: SandboxConnections
+  readonly profiles: { readonly get: (id: string) => Promise<SandboxProfile | undefined> }
+  readonly serverId: string
   readonly account: {
     readonly ownerDeviceId: () => string | undefined
     readonly presences: () => ReadonlyArray<CloudMachinePresence>
@@ -58,7 +66,6 @@ export interface Sandboxes {
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
   readonly settled: () => Promise<void>
-  readonly configuredProviders: () => Promise<ReadonlyArray<SandboxProviderId>>
 }
 
 const unopenedWorkspaceGraceMs = 60 * 60 * 1000
@@ -101,11 +108,14 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     publish?: SandboxSetupPublisher
   ): Promise<Sandbox> => {
     requireOwner(deps)
-    const provider = await deps.providers.get(request.provider)
-    const overrides = await mergedOptions(deps, request)
-    const options = asBadRequest(() => decodeProviderOptions(provider, overrides))
+    const profile = await profileOrMissing(deps, request.profileId)
+    const provider = await deps.connections.connect(connectionOf(profile))
+    if (runsElsewhere(provider.definition, profile.values, deps.serverId)) {
+      throw new HttpFailure(409, `${profile.name} runs on another Mac`)
+    }
+    const options = asBadRequest(() => readProfileOptions(provider.definition, profile.values))
     const plan = await planFor(provider, options)
-    const machine = newRecord(deps, request, provider, plan)
+    const machine = newRecord(deps, request, profile, plan)
     if ((await deps.records.get(machine.id)) !== undefined) {
       throw new HttpFailure(409, `A sandbox ${machine.id} already exists`)
     }
@@ -137,13 +147,12 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
       if (owner === undefined) return
 
       await failInterrupted(deps, busy)
-      for (const providerId of await deps.providers.configured()) {
-        await sweepProvider(deps, owner, providerId).catch((cause: unknown) =>
-          deps.log(`Sandbox sweep of ${providerId} failed: ${messageOf(cause)}`)
+      for (const connection of await deps.connections.all()) {
+        await sweepConnection(deps, owner, connection).catch((cause: unknown) =>
+          deps.log(`Sandbox sweep of ${connection.provider} failed: ${messageOf(cause)}`)
         )
       }
     },
-    configuredProviders: deps.providers.configured,
     settled: async () => {
       while (pipelines.size > 0) await Promise.all(pipelines)
     }
@@ -151,7 +160,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
 }
 
 interface PlannedProvision {
-  readonly options: unknown
+  readonly options: SandboxFieldValues
   readonly plan: ProvisionPlan
   readonly abandonments: Abandonments
   readonly harnessId?: string
@@ -207,7 +216,7 @@ const provision = async (
   const options = await prepared(provider, planned, setup)
   checkpoint()
   setup.stage("create")
-  setup.log(`Creating a ${provider.displayName} machine`)
+  setup.log(`Creating a ${provider.definition.sandboxNoun}`)
   const { preinstalled = false, ...created } = await provider.create(
     specFor(deps, record.current()),
     options,
@@ -275,14 +284,17 @@ const abandonWhileSettingUp = (abandonments: Abandonments, machine: Sandbox): vo
 const harnessOf = (request: CreateSandboxRequest): { readonly harnessId?: string } =>
   request.harnessId === undefined ? {} : { harnessId: request.harnessId }
 
-const planFor = async (provider: SandboxProvider, options: unknown): Promise<ProvisionPlan> =>
+const planFor = async (
+  provider: SandboxProvider,
+  options: SandboxFieldValues
+): Promise<ProvisionPlan> =>
   (await provider.plan?.(options)) ?? { stages: provider.provisionStages, preinstalled: false }
 
 const prepared = async (
   provider: SandboxProvider,
   planned: PlannedProvision,
   setup: SandboxSetupProgress
-): Promise<unknown> => {
+): Promise<SandboxFieldValues> => {
   if (provider.prepare === undefined) return planned.options
   return provider.prepare(planned.options, planned.plan, setup)
 }
@@ -319,7 +331,7 @@ const isPlaced = (machine: Sandbox): machine is PlacedMachine =>
   machine.machineId !== undefined
 
 const watchOne = async (deps: SandboxDeps, machine: PlacedMachine): Promise<void> => {
-  const provider = await deps.providers.get(machine.provider)
+  const provider = await deps.connections.connect(connectionOf(machine))
   const { state } = await provider.status(machine.providerMachineId)
   if (state === "stopped" && provider.resume !== undefined) {
     await resumeMachine(deps, provider, machine)
@@ -373,14 +385,14 @@ const missingWorkspaceReason = (deps: SandboxDeps, machine: PlacedMachine): stri
 
 const teardownRecord = async (deps: SandboxDeps, machine: Sandbox): Promise<void> => {
   await deps.records.put({ ...machine, state: "destroying" })
-  await teardownMachine(deps, await deps.providers.get(machine.provider), machine)
+  await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
   await deps.records.remove(machine.id)
 }
 
 const failInterrupted = async (deps: SandboxDeps, busy: ReadonlySet<string>): Promise<void> => {
   for (const machine of await deps.records.list()) {
     if (!inProgress.has(machine.state) || busy.has(machine.id)) continue
-    const provider = await deps.providers.get(machine.provider)
+    const provider = await deps.connections.connect(connectionOf(machine))
     await teardownMachine(deps, provider, machine).catch(() => undefined)
     await deps.records.put({
       ...machine,
@@ -390,42 +402,37 @@ const failInterrupted = async (deps: SandboxDeps, busy: ReadonlySet<string>): Pr
   }
 }
 
-const sweepProvider = async (
+const sweepConnection = async (
   deps: SandboxDeps,
   owner: string,
-  providerId: SandboxProviderId
+  connection: SandboxConnection
 ): Promise<void> => {
-  const provider = await deps.providers.get(providerId)
+  const provider = await deps.connections.connect(connection)
   const live = new Set((await deps.records.list()).filter(isLive).map((machine) => machine.id))
   for (const orphan of await provider.list(owner)) {
     if (live.has(orphan.tags.machine)) continue
-    deps.log(`Destroying orphaned ${provider.displayName} machine ${orphan.providerMachineId}`)
+    deps.log(
+      `Destroying orphaned ${provider.definition.displayName} sandbox ${orphan.providerMachineId}`
+    )
     await provider.destroy(orphan.providerMachineId)
   }
 }
 
 const isLive = (machine: Sandbox): boolean => machine.state !== "failed"
 
-const mergedOptions = async (
-  deps: SandboxDeps,
-  request: CreateSandboxRequest
-): Promise<Record<string, unknown>> => ({
-  ...(await deps.records.projectOptions(request.projectId))[request.provider],
-  ...request.options
-})
-
 const newRecord = (
   deps: SandboxDeps,
   request: CreateSandboxRequest,
-  provider: SandboxProvider,
+  profile: SandboxProfile,
   plan: ProvisionPlan
 ): Sandbox => {
   const id = request.id?.toLowerCase() ?? deps.newId()
   return {
     id,
-    provider: request.provider,
-    name: request.name?.trim() || `${provider.displayName} ${id.slice(0, 8)}`,
+    name: request.name?.trim() || `${profile.name} ${id.slice(0, 8)}`,
     projectId: request.projectId,
+    ...projectSourceOf(request),
+    ...profileRecordFields(profile),
     state: "creating",
     createdAt: isoNow(deps),
     plan: [
@@ -441,6 +448,11 @@ const newRecord = (
     ...(defersWorkspace(request) ? { defersWorkspace: true } : {})
   }
 }
+
+const projectSourceOf = (request: CreateSandboxRequest) => ({
+  ...(request.projectName === undefined ? {} : { projectName: request.projectName }),
+  ...(request.repoUrl === undefined ? {} : { repoUrl: request.repoUrl })
+})
 
 const defersWorkspace = (request: CreateSandboxRequest): boolean =>
   request.defersWorkspace === true && request.workspaceId === undefined
@@ -465,10 +477,3 @@ export const asBadRequest = <T>(decode: () => T): T => {
 
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
-
-export const configuredProviderIds = async (
-  isConfigured: (id: SandboxProviderId) => Promise<boolean>
-): Promise<ReadonlyArray<SandboxProviderId>> => {
-  const flags = await Promise.all(SANDBOX_PROVIDER_IDS.map(isConfigured))
-  return SANDBOX_PROVIDER_IDS.filter((_, index) => flags[index] === true)
-}

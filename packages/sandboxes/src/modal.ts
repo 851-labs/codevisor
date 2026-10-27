@@ -1,6 +1,17 @@
-import { Effect, Schema } from "effect"
-
-import type { SandboxProvider, ExecResult } from "./provider.js"
+import {
+  numberField,
+  numberValue,
+  secretField,
+  stringValue,
+  textField,
+  type SandboxFieldValues
+} from "./fields.js"
+import type {
+  ExecResult,
+  SandboxAdapter,
+  SandboxProvider,
+  SandboxProviderDefinition
+} from "./provider.js"
 import { listedMachine, ownerFilter, tagsToRecord } from "./tags.js"
 
 const defaultSetupCommands = [
@@ -9,16 +20,30 @@ const defaultSetupCommands = [
 
 export const MODAL_APP_NAME = "codevisor-sandbox"
 
-export const ModalOptions = Schema.Struct({
-  image: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed("debian:bookworm-slim"))),
-  setupCommands: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed(defaultSetupCommands))
-  ),
-  cpu: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(2))),
-  memoryMiB: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(4096))),
-  timeoutMinutes: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(24 * 60)))
-})
-export type ModalOptions = typeof ModalOptions.Type
+export const MODAL_DEFINITION: SandboxProviderDefinition = {
+  id: "modal",
+  displayName: "Modal",
+  sandboxNoun: "Modal sandbox",
+  platform: "linux",
+  tested: true,
+  accountFields: [
+    textField("tokenId", "Token ID", { required: true, placeholder: "ak-…" }),
+    secretField("tokenSecret", "Token secret", {
+      required: true,
+      placeholder: "as-…",
+      help: "Create a token in Modal under Settings › API Tokens."
+    })
+  ],
+  profileFields: [
+    textField("image", "Image", {
+      default: "debian:bookworm-slim",
+      help: "A public Debian or Ubuntu based image. Codevisor adds curl, git and sudo."
+    }),
+    numberField("cpu", "CPUs", { default: 2, min: 1, max: 64 }),
+    numberField("memoryGiB", "Memory (GiB)", { default: 4, min: 1, max: 256 }),
+    numberField("timeoutMinutes", "Lifetime (minutes)", { default: 1440, min: 5, max: 1440 })
+  ]
+}
 
 export interface ModalSandboxRef {
   readonly sandboxId: string
@@ -49,19 +74,48 @@ export interface ModalClient {
 
 const defaultExecTimeoutMs = 10 * 60 * 1000
 const millisecondsPerMinute = 60 * 1000
+const mebibytesPerGiB = 1024
+
+export interface ModalTokens {
+  readonly tokenId: string
+  readonly tokenSecret: string
+}
+
+export const modalAdapter = (
+  connectClient: (tokens: ModalTokens) => ModalClient
+): SandboxAdapter => {
+  const clientFor = (account: SandboxFieldValues) =>
+    connectClient({
+      tokenId: stringValue(account, "tokenId"),
+      tokenSecret: stringValue(account, "tokenSecret")
+    })
+  return {
+    definition: MODAL_DEFINITION,
+    connect: (account) => makeModalProvider(clientFor(account)),
+    verify: async (account) => {
+      await clientFor(account).list(ownerFilter("codevisor-verify"))
+      return {}
+    }
+  }
+}
 
 export const makeModalProvider = (
   client: ModalClient,
   now: () => number = Date.now
-): SandboxProvider<ModalOptions> => ({
-  id: "modal",
-  displayName: "Modal",
-  options: ModalOptions,
+): SandboxProvider => ({
+  definition: MODAL_DEFINITION,
   provisionStages: ["create"],
   streamsOutput: false,
   create: async (spec, options) => {
-    const timeoutMs = options.timeoutMinutes * millisecondsPerMinute
-    const sandboxId = await client.create({ ...options, timeoutMs, tags: tagsToRecord(spec.tags) })
+    const timeoutMs = numberValue(options, "timeoutMinutes", 1440) * millisecondsPerMinute
+    const sandboxId = await client.create({
+      image: stringValue(options, "image"),
+      setupCommands: defaultSetupCommands,
+      cpu: numberValue(options, "cpu", 2),
+      memoryMiB: numberValue(options, "memoryGiB", 4) * mebibytesPerGiB,
+      timeoutMs,
+      tags: tagsToRecord(spec.tags)
+    })
     return {
       providerMachineId: sandboxId,
       platform: "linux",
