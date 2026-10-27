@@ -1,6 +1,7 @@
 import { useLoaderData } from "@tanstack/react-router"
 
-import { formatStars, GITHUB_REPO_URL } from "../lib/github-stars"
+import { GITHUB_REPO_URL } from "../lib/github-repo"
+import { formatStars } from "../lib/github-stars"
 
 export { formatStars, GITHUB_REPO_URL }
 
