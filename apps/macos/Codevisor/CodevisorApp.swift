@@ -226,7 +226,7 @@ struct RootView: View {
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
       RootSidebar(selection: $selection, store: store, isColumnVisible: isSidebarColumnVisible)
-        .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
+        .navigationSplitViewColumnWidth(min: sidebarMinimumWidth, ideal: 270, max: 360)
     } detail: {
       Group {
         if let store {
@@ -257,6 +257,10 @@ struct RootView: View {
     .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
       store?.isSidebarVisible = clientSidebarVisible
     }
+  }
+
+  private var sidebarMinimumWidth: CGFloat {
+    botsEnabled ? SidebarModePicker.minimumSidebarWidth : 230
   }
 
   private var isSidebarColumnVisible: Bool {

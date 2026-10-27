@@ -14,3 +14,14 @@ struct SidebarModePicker: View {
     .fixedSize()
   }
 }
+
+extension SidebarModePicker {
+  static var minimumSidebarWidth: CGFloat {
+    let windowControls: CGFloat = 92
+    let picker: CGFloat = 111
+    let toolbarItemPadding: CGFloat = 4
+    let sidebarToggle: CGFloat = 44
+    let trailingInset: CGFloat = 4
+    return windowControls + toolbarItemPadding + picker + toolbarItemPadding + sidebarToggle + trailingInset
+  }
+}
