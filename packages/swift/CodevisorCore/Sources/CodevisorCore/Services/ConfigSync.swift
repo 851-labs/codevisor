@@ -8,7 +8,7 @@ public final class ConfigSync {
   public static let namespaces = [
     "settings", skillsNamespace, "mcps", "harness-accounts", "harnesses", "plugins",
     "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
-    "plugin-readiness", ClientPreferenceSync.namespace,
+    "plugin-readiness", ClientPreferenceSync.namespace, "sandbox-accounts", "sandbox-profiles",
   ]
   public static let skillsNamespace = "codevisor-skills"
 

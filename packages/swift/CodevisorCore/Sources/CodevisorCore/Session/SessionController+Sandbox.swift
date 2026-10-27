@@ -12,7 +12,7 @@ extension SessionController {
     else { return true }
 
     restoreComposer()
-    handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
+    handleSetupFailure(failure, returnsToNewChat: false)
     return false
   }
 

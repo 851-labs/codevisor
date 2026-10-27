@@ -1,7 +1,7 @@
 import SwiftUI
 
 public enum SettingsSectionIcon: Sendable {
-  case account, machines, projects
+  case account, machines, sandboxes, projects
   case general, updates, notifications, shortcuts
   case harnesses, mcps, skills, plugins
   case developer
@@ -10,6 +10,7 @@ public enum SettingsSectionIcon: Sendable {
     switch self {
     case .account: "person.crop.circle.fill"
     case .machines: "desktopcomputer"
+    case .sandboxes: "shippingbox.fill"
     case .projects: "folder.fill"
     case .general: "gearshape.fill"
     case .updates: "arrow.down.circle.fill"
@@ -34,6 +35,7 @@ public enum SettingsSectionIcon: Sendable {
     switch self {
     case .account: .blue
     case .machines: .indigo
+    case .sandboxes: .teal
     case .projects: .cyan
     case .general, .shortcuts: .gray
     case .updates: .green

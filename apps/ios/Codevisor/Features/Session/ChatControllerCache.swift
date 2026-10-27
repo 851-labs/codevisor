@@ -142,6 +142,16 @@ final class ChatControllerCache {
     evictIfNeeded()
   }
 
+  func reregister(_ controller: SessionController, from previous: ChatSession, to relocated: ChatSession) {
+    let old = Key(serverId: previous.serverId, id: previous.id)
+    setController(nil, for: old)
+    accessOrder.removeAll { $0 == old }
+    let key = Key(serverId: relocated.serverId, id: relocated.id)
+    noteAccess(key)
+    setController(controller, for: key)
+    bindRetainedSessionState(controller, to: key)
+  }
+
   func existingController(sessionId: UUID, serverId: String) -> SessionController? {
     slot(Key(serverId: serverId, id: sessionId)).controller
   }

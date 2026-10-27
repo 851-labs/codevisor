@@ -9,9 +9,11 @@ extension ComposerBar {
 
   private var runTargetBar: some View {
     let machine = environment.machines.machine(for: controller.project.serverId)
+    let sandbox = controller.sandboxTarget
     return ComposerRunTargetBar(
-      machineName: environment.machines.allMachines.count > 1 ? (machine?.name ?? "Machine") : nil,
-      machineSymbol: (machine?.icon ?? .fallback).systemImage,
+      machineName: sandbox?.pickerTitle ?? machine?.name ?? "Machine",
+      hasOtherMachines: environment.machines.allMachines.count > 1,
+      machineSymbol: sandbox?.systemImage ?? (machine?.icon ?? .fallback).systemImage,
       machines: environment.machines.allMachines,
       selectedServerId: controller.project.serverId,
       readyMachineIds: Set(
@@ -26,9 +28,10 @@ extension ComposerBar {
       onProject: { selectTargetProject($0) },
       onSetUpProject: selectSetUpGroup,
       onLocation: selectRunLocation,
-      onManageMachines: { showsMachineSettings = true },
+      onManageMachines: { settingsDestination = .machines(focusedMachineID: nil) },
       onManageProject: { managedProject = liveProject },
-      onProjectDeleted: projectDeleted
+      onProjectDeleted: projectDeleted,
+      sandboxes: sandboxPicks
     )
     .padding(.vertical, -6)
     .composerGlassSurface(
@@ -40,6 +43,31 @@ extension ComposerBar {
     )
   }
 
+  private var sandboxPicks: ComposerSandboxPicks {
+    let machines = environment.machines
+    let serverId = controller.project.serverId
+    return ComposerSandboxPicks(
+      selectedProfileId: controller.sandboxTarget?.profileId,
+      load: { catalog in
+        await catalog.load(from: machines.client(for: serverId)) { machines.client(forServerId: $0) }
+      },
+      onPick: selectSandbox,
+      onManage: { settingsDestination = .section("sandboxes") }
+    )
+  }
+
+  private func selectSandbox(_ choice: SandboxProfileChoice) {
+    guard choice.isEnabled else { return }
+    controller.onSandboxReady = { [weak controller] previous, relocated, project in
+      SandboxSessionRelocation.relocate(
+        previous, to: relocated, project: project,
+        projectList: environment.projectList, workspaces: environment.workspaces)
+      guard let controller else { return }
+      ChatControllerCache.shared.reregister(controller, from: previous, to: relocated)
+    }
+    controller.sandboxTarget = choice.target
+  }
+
   private var liveProject: Project {
     environment.projectList.fleetActiveProjects.first {
       $0.serverId == controller.project.serverId && $0.id == controller.project.id
@@ -48,6 +76,10 @@ extension ComposerBar {
 
   func selectTargetMachine(_ machine: CodevisorMachine) {
     let current = controller.project
+    if controller.sandboxTarget != nil {
+      controller.sandboxTarget = nil
+      if machine.id == current.serverId { return }
+    }
     guard machine.id != current.serverId,
       environment.machines.availability(for: machine.id) == .ready
     else { return }

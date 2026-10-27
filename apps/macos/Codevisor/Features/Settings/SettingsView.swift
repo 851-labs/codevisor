@@ -156,6 +156,9 @@ struct SettingsView: View {
     case .machines:
       MachinesSettingsView()
         .navigationTitle("Machines")
+    case .sandboxes:
+      SandboxesSettingsView()
+        .navigationTitle("Sandboxes")
     case .developer:
       DeveloperSettingsView()
         .navigationTitle("Developer")

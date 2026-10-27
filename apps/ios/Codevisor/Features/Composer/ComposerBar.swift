@@ -43,7 +43,7 @@ struct ComposerBar: View {
   @State var isCapturingPhoto = false
   @State var managedProject: Project?
   @State var projectSetupState = ComposerProjectSetupState()
-  @State var showsMachineSettings = false
+  @State var settingsDestination: SettingsDestination?
   @State var runTargetSelectionRevision = 0
   @State var pasteFailureNotice: ComposerPasteFailureNotice?
   @State var pasteFailureNoticeHeight: CGFloat = 0
@@ -176,8 +176,8 @@ struct ComposerBar: View {
       key: ComposerBlocksSheetDismissPreferenceKey.self,
       value: isTouchingCardInSheet || isExpanded
     )
-    .sheet(isPresented: $showsMachineSettings) {
-      SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
+    .sheet(item: $settingsDestination) { destination in
+      SettingsSheet(initialDestination: destination)
     }
     .sheet(item: $managedProject) { project in
       ProjectSettingsSheet(groupId: ProjectGroup.routeID(for: project), onDeleted: projectDeleted)

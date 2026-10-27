@@ -9,8 +9,11 @@ struct SessionSetupView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      ForEach(phases) { phase in
-        SessionSetupPhaseView(phase: phase)
+      ForEach(SessionSetupGroup.grouping(phases)) { group in
+        switch group {
+        case let .phase(phase): SessionSetupPhaseView(phase: phase)
+        case let .sandbox(summary): SandboxStartDisclosure(summary: summary) { SessionSetupPhaseView(phase: $0) }
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,7 +127,7 @@ struct SessionSetupPhaseView: View {
         Text("\(phase.activeTitle)…")
           .shimmering()
         TimelineView(.periodic(from: phase.startedAt, by: 1)) { context in
-          Text(format(elapsedSeconds(to: context.date)))
+          Text(SetupDuration.elapsed(since: phase.startedAt, to: context.date))
             .foregroundStyle(.tertiary)
             .monospacedDigit()
         }
@@ -138,18 +141,7 @@ struct SessionSetupPhaseView: View {
   }
 
   private var completedTitle: String {
-    guard let duration = phase.duration, duration >= 1 else {
-      return "\(phase.completedTitle) in a moment"
-    }
-    return "\(phase.completedTitle) in \(format(Int(duration.rounded())))"
-  }
-
-  private func elapsedSeconds(to date: Date) -> Int {
-    max(0, Int(date.timeIntervalSince(phase.startedAt)))
-  }
-
-  private func format(_ seconds: Int) -> String {
-    seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+    SetupDuration.completed(phase.completedTitle, after: phase.duration)
   }
 }
 

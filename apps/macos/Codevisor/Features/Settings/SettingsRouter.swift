@@ -4,13 +4,13 @@ import CodevisorUI
 import Observation
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-  case account, machines, projects
+  case account, machines, sandboxes, projects
   case general, updates, notifications, shortcuts
   case agents, mcps, skills, plugins
   case developer
 
   static let sidebarGroups: [[SettingsTab]] = [
-    [.account, .machines, .projects],
+    [.account, .machines, .sandboxes, .projects],
     [.general, .updates, .notifications, .shortcuts],
     [.agents, .mcps, .skills, .plugins],
     [.developer],
@@ -31,6 +31,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .plugins: "Plugins"
     case .projects: "Projects"
     case .machines: "Machines"
+    case .sandboxes: "Sandboxes"
     case .developer: "Developer"
     }
   }
@@ -48,6 +49,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .plugins: .plugins
     case .projects: .projects
     case .machines: .machines
+    case .sandboxes: .sandboxes
     case .developer: .developer
     }
   }
@@ -115,6 +117,11 @@ final class SettingsRouter {
   func showMachines() {
     panePath = []
     selectedTab = .machines
+  }
+
+  func showSandboxes() {
+    panePath = []
+    selectedTab = .sandboxes
   }
 
   func showProjects(machineId: String? = nil) {

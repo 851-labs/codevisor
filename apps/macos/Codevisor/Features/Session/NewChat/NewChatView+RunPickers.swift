@@ -102,13 +102,7 @@ extension NewChatView {
           }
         }
       }
-      Autocomplete.Footer(id: "actions") {
-        Autocomplete.Action("Manage Machines…", systemImage: "gearshape.fill") {
-          SettingsRouter.shared.showMachines()
-          openSettings()
-        }
-        .help("Open Machine Settings")
-      }
+      machinePickerFooter
     }
     .autocompleteSearchLabel("Search machines")
     .autocompleteEmptyMessage("No matching machines")
@@ -116,6 +110,21 @@ extension NewChatView {
     .help("Choose which machine this chat runs on")
     .accessibilityLabel("Machine")
     .accessibilityValue(chipText)
+  }
+
+  private var machinePickerFooter: Autocomplete.Footer {
+    Autocomplete.Footer(id: "actions") {
+      Autocomplete.Action("Manage Machines…", systemImage: "gearshape.fill") {
+        SettingsRouter.shared.showMachines()
+        openSettings()
+      }
+      .help("Open Machine Settings")
+      Autocomplete.Action("Manage Sandboxes…", systemImage: "shippingbox") {
+        SettingsRouter.shared.showSandboxes()
+        openSettings()
+      }
+      .help("Open Sandbox Settings")
+    }
   }
 
   private func sandboxChoice(_ choice: SandboxProfileChoice) -> Autocomplete.Choice<MachinePickerTarget> {
@@ -151,8 +160,6 @@ extension NewChatView {
       selectTargetMachine(machine, controller: controller)
     case let .sandbox(profileId):
       guard let choice = sandboxProfiles.choices.first(where: { $0.id == profileId }), choice.isEnabled else { return }
-      let machines = environment.machines
-      controller.serverClientForMachine = { machines.client(forServerId: $0) }
       controller.sandboxTarget = choice.target
       relocateWhenSandboxIsReady(controller)
     }

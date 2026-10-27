@@ -14,7 +14,7 @@ extension SessionController {
 
   func sandboxClient(for target: SandboxTarget) -> (any CodevisorServerClienting)? {
     guard let host = target.hostMachineId else { return serverClient }
-    return serverClientForMachine?(host)
+    return machines?.client(forServerId: host)
   }
 
   public func abandonSandboxPrewarm() {

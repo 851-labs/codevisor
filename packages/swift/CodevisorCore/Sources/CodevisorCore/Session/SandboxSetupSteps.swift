@@ -31,8 +31,10 @@ public struct SandboxSetupSteps: Sendable {
     self.agentName = agentName
   }
 
+  public static let phaseIdPrefix = "sandbox-"
+
   public static func phaseId(_ stage: SandboxSetupStage) -> String {
-    "sandbox-\(stage.rawValue)"
+    "\(phaseIdPrefix)\(stage.rawValue)"
   }
 
   public static func updates(

@@ -3,7 +3,8 @@ import CodevisorUI
 import SwiftUI
 
 struct ComposerRunTargetBar: View {
-  let machineName: String?
+  let machineName: String
+  let hasOtherMachines: Bool
   let machineSymbol: String
   let machines: [CodevisorMachine]
   let selectedServerId: String
@@ -18,6 +19,8 @@ struct ComposerRunTargetBar: View {
   let onManageMachines: () -> Void
   let onManageProject: () -> Void
   let onProjectDeleted: (ProjectGroup) -> Void
+  let sandboxes: ComposerSandboxPicks
+  @State private var sandboxProfiles = SandboxProfileCatalog()
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .footnote) private var minimumMachineWidth = 88.0
@@ -29,7 +32,7 @@ struct ComposerRunTargetBar: View {
       minimumMachineWidth: minimumMachineWidth,
       minimumProjectWidth: minimumProjectWidth
     ) {
-      if let machineName {
+      if hasOtherMachines || !sandboxProfiles.choices.isEmpty {
         chipLabel(machineName, symbol: machineSymbol)
           .accessibilityHidden(true)
           .overlay {
@@ -38,8 +41,12 @@ struct ComposerRunTargetBar: View {
               machines: machines,
               selectedServerId: selectedServerId,
               readyMachineIds: readyMachineIds,
+              sandboxChoices: sandboxProfiles.choices,
+              selectedProfileId: sandboxes.selectedProfileId,
               onMachine: onMachine,
-              onManageMachines: onManageMachines
+              onSandbox: sandboxes.onPick,
+              onManageMachines: onManageMachines,
+              onManageSandboxes: sandboxes.onManage
             )
           }
           .layoutValue(key: RunTargetPickerRoleKey.self, value: .machine)
@@ -96,6 +103,7 @@ struct ComposerRunTargetBar: View {
     .buttonStyle(.plain)
     .padding(.horizontal, 4)
     .accessibilityElement(children: .contain)
+    .task(id: selectedServerId) { await sandboxes.load(sandboxProfiles) }
   }
 
   private var locationSymbol: String {
