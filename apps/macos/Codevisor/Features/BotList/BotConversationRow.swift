@@ -22,7 +22,7 @@ struct BotConversationRow: View {
         BotConversationPreview(conversation: conversation, isHighlighted: isHighlighted)
       }
     }
-    .padding(.vertical, 8)
+    .padding(.vertical, 15)
     .padding(.trailing, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .contentShape(.rect)

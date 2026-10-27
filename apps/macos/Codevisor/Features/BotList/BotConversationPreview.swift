@@ -22,7 +22,7 @@ struct BotConversationPreview: View {
           .foregroundStyle(foreground)
       }
     }
-    .font(.subheadline)
+    .font(.body)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 

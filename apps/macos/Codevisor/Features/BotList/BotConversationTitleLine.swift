@@ -15,7 +15,7 @@ struct BotConversationTitleLine: View {
       Spacer(minLength: 0)
       if let timestamp {
         Text(timestamp)
-          .font(.subheadline)
+          .font(.body)
           .foregroundStyle(isHighlighted ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
           .lineLimit(1)
           .fixedSize()
