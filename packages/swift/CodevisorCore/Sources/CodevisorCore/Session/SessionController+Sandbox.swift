@@ -6,12 +6,18 @@ struct SandboxSetupError: LocalizedError {
 }
 
 extension SessionController {
-  func createRequestedSandbox(showsSetupPhases: Bool, restoreComposer: () -> Void) async -> Bool {
+  func createRequestedSandbox(
+    showsSetupPhases: Bool, restoreComposer: () -> Void, holdForRetry: (() -> Void)?
+  ) async -> Bool {
     guard let sandboxTarget else { return true }
     guard let failure = await sandboxFailure(sandboxTarget, showsSetupPhases: showsSetupPhases)
     else { return true }
 
-    restoreComposer()
+    if let holdForRetry, SessionSetupGroup.failedSandboxStart(in: setupPhases) {
+      holdForRetry()
+    } else {
+      restoreComposer()
+    }
     handleSetupFailure(failure, returnsToNewChat: false)
     return false
   }
@@ -24,7 +30,26 @@ extension SessionController {
   }
 
   public func retrySandboxStart() {
-    requestSubmit()
+    guard let held = heldSend else { return }
+
+    Task { await resend(held) }
+  }
+
+  func discardHeldSend() {
+    guard let held = heldSend else { return }
+
+    attachments.releaseStagedFiles(of: held.staged)
+    heldSend = nil
+  }
+
+  private func resend(_ held: OutgoingSend) async {
+    guard isReadyToSubmit, heldSend?.message == held.message else { return }
+
+    pendingUserMessage = held.message
+    heldSend = nil
+    beginSubmission()
+    pendingSendStartedAt = Date()
+    await deliver(held, delivery: resolvedDelivery(for: .steer))
   }
 
   private func sandboxFailure(_ target: SandboxTarget, showsSetupPhases: Bool) async -> String? {

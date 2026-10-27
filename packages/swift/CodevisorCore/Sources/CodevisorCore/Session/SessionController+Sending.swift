@@ -41,17 +41,28 @@ extension SessionController {
     let staged = composerAttachments
     composerText = ""
     self.attachments.clearAfterCollecting()
+    await deliver(OutgoingSend(message: outgoingMessage, staged: staged), delivery: resolvedDelivery)
+  }
 
+  func deliver(_ outgoing: OutgoingSend, delivery: ServerPromptDelivery) async {
     func restoreComposer() {
-      composerText = text
-      self.attachments.restore(staged)
+      composerText = outgoing.message.text
+      attachments.restore(outgoing.staged)
       pendingUserMessage = nil
-      cancelUserSendAnimation(for: outgoingMessage.id)
+      cancelUserSendAnimation(for: outgoing.message.id)
     }
 
-    guard let model = await prepareSession(for: text, restoreComposer: restoreComposer) else { return }
-    await submit(outgoingMessage, to: model, delivery: resolvedDelivery)
-    self.attachments.releaseStagedFiles(of: staged)
+    func holdForRetry() {
+      heldSend = outgoing
+      pendingUserMessage = nil
+    }
+
+    guard
+      let model = await prepareSession(
+        for: outgoing.message.text, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
+    else { return }
+    await submit(outgoing.message, to: model, delivery: delivery)
+    attachments.releaseStagedFiles(of: outgoing.staged)
   }
 
   var isReadyToSubmit: Bool {
@@ -64,6 +75,7 @@ extension SessionController {
   }
 
   func beginSubmission() {
+    discardHeldSend()
     showsNewChatAfterSetupFailure = false
     status = .idle
     if let notificationDelivery {
@@ -76,14 +88,17 @@ extension SessionController {
   }
 
   @discardableResult
-  func prepareSession(for prompt: String, restoreComposer: () -> Void) async -> SessionModel? {
+  func prepareSession(
+    for prompt: String, restoreComposer: () -> Void, holdForRetry: (() -> Void)? = nil
+  ) async -> SessionModel? {
     let showsSetupPhases = showsSetupPhasesForSubmission
     guard await materializeRunTarget(restoreComposer: restoreComposer) else { return nil }
     acceptFirstSend(prompt)
     isSubmitting = false
 
     guard
-      await createRequestedSandbox(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
+      await createRequestedSandbox(
+        showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
     else { return nil }
 
     guard await createRequestedWorktree(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)

@@ -103,6 +103,11 @@ final public class SessionController {
       if pendingUserMessage != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
+  var heldSend: OutgoingSend? {
+    didSet {
+      if heldSend?.message != oldValue?.message { transcriptProjectionRevision &+= 1 }
+    }
+  }
   @ObservationIgnored public var scrollState: SessionScrollState? {
     didSet { onScrollStateChange?(scrollState) }
   }

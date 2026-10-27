@@ -35,7 +35,7 @@ extension SessionController {
     }
     return TranscriptProjectionInput(
       settledConversation: settledConversation,
-      pendingUserMessage: pendingUserMessage,
+      pendingUserMessage: pendingUserMessage ?? heldSend?.message,
       activeItem: activeItem,
       setupPhases: SessionSetupPhases.merging(live: setupPhases, persisted: model?.persistedSetupPhases ?? []),
       waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
