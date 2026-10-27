@@ -119,7 +119,7 @@ final public class SessionController {
   public var project: Project {
     didSet {
       draftDidChange()
-      refreshEphemeralPrewarm()
+      refreshSandboxPrewarm()
     }
   }
   public var onFirstSend: ((String) -> Void)?
@@ -141,14 +141,14 @@ final public class SessionController {
   public internal(set) var worktreeName: String?
   public internal(set) var sessionCwdOverride: String?
   public var onWorktreeCreated: ((ServerWorktree) -> Void)?
-  public var ephemeralTarget: EphemeralTarget? {
+  public var sandboxTarget: SandboxTarget? {
     didSet {
-      if ephemeralTarget != nil { wantsNewWorktree = false }
-      refreshEphemeralPrewarm()
+      if sandboxTarget != nil { wantsNewWorktree = false }
+      refreshSandboxPrewarm()
     }
   }
-  @ObservationIgnored var ephemeralPrewarm: EphemeralPrewarm?
-  public var onEphemeralMachineReady: ((ChatSession, ChatSession, Project) -> Void)?
+  @ObservationIgnored var sandboxPrewarm: SandboxPrewarm?
+  public var onSandboxReady: ((ChatSession, ChatSession, Project) -> Void)?
   public internal(set) var setupPhases: [SessionSetupPhase] = [] {
     didSet {
       if setupPhases != oldValue { transcriptProjectionRevision &+= 1 }

@@ -15,7 +15,7 @@ extension NewChatView {
 
   enum MachinePickerTarget: Hashable {
     case machine(CodevisorMachine.ID)
-    case ephemeral(String)
+    case sandbox(String)
 
     var machineId: CodevisorMachine.ID? {
       if case let .machine(id) = self { return id }
@@ -60,7 +60,7 @@ extension NewChatView {
   }
 
   var showsMachinePicker: Bool {
-    environment.machines.allMachines.count > 1 || !ephemeralTargets.targets.isEmpty
+    environment.machines.allMachines.count > 1 || !sandboxTargets.targets.isEmpty
   }
 
   func liveProject(for controller: SessionController) -> Project {
@@ -72,12 +72,12 @@ extension NewChatView {
   func machinePicker(_ controller: SessionController) -> some View {
     let machines = environment.machines.allMachines
     let selectedMachine = environment.machines.machine(for: controller.project.serverId)
-    let ephemeral = controller.ephemeralTarget
+    let sandbox = controller.sandboxTarget
     let selection = machineSelection(controller)
-    let chipText = ephemeral?.pickerTitle ?? selectedMachine?.name ?? "Machine"
+    let chipText = sandbox?.pickerTitle ?? selectedMachine?.name ?? "Machine"
     return RunPickerMenu(
       chipText: chipText,
-      chipSymbol: ephemeral?.systemImage ?? (selectedMachine?.icon ?? .fallback).systemImage
+      chipSymbol: sandbox?.systemImage ?? (selectedMachine?.icon ?? .fallback).systemImage
     ) {
       Autocomplete.Picker("Machines", selection: selection) {
         for machine in machines {
@@ -92,9 +92,9 @@ extension NewChatView {
           }
           .disabled(environment.machines.availability(for: machine.id) != .ready)
         }
-        for target in ephemeralTargets.targets {
+        for target in sandboxTargets.targets {
           Autocomplete.Choice(
-            target.pickerTitle, value: MachinePickerTarget.ephemeral(target.providerId), systemImage: target.systemImage
+            target.pickerTitle, value: MachinePickerTarget.sandbox(target.providerId), systemImage: target.systemImage
           )
         }
       }
@@ -118,7 +118,7 @@ extension NewChatView {
 
   private func machineSelection(_ controller: SessionController) -> Binding<MachinePickerTarget> {
     Binding(
-      get: { controller.ephemeralTarget.map { .ephemeral($0.providerId) } ?? .machine(controller.project.serverId) },
+      get: { controller.sandboxTarget.map { .sandbox($0.providerId) } ?? .machine(controller.project.serverId) },
       set: { selectMachineTarget($0, controller: controller) }
     )
   }
@@ -133,12 +133,12 @@ extension NewChatView {
   private func selectMachineTarget(_ target: MachinePickerTarget, controller: SessionController) {
     switch target {
     case let .machine(id):
-      controller.ephemeralTarget = nil
+      controller.sandboxTarget = nil
       guard let machine = environment.machines.machine(for: id) else { return }
       selectTargetMachine(machine, controller: controller)
-    case let .ephemeral(providerId):
-      controller.ephemeralTarget = .provider(providerId)
-      relocateWhenEphemeralMachineIsReady(controller)
+    case let .sandbox(providerId):
+      controller.sandboxTarget = .provider(providerId)
+      relocateWhenSandboxIsReady(controller)
     }
   }
 

@@ -152,7 +152,7 @@ export interface CodevisorServerServices {
   readonly machines?: import("./infra/machine-link.js").MachineLink
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
   readonly fleetTickets?: import("./infra/fleet-tickets.js").FleetTickets
-  readonly ephemeralMachines?: import("./routes/ephemeral-machines.js").EphemeralMachinesService
+  readonly sandboxes?: import("./routes/sandboxes.js").SandboxesService
   readonly usageLimits?: UsageLimitsCache
 }
 

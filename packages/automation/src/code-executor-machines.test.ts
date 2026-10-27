@@ -39,7 +39,7 @@ const execute = async (
   return { calls, result }
 }
 
-describe.sequential("sandbox machines, clients, status, and typed errors", () => {
+describe.sequential("sandboxes, clients, status, and typed errors", () => {
   it("resolves machines by id, name, or prefix and routes their tools to that machine", async () => {
     const { calls, result } = await execute(
       `async () => {

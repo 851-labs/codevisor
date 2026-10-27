@@ -1,6 +1,6 @@
 import {
   AddMachineRequest,
-  CreateEphemeralMachineRequest,
+  CreateSandboxRequest,
   CreateProjectFromGitRequest,
   CreateProjectRequest,
   CreateScratchProjectRequest,
@@ -78,31 +78,31 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     { confirm: true }
   ),
   apiTool(
-    "machines.create_ephemeral",
+    "machines.create_sandbox",
     "Start a throwaway cloud machine (provider e2b, modal or tart) for one project, owned by a new " +
       "workspace on it: Codevisor installs itself there, joins the account, copies this machine's " +
       "harnesses, skills, MCPs and sign-ins over one way, clones the project and creates the " +
       "workspace. Archiving that workspace destroys the machine. Returns at once with state " +
-      "`creating`; follow it with machines.list_ephemeral() (a few minutes; `ready` has " +
+      "`creating`; follow it with machines.list_sandboxes() (a few minutes; `ready` has " +
       "`machineId` and `workspaceId`). It costs the user money while it runs.",
     "POST",
-    "/v1/ephemeral-machines",
-    { body: CreateEphemeralMachineRequest }
+    "/v1/sandboxes",
+    { body: CreateSandboxRequest }
   ),
   apiTool(
-    "machines.list_ephemeral",
-    "List this machine's ephemeral machines with their provider, setup state, error, and the " +
+    "machines.list_sandboxes",
+    "List this machine's sandboxes with their provider, setup state, error, and the " +
       "machine and workspace they own.",
     "GET",
-    "/v1/ephemeral-machines"
+    "/v1/sandboxes"
   ),
   apiTool(
-    "machines.destroy_ephemeral",
-    "Destroy an ephemeral machine (id from machines.list_ephemeral()) now: remove it from the " +
+    "machines.destroy_sandbox",
+    "Destroy a sandbox (id from machines.list_sandboxes()) now: remove it from the " +
       "account and delete the provider machine. Its workspace's unpushed work is lost; confirm " +
       "with the user first.",
     "DELETE",
-    "/v1/ephemeral-machines/:id",
+    "/v1/sandboxes/:id",
     { confirm: true }
   ),
   apiTool("server.update_status", "Check for a Codevisor server update.", "GET", "/v1/update", {

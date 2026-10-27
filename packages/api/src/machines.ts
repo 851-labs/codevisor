@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-import { EphemeralMachineOrigin } from "./ephemeral-machines.js"
+import { SandboxOrigin } from "./sandboxes.js"
 
 export const MachineSummary = Schema.Struct({
   id: Schema.String,
@@ -10,7 +10,7 @@ export const MachineSummary = Schema.Struct({
   lastSeen: Schema.optional(Schema.String),
   isCurrent: Schema.Boolean,
   addedBy: Schema.optional(Schema.String),
-  ephemeral: Schema.optional(EphemeralMachineOrigin)
+  ephemeral: Schema.optional(SandboxOrigin)
 })
 export type MachineSummary = typeof MachineSummary.Type
 

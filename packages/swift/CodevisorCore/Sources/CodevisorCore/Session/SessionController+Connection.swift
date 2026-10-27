@@ -62,7 +62,7 @@ extension SessionController {
       return
     }
     guard model == nil || model === cachedTranscriptModel, !isConnecting, let serverSession else { return }
-    guard !wantsNewWorktree || sessionCwdOverride != nil, ephemeralTarget == nil else { return }
+    guard !wantsNewWorktree || sessionCwdOverride != nil, sandboxTarget == nil else { return }
     let persistedHarnessId = serverSession.harnessId
     let harnessId = persistedHarnessId.isEmpty ? selectedHarness?.id : persistedHarnessId
     guard let harnessId, !harnessId.isEmpty else { return }

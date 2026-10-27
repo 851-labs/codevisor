@@ -23,12 +23,12 @@ describe("Codevisor tool result shapes", () => {
     })
   })
 
-  it("names ephemeral machine ids after their resource in lists and single records", () => {
-    expect(shaped("/v1/ephemeral-machines", [{ id: "e1", state: "ready" }])).toEqual({
-      items: [{ ephemeralMachineId: "e1", state: "ready" }]
+  it("names sandbox ids after their resource in lists and single records", () => {
+    expect(shaped("/v1/sandboxes", [{ id: "e1", state: "ready" }])).toEqual({
+      items: [{ sandboxId: "e1", state: "ready" }]
     })
-    expect(shaped("/v1/ephemeral-machines", { id: "e2", state: "creating" })).toEqual({
-      ephemeralMachineId: "e2",
+    expect(shaped("/v1/sandboxes", { id: "e2", state: "creating" })).toEqual({
+      sandboxId: "e2",
       state: "creating"
     })
   })

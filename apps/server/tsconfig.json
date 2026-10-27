@@ -80,7 +80,7 @@
       "path": "../../packages/git-hosts"
     },
     {
-      "path": "../../packages/ephemeral-machines"
+      "path": "../../packages/sandboxes"
     },
     {
       "path": "../../packages/processes"

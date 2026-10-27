@@ -264,7 +264,7 @@ public final class ConfigSync {
   }
 
   private func syncs(with machineId: String) -> Bool {
-    !machines.isEphemeral(machineId)
+    !machines.isSandbox(machineId)
   }
 
   private func reconcile(namespace: String, machineId: String) async {

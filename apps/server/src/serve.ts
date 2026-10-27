@@ -32,7 +32,6 @@ import { Effect } from "effect"
 
 import { agentProviderFactories } from "./agent-providers.js"
 import { FAILED_UPGRADE_GRACE_MS, type BootListener } from "./boot-listener.js"
-import { startEphemeralMachines } from "./ephemeral-boot.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
@@ -48,6 +47,7 @@ import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
+import { startSandboxes } from "./sandbox-boot.js"
 import {
   restoreTerminalPersistence,
   screenSharingProvider,
@@ -296,8 +296,8 @@ export const runServe = (
         console.log(`Skill migration failed: ${failureMessage(cause)}`)
       )
     const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
-    const ephemeralMachines = initializeOptionalServerFeature("Ephemeral machines", () =>
-      startEphemeralMachines({
+    const sandboxes = initializeOptionalServerFeature("Sandboxes", () =>
+      startSandboxes({
         db,
         dataDir: dirname(databasePath),
         serverId,
@@ -410,7 +410,7 @@ export const runServe = (
         machines: machineLink,
         machineEnrollment,
         fleetTickets,
-        ...(ephemeralMachines === undefined ? {} : { ephemeralMachines }),
+        ...(sandboxes === undefined ? {} : { sandboxes }),
         usageLimits: makeUsageLimitsCache({
           store: makeUsageLimitsFileStore(join(dirname(databasePath), "usage-limits.json"))
         })
@@ -457,7 +457,7 @@ export const runServe = (
     startupCompleted = true
     startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
-    ephemeralMachines?.start()
+    sandboxes?.start()
     void plugins
       ?.startAll()
       .catch((cause: unknown) =>

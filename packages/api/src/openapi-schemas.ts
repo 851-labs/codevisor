@@ -16,16 +16,6 @@ import { AddBotProjectRequest, Bot, CreateBotRequest, UpdateBotRequest } from ".
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import {
-  CreateEphemeralMachineRequest,
-  DestroyEphemeralMachineResponse,
-  EphemeralMachine,
-  EphemeralMachinesResponse,
-  EphemeralProjectOptions,
-  EphemeralProjectOptionsResponse,
-  EphemeralProvidersResponse,
-  SaveEphemeralCredentialsRequest
-} from "./ephemeral-machines.js"
-import {
   AgentSessionSummary,
   AnswerOpenCodeAuthRequest,
   AnswerPiAuthRequest,
@@ -178,6 +168,16 @@ import {
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
+import {
+  CreateSandboxRequest,
+  DestroySandboxResponse,
+  Sandbox,
+  SandboxesResponse,
+  SandboxProjectOptions,
+  SandboxProjectOptionsResponse,
+  SandboxProvidersResponse,
+  SaveSandboxCredentialsRequest
+} from "./sandboxes.js"
 import { PutSyncRequest, SyncDocument } from "./sync.js"
 
 export type JsonObject = Record<string, unknown>
@@ -253,9 +253,9 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/sessions/:id/subscriptions": CreateSessionSubscriptionRequest,
   "POST /v1/jobs/:jobId/wait": WaitForExecutionJobRequest,
   "POST /v1/machines/add": AddMachineRequest,
-  "PUT /v1/ephemeral-providers/:id/credentials": SaveEphemeralCredentialsRequest,
-  "POST /v1/ephemeral-machines": CreateEphemeralMachineRequest,
-  "PUT /v1/projects/:id/ephemeral-options": EphemeralProjectOptions,
+  "PUT /v1/sandbox-providers/:id/credentials": SaveSandboxCredentialsRequest,
+  "POST /v1/sandboxes": CreateSandboxRequest,
+  "PUT /v1/projects/:id/sandbox-options": SandboxProjectOptions,
   "POST /v1/gateway/invoke": GatewayInvokeRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
   "PATCH /v1/sessions/:id": UpdateSessionRequest,
@@ -419,12 +419,12 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/machines/invite": MachineInviteResponse,
   "POST /v1/machines/add": AddMachineResponse,
   "DELETE /v1/machines/:machineId": MachinesResponse,
-  "GET /v1/ephemeral-providers": EphemeralProvidersResponse,
-  "GET /v1/ephemeral-machines": EphemeralMachinesResponse,
-  "POST /v1/ephemeral-machines": EphemeralMachine,
-  "DELETE /v1/ephemeral-machines/:id": DestroyEphemeralMachineResponse,
-  "GET /v1/projects/:id/ephemeral-options": EphemeralProjectOptionsResponse,
-  "PUT /v1/projects/:id/ephemeral-options": EphemeralProjectOptionsResponse,
+  "GET /v1/sandbox-providers": SandboxProvidersResponse,
+  "GET /v1/sandboxes": SandboxesResponse,
+  "POST /v1/sandboxes": Sandbox,
+  "DELETE /v1/sandboxes/:id": DestroySandboxResponse,
+  "GET /v1/projects/:id/sandbox-options": SandboxProjectOptionsResponse,
+  "PUT /v1/projects/:id/sandbox-options": SandboxProjectOptionsResponse,
   "POST /v1/gateway/invoke": GatewayInvokeResponse,
   "GET /v1/sessions/:id": SessionDetail,
   "GET /v1/sessions/:id/usage-limits": HarnessUsageLimits,

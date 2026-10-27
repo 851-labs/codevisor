@@ -62,7 +62,7 @@
         "@codevisor/automation": "workspace:*",
         "@codevisor/cloud-client": "workspace:*",
         "@codevisor/db": "workspace:*",
-        "@codevisor/ephemeral-machines": "workspace:*",
+        "@codevisor/sandboxes": "workspace:*",
         "@codevisor/git-hosts": "workspace:*",
         "@codevisor/harness-manager": "workspace:*",
         "@codevisor/mcp": "workspace:*",
@@ -315,8 +315,8 @@
         "vitest": "4.1.6",
       },
     },
-    "packages/ephemeral-machines": {
-      "name": "@codevisor/ephemeral-machines",
+    "packages/sandboxes": {
+      "name": "@codevisor/sandboxes",
       "dependencies": {
         "e2b": "2.59.0",
         "effect": "4.0.0-beta.92",
@@ -660,7 +660,7 @@
 
     "@codevisor/db": ["@codevisor/db@workspace:packages/db"],
 
-    "@codevisor/ephemeral-machines": ["@codevisor/ephemeral-machines@workspace:packages/ephemeral-machines"],
+    "@codevisor/sandboxes": ["@codevisor/sandboxes@workspace:packages/ephemeral-machines"],
 
     "@codevisor/git-hosts": ["@codevisor/git-hosts@workspace:packages/git-hosts"],
 

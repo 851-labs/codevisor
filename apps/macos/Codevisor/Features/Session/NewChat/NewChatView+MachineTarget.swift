@@ -106,9 +106,9 @@ extension NewChatView {
     environment.appUpdate.isUpdating
   }
 
-  func relocateWhenEphemeralMachineIsReady(_ controller: SessionController) {
-    controller.onEphemeralMachineReady = { [weak controller, weak store = store] previous, relocated, project in
-      EphemeralSessionRelocation.relocate(
+  func relocateWhenSandboxIsReady(_ controller: SessionController) {
+    controller.onSandboxReady = { [weak controller, weak store = store] previous, relocated, project in
+      SandboxSessionRelocation.relocate(
         previous,
         to: relocated,
         project: project,

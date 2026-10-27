@@ -176,11 +176,11 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func createDirectory(path: String) async throws -> String
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func projectSetupSource(projectId: UUID) async throws -> ServerProjectSetupSource
-  func ephemeralProviders() async throws -> [ServerEphemeralProvider]
-  func ephemeralMachines() async throws -> [ServerEphemeralMachine]
-  func destroyEphemeralMachine(id: String) async throws
-  func createEphemeralMachine(_ request: ServerEphemeralMachineRequest) async throws -> ServerEphemeralMachine
-  func claimEphemeralWorkspace(id: String, workspaceId: UUID) async throws -> ServerEphemeralMachine
+  func sandboxProviders() async throws -> [ServerSandboxProvider]
+  func sandboxes() async throws -> [ServerSandbox]
+  func destroySandbox(id: String) async throws
+  func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox
+  func claimSandboxWorkspace(id: String, workspaceId: UUID) async throws -> ServerSandbox
   func readProjectEnvFiles(projectId: UUID, paths: [String]) async throws -> [ServerProjectEnvFileContent]
   func publishProjectRemote(projectId: UUID, url: String, initialize: Bool) async throws -> ServerProject
   func setUpProjectFromGit(_ request: ServerProjectSetupRequest) async throws -> ServerProject

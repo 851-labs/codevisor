@@ -7,7 +7,7 @@ enum SessionSetupPhases {
 
   private static let coveringPrefixes = [
     SessionSetupPhase.worktreePhaseId: "worktree.setup:",
-    EphemeralSetupSteps.phaseId(.clone): "project.setup:",
+    SandboxSetupSteps.phaseId(.clone): "project.setup:",
   ]
 
   private static func covers(_ live: SessionSetupPhase, _ persisted: SessionSetupPhase) -> Bool {

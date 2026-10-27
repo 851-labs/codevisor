@@ -83,7 +83,7 @@ extension SessionController {
     isSubmitting = false
 
     guard
-      await createRequestedEphemeralMachine(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
+      await createRequestedSandbox(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
     else { return nil }
 
     guard await createRequestedWorktree(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)

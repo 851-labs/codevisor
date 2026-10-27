@@ -8,7 +8,6 @@ import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
 import { routeCloud } from "./routes/cloud.js"
-import { routeEphemeralMachines } from "./routes/ephemeral-machines.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFirstRun } from "./routes/first-run.js"
 import { routeFs } from "./routes/fs.js"
@@ -24,6 +23,7 @@ import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeProjects } from "./routes/projects.js"
 import { accountGatewayRouteFor, mcpOAuthRouteFor, publicRouteFor } from "./routes/public-routes.js"
 import type { RouteContext, RouteFamily } from "./routes/route-context.js"
+import { routeSandboxes } from "./routes/sandboxes.js"
 import { routeScreenSharing } from "./routes/screen-sharing.js"
 import { firstAuthorizedRouteFor, serverEndpointFor } from "./routes/server-endpoints.js"
 import { routeSessionEvents } from "./routes/session-event-routes.js"
@@ -105,7 +105,7 @@ const featureRouteFamilies: ReadonlyArray<RouteFamily> = [
 const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, routeState, request, response, url }) =>
     routeGatewayInvoke(services, routeState, request, response, url),
-  routeEphemeralMachines,
+  routeSandboxes,
   ({ services, config, fanout, request, response, url }) =>
     routeProjects(services, config, fanout, request, response, url),
   ({ services, request, response, url }) => routeGitAuth(services, request, response, url),

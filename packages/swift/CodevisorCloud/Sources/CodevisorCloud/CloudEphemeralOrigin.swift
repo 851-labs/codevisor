@@ -8,7 +8,7 @@ public struct CloudEphemeralOrigin: Codable, Equatable, Sendable {
   }
 
   public var label: String {
-    "Ephemeral · \(providerName)"
+    "Sandbox · \(providerName)"
   }
 
   public var providerName: String {
