@@ -27,3 +27,25 @@ export const profileOrMissing = async (
   if (profile === undefined) throw new HttpFailure(404, `No sandbox profile ${profileId}`)
   return profile
 }
+
+type OptionalLink = "projectName" | "repoUrl" | "profileId" | "profileName" | "accountId"
+
+export const OPTIONAL_LINKS: ReadonlyArray<OptionalLink> = [
+  "projectName",
+  "repoUrl",
+  "profileId",
+  "profileName",
+  "accountId"
+]
+
+export const optionalLinks = <Key extends OptionalLink>(
+  machine: Sandbox,
+  keys: ReadonlyArray<Key>
+): Partial<Pick<Sandbox, Key>> => {
+  const links: { -readonly [Link in Key]?: string } = {}
+  for (const key of keys) {
+    const value = machine[key]
+    if (value !== undefined) links[key] = value
+  }
+  return links
+}

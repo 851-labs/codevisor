@@ -9,10 +9,12 @@ import {
   type SandboxField
 } from "@codevisor/sandboxes"
 
+import { run } from "../server-context.js"
 import { makeServices } from "../test-support.js"
 import { pushRemainingAgents } from "./sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
+import { makeSandboxLocalWorkspaces } from "./sandbox-local-workspaces.js"
 import { makeSandboxSettings } from "./sandbox-settings.js"
 import { makeSandboxRecordStore } from "./sandbox-store.js"
 import { pushOneWaySync } from "./sandbox-sync.js"
@@ -24,6 +26,7 @@ export const JOINED_SERVER = "server-sandbox"
 
 export interface RemoteWorkspace {
   readonly id: string
+  readonly name?: string
   isArchived: boolean
 }
 
@@ -123,6 +126,14 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     repoUrl: "https://github.com/851-labs/codevisor.git",
     ...options.project
   }
+  const events: string[] = []
+  const stored = await run(
+    services.db.createProject({ folderPath: "/fixture/sandbox", name: "codevisor" })
+  )
+  const projectLookup = {
+    get: (id: string) =>
+      Promise.resolve(id === project.id ? { ...project, id: stored.id } : undefined)
+  }
   const deps: SandboxDeps = {
     records,
     connections,
@@ -150,7 +161,13 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
         return Promise.resolve(controls.answer?.(tool) ?? remoteTool(workspaces, tool, record))
       }
     },
-    projects: { get: (id) => Promise.resolve(id === project.id ? project : undefined) },
+    projects: projectLookup,
+    localWorkspaces: makeSandboxLocalWorkspaces(services.db, projectLookup, {
+      publish: (kind, id) => {
+        events.push(`${kind} ${id}`)
+        return Promise.resolve()
+      }
+    }),
     sync: (remote, firstHarness) => pushOneWaySync({ db: services.db }, remote, firstHarness),
     syncDeferred: (remote, firstHarness) =>
       pushRemainingAgents({ db: services.db }, remote, firstHarness, {
@@ -184,6 +201,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     deps,
     catalog,
     settings,
+    events,
     provider,
     records,
     presences,
@@ -256,7 +274,7 @@ const remoteTool = (
   if (tool === "codevisor.projects.clone") return { id: "remote-project" }
   if (tool === "codevisor.projects.create_scratch") return { id: "remote-scratch" }
   if (tool === "codevisor.workspaces.upsert") {
-    workspaces.push({ id: String(args.workspaceId), isArchived: false })
+    workspaces.push({ id: String(args.workspaceId), name: String(args.name), isArchived: false })
     return { id: args.workspaceId }
   }
   return workspaces

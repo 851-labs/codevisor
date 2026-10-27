@@ -52,7 +52,7 @@ describe("a workspace the client opens itself", () => {
     const workspace = harness.workspaces[0]
     if (workspace !== undefined) workspace.isArchived = true
     await harness.machines.watch()
-    expect(await harness.machines.list()).toEqual([])
+    expect((await harness.machines.list()).map((machine) => machine.state)).toEqual(["archived"])
   })
 
   it("tears the machine down when nobody opens its workspace within an hour", async () => {
@@ -88,5 +88,42 @@ describe("a project this machine doesn't have", () => {
       ["codevisor.projects.create_scratch", undefined, undefined],
       ["codevisor.workspaces.upsert", undefined, "Spike box"]
     ])
+  })
+
+  it("forgets the sandbox when its workspace is archived, since there's no project here to keep it in", async () => {
+    const harness = await sandboxHarness()
+    await harness.machines.create({
+      ...request,
+      projectId: "on-the-laptop",
+      projectName: "hello-world"
+    })
+    await harness.machines.settled()
+    harness.workspaces.push({ id: clientWorkspaceId, isArchived: true })
+
+    await harness.machines.watch()
+
+    expect(await harness.machines.list()).toEqual([])
+    expect(harness.events).toEqual([])
+  })
+
+  it("restores into an empty slot when the archived workspace here is already gone", async () => {
+    const harness = await sandboxHarness()
+    await harness.records.put({
+      id: "old",
+      name: "Spike box",
+      projectId: "project-1",
+      provider: "e2b",
+      profileId: "profile-1",
+      accountId: "account-1",
+      state: "archived",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      workspaceId: "w-old"
+    })
+
+    await harness.machines.restore("w-old")
+    await harness.machines.settled()
+
+    expect(await harness.machines.list()).toMatchObject([{ state: "ready", workspaceId: "w-old" }])
+    expect(harness.events).toEqual([])
   })
 })

@@ -23,7 +23,8 @@ export const SandboxState = Schema.Literals([
   "cloning",
   "ready",
   "destroying",
-  "failed"
+  "failed",
+  "archived"
 ])
 export type SandboxState = typeof SandboxState.Type
 
@@ -72,6 +73,8 @@ export const Sandbox = Schema.Struct({
   machineId: Schema.optional(Schema.String),
   remoteProjectId: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
+  workspaceName: Schema.optional(Schema.String),
+  restoresWorkspace: Schema.optional(Schema.Boolean),
   defersWorkspace: Schema.optional(Schema.Boolean),
   workspaceOpenedAt: Schema.optional(Schema.String),
   plan: Schema.optional(Schema.Array(SandboxSetupStage)),

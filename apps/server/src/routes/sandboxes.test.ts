@@ -1,6 +1,7 @@
 import { machineField } from "@codevisor/sandboxes"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import type { SandboxEventPublisher } from "../infra/sandbox-local-workspaces.js"
 import { FAKE_PROFILE, sandboxHarness } from "../infra/sandbox-test-support.js"
 import { jsonRequest, startWithApp } from "../test-support.js"
 
@@ -10,11 +11,16 @@ type HarnessOptions = Parameters<typeof sandboxHarness>[0]
 
 const startSandboxServer = async (options: HarnessOptions = {}) => {
   const harness = await sandboxHarness(options)
+  const bound: SandboxEventPublisher[] = []
   const server = await startWithApp({
     ...harness.services,
-    sandboxes: { sandboxes: harness.machines, catalog: harness.catalog }
+    sandboxes: {
+      sandboxes: harness.machines,
+      catalog: harness.catalog,
+      bindEvents: (publish) => bound.push(publish)
+    }
   })
-  return { harness, server }
+  return { harness, server, bound }
 }
 
 const send = (method: string, body: unknown): RequestInit => ({
@@ -267,6 +273,36 @@ describe("sandbox routes", () => {
     )
 
     expect(claimed).toMatchObject({ status: 200, body: { id: "id-1", workspaceId: "workspace-1" } })
+  })
+
+  it("starts the sandbox again when its archived workspace is unarchived", async () => {
+    const { harness, server } = await startSandboxServer()
+    await harness.machines.create({ profileId: "profile-1", projectId: "project-1", name: "box" })
+    await harness.machines.settled()
+    const workspace = harness.workspaces[0]
+    if (workspace !== undefined) workspace.isArchived = true
+    await harness.machines.watch()
+
+    const unarchived = await jsonRequest(
+      server,
+      "/v1/workspaces/id-2",
+      send("PATCH", { isArchived: false })
+    )
+    await harness.machines.settled()
+
+    expect(unarchived.status).toBe(200)
+    expect(await harness.machines.list()).toMatchObject([{ state: "ready", workspaceId: "id-2" }])
+  })
+
+  it("publishes the sandbox's workspace changes as server events once requests arrive", async () => {
+    const { server, bound } = await startSandboxServer()
+    const before = await jsonRequest(server, "/v1/events/cursor")
+
+    await bound.at(-1)?.("workspace.deleted", "w-1", { id: "w-1" })
+    const after = await jsonRequest(server, "/v1/events/cursor")
+
+    expect(bound.length).toBeGreaterThan(0)
+    expect(after.body).not.toEqual(before.body)
   })
 
   it("leaves other methods on sandbox paths to the rest of the router", async () => {

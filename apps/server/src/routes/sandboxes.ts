@@ -1,6 +1,7 @@
 import { ClaimSandboxWorkspaceRequest, CreateSandboxRequest } from "@codevisor/api"
 
 import type { SandboxCatalogDeps } from "../infra/sandbox-catalog.js"
+import type { SandboxEventPublisher } from "../infra/sandbox-local-workspaces.js"
 import type { SandboxSetupPublisher } from "../infra/sandbox-setup-log.js"
 import type { Sandboxes } from "../infra/sandboxes.js"
 import { appendAndPublish, HttpFailure, readSchema, writeJson } from "../server-context.js"
@@ -10,6 +11,7 @@ import { routeSandboxSettings } from "./sandbox-settings.js"
 export interface SandboxesService {
   readonly sandboxes: Sandboxes
   readonly catalog: SandboxCatalogDeps
+  readonly bindEvents?: (publish: SandboxEventPublisher) => void
 }
 
 export const routeSandboxes = async (route: RouteContext): Promise<boolean> => {
@@ -19,6 +21,12 @@ export const routeSandboxes = async (route: RouteContext): Promise<boolean> => {
 
   if (await routeSandboxSettings(route, service.catalog)) return true
   return dispatchSandboxes(route, service.sandboxes)
+}
+
+export const bindSandboxEvents = ({ services, fanout }: RouteContext): void => {
+  services.sandboxes?.bindEvents?.((kind, id, payload) =>
+    appendAndPublish(services.db, fanout, kind, id, payload)
+  )
 }
 
 const dispatchSandboxes = async (route: RouteContext, sandboxes: Sandboxes): Promise<boolean> => {

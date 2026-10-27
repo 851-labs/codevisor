@@ -7,8 +7,6 @@ import type {
 } from "@codevisor/api"
 import {
   readProfileOptions,
-  startServerScript,
-  type ProviderMachineState,
   type BootstrapRequest,
   type SandboxFieldValues,
   type SandboxProvider,
@@ -21,7 +19,12 @@ import { forgetAbandoned, makeAbandonments, type Abandonments } from "./sandbox-
 import { joinAccount, requireOwner, teardownMachine } from "./sandbox-account.js"
 import { runsElsewhere } from "./sandbox-catalog.js"
 import type { SandboxConnection, SandboxConnections } from "./sandbox-connections.js"
-import { connectionOf, profileOrMissing, profileRecordFields } from "./sandbox-profile-record.js"
+import {
+  connectionOf,
+  optionalLinks,
+  profileOrMissing,
+  profileRecordFields
+} from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
 import {
   makeSandboxSetupProgress,
@@ -30,7 +33,8 @@ import {
 } from "./sandbox-setup-log.js"
 import type { SandboxRecordStore } from "./sandbox-store.js"
 import type { OneWaySyncReport } from "./sandbox-sync.js"
-import { isoNow, placeWorkspace, remoteWorkspaceState } from "./sandbox-workspace.js"
+import { isPlaced, teardownRecord, watchOne } from "./sandbox-watch.js"
+import { isoNow, placeWorkspace } from "./sandbox-workspace.js"
 
 export interface SandboxDeps {
   readonly records: SandboxRecordStore
@@ -47,12 +51,23 @@ export interface SandboxDeps {
     readonly call: (machineId: string, tool: string, args: unknown) => Promise<unknown>
   }
   readonly projects: { readonly get: (projectId: string) => Promise<Project | undefined> }
+  readonly localWorkspaces: {
+    readonly keepArchived: (placeholder: ArchivedWorkspace) => Promise<boolean>
+    readonly remove: (workspaceId: string) => Promise<void>
+  }
   readonly sync: (remote: SandboxRemote, firstHarness?: string) => Promise<OneWaySyncReport>
   readonly syncDeferred: (remote: SandboxRemote, firstHarness: string) => Promise<void>
   readonly bootstrap: Omit<BootstrapRequest, "inviteCode" | "machineName">
   readonly clock: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> }
   readonly newId: () => string
   readonly log: (line: string) => void
+}
+
+export interface ArchivedWorkspace {
+  readonly workspaceId: string
+  readonly name: string
+  readonly projectId: string
+  readonly sandboxId: string
 }
 
 export interface Sandboxes {
@@ -63,12 +78,11 @@ export interface Sandboxes {
   ) => Promise<Sandbox>
   readonly destroy: (id: string) => Promise<void>
   readonly claimWorkspace: (id: string, workspaceId: string) => Promise<Sandbox>
+  readonly restore: (workspaceId: string) => Promise<void>
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
   readonly settled: () => Promise<void>
 }
-
-const unopenedWorkspaceGraceMs = 60 * 60 * 1000
 
 const inProgress: ReadonlySet<Sandbox["state"]> = new Set([
   "creating",
@@ -105,7 +119,8 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
 
   const create = async (
     request: CreateSandboxRequest,
-    publish?: SandboxSetupPublisher
+    publish?: SandboxSetupPublisher,
+    restoring: Partial<Sandbox> = {}
   ): Promise<Sandbox> => {
     requireOwner(deps)
     const profile = await profileOrMissing(deps, request.profileId)
@@ -115,7 +130,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     }
     const options = asBadRequest(() => readProfileOptions(provider.definition, profile.values))
     const plan = await planFor(provider, options)
-    const machine = newRecord(deps, request, profile, plan)
+    const machine = { ...newRecord(deps, request, profile, plan), ...restoring }
     if ((await deps.records.get(machine.id)) !== undefined) {
       throw new HttpFailure(409, `A sandbox ${machine.id} already exists`)
     }
@@ -137,6 +152,17 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     create,
     destroy,
     claimWorkspace: (id, workspaceId) => claimWorkspace(deps, id, workspaceId),
+    restore: async (workspaceId) => {
+      const archived = await archivedFor(deps, workspaceId)
+      if (archived?.profileId === undefined) return
+
+      await deps.records.remove(archived.id)
+      await create(
+        restoreRequest(archived, archived.profileId, workspaceId.toLowerCase()),
+        undefined,
+        restoredFields(archived)
+      )
+    },
     watch: async () => {
       for (const machine of (await deps.records.list()).filter(isPlaced)) {
         await exclusively(machine.id, () => watchOne(deps, machine))
@@ -320,75 +346,6 @@ const recordWriter = (deps: SandboxDeps, initial: Sandbox): RecordWriter => {
 
 const initialId = (record: RecordWriter): string => record.current().id
 
-type PlacedMachine = Sandbox & {
-  readonly providerMachineId: string
-  readonly machineId: string
-}
-
-const isPlaced = (machine: Sandbox): machine is PlacedMachine =>
-  machine.state === "ready" &&
-  machine.providerMachineId !== undefined &&
-  machine.machineId !== undefined
-
-const watchOne = async (deps: SandboxDeps, machine: PlacedMachine): Promise<void> => {
-  const provider = await deps.connections.connect(connectionOf(machine))
-  const { state } = await provider.status(machine.providerMachineId)
-  if (state === "stopped" && provider.resume !== undefined) {
-    await resumeMachine(deps, provider, machine)
-    return
-  }
-  const reason = await endedReason(deps, machine, state)
-  if (reason === undefined) return
-
-  deps.log(`Destroying sandbox ${machine.name} (${machine.id}): ${reason}`)
-  await teardownRecord(deps, machine)
-}
-
-const resumeMachine = async (
-  deps: SandboxDeps,
-  provider: SandboxProvider,
-  machine: PlacedMachine
-): Promise<void> => {
-  deps.log(`Resuming sandbox ${machine.name} (${machine.id})`)
-  await provider.resume?.(machine.providerMachineId)
-  await provider.exec(machine.providerMachineId, {
-    script: startServerScript(deps.bootstrap.serverEnvironment)
-  })
-}
-
-const endedReason = async (
-  deps: SandboxDeps,
-  machine: PlacedMachine,
-  providerState: ProviderMachineState
-): Promise<string | undefined> => {
-  if (providerState === "gone" || providerState === "stopped") {
-    return `its ${machine.provider} machine ended`
-  }
-  const state = await remoteWorkspaceState(deps, machine).catch(() => "unreachable" as const)
-  if (state === "active") await noteWorkspaceOpened(deps, machine)
-  if (state === "archived") return "its workspace was archived"
-  if (state === "missing") return missingWorkspaceReason(deps, machine)
-  return undefined
-}
-
-const noteWorkspaceOpened = async (deps: SandboxDeps, machine: PlacedMachine): Promise<void> => {
-  if (machine.workspaceOpenedAt !== undefined) return
-
-  await deps.records.put({ ...machine, workspaceOpenedAt: isoNow(deps) })
-}
-
-const missingWorkspaceReason = (deps: SandboxDeps, machine: PlacedMachine): string | undefined => {
-  if (machine.workspaceOpenedAt !== undefined) return "its workspace is gone"
-  if (deps.clock.now() - Date.parse(machine.createdAt) < unopenedWorkspaceGraceMs) return undefined
-  return "nobody opened its workspace"
-}
-
-const teardownRecord = async (deps: SandboxDeps, machine: Sandbox): Promise<void> => {
-  await deps.records.put({ ...machine, state: "destroying" })
-  await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
-  await deps.records.remove(machine.id)
-}
-
 const failInterrupted = async (deps: SandboxDeps, busy: ReadonlySet<string>): Promise<void> => {
   for (const machine of await deps.records.list()) {
     if (!inProgress.has(machine.state) || busy.has(machine.id)) continue
@@ -418,7 +375,32 @@ const sweepConnection = async (
   }
 }
 
-const isLive = (machine: Sandbox): boolean => machine.state !== "failed"
+const isLive = (machine: Sandbox): boolean =>
+  machine.state !== "failed" && machine.state !== "archived"
+
+const archivedFor = async (deps: SandboxDeps, workspaceId: string): Promise<Sandbox | undefined> =>
+  (await deps.records.list()).find(
+    (machine) => machine.state === "archived" && machine.workspaceId === workspaceId.toLowerCase()
+  )
+
+const restoreRequest = (
+  archived: Sandbox,
+  profileId: string,
+  workspaceId: string
+): CreateSandboxRequest => {
+  return {
+    profileId,
+    projectId: archived.projectId,
+    name: archived.name,
+    workspaceId,
+    ...optionalLinks(archived, ["projectName", "repoUrl"])
+  }
+}
+
+const restoredFields = (archived: Sandbox): Partial<Sandbox> => ({
+  restoresWorkspace: true,
+  ...(archived.workspaceName === undefined ? {} : { workspaceName: archived.workspaceName })
+})
 
 const newRecord = (
   deps: SandboxDeps,

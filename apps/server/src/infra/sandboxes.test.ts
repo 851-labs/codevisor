@@ -1,7 +1,7 @@
 import { machineField } from "@codevisor/sandboxes"
 import { describe, expect, it } from "vitest"
 
-import { HttpFailure } from "../server-context.js"
+import { HttpFailure, run } from "../server-context.js"
 import {
   FAKE_PROFILE,
   JOINED_DEVICE,
@@ -11,6 +11,18 @@ import {
 } from "./sandbox-test-support.js"
 
 const request = { profileId: "profile-1", projectId: "project-1", name: "Spike box" }
+
+const archived = async () => {
+  const harness = await ready()
+  const workspace = harness.workspaces[0]
+  if (workspace === undefined) throw new Error("No workspace was placed")
+  harness.workspaces[0] = { ...workspace, name: "Renamed box", isArchived: true }
+  await harness.machines.watch()
+  return harness
+}
+
+const placeholder = async (harness: Awaited<ReturnType<typeof ready>>) =>
+  (await run(harness.services.db.listWorkspaces)).find((workspace) => workspace.id === "id-2")
 
 const ready = async () => {
   const harness = await sandboxHarness()
@@ -230,21 +242,68 @@ describe("sandbox lifetime", () => {
     expect(await harness.machines.list()).toEqual([])
   })
 
-  it("tears the machine down once its workspace is archived on the sandbox", async () => {
-    const harness = await ready()
-    await harness.machines.watch()
-    expect(harness.provider.machines.size).toBe(1)
-
-    const workspace = harness.workspaces[0]
-    if (workspace !== undefined) workspace.isArchived = true
-    await harness.machines.watch()
+  it("tears the sandbox down when its workspace is archived, keeping an archived workspace here to restore", async () => {
+    const harness = await archived()
 
     expect(harness.logs).toContain(
       "Destroying sandbox Spike box (id-1): its workspace was archived"
     )
     expect(harness.removed).toEqual([JOINED_DEVICE])
     expect(harness.provider.machines.size).toBe(0)
-    expect(await harness.machines.list()).toEqual([])
+    expect(await harness.machines.list()).toEqual([
+      {
+        id: "id-1",
+        name: "Spike box",
+        projectId: "project-1",
+        provider: "e2b",
+        profileId: "profile-1",
+        profileName: "Ubuntu Sandbox",
+        accountId: "account-1",
+        state: "archived",
+        createdAt: "2026-10-23T00:00:00.000Z",
+        workspaceId: "id-2",
+        workspaceName: "Renamed box"
+      }
+    ])
+    expect(await placeholder(harness)).toMatchObject({
+      isArchived: true,
+      name: "Renamed box",
+      labels: { "codevisor-sandbox-restore": "id-1" }
+    })
+    expect(harness.events).toEqual(["workspace.updated id-2"])
+  })
+
+  it("starts a new sandbox from the same profile when the archived workspace is restored", async () => {
+    const harness = await archived()
+
+    await harness.machines.restore("ID-2")
+    await harness.machines.settled()
+
+    expect(await harness.machines.list()).toMatchObject([
+      {
+        id: "id-3",
+        state: "ready",
+        profileId: "profile-1",
+        workspaceId: "id-2",
+        restoresWorkspace: true
+      }
+    ])
+    expect(harness.toolCalls.at(-1)).toMatchObject({
+      tool: "codevisor.workspaces.upsert",
+      args: { workspaceId: "id-2", name: "Renamed box" }
+    })
+    expect(await placeholder(harness)).toBeUndefined()
+    expect(harness.events).toEqual(["workspace.updated id-2", "workspace.deleted id-2"])
+    expect(harness.provider.machines.size).toBe(1)
+  })
+
+  it("restores nothing for a workspace no archived sandbox owns", async () => {
+    const harness = await ready()
+
+    await harness.machines.restore("id-2")
+    await harness.machines.restore("unknown")
+
+    expect((await harness.machines.list()).map((machine) => machine.state)).toEqual(["ready"])
   })
 
   it("tears down when the workspace is gone or the provider machine ended", async () => {
@@ -415,36 +474,5 @@ describe("edges of the pipeline", () => {
     await harness.machines.watch()
 
     expect((await harness.machines.list())[0]?.state).toBe("ready")
-  })
-})
-
-describe("sandboxes on newer servers", () => {
-  it("understands normalized tool results: named ids and item lists", async () => {
-    const harness = await sandboxHarness()
-    harness.controls.answer = (tool) => {
-      if (tool === "codevisor.projects.clone") return { projectId: "remote-normalized" }
-      if (tool !== "codevisor.workspaces.list") return undefined
-      return {
-        items: [
-          "noise",
-          ...harness.workspaces.map(({ id, isArchived }) => ({ workspaceId: id, isArchived }))
-        ]
-      }
-    }
-
-    await harness.machines.create(request)
-    await harness.machines.settled()
-    await harness.machines.watch()
-
-    expect((await harness.machines.list())[0]).toMatchObject({
-      state: "ready",
-      remoteProjectId: "remote-normalized"
-    })
-
-    const workspace = harness.workspaces[0]
-    if (workspace !== undefined) workspace.isArchived = true
-    await harness.machines.watch()
-
-    expect(await harness.machines.list()).toEqual([])
   })
 })

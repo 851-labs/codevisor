@@ -23,7 +23,7 @@ import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeProjects } from "./routes/projects.js"
 import { accountGatewayRouteFor, mcpOAuthRouteFor, publicRouteFor } from "./routes/public-routes.js"
 import type { RouteContext, RouteFamily } from "./routes/route-context.js"
-import { routeSandboxes } from "./routes/sandboxes.js"
+import { bindSandboxEvents, routeSandboxes } from "./routes/sandboxes.js"
 import { routeScreenSharing } from "./routes/screen-sharing.js"
 import { firstAuthorizedRouteFor, serverEndpointFor } from "./routes/server-endpoints.js"
 import { routeSessionEvents } from "./routes/session-event-routes.js"
@@ -57,6 +57,7 @@ export const handleRequest = async (
 
     const url = parseRequestUrl(request)
     const route: RouteContext = { services, fanout, routeState, request, response, url, config }
+    bindSandboxEvents(route)
     const gatewayRoute = accountGatewayRouteFor(route)
     if (gatewayRoute !== undefined) return gatewayRoute(route)
 

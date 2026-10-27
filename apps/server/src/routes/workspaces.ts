@@ -27,6 +27,7 @@ import { matchesLabelFilters } from "./label-filters.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
+import { restoreSandboxWhenUnarchived } from "./sandbox-restore.js"
 import { routeWorkspaceArchive } from "./workspace-archive.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
 import { routeWorkspaceFiles } from "./workspace-files.js"
@@ -145,6 +146,7 @@ const upsertWorkspace = async (route: RouteContext, workspaceId: string): Promis
   const wasArchived = isArchivedIn(await run(services.db.listWorkspaces), workspaceId)
   const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
   const settled = await applyArchiveEffects(route, workspace, wasArchived)
+  restoreSandboxWhenUnarchived(route, settled, wasArchived)
   writeJson(response, 200, settled)
   return true
 }
@@ -158,6 +160,7 @@ const updateWorkspace = async (route: RouteContext, workspaceId: string): Promis
   const wasArchived = existing.isArchived
   const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
   const settled = await applyArchiveEffects(route, workspace, wasArchived)
+  restoreSandboxWhenUnarchived(route, settled, wasArchived)
   writeJson(response, 200, settled)
   return true
 }

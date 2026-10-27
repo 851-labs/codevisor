@@ -12,6 +12,10 @@ export interface PlacedWorkspace {
 
 export type RemoteWorkspaceState = "active" | "archived" | "missing"
 
+export type RemoteWorkspace =
+  | { readonly state: "missing" }
+  | { readonly state: "active" | "archived"; readonly id: string; readonly name?: string }
+
 export const placeWorkspace = async (
   deps: SandboxDeps,
   machine: Sandbox & { readonly machineId: string },
@@ -22,6 +26,9 @@ export const placeWorkspace = async (
   log(project.repoUrl === undefined ? "Creating an empty project" : `Cloning ${project.repoUrl}`)
   const remoteProjectId = await remoteProjectFor(deps, machine.machineId, project)
   log(`${project.name} is ready`)
+  if (machine.restoresWorkspace === true && machine.workspaceId !== undefined) {
+    return restoreWorkspace(deps, machine, remoteProjectId, machine.workspaceId)
+  }
   if (machine.workspaceId !== undefined)
     return { remoteProjectId, workspaceId: machine.workspaceId }
   if (machine.defersWorkspace === true) return { remoteProjectId }
@@ -37,17 +44,36 @@ export const placeWorkspace = async (
   return { remoteProjectId, workspaceId, workspaceOpenedAt: isoNow(deps) }
 }
 
-export const remoteWorkspaceState = async (
+export const remoteWorkspace = async (
   deps: SandboxDeps,
   machine: Sandbox & { readonly machineId: string }
-): Promise<RemoteWorkspaceState> => {
+): Promise<RemoteWorkspace> => {
   const listed = await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.list", {})
   const workspace = workspacesIn(listed).find((candidate) =>
     sameId(candidate.id, machine.workspaceId)
   )
-  if (workspace === undefined) return "missing"
+  if (workspace === undefined) return { state: "missing" }
 
-  return workspace.isArchived ? "archived" : "active"
+  const state = workspace.isArchived ? "archived" : "active"
+  const found = { id: workspace.id.toLowerCase(), state } as const
+  return workspace.name === undefined ? found : { ...found, name: workspace.name }
+}
+
+const restoreWorkspace = async (
+  deps: SandboxDeps,
+  machine: Sandbox & { readonly machineId: string },
+  remoteProjectId: string,
+  workspaceId: string
+): Promise<PlacedWorkspace> => {
+  await deps.localWorkspaces.remove(workspaceId)
+  await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.upsert", {
+    workspaceId,
+    projectId: remoteProjectId,
+    name: machine.workspaceName ?? machine.name,
+    hasCustomName: true,
+    labels: { [SANDBOX_WORKSPACE_LABEL]: machine.id }
+  })
+  return { remoteProjectId, workspaceId, workspaceOpenedAt: isoNow(deps) }
 }
 
 export const isoNow = (deps: SandboxDeps): string => new Date(deps.clock.now()).toISOString()
@@ -87,6 +113,7 @@ const remoteProjectFor = async (
 interface ListedWorkspace {
   readonly id: string
   readonly isArchived: boolean
+  readonly name?: string
 }
 
 const workspacesIn = (listed: unknown): ReadonlyArray<ListedWorkspace> => {
@@ -98,7 +125,9 @@ const workspacesIn = (listed: unknown): ReadonlyArray<ListedWorkspace> => {
 const listedWorkspace = (item: unknown): ReadonlyArray<ListedWorkspace> => {
   const id = idIn(item, "workspaceId")
   if (id === undefined) return []
-  return [{ id, isArchived: recordField(item, "isArchived") === true }]
+  const name = recordField(item, "name")
+  const isArchived = recordField(item, "isArchived") === true
+  return [typeof name === "string" ? { id, isArchived, name } : { id, isArchived }]
 }
 
 const idOf = (project: unknown): string => {

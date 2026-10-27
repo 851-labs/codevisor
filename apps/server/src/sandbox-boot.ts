@@ -35,6 +35,7 @@ import {
   tartImages,
   type TartImageSettings
 } from "./infra/sandbox-image.js"
+import { makeSandboxLocalWorkspaces, type SandboxEvents } from "./infra/sandbox-local-workspaces.js"
 import { makeSandboxSettings } from "./infra/sandbox-settings.js"
 import { makeSandboxRecordStore } from "./infra/sandbox-store.js"
 import { pushOneWaySync } from "./infra/sandbox-sync.js"
@@ -69,6 +70,13 @@ export const startSandboxes = (
     (id) => id !== "tart" || tartHere
   )
   const connections = makeSandboxConnections(adapters, settings)
+  const events: SandboxEvents = { publish: () => Promise.resolve() }
+  const projects = {
+    get: async (projectId: string) =>
+      (await run(options.db.listProjects)).find(
+        (project) => project.id.toLowerCase() === projectId.toLowerCase()
+      )
+  }
   const machines = makeSandboxes({
     records,
     connections,
@@ -89,12 +97,8 @@ export const startSandboxes = (
           })
         )
     },
-    projects: {
-      get: async (projectId) =>
-        (await run(options.db.listProjects)).find(
-          (project) => project.id.toLowerCase() === projectId.toLowerCase()
-        )
-    },
+    projects,
+    localWorkspaces: makeSandboxLocalWorkspaces(options.db, projects, events),
     sync: (remote, firstHarness) =>
       pushOneWaySync({ db: options.db, blobs: options.syncBlobs }, remote, firstHarness),
     syncDeferred: (remote, firstHarness) =>
@@ -126,6 +130,9 @@ export const startSandboxes = (
   return {
     sandboxes: machines,
     catalog,
+    bindEvents: (publish) => {
+      events.publish = publish
+    },
     start: () => {
       tick()
       setInterval(tick, watchIntervalMs).unref()
