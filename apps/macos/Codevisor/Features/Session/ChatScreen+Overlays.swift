@@ -60,7 +60,7 @@ extension ChatScreen {
   }
 
   var transcriptBottomFade: TranscriptBottomFade {
-    guard !isReadOnly, composerCardHeight > 0 else { return .none }
+    guard !isReadOnly, !usesSlimComposer, composerCardHeight > 0 else { return .none }
     let cardHeight = composerCardHeight
     let fadeStart = cardHeight * 0.15
     let fadeEnd = max(cardHeight / 2, cardHeight - composerCardStyle.cornerRadius)

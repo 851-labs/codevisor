@@ -19,6 +19,7 @@ struct ChatScreen: View {
   @Environment(\.openSubagent) var openSubagent
   @Environment(\.transcriptWebLinkActions) var transcriptWebLinkActions
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
+  @Environment(\.usesSlimComposer) var usesSlimComposer
   @Environment(AppEnvironment.self) var environment
   @Environment(\.computerUsePiPPane) var computerUsePiPPane
   @Bindable var controller: SessionController
