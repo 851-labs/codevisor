@@ -2,6 +2,11 @@ import CodevisorCore
 import SwiftUI
 
 extension RootView {
+  var showsBotConversation: Bool {
+    guard botsEnabled, case .bot = selection else { return false }
+    return true
+  }
+
   @ViewBuilder
   func botDetail(_ store: SessionStore, serverId: String, botId: UUID) -> some View {
     if botsEnabled, let bot = environment.bots.bot(serverId: serverId, id: botId) {

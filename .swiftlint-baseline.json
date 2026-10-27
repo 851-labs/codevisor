@@ -577,7 +577,7 @@
         "file": "apps/macos/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView+Measurement.swift",
         "line": 83
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 81 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -590,7 +590,7 @@
       "location": {
         "character": 3,
         "file": "apps/macos/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView+Position.swift",
-        "line": 181
+        "line": 201
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -605,7 +605,7 @@
       "location": {
         "character": 12,
         "file": "apps/macos/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView.swift",
-        "line": 171
+        "line": 177
       },
       "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 77 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1490,7 +1490,7 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerBackend.swift",
-        "line": 233
+        "line": 234
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 88 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1865,7 +1865,7 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/BrowserCookieSync.swift",
-        "line": 72
+        "line": 73
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",

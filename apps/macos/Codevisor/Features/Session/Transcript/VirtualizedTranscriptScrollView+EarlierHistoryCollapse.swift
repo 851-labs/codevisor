@@ -11,7 +11,7 @@ extension VirtualizedTranscriptScrollView {
       ? TranscriptEarlierHistoryCollapseTarget.section(
         in: virtualLayout,
         rowByKey: rowByKey,
-        viewportTop: contentView.bounds.minY - transcriptRowsOrigin,
+        viewportTop: unobstructedViewport.minY - transcriptRowsOrigin,
         viewportBottom: contentView.bounds.maxY - transcriptRowsOrigin
       )
       : nil

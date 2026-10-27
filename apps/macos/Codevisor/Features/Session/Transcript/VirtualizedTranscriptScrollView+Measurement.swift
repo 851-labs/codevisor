@@ -88,6 +88,8 @@ extension VirtualizedTranscriptScrollView {
         hostCount: mountedHosts.count, distance: currentDistanceFromBottom())
     }
 
+    needsTopInsetGeometry = false
+    topInsetAnchor = nil
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
     let plan = TranscriptGeometryRebuildPlan(
@@ -128,10 +130,7 @@ extension VirtualizedTranscriptScrollView {
         x: 0,
         y: 0,
         width: width,
-        height: paginationHeaderLayout.documentHeight(
-          topPadding: Self.topPadding,
-          rowsHeight: virtualLayout.totalHeight
-        )
+        height: documentHeight(rowsHeight: virtualLayout.totalHeight)
       )
       positionPaginationLoadingIndicator()
       let firstChangedIndex = changedHeights?.keys.compactMap {

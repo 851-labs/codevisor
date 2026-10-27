@@ -126,6 +126,7 @@ struct RootView: View {
         )
       )
       .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
+      .background(TransparentTitlebar(isTransparent: showsBotConversation).frame(width: 0, height: 0))
       .environment(\.quickLook, quickLook)
       .quickLookPreview(
         Binding(

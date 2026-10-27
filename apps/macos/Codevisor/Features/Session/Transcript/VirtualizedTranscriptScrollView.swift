@@ -100,6 +100,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var pendingInitialState: SessionScrollState?
   var hasOlderHistory = false
   var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
+  var topChromeHeight: CGFloat = 0 {
+    didSet { if topChromeHeight != oldValue { needsLayout = true } }
+  }
+  var topContentInset: CGFloat = 0
+  var needsTopInsetGeometry = false
+  var topInsetAnchor: VirtualTranscriptAnchor?
   var isLoadingInitialHistory = false
   var isPreparingInitialProjection = true
   var isActiveProjectionPending = false
@@ -323,7 +329,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     let previousSize = lastViewportSize
     let previousDistance = lastViewportDistanceFromBottom
     super.layout()
-    if hasPendingViewportResize {
+    updateTopContentInset()
+    if hasPendingViewportResize || needsTopInsetGeometry {
       applyPositionTransaction {
         layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
       }
@@ -364,8 +371,12 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     return min(Self.maxRowWidth, availableWidth)
   }
 
+  var transcriptTopPadding: CGFloat {
+    topContentInset + Self.topPadding
+  }
+
   var transcriptRowsOrigin: CGFloat {
-    paginationHeaderLayout.rowOrigin(topPadding: Self.topPadding, rowOffset: 0)
+    paginationHeaderLayout.rowOrigin(topPadding: transcriptTopPadding, rowOffset: 0)
   }
 
   var isDraggingScrollerKnob: Bool {

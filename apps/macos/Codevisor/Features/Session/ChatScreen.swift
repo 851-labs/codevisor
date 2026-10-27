@@ -20,6 +20,7 @@ struct ChatScreen: View {
   @Environment(\.transcriptWebLinkActions) var transcriptWebLinkActions
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
   @Environment(\.usesSlimComposer) var usesSlimComposer
+  @Environment(\.transcriptTopChromeHeight) var transcriptTopChromeHeight
   @Environment(AppEnvironment.self) var environment
   @Environment(\.computerUsePiPPane) var computerUsePiPPane
   @Bindable var controller: SessionController

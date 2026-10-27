@@ -66,21 +66,39 @@ extension VirtualizedTranscriptScrollView {
   var unobstructedViewport: CGRect {
     var viewport = contentView.bounds
     let covered = rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey]?.estimatedHeight ?? 0
-    viewport.size.height = max(1, viewport.height - covered)
+    viewport.origin.y += topContentInset
+    viewport.size.height = max(1, viewport.height - topContentInset - covered)
     return viewport
   }
 
   func currentViewportAnchor() -> VirtualTranscriptAnchor? {
     virtualLayout.viewportAnchor(
-      at: contentView.bounds.minY - transcriptRowsOrigin
+      at: unobstructedViewport.minY - transcriptRowsOrigin
     )
   }
 
   func restoredViewportTop(from state: SessionScrollState) -> CGFloat? {
-    guard let anchor = state.virtualTranscript?.viewportAnchor,
-      let rowRelativeTop = virtualLayout.viewportTop(restoring: anchor)
-    else { return nil }
-    return transcriptRowsOrigin + rowRelativeTop
+    state.virtualTranscript?.viewportAnchor.flatMap(viewportTop(restoring:))
+  }
+
+  func viewportTop(restoring anchor: VirtualTranscriptAnchor) -> CGFloat? {
+    virtualLayout.viewportTop(restoring: anchor).map { transcriptRowsOrigin + $0 - topContentInset }
+  }
+
+  func updateTopContentInset() {
+    let inset = topChromeHeight.rounded()
+    guard inset != topContentInset else { return }
+    if !needsTopInsetGeometry { topInsetAnchor = currentViewportAnchor() }
+    topContentInset = inset
+    scrollerInsets.top = inset
+    needsTopInsetGeometry = true
+  }
+
+  private func rebuildKeepingVisibleTop() {
+    let anchor = topInsetAnchor
+    rebuildDocumentGeometry()
+    guard initialPositionApplied, !followsLatest, let anchor, let top = viewportTop(restoring: anchor) else { return }
+    setViewportTop(top)
   }
 
   func setDistanceFromBottom(_ distance: CGFloat) {
@@ -137,6 +155,8 @@ extension VirtualizedTranscriptScrollView {
       refreshMountedRootViews()
       rebuildDocumentGeometry()
       if inLiveResize { settleMountedRowHeights() }
+    } else if needsTopInsetGeometry {
+      rebuildKeepingVisibleTop()
     } else {
       applyPendingInitialPositionIfPossible()
       updateMountedRows()
@@ -346,7 +366,7 @@ extension VirtualizedTranscriptScrollView {
     let size = paginationLoadingIndicator.frame.size
     paginationLoadingIndicator.frame = CGRect(
       x: (max(1, contentView.bounds.width) - size.width) / 2,
-      y: Self.topPadding
+      y: transcriptTopPadding
         + (paginationHeaderLayout.height - size.height) / 2,
       width: size.width,
       height: size.height

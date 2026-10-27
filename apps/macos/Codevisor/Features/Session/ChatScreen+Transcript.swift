@@ -131,6 +131,7 @@ extension ChatScreen {
               }
             ),
             markdownRowStyle: transcriptMarkdownRowStyle,
+            topChromeHeight: transcriptTopChromeHeight,
             onInitialPresentationReady: {
               isInitialTranscriptReady = true
             },
@@ -142,6 +143,7 @@ extension ChatScreen {
               }
             }
           )
+          .ignoresSafeArea(.container, edges: transcriptTopChromeHeight > 0 ? .top : [])
         }
       }
     }

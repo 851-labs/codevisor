@@ -81,7 +81,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
   private func firstVisibleRowIndex() -> Int {
     guard
       let index = virtualLayout.index(
-        nearestToOffset: contentView.bounds.minY - transcriptRowsOrigin
+        nearestToOffset: unobstructedViewport.minY - transcriptRowsOrigin
       ),
       virtualLayout.keys.indices.contains(index)
     else { return 0 }

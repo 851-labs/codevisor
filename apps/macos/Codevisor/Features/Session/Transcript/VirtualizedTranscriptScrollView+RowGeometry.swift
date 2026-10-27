@@ -27,12 +27,16 @@ extension VirtualizedTranscriptScrollView {
     return CGRect(
       x: rowX,
       y: paginationHeaderLayout.rowOrigin(
-        topPadding: Self.topPadding,
+        topPadding: transcriptTopPadding,
         rowOffset: virtualLayout.frame(at: index).minY
       ),
       width: rowWidth,
       height: virtualLayout.frame(at: index).height
     )
+  }
+
+  func documentHeight(rowsHeight: CGFloat) -> CGFloat {
+    paginationHeaderLayout.documentHeight(topPadding: transcriptTopPadding, rowsHeight: rowsHeight)
   }
 
   func position(host: TranscriptMountedRowHost, frame: CGRect) {

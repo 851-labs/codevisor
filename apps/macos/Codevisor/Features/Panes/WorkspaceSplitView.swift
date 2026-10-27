@@ -19,6 +19,7 @@ struct WorkspaceSplitView: View {
   var onLiveTreeChanged: ((SplitNode) -> Void)? = nil
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.transcriptTopChromeHeight) private var transcriptTopChromeHeight
   @State private var activeDividerDrag: ActiveDividerDrag?
 
   var body: some View {
@@ -28,6 +29,7 @@ struct WorkspaceSplitView: View {
         size: geometry.size
       )
       let hasMultipleLeaves = snapshot.leaves.count > 1
+      let clip = WorkspaceSplitClip(extendsAboveTop: extendsChatAboveTop(snapshot))
 
       ZStack(alignment: .topLeading) {
         ForEach(snapshot.leaves) { leaf in
@@ -51,7 +53,7 @@ struct WorkspaceSplitView: View {
             height: max(0, leaf.frame.height)
           )
           .position(x: leaf.frame.midX, y: leaf.frame.midY)
-          .clipped()
+          .clipShape(clip)
           .transition(openingTransition(for: opening))
         }
 
@@ -80,7 +82,7 @@ struct WorkspaceSplitView: View {
         }
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
-      .clipped()
+      .clipShape(clip)
     }
     .overlay { dragGhostOverlay }
     .task(id: openingSplit?.id) {
@@ -91,6 +93,13 @@ struct WorkspaceSplitView: View {
       guard !Task.isCancelled, self.openingSplit == openingSplit else { return }
       onOpeningFinished?(openingSplit)
     }
+  }
+
+  private func extendsChatAboveTop(_ snapshot: WorkspaceSplitLayoutSnapshot) -> Bool {
+    guard transcriptTopChromeHeight > 0, snapshot.leaves.count == 1, let leaf = snapshot.leaves.first else {
+      return false
+    }
+    return groupModel(leaf.id).state.selectedPane?.kind == .chat
   }
 
   private func openingTransition(for opening: WorkspaceSplitOpening?) -> AnyTransition {

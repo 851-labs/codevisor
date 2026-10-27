@@ -7,6 +7,7 @@ struct BotConversationChrome: ViewModifier {
 
   func body(content: Content) -> some View {
     content
+      .environment(\.transcriptTopChromeHeight, BotConversationHeader.height)
       .toolbar(removing: .title)
       .overlay(alignment: .top) { header }
   }
