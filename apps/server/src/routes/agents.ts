@@ -7,13 +7,14 @@ import {
 import { Schema } from "effect"
 
 import { HttpFailure, matchRoute, matchRouteParams, run, writeJson } from "../server-context.js"
+import { closeAgent } from "./agent-close.js"
 import {
   defaultSearchLast,
   maxSearchLast,
   readAgentItem,
   searchAgentTranscript
 } from "./agent-debug.js"
-import { archiveAgent, listAgents, waitForAgents } from "./agent-lifecycle.js"
+import { listAgents, waitForAgents } from "./agent-lifecycle.js"
 import { startAgent } from "./agent-start.js"
 import { agentState, harnessIsLoaded } from "./agent-state.js"
 import { rejectSyncThrows, type RouteContext } from "./route-context.js"
@@ -30,8 +31,8 @@ const dispatchAgentRoute = (route: RouteContext): Promise<boolean> => {
   if (request.method === "POST" && url.pathname === "/v1/agents") return startAgent(route)
   if (request.method === "POST" && url.pathname === "/v1/agents/wait") return waitForAgents(route)
 
-  const archiveId = matchRoute(url.pathname, "/v1/agents/:id/archive")
-  if (archiveId !== undefined && request.method === "POST") return archiveAgent(route, archiveId)
+  const closeId = matchRoute(url.pathname, "/v1/agents/:id/close")
+  if (closeId !== undefined && request.method === "POST") return closeAgent(route, closeId)
   if (request.method !== "GET") return Promise.resolve(false)
 
   const statusId = matchRoute(url.pathname, "/v1/agents/:id")

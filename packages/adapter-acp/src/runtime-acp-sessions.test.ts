@@ -91,7 +91,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(reloadedElsewhere).toEqual(existing)
     expect(connector.requests).toHaveLength(5)
     expect(connector.requests[0]).toMatchObject({
-      args: ["--acp"],
       command: "/bin/gemini",
       cwd: "/tmp/project",
       harnessId: "gemini"
@@ -127,12 +126,12 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => name === "gemini",
+      executableExists: (name) => name === "goose",
       locateExecutable: (name) => `/bin/${name}`
     })
 
     const timedOut = expect(
-      run(runtime.inspectHarness("gemini", "/tmp/hang-inspection"))
+      run(runtime.inspectHarness("goose", "/tmp/hang-inspection"))
     ).rejects.toMatchObject({
       message: "Harness inspection timed out after 15000ms",
       operation: "inspectHarness"
@@ -295,7 +294,7 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.createAgentSession("goose", "/tmp/project", sink))
 
     expect(connector.requests.map((request) => request.command)).toEqual(["gemini", "goose"])
-    expect(connector.requests[0]?.args).toEqual(["--acp"])
+    expect(connector.requests[0]?.args[0]).toBe("--acp")
     expect(connector.requests[1]?.args).toEqual(["acp"])
   })
 

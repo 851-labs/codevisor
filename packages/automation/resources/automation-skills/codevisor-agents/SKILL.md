@@ -1,11 +1,13 @@
 ---
 name: codevisor-agents
-description: Start and coordinate other Codevisor coding agents as visible chats — beside you in your workspace, or in workspaces of their own. Covers starting an agent in one call, following up, getting its final reply, answering its questions, finding your agents again, and archiving them, plus debug tools for reading a transcript. Use when you want another harness or model working alongside you on the same change, separate pieces of work each with their own branch or PR, an agent per issue/PR/task, orchestrate or supervise agents, review another agent's work, or clean up agent workspaces.
+description: Start and coordinate other Codevisor coding agents as visible chats — beside you in your workspace, or in workspaces of their own. Use them instead of your harness's built-in subagents. Covers starting an agent in one call, following up, getting its final reply, answering its questions, finding your agents again, and closing or archiving them, plus debug tools for reading a transcript. Use whenever you want help with your task (research, reading code, a review, a small piece of the same change), another harness or model alongside you, separate pieces of work each with their own branch or PR, an agent per issue/PR/task, to orchestrate or supervise agents, review another agent's work, or clean up agent workspaces.
 ---
 
 # Codevisor agents
 
 Every Codevisor chat is an **agent**: a coding agent (Claude Code, Codex, …) running in a **workspace** of a **project**. Each one is visible to the user in the sidebar.
+
+Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. The user can't see or steer them, they edit your checkout unnoticed, and they die on updates. Start a Codevisor agent instead, even for a quick question.
 
 Everything goes through a machine handle. `machine.agents.<tool>(args)` is the same as `machine.tools.codevisor.agents.<tool>(args)`. Ids are passed and returned under the same name: `agentId`, `projectId`, `workspaceId`. Every list is `{ items, next? }`. Check exact inputs with `machine.tools.describe.tool({ path: "codevisor.agents.start" })`.
 
@@ -29,9 +31,18 @@ One call creates the checkout, the chat, and its first message, and subscribes y
 
 `isolation` picks where it works:
 
+- `"shared"`: your own workspace and checkout, as a tab beside you. Use it for quick, scoped help with your current task: research, reading code or docs, a review, a small piece of the same change, or a second opinion from another harness or model. Keep its task scoped so the two of you don't edit the same files at once, and close it with `agents.close` once you have its reply.
 - `"worktree"`: a new git worktree in a new workspace, for separate work that ends in its own branch or PR.
-- `"shared"`: your own workspace and checkout, for another harness or model working on the same change (a second opinion, a piece to implement, a review). Keep its task scoped so the two of you don't edit the same files at once.
-- `"project"`: the project folder itself, in a new workspace.
+- `"project"`: the project folder itself, in a new workspace, for separate work that needs no branch of its own, or a project that isn't a git repository.
+
+```js
+;async () =>
+  machines.current.agents.start({
+    title: "Find where sessions are archived",
+    prompt: "List every code path that archives a session as file:line. Don't edit files.",
+    isolation: "shared"
+  })
+```
 
 Harness, model, reasoning, and project default to yours. Pass `harness` (an id from `machine.tools.codevisor.harnesses.list()`), `model`, or `project` (an id or name) to pick others. `labels` are free-form key/value pairs that help you find your agents again later.
 
@@ -45,7 +56,7 @@ Starting an agent subscribes you, so end your turn instead of waiting. When the 
 </codevisor-event>
 ```
 
-- A turn that ends while the agent still runs background work (a background shell, a monitor, a subagent) doesn't wake you. You hear once it stops with nothing left running.
+- A turn that ends while the agent still runs background work (a background shell, a monitor) doesn't wake you. You hear once it stops with nothing left running.
 - `session.waiting_for_user` carries a pending question, and `session.errored` carries the error.
 - Several events from one agent while you're busy are combined, so you get its latest state once.
 - The user never sees these events as messages they typed.
@@ -118,10 +129,11 @@ To give guidance instead of picking an answer, send it with `agents.message`.
 
 - To review work, start another agent on the same project with `labels: { role: "reviewer", for: agentId }` and point it at the PR or branch.
 - `agents.debug.branch_diff({ agentId })` gives a quick size of an agent's changes.
-- `agents.archive({ agentId })` archives the agent's workspace. Archive only agents you started, once their work is merged or no longer needed.
+- When you're done with a shared helper (`"shared"`, in your own workspace), call `agents.close({ agentId })`. It stops if still running and you stop getting its events. Its tab leaves your workspace, its chat stays in history and `agents.list`, and your checkout is untouched.
+- When you're done with a separate workspace (`"worktree"` or `"project"`), call `machine.tools.codevisor.workspaces.archive({ workspaceId })` with the `workspaceId` from `agents.start` or `agents.list`, once its work is merged or no longer needed.
   - It waits until the archive is done. It keeps a restorable snapshot of tracked and untracked files and deletes everything else in the checkout folder, ignored files included. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
-  - It refuses an agent that shares your own workspace.
+- You can't close yourself or archive your own workspace.
 
 ## Debugging an agent
 

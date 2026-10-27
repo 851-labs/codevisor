@@ -82,12 +82,15 @@ export const WaitForAgentsResponse = Schema.Struct({
 })
 export type WaitForAgentsResponse = typeof WaitForAgentsResponse.Type
 
-export const AgentArchiveResult = Schema.Struct({
+export const CloseAgentRequest = Schema.Struct({ callerAgentId: Schema.String })
+export type CloseAgentRequest = typeof CloseAgentRequest.Type
+
+export const ClosedAgent = Schema.Struct({
   agentId: Schema.String,
   workspaceId: Schema.String,
-  archived: Schema.Boolean
+  closed: Schema.Literal(true)
 })
-export type AgentArchiveResult = typeof AgentArchiveResult.Type
+export type ClosedAgent = typeof ClosedAgent.Type
 
 export const AgentIsolation = Schema.Literals(["worktree", "shared", "project"])
 export type AgentIsolation = typeof AgentIsolation.Type

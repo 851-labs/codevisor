@@ -89,13 +89,13 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => name === "gemini",
+      executableExists: (name) => name === "goose",
       locateExecutable: (name) => `/bin/${name}`
     })
 
     const timedOut = expect(
       run(
-        runtime.probeHarnessAuth("gemini", {
+        runtime.probeHarnessAuth("goose", {
           env: { HANG_AUTH: "1" },
           id: "hung-account",
           profileKind: "default"

@@ -84,6 +84,7 @@ export interface QuestionAnswer {
 export type {
   ProviderId,
   HarnessLaunch,
+  HarnessLaunchFile,
   InstallOrigin,
   HarnessInstallMethodSpec,
   UpdateCheckSpec,

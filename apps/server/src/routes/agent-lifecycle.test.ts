@@ -64,7 +64,11 @@ const gitProject = async () => {
         })
       ).body
     )
-  return { ...running, repo, worktree, agentIn }
+  const archiveWorkspaceOf = async (agentId: string) => {
+    const { workspaceId } = await run(running.services.db.getSessionSummary(agentId))
+    return jsonRequest(running.server, `/v1/workspaces/${workspaceId}/archive`, { method: "POST" })
+  }
+  return { ...running, repo, worktree, agentIn, archiveWorkspaceOf }
 }
 
 describe("agent lifecycle routes", () => {
@@ -148,7 +152,7 @@ describe("agent lifecycle routes", () => {
 
   it("clears an archived agent's background tasks so it doesn't read as working", async () => {
     await withWorktreesRoot(async () => {
-      const { server, services, worktree, agentIn } = await gitProject()
+      const { server, services, worktree, agentIn, archiveWorkspaceOf } = await gitProject()
       const agentId = await agentIn((await worktree()).name)
       await run(
         services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell, subagent] })
@@ -157,7 +161,7 @@ describe("agent lifecycle routes", () => {
         state: "working"
       })
 
-      await jsonRequest(server, `/v1/agents/${agentId}/archive`, { method: "POST" })
+      await archiveWorkspaceOf(agentId)
 
       expect(
         (await run(services.db.getTranscriptPage(agentId, undefined, 1))).backgroundTasks
@@ -261,57 +265,27 @@ describe("agent lifecycle routes", () => {
     })
   })
 
-  it("refuses to archive an agent without a workspace", async () => {
-    const { server } = await start()
-    const project = idOf(
-      (
-        await jsonRequest(server, "/v1/projects", {
-          body: JSON.stringify({
-            folderPath: mkdtempSync(join(tmpdir(), "codevisor-agent-loose-"))
-          }),
-          method: "POST"
-        })
-      ).body
-    )
-    const agentId = idOf(
-      (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ projectId: project, harnessId: "codex" }),
-          method: "POST"
-        })
-      ).body
-    )
-
-    expect(
-      (await jsonRequest(server, `/v1/agents/${agentId}/archive`, { method: "POST" })).status
-    ).toBe(422)
-  })
-
   it("waits for the archive to remove the checkout before answering", async () => {
     await withWorktreesRoot(async () => {
-      const { server, worktree, agentIn } = await gitProject()
+      const { worktree, agentIn, archiveWorkspaceOf } = await gitProject()
       const tree = await worktree()
       const agentId = await agentIn(tree.name)
 
-      const archived = await jsonRequest(server, `/v1/agents/${agentId}/archive`, {
-        method: "POST"
-      })
+      const archived = await archiveWorkspaceOf(agentId)
 
-      expect(archived.body).toEqual({ agentId, workspaceId: expect.any(String), archived: true })
+      expect(archived.body).toEqual({ workspaceId: expect.any(String), archived: true })
       expect(existsSync(tree.path)).toBe(false)
     })
   })
 
   it("fails the archive call when the archive fails, leaving the checkout in place", async () => {
     await withWorktreesRoot(async () => {
-      const { server, worktree, agentIn } = await gitProject()
+      const { worktree, agentIn, archiveWorkspaceOf } = await gitProject()
       const tree = await worktree()
       const agentId = await agentIn(tree.name)
       rmSync(join(tree.path, ".git"))
 
-      const archived = await jsonRequest(server, `/v1/agents/${agentId}/archive`, {
-        method: "POST"
-      })
+      const archived = await archiveWorkspaceOf(agentId)
 
       expect(archived.status).toBeGreaterThanOrEqual(400)
       expect(existsSync(tree.path)).toBe(true)

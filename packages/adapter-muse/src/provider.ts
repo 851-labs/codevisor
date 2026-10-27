@@ -33,7 +33,14 @@ export interface MuseProviderConfig {
   readonly hostDeadlineMs?: number
 }
 
-const CHAT_HOST_ARGS = ["--trust-workspace", "--disable-sandbox"]
+const NATIVE_AGENTS_OFF = [
+  "-c",
+  'run.subagent_delegation_mode="off"',
+  "-c",
+  'run.workflow_trigger_mode="off"'
+]
+
+const CHAT_HOST_ARGS = ["--trust-workspace", "--disable-sandbox", ...NATIVE_AGENTS_OFF]
 
 const SESSION_PAGES = 5
 

@@ -26,6 +26,7 @@ import { Effect } from "effect"
 
 import type { AcpAgentConnection, AcpConnector, AcpPromptResult } from "./connection.js"
 import { turnLifecycleEvent } from "./internal.js"
+import { defaultLaunchFilesDirectory, writeLaunchFiles } from "./launch-files.js"
 import { makeStdioAcpConnectorWithOptions } from "./stdio-connector.js"
 
 interface ResolvedLaunch {
@@ -123,6 +124,7 @@ export interface AcpProviderConfig {
   readonly providerId?: ProviderId
   readonly connector?: AcpConnector
   readonly launchEnv?: (env: NodeJS.ProcessEnv, launch: AcpLaunchContext) => NodeJS.ProcessEnv
+  readonly launchFilesDirectory?: string
   readonly readUsageLimits?: (
     connection: AcpAgentConnection,
     definition: HarnessDefinition
@@ -237,6 +239,7 @@ export const makeAcpProvider = (
 ): AgentProvider => {
   const connector = config.connector ?? makeStdioAcpConnectorWithOptions()
   const launchEnv = config.launchEnv ?? ((env: NodeJS.ProcessEnv) => env)
+  const launchFilesDirectory = config.launchFilesDirectory ?? defaultLaunchFilesDirectory()
 
   const connect = (
     definition: HarnessDefinition,
@@ -254,9 +257,12 @@ export const makeAcpProvider = (
         return resolved
       })
       const env = yield* adapterPromise("resolveEnvironment", () => environment.envFor(cwd))
+      const fileArgs = yield* adapterPromise("writeLaunchFiles", () =>
+        writeLaunchFiles(launchFilesDirectory, definition)
+      )
       return yield* connector.connect(
         {
-          args: launch.args,
+          args: [...launch.args, ...fileArgs],
           command: launch.command,
           cwd,
           env: launchEnv(

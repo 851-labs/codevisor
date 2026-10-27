@@ -13,33 +13,6 @@ export interface Recorded {
   readonly body: unknown
 }
 
-export const session = (id: string, overrides: Record<string, unknown> = {}) => ({
-  id,
-  projectId: "project-1",
-  serverId: "server",
-  harnessId: "claude-code",
-  title: `Agent ${id}`,
-  origin: "codevisor",
-  createdAt: "2026-10-23T00:00:00.000Z",
-  ...overrides
-})
-
-export const caller = session("caller", {
-  workspaceId: "caller-workspace",
-  worktreeName: "caller-tree",
-  configSelections: { model: "opus", reasoning: "high" }
-})
-
-export const projects = [
-  {
-    id: "project-1",
-    name: "Codevisor",
-    origin: "codevisor",
-    createdAt: "2026-10-23T00:00:00.000Z",
-    locations: []
-  }
-]
-
 export const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -47,11 +20,7 @@ export interface FakeOptions {
   readonly failing?: ReadonlyArray<string>
 }
 
-export const fakeServer = (
-  sessions: Record<string, unknown>,
-  listed: ReadonlyArray<unknown> = [],
-  options: FakeOptions = {}
-) => {
+export const fakeServer = (listed: ReadonlyArray<unknown> = [], options: FakeOptions = {}) => {
   const requests: Array<Recorded> = []
   vi.stubGlobal(
     "fetch",
@@ -61,7 +30,7 @@ export const fakeServer = (
       const method = String(init.method)
       const query = Object.fromEntries(input.searchParams)
       requests.push({ method, path, query, body })
-      return respond({ method, path, query, body }, sessions, listed, options)
+      return respond({ method, path, query, body }, listed, options)
     })
   )
   return requests
@@ -69,19 +38,11 @@ export const fakeServer = (
 
 const respond = (
   { method, path, query }: Recorded,
-  sessions: Record<string, unknown>,
   listed: ReadonlyArray<unknown>,
   options: FakeOptions
 ): Response => {
   if (options.failing?.includes(`${method} ${path}`) === true) {
     return jsonResponse({ error: `${method} ${path} broke` }, 500)
-  }
-  const detail = /^\/v1\/sessions\/([^/]+)$/.exec(path)
-  if (method === "GET" && detail !== null) {
-    const found = sessions[detail[1]!]
-    return found === undefined
-      ? jsonResponse({ error: "Session not found" }, 404)
-      : jsonResponse({ session: found })
   }
   if (method === "GET" && path === "/v1/agents") return jsonResponse({ items: listed })
   if (method === "POST" && path === "/v1/agents/wait") {
@@ -93,13 +54,13 @@ const respond = (
       timedOut: false
     })
   }
-  const archive = /^\/v1\/agents\/([^/]+)\/archive$/.exec(path)
-  if (method === "POST" && archive !== null) {
-    return jsonResponse({
-      agentId: archive[1],
-      workspaceId: `${archive[1]}-workspace`,
-      archived: true
-    })
+  const closed = /^\/v1\/agents\/([^/]+)\/close$/.exec(path)
+  if (method === "POST" && closed !== null) {
+    return jsonResponse({ agentId: closed[1], workspaceId: "caller-workspace", closed: true })
+  }
+  const archived = /^\/v1\/workspaces\/([^/]+)\/archive$/.exec(path)
+  if (method === "POST" && archived !== null) {
+    return jsonResponse({ workspaceId: archived[1], archived: true })
   }
   if (path.includes("/subscriptions")) return subscriptionsResponse(method)
   return jsonResponse({

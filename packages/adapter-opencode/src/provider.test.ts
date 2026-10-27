@@ -60,7 +60,11 @@ describe("OpenCode provider", () => {
     const config = JSON.parse(launched[0]!.OPENCODE_CONFIG_CONTENT!)
     expect(config).toMatchObject({
       model: "x/y",
-      permission: { external_directory: "allow", skill: { "computer-use": "deny" } }
+      permission: {
+        external_directory: "allow",
+        task: "deny",
+        skill: { "computer-use": "deny" }
+      }
     })
     expect(launched[0]!.PATH).toBe("/bin")
   })

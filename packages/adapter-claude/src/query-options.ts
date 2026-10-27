@@ -17,6 +17,8 @@ export interface QueryLaunch {
   readonly toolGateway: ToolGatewayConfig | undefined
 }
 
+const nativeSubagentTools = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow"]
+
 export const claudeQueryOptions = (launch: QueryLaunch): ClaudeOptions => ({
   ...launch.startOptions,
   abortController: launch.abort,
@@ -25,6 +27,7 @@ export const claudeQueryOptions = (launch: QueryLaunch): ClaudeOptions => ({
   includePartialMessages: true,
   pathToClaudeCodeExecutable: launch.claudePath,
   systemPrompt: { type: "preset", preset: "claude_code" },
+  disallowedTools: nativeSubagentTools,
   ...gatewayMcpOptions(launch.toolGateway),
   canUseTool: claudeToolPermission(launch.currentSession),
   permissionMode: "bypassPermissions",

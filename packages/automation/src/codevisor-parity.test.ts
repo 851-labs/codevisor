@@ -12,6 +12,7 @@ describe("Codevisor native action parity", () => {
     const equivalents = new Set([
       "GET /v1/clients/:clientId/socket",
       "DELETE /v1/workspaces/:workspaceId/panes/:paneId",
+      "POST /v1/workspaces/:id/archive",
       "POST /v1/plugins/:pluginId/tools/:toolName",
       "GET /v1/plugins/:pluginId/icon",
       "GET /v1/plugins/:pluginId/panes/:paneType/icon"

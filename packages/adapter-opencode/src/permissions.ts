@@ -9,6 +9,8 @@ export const OPENCODE_FULL_ACCESS_PERMISSIONS = {
   read: { "*.env": "allow", "*.env.*": "allow" }
 } as const
 
+export const OPENCODE_NATIVE_SUBAGENTS_OFF = { task: "deny" } as const
+
 const parsed = (content: string | undefined): Record<string, unknown> => {
   if (content === undefined || content === "") return {}
   try {
@@ -36,6 +38,7 @@ export const withOpenCodePermissions = (
       permission: {
         ...permission,
         ...OPENCODE_FULL_ACCESS_PERMISSIONS,
+        ...OPENCODE_NATIVE_SUBAGENTS_OFF,
         ...(launch.toolGateway === undefined
           ? {}
           : { skill: supersededSkillRules(permission?.skill) })

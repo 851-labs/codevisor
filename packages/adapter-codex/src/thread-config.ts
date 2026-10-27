@@ -32,6 +32,9 @@ export const codexThreadConfig = (sources: ThreadConfigSources): Record<string, 
     "features.browser_use_full_cdp_access": false,
     "features.computer_use": false,
     "features.in_app_browser": false,
+    "agents.enabled": false,
+    "features.multi_agent": false,
+    "features.multi_agent_v2": false,
     ...gatewayMcpServers(sources.toolGateway, nativeAutomationDisables)
   }
 }

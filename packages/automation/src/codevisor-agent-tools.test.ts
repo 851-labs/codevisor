@@ -3,13 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   bodyOf,
   call,
-  caller,
   fakeServer,
   itemsOf,
   local,
   question,
   remote,
-  session,
   transcriptItem
 } from "./codevisor-agent-test-support.js"
 import { expectRecord, expectString } from "./unknown-values.js"
@@ -28,7 +26,7 @@ const summary = (agentId: string) => ({
 
 describe("agents.list", () => {
   it("forwards its filters", async () => {
-    const requests = fakeServer({}, [summary("a")])
+    const requests = fakeServer([summary("a")])
 
     const listed = await call(local, "agents.list", {
       state: "working",
@@ -47,10 +45,7 @@ describe("agents.list", () => {
   })
 
   it("pages fifty at a time with next", async () => {
-    fakeServer(
-      {},
-      Array.from({ length: 51 }, (_, index) => summary(`s${index}`))
-    )
+    fakeServer(Array.from({ length: 51 }, (_, index) => summary(`s${index}`)))
 
     const first = await call(local, "agents.list", {})
     const second = await call(local, "agents.list", { next: "50" })
@@ -64,50 +59,39 @@ describe("agents.list", () => {
   })
 })
 
-describe("agents.archive", () => {
-  it("waits for the archive and reports what it kept, but refuses a shared or missing workspace", async () => {
-    const requests = fakeServer({
-      caller,
-      worker: session("worker", { workspaceId: "worker-workspace" }),
-      helper: session("helper", { workspaceId: "CALLER-WORKSPACE" }),
-      loose: session("loose")
-    })
+describe("agents.close and workspaces.archive", () => {
+  it("names the local caller so the server can check whose workspace it is", async () => {
+    const requests = fakeServer()
 
-    const archived = await call(local, "agents.archive", { agentId: "worker" })
-    const fromRemote = await call(remote, "agents.archive", { agentId: "helper" })
+    const closed = await call(local, "agents.close", { agentId: "helper" })
+    const archived = await call(local, "workspaces.archive", { workspaceId: "worker-workspace" })
+    const fromRemote = await call(remote, "workspaces.archive", { workspaceId: "far-workspace" })
 
-    expect(archived).toEqual({
-      agentId: "worker",
-      workspaceId: "worker-workspace",
-      archived: true
-    })
-    expect(fromRemote).toMatchObject({ archived: true })
-    expect(requests.some((request) => request.method === "PATCH")).toBe(false)
-    await expect(call(local, "agents.archive", { agentId: "helper" })).rejects.toThrow(
-      "shares your workspace"
-    )
-    await expect(call(local, "agents.archive", { agentId: "loose" })).rejects.toThrow(
-      "has no workspace to archive"
-    )
+    expect(closed).toEqual({ agentId: "helper", workspaceId: "caller-workspace", closed: true })
+    expect(archived).toEqual({ workspaceId: "worker-workspace", archived: true })
+    expect(fromRemote).toEqual({ workspaceId: "far-workspace", archived: true })
+    expect(requests.map(({ method, path, body }) => [method, path, body])).toEqual([
+      ["POST", "/v1/agents/helper/close", { callerAgentId: "caller" }],
+      ["POST", "/v1/workspaces/worker-workspace/archive", { callerAgentId: "caller" }],
+      ["POST", "/v1/workspaces/far-workspace/archive", {}]
+    ])
   })
 
-  it("passes on a failed archive with the tool name", async () => {
-    fakeServer({ caller, worker: session("worker", { workspaceId: "w" }) }, [], {
-      failing: ["POST /v1/agents/worker/archive"]
-    })
+  it("closes agents on its own machine only and passes on failures with the tool name", async () => {
+    fakeServer([], { failing: ["POST /v1/workspaces/worker-workspace/archive"] })
 
-    await expect(call(local, "agents.archive", { agentId: "worker" })).rejects.toThrow(
-      "POST /v1/agents/worker/archive broke"
+    await expect(call(remote, "agents.close", { agentId: "helper" })).rejects.toThrow(
+      "agents.close works on your own machine only"
     )
-    await expect(call(local, "agents.archive", { agentId: "ghost" })).rejects.toThrow(
-      "Session not found"
-    )
+    await expect(
+      call(local, "workspaces.archive", { workspaceId: "worker-workspace" })
+    ).rejects.toThrow("POST /v1/workspaces/worker-workspace/archive broke")
   })
 })
 
 describe("agent subscriptions", () => {
   it("subscribes, lists, and unsubscribes as the caller with agent-named fields", async () => {
-    const requests = fakeServer({})
+    const requests = fakeServer()
 
     const created = await call(local, "agents.subscribe", {
       agentId: "other",
@@ -147,7 +131,7 @@ describe("agent subscriptions", () => {
 
 describe("agents.wait", () => {
   it("sends agent states and ids, clamped to the execute budget", async () => {
-    const requests = fakeServer({})
+    const requests = fakeServer()
     const tight = { sessionId: "caller", deadline: performance.now() + 30_000 }
 
     const waited = await call(tight, "agents.wait", {
@@ -179,7 +163,7 @@ describe("agents.wait", () => {
 
 describe("agents.debug.transcript", () => {
   it("pages the raw transcript with agent-named ids and next", async () => {
-    const requests = fakeServer({})
+    const requests = fakeServer()
 
     const page = await call(local, "agents.debug.transcript", {
       agentId: "child",

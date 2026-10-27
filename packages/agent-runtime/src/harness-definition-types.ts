@@ -9,6 +9,12 @@ export type ProviderId =
   | "opencode"
   | "pi"
 
+export interface HarnessLaunchFile {
+  readonly flag: string
+  readonly name: string
+  readonly contents: string
+}
+
 export type HarnessLaunch =
   | {
       readonly kind: "npx"
@@ -20,6 +26,7 @@ export type HarnessLaunch =
       readonly command: string
       readonly args: ReadonlyArray<string>
       readonly env?: Readonly<Record<string, string>>
+      readonly files?: ReadonlyArray<HarnessLaunchFile>
     }
 
 export type InstallOrigin = "npm" | "brew" | "curl" | "uv" | "appBundle" | "standalone" | "unknown"

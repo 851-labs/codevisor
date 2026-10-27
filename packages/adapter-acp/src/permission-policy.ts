@@ -12,6 +12,28 @@ export interface AcpPermissionPolicy {
   readonly automaticOutcome: (params: unknown) => AcpPermissionOutcome | undefined
 }
 
+const titledToolName = (toolCall: Record<string, unknown> | undefined): string => {
+  if (typeof toolCall?.title !== "string") return ""
+  return toolCall.title.split(":", 1)[0]?.trim() ?? ""
+}
+
+const spawnsNativeSubagent = (toolCall: Record<string, unknown> | undefined): boolean => {
+  const tool = titledToolName(toolCall)
+  return tool === "spawn_agent" || tool.startsWith("subagent_")
+}
+
+const choose = (
+  request: Record<string, unknown>,
+  kinds: ReadonlyArray<string>
+): AcpPermissionOutcome | undefined => {
+  const options = Array.isArray(request.options) ? request.options.map(record) : []
+  const matching = (kind: string) =>
+    options.find((option) => option?.kind === kind && typeof option.optionId === "string")
+  const option = kinds.map(matching).find((candidate) => candidate !== undefined)
+  if (option === undefined) return undefined
+  return { outcome: { optionId: String(option.optionId), outcome: "selected" } }
+}
+
 export const makeAcpPermissionPolicy = (): AcpPermissionPolicy => {
   const modes = new Map<string, SessionModeState>()
 
@@ -32,15 +54,13 @@ export const makeAcpPermissionPolicy = (): AcpPermissionPolicy => {
     },
     automaticOutcome: (params) => {
       const request = record(params)
-      if (typeof request?.sessionId !== "string" || gated(request.sessionId)) return undefined
-      if (record(request.toolCall)?.kind === "switch_mode") return undefined
-      const options = Array.isArray(request.options) ? request.options.map(record) : []
-      const allow = (kind: string) =>
-        options.find((option) => option?.kind === kind && typeof option.optionId === "string")
-      const option = allow("allow_once") ?? allow("allow_always")
-      return option === undefined
-        ? undefined
-        : { outcome: { optionId: String(option.optionId), outcome: "selected" } }
+      if (typeof request?.sessionId !== "string") return undefined
+
+      const toolCall = record(request.toolCall)
+      if (spawnsNativeSubagent(toolCall)) return choose(request, ["reject_once", "reject_always"])
+      if (gated(request.sessionId) || toolCall?.kind === "switch_mode") return undefined
+
+      return choose(request, ["allow_once", "allow_always"])
     }
   }
 }

@@ -13,6 +13,12 @@ export interface GrokBuildProviderConfig {
   readonly connector?: AcpConnector
 }
 
+const withGrokNativeAgentsDisabled = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
+  ...env,
+  GROK_SUBAGENTS: "0",
+  GROK_WORKFLOWS: "0"
+})
+
 export const makeGrokBuildProvider = (
   environment: ProviderEnvironment,
   config: GrokBuildProviderConfig = {}
@@ -21,6 +27,6 @@ export const makeGrokBuildProvider = (
     connector:
       config.connector ?? makeStdioAcpConnectorWithOptions({ extension: makeGrokBuildExtension }),
     providerId: "grok-build",
-    launchEnv: (env, launch) => withGrokSkillsDisabled(env, launch),
+    launchEnv: (env, launch) => withGrokNativeAgentsDisabled(withGrokSkillsDisabled(env, launch)),
     readUsageLimits: readGrokUsageLimits
   })

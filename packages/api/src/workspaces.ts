@@ -57,6 +57,17 @@ export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 export const TerminalActivity = Schema.Literals(["working", "idle", "done", "blocked", "error"])
 export type TerminalActivity = typeof TerminalActivity.Type
 
+export const ArchiveWorkspaceRequest = Schema.Struct({
+  callerAgentId: Schema.optional(Schema.String)
+})
+export type ArchiveWorkspaceRequest = typeof ArchiveWorkspaceRequest.Type
+
+export const ArchivedWorkspace = Schema.Struct({
+  workspaceId: Schema.String,
+  archived: Schema.Literal(true)
+})
+export type ArchivedWorkspace = typeof ArchivedWorkspace.Type
+
 export const WorkspacePane = Schema.Struct({
   id: Schema.String,
   workspaceId: Schema.String,

@@ -21,6 +21,7 @@ const modes = (currentModeId: string) => ({
     { id: "read-only", name: "Read only", canonicalId: "readOnly" as const }
   ]
 })
+const toolCall = (title: string) => ({ toolCall: { toolCallId: "t", title, kind: "think" } })
 const selected = (optionId: string) => ({ outcome: { optionId, outcome: "selected" } })
 
 describe("ACP permission policy", () => {
@@ -46,6 +47,25 @@ describe("ACP permission policy", () => {
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
     policy.modeChanged("s", "plan")
     expect(policy.automaticOutcome(request())).toEqual(selected("once"))
+  })
+
+  it("rejects native subagent spawns so models delegate through Codevisor agents", () => {
+    const policy = makeAcpPermissionPolicy()
+    expect(policy.automaticOutcome(request(toolCall("spawn_agent: Audit the parser")))).toEqual(
+      selected("reject")
+    )
+    expect(policy.automaticOutcome(request(toolCall("subagent_reviewer")))).toEqual(
+      selected("reject")
+    )
+    policy.sessionModes("s", modes("plan"))
+    expect(policy.automaticOutcome(request(toolCall("spawn_agent")))).toEqual(selected("reject"))
+    expect(
+      policy.automaticOutcome(request({ ...toolCall("spawn_agent"), options: options.slice(0, 2) }))
+    ).toBeUndefined()
+    policy.sessionModes("s", undefined)
+    expect(policy.automaticOutcome(request(toolCall("Read: spawn_agent.ts")))).toEqual(
+      selected("once")
+    )
   })
 
   it("asks to leave plan mode, and when there's nothing to allow", () => {

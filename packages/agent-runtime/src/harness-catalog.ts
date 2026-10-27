@@ -13,6 +13,26 @@ export const OPENCODE_INSTALL_PATH = "~/.opencode/bin/opencode"
 
 const DEVELOPMENT_TEST_HARNESS_ID = "codevisor-test-agent"
 
+const geminiSubagentPolicy = `[[rule]]
+toolName = "invoke_agent"
+decision = "deny"
+priority = 999
+`
+
+const auggieSubagentTools = [
+  "sub-agent",
+  "sub-agent-auggie-guide",
+  "sub-agent-code",
+  "sub-agent-context-gathering",
+  "sub-agent-explore",
+  "sub-agent-general-purpose",
+  "sub-agent-plan",
+  "sub-agent-research",
+  "sub-agent-validate"
+]
+
+const removeAuggieTools = auggieSubagentTools.flatMap((tool) => ["--remove-tool", tool])
+
 const developmentTestHarness = executableHarness(
   DEVELOPMENT_TEST_HARNESS_ID,
   "Test Agent",
@@ -34,6 +54,9 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   museCodeHarness,
   antigravityHarness,
   executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"], {
+    files: [
+      { contents: geminiSubagentPolicy, flag: "--admin-policy", name: "gemini-subagents.toml" }
+    ],
     installMethods: [
       { kind: "npm", packageName: "@google/gemini-cli" },
       { formula: "gemini-cli", kind: "brew" }
@@ -158,19 +181,27 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     installMethods: [{ kind: "npm", packageName: "amp-acp", additionalPackages: ["@ampcode/cli"] }],
     skills: { globalDir: "~/.config/agents/skills" }
   }),
-  executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"], {
-    installMethods: [{ kind: "npm", packageName: "@augmentcode/auggie" }],
-    skills: { globalDir: "~/.augment/skills" },
-    update: {
-      sources: [
-        {
-          apply: { kind: "reinstall" },
-          check: { kind: "npm", packageName: "@augmentcode/auggie" },
-          when: "any"
-        }
-      ]
+  executableHarness(
+    "auggie",
+    "Auggie CLI",
+    "a.square",
+    ["auggie"],
+    "auggie",
+    ["--acp", ...removeAuggieTools],
+    {
+      installMethods: [{ kind: "npm", packageName: "@augmentcode/auggie" }],
+      skills: { globalDir: "~/.augment/skills" },
+      update: {
+        sources: [
+          {
+            apply: { kind: "reinstall" },
+            check: { kind: "npm", packageName: "@augmentcode/auggie" },
+            when: "any"
+          }
+        ]
+      }
     }
-  }),
+  ),
   executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"], {
     installMethods: [{ kind: "npm", packageName: "cline" }],
     nativeMcp: {
@@ -197,7 +228,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "ellipsis.curlybraces",
     ["copilot"],
     "copilot",
-    ["--acp"],
+    ["--acp", "--excluded-tools=task,list_agents,read_agent,write_agent"],
     {
       installMethods: [
         { kind: "npm", packageName: "@github/copilot" },
@@ -229,7 +260,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "q.square",
     ["qwen"],
     "qwen",
-    ["--acp", "--experimental-skills"],
+    ["--acp", "--experimental-skills", "--exclude-tools", "agent,list_agents,send_message"],
     {
       installMethods: [
         { kind: "npm", packageName: "@qwen-code/qwen-code" },
@@ -312,7 +343,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "x.square",
     ["grok"],
     "grok",
-    ["agent", "--always-approve", "stdio"],
+    ["agent", "--always-approve", "--no-leader", "stdio"],
     {
       installMethods: [
         { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" },
@@ -322,6 +353,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     }
   ),
   executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
+    env: { KILO_PERMISSION: JSON.stringify({ task: "deny" }) },
     installMethods: [
       { kind: "npm", packageName: "@kilocode/cli" },
       { kind: "curl", command: "curl -fsSL https://kilo.ai/cli/install | bash" },

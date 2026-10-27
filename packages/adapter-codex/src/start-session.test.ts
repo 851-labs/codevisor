@@ -39,6 +39,9 @@ describe("CodexProvider", () => {
       "features.browser_use_full_cdp_access": false,
       "features.computer_use": false,
       "features.in_app_browser": false,
+      "agents.enabled": false,
+      "features.multi_agent": false,
+      "features.multi_agent_v2": false,
       mcp_servers: {
         node_repl: {
           enabled: false
@@ -71,7 +74,7 @@ describe("CodexProvider", () => {
     })
   })
 
-  it("disables native Codex skills and the unified computer use plugin without a tool gateway", async () => {
+  it("disables native Codex skills, subagents, and the unified computer use plugin without a tool gateway", async () => {
     const { client } = await setup()
     const start = client.requests.find((request) => request.method === "thread/start")
     const config = recordOf(recordOf(start?.params).config)
@@ -79,7 +82,10 @@ describe("CodexProvider", () => {
       plugins: {
         "unified-computer-use@openai-bundled": { enabled: false }
       },
-      skills: expectedNativeCodexSkills
+      skills: expectedNativeCodexSkills,
+      "agents.enabled": false,
+      "features.multi_agent": false,
+      "features.multi_agent_v2": false
     })
     expect(config).not.toHaveProperty("mcp_servers")
   })

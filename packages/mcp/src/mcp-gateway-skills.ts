@@ -135,7 +135,7 @@ export const executeSkill: BuiltinSkill = {
       sections.push(
         [
           "## Other agents",
-          "Built-in subagents usually fit help with your current task; a Codevisor chat in the current workspace fits another harness or model working on the same change; a new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR. Read `codevisor-agents` before starting one."
+          'Never use your harness\'s built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. A Codevisor agent in the current workspace (`isolation: "shared"`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `agents.close` once you have its reply. A new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR; archive it with `workspaces.archive` when its work is done. Read `codevisor-agents` before starting one.'
         ].join("\n\n")
       )
     }

@@ -27,6 +27,7 @@ import { matchesLabelFilters } from "./label-filters.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
+import { routeWorkspaceArchive } from "./workspace-archive.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
 import { routeWorkspaceFiles } from "./workspace-files.js"
 import {
@@ -78,7 +79,13 @@ const routeAfterDelegates = async (route: RouteContext): Promise<boolean> => {
     return true
   }
 
-  return routeWorkspaceReads(route) ?? routeWorkspacePanes(route) ?? routeWorkspace(route) ?? false
+  return (
+    routeWorkspaceReads(route) ??
+    routeWorkspaceArchive(route) ??
+    routeWorkspacePanes(route) ??
+    routeWorkspace(route) ??
+    false
+  )
 }
 
 const routeWorkspaceReads = (route: RouteContext): Promise<boolean> | undefined => {

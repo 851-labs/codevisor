@@ -1,3 +1,7 @@
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { makeClaudeProvider } from "@codevisor/adapter-claude"
 import { makeCodexProvider } from "@codevisor/adapter-codex"
 import {
@@ -22,13 +26,24 @@ import {
 
 export interface AcpRuntimeTestConfig extends AgentRuntimeConfig {
   readonly connector?: AcpConnector
+  readonly launchFilesDirectory?: string
 }
 
-export const makeAcpAgentRuntime = ({ connector, ...config }: AcpRuntimeTestConfig = {}) =>
+const sharedLaunchFilesDirectory = mkdtempSync(join(tmpdir(), "codevisor-acp-launch-"))
+
+export const makeAcpAgentRuntime = ({
+  connector,
+  launchFilesDirectory = sharedLaunchFilesDirectory,
+  ...config
+}: AcpRuntimeTestConfig = {}) =>
   makeAgentRuntime({
     ...config,
     providerFactories: [
-      (env) => makeAcpProvider(env, connector === undefined ? {} : { connector }),
+      (env) =>
+        makeAcpProvider(env, {
+          launchFilesDirectory,
+          ...(connector === undefined ? {} : { connector })
+        }),
       (env) => makeClaudeProvider(env),
       (env) => makeCodexProvider(env)
     ]

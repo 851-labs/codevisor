@@ -159,6 +159,33 @@ describe("ClaudeProvider", () => {
     })
   })
 
+  it("turns off Claude's native subagent tools on every launch", async () => {
+    vi.useFakeTimers()
+    const subagentTools = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow"]
+    const fresh = new FakeQuery()
+    const recovered = new FakeQuery()
+    fresh.successors.push(recovered)
+    const started = run(makeProvider(fresh).createSession(definition, "/tmp", async () => {}))
+    fresh.push(initMessage())
+    const created = await started
+    expect(fresh.options?.disallowedTools).toEqual(subagentTools)
+
+    const prompt = run(created.handle.prompt("do work"))
+    await fresh.nextPrompt()
+    fresh.finish()
+    await vi.advanceTimersByTimeAsync(STREAM_RECOVERY_BACKOFF_MS)
+    await recovered.nextPrompt()
+    expect(recovered.options?.disallowedTools).toEqual(subagentTools)
+    recovered.push(resultMessage())
+    await prompt
+
+    const resumed = new FakeQuery()
+    await run(
+      makeProvider(resumed).loadSession(definition, "previous-session", "/tmp", async () => {})
+    )
+    expect(resumed.options?.disallowedTools).toEqual(subagentTools)
+  })
+
   it("resumes an in-flight turn on a fresh query when the SDK stream dies", async () => {
     vi.useFakeTimers()
     const fake = new FakeQuery()

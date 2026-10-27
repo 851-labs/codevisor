@@ -133,7 +133,7 @@ const cancelSession = async (route: RouteContext, sessionId: string): Promise<bo
   return true
 }
 
-const cancelTurn = async (route: RouteContext, sessionId: string): Promise<CancelResult> => {
+export const cancelTurn = async (route: RouteContext, sessionId: string): Promise<CancelResult> => {
   const { services, routeState, config } = route
   routeState.updateResume.cancel(sessionId)
   const cancelRequestedAt = isoTimestamp()

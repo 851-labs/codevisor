@@ -23,7 +23,7 @@ describe("Muse provider", () => {
     ).toEqual({ state: "ready" })
   })
 
-  it("starts each chat on its own full-access host with the account's environment", async () => {
+  it("starts each chat on its own full-access host with native subagents and workflows off and the account's environment", async () => {
     const { provider, spawned, emit, client } = setup()
     const created = await run(
       provider.createSession(definition, "/repo", emit, {
@@ -36,7 +36,14 @@ describe("Muse provider", () => {
     expect(spawned).toEqual([
       {
         command: "/bin/muse",
-        args: ["--trust-workspace", "--disable-sandbox"],
+        args: [
+          "--trust-workspace",
+          "--disable-sandbox",
+          "-c",
+          'run.subagent_delegation_mode="off"',
+          "-c",
+          'run.workflow_trigger_mode="off"'
+        ],
         cwd: "/repo",
         env: { HOME: "/home/me", MUSE_TOKEN: "x" }
       }

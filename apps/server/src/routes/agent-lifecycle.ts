@@ -1,7 +1,6 @@
 import {
   AgentState as AgentStateSchema,
   WaitForAgentsRequest,
-  type AgentArchiveResult,
   type AgentState,
   type AgentSummary,
   type Project,
@@ -11,11 +10,8 @@ import {
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Schema } from "effect"
 
-import { archiveWorkspaceAndWait } from "../archive-jobs.js"
-import { appendAndPublish, HttpFailure, readSchema, run, writeJson } from "../server-context.js"
-import { captureWorkspaceRuntime } from "../server-workspace-effects.js"
+import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
 import { agentState, harnessIsLoaded } from "./agent-state.js"
-import { assertNotOwnedByBot } from "./bot-guards.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import type { RouteContext } from "./route-context.js"
 import { waitUntilSettled } from "./session-wait.js"
@@ -50,24 +46,6 @@ export const waitForAgents = async ({
     describe: (session) => waitedAgent(services, session)
   })
   writeJson(response, 200, waited)
-  return true
-}
-
-export const archiveAgent = async (
-  { services, fanout, config, routeState, response }: RouteContext,
-  agentId: string
-): Promise<boolean> => {
-  const session = await run(services.db.getSessionSummary(agentId))
-  const workspaceId = session.workspaceId
-  if (workspaceId === undefined) throw new HttpFailure(422, `Agent ${agentId} has no workspace`)
-  await assertNotOwnedByBot(services, { workspaceId }, "archive this workspace")
-
-  const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
-  await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-  const runtime = await captureWorkspaceRuntime(services, routeState, workspace)
-  await archiveWorkspaceAndWait(services, fanout, config, workspace, runtime)
-  const result: AgentArchiveResult = { agentId: session.id, workspaceId, archived: true }
-  writeJson(response, 200, result)
   return true
 }
 
@@ -128,7 +106,7 @@ const agentSummary = async (
   ...(session.updatedAt === undefined ? {} : { updatedAt: session.updatedAt })
 })
 
-const currentState = async (
+export const currentState = async (
   services: RouteContext["services"],
   session: SessionSummary
 ): Promise<AgentState> =>
