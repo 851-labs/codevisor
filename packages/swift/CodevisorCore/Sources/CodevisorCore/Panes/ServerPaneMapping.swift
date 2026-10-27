@@ -39,6 +39,8 @@ private nonisolated struct PaneFields {
 private nonisolated struct PaneFormat: Sendable {
   static let codevisorProviderId = "codevisor"
   static let pluginProviderPrefix = "plugin:"
+  static let pluginAppProviderId = "plugin-app"
+  static let pluginAppResourceKind = "app-view"
 
   var paneTypes: Set<String> = []
   let fields: @Sendable (PaneDescriptorState) -> PaneFields
@@ -62,6 +64,7 @@ private nonisolated struct PaneFormat: Sendable {
 
   static func reading(_ record: ServerWorkspacePane) -> PaneFormat? {
     if record.providerId.hasPrefix(pluginProviderPrefix) { return plugin }
+    if record.providerId == pluginAppProviderId { return plugin }
     guard record.providerId == codevisorProviderId else { return nil }
 
     return PaneKind.allCases.lazy.map(of).first { $0.paneTypes.contains(record.paneType) }
@@ -179,11 +182,15 @@ private nonisolated struct PaneFormat: Sendable {
 
   private static let plugin = PaneFormat(
     fields: { pane in
-      PaneFields(
+      if let app = pane.pluginApp { return pluginAppFields(app) }
+
+      return PaneFields(
         providerId: pluginProviderPrefix + (pane.pluginId ?? "unknown"),
         paneType: pane.pluginPaneType ?? "pane")
     },
     descriptor: { record, id in
+      if record.providerId == pluginAppProviderId { return pluginAppDescriptor(record, id) }
+
       let pluginId = String(record.providerId.dropFirst(pluginProviderPrefix.count))
       guard !pluginId.isEmpty else { return nil }
 
@@ -192,6 +199,22 @@ private nonisolated struct PaneFormat: Sendable {
         terminalKey: id.uuidString, pluginId: pluginId, pluginPaneType: record.paneType)
     }
   )
+
+  private static func pluginAppFields(_ app: PluginAppPaneResource) -> PaneFields {
+    PaneFields(
+      providerId: pluginAppProviderId, paneType: "app", resourceKind: pluginAppResourceKind,
+      resourceId: app.viewId, metadata: metadataJSON(app))
+  }
+
+  private static func pluginAppDescriptor(_ record: ServerWorkspacePane, _ id: UUID) -> PaneDescriptorState? {
+    guard record.resourceKind == pluginAppResourceKind,
+      let app = metadata(PluginAppPaneResource.self, of: record), app.viewId == record.resourceId
+    else { return nil }
+
+    return PaneDescriptorState(
+      id: id, kind: .plugin, name: record.title, terminalKey: id.uuidString, pluginId: app.serverId,
+      pluginApp: app)
+  }
 
   private struct BrowserPaneMetadata: Codable {
     var url: String?

@@ -408,10 +408,9 @@ private struct SplitLeafHeader: View {
     {
       PluginIconView(
         pluginId: pluginId,
-        paneType: pane?.pluginPaneType,
-        iconPath: "server",
         client: pluginIconClient,
-        cacheNamespace: pluginIconCacheNamespace
+        cacheNamespace: pluginIconCacheNamespace,
+        side: 11
       )
       .frame(width: 18, height: 11)
       .foregroundStyle(.secondary)

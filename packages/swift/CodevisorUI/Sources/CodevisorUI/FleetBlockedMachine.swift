@@ -4,14 +4,12 @@ import SwiftUI
 public enum FleetPlane: String, Sendable {
   case harnesses
   case mcps
-  case plugins
 
   @MainActor
   func reconcile(_ client: any CodevisorServerClienting) async throws {
     switch self {
     case .harnesses: _ = try await client.reconcileHarnessesSync()
     case .mcps: _ = try await client.reconcileMcpsSync()
-    case .plugins: _ = try await client.reconcilePluginsSync()
     }
   }
 }

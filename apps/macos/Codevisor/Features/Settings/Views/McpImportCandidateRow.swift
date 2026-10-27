@@ -32,7 +32,7 @@ struct McpImportCandidateRow: View {
         }
         .controlSize(.small)
         .disabled(importDisabled)
-        .help("Add to Codevisor's managed MCP servers")
+        .help("Add to Codevisor's plugins")
       }
     }
     .accessibilityElement(children: .contain)

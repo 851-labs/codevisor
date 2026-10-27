@@ -203,7 +203,7 @@ struct HomeSidebarContentBuilder {
     case .browser:
       .browser(favicon: pane.browserFavicon)
     case .plugin:
-      .plugin(pluginId: pane.pluginId ?? "", paneType: pane.pluginPaneType)
+      .plugin(pluginId: pane.pluginId ?? "")
     case .document:
       .document
     case .screenSharing:

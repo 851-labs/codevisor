@@ -35,10 +35,10 @@ import SwiftUI
           if entry.canEdit || entry.canRemove {
             Section {
               if entry.canEdit {
-                Button("Edit Server") { onEdit(entry) }
+                Button("Edit Plugin") { onEdit(entry) }
               }
               if entry.canRemove {
-                Button("Remove Server", role: .destructive) {
+                Button("Remove Plugin", role: .destructive) {
                   dismiss()
                   onRemove(entry)
                 }
@@ -47,11 +47,18 @@ import SwiftUI
             }
           }
         } else {
-          Text("This server is no longer in your fleet.").foregroundStyle(.secondary)
+          Text("This plugin was removed.").foregroundStyle(.secondary)
         }
       }
       .navigationTitle(serverName)
       .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        if let entry = model.entry(named: serverName), !entry.isBuiltIn {
+          ToolbarItem(placement: .topBarTrailing) {
+            PluginSafetyButton(subject: PluginModerationSubject(server: entry.representative))
+          }
+        }
+      }
     }
 
     private func machineRows(_ entry: McpFleetEntry) -> [McpFleet.MachineRow] {

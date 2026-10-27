@@ -1,4 +1,5 @@
 import Foundation
+import TranscriptKit
 
 private struct PromptBody: Encodable {
   var text: String
@@ -7,6 +8,7 @@ private struct PromptBody: Encodable {
   var messageId: String?
   var clientId: String?
   var delivery: ServerPromptDelivery?
+  var attribution: UserMessageAttribution?
 }
 
 extension CodevisorServerClient {
@@ -74,6 +76,12 @@ extension CodevisorServerClient {
         delivery: delivery
       )
     )
+  }
+
+  public func promptSession(
+    id: UUID, text: String, attribution: UserMessageAttribution
+  ) async throws -> ServerPromptAccepted {
+    try await sendPrompt(id: id, body: PromptBody(text: text, attribution: attribution))
   }
 
   private func sendPrompt(id: UUID, body: PromptBody) async throws -> ServerPromptAccepted {

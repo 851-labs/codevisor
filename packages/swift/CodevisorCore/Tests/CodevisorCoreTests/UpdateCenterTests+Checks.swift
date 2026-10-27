@@ -141,17 +141,19 @@ extension UpdateCenterTests {
     )
     defer { controller.stopEventSync() }
     await controller.refreshStatus(for: remote.id)
-    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
+    let sweeps = SweepClock()
+    let center = UpdateCenter(
+      machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"), now: sweeps.next)
     await center.refresh()
     #expect(center.hasUpdateInFlight)
+    let firstSweep = center.lastRefreshedAt
 
-    fake.configurePluginUpdates([makePluginUpdate()])
     await center.backgroundRefresh()
-    #expect(!center.components.contains { $0.kind == .plugin })
+    #expect(center.lastRefreshedAt == firstSweep)
 
     fake.configureHarnesses([makeHarness(updateAvailable: false)])
     center.noteHarnessLifecycleChanged(onServer: remote.id)
-    await awaitObserved { center.components.contains { $0.kind == .plugin } }
+    await awaitObserved { center.lastRefreshedAt != firstSweep }
     #expect(!center.hasUpdateInFlight)
   }
 
@@ -182,5 +184,15 @@ extension UpdateCenterTests {
 
     release.signal()
     await check.value
+  }
+}
+
+@MainActor
+private final class SweepClock {
+  private var ticks: TimeInterval = 0
+
+  func next() -> Date {
+    ticks += 1
+    return Date(timeIntervalSince1970: ticks)
   }
 }

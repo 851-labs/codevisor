@@ -59,12 +59,12 @@ struct NavigationEventRecoveryTests {
     defer { fixture.controller.stopEventSync() }
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
     let handled = TestSignal()
-    fixture.controller.onPluginUpdated = { _, _ in handled.signal() }
+    fixture.controller.onMcpStateChanged = { _ in handled.signal() }
     fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
     let connection = fixture.controller.connection(for: fixture.serverId)
     connection.navigationSyncState = .current
     fixture.fake.emit(kind: "navigation.changed", subjectId: fixture.workspace.id.uuidString)
-    fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
+    fixture.fake.emit(kind: "mcp.updated", subjectId: "event-barrier")
     await handled.wait()
 
     guard case .stale = connection.navigationSyncState else {
@@ -115,9 +115,9 @@ struct NavigationEventRecoveryTests {
     let snapshot = fixture.archivedSnapshot()
     fixture.fake.workspaceSnapshotHandler = { snapshot }
     let handled = TestSignal()
-    fixture.controller.onPluginUpdated = { _, _ in handled.signal() }
+    fixture.controller.onMcpStateChanged = { _ in handled.signal() }
     fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
-    fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
+    fixture.fake.emit(kind: "mcp.updated", subjectId: "event-barrier")
     await handled.wait()
     let connection = fixture.controller.connection(for: fixture.serverId)
     let stream = try #require(connection.navigationSync.eventStreamTask)
@@ -128,7 +128,7 @@ struct NavigationEventRecoveryTests {
     let retry = try #require(connection.navigationSync.retryTask)
     clock.advance(by: .seconds(2))
     await retry.value
-    fixture.fake.emit(kind: "plugin.updated", subjectId: "reconnected-barrier")
+    fixture.fake.emit(kind: "mcp.updated", subjectId: "reconnected-barrier")
     await handled.wait(for: 2)
     #expect(connection.navigationSyncState == .current)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)

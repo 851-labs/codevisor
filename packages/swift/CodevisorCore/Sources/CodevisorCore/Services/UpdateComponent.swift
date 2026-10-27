@@ -5,7 +5,6 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
     case app
     case server
     case harness
-    case plugin
   }
 
   public enum Phase: Equatable, Sendable {

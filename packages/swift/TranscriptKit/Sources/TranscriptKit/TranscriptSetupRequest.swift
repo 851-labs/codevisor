@@ -30,7 +30,7 @@ public struct TranscriptSetupRequest: Sendable, Equatable, Identifiable {
     switch presentation {
     case .computerUsePermissions: .computerUse
     case .browserExtensionSetup, .browserExtensionWaiting, .browserExtensionUpdate: .chromeExtension
-    case nil: nil
+    case .pluginSetup, nil: nil
     }
   }
 }

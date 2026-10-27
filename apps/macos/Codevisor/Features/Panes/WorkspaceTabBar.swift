@@ -80,7 +80,6 @@ extension PaneTabIcon {
       browserFaviconReference: descriptor?.browserFavicon,
       browserFaviconClient: environment.machines.client(for: serverId),
       pluginId: descriptor?.pluginId,
-      pluginPaneType: descriptor?.pluginPaneType,
       pluginIconClient: environment.machines.client(for: serverId),
       pluginIconCacheNamespace: serverId,
       chatSession: chatSession,

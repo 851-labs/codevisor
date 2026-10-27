@@ -48,6 +48,14 @@ public struct McpFormValues {
     self.removedEnvironment = removedEnvironment
   }
 
+  public var customLocation: CustomPluginLocation {
+    CustomPluginLocation(
+      transport: transport,
+      url: transport == "http" ? location : nil,
+      command: transport == "stdio" ? location : nil,
+      args: transport == "stdio" ? arguments : [])
+  }
+
   public var createBody: CreateMcpServerBody {
     CreateMcpServerBody(
       name: name,

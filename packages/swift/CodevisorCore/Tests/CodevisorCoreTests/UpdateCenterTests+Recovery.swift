@@ -41,8 +41,6 @@ extension UpdateCenterTests {
     var harness = makeHarness(updateAvailable: true)
     harness.lifecycle = ServerHarnessLifecycleState(phase: "failed", error: "old failure", startedAt: "attempt-1")
     fake.configureHarnesses([harness])
-    fake.configurePluginUpdates([makePluginUpdate()])
-    fake.pluginPrepareError = "plugin failure"
     let controller = try makeController(fakes: [remote.id: fake], remotes: [remote])
     defer { controller.stopEventSync() }
     let app = AppUpdateModel(currentVersion: "1.0")
@@ -54,7 +52,7 @@ extension UpdateCenterTests {
     app.reportFailure("app failure")
     controller.markFailed(for: remote.id, message: "restart timed out")
     #expect(center.updateAllNotice != nil)
-    #expect(center.components.filter(\.isFailed).count == 4)
+    #expect(center.components.filter(\.isFailed).count == 3)
 
     app.checkHandler = {
       #expect(center.updateAllNotice == nil)

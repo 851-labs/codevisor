@@ -34,6 +34,8 @@ struct PromptQueueRow: View {
         .help("Drag to reorder")
         .accessibilityHidden(true)
       content
+      MessageAttributionText(item.attribution)
+        .fixedSize()
       if !attachments.isEmpty {
         AttachmentCountBadge(count: attachments.count)
       }

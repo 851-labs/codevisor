@@ -15,7 +15,9 @@ struct McpSettingsView: View {
   @State private var model = McpGlobalModel()
   @State private var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live)
-  @State private var showingAdd = false
+  @State private var showingCustom = false
+  @State private var showingCatalog = false
+  @State private var showingBlockedPublishers = false
   @State private var editing: McpFleetEntry?
   @State private var details: McpDetailTarget?
   @State private var pendingRemoval: McpFleetEntry?
@@ -34,14 +36,14 @@ struct McpSettingsView: View {
       Section {
         fleetSection(builtIn: false)
       } header: {
-        Text("MCP Servers")
+        Text("Plugins")
       } footer: {
         SettingsListActions(message: actionError ?? model.actionError) {
-          Button {
-            showingAdd = true
-          } label: {
-            Label("Add MCP Server…", systemImage: "plus")
-          }
+          Button("Blocked Publishers…") { showingBlockedPublishers = true }
+          PluginAddMenu(
+            canBrowse: supportsCatalog,
+            onBrowse: { showingCatalog = true },
+            onAddCustom: { showingCustom = true })
         }
       }
       McpOtherServersSection(isExpanded: $showsOtherServers)
@@ -52,14 +54,18 @@ struct McpSettingsView: View {
     .onChange(of: environment.configSync.revisionsByNamespace["mcp-readiness"]) { _, _ in
       model.settle(in: environment)
     }
-    .sheet(isPresented: $showingAdd) {
+    .sheet(isPresented: $showingCustom) {
       McpServerEditorSheet(initialServer: nil) { values in
-        let created = try await localClient.createMcpServer(values.createBody)
-        await model.load(in: environment)
-        if created.authType == "oauth" {
-          await beginOAuth(serverId: created.id, machineId: CodevisorMachine.local.id)
-        }
+        try await recordConsent(for: values)
+        await didAdd(try await localClient.createMcpServer(values.createBody))
       }
+    }
+    .sheet(isPresented: $showingBlockedPublishers) {
+      BlockedPublishersSheet()
+    }
+    .sheet(isPresented: $showingCatalog) {
+      PluginCatalogSheet(
+        client: localClient, installedCatalogIds: model.installedCatalogIds, onInstalled: didAdd)
     }
     .sheet(item: $editing) { entry in
       McpServerEditorSheet(initialServer: entry.representative) { values in
@@ -79,12 +85,12 @@ struct McpSettingsView: View {
         .environment(environment)
     }
     .confirmationDialog(
-      "Remove \(pendingRemoval?.name ?? "MCP server")?",
+      "Remove \(pendingRemoval?.name ?? "plugin")?",
       isPresented: Binding(
         get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
       titleVisibility: .visible
     ) {
-      Button("Remove MCP Server", role: .destructive) {
+      Button("Remove Plugin", role: .destructive) {
         guard let entry = pendingRemoval else { return }
         Task { await remove(entry) }
       }
@@ -128,6 +134,22 @@ struct McpSettingsView: View {
       })
   }
 
+  private var supportsCatalog: Bool {
+    environment.machines.statusByMachineId[CodevisorMachine.local.id]?.supportsPlugins == true
+  }
+
+  private func recordConsent(for values: McpFormValues) async throws {
+    let subject = PluginModerationSubject(custom: values.customLocation, name: values.name)
+    try await environment.pluginAccess.recordConsent(subject, metadata: PluginConsentMetadata(custom: subject))
+  }
+
+  private func didAdd(_ created: ServerMcpServer) async {
+    await model.load(in: environment)
+    guard created.awaitsAuthorization else { return }
+
+    await beginOAuth(serverId: created.id, machineId: CodevisorMachine.local.id)
+  }
+
   private var mcpStateRevisions: [UInt64] {
     environment.machines.allMachines.map { environment.mcpStateRevision(for: $0.id) }
   }
@@ -159,7 +181,7 @@ struct McpSettingsView: View {
   }
 }
 
-#Preview("MCP Settings") {
+#Preview("Plugins Settings") {
   McpSettingsView()
     .environment(AppEnvironment.preview())
     .frame(width: 560, height: 460)

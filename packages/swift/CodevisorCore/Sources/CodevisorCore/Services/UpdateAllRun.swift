@@ -12,11 +12,6 @@ struct UpdateAllRun {
     var remaining = Set(snapshot.map(\.id))
     center.persistSession(remaining)
     let plan = UpdateAllPlan(snapshot)
-    for plugin in plan.plugins {
-      await center.install(plugin)
-      remaining.remove(plugin.id)
-      center.persistSession(remaining)
-    }
     for machine in plan.machines {
       guard await update(machine) else { return center.clearSession() }
       remaining.subtract(machine.componentIds)

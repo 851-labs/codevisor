@@ -1,6 +1,7 @@
 import ACPKit
 import CodevisorProtocol
 import Foundation
+import TranscriptKit
 
 public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconClienting, SimulatorClienting {
   func sharedHarnessAccount(
@@ -35,7 +36,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func reconcileSkillsSync() async throws -> ServerSkillsSyncStatus
   func reconcileMcpsSync() async throws -> ServerMcpSyncStatus
   func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus
-  func reconcilePluginsSync() async throws -> ServerPluginSyncStatus
   func reconcileCredentialsSync() async throws -> JSONValue
   func publishAccountsSync() async throws
   func syncBlob(id: String) async throws -> Data
@@ -123,26 +123,29 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func removeBotProject(botId: String, projectId: String) async throws -> ServerBot
   func deleteBot(id: String) async throws
   func botConversation(sessionId: UUID, before: Int?, limit: Int) async throws -> ServerBotConversationPage
-  func listPlugins() async throws -> [ServerPluginSummary]
-  func listPluginUpdates() async throws -> [ServerPluginUpdateStatus]
-  func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan
-  func applyPluginUpdate(pluginId: String, planId: String) async throws -> ServerPluginSummary
-  func pluginIcon(pluginId: String, paneType: String?) async throws -> ServerPluginIconAsset
+  func listPluginCatalog(query: String?) async throws -> [ServerPluginCatalogEntry]
+  func installCatalogPlugin(id: String, values: [String: ServerConfigFieldValue]) async throws -> ServerMcpServer
+  func pluginCatalogEntry(id: String) async throws -> ServerPluginCatalogEntry
+  func listPluginAccounts(serverId: String) async throws -> [ServerPluginAccount]
+  func savePluginAccount(
+    serverId: String,
+    accountId: String?,
+    draft: ServerPluginAccountDraft
+  ) async throws -> ServerPluginAccount
+  func removePluginAccount(serverId: String, accountId: String) async throws
+  func startPluginAccountOAuth(
+    serverId: String,
+    request: ServerPluginAccountOAuthRequest
+  ) async throws -> ServerPluginAccountOAuthStart
+  func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL]
+  func listPluginEventSubscriptions() async throws -> [ServerPluginEventSubscription]
+  func removePluginEventSubscription(id: String) async throws
   func issuePluginPaneToken(
-    pluginId: String,
-    paneId: String,
+    serverId: String,
     paneType: String,
-    workspaceId: String?,
-    cwd: String?,
-    themeMode: String?
+    request: ServerPluginPaneTokenRequest
   ) async throws -> ServerPluginPaneTokenResponse
-  func fetchPluginRegistry(query: String?) async throws -> ServerPluginRegistryIndex
-  func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery
-  func importRemotePlugin(source: String) async throws -> ServerPluginSummary
-  func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary]
-  func restartPlugin(pluginId: String) async throws -> ServerPluginSummary
-  func restorePlugin(pluginId: String) async throws -> ServerPluginSummary
-  func setPluginEnabled(pluginId: String, enabled: Bool) async throws -> ServerPluginSummary
+  func issuePluginAppViewToken(viewId: String) async throws -> ServerPluginPaneTokenResponse
   func navigationSnapshot() async throws -> ServerNavigationSnapshot
   func listProjects() async throws -> [ServerProject]
   func upsertProject(_ project: Project) async throws -> ServerProject
@@ -255,6 +258,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func promptSession(
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
     clientId: String?, delivery: ServerPromptDelivery?, clientActionId: String
+  ) async throws -> ServerPromptAccepted
+  func promptSession(
+    id: UUID, text: String, attribution: UserMessageAttribution
   ) async throws -> ServerPromptAccepted
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
   func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata

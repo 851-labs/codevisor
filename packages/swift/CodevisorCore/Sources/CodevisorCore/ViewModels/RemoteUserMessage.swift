@@ -12,6 +12,7 @@ struct RemoteUserMessage {
   let attachments: [Attachment]
   let isEvent: Bool
   let assistantItemId: UUID?
+  let attribution: UserMessageAttribution?
   private let trimmedText: String
 
   init(
@@ -19,13 +20,15 @@ struct RemoteUserMessage {
     text: String,
     attachments: [Attachment] = [],
     isEvent: Bool = false,
-    assistantItemId: UUID? = nil
+    assistantItemId: UUID? = nil,
+    attribution: UserMessageAttribution? = nil
   ) {
     self.id = id
     self.text = text
     self.attachments = attachments
     self.isEvent = isEvent
     self.assistantItemId = assistantItemId
+    self.attribution = attribution
     self.trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
@@ -38,12 +41,12 @@ struct RemoteUserMessage {
   }
 
   var userMessage: UserMessage {
-    UserMessage(id: echoId ?? UUID(), text: text, attachments: attachments, isEvent: isEvent)
+    UserMessage(id: echoId ?? UUID(), text: text, attachments: attachments, isEvent: isEvent, attribution: attribution)
   }
 
   func match(in settled: [ConversationItem], pendingOptimisticIds: Set<UUID>) -> Match? {
     if let echo = echoMatch(in: settled) { return echo }
-    guard !isEvent else { return nil }
+    guard !isEvent, attribution == nil else { return nil }
 
     return optimisticMatch(in: settled, pendingOptimisticIds: pendingOptimisticIds)
   }
@@ -52,6 +55,7 @@ struct RemoteUserMessage {
     var user = user
     if user.attachments.isEmpty { user.attachments = attachments }
     user.isEvent = user.isEvent || isEvent
+    user.attribution = user.attribution ?? attribution
     return user
   }
 

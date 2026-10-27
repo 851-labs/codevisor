@@ -13,16 +13,11 @@ struct PluginPaneView: View {
     WebPaneThemeTokens(isDark: colorScheme == .dark)
   }
 
-  private var updateRevision: UInt64 {
-    environment.pluginUpdateRevision(forServer: model.serverId, pluginId: model.pluginId)
-  }
-
   var body: some View {
     let tokens = themeTokens
-    let revision = updateRevision
     ZStack {
       if case let .failed(message) = model.phase {
-        errorCard(message: message, tokens: tokens, revision: revision)
+        errorCard(message: message, tokens: tokens)
       } else {
         WebPaneView(controller: model.ensureController(theme: tokens))
         if model.phase == .loading {
@@ -31,25 +26,27 @@ struct PluginPaneView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .task(id: model.id) {
-      model.onTitleChange = onRename
-      model.loadIfNeeded(theme: tokens, updateRevision: revision)
-      while !Task.isCancelled {
-        do { try await Task.sleep(for: .seconds(60)) } catch { return }
-        await model.revalidateAccess()
+    .overlay(alignment: .bottomTrailing) {
+      if let subject = model.subject {
+        PluginSafetyButton(subject: subject)
+          .padding(10)
+          .background(.regularMaterial, in: Circle())
+          .padding(12)
       }
     }
     .task(id: environment.pluginAccess.revision) {
-      model.retry(theme: tokens, updateRevision: revision)
+      guard model.phase != .idle else { return }
+      model.retry(theme: tokens)
+    }
+    .task(id: model.id) {
+      model.onTitleChange = onRename
+      model.loadIfNeeded(theme: tokens)
     }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { model.retry(theme: tokens, updateRevision: revision) }
-    }
-    .onChange(of: revision) { _, moved in
-      model.loadIfNeeded(theme: tokens, updateRevision: moved)
+      if phase == .active { model.retry(theme: tokens) }
     }
     .task(id: environment.machines.httpConnectionState(forMachineId: model.serverId)) {
-      await model.connectionDidChange(theme: tokens, updateRevision: revision)
+      await model.connectionDidChange(theme: tokens)
     }
     .onChange(of: tokens) { _, updated in
       model.applyTheme(updated)
@@ -58,8 +55,7 @@ struct PluginPaneView: View {
 
   private func errorCard(
     message: String,
-    tokens: WebPaneThemeTokens,
-    revision: UInt64
+    tokens: WebPaneThemeTokens
   ) -> some View {
     VStack(spacing: 12) {
       Image(systemName: "puzzlepiece.extension")
@@ -74,7 +70,7 @@ struct PluginPaneView: View {
         .multilineTextAlignment(.center)
         .frame(maxWidth: 420)
       Button("Retry") {
-        model.retry(theme: tokens, updateRevision: revision)
+        model.retry(theme: tokens)
       }
       .buttonStyle(.borderedProminent)
     }

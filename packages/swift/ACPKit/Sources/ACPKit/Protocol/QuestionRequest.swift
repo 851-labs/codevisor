@@ -17,6 +17,7 @@ public enum QuestionPresentation: String, Sendable, Codable, Equatable {
   case browserExtensionWaiting
   case browserExtensionUpdate
   case computerUsePermissions
+  case pluginSetup
 }
 
 public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
@@ -29,6 +30,7 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
   public var isSecret: Bool?
   public var backOptionLabel: String?
   public var presentation: QuestionPresentation?
+  public var pluginSetup: JSONValue?
 
   public init(
     id: String,
@@ -39,7 +41,8 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
     allowsOther: Bool = true,
     isSecret: Bool? = nil,
     backOptionLabel: String? = nil,
-    presentation: QuestionPresentation? = nil
+    presentation: QuestionPresentation? = nil,
+    pluginSetup: JSONValue? = nil
   ) {
     self.id = id
     self.header = header
@@ -50,6 +53,7 @@ public struct QuestionSpec: Sendable, Codable, Equatable, Identifiable {
     self.isSecret = isSecret
     self.backOptionLabel = backOptionLabel
     self.presentation = presentation
+    self.pluginSetup = pluginSetup
   }
 }
 
@@ -65,6 +69,7 @@ extension QuestionSpec {
     isSecret = try container.decodeIfPresent(Bool.self, forKey: .isSecret)
     backOptionLabel = try container.decodeIfPresent(String.self, forKey: .backOptionLabel)
     presentation = try? container.decodeIfPresent(QuestionPresentation.self, forKey: .presentation)
+    pluginSetup = try? container.decodeIfPresent(JSONValue.self, forKey: .pluginSetup)
   }
 }
 

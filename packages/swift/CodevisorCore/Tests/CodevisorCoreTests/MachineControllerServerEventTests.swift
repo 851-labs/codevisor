@@ -99,35 +99,6 @@ struct MachineControllerServerEventTests {
     controller.stopEventSync()
   }
 
-  @Test("Plugin events bridge list invalidation and per-plugin reloads")
-  func pluginEventBridging() async throws {
-    let fake = SyncFakeServerClient(projects: [], sessions: [])
-    let navigation = NavigationFixture()
-    let projectList = navigation.projectList
-    let controller = MachineController(
-      store: InMemoryStore(),
-      projectList: projectList,
-      workspaceSync: navigation.workspaceSync,
-      clientFactory: { _ in fake }
-    )
-    var stateChanges: [String] = []
-    var updates: [[String]] = []
-    controller.onPluginStateChanged = { stateChanges.append($0) }
-    let pluginUpdated = TestSignal()
-    controller.onPluginUpdated = {
-      updates.append([$0, $1]); pluginUpdated.signal()
-    }
-
-    controller.startEventSync(for: "local")
-    fake.emit(kind: "plugin.state.updated", subjectId: "owner.example")
-    fake.emit(kind: "plugin.updated", subjectId: "owner.example")
-    await pluginUpdated.wait()
-    #expect(updates == [["local", "owner.example"]])
-    #expect(stateChanges == ["local"])
-
-    controller.stopEventSync()
-  }
-
   @Test("Workspace and unarchive events drive shared navigation state")
   func workspaceEventSync() async throws {
     let projectId = UUID()

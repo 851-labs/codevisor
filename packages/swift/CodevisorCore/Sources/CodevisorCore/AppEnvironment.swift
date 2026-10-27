@@ -35,9 +35,8 @@ public final class AppEnvironment {
   public let workspaceSync: WorkspaceSyncModel
   let harnessServiceOverride: (any HarnessServicing)?
   var harnessCatalogRevisions: [String: UInt64] = [:]
-  var pluginStateRevisions: [String: UInt64] = [:]
   var mcpStateRevisions: [String: UInt64] = [:]
-  var pluginUpdateRevisions: [String: UInt64] = [:]
+  public internal(set) var pluginAccountsRevision: UInt64 = 0
   private let clientDataResetter: (any ClientDataResetting)?
   public let now: @MainActor () -> Date
 
@@ -107,15 +106,6 @@ public final class AppEnvironment {
   }
 
   private func configureServices() {
-    updateCenter.listedHarnessIds = { [configSync] in
-      guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
-      return Set(HarnessFleet.settings(configSync).map(\.id))
-    }
-    #if os(iOS)
-      updateCenter.reviewPluginUpdate = { [pluginAccess] _, plan in
-        try await pluginAccess.requireEligible(pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
-      }
-    #endif
     machines.cloudProvider = cloud
     if localServer != nil {
       cloud.localServerClient = machines.client(for: CodevisorMachine.local.id)
@@ -168,9 +158,14 @@ public final class AppEnvironment {
   }
 
   private func wireHarnessAndConfigurationSync() {
+    updateCenter.listedHarnessIds = { [configSync] in
+      guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
+      return Set(HarnessFleet.settings(configSync).map(\.id))
+    }
     machines.onHarnessLifecycleChanged = { [weak self] in self?.noteHarnessLifecycle(onServer: $0) }
     machines.onHarnessAuthChanged = { [weak self] in self?.harnessCatalogDidChange(onServer: $0) }
     machines.onSyncChanged = { [weak self] in
+      self?.notePluginAccountsChange(namespace: $1.namespace)
       self?.configSync.applyRemoteChange(namespace: $1.namespace, entries: $1.entries, fromMachine: $0)
     }
     configSync.onNamespaceChanged = { [weak self] in self?.applySyncedNamespace($0) }
@@ -184,13 +179,11 @@ public final class AppEnvironment {
   }
 
   private func wireResourceChangeCallbacks() {
-    machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
     machines.onMcpStateChanged = { [weak self] in self?.mcpStateDidChange(onServer: $0) }
     machines.onBotsChanged = { [weak self] serverId in
       guard let bots = self?.bots else { return }
       Task { await bots.refresh(serverId: serverId) }
     }
-    machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
   }
 
   private func backfillComposerDefaultsFromPersistedState() {

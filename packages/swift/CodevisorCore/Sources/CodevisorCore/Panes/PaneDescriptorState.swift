@@ -25,6 +25,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var ownerChatSessionId: UUID?
   public var pluginId: String?
   public var pluginPaneType: String?
+  public var pluginApp: PluginAppPaneResource?
   public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
   public var browserFavicon: String?
@@ -43,6 +44,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     ownerChatSessionId: UUID? = nil,
     pluginId: String? = nil,
     pluginPaneType: String? = nil,
+    pluginApp: PluginAppPaneResource? = nil,
     documentPath: String? = nil,
     browserURL: String? = nil,
     browserFavicon: String? = nil,
@@ -61,6 +63,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.ownerChatSessionId = ownerChatSessionId
     self.pluginId = pluginId
     self.pluginPaneType = pluginPaneType
+    self.pluginApp = pluginApp
     self.documentPath = documentPath
     self.browserURL = browserURL
     self.browserFavicon = browserFavicon
@@ -83,6 +86,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId),
       pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
+      pluginApp: try container.decodeIfPresent(PluginAppPaneResource.self, forKey: .pluginApp),
       documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
       browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL),
       browserFavicon: try container.decodeIfPresent(String.self, forKey: .browserFavicon),

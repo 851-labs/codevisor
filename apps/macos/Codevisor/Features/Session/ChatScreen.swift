@@ -17,6 +17,7 @@ struct ChatScreen: View {
   @Environment(\.quickLook) var quickLook
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.openSubagent) var openSubagent
+  @Environment(\.pluginAppPresenter) var pluginAppPresenter
   @Environment(\.transcriptWebLinkActions) var transcriptWebLinkActions
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
   @Environment(\.usesSlimComposer) var usesSlimComposer
@@ -94,6 +95,7 @@ struct ChatScreen: View {
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)
       .overlay { livePreviewPiPOverlay }
+      .overlay { PluginAppPipOverlay(chatSessionId: controller.serverSession?.id) }
       .sheet(item: $controller.presentedSetupRequest) { request in
         SetupRequestSheet(request: request, controller: controller)
       }

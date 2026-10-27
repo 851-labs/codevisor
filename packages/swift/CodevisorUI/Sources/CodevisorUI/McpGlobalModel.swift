@@ -21,6 +21,10 @@ public final class McpGlobalModel {
   public var builtIns: [McpFleetEntry] { entries.filter(\.isBuiltIn) }
   public var managed: [McpFleetEntry] { entries.filter { !$0.isBuiltIn } }
 
+  public var installedCatalogIds: Set<String> {
+    Set(entries.flatMap { $0.serverByMachine.values.compactMap(\.catalogId) })
+  }
+
   public func entry(named name: String) -> McpFleetEntry? {
     entries.first { $0.name == name }
   }

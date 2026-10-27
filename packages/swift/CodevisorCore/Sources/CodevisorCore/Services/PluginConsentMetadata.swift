@@ -10,15 +10,21 @@ public struct PluginConsentMetadata: Encodable, Sendable {
   let panes: [Pane]
   let tools: [Tool]
 
-  public init(_ plugin: ServerPluginRemoteDiscovery) {
-    name = plugin.name; version = plugin.version; description = plugin.description; ageRating = plugin.ageRating
-    panes = plugin.panes.map { Pane(type: $0.type, title: $0.title) }
-    tools = (plugin.tools ?? []).map { Tool(name: $0.name, description: $0.description) }
+  public init(_ entry: ServerPluginCatalogEntry, ageRating: Int?) {
+    name = entry.name
+    version = entry.version
+    description = entry.description
+    self.ageRating = ageRating
+    panes = entry.capabilities.panes.map { Pane(type: $0.type, title: $0.title) }
+    tools = entry.capabilities.tools.map { Tool(name: $0.name, description: $0.description ?? "") }
   }
 
-  public init(_ plugin: ServerPluginSummary) {
-    name = plugin.name; version = plugin.version; description = plugin.description; ageRating = plugin.ageRating
-    panes = plugin.panes.map { Pane(type: $0.type, title: $0.title) }
-    tools = (plugin.tools ?? []).map { Tool(name: $0.name, description: $0.description) }
+  public init(custom subject: PluginModerationSubject) {
+    name = subject.name
+    version = ""
+    description = nil
+    ageRating = nil
+    panes = []
+    tools = []
   }
 }

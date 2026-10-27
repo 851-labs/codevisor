@@ -6,13 +6,13 @@ import Observation
 enum SettingsTab: String, CaseIterable, Identifiable {
   case account, machines, sandboxes, projects
   case general, updates, notifications, shortcuts
-  case agents, mcps, skills, plugins
+  case agents, plugins, skills
   case developer
 
   static let sidebarGroups: [[SettingsTab]] = [
     [.account, .machines, .sandboxes, .projects],
     [.general, .updates, .notifications, .shortcuts],
-    [.agents, .mcps, .skills, .plugins],
+    [.agents, .plugins, .skills],
     [.developer],
   ]
 
@@ -26,7 +26,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .notifications: "Notifications"
     case .shortcuts: "Shortcuts"
     case .agents: "Harnesses"
-    case .mcps: "MCPs"
     case .skills: "Skills"
     case .plugins: "Plugins"
     case .projects: "Projects"
@@ -44,7 +43,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .notifications: .notifications
     case .shortcuts: .shortcuts
     case .agents: .harnesses
-    case .mcps: .mcps
     case .skills: .skills
     case .plugins: .plugins
     case .projects: .projects
@@ -163,12 +161,4 @@ final class SettingsRouter {
     panePath = []
     selectedTab = .agents
   }
-
-  func showPlugins(machineId: String? = nil) {
-    _ = machineId
-    panePath = []
-    selectedTab = .plugins
-  }
-
-  var pendingPluginInstallSource: String?
 }

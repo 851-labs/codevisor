@@ -31,14 +31,13 @@ struct HomeSidebarTabIcon: View {
         } placeholder: {
           symbol("globe")
         }
-      case let .plugin(pluginId, paneType):
+      case let .plugin(pluginId):
         if environment.machines.machine(for: serverId) != nil {
           PluginIconView(
             pluginId: pluginId,
-            paneType: paneType,
-            iconPath: "server",
             client: environment.machines.client(for: serverId),
-            cacheNamespace: serverId
+            cacheNamespace: serverId,
+            side: size
           )
           .frame(width: size, height: size)
         } else {

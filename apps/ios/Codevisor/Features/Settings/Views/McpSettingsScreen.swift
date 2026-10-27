@@ -7,12 +7,20 @@ struct McpSettingsScreen: View {
   @State private var model = McpGlobalModel()
   @State private var pendingRemoval: McpFleetEntry?
   @State private var editing: McpEditorTarget?
+  @State private var details: McpDetailTarget?
+  @State private var showingCatalog = false
   @State private var actionError: String?
 
   private struct McpEditorTarget: Identifiable {
     let entry: McpFleetEntry?
     var server: ServerMcpServer? { entry?.representative }
     var id: String { entry?.name ?? "new" }
+  }
+
+  private struct McpDetailTarget: Identifiable {
+    let server: ServerMcpServer
+    let machineId: String
+    var id: String { "\(server.id)|\(machineId)" }
   }
 
   private var authoringMachineId: String {
@@ -25,18 +33,24 @@ struct McpSettingsScreen: View {
       Section("Built-in Tools") {
         fleetSection(builtIn: true)
       }
-      Section("MCP Servers") {
+      Section("Plugins") {
         fleetSection(builtIn: false)
       }
+      Section {
+        NavigationLink("Blocked Publishers") { PluginBlockedPublishersView() }
+      }
     }
-    .navigationTitle("MCPs")
+    .navigationTitle("Plugins")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          editing = McpEditorTarget(entry: nil)
+        Menu {
+          if supportsCatalog {
+            Button("Browse Plugins…") { showingCatalog = true }
+          }
+          Button("Add Custom…") { editing = McpEditorTarget(entry: nil) }
         } label: {
-          Label("Add MCP Server", systemImage: "plus")
+          Label("Add", systemImage: "plus")
         }
       }
     }
@@ -53,8 +67,18 @@ struct McpSettingsScreen: View {
       }
       .environment(environment)
     }
+    .sheet(isPresented: $showingCatalog) {
+      PluginCatalogScreen(
+        client: environment.machines.client(for: authoringMachineId),
+        installedCatalogIds: model.installedCatalogIds,
+        onInstalled: { await didAdd($0, on: authoringMachineId) })
+    }
+    .sheet(item: $details) { target in
+      McpServerDetailScreen(
+        server: target.server, client: environment.machines.client(for: target.machineId))
+    }
     .alert(
-      "Remove \(pendingRemoval?.name ?? "MCP server")?",
+      "Remove \(pendingRemoval?.name ?? "plugin")?",
       isPresented: Binding(
         get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } })
     ) {
@@ -65,7 +89,7 @@ struct McpSettingsScreen: View {
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     }
     .alert(
-      "Couldn’t update MCP servers",
+      "Couldn’t update plugins",
       isPresented: Binding(
         get: { (actionError ?? model.actionError) != nil },
         set: {
@@ -88,7 +112,7 @@ struct McpSettingsScreen: View {
     McpFleetSection(
       model: model,
       builtIn: builtIn,
-      onDetails: { _ in },
+      onDetails: showDetails,
       onEdit: { entry in editing = McpEditorTarget(entry: entry) },
       onRemove: { pendingRemoval = $0 },
       onConnect: { entry, machineId in
@@ -96,6 +120,24 @@ struct McpSettingsScreen: View {
       },
       icon: { entry in McpEntryIcon(entry: entry) },
       machineExtras: { _, _ in EmptyView() })
+  }
+
+  private var supportsCatalog: Bool {
+    environment.machines.statusByMachineId[authoringMachineId]?.supportsPlugins == true
+  }
+
+  private func showDetails(_ entry: McpFleetEntry) {
+    guard let machineId = entry.machineId(preferring: authoringMachineId),
+      let server = entry.server(on: machineId)
+    else { return }
+    details = McpDetailTarget(server: server, machineId: machineId)
+  }
+
+  private func didAdd(_ created: ServerMcpServer, on machineId: String) async {
+    await model.load(in: environment)
+    guard created.awaitsAuthorization else { return }
+
+    await beginOAuth(serverId: created.id, machineId: machineId)
   }
 
   private var mcpStateRevisions: [UInt64] {
@@ -133,13 +175,16 @@ struct McpSettingsScreen: View {
         await beginOAuth(serverId: serverId, machineId: machineId)
       }
     } else {
+      try await recordConsent(for: values)
       let created = try await environment.machines.client(for: authoringMachineId)
         .createMcpServer(values.createBody)
-      await model.load(in: environment)
-      if created.authType == "oauth" {
-        await beginOAuth(serverId: created.id, machineId: authoringMachineId)
-      }
+      await didAdd(created, on: authoringMachineId)
     }
+  }
+
+  private func recordConsent(for values: McpFormValues) async throws {
+    let subject = PluginModerationSubject(custom: values.customLocation, name: values.name)
+    try await environment.pluginAccess.recordConsent(subject, metadata: PluginConsentMetadata(custom: subject))
   }
 
   private func remove(_ entry: McpFleetEntry) async {

@@ -23,15 +23,16 @@ struct MachineStatusFeaturesTests {
   @Test("Status probe caches the advertised feature list")
   func probeCachesFeatures() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureInfoFeatures(["plugins-v1", "screen-sharing-v1"])
+    fake.configureInfoFeatures(["plugins-v2", "screen-sharing-v1"])
     fake.configureInfoMaxUploadBytes(524_288_000)
     let (controller, remote) = try makeController(fake: fake)
 
     await controller.refreshStatus(for: remote.id)
 
     let status = try #require(controller.statusByMachineId[remote.id])
-    #expect(status.features == ["plugins-v1", "screen-sharing-v1"])
+    #expect(status.features == ["plugins-v2", "screen-sharing-v1"])
     #expect(status.supportsScreenSharing)
+    #expect(status.supportsPlugins)
     #expect(status.uploadLimitBytes == 524_288_000)
   }
 

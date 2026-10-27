@@ -19,6 +19,8 @@ struct IOSPromptQueueRow: View {
   var body: some View {
     HStack(alignment: .center, spacing: 12) {
       message
+      MessageAttributionText(item.attribution)
+        .fixedSize()
       if !attachments.isEmpty {
         AttachmentCountBadge(count: attachments.count)
       }

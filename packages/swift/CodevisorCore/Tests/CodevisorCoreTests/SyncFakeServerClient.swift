@@ -35,7 +35,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
   var harnessReadGate: (@Sendable () async -> Void)?
   var _harnessCheckScopes: [[String]?] = []
-  var pluginPrepareError: String?
   var applyProgressReports: [ServerUpdateApplyState] = []
   var applyingProgressReports = false
   let lock = NSLock()
@@ -356,7 +355,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var applyRejectionDowntime = 0
   var lastApply: ServerUpdateApplyState?
   var _harnesses: [ServerHarness] = []
-  var _pluginUpdates: [ServerPluginUpdateStatus] = []
   var _operationLog: [String] = []
   var _harnessesSyncApplied: [String] = []
   var _syncEntries: [String: [ServerSyncEntry]] = [:]

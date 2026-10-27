@@ -79,9 +79,10 @@ extension SessionModel {
       startAssistantItem(itemId)
     case let .assistantFinalized(markdown, messageId, attachments):
       finalizeAssistant(markdown: markdown, messageId: messageId, attachments: attachments)
-    case let .userMessage(id, text, attachments, isEvent, assistantItemId):
+    case let .userMessage(id, text, attachments, isEvent, assistantItemId, attribution):
       let remote = RemoteUserMessage(
-        id: id, text: text, attachments: attachments, isEvent: isEvent, assistantItemId: assistantItemId)
+        id: id, text: text, attachments: attachments, isEvent: isEvent, assistantItemId: assistantItemId,
+        attribution: attribution)
       applyUserMessage(remote)
     case let .finished(stopReason, stopDetail, stopKind, retryable, chatItemId):
       let stop = SessionTurnStop.finished(stopReason, detail: stopDetail, kind: stopKind, retryable: retryable)

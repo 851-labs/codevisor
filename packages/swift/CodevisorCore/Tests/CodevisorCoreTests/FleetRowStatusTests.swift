@@ -30,33 +30,6 @@ struct FleetRowStatusTests {
   @Test("An attention status never opens an empty explanation")
   func attentionAlwaysExplains() {
     #expect(FleetRowStatus.attention("Needs attention", reason: "  ").reason == FleetRowStatus.blockedFallbackReason)
-    #expect(PluginFleet.MachineStatus.blocked(reason: "").rowStatus.reason == FleetRowStatus.blockedFallbackReason)
-  }
-
-  @Test("Plugin rows follow the report, with offline outranking a stale one")
-  func pluginRows() {
-    let readiness: [String: [PluginFleet.MachineReadiness]] = [
-      "studio-key": [.init(pluginId: "scratch", state: "ready", reason: nil)],
-      "book-key": [.init(pluginId: "scratch", state: "blocked", reason: "needs ffmpeg")],
-      "vps-key": [.init(pluginId: "scratch", state: "ready", reason: nil)],
-    ]
-    let rows = PluginFleet.machineRows(
-      pluginId: "scratch", readiness: readiness, machines: machines())
-    #expect(rows.map(\.machineId) == ["studio", "book", "vps", "fresh"])
-    #expect(rows[0].status == .ready)
-    #expect(rows[1].status == .blocked(reason: "needs ffmpeg"))
-    #expect(rows[1].status.rowStatus.reason == "needs ffmpeg")
-    #expect(rows[2].status == .unreachable)
-    #expect(rows[3].status == .syncing)
-  }
-
-  @Test("A blocked plugin with no reason still says something actionable")
-  func pluginBlockedFallback() {
-    let rows = PluginFleet.machineRows(
-      pluginId: "scratch",
-      readiness: ["studio-key": [.init(pluginId: "scratch", state: "blocked", reason: nil)]],
-      machines: [machines()[0]])
-    #expect(rows[0].status.rowStatus.reason == FleetRowStatus.blockedFallbackReason)
   }
 
   @Test("MCP rows follow each machine's own report, and split auth from other failures")
@@ -82,7 +55,6 @@ struct FleetRowStatusTests {
   @Test(
     "A machine still reporting off after the user turned it on reads as syncing on every plane")
   func pendingTurnOnIsBusy() {
-    let studio = [machines()[0]]
     let mcp = McpFleet.machineRows(
       name: "Linear",
       readiness: [
@@ -100,17 +72,6 @@ struct FleetRowStatusTests {
       machines: [.init(id: "studio", name: "Studio", syncKey: "studio-key", isReachable: true)],
       wantsOn: true)
     #expect(harness.map(\.status) == [.syncing])
-    let plugin = PluginFleet.machineRows(
-      pluginId: "notes",
-      readiness: ["studio-key": [.init(pluginId: "notes", state: "disabled", reason: nil)]],
-      machines: studio, wantsOn: true)
-    #expect(plugin.map(\.status) == [.syncing])
-    #expect(
-      PluginFleet.machineRows(
-        pluginId: "notes",
-        readiness: ["studio-key": [.init(pluginId: "notes", state: "disabled", reason: nil)]],
-        machines: studio
-      ).map(\.status) == [.off])
   }
 
   @Test("A connected MCP reports the tools it actually exposes there")
@@ -123,21 +84,8 @@ struct FleetRowStatusTests {
     #expect(rows[0].status.label == "Connected · 1 tool")
   }
 
-  @Test("A machine-bound plugin still counts as running, so it can be restarted")
-  func machineBoundPluginIsRunning() {
-    #expect(PluginFleet.MachineStatus.localOnly.isRunningHere)
-    #expect(PluginFleet.MachineStatus.ready.isRunningHere)
-    #expect(PluginFleet.MachineStatus.off.isRunningHere == false)
-    #expect(PluginFleet.MachineStatus.blocked(reason: "died").isRunningHere == false)
-    #expect(PluginFleet.MachineStatus.ready.rowStatus.isWorthFoldingUp == false)
-    #expect(PluginFleet.MachineStatus.off.rowStatus.isWorthFoldingUp == false)
-    #expect(PluginFleet.MachineStatus.blocked(reason: "died").rowStatus.isWorthFoldingUp)
-    #expect(PluginFleet.MachineStatus.installing.rowStatus.isWorthFoldingUp)
-  }
-
-  @Test("Unknown server states degrade to syncing instead of vanishing")
+  @Test("An unknown MCP state still shows the reason the machine gave")
   func unknownStates() {
-    #expect(PluginFleet.machineStatus(state: "fromTheFuture", reason: nil) == .syncing)
     let mcp = McpFleet.machineStatus(
       .init(name: "S", state: "fromTheFuture", reason: "odd", code: nil))
     #expect(mcp == .blocked(reason: "odd"))

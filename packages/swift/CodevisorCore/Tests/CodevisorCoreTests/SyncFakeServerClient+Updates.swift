@@ -89,62 +89,11 @@ extension SyncFakeServerClient {
     lock.withLock { _harnesses = harnesses }
   }
 
-  func configurePluginUpdates(_ updates: [ServerPluginUpdateStatus]) {
-    lock.withLock { _pluginUpdates = updates }
-  }
-
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
     if let harnessUpdateHandler { return try await harnessUpdateHandler(id) }
     return lock.withLock {
       _operationLog.append("harness.update:\(id)")
       return ServerHarnessOperationStarted(accepted: true)
-    }
-  }
-
-  func listPluginUpdates() async throws -> [ServerPluginUpdateStatus] {
-    lock.withLock { _pluginUpdates }
-  }
-
-  func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan {
-    if let pluginPrepareError { throw CodevisorServerClientError.httpStatus(500, pluginPrepareError) }
-    return lock.withLock {
-      _operationLog.append("plugin.prepare:\(pluginId)")
-      let review = ServerPluginUpdateReview(
-        version: "1.1.0",
-        setupCommands: [],
-        runCommand: "run",
-        panes: []
-      )
-      return ServerPluginUpdatePlan(
-        planId: "plan-1",
-        pluginId: pluginId,
-        name: pluginId,
-        resolvedCommit: "abc123",
-        expiresAt: "2026-06-30T01:00:00.000Z",
-        current: review,
-        candidate: review,
-        paneChanges: ServerPluginNamedChanges(added: [], removed: [], changed: []),
-        toolChanges: ServerPluginNamedChanges(added: [], removed: [], changed: [])
-      )
-    }
-  }
-
-  func applyPluginUpdate(pluginId: String, planId: String) async throws -> ServerPluginSummary {
-    lock.withLock {
-      _operationLog.append("plugin.apply:\(pluginId)")
-      _pluginUpdates = _pluginUpdates.map { status in
-        var next = status
-        if status.pluginId == pluginId { next.state = .current }
-        return next
-      }
-      return ServerPluginSummary(
-        id: pluginId,
-        name: pluginId,
-        version: "1.1.0",
-        source: "managed",
-        path: "/tmp/\(pluginId)",
-        state: "running"
-      )
     }
   }
 
@@ -245,14 +194,6 @@ extension SyncFakeServerClient {
       return ServerHarnessSyncStatus(
         published: [], applied: _harnessesSyncApplied, removed: [], installing: [],
         blocked: [])
-    }
-  }
-
-  func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
-    lock.withLock {
-      _operationLog.append("plugins.reconcile")
-      return ServerPluginSyncStatus(
-        published: [], applied: [], removed: [], installed: [], blocked: [])
     }
   }
 

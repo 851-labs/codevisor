@@ -90,7 +90,7 @@ struct UpdateCenterView: View {
 
   private var summaryDetail: String {
     guard let refreshed = center.lastRefreshedAt else {
-      return "Checking every machine's Codevisor, harnesses, and plugins."
+      return "Checking every machine's Codevisor and harnesses."
     }
     return "Last checked \(refreshed.formatted(date: .omitted, time: .shortened))"
   }
@@ -164,8 +164,6 @@ struct UpdateCenterView: View {
         .accessibilityHidden(true)
     case .harness:
       HarnessIcon(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
-    case .plugin:
-      Image(systemName: "puzzlepiece.extension")
     }
   }
 

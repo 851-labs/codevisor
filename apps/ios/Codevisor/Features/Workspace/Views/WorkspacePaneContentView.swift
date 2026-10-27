@@ -37,7 +37,7 @@ struct WorkspacePaneContentView: View {
   let onConvertToReview: () -> Void
   let onConvertToSimulator: () -> Void
   let onConvertToScreenSharing: () -> Void
-  let onConvertToPlugin: (PluginNewTabOption) -> Void
+  let onConvertToPlugin: (PluginPaneOffer) -> Void
   let serverConfig: CodevisorServerConfig?
   let workspaceCwd: String
   let machineClient: any CodevisorServerClienting
@@ -126,6 +126,12 @@ struct WorkspacePaneContentView: View {
       }
     case .review:
       ReviewPaneView(model: reviewPaneModel(pane))
+    case .plugin where pane.pluginApp != nil:
+      if let model = PluginAppPaneModels.shared.model(
+        for: pane, fallbackMachineId: machineId, environment: environment)
+      {
+        PluginAppPaneView(model: model)
+      }
     case .plugin:
       PluginPaneView(
         model: pluginPaneModel(pane),

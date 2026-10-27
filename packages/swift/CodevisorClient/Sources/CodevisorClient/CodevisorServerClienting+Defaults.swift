@@ -138,58 +138,54 @@ public extension CodevisorServerClienting {
     try await upsertSession(session)
   }
 
-  func listPlugins() async throws -> [ServerPluginSummary] { [] }
+  func listPluginCatalog(query: String?) async throws -> [ServerPluginCatalogEntry] { [] }
 
-  func listPluginUpdates() async throws -> [ServerPluginUpdateStatus] { [] }
-
-  func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan {
+  func installCatalogPlugin(id: String, values: [String: ServerConfigFieldValue]) async throws -> ServerMcpServer {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func applyPluginUpdate(pluginId: String, planId: String) async throws -> ServerPluginSummary {
+  func pluginCatalogEntry(id: String) async throws -> ServerPluginCatalogEntry {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func pluginIcon(pluginId: String, paneType: String?) async throws -> ServerPluginIconAsset {
+  func listPluginAccounts(serverId: String) async throws -> [ServerPluginAccount] { [] }
+
+  func savePluginAccount(
+    serverId: String,
+    accountId: String?,
+    draft: ServerPluginAccountDraft
+  ) async throws -> ServerPluginAccount {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func removePluginAccount(serverId: String, accountId: String) async throws {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func startPluginAccountOAuth(
+    serverId: String,
+    request: ServerPluginAccountOAuthRequest
+  ) async throws -> ServerPluginAccountOAuthStart {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL] { [] }
+
+  func listPluginEventSubscriptions() async throws -> [ServerPluginEventSubscription] { [] }
+
+  func removePluginEventSubscription(id: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }
 
   func issuePluginPaneToken(
-    pluginId: String,
-    paneId: String,
+    serverId: String,
     paneType: String,
-    workspaceId: String?,
-    cwd: String?,
-    themeMode: String?
+    request: ServerPluginPaneTokenRequest
   ) async throws -> ServerPluginPaneTokenResponse {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func fetchPluginRegistry(query: String?) async throws -> ServerPluginRegistryIndex {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func discoverRemotePlugin(source: String) async throws -> ServerPluginRemoteDiscovery {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func importRemotePlugin(source: String) async throws -> ServerPluginSummary {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary] {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func restartPlugin(pluginId: String) async throws -> ServerPluginSummary {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func restorePlugin(pluginId: String) async throws -> ServerPluginSummary {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func setPluginEnabled(pluginId: String, enabled: Bool) async throws -> ServerPluginSummary {
+  func issuePluginAppViewToken(viewId: String) async throws -> ServerPluginPaneTokenResponse {
     throw CodevisorServerClientError.invalidResponse
   }
 
@@ -564,10 +560,6 @@ public extension CodevisorServerClienting {
 public extension CodevisorServerClienting {
   func reconcileHarnessesSync() async throws -> ServerHarnessSyncStatus {
     ServerHarnessSyncStatus(published: [], applied: [], removed: [], installing: [], blocked: [])
-  }
-
-  func reconcilePluginsSync() async throws -> ServerPluginSyncStatus {
-    ServerPluginSyncStatus(published: [], applied: [], removed: [], installed: [], blocked: [])
   }
 
   func reconcileCredentialsSync() async throws -> JSONValue {

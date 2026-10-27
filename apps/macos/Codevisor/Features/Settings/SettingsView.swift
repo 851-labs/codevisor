@@ -146,14 +146,11 @@ struct SettingsView: View {
     case .agents:
       HarnessesSettingsView()
         .navigationTitle("Harnesses")
-    case .mcps:
-      McpSettingsView()
-        .navigationTitle("MCPs")
     case .skills:
       SkillsSettingsView()
         .navigationTitle("Skills")
     case .plugins:
-      PluginsSettingsView()
+      McpSettingsView()
         .navigationTitle("Plugins")
     case .projects:
       ProjectsSettingsView()

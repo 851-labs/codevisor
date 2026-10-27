@@ -44,8 +44,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "mcps",
-    "skills", "plugins",
+    "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "plugins", "skills",
   ]
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
@@ -197,14 +196,11 @@ struct SettingsSheet: View {
       NavigationLink(value: SettingsDestination.section("agents")) {
         sectionLabel("Harnesses", icon: .harnesses)
       }
-      NavigationLink(value: SettingsDestination.section("mcps")) {
-        sectionLabel("MCPs", icon: .mcps)
+      NavigationLink(value: SettingsDestination.section("plugins")) {
+        sectionLabel("Plugins", icon: .plugins)
       }
       NavigationLink(value: SettingsDestination.section("skills")) {
         sectionLabel("Skills", icon: .skills)
-      }
-      NavigationLink(value: SettingsDestination.section("plugins")) {
-        sectionLabel("Plugins", icon: .plugins)
       }
     }
     Section {
@@ -282,9 +278,8 @@ struct SettingsSheet: View {
     case "projects": ProjectsSettingsScreen()
     case "updates": UpdatesSettingsScreen()
     case "agents": HarnessesSettingsScreen()
-    case "mcps": McpSettingsScreen()
     case "skills": SkillsSettingsScreen()
-    case "plugins": PluginsSettingsScreen()
+    case "plugins": McpSettingsScreen()
     default: EmptyView()
     }
   }

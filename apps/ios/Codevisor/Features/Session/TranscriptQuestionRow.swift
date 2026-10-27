@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
@@ -11,7 +12,9 @@ struct TranscriptQuestionRow: View {
   var body: some View {
     switch interaction.content {
     case let .question(question):
-      if question.answer == nil {
+      if let setup = ServerPluginSetupRequest.decoded(from: question.request.questions) {
+        PluginSetupRow(question: question, request: setup, inBotConversation: inBotConversation, controller: controller)
+      } else if question.answer == nil {
         TranscriptQuestionCard(controller: controller, request: question.request, inBotConversation: inBotConversation)
       } else {
         TranscriptQuestionSummaryView(question: question, inBotConversation: inBotConversation)

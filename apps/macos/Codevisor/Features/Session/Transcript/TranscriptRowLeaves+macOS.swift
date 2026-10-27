@@ -41,7 +41,7 @@ extension TranscriptRowLeaves {
           ))
       },
       userMessage: { message in
-        AnyView(UserMessageView(message: message))
+        AnyView(AttributedUserMessage(message) { UserMessageView(message: message) })
       },
       botMessage: { message, content in
         AnyView(BotMessageView(message: message, content: content))

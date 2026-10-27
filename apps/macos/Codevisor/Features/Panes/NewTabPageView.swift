@@ -12,7 +12,7 @@ private struct NewTabOption: Identifiable, Equatable {
     case browser
     case screenSharing
     case simulator
-    case plugin(pluginId: String, paneType: String, iconPath: String?)
+    case plugin(pluginId: String, paneType: String)
   }
 
   let id: String
@@ -85,7 +85,7 @@ struct NewTabPageView: View {
     .onDisappear {
       group?.unregisterNewTabFocus(paneId: paneId)
     }
-    .task(id: pluginStateRevision) {
+    .task(id: pluginRevision) {
       await loadPluginOptions()
     }
   }
@@ -108,12 +108,11 @@ struct NewTabPageView: View {
           Autocomplete.Action(option.title, id: option.id, systemImage: "doc.text.magnifyingglass") { open(option) }
         case .review:
           Autocomplete.Action(option.title, id: option.id, systemImage: "plusminus") { open(option) }
-        case let .plugin(pluginId, paneType, iconPath):
+        case let .plugin(pluginId, _):
           Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
             if let client {
               PluginIconView(
-                pluginId: pluginId, paneType: paneType, iconPath: iconPath,
-                client: client, cacheNamespace: iconCacheNamespace)
+                pluginId: pluginId, client: client, cacheNamespace: iconCacheNamespace, side: 16)
             } else {
               Image(systemName: "puzzlepiece.extension")
             }
@@ -150,7 +149,7 @@ struct NewTabPageView: View {
       group?.convertNewTabPane(id: paneId, to: .review)
     case .terminal:
       group?.convertNewTabPane(id: paneId, to: .terminal)
-    case let .plugin(pluginId, paneType, _):
+    case let .plugin(pluginId, paneType):
       group?.convertNewTabPane(
         id: paneId,
         to: .plugin,
@@ -161,21 +160,18 @@ struct NewTabPageView: View {
     }
   }
 
-  private var pluginStateRevision: UInt64 {
-    environment.pluginStateRevision(for: iconCacheNamespace)
+  private var pluginRevision: UInt64 {
+    environment.mcpStateRevision(for: iconCacheNamespace)
   }
 
   private func loadPluginOptions() async {
-    guard let client else { return }
-    guard let plugins = try? await client.listPlugins() else { return }
-    pluginOptions = plugins.flatMap { plugin in
-      plugin.panes.map { pane in
-        NewTabOption(
-          id: "plugin:\(plugin.id)|\(pane.type)",
-          title: pane.title,
-          kind: .plugin(pluginId: plugin.id, paneType: pane.type, iconPath: pane.iconPath ?? plugin.iconPath)
-        )
-      }
+    guard let client, let offers = await PluginPaneOffer.load(from: client) else { return }
+    pluginOptions = offers.map { offer in
+      NewTabOption(
+        id: "plugin:\(offer.id)",
+        title: offer.title,
+        kind: .plugin(pluginId: offer.pluginId, paneType: offer.paneType)
+      )
     }
   }
 }

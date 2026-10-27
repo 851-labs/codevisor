@@ -18,6 +18,10 @@ extension EnvironmentValues {
   @Entry public var transcriptAttachmentThumbnail: TranscriptAttachmentThumbnail?
 
   @Entry public var transcriptWebLinkActions: MarkdownWebLinkActions?
+
+  @Entry public var pluginAppHost: PluginAppHost?
+
+  @Entry public var pluginAppPresenter: PluginAppPresenter?
 }
 
 public struct TranscriptAttachmentThumbnail: @unchecked Sendable {

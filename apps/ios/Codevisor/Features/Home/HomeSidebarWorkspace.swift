@@ -53,7 +53,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
     case chat(harnessId: String, fallbackSymbolName: String)
     case terminal
     case browser(favicon: String?)
-    case plugin(pluginId: String, paneType: String?)
+    case plugin(pluginId: String)
     case document
     case screenSharing
     case simulator

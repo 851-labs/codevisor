@@ -12,6 +12,7 @@ extension Notification.Name {
 struct SessionTranscriptView: View {
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.openSubagent) var openSubagent
+  @Environment(\.pluginAppPresenter) var pluginAppPresenter
   static let transcriptMeasurementSchemaVersion = 3
   static let transcriptBottomBreathingRoom: CGFloat = 8
   static let composerBottomMargin: CGFloat = 6
@@ -90,6 +91,7 @@ struct SessionTranscriptView: View {
 
   var body: some View {
     chat
+      .overlay { PluginAppPipOverlay(chatSessionId: controller.serverSession?.id) }
       .attachmentQuickLookPreview(
         Binding(get: { quickLook.previewURL }, set: { quickLook.updatePreviewURL($0) })
       )

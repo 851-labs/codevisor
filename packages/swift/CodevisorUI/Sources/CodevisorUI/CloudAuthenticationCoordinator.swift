@@ -119,20 +119,7 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
   }
 
   nonisolated public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-    MainActor.assumeIsolated { presentationWindow }
-  }
-
-  private var presentationWindow: ASPresentationAnchor {
-    #if os(iOS)
-      let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-      if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) { return keyWindow }
-      guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
-        preconditionFailure("Sign-in was requested with no connected window scene to present from")
-      }
-      return scene.windows.first ?? UIWindow(windowScene: scene)
-    #else
-      NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
-    #endif
+    MainActor.assumeIsolated { WebAuthenticationAnchor.current }
   }
 }
 
@@ -166,7 +153,7 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
     }
 
     public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-      presentationWindow
+      WebAuthenticationAnchor.current
     }
 
     public func authorizationController(

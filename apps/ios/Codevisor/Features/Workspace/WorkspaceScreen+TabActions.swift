@@ -72,6 +72,7 @@ extension WorkspaceScreen {
     }
     if pane.kind == .plugin {
       PluginPaneCache.shared.remove(paneId: pane.id)
+      PluginAppPaneModels.shared.remove(paneId: pane.id)
     }
     if pane.kind == .browser {
       BrowserPaneCache.shared.remove(paneId: pane.id)

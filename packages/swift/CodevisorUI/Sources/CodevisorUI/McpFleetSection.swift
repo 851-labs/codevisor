@@ -63,7 +63,7 @@ public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
       #endif
     }
     if entries.isEmpty && !builtIn {
-      Text(model.isLoading ? "Loading…" : "No MCP servers added yet.")
+      Text(model.isLoading ? "Loading…" : "No plugins added yet.")
         .foregroundStyle(.secondary)
     }
   }
@@ -90,6 +90,10 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
   let toggleDisabledReason: (McpFleetEntry, _ machineId: String) -> String?
   let icon: Icon
   @ViewBuilder let machineExtras: (McpFleetEntry, _ machineId: String) -> MachineExtras
+  @State private var reporting = false
+  @State private var confirmingBlock = false
+
+  private var subject: PluginModerationSubject { PluginModerationSubject(server: entry.representative) }
 
   var body: some View {
     let rows = model.rows(for: entry, in: environment)
@@ -119,7 +123,9 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
           FleetStatusMark(status: single.status.rowStatus, details: details(for: single))
         }
       },
-      actions: { menu })
+      actions: { menu }
+    )
+    .pluginSafetyActions(subject: subject, reporting: $reporting, confirmingBlock: $confirmingBlock)
     if showsMachines {
       ForEach(rows) { row in
         VStack(alignment: .leading, spacing: 0) {
@@ -172,6 +178,10 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
     Button("Show Details…") { onDetails(entry) }
     if entry.canEdit {
       Button("Edit…") { onEdit(entry) }
+    }
+    if !entry.isBuiltIn {
+      Divider()
+      PluginSafetyMenuItems(subject: subject, onReport: { reporting = true }, onBlock: { confirmingBlock = true })
     }
     if entry.canRemove {
       Divider()

@@ -53,7 +53,8 @@ nonisolated enum ServerTranscriptHistoryMapper {
       text: item.text,
       attachments: (item.attachments ?? []).map(\.attachment),
       textResource: resource(item.textResource, largerThan: item.text),
-      isEvent: item.isEvent
+      isEvent: item.isEvent,
+      attribution: item.attribution
     )
   }
 

@@ -115,6 +115,10 @@ public struct McpServerEditor: View {
           }
         }
 
+        if !isEditing {
+          Section { PluginConsentNotice(name: name.isEmpty ? "this plugin" : name) }
+        }
+
         if let errorMessage {
           Section {
             Label(errorMessage, systemImage: "exclamationmark.triangle")
@@ -122,7 +126,7 @@ public struct McpServerEditor: View {
           }
         }
       }
-      .navigationTitle(isEditing ? "Edit MCP Server" : "Add MCP Server")
+      .navigationTitle(isEditing ? "Edit Plugin" : "Add Custom Plugin")
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
       #endif
@@ -168,7 +172,7 @@ public struct McpServerEditor: View {
             .autocorrectionDisabled()
           SecureField("Client Secret", text: $clientSecret)
           Text(
-            "With your own client ID, register each machine's Codevisor callback as a redirect URI with the provider. On a Mac it's usually http://127.0.0.1:49361/v1/mcps/oauth/callback; that Mac's MCP settings show the exact URL."
+            "With your own client ID, register each machine's Codevisor callback as a redirect URI with the provider. On a Mac it's usually http://127.0.0.1:49361/v1/mcps/oauth/callback; that Mac's Plugins settings show the exact URL."
           )
           .font(.footnote)
           .foregroundStyle(.secondary)

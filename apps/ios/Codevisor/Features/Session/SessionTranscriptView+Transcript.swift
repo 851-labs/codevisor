@@ -88,6 +88,10 @@ extension SessionTranscriptView {
               .markdownImageActions(transcriptImageActions)
               .environment(\.transcriptDisclosure, disclosure)
               .environment(\.transcriptController, controller)
+              .environment(
+                \.pluginAppHost,
+                PluginAppHost(environment: environment, session: controller, presenter: pluginAppPresenter)
+              )
               .environment(\.userBubbleStyle, userBubbleStyle)
               .environment(
                 \.streamingTextAnimationVisibility,

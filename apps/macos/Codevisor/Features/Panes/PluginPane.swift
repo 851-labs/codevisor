@@ -23,13 +23,13 @@ final class PluginPane: Pane, Identifiable {
   @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
   private(set) var phase: Phase = .idle
+  private(set) var subject: PluginModerationSubject?
 
   @ObservationIgnored private let context: PaneContext
   @ObservationIgnored let pluginId: String
   @ObservationIgnored private let paneType: String
   @ObservationIgnored private var controller: WebPaneController?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
-  @ObservationIgnored private var loadedUpdateRevision: UInt64?
 
   var serverId: String { context.machine.id }
 
@@ -78,21 +78,20 @@ final class PluginPane: Pane, Identifiable {
     return controller
   }
 
-  func loadIfNeeded(theme: WebPaneThemeTokens, updateRevision: UInt64) {
-    guard phase == .idle || loadedUpdateRevision != updateRevision else { return }
-    load(theme: theme, updateRevision: updateRevision)
+  func loadIfNeeded(theme: WebPaneThemeTokens) {
+    guard phase == .idle else { return }
+    load(theme: theme)
   }
 
-  func retry(theme: WebPaneThemeTokens, updateRevision: UInt64) {
-    load(theme: theme, updateRevision: updateRevision)
+  func retry(theme: WebPaneThemeTokens) {
+    load(theme: theme)
   }
 
   func applyTheme(_ theme: WebPaneThemeTokens) {
     controller?.applyTheme(theme)
   }
 
-  private func load(theme: WebPaneThemeTokens, updateRevision: UInt64) {
-    loadedUpdateRevision = updateRevision
+  private func load(theme: WebPaneThemeTokens) {
     guard !pluginId.isEmpty, !paneType.isEmpty else {
       phase = .failed("This pane's plugin information is missing.")
       return
@@ -103,13 +102,14 @@ final class PluginPane: Pane, Identifiable {
     loadTask = Task { [weak self] in
       guard let self else { return }
       do {
+        self.subject = try await self.installedSubject()
         let response = try await self.client.issuePluginPaneToken(
-          pluginId: self.pluginId,
-          paneId: self.id.uuidString.lowercased(),
+          serverId: self.pluginId,
           paneType: self.paneType,
-          workspaceId: self.context.workspaceId?.uuidString.lowercased(),
-          cwd: self.workingDirectory,
-          themeMode: theme.mode
+          request: ServerPluginPaneTokenRequest(
+            workspaceId: self.context.workspaceId?.uuidString.lowercased(),
+            themeMode: theme.mode
+          )
         )
         guard !Task.isCancelled else { return }
         guard let base = await self.resolveBaseURL() else {
@@ -120,7 +120,7 @@ final class PluginPane: Pane, Identifiable {
           return
         }
         guard !Task.isCancelled else { return }
-        guard let url = Self.paneURL(base: base, path: response.path) else {
+        guard let url = response.resolvedURL(base: base) else {
           self.phase = .failed("The server returned an unusable pane address.")
           return
         }
@@ -135,17 +135,18 @@ final class PluginPane: Pane, Identifiable {
     }
   }
 
+  private func installedSubject() async throws -> PluginModerationSubject {
+    guard let plugin = try await client.listMcpServers().first(where: { $0.id == pluginId }) else {
+      throw PluginAccessError("This plugin is no longer installed.")
+    }
+    return PluginModerationSubject(server: plugin)
+  }
+
   private func resolveBaseURL() async -> URL? {
     guard let resolveHTTPBaseURL = context.resolveHTTPBaseURL else {
       return context.machine.baseURL
     }
     return await resolveHTTPBaseURL()
-  }
-
-  private static func paneURL(base: URL, path: String) -> URL? {
-    let origin = base.absoluteString
-      .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    return URL(string: "\(origin)\(path)")
   }
 
   func makeView() -> AnyView {
@@ -173,7 +174,6 @@ final class PluginPane: Pane, Identifiable {
 }
 
 struct PluginPaneView: View {
-  @Environment(AppEnvironment.self) private var environment
   @Environment(\.colorScheme) private var colorScheme
   var pane: PluginPane
 
@@ -181,16 +181,11 @@ struct PluginPaneView: View {
     WebPaneThemeTokens(isDark: colorScheme == .dark)
   }
 
-  private var updateRevision: UInt64 {
-    environment.pluginUpdateRevision(forServer: pane.serverId, pluginId: pane.pluginId)
-  }
-
   var body: some View {
     let tokens = themeTokens
-    let revision = updateRevision
     ZStack {
       if case let .failed(message) = pane.phase {
-        errorCard(message: message, tokens: tokens, revision: revision)
+        errorCard(message: message, tokens: tokens)
       } else {
         WebPaneView(controller: pane.ensureController(theme: tokens))
         if pane.phase == .loading {
@@ -200,11 +195,16 @@ struct PluginPaneView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .task(id: pane.id) {
-      pane.loadIfNeeded(theme: tokens, updateRevision: revision)
+    .overlay(alignment: .bottomTrailing) {
+      if let subject = pane.subject {
+        PluginSafetyButton(subject: subject)
+          .padding(6)
+          .background(.regularMaterial, in: Capsule())
+          .padding(10)
+      }
     }
-    .onChange(of: revision) { _, moved in
-      pane.loadIfNeeded(theme: tokens, updateRevision: moved)
+    .task(id: pane.id) {
+      pane.loadIfNeeded(theme: tokens)
     }
     .onChange(of: tokens) { _, updated in
       pane.applyTheme(updated)
@@ -213,8 +213,7 @@ struct PluginPaneView: View {
 
   private func errorCard(
     message: String,
-    tokens: WebPaneThemeTokens,
-    revision: UInt64
+    tokens: WebPaneThemeTokens
   ) -> some View {
     VStack(spacing: 12) {
       Image(systemName: "puzzlepiece.extension")
@@ -229,7 +228,7 @@ struct PluginPaneView: View {
         .multilineTextAlignment(.center)
         .frame(maxWidth: 420)
       Button("Retry") {
-        pane.retry(theme: tokens, updateRevision: revision)
+        pane.retry(theme: tokens)
       }
     }
     .padding(24)

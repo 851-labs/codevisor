@@ -13,7 +13,9 @@ struct TranscriptQuestionRow: View {
   var body: some View {
     switch interaction.content {
     case let .question(question):
-      if question.answer == nil {
+      if let setup = ServerPluginSetupRequest.decoded(from: question.request.questions) {
+        PluginSetupRow(question: question, request: setup, inBotConversation: inBotConversation, controller: controller)
+      } else if question.answer == nil {
         PendingTranscriptQuestion(
           request: question.request,
           inBotConversation: inBotConversation,

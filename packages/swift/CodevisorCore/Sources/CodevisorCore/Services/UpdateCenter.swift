@@ -4,7 +4,6 @@ import Observation
 @MainActor
 @Observable
 public final class UpdateCenter {
-  @ObservationIgnored public var reviewPluginUpdate: (@MainActor (String, ServerPluginUpdatePlan) async throws -> Void)?
   @ObservationIgnored public var listedHarnessIds: (@MainActor () -> Set<String>?)?
   private let machines: MachineController
   private let appUpdate: AppUpdateModel
@@ -23,7 +22,6 @@ public final class UpdateCenter {
   @ObservationIgnored private let now: @MainActor () -> Date
   public internal(set) var updateAllNotice: String?
   private var harnessesByMachine: [String: [ServerHarness]] = [:]
-  private var pluginUpdatesByMachine: [String: [ServerPluginUpdateStatus]] = [:]
   var transientPhases: [String: UpdateComponent.Phase] = [:]
   private var dismissedHarnessFailures: [String: ServerHarnessLifecycleState] = [:]
 
@@ -44,7 +42,7 @@ public final class UpdateCenter {
   }
 
   public var components: [UpdateComponent] {
-    appComponents + serverComponents + harnessComponents + pluginComponents
+    appComponents + serverComponents + harnessComponents
   }
 
   public var availableCount: Int {
@@ -60,7 +58,7 @@ public final class UpdateCenter {
         machineName: machine.name,
         isLocal: machine.isLocal,
         codevisor: rows.first { $0.kind == .app || $0.kind == .server },
-        components: [.harness, .plugin].flatMap { kind in rows.filter { $0.kind == kind } }
+        components: rows.filter { $0.kind == .harness }
       )
     }
   }
@@ -161,28 +159,6 @@ public final class UpdateCenter {
     return .failed(harness.lifecycle?.error ?? "The update failed.")
   }
 
-  private var pluginComponents: [UpdateComponent] {
-    orderedMachineIds.flatMap { machineId in
-      (pluginUpdatesByMachine[machineId] ?? []).compactMap { status -> UpdateComponent? in
-        let id = "plugin:\(machineId):\(status.pluginId)"
-        let phase = transientPhases[id] ?? .idle
-        guard status.state == .available || phase != .idle else { return nil }
-        return UpdateComponent(
-          id: id,
-          kind: .plugin,
-          machineId: machineId,
-          machineName: machineName(for: machineId),
-          subjectId: status.pluginId,
-          title: status.pluginId,
-          installedVersion: status.installedVersion,
-          latestVersion: status.registryVersion,
-          updateAvailable: status.state == .available,
-          phase: phase
-        )
-      }
-    }
-  }
-
   private func machineName(for machineId: String) -> String {
     machines.machine(for: machineId)?.name ?? machineId
   }
@@ -260,9 +236,6 @@ public final class UpdateCenter {
       if let harnesses {
         harnessesByMachine[machine.id] = harnesses
       }
-      if let plugins = try? await client.listPluginUpdates() {
-        pluginUpdatesByMachine[machine.id] = plugins
-      }
     }
     lastRefreshedAt = now()
   }
@@ -314,21 +287,6 @@ public final class UpdateCenter {
         }
         await refreshHarnesses(onMachine: component.machineId)
         transientPhases[component.id] = nil
-      } catch {
-        transientPhases[component.id] = .failed(serverErrorMessage(error))
-      }
-    case .plugin:
-      transientPhases[component.id] = .updating
-      do {
-        let client = machines.client(for: component.machineId)
-        let plan = try await client.preparePluginUpdate(pluginId: component.subjectId)
-        try await reviewPluginUpdate?(component.machineId, plan)
-        _ = try await client.applyPluginUpdate(
-          pluginId: component.subjectId,
-          planId: plan.planId
-        )
-        transientPhases[component.id] = nil
-        await refreshPlugins(onMachine: component.machineId)
       } catch {
         transientPhases[component.id] = .failed(serverErrorMessage(error))
       }
@@ -398,12 +356,6 @@ extension UpdateCenter {
     else { return }
     harnesses[index].lifecycle = lifecycle
     harnessesByMachine[machineId] = harnesses
-  }
-
-  private func refreshPlugins(onMachine machineId: String) async {
-    guard let plugins = try? await machines.client(for: machineId).listPluginUpdates()
-    else { return }
-    pluginUpdatesByMachine[machineId] = plugins
   }
 
   func persistSession(_ remaining: Set<String>) {

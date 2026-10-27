@@ -21,15 +21,22 @@ public struct TranscriptInlineCard: View {
   private let inBotConversation: Bool
   private let tone: Tone
   private let leadingIcon: Image?
+  private let accessory: AnyView?
 
   public init(
-    title: String, state: State, inBotConversation: Bool, tone: Tone = .neutral, leadingIcon: Image? = nil
+    title: String,
+    state: State,
+    inBotConversation: Bool,
+    tone: Tone = .neutral,
+    leadingIcon: Image? = nil,
+    accessory: AnyView? = nil
   ) {
     self.title = title
     self.state = state
     self.inBotConversation = inBotConversation
     self.tone = tone
     self.leadingIcon = leadingIcon
+    self.accessory = accessory
   }
 
   public var body: some View {
@@ -56,6 +63,7 @@ public struct TranscriptInlineCard: View {
           }
           TranscriptInlineCardText(title: title, message: message, tone: tone)
         }
+        if let accessory { accessory }
         if !actions.isEmpty {
           TranscriptInlineCardActions(actions: actions)
             .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)

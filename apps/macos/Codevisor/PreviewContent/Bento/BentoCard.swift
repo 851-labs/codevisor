@@ -51,11 +51,11 @@
         return AnyView(SettingsView().themedRoot())
       },
       BentoCard(
-        name: "settings-mcps-window", width: 780,
+        name: "settings-plugins-window", width: 780,
         presentation: .window(
-          height: 560, title: SettingsTab.mcps.title, scroll: .endRevealing(mcpServersAndLinearHeight))
+          height: 560, title: SettingsTab.plugins.title, scroll: .endRevealing(mcpServersAndLinearHeight))
       ) {
-        SettingsRouter.shared.selectedTab = .mcps
+        SettingsRouter.shared.selectedTab = .plugins
         return AnyView(SettingsView().themedRoot())
       },
       BentoCard(

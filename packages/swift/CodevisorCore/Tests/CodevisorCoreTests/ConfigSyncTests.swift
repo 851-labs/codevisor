@@ -227,7 +227,6 @@ struct ConfigSyncTests {
     try await waitForSync {
       fake.operationLog.contains("mcps.reconcile")
         && fake.operationLog.contains("harnesses.reconcile")
-        && fake.operationLog.contains("plugins.reconcile")
         && fake.operationLog.contains("accounts.publish")
         && fake.operationLog.contains("skills.reconcile")
     }
@@ -249,7 +248,6 @@ struct ConfigSyncTests {
 
     #expect(fake.operationLog.contains("mcps.reconcile"))
     #expect(fake.operationLog.contains("harnesses.reconcile"))
-    #expect(fake.operationLog.contains("plugins.reconcile"))
     #expect(fake.operationLog.contains("accounts.publish"))
     #expect(fake.operationLog.contains("skills.reconcile"))
   }

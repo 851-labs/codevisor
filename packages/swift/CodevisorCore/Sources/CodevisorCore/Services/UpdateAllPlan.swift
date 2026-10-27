@@ -14,15 +14,12 @@ struct UpdateAllPlan: Sendable {
     }
   }
 
-  let plugins: [UpdateComponent]
   let machines: [Machine]
 
   init(_ snapshot: [UpdateComponent]) {
-    plugins = snapshot.filter { $0.kind == .plugin }
-    let restartable = snapshot.filter { $0.kind != .plugin }
-    let machineIds = Self.orderedMachineIds(restartable)
+    let machineIds = Self.orderedMachineIds(snapshot)
     machines = machineIds.map { machineId in
-      let rows = restartable.filter { $0.machineId == machineId }
+      let rows = snapshot.filter { $0.machineId == machineId }
       return Machine(
         machineId: machineId,
         harnesses: rows.filter { $0.kind == .harness },

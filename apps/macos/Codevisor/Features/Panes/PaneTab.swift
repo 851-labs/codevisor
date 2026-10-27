@@ -142,7 +142,6 @@ struct PaneTabIcon: View {
   var browserFaviconReference: String? = nil
   var browserFaviconClient: (any BrowserFaviconClienting)? = nil
   var pluginId: String? = nil
-  var pluginPaneType: String? = nil
   var pluginIconClient: (any CodevisorServerClienting)? = nil
   var pluginIconCacheNamespace = "preview"
   var chatSession: ChatSession? = nil
@@ -168,10 +167,9 @@ struct PaneTabIcon: View {
     } else if kind == .plugin, let pluginId, let pluginIconClient {
       PluginIconView(
         pluginId: pluginId,
-        paneType: pluginPaneType,
-        iconPath: "server",
         client: pluginIconClient,
-        cacheNamespace: pluginIconCacheNamespace
+        cacheNamespace: pluginIconCacheNamespace,
+        side: 12
       )
       .frame(width: 12, height: 12)
     } else if kind == .subagent {

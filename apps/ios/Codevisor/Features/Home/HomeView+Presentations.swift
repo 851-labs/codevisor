@@ -55,7 +55,6 @@ extension HomeView {
       .modifier(
         HomeExternalRouting(
           pendingDeviceApproval: $pendingDeviceApproval,
-          pendingPluginInstall: $pendingPluginInstall,
           isOnboardingPresented: showsOnboarding.wrappedValue,
           openDiagnosticSession: { id in
             #if DEBUG || NAVIGATION_DIAGNOSTICS

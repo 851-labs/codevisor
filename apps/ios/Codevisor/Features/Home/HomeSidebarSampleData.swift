@@ -176,7 +176,7 @@
             row(
               21, "Refresh landing page copy", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle"),
               status: .actionRequired),
-            row(22, "Scratchpad", .plugin(pluginId: "851-labs.scratchpad", paneType: "scratchpad")),
+            row(22, "Scratchpad", .plugin(pluginId: "851-labs.scratchpad")),
             row(23, "README.md", .document),
           ]),
         projectId: landingProject.id, branch: "copy-refresh",

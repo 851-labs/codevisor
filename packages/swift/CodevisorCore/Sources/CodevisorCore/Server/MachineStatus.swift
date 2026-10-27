@@ -34,6 +34,7 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsSimulator: Bool { features.contains("simulator-v1") }
   public var supportsBots: Bool { features.contains("bots-v1") }
   public var supportsBotProjectChanges: Bool { features.contains("bot-projects-v1") }
+  public var supportsPlugins: Bool { features.contains("plugins-v2") }
 }
 
 public func codevisorMachineIsThisMac(

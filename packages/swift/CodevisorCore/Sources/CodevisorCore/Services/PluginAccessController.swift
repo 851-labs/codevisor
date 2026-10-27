@@ -4,81 +4,71 @@ import Observation
 @MainActor
 @Observable
 public final class PluginAccessController {
-  private let cloud: CloudAccountController
-  private let consentOutbox: PluginConsentOutbox
-  public let catalog: PluginCatalogClient
-  private var currentPolicy: PluginAccessPolicy?
+  public static let enforcesAgeGateOnThisPlatform: Bool = {
+    #if os(iOS)
+      true
+    #else
+      false
+    #endif
+  }()
+
   public private(set) var revision = 0
   public private(set) var blockedPublishers: [String] = []
+  public private(set) var policy: PluginAccessPolicy?
+
+  @ObservationIgnored private let cloud: CloudAccountController
+  @ObservationIgnored private let consentOutbox: PluginConsentOutbox
+  @ObservationIgnored private let enforcesAgeGate: Bool
 
   public init(
-    cloud: CloudAccountController, store: any PersistenceStore = InMemoryStore(),
-    catalog: PluginCatalogClient = PluginCatalogClient()
+    cloud: CloudAccountController,
+    store: any PersistenceStore = InMemoryStore(),
+    enforcesAgeGate: Bool = PluginAccessController.enforcesAgeGateOnThisPlatform
   ) {
     self.cloud = cloud
-    self.catalog = catalog
     self.consentOutbox = PluginConsentOutbox(store: store)
+    self.enforcesAgeGate = enforcesAgeGate
   }
 
-  public func snapshot() async throws -> (PluginAccessPolicy, PluginPreferences) {
+  public func restriction(for subject: PluginModerationSubject) -> String? {
+    guard enforcesAgeGate else { return nil }
+    guard let policy else { return "Codevisor is still checking whether this plugin can open on iOS." }
+
+    return policy.restriction(for: subject, blockedPublishers: blockedPublishers)
+  }
+
+  public func restriction(for plugin: ServerMcpServer) -> String? {
+    restriction(for: PluginModerationSubject(server: plugin))
+  }
+
+  public func isBlocked(publisher: String) -> Bool {
+    blockedPublishers.contains(publisher)
+  }
+
+  public func ageRating(for subject: PluginModerationSubject) -> Int? {
+    policy?.ageRating(pluginId: subject.pluginId, declared: subject.declaredAgeRating) ?? subject.declaredAgeRating
+  }
+
+  public func refresh() async throws {
     try? await syncConsent()
-    async let policyRequest = refreshPolicy()
-    async let preferencesData = cloud.pluginRequest(path: "/api/plugins/preferences")
-    let policy = try await policyRequest
-    let preferences = try await JSONDecoder().decode(PluginPreferences.self, from: preferencesData)
-    blockedPublishers = preferences.blockedPublishers.sorted()
-    return (policy, preferences)
+    let data = try await cloud.pluginRequest(path: "/plugins/policy")
+    policy = try JSONDecoder().decode(PluginAccessPolicy.self, from: data)
+    blockedPublishers = try await loadBlockedPublishers()
   }
 
-  @discardableResult
-  public func refreshPolicy() async throws -> PluginAccessPolicy {
-    let policy = try await catalog.policy()
-    currentPolicy = policy
-    return policy
+  public func requireEligible(_ subject: PluginModerationSubject) async throws {
+    guard enforcesAgeGate else { return }
+
+    try await refresh()
+    if let reason = restriction(for: subject) { throw PluginAccessError(reason) }
   }
 
-  public func review(_ plugin: ServerPluginRemoteDiscovery) async throws -> Bool {
-    let (policy, preferences) = try await snapshot()
-    if let reason = policy.restriction(
-      pluginId: plugin.id, ageRating: plugin.ageRating, blockedPublishers: preferences.blockedPublishers)
-    {
-      throw PluginAccessError(reason)
-    }
-    let registry = try await catalog.index()
-    return registry.entries.contains { $0.id == plugin.id && $0.repo.lowercased() == plugin.sourceRepo?.lowercased() }
-  }
-
-  public func ageRating(pluginId: String, declared: Int?) -> Int? {
-    currentPolicy?.ageRating(pluginId: pluginId, declared: declared) ?? declared
-  }
-
-  public func requireAccess(to plugin: ServerPluginSummary) async throws {
-    try await requireEligible(pluginId: plugin.id, ageRating: plugin.ageRating)
-  }
-
-  public func requireEligible(pluginId: String, ageRating: Int?) async throws {
-    let (policy, preferences) = try await snapshot()
-    if let reason = policy.restriction(
-      pluginId: pluginId, ageRating: ageRating, blockedPublishers: preferences.blockedPublishers)
-    {
-      throw PluginAccessError(reason)
-    }
-  }
-
-  public func recordConsent(pluginId: String, consentKey: String?, metadata: PluginConsentMetadata) async throws {
-    guard let consentKey else { throw PluginAccessError("Update the connected machine to install this plugin.") }
-    struct Consent: Encodable {
-      let pluginId: String; let consentKey: String; let metadata: PluginConsentMetadata; let noticeVersion = 1
-    }
-    let body = try JSONEncoder().encode(Consent(pluginId: pluginId, consentKey: consentKey, metadata: metadata))
-    try consentOutbox.record(key: "\(pluginId):\(consentKey)", scope: cloud.pluginConsentScope, body: body)
-    #if os(macOS)
-      try? await syncConsent()
-    #else
-      guard cloud.pluginConsentScope != nil else { throw PluginAccessError("Sign in to install plugins.") }
-      try await syncConsent()
-    #endif
-    revision += 1
+  public func recordConsent(_ subject: PluginModerationSubject, metadata: PluginConsentMetadata) async throws {
+    let body = try JSONEncoder().encode(
+      PluginConsent(pluginId: subject.pluginId, consentKey: subject.consentKey, metadata: metadata))
+    try consentOutbox.record(
+      key: "\(subject.pluginId):\(subject.consentKey)", scope: cloud.pluginConsentScope, body: body)
+    try await deliverConsent(requiresAccount: enforcesAgeGate && !subject.isCustom)
   }
 
   public func syncConsent() async throws {
@@ -87,19 +77,49 @@ public final class PluginAccessController {
     }
   }
 
-  public func report(id: UUID, pluginId: String, name: String, reason: String, details: String) async throws {
+  public func report(id: UUID, subject: PluginModerationSubject, reason: String, details: String) async throws {
     let body = try JSONEncoder().encode([
-      "id": id.uuidString, "pluginId": pluginId, "pluginName": name, "reason": reason, "details": details,
+      "id": id.uuidString, "pluginId": subject.pluginId, "pluginName": subject.name, "reason": reason,
+      "details": details,
     ])
     _ = try await cloud.pluginRequest(path: "/api/plugins/reports", method: "POST", body: body)
   }
 
   public func setPublisherBlocked(_ publisher: String, blocked: Bool) async throws {
-    guard !publisher.isEmpty, publisher.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else {
-      throw PluginAccessError("This publisher could not be identified.")
-    }
-    _ = try await cloud.pluginRequest(path: "/api/plugins/publishers/\(publisher)", method: blocked ? "PUT" : "DELETE")
+    guard Self.isValidPublisher(publisher) else { throw PluginAccessError("This publisher could not be identified.") }
+
+    let path = "/api/plugins/publishers/\(publisher)"
+    _ = try await cloud.pluginRequest(path: path, method: blocked ? "PUT" : "DELETE")
     if blocked { blockedPublishers.append(publisher) } else { blockedPublishers.removeAll { $0 == publisher } }
+    blockedPublishers.sort()
     revision += 1
   }
+
+  static func isValidPublisher(_ publisher: String) -> Bool {
+    !publisher.isEmpty && publisher.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "-.".contains($0)) }
+  }
+
+  private func loadBlockedPublishers() async throws -> [String] {
+    guard cloud.pluginConsentScope != nil else { return [] }
+
+    let data = try await cloud.pluginRequest(path: "/api/plugins/preferences")
+    return try JSONDecoder().decode(PluginPreferences.self, from: data).blockedPublishers.sorted()
+  }
+
+  private func deliverConsent(requiresAccount: Bool) async throws {
+    guard requiresAccount else {
+      try? await syncConsent()
+      return
+    }
+    guard cloud.pluginConsentScope != nil else { throw PluginAccessError("Sign in to install plugins.") }
+
+    try await syncConsent()
+  }
+}
+
+private struct PluginConsent: Encodable {
+  let pluginId: String
+  let consentKey: String
+  let metadata: PluginConsentMetadata
+  let noticeVersion = 1
 }

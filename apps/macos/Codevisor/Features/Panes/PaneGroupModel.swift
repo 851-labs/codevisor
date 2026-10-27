@@ -135,11 +135,9 @@ final class PaneGroupModel: Identifiable {
       terminal.onContentAttached = { [weak self] in self?.requestSelectedPaneFocus() }
       pane = terminal
     case .plugin:
-      let plugin = PluginPane(context: makeContext(descriptor), descriptor: descriptor)
-      plugin.onTitleChange = { [weak self] title in
+      pane = PluginPaneFactory.make(context: makeContext(descriptor), descriptor: descriptor) { [weak self] title in
         self?.renamePane(id: descriptor.id, to: title)
       }
-      pane = plugin
     case .chat, .newTab, .subagent, .transcript:
       let chat = ChatPane(id: descriptor.id)
       wireChatHost(chat, paneId: descriptor.id)

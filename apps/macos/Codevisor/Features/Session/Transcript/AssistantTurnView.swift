@@ -80,6 +80,7 @@ struct AssistantTurnView: View {
     VStack(alignment: .leading, spacing: 14) {
       if presentation.showsPlanning, showsWorkedSection(.planning, items: beforePlan) {
         workedSection(items: beforePlan, kind: .planning)
+        PluginAppInlineList(items: beforePlan)
       }
 
       if presentation.showsPlanDocument,
@@ -90,6 +91,7 @@ struct AssistantTurnView: View {
 
       if presentation.showsResultWork, showsWorkedSection(.implementation, items: afterPlan) {
         workedSection(items: afterPlan, kind: .implementation)
+        PluginAppInlineList(items: afterPlan)
       }
 
       if presentation.showsActivity, activity.map({ !$0.followsResponse }) ?? turn.reservesActivitySlot {

@@ -71,6 +71,7 @@ struct SessionContainerView: View {
 
   var body: some View {
     mounted(in: selectedWorkspace)
+      .environment(\.pluginAppPresenter, pluginAppPresenter)
   }
 
   private func mounted(in workspace: Workspace) -> some View {

@@ -13,7 +13,7 @@ struct MachineControllerWorkspaceEventTests {
     let fixture = await WorkspaceEventFixture()
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
     let handled = TestSignal()
-    fixture.controller.onPluginUpdated = { _, _ in handled.signal() }
+    fixture.controller.onMcpStateChanged = { _ in handled.signal() }
     fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
     defer { fixture.controller.stopEventSync() }
     #expect(fixture.routeDisposition == .keep)
@@ -25,7 +25,7 @@ struct MachineControllerWorkspaceEventTests {
         kind: "workspace.updated", subjectId: fixture.workspace.id.uuidString.lowercased(),
         payload: fixture.payload(isArchived: archived, name: "Renamed on Mac")
       )
-      fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
+      fixture.fake.emit(kind: "mcp.updated", subjectId: "event-barrier")
       await handled.wait(for: index + 1)
 
       let updated = try #require(fixture.repository.workspace(id: fixture.workspace.id))
@@ -79,7 +79,7 @@ struct MachineControllerWorkspaceEventTests {
     #expect(fixture.repository.workspace(id: fixture.workspace.id) == nil)
     let other = fixture.repository.workspace(id: fixture.otherWorkspace.id)
     let handled = TestSignal()
-    fixture.controller.onPluginUpdated = { _, _ in handled.signal() }
+    fixture.controller.onMcpStateChanged = { _ in handled.signal() }
     fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
     defer { fixture.controller.stopEventSync() }
 
@@ -87,7 +87,7 @@ struct MachineControllerWorkspaceEventTests {
       kind: "workspace.updated", subjectId: fixture.workspace.id.uuidString,
       payload: fixture.payload(isArchived: true, name: "Shared")
     )
-    fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
+    fixture.fake.emit(kind: "mcp.updated", subjectId: "event-barrier")
     await handled.wait()
 
     let workspace = try #require(fixture.repository.workspace(id: fixture.workspace.id))

@@ -62,7 +62,7 @@ struct McpServerEditorSheet: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Text(initialServer == nil ? "Add MCP Server" : "Edit MCP Server")
+      Text(initialServer == nil ? "Add Custom Plugin" : "Edit Plugin")
         .font(.headline)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -171,6 +171,10 @@ struct McpServerEditorSheet: View {
             }
             .padding(.top, 8)
           }
+        }
+
+        if initialServer == nil {
+          Section { PluginConsentNotice(name: name.isEmpty ? "this plugin" : name) }
         }
 
         if let errorMessage {

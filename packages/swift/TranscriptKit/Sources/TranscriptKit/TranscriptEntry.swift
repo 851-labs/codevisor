@@ -26,19 +26,22 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public var attachments: [Attachment]
   public var textResource: ToolDetailResource?
   public var isEvent: Bool
+  public var attribution: UserMessageAttribution?
 
   public init(
     id: UUID = UUID(),
     text: String,
     attachments: [Attachment] = [],
     textResource: ToolDetailResource? = nil,
-    isEvent: Bool = false
+    isEvent: Bool = false,
+    attribution: UserMessageAttribution? = nil
   ) {
     self.id = id
     self.text = text
     self.textResource = textResource
     self.attachments = attachments
     self.isEvent = isEvent
+    self.attribution = attribution
   }
 }
 

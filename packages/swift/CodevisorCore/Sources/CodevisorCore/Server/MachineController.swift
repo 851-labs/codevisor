@@ -27,10 +27,8 @@ public final class MachineController {
   @ObservationIgnored public var onHarnessLifecycleChanged: ((String) -> Void)?
   @ObservationIgnored public var onHarnessAuthChanged: ((String) -> Void)?
   @ObservationIgnored public var onHarnessNotice: ((ServerHarnessNotice) -> Void)?
-  @ObservationIgnored public var onPluginStateChanged: ((String) -> Void)?
   @ObservationIgnored public var onMcpStateChanged: ((String) -> Void)?
   @ObservationIgnored public var onBotsChanged: ((String) -> Void)?
-  @ObservationIgnored public var onPluginUpdated: ((String, String) -> Void)?
   @ObservationIgnored public var onSyncChanged: ((String, ServerSyncDocument) -> Void)?
   @ObservationIgnored public var onMachineConnected: ((String) -> Void)?
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?

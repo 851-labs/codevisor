@@ -174,6 +174,7 @@ struct WorkspaceScreen: View {
         .ignoresSafeArea()
       workspaceContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.pluginAppPresenter, pluginAppPresenter)
     }
     .navigationDestination(item: $presentedSubagent) { SubagentScreen(route: $0) }
     .onChange(of: paneState?.selectedPaneId) { presentedSubagent = nil }

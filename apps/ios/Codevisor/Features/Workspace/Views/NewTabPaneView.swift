@@ -2,15 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-struct PluginNewTabOption: Identifiable, Equatable {
-  var pluginId: String
-  var paneType: String
-  var title: String
-  var iconPath: String?
-
-  var id: String { "\(pluginId)|\(paneType)" }
-}
-
 struct NewTabPaneView: View {
   let onNewChat: () -> Void
   let onNewTerminal: () -> Void
@@ -23,9 +14,9 @@ struct NewTabPaneView: View {
   var supportsScreenSharing = false
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
-  var onOpenPlugin: (PluginNewTabOption) -> Void = { _ in }
+  var onOpenPlugin: (PluginPaneOffer) -> Void = { _ in }
 
-  @State private var pluginOptions: [PluginNewTabOption] = []
+  @State private var pluginOptions: [PluginPaneOffer] = []
 
   var body: some View {
     GeometryReader { geometry in
@@ -70,10 +61,9 @@ struct NewTabPaneView: View {
               if let client {
                 PluginIconView(
                   pluginId: option.pluginId,
-                  paneType: option.paneType,
-                  iconPath: option.iconPath,
                   client: client,
-                  cacheNamespace: iconCacheNamespace
+                  cacheNamespace: iconCacheNamespace,
+                  side: 24
                 )
               } else {
                 Image(systemName: "puzzlepiece.extension")
@@ -94,18 +84,8 @@ struct NewTabPaneView: View {
   }
 
   private func loadPluginOptions() async {
-    guard let client else { return }
-    guard let plugins = try? await client.listPlugins() else { return }
-    pluginOptions = plugins.flatMap { plugin in
-      plugin.panes.map { pane in
-        PluginNewTabOption(
-          pluginId: plugin.id,
-          paneType: pane.type,
-          title: pane.title,
-          iconPath: pane.iconPath ?? plugin.iconPath
-        )
-      }
-    }
+    guard let client, let offers = await PluginPaneOffer.load(from: client) else { return }
+    pluginOptions = offers
   }
 
   private func newTabOption<Icon: View>(

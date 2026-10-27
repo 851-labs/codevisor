@@ -6,9 +6,9 @@ import Observation
 @Observable
 public final class ConfigSync {
   public static let namespaces = [
-    "settings", skillsNamespace, "mcps", "harness-accounts", "harnesses", "plugins",
-    "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
-    "plugin-readiness", ClientPreferenceSync.namespace, "sandbox-accounts", "sandbox-profiles",
+    "settings", skillsNamespace, "mcps", "harness-accounts", "harnesses", "mcp-readiness",
+    "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
+    ClientPreferenceSync.namespace, "sandbox-accounts", "sandbox-profiles", "plugin-accounts",
     BotSectionStore.namespace,
   ]
   public static let skillsNamespace = "codevisor-skills"
@@ -151,7 +151,6 @@ public final class ConfigSync {
     await synchronize(machineId: machineId)
     _ = try? await client.reconcileMcpsSync()
     _ = try? await client.reconcileHarnessesSync()
-    _ = try? await client.reconcilePluginsSync()
     try? await client.publishAccountsSync()
     await synchronizeSkills()
   }
@@ -178,7 +177,6 @@ public final class ConfigSync {
       await synchronize(machineId: machine.id)
       _ = try? await client.reconcileMcpsSync()
       _ = try? await client.reconcileHarnessesSync()
-      _ = try? await client.reconcilePluginsSync()
       try? await client.publishAccountsSync()
     }
     await synchronizeSkills()
@@ -277,7 +275,6 @@ public final class ConfigSync {
       if !status.applied.isEmpty || !status.removed.isEmpty || !status.installing.isEmpty {
         onHarnessCatalogChanged?(machineId)
       }
-    case "plugins": _ = try? await client.reconcilePluginsSync()
     case "harness-credentials", "harness-shared-accounts":
       guard let value = try? await client.reconcileCredentialsSync() else { return }
       if case .object(let fields) = value,

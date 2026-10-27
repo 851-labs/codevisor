@@ -97,22 +97,6 @@ struct AppEnvironmentTests {
     }
   }
 
-  @Test("Plugin update revisions are isolated per machine and per plugin")
-  func pluginUpdateRevisionInvalidation() {
-    let environment = AppEnvironment.preview()
-
-    #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.a") == 0)
-
-    environment.pluginDidUpdate(onServer: "local", pluginId: "owner.a")
-    environment.pluginDidUpdate(onServer: "local", pluginId: "owner.a")
-
-    #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.a") == 2)
-    #expect(environment.pluginUpdateRevision(forServer: "local", pluginId: "owner.b") == 0)
-    #expect(environment.pluginUpdateRevision(forServer: "remote", pluginId: "owner.a") == 0)
-
-    #expect(environment.pluginStateRevision(for: "local") == 0)
-  }
-
   @Test("Importable sessions are scoped to the folder and exclude known ones")
   func importableSessionsScopedToFolder() async {
     let environment = AppEnvironment.preview(seedProjects: [])

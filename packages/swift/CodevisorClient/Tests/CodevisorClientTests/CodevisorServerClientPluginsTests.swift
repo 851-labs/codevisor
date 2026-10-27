@@ -1,232 +1,143 @@
+import ACPKit
 import Foundation
 import Testing
 
 @testable import CodevisorClient
 
-@Suite("Server client plugin wire types")
+@Suite("Server client plugin endpoints")
 struct CodevisorServerClientPluginsTests {
-  @Test("PluginPaneTokenBody omits absent optional context")
-  func tokenBodyEncoding() throws {
-    func json(_ body: CodevisorServerClient.PluginPaneTokenBody) throws -> String {
-      String(decoding: try JSONEncoder().encode(body), as: UTF8.self)
-    }
-    let minimal = try json(
-      CodevisorServerClient.PluginPaneTokenBody(
-        paneType: "diff", workspaceId: nil, cwd: nil, themeMode: nil
-      )
-    )
-    #expect(minimal.contains(#""paneType":"diff""#))
-    #expect(!minimal.contains("workspaceId"))
-    #expect(!minimal.contains("cwd"))
-    #expect(!minimal.contains("themeMode"))
+  @Test("The catalog decodes entries with their capability digest")
+  func catalogDecoding() async throws {
+    let transport = PluginTransport(response: Self.catalogJSON)
+    let client = CodevisorServerClient(config: .init(requestTransport: transport))
 
-    let full = try json(
-      CodevisorServerClient.PluginPaneTokenBody(
-        paneType: "diff", workspaceId: "w-1", cwd: "/tmp/repo", themeMode: "dark"
-      )
-    )
-    #expect(full.contains(#""workspaceId":"w-1""#))
-    #expect(full.contains(#""cwd":"\/tmp\/repo""#) || full.contains(#""cwd":"/tmp/repo""#))
-    #expect(full.contains(#""themeMode":"dark""#))
+    let entries = try await client.listPluginCatalog(query: " ")
+
+    let request = try #require(await transport.requests.first)
+    #expect(request.httpMethod == "GET")
+    #expect(request.url?.path == "/v1/plugins/catalog")
+    #expect(request.url?.query == nil)
+    let grafana = try #require(entries.first)
+    #expect(grafana.publisher == "Codevisor")
+    #expect(grafana.capabilities.tools == [ServerPluginToolDigest(name: "alerts", effects: "read", app: true)])
+    #expect(grafana.capabilities.panes == [ServerPluginPane(type: "board", title: "Alerts", resourceUri: "ui://g/a")])
+    #expect(grafana.capabilities.skills.isEmpty)
+    #expect(!grafana.capabilities.isEmpty)
   }
 
-  @Test("Plugin list and token responses decode the server's wire shapes")
-  func responseDecoding() throws {
-    let list = Data(
-      """
-      {"plugins":[{"id":"codevisor.git-diff","name":"Git Diff","version":"0.1.0",
-      "description":"Live git diff viewer",
-      "iconPath":"/assets/icon.svg",
-      "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/","iconPath":"/assets/diff.webp"}],
-      "tools":[{"name":"diff_summary","description":"Summarize the diff","path":"/tools/summary"}],
-      "source":"linked","path":"/Users/x/.codevisor/plugins/git-diff","state":"stopped",
-      "enabled":false,"canRestore":true,
-      "openPaneCount":2}]}
-      """.utf8)
-    struct ListEnvelope: Decodable { var plugins: [ServerPluginSummary] }
-    let decoded = try JSONDecoder().decode(ListEnvelope.self, from: list)
-    #expect(decoded.plugins.count == 1)
-    let plugin = try #require(decoded.plugins.first)
-    #expect(plugin.id == "codevisor.git-diff")
-    #expect(!plugin.isEnabled)
-    #expect(plugin.canRestore == true)
-    #expect(plugin.state == "stopped")
-    #expect(plugin.openPaneCount == 2)
-    #expect(plugin.iconPath == "/assets/icon.svg")
-    #expect(plugin.tools?.first?.name == "diff_summary")
-    #expect(
-      plugin.panes == [
-        ServerPluginPaneDescriptor(
-          type: "diff", title: "Git Diff", path: "/panes/diff/",
-          iconPath: "/assets/diff.webp"
-        )
-      ])
+  @Test("A catalog search sends the trimmed query")
+  func catalogSearch() async throws {
+    let transport = PluginTransport(response: #"{"entries":[]}"#)
+    let client = CodevisorServerClient(config: .init(requestTransport: transport))
 
-    let bare = Data(
-      """
-      {"id":"a.b","name":"B","version":"1.0.0","panes":[],"source":"managed",
-      "path":"/p","state":"running"}
-      """.utf8)
-    let bareSummary = try JSONDecoder().decode(ServerPluginSummary.self, from: bare)
-    #expect(bareSummary.description == nil)
-    #expect(bareSummary.tools == nil)
-    #expect(bareSummary.openPaneCount == nil)
-    #expect(bareSummary.isEnabled)
+    _ = try await client.listPluginCatalog(query: " linear & co ")
 
-    let token = Data(
-      """
-      {"token":"abc","path":"/v1/plugins/codevisor.git-diff/app/panes/diff/?paneId=p&codevisorPaneToken=abc",
-      "url":"http://127.0.0.1:49871/v1/plugins/codevisor.git-diff/app/panes/diff/?paneId=p&codevisorPaneToken=abc",
-      "expiresAt":"2026-08-18T00:00:00.000Z"}
-      """.utf8)
-    let tokenResponse = try JSONDecoder().decode(ServerPluginPaneTokenResponse.self, from: token)
-    #expect(tokenResponse.token == "abc")
-    #expect(tokenResponse.path.hasPrefix("/v1/plugins/codevisor.git-diff/app/panes/diff/"))
-    #expect(tokenResponse.url == "http://127.0.0.1:49871\(tokenResponse.path)")
-
-    let bareToken = Data(
-      """
-      {"token":"abc","path":"/v1/plugins/a.b/app/panes/main/?codevisorPaneToken=abc",
-      "expiresAt":"2026-08-18T00:00:00.000Z"}
-      """.utf8)
-    let bareTokenResponse = try JSONDecoder().decode(
-      ServerPluginPaneTokenResponse.self, from: bareToken)
-    #expect(bareTokenResponse.url == nil)
+    let request = try #require(await transport.requests.first)
+    let components = try #require(request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) })
+    #expect(components.queryItems == [URLQueryItem(name: "query", value: "linear & co")])
   }
 
-  @Test("Registry indexes decode entries and skip author-facing diagnostics")
-  func registryDecoding() throws {
-    let wire = Data(
-      """
-      {"generatedAt":"2026-08-18T00:00:00.000Z",
-      "entries":[{"id":"acme.git-diff","name":"Git Diff","version":"0.1.0",
-      "description":"Live git diff viewer",
-      "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/"}],
-      "tools":[{"name":"diff_summary","description":"Summarize the diff","path":"/tools/summary"}],
-      "repo":"acme/git-diff","stars":12,"pushedAt":"2026-08-17T00:00:00Z"},
-      {"id":"beta.notes","name":"Notes","version":"1.0.0","panes":[],
-      "repo":"beta/notes","stars":0,"pushedAt":"2026-08-16T00:00:00Z"}],
-      "rejected":[{"repo":"x/y","reason":"codevisor-plugin.json not found"}]}
-      """.utf8)
-    let index = try JSONDecoder().decode(ServerPluginRegistryIndex.self, from: wire)
-    #expect(index.generatedAt == "2026-08-18T00:00:00.000Z")
-    #expect(index.entries.count == 2)
-    let entry = try #require(index.entries.first)
-    #expect(entry.id == "acme.git-diff")
-    #expect(entry.repo == "acme/git-diff")
-    #expect(entry.stars == 12)
-    #expect(entry.tools?.first?.name == "diff_summary")
-    let bare = try #require(index.entries.last)
-    #expect(bare.description == nil)
-    #expect(bare.tools == nil)
-    #expect(bare.verified == nil)
+  @Test("Installing a registry plugin encodes its name as one path segment and sends the field values")
+  func catalogInstall() async throws {
+    let transport = PluginTransport(response: Self.serverJSON)
+    let client = CodevisorServerClient(config: .init(requestTransport: transport))
 
-    let empty = Data(#"{"generatedAt":null,"entries":[],"rejected":[]}"#.utf8)
-    let emptyIndex = try JSONDecoder().decode(ServerPluginRegistryIndex.self, from: empty)
-    #expect(emptyIndex.generatedAt == nil)
-    #expect(emptyIndex.entries.isEmpty)
+    let server = try await client.installCatalogPlugin(
+      id: "io.github.acme/grafana", values: ["env:TOKEN": .string("t"), "header:Port": .number(3)])
+
+    let request = try #require(await transport.requests.first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString.hasSuffix("/v1/plugins/catalog/io.github.acme%2Fgrafana/install") == true)
+    let body = try JSONDecoder().decode([String: [String: JSONValue]].self, from: #require(request.httpBody))
+    #expect(body == ["values": ["env:TOKEN": .string("t"), "header:Port": .number(3)]])
+    #expect(server.catalogId == "grafana")
+    #expect(server.catalogVersion == "1.0.0")
+    #expect(server.capabilityDigest?.events == [ServerPluginEventDigest(name: "alert.firing")])
   }
 
-  @Test("Install request bodies carry the raw source and path strings")
-  func installBodyEncoding() throws {
-    let source = String(
-      decoding: try JSONEncoder().encode(
-        CodevisorServerClient.PluginSourceBody(source: "acme/git-diff#v1")
-      ),
-      as: UTF8.self
+  @Test("A pane token request names the plugin row and pane type and sends only the given context")
+  func paneToken() async throws {
+    let transport = PluginTransport(response: #"{"url":"/v1/plugins/apps/abc","expiresAt":"2026-10-27T00:00:00.000Z"}"#)
+    let client = CodevisorServerClient(config: .init(requestTransport: transport))
+
+    let token = try await client.issuePluginPaneToken(
+      serverId: "mcp-1", paneType: "board", request: ServerPluginPaneTokenRequest(themeMode: "dark"))
+
+    let request = try #require(await transport.requests.first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.path == "/v1/plugins/mcp-1/panes/board/token")
+    let body = try JSONDecoder().decode([String: JSONValue].self, from: #require(request.httpBody))
+    #expect(body == ["themeMode": .string("dark")])
+    #expect(token.url == "/v1/plugins/apps/abc")
+  }
+
+  @Test("An inline app token is a bodiless POST that names the view as one path segment")
+  func appViewToken() async throws {
+    let transport = PluginTransport(
+      response: #"{"url":"/v1/plugins/apps/a%2Fb?token=t","expiresAt":"2026-10-27T00:10:00.000Z"}"#)
+    let client = CodevisorServerClient(config: .init(requestTransport: transport))
+
+    let token = try await client.issuePluginAppViewToken(viewId: "a/b")
+
+    let request = try #require(await transport.requests.first)
+    #expect(request.httpMethod == "POST")
+    #expect(request.url?.absoluteString.hasSuffix("/v1/plugins/apps/a%2Fb/token") == true)
+    #expect(request.httpBody == nil)
+    #expect(token.url == "/v1/plugins/apps/a%2Fb?token=t")
+  }
+
+  @Test("A pane token URL is appended to the machine's base unless it is already absolute")
+  func paneTokenURL() throws {
+    let base = try #require(URL(string: "https://relay.example/m/1/"))
+    let relative = ServerPluginPaneTokenResponse(url: "/v1/plugins/apps/abc?t=1", expiresAt: "")
+    let absolute = ServerPluginPaneTokenResponse(url: "http://127.0.0.1:4000/app", expiresAt: "")
+
+    #expect(relative.resolvedURL(base: base)?.absoluteString == "https://relay.example/m/1/v1/plugins/apps/abc?t=1")
+    #expect(absolute.resolvedURL(base: base)?.absoluteString == "http://127.0.0.1:4000/app")
+  }
+
+  @Test("A plugin row without a digest, or with an empty one, has no capability digest")
+  func serverWithoutCapabilities() throws {
+    let bare = """
+      {"id":"m","name":"M","transport":"http","args":[],"enabled":true,"authType":"none",\
+      "connectionState":"connected","toolCount":0,"createdAt":"","updatedAt":""}
+      """
+    let empty = bare.replacingOccurrences(of: #""toolCount":0"#, with: #""toolCount":0,"capabilities":{"tools":[]}"#)
+
+    let servers = try [bare, empty].map { try JSONDecoder().decode(ServerMcpServer.self, from: Data($0.utf8)) }
+
+    #expect(servers.map(\.catalogId) == [nil, nil])
+    #expect(servers[1].capabilities == ServerPluginCapabilities())
+    #expect(servers.allSatisfy { $0.capabilityDigest == nil })
+  }
+
+  private static let catalogJSON = """
+    {"entries":[{"id":"grafana","name":"Grafana","description":"Alerts","publisher":"Codevisor",
+    "version":"1.0.0","transport":"stdio","capabilities":{"tools":[{"name":"alerts","effects":"read","app":true}],
+    "events":[],"skills":[],"panes":[{"type":"board","title":"Alerts","resourceUri":"ui://g/a"}],"ingress":[]}}]}
+    """
+
+  private static let serverJSON = """
+    {"id":"mcp-1","name":"Grafana","kind":"custom","transport":"stdio","args":[],"enabled":true,
+    "authType":"none","connectionState":"connected","toolCount":1,"catalogId":"grafana","catalogVersion":"1.0.0",
+    "capabilities":{"tools":[],"events":[{"name":"alert.firing"}],"skills":[],"panes":[],"ingress":[]},
+    "createdAt":"","updatedAt":""}
+    """
+}
+
+private actor PluginTransport: ServerRequestTransport {
+  let response: String
+  var requests: [URLRequest] = []
+
+  init(response: String) {
+    self.response = response
+  }
+
+  func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    requests.append(request)
+    return (
+      Data(response.utf8),
+      HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
     )
-    #expect(source == #"{"source":"acme\/git-diff#v1"}"# || source == #"{"source":"acme/git-diff#v1"}"#)
-
-    let apply = String(
-      decoding: try JSONEncoder().encode(
-        CodevisorServerClient.PluginUpdateApplyBody(planId: "plan-1")
-      ),
-      as: UTF8.self
-    )
-    #expect(apply == #"{"planId":"plan-1"}"#)
-    let disabled = String(
-      decoding: try JSONEncoder().encode(
-        CodevisorServerClient.PluginSetEnabledBody(enabled: false)
-      ),
-      as: UTF8.self
-    )
-    #expect(disabled == #"{"enabled":false}"#)
-  }
-
-  @Test("Update status and prepared review plans decode exactly")
-  func updateDecoding() throws {
-    let statuses = Data(
-      """
-      {"updates":[
-      {"pluginId":"acme.git-diff","installedVersion":"1.0.0","state":"available",
-      "checkedAt":"2026-08-23T00:00:00.000Z","registryVersion":"2.0.0"},
-      {"pluginId":"local.dev","installedVersion":"0.1.0","state":"pinned",
-      "checkedAt":"2026-08-23T00:00:00.000Z","reason":"Linked plugins are pinned"}]}
-      """.utf8)
-    struct UpdatesEnvelope: Decodable { var updates: [ServerPluginUpdateStatus] }
-    let decodedStatuses = try JSONDecoder().decode(UpdatesEnvelope.self, from: statuses)
-    #expect(decodedStatuses.updates.map(\.state) == [.available, .pinned])
-    #expect(decodedStatuses.updates.first?.registryVersion == "2.0.0")
-    #expect(decodedStatuses.updates.last?.reason == "Linked plugins are pinned")
-
-    let planData = Data(
-      """
-      {"planId":"plan-1","pluginId":"acme.git-diff","name":"Git Diff",
-      "resolvedCommit":"0123456789012345678901234567890123456789",
-      "expiresAt":"2026-08-23T00:15:00.000Z",
-      "current":{"version":"1.0.0","setupCommands":[],"runCommand":"node server.js",
-      "panes":[{"type":"diff","title":"Diff","path":"/diff/"}]},
-      "candidate":{"version":"2.0.0","setupCommands":["npm ci"],
-      "runCommand":"node server.js --port $PORT","panes":[],
-      "tools":[{"name":"diff_summary","description":"Summarize","path":"/tools/summary"}],
-      "requirements":{"executables":[{"name":"node","installHint":"Install Node.js",
-      "helpUrl":"https://nodejs.org"}]}},
-      "paneChanges":{"added":[],"removed":["diff"],"changed":[]},
-      "toolChanges":{"added":["diff_summary"],"removed":[],"changed":[]}}
-      """.utf8)
-    let plan = try JSONDecoder().decode(ServerPluginUpdatePlan.self, from: planData)
-    #expect(plan.id == "plan-1")
-    #expect(plan.current.version == "1.0.0")
-    #expect(plan.candidate.setupCommands == ["npm ci"])
-    #expect(plan.candidate.requirements?.executables?.first?.name == "node")
-    #expect(plan.paneChanges.removed == ["diff"])
-    #expect(plan.toolChanges.added == ["diff_summary"])
-  }
-
-  @Test("Remote discovery decodes the verbatim install and run commands")
-  func discoveryDecoding() throws {
-    let full = Data(
-      """
-      {"id":"acme.git-diff","name":"Git Diff","version":"0.1.0",
-      "description":"Live git diff viewer",
-      "panes":[{"type":"diff","title":"Git Diff","path":"/panes/diff/"}],
-      "tools":[{"name":"diff_summary","description":"Summarize the diff",
-      "path":"/tools/summary","inputSchema":{"type":"object"}}],
-      "installCommand":"bun install","runCommand":"bun run start","alreadyInstalled":true}
-      """.utf8)
-    let discovery = try JSONDecoder().decode(ServerPluginRemoteDiscovery.self, from: full)
-    #expect(discovery.id == "acme.git-diff")
-    #expect(discovery.installCommand == "bun install")
-    #expect(discovery.runCommand == "bun run start")
-    #expect(discovery.alreadyInstalled)
-    #expect(discovery.panes.count == 1)
-    #expect(
-      discovery.tools == [
-        ServerPluginToolDescriptor(
-          name: "diff_summary", description: "Summarize the diff",
-          path: "/tools/summary"
-        )
-      ])
-
-    let bare = Data(
-      """
-      {"id":"a.b","name":"B","version":"1.0.0","panes":[],
-      "runCommand":"./serve","alreadyInstalled":false}
-      """.utf8)
-    let minimal = try JSONDecoder().decode(ServerPluginRemoteDiscovery.self, from: bare)
-    #expect(minimal.installCommand == nil)
-    #expect(minimal.description == nil)
-    #expect(minimal.tools == nil)
-    #expect(!minimal.alreadyInstalled)
   }
 }

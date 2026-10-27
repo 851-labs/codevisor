@@ -138,7 +138,7 @@ struct MachineNavigationSyncTests {
 
     defer { controller.stopEventSync() }
     let applied = TestSignal()
-    controller.onPluginUpdated = { _, _ in applied.signal() }
+    controller.onMcpStateChanged = { _ in applied.signal() }
     let before = fake.listSessionCallCount
     fake.emit(
       kind: "navigation.changed", subjectId: "navigation",
@@ -146,7 +146,7 @@ struct MachineNavigationSyncTests {
         "eventCursor": .number(1), "projects": .array([]), "sessions": .array([]),
         "workspaces": .array([]), "panes": .array([]), "deleted": .array([]),
       ]))
-    fake.emit(kind: "plugin.updated", subjectId: "barrier", payload: .object([:]))
+    fake.emit(kind: "mcp.updated", subjectId: "barrier", payload: .object([:]))
     await applied.wait()
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
     #expect(fake.listSessionCallCount == before)
@@ -171,11 +171,11 @@ struct MachineNavigationSyncTests {
       authChanged.signal()
     }
     controller.onHarnessLifecycleChanged = { _ in lifecycleChanged.signal() }
-    controller.onPluginUpdated = { _, _ in barrier.signal() }
+    controller.onMcpStateChanged = { _ in barrier.signal() }
     fake.emit(
       kind: "harness.auth.updated", subjectId: "claude-code",
       payload: .object(["id": .string("shared-1"), "authState": .string("authenticated")]))
-    fake.emit(kind: "plugin.updated", subjectId: "barrier", payload: .object([:]))
+    fake.emit(kind: "mcp.updated", subjectId: "barrier", payload: .object([:]))
     await barrier.wait()
     #expect(authChanged.value == 1)
     #expect(lifecycleChanged.value == 0)

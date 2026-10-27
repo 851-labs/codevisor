@@ -132,7 +132,6 @@ struct RootView: View {
       .modifier(ChromiumBrowserHostSync())
       .modifier(ServerDataUpgradePresentation())
       .modifier(CloudAuthDeeplinkHandling())
-      .modifier(PluginInstallDeeplinkHandling())
   }
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {

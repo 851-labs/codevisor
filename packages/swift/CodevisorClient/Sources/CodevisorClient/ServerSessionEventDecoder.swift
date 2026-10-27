@@ -189,12 +189,20 @@ enum ServerSessionEventDecoder {
           text: text,
           attachments: attachments,
           isEvent: payload["origin"]?.stringValue == "event",
-          assistantItemId: payload["assistantItemId"]?.stringValue.flatMap(UUID.init(uuidString:))
+          assistantItemId: payload["assistantItemId"]?.stringValue.flatMap(UUID.init(uuidString:)),
+          attribution: attribution(from: payload)
         )
       ]
     default:
       return []
     }
+  }
+
+  private static func attribution(from payload: JSONValue) -> UserMessageAttribution? {
+    guard let raw = payload["attribution"],
+      let data = try? bridgeEncoder.encode(raw)
+    else { return nil }
+    return try? bridgeDecoder.decode(UserMessageAttribution.self, from: data)
   }
 
   private static func attachments(from payload: JSONValue) -> [Attachment] {

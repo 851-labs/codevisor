@@ -12,6 +12,9 @@ public struct PluginAccessPolicy: Decodable, Sendable {
     public var minimumAge: Int
   }
 
+  public static let appAgeCeiling = 16
+  private static let knownRatings: Set<Int> = [4, 9, 13, 16, 18]
+
   public var supportedAgeRating: Int
   public var blocks: [Block]
   public var ageRatings: [AgeRating]
@@ -20,21 +23,26 @@ public struct PluginAccessPolicy: Decodable, Sendable {
     ageRatings.first { $0.pluginId == pluginId }?.minimumAge ?? declared
   }
 
-  public func restriction(pluginId: String, ageRating: Int?, blockedPublishers: [String]) -> String? {
-    let publisher = String(pluginId.split(separator: ".").first ?? "")
-    if blocks.contains(where: {
-      ($0.targetKind == "plugin" && $0.target == pluginId)
-        || ($0.targetKind == "publisher" && $0.target == publisher)
-    }) {
-      return "This plugin is unavailable on iOS."
-    }
-    if blockedPublishers.contains(publisher) { return "You blocked this publisher." }
-    let minimumAge = self.ageRating(pluginId: pluginId, declared: ageRating)
-    guard let minimumAge, [4, 9, 13, 16, 18].contains(minimumAge) else {
+  public func restriction(for subject: PluginModerationSubject, blockedPublishers: [String]) -> String? {
+    if isBlocked(subject) { return "This plugin is unavailable on iOS." }
+    if blockedPublishers.contains(subject.publisher) { return "You blocked this publisher." }
+    if subject.isCustom { return nil }
+
+    let minimumAge = ageRating(pluginId: subject.pluginId, declared: subject.declaredAgeRating)
+    guard let minimumAge, Self.knownRatings.contains(minimumAge) else {
       return "The publisher needs to add an age rating before this plugin can open on iOS."
     }
-    if minimumAge > min(supportedAgeRating, 16) { return "This plugin exceeds Codevisor’s iOS age rating." }
+    if minimumAge > min(supportedAgeRating, Self.appAgeCeiling) {
+      return "This plugin exceeds Codevisor’s iOS age rating."
+    }
     return nil
+  }
+
+  private func isBlocked(_ subject: PluginModerationSubject) -> Bool {
+    blocks.contains { block in
+      (block.targetKind == "plugin" && block.target == subject.pluginId)
+        || (block.targetKind == "publisher" && block.target == subject.publisher)
+    }
   }
 }
 

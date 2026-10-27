@@ -20,8 +20,21 @@ public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
   public var connectionState: String
   public var toolCount: Int
   public var detail: String?
+  public var catalogId: String?
+  public var catalogVersion: String?
+  public var capabilities: ServerPluginCapabilities?
+  public var ageRating: Int?
   public var createdAt: String
   public var updatedAt: String
+
+  public var capabilityDigest: ServerPluginCapabilities? {
+    guard let capabilities, !capabilities.isEmpty else { return nil }
+    return capabilities
+  }
+
+  public var awaitsAuthorization: Bool {
+    connectionState == "needsAuthorization" || (authType == "oauth" && connectionState != "connected")
+  }
 
   public var isBuiltIn: Bool {
     switch kind {

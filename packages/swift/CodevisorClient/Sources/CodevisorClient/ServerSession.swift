@@ -1,6 +1,7 @@
 import ACPKit
 import CodevisorProtocol
 import Foundation
+import TranscriptKit
 
 public enum TokenBudgetUpdate: Sendable, Equatable {
   case keep
@@ -60,6 +61,7 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
   public var updatedAt: String
   public var attachments: [ServerAttachmentRef]?
   public var origin: String?
+  public var attribution: UserMessageAttribution? = nil
 
   public var isSystem: Bool { origin == "system" }
 
@@ -348,6 +350,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var textResource: ToolDetailResource?
   public var planResource: ToolDetailResource?
   public var origin: String? = nil
+  public var attribution: UserMessageAttribution? = nil
   public var revision: Int
 
   public var isEvent: Bool { origin == "event" }

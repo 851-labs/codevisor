@@ -149,8 +149,6 @@ struct UpdatesSettingsScreen: View {
         .font(.system(size: 15))
     case .harness:
       HarnessGlyph(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
-    case .plugin:
-      Image(systemName: "puzzlepiece.extension")
     }
   }
 

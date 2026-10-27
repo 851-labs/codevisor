@@ -21,6 +21,7 @@ final class PluginPaneModel: Identifiable {
   @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
   private(set) var phase: Phase = .idle
+  private(set) var subject: PluginModerationSubject?
 
   @ObservationIgnored let serverId: String
   @ObservationIgnored let pluginId: String
@@ -37,7 +38,6 @@ final class PluginPaneModel: Identifiable {
   @ObservationIgnored private var connectionRecovery = WebConnectionRecovery()
   @ObservationIgnored private var controller: WebPaneController?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
-  @ObservationIgnored private var loadedUpdateRevision: UInt64?
 
   init(
     paneId: UUID,
@@ -84,10 +84,10 @@ final class PluginPaneModel: Identifiable {
       self?.phase = .failed(message)
     }
     controller.onConnectionFailure = { [weak self] _ in
-      guard let self, let theme = lastTheme, let revision = loadedUpdateRevision else { return }
+      guard let self, let theme = lastTheme else { return }
       connectionFailure = true
       guard connectionRecovery.canRetry else { return }
-      load(theme: theme, updateRevision: revision, recovering: true)
+      load(theme: theme, recovering: true)
     }
     controller.onNavigationFinished = { [weak self] in
       self?.phase = .ready
@@ -98,49 +98,35 @@ final class PluginPaneModel: Identifiable {
     return controller
   }
 
-  func loadIfNeeded(theme: WebPaneThemeTokens, updateRevision: UInt64) {
-    guard phase == .idle || loadedUpdateRevision != updateRevision else { return }
-    load(theme: theme, updateRevision: updateRevision)
+  func loadIfNeeded(theme: WebPaneThemeTokens) {
+    guard phase == .idle else { return }
+    load(theme: theme)
   }
 
-  func retry(theme: WebPaneThemeTokens, updateRevision: UInt64) {
+  func retry(theme: WebPaneThemeTokens) {
     connectionRecovery.reset()
-    load(theme: theme, updateRevision: updateRevision, recovering: true)
+    load(theme: theme, recovering: true)
   }
 
-  func connectionDidChange(theme: WebPaneThemeTokens, updateRevision: UInt64) async {
+  func connectionDidChange(theme: WebPaneThemeTokens) async {
     guard phase != .idle, phase != .loading else { return }
     if connectionFailure {
-      if connectionRecovery.canRetry { load(theme: theme, updateRevision: updateRevision, recovering: true) }
+      if connectionRecovery.canRetry { load(theme: theme, recovering: true) }
       return
     }
     guard phase == .ready, let base = await resolveBaseURL(), !Task.isCancelled,
       phase == .ready, let loadedBaseURL, base != loadedBaseURL
     else { return }
-    load(theme: theme, updateRevision: updateRevision)
+    load(theme: theme)
   }
 
   func applyTheme(_ theme: WebPaneThemeTokens) {
     controller?.applyTheme(theme)
   }
 
-  func revalidateAccess() async {
-    do {
-      guard let plugin = try await client.listPlugins().first(where: { $0.id == pluginId }) else {
-        throw PluginAccessError("This plugin is no longer installed.")
-      }
-      try await access.requireAccess(to: plugin)
-    } catch {
-      guard !Task.isCancelled else { return }
-      teardown()
-      phase = .failed(ErrorReporter.userFacingMessage(for: error))
-    }
-  }
-
-  private func load(theme: WebPaneThemeTokens, updateRevision: UInt64, recovering: Bool = false) {
+  private func load(theme: WebPaneThemeTokens, recovering: Bool = false) {
     lastTheme = theme
     if !recovering { connectionRecovery.reset(); connectionFailure = false }
-    loadedUpdateRevision = updateRevision
     guard !pluginId.isEmpty, !paneType.isEmpty else {
       phase = .failed("This pane's plugin information is missing.")
       return
@@ -151,18 +137,15 @@ final class PluginPaneModel: Identifiable {
     loadTask = Task { [weak self] in
       guard let self else { return }
       do {
-        guard let plugin = try await self.client.listPlugins().first(where: { $0.id == self.pluginId }) else {
-          throw PluginAccessError("This plugin is no longer installed.")
-        }
-        try await self.access.requireAccess(to: plugin)
+        try await self.requireAccess()
         guard !Task.isCancelled else { return }
         let response = try await self.client.issuePluginPaneToken(
-          pluginId: self.pluginId,
-          paneId: self.id.uuidString.lowercased(),
+          serverId: self.pluginId,
           paneType: self.paneType,
-          workspaceId: self.workspaceId?.uuidString.lowercased(),
-          cwd: self.cwd,
-          themeMode: theme.mode
+          request: ServerPluginPaneTokenRequest(
+            workspaceId: self.workspaceId?.uuidString.lowercased(),
+            themeMode: theme.mode
+          )
         )
         guard !Task.isCancelled else { return }
         let base = recovering ? await self.recoverConnection() : await self.resolveBaseURL()
@@ -175,7 +158,7 @@ final class PluginPaneModel: Identifiable {
         }
         guard !Task.isCancelled else { return }
         if recovering, !connectionRecovery.claimRetry() { return }
-        guard let url = Self.paneURL(base: base, path: response.path) else {
+        guard let url = response.resolvedURL(base: base) else {
           self.phase = .failed("The server returned an unusable pane address.")
           return
         }
@@ -192,10 +175,13 @@ final class PluginPaneModel: Identifiable {
     }
   }
 
-  private static func paneURL(base: URL, path: String) -> URL? {
-    let origin = base.absoluteString
-      .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    return URL(string: "\(origin)\(path)")
+  private func requireAccess() async throws {
+    guard let plugin = try await client.listMcpServers().first(where: { $0.id == pluginId }) else {
+      throw PluginAccessError("This plugin is no longer installed.")
+    }
+    let subject = PluginModerationSubject(server: plugin)
+    self.subject = subject
+    try await access.requireEligible(subject)
   }
 
   func teardown() {

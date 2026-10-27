@@ -47,23 +47,12 @@ struct UpdateCenterTests {
     )
   }
 
-  func makePluginUpdate() -> ServerPluginUpdateStatus {
-    ServerPluginUpdateStatus(
-      pluginId: "notes",
-      installedVersion: "1.0.0",
-      state: .available,
-      checkedAt: "2026-06-30T00:00:00.000Z",
-      registryVersion: "1.1.0"
-    )
-  }
-
-  @Test("Components fold servers, harnesses, and plugins across machines")
+  @Test("Components fold servers and harnesses across machines")
   func componentsFold() async throws {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureHarnesses([makeHarness(updateAvailable: true)])
-    fake.configurePluginUpdates([makePluginUpdate()])
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
       remotes: [remote]
@@ -80,23 +69,21 @@ struct UpdateCenterTests {
     #expect(
       ids == [
         "harness:cloud:remote-a:claude-code",
-        "plugin:cloud:remote-a:notes",
         "server:cloud:remote-a",
       ])
-    #expect(center.availableCount == 3)
+    #expect(center.availableCount == 2)
     let server = center.components.first { $0.kind == .server }
     #expect(server?.machineName == "remote-a")
     #expect(server?.latestVersion == "0.2.0")
     controller.stopEventSync()
   }
 
-  @Test("updateAll runs plugins, then harnesses, then servers, app last")
+  @Test("updateAll runs harnesses, then servers, app last")
   func updateAllOrder() async throws {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureHarnesses([makeHarness(updateAvailable: true)])
-    fake.configurePluginUpdates([makePluginUpdate()])
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
       remotes: [remote]
@@ -112,19 +99,17 @@ struct UpdateCenterTests {
 
     await controller.refreshStatus(for: remote.id)
     await center.refresh()
-    #expect(center.availableCount == 4)
+    #expect(center.availableCount == 3)
 
     await center.updateAll()
 
     #expect(
       fake.operationLog == [
-        "plugin.prepare:notes",
-        "plugin.apply:notes",
         "update.run:claude-code+server",
         "harness.update:claude-code",
         "server.apply",
       ])
-    #expect(appInstalledAfterOperations == 5)
+    #expect(appInstalledAfterOperations == 3)
     controller.stopEventSync()
   }
 
@@ -444,13 +429,12 @@ struct UpdateCenterTests {
 }
 
 extension UpdateCenterTests {
-  @Test("Machine groups put each machine's Codevisor first, then harnesses, then plugins")
+  @Test("Machine groups put each machine's Codevisor first, then harnesses")
   func machineGroups() async throws {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureHarnesses([makeHarness(updateAvailable: true)])
-    fake.configurePluginUpdates([makePluginUpdate()])
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
       remotes: [remote]
@@ -473,9 +457,9 @@ extension UpdateCenterTests {
     #expect(groups.last?.codevisor?.title == "Codevisor")
     #expect(groups.last?.codevisor?.detailText == "0.1.0 → 0.2.0")
     #expect(groups.last?.codevisor?.pendingVersionChange?.latest == "0.2.0")
-    #expect(groups.last?.components.map(\.kind) == [.harness, .plugin])
-    #expect(groups.last?.availableCount == 3)
-    #expect(groups.last?.components.map(\.detailText) == ["1.0.0 → 1.2.0", "1.0.0 → 1.1.0"])
+    #expect(groups.last?.components.map(\.kind) == [.harness])
+    #expect(groups.last?.availableCount == 2)
+    #expect(groups.last?.components.map(\.detailText) == ["1.0.0 → 1.2.0"])
     controller.stopEventSync()
   }
 

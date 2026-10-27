@@ -43,7 +43,7 @@ extension WorkspaceScreen {
     }
   }
 
-  func convertToPlugin(_ pane: PaneDescriptorState, option: PluginNewTabOption) {
+  func convertToPlugin(_ pane: PaneDescriptorState, option: PluginPaneOffer) {
     guard let workspaceSessionId = paneStorageId else { return }
     var state = panes
     let converted = state.convertNewTabPane(

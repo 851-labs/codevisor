@@ -141,6 +141,7 @@ public struct CodevisorExecution: Equatable, Sendable {
   public var description: String?
   public var status: String?
   public var calls: [Call]
+  public var apps: [CodevisorExecutionApp]
   public var error: String?
   public var icon: CodevisorExecutionIconRef?
   public var activeIcon: CodevisorExecutionIconRef?
@@ -173,5 +174,6 @@ public struct CodevisorExecution: Equatable, Sendable {
         files: (call["files"]?.arrayValue ?? []).compactMap(Self.file)
       )
     }
+    apps = CodevisorExecutionApp.decodeList(json["apps"])
   }
 }

@@ -87,6 +87,10 @@ extension ChatScreen {
                     .environment(\.transcriptDisclosure, controller.disclosure)
                     .environment(\.transcriptController, controller)
                     .environment(
+                      \.pluginAppHost,
+                      PluginAppHost(environment: environment, session: controller, presenter: pluginAppPresenter)
+                    )
+                    .environment(
                       \.streamingTextAnimationVisibility,
                       presentationSurface.textAnimationVisibility
                     )

@@ -41,7 +41,6 @@ struct HomeView: View {
   @State var pendingDraftPromotion: HomeRoute?
   @State var detailPath = NavigationPath()
   @State var pendingDeviceApproval: CloudDeviceApprovalRequest?
-  @State var pendingPluginInstall: PendingPluginInstall?
   @State var botEditor: BotEditorTarget?
   @State var botHeaderWindowBottom: CGFloat = 0
   @State var deletingBot: Bot?
@@ -85,7 +84,6 @@ struct HomeView: View {
   var clientBlockingPresentation: String? {
     if showsOnboarding.wrappedValue { return "onboarding" }
     if pendingHarnessSignIn != nil { return "harness_sign_in" }
-    if pendingPluginInstall != nil { return "plugin_install" }
     if pendingDeviceApproval != nil { return "device_approval" }
     if renamingWorkspace != nil || renamingTab != nil { return "rename" }
     if botEditor != nil { return "bot_editor" }
@@ -244,11 +242,6 @@ struct HomeView: View {
       }
     }
   #endif
-}
-
-struct PendingPluginInstall: Identifiable {
-  let repo: String
-  var id: String { repo }
 }
 
 #Preview {

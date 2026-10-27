@@ -52,21 +52,6 @@
         "file": "apps/ios/Codevisor/Features/Home/HomeView+Presentations.swift",
         "line": 15
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 65 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  func body(content: Content) -> some View {",
-    "violation": {
-      "location": {
-        "character": 3,
-        "file": "apps/ios/Codevisor/Features/Home/Views/HomeExternalRouting.swift",
-        "line": 15
-      },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 64 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
@@ -155,7 +140,7 @@
       "location": {
         "character": 11,
         "file": "apps/ios/Codevisor/Features/Session/Transcript/Views/AssistantTurnBody.swift",
-        "line": 273
+        "line": 275
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -270,21 +255,6 @@
     }
   },
   {
-    "text": "  private func discoverySections(_ discovery: ServerPluginRemoteDiscovery) -> some View {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/ios/Codevisor/Features/Settings/Views/PluginInstallSheet.swift",
-        "line": 108
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  init(terminalKey: String, cwd: String, config: CodevisorServerConfig) {",
     "violation": {
       "location": {
@@ -293,21 +263,6 @@
         "line": 28
       },
       "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  private func load(theme: WebPaneThemeTokens, updateRevision: UInt64, recovering: Bool = false) {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/ios/Codevisor/Features/Workspace/PluginPaneModel.swift",
-        "line": 140
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -515,7 +470,7 @@
       "location": {
         "character": 11,
         "file": "apps/macos/Codevisor/Features/Session/Transcript/AssistantTurnView.swift",
-        "line": 289
+        "line": 291
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -773,21 +728,6 @@
         "line": 97
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 96 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  func responseDecoding() throws {",
-    "violation": {
-      "location": {
-        "character": 3,
-        "file": "packages/swift/CodevisorClient/Tests/CodevisorClientTests/CodevisorServerClientPluginsTests.swift",
-        "line": 34
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1115,7 +1055,7 @@
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/MachineControllerServerEventTests.swift",
-        "line": 132
+        "line": 103
       },
       "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 124 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1385,7 +1325,7 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/SyncFakeServerClient.swift",
-        "line": 163
+        "line": 162
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
       "ruleDescription": "Function bodies should not span too many lines",
