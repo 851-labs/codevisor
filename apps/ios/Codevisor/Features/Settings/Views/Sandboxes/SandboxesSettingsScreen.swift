@@ -10,7 +10,13 @@ struct SandboxesSettingsScreen: View {
   @State private var removingProfile: ServerSandboxProfile?
 
   private var client: any CodevisorServerClienting {
-    environment.machines.client(for: environment.machines.selectedMachineId)
+    environment.machines.client(for: settingsMachineId)
+  }
+
+  private var settingsMachineId: String {
+    let machines = environment.machines
+    if machines.availability(for: machines.selectedMachineId) == .ready { return machines.selectedMachineId }
+    return reachableMachines.first?.id ?? machines.selectedMachineId
   }
 
   var body: some View {
@@ -55,15 +61,17 @@ struct SandboxesSettingsScreen: View {
     } message: {
       Text(model.errorMessage ?? "")
     }
-    .task(id: environment.machines.allMachines.map(\.id)) {
-      await model.load(from: client, machines: reachableMachines)
+    .task(id: reachableMachines.map(\.id)) {
+      await model.load(from: client, machines: reachableMachines.map(sandboxMachine))
     }
   }
 
-  private var reachableMachines: [SandboxMachine] {
-    environment.machines.allMachines
-      .filter { environment.machines.availability(for: $0.id) == .ready }
-      .map { SandboxMachine(name: $0.name, client: environment.machines.client(for: $0.id)) }
+  private var reachableMachines: [CodevisorMachine] {
+    environment.machines.chatMachines.filter { environment.machines.availability(for: $0.id) == .ready }
+  }
+
+  private func sandboxMachine(_ machine: CodevisorMachine) -> SandboxMachine {
+    SandboxMachine(name: machine.name, client: environment.machines.client(for: machine.id))
   }
 
   private func edit(_ profile: ServerSandboxProfile) {

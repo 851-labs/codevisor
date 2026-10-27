@@ -20,6 +20,7 @@ struct SandboxProfilesList: View {
             isUntested: model.provider(profile.provider)?.tested == false
           )
         }
+        .buttonStyle(.plain)
         .swipeActions {
           Button("Delete", role: .destructive) { onDelete(profile) }
         }

@@ -20,6 +20,7 @@ struct SandboxAccountsList: View {
             isUntested: model.provider(account.provider)?.tested == false
           )
         }
+        .buttonStyle(.plain)
         .swipeActions {
           Button("Remove", role: .destructive) { onDelete(account) }
         }

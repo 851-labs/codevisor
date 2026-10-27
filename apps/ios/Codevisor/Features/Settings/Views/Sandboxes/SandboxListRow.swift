@@ -30,5 +30,7 @@ struct SandboxListRow: View {
       Image(systemName: systemImage)
         .foregroundStyle(.secondary)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
   }
 }
