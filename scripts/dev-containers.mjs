@@ -123,8 +123,8 @@ export async function ensureDevContainerImage(engine) {
       : ["image", "inspect", DEV_CONTAINER_IMAGE]
   )
   if (
-    (listed !== undefined && listed.includes('node:22-bookworm"')) ||
-    listed.includes("22-bookworm ")
+    listed !== undefined &&
+    (listed.includes('node:22-bookworm"') || listed.includes("22-bookworm "))
   )
     return
   console.log(`Pulling ${DEV_CONTAINER_IMAGE} (one-time, shared across worktrees)…`)
