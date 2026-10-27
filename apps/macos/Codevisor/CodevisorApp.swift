@@ -142,7 +142,6 @@ struct RootView: View {
       )
       .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
       .onChange(of: selection) { _, newValue in
-        panelLayout.dismissDrawer()
         guard let store else { return }
         if case let .session(serverId, sessionId) = newValue {
           store.markOpened(sessionId, serverId: serverId)
@@ -188,7 +187,7 @@ struct RootView: View {
           await environment.bootstrapCloud()
         }
       }
-      .modifier(SidebarModeSelectionMemory(selection: $selection))
+      .modifier(SidebarModeSelectionMemory(selection: $selection) { panelLayout.dismissDrawer() })
       .modifier(UpdateCenterUpkeep())
       .modifier(ChromiumBrowserHostSync())
       .modifier(ServerDataUpgradePresentation())

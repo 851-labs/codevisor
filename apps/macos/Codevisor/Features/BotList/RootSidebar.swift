@@ -11,7 +11,7 @@ struct RootSidebar: View {
   @State private var revealRequest = SidebarRevealRequest()
 
   var body: some View {
-    content
+    layout
       .modifier(
         PaletteDestinationsPublisher(
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
@@ -21,6 +21,20 @@ struct RootSidebar: View {
           ToolbarItem { SidebarModePicker(mode: $storedMode) }
         }
       }
+  }
+
+  @ViewBuilder
+  private var layout: some View {
+    if isDrawer && botsEnabled {
+      VStack(spacing: 0) {
+        SidebarModePicker(mode: $storedMode)
+          .controlSize(.large)
+          .padding(.top, 10)
+        content
+      }
+    } else {
+      content
+    }
   }
 
   @ViewBuilder
