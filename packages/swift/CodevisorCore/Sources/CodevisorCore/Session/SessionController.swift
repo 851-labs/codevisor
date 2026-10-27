@@ -149,7 +149,7 @@ final public class SessionController {
   public internal(set) var isSubmitting = false
   public internal(set) var isResolvingQuestion = false
   @ObservationIgnored var questionDrafts: [String: QuestionDraft] = [:]
-  public var presentedQuestionId: String?
+  public internal(set) var transcriptQuestionRevealSignal = 0
   public var presentedSetupRequest: TranscriptSetupRequest?
   public var onAgentSessionCreated: ((String) -> Void)?
   public var onTurnEnded: (() -> Void)?

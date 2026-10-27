@@ -41,7 +41,7 @@ struct QuestionDraftTests {
 
     draft.toggle("SQLite", in: database)
     draft.move(by: -1)
-    draft.show(page: 1)
+    draft.move(by: 1)
     draft.move(by: 1)
 
     #expect(draft.typedAnswer(for: database).isEmpty)

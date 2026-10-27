@@ -150,6 +150,10 @@ extension SessionTranscriptView {
       followsLatest = true
       scrollCommand.token &+= 1
     }
+    .onChange(of: controller.transcriptQuestionRevealSignal) { _, _ in
+      followsLatest = true
+      scrollCommand.token &+= 1
+    }
   }
 
   var transcriptProjectionRequest: TranscriptProjectionRequest {

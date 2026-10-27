@@ -12,7 +12,7 @@ struct TranscriptQuestionRow: View {
     switch interaction.content {
     case let .question(question):
       if question.answer == nil {
-        PendingQuestionCard(controller: controller, request: question.request, inBotConversation: inBotConversation)
+        TranscriptQuestionCard(controller: controller, request: question.request, inBotConversation: inBotConversation)
       } else {
         TranscriptQuestionSummaryView(question: question, inBotConversation: inBotConversation)
       }

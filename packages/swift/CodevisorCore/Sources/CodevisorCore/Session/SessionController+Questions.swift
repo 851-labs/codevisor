@@ -28,6 +28,10 @@ extension SessionController {
     return draft
   }
 
+  public func revealTranscriptQuestion() {
+    transcriptQuestionRevealSignal &+= 1
+  }
+
   public func submitTranscriptQuestion(_ id: String) async {
     guard let draft = questionDrafts[id], transcriptQuestion?.questionId == id, draft.isSubmittable else { return }
     await resolveTranscriptQuestion { await $0.answerQuestion(answers: draft.answers) }
