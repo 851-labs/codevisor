@@ -20,7 +20,7 @@ extension RootView {
       repository: environment.workspaces, serverId: serverId,
       workspaceId: workspaceId, isActive: clientWindow.window?.isKeyWindow == true
     )
-    context.capabilities = ClientCapabilities(settingsSections: SettingsTab.allCases.map(\.rawValue), compact: false)
+    context.capabilities = ClientCapabilities(settingsSections: SettingsTab.clientTabs.map(\.rawValue), compact: false)
     context.window = clientWindow.context(sidebarVisible: clientSidebarVisible)
     let settings = SettingsRouter.shared
     context.page = ClientPageContext(
@@ -114,7 +114,7 @@ extension RootView {
       selection = .newChat(target)
       clientWindow.window?.makeKeyAndOrderFront(nil)
     case "settings":
-      guard let tab = SettingsTab(rawValue: request.section ?? "general") else {
+      guard let tab = SettingsTab(rawValue: request.section ?? "general"), SettingsTab.clientTabs.contains(tab) else {
         throw ClientControlError("Settings section is unsupported on this client")
       }
       guard router.controlWindow?.attachedSheet == nil else {

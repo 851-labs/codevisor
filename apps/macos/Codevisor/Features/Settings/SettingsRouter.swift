@@ -20,6 +20,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     sidebarGroups.map { group in group.filter { $0 != .sandboxes || sandboxesEnabled } }
   }
 
+  static var clientTabs: [SettingsTab] {
+    allCases.filter { $0 != .sandboxes || SandboxesFeature.isEnabled }
+  }
+
   var id: String { rawValue }
 
   var title: String {

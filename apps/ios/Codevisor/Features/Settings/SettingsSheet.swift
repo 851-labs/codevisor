@@ -40,10 +40,12 @@ struct SettingsSheet: View {
     return "\(version) (\(buildNumber))"
   }
 
-  static let clientSections = [
-    "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "mcps",
-    "skills", "plugins",
-  ]
+  static var clientSections: [String] {
+    [
+      "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "mcps",
+      "skills", "plugins",
+    ].filter { $0 != "sandboxes" || SandboxesFeature.isEnabled }
+  }
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
     self.onSectionChange = onSectionChange
