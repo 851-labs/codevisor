@@ -27,6 +27,7 @@ struct ComposerCard: View {
   @State private var didStartResolvingQuestion = false
   @State private var didAcceptSubmission = false
   @State private var isPickingFiles = false
+  @State private var isPickingPhotos = false
   @State private var sendSource = ComposerSendSource()
 
   private static let slashMenuMaxHeight: CGFloat = 220
@@ -118,6 +119,7 @@ struct ComposerCard: View {
       guard case let .success(urls) = result else { return }
       controller.attachments.attachFileURLs(urls)
     }
+    .modifier(ComposerPhotosPicker(isPresented: $isPickingPhotos, controller: controller))
     .onChange(of: controller.submitRequest) { _, _ in
       sendDraft(delivery: .steer)
     }
@@ -142,7 +144,8 @@ private extension ComposerCard {
 
   private var slimContent: some View {
     ComposerSlimBar(
-      field: editorStack, action: slimAction, glassNamespace: glassNamespace, onAttach: pickFiles,
+      field: editorStack, action: slimAction, glassNamespace: glassNamespace,
+      onAttachPhotos: { isPickingPhotos = true }, onAttachFiles: pickFiles,
       onStop: { Task { await controller.stop() } }, onSend: submitOrAcceptSlash)
   }
 

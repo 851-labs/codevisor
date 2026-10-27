@@ -165,6 +165,12 @@ public final class ComposerAttachments {
       id: id, name: name, mimeType: mimeType, kind: .image, data: data)
   }
 
+  public func attachPhotoData(_ data: Data, mimeType: String) {
+    let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "jpg"
+    attachImageData(
+      data, suggestedName: "Photo \(AttachmentFileStager.pastedImageNameDate()).\(ext)", mimeType: mimeType)
+  }
+
   @discardableResult
   public func beginLoadingAttachment(
     id: UUID,
