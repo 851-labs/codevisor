@@ -19,6 +19,7 @@ import {
 import { loadEncryptionKey } from "@codevisor/mcp"
 import type { BlobStore } from "@codevisor/sync"
 
+import { FIRST_AGENT_WAIT, pushRemainingAgents } from "./infra/ephemeral-agents.js"
 import {
   makeEphemeralCredentialStore,
   type ProviderCredentials
@@ -91,7 +92,13 @@ export const startEphemeralMachines = (
           (project) => project.id.toLowerCase() === projectId.toLowerCase()
         )
     },
-    sync: (remote) => pushOneWaySync({ db: options.db, blobs: options.syncBlobs }, remote),
+    sync: (remote, firstHarness) =>
+      pushOneWaySync({ db: options.db, blobs: options.syncBlobs }, remote, firstHarness),
+    syncDeferred: (remote, firstHarness) =>
+      pushRemainingAgents({ db: options.db }, remote, firstHarness, {
+        ...FIRST_AGENT_WAIT,
+        sleep: (ms) => delay(ms)
+      }),
     bootstrap: bootstrapSettings(options.env),
     clock: { now: Date.now, sleep: (ms) => delay(ms) },
     newId: randomUUID,

@@ -8,6 +8,7 @@ import {
 } from "@codevisor/ephemeral-machines"
 
 import { makeServices } from "../test-support.js"
+import { pushRemainingAgents } from "./ephemeral-agents.js"
 import { makeEphemeralMachines, type EphemeralMachineDeps } from "./ephemeral-machines.js"
 import { makeEphemeralRecordStore } from "./ephemeral-store.js"
 import { pushOneWaySync } from "./ephemeral-sync.js"
@@ -127,7 +128,13 @@ export const ephemeralHarness = async (options: EphemeralHarnessOptions = {}) =>
       }
     },
     projects: { get: (id) => Promise.resolve(id === project.id ? project : undefined) },
-    sync: (remote) => pushOneWaySync({ db: services.db }, remote),
+    sync: (remote, firstHarness) => pushOneWaySync({ db: services.db }, remote, firstHarness),
+    syncDeferred: (remote, firstHarness) =>
+      pushRemainingAgents({ db: services.db }, remote, firstHarness, {
+        attempts: 3,
+        intervalMs: 1,
+        sleep: () => Promise.resolve()
+      }),
     bootstrap: { installUrl: "https://example.test/install.sh" },
     clock: {
       now: () => clock,

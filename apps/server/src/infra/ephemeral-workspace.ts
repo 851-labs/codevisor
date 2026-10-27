@@ -6,7 +6,7 @@ export const EPHEMERAL_WORKSPACE_LABEL = "codevisor-ephemeral"
 
 export interface PlacedWorkspace {
   readonly remoteProjectId: string
-  readonly workspaceId: string
+  readonly workspaceId?: string
   readonly workspaceOpenedAt?: string
 }
 
@@ -25,6 +25,7 @@ export const placeWorkspace = async (
   log(`${project.name} is ready`)
   if (machine.workspaceId !== undefined)
     return { remoteProjectId, workspaceId: machine.workspaceId }
+  if (machine.defersWorkspace === true) return { remoteProjectId }
 
   const workspaceId = deps.newId()
   await deps.remoteTools.call(machine.machineId, "codevisor.workspaces.upsert", {

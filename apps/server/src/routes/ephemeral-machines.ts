@@ -1,4 +1,5 @@
 import {
+  ClaimEphemeralWorkspaceRequest,
   CreateEphemeralMachineRequest,
   EphemeralProjectOptions,
   SaveEphemeralCredentialsRequest,
@@ -79,6 +80,12 @@ const dispatchMachines = async (
   if (destroyId !== undefined) {
     await service.machines.destroy(destroyId)
     writeJson(response, 200, { destroyed: destroyId })
+    return true
+  }
+  const claimId = methodRouteId(route, "POST", "/v1/ephemeral-machines/:id/workspace")
+  if (claimId !== undefined) {
+    const { workspaceId } = await readSchema(request, ClaimEphemeralWorkspaceRequest)
+    writeJson(response, 200, await service.machines.claimWorkspace(claimId, workspaceId))
     return true
   }
   return dispatchProjectOptions(route, service)

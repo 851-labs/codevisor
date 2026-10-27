@@ -11,12 +11,11 @@ public extension CodevisorServerClienting {
 
   func destroyEphemeralMachine(id: String) async throws {}
 
-  func createEphemeralMachine(
-    id: String,
-    provider: String,
-    projectId: UUID,
-    workspaceId: UUID?
-  ) async throws -> ServerEphemeralMachine {
+  func createEphemeralMachine(_ request: ServerEphemeralMachineRequest) async throws -> ServerEphemeralMachine {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
+  func claimEphemeralWorkspace(id: String, workspaceId: UUID) async throws -> ServerEphemeralMachine {
     throw CodevisorServerClientError.invalidResponse
   }
 }

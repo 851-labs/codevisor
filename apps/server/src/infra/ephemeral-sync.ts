@@ -1,5 +1,5 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { BlobStore } from "@codevisor/sync"
+import type { BlobStore, SyncEntryRecord } from "@codevisor/sync"
 
 import { run } from "../server-context.js"
 import type { EphemeralRemote } from "./ephemeral-remote.js"
@@ -39,11 +39,14 @@ export interface OneWaySyncReport {
   readonly failedSteps: ReadonlyArray<string>
 }
 
+export const HARNESSES_NAMESPACE = "harnesses"
+
 export const pushOneWaySync = async (
   source: OneWaySyncSource,
-  remote: EphemeralRemote
+  remote: EphemeralRemote,
+  firstHarness?: string
 ): Promise<OneWaySyncReport> => {
-  const entries = await pushNamespaces(source, remote)
+  const entries = await pushNamespaces(source, remote, firstHarness)
   const failedSteps = await applyOnRemote(remote)
   const skillBlobs = await pushSkills(source, remote)
   return { entries, skillBlobs, failedSteps }
@@ -51,11 +54,13 @@ export const pushOneWaySync = async (
 
 const pushNamespaces = async (
   source: OneWaySyncSource,
-  remote: EphemeralRemote
+  remote: EphemeralRemote,
+  firstHarness: string | undefined
 ): Promise<number> => {
   let pushed = 0
   for (const namespace of ONE_WAY_SYNC_NAMESPACES) {
-    const entries = await run(source.db.getSyncEntries(namespace))
+    const all = await run(source.db.getSyncEntries(namespace))
+    const entries = namespace === HARNESSES_NAMESPACE ? firstOnly(all, firstHarness) : all
     await remote.request("PUT", `/v1/sync/${namespace}`, { entries })
     pushed += entries.length
   }
@@ -80,6 +85,14 @@ const pushSkills = async (source: OneWaySyncSource, remote: EphemeralRemote): Pr
   }
   if (uploaded > 0) await remote.request("POST", "/v1/sync/skills/reconcile")
   return uploaded
+}
+
+const firstOnly = (
+  entries: ReadonlyArray<SyncEntryRecord>,
+  firstHarness: string | undefined
+): ReadonlyArray<SyncEntryRecord> => {
+  const first = entries.filter((entry) => entry.key === firstHarness)
+  return first.length === 0 ? entries : first
 }
 
 const missingBlobHashes = (status: unknown): ReadonlyArray<string> => {

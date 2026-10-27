@@ -43,7 +43,8 @@ export interface EphemeralMachineDeps {
     readonly call: (machineId: string, tool: string, args: unknown) => Promise<unknown>
   }
   readonly projects: { readonly get: (projectId: string) => Promise<Project | undefined> }
-  readonly sync: (remote: EphemeralRemote) => Promise<OneWaySyncReport>
+  readonly sync: (remote: EphemeralRemote, firstHarness?: string) => Promise<OneWaySyncReport>
+  readonly syncDeferred: (remote: EphemeralRemote, firstHarness: string) => Promise<void>
   readonly bootstrap: Omit<BootstrapRequest, "inviteCode" | "machineName">
   readonly clock: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> }
   readonly newId: () => string
@@ -57,6 +58,7 @@ export interface EphemeralMachines {
     publish?: EphemeralSetupPublisher
   ) => Promise<EphemeralMachine>
   readonly destroy: (id: string) => Promise<void>
+  readonly claimWorkspace: (id: string, workspaceId: string) => Promise<EphemeralMachine>
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
   readonly settled: () => Promise<void>
@@ -109,11 +111,14 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
       throw new HttpFailure(409, `An ephemeral machine ${machine.id} already exists`)
     }
     await deps.records.put(machine)
+    const planned = { options, plan, ...harnessOf(request) }
     track(
       pipelines,
-      exclusively(machine.id, () =>
-        runPipeline(deps, provider, machine, { options, plan }, publish)
-      )
+      exclusively(machine.id, async () => {
+        const remote = await runPipeline(deps, provider, machine, planned, publish)
+        if (remote !== undefined && planned.harnessId !== undefined)
+          track(pipelines, installRemainingAgents(deps, remote, planned.harnessId))
+      })
     )
     return machine
   }
@@ -122,6 +127,7 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
     list: deps.records.list,
     create,
     destroy,
+    claimWorkspace: (id, workspaceId) => claimWorkspace(deps, id, workspaceId),
     watch: async () => {
       for (const machine of (await deps.records.list()).filter(isPlaced)) {
         await exclusively(machine.id, () => watchOne(deps, machine))
@@ -140,7 +146,7 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
     },
     configuredProviders: deps.providers.configured,
     settled: async () => {
-      await Promise.all(pipelines)
+      while (pipelines.size > 0) await Promise.all(pipelines)
     }
   }
 }
@@ -148,6 +154,7 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
 interface PlannedProvision {
   readonly options: unknown
   readonly plan: ProvisionPlan
+  readonly harnessId?: string
 }
 
 const runPipeline = async (
@@ -156,7 +163,7 @@ const runPipeline = async (
   initial: EphemeralMachine,
   planned: PlannedProvision,
   publish: EphemeralSetupPublisher | undefined
-): Promise<void> => {
+): Promise<EphemeralRemote | undefined> => {
   const record = recordWriter(deps, initial)
   const setup = makeEphemeralSetupProgress({
     machineId: initial.id,
@@ -167,10 +174,11 @@ const runPipeline = async (
     }
   })
   try {
-    await provision(deps, provider, record, setup, planned)
+    return await provision(deps, provider, record, setup, planned)
   } catch (cause) {
     await teardownMachine(deps, provider, record.current()).catch(() => undefined)
     await record.advance({ state: "failed", error: messageOf(cause) })
+    return undefined
   }
 }
 
@@ -180,7 +188,7 @@ const provision = async (
   record: RecordWriter,
   setup: EphemeralSetupProgress,
   planned: PlannedProvision
-): Promise<void> => {
+): Promise<EphemeralRemote> => {
   const options = await prepared(provider, planned, setup)
   setup.stage("create")
   setup.log(`Creating a ${provider.displayName} machine`)
@@ -199,7 +207,8 @@ const provision = async (
   )
   await record.advance({ ...joined, state: "syncing" })
   setup.stage("sync")
-  const report = await deps.sync(ephemeralRemote(provider, created.providerMachineId))
+  const remote = ephemeralRemote(provider, created.providerMachineId)
+  const report = await deps.sync(remote, planned.harnessId)
   setup.log(`Pushed ${report.entries} settings`)
   deps.log(`Ephemeral ${initialId(record)}: pushed ${report.entries} sync entries one way`)
   await record.advance({ state: "cloning" })
@@ -207,7 +216,38 @@ const provision = async (
   const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, setup.log)
   setup.finish()
   await record.advance({ ...placed, state: "ready" })
+  return remote
 }
+
+const installRemainingAgents = async (
+  deps: EphemeralMachineDeps,
+  remote: EphemeralRemote,
+  firstHarness: string
+): Promise<void> => {
+  await deps.syncDeferred(remote, firstHarness).catch((cause: unknown) => {
+    deps.log(`Installing the remaining agents failed: ${messageOf(cause)}`)
+  })
+}
+
+const claimWorkspace = async (
+  deps: EphemeralMachineDeps,
+  id: string,
+  workspaceId: string
+): Promise<EphemeralMachine> => {
+  const machine = await deps.records.get(id)
+  if (machine === undefined) throw new HttpFailure(404, `No ephemeral machine ${id}`)
+  const wanted = workspaceId.toLowerCase()
+  if (machine.workspaceId === wanted) return machine
+  if (machine.state !== "ready" || machine.workspaceId !== undefined)
+    throw new HttpFailure(409, `${machine.name} can't move to another workspace`)
+
+  const claimed = { ...machine, workspaceId: wanted }
+  await deps.records.put(claimed)
+  return claimed
+}
+
+const harnessOf = (request: CreateEphemeralMachineRequest): { readonly harnessId?: string } =>
+  request.harnessId === undefined ? {} : { harnessId: request.harnessId }
 
 const planFor = async (provider: EphemeralProvider, options: unknown): Promise<ProvisionPlan> =>
   (await provider.plan?.(options)) ?? { stages: provider.provisionStages, preinstalled: false }
@@ -381,9 +421,15 @@ const newRecord = (
       "sync",
       "clone"
     ],
-    ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId.toLowerCase() })
+    ...(request.workspaceId === undefined
+      ? {}
+      : { workspaceId: request.workspaceId.toLowerCase() }),
+    ...(defersWorkspace(request) ? { defersWorkspace: true } : {})
   }
 }
+
+const defersWorkspace = (request: CreateEphemeralMachineRequest): boolean =>
+  request.defersWorkspace === true && request.workspaceId === undefined
 
 const specFor = (deps: EphemeralMachineDeps, machine: EphemeralMachine) => ({
   name: machine.name,

@@ -126,6 +126,22 @@ describe("ephemeral machine routes", () => {
     expect(harness.provider.machines.size).toBe(0)
   })
 
+  it("hands a machine started before the first send to the chat's workspace", async () => {
+    const { harness, server } = await startEphemeralServer()
+    await jsonRequest(server, "/v1/ephemeral-machines", {
+      method: "POST",
+      body: JSON.stringify({ provider: "e2b", projectId: "project-1", defersWorkspace: true })
+    })
+    await harness.machines.settled()
+
+    const claimed = await jsonRequest(server, "/v1/ephemeral-machines/id-1/workspace", {
+      method: "POST",
+      body: JSON.stringify({ workspaceId: "workspace-1" })
+    })
+
+    expect(claimed).toMatchObject({ status: 200, body: { id: "id-1", workspaceId: "workspace-1" } })
+  })
+
   it("stores per-project provider options after checking them against each provider's schema", async () => {
     const { server } = await startEphemeralServer()
     const path = "/v1/projects/project-1/ephemeral-options"

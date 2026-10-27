@@ -116,7 +116,12 @@ final public class SessionController {
   public internal(set) var userSendAnimationRequest: UserSendAnimationRequest?
   @ObservationIgnored var userSendAnimationCoordinator = UserSendAnimationCoordinator()
 
-  public var project: Project { didSet { draftDidChange() } }
+  public var project: Project {
+    didSet {
+      draftDidChange()
+      refreshEphemeralPrewarm()
+    }
+  }
   public var onFirstSend: ((String) -> Void)?
   public var onScratchProjectCreated: ((Project) -> Void)?
   public var onSetupFailed: (() -> Void)?
@@ -139,8 +144,10 @@ final public class SessionController {
   public var ephemeralTarget: EphemeralTarget? {
     didSet {
       if ephemeralTarget != nil { wantsNewWorktree = false }
+      refreshEphemeralPrewarm()
     }
   }
+  @ObservationIgnored var ephemeralPrewarm: EphemeralPrewarm?
   public var onEphemeralMachineReady: ((ChatSession, ChatSession, Project) -> Void)?
   public internal(set) var setupPhases: [SessionSetupPhase] = [] {
     didSet {

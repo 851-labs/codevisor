@@ -27,37 +27,37 @@ extension SessionController {
     guard let serverClient else {
       return "Ephemeral machines need the Codevisor server. Start it and try again."
     }
-    let machineId = UUID().uuidString.lowercased()
+    guard let prewarm = takeEphemeralPrewarm(for: target, client: serverClient) else {
+      return "Choose a project to run on a \(target.machineNoun)."
+    }
     let tracker = EphemeralSetupTracker(
       controller: self, steps: ephemeralSteps(for: target), showsPhases: showsSetupPhases)
     status = .connecting(tracker.steps.status(.create))
-    let follow = followEphemeralLog(machineId, client: serverClient, tracker: tracker)
-    defer { follow.cancel() }
+    defer { prewarm.finish() }
     do {
-      _ = try await serverClient.createEphemeralMachine(
-        id: machineId, provider: target.providerId, projectId: project.id, workspaceId: hostWorkspaceId)
-      let ready = try await awaitEphemeralMachine(machineId, client: serverClient, tracker: tracker)
-      try await adoptEphemeralMachine(ready, target: target, tracker: tracker)
+      try await prewarm.created()
+      tracker.apply(try await ephemeralMachine(prewarm.machineId, client: serverClient))
+      prewarm.attach(tracker)
+      let ready = try await awaitEphemeralMachine(prewarm.machineId, client: serverClient, tracker: tracker)
+      try await adoptEphemeralMachine(
+        try await claimWorkspace(ready, client: serverClient), target: target, tracker: tracker)
       return nil
     } catch {
-      try? await serverClient.destroyEphemeralMachine(id: machineId)
+      try? await serverClient.destroyEphemeralMachine(id: prewarm.machineId)
       return serverErrorMessage(error)
     }
   }
 
-  private func ephemeralSteps(for target: EphemeralTarget) -> EphemeralSetupSteps {
-    EphemeralSetupSteps(target: target, projectName: project.name, agentName: selectedHarness?.name ?? "the agent")
+  private func claimWorkspace(
+    _ machine: ServerEphemeralMachine,
+    client: any CodevisorServerClienting
+  ) async throws -> ServerEphemeralMachine {
+    guard machine.workspaceId == nil, let hostWorkspaceId else { return machine }
+    return try await client.claimEphemeralWorkspace(id: machine.id, workspaceId: hostWorkspaceId)
   }
 
-  private func followEphemeralLog(
-    _ machineId: String,
-    client: any CodevisorServerClienting,
-    tracker: EphemeralSetupTracker
-  ) -> Task<Void, Never> {
-    let log = EphemeralSetupLogLine.liveLog(client, machineId: machineId)
-    return Task { [weak tracker] in
-      for await line in log { tracker?.append(line) }
-    }
+  private func ephemeralSteps(for target: EphemeralTarget) -> EphemeralSetupSteps {
+    EphemeralSetupSteps(target: target, projectName: project.name, agentName: selectedHarness?.name ?? "the agent")
   }
 
   private func awaitEphemeralMachine(

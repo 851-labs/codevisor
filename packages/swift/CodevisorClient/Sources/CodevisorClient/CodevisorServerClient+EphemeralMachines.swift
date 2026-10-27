@@ -65,13 +65,6 @@ private struct EphemeralProvidersResponse: Decodable {
   var providers: [ServerEphemeralProvider]
 }
 
-private struct CreateEphemeralMachineBody: Encodable {
-  var id: String
-  var provider: String
-  var projectId: String
-  var workspaceId: String?
-}
-
 extension CodevisorServerClient {
   public func ephemeralProviders() async throws -> [ServerEphemeralProvider] {
     let response: EphemeralProvidersResponse = try await get("/v1/ephemeral-providers")
@@ -86,21 +79,15 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/ephemeral-machines/\(pathComponent(id))", method: "DELETE")
   }
 
-  public func createEphemeralMachine(
-    id: String,
-    provider: String,
-    projectId: UUID,
-    workspaceId: UUID?
-  ) async throws -> ServerEphemeralMachine {
+  public func createEphemeralMachine(_ request: ServerEphemeralMachineRequest) async throws -> ServerEphemeralMachine {
+    try await send("/v1/ephemeral-machines", method: "POST", body: request)
+  }
+
+  public func claimEphemeralWorkspace(id: String, workspaceId: UUID) async throws -> ServerEphemeralMachine {
     try await send(
-      "/v1/ephemeral-machines",
+      "/v1/ephemeral-machines/\(pathComponent(id))/workspace",
       method: "POST",
-      body: CreateEphemeralMachineBody(
-        id: id,
-        provider: provider,
-        projectId: projectId.uuidString,
-        workspaceId: workspaceId?.uuidString
-      )
+      body: ["workspaceId": workspaceId.uuidString]
     )
   }
 }
