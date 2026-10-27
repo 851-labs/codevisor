@@ -241,7 +241,7 @@ struct RootView: View {
         }
       }
     }
-    .modifier(WorkspaceInspectorPresentation(store: store, selection: inspectedSelection))
+    .modifier(WorkspaceInspectorPresentation(store: store, selection: selection))
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
@@ -257,11 +257,6 @@ struct RootView: View {
     .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
       store?.isSidebarVisible = clientSidebarVisible
     }
-  }
-
-  private var inspectedSelection: SidebarSelection? {
-    if case .bot = selection { return nil }
-    return selection
   }
 
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {

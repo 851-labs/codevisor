@@ -3,7 +3,7 @@ import SwiftUI
 
 extension SessionContainerView {
   func openInspectorDestination(_ destination: WorkspaceInspectorView.Destination) {
-    guard !isSinglePane else { return }
+    guard !isSinglePane else { return botPageInspectorOpener.open(destination) }
     switch destination {
     case let .pullRequest(url), let .link(url):
       let id = UUID()
@@ -22,6 +22,13 @@ extension SessionContainerView {
       else { return }
       openBotTranscript(bot)
     }
+  }
+
+  private var botPageInspectorOpener: BotPageInspectorOpener {
+    BotPageInspectorOpener(
+      workspace: selectedWorkspace,
+      rootDirectory: selectedWorkspace.rootDirectory ?? session?.cwd ?? project.folderURL.path,
+      environment: environment, store: store, quickLook: quickLook)
   }
 
   private func openCenterTab(with pane: PaneDescriptorState) {

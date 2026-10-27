@@ -24,6 +24,7 @@ struct SessionContainerView: View {
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.quickLook) var quickLook
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @State var splitDragCoordinator = WorkspaceSplitDragCoordinator()
   @State var sessionFocus = TerminalFocusController()
