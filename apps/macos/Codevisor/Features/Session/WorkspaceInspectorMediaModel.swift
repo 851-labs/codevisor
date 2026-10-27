@@ -3,13 +3,14 @@ import Foundation
 import Observation
 
 enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
-  case info, media = "photos", links, files
+  case info, machine, media = "photos", links, files
 
   var id: Self { self }
 
   var title: String {
     switch self {
     case .info: "Info"
+    case .machine: "Machine"
     case .media: "Media"
     case .links: "Links"
     case .files: "Files"
@@ -19,6 +20,7 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
   var systemImage: String {
     switch self {
     case .info: "info.circle"
+    case .machine: "desktopcomputer"
     case .media: "photo.on.rectangle"
     case .links: "link"
     case .files: "folder"
@@ -58,7 +60,7 @@ final class WorkspaceInspectorMediaModel {
     }
     self.client = client
     switch tab {
-    case .info: break
+    case .info, .machine: break
     case .media: await loadMedia(before: nil)
     case .links: await loadLinks(before: nil)
     case .files: break

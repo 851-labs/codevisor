@@ -27,13 +27,15 @@ const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const isSimulatorTarget = (displayId: string | undefined): boolean =>
   displayId !== undefined && simulatorTarget.test(displayId)
 
+const desktopPaneTypes: ReadonlySet<string> = new Set(["screen-sharing", "machine-desktop"])
+
 const paneMismatchesTarget = (
   pane: WorkspacePane,
   displayId: string | undefined,
   sessionId: string | undefined
 ): boolean => {
   if (isSimulatorTarget(displayId)) return pane.paneType !== "simulator"
-  if (sessionId === undefined) return pane.paneType !== "screen-sharing"
+  if (sessionId === undefined) return !desktopPaneTypes.has(pane.paneType)
   return (
     pane.paneType !== "chat" ||
     pane.resourceKind !== "session" ||

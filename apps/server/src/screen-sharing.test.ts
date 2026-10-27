@@ -278,6 +278,21 @@ describe("native Screen Sharing signaling", () => {
     expect(helper).not.toHaveBeenCalled()
   })
 
+  it("streams the desktop to an inspector's hidden machine-desktop pane", async () => {
+    const helper = vi.fn(async () => reply)
+    const { services, workspace, pane, post } = await fixture(helper)
+    await run(
+      services.db.upsertWorkspacePane(workspace.id, {
+        id: pane.id,
+        title: "Desktop",
+        providerId: "codevisor",
+        paneType: "machine-desktop"
+      })
+    )
+    expect((await post()).status).toBe(200)
+    expect(helper).toHaveBeenCalledOnce()
+  })
+
   it("returns actionable errors for an absent, incompatible or failed native helper", async () => {
     const { services } = await makeServices()
     const server = await startWithApp(services)

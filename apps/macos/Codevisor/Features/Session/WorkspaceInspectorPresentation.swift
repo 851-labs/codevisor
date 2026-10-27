@@ -119,6 +119,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
     let workspace = inspected.workspace
     let chatSessionId = focusedChatSessionId(in: workspace)
+    let desktop = MachineDesktopRegistry.shared.session(
+      for: workspace, project: inspected.project, environment: environment)
     return WorkspaceInspectorView(
       workspace: workspace,
       project: inspected.project,
@@ -141,6 +143,12 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       },
       activity: activity(in: workspace),
       client: environment.machines.client(for: workspace.serverId),
+      desktop: desktop,
+      isDesktopDialogOpen: MachineDesktopWindows.shared.isOpen(workspace.id),
+      onOpenDesktop: {
+        guard let desktop else { return }
+        MachineDesktopWindows.shared.present(desktop, workspaceId: workspace.id, environment: environment)
+      },
       onReload: { Task { await reload(inspected) } },
       onOpen: { destination in
         store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
@@ -167,6 +175,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       await reloadUsage(inspected)
     case .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
+    case .machine:
+      break
     }
   }
 

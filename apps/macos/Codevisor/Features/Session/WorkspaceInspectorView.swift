@@ -27,6 +27,9 @@ struct WorkspaceInspectorView: View {
   let chatUsage: SessionUsage?
   let activity: Date?
   let client: any CodevisorServerClienting
+  let desktop: MachineDesktopSession?
+  let isDesktopDialogOpen: Bool
+  let onOpenDesktop: () -> Void
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
 
@@ -48,7 +51,6 @@ struct WorkspaceInspectorView: View {
   @State private var tabFrames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var visited: Set<WorkspaceInspectorTab> = []
   @State private var chatContext: (sessionId: UUID, context: ServerSessionContext)?
-  @State private var machineStats: (serverId: String, stats: ServerMachineStats)?
   @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
   var body: some View {
@@ -188,6 +190,11 @@ struct WorkspaceInspectorView: View {
   private func content(for tab: WorkspaceInspectorTab) -> some View {
     switch tab {
     case .info: info
+    case .machine:
+      WorkspaceInspectorMachineView(
+        serverId: workspace.serverId, isActive: self.tab == .machine, client: client, desktop: desktop,
+        isDesktopDialogOpen: isDesktopDialogOpen, desktopExpansion: expansion("Desktop"),
+        statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop)
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)
     case .links:
       WorkspaceInspectorLinksView(model: media, client: client, onOpen: onOpen, onRetry: onReload)
@@ -232,10 +239,6 @@ struct WorkspaceInspectorView: View {
           }
         }
 
-        if let machineStats, machineStats.serverId == workspace.serverId {
-          WorkspaceInspectorMachineSection(stats: machineStats.stats, isExpanded: expansion("Machine"))
-        }
-
         if let usageChat, let limits = usage.limits(for: usageChat) {
           WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
         }
@@ -258,16 +261,6 @@ struct WorkspaceInspectorView: View {
         !Task.isCancelled
       else { return }
       chatContext = (chatSessionId, context)
-    }
-    .task(id: tab == .info ? workspace.serverId : nil) {
-      guard tab == .info else { return }
-      let serverId = workspace.serverId
-      while !Task.isCancelled {
-        if let stats = try? await client.machineStats(), !Task.isCancelled {
-          machineStats = (serverId, stats)
-        }
-        try? await Task.sleep(for: WorkspaceInspectorMachineSection.refreshInterval)
-      }
     }
   }
 
