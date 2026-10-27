@@ -105,8 +105,7 @@ struct SandboxSetupStepsTests {
     #expect(target.machineNoun == "Tart VM")
     #expect(target.hostMachineId == "server-studio")
     #expect(olderTarget.hostMachineId == "server-laptop")
-    #expect(target.systemImage == "desktopcomputer")
-    #expect([unknown.machineNoun, unknown.systemImage] == ["sandbox", "shippingbox"])
+    #expect(unknown.machineNoun == "sandbox")
     #expect(unknown.hostMachineId == nil)
   }
 

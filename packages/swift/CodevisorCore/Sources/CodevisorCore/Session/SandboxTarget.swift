@@ -10,7 +10,6 @@ public struct SandboxTarget: Equatable, Hashable, Sendable, Identifiable {
 
   public var id: String { profileId }
   public var pickerTitle: String { "New \(profileName)" }
-  public var systemImage: String { SandboxVendorSymbol.name(for: vendorId) }
 
   public init(
     profileId: String,

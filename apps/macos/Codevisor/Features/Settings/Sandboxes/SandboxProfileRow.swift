@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct SandboxProfileRow: View {
@@ -10,7 +11,7 @@ struct SandboxProfileRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: SandboxVendorSymbol.name(for: profile.vendor))
+      CodevisorSymbol.sandboxVendor(profile.vendor)
         .foregroundStyle(.secondary)
         .frame(width: 20)
       Text(profile.name)

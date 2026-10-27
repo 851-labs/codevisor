@@ -13,7 +13,8 @@ extension ComposerBar {
     return ComposerRunTargetBar(
       machineName: sandbox?.pickerTitle ?? machine?.name ?? "Machine",
       hasOtherMachines: environment.machines.chatMachines.count > 1,
-      machineSymbol: sandbox?.systemImage ?? (machine?.icon ?? .fallback).systemImage,
+      machineIcon: sandbox.map { CodevisorSymbol.sandboxVendor($0.vendorId) }
+        ?? Image(systemName: (machine?.icon ?? .fallback).systemImage),
       machines: environment.machines.chatMachines,
       selectedServerId: controller.project.serverId,
       readyMachineIds: Set(

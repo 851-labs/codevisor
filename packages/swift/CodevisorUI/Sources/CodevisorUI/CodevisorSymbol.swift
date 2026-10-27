@@ -17,18 +17,27 @@ public enum CodevisorSymbol: String {
   public var image: Image { Image(rawValue, bundle: .module) }
 
   public static func harness(_ harnessId: String?, fallback systemName: String) -> Image {
-    harnessSymbolName(harnessId).map { Image($0, bundle: .module) } ?? Image(systemName: systemName)
+    symbolName("harness", harnessId).map { Image($0, bundle: .module) } ?? Image(systemName: systemName)
+  }
+
+  public static func sandboxVendor(_ vendorId: String?) -> Image {
+    symbolName("sandbox-vendor", vendorId).map { Image($0, bundle: .module) } ?? Image(systemName: "shippingbox")
   }
 
   #if os(macOS)
     public static func harnessImage(_ harnessId: String?) -> NSImage? {
-      harnessSymbolName(harnessId).flatMap { NSImage(symbolName: $0, bundle: .module, variableValue: 0) }
+      symbolName("harness", harnessId).flatMap { NSImage(symbolName: $0, bundle: .module, variableValue: 0) }
+    }
+  #else
+    public static func sandboxVendorImage(_ vendorId: String?) -> UIImage? {
+      symbolName("sandbox-vendor", vendorId).flatMap { UIImage(named: $0, in: .module, with: nil) }
+        ?? UIImage(systemName: "shippingbox")
     }
   #endif
 
-  private static func harnessSymbolName(_ harnessId: String?) -> String? {
-    guard let harnessId, !harnessId.isEmpty else { return nil }
-    let name = "harness-\(harnessId)"
+  private static func symbolName(_ family: String, _ id: String?) -> String? {
+    guard let id, !id.isEmpty else { return nil }
+    let name = "\(family)-\(id)"
     #if canImport(UIKit)
       return UIImage(named: name, in: .module, with: nil) == nil ? nil : name
     #else

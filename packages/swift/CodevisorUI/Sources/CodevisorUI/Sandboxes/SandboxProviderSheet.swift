@@ -61,7 +61,7 @@ public struct SandboxProviderSheet: View {
         label: "Vendor",
         placeholder: "Select a vendor",
         options: model.vendors.vendors.map { vendor in
-          .init(id: vendor.id, title: vendor.displayName, systemImage: SandboxVendorSymbol.name(for: vendor.id))
+          .init(id: vendor.id, title: vendor.displayName, icon: CodevisorSymbol.sandboxVendor(vendor.id))
         },
         selection: draft.vendor?.id,
         onSelect: { id in model.vendor(id).map { draft.choose($0) } }

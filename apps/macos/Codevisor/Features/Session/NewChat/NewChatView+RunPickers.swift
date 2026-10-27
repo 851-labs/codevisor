@@ -77,7 +77,8 @@ extension NewChatView {
     let chipText = sandbox?.pickerTitle ?? selectedMachine?.name ?? "Machine"
     return RunPickerMenu(
       chipText: chipText,
-      chipSymbol: sandbox?.systemImage ?? (selectedMachine?.icon ?? .fallback).systemImage
+      chipIcon: sandbox.map { CodevisorSymbol.sandboxVendor($0.vendorId) }
+        ?? Image(systemName: (selectedMachine?.icon ?? .fallback).systemImage)
     ) {
       Autocomplete.Picker("Machines", selection: selection) {
         for machine in machines {
@@ -130,7 +131,7 @@ extension NewChatView {
 
   private func sandboxChoice(_ choice: SandboxProfileChoice) -> Autocomplete.Choice<MachinePickerTarget> {
     Autocomplete.Choice(choice.target.pickerTitle, value: MachinePickerTarget.sandbox(choice.id)) {
-      Image(systemName: choice.target.systemImage)
+      CodevisorSymbol.sandboxVendor(choice.target.vendorId)
     } label: {
       SandboxChoiceLabel(choice: choice)
     }
@@ -195,7 +196,7 @@ extension NewChatView {
       }
     )
     return RunPickerMenu(
-      chipText: chipText, chipSymbol: isNoProject ? Self.noProjectSymbol : EntitySystemSymbol.project
+      chipText: chipText, chipIcon: Image(systemName: isNoProject ? Self.noProjectSymbol : EntitySystemSymbol.project)
     ) {
       Autocomplete.Picker("Projects", selection: selection) {
         Autocomplete.Choice(
@@ -234,7 +235,7 @@ extension NewChatView {
       set: { selectRunLocation(newWorktree: $0, controller: controller) }
     )
     return RunPickerMenu(
-      chipText: current.title, chipSymbol: current.symbol, isPresented: $isRunLocationMenuPresented
+      chipText: current.title, chipIcon: Image(systemName: current.symbol), isPresented: $isRunLocationMenuPresented
     ) {
       Autocomplete.Picker("Run location", selection: selection, options: RunLocationOption.all) { option in
         Autocomplete.Choice(option.title, value: option.newWorktree, systemImage: option.symbol)

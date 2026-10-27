@@ -5,7 +5,7 @@ import SwiftUI
 struct ComposerRunTargetBar: View {
   let machineName: String
   let hasOtherMachines: Bool
-  let machineSymbol: String
+  let machineIcon: Image
   let machines: [CodevisorMachine]
   let selectedServerId: String
   let readyMachineIds: Set<String>
@@ -33,7 +33,7 @@ struct ComposerRunTargetBar: View {
       minimumProjectWidth: minimumProjectWidth
     ) {
       if hasOtherMachines || !sandboxProfiles.choices.isEmpty {
-        chipLabel(machineName, symbol: machineSymbol)
+        chipLabel(machineName, icon: machineIcon)
           .accessibilityHidden(true)
           .overlay {
             ComposerMachineMenu(
@@ -128,8 +128,12 @@ struct ComposerRunTargetBar: View {
   }
 
   private func chipLabel(_ title: String?, symbol: String) -> some View {
+    chipLabel(title, icon: Image(systemName: symbol))
+  }
+
+  private func chipLabel(_ title: String?, icon: Image) -> some View {
     HStack(spacing: 4) {
-      Image(systemName: symbol)
+      icon
         .font(.caption)
         .fixedSize()
       if let title {

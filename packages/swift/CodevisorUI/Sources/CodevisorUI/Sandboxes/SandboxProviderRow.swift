@@ -9,7 +9,7 @@ struct SandboxProviderRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 10) {
-        Image(systemName: SandboxVendorSymbol.name(for: vendor))
+        CodevisorSymbol.sandboxVendor(vendor)
           .foregroundStyle(.secondary)
           .frame(width: 20)
         Text(title)

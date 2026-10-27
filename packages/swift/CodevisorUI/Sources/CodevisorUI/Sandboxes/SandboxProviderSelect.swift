@@ -14,7 +14,7 @@ struct SandboxProviderSelect: View {
       placeholder: "Select a provider",
       options: model.providers.map { provider in
         .init(
-          id: provider.id, title: model.title(of: provider), systemImage: SandboxVendorSymbol.name(for: provider.vendor)
+          id: provider.id, title: model.title(of: provider), icon: CodevisorSymbol.sandboxVendor(provider.vendor)
         )
       },
       selection: selection,

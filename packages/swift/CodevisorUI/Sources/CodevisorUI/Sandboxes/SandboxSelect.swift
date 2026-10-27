@@ -4,7 +4,7 @@ struct SandboxSelect<Extra: View>: View {
   struct Option: Identifiable {
     let id: String
     let title: String
-    let systemImage: String
+    let icon: Image
   }
 
   let label: String
@@ -19,7 +19,12 @@ struct SandboxSelect<Extra: View>: View {
       Menu {
         Picker(label, selection: choice) {
           ForEach(options) { option in
-            Label(option.title, systemImage: option.systemImage).tag(Optional(option.id))
+            Label {
+              Text(option.title)
+            } icon: {
+              option.icon
+            }
+            .tag(Optional(option.id))
           }
         }
         .pickerStyle(.inline)
@@ -38,7 +43,7 @@ struct SandboxSelect<Extra: View>: View {
       }
       .fixedSize()
       #if os(iOS)
-        .tint(.secondary)
+        .buttonStyle(.plain)
       #endif
       .accessibilityLabel(label)
       .accessibilityValue(selectedTitle ?? placeholder)
