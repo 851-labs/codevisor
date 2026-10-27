@@ -32,6 +32,21 @@ struct ConfigSyncSandboxTests {
     return ConfigSync(machines: controller, store: InMemoryStore())
   }
 
+  @Test("New chats can target every machine except a sandbox, which belongs to its workspace")
+  func chatMachinesSkipSandboxes() async {
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel.fixture(),
+      clientFactory: { _ in SyncFakeServerClient(projects: [], sessions: []) }
+    )
+    let provider = signIn(controller, machines: [regular, sandbox])
+    provider.cloudMachines = provider.cloudMachines.map(markingSandboxSandbox)
+
+    #expect(controller.chatMachines.map(\.id).contains(regular.id))
+    #expect(!controller.chatMachines.map(\.id).contains(sandbox.id))
+    #expect(controller.allMachines.map(\.id).contains(sandbox.id))
+  }
+
   private func markingSandboxSandbox(_ machine: CloudMachine) -> CloudMachine {
     guard machine.deviceId == "sandbox" else { return machine }
     var marked = machine

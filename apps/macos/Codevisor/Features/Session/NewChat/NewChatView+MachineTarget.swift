@@ -7,7 +7,7 @@ extension NewChatView {
     if let controller { return controller.project.serverId }
     if let initialProjectTarget { return initialProjectTarget.serverId }
     if let remembered = environment.composerDefaults.lastNewWorkspaceServerId,
-      environment.machines.allMachines.contains(where: { $0.id == remembered })
+      environment.machines.chatMachines.contains(where: { $0.id == remembered })
     {
       return remembered
     }

@@ -220,7 +220,7 @@ struct NewChatView: View {
     }
     .onChange(of: environment.machines.allMachines.map(\.id)) { _, _ in
       guard let controller else { return }
-      if let canonical = canonicalProjectTarget(for: controller) {
+      if let canonical = canonicalProjectTarget(for: controller), !environment.machines.isSandbox(canonical.serverId) {
         selectedProjectId = canonical.isRunTargetPlaceholder ? nil : canonical.id
         environment.composerDefaults.rememberNewWorkspaceServer(
           serverId: canonical.serverId

@@ -3,11 +3,12 @@ import Foundation
 extension AppEnvironment {
   public var defaultComposerServerId: String {
     if let remembered = composerDefaults.lastNewWorkspaceServerId,
-      let canonical = machines.canonicalComposerMachineId(for: remembered)
+      let canonical = machines.canonicalComposerMachineId(for: remembered),
+      !machines.isSandbox(canonical)
     {
       return canonical
     }
-    return machines.allMachines.first?.id ?? CodevisorMachine.local.id
+    return machines.chatMachines.first?.id ?? CodevisorMachine.local.id
   }
 
   public func prepareMachine(_ serverId: String) async {
