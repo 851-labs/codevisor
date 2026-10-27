@@ -24,7 +24,8 @@ struct CommandPaletteCatalog {
       activeWorkspaceSections
       + [
         CommandPaletteSection(title: "General", items: generalCommands + appCommands),
-        CommandPaletteSection(title: "View", items: sidebarCommands + inspectorCommands),
+        CommandPaletteSection(title: "View", items: sidebarCommands + inspectorToggleCommands),
+        CommandPaletteSection(title: "Inspector", items: inspectorTabCommands),
         CommandPaletteSection(title: "Find", items: findCommands),
         CommandPaletteSection(title: "Browser", items: browserCommands),
         CommandPaletteSection(title: "Tabs & Splits", items: layoutCommands),
@@ -190,19 +191,26 @@ struct CommandPaletteCatalog {
     ]
   }
 
-  private var inspectorCommands: [CommandPaletteItem] {
+  private var inspectorToggleCommands: [CommandPaletteItem] {
     guard let inspector else { return [] }
 
     let title = inspector.isVisible ? "Hide Inspector" : "Show Inspector"
-    let toggle = CommandPaletteItem(
-      id: "toggleInspector", title: title, icon: .symbol("sidebar.trailing"), searchTerms: ["Toggle Inspector"],
-      perform: inspector.toggle)
-    let tabs = WorkspaceInspectorTab.allCases.map { tab in
+    return [
       CommandPaletteItem(
-        id: "inspector:\(tab.rawValue)", title: "Show \(tab.title) Inspector", icon: .symbol(tab.systemImage)
+        id: "toggleInspector", title: title, icon: .symbol("sidebar.trailing"), searchTerms: ["Toggle Inspector"],
+        perform: inspector.toggle)
+    ]
+  }
+
+  private var inspectorTabCommands: [CommandPaletteItem] {
+    guard let inspector else { return [] }
+
+    return WorkspaceInspectorTab.allCases.map { tab in
+      CommandPaletteItem(
+        id: "inspector:\(tab.rawValue)", title: tab.title, icon: .symbol(tab.systemImage),
+        searchTerms: ["Show \(tab.title) Inspector"]
       ) { inspector.show(tab) }
     }
-    return [toggle] + tabs
   }
 
   private var developerCommands: [CommandPaletteItem] {
