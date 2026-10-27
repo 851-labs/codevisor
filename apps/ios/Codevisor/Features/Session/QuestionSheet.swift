@@ -37,20 +37,13 @@ struct QuestionSheet: View {
             }
           }
         }
-        .safeAreaInset(edge: .bottom) {
-          QuestionSheetFooter(
-            draft: draft, question: question, isSubmitting: controller.isResolvingQuestion,
-            actions: footerActions(question)
-          )
-          .padding(.horizontal, 20)
-          .padding(.vertical, 12)
-        }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
-            Button(role: .close) { dismiss() }
-          }
+          QuestionSheetToolbar(
+            draft: draft, question: question, isSubmitting: controller.isResolvingQuestion,
+            actions: toolbarActions(question)
+          )
         }
       }
     }
@@ -78,8 +71,9 @@ struct QuestionSheet: View {
     isAnswerFieldFocused = draft.isOtherSelected(question)
   }
 
-  private func footerActions(_ question: QuestionSpec) -> QuestionSheetFooter.Actions {
-    QuestionSheetFooter.Actions(
+  private func toolbarActions(_ question: QuestionSpec) -> QuestionSheetToolbar.Actions {
+    QuestionSheetToolbar.Actions(
+      close: { dismiss() },
       back: { page(by: -1) },
       next: { page(by: 1) },
       submit: submit,
@@ -141,6 +135,7 @@ private struct QuestionSheetPage: View {
     }
     .padding(.horizontal, 20)
     .padding(.top, 8)
+    .padding(.bottom, 24)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

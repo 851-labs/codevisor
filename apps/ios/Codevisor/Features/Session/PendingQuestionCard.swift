@@ -13,48 +13,40 @@ struct PendingQuestionCard: View {
   }
 
   var body: some View {
-    TranscriptQuestionContainer(inBotConversation: inBotConversation) {
-      Button {
-        controller.presentedQuestionId = request.questionId
-      } label: {
-        HStack(alignment: .center, spacing: 12) {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(caption)
-              .font(.footnote.weight(.medium))
-              .foregroundStyle(.secondary)
+    Button {
+      controller.presentedQuestionId = request.questionId
+    } label: {
+      TranscriptQuestionContainer(inBotConversation: inBotConversation) {
+        HStack(spacing: 12) {
+          Image(systemName: "questionmark.bubble.fill")
+            .font(.title3)
+            .foregroundStyle(.tint)
+            .frame(width: 28)
+            .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+              .font(.body.weight(.semibold))
             Text(request.questions.first?.question ?? "")
-              .font(.headline)
-              .foregroundStyle(.primary)
-              .lineLimit(2)
-              .multilineTextAlignment(.leading)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
-          AnswerPill()
+          Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
         }
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
-      .disabled(!isAnswerable)
-      .accessibilityHint("Opens the questions")
     }
+    .buttonStyle(.plain)
+    .disabled(!isAnswerable)
+    .accessibilityHint("Opens the questions")
   }
 
-  private var caption: String {
+  private var title: String {
     let count = request.questions.count
-    let answered = controller.questionDraft(for: request).answers.count
-    let questions = count == 1 ? "Question" : "\(count) questions"
-    return answered == 0 ? questions : "\(questions) · \(answered) answered"
-  }
-}
-
-private struct AnswerPill: View {
-  var body: some View {
-    Text("Answer")
-      .font(.body.weight(.semibold))
-      .foregroundStyle(.white)
-      .padding(.horizontal, 18)
-      .frame(minHeight: 36)
-      .background(Capsule().fill(Color.accentColor))
-      .accessibilityHidden(true)
+    return count == 1 ? "The agent has a question" : "The agent has \(count) questions"
   }
 }
