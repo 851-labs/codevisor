@@ -1,3 +1,4 @@
+import { SKIPPED_FOR_REPLY } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -142,7 +143,7 @@ describe("Grok Build compatibility", () => {
         outcome: "accepted",
         answers: {
           "Which database?": ["The user replied instead: Postgres"],
-          "Anything else?": ["The user replied instead: Postgres"]
+          "Anything else?": [SKIPPED_FOR_REPLY]
         }
       }
     })

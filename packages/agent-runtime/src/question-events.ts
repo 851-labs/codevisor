@@ -97,3 +97,8 @@ export const questionReplyText = (reply: PromptInput): string | undefined => {
   if (text.length === 0 || (reply.attachments?.length ?? 0) > 0) return undefined
   return `The user replied instead: ${text}`
 }
+
+export const SKIPPED_FOR_REPLY = "Skipped: the user's reply is in the first answer."
+
+export const questionReplyAnswer = (index: number, reply: string): string =>
+  index === 0 ? reply : SKIPPED_FOR_REPLY

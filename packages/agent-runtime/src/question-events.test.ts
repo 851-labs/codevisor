@@ -5,7 +5,9 @@ import {
   answersIfDefined,
   answersIfPresent,
   questionIdFirstPayloads,
+  questionReplyAnswer,
   questionReplyText,
+  SKIPPED_FOR_REPLY,
   sessionUpdateFirstPayloads,
   type QuestionResolution
 } from "./question-events.js"
@@ -124,5 +126,13 @@ describe("question reply text", () => {
     } as const
     expect(questionReplyText({ text: "   " })).toBeUndefined()
     expect(questionReplyText({ text: "See this", attachments: [attachment] })).toBeUndefined()
+  })
+
+  it("gives the reply to the first question and marks the rest skipped", () => {
+    expect([0, 1, 2].map((index) => questionReplyAnswer(index, "Do X"))).toEqual([
+      "Do X",
+      SKIPPED_FOR_REPLY,
+      SKIPPED_FOR_REPLY
+    ])
   })
 })

@@ -1,5 +1,5 @@
 import type { AcpMappedQuestion, AcpQuestionReply } from "@codevisor/adapter-acp"
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { questionReplyAnswer, type RuntimeEvent } from "@codevisor/agent-runtime"
 import { isRecord } from "@codevisor/api"
 import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
 
@@ -221,7 +221,10 @@ const grokAskReply = (
 ): AcpQuestionReply<GrokAskUserQuestionResponse> => {
   if (replyText === undefined) return { delivered: false, response: { outcome: "cancelled" } }
   const answers = Object.fromEntries(
-    grokQuestions.map((question) => [question.question, [replyText]])
+    grokQuestions.map((question, index) => [
+      question.question,
+      [questionReplyAnswer(index, replyText)]
+    ])
   )
   return { delivered: true, response: { outcome: "accepted", answers } }
 }

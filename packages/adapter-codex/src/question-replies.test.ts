@@ -1,4 +1,4 @@
-import type { PromptInput, RuntimeEvent } from "@codevisor/agent-runtime"
+import { SKIPPED_FOR_REPLY, type PromptInput, type RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { payloadField, payloadOf, run, setup, stringOf } from "./test-support.js"
@@ -54,15 +54,17 @@ const reply = async (context: Context, input: PromptInput): Promise<boolean> => 
 }
 
 describe("Codex question replies", () => {
-  it("answers every requestUserInput question with the typed reply", async () => {
+  it("answers the first requestUserInput question with the typed reply and skips the rest", async () => {
     const context = await setup()
     const { request } = await askUserInput(context)
 
     await expect(reply(context, { text: " Ship the MVP " })).resolves.toBe(true)
 
-    const text = "The user replied instead: Ship the MVP"
     await expect(request).resolves.toEqual({
-      answers: { approach: { answers: [text] }, scope: { answers: [text] } }
+      answers: {
+        approach: { answers: ["The user replied instead: Ship the MVP"] },
+        scope: { answers: [SKIPPED_FOR_REPLY] }
+      }
     })
     expect(payloadOf(context.events.at(-1))).toEqual({
       outcome: "replied",
@@ -91,9 +93,11 @@ describe("Codex question replies", () => {
       })
     ).resolves.toBe(false)
 
-    const text = "The user replied instead of answering."
     await expect(request).resolves.toEqual({
-      answers: { approach: { answers: [text] }, scope: { answers: [text] } }
+      answers: {
+        approach: { answers: ["The user replied instead of answering."] },
+        scope: { answers: [SKIPPED_FOR_REPLY] }
+      }
     })
     expect(payloadOf(context.events.at(-1))).toMatchObject({ outcome: "replied" })
   })

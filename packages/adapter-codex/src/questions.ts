@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import {
   answersIfDefined,
   questionIdFirstPayloads,
+  questionReplyAnswer,
   type QuestionAnswer,
   type QuestionOutcome
 } from "@codevisor/agent-runtime"
@@ -171,7 +172,10 @@ const repliedAnswers = (
   carriedText: text !== undefined,
   response: {
     answers: Object.fromEntries(
-      questions.map((spec) => [spec.id, { answers: [text ?? REPLIED_WITHOUT_TEXT] }])
+      questions.map((spec, index) => [
+        spec.id,
+        { answers: [questionReplyAnswer(index, text ?? REPLIED_WITHOUT_TEXT)] }
+      ])
     )
   }
 })

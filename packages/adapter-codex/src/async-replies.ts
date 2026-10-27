@@ -1,4 +1,4 @@
-import { questionReplyText } from "@codevisor/agent-runtime"
+import { questionReplyAnswer, questionReplyText } from "@codevisor/agent-runtime"
 import type { PromptInput, QuestionAnswer } from "@codevisor/agent-runtime"
 import type { QuestionAnswerEntry, QuestionSpec } from "@codevisor/api"
 
@@ -50,7 +50,9 @@ export const replyToQuestion = async (
   const text = questionReplyText(reply)
   const asked = session.asyncQuestion
   if (asked?.questionId !== questionId) return replyToCodexQuestion(session, questionId, text)
-  const replies = asked.questions.map((spec) => questionReply(spec, text ?? REPLIED_WITHOUT_TEXT))
+  const replies = asked.questions.map((spec, index) =>
+    questionReply(spec, questionReplyAnswer(index, text ?? REPLIED_WITHOUT_TEXT))
+  )
   await sendAsyncReply(session, replyInput(replies), text !== undefined)
   if (session.asyncQuestion === asked) session.asyncQuestion = undefined
   await emitQuestionResolved(session, questionId, "replied", asked.questions, undefined)
