@@ -5,109 +5,113 @@ import Testing
 @testable import CodevisorCore
 
 @MainActor
-@Suite("Adding a sandbox profile")
+@Suite("Sandbox providers and profiles in Settings")
 struct SandboxSettingsModelTests {
-  @Test("Someone with no accounts picks from every provider; otherwise from their accounts and keyless providers")
-  func choices() async {
+  @Test("A provider is named by its vendor and label, or by the Mac it runs on")
+  func providerTitles() async {
     let model = SandboxSettingsModel()
-    let fresh = SandboxSettingsModel()
+    let studio = SandboxMachine(name: "Dylan's Mac Studio", client: SettingsFakeServerClient(serverId: "studio"))
 
-    await model.load(from: SettingsFakeServerClient(accounts: [labs]), machines: [])
-    await fresh.load(from: SettingsFakeServerClient(), machines: [])
+    await model.load(from: SettingsFakeServerClient(), machines: [studio])
 
-    #expect(model.setUpChoices.map(model.title(of:)) == ["E2B (851 Labs)", "Tart"])
-    #expect(model.signInChoices.map(model.title(of:)) == ["E2B"])
-    #expect(fresh.setUpChoices.map(fresh.title(of:)) == ["Tart"])
-    #expect(fresh.providerChoices.map(fresh.title(of:)) == ["Tart", "E2B"])
-    #expect(model.setUpChoices.map(\.signsIn) == [false, false])
-    #expect(model.signInChoices.map(\.signsIn) == [true])
-    #expect(model.choice(id: "labs")?.account == labs)
-    #expect(model.choice(id: "e2b")?.signsIn == true)
+    #expect(
+      model.providers.map(model.title(of:)) == [
+        "E2B (851 Labs)", "E2B", "Tart on Dylan's Mac Studio", "Tart on another Mac",
+      ])
   }
 
-  @Test("A new provider signs in first, and a failed profile keeps that account instead of signing in again")
-  func signsInOnce() async throws {
-    let client = SettingsFakeServerClient(failsNextProfile: true)
+  @Test("Choosing a provider shows its vendor's fields, and switching vendor starts them over")
+  func choosingProviders() async throws {
     let model = SandboxSettingsModel()
-    await model.load(from: client, machines: [])
-    var draft = SandboxNewProfileDraft(choice: try #require(model.signInChoices.first))
-    draft.account?.fields.text["apiKey"] = "key"
-    draft.profile.name = "Ubuntu"
+    await model.load(from: SettingsFakeServerClient(), machines: [])
+    var draft = SandboxProfileDraft()
+    let unchosen = draft.canSave
 
-    guard case let .failed(remaining) = await model.create(draft, using: client) else {
-      Issue.record("The profile should have failed")
-      return
-    }
-    let retried = await model.create(remaining, using: client)
+    draft.choose(try #require(model.provider("labs")), vendor: SettingsFakeServerClient.e2b)
+    let e2bName = draft.name
+    draft.fields.text["template"] = "custom"
+    draft.choose(try #require(model.provider("personal")), vendor: SettingsFakeServerClient.e2b)
+    let keptTemplate = draft.fields.text["template"]
+    draft.choose(try #require(model.provider("studio")), vendor: SettingsFakeServerClient.tart)
 
-    #expect(retried == .created)
-    #expect(remaining.account == nil)
-    #expect(client.createdAccounts == 1)
-    #expect(client.profileRequests.map(\.accountId) == ["account-1", "account-1"])
-    #expect(model.profiles.map(\.name) == ["Ubuntu"])
+    #expect(!unchosen)
+    #expect(e2bName == "E2B sandbox")
+    #expect(keptTemplate == "custom")
+    #expect(draft.name == "Tart VM")
+    #expect(draft.request?.vendor == "tart")
+    #expect(draft.request?.providerId == "studio")
+    #expect(draft.fields.text["template"] == nil)
+    #expect(draft.canSave)
   }
 
-  @Test("A profile needs its credentials and name filled in before it can be added")
-  func canSave() throws {
-    let e2b = SandboxSetupChoice(provider: SettingsFakeServerClient.e2b)
-    var draft = SandboxNewProfileDraft(choice: e2b)
-    let keyless = SandboxNewProfileDraft(choice: SandboxSetupChoice(provider: SettingsFakeServerClient.tart))
+  @Test("A new provider needs a vendor and that vendor's credentials before it can be added")
+  func providerDraft() {
+    var draft = SandboxProviderDraft()
+    let withoutVendor = draft.canSave
 
+    draft.choose(SettingsFakeServerClient.e2b)
     let withoutKey = draft.canSave
-    draft.account?.fields.text["apiKey"] = "key"
+    draft.fields.text["apiKey"] = "key"
+    draft.label = " Work "
 
+    #expect(!withoutVendor)
     #expect(!withoutKey)
     #expect(draft.canSave)
-    #expect(keyless.account == nil)
-    #expect(keyless.canSave)
+    #expect(
+      draft.request == ServerSandboxProviderRequest(vendor: "e2b", label: "Work", values: ["apiKey": .string("key")]))
   }
 
-  private var labs: ServerSandboxAccount {
-    ServerSandboxAccount(id: "labs", provider: "e2b", label: "851 Labs", secretsSet: ["apiKey"])
+  @Test("Saving a provider hands it back so the profile can select it")
+  func savingProviders() async throws {
+    let client = SettingsFakeServerClient()
+    let model = SandboxSettingsModel()
+    await model.load(from: client, machines: [])
+    var draft = SandboxProviderDraft()
+    draft.choose(SettingsFakeServerClient.e2b)
+    draft.fields.text["apiKey"] = "key"
+
+    let saved = try #require(await model.save(draft, using: client))
+
+    #expect(saved.vendor == "e2b")
+    #expect(model.provider(saved.id) == saved)
   }
 }
 
 private final class SettingsFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
-  static let tart = ServerSandboxProviderInfo(
+  static let tart = ServerSandboxVendor(
     id: "tart", displayName: "Tart", sandboxNoun: "Tart VM", platform: "darwin", tested: true,
-    accountFields: [], profileFields: [])
-  static let e2b = ServerSandboxProviderInfo(
+    providerFields: [.init(key: "machineId", label: "Mac", type: .machine, required: true, capability: "tart")],
+    profileFields: [])
+  static let e2b = ServerSandboxVendor(
     id: "e2b", displayName: "E2B", sandboxNoun: "E2B sandbox", platform: "linux", tested: true,
-    accountFields: [.init(key: "apiKey", label: "API key", type: .secret, required: true)], profileFields: [])
+    providerFields: [.init(key: "apiKey", label: "API key", type: .secret, required: true)],
+    profileFields: [.init(key: "template", label: "Template", type: .string)])
 
-  let accounts: [ServerSandboxAccount]
-  var failsNextProfile: Bool
-  var createdAccounts = 0
-  var profileRequests: [ServerSandboxProfileRequest] = []
+  let serverId: String
 
-  init(accounts: [ServerSandboxAccount] = [], failsNextProfile: Bool = false) {
-    self.accounts = accounts
-    self.failsNextProfile = failsNextProfile
+  init(serverId: String = "local") {
+    self.serverId = serverId
   }
 
-  func sandboxProviders() async throws -> ServerSandboxProviders {
-    ServerSandboxProviders(providers: [Self.tart, Self.e2b])
+  func sandboxVendors() async throws -> ServerSandboxVendors {
+    ServerSandboxVendors(vendors: [Self.tart, Self.e2b], capabilities: serverId == "local" ? [] : ["tart"])
   }
 
-  func sandboxAccounts() async throws -> [ServerSandboxAccount] { accounts }
-
-  func createSandboxAccount(_ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount {
-    createdAccounts += 1
-    return ServerSandboxAccount(id: "account-\(createdAccounts)", provider: request.provider)
+  func sandboxProviders() async throws -> [ServerSandboxProvider] {
+    [
+      ServerSandboxProvider(id: "labs", vendor: "e2b", label: "851 Labs", secretsSet: ["apiKey"]),
+      ServerSandboxProvider(id: "personal", vendor: "e2b", secretsSet: ["apiKey"]),
+      ServerSandboxProvider(id: "studio", vendor: "tart", values: ["machineId": .string("studio")]),
+      ServerSandboxProvider(id: "gone", vendor: "tart", values: ["machineId": .string("gone")]),
+    ]
   }
 
-  func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile {
-    profileRequests.append(request)
-    if failsNextProfile {
-      failsNextProfile = false
-      throw CodevisorServerClientError.invalidResponse
-    }
-    return ServerSandboxProfile(
-      id: "profile", name: request.name, provider: request.provider, accountId: request.accountId)
+  func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider {
+    ServerSandboxProvider(id: "new", vendor: request.vendor, label: request.label, secretsSet: ["apiKey"])
   }
 
   func info() async throws -> ServerInfo {
-    ServerInfo(id: "local", name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "0.0.0.0")
+    ServerInfo(id: serverId, name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "0.0.0.0")
   }
   func health() async throws -> ServerHealth {
     ServerHealth(ok: true, version: "0.1.0", database: "ready", bootId: nil)

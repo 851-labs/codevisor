@@ -115,7 +115,7 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
     lock.withLock { creates += 1 }
     createdContinuation.yield(request)
-    return ServerSandbox(id: request.id, provider: "tart", name: "Tart", state: "creating")
+    return ServerSandbox(id: request.id, vendor: "tart", name: "Tart", state: "creating")
   }
 
   func destroySandbox(id: String) async throws {

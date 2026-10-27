@@ -5,7 +5,6 @@ struct SandboxSheetPage<Content: View>: View {
   var confirmTitle: String?
   var canConfirm = true
   var status: String?
-  var showsCancel = true
   let onCancel: () -> Void
   var onConfirm: () -> Void = {}
   @ViewBuilder let content: Content
@@ -31,12 +30,10 @@ struct SandboxSheetPage<Content: View>: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          if showsCancel {
-            ToolbarItem(placement: .cancellationAction) {
-              Button("Cancel", systemImage: "xmark", role: .cancel, action: onCancel)
-                .labelStyle(.iconOnly)
-                .disabled(status != nil)
-            }
+          ToolbarItem(placement: .cancellationAction) {
+            Button("Cancel", systemImage: "xmark", role: .cancel, action: onCancel)
+              .labelStyle(.iconOnly)
+              .disabled(status != nil)
           }
           if let confirmTitle {
             SheetConfirmToolbarItem(confirmTitle, isEnabled: canConfirm && status == nil, action: onConfirm)

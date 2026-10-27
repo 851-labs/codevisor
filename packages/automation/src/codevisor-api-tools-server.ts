@@ -99,7 +99,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "machines.list_sandboxes",
-    "List this machine's sandboxes with their provider, setup state, error, and the " +
+    "List this machine's sandboxes with their vendor, setup state, error, and the " +
       "machine and workspace they own.",
     "GET",
     "/v1/sandboxes"
@@ -107,7 +107,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "machines.destroy_sandbox",
     "Destroy a sandbox (id from machines.list_sandboxes()) now: remove it from the " +
-      "account and delete the provider machine. Its workspace's unpushed work is lost; confirm " +
+      "account and delete the vendor's machine. Its workspace's unpushed work is lost; confirm " +
       "with the user first.",
     "DELETE",
     "/v1/sandboxes/:id",

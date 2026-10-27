@@ -1,23 +1,24 @@
 import Foundation
 
 public extension CodevisorServerClienting {
-  func sandboxProviders() async throws -> ServerSandboxProviders {
-    ServerSandboxProviders()
+  func sandboxVendors() async throws -> ServerSandboxVendors {
+    ServerSandboxVendors()
   }
 
-  func sandboxAccounts() async throws -> [ServerSandboxAccount] {
+  func sandboxProviders() async throws -> [ServerSandboxProvider] {
     []
   }
 
-  func createSandboxAccount(_ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount {
+  func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func updateSandboxAccount(id: String, _ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount {
+  func updateSandboxProvider(id: String, _ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider
+  {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func deleteSandboxAccount(id: String) async throws {}
+  func deleteSandboxProvider(id: String) async throws {}
 
   func sandboxProfiles() async throws -> [ServerSandboxProfile] {
     []

@@ -26,9 +26,14 @@ public final class SandboxProfileCatalog {
     from composer: any CodevisorServerClienting,
     host: (String) -> (any CodevisorServerClienting)?
   ) async {
-    let providers = (try? await composer.sandboxProviders()) ?? ServerSandboxProviders()
+    let vendors = (try? await composer.sandboxVendors()) ?? ServerSandboxVendors()
+    let providers = (try? await composer.sandboxProviders()) ?? []
     let profiles = (try? await composer.sandboxProfiles()) ?? []
-    let targets = profiles.map { SandboxTarget(profile: $0, provider: providers.provider($0.provider)) }
+    let targets = profiles.map { profile in
+      SandboxTarget(
+        profile: profile, vendor: vendors.vendor(profile.vendor),
+        provider: providers.first { $0.id == profile.providerId })
+    }
     let reasons = await disabledReasons(for: targets, composer: composer, host: host)
     choices = targets.map { SandboxProfileChoice(target: $0, disabledReason: reasons[$0.profileId]) }
   }

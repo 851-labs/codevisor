@@ -17,7 +17,7 @@ import {
 import { HttpFailure } from "../server-context.js"
 import { forgetAbandoned, makeAbandonments, type Abandonments } from "./sandbox-abandon.js"
 import { joinAccount, requireOwner, teardownMachine } from "./sandbox-account.js"
-import { runsElsewhere } from "./sandbox-catalog.js"
+import { placementOf, runsElsewhere } from "./sandbox-catalog.js"
 import type { SandboxConnection, SandboxConnections } from "./sandbox-connections.js"
 import {
   connectionOf,
@@ -125,7 +125,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     requireOwner(deps)
     const profile = await profileOrMissing(deps, request.profileId)
     const provider = await deps.connections.connect(connectionOf(profile))
-    if (runsElsewhere(provider.definition, profile.values, deps.serverId)) {
+    if (runsElsewhere(provider.definition, await placementOf(deps, profile), deps.serverId)) {
       throw new HttpFailure(409, `${profile.name} runs on another Mac`)
     }
     const options = asBadRequest(() => readProfileOptions(provider.definition, profile.values))

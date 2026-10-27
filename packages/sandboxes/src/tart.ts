@@ -52,12 +52,13 @@ export const TART_DEFINITION: SandboxProviderDefinition = {
   sandboxNoun: "Tart VM",
   platform: "darwin",
   tested: true,
-  accountFields: [],
-  profileFields: [
+  accountFields: [
     machineField("machineId", "Mac", TART_CAPABILITY, {
       required: true,
-      help: "The Apple silicon Mac that runs this profile's VMs."
-    }),
+      help: "The Apple silicon Mac that runs this provider's VMs."
+    })
+  ],
+  profileFields: [
     textField("image", "Image", {
       default: DEFAULT_TART_BASE_IMAGE,
       help: "A Tart image. macOS images get Codevisor and its permissions built in on first use."

@@ -5,8 +5,7 @@ import SwiftUI
 struct SandboxesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var model = SandboxSettingsModel()
-  @State private var isAdding = false
-  @State private var accountDraft: SandboxAccountDraft?
+  @State private var providerDraft: SandboxProviderDraft?
   @State private var profileDraft: SandboxProfileDraft?
   @State private var removingProfile: ServerSandboxProfile?
 
@@ -24,10 +23,9 @@ struct SandboxesSettingsView: View {
         ForEach(model.profiles) { profile in
           SandboxProfileRow(
             profile: profile,
-            isUntested: model.provider(profile.provider)?.tested == false,
-            hasAccount: model.account(of: profile) != nil,
+            hasProvider: model.provider(profile.providerId) != nil,
             onEdit: { edit(profile) },
-            onEditAccount: { editAccount(of: profile) },
+            onEditProvider: { editProvider(of: profile) },
             onDelete: { removingProfile = profile }
           )
         }
@@ -36,7 +34,7 @@ struct SandboxesSettingsView: View {
       } footer: {
         SettingsListActions {
           Button {
-            isAdding = true
+            profileDraft = SandboxProfileDraft()
           } label: {
             Label("Add Profile…", systemImage: "plus")
           }
@@ -45,9 +43,8 @@ struct SandboxesSettingsView: View {
       }
     }
     .formStyle(.grouped)
-    .sheet(isPresented: $isAdding) { SandboxAddProfileSheet(model: model, client: client) }
-    .sheet(item: $accountDraft) { SandboxAccountEditSheet(draft: $0, model: model, client: client) }
-    .sheet(item: $profileDraft) { SandboxProfileEditSheet(draft: $0, model: model, client: client) }
+    .sheet(item: $providerDraft) { SandboxProviderSheet(draft: $0, model: model, client: client, onSaved: { _ in }) }
+    .sheet(item: $profileDraft) { SandboxProfileSheet(draft: $0, model: model, client: client) }
     .confirmationDialog(
       "Delete “\(removingProfile?.name ?? "")”?",
       isPresented: presence($removingProfile), titleVisibility: .visible, presenting: removingProfile
@@ -77,18 +74,17 @@ struct SandboxesSettingsView: View {
   }
 
   private func edit(_ profile: ServerSandboxProfile) {
-    guard let provider = model.provider(profile.provider) else { return }
-    profileDraft = SandboxProfileDraft(provider: provider, profile: profile)
+    profileDraft = SandboxProfileDraft(profile: profile, vendor: model.vendor(profile.vendor))
   }
 
-  private func editAccount(of profile: ServerSandboxProfile) {
-    guard let account = model.account(of: profile), let provider = model.provider(account.provider) else { return }
-    accountDraft = SandboxAccountDraft(provider: provider, account: account)
+  private func editProvider(of profile: ServerSandboxProfile) {
+    guard let provider = model.provider(profile.providerId) else { return }
+    providerDraft = SandboxProviderDraft(vendor: model.vendor(provider.vendor), provider: provider)
   }
 
   private var errorShown: Binding<Bool> {
     Binding(
-      get: { model.errorMessage != nil && !isAdding && accountDraft == nil && profileDraft == nil },
+      get: { model.errorMessage != nil && providerDraft == nil && profileDraft == nil },
       set: { if !$0 { model.errorMessage = nil } }
     )
   }

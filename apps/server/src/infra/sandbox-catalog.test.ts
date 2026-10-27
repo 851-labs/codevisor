@@ -122,10 +122,10 @@ describe("sandbox accounts", () => {
     ])
 
     expect(failures).toEqual([
-      new HttpFailure(400, "Host doesn't use accounts"),
-      new HttpFailure(404, "No sandbox account missing"),
-      new HttpFailure(400, "An account can't move to another provider"),
-      new HttpFailure(404, "No sandbox provider vercel")
+      new HttpFailure(400, "Host doesn't use providers"),
+      new HttpFailure(404, "No sandbox provider missing"),
+      new HttpFailure(400, "A provider can't move to another vendor"),
+      new HttpFailure(404, "No sandbox vendor vercel")
     ])
   })
 
@@ -142,9 +142,9 @@ describe("sandbox accounts", () => {
     const running = await failure(deleteAccount(deps, "id-1"))
 
     expect(inUse).toEqual(
-      new HttpFailure(409, "A, B use this account; change or delete those profiles first")
+      new HttpFailure(409, "A, B use this provider; change or delete those profiles first")
     )
-    expect(running).toEqual(new HttpFailure(409, "2 sandboxes are still running on this account"))
+    expect(running).toEqual(new HttpFailure(409, "2 sandboxes are still running on this provider"))
   })
 
   it("hides accounts whose provider this version doesn't know", async () => {
@@ -192,8 +192,8 @@ describe("sandbox profiles", () => {
     })
     expect(created.accountId).toBeUndefined()
     expect(failures).toEqual([
-      new HttpFailure(400, "Choose a Fake account"),
-      new HttpFailure(400, "Choose a Fake account"),
+      new HttpFailure(400, "Choose a Fake provider"),
+      new HttpFailure(400, "Choose a Fake provider"),
       new HttpFailure(404, "No sandbox profile missing"),
       new HttpFailure(404, "No sandbox profile missing")
     ])
@@ -224,7 +224,7 @@ describe("sandbox profiles", () => {
     expect(await profileAvailability(deps)).toEqual([
       { profileId: "a", disabledReason: "Fake isn't installed here" },
       { profileId: "b" },
-      { profileId: "c", disabledReason: "Its Fake account was removed" },
+      { profileId: "c", disabledReason: "Its Fake provider was removed" },
       { profileId: "d" }
     ])
     expect(hostCapabilities(deps.adapters)).toEqual(["tart"])
@@ -232,6 +232,38 @@ describe("sandbox profiles", () => {
       { provider: "tart" },
       { provider: "modal", accountId: "m" }
     ])
+  })
+})
+
+describe("providers that live on a Mac", () => {
+  it("place profiles on their provider's Mac, sweep that vendor once, and need a provider", async () => {
+    const macs: SandboxProviderDefinition = {
+      ...fakeDefinition("tart", "darwin"),
+      displayName: "Mac",
+      accountFields: [machineField("machineId", "Mac", "tart")],
+      profileFields: []
+    }
+    const deps = await catalogWith([adapterFor(macs)])
+    await createAccount(deps, { provider: "tart", values: { machineId: "server-a" } })
+    await createAccount(deps, { provider: "tart", values: { machineId: "server-b" } })
+    await deps.settings.putProfile(profile({ id: "here", provider: "tart", accountId: "id-1" }))
+    await deps.settings.putProfile(profile({ id: "there", provider: "tart", accountId: "id-2" }))
+    await deps.settings.putProfile(
+      profile({ id: "older", provider: "tart", values: { machineId: "server-b" } })
+    )
+
+    const withoutProvider = await failure(
+      createProfile(deps, { name: "Nowhere", provider: "tart", values: {} })
+    )
+
+    expect(await profileAvailability(deps)).toEqual([
+      { profileId: "here" },
+      { profileId: "older", disabledReason: "Runs on another Mac" },
+      { profileId: "there", disabledReason: "Runs on another Mac" }
+    ])
+    expect(hostCapabilities(deps.adapters)).toEqual(["tart"])
+    expect(await deps.connections.all()).toEqual([{ provider: "tart" }])
+    expect(withoutProvider).toEqual(new HttpFailure(400, "Choose a Mac provider"))
   })
 })
 
@@ -257,8 +289,8 @@ describe("sandbox connections", () => {
 
     expect(host.definition.id).toBe("tart")
     expect(failures).toEqual([
-      new HttpFailure(409, "Its Fake account was removed"),
-      new HttpFailure(409, "Its Fake account was removed")
+      new HttpFailure(409, "Its Fake provider was removed"),
+      new HttpFailure(409, "Its Fake provider was removed")
     ])
     expect(await deps.connections.all()).toEqual([{ provider: "e2b", accountId: "id-1" }])
   })

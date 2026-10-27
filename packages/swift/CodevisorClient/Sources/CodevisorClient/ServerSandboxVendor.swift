@@ -1,13 +1,18 @@
 import Foundation
 
-public struct ServerSandboxProviderInfo: Decodable, Equatable, Sendable, Identifiable {
+public struct ServerSandboxVendor: Decodable, Equatable, Sendable, Identifiable {
   public var id: String
   public var displayName: String
   public var sandboxNoun: String
   public var platform: String
   public var tested: Bool
-  public var accountFields: [ServerSandboxField]
+  public var providerFields: [ServerSandboxField]
   public var profileFields: [ServerSandboxField]
+
+  private enum CodingKeys: String, CodingKey {
+    case id, displayName, sandboxNoun, platform, tested, profileFields
+    case providerFields = "accountFields"
+  }
 
   public init(
     id: String,
@@ -15,7 +20,7 @@ public struct ServerSandboxProviderInfo: Decodable, Equatable, Sendable, Identif
     sandboxNoun: String,
     platform: String,
     tested: Bool,
-    accountFields: [ServerSandboxField],
+    providerFields: [ServerSandboxField],
     profileFields: [ServerSandboxField]
   ) {
     self.id = id
@@ -23,9 +28,9 @@ public struct ServerSandboxProviderInfo: Decodable, Equatable, Sendable, Identif
     self.sandboxNoun = sandboxNoun
     self.platform = platform
     self.tested = tested
-    self.accountFields = accountFields
+    self.providerFields = providerFields
     self.profileFields = profileFields
   }
 
-  public var usesAccounts: Bool { !accountFields.isEmpty }
+  public var runsOnAMac: Bool { providerFields.contains { $0.type == .machine } }
 }

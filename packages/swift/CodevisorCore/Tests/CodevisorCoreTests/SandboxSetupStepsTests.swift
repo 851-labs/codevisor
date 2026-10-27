@@ -82,21 +82,29 @@ struct SandboxSetupStepsTests {
         == ["worktree", "project.setup:p1"])
   }
 
-  @Test("A profile's picker row is New plus its name, and a Tart profile runs on its Mac")
+  @Test("A profile's picker row is New plus its name, and a Tart profile runs on its provider's Mac")
   func profileTargets() {
-    let tart = ServerSandboxProviderInfo(
+    let mac = ServerSandboxField(key: "machineId", label: "Mac", type: .machine)
+    let tart = ServerSandboxVendor(
       id: "tart", displayName: "Tart", sandboxNoun: "Tart VM", platform: "darwin", tested: true,
-      accountFields: [], profileFields: [ServerSandboxField(key: "machineId", label: "Mac", type: .machine)])
-    let profile = ServerSandboxProfile(
-      id: "p1", name: "macOS 27 Tart VM", provider: "tart", values: ["machineId": .string("server-studio")])
+      providerFields: [mac], profileFields: [])
+    let olderTart = ServerSandboxVendor(
+      id: "tart", displayName: "Tart", sandboxNoun: "Tart VM", platform: "darwin", tested: true,
+      providerFields: [], profileFields: [mac])
+    let studio = ServerSandboxProvider(id: "studio", vendor: "tart", values: ["machineId": .string("server-studio")])
+    let profile = ServerSandboxProfile(id: "p1", name: "macOS 27 Tart VM", vendor: "tart", providerId: "studio")
+    let older = ServerSandboxProfile(
+      id: "p0", name: "Laptop VM", vendor: "tart", values: ["machineId": .string("server-laptop")])
 
-    let target = SandboxTarget(profile: profile, provider: tart)
+    let target = SandboxTarget(profile: profile, vendor: tart, provider: studio)
+    let olderTarget = SandboxTarget(profile: older, vendor: olderTart, provider: nil)
     let unknown = SandboxTarget(
-      profile: ServerSandboxProfile(id: "p2", name: "Ubuntu", provider: "acme"), provider: nil)
+      profile: ServerSandboxProfile(id: "p2", name: "Ubuntu", vendor: "acme"), vendor: nil, provider: nil)
 
     #expect(target.pickerTitle == "New macOS 27 Tart VM")
     #expect(target.machineNoun == "Tart VM")
     #expect(target.hostMachineId == "server-studio")
+    #expect(olderTarget.hostMachineId == "server-laptop")
     #expect(target.systemImage == "desktopcomputer")
     #expect([unknown.machineNoun, unknown.systemImage] == ["sandbox", "shippingbox"])
     #expect(unknown.hostMachineId == nil)
@@ -125,5 +133,5 @@ struct SandboxSetupStepsTests {
 
 extension SandboxTarget {
   static let tartVM = SandboxTarget(
-    profileId: "profile-tart", profileName: "macOS VM", providerId: "tart", machineNoun: "Tart VM")
+    profileId: "profile-tart", profileName: "macOS VM", vendorId: "tart", machineNoun: "Tart VM")
 }

@@ -10,7 +10,7 @@ struct SandboxProfileCatalogTests {
   @Test("Each profile asks the server that would start it whether it can, right now")
   func reasonsComeFromTheHost() async {
     let composer = CatalogFakeServerClient(
-      profiles: [.init(id: "ubuntu", name: "Ubuntu Sandbox", provider: "e2b", accountId: "a")] + tartProfiles,
+      profiles: [.init(id: "ubuntu", name: "Ubuntu Sandbox", vendor: "e2b", providerId: "a")] + tartProfiles,
       availability: [
         .init(profileId: "ubuntu"),
         .init(profileId: "studio", disabledReason: "Runs on another Mac"),
@@ -40,8 +40,8 @@ struct SandboxProfileCatalogTests {
 
   private var tartProfiles: [ServerSandboxProfile] {
     [
-      .init(id: "studio", name: "Studio VM", provider: "tart", values: ["machineId": .string("server-studio")]),
-      .init(id: "laptop", name: "Laptop VM", provider: "tart", values: ["machineId": .string("server-laptop")]),
+      .init(id: "studio", name: "Studio VM", vendor: "tart", providerId: "tart-studio"),
+      .init(id: "laptop", name: "Laptop VM", vendor: "tart", providerId: "tart-laptop"),
     ]
   }
 }
@@ -57,15 +57,22 @@ private final class CatalogFakeServerClient: CodevisorServerClienting, @unchecke
     self.failing = failing
   }
 
-  func sandboxProviders() async throws -> ServerSandboxProviders {
+  func sandboxProviders() async throws -> [ServerSandboxProvider] {
     if failing { throw CodevisorServerClientError.invalidResponse }
-    return ServerSandboxProviders(providers: [
+    return ["studio", "laptop"].map { mac in
+      ServerSandboxProvider(id: "tart-\(mac)", vendor: "tart", values: ["machineId": .string("server-\(mac)")])
+    }
+  }
+
+  func sandboxVendors() async throws -> ServerSandboxVendors {
+    if failing { throw CodevisorServerClientError.invalidResponse }
+    return ServerSandboxVendors(vendors: [
       .init(
         id: "tart", displayName: "Tart", sandboxNoun: "Tart VM", platform: "darwin", tested: true,
-        accountFields: [], profileFields: [.init(key: "machineId", label: "Mac", type: .machine)]),
+        providerFields: [.init(key: "machineId", label: "Mac", type: .machine)], profileFields: []),
       .init(
         id: "e2b", displayName: "E2B", sandboxNoun: "E2B sandbox", platform: "linux", tested: true,
-        accountFields: [.init(key: "apiKey", label: "API key", type: .secret)], profileFields: []),
+        providerFields: [.init(key: "apiKey", label: "API key", type: .secret)], profileFields: []),
     ])
   }
 

@@ -136,11 +136,11 @@ describe("sandbox provider accounts", () => {
 
     expect(usedByProfile).toMatchObject({
       status: 409,
-      body: { error: "Ubuntu Sandbox uses this account; change or delete that profile first" }
+      body: { error: "Ubuntu Sandbox uses this provider; change or delete that profile first" }
     })
     expect(usedBySandbox).toMatchObject({
       status: 409,
-      body: { error: "A sandbox is still running on this account" }
+      body: { error: "A sandbox is still running on this provider" }
     })
     expect(removed.status).toBe(204)
     expect(await harness.settings.accounts()).toEqual([])
@@ -179,7 +179,7 @@ describe("sandbox profiles", () => {
     expect(edited).toMatchObject({ status: 200, body: { id: "id-1", values: { size: "large" } } })
     expect(failures).toEqual([
       { error: "Name is required" },
-      { error: "Choose a Fake account" },
+      { error: "Choose a Fake provider" },
       { error: "Size must be text" }
     ])
     expect(deleted.status).toBe(204)
@@ -204,7 +204,7 @@ describe("sandbox profiles", () => {
     expect(availability.body).toEqual({
       profiles: [
         { profileId: "newer", disabledReason: "Update Codevisor to use vercel sandboxes" },
-        { profileId: "orphan", disabledReason: "Its Fake account was removed" },
+        { profileId: "orphan", disabledReason: "Its Fake provider was removed" },
         {
           profileId: "profile-1",
           disabledReason: "This Mac already runs 2 macOS VMs"

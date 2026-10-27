@@ -1,5 +1,6 @@
 import type {
   SandboxAdapter,
+  SandboxFieldValues,
   SandboxProvider,
   SandboxProviderDefinition,
   SandboxProviderId
@@ -21,6 +22,7 @@ export interface SandboxAdapters {
 
 export interface SandboxConnections {
   readonly connect: (connection: SandboxConnection) => Promise<SandboxProvider>
+  readonly providerValues: (connection: SandboxConnection) => Promise<SandboxFieldValues>
   readonly all: () => Promise<ReadonlyArray<SandboxConnection>>
 }
 
@@ -42,14 +44,16 @@ export const makeSandboxConnections = (
     const account = await accountFor(settings, adapter.definition, connection.accountId)
     return adapter.connect(account?.values ?? {})
   },
+  providerValues: async (connection) =>
+    (await accountById(settings, connection.accountId))?.values ?? {},
   all: async () => [
     ...adapters
       .all()
-      .filter((adapter) => needsNoAccount(adapter.definition))
+      .filter((adapter) => connectsWithoutAccount(adapter.definition))
       .filter((adapter) => adapters.runsHere(adapter.definition.id))
       .map((adapter) => ({ provider: adapter.definition.id })),
     ...(await settings.accounts())
-      .filter((account) => adapters.get(account.provider) !== undefined)
+      .filter((account) => needsStoredAccount(adapters.get(account.provider)))
       .map((account) => ({ provider: account.provider, accountId: account.id }))
   ]
 })
@@ -59,19 +63,25 @@ export const requireAdapter = (
   id: SandboxProviderId
 ): SandboxAdapter => {
   const adapter = adapters.get(id)
-  if (adapter === undefined) throw new HttpFailure(404, `No sandbox provider ${id}`)
+  if (adapter === undefined) throw new HttpFailure(404, `No sandbox vendor ${id}`)
   return adapter
 }
 
-export const needsNoAccount = (definition: SandboxProviderDefinition): boolean =>
-  definition.accountFields.length === 0
+export const usesAccounts = (definition: SandboxProviderDefinition): boolean =>
+  definition.accountFields.length > 0
+
+export const connectsWithoutAccount = (definition: SandboxProviderDefinition): boolean =>
+  definition.accountFields.every((field) => field.type === "machine")
+
+const needsStoredAccount = (adapter: SandboxAdapter | undefined): boolean =>
+  adapter !== undefined && !connectsWithoutAccount(adapter.definition)
 
 const accountFor = async (
   settings: Pick<SandboxSettings, "account">,
   definition: SandboxProviderDefinition,
   accountId: string | undefined
 ): Promise<StoredSandboxAccount | undefined> => {
-  if (needsNoAccount(definition)) return undefined
+  if (connectsWithoutAccount(definition)) return undefined
 
   const account = await accountById(settings, accountId)
   if (account === undefined) throw new HttpFailure(409, missingAccountReason(definition))
@@ -87,4 +97,4 @@ export const accountById = async (
 }
 
 export const missingAccountReason = (definition: SandboxProviderDefinition): string =>
-  `Its ${definition.displayName} account was removed`
+  `Its ${definition.displayName} provider was removed`

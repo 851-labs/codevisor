@@ -1,24 +1,19 @@
 import CodevisorCore
-import CodevisorUI
 import SwiftUI
 
 struct SandboxProfileRow: View {
   let profile: ServerSandboxProfile
-  let isUntested: Bool
-  let hasAccount: Bool
+  let hasProvider: Bool
   let onEdit: () -> Void
-  let onEditAccount: () -> Void
+  let onEditProvider: () -> Void
   let onDelete: () -> Void
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: SandboxTarget.systemImage(forProvider: profile.provider))
+      Image(systemName: SandboxVendorSymbol.name(for: profile.vendor))
         .foregroundStyle(.secondary)
         .frame(width: 20)
       Text(profile.name)
-      if isUntested {
-        SandboxUntestedBadge()
-      }
       Spacer()
       Menu {
         actions
@@ -39,8 +34,8 @@ struct SandboxProfileRow: View {
   @ViewBuilder
   private var actions: some View {
     Button("Edit…", action: onEdit)
-    if hasAccount {
-      Button("Edit Account…", action: onEditAccount)
+    if hasProvider {
+      Button("Edit Provider…", action: onEditProvider)
     }
     Divider()
     Button("Delete…", role: .destructive, action: onDelete)

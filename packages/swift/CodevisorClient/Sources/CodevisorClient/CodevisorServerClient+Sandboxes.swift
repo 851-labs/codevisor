@@ -14,7 +14,7 @@ public struct ServerSandboxSetupStep: Decodable, Equatable, Sendable {
 
 public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var id: String
-  public var provider: String
+  public var vendor: String
   public var name: String
   public var state: String
   public var profileId: String?
@@ -26,9 +26,14 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var steps: [ServerSandboxSetupStep]?
   public var error: String?
 
+  private enum CodingKeys: String, CodingKey {
+    case id, name, state, profileId, profileName, deviceId, remoteProjectId, workspaceId, plan, steps, error
+    case vendor = "provider"
+  }
+
   public init(
     id: String,
-    provider: String,
+    vendor: String,
     name: String,
     state: String,
     profileId: String? = nil,
@@ -41,7 +46,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     error: String? = nil
   ) {
     self.id = id
-    self.provider = provider
+    self.vendor = vendor
     self.name = name
     self.state = state
     self.profileId = profileId
@@ -55,8 +60,8 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   }
 }
 
-private struct SandboxAccountsResponse: Decodable {
-  var accounts: [ServerSandboxAccount]
+private struct SandboxProvidersResponse: Decodable {
+  var accounts: [ServerSandboxProvider]
 }
 
 private struct SandboxProfilesResponse: Decodable {
@@ -68,27 +73,27 @@ private struct SandboxAvailabilityResponse: Decodable {
 }
 
 extension CodevisorServerClient {
-  public func sandboxProviders() async throws -> ServerSandboxProviders {
+  public func sandboxVendors() async throws -> ServerSandboxVendors {
     try await get("/v1/sandbox-providers")
   }
 
-  public func sandboxAccounts() async throws -> [ServerSandboxAccount] {
-    let response: SandboxAccountsResponse = try await get("/v1/sandbox-accounts")
+  public func sandboxProviders() async throws -> [ServerSandboxProvider] {
+    let response: SandboxProvidersResponse = try await get("/v1/sandbox-accounts")
     return response.accounts
   }
 
-  public func createSandboxAccount(_ request: ServerSandboxAccountRequest) async throws -> ServerSandboxAccount {
+  public func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider {
     try await send("/v1/sandbox-accounts", method: "POST", body: request)
   }
 
-  public func updateSandboxAccount(
+  public func updateSandboxProvider(
     id: String,
-    _ request: ServerSandboxAccountRequest
-  ) async throws -> ServerSandboxAccount {
+    _ request: ServerSandboxProviderRequest
+  ) async throws -> ServerSandboxProvider {
     try await send("/v1/sandbox-accounts/\(pathComponent(id))", method: "PUT", body: request)
   }
 
-  public func deleteSandboxAccount(id: String) async throws {
+  public func deleteSandboxProvider(id: String) async throws {
     try await sendNoResponse("/v1/sandbox-accounts/\(pathComponent(id))", method: "DELETE")
   }
 

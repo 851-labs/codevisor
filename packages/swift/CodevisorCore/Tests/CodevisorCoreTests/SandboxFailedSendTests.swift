@@ -68,13 +68,13 @@ private final class FailingSandboxServerClient: CodevisorServerClienting, @unche
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
     lock.withLock { created.append(request.id) }
     creates.signal()
-    return ServerSandbox(id: request.id, provider: "tart", name: "Tart", state: "creating")
+    return ServerSandbox(id: request.id, vendor: "tart", name: "Tart", state: "creating")
   }
 
   func sandboxes() async throws -> [ServerSandbox] {
     lock.withLock { created }.map { id in
       ServerSandbox(
-        id: id, provider: "tart", name: "Tart", state: "failed",
+        id: id, vendor: "tart", name: "Tart", state: "failed",
         steps: [ServerSandboxSetupStep(stage: "create", startedAt: "2026-10-27T00:00:00.000Z")],
         error: "Couldn't connect to the dev cloud")
     }

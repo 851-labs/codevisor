@@ -21,8 +21,8 @@ import { HttpFailure } from "../server-context.js"
 import {
   accountById,
   missingAccountReason,
-  needsNoAccount,
   requireAdapter,
+  usesAccounts,
   type SandboxAdapters,
   type SandboxConnections
 } from "./sandbox-connections.js"
@@ -94,7 +94,7 @@ export const updateAccount = async (
 ): Promise<SavedAccount> => {
   const previous = await existingAccount(deps, id)
   if (request.provider !== previous.provider) {
-    throw new HttpFailure(400, "An account can't move to another provider")
+    throw new HttpFailure(400, "A provider can't move to another vendor")
   }
   const adapter = accountAdapter(deps, previous.provider)
   const raw = keepingSecrets(adapter.definition.accountFields, previous.values, request.values)
@@ -175,12 +175,20 @@ export const existingProfile = async (
   return profile
 }
 
+export const placementOf = async (
+  deps: Pick<SandboxCatalogDeps, "connections">,
+  profile: SandboxProfile
+): Promise<SandboxFieldValues> => ({
+  ...profile.values,
+  ...(await deps.connections.providerValues(connectionOf(profile)))
+})
+
 export const runsElsewhere = (
   definition: SandboxProviderDefinition,
   values: SandboxFieldValues,
   serverId: string
 ): boolean =>
-  definition.profileFields.some(
+  [...definition.accountFields, ...definition.profileFields].some(
     (field) =>
       field.type === "machine" && values[field.key] !== undefined && values[field.key] !== serverId
   )
@@ -193,7 +201,8 @@ const disabledReasonFor = async (
   if (adapter === undefined) return `Update Codevisor to use ${profile.provider} sandboxes`
 
   const { definition } = adapter
-  if (runsElsewhere(definition, profile.values, deps.serverId)) return "Runs on another Mac"
+  if (runsElsewhere(definition, await placementOf(deps, profile), deps.serverId))
+    return "Runs on another Mac"
   if (!deps.adapters.runsHere(definition.id))
     return `${definition.displayName} isn't installed here`
   if (await accountMissing(deps, definition, profile)) return missingAccountReason(definition)
@@ -218,7 +227,7 @@ const accountMissing = async (
   definition: SandboxProviderDefinition,
   profile: SandboxProfile
 ): Promise<boolean> => {
-  if (needsNoAccount(definition)) return false
+  if (!usesAccounts(definition)) return false
   return (await accountById(deps.settings, profile.accountId)) === undefined
 }
 
@@ -245,19 +254,19 @@ const profileAccount = async (
   definition: SandboxProviderDefinition,
   accountId: string | undefined
 ): Promise<string | undefined> => {
-  if (needsNoAccount(definition)) return undefined
+  if (!usesAccounts(definition)) return undefined
 
   const account = await accountById(deps.settings, accountId)
   if (account?.provider !== definition.id) {
-    throw new HttpFailure(400, `Choose a ${definition.displayName} account`)
+    throw new HttpFailure(400, `Choose a ${definition.displayName} provider`)
   }
   return account.id
 }
 
 const accountAdapter = (deps: SandboxCatalogDeps, id: SandboxAdapter["definition"]["id"]) => {
   const adapter = requireAdapter(deps.adapters, id)
-  if (needsNoAccount(adapter.definition)) {
-    throw new HttpFailure(400, `${adapter.definition.displayName} doesn't use accounts`)
+  if (!usesAccounts(adapter.definition)) {
+    throw new HttpFailure(400, `${adapter.definition.displayName} doesn't use providers`)
   }
   return adapter
 }
@@ -267,7 +276,7 @@ const existingAccount = async (
   id: string
 ): Promise<StoredSandboxAccount> => {
   const account = await deps.settings.account(id)
-  if (account === undefined) throw new HttpFailure(404, `No sandbox account ${id}`)
+  if (account === undefined) throw new HttpFailure(404, `No sandbox provider ${id}`)
   return account
 }
 
@@ -310,20 +319,20 @@ const labelOf = (request: SaveSandboxAccountRequest): { readonly label?: string 
 }
 
 const machineCapabilities = (definition: SandboxProviderDefinition): ReadonlyArray<string> =>
-  definition.profileFields.flatMap((field) =>
+  [...definition.accountFields, ...definition.profileFields].flatMap((field) =>
     field.type === "machine" && field.capability !== undefined ? [field.capability] : []
   )
 
 const accountInUseByProfiles = (profiles: ReadonlyArray<SandboxProfile>): string => {
   const names = profiles.map((profile) => profile.name).join(", ")
   if (profiles.length === 1)
-    return `${names} uses this account; change or delete that profile first`
-  return `${names} use this account; change or delete those profiles first`
+    return `${names} uses this provider; change or delete that profile first`
+  return `${names} use this provider; change or delete those profiles first`
 }
 
 const accountInUseBySandboxes = (count: number): string => {
-  if (count === 1) return "A sandbox is still running on this account"
-  return `${count} sandboxes are still running on this account`
+  if (count === 1) return "A sandbox is still running on this provider"
+  return `${count} sandboxes are still running on this provider`
 }
 
 const asFieldInput = <T>(read: () => T): T => {

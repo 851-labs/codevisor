@@ -4,43 +4,35 @@ import Foundation
 public struct SandboxTarget: Equatable, Hashable, Sendable, Identifiable {
   public let profileId: String
   public let profileName: String
-  public let providerId: String
+  public let vendorId: String
   public let machineNoun: String
   public let hostMachineId: String?
 
   public var id: String { profileId }
   public var pickerTitle: String { "New \(profileName)" }
-
-  public var systemImage: String { Self.systemImage(forProvider: providerId) }
-
-  public static func systemImage(forProvider providerId: String) -> String {
-    switch providerId {
-    case "tart", "tart-orchard": "desktopcomputer"
-    default: "shippingbox"
-    }
-  }
+  public var systemImage: String { SandboxVendorSymbol.name(for: vendorId) }
 
   public init(
     profileId: String,
     profileName: String,
-    providerId: String,
+    vendorId: String,
     machineNoun: String,
     hostMachineId: String? = nil
   ) {
     self.profileId = profileId
     self.profileName = profileName
-    self.providerId = providerId
+    self.vendorId = vendorId
     self.machineNoun = machineNoun
     self.hostMachineId = hostMachineId
   }
 
-  public init(profile: ServerSandboxProfile, provider: ServerSandboxProviderInfo?) {
+  public init(profile: ServerSandboxProfile, vendor: ServerSandboxVendor?, provider: ServerSandboxProvider?) {
     self.init(
       profileId: profile.id,
       profileName: profile.name,
-      providerId: profile.provider,
-      machineNoun: provider?.sandboxNoun ?? "sandbox",
-      hostMachineId: profile.machineId(for: provider)
+      vendorId: profile.vendor,
+      machineNoun: vendor?.sandboxNoun ?? "sandbox",
+      hostMachineId: profile.machineId(vendor: vendor, provider: provider)
     )
   }
 }
