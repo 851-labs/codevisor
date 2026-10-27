@@ -6,8 +6,14 @@ struct ComposerSlimAttachMenu: View {
 
   var body: some View {
     Menu {
-      Button("Photos", action: onPhotos)
-      Button("Files", action: onFiles)
+      Button(action: onPhotos) {
+        Label("Photos", systemImage: "photo.on.rectangle")
+          .labelStyle(.titleAndIcon)
+      }
+      Button(action: onFiles) {
+        Label("Files", systemImage: "folder")
+          .labelStyle(.titleAndIcon)
+      }
     } label: {
       Image(systemName: "plus")
         .font(.system(size: 15, weight: .semibold))
