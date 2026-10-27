@@ -77,6 +77,10 @@ public final class QuestionDraft {
     page = next
   }
 
+  public func show(page target: Int) {
+    move(by: target - page)
+  }
+
   private var hasAnyAnswer: Bool {
     request.questions.contains { answer(for: $0) != nil }
   }

@@ -17,9 +17,6 @@ struct QuestionSheetToolbar: ToolbarContent {
   let actions: Actions
 
   var body: some ToolbarContent {
-    ToolbarItem(placement: .cancellationAction) {
-      Button(role: .close, action: actions.close)
-    }
     if let backLabel = question.backOptionLabel {
       ToolbarItem(placement: .navigation) {
         Button(backLabel, systemImage: "chevron.backward") { actions.answerDirectly(backLabel) }
@@ -29,10 +26,14 @@ struct QuestionSheetToolbar: ToolbarContent {
         Button("Back", systemImage: "chevron.backward", action: actions.back)
           .accessibilityLabel("Previous question")
       }
+    } else {
+      ToolbarItem(placement: .cancellationAction) {
+        Button(role: .close, action: actions.close)
+      }
     }
     if draft.isLastPage {
       ToolbarItem(placement: .confirmationAction) {
-        Button("Submit", role: .confirm, action: actions.submit)
+        Button("Submit", systemImage: "arrow.up", role: .confirm, action: actions.submit)
           .disabled(!draft.isSubmittable || isSubmitting)
           .accessibilityLabel(isSubmitting ? "Submitting answers" : "Submit answers")
       }
