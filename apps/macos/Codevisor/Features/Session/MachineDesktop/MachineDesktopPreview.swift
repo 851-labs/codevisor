@@ -31,12 +31,7 @@ struct MachineDesktopPreview: View {
   }
 
   private var openBadge: some View {
-    Label("Open", systemImage: "arrow.up.left.and.arrow.down.right")
-      .font(.callout.weight(.medium))
-      .foregroundStyle(.white)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 8)
-      .background(.black.opacity(0.75), in: .capsule)
+    MachineDesktopOpenButton(action: onOpen)
       .opacity(isHovered || !isStreaming ? 1 : 0)
       .animation(.easeOut(duration: 0.15), value: isHovered)
   }

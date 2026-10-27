@@ -10,21 +10,21 @@ final class MachineDesktopWindows {
 
   private static let initialSize = NSSize(width: 1100, height: 720)
 
-  private(set) var openWorkspaceIds: Set<UUID> = []
-  @ObservationIgnored private var windows: [UUID: NSWindow] = [:]
-  @ObservationIgnored private var closeObservers: [UUID: NSObjectProtocol] = [:]
+  private(set) var openMachineIds: Set<String> = []
+  @ObservationIgnored private var windows: [String: NSWindow] = [:]
+  @ObservationIgnored private var closeObservers: [String: NSObjectProtocol] = [:]
 
-  func isOpen(_ workspaceId: UUID) -> Bool { openWorkspaceIds.contains(workspaceId) }
+  func isOpen(_ machineId: String) -> Bool { openMachineIds.contains(machineId) }
 
-  func present(_ session: MachineDesktopSession, workspaceId: UUID, environment: AppEnvironment) {
-    let window = windows[workspaceId] ?? makeWindow(session, workspaceId: workspaceId, environment: environment)
-    windows[workspaceId] = window
-    openWorkspaceIds.insert(workspaceId)
+  func present(_ session: MachineDesktopSession, machineId: String, environment: AppEnvironment) {
+    let window = windows[machineId] ?? makeWindow(session, machineId: machineId, environment: environment)
+    windows[machineId] = window
+    openMachineIds.insert(machineId)
     window.makeKeyAndOrderFront(nil)
   }
 
   private func makeWindow(
-    _ session: MachineDesktopSession, workspaceId: UUID, environment: AppEnvironment
+    _ session: MachineDesktopSession, machineId: String, environment: AppEnvironment
   ) -> NSWindow {
     let host = NSHostingController(
       rootView: MachineDesktopDialog(session: session).environment(environment).themedRoot())
@@ -35,17 +35,17 @@ final class MachineDesktopWindows {
     window.setContentSize(Self.initialSize)
     window.isReleasedWhenClosed = false
     window.center()
-    closeObservers[workspaceId] = NotificationCenter.default.addObserver(
+    closeObservers[machineId] = NotificationCenter.default.addObserver(
       forName: NSWindow.willCloseNotification, object: window, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.closed(workspaceId) }
+      MainActor.assumeIsolated { self?.closed(machineId) }
     }
     return window
   }
 
-  private func closed(_ workspaceId: UUID) {
-    openWorkspaceIds.remove(workspaceId)
-    windows[workspaceId] = nil
-    closeObservers.removeValue(forKey: workspaceId).map(NotificationCenter.default.removeObserver)
+  private func closed(_ machineId: String) {
+    openMachineIds.remove(machineId)
+    windows[machineId] = nil
+    closeObservers.removeValue(forKey: machineId).map(NotificationCenter.default.removeObserver)
   }
 }

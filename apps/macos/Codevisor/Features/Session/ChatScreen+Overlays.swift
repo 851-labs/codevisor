@@ -42,9 +42,24 @@ extension ChatScreen {
             ? BrowserUsePiPModel(chatSessionID: chatSessionID, client: environment.machines.client(for: serverId))
             : nil),
         isTurnRunning: controller.isSending,
-        composerHeight: composerHeight
+        composerHeight: composerHeight,
+        onOpenDesktop: openDesktopAction
       )
       .id("\(chatSessionID)/\(computerSource != nil)/\(supportsBrowser)")
+    }
+  }
+
+  private var openDesktopAction: (() -> Void)? {
+    guard let workspaceId = controller.hostWorkspaceId,
+      let workspace = environment.workspaces.workspace(id: workspaceId),
+      let desktop = MachineDesktopRegistry.shared.session(
+        for: workspace, project: controller.project, environment: environment)
+    else { return nil }
+    return { [environment] in
+      Task {
+        guard await desktop.register() else { return }
+        MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
+      }
     }
   }
 

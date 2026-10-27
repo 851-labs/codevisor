@@ -11,14 +11,19 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
   @Environment(\.displayScale) private var displayScale
   private let isTurnRunning: Bool
   private let composerHeight: CGFloat
+  private let onOpenDesktop: (() -> Void)?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static var coordinateSpace: String { "computer-use-pip-pane" }
 
-  init(model: @autoclosure () -> Model, isTurnRunning: Bool, composerHeight: CGFloat) {
+  init(
+    model: @autoclosure () -> Model, isTurnRunning: Bool, composerHeight: CGFloat,
+    onOpenDesktop: (() -> Void)? = nil
+  ) {
     _model = State(wrappedValue: model())
     self.isTurnRunning = isTurnRunning
     self.composerHeight = composerHeight
+    self.onOpenDesktop = onOpenDesktop
   }
 
   var body: some View {
@@ -34,6 +39,7 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
           card(viewer: viewer, size: size, resizeHandles: resizeHandles(size: size, aspect: aspect, viewer: viewer))
             .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
             .overlay(alignment: .topLeading) { closeControl }
+            .overlay { openDesktopControl }
             .onHover { isHovering = $0 }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
             .accessibilityElement(children: .contain)
@@ -214,6 +220,16 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
     .onTapGesture { model.activateTarget() }
     .contextMenu { contextMenu }
     .help(model.canActivateTarget ? "Show \(model.title)" : model.title)
+  }
+
+  @ViewBuilder
+  private var openDesktopControl: some View {
+    if let onOpenDesktop {
+      MachineDesktopOpenButton(action: onOpenDesktop)
+        .opacity(isHovering ? 1 : 0)
+        .scaleEffect(isHovering ? 1 : 0.9)
+        .allowsHitTesting(isHovering)
+    }
   }
 
   private var closeControl: some View {
