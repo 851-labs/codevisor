@@ -16,6 +16,7 @@ import {
 } from "@codevisor/ephemeral-machines"
 
 import { HttpFailure } from "../server-context.js"
+import { forgetAbandoned, makeAbandonments, type Abandonments } from "./ephemeral-abandon.js"
 import { joinAccount, requireOwner, teardownMachine } from "./ephemeral-account.js"
 import { ephemeralRemote, type EphemeralRemote } from "./ephemeral-remote.js"
 import {
@@ -77,6 +78,7 @@ const inProgress: ReadonlySet<EphemeralMachine["state"]> = new Set([
 export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMachines => {
   const pipelines = new Set<Promise<void>>()
   const busy = new Set<string>()
+  const abandonments = makeAbandonments()
 
   const exclusively = async (id: string, work: () => Promise<void>): Promise<void> => {
     if (busy.has(id)) return
@@ -91,8 +93,10 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
   const destroy = async (id: string): Promise<void> => {
     const machine = await deps.records.get(id)
     if (machine === undefined) throw new HttpFailure(404, `No ephemeral machine ${id}`)
-    if (busy.has(id))
-      throw new HttpFailure(409, `${machine.name} is still being set up or torn down`)
+    if (busy.has(id)) {
+      abandonWhileSettingUp(abandonments, machine)
+      return
+    }
 
     await exclusively(id, () => teardownRecord(deps, machine))
   }
@@ -111,7 +115,7 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
       throw new HttpFailure(409, `An ephemeral machine ${machine.id} already exists`)
     }
     await deps.records.put(machine)
-    const planned = { options, plan, ...harnessOf(request) }
+    const planned = { options, plan, abandonments, ...harnessOf(request) }
     track(
       pipelines,
       exclusively(machine.id, async () => {
@@ -154,6 +158,7 @@ export const makeEphemeralMachines = (deps: EphemeralMachineDeps): EphemeralMach
 interface PlannedProvision {
   readonly options: unknown
   readonly plan: ProvisionPlan
+  readonly abandonments: Abandonments
   readonly harnessId?: string
 }
 
@@ -173,6 +178,20 @@ const runPipeline = async (
       record.advance({ steps }).catch(() => undefined)
     }
   })
+  const remote = await provisionOrFail(deps, provider, record, setup, planned)
+  if (!planned.abandonments.settle(initial.id)) return remote
+
+  await forgetAbandoned(deps, record.current())
+  return undefined
+}
+
+const provisionOrFail = async (
+  deps: EphemeralMachineDeps,
+  provider: EphemeralProvider,
+  record: RecordWriter,
+  setup: EphemeralSetupProgress,
+  planned: PlannedProvision
+): Promise<EphemeralRemote | undefined> => {
   try {
     return await provision(deps, provider, record, setup, planned)
   } catch (cause) {
@@ -189,7 +208,9 @@ const provision = async (
   setup: EphemeralSetupProgress,
   planned: PlannedProvision
 ): Promise<EphemeralRemote> => {
+  const checkpoint = () => planned.abandonments.checkpoint(initialId(record))
   const options = await prepared(provider, planned, setup)
+  checkpoint()
   setup.stage("create")
   setup.log(`Creating a ${provider.displayName} machine`)
   const { preinstalled = false, ...created } = await provider.create(
@@ -198,6 +219,7 @@ const provision = async (
     setup
   )
   await record.advance({ ...created, state: "bootstrapping" })
+  checkpoint()
   if (!preinstalled) setup.stage("install")
   const joined = await joinAccount(
     deps,
@@ -206,12 +228,14 @@ const provision = async (
     { setup, preinstalled }
   )
   await record.advance({ ...joined, state: "syncing" })
+  checkpoint()
   setup.stage("sync")
   const remote = ephemeralRemote(provider, created.providerMachineId)
   const report = await deps.sync(remote, planned.harnessId)
   setup.log(`Pushed ${report.entries} settings`)
   deps.log(`Ephemeral ${initialId(record)}: pushed ${report.entries} sync entries one way`)
   await record.advance({ state: "cloning" })
+  checkpoint()
   setup.stage("clone")
   const placed = await placeWorkspace(deps, { ...record.current(), ...joined }, setup.log)
   setup.finish()
@@ -244,6 +268,13 @@ const claimWorkspace = async (
   const claimed = { ...machine, workspaceId: wanted }
   await deps.records.put(claimed)
   return claimed
+}
+
+const abandonWhileSettingUp = (abandonments: Abandonments, machine: EphemeralMachine): void => {
+  if (!inProgress.has(machine.state))
+    throw new HttpFailure(409, `${machine.name} is still being set up or torn down`)
+
+  abandonments.abandon(machine.id)
 }
 
 const harnessOf = (request: CreateEphemeralMachineRequest): { readonly harnessId?: string } =>

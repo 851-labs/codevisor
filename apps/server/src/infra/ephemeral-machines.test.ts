@@ -165,14 +165,43 @@ describe("ephemeral machine lifetime", () => {
     expect(await harness.machines.list()).toEqual([])
   })
 
-  it("answers 404 for an unknown machine and 409 while it's still being set up", async () => {
-    const harness = await ephemeralHarness()
+  it("answers 404 for an unknown machine and 409 while it's being torn down", async () => {
+    const harness = await ready()
     await expect(harness.machines.destroy("nope")).rejects.toMatchObject({ status: 404 })
 
-    await harness.machines.create(request)
+    const first = harness.machines.destroy("id-1")
 
     await expect(harness.machines.destroy("id-1")).rejects.toMatchObject({ status: 409 })
+    await first
+  })
+
+  it("stops setting up a machine that is destroyed before it's ready, and removes it", async () => {
+    const harness = await ephemeralHarness()
+    await harness.machines.create(request)
+
+    await harness.machines.destroy("id-1")
     await harness.machines.settled()
+
+    expect(harness.provider.machines.size).toBe(0)
+    expect(harness.removed).toEqual([])
+    expect(await harness.machines.list()).toEqual([])
+    expect(harness.logs).toContain("Destroying ephemeral machine Spike box (id-1): nobody used it")
+  })
+
+  it("tears down a machine destroyed during its last setup step, once that step ends", async () => {
+    const harness = await ephemeralHarness()
+    let destroyed: Promise<void> | undefined
+    harness.controls.answer = () => {
+      destroyed ??= harness.machines.destroy("id-1")
+      return undefined
+    }
+    await harness.machines.create(request)
+    await harness.machines.settled()
+    await destroyed
+
+    expect(harness.removed).toEqual([JOINED_DEVICE])
+    expect(harness.provider.machines.size).toBe(0)
+    expect(await harness.machines.list()).toEqual([])
   })
 
   it("tears the machine down once its workspace is archived on the ephemeral machine", async () => {
