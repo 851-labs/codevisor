@@ -48,6 +48,21 @@ struct EphemeralPrewarmTests {
     #expect(client.createCount == 1)
   }
 
+  @Test("Changes made while the first send starts leave the early VM for that send")
+  func firstSendKeepsPrewarm() async throws {
+    let client = PrewarmFakeServerClient()
+    let controller = makeController(client: client)
+    controller.ephemeralTarget = .provider("tart")
+    let created = await client.nextCreate()
+
+    controller.hasSentFirst = true
+    controller.project = controller.project
+    let adopted = try #require(controller.takeEphemeralPrewarm(for: .provider("tart"), client: client))
+
+    #expect(adopted.machineId == created.id)
+    #expect(client.createCount == 1)
+  }
+
   @Test("Without a project there is nothing to start early")
   func scratchProjectsWait() {
     let client = PrewarmFakeServerClient()

@@ -3,7 +3,8 @@ import Foundation
 
 extension SessionController {
   func refreshEphemeralPrewarm() {
-    let wanted = hasSentFirst ? nil : prewarmKey(for: ephemeralTarget)
+    guard !hasSentFirst else { return }
+    let wanted = prewarmKey(for: ephemeralTarget)
     guard ephemeralPrewarm?.key != wanted else { return }
 
     abandonEphemeralPrewarm()
