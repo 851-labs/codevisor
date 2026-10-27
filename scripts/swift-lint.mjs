@@ -1,30 +1,78 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { createHash } from "node:crypto"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync
+} from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 export const baselineFile = ".swiftlint-baseline.json"
-export const minimumSwiftLintVersion = "0.65.1"
+export const swiftLintVersion = "0.65.1"
 
-const versionParts = (version) => version.trim().split(".").map(Number)
+const macRelease = {
+  asset: "portable_swiftlint.zip",
+  sha256: "c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0"
+}
+const releases = {
+  "darwin-arm64": macRelease,
+  "darwin-x64": macRelease,
+  "linux-arm64": {
+    asset: "swiftlint_linux_arm64.zip",
+    sha256: "9ffa52f478e6d8eb485d37d14715ffac90abc81c58f3370d598bf75be05605f8"
+  },
+  "linux-x64": {
+    asset: "swiftlint_linux_amd64.zip",
+    sha256: "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
+  }
+}
+const artifactsRoot = join(homedir(), ".codevisor-development", "artifacts", "swiftlint")
 
-export function supportsRelativeBaselines(version) {
-  const parts = versionParts(version)
-  const minimum = versionParts(minimumSwiftLintVersion)
-  const differing = minimum.findIndex((part, index) => (parts[index] ?? 0) !== part)
-  return differing === -1 || (parts[differing] ?? 0) > minimum[differing]
+function run(command, args) {
+  const { status } = spawnSync(command, args, { stdio: ["ignore", "ignore", "inherit"] })
+  if (status !== 0) throw new Error(`${command} ${args.join(" ")} failed`)
 }
 
-function requireSwiftLint() {
-  const { stdout, error } = spawnSync("swiftlint", ["version"], { encoding: "utf8" })
-  if (error !== undefined) throw new Error("SwiftLint is not installed: brew install swiftlint")
-  if (!supportsRelativeBaselines(stdout)) {
-    throw new Error(
-      `SwiftLint ${stdout.trim()} writes baseline paths that ${baselineFile} can't match; ` +
-        `${minimumSwiftLintVersion} or newer is required: brew upgrade swiftlint`
-    )
+export function swiftLint() {
+  const platform = `${process.platform}-${process.arch}`
+  const release = releases[platform]
+  if (release === undefined)
+    throw new Error(`SwiftLint ${swiftLintVersion} has no ${platform} build`)
+  const installed = join(artifactsRoot, swiftLintVersion)
+  const binary = join(installed, "swiftlint")
+  if (existsSync(binary)) return binary
+  mkdirSync(artifactsRoot, { recursive: true })
+  const staging = mkdtempSync(join(artifactsRoot, "download-"))
+  try {
+    const archive = join(staging, release.asset)
+    run("curl", [
+      "-fsSL",
+      "--retry",
+      "3",
+      "-o",
+      archive,
+      `https://github.com/realm/SwiftLint/releases/download/${swiftLintVersion}/${release.asset}`
+    ])
+    const digest = createHash("sha256").update(readFileSync(archive)).digest("hex")
+    if (digest !== release.sha256) {
+      throw new Error(`${release.asset} has SHA-256 ${digest}, expected ${release.sha256}`)
+    }
+    run("unzip", ["-q", archive, "swiftlint", "-d", join(staging, "bin")])
+    try {
+      renameSync(join(staging, "bin"), installed)
+    } catch (error) {
+      if (!existsSync(binary)) throw error
+    }
+    return binary
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
   }
 }
 
@@ -44,9 +92,8 @@ const withSortedKeys = (_, value) =>
       )
 
 export function lint(root, stdio = "inherit") {
-  requireSwiftLint()
   const result = spawnSync(
-    "swiftlint",
+    swiftLint(),
     ["lint", "--quiet", "--strict", "--baseline", baselineFile],
     {
       cwd: root,
@@ -57,11 +104,11 @@ export function lint(root, stdio = "inherit") {
 }
 
 export function writeBaseline(root) {
-  requireSwiftLint()
+  const swiftlint = swiftLint()
   const scratch = mkdtempSync(join(tmpdir(), "swiftlint-baseline-"))
   try {
     const written = join(scratch, "baseline.json")
-    spawnSync("swiftlint", ["lint", "--quiet", "--strict", "--write-baseline", written], {
+    spawnSync(swiftlint, ["lint", "--quiet", "--strict", "--write-baseline", written], {
       cwd: root,
       stdio: "ignore"
     })

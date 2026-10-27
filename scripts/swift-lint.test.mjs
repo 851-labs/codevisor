@@ -1,25 +1,12 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { baselineFile, lint, supportsRelativeBaselines, writeBaseline } from "./swift-lint.mjs"
+import { baselineFile, lint, writeBaseline } from "./swift-lint.mjs"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
-const swiftlintMissing = spawnSync("swiftlint", ["version"]).error !== undefined
-const needsSwiftLint = { skip: swiftlintMissing && "SwiftLint is not installed" }
-
-test("only SwiftLint releases that write relative baseline paths are accepted", () => {
-  for (const version of ["0.65.1", "0.65.2", "0.66.0", "0.100.0", "1.0.0", "0.65.1\n"]) {
-    assert.ok(supportsRelativeBaselines(version), version)
-  }
-  for (const version of ["0.65.0", "0.64.9", "0.9.0", "0.65"]) {
-    assert.ok(!supportsRelativeBaselines(version), version)
-  }
-})
-
 const swiftFunction = (name, bodyLines) =>
   [
     `  static func ${name}() -> Int {`,
@@ -48,7 +35,7 @@ function swiftPackage(t) {
   }
 }
 
-test("functions over 50 lines fail SwiftLint", needsSwiftLint, (t) => {
+test("functions over 50 lines fail SwiftLint", (t) => {
   const swift = swiftPackage(t)
   swift.write(swiftFunction("short", 50))
   assert.equal(swift.lint(), 0)
@@ -56,7 +43,7 @@ test("functions over 50 lines fail SwiftLint", needsSwiftLint, (t) => {
   assert.notEqual(swift.lint(), 0)
 })
 
-test("the baseline keeps old long functions but fails grown or new ones", needsSwiftLint, (t) => {
+test("the baseline keeps old long functions but fails grown or new ones", (t) => {
   const swift = swiftPackage(t)
   swift.write(swiftFunction("long", 60))
   assert.notEqual(swift.lint(), 0)

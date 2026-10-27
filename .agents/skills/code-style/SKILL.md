@@ -624,8 +624,8 @@ final class ConnectionStatus {
   declaration line, so any change to either fails. Bring the function to 50
   lines or fewer; if you only shrink it, run `bun run swift:lint:baseline` and
   check that the diff only shortens entries. `swift:lint` and
-  `swift:lint:baseline` need SwiftLint 0.65.1 or newer
-  (`brew upgrade swiftlint`). The rule skips computed
+  `swift:lint:baseline` download and run the pinned SwiftLint release from
+  `scripts/swift-lint.mjs`, locally and in CI. The rule skips computed
   properties, so SwiftUI `body` (S4) isn't checked.
 - `file_name` for Swift, and no comments anywhere (`codevisor/no-comments`).
 

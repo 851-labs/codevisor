@@ -67,6 +67,7 @@ jobs:
       - run: bun run comments:check
       - run: bun run ratchet:check
       - run: bun run boundaries
+      - run: bun run swift:lint
 
   typecheck:
     needs: metadata
