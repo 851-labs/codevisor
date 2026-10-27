@@ -23,7 +23,7 @@ struct TranscriptQuestionCard: View {
     TranscriptQuestionContainer(inBotConversation: inBotConversation) {
       if let question = draft.question {
         VStack(alignment: .leading, spacing: 12) {
-          QuestionCardHeading(draft: draft, question: question)
+          QuestionCardTitle(question: question)
           QuestionCardOptions(
             draft: draft,
             question: question,
@@ -110,27 +110,15 @@ struct TranscriptQuestionCard: View {
   }
 }
 
-private struct QuestionCardHeading: View {
-  let draft: QuestionDraft
+private struct QuestionCardTitle: View {
   let question: QuestionSpec
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(caption)
-        .font(.footnote.weight(.medium))
-        .foregroundStyle(.secondary)
-      Text(question.question)
-        .font(.headline)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityAddTraits(.isHeader)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
-  private var caption: String {
-    let header = question.header.map { " · \($0)" } ?? ""
-    guard draft.pageCount > 1 else { return "Question\(header)" }
-    return "Question \(draft.page + 1) of \(draft.pageCount)\(header)"
+    Text(question.question)
+      .font(.headline)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityAddTraits(.isHeader)
   }
 }
 

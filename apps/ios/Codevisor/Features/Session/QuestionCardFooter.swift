@@ -16,11 +16,23 @@ struct QuestionCardFooter: View {
   let isSubmitting: Bool
   let actions: Actions
 
+  private static let sideSlotWidth: CGFloat = 44
+
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: 0) {
       leadingButton
+        .frame(width: Self.sideSlotWidth, alignment: .leading)
+      Spacer(minLength: 0)
+      if draft.pageCount > 1 {
+        Text("\(draft.page + 1)/\(draft.pageCount)")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .monospacedDigit()
+          .accessibilityLabel("Question \(draft.page + 1) of \(draft.pageCount)")
+      }
       Spacer(minLength: 0)
       primaryButton
+        .frame(width: Self.sideSlotWidth, alignment: .trailing)
     }
   }
 
@@ -30,6 +42,10 @@ struct QuestionCardFooter: View {
       circleButton("chevron.left", label: backLabel) { actions.answerDirectly(backLabel) }
     } else if draft.page > 0 {
       circleButton("chevron.left", label: "Previous question", action: actions.back)
+    } else {
+      Color.clear
+        .frame(height: 1)
+        .accessibilityHidden(true)
     }
   }
 
