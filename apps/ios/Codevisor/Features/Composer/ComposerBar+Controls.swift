@@ -97,22 +97,22 @@ extension ComposerBar {
 
   var attachButton: some View {
     Menu {
-      Button {
-        isPickingPhotos = true
-      } label: {
-        Label("Photo Library", systemImage: "photo.on.rectangle")
-      }
       if UIImagePickerController.isSourceTypeAvailable(.camera) {
         Button {
           isCapturingPhoto = true
         } label: {
-          Label("Take Photo", systemImage: "camera")
+          Label("Camera", systemImage: "camera")
         }
+      }
+      Button {
+        isPickingPhotos = true
+      } label: {
+        Label("Photos", systemImage: "photo.on.rectangle")
       }
       Button {
         isPickingFiles = true
       } label: {
-        Label("Choose Files", systemImage: "folder")
+        Label("Files", systemImage: "folder")
       }
     } label: {
       Image(systemName: "paperclip")
@@ -121,6 +121,7 @@ extension ComposerBar {
         .scaledFrame(width: 28, height: 28, relativeTo: .subheadline)
         .expandedHitTarget(base: 28)
     }
+    .menuOrder(.fixed)
     .buttonStyle(.plain)
     .pointerHighlight(Circle())
     .disabled(remainingAttachmentSlots == 0 || controller.isSubmitting)
