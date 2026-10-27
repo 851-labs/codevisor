@@ -9,12 +9,10 @@ struct QuestionCardFooter: View {
     let next: () -> Void
     let submit: () -> Void
     let answerDirectly: (String) -> Void
-    let dismissKeyboard: () -> Void
   }
 
   let draft: QuestionDraft
   let question: QuestionSpec
-  let isTyping: Bool
   let isSubmitting: Bool
   let actions: Actions
 
@@ -28,9 +26,7 @@ struct QuestionCardFooter: View {
 
   @ViewBuilder
   private var leadingButton: some View {
-    if isTyping {
-      circleButton("keyboard.chevron.compact.down", label: "Hide keyboard", action: actions.dismissKeyboard)
-    } else if let backLabel = question.backOptionLabel {
+    if let backLabel = question.backOptionLabel {
       circleButton("chevron.left", label: backLabel) { actions.answerDirectly(backLabel) }
     } else if draft.page > 0 {
       circleButton("chevron.left", label: "Previous question", action: actions.back)

@@ -6,6 +6,7 @@ import Observation
 @Observable
 public final class QuestionDraft {
   public static let otherToken = "__other__"
+  static let autoAdvanceDelay: Duration = .milliseconds(250)
 
   public let request: QuestionRequest
   public private(set) var page = 0
@@ -64,6 +65,21 @@ public final class QuestionDraft {
     }
     selections[spec.id] = selected
     dropTypedAnswerIfOtherDeselected(spec)
+  }
+
+  public func pick(_ label: String, in spec: QuestionSpec) {
+    toggle(label, in: spec)
+    guard advancesAfterPicking(label, in: spec) else { return }
+    let pickedPage = page
+    Task { [weak self] in
+      try? await Task.sleep(for: Self.autoAdvanceDelay)
+      guard let self, self.page == pickedPage else { return }
+      self.move(by: 1)
+    }
+  }
+
+  public func advancesAfterPicking(_ label: String, in spec: QuestionSpec) -> Bool {
+    spec.multiSelect != true && label != Self.otherToken && isSelected(label, in: spec) && !isLastPage
   }
 
   public func select(_ label: String, in spec: QuestionSpec) {

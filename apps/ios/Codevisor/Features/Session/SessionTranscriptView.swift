@@ -83,7 +83,7 @@ struct SessionTranscriptView: View {
   }
 
   var composerHeight: CGFloat {
-    isReadOnly ? 0 : composerCardHeight + composerAccessoryHeight
+    isReadOnly || controller.hidesComposerForAnswer ? 0 : composerCardHeight + composerAccessoryHeight
   }
 
   var body: some View {
@@ -318,6 +318,10 @@ struct SessionTranscriptView: View {
         readOnlyScrollControl
       } else {
         composerChrome
+          .opacity(controller.hidesComposerForAnswer ? 0 : 1)
+          .allowsHitTesting(!controller.hidesComposerForAnswer)
+          .accessibilityHidden(controller.hidesComposerForAnswer)
+          .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.hidesComposerForAnswer)
       }
     }
   }

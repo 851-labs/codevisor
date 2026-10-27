@@ -54,7 +54,7 @@ struct QuestionOptionList: View {
 
   private func choose(_ token: String, at index: Int) {
     highlighted = index
-    draft.toggle(token, in: question)
+    draft.pick(token, in: question)
     if token != QuestionDraft.otherToken { focusTargets.focusPicker() }
   }
 

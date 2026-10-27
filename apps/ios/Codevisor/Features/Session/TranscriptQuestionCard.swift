@@ -2,6 +2,7 @@ import ACPKit
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
+import UIKit
 
 struct TranscriptQuestionCard: View {
   let controller: SessionController
@@ -10,7 +11,7 @@ struct TranscriptQuestionCard: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
-  @FocusState private var isAnswerFieldFocused: Bool
+  @State private var otherFocusRequest: UUID?
 
   private var draft: QuestionDraft { controller.questionDraft(for: request) }
 
@@ -22,20 +23,20 @@ struct TranscriptQuestionCard: View {
     TranscriptQuestionContainer(inBotConversation: inBotConversation) {
       if let question = draft.question {
         VStack(alignment: .leading, spacing: 12) {
-          QuestionCardHeading(draft: draft, question: question, isTyping: isAnswerFieldFocused)
-          if !isAnswerFieldFocused {
-            QuestionCardOptions(draft: draft, question: question, onChoose: choose)
-              .id(question.id)
-              .transition(pageTransition)
-          }
-          if draft.isOtherSelected(question) {
-            QuestionAnswerField(
-              draft: draft, question: question, isFocused: $isAnswerFieldFocused, onReturn: handleReturn)
-          }
+          QuestionCardHeading(draft: draft, question: question)
+          QuestionCardOptions(
+            draft: draft,
+            question: question,
+            otherFocusRequest: otherFocusRequest,
+            onChoose: choose,
+            onOtherFocusChange: otherFocusChanged,
+            onOtherHeightChange: revealCard
+          )
+          .id(question.id)
+          .transition(pageTransition)
           QuestionCardFooter(
             draft: draft,
             question: question,
-            isTyping: isAnswerFieldFocused,
             isSubmitting: controller.isResolvingQuestion,
             actions: footerActions(question)
           )
@@ -45,14 +46,10 @@ struct TranscriptQuestionCard: View {
     .disabled(!isAnswerable)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: draft.page)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: draft.selections)
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: isAnswerFieldFocused)
     .sensoryFeedback(.selection, trigger: draft.selections)
     .onChange(of: draft.page) { _, _ in invalidateRowMeasurement?() }
     .onChange(of: draft.selections) { _, _ in invalidateRowMeasurement?() }
-    .onChange(of: isAnswerFieldFocused) { _, focused in
-      invalidateRowMeasurement?()
-      if focused { controller.revealTranscriptQuestion() }
-    }
+    .onDisappear { controller.isTypingTranscriptAnswer = false }
   }
 
   private var pageTransition: AnyTransition {
@@ -61,9 +58,23 @@ struct TranscriptQuestionCard: View {
   }
 
   private func choose(_ label: String, in question: QuestionSpec) {
+    guard label == QuestionDraft.otherToken else {
+      draft.pick(label, in: question)
+      return
+    }
     draft.toggle(label, in: question)
-    guard label == QuestionDraft.otherToken else { return }
-    isAnswerFieldFocused = draft.isOtherSelected(question)
+    otherFocusRequest = draft.isOtherSelected(question) ? UUID() : nil
+  }
+
+  private func otherFocusChanged(_ focused: Bool) {
+    controller.isTypingTranscriptAnswer = focused
+    revealCard()
+  }
+
+  private func revealCard() {
+    invalidateRowMeasurement?()
+    guard controller.isTypingTranscriptAnswer else { return }
+    controller.revealTranscriptQuestion()
   }
 
   private func footerActions(_ question: QuestionSpec) -> QuestionCardFooter.Actions {
@@ -71,34 +82,29 @@ struct TranscriptQuestionCard: View {
       back: { page(by: -1) },
       next: { page(by: 1) },
       submit: submit,
-      answerDirectly: { label in answer([question.id: QuestionAnswerEntry(answers: [label])]) },
-      dismissKeyboard: { isAnswerFieldFocused = false }
+      answerDirectly: { label in answer([question.id: QuestionAnswerEntry(answers: [label])]) }
     )
   }
 
-  private func handleReturn() {
-    if !draft.isLastPage {
-      page(by: 1)
-    } else if draft.isSubmittable {
-      submit()
-    } else {
-      isAnswerFieldFocused = false
-    }
-  }
-
   private func page(by delta: Int) {
-    isAnswerFieldFocused = false
+    endTyping()
     draft.move(by: delta)
   }
 
+  private func endTyping() {
+    otherFocusRequest = nil
+    controller.isTypingTranscriptAnswer = false
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+  }
+
   private func submit() {
-    isAnswerFieldFocused = false
+    endTyping()
     let id = request.questionId
     Task { await controller.submitTranscriptQuestion(id) }
   }
 
   private func answer(_ entries: [String: QuestionAnswerEntry]) {
-    isAnswerFieldFocused = false
+    endTyping()
     let id = request.questionId
     Task { await controller.answerTranscriptQuestion(id, with: entries) }
   }
@@ -107,7 +113,6 @@ struct TranscriptQuestionCard: View {
 private struct QuestionCardHeading: View {
   let draft: QuestionDraft
   let question: QuestionSpec
-  let isTyping: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -115,10 +120,8 @@ private struct QuestionCardHeading: View {
         .font(.footnote.weight(.medium))
         .foregroundStyle(.secondary)
       Text(question.question)
-        .font(isTyping ? .subheadline.weight(.semibold) : .headline)
-        .foregroundStyle(isTyping ? .secondary : .primary)
-        .lineLimit(isTyping ? 2 : nil)
-        .fixedSize(horizontal: false, vertical: !isTyping)
+        .font(.headline)
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityAddTraits(.isHeader)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,7 +137,10 @@ private struct QuestionCardHeading: View {
 private struct QuestionCardOptions: View {
   let draft: QuestionDraft
   let question: QuestionSpec
+  let otherFocusRequest: UUID?
   let onChoose: (String, QuestionSpec) -> Void
+  let onOtherFocusChange: (Bool) -> Void
+  let onOtherHeightChange: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -154,14 +160,15 @@ private struct QuestionCardOptions: View {
           )
         }
         if question.allowsOther {
-          QuestionOptionRow(
-            title: "Other",
-            description: nil,
+          QuestionOtherRow(
+            draft: draft,
+            question: question,
             indicator: indicator,
-            isSelected: draft.isOtherSelected(question),
-            action: { onChoose(QuestionDraft.otherToken, question) }
+            focusRequest: otherFocusRequest,
+            onToggle: { onChoose(QuestionDraft.otherToken, question) },
+            onFocusChange: onOtherFocusChange,
+            onHeightChange: onOtherHeightChange
           )
-          .accessibilityHint("Type your own answer")
         }
       }
     }
@@ -170,42 +177,5 @@ private struct QuestionCardOptions: View {
 
   private var indicator: QuestionOptionIndicator {
     question.multiSelect == true ? .multiple : .single
-  }
-}
-
-private struct QuestionAnswerField: View {
-  let draft: QuestionDraft
-  let question: QuestionSpec
-  var isFocused: FocusState<Bool>.Binding
-  let onReturn: () -> Void
-
-  private let shape = ComposerCardStyle().insetShape(by: ComposerCardStyle.contentPadding)
-
-  var body: some View {
-    TextField("Your answer", text: text, axis: .vertical)
-      .font(.body)
-      .lineLimit(1...4)
-      .focused(isFocused)
-      .submitLabel(draft.isLastPage ? .send : .next)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 12)
-      .frame(minHeight: 48)
-      .background(shape.fill(HierarchicalShapeStyle.quaternary.opacity(0.6)))
-      .overlay(shape.stroke(Color.accentColor.opacity(isFocused.wrappedValue ? 0.55 : 0), lineWidth: 1.5))
-      .accessibilityLabel("Your answer")
-  }
-
-  private var text: Binding<String> {
-    Binding(
-      get: { draft.typedAnswer(for: question) },
-      set: { newValue in
-        guard newValue.contains("\n") else {
-          draft.setTypedAnswer(newValue, for: question)
-          return
-        }
-        draft.setTypedAnswer(newValue.replacingOccurrences(of: "\n", with: ""), for: question)
-        onReturn()
-      }
-    )
   }
 }

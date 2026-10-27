@@ -21,7 +21,7 @@ struct QuestionPickerKeyHandler {
     case .down: highlighted = min(rowCount(question) - 1, highlighted + 1)
     case .left: moveBack(question)
     case .right: draft.move(by: 1)
-    case .space: draft.toggle(token(question, at: highlighted), in: question)
+    case .space: draft.pick(token(question, at: highlighted), in: question)
     case .enter: enter(question)
     case .escape: actions.dismiss()
     case let .digit(digit): return choose(digit, in: question)
@@ -57,7 +57,7 @@ struct QuestionPickerKeyHandler {
   private func choose(_ digit: Int, in question: QuestionSpec) -> Bool {
     guard digit >= 1, digit <= rowCount(question) else { return false }
     highlighted = digit - 1
-    draft.toggle(token(question, at: digit - 1), in: question)
+    draft.pick(token(question, at: digit - 1), in: question)
     return true
   }
 }

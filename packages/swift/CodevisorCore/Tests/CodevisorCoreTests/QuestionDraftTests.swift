@@ -66,4 +66,25 @@ struct QuestionDraftTests {
         plan.id: QuestionAnswerEntry(answers: [QuestionRequest.keepPlanningLabel], note: "Split the migration")
       ])
   }
+
+  @Test("Picking an answer to a single-choice question moves on, except for Other, multi-select and the last page")
+  func autoAdvance() async {
+    let draft = QuestionDraft(request: QuestionRequest(questionId: "q", questions: [database, checks]))
+
+    #expect(!draft.advancesAfterPicking(QuestionDraft.otherToken, in: database))
+    draft.pick("SQLite", in: database)
+    #expect(draft.page == 0)
+    await waitUntil { draft.page == 1 }
+
+    draft.pick("Lint", in: checks)
+    #expect(!draft.advancesAfterPicking("Lint", in: checks))
+    #expect(draft.page == 1)
+  }
+
+  private func waitUntil(_ condition: @MainActor () -> Bool) async {
+    for _ in 0..<200 where !condition() {
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(condition())
+  }
 }

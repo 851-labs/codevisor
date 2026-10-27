@@ -21,6 +21,8 @@ extension SessionController {
 
   public var isAwaitingAnswer: Bool { transcriptQuestion != nil }
 
+  public var hidesComposerForAnswer: Bool { isTypingTranscriptAnswer && isAwaitingAnswer }
+
   public func questionDraft(for request: QuestionRequest) -> QuestionDraft {
     if let draft = questionDrafts[request.questionId] { return draft }
     let draft = QuestionDraft(request: request)

@@ -26,6 +26,7 @@ struct ComposerTextView: UIViewRepresentable {
   var onResizePanCancelled: () -> Void
   var onHardwareReturn: (() -> Void)?
   var onHardwareQueue: (() -> Void)?
+  var topInset: CGFloat = ComposerBar.editorTopBleed
 
   func makeUIView(context: Context) -> ComposerTextViewContainer {
     let container = ComposerTextViewContainer()
@@ -98,8 +99,7 @@ struct ComposerTextView: UIViewRepresentable {
     view.backgroundColor = .clear
     view.font = .preferredFont(forTextStyle: .body)
     view.adjustsFontForContentSizeCategory = true
-    view.textContainerInset = UIEdgeInsets(
-      top: 4 + ComposerBar.editorTopBleed, left: 0, bottom: 4, right: 0)
+    view.textContainerInset = UIEdgeInsets(top: 4 + topInset, left: 0, bottom: 4, right: 0)
     view.textContainer.lineFragmentPadding = 0
     view.autocapitalizationType = .none
     view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
