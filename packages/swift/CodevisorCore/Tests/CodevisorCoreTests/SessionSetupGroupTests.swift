@@ -39,7 +39,7 @@ struct SessionSetupGroupTests {
   @Test("A failed step marks the whole start as failed")
   func failed() throws {
     var boot = steps.phase(.boot, startedAt: start)
-    boot.fail(message: "The limit of 2 macOS VMs per Mac has been reached", at: start.addingTimeInterval(1))
+    boot.fail(message: "This Mac already runs 2 macOS VMs", at: start.addingTimeInterval(1))
 
     let summary = try #require(SandboxStartSummary(steps: [boot]))
 

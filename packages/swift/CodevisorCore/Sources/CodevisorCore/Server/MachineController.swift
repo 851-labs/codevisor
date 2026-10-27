@@ -116,6 +116,8 @@ public final class MachineController {
   public var localCloudMachine: CloudMachine? { catalog.localCloudMachine }
   public func machine(for id: String) -> CodevisorMachine? { catalog.machine(for: id) }
   public func cloudMachine(forMachineId id: String) -> CloudMachine? { catalog.cloudMachine(forMachineId: id) }
+  public var chatMachines: [CodevisorMachine] { allMachines.filter { !isSandbox($0.id) } }
+
   public func isSandbox(_ id: String) -> Bool { cloudMachine(forMachineId: id)?.ephemeral != nil }
   public func icon(for cloud: CloudMachine) -> MachineIcon { catalog.icon(for: cloud) }
   public func canonicalComposerMachineId(for id: String) -> String? { catalog.canonicalComposerMachineId(for: id) }

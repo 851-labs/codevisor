@@ -196,6 +196,33 @@ struct CloudDirectPathControllerTests {
     #expect(script.probes.count == 4)
   }
 
+  @Test("A dial that doesn't verify is reported, so the app can fetch a fresh roster")
+  func failedDialReported() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    let controller = makePathController(script: script, clock: clock)
+    var failed: [String] = []
+    controller.onDialFailed = { failed.append($0) }
+
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    await clock.waitForSleep(.seconds(60))
+
+    #expect(failed == script.probes)
+    #expect(failed.first == "m1")
+  }
+
+  @Test("Roster refreshes after failed dials happen at most once per interval")
+  func rosterRefreshThrottle() {
+    var throttle = CloudRosterRefreshThrottle(interval: .seconds(30))
+    let start = ContinuousClock.now
+
+    let answers = [start, start + .seconds(29), start + .seconds(30), start + .seconds(31)].map {
+      throttle.allowsRefresh(at: $0)
+    }
+
+    #expect(answers == [true, false, true, false])
+  }
+
   @Test("A tunnel address arriving after launch dials right away")
   func addressArrivalDials() async throws {
     let script = ProbeScript()

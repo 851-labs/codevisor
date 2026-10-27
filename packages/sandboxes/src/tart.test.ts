@@ -60,7 +60,7 @@ describe("Tart provider", () => {
     })
 
     await expect(makeTartProvider(tart.host).create(spec, options)).rejects.toThrow(
-      "The limit of 2 macOS VMs per Mac has been reached"
+      "This Mac already runs 2 macOS VMs"
     )
     expect(tart.vms.map((vm) => vm.Name)).toEqual(["a", "b"])
     expect(tart.commands.slice(-2)).toEqual([`stop ${name}`, `delete ${name}`])
@@ -74,9 +74,7 @@ describe("Tart provider", () => {
     const linux = { image: "ghcr.io/cirruslabs/ubuntu:latest", cpu: 2, memoryGiB: 4 }
     const busy = makeTartProvider(fakeTart({ vms: twoRunning }).host)
 
-    expect(await busy.availability?.(options)).toBe(
-      "The limit of 2 macOS VMs per Mac has been reached"
-    )
+    expect(await busy.availability?.(options)).toBe("This Mac already runs 2 macOS VMs")
     expect(await busy.availability?.(linux)).toBeUndefined()
     expect(await makeTartProvider(fakeTart().host).availability?.(options)).toBeUndefined()
     expect(await makeTartProvider(fakeTart({ freeGiB: 39.5 }).host).availability?.(linux)).toBe(

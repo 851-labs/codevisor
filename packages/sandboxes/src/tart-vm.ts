@@ -125,7 +125,7 @@ export const macOSSlotsFull = async (tart: TartCommands): Promise<string | undef
   if (platforms.filter((platform) => platform === "darwin").length < MAX_RUNNING_MACOS_VMS) {
     return undefined
   }
-  return `The limit of ${MAX_RUNNING_MACOS_VMS} macOS VMs per Mac has been reached`
+  return `This Mac already runs ${MAX_RUNNING_MACOS_VMS} macOS VMs`
 }
 
 const waitForGuestAgent = async (host: TartHost, name: string): Promise<void> => {

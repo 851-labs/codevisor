@@ -12,9 +12,9 @@ extension ComposerBar {
     let sandbox = controller.sandboxTarget
     return ComposerRunTargetBar(
       machineName: sandbox?.pickerTitle ?? machine?.name ?? "Machine",
-      hasOtherMachines: environment.machines.allMachines.count > 1,
+      hasOtherMachines: environment.machines.chatMachines.count > 1,
       machineSymbol: sandbox?.systemImage ?? (machine?.icon ?? .fallback).systemImage,
-      machines: environment.machines.allMachines,
+      machines: environment.machines.chatMachines,
       selectedServerId: controller.project.serverId,
       readyMachineIds: Set(
         environment.machines.allMachines

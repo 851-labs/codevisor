@@ -60,7 +60,7 @@ extension NewChatView {
   }
 
   var showsMachinePicker: Bool {
-    environment.machines.allMachines.count > 1 || !sandboxProfiles.choices.isEmpty
+    environment.machines.chatMachines.count > 1 || !sandboxProfiles.choices.isEmpty
   }
 
   func liveProject(for controller: SessionController) -> Project {
@@ -70,7 +70,7 @@ extension NewChatView {
   }
 
   func machinePicker(_ controller: SessionController) -> some View {
-    let machines = environment.machines.allMachines
+    let machines = environment.machines.chatMachines
     let selectedMachine = environment.machines.machine(for: controller.project.serverId)
     let sandbox = controller.sandboxTarget
     let selection = machineSelection(controller)

@@ -189,7 +189,7 @@ describe("sandbox profiles", () => {
   it("says why this machine can't start a profile right now", async () => {
     const { harness, server } = await startSandboxServer({
       extraProfileFields: [machineField("machineId", "Mac", "tart")],
-      availability: () => Promise.resolve("The limit of 2 macOS VMs per Mac has been reached")
+      availability: () => Promise.resolve("This Mac already runs 2 macOS VMs")
     })
     await harness.settings.putProfile({ ...FAKE_PROFILE, id: "orphan", accountId: "gone" })
     await harness.settings.putProfile({
@@ -207,7 +207,7 @@ describe("sandbox profiles", () => {
         { profileId: "orphan", disabledReason: "Its Fake account was removed" },
         {
           profileId: "profile-1",
-          disabledReason: "The limit of 2 macOS VMs per Mac has been reached"
+          disabledReason: "This Mac already runs 2 macOS VMs"
         },
         { profileId: "studio", disabledReason: "Runs on another Mac" }
       ]

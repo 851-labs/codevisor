@@ -67,6 +67,8 @@ public final class CloudDirectPathController {
 
   @ObservationIgnored public var onPipeUp: (@MainActor (String) -> Void)?
 
+  @ObservationIgnored public var onDialFailed: (@MainActor (String) -> Void)?
+
   public func configureTunnel(_ config: CloudTunnelConfig) {
     let tunnel = tunnel
     Task { [weak self] in
@@ -125,6 +127,7 @@ public final class CloudDirectPathController {
       self.probeTasks[deviceId] = nil
       self.dialing.remove(deviceId)
       guard let pipe else {
+        self.onDialFailed?(deviceId)
         self.dialFailed(deviceId)
         return
       }

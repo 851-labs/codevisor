@@ -22,6 +22,7 @@ public final class AppEnvironment {
   public let bots: BotListModel
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
+  @ObservationIgnored var failedDialRefresh = CloudRosterRefreshThrottle()
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
@@ -138,6 +139,10 @@ public final class AppEnvironment {
   }
 
   private func wireCloudRefreshAndAdoption() {
+    cloud.directPaths.onDialFailed = { [weak self] _ in
+      guard let self, self.failedDialRefresh.allowsRefresh(at: .now) else { return }
+      Task { await self.cloud.refreshCloudMachines() }
+    }
     cloud.onMachinesRefreshed = { [weak self] in
       if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()
