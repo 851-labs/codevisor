@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { z } from "zod"
 
 import { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
+
+const SentMessageSchema = z.object({ id: z.number().optional() })
 
 const ping = { jsonrpc: "2.0" as const, id: 1, method: "ping" }
 
@@ -59,5 +62,60 @@ describe("Streamable HTTP authorization", () => {
       "Streamable HTTP error 401: Tracker needs authorization"
     )
     expect(presented).toEqual(["Bearer stale"])
+  })
+})
+
+describe("Streamable HTTP cancellation", () => {
+  it("only aborts the request a cancellation names", async () => {
+    const signals: Array<AbortSignal> = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: URL, init: RequestInit) => {
+        if (init.signal !== null && init.signal !== undefined) signals.push(init.signal)
+        return new Response(null, { status: 202 })
+      })
+    )
+    const transport = new NodeStreamableHttpTransport(new URL("https://mcp.example/mcp"))
+    await transport.start()
+
+    await transport.send({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: "a" }
+    })
+    await transport.send({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: {} }
+    })
+    await transport.send({ jsonrpc: "2.0", method: "notifications/cancelled" })
+
+    expect(signals).toHaveLength(3)
+    expect(signals.some((signal) => signal.aborted)).toBe(false)
+  })
+
+  it("aborts the in-flight request a cancellation names", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: URL, init: RequestInit) => {
+        const message = SentMessageSchema.parse(
+          JSON.parse(typeof init.body === "string" ? init.body : "{}")
+        )
+        if (message.id === undefined) return new Response(null, { status: 202 })
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+        })
+      })
+    )
+    const transport = new NodeStreamableHttpTransport(new URL("https://mcp.example/mcp"))
+
+    const pending = transport.send({ jsonrpc: "2.0", id: 7, method: "events/stream" })
+    await transport.send({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: 7 }
+    })
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" })
   })
 })

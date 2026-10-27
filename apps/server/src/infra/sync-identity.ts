@@ -8,11 +8,7 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
-import {
-  ACCOUNTS_SYNC_NAMESPACE,
-  HARNESS_READINESS_NAMESPACE,
-  PLUGIN_READINESS_NAMESPACE
-} from "./config-sync.js"
+import { ACCOUNTS_SYNC_NAMESPACE, HARNESS_READINESS_NAMESPACE } from "./config-sync.js"
 import {
   MCP_OVERLAYS_NAMESPACE,
   MCP_READINESS_NAMESPACE,
@@ -25,7 +21,6 @@ export const LEGACY_LOCAL_SERVER_ID = "local"
 const SINGLE_WRITER_NAMESPACES: ReadonlyArray<string> = [
   MCP_READINESS_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
-  PLUGIN_READINESS_NAMESPACE,
   ACCOUNTS_SYNC_NAMESPACE
 ]
 

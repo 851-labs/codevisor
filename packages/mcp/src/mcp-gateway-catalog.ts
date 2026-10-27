@@ -15,7 +15,9 @@ import {
   type SkillEntry
 } from "./mcp-gateway-skills.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
-import { PLUGIN_CATALOG_SERVER, pluginToolDefinitions } from "./mcp-plugin-tools.js"
+import { withAccountArguments } from "./mcp-plugin-accounts.js"
+import { toolVisibleTo } from "./mcp-plugin-apps.js"
+import { makePluginSkillReader, pluginSkillEntries } from "./mcp-plugin-skills.js"
 import { run, type UpstreamConnection } from "./mcp-support.js"
 
 export interface CatalogServer {
@@ -128,9 +130,6 @@ const searchKey = (item: {
 export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   const { automationProviders, config, connectUpstream, isSuppressed } = deps
 
-  const listPluginTools = (): Promise<ReadonlyArray<Tool>> =>
-    pluginToolDefinitions(config.pluginTools)
-
   const enabledServers = async (projectId?: string, sessionId?: string) =>
     (await run(config.db.resolveMcpServers(projectId, sessionId))).filter(
       (server) => server.enabled && !isSuppressed(server.name)
@@ -141,12 +140,9 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const builtins = Object.keys(BUILTIN_CAPABILITIES).filter((id) =>
       enabled.some((server) => server.id === id)
     )
-    const names = [
-      ...enabled
-        .filter((server) => !(server.id in BUILTIN_CAPABILITIES))
-        .map((server) => server.name.trim()),
-      ...(await listPluginTools()).map((tool) => tool.name.slice(0, tool.name.lastIndexOf(".")))
-    ]
+    const names = enabled
+      .filter((server) => !(server.id in BUILTIN_CAPABILITIES))
+      .map((server) => server.name.trim())
       .filter((name, index, all) => name.length > 0 && all.indexOf(name) === index)
       .toSorted((left, right) => left.localeCompare(right))
     const shown = names.slice(0, INTEGRATION_LIMIT)
@@ -198,21 +194,26 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     return provider.tools.filter((tool) => !hidden.has(tool.name))
   }
 
+  const pluginSkillReader = makePluginSkillReader({ accounts: config.accounts, connectUpstream })
+
   const sessionSkills = async (
     projectId?: string,
     sessionId?: string
   ): Promise<ReadonlyArray<SkillEntry>> => {
-    const enabledIds = new Set(
-      (await enabledServers(projectId, sessionId)).map((server) => server.id)
-    )
+    const enabled = await enabledServers(projectId, sessionId)
+    const enabledIds = new Set(enabled.map((server) => server.id))
     if (enabledIds.has("codevisor") && (await botChatKind(sessionId)) === "conversational") {
       enabledIds.add("bot")
     }
-    return skillEntries(
-      builtinSkills,
-      { enabledIds, pluginTools: await listPluginTools() },
-      config.skillSource
+    const saved = await skillEntries(builtinSkills, { enabledIds }, config.skillSource)
+    return [...saved, ...pluginSkillEntries(enabled, pluginSkillReader)]
+  }
+
+  const upstreamTools = async (server: CatalogServer): Promise<ReadonlyArray<Tool>> => {
+    const tools = (await connectUpstream(server.id)).tools.filter((tool) =>
+      toolVisibleTo(tool, "model")
     )
+    return withAccountArguments(config.accounts, server, tools)
   }
 
   const allTools = async (
@@ -223,20 +224,15 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const results = await Promise.allSettled(
       enabled.map(async (server) => {
         const provider = automationProviders.get(server.id)
-        if (provider === undefined) {
-          return { server, tools: (await connectUpstream(server.id)).tools }
-        }
+        if (provider === undefined) return { server, tools: await upstreamTools(server) }
         return { server, tools: await providerTools(provider, sessionId) }
       })
     )
-    return [
-      ...(await listPluginTools()).map((tool) => ({ server: PLUGIN_CATALOG_SERVER, tool })),
-      ...results.flatMap((result) =>
-        result.status === "fulfilled"
-          ? result.value.tools.map((tool) => ({ server: result.value.server, tool }))
-          : []
-      )
-    ]
+    return results.flatMap((result) =>
+      result.status === "fulfilled"
+        ? result.value.tools.map((tool) => ({ server: result.value.server, tool }))
+        : []
+    )
   }
 
   const gatewayServerAllowed = async (
@@ -291,16 +287,13 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
       throw new Error(`Invalid tool path: ${path}`)
     const serverId = path.slice(0, separator)
     const toolName = path.slice(separator + 1)
-    if (serverId === "plugin") {
-      const definition = (await listPluginTools()).find((candidate) => candidate.name === toolName)
-      if (definition === undefined) throw new Error(`Tool not found: ${path}`)
-      return definition
-    }
-    const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
-    if (!allowed) throw new Error("Tool server is disabled for this session")
+    const server = (await enabledServers(projectId, sessionId)).find(
+      (candidate) => candidate.id === serverId
+    )
+    if (server === undefined) throw new Error("Tool server is disabled for this session")
     const provider = automationProviders.get(serverId)
     let serverTools: ReadonlyArray<Tool>
-    if (provider === undefined) serverTools = (await connectUpstream(serverId)).tools
+    if (provider === undefined) serverTools = await upstreamTools(server)
     else serverTools = await providerTools(provider, sessionId)
     const definition = serverTools.find((candidate) => candidate.name === toolName)
     if (definition === undefined) throw new Error(`Tool not found: ${path}`)
@@ -312,7 +305,6 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     describeCatalogPath,
     gatewayServerAllowed,
     integrationInventory,
-    listPluginTools,
     searchCatalog,
     sessionSkills
   }

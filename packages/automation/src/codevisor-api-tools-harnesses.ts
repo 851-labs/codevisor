@@ -1,17 +1,11 @@
 import {
   AnswerOpenCodeAuthRequest,
   AnswerHarnessAuthRequest,
-  ApplyPluginUpdateRequest,
   AnswerPiAuthRequest,
   CreateHarnessAccountRequest,
-  DiscoverRemotePluginRequest,
-  ImportRemotePluginRequest,
-  LinkPluginRequest,
-  PluginPaneTokenRequest,
   StartHarnessLoginRequest,
   StartOpenCodeAuthRequest,
   StartPiAuthRequest,
-  SetPluginEnabledRequest,
   UpdateHarnessAccountRequest,
   UpdateHarnessRequest
 } from "@codevisor/api"
@@ -29,120 +23,6 @@ export const codevisorHarnessApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Delete a skill from Codevisor's skill store.",
     "DELETE",
     "/v1/skills/:name"
-  ),
-  apiTool(
-    "plugins.get",
-    "Inspect one installed plugin and its runtime state.",
-    "GET",
-    "/v1/plugins/:pluginId"
-  ),
-  apiTool(
-    "plugins.updates",
-    "Check installed plugins for available updates.",
-    "GET",
-    "/v1/plugins/updates"
-  ),
-  apiTool(
-    "plugins.link",
-    "Link a local development plugin directory on this server machine.",
-    "POST",
-    "/v1/plugins/link",
-    { body: LinkPluginRequest }
-  ),
-  apiTool(
-    "plugins.restore",
-    "Restore a managed plugin to its known-good backup after a failed update.",
-    "POST",
-    "/v1/plugins/:pluginId/restore"
-  ),
-  apiTool(
-    "plugins.set_enabled",
-    "Enable or disable a plugin on this server.",
-    "POST",
-    "/v1/plugins/:pluginId/set-enabled",
-    { body: SetPluginEnabledRequest }
-  ),
-  apiTool(
-    "plugins.update_prepare",
-    "Prepare a plugin update and inspect its changes before applying the returned plan.",
-    "POST",
-    "/v1/plugins/:pluginId/update/prepare"
-  ),
-  apiTool(
-    "plugins.update_apply",
-    "Apply a previously prepared plugin update by planId.",
-    "POST",
-    "/v1/plugins/:pluginId/update/apply",
-    { body: ApplyPluginUpdateRequest }
-  ),
-  apiTool(
-    "plugins.list",
-    "List installed Codevisor plugins with their panes, declared agent tools, and runtime state.",
-    "GET",
-    "/v1/plugins"
-  ),
-  apiTool(
-    "plugins.registry_search",
-    "Search the public Codevisor plugin registry for installable plugins. Entries carry the " +
-      "plugin's name, description, panes, declared agent tools, GitHub repo (owner/name), and " +
-      "star count. To install a result, pass its repo to plugins.discover_remote, show the user " +
-      "what it would run, then call plugins.install.",
-    "GET",
-    "/v1/plugins/registry",
-    {
-      query: [
-        stringQuery("q", "Case-insensitive filter over plugin id, name, description, and repo.")
-      ]
-    }
-  ),
-  apiTool(
-    "plugins.discover_remote",
-    "Preview a plugin source without installing it: returns the manifest summary (panes and any " +
-      "declared agent tools) and the exact install/run commands installation would execute on " +
-      "this machine. ALWAYS call this before plugins.install and show the user the result.",
-    "POST",
-    "/v1/plugins/discover-remote",
-    {
-      body: DiscoverRemotePluginRequest
-    }
-  ),
-  apiTool(
-    "plugins.install",
-    "Install (or update) a plugin from a remote source, running its install command on the " +
-      "user's machine. Mandatory first step: call plugins.discover_remote and show the user the " +
-      "discovered manifest, the agent tools it would add (name and description for each), and " +
-      "the verbatim commands. Only set confirm=true after the user explicitly approves.",
-    "POST",
-    "/v1/plugins/import-remote",
-    {
-      body: ImportRemotePluginRequest,
-      confirm: true
-    }
-  ),
-  apiTool(
-    "plugins.remove",
-    "Uninstall a managed plugin: stop its process and delete its directory. Linked (dev-mode) " +
-      "plugins are never deleted this way.",
-    "DELETE",
-    "/v1/plugins/:pluginId"
-  ),
-  apiTool(
-    "plugins.restart",
-    "Restart a plugin's server process, clearing a failed state.",
-    "POST",
-    "/v1/plugins/:pluginId/restart"
-  ),
-  apiTool(
-    "plugins.open_pane_url",
-    "Issue a pane URL for a plugin pane, then open it with the browser tools to view and " +
-      "interact with it. The browser view is an independent view of the same pane: it shares " +
-      "live server state with the user's open panes. Use the workspace pane's id as paneId " +
-      "when one exists, otherwise any unique id. Pass the workspace root as cwd.",
-    "POST",
-    "/v1/plugins/:pluginId/panes/:paneId/token",
-    {
-      body: PluginPaneTokenRequest
-    }
   ),
   apiTool("harnesses.list", "List agent harnesses and readiness state.", "GET", "/v1/harnesses", {
     query: [{ name: "include", schema: { type: "string", enum: ["lifecycle"] } }]

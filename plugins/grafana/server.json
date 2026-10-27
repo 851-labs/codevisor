@@ -1,0 +1,84 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.codevisor/grafana",
+  "title": "Grafana",
+  "description": "Query Grafana alerts and data sources, and wake agents when alerts fire.",
+  "version": "1.0.0",
+  "websiteUrl": "https://codevisor.dev",
+  "repository": {
+    "url": "https://github.com/851-labs/codevisor",
+    "source": "github",
+    "subfolder": "plugins/grafana"
+  },
+  "_meta": {
+    "dev.codevisor/plugin": {
+      "bundled": "grafana",
+      "entry": "dist/main.js",
+      "ageRating": 4,
+      "accounts": {
+        "label": "Grafana instance",
+        "fields": [
+          {
+            "key": "url",
+            "label": "Grafana URL",
+            "type": "url",
+            "required": true,
+            "placeholder": "https://grafana.example.com"
+          },
+          {
+            "key": "token",
+            "label": "Service account token",
+            "type": "secret",
+            "required": true,
+            "help": "A Viewer service account token is enough to read alerts and query data."
+          },
+          {
+            "key": "webhookSecret",
+            "label": "Webhook secret",
+            "type": "secret",
+            "required": true,
+            "generated": true,
+            "help": "Send it as the Authorization header (Bearer) from Grafana's webhook contact point."
+          }
+        ]
+      },
+      "capabilities": {
+        "tools": [
+          {
+            "name": "list_alerts",
+            "description": "List firing and pending alerts",
+            "effects": "read"
+          },
+          {
+            "name": "get_alert_rule",
+            "description": "Read one alert rule",
+            "effects": "read"
+          },
+          {
+            "name": "query",
+            "description": "Run a data source query",
+            "effects": "read"
+          }
+        ],
+        "events": [
+          {
+            "name": "alert.firing",
+            "description": "A Grafana alert started firing"
+          },
+          {
+            "name": "alert.resolved",
+            "description": "A Grafana alert resolved"
+          }
+        ],
+        "skills": [],
+        "panes": [],
+        "ingress": [
+          {
+            "name": "alerts",
+            "title": "Grafana alert webhook"
+          }
+        ]
+      }
+    }
+  }
+}

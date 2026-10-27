@@ -17,6 +17,9 @@ import { makeHarnessService } from "./harness-service.js"
 import { makeMachineSettingsService } from "./machine-settings-service.js"
 import { makeMcpService } from "./mcp-service.js"
 import { makeNavigationService } from "./navigation-service.js"
+import { makePluginAppContextsService } from "./plugin-app-contexts-service.js"
+import { makePluginEventSubscriptionsService } from "./plugin-event-subscriptions-service.js"
+import { makePluginEventsService } from "./plugin-events-service.js"
 import { makeProjectsService } from "./projects-service.js"
 import { makePromptQueueService } from "./prompt-queue-service.js"
 import { createServiceContext } from "./service-context.js"
@@ -61,6 +64,9 @@ export const createService = (
     ...makeEventsService(context),
     ...makePromptQueueService(context),
     ...makeSessionSubscriptionsService(context),
+    ...makePluginEventSubscriptionsService(context),
+    ...makePluginAppContextsService(context),
+    ...makePluginEventsService(context),
     ...makeAutoResumeService(context),
     ...makeFleetOutboxService(context),
     ...makeFilesService(context),

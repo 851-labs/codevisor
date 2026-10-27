@@ -16,7 +16,6 @@ export interface McpGatewayOperationDeps {
   readonly gatewayRuntime: GatewayHandles["gatewayRuntime"]
   readonly invokeRemoteGatewayCall: GatewayHandles["invokeRemoteGatewayCall"]
   readonly jobs: ExecutionJobs
-  readonly unsubscribePluginTools: (() => void) | undefined
   readonly unsubscribeSkills: (() => void) | undefined
 }
 
@@ -54,7 +53,6 @@ export const makeMcpGatewayOperations = (
     gatewayRuntime,
     invokeRemoteGatewayCall,
     jobs,
-    unsubscribePluginTools,
     unsubscribeSkills
   } = deps
 
@@ -171,7 +169,6 @@ export const makeMcpGatewayOperations = (
   }
 
   const close: McpManager["close"] = async () => {
-    unsubscribePluginTools?.()
     unsubscribeSkills?.()
     for (const cancel of oauthRetries.values()) cancel()
     oauthRetries.clear()

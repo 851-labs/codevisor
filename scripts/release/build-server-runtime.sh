@@ -58,6 +58,10 @@ if [[ -n "${CODEVISOR_PREBUILT_SERVER_JS:-}" ]]; then
   "$script_dir/package-server-js.sh" --extract "$CODEVISOR_PREBUILT_SERVER_JS"
 else
   (cd "$repo_root" && bun run --cwd apps/server build)
+  for plugin_dir in "$repo_root"/plugins/*/; do
+    [[ -f "$plugin_dir/package.json" ]] || continue
+    (cd "$repo_root" && bun run --cwd "$plugin_dir" build)
+  done
 fi
 
 node_runtime="${CODEVISOR_RELEASE_NODE:-$(command -v node || true)}"
@@ -105,6 +109,26 @@ for package_dir in "$repo_root"/packages/*/; do
   fi
 done
 
+for catalog_file in "$repo_root"/plugins/*.json; do
+  [[ -f "$catalog_file" ]] || continue
+  mkdir -p "$runtime_dir/plugins"
+  cp "$catalog_file" "$runtime_dir/plugins/"
+done
+for plugin_dir in "$repo_root"/plugins/*/; do
+  plugin_name="$(basename "$plugin_dir")"
+  [[ -f "$plugin_dir/package.json" ]] || continue
+  if [[ ! -d "$plugin_dir/dist" ]]; then
+    echo "error: plugin $plugin_name has no dist; build it before packaging the runtime" >&2
+    exit 1
+  fi
+  mkdir -p "$runtime_dir/plugins/$plugin_name"
+  cp "$plugin_dir/package.json" "$runtime_dir/plugins/$plugin_name/package.json"
+  cp -R "$plugin_dir/dist" "$runtime_dir/plugins/$plugin_name/dist"
+  if [[ -f "$plugin_dir/server.json" ]]; then
+    cp "$plugin_dir/server.json" "$runtime_dir/plugins/$plugin_name/server.json"
+  fi
+done
+
 node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null
 mkdir -p "$runtime_dir/packages/net/native/$target"
 cp "$repo_root/packages/net/native/$target/codevisor_net.node" "$runtime_dir/packages/net/native/$target/"
@@ -130,7 +154,7 @@ if ! cmp -s \
   exit 1
 fi
 
-for manifest in "$repo_root"/apps/*/package.json "$repo_root"/packages/*/package.json; do
+for manifest in "$repo_root"/apps/*/package.json "$repo_root"/packages/*/package.json "$repo_root"/plugins/*/package.json; do
   [[ -f "$manifest" ]] || continue
   relative="${manifest#"$repo_root"/}"
   if [[ ! -f "$runtime_dir/$relative" ]]; then
@@ -145,12 +169,12 @@ if [[ ! -x "$node_gyp" ]]; then
   exit 1
 fi
 
-(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile --filter '@codevisor/server' --linker hoisted)
+(cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile --filter '@codevisor/server' --filter './plugins/*' --linker hoisted)
 cp "$node_runtime" "$runtime_dir/bin/node"
 chmod +x "$runtime_dir/bin/node"
 echo "Bundled $node_version from $node_runtime"
 
-find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" \
+find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" "$runtime_dir/plugins" \
   \( -name "*.test.js" -o -name "*.test.d.ts" \) \
   -delete
 

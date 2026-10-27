@@ -15,6 +15,7 @@ import type {
   GitPullRequest,
   Harness,
   Project,
+  PromptAttribution,
   PromptOrigin,
   PromptQueueItem,
   QuestionPayload,
@@ -44,10 +45,10 @@ import type { AutoResumeService } from "./auto-resume-service.js"
 import type { BotsService } from "./bot-rows.js"
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
+import type { FileStorageService } from "./file-storage-service.js"
 import type { FleetOutboxService } from "./fleet-outbox-service.js"
+import type { PluginDatabaseService } from "./plugin-database-service.js"
 import type {
-  FileStorageRecord,
-  FileStorageState,
   HarnessAccountRecord,
   HarnessUpdateStateRecord,
   McpServerRecord,
@@ -58,7 +59,6 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
-import type { StoredFileReferences } from "./session-files.js"
 import type { SessionStateService } from "./session-state-types.js"
 import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
@@ -87,7 +87,9 @@ export interface CodevisorDatabaseService
     SessionStateService,
     BotsService,
     SessionSubscriptionsService,
+    PluginDatabaseService,
     AutoResumeService,
+    FileStorageService,
     FleetOutboxService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
@@ -271,7 +273,8 @@ export interface CodevisorDatabaseService
     attachments?: ReadonlyArray<AttachmentRef>,
     id?: string,
     clientId?: string,
-    origin?: PromptOrigin
+    origin?: PromptOrigin,
+    attribution?: PromptAttribution
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly createFile: (
     name: string,
@@ -300,20 +303,6 @@ export interface CodevisorDatabaseService
     workspaceId: string,
     limit: number
   ) => Effect.Effect<ReadonlyArray<WorkspaceFileEdit>, DatabaseError>
-  readonly getFileStorage: (
-    id: string
-  ) => Effect.Effect<FileStorageRecord | undefined, DatabaseError>
-  readonly listFileStorage: (
-    state: FileStorageState,
-    limit: number
-  ) => Effect.Effect<ReadonlyArray<FileStorageRecord>, DatabaseError>
-  readonly fileStorageCounts: Effect.Effect<
-    Readonly<Record<FileStorageState, number>>,
-    DatabaseError
-  >
-  readonly markFileStorageDual: (id: string) => Effect.Effect<void, DatabaseError>
-  readonly markFileStorageDisk: (id: string) => Effect.Effect<void, DatabaseError>
-  readonly storedFileReferences: Effect.Effect<StoredFileReferences, DatabaseError>
   readonly listPromptQueue: (
     sessionId: string
   ) => Effect.Effect<ReadonlyArray<PromptQueueItem>, DatabaseError>

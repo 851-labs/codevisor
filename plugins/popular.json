@@ -1,0 +1,129 @@
+{
+  "servers": [
+    {
+      "server": {
+        "name": "app.linear/linear",
+        "title": "Linear",
+        "description": "Find and manage issues, projects, and documents in your Linear workspace.",
+        "version": "1.0.2",
+        "websiteUrl": "https://linear.app",
+        "icons": [
+          {
+            "src": "https://static.linear.app/integrations/mcp/icon-256.png"
+          }
+        ],
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.linear.app/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "com.notion/mcp",
+        "title": "Notion",
+        "description": "Search, read and edit Notion pages and databases.",
+        "version": "1.0.1",
+        "websiteUrl": "https://developers.notion.com/docs/mcp",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.notion.com/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "io.sentry/mcp",
+        "title": "Sentry",
+        "description": "Search Sentry issues and events, and read stack traces.",
+        "version": "remote",
+        "websiteUrl": "https://docs.sentry.io/product/sentry-mcp/",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.sentry.dev/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "com.stripe/mcp",
+        "title": "Stripe",
+        "description": "Work with Stripe customers, products, payments and more.",
+        "version": "0.2.4",
+        "websiteUrl": "https://docs.stripe.com/mcp",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.stripe.com"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "co.huggingface/hf-mcp-server",
+        "title": "Hugging Face",
+        "description": "Search models, datasets, Spaces and papers on Hugging Face.",
+        "version": "remote",
+        "websiteUrl": "https://huggingface.co/settings/mcp",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://huggingface.co/mcp?login"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 13
+          }
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "com.zillow/mcp",
+        "title": "Zillow",
+        "description": "Search homes, Zestimates, neighborhoods and affordability, with interactive results.",
+        "version": "2",
+        "websiteUrl": "https://www.zillow.com",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.zillow.com/api/v2"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    }
+  ]
+}

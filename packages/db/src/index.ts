@@ -60,3 +60,18 @@ export type {
   UpsertWorkspaceRecord,
   WorkspaceBotFields
 } from "./workspace-service-types.js"
+export type {
+  DeliveredPluginAppContext,
+  PluginAppContextRecord,
+  PluginAppContextUpdate
+} from "./plugin-app-contexts-service.js"
+export type {
+  NewPluginEventSubscription,
+  PluginEventSubscriptionRecord
+} from "./plugin-event-subscriptions-service.js"
+export type {
+  PendingPluginEventDelivery,
+  PluginEventOccurrence,
+  PluginEventStored,
+  RecordedPluginEvent
+} from "./plugin-events-service.js"

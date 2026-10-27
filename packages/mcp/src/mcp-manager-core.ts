@@ -23,6 +23,7 @@ import { makeAutomationUse } from "./mcp-automation-use.js"
 import type { GatewayRuntime } from "./mcp-gateway.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
 import type { McpOAuthClock } from "./mcp-oauth-clock.js"
+import { makePluginAppViewStore } from "./mcp-plugin-app-views.js"
 import {
   decryptSecrets,
   encryptSecrets,
@@ -30,6 +31,8 @@ import {
   type StoredSecrets
 } from "./mcp-secret-store.js"
 import { reportBackgroundFailure, run, type UpstreamConnection } from "./mcp-support.js"
+
+export type ConnectionListener = (id: string, state: "connected" | "closed") => void
 
 export interface McpManagerState {
   gatewayBaseUrl: string
@@ -59,7 +62,10 @@ const visibleSignature = (server: McpServerRecord): string =>
     server.oauthScope,
     server.connectionState,
     server.toolCount,
-    server.detail
+    server.detail,
+    server.catalogId,
+    server.catalogVersion,
+    server.capabilities
   ])
 
 export const makeMcpManagerCore = (config: McpManagerConfig) => {
@@ -68,6 +74,8 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     .update("herdman-mcp-gateway-v1")
     .update(key)
     .digest("base64url")
+  const appViews = makePluginAppViewStore(config.dataDir)
+  void appViews.prune()
   const connections = new Map<string, UpstreamConnection>()
   const connectionLocks = new Map<string, Promise<UpstreamConnection>>()
   const oauthRetries = new Map<string, () => void>()
@@ -94,6 +102,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   /* v8 ignore next 3 */
   const emitCredentialsRotated = (id: string): void => {
     for (const listener of Array.from(rotationListeners)) listener(id)
+  }
+  const connectionListeners = new Set<ConnectionListener>()
+  const emitConnection: ConnectionListener = (id, connectionState) => {
+    for (const listener of Array.from(connectionListeners)) listener(id, connectionState)
   }
   const changeListeners = new Set<(id: string) => void>()
   const emitServerChanged = (id: string): void => {
@@ -258,6 +270,9 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     const oauthScope = patch.oauthScope ?? server.oauthScope
     const detail = patch.detail
     const secretCipher = patch.secretCipher ?? server.secretCipher
+    const catalogId = patch.catalogId ?? server.catalogId
+    const catalogVersion = patch.catalogVersion ?? server.catalogVersion
+    const capabilities = patch.capabilities ?? server.capabilities
     const saved = await run(
       config.db.saveMcpServer({
         id: server.id,
@@ -275,7 +290,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
         toolCount: patch.toolCount ?? server.toolCount,
         ...(detail === undefined ? {} : { detail }),
         /* v8 ignore next */
-        ...(secretCipher === undefined ? {} : { secretCipher })
+        ...(secretCipher === undefined ? {} : { secretCipher }),
+        ...(catalogId === undefined ? {} : { catalogId }),
+        ...(catalogVersion === undefined ? {} : { catalogVersion }),
+        ...(capabilities === undefined ? {} : { capabilities })
       })
     )
     if (patch.secretCipher !== undefined || visibleSignature(saved) !== visibleSignature(server)) {
@@ -357,6 +375,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   /* v8 ignore stop */
 
   return {
+    appViews,
     automationProviders,
     automationUse,
     browserProvider,
@@ -370,8 +389,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     codeExecutor,
     computerProvider,
     config,
+    connectionListeners,
     connectionLocks,
     connections,
+    emitConnection,
     emitCredentialsRotated,
     emitServerChanged,
     extensionFlowSupported,

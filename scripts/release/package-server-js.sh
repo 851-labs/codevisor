@@ -8,7 +8,7 @@ usage: scripts/release/package-server-js.sh <archive.tar.gz>
        scripts/release/package-server-js.sh --extract <archive.tar.gz>
 
 Packs or restores the compiled server JavaScript (apps/server/dist and every
-packages/*/dist) so a slow runner can package a native runtime without
+packages/*/dist and plugins/*/dist) so a slow runner can package a native runtime without
 repeating the TypeScript build. The output is platform independent.
 
 Packing requires a completed build-server-runtime.sh run in this checkout.
@@ -38,13 +38,14 @@ case "${1:-}" in
       exit 1
     fi
     [[ -f "$staging/apps/server/dist/main.js" ]] || { echo "error: archive has no apps/server/dist/main.js" >&2; exit 1; }
-    rm -rf "$repo_root/apps/server/dist" "$repo_root"/packages/*/dist
+    rm -rf "$repo_root/apps/server/dist" "$repo_root"/packages/*/dist "$repo_root"/plugins/*/dist
     cp -R "$staging/apps/server/dist" "$repo_root/apps/server/dist"
-    for dist in "$staging"/packages/*/dist; do
+    for dist in "$staging"/packages/*/dist "$staging"/plugins/*/dist; do
       [[ -d "$dist" ]] || continue
-      package_name="$(basename "$(dirname "$dist")")"
-      [[ -d "$repo_root/packages/$package_name" ]] || { echo "error: archive has unknown package $package_name" >&2; exit 1; }
-      cp -R "$dist" "$repo_root/packages/$package_name/dist"
+      package_dir="${dist#"$staging"/}"
+      package_dir="${package_dir%/dist}"
+      [[ -d "$repo_root/$package_dir" ]] || { echo "error: archive has unknown package $package_dir" >&2; exit 1; }
+      cp -R "$dist" "$repo_root/$package_dir/dist"
     done
     echo "Restored server JavaScript built from $revision"
     ;;
@@ -62,7 +63,7 @@ case "${1:-}" in
     (
       cd "$repo_root"
       dists=(apps/server/dist)
-      for dist in packages/*/dist; do
+      for dist in packages/*/dist plugins/*/dist; do
         [[ -d "$dist" ]] && dists+=("$dist")
       done
       tar -czf "$archive" -C "$staging" SOURCE_REVISION -C "$repo_root" "${dists[@]}"

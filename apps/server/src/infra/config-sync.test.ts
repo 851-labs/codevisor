@@ -7,7 +7,6 @@ import {
   ACCOUNTS_SYNC_NAMESPACE,
   MCPS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
-  PLUGIN_READINESS_NAMESPACE,
   publishAccountsRoster,
   publishMachineReadiness,
   reconcileMcps
@@ -238,7 +237,7 @@ describe("config sync", () => {
     const { services } = await makeServices("server-p")
     const deps = {
       db: services.db,
-      namespace: PLUGIN_READINESS_NAMESPACE,
+      namespace: "test-readiness",
       now: () => 9_000,
       serverId: "server-p",
       value: {
@@ -262,7 +261,7 @@ describe("config sync", () => {
       { wallMs: 12_000, counter: 5, deviceId: "server-p" }
     ])
 
-    const document = await run(services.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
+    const document = await run(services.db.getSyncEntries("test-readiness"))
     expect(document[0]?.key).toBe("server-p")
     const value = Schema.decodeUnknownSync(
       Schema.Struct({

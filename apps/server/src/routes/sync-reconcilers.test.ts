@@ -4,7 +4,6 @@ import { join } from "node:path"
 
 import { decode } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
-import { writePluginInstallReceipt } from "@codevisor/plugins"
 import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { Schema } from "effect"
@@ -16,21 +15,13 @@ import {
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
-import {
-  jsonRequest,
-  makeServices,
-  pluginSummary,
-  run,
-  startWithApp,
-  tempDirs
-} from "../test-support.js"
-import { fakeHarnessAuth, fakePlugins } from "./harness-auth-test-support.js"
+import { jsonRequest, makeServices, run, startWithApp, tempDirs } from "../test-support.js"
+import { fakeHarnessAuth } from "./harness-auth-test-support.js"
 import { field } from "./response-test-support.js"
 import {
   makeAuthSyncRefreshScheduler,
   refreshHarnessReadiness,
   refreshMcpReadiness,
-  refreshPluginReadiness,
   republishAccountsRoster
 } from "./sync-readiness.js"
 import {
@@ -50,17 +41,10 @@ describe("configMutationNamespace", () => {
     expect(configMutationNamespace("POST", "/v1/native-mcps/import")).toBe("mcps")
     expect(configMutationNamespace("POST", "/v1/skills")).toBe("skills")
     expect(configMutationNamespace("PATCH", "/v1/harnesses/claude")).toBe("harnesses")
-    expect(configMutationNamespace("POST", "/v1/plugins/import-remote")).toBe("plugins")
-    expect(configMutationNamespace("DELETE", "/v1/plugins/acme.tunes")).toBe("plugins")
 
     expect(configMutationNamespace("GET", "/v1/mcps")).toBeUndefined()
     expect(configMutationNamespace("HEAD", "/v1/skills")).toBeUndefined()
-    expect(configMutationNamespace("OPTIONS", "/v1/plugins")).toBeUndefined()
     expect(configMutationNamespace(undefined, "/v1/mcps")).toBeUndefined()
-
-    expect(configMutationNamespace("POST", "/v1/plugins/x/app/api")).toBeUndefined()
-    expect(configMutationNamespace("POST", "/v1/plugins/x/panes/p/token")).toBeUndefined()
-    expect(configMutationNamespace("POST", "/v1/plugins/x/tools/run")).toBeUndefined()
 
     expect(configMutationNamespace("POST", "/v1/sessions")).toBeUndefined()
   })
@@ -260,103 +244,6 @@ describe("auth-derived sync refresh", () => {
     scheduler.close()
     scheduler.request()
     expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2)
-  })
-})
-
-describe("refreshPluginReadiness", () => {
-  it("derives every row state", async () => {
-    const fanout = await run(makeEventFanout)
-    const { services } = await makeServices("server-pr")
-
-    const managedPath = await mkdtemp(join(tmpdir(), "codevisor-pr-"))
-    await writePluginInstallReceipt(managedPath, {
-      installedAt: "2026-01-01T00:00:00.000Z",
-      installedVersion: "0.1.0",
-      pluginId: "owner.example",
-      resolvedCommit: "a".repeat(40),
-      schemaVersion: 1,
-      source: { kind: "github", repo: "owner/example", tracking: "registry", url: "owner/example" },
-      updatedAt: "2026-01-01T00:00:00.000Z"
-    })
-    const manager = fakePlugins({
-      list: async () => ({
-        plugins: [
-          {
-            ...pluginSummary,
-            enabled: true,
-            id: "owner.example",
-            path: managedPath,
-            source: "managed"
-          },
-          {
-            ...pluginSummary,
-            enabled: false,
-            id: "owner.paused",
-            path: managedPath,
-            source: "managed"
-          },
-          {
-            ...pluginSummary,
-            enabled: true,
-            id: "dev-linked",
-            path: "/tmp/nowhere",
-            source: "linked"
-          }
-        ]
-      })
-    })
-
-    await run(
-      services.db.mergeSyncEntries("plugins", [
-        {
-          key: "fleet.pending",
-          timestamp: { counter: 0, deviceId: "other", wallMs: 1 },
-          value: { enabled: true, source: "o/p" }
-        },
-        {
-          key: "fleet.ffmpeg",
-          timestamp: { counter: 1, deviceId: "other", wallMs: 1 },
-          value: { enabled: true, source: "o/f" }
-        },
-        {
-          deleted: true,
-          key: "fleet.gone",
-          timestamp: { counter: 2, deviceId: "other", wallMs: 1 },
-          value: null
-        }
-      ])
-    )
-    await refreshPluginReadiness(services, config, fanout, manager, [
-      { id: "fleet.ffmpeg", reason: "needs ffmpeg" }
-    ])
-    const entries = await run(services.db.getSyncEntries("plugin-readiness"))
-    const value = decode(
-      Schema.Struct({
-        plugins: Schema.Array(
-          Schema.Struct({
-            id: Schema.String,
-            state: Schema.String,
-            reason: Schema.optional(Schema.String)
-          })
-        )
-      })
-    )(entries[0]?.value)
-    const byId = Object.fromEntries(value.plugins.map((row) => [row.id, row]))
-    expect(byId["owner.example"]?.state).toBe("ready")
-    expect(byId["owner.paused"]?.state).toBe("disabled")
-    expect(byId["dev-linked"]?.state).toBe("machineOnly")
-    expect(byId["fleet.pending"]?.state).toBe("notInstalled")
-    expect(byId["fleet.ffmpeg"]).toEqual({
-      id: "fleet.ffmpeg",
-      reason: "needs ffmpeg",
-      state: "blocked"
-    })
-    expect(byId["fleet.gone"]).toBeUndefined()
-
-    const poisoned = fakePlugins({ list: () => Promise.reject(new Error("boom")) })
-    await expect(
-      refreshPluginReadiness(services, config, fanout, poisoned, [])
-    ).resolves.toBeUndefined()
   })
 })
 

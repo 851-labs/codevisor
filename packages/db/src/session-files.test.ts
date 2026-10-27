@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest"
 import { makeAttachmentStore, type AttachmentStore } from "./attachment-store.js"
 import { removeUnreferencedAttachments } from "./attachment-sweep.js"
 import { makeDatabase, type CodevisorDatabaseService } from "./index.js"
-import { memoryDatabase, run, tempDatabase } from "./test-support.js"
+import { memoryDatabase, rewindPluginsSql, run, tempDatabase } from "./test-support.js"
 
 const directories: Array<string> = []
 
@@ -46,6 +46,7 @@ const rewindToV78 = (filename: string): void => {
   const sqlite = new Database(filename)
   try {
     sqlite.exec(`
+      ${rewindPluginsSql}
       drop table session_files;
       alter table files drop column purge_with_chats;
       delete from schema_migrations where id = 79;

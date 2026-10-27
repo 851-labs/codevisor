@@ -66,6 +66,55 @@ const makeFakeRepo = async (root) => {
   await utimes(join(root, "packages/sync/resources/runtime.wasm"), 1600000000, 1600000000)
 }
 
+test("syncLinuxWorkspace ships plugin packages, their server.json and the plugin catalog", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-devc-"))
+  try {
+    await makeFakeRepo(root)
+    await mkdir(join(root, "plugins/gmail/dist"), { recursive: true })
+    await mkdir(join(root, "plugins/gmail/src"), { recursive: true })
+    await writeFile(join(root, "plugins/popular.json"), '{"servers":[]}')
+    await writeFile(join(root, "plugins/gmail/package.json"), '{"name":"@codevisor/plugin-gmail"}')
+    await writeFile(join(root, "plugins/gmail/server.json"), '{"name":"dev.codevisor/gmail"}')
+    await writeFile(join(root, "plugins/gmail/dist/main.js"), "export {}")
+    await writeFile(join(root, "plugins/gmail/src/main.ts"), "secret source")
+    const containerRoot = join(root, "tmp/container")
+
+    const first = await syncLinuxWorkspace(root, containerRoot)
+
+    assert.equal(
+      await readFile(join(first.appRoot, "plugins/popular.json"), "utf8"),
+      '{"servers":[]}'
+    )
+    assert.equal(
+      await readFile(join(first.appRoot, "plugins/gmail/server.json"), "utf8"),
+      '{"name":"dev.codevisor/gmail"}'
+    )
+    assert.equal(
+      await readFile(join(first.appRoot, "plugins/gmail/dist/main.js"), "utf8"),
+      "export {}"
+    )
+    await assert.rejects(readFile(join(first.appRoot, "plugins/gmail/src/main.ts")))
+
+    await writeFile(
+      join(root, "plugins/gmail/server.json"),
+      '{"name":"dev.codevisor/gmail","version":"2"}'
+    )
+    await utimes(join(root, "plugins/gmail/server.json"), 1600000010, 1600000010)
+    const updated = await syncLinuxWorkspace(root, containerRoot)
+    assert.equal(updated.changed, true)
+
+    await rm(join(root, "plugins/gmail"), { recursive: true })
+    const removed = await syncLinuxWorkspace(root, containerRoot)
+    await assert.rejects(readFile(join(removed.appRoot, "plugins/gmail/package.json")))
+    assert.equal(
+      await readFile(join(removed.appRoot, "plugins/popular.json"), "utf8"),
+      '{"servers":[]}'
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("syncLinuxWorkspace copies dists and manifests, never sources", async () => {
   const root = await mkdtemp(join(tmpdir(), "codevisor-devc-"))
   try {

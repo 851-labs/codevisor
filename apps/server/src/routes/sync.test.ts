@@ -1,8 +1,8 @@
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { decode, type HarnessAuthState, type PluginSummary } from "@codevisor/api"
+import { decode, type HarnessAuthState } from "@codevisor/api"
 import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { Effect, Schema } from "effect"
@@ -12,7 +12,6 @@ import {
   harnesses,
   jsonRequest,
   makeServices,
-  pluginSummary,
   readWebSocketEvents,
   run,
   startWithApp,
@@ -22,7 +21,6 @@ import {
   authStatus,
   fakeHarnessAuth,
   fakeHarnessLifecycle,
-  fakePlugins,
   syncRows
 } from "./harness-auth-test-support.js"
 import { field, itemsOf } from "./response-test-support.js"
@@ -301,107 +299,6 @@ describe("/v1/sync", () => {
     expect((await reconcileWithAuth("notRequired", "server-h3")).body).toMatchObject({
       applied: ["codex"]
     })
-  })
-
-  it("reconciles plugins over HTTP from install receipts", async () => {
-    const { services } = await makeServices("server-psync")
-    await run(
-      services.db.mergeSyncEntries("plugins", [
-        {
-          key: "acme.tunes",
-          value: { enabled: true, source: "acme/tunes" },
-          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
-        },
-        {
-          key: "acme.paused",
-          value: { enabled: true, source: "acme/paused" },
-          timestamp: { wallMs: 11, counter: 0, deviceId: "z" }
-        }
-      ])
-    )
-    const receiptDir = mkdtempSync(join(tmpdir(), "plugin-receipt-"))
-    const bareDir = mkdtempSync(join(tmpdir(), "plugin-bare-"))
-    tempDirs.push(receiptDir, bareDir)
-    writeFileSync(
-      join(receiptDir, ".codevisor-install.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        pluginId: "acme.paused",
-        source: {
-          kind: "github",
-          url: "https://github.com/acme/paused",
-          repo: "acme/paused",
-          tracking: "registry"
-        },
-        resolvedCommit: "a".repeat(40),
-        installedVersion: "1.0.0",
-        installedAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z"
-      })
-    )
-    const installs: Array<string> = []
-    const enables: Array<readonly [string, boolean]> = []
-    const removals: Array<string> = []
-    let pluginList: Array<PluginSummary> = [
-      { ...pluginSummary, id: "acme.paused", enabled: false, source: "managed", path: receiptDir },
-      { ...pluginSummary, id: "acme.bare", enabled: true, source: "managed", path: bareDir },
-      { ...pluginSummary, id: "dev.x", enabled: true, source: "linked", path: "/dev/x" }
-    ]
-    const plugins = fakePlugins({
-      subscribe: () => () => {},
-      close: () => {},
-      list: () => Promise.resolve({ plugins: [...pluginList] }),
-      importRemote: (request) => {
-        installs.push(request.source)
-        return Promise.resolve({ ...pluginSummary, id: "acme.tunes" })
-      },
-      setEnabled: (pluginId, enabled) => {
-        enables.push([pluginId, enabled])
-        pluginList = pluginList.map((plugin) =>
-          plugin.id === pluginId ? { ...plugin, enabled } : plugin
-        )
-        return Promise.resolve({ ...pluginSummary, id: pluginId, enabled })
-      },
-      remove: (pluginId) => {
-        removals.push(pluginId)
-        pluginList = pluginList.filter((plugin) => plugin.id !== pluginId)
-        return Promise.resolve({ plugins: [] })
-      }
-    })
-    const server = await startWithApp({ ...services, plugins })
-
-    const result = await jsonRequest(server, "/v1/sync/plugins/reconcile", { method: "POST" })
-    expect(result.status).toBe(200)
-    expect(result.body).toMatchObject({
-      published: [],
-      installed: ["acme.tunes"]
-    })
-    expect(
-      decode(Schema.Struct({ applied: Schema.Array(Schema.String) }))(
-        result.body
-      ).applied.toSorted()
-    ).toEqual(["acme.paused", "acme.tunes"])
-    expect(installs).toEqual(["acme/tunes"])
-    expect(enables).toEqual([["acme.paused", true]])
-
-    await run(
-      services.db.mergeSyncEntries("plugins", [
-        {
-          key: "acme.paused",
-          value: null,
-          deleted: true,
-          timestamp: { wallMs: 20_000_000_000_000, counter: 0, deviceId: "z" }
-        }
-      ])
-    )
-    await jsonRequest(server, "/v1/sync/plugins/reconcile", { method: "POST" })
-    expect(removals).toEqual(["acme.paused"])
-
-    const { services: bare } = await makeServices("server-psync-bare")
-    const bareServer = await startWithApp(bare)
-    expect(
-      (await jsonRequest(bareServer, "/v1/sync/plugins/reconcile", { method: "POST" })).status
-    ).toBe(501)
   })
 
   it("responds 501 for sync routes without the backing services", async () => {

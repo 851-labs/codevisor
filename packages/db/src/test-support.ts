@@ -251,3 +251,17 @@ const v4FixtureSql = `
     insert into session_actions (session_id, client_action_id, action_kind, response, created_at)
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `
+
+export const rewindPluginsSql = `
+  drop table plugin_event_deliveries;
+  drop table plugin_events;
+  drop table plugin_event_cursors;
+  drop table plugin_event_subscriptions;
+  drop table plugin_app_contexts;
+  alter table mcp_servers drop column catalog_id;
+  alter table mcp_servers drop column catalog_version;
+  alter table mcp_servers drop column capabilities;
+  alter table prompt_queue_items drop column attribution;
+  alter table chat_items drop column attribution;
+  delete from schema_migrations where id = 82;
+`

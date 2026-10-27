@@ -23,8 +23,6 @@ export {
   type AccountsRosterDeps,
   HARNESS_READINESS_NAMESPACE,
   type HarnessReadinessRow,
-  PLUGIN_READINESS_NAMESPACE,
-  type PluginReadinessRow,
   publishAccountsRoster,
   publishMachineReadiness
 } from "./fleet-readiness.js"

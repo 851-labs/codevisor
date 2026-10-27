@@ -22,7 +22,7 @@ import type {
   SharedOAuthHarness,
   SharedTokenBundle
 } from "@codevisor/harness-manager"
-import { McpRefreshRejected, McpRefreshUnavailable, refreshMcpOAuth } from "@codevisor/mcp"
+import { McpRefreshRejected, McpRefreshUnavailable, refreshOAuthGrant } from "@codevisor/mcp"
 import { Schema } from "effect"
 
 import { errorCode } from "../unknown-values.js"
@@ -70,14 +70,17 @@ export const sharedAccountVault = (
   })
 }
 
-export const rotateMcpCredential = async (
+export const rotateOAuthGrant = async (
   bundle: SharedTokenBundle,
   now: () => number = Date.now
 ): Promise<SharedTokenBundle> => {
-  if (bundle.harnessId !== "mcp" || bundle.ownership !== "managed")
-    throw new SharedCredentialError("reauthenticate")
+  if (!isOAuthGrantKind(bundle)) throw new SharedCredentialError("reauthenticate")
   try {
-    return await refreshMcpOAuth({ ...bundle, harnessId: "mcp", ownership: "managed" }, { now })
+    const refreshed = await refreshOAuthGrant(
+      { ...bundle, harnessId: "mcp", ownership: "managed" },
+      { now }
+    )
+    return { ...refreshed, harnessId: bundle.harnessId }
   } catch (cause) {
     if (cause instanceof McpRefreshRejected) throw new OAuthRefreshRejected(400, cause.code)
     if (cause instanceof McpRefreshUnavailable) throw new OAuthRefreshUnavailable(cause.detail)
@@ -85,13 +88,18 @@ export const rotateMcpCredential = async (
   }
 }
 
+const isOAuthGrantKind = (bundle: SharedTokenBundle): boolean =>
+  (bundle.harnessId === "mcp" || bundle.harnessId === "plugin") &&
+  bundle.ownership === "managed" &&
+  bundle.authMethod !== "apiKey"
+
 export const mcpCredentialVault = (
   dataDir: string,
   provided?: CredentialCoordinator,
   now: () => number = Date.now
 ) =>
   sharedAccountVault(dataDir, provided, {
-    rotate: (bundle) => rotateMcpCredential(bundle, now),
+    rotate: (bundle) => rotateOAuthGrant(bundle, now),
     now
   })
 

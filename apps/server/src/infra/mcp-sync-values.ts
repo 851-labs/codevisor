@@ -5,6 +5,8 @@ import { field } from "../unknown-values.js"
 
 export interface SyncedMcpValue {
   readonly name: string
+  readonly catalogId?: string | undefined
+  readonly catalogVersion?: string | undefined
   readonly transport: "http" | "stdio"
   readonly url?: string | undefined
   readonly command?: string | undefined
@@ -27,6 +29,8 @@ export interface StaticMcpSecrets {
 export interface McpLike {
   readonly id: string
   readonly name: string
+  readonly catalogId?: string | undefined
+  readonly catalogVersion?: string | undefined
   readonly kind: string
   readonly transport: "http" | "stdio"
   readonly url?: string | undefined
@@ -61,6 +65,8 @@ export const withHeldCredential = (
 
 export const mcpCreation = (wanted: SyncedMcpValue): CreateMcpServerRequest => ({
   name: wanted.name,
+  ...(wanted.catalogId === undefined ? {} : { catalogId: wanted.catalogId }),
+  ...(wanted.catalogVersion === undefined ? {} : { catalogVersion: wanted.catalogVersion }),
   transport: wanted.transport,
   ...(wanted.url === undefined ? {} : { url: wanted.url }),
   ...(wanted.command === undefined ? {} : { command: wanted.command }),
@@ -91,6 +97,7 @@ export const syncedValue = (server: McpLike, secrets: StaticMcpSecrets): SyncedM
   const env = sortedRecord(secrets.env)
   return {
     name: server.name,
+    ...catalogOf(server),
     transport: server.transport,
     ...(server.url === undefined ? {} : { url: server.url }),
     ...(server.command === undefined ? {} : { command: server.command }),
@@ -133,6 +140,7 @@ export const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => 
       : undefined
   return {
     name: candidate.name,
+    ...catalogOf(candidate),
     transport: candidate.transport,
     ...(typeof candidate.url === "string" ? { url: candidate.url } : {}),
     ...(typeof candidate.command === "string" ? { command: candidate.command } : {}),
@@ -150,6 +158,14 @@ export const parseSyncedValue = (value: unknown): SyncedMcpValue | undefined => 
     ...(credential === undefined ? {} : { oauthCredential: credential })
   }
 }
+
+const catalogOf = (value: {
+  readonly catalogId?: unknown
+  readonly catalogVersion?: unknown
+}): { readonly catalogId?: string; readonly catalogVersion?: string } => ({
+  ...(typeof value.catalogId === "string" ? { catalogId: value.catalogId } : {}),
+  ...(typeof value.catalogVersion === "string" ? { catalogVersion: value.catalogVersion } : {})
+})
 
 const httpSecretsUpdate = (local: McpLike, wanted: SyncedMcpValue): UpdateMcpServerRequest => {
   const wantedHeaders = wanted.headers ?? {}

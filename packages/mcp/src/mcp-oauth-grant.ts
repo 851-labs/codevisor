@@ -122,7 +122,7 @@ const classified = (cause: unknown): unknown => {
   return unsent === undefined ? cause : new McpRefreshUnavailable(unsent)
 }
 
-export const refreshMcpOAuth = async (
+export const refreshOAuthGrant = async (
   bundle: McpTokenBundle,
   options: { readonly fetch?: typeof fetch; readonly now?: () => number } = {}
 ): Promise<McpTokenBundle> => {

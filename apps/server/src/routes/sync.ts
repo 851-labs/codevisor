@@ -37,7 +37,6 @@ const RECONCILE_ROUTES: Record<string, SyncReconcileNamespace> = {
   "/v1/sync/skills/reconcile": "skills",
   "/v1/sync/mcps/reconcile": "mcps",
   "/v1/sync/harnesses/reconcile": "harnesses",
-  "/v1/sync/plugins/reconcile": "plugins",
   "/v1/sync/credentials/reconcile": "credentials"
 }
 
@@ -45,7 +44,6 @@ const RECONCILE_UNAVAILABLE: Record<SyncReconcileNamespace, string> = {
   skills: "Skills sync unavailable",
   mcps: "MCP sync unavailable",
   harnesses: "Harness sync unavailable",
-  plugins: "Plugin sync unavailable",
   credentials: "Credential sync unavailable"
 }
 

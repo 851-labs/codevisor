@@ -7,6 +7,8 @@ import { makeCodevisorApi, type CodevisorApiConnection } from "./codevisor-api-c
 import { bearerHeaders, requestBody, requestInit, requestUrl } from "./codevisor-api-request.js"
 import { resourceResult, responseError, textResult } from "./codevisor-api-response.js"
 import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
+import { codevisorEventTools } from "./codevisor-event-tools.js"
+import { codevisorPluginTools } from "./codevisor-plugin-tools.js"
 import { toolInputSchema } from "./codevisor-tool-schema.js"
 import { shapedToolResult } from "./codevisor-tool-shapes.js"
 import type { UnknownRecord } from "./unknown-values.js"
@@ -16,6 +18,8 @@ export {
   CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES
 } from "./codevisor-api-tools.js"
 
+const agentTools = [...codevisorAgentTools, ...codevisorEventTools, ...codevisorPluginTools]
+
 const tools: ReadonlyArray<Tool> = [
   {
     name: "context.current",
@@ -23,7 +27,7 @@ const tools: ReadonlyArray<Tool> = [
       "Return where you are: agentId, projectId, workspaceId, worktreeName (your git worktree, absent for the project folder), parentAgentId (the agent that started you, if any), the machine you run on, and clientId (the app window that sent the current message, absent for automations and agent-sent messages).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
-  ...codevisorAgentTools.map((tool) => tool.definition),
+  ...agentTools.map((tool) => tool.definition),
   ...CODEVISOR_API_TOOLS.map((spec): Tool => ({
     name: spec.name,
     description: spec.description,
@@ -68,7 +72,7 @@ const invokeAgentTool = async (
   toolName: string,
   args: UnknownRecord
 ): Promise<CallToolResult | undefined> => {
-  const tool = codevisorAgentTools.find((candidate) => candidate.definition.name === toolName)
+  const tool = agentTools.find((candidate) => candidate.definition.name === toolName)
   if (tool === undefined) return undefined
   const api = makeCodevisorApi(connection, context, toolName)
   return textToolResult(JSON.stringify(await tool.run({ api, context }, args)))

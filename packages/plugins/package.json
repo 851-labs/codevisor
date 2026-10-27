@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@codevisor/api": "workspace:*",
+    "@marcbachmann/cel-js": "8.0.0",
     "sharp": "0.35.2"
   },
   "devDependencies": {

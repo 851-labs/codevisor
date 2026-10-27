@@ -40,10 +40,12 @@ describe("shared account names", () => {
     ).toEqual(["Google", "ChatGPT", "Meta", "Claude"])
   })
 
-  it("never turns an MCP server sign-in into a harness account", () => {
+  it("never turns an MCP or plugin sign-in into a harness account", () => {
     const credential = { id: "credential-0123456789", key: "k".repeat(43) }
-    expect(() =>
-      sharedAccountFor(bundle({ harnessId: "mcp" }), credential, undefined, "machine")
-    ).toThrow("An MCP sign-in is not a harness account")
+    for (const harnessId of ["mcp", "plugin"] as const) {
+      expect(() =>
+        sharedAccountFor(bundle({ harnessId }), credential, undefined, "machine")
+      ).toThrow("A plugin sign-in is not a harness account")
+    }
   })
 })

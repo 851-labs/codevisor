@@ -24,12 +24,7 @@ import { credentialFerrySources } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager, type NativeMcpManager } from "@codevisor/mcp"
-import {
-  makePluginRegistryClient,
-  makePluginsManager,
-  pluginAuthoringSkill,
-  resolvePluginRegistryUrl
-} from "@codevisor/plugins"
+import { pluginAuthoringSkill } from "@codevisor/plugins"
 import { attachingFilesSkill, makeSkillStore, migrateLegacySkills } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { makeTerminalManager } from "@codevisor/terminal"
@@ -52,6 +47,8 @@ import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
+import { isDevInstance, makePluginCatalog, startCatalogRefresh } from "./plugins/plugin-catalog.js"
+import { makePluginPlatform } from "./plugins/plugin-platform.js"
 import { startSandboxes } from "./sandbox-boot.js"
 import {
   restoreTerminalPersistence,
@@ -241,7 +238,7 @@ export const runServe = (
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
     const iconGuess = guessMachineIcon()
-    const { cloudControl, machine, machineLink, machineEnrollment, fleetTickets } =
+    const { cloudControl, cloudInbox, machine, machineLink, machineEnrollment, fleetTickets } =
       yield* Effect.promise(() =>
         startMachineNetwork({
           databasePath,
@@ -320,27 +317,25 @@ export const runServe = (
         env: process.env
       })
     )
-    const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
-      makePluginRegistryClient({ baseUrl: resolvePluginRegistryUrl(process.env) })
-    )
-    const plugins = initializeOptionalServerFeature("Plugins", () =>
-      makePluginsManager({
-        ...(version === undefined ? {} : { codevisorVersion: version }),
-        dataDir: dirname(databasePath),
-        log: (message) => console.log(message),
-        registerExternalTerminal: (config, process) =>
-          terminal.registerExternalTerminal(config, process),
-        resolveEnv: () => resolveShellEnv(),
-        ...(pluginRegistryClient === undefined
-          ? {}
-          : { fetchPluginRegistry: pluginRegistryClient.fetchIndex })
-      })
-    )
-    const pluginRegistry = plugins === undefined ? undefined : pluginRegistryClient
     const packagedSkills = [
       initializeOptionalServerFeature("File delivery skill", attachingFilesSkill),
-      plugins && initializeOptionalServerFeature("Plugin skill", () => pluginAuthoringSkill())
+      initializeOptionalServerFeature("Plugin skill", () => pluginAuthoringSkill())
     ].filter((skill) => skill !== undefined)
+    const pluginCatalog = makePluginCatalog({
+      dev: isDevInstance(process.env),
+      execPath: process.execPath
+    })
+    startCatalogRefresh(pluginCatalog, () => cloudControl.serverUrl?.())
+    const credentialVault = mcpCredentialVault(dirname(databasePath))
+    const pluginPlatform = makePluginPlatform({
+      db,
+      serverId,
+      vault: credentialVault,
+      catalog: pluginCatalog,
+      cloud: cloudControl,
+      inbox: cloudInbox,
+      localBaseUrl: `http://127.0.0.1:${port}`
+    })
     const mcp = initializeOptionalServerFeature("MCP", () =>
       makeMcpManager({
         db,
@@ -350,12 +345,15 @@ export const runServe = (
         machine,
         remoteInvoker: machineLink.invoke,
         serverKind: resolvedKind,
-        oauthVault: mcpCredentialVault(dirname(databasePath)),
+        oauthVault: credentialVault,
+        accounts: pluginPlatform.accountSource,
+        oauthRedirect: pluginPlatform.mcpOAuthRedirect,
         packagedSkills,
-        ...(skills === undefined ? {} : { skillSource: skills }),
-        ...(plugins === undefined ? {} : { pluginTools: plugins })
+        catalog: pluginCatalog.resolver,
+        ...(skills === undefined ? {} : { skillSource: skills })
       })
     )
+    if (mcp !== undefined) pluginPlatform.attachMcp(mcp)
     if (resolvedKind === "local" || worktreeNameStyle === "production") {
       initializeOptionalServerFeature("Browser native host", () =>
         installServerNativeHost(dirname(databasePath), {
@@ -407,8 +405,8 @@ export const runServe = (
         ...(credentialFerry === undefined ? {} : { credentialFerry }),
         ...(mcp === undefined ? {} : { mcp }),
         ...(nativeMcp === undefined ? {} : { nativeMcp }),
-        ...(plugins === undefined ? {} : { plugins }),
-        ...(pluginRegistry === undefined ? {} : { pluginRegistry }),
+        pluginCatalog,
+        pluginPlatform,
         ...(skills === undefined ? {} : { skills }),
         syncBlobs,
         toolIcons: makeToolIconStore({
@@ -469,11 +467,6 @@ export const runServe = (
     startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
     sandboxes?.start()
-    void plugins
-      ?.startAll()
-      .catch((cause: unknown) =>
-        console.log(`Plugin startup unavailable: ${failureMessage(cause)}`)
-      )
   })
 
   return Effect.runPromise(program).catch(async (cause: unknown) => {

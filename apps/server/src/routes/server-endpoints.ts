@@ -147,7 +147,7 @@ const configuredFeatures = (
   "bots-v1",
   "bot-projects-v1",
   "project-machine-setup-v1",
-  ...(services.plugins === undefined ? [] : ["plugins-v1"])
+  ...(services.mcp === undefined ? [] : ["plugins-v2"])
 ]
 
 const writeInfoWithMachine = (

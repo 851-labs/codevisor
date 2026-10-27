@@ -69,6 +69,18 @@
     },
     {
       "path": "./packages/mcp"
+    },
+    {
+      "path": "./plugins/kit"
+    },
+    {
+      "path": "./plugins/test-events"
+    },
+    {
+      "path": "./plugins/grafana"
+    },
+    {
+      "path": "./plugins/gmail"
     }
   ]
 }

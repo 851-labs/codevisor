@@ -1,4 +1,4 @@
-import type { CloudRelayInfo, CloudVouchedDevice } from "@codevisor/api"
+import type { CloudRelayInfo, CloudVouchedDevice, HubInboxItem } from "@codevisor/api"
 
 import type { ChannelHandler } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
@@ -38,6 +38,7 @@ export interface MachineConnectionOptions {
   tunnelEndpointId?: string
   onTunnelConfig?: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
   onPeerDevices?: (devices: readonly CloudVouchedDevice[]) => void
+  onInboxItem?: (item: HubInboxItem) => void
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   random?: () => number

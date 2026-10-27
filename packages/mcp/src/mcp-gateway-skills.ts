@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises"
 import type { ComposerSkill } from "@codevisor/api"
 import { codevisorSandboxSignatures } from "@codevisor/automation"
 import { parseFrontmatter, RESERVED_SKILL_NAMES } from "@codevisor/skills"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+
+import { errorMessage } from "./mcp-support.js"
 
 export interface SkillSource {
   readonly list: () => Promise<{
@@ -33,7 +34,6 @@ export interface PackagedSkill {
 
 export interface SkillContext {
   readonly enabledIds: ReadonlySet<string>
-  readonly pluginTools: ReadonlyArray<Tool>
 }
 
 export interface BuiltinSkill {
@@ -50,6 +50,7 @@ export interface SkillEntry {
   readonly builtin: boolean
   readonly composer?: string
   readonly read: () => Promise<string | undefined>
+  readonly readFile?: (path: string) => Promise<string | undefined>
 }
 
 export const DESCRIPTION_GUIDANCE = [
@@ -98,7 +99,7 @@ const CAPABILITY_SKILLS: ReadonlyArray<{ readonly gate: string; readonly line: s
 export const executeSkill: BuiltinSkill = {
   name: "execute",
   summary: "how to write code for `execute`: tool discovery, labels, other agents, sandbox globals",
-  load: async ({ enabledIds, pluginTools }) => {
+  load: async ({ enabledIds }) => {
     const sections = [
       "# execute",
       [
@@ -136,14 +137,14 @@ export const executeSkill: BuiltinSkill = {
         [
           "## Other agents",
           'Never use your harness\'s built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. A Codevisor agent in the current workspace (`isolation: "shared"`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `agents.close` once you have its reply. A new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR; archive it with `workspaces.archive` when its work is done. Read `codevisor-agents` before starting one.'
-        ].join("\n\n")
-      )
-    }
-    if (pluginTools.length > 0) {
-      sections.push(
+        ].join("\n\n"),
         [
-          '## Installed plugin tools (call through server "plugin")',
-          pluginTools.map((tool) => `- plugin.${tool.name} — ${tool.description}`).join("\n")
+          "## Plugins",
+          [
+            "- When the user asks for something a service or app could do, call `machine.tools.codevisor.plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready.",
+            "- Never claim a capability that `plugins.describe` doesn't list.",
+            "- To react to outside events (a new email, an alert), call `events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`, and read its `explained` back to the user."
+          ].join("\n")
         ].join("\n\n")
       )
     }
@@ -246,20 +247,54 @@ export const skillsToolDescription = (entries: ReadonlyArray<SkillEntry>): strin
   return lines.join("\n")
 }
 
+export interface SkillsToolResult {
+  readonly text: string
+  readonly isError: boolean
+}
+
 export const skillsToolResult = async (
   entries: ReadonlyArray<SkillEntry>,
-  name: string | undefined
-): Promise<{ readonly text: string; readonly isError: boolean }> => {
+  name: string | undefined,
+  file?: string
+): Promise<SkillsToolResult> => {
   const index = entries.map((entry) => `- ${entry.name} — ${entry.summary}`).join("\n")
   if (name === undefined || name.trim() === "") {
     return { isError: false, text: `Skills (call this tool with a name to read one):\n${index}` }
   }
   const wanted = name.trim()
   const entry = entries.find((candidate) => candidate.name === wanted)
-  let text: string | undefined
-  if (entry !== undefined) text = await entry.read()
-  if (text === undefined) {
-    return { isError: true, text: `No skill named "${wanted}". Available skills:\n${index}` }
+  if (entry === undefined) return unknownSkill(wanted, index)
+
+  const path = file?.trim() ?? ""
+  try {
+    if (path === "") return (await skillText(entry.read())) ?? unknownSkill(wanted, index)
+    return (await skillText(skillFile(entry, path))) ?? unknownFile(wanted, path)
+  } catch (cause) {
+    return { isError: true, text: `Couldn't read ${wanted}: ${errorMessage(cause)}` }
   }
-  return { isError: false, text }
 }
+
+const skillText = async (
+  text: Promise<string | undefined>
+): Promise<SkillsToolResult | undefined> => {
+  const value = await text
+  if (value === undefined) return undefined
+  return { isError: false, text: value }
+}
+
+const skillFile = (entry: SkillEntry, path: string): Promise<string | undefined> => {
+  if (entry.readFile === undefined) {
+    throw new Error("its supporting files are in its skill folder; open them with your file tools")
+  }
+  return entry.readFile(path)
+}
+
+const unknownSkill = (wanted: string, index: string): SkillsToolResult => ({
+  isError: true,
+  text: `No skill named "${wanted}". Available skills:\n${index}`
+})
+
+const unknownFile = (wanted: string, path: string): SkillsToolResult => ({
+  isError: true,
+  text: `The ${wanted} skill has no file "${path}".`
+})

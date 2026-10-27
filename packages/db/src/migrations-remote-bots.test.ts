@@ -6,9 +6,10 @@ import Database from "better-sqlite3"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
-import { run, tempDatabase } from "./test-support.js"
+import { rewindPluginsSql, run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
+  ${rewindPluginsSql}
   drop index session_attention_finished_turns;
   alter table session_attention drop column turn_end_state;
   alter table session_attention drop column turn_end_revision;

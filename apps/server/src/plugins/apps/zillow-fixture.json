@@ -1,0 +1,1147 @@
+{
+  "recordedFrom": "https://mcp.zillow.com/api/v2 on 2026-10-27 (googleApiKey and widgetId replaced; arrays trimmed to 2 items, long strings to 400 chars)",
+  "serverInfo": {
+    "name": "fastmcp-external-gateway-pioneer",
+    "version": "3.4.7"
+  },
+  "capabilities": {
+    "experimental": {},
+    "logging": {},
+    "prompts": {
+      "listChanged": true
+    },
+    "resources": {
+      "subscribe": false,
+      "listChanged": true
+    },
+    "tools": {
+      "listChanged": true
+    },
+    "extensions": {
+      "io.modelcontextprotocol/ui": {}
+    }
+  },
+  "tools": [
+    {
+      "name": "zillow_property_search",
+      "title": "Zillow Property Search",
+      "description": "<tool_purpose>\nPrimary property search tool for U.S. real estate. Searches for properties for sale or for rent.\nSupports filters for location, price, property type, size, amenities, commute time, scho",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object"
+          }
+        },
+        "required": ["request"]
+      },
+      "annotations": {
+        "title": "",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        },
+        "openai.com/resultCanProduceWidget": true,
+        "openai/outputTemplate": "ui://widget/zillow-property-search.html",
+        "openai/toolInvocation/invoked": "Loaded properties with Zillow",
+        "openai/toolInvocation/invoking": "Working with Zillow to find properties",
+        "ui": {
+          "resourceUri": "ui://widget/zillow-property-search.html"
+        }
+      }
+    },
+    {
+      "name": "zillow_city_neighborhood_real_estate_information",
+      "title": "Zillow City & Neighborhood Search",
+      "description": "<tool_purpose>\nReturns U.S. regions, areas, neighborhoods, or cities with for-sale and/or for-rent property counts\nfor each area. Use this tool for neighborhood exploration, area comparison, and locat",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object"
+          }
+        }
+      },
+      "annotations": {
+        "title": "",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        },
+        "openai.com/resultCanProduceWidget": true,
+        "openai/outputTemplate": "ui://widget/zillow-areas.html",
+        "openai/toolInvocation/invoked": "Loaded areas with Zillow",
+        "openai/toolInvocation/invoking": "Working with Zillow to find areas",
+        "ui": {
+          "resourceUri": "ui://widget/zillow-areas.html"
+        }
+      }
+    },
+    {
+      "name": "get_zestimate",
+      "title": "Get Zestimate",
+      "description": "- When to use: For queries about the estimated home value (Zestimate) for a property\n  and/or the confidence in that valuation, including WHY it has that value and how it\n  compares to similar propert",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ],
+  "resources": {
+    "ui://widget/zillow-areas.html": {
+      "uri": "ui://widget/zillow-areas.html",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "prefersBorder": true,
+          "csp": {
+            "connectDomains": [
+              "https://www.zillow.com",
+              "https://mcp.zillow.com",
+              "https://cs.zg-api.com",
+              "https://zgcp-keystone-eventing-prod.pub.zgcp-consumer-prod-k8s.zg-int.net",
+              "https://maps.googleapis.com",
+              "https://browser-intake-datadoghq.com",
+              "https://sdk.split.io",
+              "https://auth.split.io",
+              "https://pagead2.googlesyndication.com",
+              "https://www.google-analytics.com"
+            ],
+            "resourceDomains": [
+              "https://www.zillowstatic.com",
+              "https://s.zillow.net",
+              "https://www.zillow.com",
+              "https://maps.googleapis.com",
+              "https://fonts.googleapis.com",
+              "https://fonts.gstatic.com",
+              "https://js.zg-api.com",
+              "https://maps.gstatic.com",
+              "https://photos.zillowstatic.com",
+              "https://delivery.digitallibrary.zillowgroup.com",
+              "https://pagead2.googlesyndication.com"
+            ]
+          },
+          "domain": "6d21a5cbdfb857a79623f72ba0e8ea29.claudemcpcontent.com"
+        }
+      },
+      "text": "\n<div id=\"zillow-sub-app-root\"></div>\n<script>\n(function() {\n            try {\n                const SharedScope={},SharedDependencies={},Hooks={beforeRender:null};function registerHooks(DefaultExport){if(!(\"function\"==typeof DefaultExport||DefaultExport instanceof Function)||!(\"hooks\"in DefaultExport)||\"object\"!=typeof DefaultExport.hooks)return;const hooks=Object.keys(Hooks);for(const hook of hooks)\"function\"==typeof DefaultExport.hooks[hook]||DefaultExport.hooks[hook]instanceof Function?Hooks[hook]=DefaultExport.hooks[hook]:console.warn(`[widget-sub-app-template]: Sub-app hook: '${hook}' is not a function`)}function triggerHook(hook){if(hook in Hooks){if(null!==Hooks[hook])try{Hooks[hook]()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to trigger sub-app hook: '${hook}'`,{cause:error})}}else console.warn(`[widget-sub-app-template]: Invalid sub-app hook: '${hook}'`)}async function fetchSubAppManifest(options){let response,manifest;try{response=await fetch(`${options.baseUrl}/api/sub-app/manifest/effective-version/${options.name}`,{headers:{\"Access-Control-Request-Private-Network\":\"true\"}})}catch(error){throw new Error(\"[widget-sub-app-template]: Failed to fetch sub-app manifest\",{cause:error})}if(!response.ok)throw new Error(\"[widget-sub-app-template]: Failed to fetch sub-app manifest\");try{manifest=await response.json()}catch(error){throw new Error(\"[widget-sub-app-template]: Failed to parse sub-app manifest\",{cause:error})}if(null==manifest||\"object\"!=typeof manifest)throw new Error(\"[widget-sub-app-template]: Invalid manifest. It is not an object\");if(!(\"remoteEntryClientUrl\"in manifest)||\"string\"!=typeof manifest.remoteEntryClientUrl)throw new Error(\"[widget-sub-app-template]: Invalid manifest. The property 'remoteEntryClientUrl' is not a string\");if(!(\"scope\"in manifest)||\"string\"!=typeof manifest.scope)throw new Error(\"[widget-sub-app-template]: Invalid manifest. The property 'scope' is not a string\");const{scope:scope,remoteEntryClientUrl:remoteEntryClientUrl}=manifest;return{remoteEntryClientUrl:remoteEntryClientUrl,defaultExposes:scope}}async function loadSubAppRemoteEntry(options){const{remoteEntryClientUrl:remoteEntryClientUrl}=options;return new Promise(((resolve,reject)=>{const script=document.createElement(\"script\");script.src=remoteEntryClientUrl,script.onload=()=>{resolve()},script.onerror=()=>{reject(new Error(`[widget-sub-app-template]: Failed to load sub-app remote entry: ${remoteEntryClientUrl}`))},document.body.appendChild(script)}))}async function buildSubAppExposesDefaultExport(options){try{await Odyssey.init(SharedScope)}catch(error){throw new Error(\"[widget-sub-app-template]: Failed to initialize sub-app container\",{cause:error})}let factory,RemoteModule;try{factory=await Odyssey.get(`./${options.exposes}`)}catch(error){throw new Error(`[widget-sub-app-template]: Failed to get sub-app exposes: './${options.exposes}' from container`,{cause:error})}try{RemoteModule=factory()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to factory build sub-app exposes: './${options.exposes}'`,{cause:error})}if(!(\"default\"in RemoteModule))throw new Error(`[widget-sub-app-template]: Sub-app exposes: './${options.exposes}' does not have a default export`);const DefaultExport=RemoteModule.default;return registerHooks(DefaultExport),DefaultExport}async function loadSharedDependency(name){const dependency=SharedScope[name];if(!dependency)throw new Error(`[widget-sub-app-template]: Shared dependency: '${name}' not found in shared scope`);const versions=Object.keys(dependency),[version]=versions;if(0===versions.length)throw new Error(`[widget-sub-app-template]: Shared dependency: '${name}' does not have any versions`);let factory,resolved;versions.length>1&&console.warn(`[widget-sub-app-template]: Shared dependency: '${name}' has multiple versions, using ${version}`);try{factory=await dependency[version].get()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to get shared dependency: '${name}' version: '${version}' from container`,{cause:error})}try{resolved=factory()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to factory build shared dependency: '${name}' with version: '${version}'`,{cause:error})}SharedDependencies[name]=resolved}async function loadSharedDependencies(dependencies){const promises=dependencies.map(loadSharedDependency);await Promise.all(promises)}function getSharedDependency(name){const dependency=SharedDependencies[name];if(!dependency)throw new Error(`[widget-sub-app-template]: Shared dependency: '${name}' not found in shared dependencies`);return dependency}function createReactElement(variable){return getSharedDependency(\"react\").createElement(variable)}function validateReactVersion(){const reactVersion=getSharedDependency(\"react\").version;if(null==reactVersion||\"string\"!=typeof reactVersion)throw new Error(\"[widget-sub-app-template]: React version is invalid\");const reactMajorVersionString=reactVersion.split(\".\")[0],reactMajorVersion=Number(reactMajorVersionString);if(reactMajorVersion<18)throw new Error(`[widget-sub-app-template]: The 'react' version is ${reactVersion}. Version 18 or later is required`);const reactDOMVersion=getSharedDependency(\"react-dom\").version;if(null==reactDOMVersion||\"string\"!=typeof reactDOMVersion)throw new Error(\"[widget-sub-app-template]: ReactDOM version is invalid\");const reactDOMMajorVersionString=reactDOMVersion.split(\".\")[0],reactDOMMajorVersion=Number(reactDOMMajorVersionString);if(reactDOMMajorVersion<18)throw new Error(`[widget-sub-app-template]: The 'react-dom' version is ${reactDOMVersion}. Version 18 or later is required`);if(reactMajorVersion!==reactDOMMajorVersion)throw new Error(`[widget-sub-app-template]: The 'react' version is ${reactVersion} and the 'react-dom' version is ${reactDOMVersion}. Major versions must match`)}async function renderSubApp(options){const{ReactElement:ReactElement}=options,ReactDOMClient=getSharedDependency(\"react-dom/client\"),container=document.getElementById(\"zillow-sub-app-root\");if(!container)throw new Error(\"[widget-sub-app-template]: Root element '#zillow-sub-app-root' not found\");const root=ReactDOMClient.createRoot(container);triggerHook(\"beforeRender\"),root.render(ReactElement)}async function initSubApp(options){const{name:name,exposes:exposes,baseUrl:baseUrl=\"https://www.zillow.com/web-platform\"}=options,{remoteEntryClientUrl:remoteEntryClientUrl,defaultExposes:defaultExposes}=await fetchSubAppManifest({name:name,baseUrl:baseUrl});await loadSubAppRemoteEntry({remoteEntryClientUrl:remoteEntryClientUrl});const DefaultExport=await buildSubAppExposesDefaultExport({exposes:exposes??defaultExposes});await loadSharedDependencies([\"react\",\"react-dom\",\"react-dom/client\"]);const ReactElement=createReactElement(DefaultExport);validateReactVersion(),await renderSubApp({ReactElement:ReactElement})}\"undefined\"!=typeof module&&module.exports&&(module.exports={SharedScope:SharedScope,SharedDependencies:SharedDependencies,Hooks:Hooks,registerHooks:registerHooks,triggerHook:triggerHook,fetchSubAppManifest:fetchSubAppManifest,loadSubAppRemoteEntry:loadSubAppRemoteEntry,buildSubAppExposesDefaultExport:buildSubAppExposesDefaultExport,loadSharedDependency:loadSharedDependency,loadSharedDependencies:loadSharedDependencies,getSharedDependency:getSharedDependency,createReactElement:createReactElement,validateReactVersion:validateReactVersion,renderSubApp:renderSubApp,initSubApp:initSubApp});\n                initSubApp({\"name\":\"odyssey\",\"baseUrl\":\"https://www.zillow.com/web-platform\"});\n            } catch (error) {\n                console.error('Uncaught error in inlined script \"init-widget-sub-app\" calling initSubApp:', error);\n            }\n        })();\n</script>\n"
+    },
+    "ui://widget/zillow-property-search.html": {
+      "uri": "ui://widget/zillow-property-search.html",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "prefersBorder": true,
+          "csp": {
+            "connectDomains": [
+              "https://www.zillow.com",
+              "https://mcp.zillow.com",
+              "https://cs.zg-api.com",
+              "https://zgcp-keystone-eventing-prod.pub.zgcp-consumer-prod-k8s.zg-int.net",
+              "https://maps.googleapis.com",
+              "https://browser-intake-datadoghq.com",
+              "https://sdk.split.io",
+              "https://auth.split.io",
+              "https://pagead2.googlesyndication.com",
+              "https://www.google-analytics.com"
+            ],
+            "resourceDomains": [
+              "https://www.zillowstatic.com",
+              "https://s.zillow.net",
+              "https://www.zillow.com",
+              "https://maps.googleapis.com",
+              "https://fonts.googleapis.com",
+              "https://fonts.gstatic.com",
+              "https://js.zg-api.com",
+              "https://maps.gstatic.com",
+              "https://photos.zillowstatic.com",
+              "https://delivery.digitallibrary.zillowgroup.com",
+              "https://pagead2.googlesyndication.com"
+            ]
+          },
+          "domain": "6d21a5cbdfb857a79623f72ba0e8ea29.claudemcpcontent.com"
+        }
+      },
+      "text": "\n<div id=\"zillow-sub-app-root\"></div>\n<script>\n(function() {\n            try {\n                const SharedScope={},SharedDependencies={},Hooks={beforeRender:null};function registerHooks(DefaultExport){if(!(\"function\"==typeof DefaultExport||DefaultExport instanceof Function)||!(\"hooks\"in DefaultExport)||\"object\"!=typeof DefaultExport.hooks)return;const hooks=Object.keys(Hooks);for(const hook of hooks)\"function\"==typeof DefaultExport.hooks[hook]||DefaultExport.hooks[hook]instanceof Function?Hooks[hook]=DefaultExport.hooks[hook]:console.warn(`[widget-sub-app-template]: Sub-app hook: '${hook}' is not a function`)}function triggerHook(hook){if(hook in Hooks){if(null!==Hooks[hook])try{Hooks[hook]()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to trigger sub-app hook: '${hook}'`,{cause:error})}}else console.warn(`[widget-sub-app-template]: Invalid sub-app hook: '${hook}'`)}async function fetchSubAppManifest(options){let response,manifest;try{response=await fetch(`${options.baseUrl}/api/sub-app/manifest/effective-version/${options.name}`,{headers:{\"Access-Control-Request-Private-Network\":\"true\"}})}catch(error){throw new Error(\"[widget-sub-app-template]: Failed to fetch sub-app manifest\",{cause:error})}if(!response.ok)throw new Error(\"[widget-sub-app-template]: Failed to fetch sub-app manifest\");try{manifest=await response.json()}catch(error){throw new Error(\"[widget-sub-app-template]: Failed to parse sub-app manifest\",{cause:error})}if(null==manifest||\"object\"!=typeof manifest)throw new Error(\"[widget-sub-app-template]: Invalid manifest. It is not an object\");if(!(\"remoteEntryClientUrl\"in manifest)||\"string\"!=typeof manifest.remoteEntryClientUrl)throw new Error(\"[widget-sub-app-template]: Invalid manifest. The property 'remoteEntryClientUrl' is not a string\");if(!(\"scope\"in manifest)||\"string\"!=typeof manifest.scope)throw new Error(\"[widget-sub-app-template]: Invalid manifest. The property 'scope' is not a string\");const{scope:scope,remoteEntryClientUrl:remoteEntryClientUrl}=manifest;return{remoteEntryClientUrl:remoteEntryClientUrl,defaultExposes:scope}}async function loadSubAppRemoteEntry(options){const{remoteEntryClientUrl:remoteEntryClientUrl}=options;return new Promise(((resolve,reject)=>{const script=document.createElement(\"script\");script.src=remoteEntryClientUrl,script.onload=()=>{resolve()},script.onerror=()=>{reject(new Error(`[widget-sub-app-template]: Failed to load sub-app remote entry: ${remoteEntryClientUrl}`))},document.body.appendChild(script)}))}async function buildSubAppExposesDefaultExport(options){try{await Odyssey.init(SharedScope)}catch(error){throw new Error(\"[widget-sub-app-template]: Failed to initialize sub-app container\",{cause:error})}let factory,RemoteModule;try{factory=await Odyssey.get(`./${options.exposes}`)}catch(error){throw new Error(`[widget-sub-app-template]: Failed to get sub-app exposes: './${options.exposes}' from container`,{cause:error})}try{RemoteModule=factory()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to factory build sub-app exposes: './${options.exposes}'`,{cause:error})}if(!(\"default\"in RemoteModule))throw new Error(`[widget-sub-app-template]: Sub-app exposes: './${options.exposes}' does not have a default export`);const DefaultExport=RemoteModule.default;return registerHooks(DefaultExport),DefaultExport}async function loadSharedDependency(name){const dependency=SharedScope[name];if(!dependency)throw new Error(`[widget-sub-app-template]: Shared dependency: '${name}' not found in shared scope`);const versions=Object.keys(dependency),[version]=versions;if(0===versions.length)throw new Error(`[widget-sub-app-template]: Shared dependency: '${name}' does not have any versions`);let factory,resolved;versions.length>1&&console.warn(`[widget-sub-app-template]: Shared dependency: '${name}' has multiple versions, using ${version}`);try{factory=await dependency[version].get()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to get shared dependency: '${name}' version: '${version}' from container`,{cause:error})}try{resolved=factory()}catch(error){throw new Error(`[widget-sub-app-template]: Failed to factory build shared dependency: '${name}' with version: '${version}'`,{cause:error})}SharedDependencies[name]=resolved}async function loadSharedDependencies(dependencies){const promises=dependencies.map(loadSharedDependency);await Promise.all(promises)}function getSharedDependency(name){const dependency=SharedDependencies[name];if(!dependency)throw new Error(`[widget-sub-app-template]: Shared dependency: '${name}' not found in shared dependencies`);return dependency}function createReactElement(variable){return getSharedDependency(\"react\").createElement(variable)}function validateReactVersion(){const reactVersion=getSharedDependency(\"react\").version;if(null==reactVersion||\"string\"!=typeof reactVersion)throw new Error(\"[widget-sub-app-template]: React version is invalid\");const reactMajorVersionString=reactVersion.split(\".\")[0],reactMajorVersion=Number(reactMajorVersionString);if(reactMajorVersion<18)throw new Error(`[widget-sub-app-template]: The 'react' version is ${reactVersion}. Version 18 or later is required`);const reactDOMVersion=getSharedDependency(\"react-dom\").version;if(null==reactDOMVersion||\"string\"!=typeof reactDOMVersion)throw new Error(\"[widget-sub-app-template]: ReactDOM version is invalid\");const reactDOMMajorVersionString=reactDOMVersion.split(\".\")[0],reactDOMMajorVersion=Number(reactDOMMajorVersionString);if(reactDOMMajorVersion<18)throw new Error(`[widget-sub-app-template]: The 'react-dom' version is ${reactDOMVersion}. Version 18 or later is required`);if(reactMajorVersion!==reactDOMMajorVersion)throw new Error(`[widget-sub-app-template]: The 'react' version is ${reactVersion} and the 'react-dom' version is ${reactDOMVersion}. Major versions must match`)}async function renderSubApp(options){const{ReactElement:ReactElement}=options,ReactDOMClient=getSharedDependency(\"react-dom/client\"),container=document.getElementById(\"zillow-sub-app-root\");if(!container)throw new Error(\"[widget-sub-app-template]: Root element '#zillow-sub-app-root' not found\");const root=ReactDOMClient.createRoot(container);triggerHook(\"beforeRender\"),root.render(ReactElement)}async function initSubApp(options){const{name:name,exposes:exposes,baseUrl:baseUrl=\"https://www.zillow.com/web-platform\"}=options,{remoteEntryClientUrl:remoteEntryClientUrl,defaultExposes:defaultExposes}=await fetchSubAppManifest({name:name,baseUrl:baseUrl});await loadSubAppRemoteEntry({remoteEntryClientUrl:remoteEntryClientUrl});const DefaultExport=await buildSubAppExposesDefaultExport({exposes:exposes??defaultExposes});await loadSharedDependencies([\"react\",\"react-dom\",\"react-dom/client\"]);const ReactElement=createReactElement(DefaultExport);validateReactVersion(),await renderSubApp({ReactElement:ReactElement})}\"undefined\"!=typeof module&&module.exports&&(module.exports={SharedScope:SharedScope,SharedDependencies:SharedDependencies,Hooks:Hooks,registerHooks:registerHooks,triggerHook:triggerHook,fetchSubAppManifest:fetchSubAppManifest,loadSubAppRemoteEntry:loadSubAppRemoteEntry,buildSubAppExposesDefaultExport:buildSubAppExposesDefaultExport,loadSharedDependency:loadSharedDependency,loadSharedDependencies:loadSharedDependencies,getSharedDependency:getSharedDependency,createReactElement:createReactElement,validateReactVersion:validateReactVersion,renderSubApp:renderSubApp,initSubApp:initSubApp});\n                initSubApp({\"name\":\"odyssey\",\"baseUrl\":\"https://www.zillow.com/web-platform\"});\n            } catch (error) {\n                console.error('Uncaught error in inlined script \"init-widget-sub-app\" calling initSubApp:', error);\n            }\n        })();\n</script>\n"
+    }
+  },
+  "results": {
+    "zillow_city_neighborhood_real_estate_information": {
+      "_meta": {
+        "zillow.com/data": {
+          "widgetId": "00000000-0000-4000-8000-000000000000",
+          "widget": "areas",
+          "widgetVersion": "1",
+          "env": {
+            "googleApiKey": "recorded-key",
+            "environment": "prod",
+            "zgGraphHost": "https://www.zillow.com"
+          },
+          "metadata": {
+            "createdAt": "2026-10-27T20:52:22.498595362Z",
+            "mcpSource": "SEARCH_MCP"
+          },
+          "payload": {
+            "areas": {
+              "boundingBox": {
+                "south": 47.612881,
+                "west": -122.330368,
+                "north": 47.63956,
+                "east": -122.301591
+              },
+              "requestMetadata": {
+                "displayLimit": 1
+              },
+              "regions": [
+                {
+                  "displayName": "Capitol Hill",
+                  "regionId": 250206,
+                  "boundingBox": {
+                    "south": 47.612881,
+                    "west": -122.330368,
+                    "north": 47.63956,
+                    "east": -122.301591
+                  },
+                  "centroid": {
+                    "latitude": 47.6262205,
+                    "longitude": -122.3159795
+                  },
+                  "description": "Lively neighborhood with restaurants and parks.",
+                  "label": "Vibrant nightlife",
+                  "propertyInfo": {
+                    "forSalePropertySearchLookupRequest": {
+                      "sortSelection": "personalized",
+                      "exclude": [
+                        "pending",
+                        "underContract",
+                        "contingent",
+                        "acceptingBackupOffers"
+                      ],
+                      "homeStatuses": ["fsba", "fsbo", "auction", "foreclosure", "newConstruction"],
+                      "supplementResultsWithOffMarket": false,
+                      "sortAscending": false,
+                      "useZGSearch": false,
+                      "filterHiddenHomes": false,
+                      "includeUngroupedCount": false,
+                      "includeRoomForRent": false,
+                      "includeOnlyShowcaseListings": false,
+                      "pageNumber": 1,
+                      "pageSize": 100,
+                      "regions": [
+                        {
+                          "regionType": "standardId",
+                          "regionId": {
+                            "regionId": "250206",
+                            "regionIdType": "neighborhood"
+                          }
+                        }
+                      ],
+                      "boundingBox": {
+                        "south": 47.612881,
+                        "west": -122.330368,
+                        "north": 47.63956,
+                        "east": -122.301591
+                      },
+                      "requestedFields": [
+                        "bathroomCount",
+                        "bedroomCount",
+                        "buildingId",
+                        "countryCode",
+                        "currencyType",
+                        "enrichment_estimate_restimate_value",
+                        "enrichment_estimate_zestimate_value",
+                        "fixtureClassification",
+                        "formattedAddress",
+                        "geoRegion_latLong",
+                        "homeStatus",
+                        "homeStatus_marketing",
+                        "homeStatus_contingencies",
+                        "homeStatus_filteredHomeStatus",
+                        "homeType",
+                        "livingAreaSquareFeet",
+                        "lotArea",
+                        "newConstruction_isPremierBuilder",
+                        "price_filteredPrice",
+                        "composablePrimaryPhoto",
+                        "propertyResultRules_agentNameIfRequired",
+                        "propertyResultRules_agentPhoneIfRequired",
+                        "propertyResultRules_brokerNameIfRequired",
+                        "propertyResultRules_brokerPhoneIfRequired",
+                        "propertyResultRules_canShowAddress",
+                        "propertyResultRules_canShowCroppedPhotos",
+                        "propertyResultRules_canShowOnMap",
+                        "propertyResultRules_mlsIdIfRequired",
+                        "propertyResultRules_mlsNameIfRequired",
+                        "propertyResultRules_mlsStatusIfRequired",
+                        "propertyResultRules_providerLogoIfRequired",
+                        "propertyResultRules_mustDisplayLotSizeInAcres",
+                        "propertyResultRules_builderNameIfRequired",
+                        "propertyResultRules_soldByOfficeNameIfRequired",
+                        "providerCategory",
+                        "providerListingId",
+                        "thirdPartyPhotos_streetViewPhotoLink",
+                        "title",
+                        "zpid"
+                      ],
+                      "primaryPhotoRequest": {
+                        "photoTreatments": [
+                          {
+                            "primary": "p_n",
+                            "noCropFallback": "p_n"
+                          }
+                        ],
+                        "fallbackPhotoStrategy": "googleSatelliteUrl",
+                        "includePhotoKeys": false
+                      },
+                      "thirdPartyPhotosRequest": {
+                        "streetViewSize": {
+                          "horizontal": 286,
+                          "vertical": 186
+                        }
+                      },
+                      "rulesRequest": {
+                        "comminglingCategory": "commingled",
+                        "applyRules": true,
+                        "providerLogoPhotoTreatments": [
+                          {
+                            "primary": "zillow_web_48_23"
+                          }
+                        ]
+                      },
+                      "includeCountsByRulesApplicable": false
+                    },
+                    "forRentPropertySearchLookupRequest": {
+                      "sortSelection": "rentalPriorityScore",
+                      "homeStatuses": ["forRent"],
+                      "supplementResultsWithOffMarket": false,
+                      "sortAscending": false,
+                      "useZGSearch": false,
+                      "filterHiddenHomes": false,
+                      "includeUngroupedCount": false,
+                      "includeRoomForRent": false,
+                      "includeOnlyShowcaseListings": false,
+                      "pageNumber": 1,
+                      "pageSize": 100,
+                      "regions": [
+                        {
+                          "regionType": "standardId",
+                          "regionId": {
+                            "regionId": "250206",
+                            "regionIdType": "neighborhood"
+                          }
+                        }
+                      ],
+                      "boundingBox": {
+                        "south": 47.612881,
+                        "west": -122.330368,
+                        "north": 47.63956,
+                        "east": -122.301591
+                      },
+                      "requestedFields": [
+                        "bathroomCount",
+                        "bedroomCount",
+                        "buildingId",
+                        "countryCode",
+                        "currencyType",
+                        "enrichment_estimate_restimate_value",
+                        "enrichment_estimate_zestimate_value",
+                        "factsAndFeatures_quarterBathroomCount",
+                        "factsAndFeatures_halfBathroomCount",
+                        "factsAndFeatures_threeQuarterBathroomCount",
+                        "factsAndFeatures_fullBathroomCount",
+                        "fixtureClassification",
+                        "formattedAddress",
+                        "geoRegion_latLong",
+                        "homeStatus",
+                        "homeStatus_marketing",
+                        "homeStatus_contingencies",
+                        "homeStatus_filteredHomeStatus",
+                        "homeType",
+                        "livingAreaSquareFeet",
+                        "lotArea",
+                        "newConstruction_isPremierBuilder",
+                        "price_filteredPrice",
+                        "composablePrimaryPhoto",
+                        "propertyResultRules_agentNameIfRequired",
+                        "propertyResultRules_agentPhoneIfRequired",
+                        "propertyResultRules_brokerNameIfRequired",
+                        "propertyResultRules_brokerPhoneIfRequired",
+                        "propertyResultRules_canShowAddress",
+                        "propertyResultRules_canShowCroppedPhotos",
+                        "propertyResultRules_canShowOnMap",
+                        "propertyResultRules_mlsIdIfRequired",
+                        "propertyResultRules_mlsNameIfRequired",
+                        "propertyResultRules_mlsStatusIfRequired",
+                        "propertyResultRules_providerLogoIfRequired",
+                        "propertyResultRules_mustDisplayLotSizeInAcres",
+                        "propertyResultRules_builderNameIfRequired",
+                        "propertyResultRules_soldByOfficeNameIfRequired",
+                        "providerCategory",
+                        "providerListingId",
+                        "rental_areApplicationsAccepted",
+                        "rental_isIncomeRestricted",
+                        "rental_marketingTreatments",
+                        "rental_totalRequiredMonthlyMinFee",
+                        "rental_totalRequiredMonthlyMaxFee",
+                        "rental_baseRent",
+                        "rental_listPriceIncludesRequiredMonthlyFees",
+                        "totalRequiredMonthlyMinFee",
+                        "totalRequiredMonthlyMaxFee",
+                        "minBaseRent",
+                        "maxBaseRent",
+                        "thirdPartyPhotos_streetViewPhotoLink",
+                        "title",
+                        "zpid"
+                      ],
+                      "primaryPhotoRequest": {
+                        "photoTreatments": [
+                          {
+                            "primary": "p_n",
+                            "noCropFallback": "p_n"
+                          }
+                        ],
+                        "fallbackPhotoStrategy": "googleSatelliteUrl",
+                        "includePhotoKeys": false
+                      },
+                      "thirdPartyPhotosRequest": {
+                        "streetViewSize": {
+                          "horizontal": 286,
+                          "vertical": 186
+                        }
+                      },
+                      "rulesRequest": {
+                        "comminglingCategory": "commingled",
+                        "applyRules": true,
+                        "providerLogoPhotoTreatments": [
+                          {
+                            "primary": "zillow_web_48_23"
+                          }
+                        ]
+                      },
+                      "includeCountsByRulesApplicable": false
+                    },
+                    "forSalePropertyCount": 155,
+                    "forRentPropertyCount": 482
+                  }
+                }
+              ],
+              "propertyFiltersRequest": {
+                "homeStatuses": ["fsba", "fsbo", "auction", "foreclosure", "newConstruction"],
+                "exclude": ["pending", "underContract", "contingent", "acceptingBackupOffers"]
+              },
+              "allAreasForSalePSLRequest": {
+                "sortSelection": "personalized",
+                "exclude": ["pending", "underContract", "contingent", "acceptingBackupOffers"],
+                "homeStatuses": ["fsba", "fsbo", "auction", "foreclosure", "newConstruction"],
+                "supplementResultsWithOffMarket": false,
+                "sortAscending": false,
+                "useZGSearch": false,
+                "filterHiddenHomes": false,
+                "includeUngroupedCount": false,
+                "includeRoomForRent": false,
+                "includeOnlyShowcaseListings": false,
+                "pageNumber": 1,
+                "pageSize": 100,
+                "regions": [
+                  {
+                    "regionType": "standardId",
+                    "regionId": {
+                      "regionId": "250206",
+                      "regionIdType": "neighborhood"
+                    }
+                  }
+                ],
+                "boundingBox": {
+                  "south": 47.612881,
+                  "west": -122.330368,
+                  "north": 47.63956,
+                  "east": -122.301591
+                },
+                "requestedFields": [
+                  "bathroomCount",
+                  "bedroomCount",
+                  "buildingId",
+                  "countryCode",
+                  "currencyType",
+                  "enrichment_estimate_restimate_value",
+                  "enrichment_estimate_zestimate_value",
+                  "fixtureClassification",
+                  "formattedAddress",
+                  "geoRegion_latLong",
+                  "homeStatus",
+                  "homeStatus_marketing",
+                  "homeStatus_contingencies",
+                  "homeStatus_filteredHomeStatus",
+                  "homeType",
+                  "livingAreaSquareFeet",
+                  "lotArea",
+                  "newConstruction_isPremierBuilder",
+                  "price_filteredPrice",
+                  "composablePrimaryPhoto",
+                  "propertyResultRules_agentNameIfRequired",
+                  "propertyResultRules_agentPhoneIfRequired",
+                  "propertyResultRules_brokerNameIfRequired",
+                  "propertyResultRules_brokerPhoneIfRequired",
+                  "propertyResultRules_canShowAddress",
+                  "propertyResultRules_canShowCroppedPhotos",
+                  "propertyResultRules_canShowOnMap",
+                  "propertyResultRules_mlsIdIfRequired",
+                  "propertyResultRules_mlsNameIfRequired",
+                  "propertyResultRules_mlsStatusIfRequired",
+                  "propertyResultRules_providerLogoIfRequired",
+                  "propertyResultRules_mustDisplayLotSizeInAcres",
+                  "propertyResultRules_builderNameIfRequired",
+                  "propertyResultRules_soldByOfficeNameIfRequired",
+                  "providerCategory",
+                  "providerListingId",
+                  "thirdPartyPhotos_streetViewPhotoLink",
+                  "title",
+                  "zpid"
+                ],
+                "primaryPhotoRequest": {
+                  "photoTreatments": [
+                    {
+                      "primary": "p_n",
+                      "noCropFallback": "p_n"
+                    }
+                  ],
+                  "fallbackPhotoStrategy": "googleSatelliteUrl",
+                  "includePhotoKeys": false
+                },
+                "thirdPartyPhotosRequest": {
+                  "streetViewSize": {
+                    "horizontal": 286,
+                    "vertical": 186
+                  }
+                },
+                "rulesRequest": {
+                  "comminglingCategory": "commingled",
+                  "applyRules": true,
+                  "providerLogoPhotoTreatments": [
+                    {
+                      "primary": "zillow_web_48_23"
+                    }
+                  ]
+                },
+                "includeCountsByRulesApplicable": false
+              },
+              "allAreasForRentPSLRequest": {
+                "sortSelection": "rentalPriorityScore",
+                "homeStatuses": ["forRent"],
+                "supplementResultsWithOffMarket": false,
+                "sortAscending": false,
+                "useZGSearch": false,
+                "filterHiddenHomes": false,
+                "includeUngroupedCount": false,
+                "includeRoomForRent": false,
+                "includeOnlyShowcaseListings": false,
+                "pageNumber": 1,
+                "pageSize": 100,
+                "regions": [
+                  {
+                    "regionType": "standardId",
+                    "regionId": {
+                      "regionId": "250206",
+                      "regionIdType": "neighborhood"
+                    }
+                  }
+                ],
+                "boundingBox": {
+                  "south": 47.612881,
+                  "west": -122.330368,
+                  "north": 47.63956,
+                  "east": -122.301591
+                },
+                "requestedFields": [
+                  "bathroomCount",
+                  "bedroomCount",
+                  "buildingId",
+                  "countryCode",
+                  "currencyType",
+                  "enrichment_estimate_restimate_value",
+                  "enrichment_estimate_zestimate_value",
+                  "factsAndFeatures_quarterBathroomCount",
+                  "factsAndFeatures_halfBathroomCount",
+                  "factsAndFeatures_threeQuarterBathroomCount",
+                  "factsAndFeatures_fullBathroomCount",
+                  "fixtureClassification",
+                  "formattedAddress",
+                  "geoRegion_latLong",
+                  "homeStatus",
+                  "homeStatus_marketing",
+                  "homeStatus_contingencies",
+                  "homeStatus_filteredHomeStatus",
+                  "homeType",
+                  "livingAreaSquareFeet",
+                  "lotArea",
+                  "newConstruction_isPremierBuilder",
+                  "price_filteredPrice",
+                  "composablePrimaryPhoto",
+                  "propertyResultRules_agentNameIfRequired",
+                  "propertyResultRules_agentPhoneIfRequired",
+                  "propertyResultRules_brokerNameIfRequired",
+                  "propertyResultRules_brokerPhoneIfRequired",
+                  "propertyResultRules_canShowAddress",
+                  "propertyResultRules_canShowCroppedPhotos",
+                  "propertyResultRules_canShowOnMap",
+                  "propertyResultRules_mlsIdIfRequired",
+                  "propertyResultRules_mlsNameIfRequired",
+                  "propertyResultRules_mlsStatusIfRequired",
+                  "propertyResultRules_providerLogoIfRequired",
+                  "propertyResultRules_mustDisplayLotSizeInAcres",
+                  "propertyResultRules_builderNameIfRequired",
+                  "propertyResultRules_soldByOfficeNameIfRequired",
+                  "providerCategory",
+                  "providerListingId",
+                  "rental_areApplicationsAccepted",
+                  "rental_isIncomeRestricted",
+                  "rental_marketingTreatments",
+                  "rental_totalRequiredMonthlyMinFee",
+                  "rental_totalRequiredMonthlyMaxFee",
+                  "rental_baseRent",
+                  "rental_listPriceIncludesRequiredMonthlyFees",
+                  "totalRequiredMonthlyMinFee",
+                  "totalRequiredMonthlyMaxFee",
+                  "minBaseRent",
+                  "maxBaseRent",
+                  "thirdPartyPhotos_streetViewPhotoLink",
+                  "title",
+                  "zpid"
+                ],
+                "primaryPhotoRequest": {
+                  "photoTreatments": [
+                    {
+                      "primary": "p_n",
+                      "noCropFallback": "p_n"
+                    }
+                  ],
+                  "fallbackPhotoStrategy": "googleSatelliteUrl",
+                  "includePhotoKeys": false
+                },
+                "thirdPartyPhotosRequest": {
+                  "streetViewSize": {
+                    "horizontal": 286,
+                    "vertical": 186
+                  }
+                },
+                "rulesRequest": {
+                  "comminglingCategory": "commingled",
+                  "applyRules": true,
+                  "providerLogoPhotoTreatments": [
+                    {
+                      "primary": "zillow_web_48_23"
+                    }
+                  ]
+                },
+                "includeCountsByRulesApplicable": false
+              }
+            }
+          }
+        }
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Found 1 neighborhoods. See interactive comparison below."
+        },
+        {
+          "type": "text",
+          "text": "{\"boundingBox\":{\"south\":47.612881,\"west\":-122.330368,\"north\":47.63956,\"east\":-122.301591},\"requestMetadata\":{\"displayLimit\":1},\"regions\":[{\"displayName\":\"Capitol Hill\",\"regionId\":250206,\"boundingBox\":{\"south\":47.612881,\"west\":-122.330368,\"north\":47.63956,\"east\":-122.301591},\"centroid\":{\"latitude\":47.6262205,\"longitude\":-122.3159795},\"description\":\"Lively neighborhood with restaurants and parks.\",\"label\":\"Vibrant nightlife\",\"propertyInfo\":{\"forSalePropertyCount\":155,\"forRentPropertyCount\":482}}],\"propertyFiltersRequest\":{\"homeStatuses\":[\"fsba\",\"fsbo\",\"auction\",\"foreclosure\",\"newConstruction\"],\"exclude\":[\"pending\",\"underContract\",\"contingent\",\"acceptingBackupOffers\"]}}"
+        }
+      ],
+      "structuredContent": {
+        "boundingBox": {
+          "south": 47.612881,
+          "west": -122.330368,
+          "north": 47.63956,
+          "east": -122.301591
+        },
+        "requestMetadata": {
+          "displayLimit": 1
+        },
+        "regions": [
+          {
+            "displayName": "Capitol Hill",
+            "regionId": 250206,
+            "boundingBox": {
+              "south": 47.612881,
+              "west": -122.330368,
+              "north": 47.63956,
+              "east": -122.301591
+            },
+            "centroid": {
+              "latitude": 47.6262205,
+              "longitude": -122.3159795
+            },
+            "description": "Lively neighborhood with restaurants and parks.",
+            "label": "Vibrant nightlife",
+            "propertyInfo": {
+              "forSalePropertyCount": 155,
+              "forRentPropertyCount": 482
+            }
+          }
+        ],
+        "propertyFiltersRequest": {
+          "homeStatuses": ["fsba", "fsbo", "auction", "foreclosure", "newConstruction"],
+          "exclude": ["pending", "underContract", "contingent", "acceptingBackupOffers"]
+        }
+      },
+      "isError": false
+    },
+    "zillow_property_search": {
+      "_meta": {
+        "zillow.com/data": {
+          "widgetId": "00000000-0000-4000-8000-000000000001",
+          "widget": "search",
+          "widgetVersion": "1",
+          "env": {
+            "googleApiKey": "recorded-key",
+            "environment": "prod",
+            "zgGraphHost": "https://www.zillow.com"
+          },
+          "metadata": {
+            "createdAt": "2026-10-27T21:06:37.877114895Z",
+            "mcpSource": "SEARCH_MCP"
+          },
+          "payload": {
+            "search": {
+              "boundingBox": {
+                "south": 47.612881,
+                "west": -122.330368,
+                "north": 47.63956,
+                "east": -122.301591
+              },
+              "requestMetadata": {
+                "displayLimit": 2
+              },
+              "propertyFiltersRequest": {},
+              "propertySearchLookupResponse": {
+                "results": [
+                  {
+                    "type": "property",
+                    "result": {
+                      "formattedAddress": {
+                        "line1": "926 11th Avenue E",
+                        "line2": "Seattle, WA 98102",
+                        "city": "Seattle",
+                        "stateOrProvince": "WA",
+                        "postalCode": "98102"
+                      },
+                      "homeStatus": {
+                        "rawHomeStatus": "fsba",
+                        "filteredHomeStatus": "fsba",
+                        "marketing": {
+                          "status": "active",
+                          "representation": "agent",
+                          "type": "forSale",
+                          "statusSimplified": "active"
+                        },
+                        "contingencies": [],
+                        "isNewConstruction": false
+                      },
+                      "geoRegion": {
+                        "latLong": {
+                          "latitude": 47.62764,
+                          "longitude": -122.31768
+                        },
+                        "isBadGeocode": false
+                      },
+                      "bathroomCount": 2,
+                      "bedroomCount": 4,
+                      "livingAreaSquareFeet": 2550,
+                      "lotArea": {
+                        "size": 6098.4,
+                        "sizeUnits": "Square Feet"
+                      },
+                      "fixtureClassification": "improvement",
+                      "homeType": "singleFamily",
+                      "zpid": 48724903,
+                      "title": "Capitol Hill Addition",
+                      "currencyType": "usd",
+                      "countryCode": "us",
+                      "price": {
+                        "filteredPrice": 1485000
+                      },
+                      "newConstruction": {
+                        "availablePlanCnt": 0,
+                        "premierBuilder": false
+                      },
+                      "enrichment": {
+                        "estimate": {
+                          "zestimate": {
+                            "value": 1437600
+                          },
+                          "restimate": {
+                            "value": 4013
+                          }
+                        }
+                      },
+                      "composablePrimaryPhoto": {
+                        "baseUrls": [
+                          {
+                            "photoTreatment": "p_c",
+                            "baseUrl": "https://photos.zillowstatic.com/fp/{photoKey}-p_c.jpg"
+                          }
+                        ],
+                        "photosData": [
+                          {
+                            "photoKey": "e610f7b33900274b5041c2a5e1b662d1",
+                            "metadataTags": []
+                          }
+                        ],
+                        "isStaticUrls": false
+                      },
+                      "thirdPartyPhotos": {
+                        "streetViewPhotoLink": {
+                          "url": "https://maps.googleapis.com/maps/api/streetview?size=286x186&location=47.62763977050781,-122.31768035888672&source=outdoor&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&signature=Fp4lrU3W8g5Avj4WRhEGSKx5xPs=",
+                          "streetviewMetadataUrl": "https://maps.googleapis.com/maps/api/streetview/metadata?location=47.62763977050781,-122.31768035888672&source=outdoor&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&signature=DgqFAQN_VJhx0ywiXD20QyfNnas="
+                        }
+                      },
+                      "hasOpenHouse": false,
+                      "isFeaturedListing": false,
+                      "hasVideos": false,
+                      "isUnmappable": false,
+                      "isOwnerOccupied": false,
+                      "hideZestimate": false,
+                      "isZillowOwned": false,
+                      "hasVRModel": false,
+                      "isShowcaseListing": false,
+                      "propertyHasLasViolation": false,
+                      "hasVerifiedClaim": false,
+                      "isFeedControlled": false,
+                      "hasApprovedThirdPartyVirtualTourUrl": false,
+                      "propertyResultRules": {
+                        "canShowAddress": true,
+                        "canShowOnMap": true,
+                        "canShowCroppedPhotos": true,
+                        "mlsStatusIfRequired": "Active",
+                        "mlsNameIfRequired": "NWMLS as distributed by MLS GRID",
+                        "mustDisplayLotSizeInAcres": false
+                      },
+                      "providerCategory": "MLS",
+                      "hasFloorPlan": false,
+                      "hasIMX": false
+                    }
+                  },
+                  {
+                    "type": "property",
+                    "result": {
+                      "formattedAddress": {
+                        "line1": "915 11th Avenue E",
+                        "line2": "Seattle, WA 98102",
+                        "city": "Seattle",
+                        "stateOrProvince": "WA",
+                        "postalCode": "98102"
+                      },
+                      "homeStatus": {
+                        "rawHomeStatus": "fsba",
+                        "filteredHomeStatus": "fsba",
+                        "marketing": {
+                          "status": "active",
+                          "representation": "agent",
+                          "type": "forSale",
+                          "statusSimplified": "active"
+                        },
+                        "contingencies": [],
+                        "isNewConstruction": false
+                      },
+                      "geoRegion": {
+                        "latLong": {
+                          "latitude": 47.627277,
+                          "longitude": -122.31838
+                        },
+                        "isBadGeocode": false
+                      },
+                      "bathroomCount": 5,
+                      "bedroomCount": 3,
+                      "livingAreaSquareFeet": 3739,
+                      "lotArea": {
+                        "size": 4199.184,
+                        "sizeUnits": "Square Feet"
+                      },
+                      "fixtureClassification": "improvement",
+                      "homeType": "singleFamily",
+                      "zpid": 48818994,
+                      "title": "Furths Add",
+                      "currencyType": "usd",
+                      "countryCode": "us",
+                      "price": {
+                        "filteredPrice": 2250000
+                      },
+                      "newConstruction": {
+                        "availablePlanCnt": 0,
+                        "premierBuilder": false
+                      },
+                      "enrichment": {
+                        "estimate": {
+                          "zestimate": {
+                            "value": 2158500
+                          },
+                          "restimate": {
+                            "value": 5687
+                          }
+                        }
+                      },
+                      "composablePrimaryPhoto": {
+                        "baseUrls": [
+                          {
+                            "photoTreatment": "p_c",
+                            "baseUrl": "https://photos.zillowstatic.com/fp/{photoKey}-p_c.jpg"
+                          }
+                        ],
+                        "photosData": [
+                          {
+                            "photoKey": "0084c068c3ab1e88f587b4352d66c41f",
+                            "metadataTags": []
+                          }
+                        ],
+                        "isStaticUrls": false
+                      },
+                      "thirdPartyPhotos": {
+                        "streetViewPhotoLink": {
+                          "url": "https://maps.googleapis.com/maps/api/streetview?size=286x186&location=47.62727737426758,-122.3183822631836&source=outdoor&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&signature=5Hy-e2dVgKSW-ZIvucxNVfj7dCs=",
+                          "streetviewMetadataUrl": "https://maps.googleapis.com/maps/api/streetview/metadata?location=47.62727737426758,-122.3183822631836&source=outdoor&key=AIzaSyBWYJWCA8FNMQvSe_k3LKfDGJaEgdKwsco&signature=wIABcARM2skrf2bRzyWJx6ws0BA="
+                        }
+                      },
+                      "hasOpenHouse": false,
+                      "isFeaturedListing": false,
+                      "hasVideos": false,
+                      "isUnmappable": false,
+                      "isOwnerOccupied": false,
+                      "hideZestimate": false,
+                      "isZillowOwned": false,
+                      "hasVRModel": false,
+                      "isShowcaseListing": false,
+                      "propertyHasLasViolation": false,
+                      "hasVerifiedClaim": false,
+                      "isFeedControlled": false,
+                      "hasApprovedThirdPartyVirtualTourUrl": false,
+                      "propertyResultRules": {
+                        "canShowAddress": true,
+                        "canShowOnMap": true,
+                        "canShowCroppedPhotos": true,
+                        "mlsStatusIfRequired": "Active",
+                        "mlsNameIfRequired": "NWMLS as distributed by MLS GRID",
+                        "mustDisplayLotSizeInAcres": false
+                      },
+                      "providerCategory": "MLS",
+                      "hasFloorPlan": false,
+                      "hasIMX": false
+                    }
+                  }
+                ],
+                "resultCounts": {
+                  "totalMatchingCount": 155,
+                  "displayResultsCount": 100
+                },
+                "rules": {
+                  "adsRestricted": false
+                },
+                "adsInfo": {},
+                "providerInfoList": [
+                  {
+                    "ssid": 39,
+                    "disclaimer": "Based on information submitted to the MLS GRID as of 2026-10-27 14:03:57 PDT. All data is obtained from various sources and may not have been verified by broker or\nMLS GRID. Supplied Open House Information is subject to change without notice. All information should be independently reviewed and verified for accuracy. Properties may or may not be listed by\nthe office/agent presenting the informatio",
+                    "providerLogo": {
+                      "url": "https://photos.zillowstatic.com/fp/033de87a0051f29108423257c615e0b5-zillow_web_48_23.jpg",
+                      "photoKey": "033de87a0051f29108423257c615e0b5"
+                    }
+                  }
+                ],
+                "personalizedResultLoggingId": "6ae1125d000000005d57b48d42c5aab7",
+                "propertySearchResultMetadata": {}
+              },
+              "propertySearchLookupRequest": {
+                "sortSelection": "personalized",
+                "exclude": ["pending", "underContract"],
+                "homeStatuses": ["fsba", "fsbo"],
+                "forSaleListingStatuses": ["active", "comingSoon"],
+                "supplementResultsWithOffMarket": false,
+                "sortAscending": false,
+                "useZGSearch": false,
+                "filterHiddenHomes": false,
+                "includeUngroupedCount": false,
+                "includeRoomForRent": false,
+                "includeOnlyShowcaseListings": false,
+                "pageNumber": 1,
+                "pageSize": 100,
+                "regions": [
+                  {
+                    "regionType": "standardId",
+                    "regionId": {
+                      "regionId": "250206",
+                      "regionIdType": "neighborhood"
+                    }
+                  }
+                ],
+                "boundingBox": {
+                  "south": 47.612881,
+                  "west": -122.330368,
+                  "north": 47.63956,
+                  "east": -122.301591
+                },
+                "requestedFields": ["bathroomCount", "bedroomCount"],
+                "primaryPhotoRequest": {
+                  "photoTreatments": [
+                    {
+                      "primary": "p_c",
+                      "noCropFallback": "p_n"
+                    }
+                  ],
+                  "fallbackPhotoStrategy": "googleSatelliteUrl",
+                  "includePhotoKeys": false
+                },
+                "thirdPartyPhotosRequest": {
+                  "streetViewSize": {
+                    "horizontal": 286,
+                    "vertical": 186
+                  }
+                },
+                "rulesRequest": {
+                  "comminglingCategory": "commingled",
+                  "applyRules": true,
+                  "providerLogoPhotoTreatments": [
+                    {
+                      "primary": "zillow_web_48_23"
+                    }
+                  ]
+                },
+                "providerInfoRequest": {
+                  "includeLogo": true,
+                  "includeDisclaimer": true,
+                  "providerLogoTreatment": {
+                    "primary": "zillow_web_48_23"
+                  },
+                  "returnOrderedList": true
+                },
+                "includeCountsByRulesApplicable": false
+              }
+            }
+          }
+        }
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Found 155 properties. See interactive map below."
+        },
+        {
+          "type": "text",
+          "text": "{\"results\":[{\"type\":\"property\",\"result\":{\"formattedAddress\":{\"line1\":\"926 11th Avenue E\",\"line2\":\"Seattle, WA 98102\",\"city\":\"Seattle\",\"stateOrProvince\":\"WA\",\"postalCode\":\"98102\"},\"geoRegion\":{\"latLong\":{\"latitude\":47.62764,\"longitude\":-122.31768},\"isBadGeocode\":false},\"bathroomCount\":2.0,\"bedroomCount\":4,\"livingAreaSquareFeet\":2550,\"lotArea\":{\"size\":6098.4,\"sizeUnits\":\"Square Feet\"},\"fixtureClassi"
+        }
+      ],
+      "structuredContent": {
+        "results": [
+          {
+            "type": "property",
+            "result": {
+              "formattedAddress": {
+                "line1": "926 11th Avenue E",
+                "line2": "Seattle, WA 98102",
+                "city": "Seattle",
+                "stateOrProvince": "WA",
+                "postalCode": "98102"
+              },
+              "geoRegion": {
+                "latLong": {
+                  "latitude": 47.62764,
+                  "longitude": -122.31768
+                },
+                "isBadGeocode": false
+              },
+              "bathroomCount": 2,
+              "bedroomCount": 4,
+              "livingAreaSquareFeet": 2550,
+              "lotArea": {
+                "size": 6098.4,
+                "sizeUnits": "Square Feet"
+              },
+              "fixtureClassification": "improvement",
+              "homeType": "singleFamily",
+              "title": "Capitol Hill Addition",
+              "price": {
+                "filteredPrice": 1485000
+              },
+              "newConstruction": {
+                "availablePlanCnt": 0,
+                "premierBuilder": false
+              },
+              "hasOpenHouse": false,
+              "hasVRModel": false,
+              "homeDetailsPageUrl": "https://www.zillow.com/homedetails/926-11th-Ave-E-Seattle-WA-98102/48724903_zpid?utm_source=unknown&utm_campaign=unknownconnector"
+            }
+          },
+          {
+            "type": "property",
+            "result": {
+              "formattedAddress": {
+                "line1": "915 11th Avenue E",
+                "line2": "Seattle, WA 98102",
+                "city": "Seattle",
+                "stateOrProvince": "WA",
+                "postalCode": "98102"
+              },
+              "geoRegion": {
+                "latLong": {
+                  "latitude": 47.627277,
+                  "longitude": -122.31838
+                },
+                "isBadGeocode": false
+              },
+              "bathroomCount": 5,
+              "bedroomCount": 3,
+              "livingAreaSquareFeet": 3739,
+              "lotArea": {
+                "size": 4199.184,
+                "sizeUnits": "Square Feet"
+              },
+              "fixtureClassification": "improvement",
+              "homeType": "singleFamily",
+              "title": "Furths Add",
+              "price": {
+                "filteredPrice": 2250000
+              },
+              "newConstruction": {
+                "availablePlanCnt": 0,
+                "premierBuilder": false
+              },
+              "hasOpenHouse": false,
+              "hasVRModel": false,
+              "homeDetailsPageUrl": "https://www.zillow.com/homedetails/915-11th-Ave-E-Seattle-WA-98102/48818994_zpid?utm_source=unknown&utm_campaign=unknownconnector"
+            }
+          }
+        ],
+        "resultCounts": {
+          "totalMatchingCount": 155,
+          "displayResultsCount": 100
+        }
+      },
+      "isError": false
+    }
+  }
+}

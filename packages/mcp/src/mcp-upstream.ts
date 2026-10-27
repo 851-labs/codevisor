@@ -1,3 +1,4 @@
+import type { McpServerRecord } from "@codevisor/db"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
@@ -7,6 +8,9 @@ import {
   type StreamableHttpAuthorization
 } from "./mcp-http-transport.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
+import { CATALOG_STDIO_COMMAND, type CatalogLaunch } from "./mcp-manager-types.js"
+import { discoverPlugin, PLUGIN_CLIENT_CAPABILITIES } from "./mcp-plugin-capabilities.js"
+import { makePluginChannel } from "./mcp-plugin-channel.js"
 import { connectionSecretsSignature } from "./mcp-secret-update.js"
 import { errorMessage, requireHttpUrl, type UpstreamConnection } from "./mcp-support.js"
 
@@ -30,6 +34,23 @@ const definedEnvironment = (
   return defined
 }
 
+const serverLaunch = (core: McpManagerCore, server: McpServerRecord): CatalogLaunch => {
+  if (server.catalogId === undefined || server.command !== CATALOG_STDIO_COMMAND) {
+    return storedLaunch(server)
+  }
+  const launch = core.config.catalog?.launch(server.catalogId)
+  if (launch === undefined)
+    throw new Error(`${server.name} isn't available in this version of Codevisor`)
+  return launch
+}
+
+const storedLaunch = (server: McpServerRecord): CatalogLaunch => {
+  /* v8 ignore next */
+  if (server.transport === "stdio")
+    return { transport: "stdio", command: server.command ?? "", args: server.args }
+  return { transport: "http", url: requireHttpUrl(server.url) }
+}
+
 const listAllUpstreamTools = async (client: Client): Promise<ReadonlyArray<Tool>> => {
   const tools: Tool[] = []
   let cursor: string | undefined
@@ -45,7 +66,7 @@ export const makeConnectUpstream = (
   core: McpManagerCore,
   oauthAuthorization: (id: string) => StreamableHttpAuthorization
 ): ConnectUpstream => {
-  const { connectionLocks, connections, record, saveRecord, secrets, state } = core
+  const { connectionLocks, connections, emitConnection, record, saveRecord, secrets, state } = core
 
   return async (id, options = {}) => {
     const cached = connections.get(id)
@@ -96,26 +117,32 @@ export const makeConnectUpstream = (
         await saveRecord(server, { connectionState: "connecting", detail: undefined })
       }
       checkOwner()
-      const client = new Client({ name: "Codevisor", version: "0.1.0" }, { capabilities: {} })
+      const client = new Client(
+        { name: "Codevisor", version: "0.1.0" },
+        { capabilities: PLUGIN_CLIENT_CAPABILITIES }
+      )
+      const launch = serverLaunch(core, server)
       const transport =
-        server.transport === "stdio"
+        launch.transport === "stdio"
           ? new StdioClientTransport({
-              /* v8 ignore next */
-              command: server.command ?? "",
-              args: [...server.args],
+              command: launch.command,
+              args: [...launch.args],
               env: definedEnvironment({ ...process.env, ...stored.env }),
               stderr: "pipe"
             })
           : new NodeStreamableHttpTransport(
-              new URL(requireHttpUrl(server.url)),
+              new URL(requireHttpUrl(launch.url)),
               bearer === undefined && server.authType === "oauth" ? oauthAuthorization(id) : bearer,
               stored.headers
             )
+      const channel = makePluginChannel(client, transport)
       let phase = "initialize"
       try {
         await client.connect(transport)
         phase = "tools/list"
         const tools = await listAllUpstreamTools(client)
+        phase = "capability discovery"
+        const discovered = await discoverPlugin(client, tools)
         const latest = await record(id)
         checkOwner()
         if (
@@ -144,20 +171,31 @@ export const makeConnectUpstream = (
           throw new Error(`${latest.name} changed while connecting`)
         }
         const serverInfo = client.getServerVersion()
+        const capabilities = client.getServerCapabilities() ?? {}
         const connection: UpstreamConnection = {
           client,
+          channel,
           close: () => client.close(),
           tools,
+          skills: discovered.skills,
+          capabilities,
           ...(serverInfo === undefined ? {} : { serverInfo })
         }
         connections.set(id, connection)
+        // oxlint-disable-next-line unicorn/prefer-add-event-listener
+        client.onclose = () => {
+          if (connections.get(id) === connection) connections.delete(id)
+          emitConnection(id, "closed")
+        }
         const updated = await record(id)
         checkOwner()
         await saveRecord(updated, {
           connectionState: "connected",
           toolCount: tools.length,
-          detail: undefined
+          detail: undefined,
+          capabilities: discovered.capabilities
         })
+        emitConnection(id, "connected")
         return connection
       } catch (cause) {
         /* v8 ignore next */

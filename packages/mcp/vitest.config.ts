@@ -22,6 +22,7 @@ export default defineConfig({
         "src/mcp-manager-servers.ts",
         "src/mcp-gateway-machines-test-support.ts",
         "src/mcp-manager-test-support.ts",
+        "src/mcp-plugin-test-support.ts",
         "src/mcp-oauth.ts",
         "src/mcp-oauth-provider.ts",
         "src/mcp-oauth-vault-test-support.ts",

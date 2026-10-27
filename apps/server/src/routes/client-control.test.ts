@@ -61,7 +61,7 @@ describe("client control routes", () => {
       const commands = [
         { method: "context", body: undefined },
         { method: "navigate", body: { workspaceId: "workspace" } },
-        { method: "page", body: { page: "settings", section: "mcps" } },
+        { method: "page", body: { page: "settings", section: "plugins" } },
         {
           method: "layout",
           body: {

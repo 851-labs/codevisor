@@ -45,7 +45,7 @@ const seedV80 = async (filename: string) => {
     insertStop.run("limited-stop", limitedChat, 0, fiveHourLimit, "usageLimit")
     insertStop.run("refused-stop", limitedChat, 1, "Refused", null)
     insertStop.run("other-stop", otherChat, 0, fiveHourLimit, null)
-    sqlite.exec("delete from schema_migrations where id >= 81")
+    sqlite.exec("delete from schema_migrations where id = 81")
   } finally {
     sqlite.close()
   }

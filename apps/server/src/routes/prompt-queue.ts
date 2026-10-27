@@ -3,6 +3,7 @@ import type {
   AttachmentRef,
   ConnectedClient,
   EventEnvelope,
+  PromptAttribution,
   PromptOrigin,
   PromptQueueItem
 } from "@codevisor/api"
@@ -24,6 +25,11 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
+import {
+  markAppContextsDelivered,
+  withAppContexts,
+  type AppContextPrompt
+} from "./prompt-app-context.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { answeredPendingQuestion } from "./question-replies.js"
@@ -234,7 +240,8 @@ export const drainPromptQueue = async (
         item.clientId === undefined
           ? undefined
           : { clientId: item.clientId, platform: clientPlatform(routeState, item.clientId) },
-        item.origin
+        item.origin,
+        item.attribution
       )
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
@@ -356,8 +363,10 @@ const steerIntoRunningTurn = async (
   if (steer === undefined) return false
 
   const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
-  const input = await promptInput(services, sessionId, item, agentSession.skills)
-  return run(steer(agentSession.sessionId, input))
+  const prompt = await promptInput(services, sessionId, item, agentSession.skills)
+  const steered = await run(steer(agentSession.sessionId, prompt.input))
+  if (steered) await markAppContextsDelivered(services, sessionId, prompt.delivered)
+  return steered
 }
 
 const promptInput = async (
@@ -367,11 +376,21 @@ const promptInput = async (
   skills: Parameters<typeof withCodevisorSkills>[3]
 ) => {
   const refs = item.attachments ?? []
-  let promptText: string
-  if (item.origin === "system") promptText = item.text
-  else promptText = await withCodevisorSkills(services, sessionId, item.text, skills)
-  if (refs.length === 0) return promptText
-  return { attachments: await resolvePromptAttachments(services, refs), text: promptText }
+  const prompt = await promptText(services, sessionId, item, skills)
+  if (refs.length === 0) return { input: prompt.text, delivered: prompt.delivered }
+  const attachments = await resolvePromptAttachments(services, refs)
+  return { input: { attachments, text: prompt.text }, delivered: prompt.delivered }
+}
+
+const promptText = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  item: Pick<PromptQueueItem, "text" | "origin">,
+  skills: Parameters<typeof withCodevisorSkills>[3]
+): Promise<AppContextPrompt> => {
+  if (item.origin === "system") return { text: item.text, delivered: [] }
+  const typed = await withCodevisorSkills(services, sessionId, item.text, skills)
+  return withAppContexts(services, sessionId, typed)
 }
 
 const clientPlatform = (
@@ -394,7 +413,8 @@ const runPromptInBackground = async (
     readonly clientId: string
     readonly platform: ConnectedClient["platform"] | undefined
   },
-  origin?: PromptOrigin
+  origin?: PromptOrigin,
+  attribution?: PromptAttribution
 ): Promise<void> => {
   try {
     await recordUserPrompt(services, fanout, serverId, sessionId, {
@@ -402,6 +422,7 @@ const runPromptInBackground = async (
       text,
       attachments,
       origin,
+      attribution,
       startsTurn: true
     })
     if (client === undefined) {
@@ -414,7 +435,7 @@ const runPromptInBackground = async (
     }
     await recordTurnStart(services, sessionId).catch(swallowError)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
-    const input = await promptInput(
+    const prompt = await promptInput(
       services,
       sessionId,
       {
@@ -424,7 +445,8 @@ const runPromptInBackground = async (
       },
       agentSession.skills
     )
-    await run(services.agents.prompt(agentSession.sessionId, input))
+    await run(services.agents.prompt(agentSession.sessionId, prompt.input))
+    await markAppContextsDelivered(services, sessionId, prompt.delivered)
   } catch (cause) {
     const signedOut = isAuthenticationFailure(cause)
     if (signedOut) {

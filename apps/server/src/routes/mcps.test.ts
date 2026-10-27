@@ -184,7 +184,7 @@ describe("mcp routes", () => {
         "agents.message",
         "agents.status",
         "agents.debug.search",
-        "mcps.create",
+        "plugins.add_custom",
         "skills.create",
         "harnesses.list",
         "machines.cloud_status"

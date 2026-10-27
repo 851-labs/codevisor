@@ -1,283 +1,264 @@
 ---
 name: create-codevisor-plugin
-description: Create, install, and iterate on a Codevisor plugin — a local HTTP server whose panes render inside Codevisor on every connected device. Use when the user asks for a new pane, panel, viewer, dashboard, or tool inside Codevisor (e.g. "make me a pane that shows X"), or asks to build or modify a Codevisor plugin.
+description: Create, install and iterate on a Codevisor plugin, an MCP server (stdio or Streamable HTTP) that can add tools, skills, inline UI (MCP Apps), event sources, workspace panes and webhooks. Use when the user asks for a new integration, tool, pane, dashboard or event trigger inside Codevisor, or asks to build or change a Codevisor plugin.
 ---
 
 # Create a Codevisor plugin
 
-A plugin is a folder with a manifest and any program that serves HTTP on
-`$PORT` (loopback). Codevisor supervises the process, proxies pane traffic to
-it, and renders its pages in webview panes on every client (macOS, iOS,
-remote). You can scaffold, install, and show a working pane in under a minute.
+A Codevisor plugin **is an MCP server**. Anything that speaks MCP over stdio or
+Streamable HTTP works; Codevisor connects to it, exposes its tools to agents
+through the `execute` gateway, and reads the extensions it declares in
+`capabilities.extensions`.
 
-## Workflow
+| Feature                 | Mechanism                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| Tools                   | Standard MCP `tools/list` / `tools/call`                                          |
+| Skills                  | MCP Skills extension `io.modelcontextprotocol/skills`                             |
+| Inline UI in chat       | MCP Apps `io.modelcontextprotocol/ui`: tool `_meta.ui.resourceUri` → `ui://` page |
+| Events that wake agents | MCP Events (SEP-3415) `io.modelcontextprotocol/events`                            |
+| Workspace tabs          | `dev.codevisor/panes`                                                             |
+| Inbound webhooks        | `dev.codevisor/webhooks` + `codevisor/webhook` request                            |
+| Accounts (tokens, keys) | Per-request `params._meta["dev.codevisor/account"]`                               |
 
-1. **Scaffold** a folder with `codevisor-plugin.json` + a single-file server
-   (templates below). Prefer zero dependencies.
-2. **Install it (dev mode)** so Codevisor discovers it:
-   - Tool: `plugins.link` with the folder's absolute path, or
-   - CLI: `codevisor plugin link <absolute-path>`
-3. **Open a pane** so the user sees it immediately: use the
-   `workspaces.open_plugin_pane` tool (or tell the user it's on the New Tab
-   page). Pane records need `providerId: "plugin:<pluginId>"` and the pane
-   `type`; do not persist icon metadata in the workspace record.
-4. **Iterate**: edit files → `plugins.restart` → open panes reload
-   automatically on every connected device. HMR-capable dev servers (Vite
-   etc.) also work without restarting, since WebSockets are proxied. Read
-   runtime logs via the plugin's output terminal (Settings → Plugins → Show
-   Output) when something fails.
+## Workflow (your own or a third-party plugin)
 
-## Manifest — `codevisor-plugin.json`
+1. **Scaffold** a single-file server with `@modelcontextprotocol/sdk` and `zod`
+   (template below). Start with tools; add extensions only when needed.
+2. **Check it** with the MCP Inspector: `npx @modelcontextprotocol/inspector node server.ts`.
+3. **Add it in Codevisor** from Settings › Plugins › **Add Custom…**. The
+   plugin syncs to the user's other Macs like any other. Choose one:
+   - **Command** (stdio): `node /absolute/path/server.ts` (Node ≥ 22.18 runs
+     TypeScript directly; otherwise compile first).
+   - **URL** (Streamable HTTP): `https://host/mcp` for a server already running.
+4. **Iterate**: edit, then turn the plugin off and on in Settings › Plugins to
+   restart a stdio server. Tools, skills and events are re-read on connect.
+5. **Share it** (optional) by publishing a `server.json` to the
+   [MCP Registry](https://registry.modelcontextprotocol.io) with `mcp-publisher`.
+   It needs `packages` (for example npm with `"transport": { "type": "stdio" }`)
+   or `remotes` (Streamable HTTP). Registry plugins show up in Codevisor's
+   plugin catalog. The registry keeps only publisher metadata, so put the
+   Codevisor digest under
+   `_meta["io.modelcontextprotocol.registry/publisher-provided"]["dev.codevisor/plugin"]`.
+   It has the same `accounts` and `capabilities` shape as below.
 
-```json
-{
-  "protocolVersion": 1,
-  "id": "<owner>.<name>",
-  "name": "My Plugin",
-  "description": "One line about what it does",
-  "version": "0.1.0",
-  "ageRating": 4,
-  "iconPath": "/assets/icon.svg",
-  "panes": [{ "type": "main", "title": "My Plugin", "path": "/panes/main/" }],
-  "run": { "command": "node server.js" },
-  "healthPath": "/health"
-}
+## First-party plugins (the Codevisor repo)
+
+Codevisor's own plugins ship inside the Codevisor server. Each one is a
+workspace package under the top-level `plugins/` folder:
+
+```
+plugins/
+  kit/                 @codevisor/plugin-kit: event streams, skills, resources, stdio, test support
+  gmail/               @codevisor/plugin-gmail
+    package.json       build "tsc -b tsconfig.json"; depends on @codevisor/plugin-kit
+    server.json        MCP Registry server.json; the catalog reads it
+    tsconfig.json      extends ../../tsconfig.base.json; references ../kit
+    vitest.config.ts   100% coverage thresholds
+    src/main.ts        serveStdio(createGmailServer(), process.stdin, process.stdout)
+    src/*-server.ts    createXServer(deps): a pure factory, tested in-process
 ```
 
-- `id`: lowercase `owner.name` (letters/digits/hyphens, exactly one dot).
-- Pane `path` MUST start **and** end with `/`.
-- `install: {"command": "..."}` only if dependencies are unavoidable.
-- `iconPath` is an optional plain absolute server path to SVG, PNG, or WebP.
-  A pane-level `iconPath` overrides the plugin path; otherwise it inherits it.
+- `server.json` follows the official schema
+  (`https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`).
+  It needs `name: "dev.codevisor/<plugin>"`, `title`, a `description` of at
+  most 100 characters, `version`, `websiteUrl` and `repository` (with
+  `subfolder: "plugins/<plugin>"`). Leave out `packages` and `remotes`:
+  bundled plugins are not installed from npm.
+- `_meta["dev.codevisor/plugin"]` describes the plugin to Codevisor:
+  `{ bundled: "<plugin>", entry: "dist/main.js", accounts?, capabilities, devOnly? }`.
+  - `accounts` is a `PluginAccountSpec`: `{ label, oauth?, fields }`.
+  - `capabilities` is the digest of tools (`name`, `description`, `effects`,
+    `app`), events, skills, panes and ingress. A `server-json.test.ts`
+    compares it with what the server really serves.
+  - `devOnly: true` hides dev-only plugins such as `test-events`.
+- Inject everything nondeterministic (`fetch`, a `Clock`) into the factory.
+  Test with `connectClient` from `@codevisor/plugin-kit/test-support` and an
+  in-memory fake of the upstream API.
+- The release runtime ships `plugins/<plugin>/{package.json,server.json,dist}`.
+  Add the package to the root `tsconfig.json` references.
 
-Create the referenced `assets/icon.svg` as self-contained full-color artwork
-(no scripts, embedded HTML, external links, or external CSS):
+## Minimal server (tools + a poll event)
 
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#7657e8"/>
-  <circle cx="32" cy="32" r="13" fill="#fff"/>
-</svg>
-```
+```ts
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { z } from "zod"
 
-## Server template (zero-dep Node)
+const notes: Array<{ id: string; text: string; at: number }> = []
 
-```js
-const http = require("http")
-const { readFile } = require("node:fs/promises")
-const path = require("node:path")
+const server = new McpServer(
+  { name: "notes", version: "0.1.0" },
+  { capabilities: { extensions: { "io.modelcontextprotocol/events": { listChanged: false } } } }
+)
 
-const decodeContext = (header) => {
-  try {
-    return JSON.parse(Buffer.from(header ?? "", "base64").toString("utf8"))
-  } catch {
-    return {}
-  }
-}
-
-http
-  .createServer(async (request, response) => {
-    const url = new URL(request.url, "http://127.0.0.1")
-    const context = decodeContext(request.headers["x-codevisor-context"])
-    if (url.pathname === "/health") return response.end("ok")
-    if (url.pathname === "/assets/icon.svg") {
-      response.writeHead(200, { "Content-Type": "image/svg+xml" })
-      return response.end(await readFile(path.join(__dirname, "assets/icon.svg")))
-    }
-    if (url.pathname === "/panes/main/") {
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-      return response.end(`<!doctype html><html><head><meta charset="utf-8">
-      <style>body{margin:0;font-family:var(--codevisor-font-family,sans-serif);
-      background:var(--codevisor-bg,Canvas);color:var(--codevisor-fg,CanvasText)}</style>
-      </head><body><h1>Hello from ${context.cwd ?? "?"}</h1>
-      <script>fetch("api/data").then(r => r.json()).then(console.log)</script>
-      </body></html>`)
-    }
-    if (url.pathname === "/panes/main/api/data") {
-      response.writeHead(200, { "Content-Type": "application/json" })
-      return response.end(JSON.stringify({ cwd: context.cwd }))
-    }
-    response.writeHead(404).end()
-  })
-  .listen(Number(process.env.PORT), "127.0.0.1")
-```
-
-## Hard rules
-
-- **Every URL in pane documents must be RELATIVE** (`api/data`, `./app.js` —
-  never `/app.js` or absolute URLs). Panes are served under a proxy prefix;
-  path-absolute URLs escape it and 404.
-- **Bind `127.0.0.1` on `Number(process.env.PORT)`** — never `0.0.0.0`.
-- **Serve `iconPath` with the right MIME type.** Codevisor accepts SVG, PNG,
-  and WebP up to 512 KiB, rejects active/external SVG content, and normalizes
-  every asset to a 256 px PNG for clients. Use full-color artwork that works
-  on light and dark backgrounds; it is not tinted like a system symbol.
-- Read per-pane context (cwd, workspaceId, paneId, themeMode) from the
-  `X-Codevisor-Context` header: base64 JSON, present on every proxied request.
-  Any local process can call your port, so before trusting the context (for
-  example, reading files under `cwd`), check `X-Codevisor-Context-Signature`.
-  It is the hex HMAC-SHA256 of the raw header value, keyed with the
-  `CODEVISOR_PLUGIN_CONTEXT_SECRET` env string. Compare it with
-  `crypto.timingSafeEqual`:
-  `createHmac("sha256", process.env.CODEVISOR_PLUGIN_CONTEXT_SECRET).update(header).digest("hex")`.
-- Style with the injected `--codevisor-*` CSS variables so panes match the
-  app's light or dark look (full reference under "Styling panes"); every `var()` needs a
-  fallback: `var(--codevisor-bg, Canvas)`.
-- **Treat the pane document as content, not a standalone app shell.** Codevisor
-  already renders native chrome above the webview with the pane icon, title,
-  and controls. Do not repeat the plugin icon, plugin name, or pane title, and
-  do not add a top bar solely for branding. Start with the useful content. Add
-  an in-pane toolbar only for content-specific context or actions (such as
-  tabs, filters, breadcrumbs, or status); use `window.codevisor.setTitle()` to
-  change the title in the native chrome on macOS. On iOS it sets the document
-  title only; plugins have no native message bridge, and `openUrl()` uses
-  standard HTTP(S) web links.
-- **Keep ALL state in your plugin server** — in memory for ephemera, under
-  `$CODEVISOR_PLUGIN_DATA_DIR` for anything durable (never in the plugin
-  folder). The same pane renders on multiple devices at once (Mac, iPhone,
-  remote); server-side state means every device sees the same thing by
-  construction, and reloads/reinstalls lose nothing. Scope per-pane state by
-  the `paneId` (and per-project state by the `cwd`) from the request context.
-- **Do not use localStorage/IndexedDB unless the user explicitly asks for
-  device-local storage.** Browser storage is per-device (state saved on the
-  Mac never appears on the phone), can silently reset on relayed
-  connections, and is ONE shared bucket for the whole plugin — every pane in
-  every workspace reads and writes the same keys, so two open panes will
-  clobber each other's "per-pane" state. Your plugin IS a server:
-  `fetch("api/state")` costs the same to write and is correct everywhere.
-- The in-page bridge: `window.codevisor.getContext()`, `.openUrl(url)`,
-  `.setTitle(title)`; theme changes fire a `codevisor:themechange` event
-  (feature-detect it — the bridge only exists inside the app's webviews).
-- WebSockets work (relative URLs). Prefer fetch for bulk data and WS for
-  "something changed" signals.
-
-## Exposing tools to the model
-
-Plugins can declare agent-invocable tools next to panes. Add to the manifest:
-
-```json
-"tools": [
+server.registerTool(
+  "add_note",
   {
-    "name": "notes_add",
-    "description": "Append a note",
-    "path": "/tools/add",
-    "inputSchema": {
-      "type": "object",
-      "properties": { "text": { "type": "string" } },
-      "required": ["text"]
-    }
+    description: "Save a note",
+    inputSchema: { text: z.string() },
+    annotations: { readOnlyHint: false, openWorldHint: false }
   },
-  { "name": "notes_list", "description": "List saved notes", "path": "/tools/list" }
-]
-```
+  async ({ text }) => {
+    notes.push({ id: String(notes.length + 1), text, at: Date.now() })
+    return { content: [{ type: "text", text: `Saved note ${notes.length}` }] }
+  }
+)
 
-- `name`: lowercase letters/digits/underscores, unique within the plugin.
-- `path`: plain absolute path; no trailing slash needed (RPC endpoint, not a
-  document).
-- `inputSchema`: optional JSON Schema for the arguments, shown to agents.
-
-The contract: Codevisor POSTs the JSON arguments to `path` on your server,
-with the same signed `X-Codevisor-Context` header (here carrying `pluginId`,
-`toolName`, and the caller's `workspaceId`/`cwd` when known). Respond 2xx
-with JSON (or plain text); any non-2xx marks the call failed. The installed
-plugin process is already running; tool-only plugins are valid, so leave
-`panes` empty. Agents discover and call the tool as
-`plugin.<pluginId>.<toolName>` through the Codevisor tool gateway; clients
-can also `POST /v1/plugins/<pluginId>/tools/<toolName>` with
-`{ "args": { ... } }`.
-
-```js
-if (url.pathname === "/tools/add" && request.method === "POST") {
-  let body = ""
-  request.on("data", (chunk) => (body += chunk))
-  request.on("end", () => {
-    notes.push(JSON.parse(body || "{}").text)
-    response.writeHead(200, { "Content-Type": "application/json" })
-    response.end(JSON.stringify({ ok: true, count: notes.length }))
+server.server.setRequestHandler(
+  z.object({ method: z.literal("events/list"), params: z.object({}).loose().optional() }),
+  () => ({
+    resultType: "complete",
+    events: [
+      {
+        name: "note.added",
+        description: "A note was saved",
+        delivery: ["poll"],
+        inputSchema: { type: "object", properties: {} },
+        payloadSchema: {
+          type: "object",
+          properties: { id: { type: "string" }, text: { type: "string" } },
+          required: ["id", "text"]
+        }
+      }
+    ]
   })
-  return
-}
+)
+
+server.server.setRequestHandler(
+  z.object({
+    method: z.literal("events/poll"),
+    params: z.object({ name: z.string(), cursor: z.string().nullish() }).loose()
+  }),
+  ({ params }) => {
+    const after = Number(params.cursor ?? notes.length)
+    return {
+      resultType: "complete",
+      events: notes.slice(after).map((note) => ({
+        eventId: note.id,
+        name: "note.added",
+        timestamp: new Date(note.at).toISOString(),
+        data: { id: note.id, text: note.text }
+      })),
+      cursor: String(notes.length),
+      truncated: false,
+      hasMore: false,
+      nextPollMs: 5000
+    }
+  }
+)
+
+await server.connect(new StdioServerTransport())
 ```
 
-## Lifecycle facts (for debugging)
+Custom extension methods are plain JSON-RPC: register them on `server.server`
+(the low-level `Server`) with a zod schema whose `method` is a literal.
 
-- Codevisor starts installed plugins after its main listener is ready and
-  keeps them running until server shutdown. Crashes restart with backoff; 5
-  consecutive failures → `failed` until `plugins.restart`.
-- The server must accept connections on `$PORT` within 15s of spawn.
-- Pane shows an error card? Check `plugins.list` state, then the output
-  terminal. 502 = process unreachable (crashed?), 504 = request hung >30s.
+## Extensions
 
-## Styling panes
+### Tools
 
-Panes render inside Codevisor's chrome, which is native macOS/iOS and
-deliberately quiet: system font, small type (11–13px chrome, ~12px mono
-content), hairline 1px borders, flat surfaces with at most one elevation
-step, no shadows or gradients, whitespace over boxes, and color reserved
-for meaning — the accent, status, and diff tokens below. A pane inherits
-that look by building from these variables instead of its own palette.
+- Annotate every tool: `readOnlyHint: true` for reads; `openWorldHint: true`
+  for anything that reaches other people (sending mail, posting messages).
+- Always return useful `content` text. Put machine-readable data in
+  `structuredContent` too.
+- Report failures as `{ isError: true, content: [...] }`, not exceptions.
 
-The clients inject these on `:root` (values track the system light/dark
-appearance live — a `codevisor:themechange` event fires on `window` when
-they change):
+### Skills (`io.modelcontextprotocol/skills`)
 
-| Variable                                     | Meaning                               |
-| -------------------------------------------- | ------------------------------------- |
-| `--codevisor-bg`                             | pane background                       |
-| `--codevisor-bg-elevated`                    | raised surface (cards, header bars)   |
-| `--codevisor-fg`                             | primary text                          |
-| `--codevisor-fg-secondary`                   | secondary text                        |
-| `--codevisor-fg-tertiary`                    | faint text (placeholders, timestamps) |
-| `--codevisor-border`                         | control borders                       |
-| `--codevisor-separator`                      | hairline dividers                     |
-| `--codevisor-accent`                         | interactive/highlight color           |
-| `--codevisor-status-ok` / `-warn` / `-error` | status colors                         |
-| `--codevisor-diff-added` / `-removed`        | diff foregrounds                      |
-| `--codevisor-diff-added-bg` / `-removed-bg`  | diff line backgrounds                 |
-| `--codevisor-font-family`                    | UI font (system stack)                |
-| `--codevisor-font-family-mono`               | monospace font                        |
+Declare `resources: {}` and `extensions["io.modelcontextprotocol/skills"]: {}`.
+Then implement:
 
-Because the variables only exist inside the app's webviews (see "Seeing
-your pane"), every `var()` carries a fallback; `color-mix` against
-`Canvas`/`CanvasText` plus `:root { color-scheme: light dark }` keeps the
-fallbacks theme-correct too — the git-diff reference plugin
-(codevisor repo, `plugins/git-diff/server.ts`) shows the full pattern.
+- `skills/list` → `{ resultType: "complete", ttlMs, cacheScope: "public", skills: [entry] }`
+- `skills/get { uri }` → `{ resultType, ttlMs, cacheScope, skill: entry }`; unknown URI → `-32602`
+- `resources/read` for every file in the manifest
 
-## Seeing your pane
+An entry is `{ uri: "skill://<name>/SKILL.md", frontmatter: { name, description },
+resources: [{ uri, digest: "sha256:<hex>", size }] }`. `SKILL.md` must start
+with YAML frontmatter that matches `frontmatter` field for field. Compute
+digests and byte sizes from the exact bytes `resources/read` returns, or
+Codevisor rejects the skill.
 
-`plugins.open_pane_url` returns a URL you can open with the browser tools:
-it renders the same pane the user sees — an independent view backed by the
-same plugin server, so state and interactions are shared both ways. Good
-for screenshotting a pane after a change or driving its UI end to end.
+### MCP Apps: inline UI in the transcript (`io.modelcontextprotocol/ui`)
 
-This browser view shows the pane document without Codevisor's surrounding
-native chrome. The missing icon/title bar in this preview is expected; do not
-add a replacement top bar to the document to compensate for it.
+- Give the tool `_meta: { ui: { resourceUri: "ui://<plugin>/view.html" } }`.
+- `resources/read` of that URI returns `mimeType: "text/html;profile=mcp-app"`
+  with a self-contained HTML document (inline CSS and JS, no external URLs).
+- The page talks JSON-RPC over `window.parent.postMessage`:
+  1. send request `ui/initialize` `{ appInfo: { name, version }, appCapabilities: {}, protocolVersion: "2026-01-26" }`
+  2. on the response, send notification `ui/notifications/initialized`
+  3. receive `ui/notifications/tool-input` and `ui/notifications/tool-result`
+     (render from `params.structuredContent`)
+  4. optionally send `tools/call` requests for fresh data or user actions
+- Use `:root { color-scheme: light dark }` and system colors so it works in both themes.
 
-A pane opened this way runs without the native clients' injections — no
-`window.codevisor` bridge, no `--codevisor-*` CSS variables (those come
-from the app's webview, not the proxy). This is why every `var()` carries
-a fallback and why bridge use is feature-detected (`if (window.codevisor)`):
-a pane written that way renders correctly anywhere it can be opened.
+### Panes (`dev.codevisor/panes`)
 
-## Publishing (when the user asks)
+```json
+"dev.codevisor/panes": { "panes": [{ "type": "dashboard", "title": "Alerts", "resourceUri": "ui://grafana/alerts.html" }] }
+```
 
-Push the folder to a public GitHub repo whose owner matches the id's
-namespace (`owner.name` ⇒ `github.com/owner/...`). Others install it with
-`plugins.discover_remote` → user consent → `plugins.install`, or
-`codevisor plugin install owner/repo`.
+Each pane opens as a workspace tab rendering the `ui://` resource with the
+same Apps bridge. A pane has no tool result, so load data with `tools/call`
+after `ui/initialize`. Keep state in the server, not in the page: the same
+pane can be open on several devices at once.
 
-To list it in the plugin registry (Settings ▸ Plugins ▸ Browse and
-codevisor.dev/plugins), add the `codevisor-plugin` GitHub topic to the
-repo; the registry indexes it within ~15 minutes. The manifest must sit at
-the repo root and its id namespace must equal the repo owner, or the entry
-is rejected (rejections and reasons appear in the index's `rejected` list).
-Untag the repo to delist it.
+### Events (`io.modelcontextprotocol/events`, SEP-3415)
 
-Publishing to the registry agrees to the [plugin publisher terms](https://codevisor.dev/terms#plugins).
-Set `ageRating` honestly to 4, 9, 13, 16, or 18 using Apple’s age-rating criteria.
-iOS accepts ratings up to 16; a missing or higher rating prevents opening there.
-Codevisor may restrict a plugin or publisher on iOS after review. Mac execution is unaffected.
-Keep content, metadata, and data practices accurate, and moderate user-generated content.
-The native install screens explain the plugin’s access and record consent.
-There is no separate consent prompt when viewing or opening an installed plugin.
+- `events/list` → `{ resultType: "complete", events: [{ name, description, delivery, inputSchema, payloadSchema }] }`.
+  `delivery` is any of `"poll"`, `"push"`.
+- **`payloadSchema` must be fully typed.** Agents filter with CEL expressions
+  that are type-checked against it, such as `from.email.endsWith("@acme.com")`
+  or `labels.severity == "critical"`. Give nested objects `properties`, give
+  string maps `additionalProperties: { type: "string" }`, and give arrays `items`.
+- **Poll**: `events/poll { name, arguments, cursor, maxEvents?, maxAgeMs? }` →
+  `{ resultType: "complete", events: [{ eventId, name, timestamp, data }], cursor, truncated, hasMore, nextPollMs }`.
+  A `null` cursor means "start now": return no events and a fresh cursor.
+  Return `truncated: true` with a fresh cursor when the old one expired.
+  Set `hasMore: true` when another page is waiting.
+- **Push**: `events/stream { name, arguments, cursor }` is a long-lived request.
+  - Send `notifications/events/active { cursor, truncated }` first.
+  - Then send `notifications/events/event { eventId, name, timestamp, data, cursor }`
+    as events happen, and `notifications/events/heartbeat { cursor }` at least every 30 s.
+  - Every notification carries `_meta["io.modelcontextprotocol/subscriptionId"]` = the request id.
+  - Stop when `notifications/cancelled` arrives (the SDK aborts the handler's `signal`).
+  - Use `cursor: null` throughout if you cannot replay.
+- **`eventId` must be the stable upstream id** (message id, alert fingerprint
+  plus start time). Codevisor dedupes on it across machines and reconnects.
+- Errors: unknown event type `-32023`, missing or rejected credentials
+  `-32024`, unsupported delivery mode `-32026`.
+
+### Webhooks (`dev.codevisor/webhooks`)
+
+```json
+"dev.codevisor/webhooks": { "ingress": [{ "name": "alerts", "title": "Grafana alert webhook" }] }
+```
+
+Codevisor gives each ingress a public inbox URL for the user to paste into
+the provider. It forwards each delivery to the machines that need it as the
+request `codevisor/webhook`:
+`{ ingress, request: { method, headers, body /* base64 */, receivedAt } }`,
+plus the account `_meta`. Verify the provider's signature or shared secret
+yourself (constant-time compare). Normalize the delivery into events and
+emit them on your open `events/stream` streams for that account. Return
+`{ accepted: <events emitted>, status?: <http status> }`, for example
+`{ accepted: 0, status: 401 }` on a bad signature.
+
+### Accounts
+
+Every host → plugin request (`tools/call`, `events/*`, `codevisor/webhook`)
+for a plugin with accounts carries
+`params._meta["dev.codevisor/account"] = { id, label?, identity?, accessToken?, fields }`.
+In the SDK it is `extra._meta`.
+
+- Treat it as per-request. Never persist or cache tokens.
+- Codevisor refreshes OAuth tokens. Plugins only ever see access tokens, never refresh tokens.
+- Scope stream state by `account.id` so one account's events never reach another's subscribers.
+- Missing or invalid account: return a tool error, or `-32024` from `events/*`.
+
+## Rules
+
+- On stdio, stdout is the protocol channel. Log to stderr only.
+- Exit when stdin closes, so timers do not keep an orphaned process alive.
+- Event payloads and tool results are untrusted data for the model. Keep them
+  minimal and never include secrets.
+- Make tools safe to retry. Prefer drafts or confirmations over irreversible actions.

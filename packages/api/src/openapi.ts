@@ -97,14 +97,6 @@ const setSuccessContent = (
       "application/octet-stream": { schema: { type: "string", format: "binary" } }
     }
   }
-  if (
-    endpoint === "GET /v1/plugins/:pluginId/icon" ||
-    endpoint === "GET /v1/plugins/:pluginId/panes/:paneType/icon"
-  ) {
-    successResponse.content = {
-      "image/png": { schema: { type: "string", format: "binary" } }
-    }
-  }
 }
 
 const setRequestBody = (

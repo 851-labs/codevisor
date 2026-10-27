@@ -4,9 +4,12 @@ import {
   QuestionPayload,
   SessionPlan as SessionPlanSchema,
   type EventKind,
+  type PromptAttribution,
   type SessionPlan
 } from "@codevisor/api"
 import { Schema } from "effect"
+
+import { attributionFrom } from "./prompt-attribution.js"
 
 export type JsonRecord = Record<string, unknown>
 
@@ -127,9 +130,11 @@ export const conversationEventPayload = (
       readonly messageId?: string
       readonly attachments?: ReadonlyArray<AttachmentRef>
       readonly origin?: "event"
+      readonly attribution?: PromptAttribution
     }
   | undefined => {
   const { role, text: directText, messageId, attachments, origin } = payload
+  const attribution = attributionFrom(payload.attribution)
   if (
     (role === "user" || role === "assistant" || role === "system") &&
     typeof directText === "string" &&
@@ -141,7 +146,8 @@ export const conversationEventPayload = (
       text: directText,
       ...(messageId === undefined ? {} : { messageId }),
       ...(attachments === undefined ? {} : { attachments }),
-      ...(origin === "event" ? { origin } : {})
+      ...(origin === "event" ? { origin } : {}),
+      ...(attribution === undefined ? {} : { attribution })
     }
   }
   if (

@@ -2,6 +2,7 @@ import type { ServerResponse } from "node:http"
 
 import type {
   AttachmentRef,
+  PromptAttribution,
   PromptOrigin,
   PromptQueueItem,
   PromptRequest as PromptRequestBody
@@ -13,6 +14,7 @@ import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { agentMessageEvent } from "./bot-conversation.js"
 import { refusePlanOrGoalCommandForBot } from "./bot-session-modes.js"
 import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
+import { verifiedAttribution } from "./prompt-attribution.js"
 import type { PromptDeliveryOutcome } from "./prompt-delivery.js"
 import {
   defaultPromptDelivery,
@@ -50,11 +52,12 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
 
   const attachments = payload.attachments ?? []
   await requireKnownAttachments(services, attachments)
+  const attribution = await verifiedAttribution(services, sessionId, payload.attribution)
   markPromptActionPending(routeState, actionKey)
 
   const toBot = (await conversationalBotForSession(services, sessionId)) !== undefined
   const agentSessionId = relayedAgentSessionId(toBot, payload, sessionId)
-  const enqueue = promptEnqueuer(services, sessionId, payload, attachments)
+  const enqueue = promptEnqueuer(services, sessionId, payload, attachments, attribution)
   let queueItem: PromptQueueItem
   if (agentSessionId === undefined) {
     queueItem = await enqueue(payload.text, "user")
@@ -120,11 +123,13 @@ const promptEnqueuer = (
   services: CodevisorServerServices,
   sessionId: string,
   payload: PromptRequestBody,
-  attachments: ReadonlyArray<AttachmentRef>
+  attachments: ReadonlyArray<AttachmentRef>,
+  attribution: PromptAttribution | undefined
 ): EnqueuePrompt => {
   const createQueueItem = services.db.createPromptQueueItem
+  const { messageId, clientId } = payload
   return (text, origin) =>
-    run(createQueueItem(sessionId, text, attachments, payload.messageId, payload.clientId, origin))
+    run(createQueueItem(sessionId, text, attachments, messageId, clientId, origin, attribution))
 }
 
 const relayedMessage = (

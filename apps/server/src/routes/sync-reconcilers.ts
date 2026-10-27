@@ -1,4 +1,4 @@
-import type { Harness, PluginSummary } from "@codevisor/api"
+import type { Harness } from "@codevisor/api"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "../infra/config-sync.js"
@@ -8,12 +8,6 @@ import {
   reconcileHarnesses,
   type LocalHarnessState
 } from "../infra/harness-sync.js"
-import {
-  PLUGINS_SYNC_NAMESPACE,
-  pluginSyncOrigin,
-  reconcilePlugins,
-  type LocalPluginState
-} from "../infra/plugin-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -24,13 +18,9 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { discoverHarnesses } from "./harnesses.js"
-import {
-  refreshHarnessReadiness,
-  refreshMcpReadiness,
-  refreshPluginReadiness
-} from "./sync-readiness.js"
+import { refreshHarnessReadiness, refreshMcpReadiness } from "./sync-readiness.js"
 
-export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "plugins" | "credentials"
+export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "credentials"
 
 export interface SyncReconcileOutcome {
   readonly status: unknown
@@ -50,10 +40,8 @@ export const reconcileForNamespace = (
       return reconcileMcpsPlane(services, config)
     case "harnesses":
       return reconcileHarnessesPlane(services, config)
-    case "credentials":
-      return reconcileCredentialsPlane(services, config)
     default:
-      return reconcilePluginsPlane(services, config)
+      return reconcileCredentialsPlane(services, config)
   }
 }
 
@@ -63,9 +51,17 @@ export const publishSyncChanged = (
   namespace: SyncReconcileNamespace,
   changedEntries: ReadonlyArray<SyncEntryRecord>
 ): void => {
+  publishSyncEntries(services, fanout, WIRE_NAMESPACES[namespace], changedEntries)
+}
+
+export const publishSyncEntries = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  wire: string,
+  changedEntries: ReadonlyArray<SyncEntryRecord>
+): void => {
   if (changedEntries.length === 0) return
 
-  const wire = WIRE_NAMESPACES[namespace]
   void appendAndPublish(services.db, fanout, "sync.changed", wire, {
     namespace: wire,
     entries: changedEntries
@@ -101,7 +97,6 @@ export const configMutationNamespace = (
   if (isMcpConfigPath(pathname)) return "mcps"
   if (pathname.startsWith("/v1/skills")) return "skills"
   if (pathname.startsWith("/v1/harnesses")) return "harnesses"
-  if (isPluginConfigPath(pathname)) return "plugins"
   return undefined
 }
 
@@ -172,34 +167,6 @@ const reconcileCredentialsPlane = async (
   })
 }
 
-const reconcilePluginsPlane = async (
-  services: CodevisorServerServices,
-  config: CodevisorServerConfig
-): Promise<SyncReconcileOutcome | undefined> => {
-  const manager = services.plugins
-  if (manager === undefined) return undefined
-
-  const outcome = await reconcilePlugins({
-    db: services.db,
-    serverId: config.id,
-    listPlugins: async () => (await manager.list()).plugins.map(syncPluginFor),
-    installFromSource: async (source) => {
-      await manager.importRemote({ source })
-    },
-    setEnabled: async (pluginId, enabled) => {
-      await manager.setEnabled(pluginId, enabled)
-    },
-    removePlugin: async (pluginId) => {
-      await manager.remove(pluginId)
-    }
-  })
-  return {
-    ...outcome,
-    refreshReadiness: (fanout) =>
-      refreshPluginReadiness(services, config, fanout, manager, outcome.status.blocked)
-  }
-}
-
 const listSyncHarnesses = async (
   services: CodevisorServerServices
 ): Promise<ReadonlyArray<LocalHarnessState>> => {
@@ -248,38 +215,18 @@ const credentialHarnessFor = (sourceId: string): string | undefined => {
   return CREDENTIAL_SOURCE_HARNESSES[sourceId]
 }
 
-const syncPluginFor = (summary: PluginSummary): LocalPluginState => {
-  const origin = managedPluginOrigin(summary)
-  return {
-    id: summary.id,
-    enabled: summary.enabled,
-    ...(origin === undefined ? {} : { origin })
-  }
-}
-
-const managedPluginOrigin = (summary: PluginSummary): string | undefined => {
-  if (summary.source !== "managed") return undefined
-
-  return pluginSyncOrigin(summary.path)
-}
-
 const isReadOnlyMethod = (method: string | undefined): boolean =>
   method === undefined || method === "GET" || method === "HEAD" || method === "OPTIONS"
 
 const isMcpConfigPath = (pathname: string): boolean =>
-  pathname.startsWith("/v1/mcps") || pathname.startsWith("/v1/native-mcps")
-
-const isPluginConfigPath = (pathname: string): boolean =>
-  pathname.startsWith("/v1/plugins") && !isPluginRuntimePath(pathname)
-
-const isPluginRuntimePath = (pathname: string): boolean =>
-  pathname.includes("/app/") || pathname.includes("/panes/") || pathname.includes("/tools/")
+  pathname.startsWith("/v1/mcps") ||
+  pathname.startsWith("/v1/native-mcps") ||
+  pathname.startsWith("/v1/plugins/catalog")
 
 const WIRE_NAMESPACES: Record<SyncReconcileNamespace, string> = {
   skills: SKILLS_SYNC_NAMESPACE,
   mcps: MCPS_SYNC_NAMESPACE,
   harnesses: HARNESSES_SYNC_NAMESPACE,
-  plugins: PLUGINS_SYNC_NAMESPACE,
   credentials: CREDENTIALS_SYNC_NAMESPACE
 }
 

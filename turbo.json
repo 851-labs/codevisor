@@ -22,8 +22,22 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@codevisor/cloud#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/plugins/*/server.json",
+        "$TURBO_ROOT$/plugins/popular.json"
+      ],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo"]
+    },
     "@codevisor/cloud#test:coverage": {
       "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/plugins/*/server.json",
+        "$TURBO_ROOT$/plugins/popular.json"
+      ],
       "outputs": []
     }
   }

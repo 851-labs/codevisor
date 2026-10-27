@@ -13,7 +13,7 @@ const SHARED_OAUTH_HARNESSES = [
 ] as const
 
 export type SharedOAuthHarness = (typeof SHARED_OAUTH_HARNESSES)[number]
-export type SharedCredentialKind = SharedOAuthHarness | "mcp"
+export type SharedCredentialKind = SharedOAuthHarness | "mcp" | "plugin"
 
 export interface SharedTokenBundle {
   readonly authMethod?: "apiKey"
@@ -38,6 +38,7 @@ const isOptionalString = (value: unknown): boolean =>
 export const isSharedTokenBundle = (value: unknown): value is SharedTokenBundle =>
   isRecord(value) &&
   (value.harnessId === "mcp" ||
+    value.harnessId === "plugin" ||
     SHARED_OAUTH_HARNESSES.some((harnessId) => harnessId === value.harnessId)) &&
   typeof value.subject === "string" &&
   typeof value.accessToken === "string" &&

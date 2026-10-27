@@ -69,18 +69,12 @@ export const handleUpgrade = async (
     const url = parseRequestUrl(request)
     if (acceptPublicSocket(upgrade, url)) return
 
-    const pluginOwnsPath = pluginsMayUpgrade(upgrade, url)
-    if (pluginOwnsPath && (await services.plugins!.handleUpgrade(request, socket, head))) return
-
     await authorize(services.db, config, request)
     acceptAuthorizedSocket(upgrade, url)
   } catch {
     refuseUnauthorized(socket)
   }
 }
-
-const pluginsMayUpgrade = ({ services }: SocketUpgrade, url: URL): boolean =>
-  url.pathname.startsWith("/v1/plugins/") && services.plugins !== undefined
 
 const refuseUnauthorized = (socket: Socket): void => {
   socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")

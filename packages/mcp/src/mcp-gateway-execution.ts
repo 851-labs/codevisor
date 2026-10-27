@@ -3,11 +3,13 @@ import { createHash } from "node:crypto"
 import type { RuntimeEventSink } from "@codevisor/agent-runtime"
 import {
   canonicalExecutionArgs,
+  CODEVISOR_EXECUTION_MAX_APPS,
   CODEVISOR_EXECUTION_MAX_CALLS,
   CODEVISOR_EXECUTION_MAX_DESCRIPTION,
   CODEVISOR_EXECUTION_MAX_ERROR,
   CODEVISOR_EXECUTION_MAX_FILES,
   CODEVISOR_EXECUTION_MAX_STATUS,
+  type CodevisorExecutionApp,
   type CodevisorExecutionCall,
   type CodevisorExecutionFile,
   type CodevisorExecutionIcon,
@@ -59,6 +61,7 @@ export interface ExecutionRecorder {
   readonly status: (text: string) => void
   readonly call: (call: CodevisorExecutionCall) => void
   readonly touch: (icon: CodevisorExecutionIcon) => void
+  readonly app: (app: CodevisorExecutionApp) => void
   readonly finish: (error?: string) => Promise<void>
 }
 
@@ -87,6 +90,7 @@ export const makeExecutionRecorder = (options: {
       ? undefined
       : truncateText(firstLine, CODEVISOR_EXECUTION_MAX_DESCRIPTION)
   const calls: Array<CodevisorExecutionCall> = []
+  const apps: Array<CodevisorExecutionApp> = []
   let filesShown = 0
   let status: string | undefined
   let icon: CodevisorExecutionIcon | undefined
@@ -104,6 +108,7 @@ export const makeExecutionRecorder = (options: {
       ...(description === undefined ? {} : { description }),
       ...(status === undefined ? {} : { status }),
       calls: [...calls],
+      ...(apps.length === 0 ? {} : { apps: [...apps] }),
       ...(error === undefined ? {} : { error }),
       ...(icon === undefined ? {} : { icon }),
       ...(activeIcon === undefined ? {} : { activeIcon })
@@ -158,6 +163,11 @@ export const makeExecutionRecorder = (options: {
           : { error: errorSummary(error, CODEVISOR_EXECUTION_MAX_ERROR) })
       })
       if (calls.length > CODEVISOR_EXECUTION_MAX_CALLS) calls.shift()
+      scheduleRunning()
+    },
+    app: (next) => {
+      apps.push(next)
+      if (apps.length > CODEVISOR_EXECUTION_MAX_APPS) apps.shift()
       scheduleRunning()
     },
     touch: (next) => {

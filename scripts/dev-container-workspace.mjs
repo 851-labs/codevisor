@@ -4,10 +4,18 @@ import { join } from "node:path"
 
 import { pathExists } from "./dev-shared.mjs"
 
-const WORKSPACE_ROOTS = ["packages", "apps"]
-const PACKAGE_RUNTIME = ["dist", "native", "resources"]
+const WORKSPACE_ROOTS = ["packages", "apps", "plugins"]
+const PACKAGE_RUNTIME = ["dist", "native", "resources", "server.json"]
 const PACKAGE_KEEP = ["package.json", ...PACKAGE_RUNTIME]
-const ROOT_KEEP = ["package.json", "bun.lock", "bun.lockb", ".npmrc", "bunfig.toml", "patches"]
+const ROOT_KEEP = [
+  "package.json",
+  "bun.lock",
+  "bun.lockb",
+  ".npmrc",
+  "bunfig.toml",
+  "patches",
+  "plugins/popular.json"
+]
 
 const copyIfPresent = async (from, to) => {
   if (!(await pathExists(from))) return false
@@ -100,8 +108,9 @@ export async function syncLinuxWorkspace(repoRoot, containerRoot) {
     const rootPath = join(appRoot, root)
     if (!(await pathExists(rootPath))) continue
     for (const entry of await readdir(rootPath)) {
-      if (!packageDirectories.includes(join(root, entry))) {
-        await rm(join(rootPath, entry), { recursive: true, force: true })
+      const path = join(root, entry)
+      if (!packageDirectories.includes(path) && !ROOT_KEEP.includes(path)) {
+        await rm(join(appRoot, path), { recursive: true, force: true })
       }
     }
   }

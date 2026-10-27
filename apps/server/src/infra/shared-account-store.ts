@@ -46,7 +46,8 @@ export const sharedAccountFor = (
   label?: string
 ): SharedHarnessAccount => {
   const harnessId = bundle.harnessId
-  if (harnessId === "mcp") throw new Error("An MCP sign-in is not a harness account")
+  if (harnessId === "mcp" || harnessId === "plugin")
+    throw new Error("A plugin sign-in is not a harness account")
   return {
     id: sharedOAuthIdentity(bundle),
     harnessId,

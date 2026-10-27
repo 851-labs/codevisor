@@ -1,6 +1,5 @@
 import type { HarnessAuth, HarnessAuthState } from "@codevisor/api"
 import type { HarnessAuthManager, HarnessLifecycleManager } from "@codevisor/harness-manager"
-import type { PluginsManager } from "@codevisor/plugins"
 import { vi } from "vitest"
 
 import { field, itemsOf } from "./response-test-support.js"
@@ -65,33 +64,6 @@ export const fakeHarnessLifecycle = (
   finishPendingSetup: unused,
   onGateReleased: unused,
   subscribe: unused,
-  ...overrides
-})
-
-export const fakePlugins = (overrides: Partial<PluginsManager> = {}): PluginsManager => ({
-  startAll: unused,
-  list: unused,
-  get: unused,
-  issuePaneToken: unused,
-  fetchIcon: unused,
-  handleProxyRequest: unused,
-  handleUpgrade: unused,
-  restart: unused,
-  discoverRemote: unused,
-  importRemote: unused,
-  listUpdates: unused,
-  prepareUpdate: unused,
-  applyUpdate: unused,
-  restore: unused,
-  setEnabled: unused,
-  link: unused,
-  remove: unused,
-  unlink: unused,
-  subscribe: unused,
-  listTools: unused,
-  invokeTool: unused,
-  subscribeInstalled: unused,
-  close: unused,
   ...overrides
 })
 

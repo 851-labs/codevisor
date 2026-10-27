@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { PluginCapabilities } from "./plugins.js"
+
 export const DiffStat = Schema.Struct({
   path: Schema.String,
   added: Schema.Number,
@@ -127,9 +129,24 @@ export const QuestionPresentation = Schema.Literals([
   "browserExtensionSetup",
   "browserExtensionWaiting",
   "browserExtensionUpdate",
-  "computerUsePermissions"
+  "computerUsePermissions",
+  "pluginSetup"
 ])
 export type QuestionPresentation = typeof QuestionPresentation.Type
+
+export const PluginSetupRequest = Schema.Struct({
+  plugin: Schema.String,
+  catalogId: Schema.optional(Schema.String),
+  serverId: Schema.optional(Schema.String),
+  name: Schema.String,
+  publisher: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  reason: Schema.String,
+  auth: Schema.Literals(["none", "fields", "oauth2", "mcpOAuth"]),
+  capabilities: PluginCapabilities,
+  machine: Schema.Struct({ id: Schema.String, name: Schema.String })
+})
+export type PluginSetupRequest = typeof PluginSetupRequest.Type
 
 export const QuestionSpec = Schema.Struct({
   id: Schema.String,
@@ -140,7 +157,8 @@ export const QuestionSpec = Schema.Struct({
   allowsOther: Schema.Boolean,
   isSecret: Schema.optional(Schema.Boolean),
   backOptionLabel: Schema.optional(Schema.String),
-  presentation: Schema.optional(QuestionPresentation)
+  presentation: Schema.optional(QuestionPresentation),
+  pluginSetup: Schema.optional(PluginSetupRequest)
 })
 export type QuestionSpec = typeof QuestionSpec.Type
 

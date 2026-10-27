@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const tsc = join(root, "node_modules/typescript/bin/tsc")
 const commands = new Set()
-for (const category of ["packages", "apps"]) {
+for (const category of ["packages", "apps", "plugins"]) {
   for (const entry of readdirSync(join(root, category), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     let manifest

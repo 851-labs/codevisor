@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 
-import { isSupportedPluginProtocolVersion } from "./plugins.js"
 import {
   compareSemanticVersions,
   isSemanticVersion,
@@ -63,11 +62,5 @@ describe("semantic versions", () => {
 
   it("refuses to compare invalid input", () => {
     expect(() => compareSemanticVersions("latest", "1.0.0")).toThrow(/invalid semantic versions/)
-  })
-
-  it("recognizes every supported plugin protocol version", () => {
-    expect(isSupportedPluginProtocolVersion(1)).toBe(true)
-    expect(isSupportedPluginProtocolVersion(2)).toBe(true)
-    expect(isSupportedPluginProtocolVersion(3)).toBe(false)
   })
 })

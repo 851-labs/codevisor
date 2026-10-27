@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { UpdateMcpServerRequest } from "@codevisor/api"
+import type { McpServer, UpdateMcpServerRequest } from "@codevisor/api"
 import {
   CreateMcpServerRequest as CreateMcpServerRequestSchema,
   DetectMcpAuthRequest as DetectMcpAuthRequestSchema,
@@ -11,6 +11,7 @@ import {
 } from "@codevisor/api"
 import type { McpManager } from "@codevisor/mcp"
 
+import type { PluginCatalog } from "../plugins/plugin-catalog.js"
 import {
   HttpFailure,
   matchRoute,
@@ -31,7 +32,7 @@ export const routeMcps = async (
   if (!url.pathname.startsWith("/v1/mcps")) return false
   if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
 
-  const catalog = routeMcpCatalog(manager, request, response, url)
+  const catalog = routeMcpCatalog(manager, request, response, url, services.pluginCatalog)
   if (catalog !== undefined) return catalog
   const action = routeMcpAction(manager, request, response, url)
   if (action !== undefined) return action
@@ -44,10 +45,11 @@ function routeMcpCatalog(
   manager: McpManager,
   request: IncomingMessage,
   response: ServerResponse,
-  url: URL
+  url: URL,
+  catalog: PluginCatalog | undefined
 ): Promise<boolean> | undefined {
   if (url.pathname === "/v1/mcps") {
-    if (request.method === "GET") return listMcpServers(manager, response)
+    if (request.method === "GET") return listMcpServers(manager, response, catalog)
     if (request.method === "POST") return createMcpServer(manager, request, response)
   }
   if (url.pathname === "/v1/mcps/detect-auth" && request.method === "POST") {
@@ -96,9 +98,23 @@ function routeMcpMutation(
   return undefined
 }
 
-async function listMcpServers(manager: McpManager, response: ServerResponse): Promise<boolean> {
-  writeJson(response, 200, await manager.list())
+async function listMcpServers(
+  manager: McpManager,
+  response: ServerResponse,
+  catalog: PluginCatalog | undefined
+): Promise<boolean> {
+  writeJson(
+    response,
+    200,
+    (await manager.list()).map((server) => withAgeRating(server, catalog))
+  )
   return true
+}
+
+const withAgeRating = (server: McpServer, catalog: PluginCatalog | undefined): McpServer => {
+  const rating =
+    server.catalogId === undefined ? undefined : catalog?.entry(server.catalogId)?.ageRating
+  return rating === undefined ? server : { ...server, ageRating: rating }
 }
 
 async function listMcpTools(

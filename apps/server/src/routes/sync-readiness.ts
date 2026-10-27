@@ -1,15 +1,12 @@
 import type { McpManager } from "@codevisor/mcp"
-import type { PluginsManager } from "@codevisor/plugins"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
 import {
   ACCOUNTS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
-  PLUGIN_READINESS_NAMESPACE,
   publishAccountsRoster,
   publishMachineReadiness,
-  type HarnessReadinessRow,
-  type PluginReadinessRow
+  type HarnessReadinessRow
 } from "../infra/config-sync.js"
 import type { HarnessSyncStatus } from "../infra/harness-sync.js"
 import {
@@ -17,10 +14,8 @@ import {
   publishMcpReadiness,
   readMcpOverlays
 } from "../infra/mcp-fleet.js"
-import { pluginSyncOrigin, PLUGINS_SYNC_NAMESPACE } from "../infra/plugin-sync.js"
 import {
   appendAndPublish,
-  run,
   swallowError,
   type CodevisorServerConfig,
   type CodevisorServerServices,
@@ -217,55 +212,4 @@ const makeRefreshScheduler = (refresh: () => Promise<void>): RefreshScheduler =>
       requested = false
     }
   }
-}
-
-export const refreshPluginReadiness = async (
-  services: CodevisorServerServices,
-  config: CodevisorServerConfig,
-  fanout: EventFanout,
-  manager: PluginsManager,
-  blocked: ReadonlyArray<{ readonly id: string; readonly reason: string }>
-): Promise<void> => {
-  try {
-    const blockedById = new Map(blocked.map((entry) => [entry.id, entry.reason]))
-    const local = (await manager.list()).plugins
-    const localIds = new Set(local.map((summary) => summary.id))
-    const rows: PluginReadinessRow[] = local.map((summary) => {
-      const machineOnly =
-        summary.source !== "managed" || pluginSyncOrigin(summary.path) === undefined
-      if (summary.enabled && summary.state === "failed") {
-        return {
-          id: summary.id,
-          state: "blocked",
-          reason: "The plugin stopped running on this machine. Restart it to try again."
-        }
-      }
-      let state: PluginReadinessRow["state"]
-      if (machineOnly) {
-        state = "machineOnly"
-      } else if (summary.enabled) {
-        state = "ready"
-      } else {
-        state = "disabled"
-      }
-      return { id: summary.id, state }
-    })
-    const desired = await run(services.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
-    for (const entry of desired) {
-      if (entry.deleted === true || localIds.has(entry.key)) continue
-      const reason = blockedById.get(entry.key)
-      rows.push({
-        id: entry.key,
-        state: reason === undefined ? "notInstalled" : "blocked",
-        ...(reason === undefined ? {} : { reason })
-      })
-    }
-    const result = await publishMachineReadiness({
-      db: services.db,
-      namespace: PLUGIN_READINESS_NAMESPACE,
-      serverId: config.id,
-      value: { plugins: rows.toSorted((a, b) => a.id.localeCompare(b.id)) }
-    })
-    publishReadinessChanges(services, fanout, PLUGIN_READINESS_NAMESPACE, result)
-  } catch {}
 }

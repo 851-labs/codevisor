@@ -17,7 +17,6 @@ import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import type { HarnessLifecycleManager } from "@codevisor/harness-manager"
 import type { McpManager } from "@codevisor/mcp"
 import type { NativeMcpManager } from "@codevisor/mcp"
-import type { PluginRegistryClient, PluginsManager } from "@codevisor/plugins"
 import type { SkillStore } from "@codevisor/skills"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { ServerUpdateChannel } from "@codevisor/updater"
@@ -28,6 +27,10 @@ import type { BrowserProxy } from "./infra/browser-proxy.js"
 import type { ClientControlBroker } from "./infra/client-control.js"
 import type { SharedAccounts } from "./infra/shared-accounts.js"
 import type { UsageLimitsCache } from "./infra/usage-limits-cache.js"
+import type { PluginDiscovery } from "./plugins/discovery/plugin-discovery-boot.js"
+import type { PluginEvents } from "./plugins/events/plugin-events.js"
+import type { PluginCatalog } from "./plugins/plugin-catalog.js"
+import type { PluginPlatform } from "./plugins/plugin-platform.js"
 import type { RestartCoordinator } from "./restart-drain.js"
 import type { AutoResumeScheduler } from "./routes/auto-resume-scheduler.js"
 import type { Simulators } from "./simulators.js"
@@ -115,6 +118,7 @@ export interface CloudServerControl {
     options?: import("@codevisor/cloud-client").MachineInviteOptions
   ) => Promise<import("@codevisor/cloud-client").MachineInvite>
   readonly removePeer?: (deviceId: string) => Promise<void>
+  readonly machineRequest?: (method: string, path: string, body?: unknown) => Promise<unknown>
   readonly disconnect: () => Promise<{ readonly removedFromAccount: boolean }>
   readonly acceptDirect?: (socket: import("@codevisor/cloud-client").CloudSocket) => boolean
   readonly machines?: () => ReadonlyArray<import("@codevisor/api").CloudMachinePresence> | undefined
@@ -143,8 +147,8 @@ export interface CodevisorServerServices {
   readonly lifecycle?: HarnessLifecycleManager
   readonly nativeMcp?: NativeMcpManager
   readonly skills?: SkillStore
-  readonly plugins?: PluginsManager
-  readonly pluginRegistry?: PluginRegistryClient
+  readonly pluginCatalog?: PluginCatalog
+  readonly pluginPlatform?: PluginPlatform
   readonly syncBlobs?: import("@codevisor/sync").BlobStore
   readonly toolIcons?: import("./infra/tool-icons.js").ToolIconStore
   readonly linkPreviews?: import("./infra/link-previews.js").LinkPreviewStore
@@ -186,6 +190,8 @@ export interface RouteState {
   readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
   autoResume?: AutoResumeScheduler
+  pluginEvents?: PluginEvents | undefined
+  pluginDiscovery?: PluginDiscovery | undefined
   drainSessionQueue?: (sessionId: string) => Promise<void>
 }
 

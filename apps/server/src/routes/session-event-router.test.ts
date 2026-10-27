@@ -8,13 +8,15 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { appendAndPublish, makeEventFanout } from "../server-context.js"
 import { idleRouteState, makeServices, run, tempDirs, waitFor } from "../test-support.js"
 import { makeTurnDispatchListener } from "./prompt-queue.js"
+import { makeSessionEventOutbox } from "./session-event-outbox.js"
 import { finalAssistantText, makeSessionEventRouter } from "./session-event-router.js"
 
 const setUpRouter = async () => {
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
   const routeState = idleRouteState()
-  const router = makeSessionEventRouter(services, fanout, routeState, "server-a", async () => {})
+  const outbox = makeSessionEventOutbox(services, fanout, routeState, "server-a")
+  const router = makeSessionEventRouter(services, outbox, async () => {})
   onTestFinished(fanout.subscribe(router.listener))
   onTestFinished(
     fanout.subscribe(makeTurnDispatchListener(services, fanout, routeState, "server-a"))

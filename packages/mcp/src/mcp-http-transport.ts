@@ -1,5 +1,11 @@
 import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { type JSONRPCMessage, JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js"
+import {
+  isJSONRPCNotification,
+  isJSONRPCRequest,
+  type JSONRPCMessage,
+  JSONRPCMessageSchema,
+  type RequestId
+} from "@modelcontextprotocol/sdk/types.js"
 
 import { isRecord } from "./mcp-guards.js"
 
@@ -32,6 +38,7 @@ export class NodeStreamableHttpTransport implements Transport {
 
   private controller: AbortController | undefined
   private protocolVersion: string | undefined
+  private readonly inFlight = new Map<RequestId, AbortController>()
 
   constructor(
     private readonly url: URL,
@@ -49,7 +56,28 @@ export class NodeStreamableHttpTransport implements Transport {
   }
 
   async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
-    const response = await this.post(message)
+    if (!isJSONRPCRequest(message)) {
+      await this.deliver(message, this.controller?.signal)
+      const cancelled = cancelledRequestId(message)
+      if (cancelled !== undefined) this.inFlight.get(cancelled)?.abort()
+      return
+    }
+    const request = new AbortController()
+    this.inFlight.set(message.id, request)
+    try {
+      await this.deliver(message, this.requestSignal(request))
+    } finally {
+      this.inFlight.delete(message.id)
+    }
+  }
+
+  private requestSignal(request: AbortController): AbortSignal {
+    if (this.controller === undefined) return request.signal
+    return AbortSignal.any([this.controller.signal, request.signal])
+  }
+
+  private async deliver(message: JSONRPCMessage, signal: AbortSignal | undefined): Promise<void> {
+    const response = await this.post(message, signal)
     const sessionId = response.headers.get("mcp-session-id")
     if (sessionId !== null) this.sessionId = sessionId
     if (!response.ok) {
@@ -82,14 +110,14 @@ export class NodeStreamableHttpTransport implements Transport {
     this.onclose?.()
   }
 
-  private async post(message: JSONRPCMessage): Promise<Response> {
+  private async post(message: JSONRPCMessage, signal: AbortSignal | undefined): Promise<Response> {
     const authorization = this.authorization
     const attempt = async (accessToken: string | undefined): Promise<Response> =>
       fetch(this.url, {
         method: "POST",
         headers: this.headers("application/json, text/event-stream", accessToken),
         body: JSON.stringify(message),
-        signal: this.controller?.signal ?? null
+        signal: signal ?? null
       })
     if (typeof authorization !== "object") return attempt(authorization)
     const accessToken = await authorization.accessToken()
@@ -155,4 +183,13 @@ export class NodeStreamableHttpTransport implements Transport {
       if (chunk.done) return
     }
   }
+}
+
+const cancelledRequestId = (message: JSONRPCMessage): RequestId | undefined => {
+  if (!isJSONRPCNotification(message) || message.method !== "notifications/cancelled") {
+    return undefined
+  }
+  const requestId: unknown = message.params?.requestId
+  if (typeof requestId === "string" || typeof requestId === "number") return requestId
+  return undefined
 }

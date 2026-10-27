@@ -1,0 +1,99 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.codevisor/gmail",
+  "title": "Gmail",
+  "description": "Search, read, draft and reply to email, and wake agents when new mail arrives.",
+  "version": "1.0.0",
+  "websiteUrl": "https://codevisor.dev",
+  "repository": {
+    "url": "https://github.com/851-labs/codevisor",
+    "source": "github",
+    "subfolder": "plugins/gmail"
+  },
+  "_meta": {
+    "dev.codevisor/plugin": {
+      "bundled": "gmail",
+      "entry": "dist/main.js",
+      "ageRating": 4,
+      "accounts": {
+        "label": "Google account",
+        "oauth": {
+          "provider": "google",
+          "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "tokenUrl": "https://oauth2.googleapis.com/token",
+          "scopes": ["https://www.googleapis.com/auth/gmail.modify", "openid", "email"],
+          "client": "byo",
+          "authorizeParams": {
+            "access_type": "offline",
+            "prompt": "consent"
+          },
+          "userinfoUrl": "https://openidconnect.googleapis.com/v1/userinfo",
+          "identityField": "email",
+          "setupUrl": "https://console.cloud.google.com/apis/credentials"
+        },
+        "fields": [
+          {
+            "key": "clientId",
+            "label": "OAuth client ID",
+            "type": "string",
+            "required": true
+          },
+          {
+            "key": "clientSecret",
+            "label": "OAuth client secret",
+            "type": "secret",
+            "required": true
+          }
+        ]
+      },
+      "capabilities": {
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search messages with Gmail query syntax",
+            "effects": "read"
+          },
+          {
+            "name": "read_message",
+            "description": "Read one message",
+            "effects": "read"
+          },
+          {
+            "name": "read_thread",
+            "description": "Read a whole thread",
+            "effects": "read"
+          },
+          {
+            "name": "create_draft",
+            "description": "Create a draft reply or message",
+            "effects": "write"
+          },
+          {
+            "name": "send",
+            "description": "Send a message or reply",
+            "effects": "external-write"
+          },
+          {
+            "name": "modify_labels",
+            "description": "Add or remove labels",
+            "effects": "write"
+          }
+        ],
+        "events": [
+          {
+            "name": "message.received",
+            "description": "A new message arrived in the inbox"
+          }
+        ],
+        "skills": [
+          {
+            "name": "gmail-replies",
+            "description": "Reply to Gmail messages safely: read the thread, answer in-thread, only to existing participants, draft when unsure."
+          }
+        ],
+        "panes": [],
+        "ingress": []
+      }
+    }
+  }
+}

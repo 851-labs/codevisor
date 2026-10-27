@@ -6,6 +6,7 @@ import { makeMcpBrowserOperations } from "./mcp-manager-browser.js"
 import { makeMcpManagerCore } from "./mcp-manager-core.js"
 import { makeMcpGatewayOperations } from "./mcp-manager-gateway.js"
 import { makeMcpOAuthFlows } from "./mcp-manager-oauth-flows.js"
+import { makeMcpPluginOperations } from "./mcp-manager-plugins.js"
 import { makeMcpReplicationOperations } from "./mcp-manager-replication.js"
 import { makeMcpServerOperations } from "./mcp-manager-servers.js"
 import type { McpManager, McpManagerConfig } from "./mcp-manager-types.js"
@@ -18,7 +19,6 @@ export type { ToolGatewayConfig } from "./mcp-gateway.js"
 export type { ExecutionJobFinished, ExecutionJobs } from "./mcp-gateway-jobs.js"
 export type { ExecutionTimers } from "./mcp-gateway-execution.js"
 export type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
-export type { PluginGatewayTool, PluginToolSource } from "./mcp-plugin-tools.js"
 export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 export type { McpOAuthClock } from "./mcp-oauth-clock.js"
 
@@ -39,6 +39,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     invokeRemoteGatewayCall,
     refreshGatewayInventories
   } = makeMcpGateway({
+    appViews: core.appViews,
     automationProviders: core.automationProviders,
     browserSetupBroker: core.browserSetupBroker,
     codeExecutor: core.codeExecutor,
@@ -50,13 +51,6 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     record: core.record,
     selfMachine: core.selfMachine,
     turnClientId: (sessionId) => core.turnClientIds.get(sessionId)
-  })
-
-  const unsubscribePluginTools = config.pluginTools?.subscribeInstalled(() => {
-    /* v8 ignore next 2 */
-    void refreshGatewayInventories().catch((cause: unknown) =>
-      reportBackgroundFailure("Plugin tool inventory refresh failed", cause)
-    )
   })
 
   const unsubscribeSkills = config.skillSource?.subscribe(() => {
@@ -101,10 +95,10 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       gatewayRuntime,
       invokeRemoteGatewayCall,
       jobs,
-      unsubscribePluginTools,
       unsubscribeSkills
     }),
     ...makeMcpBrowserOperations(core),
+    ...makeMcpPluginOperations(core, connectUpstream),
     jobs,
     iconSources: async (id) => {
       const server = await core.record(id).catch(() => undefined)

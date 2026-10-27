@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { PluginAgeRating, PluginCapabilities } from "./plugins.js"
+
 export const McpTransport = Schema.Literals(["http", "stdio"])
 export type McpTransport = typeof McpTransport.Type
 
@@ -60,6 +62,10 @@ export const McpServer = Schema.Struct({
   connectionState: McpConnectionState,
   toolCount: Schema.Number,
   detail: Schema.optional(Schema.String),
+  catalogId: Schema.optional(Schema.String),
+  catalogVersion: Schema.optional(Schema.String),
+  capabilities: Schema.optional(PluginCapabilities),
+  ageRating: Schema.optional(PluginAgeRating),
   createdAt: Schema.String,
   updatedAt: Schema.String
 })
@@ -77,6 +83,8 @@ export type McpTool = typeof McpTool.Type
 
 export const CreateMcpServerRequest = Schema.Struct({
   name: Schema.String,
+  catalogId: Schema.optional(Schema.String),
+  catalogVersion: Schema.optional(Schema.String),
   transport: McpTransport,
   url: Schema.optional(Schema.String),
   command: Schema.optional(Schema.String),

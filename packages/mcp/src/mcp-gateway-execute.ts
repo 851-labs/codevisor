@@ -139,7 +139,8 @@ const makeExecuteCall = (
         usedBrowser = true
       },
       onBrowserPage: steps.onBrowserPage,
-      onComputerApp: steps.onComputerApp
+      onComputerApp: steps.onComputerApp,
+      onAppView: recorder.app
     })
 
   const invoke = async ({ path, args, target }: CodeToolCall): Promise<unknown> => {

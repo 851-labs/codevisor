@@ -69,12 +69,13 @@ describe("Codevisor MCP provider", () => {
         "agents.message",
         "agents.debug.search",
         "files.upload",
-        "mcps.create",
+        "plugins.add_custom",
         "skills.create",
-        "plugins.registry_search",
-        "plugins.discover_remote",
-        "plugins.install",
-        "plugins.open_pane_url",
+        "plugins.search",
+        "plugins.describe",
+        "plugins.request_setup",
+        "events.topics",
+        "events.subscribe",
         "harnesses.accounts_login",
         "machines.cloud_connect",
         "server.shutdown"
@@ -316,32 +317,27 @@ describe("Codevisor MCP provider", () => {
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {
       requests.push({ url, init })
-      return jsonResponse({ id: "codevisor.git-diff" })
+      return jsonResponse({ removed: true })
     })
     const provider = makeCodevisorProvider(
       () => "http://localhost:43210",
       async () => "stable-token"
     )
-    const install = provider.tools.find((tool) => tool.name === "plugins.install")!
-    expect(install.inputSchema.required).toContain("confirm")
-    expect(install.inputSchema).toMatchObject({
-      properties: { source: { type: "string" }, confirm: { type: "boolean" } }
-    })
+    const remove = provider.tools.find((tool) => tool.name === "machines.remove")!
+    expect(remove.inputSchema.required).toContain("confirm")
+    expect(remove.inputSchema).toMatchObject({ properties: { confirm: { type: "boolean" } } })
 
     await expect(
-      provider.invoke(callingContext, "plugins.install", { source: "owner/repo" })
-    ).rejects.toThrow("plugins.install requires confirm: true")
+      provider.invoke(callingContext, "machines.remove", { machineId: "studio" })
+    ).rejects.toThrow("machines.remove requires confirm: true")
     await expect(
-      provider.invoke(callingContext, "plugins.install", { source: "owner/repo", confirm: false })
+      provider.invoke(callingContext, "machines.remove", { machineId: "studio", confirm: false })
     ).rejects.toThrow("explicit approval")
     expect(requests).toHaveLength(0)
 
-    await provider.invoke(callingContext, "plugins.install", {
-      source: "owner/repo",
-      confirm: true
-    })
-    expect(requests[0]!.url.pathname).toBe("/v1/plugins/import-remote")
-    expect(requestJson(requests[0]!.init)).toEqual({ source: "owner/repo" })
+    await provider.invoke(callingContext, "machines.remove", { machineId: "studio", confirm: true })
+    expect(requests[0]!.url.pathname).toBe("/v1/machines/studio")
+    expect(requests[0]!.init.method).toBe("DELETE")
   })
 
   it("returns binary, empty, JSON, and plain-text API responses", async () => {

@@ -233,8 +233,10 @@ const deliverAnswer = async (
 ): Promise<AnswerResult> => {
   const { services } = route
   const answer = questionAnswer(payload)
+  const handledBySetup =
+    (await route.routeState.pluginDiscovery?.setup.answer(sessionId, questionId, answer)) ?? false
   const handledByAutomation =
-    (await services.mcp?.answerQuestion(sessionId, questionId, answer)) ?? false
+    handledBySetup || ((await services.mcp?.answerQuestion(sessionId, questionId, answer)) ?? false)
   if (!handledByAutomation) {
     const agentSession = await agentSessionFor(route, sessionId)
     await run(services.agents.answerQuestion(agentSession.sessionId, questionId, answer))

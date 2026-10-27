@@ -6,7 +6,6 @@ import { decode } from "@codevisor/api"
 import { AttachmentStoreError } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { NativeMcpError } from "@codevisor/mcp"
-import { PluginsError } from "@codevisor/plugins"
 import { SkillsError } from "@codevisor/skills"
 import { CloneError, GitError } from "@codevisor/worktrees"
 import { Effect, Schema } from "effect"
@@ -164,13 +163,6 @@ const skillsFailureStatus = (cause: SkillsError) => {
   return 409
 }
 
-const pluginsFailureStatus = (cause: PluginsError) => {
-  if (cause.code === "invalid") return 400
-  if (cause.code === "notFound") return 404
-  if (cause.code === "unavailable") return 503
-  return 409
-}
-
 const nativeMcpFailureStatus = (cause: NativeMcpError) => {
   if (cause.code === "notFound") return 404
   if (cause.code === "conflict") return 409
@@ -197,11 +189,6 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
   }
   if (cause instanceof SkillsError) {
     const status = skillsFailureStatus(cause)
-    writeJson(response, status, { code: cause.code, error: cause.message })
-    return
-  }
-  if (cause instanceof PluginsError) {
-    const status = pluginsFailureStatus(cause)
     writeJson(response, status, { code: cause.code, error: cause.message })
     return
   }

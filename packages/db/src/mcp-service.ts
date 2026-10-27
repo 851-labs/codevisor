@@ -89,6 +89,9 @@ export const makeMcpService = (
             request.toolCount,
             request.detail ?? null,
             request.secretCipher ?? null,
+            request.catalogId ?? null,
+            request.catalogVersion ?? null,
+            request.capabilities === undefined ? null : JSON.stringify(request.capabilities),
             now,
             now
           )
@@ -175,15 +178,17 @@ const mcpServerSql = {
   byId: "select * from mcp_servers where id = ?",
   upsert: `insert into mcp_servers (
                id, name, kind, transport, url, command, args, enabled, auth_type, oauth_scope,
-               connection_state, tool_count, detail, secret_cipher, created_at, updated_at
-             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               connection_state, tool_count, detail, secret_cipher, catalog_id, catalog_version,
+               capabilities, created_at, updated_at
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              on conflict(id) do update set
                name = excluded.name, kind = excluded.kind, transport = excluded.transport, url = excluded.url,
                command = excluded.command, args = excluded.args, enabled = excluded.enabled,
                auth_type = excluded.auth_type, oauth_scope = excluded.oauth_scope,
                connection_state = excluded.connection_state, tool_count = excluded.tool_count,
                detail = excluded.detail, secret_cipher = excluded.secret_cipher,
-               updated_at = excluded.updated_at`,
+               catalog_id = excluded.catalog_id, catalog_version = excluded.catalog_version,
+               capabilities = excluded.capabilities, updated_at = excluded.updated_at`,
   delete: "delete from mcp_servers where id = ?"
 }
 

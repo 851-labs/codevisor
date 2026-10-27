@@ -78,7 +78,8 @@ describe("control frames (JSON text)", () => {
         protocol: CLOUD_PROTOCOL_VERSION,
         device: { deviceId: "m-1", kind: "machine", name: "dev-vps", publicKey: "machine-pub" }
       },
-      { t: "ping" }
+      { t: "ping" },
+      { t: "inbox-ack", itemIds: ["item-1"] }
     ]
     for (const frame of toHub) {
       expect(decodeMachineToHub(encodeCloudFrame(frame))).toEqual(frame)
@@ -87,7 +88,15 @@ describe("control frames (JSON text)", () => {
       { t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "conn-2" },
       { t: "peer-gone", peerId: "conn-1" },
       { t: "error", code: "invalid-frame", message: "bad json" },
-      { t: "pong" }
+      { t: "pong" },
+      {
+        t: "inbox-item",
+        itemId: "item-1",
+        kind: "webhook",
+        sender: "sender-pub",
+        ephemeralKey: "ephemeral-pub",
+        sealed: "sealed"
+      }
     ]
     for (const frame of fromHub) {
       expect(decodeHubToMachine(encodeCloudFrame(frame))).toEqual(frame)

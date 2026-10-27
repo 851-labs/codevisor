@@ -293,7 +293,17 @@ export const MachineHello = Schema.Struct({
 
 export const MachinePing = Schema.Struct({ t: Schema.Literal("ping") })
 
-export const MachineToHub = Schema.Union([MachineHello, MachinePing, MachineTunnelAddr])
+export const MachineInboxAck = Schema.Struct({
+  t: Schema.Literal("inbox-ack"),
+  itemIds: Schema.Array(Schema.String)
+})
+
+export const MachineToHub = Schema.Union([
+  MachineHello,
+  MachinePing,
+  MachineTunnelAddr,
+  MachineInboxAck
+])
 export type MachineToHub = typeof MachineToHub.Type
 
 export const HubMachineWelcome = Schema.Struct({
@@ -312,7 +322,18 @@ export const HubPeerGone = Schema.Struct({
   peerId: Schema.String
 })
 
+export const HubInboxItem = Schema.Struct({
+  t: Schema.Literal("inbox-item"),
+  itemId: Schema.String,
+  kind: Schema.Literals(["webhook", "oauth"]),
+  sender: Schema.String,
+  ephemeralKey: Schema.String,
+  sealed: Schema.String
+})
+export type HubInboxItem = typeof HubInboxItem.Type
+
 export const HubToMachine = Schema.Union([
+  HubInboxItem,
   HubMachineWelcome,
   HubPeerGone,
   HubPresence,

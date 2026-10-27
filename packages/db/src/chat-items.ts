@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type {
   AttachmentRef,
   MessagePhase,
+  PromptAttribution,
   SessionGoal,
   TranscriptBodyResource
 } from "@codevisor/api"
@@ -14,6 +15,7 @@ import type Database from "better-sqlite3"
 import { Schema } from "effect"
 
 import { numberField, parseJsonRecord, stringField, type JsonRecord } from "./event-payloads.js"
+import { serializeAttribution } from "./prompt-attribution.js"
 import { serializeAttachments } from "./row-mappers.js"
 import { integer, nullable, rowReader, text as textColumn } from "./row-reader.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
@@ -70,6 +72,7 @@ export const createChatItem = (
     readonly hasDetails?: boolean
     readonly revision?: number
     readonly origin?: "event"
+    readonly attribution?: PromptAttribution
   }
 ): string => {
   const state = chatState(sqlite, sessionId)
@@ -113,7 +116,8 @@ const insertChatItemRow = (
       serializeAttachments(options.attachments),
       options.hasDetails === true ? 1 : 0,
       options.revision ?? 1,
-      options.origin ?? null
+      options.origin ?? null,
+      serializeAttribution(options.attribution)
     )
 }
 
@@ -386,8 +390,8 @@ const chatItemSql = {
   insert: `insert into chat_items (
         id, session_id, position, role, message_id, status, created_at, updated_at, turn_id,
         started_at, completed_at, stop_reason, stop_detail, retryable, attachments, has_details, revision,
-        origin
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        origin, attribution
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do nothing`,
   bindTurn: "update chat_items set turn_id = ? where id = ? and turn_id is null",
   finish: `update chat_items set status = ?,

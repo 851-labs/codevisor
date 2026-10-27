@@ -23,8 +23,7 @@ afterEach(() => {
 })
 
 const allEnabled = {
-  enabledIds: new Set(["browser", "computer", "codevisor"]),
-  pluginTools: []
+  enabledIds: new Set(["browser", "computer", "codevisor"])
 }
 
 const source = (
@@ -40,7 +39,7 @@ describe("skill catalog", () => {
   it("shows built-ins only while their server is enabled, then the user's skills", async () => {
     const entries = await skillEntries(
       [executeSkill, ...automationSkills()],
-      { enabledIds: new Set(["browser"]), pluginTools: [] },
+      { enabledIds: new Set(["browser"]) },
       source([
         { description: "Ships it", directoryName: "deploy", name: "Deploy" },
         { directoryName: "browser-use", name: "Shadow" },
@@ -66,7 +65,7 @@ describe("skill catalog", () => {
     })
     const entries = await skillEntries(
       [executeSkill, ...automationSkills(), attaching],
-      { enabledIds: new Set(["browser", "codevisor"]), pluginTools: [] },
+      { enabledIds: new Set(["browser", "codevisor"]) },
       source([
         { description: "Ships it", directoryName: "deploy", name: "Deploy" },
         { directoryName: "plain", name: "Plain" }
@@ -133,21 +132,22 @@ describe("skill catalog", () => {
 
   it("generates the execute guide for the session's capabilities", async () => {
     const full = await executeSkill.load({
-      enabledIds: new Set(["browser", "computer", "codevisor"]),
-      pluginTools: [
-        { description: "Append a note", inputSchema: { type: "object" }, name: "o.n.add" }
-      ]
+      enabledIds: new Set(["browser", "computer", "codevisor"])
     })
     expect(full).toContain("`description` is the label the user sees")
     expect(full).toContain("read `browser-use`")
     expect(full).toContain("## Other agents")
-    expect(full).toContain("- plugin.o.n.add — Append a note")
+    expect(full).toContain("## Plugins")
+    expect(full).toContain("`machine.tools.codevisor.plugins.search`, then `plugins.describe`")
+    expect(full).toContain(
+      "`events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`"
+    )
     expect(full).toContain(codevisorSandboxSignatures)
 
-    const minimal = await executeSkill.load({ enabledIds: new Set(), pluginTools: [] })
+    const minimal = await executeSkill.load({ enabledIds: new Set() })
     expect(minimal).not.toContain("browser-use")
     expect(minimal).not.toContain("## Other agents")
-    expect(minimal).not.toContain("plugin tools")
+    expect(minimal).not.toContain("## Plugins")
     expect(minimal).toContain("attaching-files")
   })
 })
@@ -195,6 +195,19 @@ describe("skills tool", () => {
       text: expect.stringContaining('No skill named "missing"')
     })
     expect((await skillsToolResult(entries, "gone")).isError).toBe(true)
+  })
+
+  it("points to the skill folder for supporting files of saved skills", async () => {
+    const entries = await skillEntries(
+      [],
+      allEnabled,
+      source([{ directoryName: "deploy", name: "Deploy" }])
+    )
+
+    expect(await skillsToolResult(entries, "deploy", "notes.md")).toEqual({
+      isError: true,
+      text: "Couldn't read deploy: its supporting files are in its skill folder; open them with your file tools"
+    })
   })
 })
 

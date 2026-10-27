@@ -61,14 +61,6 @@ export const publishMachineReadiness = async (deps: {
   return { changedEntries: result.changed }
 }
 
-export const PLUGIN_READINESS_NAMESPACE = "plugin-readiness"
-
-export interface PluginReadinessRow {
-  readonly id: string
-  readonly state: "ready" | "disabled" | "notInstalled" | "blocked" | "machineOnly"
-  readonly reason?: string | undefined
-}
-
 export const publishAccountsRoster = async (
   deps: AccountsRosterDeps
 ): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {

@@ -31,8 +31,6 @@ export const EventKind = Schema.Literals([
   "harness.notice",
   "session.updateGate.updated",
   "session.autoResume.updated",
-  "plugin.state.updated",
-  "plugin.updated",
   "terminal.output",
   "terminal.exit",
   "update.changed",

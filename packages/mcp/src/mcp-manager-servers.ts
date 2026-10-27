@@ -127,7 +127,9 @@ export const makeMcpServerOperations = (
         ...(request.oauthScope === undefined ? {} : { oauthScope: request.oauthScope }),
         connectionState: authType === "oauth" ? "needsAuthorization" : "disconnected",
         toolCount: 0,
-        secretCipher: encryptSecrets(key, stored)
+        secretCipher: encryptSecrets(key, stored),
+        ...(request.catalogId === undefined ? {} : { catalogId: request.catalogId }),
+        ...(request.catalogVersion === undefined ? {} : { catalogVersion: request.catalogVersion })
       })
     )
     emitServerChanged(saved.id)

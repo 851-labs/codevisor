@@ -5,7 +5,7 @@ import {
   McpRefreshRejected,
   McpRefreshUnavailable,
   mcpTokenBundle,
-  refreshMcpOAuth
+  refreshOAuthGrant
 } from "./mcp-oauth-grant.js"
 
 const grant = {
@@ -99,7 +99,7 @@ describe("MCP OAuth grants", () => {
       })()
     }
 
-    const rotated = await refreshMcpOAuth(signedIn, { fetch: request, now: () => 5_000 })
+    const rotated = await refreshOAuthGrant(signedIn, { fetch: request, now: () => 5_000 })
 
     expect(rotated).toMatchObject({
       accessToken: "access-2",
@@ -132,7 +132,7 @@ describe("MCP OAuth grants", () => {
       urls.push(url instanceof Request ? url.url : url.toString())
       return respond(200, { access_token: "b", token_type: "Bearer" })()
     }
-    expect(await refreshMcpOAuth(bundle, { fetch: request })).toMatchObject({
+    expect(await refreshOAuthGrant(bundle, { fetch: request })).toMatchObject({
       accessToken: "b",
       refreshToken: "r",
       expiresAt: Number.MAX_SAFE_INTEGER
@@ -143,7 +143,7 @@ describe("MCP OAuth grants", () => {
   it("uses the global fetch by default", async () => {
     vi.stubGlobal("fetch", vi.fn(respond(400, { error: "invalid_grant" })))
     try {
-      await expect(refreshMcpOAuth(signedIn)).rejects.toBeInstanceOf(McpRefreshRejected)
+      await expect(refreshOAuthGrant(signedIn)).rejects.toBeInstanceOf(McpRefreshRejected)
     } finally {
       vi.unstubAllGlobals()
     }
@@ -153,7 +153,7 @@ describe("MCP OAuth grants", () => {
     ["invalid_grant", respond(400, { error: "invalid_grant" })],
     ["invalid_client", respond(401, { error: "invalid_client" })]
   ])("reports %s as a rejected grant", async (code, request) => {
-    const failure = await refreshMcpOAuth(signedIn, { fetch: request }).catch((cause) => cause)
+    const failure = await refreshOAuthGrant(signedIn, { fetch: request }).catch((cause) => cause)
     expect(failure).toBeInstanceOf(McpRefreshRejected)
     expect(failure).toMatchObject({ code })
   })
@@ -161,7 +161,7 @@ describe("MCP OAuth grants", () => {
   it("rejects a bundle that cannot be refreshed", async () => {
     const { refreshToken: _refresh, ...withoutRefresh } = signedIn
     for (const bundle of [withoutRefresh, { ...signedIn, credential: { client: {} } }]) {
-      await expect(refreshMcpOAuth(bundle)).rejects.toMatchObject({ code: "missing_grant" })
+      await expect(refreshOAuthGrant(bundle)).rejects.toMatchObject({ code: "missing_grant" })
     }
   })
 
@@ -172,7 +172,7 @@ describe("MCP OAuth grants", () => {
     ["ECONNREFUSED", connectionFailure("ECONNREFUSED")],
     ["ENOTFOUND", connectionFailure("ENOTFOUND")]
   ])("reports %s as unavailable, leaving the refresh token unspent", async (detail, request) => {
-    const failure = await refreshMcpOAuth(signedIn, { fetch: request }).catch((cause) => cause)
+    const failure = await refreshOAuthGrant(signedIn, { fetch: request }).catch((cause) => cause)
     expect(failure).toBeInstanceOf(McpRefreshUnavailable)
     expect(failure).toMatchObject({ detail })
   })
@@ -187,7 +187,7 @@ describe("MCP OAuth grants", () => {
     ],
     ["an unreadable success", respond(200, { unexpected: true })]
   ])("treats %s as ambiguous because the token may have rotated", async (_case, request) => {
-    const failure = await refreshMcpOAuth(signedIn, { fetch: request }).catch((cause) => cause)
+    const failure = await refreshOAuthGrant(signedIn, { fetch: request }).catch((cause) => cause)
     expect(failure).not.toBeInstanceOf(McpRefreshUnavailable)
     expect(failure).not.toBeInstanceOf(McpRefreshRejected)
   })

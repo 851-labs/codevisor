@@ -9,13 +9,7 @@ import {
 } from "@codevisor/api"
 import type { ExecutionJobFinished } from "@codevisor/mcp"
 
-import {
-  run,
-  swallowError,
-  type CodevisorServerServices,
-  type EventFanout,
-  type RouteState
-} from "../server-context.js"
+import { run, swallowError, type CodevisorServerServices } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import {
@@ -26,7 +20,7 @@ import {
   type SessionEventMessage,
   type TurnEnd
 } from "./session-event-messages.js"
-import { makeSessionEventOutbox, type SessionEventOutbox } from "./session-event-outbox.js"
+import type { SessionEventOutbox } from "./session-event-outbox.js"
 
 export interface SessionEventRouter {
   readonly listener: (event: EventEnvelope) => void
@@ -56,12 +50,9 @@ const usageLimitDetailOf = (item: TranscriptItem): string | undefined =>
 
 export const makeSessionEventRouter = (
   services: CodevisorServerServices,
-  fanout: EventFanout,
-  routeState: RouteState,
-  serverId: string,
+  outbox: SessionEventOutbox,
   afterTurnFinished: () => Promise<void>
 ): SessionEventRouter => {
-  const outbox = makeSessionEventOutbox(services, fanout, routeState, serverId)
   const actionKinds = new Map<string, string | undefined>()
   const publish = makePublisher(services, outbox)
   const announcements = new Map<string, Promise<void>>()

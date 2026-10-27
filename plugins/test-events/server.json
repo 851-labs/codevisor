@@ -1,0 +1,65 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.codevisor/test-events",
+  "title": "Test Events",
+  "description": "Emits test events on demand for developing event subscriptions.",
+  "version": "1.0.0",
+  "websiteUrl": "https://codevisor.dev",
+  "repository": {
+    "url": "https://github.com/851-labs/codevisor",
+    "source": "github",
+    "subfolder": "plugins/test-events"
+  },
+  "_meta": {
+    "dev.codevisor/plugin": {
+      "bundled": "test-events",
+      "entry": "dist/main.js",
+      "ageRating": 4,
+      "devOnly": true,
+      "capabilities": {
+        "tools": [
+          {
+            "name": "emit",
+            "description": "Publish a test event",
+            "effects": "write"
+          },
+          {
+            "name": "list_recent",
+            "description": "List recent test events",
+            "effects": "read"
+          },
+          {
+            "name": "show_events",
+            "description": "Show recent events in an app",
+            "effects": "read",
+            "app": true
+          }
+        ],
+        "events": [
+          {
+            "name": "test.ping",
+            "description": "A test ping with a message, level and tags"
+          },
+          {
+            "name": "test.counter",
+            "description": "A counter tick"
+          }
+        ],
+        "skills": [
+          {
+            "name": "test-events",
+            "description": "Exercise Codevisor plugin events end to end with the test-events plugin."
+          }
+        ],
+        "panes": [
+          {
+            "type": "events",
+            "title": "Test events",
+            "resourceUri": "ui://test-events/events.html"
+          }
+        ],
+        "ingress": []
+      }
+    }
+  }
+}

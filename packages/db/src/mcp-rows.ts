@@ -4,6 +4,7 @@ import {
   McpServerKind,
   McpTransport,
   type McpServer,
+  type PluginCapabilities,
   type NativeMcpRemoval
 } from "@codevisor/api"
 import { Schema } from "effect"
@@ -25,6 +26,9 @@ export interface McpServerRow {
   readonly tool_count: number
   readonly detail: string | null
   readonly secret_cipher: string | null
+  readonly catalog_id: string | null
+  readonly catalog_version: string | null
+  readonly capabilities: string | null
   readonly created_at: string
   readonly updated_at: string
 }
@@ -65,6 +69,9 @@ export interface SaveMcpServerRecordRequest {
   readonly toolCount: number
   readonly detail?: string
   readonly secretCipher?: string
+  readonly catalogId?: string
+  readonly catalogVersion?: string
+  readonly capabilities?: PluginCapabilities
 }
 
 export interface NativeConfigBackupRow {
@@ -98,6 +105,9 @@ export const mcpServerRows = rowReader<McpServerRow>({
   tool_count: integer,
   detail: nullable(text),
   secret_cipher: nullable(text),
+  catalog_id: nullable(text),
+  catalog_version: nullable(text),
+  capabilities: nullable(text),
   created_at: text,
   updated_at: text
 })

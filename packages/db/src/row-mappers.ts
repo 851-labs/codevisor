@@ -1,4 +1,4 @@
-import { GitPullRequest, repoIdentityKey } from "@codevisor/api"
+import { GitPullRequest, PluginCapabilities, repoIdentityKey } from "@codevisor/api"
 import type {
   ArchivedWorktree,
   FileMetadata,
@@ -327,9 +327,23 @@ export const mcpServerFromRow = (row: McpServerRow): McpServerRecord => ({
   toolCount: row.tool_count,
   ...(row.detail === null ? {} : { detail: row.detail }),
   ...(row.secret_cipher === null ? {} : { secretCipher: row.secret_cipher }),
+  ...(row.catalog_id === null ? {} : { catalogId: row.catalog_id }),
+  ...(row.catalog_version === null ? {} : { catalogVersion: row.catalog_version }),
+  ...pluginCapabilitiesColumn(row.capabilities),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 })
+
+const pluginCapabilitiesColumn = (
+  raw: string | null
+): { readonly capabilities?: PluginCapabilities } => {
+  if (raw === null) return {}
+  try {
+    return { capabilities: parseJsonColumn(PluginCapabilities, raw) }
+  } catch {
+    return {}
+  }
+}
 
 export const nativeMcpRemovalFromRow = (row: NativeMcpRemovalRow): NativeMcpRemovalRecord => ({
   configPath: row.config_path,

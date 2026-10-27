@@ -1,20 +1,17 @@
 import { once } from "node:events"
 import { mkdirSync, mkdtempSync } from "node:fs"
-import { IncomingMessage } from "node:http"
-import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { decode } from "@codevisor/api"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
-import { WebSocket, WebSocketServer } from "ws"
+import { WebSocket } from "ws"
 
-import { defaultServerConfig, makeEventFanout } from "../server.js"
+import { makeEventFanout } from "../server.js"
 import {
   jsonRequest,
   makeServices,
-  pluginsStub,
   readSseEvents,
   readWebSocketEvents,
   run,
@@ -23,7 +20,6 @@ import {
   tempDirs,
   listSubjectEvents
 } from "../test-support.js"
-import { handleUpgrade } from "./events.js"
 import { idOf } from "./response-test-support.js"
 import {
   CreatedSession,
@@ -446,33 +442,6 @@ describe("event routes", () => {
 })
 
 describe("websocket upgrades", () => {
-  it("drops an upgrade socket that resets while a plugin decides on it", async () => {
-    let decide!: (handled: boolean) => void
-    const { services } = await makeServices("server-a")
-    const plugins = {
-      ...pluginsStub([]),
-      handleUpgrade: () => new Promise<boolean>((resolve) => (decide = resolve))
-    }
-    const request = Object.assign(new IncomingMessage(new Socket()), {
-      method: "GET",
-      url: "/v1/plugins/p/socket"
-    })
-    const socket = new Socket()
-    const upgraded = handleUpgrade(
-      { ...services, plugins },
-      defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 }),
-      await run(makeEventFanout),
-      request,
-      socket,
-      Buffer.alloc(0),
-      new WebSocketServer({ noServer: true })
-    )
-    socket.emit("error", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }))
-    expect(socket.destroyed).toBe(true)
-    decide(true)
-    await upgraded
-  })
-
   it("closes a socket that sends a malformed frame and keeps serving", async () => {
     const { server } = await start()
     const socket = new WebSocket(`${server.url.replace("http:", "ws:")}/v1/events/socket?since=0`)

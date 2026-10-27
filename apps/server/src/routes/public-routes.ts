@@ -23,6 +23,7 @@ export const publicRouteFor = ({ request, url }: RouteContext): RouteHandler | u
 export const mcpOAuthRouteFor = ({ request, url }: RouteContext): RouteHandler | undefined => {
   if (isMethodRoute(request, url, "GET", "/v1/mcps/oauth/callback")) return finishMcpOAuth
   if (isMethodRoute(request, url, "GET", "/v1/mcps/oauth/complete")) return writeOAuthReconnecting
+  if (isMethodRoute(request, url, "GET", "/v1/plugins/oauth/callback")) return finishPluginOAuth
   return undefined
 }
 
@@ -54,6 +55,22 @@ const oauthAuthorizedPage =
 
 const oauthReconnectingPage =
   "<!doctype html><title>Codevisor</title><p>Codevisor is reconnecting to the MCP server. You can close this window.</p>"
+
+const pluginSignedInPage =
+  "<!doctype html><title>Codevisor</title><p>Signed in. You can return to Codevisor.</p>"
+
+const finishPluginOAuth = ({ services, response, url }: RouteContext): Promise<void> => {
+  const platform = services.pluginPlatform
+  if (platform === undefined) throw new HttpFailure(501, "Plugins unavailable")
+  const state = url.searchParams.get("state") ?? ""
+  const code = url.searchParams.get("code") ?? undefined
+  const completing = platform.accounts.completeOAuth(
+    state,
+    code,
+    url.searchParams.get("error") ?? undefined
+  )
+  return respondAfter(response, completing, () => writeHtml(response, pluginSignedInPage))
+}
 
 const forwardProviderToken = ({ services, request, response }: RouteContext): Promise<void> => {
   if (!services.sharedAccounts) throw new HttpFailure(501, accountGatewayUnavailable)

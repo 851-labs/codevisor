@@ -8,6 +8,8 @@ on:
       - "apps/cloud/**"
       - "packages/api/**"
       - "packages/cloud-crypto/**"
+      - "plugins/*/server.json"
+      - "plugins/popular.json"
       - "apps/relay/relays.json"
       - "bun.lock"
       - ".github/workflows/deploy-cloud.yml"

@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto"
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 
-import { isFleetPath, remoteSessionKey } from "@codevisor/api"
+import { isFleetPath, remoteSessionKey, type CodevisorExecutionApp } from "@codevisor/api"
 import type {
   AutomationProviderContext,
   AutomationToolProvider,
@@ -20,7 +21,9 @@ import type {
   McpManagerConfig,
   RemoteGatewayCallOptions
 } from "./mcp-manager-types.js"
-import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
+import { pluginToolCall } from "./mcp-plugin-accounts.js"
+import type { PluginAppViewStore } from "./mcp-plugin-app-views.js"
+import { appViewRef, capturedAppView, toolVisibleTo } from "./mcp-plugin-apps.js"
 import type { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import {
   type SandboxArtifactCollector,
@@ -37,6 +40,7 @@ export interface GatewayInvokeOptions {
   readonly onBrowser?: () => void
   readonly onBrowserPage?: (url: string) => void
   readonly onComputerApp?: (app: ComputerUseApp) => void
+  readonly onAppView?: (app: CodevisorExecutionApp) => void
 }
 
 export const gatewayToolError = (cause: unknown): CodeExecutionToolError => {
@@ -51,6 +55,7 @@ export const gatewayToolError = (cause: unknown): CodeExecutionToolError => {
 type GatewayCatalog = ReturnType<typeof makeGatewayCatalog>
 
 export interface GatewayDispatchDeps {
+  readonly appViews: PluginAppViewStore
   readonly artifactPersistence: SandboxArtifactPersistence
   readonly automationProviders: Map<string, AutomationToolProvider>
   readonly browserSetupBroker: BrowserSetupBroker
@@ -131,6 +136,7 @@ const workspaceUploadPaths = (
 
 export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   const {
+    appViews,
     artifactPersistence,
     automationProviders,
     browserSetupBroker,
@@ -141,20 +147,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     record,
     selfMachine
   } = deps
-
-  const invokePluginTool = async (
-    sessionId: string,
-    name: string,
-    args: Readonly<Record<string, unknown>>
-  ): Promise<unknown> => {
-    const session = await run(config.db.getSessionSummary(sessionId))
-    return invokeGatewayPluginTool(
-      config.pluginTools,
-      name,
-      args,
-      session.cwd === undefined ? {} : { cwd: session.cwd }
-    )
-  }
 
   const computerUsePermissionPrompt = (
     context: {
@@ -310,17 +302,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     }
     const serverId = path.slice(0, separator)
     const toolName = path.slice(separator + 1)
-    if (serverId === "plugin") {
-      if (sessionId !== undefined) return invokePluginTool(sessionId, toolName, input)
-      try {
-        return await invokeGatewayPluginTool(config.pluginTools, toolName, input, {})
-      } catch (cause) {
-        throw new Error(
-          `plugin.${toolName} failed without a workspace folder (called from ${remote?.machineName ?? "another machine"}): ${errorMessage(cause)}`,
-          { cause }
-        )
-      }
-    }
     const installed = await record(serverId)
     const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
     if (!installed.enabled || !allowed) {
@@ -350,12 +331,37 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       return sandboxSuccessfulToolResult(result, artifacts, path)
     }
     const connection = await connectUpstream(serverId)
+    const tool = connection.tools.find((candidate) => candidate.name === toolName)
+    if (tool !== undefined && !toolVisibleTo(tool, "model")) {
+      throw new Error(`${path} is only available to the ${installed.name} app`)
+    }
+    const call = await pluginToolCall(config.accounts, installed, tool, input)
     const result = await connection.client.callTool(
-      { name: toolName, arguments: input },
+      {
+        name: toolName,
+        arguments: call.arguments,
+        ...(call.meta === undefined ? {} : { _meta: call.meta })
+      },
       undefined,
       options.signal === undefined ? undefined : { signal: options.signal }
     )
-    return sandboxSuccessfulToolResult(CallToolResultSchema.parse(result), artifacts, path)
+    const parsed = CallToolResultSchema.parse(result)
+    const view = capturedAppView({
+      viewId: randomUUID(),
+      machineId: selfMachine.id,
+      sessionId: options.onAppView === undefined ? undefined : sessionId,
+      server: installed,
+      tool,
+      accountId: call.accountId,
+      toolInput: call.arguments,
+      toolResult: parsed,
+      createdAt: new Date().toISOString()
+    })
+    if (view !== undefined) {
+      await appViews.save(view)
+      options.onAppView?.(appViewRef(view))
+    }
+    return sandboxSuccessfulToolResult(parsed, artifacts, path)
   }
 
   const invokeRemoteGatewayCall = (

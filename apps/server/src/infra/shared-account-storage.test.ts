@@ -16,7 +16,7 @@ import {
   forgetNativeProfileLogin,
   mcpCredentialVault,
   nativeClaudeMachine,
-  rotateMcpCredential,
+  rotateOAuthGrant,
   sharedAccountVault
 } from "./shared-account-storage.js"
 const execute = vi.hoisted(() =>
@@ -208,7 +208,7 @@ const mcpBundle: SharedTokenBundle = {
 }
 
 it("refreshes MCP sign-ins only through the MCP token endpoint", async () => {
-  await expect(rotateMcpCredential({ ...mcpBundle, harnessId: "codex" })).rejects.toBeInstanceOf(
+  await expect(rotateOAuthGrant({ ...mcpBundle, harnessId: "codex" })).rejects.toBeInstanceOf(
     SharedCredentialError
   )
   vi.stubGlobal(
@@ -217,7 +217,7 @@ it("refreshes MCP sign-ins only through the MCP token endpoint", async () => {
       throw new TypeError("fetch failed")
     })
   )
-  const ambiguous = await rotateMcpCredential(mcpBundle).catch((cause: unknown) => cause)
+  const ambiguous = await rotateOAuthGrant(mcpBundle).catch((cause: unknown) => cause)
   expect(ambiguous).toBeInstanceOf(TypeError)
   expect(ambiguous).not.toBeInstanceOf(OAuthRefreshUnavailable)
 })

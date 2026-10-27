@@ -226,6 +226,13 @@ export type TranscriptQuestionInteraction = typeof TranscriptQuestionInteraction
 export const TranscriptInteraction = Schema.Union([TranscriptQuestionInteraction])
 export type TranscriptInteraction = typeof TranscriptInteraction.Type
 
+export const PromptAttribution = Schema.Struct({
+  kind: Schema.Literal("app"),
+  viewId: Schema.String,
+  plugin: Schema.String
+})
+export type PromptAttribution = typeof PromptAttribution.Type
+
 export const TranscriptItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -250,6 +257,7 @@ export const TranscriptItem = Schema.Struct({
   messageId: Schema.optional(Schema.String),
   phase: Schema.optional(MessagePhase),
   origin: Schema.optional(Schema.Literals(["event"])),
+  attribution: Schema.optional(PromptAttribution),
   textResource: Schema.optional(TranscriptBodyResource),
   planResource: Schema.optional(TranscriptBodyResource),
   textGeneration: Schema.optional(Schema.Number),
@@ -325,7 +333,8 @@ export const PromptQueueItem = Schema.Struct({
   updatedAt: Schema.String,
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   clientId: Schema.optional(Schema.String),
-  origin: Schema.optional(PromptOrigin)
+  origin: Schema.optional(PromptOrigin),
+  attribution: Schema.optional(PromptAttribution)
 })
 export type PromptQueueItem = typeof PromptQueueItem.Type
 
@@ -416,7 +425,8 @@ export const PromptRequest = Schema.Struct({
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   messageId: Schema.optional(Schema.String),
   clientId: Schema.optional(Schema.String),
-  fromSessionId: Schema.optional(Schema.String)
+  fromSessionId: Schema.optional(Schema.String),
+  attribution: Schema.optional(PromptAttribution)
 })
 export type PromptRequest = typeof PromptRequest.Type
 

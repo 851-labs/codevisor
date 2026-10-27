@@ -1,4 +1,4 @@
-import { integer, literal, nullable, rowReader, text } from "./row-reader.js"
+import { integer, literal, nullable, optional, rowReader, text } from "./row-reader.js"
 
 export interface ConversationRow {
   readonly id: string
@@ -53,6 +53,7 @@ export interface ChatItemRow {
   readonly has_details: number
   readonly revision: number
   readonly origin: string | null
+  readonly attribution?: string | null
   readonly text: string
   readonly plan_document: string | null
 }
@@ -110,6 +111,7 @@ export const chatItemRows = rowReader<ChatItemRow>({
   has_details: integer,
   revision: integer,
   origin: nullable(text),
+  attribution: optional(nullable(text)),
   text,
   plan_document: nullable(text)
 })

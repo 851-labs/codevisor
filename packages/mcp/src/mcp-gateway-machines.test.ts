@@ -463,10 +463,5 @@ describe("gateway machines and execution annotations", () => {
       agentId: "remote2:mbp:chat-7",
       machine: { machineId: "studio", name: "Mac Studio" }
     })
-    await expect(
-      manager.invokeRemoteGatewayCall(origin, "plugin.owner.notes.notes_add", {})
-    ).rejects.toThrow(
-      "plugin.owner.notes.notes_add failed without a workspace folder (called from MacBook Pro)"
-    )
   })
 })

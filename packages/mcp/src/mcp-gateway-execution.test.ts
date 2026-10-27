@@ -55,6 +55,15 @@ const recording = (timers?: ExecutionTimers) => {
   return { events, recorder, states }
 }
 
+const appView = (index: number) => ({
+  viewId: `view-${index}`,
+  machineId: "studio",
+  serverId: "grafana",
+  serverName: "Grafana",
+  toolName: "show_alerts",
+  resourceUri: "ui://grafana/alerts.html"
+})
+
 describe("skill read reports", () => {
   it("reach the session sink, and never fail the read", async () => {
     const events: Array<RuntimeEvent> = []
@@ -181,6 +190,18 @@ describe("execution recorder", () => {
         ...Array.from({ length: 49 }, (_, index) => ({ path: `tool.call_${index + 6}` })),
         { path: "tool.failed", error: `bad ${"x".repeat(195)}…` }
       ]
+    })
+  })
+
+  it("lists the app views a workflow opened, keeping the newest eight", async () => {
+    const clock = manualTimers()
+    const { recorder, states } = recording(clock.timers)
+    for (let index = 0; index < 10; index += 1) recorder.app(appView(index))
+    await recorder.finish()
+
+    expect(states()[0]).not.toHaveProperty("apps")
+    expect(states().at(-1)).toMatchObject({
+      apps: Array.from({ length: 8 }, (_, index) => appView(index + 2))
     })
   })
 

@@ -7,20 +7,9 @@ import { fileURLToPath } from "node:url"
 
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
-import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
+import { Command, Flag } from "effect/unstable/cli"
 
 import { authLoginCommand } from "./cli/cloud-auth.js"
-import {
-  pluginInstallCommand,
-  pluginLinkCommand,
-  pluginListCommand,
-  pluginRemoveCommand,
-  pluginRestoreCommand,
-  pluginSetEnabledCommand,
-  pluginUpdateCommand,
-  pluginUpdatesCommand,
-  type PluginsCliDeps
-} from "./cli/plugins.js"
 import { setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
   logsCommand,
@@ -32,13 +21,7 @@ import {
   updateCommand,
   type CliDeps
 } from "./cli/support.js"
-import {
-  makeAuthCommand,
-  makeMachinesCommand,
-  optionalString,
-  portFlag,
-  runPrompt
-} from "./cli/wiring.js"
+import { makeAuthCommand, makeMachinesCommand, optionalString, portFlag } from "./cli/wiring.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
@@ -266,151 +249,6 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Command.withDescription("Onboard this machine: start the server and sign it into Codevisor Cloud")
 )
 
-const makePluginsDeps = (): PluginsCliDeps => ({
-  ...makeDeps(),
-  confirm: (message) => runPrompt(Prompt.confirm({ message }))
-})
-
-const pluginInstall = Command.make(
-  "install",
-  {
-    source: Argument.string("source").pipe(
-      Argument.withDescription("owner/repo, owner/repo/path, a git URL, or a local path")
-    ),
-    port: portFlag,
-    yes: Flag.boolean("yes").pipe(
-      Flag.withAlias("y"),
-      Flag.withDescription("Skip the install confirmation prompt")
-    )
-  },
-  ({ port, source, yes }) =>
-    Effect.promise(async () => {
-      process.exitCode = await pluginInstallCommand(makePluginsDeps(), {
-        port: Option.getOrUndefined(port),
-        source,
-        yes
-      })
-    })
-).pipe(Command.withDescription("Install a plugin after showing the commands it will run"))
-
-const pluginLink = Command.make(
-  "link",
-  {
-    path: Argument.string("path").pipe(
-      Argument.withDescription("Local plugin directory to symlink into the plugins root")
-    ),
-    port: portFlag
-  },
-  ({ path, port }) =>
-    runCli((deps) =>
-      pluginLinkCommand(
-        { ...deps, confirm: async () => true },
-        { path, port: Option.getOrUndefined(port) }
-      )
-    )
-).pipe(Command.withDescription("Link a local plugin directory for development"))
-
-const pluginList = Command.make("list", { port: portFlag }, ({ port }) =>
-  runCli((deps) =>
-    pluginListCommand({ ...deps, confirm: async () => true }, { port: Option.getOrUndefined(port) })
-  )
-).pipe(Command.withDescription("List installed plugins with their runtime state"))
-
-const pluginRemove = Command.make(
-  "remove",
-  {
-    pluginId: Argument.string("id").pipe(
-      Argument.withDescription("Plugin id to uninstall (managed installs only)")
-    ),
-    port: portFlag
-  },
-  ({ pluginId, port }) =>
-    runCli((deps) =>
-      pluginRemoveCommand(
-        { ...deps, confirm: async () => true },
-        { pluginId, port: Option.getOrUndefined(port) }
-      )
-    )
-).pipe(Command.withDescription("Uninstall a managed plugin"))
-
-const pluginUpdates = Command.make("updates", { port: portFlag }, ({ port }) =>
-  runCli((deps) =>
-    pluginUpdatesCommand(
-      { ...deps, confirm: async () => true },
-      { port: Option.getOrUndefined(port) }
-    )
-  )
-).pipe(Command.withDescription("Show update state for installed plugins"))
-
-const pluginUpdate = Command.make(
-  "update",
-  {
-    pluginId: Argument.string("id").pipe(Argument.withDescription("Plugin id to update")),
-    port: portFlag,
-    yes: Flag.boolean("yes").pipe(
-      Flag.withAlias("y"),
-      Flag.withDescription("Skip the update confirmation prompt")
-    )
-  },
-  ({ pluginId, port, yes }) =>
-    Effect.promise(async () => {
-      process.exitCode = await pluginUpdateCommand(makePluginsDeps(), {
-        pluginId,
-        port: Option.getOrUndefined(port),
-        yes
-      })
-    })
-).pipe(Command.withDescription("Review and apply an available plugin update"))
-
-const pluginRestore = Command.make(
-  "restore",
-  {
-    pluginId: Argument.string("id").pipe(Argument.withDescription("Plugin id to restore")),
-    port: portFlag
-  },
-  ({ pluginId, port }) =>
-    runCli((deps) =>
-      pluginRestoreCommand(
-        { ...deps, confirm: async () => true },
-        { pluginId, port: Option.getOrUndefined(port) }
-      )
-    )
-).pipe(Command.withDescription("Restore a plugin's verified pre-update version"))
-
-const pluginEnabledCommand = (name: "enable" | "disable", enabled: boolean) =>
-  Command.make(
-    name,
-    {
-      pluginId: Argument.string("id").pipe(Argument.withDescription(`Plugin id to ${name}`)),
-      port: portFlag
-    },
-    ({ pluginId, port }) =>
-      runCli((deps) =>
-        pluginSetEnabledCommand(
-          { ...deps, confirm: async () => true },
-          { enabled, pluginId, port: Option.getOrUndefined(port) }
-        )
-      )
-  ).pipe(Command.withDescription(`${name === "enable" ? "Enable" : "Disable"} an installed plugin`))
-
-const pluginEnable = pluginEnabledCommand("enable", true)
-const pluginDisable = pluginEnabledCommand("disable", false)
-
-const plugin = Command.make("plugin").pipe(
-  Command.withDescription("Manage this machine's Codevisor plugins"),
-  Command.withSubcommands([
-    pluginInstall,
-    pluginLink,
-    pluginList,
-    pluginRemove,
-    pluginUpdates,
-    pluginUpdate,
-    pluginRestore,
-    pluginEnable,
-    pluginDisable
-  ])
-)
-
 const auth = makeAuthCommand(runCli)
 const machines = makeMachinesCommand(runCli)
 
@@ -421,7 +259,6 @@ const root = Command.make("codevisor").pipe(
     setup,
     auth,
     machines,
-    plugin,
     start,
     stop,
     restart,

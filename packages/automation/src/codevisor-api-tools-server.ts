@@ -234,7 +234,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.pane_upsert",
-    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<pluginId> and a paneType from plugins.list. Use clients.navigate to select the synchronized pane in a particular client.",
+    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<plugin id from plugins.list> and a paneType from that plugin's capabilities.panes. Use clients.navigate to select the synchronized pane in a particular client.",
     "PUT",
     "/v1/workspaces/:workspaceId/panes/:paneId",
     { body: UpsertWorkspacePaneRequest }
@@ -342,9 +342,8 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "workspaces.open_plugin_pane",
     "Open a plugin pane in a workspace by upserting a workspace pane record. " +
-      "Set providerId to `plugin:<pluginId>` (e.g. plugin:codevisor.git-diff), paneType to the " +
-      "pane type from the plugin's manifest (see plugins.list). Omit metadata; plugin artwork " +
-      "comes from the running plugin server and is never stored in workspace records. paneId is " +
+      "Set providerId to `plugin:<id>` with the plugin's id from plugins.list, and paneType to " +
+      "one of that plugin's capabilities.panes types. Omit metadata. paneId is " +
       "the stable pane identity: pass a new lowercase UUID to open a " +
       "new pane, or an existing pane's id to replace it.",
     "PUT",

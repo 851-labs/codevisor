@@ -18,6 +18,7 @@ import type {
   BrowserUseProvider
 } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js"
 import type { WebSocket } from "ws"
 
 import type { AutomationTool } from "./mcp-automation-use.js"
@@ -27,9 +28,19 @@ import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { McpOAuthClock } from "./mcp-oauth-clock.js"
 import type { McpCredentialReference, McpOAuthVault } from "./mcp-oauth-grant.js"
-import type { PluginToolSource } from "./mcp-plugin-tools.js"
+import type { PluginAccountSource } from "./mcp-plugin-accounts.js"
+import type { PluginAppView } from "./mcp-plugin-apps.js"
+import type { PluginConnection } from "./mcp-plugin-connection.js"
 
 export type { AutomationTool } from "./mcp-automation-use.js"
+export type { PluginAccountChoice, PluginAccountSource } from "./mcp-plugin-accounts.js"
+export type { PluginAppView } from "./mcp-plugin-apps.js"
+export type {
+  PluginConnection,
+  PluginExtensions,
+  PluginRequestOptions,
+  PluginStreamOptions
+} from "./mcp-plugin-connection.js"
 
 export interface GatewayOrigin {
   readonly machineId: string
@@ -162,7 +173,33 @@ export interface McpManager {
     request: IncomingMessage,
     response: ServerResponse
   ) => Promise<void>
+  readonly pluginConnection: (id: string) => Promise<PluginConnection>
+  readonly subscribeConnections: (
+    listener: (id: string, state: "connected" | "closed") => void
+  ) => () => void
+  readonly readResource: (
+    id: string,
+    uri: string,
+    accountId?: string
+  ) => Promise<ReadResourceResult>
+  readonly appView: (viewId: string) => Promise<PluginAppView | undefined>
+  readonly callAppTool: (
+    serverId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    accountId?: string
+  ) => Promise<CallToolResult>
   readonly close: () => Promise<void>
+}
+
+export const CATALOG_STDIO_COMMAND = "codevisor-plugin"
+
+export type CatalogLaunch =
+  | { readonly transport: "stdio"; readonly command: string; readonly args: ReadonlyArray<string> }
+  | { readonly transport: "http"; readonly url: string }
+
+export interface McpCatalogResolver {
+  readonly launch: (catalogId: string) => CatalogLaunch | undefined
 }
 
 export interface McpManagerConfig {
@@ -175,7 +212,11 @@ export interface McpManagerConfig {
   readonly serverKind?: "local" | "remote"
   readonly skillSource?: SkillSource
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
-  readonly pluginTools?: PluginToolSource
+  readonly catalog?: McpCatalogResolver
+  readonly oauthRedirect?: (
+    serverId: string
+  ) => Promise<{ readonly redirectUrl: string; readonly state: string } | undefined>
+  readonly accounts?: PluginAccountSource
   readonly executionTimers?: ExecutionTimers
   readonly oauthClock?: McpOAuthClock
   readonly oauthVault?: McpOAuthVault

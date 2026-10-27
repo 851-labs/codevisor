@@ -9,7 +9,9 @@ type QueryParameterBuilder = () => ReadonlyArray<JsonObject>
 
 const queryParameterBuilders: Partial<Record<Endpoint, QueryParameterBuilder>> = {
   "GET /v1/capabilities": () => [stringQuery("cwd"), stringQuery("harnessId")],
-  "GET /v1/plugins/registry": () => [stringQuery("q")],
+  "GET /v1/plugins/search": () => [stringQuery("query")],
+  "GET /v1/plugins/events/types": () => [stringQuery("query")],
+  "GET /v1/plugins/events/subscriptions": () => [stringQuery("sessionId")],
   "GET /v1/agents": () => [
     stringQuery("state"),
     stringQuery("project"),

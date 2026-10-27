@@ -32,6 +32,7 @@ import {
   skillsToolResult
 } from "./mcp-gateway-skills.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
+import type { PluginAppViewStore } from "./mcp-plugin-app-views.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import type { SandboxArtifactPersistence } from "./mcp-sandbox-results.js"
 import { run, sdkTransport, type UpstreamConnection } from "./mcp-support.js"
@@ -61,6 +62,7 @@ export interface ToolGatewayConfig {
 }
 
 export interface McpGatewayDeps {
+  readonly appViews: PluginAppViewStore
   readonly automationProviders: Map<string, AutomationToolProvider>
   readonly browserSetupBroker: BrowserSetupBroker
   readonly codeExecutor: CodeExecutor
@@ -130,6 +132,7 @@ export const artifactFileName = (toolPath: string, mimeType: string): string => 
 
 export const makeMcpGateway = (deps: McpGatewayDeps) => {
   const {
+    appViews,
     automationProviders,
     browserSetupBroker,
     codeExecutor,
@@ -214,6 +217,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     invokeRemoteGatewayCall,
     newArtifactCollector
   } = makeGatewayDispatch({
+    appViews,
     artifactPersistence,
     automationProviders,
     browserSetupBroker,
@@ -302,11 +306,17 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
             .optional()
             .describe(
               'A skill name from this tool\'s description, e.g. "execute". Omit to list every skill.'
+            ),
+          file: z
+            .string()
+            .optional()
+            .describe(
+              "A supporting file of a plugin skill, by the path its instructions list, e.g. references/checklist.md. Needs name."
             )
         }
       },
-      async ({ name }) => {
-        const result = await skillsToolResult(await sessionSkills(projectId, sessionId), name)
+      async ({ name, file }) => {
+        const result = await skillsToolResult(await sessionSkills(projectId, sessionId), name, file)
         await reportSkillRead(runtime.sink, sessionId, {
           ...(name === undefined || name.trim() === "" ? {} : { name: name.trim() }),
           ok: !result.isError

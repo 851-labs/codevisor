@@ -83,7 +83,7 @@ async function changedSwiftManifest(files) {
 }
 
 async function gatherContext(files) {
-  const workspaces = ["apps", "packages"].flatMap((parent) =>
+  const workspaces = ["apps", "packages", "plugins"].flatMap((parent) =>
     readdirSync(join(repoRoot, parent))
       .map((name) => `${parent}/${name}`)
       .filter((directory) => existsSync(join(repoRoot, directory, "package.json")))

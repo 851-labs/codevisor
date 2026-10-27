@@ -5,7 +5,7 @@ import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import type { makeMcpOAuthRuntime } from "./mcp-oauth.js"
-import { reportBackgroundFailure, requireHttpUrl } from "./mcp-support.js"
+import { reportBackgroundFailure, requireHttpUrl, run } from "./mcp-support.js"
 
 type OAuthRuntime = ReturnType<typeof makeMcpOAuthRuntime>
 
@@ -54,8 +54,9 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       validateInBackground(id)
       return new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
     }
-    const redirectUrl = callbackUrl()
-    const oauthState = `${id}.${randomUUID()}`
+    const relayed = await core.config.oauthRedirect?.(id)
+    const redirectUrl = relayed?.redirectUrl ?? callbackUrl()
+    const oauthState = relayed?.state ?? `${id}.${randomUUID()}`
     await replaceSecrets(id, (value) => ({
       ...value,
       oauth: { ...value.oauth, redirectUrl, state: oauthState }
@@ -75,12 +76,16 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     return provider.authorizationUrl.toString()
   }
 
+  const serverForState = async (oauthState: string) => {
+    const servers = await run(core.config.db.listMcpServers)
+    const server = servers.find((candidate) => secrets(candidate).oauth?.state === oauthState)
+    if (server === undefined) throw new Error("Invalid OAuth state")
+    return server
+  }
+
   const finishOAuth: McpManager["finishOAuth"] = async (oauthState, code) => {
-    const id = oauthState.split(".", 1)[0]
-    if (id === undefined || id.length === 0) throw new Error("Invalid OAuth state")
-    const server = await record(id)
-    const expected = secrets(server).oauth?.state
-    if (expected === undefined || expected !== oauthState) throw new Error("Invalid OAuth state")
+    const server = await serverForState(oauthState)
+    const id = server.id
     const result = await auth(oauthProvider(id, secrets(server).oauth?.redirectUrl), {
       serverUrl: requireHttpUrl(server.url),
       authorizationCode: code,

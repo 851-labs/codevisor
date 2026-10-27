@@ -19,7 +19,11 @@ import { routeMachineStats } from "./routes/machine-stats.js"
 import { routeMachineMcps } from "./routes/mcp-machine.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
 import { routeNetDirect } from "./routes/net-direct.js"
-import { routePluginProxy, routePlugins } from "./routes/plugins.js"
+import { routePluginAccounts } from "./routes/plugin-account-routes.js"
+import { pluginAppRouteFor, routePluginApps } from "./routes/plugin-app-routes.js"
+import { routePluginCatalog } from "./routes/plugin-catalog-routes.js"
+import { routePluginDiscovery } from "./routes/plugin-discovery-routes.js"
+import { routePluginEvents } from "./routes/plugin-event-routes.js"
 import { routeProjects } from "./routes/projects.js"
 import { accountGatewayRouteFor, mcpOAuthRouteFor, publicRouteFor } from "./routes/public-routes.js"
 import type { RouteContext, RouteFamily } from "./routes/route-context.js"
@@ -65,10 +69,11 @@ export const handleRequest = async (
     const publicRoute = publicRouteFor(route)
     if (publicRoute !== undefined) return publicRoute(route)
 
-    if (isPluginPath(url) && (await routePluginProxy(services, request, response, url))) return
-
     const oauthRoute = mcpOAuthRouteFor(route)
     if (oauthRoute !== undefined) return oauthRoute(route)
+
+    const pluginAppRoute = pluginAppRouteFor(route)
+    if (pluginAppRoute !== undefined) return pluginAppRoute(route)
 
     const firstAuthorizedRoute = firstAuthorizedRouteFor(route)
     await authorize(services.db, config, request)
@@ -124,14 +129,18 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, request, response, url }) => routeMachineStats(services, request, response, url),
   ({ services, request, response, url }) => routeFirstRun(services, request, response, url),
   ({ services, request, response, url }) => routeMcps(services, request, response, url),
+  ({ services, request, response, url }) => routePluginCatalog(services, request, response, url),
+  routePluginApps,
   ({ services, request, response, url }) => routeMcpScopes(services, request, response, url),
   ({ services, request, response, url }) => routeNativeMcps(services, request, response, url),
   ({ services, request, response, url }) => routeSkills(services, request, response, url),
   routeSync,
-  routePlugins,
   ({ services, request, response, url }) => routeSessionEvents(services, request, response, url),
   ({ routeState, request, response, url }) => routeAutoResume(routeState, request, response, url),
   routeAgents,
+  routePluginEvents,
+  routePluginAccounts,
+  routePluginDiscovery,
   routeSessions,
   ({ services, request, response, url }) => routeFiles(services, request, response, url),
   ({ services, request, response, url }) => routeFs(services, request, response, url),
@@ -163,5 +172,3 @@ const reconcileAfterConfigMutation = ({
       void runBackgroundSyncReconcile(services, config, fanout, mutatedPlane)
   })
 }
-
-const isPluginPath = (url: URL): boolean => url.pathname.startsWith("/v1/plugins/")

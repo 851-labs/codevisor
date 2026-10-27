@@ -33,6 +33,7 @@ import { field, stringField } from "../unknown-values.js"
 import { removeMachineFromCloudAccount } from "./cloud-account-removal.js"
 import { socketFactory } from "./cloud-bridge-socket.js"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
+import { inboxFrameHandler, machineApiRequest, type CloudInbox } from "./cloud-inbox.js"
 import {
   gatewayLoopbackHandler,
   httpChannelHandler,
@@ -53,6 +54,7 @@ export interface CloudBridgeOptions {
   readonly releaseChannel?: () => "stable" | "alpha" | undefined
   readonly fetchImpl?: FetchLike
   readonly fleetCallers?: TicketBook<ChannelPeer>
+  readonly inbox?: CloudInbox
 }
 
 export type CloudBridgeManagedBy = "app" | "external"
@@ -240,6 +242,9 @@ const makeBridge = async (
     },
     socketFactory,
     channelHandlers,
+    onInboxItem: inboxFrameHandler(options.inbox, credentials.secretKey, (itemIds) =>
+      connection?.ackInboxItems(itemIds)
+    ),
     onWelcome: ({ resumed, replayedFrames }) => {
       if (resumed) {
         options.log(`Cloud: resumed relay session (${replayedFrames} held frames replayed)`)
@@ -410,6 +415,8 @@ export const makeCloudServerControl = (
       createMachineInvite(fetchImpl(), await storedCredentials(), inviteOptions),
     removePeer: async (deviceId) =>
       removeMachinePeer(fetchImpl(), await storedCredentials(), deviceId),
+    machineRequest: async (method, path, body) =>
+      machineApiRequest(fetchImpl(), await storedCredentials(), { method, path, body }),
     disconnect: async () => {
       current?.stop()
       current = undefined

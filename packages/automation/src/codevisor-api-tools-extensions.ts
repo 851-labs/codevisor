@@ -15,24 +15,35 @@ import { enabledBody, apiTool, type CodevisorApiToolSpec } from "./codevisor-api
 
 export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
-    "mcps.machine_state",
-    "Read an MCP's effective availability and per-machine disable on the current server machine.",
+    "plugins.machine_state",
+    "Read a plugin's effective availability and per-machine disable on the current server machine.",
     "GET",
     "/v1/mcps/:id/machine-state"
   ),
   apiTool(
-    "mcps.machine_set_enabled",
-    "Set MCP availability on this server machine, matching the native Settings switch. Off preserves the shared definition. On clears this machine's override and enables the definition if needed.",
+    "plugins.machine_set_enabled",
+    "Set plugin availability on this server machine, matching the native Settings switch. Off preserves the shared definition. On clears this machine's override and enables the definition if needed.",
     "PUT",
     "/v1/mcps/:id/machine-state",
     { body: SetMachineMcpEnabledRequest }
   ),
-  apiTool("mcps.list", "List MCP servers managed by Codevisor.", "GET", "/v1/mcps"),
-  apiTool("mcps.create", "Add an MCP server to Codevisor.", "POST", "/v1/mcps", {
-    body: CreateMcpServerRequest
-  }),
   apiTool(
-    "mcps.detect_auth",
+    "plugins.list",
+    "List installed plugins (MCP servers): catalog plugins and custom ones, with their capabilities.",
+    "GET",
+    "/v1/mcps"
+  ),
+  apiTool(
+    "plugins.add_custom",
+    "Add a custom plugin from an MCP server URL or command. For plugins in the catalog, use plugins.request_setup so the user can install and sign in from the chat.",
+    "POST",
+    "/v1/mcps",
+    {
+      body: CreateMcpServerRequest
+    }
+  ),
+  apiTool(
+    "plugins.detect_auth",
     "Probe an HTTP MCP server's authentication requirements.",
     "POST",
     "/v1/mcps/detect-auth",
@@ -40,37 +51,27 @@ export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       body: DetectMcpAuthRequest
     }
   ),
-  apiTool(
-    "mcps.tools",
-    "List tools exposed by one managed MCP server.",
-    "GET",
-    "/v1/mcps/:id/tools"
-  ),
-  apiTool("mcps.update", "Update or enable a managed MCP server.", "PATCH", "/v1/mcps/:id", {
+  apiTool("plugins.tools", "List the tools one plugin exposes.", "GET", "/v1/mcps/:id/tools"),
+  apiTool("plugins.update", "Update or enable a plugin.", "PATCH", "/v1/mcps/:id", {
     body: UpdateMcpServerRequest
   }),
-  apiTool("mcps.delete", "Remove a managed MCP server.", "DELETE", "/v1/mcps/:id"),
+  apiTool("plugins.remove", "Remove a plugin.", "DELETE", "/v1/mcps/:id"),
+  apiTool("plugins.connect", "Connect and refresh one plugin.", "POST", "/v1/mcps/:id/connect"),
   apiTool(
-    "mcps.connect",
-    "Connect and refresh one managed MCP server.",
-    "POST",
-    "/v1/mcps/:id/connect"
-  ),
-  apiTool(
-    "mcps.oauth_start",
-    "Start OAuth authorization for a managed MCP server.",
+    "plugins.oauth_start",
+    "Start OAuth sign-in for a plugin that is a hosted MCP server.",
     "POST",
     "/v1/mcps/:id/oauth-start"
   ),
   apiTool(
-    "mcps.oauth_disconnect",
-    "Disconnect OAuth from a managed MCP server.",
+    "plugins.oauth_disconnect",
+    "Sign a hosted MCP plugin out of OAuth.",
     "POST",
     "/v1/mcps/:id/oauth-disconnect"
   ),
   apiTool(
-    "mcps.project_enable",
-    "Override an MCP server's enabled state for a project.",
+    "plugins.project_enable",
+    "Override a plugin's enabled state for a project.",
     "PATCH",
     "/v1/projects/:id/mcps/:mcpId",
     {
@@ -78,8 +79,8 @@ export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     }
   ),
   apiTool(
-    "mcps.session_enable",
-    "Override an MCP server's enabled state for a session.",
+    "plugins.session_enable",
+    "Override a plugin's enabled state for a session.",
     "PATCH",
     "/v1/sessions/:id/mcps/:mcpId",
     {

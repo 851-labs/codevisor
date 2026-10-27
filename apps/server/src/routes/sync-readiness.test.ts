@@ -5,28 +5,16 @@ import { describe, expect, it } from "vitest"
 import { waitFor } from "../changes-test-support.js"
 import { defaultServerConfig } from "../server-config.js"
 import { makeEventFanout, type CodevisorServerConfig } from "../server-context.js"
-import {
-  jsonRequest,
-  makeServices,
-  pluginsStub,
-  pluginSummary,
-  run,
-  startWithApp
-} from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import {
   authStatus,
   fakeHarnessAuth,
   fakeHarnessLifecycle,
-  fakePlugins,
   rowWithId,
   syncRows
 } from "./harness-auth-test-support.js"
 import { field, itemsOf } from "./response-test-support.js"
-import {
-  refreshHarnessReadiness,
-  refreshMcpReadiness,
-  refreshPluginReadiness
-} from "./sync-readiness.js"
+import { refreshHarnessReadiness, refreshMcpReadiness } from "./sync-readiness.js"
 
 const machine = (id: string): CodevisorServerConfig =>
   defaultServerConfig({ bootId: "test-boot", id })
@@ -289,60 +277,6 @@ describe("/v1/sync/harness-readiness", () => {
       state: "ready",
       installed: true,
       authRequired: false
-    })
-  })
-})
-
-describe("/v1/sync/plugin-readiness", () => {
-  it("publishes this machine's plugin readiness", async () => {
-    const { services } = await makeServices("server-plr")
-    const withPlugins = { ...services, plugins: pluginsStub([]) }
-    const server = await startWithApp(withPlugins, undefined, { id: "server-plr" })
-
-    await refreshPluginReadiness(
-      withPlugins,
-      machine("server-plr"),
-      await run(makeEventFanout),
-      withPlugins.plugins,
-      []
-    )
-
-    const document = (await jsonRequest(server, "/v1/sync/plugin-readiness")).body
-    const entries = itemsOf(field(document, "entries"))
-    expect(entries).toHaveLength(1)
-    expect(field(entries[0], "key")).toBe("server-plr")
-    expect(syncRows(document, "plugins")).toEqual([{ id: "owner.example", state: "machineOnly" }])
-  })
-
-  it("reports an enabled plugin whose process died as blocked", async () => {
-    const { services } = await makeServices("server-plr-failed")
-    const plugins = fakePlugins({
-      ...pluginsStub([]),
-      list: async () => ({
-        plugins: [
-          { ...pluginSummary, state: "failed" as const },
-          { ...pluginSummary, id: "owner.off", enabled: false, state: "failed" as const }
-        ]
-      })
-    })
-
-    await refreshPluginReadiness(
-      services,
-      machine("server-plr-failed"),
-      await run(makeEventFanout),
-      plugins,
-      []
-    )
-    const entries = await run(services.db.getSyncEntries("plugin-readiness"))
-    expect(entries[0]?.value).toEqual({
-      plugins: [
-        {
-          id: "owner.example",
-          state: "blocked",
-          reason: "The plugin stopped running on this machine. Restart it to try again."
-        },
-        { id: "owner.off", state: "machineOnly" }
-      ]
     })
   })
 })

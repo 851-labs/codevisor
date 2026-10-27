@@ -2,6 +2,7 @@ import {
   TurnStopKind,
   type AttachmentRef,
   type EventEnvelope,
+  type PromptAttribution,
   type PromptQueueItem,
   type TranscriptItem
 } from "@codevisor/api"
@@ -10,6 +11,7 @@ import { Schema } from "effect"
 
 import { AttachmentRefs, withChatItemId } from "./event-payloads.js"
 import { parseJsonColumn } from "./json-column.js"
+import { parseAttribution } from "./prompt-attribution.js"
 import {
   promptQueueRows,
   type ChatItemRow,
@@ -62,6 +64,7 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
     ...(attachments === undefined ? {} : { attachments }),
     ...(row.origin === "event" ? { origin: "event" as const } : {}),
+    ...attributionField(parseAttribution(row.attribution)),
     revision: row.revision
   }
 }
@@ -76,7 +79,8 @@ export const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
     updatedAt: row.updated_at,
     ...(attachments === undefined ? {} : { attachments }),
     ...(row.client_id == null ? {} : { clientId: row.client_id }),
-    ...(row.origin === "system" ? { origin: "system" as const } : {})
+    ...(row.origin === "system" ? { origin: "system" as const } : {}),
+    ...attributionField(parseAttribution(row.attribution))
   }
 }
 
@@ -114,3 +118,8 @@ export const sessionEventFromRow = (row: SessionEventRow): EventEnvelope => ({
 const promptQueueListSql = `select * from prompt_queue_items
        where session_id = ? and state = ?
        order by position asc, created_at asc, rowid asc`
+
+const attributionField = (
+  attribution: PromptAttribution | undefined
+): { readonly attribution?: PromptAttribution } =>
+  attribution === undefined ? {} : { attribution }

@@ -32,11 +32,21 @@ export interface CodevisorExecutionCall {
   readonly error?: string
 }
 
+export interface CodevisorExecutionApp {
+  readonly viewId: string
+  readonly machineId: string
+  readonly serverId: string
+  readonly serverName: string
+  readonly toolName: string
+  readonly resourceUri: string
+}
+
 export interface CodevisorExecutionState {
   readonly state: "running" | "completed" | "failed"
   readonly description?: string
   readonly status?: string
   readonly calls: ReadonlyArray<CodevisorExecutionCall>
+  readonly apps?: ReadonlyArray<CodevisorExecutionApp>
   readonly error?: string
   readonly icon?: CodevisorExecutionIcon
   readonly activeIcon?: CodevisorExecutionIcon
@@ -52,6 +62,7 @@ export const CODEVISOR_EXECUTION_MAX_STATUS = 120
 export const CODEVISOR_EXECUTION_MAX_ERROR = 200
 export const CODEVISOR_EXECUTION_MAX_CALLS = 50
 export const CODEVISOR_EXECUTION_MAX_FILES = 12
+export const CODEVISOR_EXECUTION_MAX_APPS = 8
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize)

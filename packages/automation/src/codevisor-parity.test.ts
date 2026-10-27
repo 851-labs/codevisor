@@ -13,9 +13,26 @@ describe("Codevisor native action parity", () => {
       "GET /v1/clients/:clientId/socket",
       "DELETE /v1/workspaces/:workspaceId/panes/:paneId",
       "POST /v1/workspaces/:id/archive",
-      "POST /v1/plugins/:pluginId/tools/:toolName",
-      "GET /v1/plugins/:pluginId/icon",
-      "GET /v1/plugins/:pluginId/panes/:paneType/icon"
+      "GET /v1/plugins/search",
+      "GET /v1/plugins/describe/:plugin",
+      "POST /v1/plugins/setup-requests",
+      "GET /v1/plugins/events/types",
+      "GET /v1/plugins/events/subscriptions",
+      "POST /v1/plugins/events/subscriptions",
+      "DELETE /v1/plugins/events/subscriptions/:id",
+      "POST /v1/plugins/events/preview",
+      "GET /v1/plugins/events/:id",
+      "GET /v1/plugins/catalog",
+      "GET /v1/plugins/catalog/:id",
+      "POST /v1/plugins/catalog/:id/install",
+      "GET /v1/plugins/:serverId/accounts",
+      "POST /v1/plugins/:serverId/accounts",
+      "PUT /v1/plugins/:serverId/accounts/:accountId",
+      "DELETE /v1/plugins/:serverId/accounts/:accountId",
+      "POST /v1/plugins/:serverId/accounts/oauth/start",
+      "GET /v1/plugins/:serverId/accounts/:accountId/ingress",
+      "POST /v1/plugins/apps/:viewId/token",
+      "POST /v1/plugins/:serverId/panes/:paneType/token"
     ])
     const covered = new Set(CODEVISOR_API_TOOLS.map((tool) => `${tool.method} ${tool.path}`))
     const actions = endpoints.filter(
@@ -60,7 +77,7 @@ describe("Codevisor native action parity", () => {
       paneId: "p",
       session: { projectId: "project", harnessId: "codex" }
     })
-    await provider.invoke(context, "mcps.machine_set_enabled", {
+    await provider.invoke(context, "plugins.machine_set_enabled", {
       mcpId: "codevisor",
       enabled: false
     })
@@ -101,7 +118,7 @@ describe("Codevisor native action parity", () => {
       async () => "token"
     )
     const context = { sessionId: "caller", projectId: "project" }
-    const page = { page: "settings", section: "mcps" }
+    const page = { page: "settings", section: "plugins" }
     const layout = {
       workspaceId: "workspace",
       action: {

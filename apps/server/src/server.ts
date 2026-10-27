@@ -26,6 +26,7 @@ import {
   makeMemoryPausedTurnStore,
   observePausedTurns
 } from "./paused-turns.js"
+import { startPlugins } from "./plugins/plugin-server-boot.js"
 import { makeRestartCoordinator } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeFileRestartSnapshotStore, makeMemoryRestartSnapshotStore } from "./restart-snapshot.js"
@@ -36,6 +37,7 @@ import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
 import { fleetTurnSender } from "./routes/fleet-turns.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
+import { makeSessionEventOutbox } from "./routes/session-event-outbox.js"
 import { makeSessionEventRouter } from "./routes/session-event-router.js"
 import {
   drainPromptQueue,
@@ -161,13 +163,9 @@ export const makeCodevisorServerApp = (
   )
   const fleet = fleetLinkFor(services)
   const sendFleetTurns = fleetTurnSender(services, config.id, fleet)
-  const sessionEvents = makeSessionEventRouter(
-    services,
-    fanout,
-    routeState,
-    config.id,
-    sendFleetTurns
-  )
+  const outbox = makeSessionEventOutbox(services, fanout, routeState, config.id)
+  const sessionEvents = makeSessionEventRouter(services, outbox, sendFleetTurns)
+  const stopPlugins = startPlugins(services, fanout, routeState, outbox, config)
   routeState.drainSessionQueue = (sessionId) =>
     drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
   void sendFleetTurns().catch(swallowError)
@@ -225,11 +223,6 @@ export const makeCodevisorServerApp = (
       () => undefined
     )
     authSyncRefresh.request()
-  })
-  const unsubscribePlugins = services.plugins?.subscribe((event) => {
-    void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
-      swallowError
-    )
   })
   const unsubscribeGate = services.lifecycle?.onGateReleased((harnessId) => {
     const catalogName = services.agents.catalog.find(
@@ -314,6 +307,7 @@ export const makeCodevisorServerApp = (
       unsubscribeBotConversations()
       unsubscribeUsageHoldRelease()
       unsubscribeSessionEvents()
+      stopPlugins()
       unsubscribeJobEvents?.()
       unsubscribeSessionActivity?.()
       activeSessionIds.clear()
@@ -324,12 +318,10 @@ export const makeCodevisorServerApp = (
       services.sharedAccounts?.gateway.close()
       authSyncRefresh.close()
       unsubscribeLifecycle?.()
-      unsubscribePlugins?.()
       unsubscribeGate?.()
       unsubscribeRotations?.()
       unsubscribeMcpChanges?.()
       webSocketServer.close()
-      services.plugins?.close()
       void services.mcp?.close().catch(swallowError)
       await sharedAccountReconcile
       await closeTerminalTitles()

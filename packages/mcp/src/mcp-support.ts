@@ -6,14 +6,20 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import type { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import type { Implementation, Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Implementation, ServerCapabilities, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Effect } from "effect"
+
+import type { PluginChannel } from "./mcp-plugin-channel.js"
+import type { PluginSkill } from "./mcp-plugin-skill-manifest.js"
 
 export interface UpstreamConnection {
   readonly client: Client
   readonly close: () => Promise<void>
   tools: ReadonlyArray<Tool>
+  skills: ReadonlyArray<PluginSkill>
+  readonly channel: PluginChannel
   readonly serverInfo?: Implementation
+  readonly capabilities: ServerCapabilities
 }
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)

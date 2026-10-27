@@ -6,6 +6,7 @@ import {
   parseHubToMachineRelayHeader,
   type CloudMachinePresence,
   type CloudTunnelInfo,
+  type MachineToHub,
   type RelayFrameHeader,
   type WireRelayEnvelope
 } from "@codevisor/api"
@@ -224,6 +225,9 @@ export class CloudMachineConnection {
       case "peer-devices":
         this.options.onPeerDevices?.(frame.devices)
         return
+      case "inbox-item":
+        this.options.onInboxItem?.(frame)
+        return
     }
   }
 
@@ -306,10 +310,19 @@ export class CloudMachineConnection {
   }
 
   sendTunnelAddr(tunnel: CloudTunnelInfo): boolean {
+    return this.#sendControl({ t: "tunnel-addr", tunnel })
+  }
+
+  ackInboxItems(itemIds: ReadonlyArray<string>): boolean {
+    if (itemIds.length === 0) return true
+    return this.#sendControl({ t: "inbox-ack", itemIds: [...itemIds] })
+  }
+
+  #sendControl(frame: MachineToHub): boolean {
     const socket = this.#socket
     if (socket === undefined || this.#state !== "connected") return false
     try {
-      socket.send(encodeCloudFrame({ t: "tunnel-addr", tunnel }))
+      socket.send(encodeCloudFrame(frame))
       return true
     } catch {
       return false

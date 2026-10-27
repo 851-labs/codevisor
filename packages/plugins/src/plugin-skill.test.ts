@@ -63,7 +63,7 @@ describe("pluginAuthoringSkill", () => {
     expect(spec.path.endsWith(join(PLUGIN_AUTHORING_SKILL_DIRECTORY, "SKILL.md"))).toBe(true)
   })
 
-  it("throws a typed error when the packaged skill is missing", () => {
+  it("throws when the packaged skill is missing", () => {
     const root = makeRoot()
     expect(() =>
       pluginAuthoringSkill({
