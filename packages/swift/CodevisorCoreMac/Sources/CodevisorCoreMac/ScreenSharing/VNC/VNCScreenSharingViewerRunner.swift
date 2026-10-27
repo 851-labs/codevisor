@@ -16,7 +16,7 @@ extension ScreenSharingViewerBackend {
     let runner = VNCScreenSharingViewerRunner(displayId: displayId, open: open, makeSurface: makeSurface)
     return Self(
       connect: { _ in await runner.connect() }, discover: { try await runner.discover() }, claim: {},
-      setVisible: { _ in }, retire: {})
+      setVisible: { _ in }, retire: {}, liveStreams: { .finished })
   }
 }
 

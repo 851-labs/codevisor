@@ -40,6 +40,7 @@ public struct ScreenSharingViewer {
     case displaySelected(String)
     case dynamicResolutionToggled
     case hiddenGraceExpired
+    case liveStreamFound
     case interactionModeChanged(InteractionMode)
     case lease(ControlLease.Action)
     case paneAppeared
@@ -51,7 +52,7 @@ public struct ScreenSharingViewer {
     case systemKeyTapped(ScreenSharingSystemKey)
   }
 
-  enum CancelID { case connection, controlEvents, hiddenGrace }
+  enum CancelID { case connection, controlEvents, hiddenGrace, rejoin }
 
   static let hiddenGrace: Duration = .seconds(300)
 
@@ -110,23 +111,20 @@ public struct ScreenSharingViewer {
 
       case .connectionEvent(.ended(let message)):
         dropEndpoint(&state)
-        fail(&state, message)
-        return .cancel(id: CancelID.controlEvents)
+        return .merge(.cancel(id: CancelID.controlEvents), fail(&state, message))
 
       case .discoveryResponse(.success(let displays)):
         guard state.phase == .loading else { return .none }
         state.displays = displays
         let preferred = state.preferences.preferredDisplayId
         guard let chosen = state.displays.first(where: { $0.id == preferred }) ?? state.displays.first else {
-          fail(&state, "No displays are available on this Mac.")
-          return .none
+          return fail(&state, "No displays are available on this Mac.")
         }
         return select(chosen.id, &state)
 
       case .discoveryResponse(.failure(let error)):
         guard state.phase == .loading, !isTaskCancellation(error) else { return .none }
-        fail(&state, serverErrorMessage(error))
-        return .none
+        return fail(&state, serverErrorMessage(error))
 
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
@@ -135,6 +133,10 @@ public struct ScreenSharingViewer {
       case .hiddenGraceExpired:
         guard !state.visible else { return .none }
         return disconnect(&state)
+
+      case .liveStreamFound:
+        guard state.phase == .failed else { return .none }
+        return refresh(&state)
 
       case .dynamicResolutionToggled:
         state.dynamicResolution.toggle()
@@ -212,6 +214,7 @@ public struct ScreenSharingViewer {
     state.message = nil
     return .merge(
       .cancel(id: CancelID.controlEvents),
+      .cancel(id: CancelID.rejoin),
       .run { [backend] send in
         await send(.discoveryResponse(Result { try await backend.discover() }))
       }
@@ -231,7 +234,8 @@ public struct ScreenSharingViewer {
     dropEndpoint(&state)
     state.phase = .suspended
     return .merge(
-      .cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents), .cancel(id: CancelID.hiddenGrace))
+      .cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents), .cancel(id: CancelID.hiddenGrace),
+      .cancel(id: CancelID.rejoin))
   }
 
   static func keepsConnection(_ phase: Phase) -> Bool {
@@ -258,8 +262,20 @@ public struct ScreenSharingViewer {
     state.hostNotice = nil
   }
 
-  private func fail(_ state: inout State, _ message: String) {
+  private func fail(_ state: inout State, _ message: String) -> Effect<Action> {
     state.phase = .failed
     state.message = message
+    return rejoinWhenLive()
+  }
+
+  private func rejoinWhenLive() -> Effect<Action> {
+    .run { [backend, clock] send in
+      for await _ in await backend.liveStreams() {
+        try await clock.sleep(for: ScreenSharingTransientRetry.delay)
+        await send(.liveStreamFound)
+        return
+      }
+    }
+    .cancellable(id: CancelID.rejoin, cancelInFlight: true)
   }
 }

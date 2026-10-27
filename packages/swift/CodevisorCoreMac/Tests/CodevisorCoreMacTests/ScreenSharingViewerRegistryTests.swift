@@ -179,6 +179,30 @@ struct ScreenSharingViewerRegistryTests {
     expectNoDifference(tab.log.events, [.opened(endpoint), .elsewhere(endpoint), .opened(endpoint)])
   }
 
+  @Test func aPaneWaitingOnAMachineHearsWhenItsDesktopStartsStreaming() async {
+    let watcher = Pane(registry, role: .watcher)
+    let otherMachine = Pane(registry, machine: "laptop")
+    let window = Pane(registry, role: .window)
+    let heard = ScreenSharingEventLog()
+    let listener = Task { @MainActor in
+      for await _ in watcher.share.liveStreams() { heard.append(.ready) }
+    }
+    otherMachine.show()
+    await otherMachine.runner.connected.wait()
+    otherMachine.runner.send(.opened(endpoint()))
+    await awaitObserved { otherMachine.log.events.count == 1 }
+    window.show()
+    await window.runner.connected.wait()
+    #expect(heard.events.isEmpty)
+
+    window.runner.send(.opened(endpoint()))
+
+    await awaitObserved { heard.events.count == 1 }
+    listener.cancel()
+    var late = watcher.share.liveStreams().makeAsyncIterator()
+    #expect(await late.next() != nil)
+  }
+
   @Test func aHostEndEndsEveryPanesStream() async {
     let first = Pane(registry)
     let second = Pane(registry)

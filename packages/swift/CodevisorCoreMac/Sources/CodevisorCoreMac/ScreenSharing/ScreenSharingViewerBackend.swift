@@ -23,6 +23,7 @@ public struct ScreenSharingViewerBackend: Sendable {
   public var claim: @Sendable () async -> Void = {}
   public var setVisible: @Sendable (_ visible: Bool) async -> Void = { _ in }
   public var retire: @Sendable () async -> Void = {}
+  public var liveStreams: @Sendable () async -> AsyncStream<Void> = { .finished }
 }
 
 public struct ScreenSharingTunnelMedia: Sendable {
@@ -87,14 +88,14 @@ extension ScreenSharingViewerBackend {
     guard let machineId else {
       return Self(
         connect: { display in await runner.connect(display) }, discover: { try await runner.discover() }, claim: {},
-        setVisible: { _ in }, retire: {})
+        setVisible: { _ in }, retire: {}, liveStreams: { .finished })
     }
     let share = ScreenSharingViewerRegistry.shared.share(
       machineId: machineId, paneId: paneId, role: role, runner: runner)
     return Self(
       connect: { display in await share.connect(display) }, discover: { try await runner.discover() },
       claim: { await share.claim() }, setVisible: { visible in await share.setVisible(visible) },
-      retire: { await share.retire() })
+      retire: { await share.retire() }, liveStreams: { await share.liveStreams() })
   }
 }
 

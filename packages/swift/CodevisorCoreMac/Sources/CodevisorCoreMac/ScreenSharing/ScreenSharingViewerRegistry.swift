@@ -67,6 +67,7 @@ final class ScreenSharingViewerRegistry {
     func setVisible(_ visible: Bool) { registry.setVisible(self, visible) }
     func claim() { registry.claim(self) }
     func retire() { registry.retire(paneId: paneId) }
+    func liveStreams() -> AsyncStream<Void> { registry.liveStreams(machineId: machineId) }
   }
 
   private final class Entry {
@@ -85,11 +86,31 @@ final class ScreenSharingViewerRegistry {
   private var entries: [Key: Entry] = [:]
   private var draining: [Key: Task<Void, Never>] = [:]
   private var claims = 0
+  private var liveWatchers: [String: [UUID: AsyncStream<Void>.Continuation]] = [:]
 
   func share(
     machineId: String, paneId: UUID, role: ScreenSharingViewerRole = .tab, runner: any ScreenSharingViewerConnecting
   ) -> Share {
     Share(registry: self, machineId: machineId, paneId: paneId, role: role, runner: runner)
+  }
+
+  fileprivate func liveStreams(machineId: String) -> AsyncStream<Void> {
+    let (stream, continuation) = AsyncStream<Void>.makeStream()
+    let id = UUID()
+    liveWatchers[machineId, default: [:]][id] = continuation
+    continuation.onTermination = { [weak self] _ in
+      Task { @MainActor in self?.liveWatchers[machineId]?[id] = nil }
+    }
+    if isLive(machineId) { continuation.yield() }
+    return stream
+  }
+
+  private func isLive(_ machineId: String) -> Bool {
+    entries.contains { $0.key.machineId == machineId && $0.value.endpoint != nil }
+  }
+
+  private func announceLive(_ machineId: String) {
+    for continuation in liveWatchers[machineId, default: [:]].values { continuation.yield() }
   }
 
   fileprivate func subscribe(_ share: Share, to key: Key) -> AsyncStream<ScreenSharingViewerEvent> {
@@ -241,6 +262,7 @@ final class ScreenSharingViewerRegistry {
       entry.notice = nil
       entry.active?.emit(event)
       for subscriber in entry.subscribers where subscriber !== entry.active { subscriber.emit(.elsewhere(endpoint)) }
+      announceLive(entry.sponsor.machineId)
     case .ready:
       entry.ready = true
       entry.active?.emit(event)

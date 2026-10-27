@@ -415,6 +415,8 @@ final class FakeBackend {
   let shareCalls = LockIsolated<[String]>([])
   private(set) var endpoints: [ScreenSharingViewerEndpoint] = []
   private var continuation: AsyncStream<ScreenSharingViewerEvent>.Continuation?
+  private var isLive = false
+  private var liveContinuation: AsyncStream<Void>.Continuation?
 
   init(displays: [ServerScreenSharingDisplay]) { self.displays = displays }
 
@@ -438,7 +440,15 @@ final class FakeBackend {
       },
       claim: { [shareCalls] in shareCalls.withValue { $0.append("claim") } },
       setVisible: { [shareCalls] visible in shareCalls.withValue { $0.append(visible ? "visible" : "hidden") } },
-      retire: { [shareCalls] in shareCalls.withValue { $0.append("retire") } })
+      retire: { [shareCalls] in shareCalls.withValue { $0.append("retire") } },
+      liveStreams: { [self] in
+        await MainActor.run {
+          let (stream, continuation) = AsyncStream<Void>.makeStream()
+          liveContinuation = continuation
+          if isLive { continuation.yield() }
+          return stream
+        }
+      })
   }
 
   @discardableResult
@@ -454,6 +464,11 @@ final class FakeBackend {
 
   func emit(_ event: ScreenSharingViewerEvent) { continuation?.yield(event) }
   func end() { continuation?.finish() }
+
+  func streamElsewhere() {
+    isLive = true
+    liveContinuation?.yield()
+  }
 
   private struct Failure: LocalizedError {
     let message: String
