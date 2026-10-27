@@ -39,7 +39,6 @@ struct BotConversationRows: View {
         Divider()
         Button("Delete Bot…", systemImage: "trash", role: .destructive) { onDelete(bot) }
       }
-      .help(bot.rootPath)
       .id(bot.id)
   }
 }
