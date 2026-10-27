@@ -271,3 +271,33 @@ export const machineInvite = sqliteTable(
   },
   (table) => [index("machine_invite_user_expires").on(table.userId, table.expiresAt)]
 )
+
+export const inbox = sqliteTable(
+  "inbox",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    plugin: text("plugin").notNull(),
+    accountId: text("account_id").notNull(),
+    ingress: text("ingress").notNull(),
+    createdAt: integer("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("inbox_user_target").on(table.userId, table.plugin, table.accountId, table.ingress)
+  ]
+)
+
+export const oauthFlow = sqliteTable(
+  "oauth_flow",
+  {
+    flowId: text("flow_id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    deviceId: text("device_id").notNull(),
+    expiresAt: integer("expires_at").notNull()
+  },
+  (table) => [index("oauth_flow_user_expires").on(table.userId, table.expiresAt)]
+)

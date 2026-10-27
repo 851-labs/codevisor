@@ -24,12 +24,22 @@ One Cloudflare Worker contains the whole plane:
   addressing. Even `channelType` is encrypted.
 - **Pages** — three tiny server-rendered pages (`/`, `/login`, `/device`,
   `/auth/handoff`); everything else is native-app UI.
-- **Plugin registry** — a cron trigger (every 15 min, or `POST
-/plugins/refresh`) searches GitHub for public repos tagged
-  `codevisor-plugin`, validates each repo's `codevisor-plugin.json` (manifest
-  schema + the id must be namespaced under the repo owner), and serves the
-  KV-backed index at `GET /plugins/index.json` / `GET /plugins/:id.json`.
-  Rejected repos are published with diagnostics so authors can fix them.
+- **Plugin inboxes** — machines provision public webhook URLs
+  (`POST /api/machine/inboxes`, served at `/hooks/i/:id` or `<HOOKS_BASE_URL>/i/:id`).
+  Each request is sealed to every subscribed device's public key and kept in
+  that device's queue in `UserHub` until it acks (7-day TTL). The same queue
+  relays OAuth redirects (`GET /oauth/callback`) to the machine that started
+  the sign-in.
+- **Plugin catalog** — `GET /v0/servers` (MCP Registry list format, optional
+  `?search=`) and `GET /v0/servers/:name/versions/latest` serve the
+  first-party `plugins/*/server.json` files and `plugins/popular.json`,
+  bundled at build time (`bun run build:catalog`), with age ratings from D1
+  merged into `_meta["dev.codevisor/plugin"].ageRating`.
+- **Plugin moderation** — `GET /plugins/policy` publishes blocks and age
+  ratings straight from D1; signed-in users record consent, block
+  publishers, and file reports under `/api/plugins/*`. Reports are stored
+  first, then posted to `PLUGIN_REPORT_SLACK_WEBHOOK`; a cron trigger (every
+  15 min) retries any that failed.
 
 ## Development
 
@@ -71,12 +81,10 @@ account:
 cd apps/cloud
 wrangler d1 create codevisor-cloud        # put the id in wrangler.jsonc
 wrangler d1 migrations apply codevisor-cloud --remote
-wrangler kv namespace create PLUGIN_INDEX # put the id in wrangler.jsonc
 wrangler secret put BETTER_AUTH_SECRET    # openssl rand -base64 32
 wrangler secret put GITHUB_CLIENT_ID      # your own GitHub OAuth app
 wrangler secret put GITHUB_CLIENT_SECRET  # callback: <your-url>/api/auth/callback/github
-wrangler secret put GITHUB_TOKEN          # plugin-index poller (public repo read)
-wrangler secret put PLUGINS_REFRESH_TOKEN # optional: enables POST /plugins/refresh
+wrangler secret put PLUGIN_REPORT_SLACK_WEBHOOK # optional: plugin report notifications
 wrangler deploy
 ```
 

@@ -64,6 +64,13 @@
       "when": 1792790228491,
       "tag": "0008_machine_invite_ephemeral",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793155186178,
+      "tag": "0009_inboxes",
+      "breakpoints": true
     }
   ]
 }

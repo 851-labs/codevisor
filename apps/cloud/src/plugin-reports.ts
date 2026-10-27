@@ -1,4 +1,13 @@
 import type { CloudEnv } from "./env.js"
+import { pluginPageUrl, pluginPublisher } from "./plugin-ids.js"
+
+export const notifyPluginReports = async (env: CloudEnv): Promise<void> => {
+  const webhook = reportWebhook(env)
+  if (webhook === undefined) return
+
+  const pending = await pendingReports(env.DB)
+  for (const report of pending) await deliverReport(env, webhook, report)
+}
 
 interface PendingReport {
   id: string
@@ -8,41 +17,55 @@ interface PendingReport {
   details: string
 }
 
-export const notifyPluginReports = async (env: CloudEnv): Promise<void> => {
-  if (!env.PLUGIN_REPORT_SLACK_WEBHOOK) return
+const slackTimeoutMs = 5000
+const pendingBatchSize = 20
+
+const reportWebhook = (env: CloudEnv): URL | undefined => {
+  if (!env.PLUGIN_REPORT_SLACK_WEBHOOK) return undefined
+
   const url = new URL(env.PLUGIN_REPORT_SLACK_WEBHOOK)
-  if (url.origin !== "https://hooks.slack.com" || !url.pathname.startsWith("/services/")) {
-    throw new Error("Invalid plugin report webhook configuration")
-  }
-  const pending = await pendingReports(env)
-  for (const report of pending.results) {
-    try {
-      const response = await (env.PLUGIN_REPORT_FETCH ?? fetch)(url.toString(), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: AbortSignal.timeout(5000),
-        body: JSON.stringify({
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "plain_text",
-                text: `Plugin report: ${report.plugin_name}\nPlugin: ${report.plugin_id}\nReason: ${report.reason}\n${report.details}\nReport: ${report.id}`
-              }
-            }
-          ]
-        })
-      })
-      if (!response.ok) continue
-      await env.DB.prepare(reportSql.markNotified).bind(Date.now(), report.id).run()
-    } catch {}
-  }
+  if (!isSlackWebhook(url)) throw new Error("Invalid plugin report webhook configuration")
+  return url
 }
 
-const pendingReports = (env: CloudEnv) => env.DB.prepare(reportSql.pending).all<PendingReport>()
+const isSlackWebhook = (url: URL): boolean =>
+  url.origin === "https://hooks.slack.com" && url.pathname.startsWith("/services/")
+
+const deliverReport = async (env: CloudEnv, webhook: URL, report: PendingReport) => {
+  const delivered = await postToSlack(env, webhook, report).catch(() => false)
+  if (!delivered) return
+
+  await env.DB.prepare(reportSql.markNotified).bind(Date.now(), report.id).run()
+}
+
+const postToSlack = async (env: CloudEnv, webhook: URL, report: PendingReport) => {
+  const response = await (env.PLUGIN_REPORT_FETCH ?? fetch)(webhook.toString(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(slackTimeoutMs),
+    body: JSON.stringify({
+      blocks: [{ type: "section", text: { type: "plain_text", text: reportText(report) } }]
+    })
+  })
+  return response.ok
+}
+
+const reportText = (report: PendingReport): string =>
+  [
+    `Plugin report: ${report.plugin_name}`,
+    `Plugin: ${report.plugin_id}`,
+    `Publisher: ${pluginPublisher(report.plugin_id)}`,
+    `Page: ${pluginPageUrl(report.plugin_id)}`,
+    `Reason: ${report.reason}`,
+    report.details,
+    `Report: ${report.id}`
+  ].join("\n")
+
+const pendingReports = async (db: D1Database): Promise<PendingReport[]> =>
+  (await db.prepare(reportSql.pending).bind(pendingBatchSize).all<PendingReport>()).results
 
 const reportSql = {
   pending:
-    "SELECT id, plugin_id, plugin_name, reason, details FROM plugin_reports WHERE notified_at IS NULL ORDER BY created_at LIMIT 20",
+    "SELECT id, plugin_id, plugin_name, reason, details FROM plugin_reports WHERE notified_at IS NULL ORDER BY created_at LIMIT ?",
   markNotified: "UPDATE plugin_reports SET notified_at = ? WHERE id = ?"
 }

@@ -40,7 +40,7 @@ export const authed = (token: string): Record<string, string> => ({
   authorization: `Bearer ${token}`
 })
 
-const hubStub = async (token: string): Promise<DurableObjectStub<UserHub>> => {
+export const hubStub = async (token: string): Promise<DurableObjectStub<UserHub>> => {
   const session = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
   const body = await readJson(session, SessionUserBody)
   if (body === null) throw new Error("no session user for hub stub")

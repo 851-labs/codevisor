@@ -10,12 +10,10 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID" | "RELAY_MA
   RESEND_API_KEY?: string
   AUTH_EMAIL_FROM?: string
   AUTH_EMAIL_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
-  GITHUB_TOKEN?: string
-  PLUGINS_REFRESH_TOKEN?: string
   PLUGIN_REPORT_SLACK_WEBHOOK?: string
   PLUGIN_REPORT_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
-  GITHUB_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   DEV_AUTH?: string
+  HOOKS_BASE_URL?: string
   RESUME_GRACE_MS?: string
   RELAY_MAP?: string
   RELAY_AUTHORIZE_TOKEN?: string

@@ -46,7 +46,30 @@ export const HUB_MIGRATIONS: readonly string[] = [
   `ALTER TABLE machines ADD COLUMN display_name TEXT;
    ALTER TABLE machines ADD COLUMN icon TEXT;
    ALTER TABLE machines ADD COLUMN reported_icon TEXT`,
-  `ALTER TABLE machine_origins ADD COLUMN ephemeral_provider TEXT`
+  `ALTER TABLE machine_origins ADD COLUMN ephemeral_provider TEXT`,
+  `CREATE TABLE inbox_subscribers (
+     inbox_id TEXT NOT NULL,
+     device_id TEXT NOT NULL,
+     PRIMARY KEY (inbox_id, device_id)
+   );
+   CREATE INDEX inbox_subscribers_device ON inbox_subscribers (device_id);
+   CREATE TABLE inbox_rates (
+     inbox_id TEXT PRIMARY KEY,
+     window_start INTEGER NOT NULL,
+     count INTEGER NOT NULL
+   );
+   CREATE TABLE device_queue (
+     seq INTEGER PRIMARY KEY,
+     device_id TEXT NOT NULL,
+     item_id TEXT NOT NULL,
+     inbox_id TEXT,
+     frame TEXT NOT NULL,
+     bytes INTEGER NOT NULL,
+     expires_at INTEGER NOT NULL
+   );
+   CREATE UNIQUE INDEX device_queue_item ON device_queue (device_id, item_id);
+   CREATE INDEX device_queue_inbox ON device_queue (inbox_id, device_id);
+   CREATE INDEX device_queue_expiry ON device_queue (expires_at)`
 ]
 
 export interface MachineRow extends Record<string, SqlStorageValue> {

@@ -9,7 +9,7 @@
     "enabled": true
   },
   "build": {
-    "command": "bun run build:css",
+    "command": "bun run build:generated",
     "watch_dir": "src/pages"
   },
   "rules": [{ "type": "Text", "globs": ["**/*.css"], "fallthrough": true }],
@@ -17,12 +17,6 @@
     "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }]
   },
   "triggers": { "crons": ["*/15 * * * *"] },
-  "kv_namespaces": [
-    {
-      "binding": "PLUGIN_INDEX",
-      "id": "85743d49d3a241f99548cd6ad3179f3e"
-    }
-  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserHub"] }],
   "d1_databases": [
     {

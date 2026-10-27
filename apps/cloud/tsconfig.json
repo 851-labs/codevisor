@@ -23,6 +23,7 @@
   },
   "include": [
     "src",
+    "scripts",
     "test",
     "worker-configuration.d.ts",
     "drizzle.config.ts",

@@ -8,14 +8,17 @@ import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { isMachineIcon, type MachineUpdate } from "./hub-registry.js"
 import { relayMap } from "./hub-tunnel.js"
+import { inboxIngress } from "./inbox-ingress.js"
+import { inboxRoutes } from "./inbox-routes.js"
 import { userHub } from "./location-hint.js"
 import { machineInviteRoutes } from "./machine-invites.js"
+import { oauthRelayRoutes } from "./oauth-relay.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
 import { loginPage } from "./pages/login.js"
 import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
+import { pluginCatalog } from "./plugin-catalog.js"
 import { pluginModeration } from "./plugin-moderation.js"
-import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { notifyPluginReports } from "./plugin-reports.js"
 import {
   forgetTunnelEndpoints,
@@ -44,9 +47,13 @@ const connectionUserId = async (env: CloudEnv, request: Request): Promise<string
 
 const app = new Hono<HonoEnv>()
 app.route("/", pluginModeration)
+app.route("/", pluginCatalog)
 app.route("/", credentialRoutes)
 app.route("/", relayRoutes)
 app.route("/", machineInviteRoutes)
+app.route("/", inboxRoutes)
+app.route("/", inboxIngress)
+app.route("/", oauthRelayRoutes)
 
 app.get("/.well-known/codevisor", (c) =>
   c.json({
@@ -246,44 +253,6 @@ app.get("/api/machine/credential", async (c) => {
   return verified.valid ? c.json({ ok: true }) : c.json({ error: "invalid credential" }, 401)
 })
 
-const PLUGIN_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=900"
-
-const pluginJson = (body: string): Response =>
-  new Response(body, {
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": PLUGIN_CACHE_CONTROL
-    }
-  })
-
-app.get("/plugins/index.json", async (c) => {
-  const raw = await c.env.PLUGIN_INDEX.get(PLUGIN_INDEX_KEY)
-  return pluginJson(raw ?? JSON.stringify({ generatedAt: null, entries: [], rejected: [] }))
-})
-
-app.get("/plugins/:file{[a-z0-9-]+\\.[a-z0-9-]+\\.json}", async (c) => {
-  const id = c.req.param("file").slice(0, -".json".length)
-  const raw = await c.env.PLUGIN_INDEX.get(pluginEntryKey(id))
-  if (raw === null) return c.json({ error: "unknown plugin" }, 404)
-  return pluginJson(raw)
-})
-
-app.post("/plugins/refresh", async (c) => {
-  if (!isDevAuthEnabled(c.env)) {
-    const expected = c.env.PLUGINS_REFRESH_TOKEN
-    if (expected === undefined) return c.notFound()
-    if (c.req.header("authorization") !== `Bearer ${expected}`) {
-      return c.json({ error: "unauthorized" }, 401)
-    }
-  }
-  try {
-    return c.json(await refreshPluginIndex(c.env))
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return c.json({ error: message }, 502)
-  }
-})
-
 app.get("/connect", async (c) => {
   if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") {
     return c.json({ error: "websocket upgrade required" }, 426)
@@ -328,7 +297,6 @@ app.get("/auth/handoff", nativeHandoff)
 const worker = {
   fetch: app.fetch,
   scheduled: (_controller: ScheduledController, env: CloudEnv, ctx: ExecutionContext): void => {
-    ctx.waitUntil(refreshPluginIndex(env))
     ctx.waitUntil(notifyPluginReports(env))
   }
 } satisfies ExportedHandler<CloudEnv>

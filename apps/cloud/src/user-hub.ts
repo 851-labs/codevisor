@@ -1,5 +1,4 @@
 import {
-  type AppHello,
   CLOUD_PROTOCOL_VERSION,
   type CredentialCommand,
   decodeAppToHub,
@@ -17,6 +16,12 @@ import { DurableObject } from "cloudflare:workers"
 import { deleteHubAccount, storeCredentialCommand } from "./credential-storage.js"
 import type { CloudEnv } from "./env.js"
 import { deliverToMachine, deliverToPeer, type HubDeliveryPort } from "./hub-delivery.js"
+import {
+  HubInbox,
+  type IngestOutcome,
+  type OAuthDelivery,
+  type SubscribeOutcome
+} from "./hub-inbox.js"
 import { HubMetrics } from "./hub-metrics.js"
 import { abandonSession, announceExpired, type HubNoticesPort } from "./hub-notices.js"
 import {
@@ -30,6 +35,15 @@ import {
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { hubTunnel } from "./hub-tunnel-events.js"
+import {
+  adoptAppIdentity,
+  answerPing,
+  completeHello,
+  resumeFields,
+  welcomeHead,
+  type WelcomeMachines
+} from "./hub-welcome.js"
+import { inboxAckItemIds, type InboxRequest, type OAuthCallbackItem } from "./inbox-frames.js"
 import { admitRelayMessage } from "./relay-admission.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
@@ -47,35 +61,21 @@ const MAX_FRAME_LENGTH = 64 * 1024
 const APP_UPDATE_HINT = "update Codevisor to use this relay"
 const MACHINE_UPDATE_HINT = "update the Codevisor server to use this relay"
 
-type AppHelloFrame = typeof AppHello.Type
 type MachineHelloFrame = typeof MachineHello.Type
 type TunnelWelcome = ReturnType<typeof hubTunnel.appHello>
 type MachineTunnelScope = ReturnType<typeof hubTunnel.machineScope>
-
-interface WelcomeHead {
-  t: "welcome"
-  protocol: number
-  connectionId: string
-}
-
-interface WelcomeMachines {
-  machines?: CloudMachinePresence[]
-}
-
-interface WelcomeResume {
-  resume: string
-  resumed?: true
-}
 
 export class UserHub extends DurableObject<CloudEnv> {
   #accountDeleted = false
   readonly #resume: ResumeSessions
   readonly #net: HubSockets
+  readonly #inbox: HubInbox
   readonly #metrics = new HubMetrics()
 
   constructor(ctx: DurableObjectState, env: CloudEnv) {
     super(ctx, env)
     this.#net = new HubSockets(ctx)
+    this.#inbox = new HubInbox(ctx.storage.sql, this.#net)
     this.#resume = new ResumeSessions(
       ctx.storage.sql,
       Number(env.RESUME_GRACE_MS ?? "") || DEFAULT_RESUME_GRACE_MS
@@ -110,6 +110,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   removeMachine(deviceId: string): boolean {
+    this.#inbox.forgetDevice(deviceId)
     return removeHubMachine(this.#notices(), deviceId, CLOSE_REVOKED)
   }
 
@@ -127,6 +128,33 @@ export class UserHub extends DurableObject<CloudEnv> {
 
   credentialCommand(id: string, owner: string, command: CredentialCommand) {
     return storeCredentialCommand(this.ctx.storage, this.#accountDeleted, id, owner, command)
+  }
+
+  subscribeInbox(inboxId: string, deviceId: string): SubscribeOutcome {
+    return this.#inbox.subscribe(inboxId, deviceId)
+  }
+
+  unsubscribeInbox(inboxId: string, deviceId: string): void {
+    this.#inbox.unsubscribe(inboxId, deviceId)
+  }
+
+  revokeInbox(inboxId: string): void {
+    this.#inbox.revoke(inboxId)
+  }
+
+  async ingestInbox(inboxId: string, request: InboxRequest): Promise<IngestOutcome> {
+    const outcome = this.#inbox.ingest(inboxId, request, Date.now())
+    await this.#scheduleInboxSweep()
+    return outcome
+  }
+
+  async deliverOAuthCallback(
+    deviceId: string,
+    callback: OAuthCallbackItem
+  ): Promise<OAuthDelivery> {
+    const delivery = this.#inbox.deliverOAuth(deviceId, callback, Date.now())
+    await this.#scheduleInboxSweep()
+    return delivery
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -218,6 +246,8 @@ export class UserHub extends DurableObject<CloudEnv> {
     attachment: SocketAttachment,
     message: string
   ): Promise<void> {
+    const acked = inboxAckItemIds(message)
+    if (acked !== undefined) return this.#inbox.acknowledge(attachment.deviceId!, acked)
     const frame = decodeMachineToHub(message)
     if (frame.t === "ping") return answerPing(socket)
     if (frame.t === "tunnel-addr") {
@@ -237,8 +267,9 @@ export class UserHub extends DurableObject<CloudEnv> {
     }
 
     hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
-    if (resumed) return this.#replayBuffers(socket, attachment.connectionId)
-    this.#announceFreshMachine(deviceId, attachment)
+    if (resumed) this.#replayBuffers(socket, attachment.connectionId)
+    else this.#announceFreshMachine(deviceId, attachment)
+    this.#inbox.flush(socket, deviceId)
   }
 
   #rejectsProtocol(socket: WebSocket, protocol: number, updateHint: string): boolean {
@@ -437,8 +468,14 @@ export class UserHub extends DurableObject<CloudEnv> {
       this.#metrics.resumeExpired(session)
       abandonSession(this.#notices(), session)
     }
-    const next = this.#resume.nextExpiry()
+    this.#inbox.sweep(now)
+    const next = earliest(this.#resume.nextExpiry(), this.#inbox.nextExpiry())
     if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(next, now + 250))
+  }
+
+  async #scheduleInboxSweep(): Promise<void> {
+    const next = this.#inbox.nextExpiry()
+    if (next !== undefined) await this.#ensureAlarm(next)
   }
 
   async #ensureAlarm(deadline: number): Promise<void> {
@@ -449,29 +486,10 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 }
 
-const welcomeHead = (connectionId: string): WelcomeHead => ({
-  t: "welcome",
-  protocol: CLOUD_PROTOCOL_VERSION,
-  connectionId
-})
-
-const resumeFields = (token: string, resumed: boolean): WelcomeResume => ({
-  resume: token,
-  ...(resumed ? { resumed: true as const } : {})
-})
-
-const answerPing = (socket: WebSocket): void => {
-  socket.send(encodeCloudFrame({ t: "pong" }))
-}
-
-const adoptAppIdentity = (attachment: SocketAttachment, frame: AppHelloFrame): void => {
-  attachment.deviceId = frame.device.deviceId
-  attachment.publicKey = frame.device.publicKey
-}
-
-const completeHello = (socket: WebSocket, attachment: SocketAttachment): void => {
-  attachment.helloDone = true
-  socket.serializeAttachment(attachment)
+const earliest = (first: number | undefined, second: number | undefined): number | undefined => {
+  if (first === undefined) return second
+  if (second === undefined) return first
+  return Math.min(first, second)
 }
 
 const markMachineSeenSql = "UPDATE machines SET last_seen_at = ? WHERE device_id = ?"
