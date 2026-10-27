@@ -52,6 +52,7 @@ struct SidebarWorkspaceHeader: View {
         Label("Archive", systemImage: "archivebox")
           .labelStyle(.titleAndIcon)
       }
+      .shortcut(.archiveWorkspace)
     }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(.isHeader)
