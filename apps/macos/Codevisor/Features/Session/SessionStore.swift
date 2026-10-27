@@ -67,10 +67,23 @@ final class SessionStore {
   @ObservationIgnored var navigationRevision = 0
   var newCenterTabRequest: NewCenterTabRequest?
   var inspectorOpenRequest: WorkspaceInspectorOpenRequest?
-  @ObservationIgnored var workspaceStepHandler: ((Int) -> Void)?
+  @ObservationIgnored private(set) var workspaceStepHandler: ((Int) -> Void)?
+  @ObservationIgnored private var workspaceStepOwner: UUID?
   @ObservationIgnored var isSidebarVisible = true
   @ObservationIgnored var closedPanes: [UUID: [ClosedPaneRecord]] = [:]
   static let maxClosedPanesPerWorkspace = 20
+
+  func setWorkspaceStepHandler(owner: UUID, _ handler: @escaping (Int) -> Void) {
+    workspaceStepOwner = owner
+    workspaceStepHandler = handler
+  }
+
+  func clearWorkspaceStepHandler(owner: UUID) {
+    guard workspaceStepOwner == owner else { return }
+
+    workspaceStepOwner = nil
+    workspaceStepHandler = nil
+  }
 
   func recordClosedPane(_ record: ClosedPaneRecord, workspaceId: UUID) {
     var stack = closedPanes[workspaceId, default: []]

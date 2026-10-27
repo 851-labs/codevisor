@@ -64,7 +64,7 @@ extension SessionContainerView {
   }
 
   func stepTab(offset: Int) {
-    if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
+    if store.isSidebarVisible || isSinglePane, let stepWorkspace = store.workspaceStepHandler {
       stepWorkspace(offset)
       return
     }
@@ -109,7 +109,7 @@ extension SessionContainerView {
 
   private static func isWorkspaceStep(_ command: PaneGroupCommand) -> Bool {
     switch command {
-    case .previousWorkspace, .nextWorkspace: true
+    case .previousWorkspace, .nextWorkspace, .previousTab, .nextTab: true
     default: false
     }
   }

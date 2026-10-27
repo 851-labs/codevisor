@@ -8,6 +8,7 @@ struct BotListSidebar: View {
   var publishesSceneActions = true
   @State private var botEditor: BotEditorTarget?
   @State private var deletingBot: Bot?
+  @State private var stepHandlerOwner = UUID()
 
   private var conversations: [BotConversation] {
     BotConversationList(environment: environment, store: store).conversations()
@@ -29,10 +30,10 @@ struct BotListSidebar: View {
       .focusedSceneValue(\.botListActions, publishesSceneActions ? actions : nil)
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
-        store?.workspaceStepHandler = { offset in step(offset) }
+        store?.setWorkspaceStepHandler(owner: stepHandlerOwner) { offset in step(offset) }
       }
       .onDisappear {
-        if publishesSceneActions { store?.workspaceStepHandler = nil }
+        if publishesSceneActions { store?.clearWorkspaceStepHandler(owner: stepHandlerOwner) }
       }
   }
 

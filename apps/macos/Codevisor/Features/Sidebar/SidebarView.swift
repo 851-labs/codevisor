@@ -12,6 +12,7 @@ struct SidebarView: View {
   var publishesSceneActions = true
 
   @State private var showingAddProject = false
+  @State private var stepHandlerOwner = UUID()
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
@@ -174,11 +175,11 @@ struct SidebarView: View {
     sidebarAlertsView
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
-        store?.workspaceStepHandler = { offset in stepWorkspace(offset) }
+        store?.setWorkspaceStepHandler(owner: stepHandlerOwner) { offset in stepWorkspace(offset) }
       }
       .onDisappear {
         if publishesSceneActions {
-          store?.workspaceStepHandler = nil
+          store?.clearWorkspaceStepHandler(owner: stepHandlerOwner)
         }
       }
       .task(id: gitLookupRefreshKey) {
