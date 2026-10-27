@@ -22,14 +22,34 @@
       }
 
       private var shape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-          topLeadingRadius: topCornerRadius,
-          bottomLeadingRadius: bottomCornerRadius,
-          bottomTrailingRadius: bottomCornerRadius,
-          topTrailingRadius: topCornerRadius,
-          style: .continuous
-        )
+        Autocomplete.rowShape(topCornerRadius: topCornerRadius, bottomCornerRadius: bottomCornerRadius)
       }
+    }
+
+    struct ListClip: View {
+      let horizontalInset: CGFloat
+      let topCornerRadius: CGFloat
+      let bottomCornerRadius: CGFloat
+
+      var body: some View {
+        ZStack {
+          Rectangle()
+            .padding(.top, topCornerRadius)
+            .padding(.bottom, bottomCornerRadius)
+          Autocomplete.rowShape(topCornerRadius: topCornerRadius, bottomCornerRadius: bottomCornerRadius)
+            .padding(.horizontal, horizontalInset)
+        }
+      }
+    }
+
+    static func rowShape(topCornerRadius: CGFloat, bottomCornerRadius: CGFloat) -> UnevenRoundedRectangle {
+      UnevenRoundedRectangle(
+        topLeadingRadius: topCornerRadius,
+        bottomLeadingRadius: bottomCornerRadius,
+        bottomTrailingRadius: bottomCornerRadius,
+        topTrailingRadius: topCornerRadius,
+        style: .continuous
+      )
     }
 
     struct NativeMenuSelectionMaterial: NSViewRepresentable {

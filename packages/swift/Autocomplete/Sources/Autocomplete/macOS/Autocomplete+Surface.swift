@@ -200,10 +200,15 @@
                 lastID: snapshot.footerItems.isEmpty ? snapshot.resultItems.last?.id : nil, height: height)
             }
             .padding(.horizontal, metrics.listHorizontalInset)
-            .padding(.vertical, metrics.listVerticalInset)
             .background { ScrollConfigurator(usesMiniScroller: style.usesMiniScroller, onResolve: host.linkResults) }
           }
           .scrollBounceBehavior(.basedOnSize)
+          .mask {
+            ListClip(
+              horizontalInset: metrics.listHorizontalInset, topCornerRadius: metrics.itemCornerRadius,
+              bottomCornerRadius: snapshot.footerItems.isEmpty ? metrics.bottomCornerRadius : metrics.itemCornerRadius)
+          }
+          .padding(.vertical, metrics.listVerticalInset)
           .onScrollPhaseChange { _, phase in isScrolling = phase != .idle }
           .onChange(of: host.highlight.highlighted) { _, target in
             guard let target, host.highlight.source == .keyboard else { return }
