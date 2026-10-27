@@ -11,7 +11,9 @@ public struct SandboxTarget: Equatable, Hashable, Sendable, Identifiable {
   public var id: String { profileId }
   public var pickerTitle: String { "New \(profileName)" }
 
-  public var systemImage: String {
+  public var systemImage: String { Self.systemImage(forProvider: providerId) }
+
+  public static func systemImage(forProvider providerId: String) -> String {
     switch providerId {
     case "tart", "tart-orchard": "desktopcomputer"
     default: "shippingbox"

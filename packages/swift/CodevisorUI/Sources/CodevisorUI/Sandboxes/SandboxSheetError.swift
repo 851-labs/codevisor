@@ -5,8 +5,9 @@ struct SandboxSheetError: View {
 
   var body: some View {
     if let message {
-      Label(message, systemImage: "exclamationmark.triangle.fill")
-        .foregroundStyle(.red)
+      Section {
+        Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+      }
     }
   }
 }

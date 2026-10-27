@@ -11,10 +11,9 @@ public struct SandboxProfileDraft: Equatable, Identifiable, Sendable {
   public var id: String { profileId ?? "new-\(provider.id)" }
   public var isNew: Bool { profileId == nil }
 
-  public var canSave: Bool {
-    !trimmedName.isEmpty && (!provider.usesAccounts || accountId != nil)
-      && fields.isFilled(provider.profileFields)
-  }
+  public var isFilled: Bool { !trimmedName.isEmpty && fields.isFilled(provider.profileFields) }
+
+  public var canSave: Bool { isFilled && (!provider.usesAccounts || accountId != nil) }
 
   public init(provider: ServerSandboxProviderInfo, profile: ServerSandboxProfile? = nil, accountId: String? = nil) {
     profileId = profile?.id

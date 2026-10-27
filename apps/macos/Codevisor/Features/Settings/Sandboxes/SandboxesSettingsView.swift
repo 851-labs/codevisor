@@ -1,12 +1,13 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct SandboxesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var model = SandboxSettingsModel()
+  @State private var isAdding = false
   @State private var accountDraft: SandboxAccountDraft?
   @State private var profileDraft: SandboxProfileDraft?
-  @State private var removingAccount: ServerSandboxAccount?
   @State private var removingProfile: ServerSandboxProfile?
 
   private var client: any CodevisorServerClienting {
@@ -15,54 +16,58 @@ struct SandboxesSettingsView: View {
 
   var body: some View {
     Form {
-      SandboxProfilesSection(
-        model: model,
-        onAdd: { profileDraft = SandboxProfileDraft(provider: $0, accountId: model.accounts(for: $0.id).first?.id) },
-        onEdit: { profile in
-          guard let provider = model.provider(profile.provider) else { return }
-          profileDraft = SandboxProfileDraft(provider: provider, profile: profile)
-        },
-        onDelete: { removingProfile = $0 }
-      )
-      SandboxAccountsSection(
-        model: model,
-        onAdd: { accountDraft = SandboxAccountDraft(provider: $0) },
-        onEdit: { account in
-          guard let provider = model.provider(account.provider) else { return }
-          accountDraft = SandboxAccountDraft(provider: provider, account: account)
-        },
-        onDelete: { removingAccount = $0 }
-      )
+      Section {
+        if model.profiles.isEmpty, model.hasLoaded {
+          Text("No Profiles")
+            .foregroundStyle(.secondary)
+        }
+        ForEach(model.profiles) { profile in
+          SandboxProfileRow(
+            profile: profile,
+            isUntested: model.provider(profile.provider)?.tested == false,
+            hasAccount: model.account(of: profile) != nil,
+            onEdit: { edit(profile) },
+            onEditAccount: { editAccount(of: profile) },
+            onDelete: { removingProfile = profile }
+          )
+        }
+      } header: {
+        Text("Profiles")
+      } footer: {
+        SettingsListActions {
+          Button {
+            isAdding = true
+          } label: {
+            Label("Add Profile…", systemImage: "plus")
+          }
+          .disabled(!model.hasLoaded)
+        }
+      }
     }
     .formStyle(.grouped)
-    .sheet(item: $accountDraft) { SandboxAccountSheet(draft: $0, model: model, client: client) }
-    .sheet(item: $profileDraft) { SandboxProfileSheet(draft: $0, model: model, client: client) }
-    .confirmationDialog(
-      "Remove “\(removingAccount.map(model.title(of:)) ?? "")”?",
-      isPresented: presence($removingAccount), titleVisibility: .visible, presenting: removingAccount
-    ) { account in
-      Button("Remove Account", role: .destructive) { Task { await model.delete(account, using: client) } }
-      Button("Cancel", role: .cancel) {}
-    } message: { _ in
-      Text("Codevisor forgets these credentials on all your machines.")
-    }
+    .sheet(isPresented: $isAdding) { SandboxAddProfileSheet(model: model, client: client) }
+    .sheet(item: $accountDraft) { SandboxAccountEditSheet(draft: $0, model: model, client: client) }
+    .sheet(item: $profileDraft) { SandboxProfileEditSheet(draft: $0, model: model, client: client) }
     .confirmationDialog(
       "Delete “\(removingProfile?.name ?? "")”?",
       isPresented: presence($removingProfile), titleVisibility: .visible, presenting: removingProfile
     ) { profile in
-      Button("Delete Profile", role: .destructive) { Task { await model.delete(profile, using: client) } }
+      Button("Delete", role: .destructive) { Task { await model.delete(profile, using: client) } }
       Button("Cancel", role: .cancel) {}
-    } message: { _ in
-      Text("Sandboxes already started from it keep running until their workspace is archived.")
     }
-    .alert("Couldn't change sandboxes", isPresented: errorShown) {
+    .alert("Couldn’t change sandboxes", isPresented: errorShown) {
       Button("OK", role: .cancel) {}
     } message: {
       Text(model.errorMessage ?? "")
     }
-    .task(id: environment.machines.allMachines.map(\.id)) {
+    .task(id: reloadKey) {
       await model.load(from: client, machines: reachableMachines)
     }
+  }
+
+  private var reloadKey: [String] {
+    let revisions = SandboxSettingsModel.syncNamespaces.map { environment.configSync.revisionsByNamespace[$0] ?? 0 }
+    return environment.machines.allMachines.map(\.id) + revisions.map(String.init)
   }
 
   private var reachableMachines: [SandboxMachine] {
@@ -71,9 +76,19 @@ struct SandboxesSettingsView: View {
       .map { SandboxMachine(name: $0.name, client: environment.machines.client(for: $0.id)) }
   }
 
+  private func edit(_ profile: ServerSandboxProfile) {
+    guard let provider = model.provider(profile.provider) else { return }
+    profileDraft = SandboxProfileDraft(provider: provider, profile: profile)
+  }
+
+  private func editAccount(of profile: ServerSandboxProfile) {
+    guard let account = model.account(of: profile), let provider = model.provider(account.provider) else { return }
+    accountDraft = SandboxAccountDraft(provider: provider, account: account)
+  }
+
   private var errorShown: Binding<Bool> {
     Binding(
-      get: { model.errorMessage != nil && accountDraft == nil && profileDraft == nil },
+      get: { model.errorMessage != nil && !isAdding && accountDraft == nil && profileDraft == nil },
       set: { if !$0 { model.errorMessage = nil } }
     )
   }

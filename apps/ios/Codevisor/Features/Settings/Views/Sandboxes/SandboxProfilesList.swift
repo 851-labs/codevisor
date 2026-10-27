@@ -1,35 +1,39 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct SandboxProfilesList: View {
   let model: SandboxSettingsModel
-  let onAdd: (ServerSandboxProviderInfo) -> Void
   let onEdit: (ServerSandboxProfile) -> Void
+  let onEditAccount: (ServerSandboxProfile) -> Void
   let onDelete: (ServerSandboxProfile) -> Void
 
   var body: some View {
-    Section {
+    Section("Profiles") {
+      if model.profiles.isEmpty, model.hasLoaded {
+        Text("No Profiles")
+          .foregroundStyle(.secondary)
+      }
       ForEach(model.profiles) { profile in
         Button {
           onEdit(profile)
         } label: {
-          SandboxListRow(
-            systemImage: SandboxTarget(profile: profile, provider: model.provider(profile.provider)).systemImage,
-            title: profile.name,
-            subtitle: model.summary(of: profile),
-            isUntested: model.provider(profile.provider)?.tested == false
-          )
+          SandboxProfileListRow(profile: profile, isUntested: model.provider(profile.provider)?.tested == false)
         }
         .buttonStyle(.plain)
-        .swipeActions {
-          Button("Delete", role: .destructive) { onDelete(profile) }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+          Button("Delete", systemImage: "trash", role: .destructive) { onDelete(profile) }
+            .labelStyle(.iconOnly)
+        }
+        .contextMenu {
+          Button("Edit", systemImage: "pencil") { onEdit(profile) }
+          if model.account(of: profile) != nil {
+            Button("Edit Account", systemImage: "person.crop.circle") { onEditAccount(profile) }
+          }
+          Divider()
+          Button("Delete", systemImage: "trash", role: .destructive) { onDelete(profile) }
         }
       }
-      SandboxAddMenu(title: "Add Profile", providers: model.providers.providers, onPick: onAdd)
-    } header: {
-      Text("Profiles")
-    } footer: {
-      Text("Each profile shows up in the machine picker as “New” and its name. Use one profile per image.")
     }
   }
 }

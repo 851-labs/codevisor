@@ -5,6 +5,8 @@ import Observation
 @MainActor
 @Observable
 public final class SandboxSettingsModel {
+  public static let syncNamespaces = ["sandbox-accounts", "sandbox-profiles"]
+
   public private(set) var providers = ServerSandboxProviders()
   public private(set) var accounts: [ServerSandboxAccount] = []
   public private(set) var profiles: [ServerSandboxProfile] = []
@@ -14,7 +16,20 @@ public final class SandboxSettingsModel {
 
   public init() {}
 
-  public var accountProviders: [ServerSandboxProviderInfo] { providers.providers.filter(\.usesAccounts) }
+  public var setUpChoices: [SandboxSetupChoice] {
+    let signedIn = accounts.compactMap { account in
+      provider(account.provider).map { SandboxSetupChoice(provider: $0, account: account) }
+    }
+    return signedIn + providers.providers.filter { !$0.usesAccounts }.map { SandboxSetupChoice(provider: $0) }
+  }
+
+  public var signInChoices: [SandboxSetupChoice] {
+    providers.providers.filter(\.usesAccounts).map { SandboxSetupChoice(provider: $0) }
+  }
+
+  public var providerChoices: [SandboxSetupChoice] {
+    providers.providers.map { SandboxSetupChoice(provider: $0) }
+  }
 
   public func load(from client: any CodevisorServerClienting, machines: [SandboxMachine]) async {
     providers = (try? await client.sandboxProviders()) ?? providers
@@ -39,24 +54,32 @@ public final class SandboxSettingsModel {
     account.title(providerName: provider(account.provider)?.displayName ?? account.provider)
   }
 
-  public func summary(of profile: ServerSandboxProfile) -> String {
-    let provider = provider(profile.provider)
-    let account = profile.accountId.flatMap { id in accounts.first { $0.id == id } }
-    let place = profile.machineId(for: provider).map(hostName) ?? account.map(title(of:))
-    let image = profile.values["image"]?.text ?? profile.values["template"]?.text
-    return [place ?? provider?.displayName ?? profile.provider, image].compactMap(\.self).joined(separator: " · ")
+  public func choice(id: String) -> SandboxSetupChoice? {
+    (setUpChoices + providerChoices).first { $0.id == id }
+  }
+
+  public func title(of choice: SandboxSetupChoice) -> String {
+    choice.account.map(title(of:)) ?? choice.provider.displayName
+  }
+
+  public func account(of profile: ServerSandboxProfile) -> ServerSandboxAccount? {
+    profile.accountId.flatMap { id in accounts.first { $0.id == id } }
+  }
+
+  public func create(
+    _ draft: SandboxNewProfileDraft, using client: any CodevisorServerClienting
+  ) async -> SandboxNewProfileDraft.Creation {
+    var draft = draft
+    if let accountDraft = draft.account {
+      guard let account = await savedAccount(accountDraft, using: client) else { return .failed(draft) }
+      draft.account = nil
+      draft.profile.accountId = account.id
+    }
+    return await save(draft.profile, using: client) ? .created : .failed(draft)
   }
 
   public func save(_ draft: SandboxAccountDraft, using client: any CodevisorServerClienting) async -> Bool {
-    await attempt {
-      let saved =
-        if let id = draft.accountId {
-          try await client.updateSandboxAccount(id: id, draft.request)
-        } else {
-          try await client.createSandboxAccount(draft.request)
-        }
-      accounts = Self.replacing(saved, in: accounts)
-    }
+    await savedAccount(draft, using: client) != nil
   }
 
   public func save(_ draft: SandboxProfileDraft, using client: any CodevisorServerClienting) async -> Bool {
@@ -85,8 +108,21 @@ public final class SandboxSettingsModel {
     }
   }
 
-  private func hostName(_ serverId: String) -> String {
-    hosts.first { $0.serverId == serverId }?.name ?? "Another Mac"
+  private func savedAccount(
+    _ draft: SandboxAccountDraft, using client: any CodevisorServerClienting
+  ) async -> ServerSandboxAccount? {
+    var saved: ServerSandboxAccount?
+    _ = await attempt {
+      let account =
+        if let id = draft.accountId {
+          try await client.updateSandboxAccount(id: id, draft.request)
+        } else {
+          try await client.createSandboxAccount(draft.request)
+        }
+      accounts = Self.replacing(account, in: accounts)
+      saved = account
+    }
+    return saved
   }
 
   private func attempt(_ work: () async throws -> Void) async -> Bool {

@@ -1,7 +1,9 @@
 import SwiftUI
 
-struct SandboxUntestedBadge: View {
-  var body: some View {
+public struct SandboxUntestedBadge: View {
+  public init() {}
+
+  public var body: some View {
     Text("Untested")
       .font(.caption2.weight(.medium))
       .foregroundStyle(.orange)
