@@ -101,6 +101,7 @@ extension NewChatView {
             sandboxChoice(choice)
           }
         }
+        .labelsHidden()
       }
       machinePickerFooter
     }

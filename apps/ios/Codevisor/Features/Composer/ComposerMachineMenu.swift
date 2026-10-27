@@ -56,7 +56,7 @@ struct ComposerMachineMenu: UIViewRepresentable {
     button.menu = UIMenu(children: [
       managementMenu,
       UIMenu(options: [.displayInline, .singleSelection], children: choices),
-      UIMenu(title: "Sandboxes", options: .displayInline, children: sandboxActions),
+      UIMenu(options: .displayInline, children: sandboxActions),
     ])
   }
 
