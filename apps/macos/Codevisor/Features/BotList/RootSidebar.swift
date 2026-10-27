@@ -8,9 +8,14 @@ struct RootSidebar: View {
   var isDrawer = false
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
+  @State private var revealRequest = SidebarRevealRequest()
 
   var body: some View {
     content
+      .modifier(
+        PaletteDestinationsPublisher(
+          selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
+      )
       .toolbar {
         if botsEnabled && !isDrawer {
           ToolbarItem { SidebarModePicker(mode: $storedMode) }
@@ -23,7 +28,9 @@ struct RootSidebar: View {
     if SidebarMode.active(storedMode, botsEnabled: botsEnabled) == .chat {
       BotListSidebar(selection: $selection, store: store, publishesSceneActions: publishesSceneActions)
     } else {
-      SidebarView(selection: $selection, store: store, publishesSceneActions: publishesSceneActions)
+      SidebarView(
+        selection: $selection, store: store, publishesSceneActions: publishesSceneActions,
+        revealRequest: revealRequest)
     }
   }
 }

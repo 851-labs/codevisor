@@ -4,6 +4,8 @@ import SwiftUI
 
 struct CommandPaletteCatalog {
   var sidebar: SidebarActions?
+  var botList: BotListActions?
+  var destinations: PaletteDestinations?
   var composerFocus: NewChatComposerFocus?
   var layout: WorkspaceLayoutActions?
   var file: FilePaneModel?
@@ -27,14 +29,14 @@ struct CommandPaletteCatalog {
         CommandPaletteSection(title: "Browser", items: browserCommands),
         CommandPaletteSection(title: "Tabs & Splits", items: layoutCommands),
         CommandPaletteSection(title: "Developer", items: developerCommands),
-        CommandPaletteSection(
-          id: "workspaces", title: "Go to Workspace", items: sidebar?.paletteDestinations?() ?? []),
+        CommandPaletteSection(id: "bots", title: "Go to Bot", items: destinations?.bots() ?? []),
+        CommandPaletteSection(id: "workspaces", title: "Go to Workspace", items: destinations?.workspaces() ?? []),
       ]
     return sections.filter { !$0.items.isEmpty }
   }
 
   private var generalCommands: [CommandPaletteItem] {
-    guard let sidebar else { return [] }
+    guard let sidebar else { return botListCommands }
 
     return [
       CommandPaletteItem(.newChat, systemImage: "square.and.pencil") {
@@ -43,6 +45,17 @@ struct CommandPaletteCatalog {
       },
       CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: sidebar.newProject),
     ]
+  }
+
+  private var botListCommands: [CommandPaletteItem] {
+    guard let botList else { return [] }
+
+    let newProject = CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: botList.newProject)
+    guard let newBot = botList.newBot else { return [newProject] }
+    let newBotItem = CommandPaletteItem(
+      id: "newBot", title: "New Bot", icon: .symbol("square.and.pencil"),
+      shortcut: ShortcutCatalog.combo(for: .newChat)?.keyboardShortcut, perform: newBot)
+    return [newBotItem, newProject]
   }
 
   private var activeWorkspaceSections: [CommandPaletteSection] {

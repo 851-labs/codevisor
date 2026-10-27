@@ -12,7 +12,6 @@ struct SidebarActions: Equatable {
   let newProject: @MainActor () -> Void
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
   var archiveWorkspace: (@MainActor () -> Void)? = nil
-  var paletteDestinations: (@MainActor () -> [CommandPaletteItem])? = nil
   var activeWorkspace: (@MainActor () -> ActiveWorkspaceActions?)? = nil
 
   static func == (lhs: SidebarActions, rhs: SidebarActions) -> Bool { true }
@@ -67,6 +66,7 @@ struct FileCommands: Commands {
     CommandGroup(replacing: .newItem) {
       if botActions != nil {
         NewBotMenuItem()
+        NewProjectMenuItem()
 
         Divider()
 
@@ -150,9 +150,14 @@ private struct ArchiveWorkspaceMenuItem: View {
 
 private struct NewProjectMenuItem: View {
   @FocusedValue(\.sidebarActions) private var actions
+  @FocusedValue(\.botListActions) private var botActions
+
+  private var newProject: (@MainActor () -> Void)? {
+    actions?.newProject ?? botActions?.newProject
+  }
 
   var body: some View {
-    ShortcutButton(.newProject) { actions?.newProject() }
-      .disabled(actions == nil)
+    ShortcutButton(.newProject) { newProject?() }
+      .disabled(newProject == nil)
   }
 }

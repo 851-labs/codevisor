@@ -4,15 +4,14 @@ import Foundation
 import SwiftUI
 
 extension SidebarView {
-  var botHomeWorkspaceIDs: Set<UUID> {
-    botsEnabled ? Set(environment.bots.bots.map(\.workspaceId)) : []
+  var workspaceListing: SidebarWorkspaceListing {
+    SidebarWorkspaceListing(
+      environment: environment, botsEnabled: botsEnabled, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs,
+      machineOrder: machineOrder, projectOrder: projectOrder)
   }
 
   var listedSidebarItems: [WorkspaceSidebarItem] {
-    let botHomes = botHomeWorkspaceIDs
-    return environment.navigationStore.workspaceEntries.sidebar.filter {
-      environment.machines.machine(for: $0.serverId) != nil && !botHomes.contains($0.id)
-    }
+    workspaceListing.listedItems
   }
 
   func routingSession(for item: WorkspaceSidebarItem) -> ChatSession? {
@@ -24,22 +23,7 @@ extension SidebarView {
   }
 
   var workspaceGroups: [SidebarWorkspaceGroup] {
-    workspaceGroups(listedSidebarItems)
-  }
-
-  func workspaceGroups(_ items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
-    SidebarWorkspaceGroup.groups(
-      items, grouping: grouping, pinnedIDs: pinnedWorkspaceIDs, projects: list.projects,
-      defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder, machineKey: machineKey,
-      projectOrder: projectOrder
-    ) { serverId in
-      let machine = environment.machines.machine(for: serverId)
-      return SidebarWorkspaceGroup.Heading(
-        title: machineName(forServer: serverId) ?? "Unknown Machine",
-        systemImage: machine?.icon.systemImage ?? "questionmark.circle",
-        newChatTarget: machine.map { NewChatTarget(machine: $0.id) }
-      )
-    }
+    workspaceListing.groups
   }
 
   func isPinned(_ workspace: Workspace) -> Bool {

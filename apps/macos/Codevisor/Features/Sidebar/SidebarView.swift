@@ -56,7 +56,7 @@ struct SidebarView: View {
         }
       }
       .contextMenu { sidebarOptionsMenu }
-      .onChange(of: selectedWorkspaceID) { _, current in
+      .onChange(of: selectedWorkspaceID, initial: true) { _, current in
         if let current, revealRequest.take(current) { proxy.scrollTo(current) }
       }
     }
@@ -208,7 +208,6 @@ struct SidebarView: View {
       newProject: { startAddProject() },
       stepWorkspace: { stepWorkspace($0) },
       archiveWorkspace: { archiveSelectedWorkspace() },
-      paletteDestinations: { paletteDestinations.items },
       activeWorkspace: { activeWorkspaceActions }
     )
   }

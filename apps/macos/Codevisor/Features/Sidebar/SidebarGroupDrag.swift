@@ -17,7 +17,7 @@ extension SidebarView {
   var reordersGroups: Bool { grouping != .flat }
 
   func machineKey(_ serverId: String) -> String {
-    environment.navigationStore.machineOrderKey(forMachineId: serverId, machines: environment.machines)
+    workspaceListing.machineKey(serverId)
   }
 
   func groupReorderGesture(for id: String, heading: SidebarWorkspaceGroup.Heading) -> some Gesture {
