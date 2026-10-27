@@ -136,7 +136,7 @@ extension SidebarView {
     }
   }
 
-  func archiveSelectedWorkspace() {
+  var selectedActiveWorkspace: Workspace? {
     let workspaceId: UUID? =
       switch selection {
       case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
@@ -145,8 +145,28 @@ extension SidebarView {
       }
     guard let workspace = workspaceId.flatMap({ environment.workspaces.workspace(id: $0) }),
       !workspace.isArchived
-    else { return }
+    else { return nil }
+    return workspace
+  }
+
+  func archiveSelectedWorkspace() {
+    guard let workspace = selectedActiveWorkspace else { return }
     archiveWorkspace(workspace)
+  }
+
+  var activeWorkspaceActions: ActiveWorkspaceActions? {
+    guard let workspace = selectedActiveWorkspace else { return nil }
+
+    let id = workspace.id
+    return ActiveWorkspaceActions(
+      name: SidebarWorkspaceRowLabel.title(for: workspace.name), isPinned: isPinned(workspace),
+      rename: { if let current = currentActiveWorkspace(id) { rowActions.rename(current) } },
+      togglePin: { if let current = currentActiveWorkspace(id) { togglePin(current) } },
+      archive: { if let current = currentActiveWorkspace(id) { archiveWorkspace(current) } })
+  }
+
+  private func currentActiveWorkspace(_ id: UUID) -> Workspace? {
+    environment.workspaces.workspace(id: id).flatMap { $0.isArchived ? nil : $0 }
   }
 
   private func archiveWorkspace(_ workspace: Workspace) {

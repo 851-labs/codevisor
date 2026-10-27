@@ -13,6 +13,7 @@ struct SidebarActions: Equatable {
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
   var archiveWorkspace: (@MainActor () -> Void)? = nil
   var paletteDestinations: (@MainActor () -> [CommandPaletteItem])? = nil
+  var activeWorkspace: (@MainActor () -> ActiveWorkspaceActions?)? = nil
 
   static func == (lhs: SidebarActions, rhs: SidebarActions) -> Bool { true }
 }

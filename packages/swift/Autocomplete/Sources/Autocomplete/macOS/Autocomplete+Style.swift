@@ -143,7 +143,7 @@
       case menuSelection
       case fill(Color, foreground: Color = .white)
 
-      var foreground: Color {
+      public var foreground: Color {
         switch self {
         case .menuSelection: Color(nsColor: .selectedMenuItemTextColor)
         case let .fill(_, foreground): foreground

@@ -191,18 +191,18 @@ struct SidebarView: View {
       .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
         if publishesSceneActions, gitLookupRefreshKey != nil { refreshGitLookups() }
       }
-      .focusedSceneValue(
-        \.sidebarActions,
-        publishesSceneActions && store != nil
-          ? SidebarActions(
-            newChat: { selection = .newChat(nil) },
-            newProject: { startAddProject() },
-            stepWorkspace: { stepWorkspace($0) },
-            archiveWorkspace: { archiveSelectedWorkspace() },
-            paletteDestinations: { paletteDestinations.items }
-          )
-          : nil
-      )
+      .focusedSceneValue(\.sidebarActions, publishesSceneActions && store != nil ? sceneActions : nil)
+  }
+
+  private var sceneActions: SidebarActions {
+    SidebarActions(
+      newChat: { selection = .newChat(nil) },
+      newProject: { startAddProject() },
+      stepWorkspace: { stepWorkspace($0) },
+      archiveWorkspace: { archiveSelectedWorkspace() },
+      paletteDestinations: { paletteDestinations.items },
+      activeWorkspace: { activeWorkspaceActions }
+    )
   }
 
   private func startAddProject() {

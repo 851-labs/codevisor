@@ -185,6 +185,44 @@
       #expect(accepted == ["B", "A"])
     }
 
+    private struct ProminenceProbe: View {
+      let id: String
+      let seen: SelectionStore<[String: BackgroundProminence]>
+      @Environment(\.backgroundProminence) private var prominence
+
+      var body: some View {
+        Color.clear.onChange(of: prominence, initial: true) { _, value in seen.value[id] = value }
+      }
+    }
+
+    @Test("Custom icons see increased background prominence only on the highlighted row")
+    func highlightedRowProminence() throws {
+      let seen = SelectionStore<[String: BackgroundProminence]>([:])
+      let window = window(
+        Autocomplete.Suggestions {
+          for id in ["A", "B"] {
+            Autocomplete.Action(id, id: id, action: {}) {
+              ProminenceProbe(id: id, seen: seen)
+            } label: {
+              Text(id)
+            }
+          }
+        })
+      defer {
+        window.contentView = nil
+        window.close()
+      }
+      let view = try #require(window.contentView)
+      view.layoutSubtreeIfNeeded()
+      #expect(seen.value == ["A": .increased, "B": .standard])
+
+      let field = try #require(field(in: view))
+      let coordinator = try #require(field.delegate as? Autocomplete.InputField.Coordinator)
+      _ = coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:)))
+      view.layoutSubtreeIfNeeded()
+      #expect(seen.value == ["A": .standard, "B": .increased])
+    }
+
     @Test("A pane's deferred search focus is discarded after navigation")
     func supersededPaneFocus() throws {
       let focus = Autocomplete.InputFocus()

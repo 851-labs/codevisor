@@ -72,6 +72,7 @@
             }
             .font(metrics.menuFont)
             .foregroundStyle(item.definition.role == .destructive && !highlighted ? .red : foreground)
+            .environment(\.backgroundProminence, highlighted ? .increased : .standard)
             .padding(.leading, metrics.itemHorizontalInset)
             .padding(.trailing, metrics.itemHorizontalInset + accessoryWidth)
             .frame(height: metrics.itemHeight)

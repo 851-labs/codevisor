@@ -18,30 +18,51 @@ struct CommandPaletteCatalog {
   private static let splitEdges: [SplitEdge] = [.leading, .trailing, .top, .bottom]
 
   var sections: [CommandPaletteSection] {
-    [
-      CommandPaletteSection(title: "Chats", items: chatCommands),
-      CommandPaletteSection(title: "Tabs & Splits", items: layoutCommands),
-      CommandPaletteSection(title: "Find", items: findCommands),
-      CommandPaletteSection(title: "Browser", items: browserCommands),
-      CommandPaletteSection(title: "View", items: sidebarCommands + inspectorCommands),
-      CommandPaletteSection(title: "App", items: appCommands),
-      CommandPaletteSection(title: "Developer", items: developerCommands),
-      CommandPaletteSection(title: "Workspaces", items: sidebar?.paletteDestinations?() ?? []),
-    ].filter { !$0.items.isEmpty }
+    let sections =
+      [CommandPaletteSection(title: "General", items: generalCommands + appCommands)]
+      + activeWorkspaceSections
+      + [
+        CommandPaletteSection(title: "View", items: sidebarCommands + inspectorCommands),
+        CommandPaletteSection(title: "Find", items: findCommands),
+        CommandPaletteSection(title: "Browser", items: browserCommands),
+        CommandPaletteSection(title: "Tabs & Splits", items: layoutCommands),
+        CommandPaletteSection(title: "Developer", items: developerCommands),
+        CommandPaletteSection(
+          id: "workspaces", title: "Go to Workspace", items: sidebar?.paletteDestinations?() ?? []),
+      ]
+    return sections.filter { !$0.items.isEmpty }
   }
 
-  private var chatCommands: [CommandPaletteItem] {
+  private var generalCommands: [CommandPaletteItem] {
     guard let sidebar else { return [] }
 
-    let items = [
+    return [
       CommandPaletteItem(.newChat, systemImage: "square.and.pencil") {
         sidebar.newChat()
         composerFocus?.focus()
       },
       CommandPaletteItem(.newProject, systemImage: "folder.badge.plus", perform: sidebar.newProject),
     ]
-    guard layout != nil, let archive = sidebar.archiveWorkspace else { return items }
-    return items + [CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: archive)]
+  }
+
+  private var activeWorkspaceSections: [CommandPaletteSection] {
+    guard let workspace = sidebar?.activeWorkspace?() else { return [] }
+
+    return [
+      CommandPaletteSection(
+        id: "activeWorkspace", title: workspace.name, items: activeWorkspaceCommands(workspace))
+    ]
+  }
+
+  private func activeWorkspaceCommands(_ workspace: ActiveWorkspaceActions) -> [CommandPaletteItem] {
+    let pinTitle = workspace.isPinned ? "Unpin Workspace" : "Pin Workspace"
+    return [
+      CommandPaletteItem("Rename Workspace…", systemImage: "pencil", perform: workspace.rename),
+      CommandPaletteItem(
+        id: "togglePin", title: pinTitle, icon: .symbol(workspace.isPinned ? "pin.slash" : "pin"),
+        perform: workspace.togglePin),
+      CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: workspace.archive),
+    ]
   }
 
   private var layoutCommands: [CommandPaletteItem] {
@@ -178,7 +199,6 @@ struct CommandPaletteCatalog {
     return [
       CommandPaletteItem(
         id: ShortcutID.toggleDebugOverlay.rawValue, title: title, icon: .symbol("gauge.with.dots.needle.50percent"),
-        shortcut: ShortcutCatalog.combo(for: .toggleDebugOverlay)?.keyboardShortcut,
         searchTerms: [ShortcutCatalog.title(for: .toggleDebugOverlay)], perform: debugOverlay.toggle)
     ]
   }
