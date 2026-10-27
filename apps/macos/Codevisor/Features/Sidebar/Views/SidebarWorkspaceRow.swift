@@ -99,6 +99,7 @@ struct SidebarWorkspaceRow: View {
           Label("Archive", systemImage: "archivebox")
             .labelStyle(.titleAndIcon)
         }
+        .shortcut(.archiveWorkspace)
       case let .archived(onRestore):
         Button(action: onRestore) {
           Label("Restore", systemImage: "arrow.uturn.backward")

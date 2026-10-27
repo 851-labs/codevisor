@@ -70,10 +70,10 @@ struct CommandPaletteCatalog {
   private func activeWorkspaceCommands(_ workspace: ActiveWorkspaceActions) -> [CommandPaletteItem] {
     let pinTitle = workspace.isPinned ? "Unpin Workspace" : "Pin Workspace"
     return [
-      CommandPaletteItem("Rename Workspace…", systemImage: "pencil", perform: workspace.rename),
       CommandPaletteItem(
         id: "togglePin", title: pinTitle, icon: .symbol(workspace.isPinned ? "pin.slash" : "pin"),
         perform: workspace.togglePin),
+      CommandPaletteItem("Rename Workspace…", systemImage: "pencil", perform: workspace.rename),
       CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: workspace.archive),
     ]
   }
