@@ -33,12 +33,11 @@ struct SandboxFieldRow: View {
     }
   }
 
+  @ViewBuilder
   private var label: some View {
-    VStack(alignment: .leading) {
-      Text(field.required ? field.label : "\(field.label) (optional)")
-      if let help = helpText {
-        Text(help)
-      }
+    Text(field.isOptional ? "\(field.label) (optional)" : field.label)
+    if let help = helpText {
+      Text(help)
     }
   }
 

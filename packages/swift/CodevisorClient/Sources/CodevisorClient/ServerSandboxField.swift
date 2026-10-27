@@ -28,6 +28,7 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
   public var capability: String?
 
   public var id: String { key }
+  public var isOptional: Bool { !required && defaultValue == nil && type != .boolean }
 
   public init(
     key: String,

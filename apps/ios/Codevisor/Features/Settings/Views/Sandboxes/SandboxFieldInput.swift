@@ -54,7 +54,7 @@ struct SandboxFieldInput: View {
     }
   }
 
-  private var title: String { field.required ? field.label : "\(field.label) (optional)" }
+  private var title: String { field.isOptional ? "\(field.label) (optional)" : field.label }
 
   private var helpText: String? {
     if field.type == .machine, hosts.isEmpty { return "None of your connected Macs can run this" }
