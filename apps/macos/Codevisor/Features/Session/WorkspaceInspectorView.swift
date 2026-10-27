@@ -15,6 +15,7 @@ struct WorkspaceInspectorView: View {
   let pullRequest: ServerGitPullRequest?
   let machineName: String?
   let machineSymbol: String?
+  let showsDebugSection: Bool
   let showsBotTranscript: Bool
   let usageChat: ChatSession?
   let usage: WorkspaceInspectorUsageModel
@@ -164,6 +165,25 @@ struct WorkspaceInspectorView: View {
     }
   }
 
+  private var botTranscriptRow: some View {
+    row(.botTranscript) {
+      Label {
+        HStack {
+          Text("Show Full Transcript")
+          Spacer(minLength: 8)
+          Image(systemName: "arrow.up.forward.square")
+            .foregroundStyle(.secondary)
+        }
+      } icon: {
+        Image(systemName: "text.page")
+          .foregroundStyle(.secondary)
+          .frame(width: 20)
+      }
+    }
+    .help("Show everything the bot did, including its tool calls and the messages it received")
+    .accessibilityIdentifier("bot.showFullTranscript")
+  }
+
   @ViewBuilder
   private func content(for tab: WorkspaceInspectorTab) -> some View {
     switch tab {
@@ -204,24 +224,6 @@ struct WorkspaceInspectorView: View {
           if let machineName {
             detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
           }
-          if showsBotTranscript {
-            row(.botTranscript) {
-              Label {
-                HStack {
-                  Text("Show Full Transcript")
-                  Spacer(minLength: 8)
-                  Image(systemName: "arrow.up.forward.square")
-                    .foregroundStyle(.secondary)
-                }
-              } icon: {
-                Image(systemName: "text.page")
-                  .foregroundStyle(.secondary)
-                  .frame(width: 20)
-              }
-            }
-            .help("Show everything the bot did, including its tool calls and the messages it received")
-            .accessibilityIdentifier("bot.showFullTranscript")
-          }
         }
 
         if let machineStats, machineStats.serverId == workspace.serverId {
@@ -236,6 +238,12 @@ struct WorkspaceInspectorView: View {
           WorkspaceInspectorContextSection(
             context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage,
             isExpanded: expansion("Context"))
+        }
+
+        if showsDebugSection && showsBotTranscript {
+          WorkspaceInspectorCard(title: "Debug", isExpanded: expansion("Debug")) {
+            botTranscriptRow
+          }
         }
       }
       .padding(.vertical, 10)

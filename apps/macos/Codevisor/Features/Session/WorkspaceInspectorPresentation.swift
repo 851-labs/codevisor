@@ -33,6 +33,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @ClientPreference(Self.presentedKey, default: false) private var isPresented
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
+  @ClientPreference(FeatureFlag.developerMode.preferenceKey, default: false) private var developerMode
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
@@ -125,6 +126,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       pullRequest: store.gitLookups.pullRequest(for: workspace),
       machineName: environment.machines.fleetMachineName(for: workspace.serverId),
       machineSymbol: environment.machines.machine(for: workspace.serverId)?.icon.systemImage,
+      showsDebugSection: developerMode,
       showsBotTranscript: botsEnabled
         && environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)?.isConversational == true,
       usageChat: inspected.chat,
