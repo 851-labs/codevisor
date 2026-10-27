@@ -1,6 +1,6 @@
 # Codevisor documentation inventory
 
-Last audited: 2026-08-20
+Last audited: 2026-10-27
 
 This source-of-truth map compares the rendered content in `content/docs` with
 the product and server implementation. It stays outside `content/docs` so
@@ -8,16 +8,16 @@ planning notes are not published.
 
 ## Product coverage
 
-| Surface                                                       | Current public coverage                    | Implementation evidence                                    |
-| ------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------- |
-| Product model, installation, and first run                    | Get-started, install, and quickstart       | `apps/www/public/install.sh`, server CLI                   |
-| Server configuration, auth, security, realtime, and terminals | Verified guides and generated API          | `apps/server/src`, `packages/api/src`                      |
-| Projects, worktrees, workspaces, sessions, files, and events  | Concepts and generated API                 | Server route modules and API schemas                       |
-| Harnesses and accounts                                        | Generated API                              | `packages/harness-manager`, harness routes                 |
-| MCP servers                                                   | Managed/native guide and generated API     | `packages/mcp`, MCP routes                                 |
-| Skills                                                        | Store, `skills` tool, and API              | `packages/skills`, skills routes                           |
-| Plugins                                                       | Authoring/runtime/publishing guide and API | `packages/plugins`, plugin routes, public plugin directory |
-| Browser and computer automation                               | MCP relationship and security boundary     | `packages/automation`, browser-use routes                  |
+| Surface                                                       | Current public coverage                   | Implementation evidence                                         |
+| ------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------- |
+| Product model, installation, and first run                    | Get-started, install, and quickstart      | `apps/www/public/install.sh`, server CLI                        |
+| Server configuration, auth, security, realtime, and terminals | Verified guides and generated API         | `apps/server/src`, `packages/api/src`                           |
+| Projects, worktrees, workspaces, sessions, files, and events  | Concepts and generated API                | Server route modules and API schemas                            |
+| Harnesses and accounts                                        | Generated API                             | `packages/harness-manager`, harness routes                      |
+| MCP servers                                                   | Managed/native guide and generated API    | `packages/mcp`, MCP routes                                      |
+| Skills                                                        | Store, `skills` tool, and API             | `packages/skills`, skills routes                                |
+| Plugins                                                       | Model, accounts, and events guide and API | `packages/plugins` catalog, plugin routes, `/plugins` directory |
+| Browser and computer automation                               | MCP relationship and security boundary    | `packages/automation`, browser-use routes                       |
 
 The documentation is intentionally organized around Codevisor Server and its extension contracts.
 It does not maintain separate macOS or iOS product manuals.
@@ -37,7 +37,7 @@ currently covers these route families:
 - Projects, Git branches, worktrees, and filesystem listing
 - Workspaces and panes
 - Harness discovery, accounts, provider authentication, and agent-session discovery
-- Plugin discovery, installation/linking, lifecycle, pane tokens, and tools
+- Plugin catalog and installation, accounts, search and setup requests, and event subscriptions
 - Managed MCP servers, native MCP discovery/import/editing, and project/session scopes
 - Skills creation, import, synchronization, promotion, installation, and removal
 - Sessions, transcripts, prompts, queues, goals, approvals, events, and usage data
@@ -62,9 +62,9 @@ family with schemas and docs or explicitly mark it internal:
 
 - `/v1/mcps/oauth/callback` and `/v1/mcps/oauth/complete`
 - `/v1/browser-use/extension/socket` and extension asset/install helper routes
-- `ANY /v1/plugins/:pluginId/app/*`, including proxied WebSockets
+- Plugin pane tokens and the view pages that host plugin panes and inline apps
 
-These exist to complete browser, OAuth, and plugin-pane flows. They should be
+These exist to complete browser, OAuth, and plugin UI flows. They should be
 explained where developers need the architecture, but not presented as general
 client endpoints.
 

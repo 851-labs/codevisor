@@ -42,7 +42,5 @@ codevisor update --alpha
 4. Check firewall, reverse-proxy, and TLS configuration independently.
 5. Confirm the service user's `PATH` contains the coding-agent CLIs you expect the server to use.
 6. Use `POST /v1/harnesses/rescan` after installing a CLI without restarting the server.
-7. Use `codevisor plugin list` and an explicit plugin restart when a pane returns `502` or a plugin
-   is in the `failed` state.
-8. Inspect MCP `connectionState` and `detail`; OAuth servers may need authorization rather than a
-   process restart.
+7. Inspect a plugin's `connectionState` and `detail` in `GET /v1/mcps`. OAuth plugins may need
+   authorization rather than a restart; turn a local plugin off and on to restart its process.

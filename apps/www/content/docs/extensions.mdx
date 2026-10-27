@@ -4,18 +4,18 @@ description: Add tools, instructions, agents, and workspace interfaces to Codevi
 icon: Puzzle
 ---
 
-Codevisor has three extension systems. They solve different problems and all run on the machine that
-hosts Codevisor Server.
+Codevisor has two extension systems: plugins and skills. Both run on the machine that hosts
+Codevisor Server.
 
 <Cards>
   <Card
     title="Plugins"
-    description="Add server-supervised workspace panes and agent-callable tools."
+    description="Add MCP servers with tools, skills, inline UI, events, and workspace panes."
     href="/docs/plugins"
   />
   <Card
     title="MCP servers"
-    description="Make external tools available to the coding agents on a machine."
+    description="Manage installed plugins and harness-native MCP servers through the API."
     href="/docs/mcp"
   />
   <Card
@@ -25,18 +25,16 @@ hosts Codevisor Server.
   />
 </Cards>
 
-| Use this   | When you need to add                        | Runtime                                        |
-| ---------- | ------------------------------------------- | ---------------------------------------------- |
-| MCP server | Tools for coding agents                     | HTTP or stdio MCP                              |
-| Skill      | Reusable agent instructions                 | Files installed into harness skill directories |
-| Plugin     | Workspace UI, agent-callable tools, or both | Supervised loopback HTTP server                |
+| Use this | When you need to add                                    | Runtime                                        |
+| -------- | ------------------------------------------------------- | ---------------------------------------------- |
+| Plugin   | Agent tools, events, inline UI, workspace panes, or all | MCP server over stdio or Streamable HTTP       |
+| Skill    | Reusable agent instructions                             | Files installed into harness skill directories |
 
-Extensions are machine-scoped. The server owns their processes, files, configuration, and
-credentials; connected clients manage them through the HTTP API. A plugin is the only extension
-that renders a workspace pane. MCP servers and plugin tools both add tools to agent sessions, while
-skills change agent instructions without running another service.
+Every MCP server you add is a plugin, and a plugin can ship its own skills. The server owns plugin
+processes, configuration, and connections; connected clients manage them through the HTTP API.
+Installed plugins, their accounts, and your skills sync to every Mac signed in to your account.
 
 <Callout type="warning" title="Trust boundary">
-  Plugins, stdio MCP servers, and skills can execute code or influence an agent on the server
-  machine. Inspect their source and commands before installing them.
+  Local plugins and skills can execute code or influence an agent on the server machine. Inspect
+  their source and commands before installing them.
 </Callout>

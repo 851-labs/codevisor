@@ -1,17 +1,20 @@
 ---
 title: MCP Servers
-description: Manage Model Context Protocol tools for the agents on a Codevisor machine.
+description: Manage the MCP servers behind Codevisor plugins and import harness-native servers.
 icon: Plug
 ---
 
 Codevisor Server provides one Model Context Protocol gateway to agent sessions. The gateway combines
-Codevisor tools, Browser Use, Computer Use, plugin tools, and user-configured MCP servers. Clients
-manage the catalog; they do not pass upstream credentials to individual agent harnesses.
+Codevisor tools, Browser Use, Computer Use, and every enabled [plugin](/docs/plugins). Each plugin
+is a managed MCP server row on `/v1/mcps`. Clients manage the list; they do not pass upstream
+credentials to individual agent harnesses.
 
 ## Managed and native servers
 
 **Managed MCP servers** are stored by Codevisor and can use HTTP or stdio. Codevisor owns their
-connection state, authorization, tool discovery, and per-project or per-session visibility.
+connection state, authorization, tool discovery, and per-project or per-session visibility. A server
+installed from the plugin catalog carries a `catalogId` and `catalogVersion`; Codevisor resolves its
+command or URL from the bundled catalog on each machine. A server added by hand has neither.
 
 **Native MCP servers** already exist in a harness configuration file. A scan groups them by harness
 and coalesces equivalent entries into import candidates. The client sends only candidate identities
@@ -23,7 +26,10 @@ removed fragments, and exposes a restore action.
 
 ## Add a managed server
 
-Create an HTTP server:
+Install a catalog plugin with `POST /v1/plugins/catalog/{id}/install`, using an `id` from
+`GET /v1/plugins/catalog`. The response is the new managed server.
+
+Create a custom HTTP server:
 
 ```http
 POST /v1/mcps

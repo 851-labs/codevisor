@@ -28,17 +28,19 @@ overlay network.
 
 ## Extension trust
 
-Installing a plugin may run its declared install command and later runs its server command. A stdio
-MCP server runs arbitrary local commands. Skills can direct an agent to execute
-tools and change files. Review the source, manifest, command, requested tools, and update before
-adding any of them to a sensitive machine.
+A local plugin runs its command on every Mac that uses it, and that command can run arbitrary local
+code. Skills, including those a plugin ships, can direct an agent to execute tools and change files.
+Review the source, command, and requested tools before adding any of them to a sensitive machine.
 
 MCP credentials are encrypted with a key stored in the server data directory, but a process running
 as the service user can still access Codevisor's files. Filesystem permissions remain the primary
 local boundary.
 
-Plugin panes use short-lived, pane-scoped tokens and HttpOnly cookies through the server proxy.
-Never give a plugin webview the machine bearer token.
+Plugin accounts keep their tokens and secrets in the shared credential vault. A plugin receives only
+the current access token and field values for the request it handles, never a refresh token.
+
+Plugin panes and inline apps load through short-lived view URLs that sandbox the plugin's UI in an
+iframe. Never give a plugin webview the machine bearer token.
 
 The hosted API reference intentionally does not execute requests. This prevents server addresses and
 bearer tokens from being sent to `www.codevisor.dev`.

@@ -1,44 +1,22 @@
-import { decode, PluginRegistryIndex, type PluginRegistryEntry } from "@codevisor/api"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 
-import { PluginAvatar, registryBaseUrl } from "../components/plugin-directory"
+import { PluginAvatar } from "../components/plugin-directory"
 import { SiteNav } from "../components/site-nav"
-
-interface DirectoryEntry {
-  readonly id: string
-  readonly name: string
-  readonly description?: string
-  readonly repo: string
-  readonly ownerAvatarUrl?: string
-}
+import { fetchCatalog, type CatalogPlugin, type CatalogSource } from "../lib/plugin-catalog"
 
 interface DirectoryData {
-  readonly entries: ReadonlyArray<DirectoryEntry> | null
+  readonly plugins: ReadonlyArray<CatalogPlugin> | null
 }
 
-const toDirectoryEntry = (entry: PluginRegistryEntry): DirectoryEntry => ({
-  id: entry.id,
-  name: entry.name,
-  ...(entry.description === undefined ? {} : { description: entry.description }),
-  repo: entry.repo,
-  ...(entry.ownerAvatarUrl === undefined ? {} : { ownerAvatarUrl: entry.ownerAvatarUrl })
-})
-
 const fetchDirectory = createServerFn({ method: "GET" }).handler(
-  async (): Promise<DirectoryData> => {
-    try {
-      const response = await fetch(`${registryBaseUrl()}/plugins/index.json`, {
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (!response.ok) return { entries: null }
-      const index = decode(PluginRegistryIndex)(await response.json())
-      return { entries: index.entries.map(toDirectoryEntry) }
-    } catch {
-      return { entries: null }
-    }
-  }
+  async (): Promise<DirectoryData> => ({ plugins: await fetchCatalog() })
 )
+
+const sections: ReadonlyArray<{ readonly source: CatalogSource; readonly title: string }> = [
+  { source: "first-party", title: "By Codevisor" },
+  { source: "popular", title: "Popular" }
+]
 
 export const Route = createFileRoute("/plugins")({
   loader: () => fetchDirectory(),
@@ -48,7 +26,7 @@ export const Route = createFileRoute("/plugins")({
       {
         name: "description",
         content:
-          "Browse Codevisor plugins: custom panes and agent tools served from your own machine. Publish yours by tagging a public GitHub repo with the codevisor-plugin topic."
+          "Browse the plugins available in Codevisor: MCP servers that add tools, events, and inline UI for your agents."
       }
     ]
   }),
@@ -56,67 +34,76 @@ export const Route = createFileRoute("/plugins")({
 })
 
 function PluginsDirectory() {
-  const { entries } = Route.useLoaderData()
+  const { plugins } = Route.useLoaderData()
   return (
     <div className="marketing-shell min-h-screen">
       <SiteNav />
 
       <main className="mx-auto max-w-5xl px-6 pt-28 pb-16 sm:pt-32 sm:pb-24">
         <h1 className="text-4xl font-semibold tracking-[-0.035em] text-text">Plugin directory</h1>
+        <p className="mt-4 max-w-2xl text-lg text-muted">
+          Every plugin here is available in Codevisor from Settings › Plugins › Browse Plugins.
+        </p>
 
-        <section className="pt-12">{directoryContent(entries)}</section>
+        {directoryContent(plugins)}
       </main>
     </div>
   )
 }
 
-function directoryContent(entries: ReadonlyArray<DirectoryEntry> | null) {
-  if (entries === null)
+function directoryContent(plugins: ReadonlyArray<CatalogPlugin> | null) {
+  if (plugins === null)
     return (
-      <p className="text-lg text-muted">
-        The plugin registry is unreachable right now. Try again in a few minutes.
+      <p className="pt-12 text-lg text-muted">
+        The plugin catalog is unreachable right now. Try again in a few minutes.
       </p>
     )
-  if (entries.length === 0) return <EmptyDirectory />
+  if (plugins.length === 0)
+    return <p className="pt-12 text-lg text-muted">No plugins are available right now.</p>
+  return sections.map((section) => (
+    <DirectorySection
+      key={section.source}
+      title={section.title}
+      plugins={plugins.filter((plugin) => plugin.source === section.source)}
+    />
+  ))
+}
+
+function DirectorySection({
+  title,
+  plugins
+}: {
+  title: string
+  plugins: ReadonlyArray<CatalogPlugin>
+}) {
+  if (plugins.length === 0) return null
   return (
-    <ul className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
-      {entries.map((entry) => (
-        <PluginRow key={entry.id} entry={entry} />
-      ))}
-    </ul>
+    <section className="pt-12">
+      <h2 className="text-lg font-semibold text-text">{title}</h2>
+      <ul className="mt-6 grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
+        {plugins.map((plugin) => (
+          <PluginRow key={plugin.name} plugin={plugin} />
+        ))}
+      </ul>
+    </section>
   )
 }
 
-function EmptyDirectory() {
-  return (
-    <div className="text-lg text-muted">
-      <p>No plugins have been published yet.</p>
-      <p className="mt-2">
-        Yours could be first — tag a public GitHub repo with the{" "}
-        <code className="font-mono text-[0.9em] text-text">codevisor-plugin</code> topic and it
-        appears here within about 15 minutes.
-      </p>
-    </div>
-  )
-}
-
-function PluginRow({ entry }: { entry: DirectoryEntry }) {
+function PluginRow({ plugin }: { plugin: CatalogPlugin }) {
   return (
     <li className="flex items-center gap-4 rounded-xl border border-hairline bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]">
       <Link
         to="/plugins/$pluginId"
-        params={{ pluginId: entry.id }}
+        params={{ pluginId: plugin.name }}
         className="group flex min-w-0 flex-1 items-center gap-4"
       >
-        <PluginAvatar avatarUrl={entry.ownerAvatarUrl} sizeClass="size-12" />
+        <PluginAvatar avatarUrl={plugin.iconUrl} sizeClass="size-12" />
         <span className="min-w-0">
           <span className="block truncate text-[16px] font-semibold text-text transition-colors group-hover:text-white">
-            {entry.name}
+            {plugin.title}
           </span>
           <span className="block truncate text-[15px] text-muted">
-            {entry.description !== undefined && entry.description.length > 0
-              ? entry.description
-              : entry.repo}
+            {plugin.description.length > 0 ? plugin.description : plugin.publisher}
           </span>
         </span>
       </Link>
