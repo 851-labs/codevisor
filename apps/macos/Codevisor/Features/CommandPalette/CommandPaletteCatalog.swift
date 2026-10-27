@@ -19,9 +19,9 @@ struct CommandPaletteCatalog {
 
   var sections: [CommandPaletteSection] {
     let sections =
-      [CommandPaletteSection(title: "General", items: generalCommands + appCommands)]
-      + activeWorkspaceSections
+      activeWorkspaceSections
       + [
+        CommandPaletteSection(title: "General", items: generalCommands + appCommands),
         CommandPaletteSection(title: "View", items: sidebarCommands + inspectorCommands),
         CommandPaletteSection(title: "Find", items: findCommands),
         CommandPaletteSection(title: "Browser", items: browserCommands),
