@@ -365,8 +365,9 @@ const sweepConnection = async (
   connection: SandboxConnection
 ): Promise<void> => {
   const provider = await deps.connections.connect(connection)
-  const live = new Set((await deps.records.list()).filter(isLive).map((machine) => machine.id))
-  for (const orphan of await provider.list(owner)) {
+  const listed = await provider.list(owner)
+  const live = await liveIds(deps)
+  for (const orphan of listed) {
     if (live.has(orphan.tags.machine)) continue
     deps.log(
       `Destroying orphaned ${provider.definition.displayName} sandbox ${orphan.providerMachineId}`
@@ -374,6 +375,9 @@ const sweepConnection = async (
     await provider.destroy(orphan.providerMachineId)
   }
 }
+
+const liveIds = async (deps: SandboxDeps): Promise<ReadonlySet<string>> =>
+  new Set((await deps.records.list()).filter(isLive).map((machine) => machine.id))
 
 const isLive = (machine: Sandbox): boolean =>
   machine.state !== "failed" && machine.state !== "archived"

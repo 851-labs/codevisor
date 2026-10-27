@@ -74,4 +74,24 @@ describe("teardown robustness", () => {
 
     expect((await harness.machines.list())[0]?.error).toBe("clone exploded")
   })
+
+  it("keeps a sandbox created while the sweep was asking the provider for its list", async () => {
+    const harness = await sandboxHarness()
+    const listing = Promise.withResolvers<void>()
+    const answer = Promise.withResolvers<void>()
+    harness.controls.beforeList = () => {
+      listing.resolve()
+      return answer.promise
+    }
+
+    const sweep = harness.machines.sweep()
+    await listing.promise
+    await harness.machines.create(request)
+    await harness.machines.settled()
+    answer.resolve()
+    await sweep
+
+    expect([...harness.provider.machines.keys()]).toEqual(["fake-1"])
+    expect((await harness.machines.list())[0]?.state).toBe("ready")
+  })
 })

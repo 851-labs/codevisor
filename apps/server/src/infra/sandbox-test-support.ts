@@ -36,6 +36,7 @@ export interface HarnessControls {
   createFails: boolean
   removeFails: boolean
   answer?: (tool: string) => unknown
+  beforeList?: () => Promise<void>
 }
 
 export interface ToolCall {
@@ -103,8 +104,11 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       controls.createFails
         ? Promise.reject(new Error("quota exceeded"))
         : fake.create(spec, machineOptions, progress),
-    list: (owner) =>
-      controls.listFails ? Promise.reject(new Error("401 from provider")) : fake.list(owner)
+    list: async (owner) => {
+      await controls.beforeList?.()
+      if (controls.listFails) throw new Error("401 from provider")
+      return fake.list(owner)
+    }
   }
   const records = makeSandboxRecordStore(services.db)
   const settings = makeSandboxSettings(services.db, "server-owner", () => clock)
