@@ -6,7 +6,7 @@ import Foundation
 
 @CasePathable
 public enum ScreenSharingViewerEvent: Equatable, Sendable {
-  case elsewhere
+  case elsewhere(ScreenSharingViewerEndpoint?)
   case ended(String)
   case opened(ScreenSharingViewerEndpoint)
   case ready
@@ -49,10 +49,11 @@ extension ScreenSharingViewerBackend {
   @MainActor
   public static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    tunnelMedia: TunnelMediaProvider? = nil
+    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil
   ) -> Self {
     native(
-      client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, tunnelMedia: tunnelMedia,
+      client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
+      tunnelMedia: tunnelMedia,
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
@@ -70,7 +71,7 @@ extension ScreenSharingViewerBackend {
   @MainActor
   static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    tunnelMedia: TunnelMediaProvider? = nil,
+    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession:
       @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
@@ -88,7 +89,8 @@ extension ScreenSharingViewerBackend {
         connect: { display in await runner.connect(display) }, discover: { try await runner.discover() }, claim: {},
         setVisible: { _ in }, retire: {})
     }
-    let share = ScreenSharingViewerRegistry.shared.share(machineId: machineId, paneId: paneId, runner: runner)
+    let share = ScreenSharingViewerRegistry.shared.share(
+      machineId: machineId, paneId: paneId, role: role, runner: runner)
     return Self(
       connect: { display in await share.connect(display) }, discover: { try await runner.discover() },
       claim: { await share.claim() }, setVisible: { visible in await share.setVisible(visible) },

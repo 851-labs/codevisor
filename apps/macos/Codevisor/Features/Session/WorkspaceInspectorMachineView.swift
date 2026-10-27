@@ -6,7 +6,6 @@ struct WorkspaceInspectorMachineView: View {
   let isActive: Bool
   let client: any CodevisorServerClienting
   let desktop: MachineDesktopSession?
-  let isDesktopDialogOpen: Bool
   let desktopExpansion: Binding<Bool>
   let statsExpansion: Binding<Bool>
   let onOpenDesktop: () -> Void
@@ -18,7 +17,7 @@ struct WorkspaceInspectorMachineView: View {
         if let desktop {
           WorkspaceInspectorCard(title: "Desktop", isExpanded: desktopExpansion) {
             MachineDesktopPreview(
-              session: desktop, isStreaming: isActive && !isDesktopDialogOpen, onOpen: onOpenDesktop)
+              session: desktop, isStreaming: isActive, onOpen: onOpenDesktop)
           }
         }
         if let stats, stats.serverId == serverId {

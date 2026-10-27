@@ -56,7 +56,7 @@ struct ScreenSharingViewerVisibilityTests {
       let client = FakeEndpointClient()
       let store = await viewer.makeViewingStore(backend, client, mode: .view)
       let endpoint = backend.endpoints[0]
-      backend.emit(.elsewhere)
+      backend.emit(.elsewhere(nil))
       await store.receive(\.connectionEvent.elsewhere) {
         $0.endpoint = nil
         $0.lease = nil

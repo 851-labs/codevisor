@@ -4,13 +4,13 @@ struct MachineDesktopDialog: View {
   let session: MachineDesktopSession
 
   var body: some View {
-    session.pane.makeView()
+    session.window.makeView()
       .frame(minWidth: 640, minHeight: 400)
       .toolbar {
-        if let store = session.pane.store {
+        if let store = session.window.store {
           ScreenSharingToolbar(
-            store: store, settings: { session.pane.machineSettings() },
-            applySettings: { session.pane.applyMachineSettings($0) })
+            store: store, settings: { session.window.machineSettings() },
+            applySettings: { session.window.applyMachineSettings($0) })
         }
       }
   }

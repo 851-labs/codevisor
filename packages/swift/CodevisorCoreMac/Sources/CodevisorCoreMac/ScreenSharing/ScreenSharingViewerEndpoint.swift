@@ -33,6 +33,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private var clipboardTask: Task<Void, Never>?
   private var diagnosticsTask: Task<Void, Never>?
   private var presented = false
+  private var mirrors: [UUID: ScreenSharingMirrorReference] = [:]
   private var reportedFailure = false
   private var closed = false
 
@@ -121,6 +122,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     self.session = session
     self.surface = surface
     capabilities = session.capabilities
+    session.frames.retainsLatest = true
     channel = session.control
     let channel = session.control
     forwarder = ScreenSharingInputForwarder(send: { [weak channel] in channel?.send($0) ?? false })
@@ -166,11 +168,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self?.reportHighDynamicRange()
     }
     session.onVideoFormatChanged = { [weak self] in self?.hostDynamicRange = ($0, $1) }
-    surface.onPresented = { [weak self] in
-      guard let self, !self.presented else { return }
-      self.presented = true
-      self.onReady?()
-    }
+    surface.onPresented = { [weak self] in self?.notePresented() }
     tickTask = Task { [weak self] in
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -297,6 +295,29 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
 
   public func letterbox(_ color: NSColor) { surface.setLetterboxColor(color) }
 
+  public func makeMirror() -> ScreenSharingMirrorView? {
+    guard !closed else { return nil }
+    let id = UUID()
+    let frames = session.frames
+    guard let mirror = try? ScreenSharingMirrorView(mailbox: frames.tap(id)) else {
+      frames.untap(id)
+      return nil
+    }
+    mirror.onPresented = { [weak self] in self?.notePresented() }
+    mirror.onStop = { [weak self, weak frames] in
+      frames?.untap(id)
+      self?.mirrors[id] = nil
+    }
+    mirrors[id] = ScreenSharingMirrorReference(view: mirror)
+    return mirror
+  }
+
+  private func notePresented() {
+    guard !presented else { return }
+    presented = true
+    onReady?()
+  }
+
   private func emit(_ event: ScreenSharingControlEvent) {
     guard !closed else { return }
     for continuation in subscribers.values { continuation.yield(event) }
@@ -318,6 +339,9 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       "Viewer ended: \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"
     )
     onReady = nil
+    for mirror in mirrors.values { mirror.view?.stop() }
+    mirrors = [:]
+    session.frames.retainsLatest = false
     surface.stop()
     session.close()
   }

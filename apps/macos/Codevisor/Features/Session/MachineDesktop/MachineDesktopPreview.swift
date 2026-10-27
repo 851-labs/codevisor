@@ -13,7 +13,7 @@ struct MachineDesktopPreview: View {
     ZStack {
       Rectangle().fill(.quaternary)
       if isRegistered, isStreaming {
-        session.pane.makeView()
+        session.preview.makeView()
           .allowsHitTesting(false)
       }
       openBadge

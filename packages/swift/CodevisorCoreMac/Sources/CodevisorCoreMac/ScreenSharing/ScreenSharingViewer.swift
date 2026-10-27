@@ -15,6 +15,7 @@ public struct ScreenSharingViewer {
   public struct State: Equatable {
     public var displays: [ServerScreenSharingDisplay] = []
     public var endpoint: ScreenSharingViewerEndpoint?
+    public var mirror: ScreenSharingViewerEndpoint?
     public var interactionMode: InteractionMode = .control
     public var lease: ControlLease.State?
     public var message: String?
@@ -65,6 +66,7 @@ public struct ScreenSharingViewer {
       switch action {
       case .connectionEvent(.opened(let endpoint)):
         if state.phase == .elsewhere { state.phase = .connecting }
+        state.mirror = nil
         state.endpoint = endpoint
         state.lease = ControlLease.State(endpoint: endpoint.id)
         let id = endpoint.id
@@ -99,9 +101,10 @@ public struct ScreenSharingViewer {
         state.hostNotice = notice
         return .none
 
-      case .connectionEvent(.elsewhere):
+      case .connectionEvent(.elsewhere(let mirror)):
         dropEndpoint(&state)
         state.phase = .elsewhere
+        state.mirror = mirror
         state.message = nil
         return .cancel(id: CancelID.controlEvents)
 
@@ -250,6 +253,7 @@ public struct ScreenSharingViewer {
 
   private func dropEndpoint(_ state: inout State) {
     state.endpoint = nil
+    state.mirror = nil
     state.lease = nil
     state.hostNotice = nil
   }

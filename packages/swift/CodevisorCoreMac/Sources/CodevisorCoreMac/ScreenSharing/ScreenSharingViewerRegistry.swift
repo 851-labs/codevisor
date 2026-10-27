@@ -19,6 +19,7 @@ final class ScreenSharingViewerRegistry {
   final class Share {
     let machineId: String
     let paneId: UUID
+    let role: ScreenSharingViewerRole
     let runner: any ScreenSharingViewerConnecting
     private let registry: ScreenSharingViewerRegistry
     fileprivate var visible = false
@@ -27,11 +28,15 @@ final class ScreenSharingViewerRegistry {
     fileprivate var subscription: UUID?
     fileprivate var continuation: AsyncStream<ScreenSharingViewerEvent>.Continuation?
 
-    private var elsewhere = false
+    private var lastElsewhere: ScreenSharingViewerEvent?
 
     fileprivate func emit(_ event: ScreenSharingViewerEvent) {
-      guard event != .elsewhere || !elsewhere else { return }
-      elsewhere = event == .elsewhere
+      if case .elsewhere = event {
+        guard event != lastElsewhere else { return }
+        lastElsewhere = event
+      } else {
+        lastElsewhere = nil
+      }
       continuation?.yield(event)
     }
 
@@ -39,17 +44,19 @@ final class ScreenSharingViewerRegistry {
       let continuation = continuation
       key = nil
       subscription = nil
-      elsewhere = false
+      lastElsewhere = nil
       self.continuation = nil
       continuation?.finish()
     }
 
     fileprivate init(
-      registry: ScreenSharingViewerRegistry, machineId: String, paneId: UUID, runner: any ScreenSharingViewerConnecting
+      registry: ScreenSharingViewerRegistry, machineId: String, paneId: UUID, role: ScreenSharingViewerRole,
+      runner: any ScreenSharingViewerConnecting
     ) {
       self.registry = registry
       self.machineId = machineId
       self.paneId = paneId
+      self.role = role
       self.runner = runner
     }
 
@@ -79,8 +86,10 @@ final class ScreenSharingViewerRegistry {
   private var draining: [Key: Task<Void, Never>] = [:]
   private var claims = 0
 
-  func share(machineId: String, paneId: UUID, runner: any ScreenSharingViewerConnecting) -> Share {
-    Share(registry: self, machineId: machineId, paneId: paneId, runner: runner)
+  func share(
+    machineId: String, paneId: UUID, role: ScreenSharingViewerRole = .tab, runner: any ScreenSharingViewerConnecting
+  ) -> Share {
+    Share(registry: self, machineId: machineId, paneId: paneId, role: role, runner: runner)
   }
 
   fileprivate func subscribe(_ share: Share, to key: Key) -> AsyncStream<ScreenSharingViewerEvent> {
@@ -105,10 +114,10 @@ final class ScreenSharingViewerRegistry {
       run(entry, key: key, after: draining.removeValue(forKey: key))
     }
     entry.subscribers.append(share)
-    if share.visible || entry.active == nil {
+    if canTakeOver(share, in: entry) {
       claim(share, in: entry)
     } else {
-      share.emit(.elsewhere)
+      share.emit(.elsewhere(entry.endpoint))
     }
     return stream
   }
@@ -119,7 +128,7 @@ final class ScreenSharingViewerRegistry {
     guard let entry = entries[key] else { return }
     entry.subscribers.removeAll { $0 === share }
     guard entry.subscribers.isEmpty else {
-      if entry.active === share, let next = successor(in: entry) { activate(next, in: entry) }
+      if entry.active === share { handOff(from: share, in: entry) }
       return
     }
     entries[key] = nil
@@ -136,15 +145,30 @@ final class ScreenSharingViewerRegistry {
     share.visible = visible
     guard let key = share.key, let entry = entries[key] else { return }
     if visible {
-      claim(share, in: entry)
+      if canTakeOver(share, in: entry) { claim(share, in: entry) }
     } else if entry.active === share, let next = successor(in: entry, visibleOnly: true) {
       activate(next, in: entry)
     }
   }
 
   fileprivate func claim(_ share: Share) {
-    guard let key = share.key, let entry = entries[key] else { return }
+    guard share.role != .watcher, let key = share.key, let entry = entries[key] else { return }
     claim(share, in: entry)
+  }
+
+  private func canTakeOver(_ share: Share, in entry: Entry) -> Bool {
+    guard share.role != .watcher else { return false }
+    guard let active = entry.active else { return true }
+    return share.visible && (!active.visible || share.role >= active.role)
+  }
+
+  private func handOff(from share: Share, in entry: Entry) {
+    if let next = successor(in: entry) {
+      activate(next, in: entry)
+      return
+    }
+    entry.active = nil
+    entry.endpoint?.relinquish()
   }
 
   fileprivate func retire(paneId: UUID) {
@@ -174,9 +198,9 @@ final class ScreenSharingViewerRegistry {
   }
 
   private func successor(in entry: Entry, visibleOnly: Bool = false) -> Share? {
-    let others = entry.subscribers.filter { $0 !== entry.active }
+    let others = entry.subscribers.filter { $0 !== entry.active && $0.role != .watcher }
     let visible = others.filter(\.visible)
-    return (visible.isEmpty && !visibleOnly ? others : visible).max { $0.claimed < $1.claimed }
+    return (visible.isEmpty && !visibleOnly ? others : visible).max { ($0.role, $0.claimed) < ($1.role, $1.claimed) }
   }
 
   private func activate(_ share: Share, in entry: Entry) {
@@ -184,7 +208,7 @@ final class ScreenSharingViewerRegistry {
     let previous = entry.active
     entry.active = share
     if previous != nil { entry.endpoint?.relinquish() }
-    previous?.emit(.elsewhere)
+    previous?.emit(.elsewhere(entry.endpoint))
     guard let endpoint = entry.endpoint else { return }
     share.emit(.opened(endpoint))
     if entry.ready { share.emit(.ready) }
@@ -216,7 +240,7 @@ final class ScreenSharingViewerRegistry {
       entry.ready = false
       entry.notice = nil
       entry.active?.emit(event)
-      for subscriber in entry.subscribers where subscriber !== entry.active { subscriber.emit(.elsewhere) }
+      for subscriber in entry.subscribers where subscriber !== entry.active { subscriber.emit(.elsewhere(endpoint)) }
     case .ready:
       entry.ready = true
       entry.active?.emit(event)

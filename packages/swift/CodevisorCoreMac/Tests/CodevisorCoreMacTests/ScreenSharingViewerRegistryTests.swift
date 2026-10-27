@@ -42,8 +42,10 @@ struct ScreenSharingViewerRegistryTests {
     let log = ScreenSharingEventLog()
     private var consumer: Task<Void, Never>?
 
-    init(_ registry: ScreenSharingViewerRegistry, machine: String = "studio") {
-      share = registry.share(machineId: machine, paneId: UUID(), runner: runner)
+    init(
+      _ registry: ScreenSharingViewerRegistry, machine: String = "studio", role: ScreenSharingViewerRole = .tab
+    ) {
+      share = registry.share(machineId: machine, paneId: UUID(), role: role, runner: runner)
     }
 
     func show(visible: Bool = true) {
@@ -79,7 +81,7 @@ struct ScreenSharingViewerRegistryTests {
     otherMachine.show()
     await first.runner.connected.wait()
     await otherMachine.runner.connected.wait()
-    await awaitObserved { second.log.events == [.elsewhere] }
+    await awaitObserved { second.log.events == [.elsewhere(nil)] }
     #expect(first.runner.connects == 1 && second.runner.connects == 0)
   }
 
@@ -100,9 +102,9 @@ struct ScreenSharingViewerRegistryTests {
     second.share.setVisible(true)
 
     #expect(session.controlChannel.sent == [.release(lease: lease)] && !surface.inputActive)
-    await awaitObserved { second.log.events.count == 3 && first.log.events.count == 3 }
-    expectNoDifference(second.log.events, [.elsewhere, .opened(endpoint), .ready])
-    expectNoDifference(first.log.events, [.opened(endpoint), .ready, .elsewhere])
+    await awaitObserved { second.log.events.count == 4 && first.log.events.count == 3 }
+    expectNoDifference(second.log.events, [.elsewhere(nil), .elsewhere(endpoint), .opened(endpoint), .ready])
+    expectNoDifference(first.log.events, [.opened(endpoint), .ready, .elsewhere(endpoint)])
   }
 
   @Test func hidingTheSponsorKeepsItsConnectionButClosingItReconnectsUnderAnotherPane() async {
@@ -137,6 +139,44 @@ struct ScreenSharingViewerRegistryTests {
     #expect(next.runner.connects == 0)
     first.runner.stopFinished.signal()
     await next.runner.connected.wait()
+  }
+
+  @Test func aWatcherMirrorsTheLiveEndpointWithoutEverTakingIt() async {
+    let tab = Pane(registry)
+    let watcher = Pane(registry, role: .watcher)
+    tab.show(visible: false)
+    watcher.show()
+    await tab.runner.connected.wait()
+    let endpoint = endpoint()
+    tab.runner.send(.opened(endpoint))
+    await awaitObserved { watcher.log.events == [.elsewhere(nil), .elsewhere(endpoint)] }
+
+    watcher.share.claim()
+    watcher.share.setVisible(true)
+    tab.share.setVisible(true)
+
+    await awaitObserved { tab.log.events == [.opened(endpoint)] }
+    expectNoDifference(watcher.log.events, [.elsewhere(nil), .elsewhere(endpoint)])
+  }
+
+  @Test func aDesktopWindowKeepsTheStreamOverATabUntilItCloses() async {
+    let tab = Pane(registry)
+    let window = Pane(registry, role: .window)
+    tab.show()
+    await tab.runner.connected.wait()
+    let endpoint = endpoint()
+    tab.runner.send(.opened(endpoint))
+    await awaitObserved { tab.log.events == [.opened(endpoint)] }
+    window.show()
+    await awaitObserved { window.log.events == [.opened(endpoint)] }
+
+    tab.share.setVisible(false)
+    tab.share.setVisible(true)
+    #expect(window.log.events == [.opened(endpoint)])
+
+    await window.leave()
+    await awaitObserved { tab.log.events.last == .opened(endpoint) }
+    expectNoDifference(tab.log.events, [.opened(endpoint), .elsewhere(endpoint), .opened(endpoint)])
   }
 
   @Test func aHostEndEndsEveryPanesStream() async {

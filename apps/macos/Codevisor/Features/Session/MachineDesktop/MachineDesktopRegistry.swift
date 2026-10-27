@@ -24,16 +24,19 @@ final class MachineDesktopRegistry {
     workspace: Workspace, project: Project, machine: CodevisorMachine, environment: AppEnvironment
   ) -> MachineDesktopSession {
     let client = environment.machines.client(for: workspace.serverId)
-    let paneId = MachineDesktopSession.paneId(forWorkspace: workspace.id)
-    let descriptor = PaneDescriptorState(
-      id: paneId, kind: .screenSharing, name: "Desktop", terminalKey: paneId.uuidString,
-      screenSharing: ScreenSharingPanePreferences())
-    let context = PaneContext(
-      paneId: paneId, sessionId: nil, terminalKey: descriptor.terminalKey, machine: machine, session: nil,
-      project: project, workspaceRootDirectory: workspace.rootDirectory, workspaceId: workspace.id, client: client,
-      openTunnelMedia: Self.tunnelMedia(serverId: workspace.serverId, machines: environment.machines))
-    let pane = ScreenSharingPane(context: context, descriptor: descriptor)
-    return MachineDesktopSession(pane: pane, workspaceId: workspace.id, client: client)
+    let pane = { (role: ScreenSharingViewerRole) in
+      let paneId = MachineDesktopSession.paneId(forWorkspace: workspace.id, role: role)
+      let descriptor = PaneDescriptorState(
+        id: paneId, kind: .screenSharing, name: "Desktop", terminalKey: paneId.uuidString,
+        screenSharing: ScreenSharingPanePreferences())
+      let context = PaneContext(
+        paneId: paneId, sessionId: nil, terminalKey: descriptor.terminalKey, machine: machine, session: nil,
+        project: project, workspaceRootDirectory: workspace.rootDirectory, workspaceId: workspace.id, client: client,
+        openTunnelMedia: Self.tunnelMedia(serverId: workspace.serverId, machines: environment.machines))
+      return ScreenSharingPane(context: context, descriptor: descriptor, role: role)
+    }
+    return MachineDesktopSession(
+      preview: pane(.watcher), window: pane(.window), workspaceId: workspace.id, client: client)
   }
 
   private static func tunnelMedia(

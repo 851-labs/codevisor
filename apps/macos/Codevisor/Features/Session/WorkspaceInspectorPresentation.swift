@@ -144,10 +144,12 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       activity: activity(in: workspace),
       client: environment.machines.client(for: workspace.serverId),
       desktop: desktop,
-      isDesktopDialogOpen: MachineDesktopWindows.shared.isOpen(workspace.serverId),
       onOpenDesktop: {
         guard let desktop else { return }
-        MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
+        Task {
+          guard await desktop.register() else { return }
+          MachineDesktopWindows.shared.present(desktop, machineId: workspace.serverId, environment: environment)
+        }
       },
       onReload: { Task { await reload(inspected) } },
       onOpen: { destination in

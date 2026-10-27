@@ -1,25 +1,19 @@
 import AppKit
 import CodevisorCore
-import Observation
 import SwiftUI
 
 @MainActor
-@Observable
 final class MachineDesktopWindows {
   static let shared = MachineDesktopWindows()
 
   private static let initialSize = NSSize(width: 1100, height: 720)
 
-  private(set) var openMachineIds: Set<String> = []
-  @ObservationIgnored private var windows: [String: NSWindow] = [:]
-  @ObservationIgnored private var closeObservers: [String: NSObjectProtocol] = [:]
-
-  func isOpen(_ machineId: String) -> Bool { openMachineIds.contains(machineId) }
+  private var windows: [String: NSWindow] = [:]
+  private var closeObservers: [String: NSObjectProtocol] = [:]
 
   func present(_ session: MachineDesktopSession, machineId: String, environment: AppEnvironment) {
     let window = windows[machineId] ?? makeWindow(session, machineId: machineId, environment: environment)
     windows[machineId] = window
-    openMachineIds.insert(machineId)
     window.makeKeyAndOrderFront(nil)
   }
 
@@ -30,7 +24,7 @@ final class MachineDesktopWindows {
       rootView: MachineDesktopDialog(session: session).environment(environment).themedRoot())
     host.sceneBridgingOptions = [.toolbars, .title]
     let window = NSWindow(contentViewController: host)
-    window.title = "\(session.pane.machineName) – Desktop"
+    window.title = "\(session.window.machineName) – Desktop"
     window.styleMask.insert([.resizable, .miniaturizable])
     window.setContentSize(Self.initialSize)
     window.isReleasedWhenClosed = false
@@ -44,7 +38,6 @@ final class MachineDesktopWindows {
   }
 
   private func closed(_ machineId: String) {
-    openMachineIds.remove(machineId)
     windows[machineId] = nil
     closeObservers.removeValue(forKey: machineId).map(NotificationCenter.default.removeObserver)
   }

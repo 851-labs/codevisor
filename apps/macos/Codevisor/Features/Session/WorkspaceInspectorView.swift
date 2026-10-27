@@ -28,7 +28,6 @@ struct WorkspaceInspectorView: View {
   let activity: Date?
   let client: any CodevisorServerClienting
   let desktop: MachineDesktopSession?
-  let isDesktopDialogOpen: Bool
   let onOpenDesktop: () -> Void
   let onReload: () -> Void
   let onOpen: (Destination) -> Void
@@ -193,7 +192,7 @@ struct WorkspaceInspectorView: View {
     case .machine:
       WorkspaceInspectorMachineView(
         serverId: workspace.serverId, isActive: self.tab == .machine, client: client, desktop: desktop,
-        isDesktopDialogOpen: isDesktopDialogOpen, desktopExpansion: expansion("Desktop"),
+        desktopExpansion: expansion("Desktop"),
         statsExpansion: expansion("Stats"), onOpenDesktop: onOpenDesktop)
     case .media: WorkspaceInspectorMediaView(model: media, onRetry: onReload)
     case .links:

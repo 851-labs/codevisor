@@ -13,6 +13,7 @@ final class ScreenSharingPane: Pane {
   let store: StoreOf<ScreenSharingViewer>?
   let machineName: String
   let isLocal: Bool
+  let role: ScreenSharingViewerRole
   var onGroupCommand: ((PaneGroupCommand) -> Void)?
   var onFocusChanged: ((Bool) -> Void)? { didSet { store?.endpoint?.onFocusChanged = onFocusChanged } }
   var onFocus: (() -> Void)?
@@ -30,25 +31,14 @@ final class ScreenSharingPane: Pane {
 
   var connectionName: String { machineName }
 
-  init(context: PaneContext, descriptor: PaneDescriptorState) {
+  init(context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole = .tab) {
     id = descriptor.id
+    self.role = role
     machineName = context.machine.name
     machineId = context.machine.id
     isLocal = context.machine.isLocal
     connection = Self.connection(of: context.machine)
-    store = context.workspaceId.map { workspaceId in
-      let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
-      let state = ScreenSharingViewer.State(
-        preferences: descriptor.screenSharing ?? .init(),
-        dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: context.machine.id))
-      return Store(initialState: state) {
-        ScreenSharingViewer()
-      } withDependencies: {
-        $0[ScreenSharingViewerBackend.self] = .native(
-          client: client, workspaceId: workspaceId, paneId: descriptor.id, machineId: context.machine.id,
-          tunnelMedia: context.openTunnelMedia)
-      }
-    }
+    store = Self.makeStore(context: context, descriptor: descriptor, role: role)
     guard let store else { return }
     observation = observe { [weak self] in
       guard let self else { return }
@@ -89,6 +79,23 @@ final class ScreenSharingPane: Pane {
     }
   }
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
+
+  private static func makeStore(
+    context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole
+  ) -> StoreOf<ScreenSharingViewer>? {
+    guard let workspaceId = context.workspaceId else { return nil }
+    let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
+    let state = ScreenSharingViewer.State(
+      preferences: descriptor.screenSharing ?? .init(),
+      dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: context.machine.id))
+    return Store(initialState: state) {
+      ScreenSharingViewer()
+    } withDependencies: {
+      $0[ScreenSharingViewerBackend.self] = .native(
+        client: client, workspaceId: workspaceId, paneId: descriptor.id, machineId: context.machine.id,
+        role: role, tunnelMedia: context.openTunnelMedia)
+    }
+  }
 
   func machineSettings() -> ScreenSharingMachineSettings {
     var settings = ScreenSharingMachineSettings(
@@ -212,13 +219,10 @@ private struct ScreenSharingPaneView: View {
   }
 
   private func elsewhere(_ store: StoreOf<ScreenSharingViewer>) -> some View {
-    VStack(spacing: 12) {
-      Image(systemName: "rectangle.on.rectangle").font(.largeTitle).foregroundStyle(.secondary)
-      Text("\(pane.connectionName) is showing in another pane.").foregroundStyle(.secondary)
-      Button("Show Here") { store.send(.showHereTapped) }
-    }
-    .padding(24)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    ScreenSharingMirrorPane(
+      endpoint: store.mirror, connectionName: pane.connectionName,
+      onTakeControl: pane.role == .watcher ? nil : { store.send(.showHereTapped) }
+    )
     .simultaneousGesture(TapGesture().onEnded { pane.onFocusChanged?(true) })
   }
 

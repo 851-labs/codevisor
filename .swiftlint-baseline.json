@@ -420,21 +420,6 @@
     }
   },
   {
-    "text": "  init(context: PaneContext, descriptor: PaneDescriptorState) {",
-    "violation": {
-      "location": {
-        "character": 3,
-        "file": "apps/macos/Codevisor/Features/Panes/ScreenSharingPane.swift",
-        "line": 33
-      },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  private func handleDrop(_ providers: [NSItemProvider]) -> Bool {",
     "violation": {
       "location": {
@@ -515,7 +500,7 @@
       "location": {
         "character": 11,
         "file": "apps/macos/Codevisor/Features/Session/SessionContainerView.swift",
-        "line": 75
+        "line": 76
       },
       "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 109 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -653,21 +638,6 @@
         "line": 214
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  private func workspaceRegionRow(",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/macos/Codevisor/Features/Sidebar/SidebarView+WorkspaceRows.swift",
-        "line": 16
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1535,7 +1505,7 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerBackend.swift",
-        "line": 231
+        "line": 233
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 88 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1550,9 +1520,9 @@
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerEndpoint.swift",
-        "line": 120
+        "line": 121
       },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 93 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 90 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1958,21 +1928,6 @@
         "line": 31
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 55 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  public static func derive(_ state: State) -> [SidebarRow] {",
-    "violation": {
-      "location": {
-        "character": 17,
-        "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Sidebar/SidebarRows.swift",
-        "line": 146
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

@@ -84,19 +84,48 @@ public struct ScreenSharingEncodedFrame: Sendable {
 public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   private let lock = NSLock()
   private var frame: ScreenSharingVideoFrame?
+  private var latest: ScreenSharingVideoFrame?
+  private var taps: [UUID: ScreenSharingFrameMailbox] = [:]
   private var replacements = 0
   private var onAvailable: (@Sendable () -> Void)?
+  private var keepsLatest = false
 
   public init() {}
 
+  public var retainsLatest: Bool {
+    get { lock.withLock { keepsLatest } }
+    set {
+      lock.withLock {
+        keepsLatest = newValue
+        if !newValue { latest = nil }
+      }
+    }
+  }
+
   public func put(_ value: ScreenSharingVideoFrame) {
-    let notify = lock.withLock {
+    let (notify, copies) = lock.withLock {
       let previous = frame
       if previous != nil { replacements += 1 }
       frame = value
-      return previous == nil ? onAvailable : nil
+      if keepsLatest { latest = value }
+      return (previous == nil ? onAvailable : nil, Array(taps.values))
     }
     notify?()
+    for copy in copies { copy.put(value) }
+  }
+
+  public func tap(_ id: UUID) -> ScreenSharingFrameMailbox {
+    lock.withLock {
+      if let existing = taps[id] { return existing }
+      let copy = ScreenSharingFrameMailbox()
+      if let latest { copy.put(latest) }
+      taps[id] = copy
+      return copy
+    }
+  }
+
+  public func untap(_ id: UUID) {
+    lock.withLock { taps[id] = nil }
   }
 
   public func onFrameAvailable(_ callback: (@Sendable () -> Void)?) {
@@ -113,7 +142,12 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
     }
   }
 
-  public func clear() { lock.withLock { frame = nil } }
+  public func clear() {
+    lock.withLock {
+      frame = nil
+      latest = nil
+    }
+  }
   public var droppedFrames: Int { lock.withLock { replacements } }
   public var isHolding: Bool { lock.withLock { frame != nil } }
 }
