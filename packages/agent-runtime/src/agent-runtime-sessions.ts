@@ -15,6 +15,7 @@ export type AgentSessionOperations = Pick<
   | "probeHarnessAuth"
   | "prompt"
   | "readSessionContext"
+  | "replyToQuestion"
   | "setConfigOption"
   | "setGoal"
   | "setMode"
@@ -132,6 +133,20 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
           )
         }
         return yield* answerQuestion(questionId, answer)
+      }),
+    replyToQuestion: (sessionId, questionId, reply) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const replyToQuestion = session.handle.replyToQuestion
+        if (replyToQuestion === undefined) {
+          return yield* Effect.fail(
+            new AgentRuntimeError({
+              operation: "replyToQuestion",
+              message: "Questions are not supported by this harness"
+            })
+          )
+        }
+        return yield* replyToQuestion(questionId, reply)
       }),
     readSessionContext: (sessionId) =>
       Effect.gen(function* () {

@@ -7,7 +7,7 @@ import TranscriptKit
 
 extension ChatScreen {
   var rowLeaves: TranscriptRowLeaves {
-    .macOS(errorRow: { AnyView(errorBanner($0)) })
+    .macOS(focus: isReadOnly ? nil : focus, errorRow: { AnyView(errorBanner($0)) })
   }
 
   @ViewBuilder

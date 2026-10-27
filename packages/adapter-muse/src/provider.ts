@@ -52,6 +52,8 @@ const museSessionHandle = (chat: MuseChat): AgentSessionHandle => ({
     adapterPromise("setConfigOption", () => chat.setConfigOption(configId, value)),
   answerQuestion: (questionId, answer) =>
     adapterPromise("answerQuestion", () => chat.answerQuestion(questionId, answer)),
+  replyToQuestion: (questionId, reply) =>
+    adapterPromise("replyToQuestion", () => chat.replyToQuestion(questionId, reply)),
   close: Effect.sync(() => chat.close())
 })
 

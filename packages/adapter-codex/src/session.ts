@@ -26,7 +26,13 @@ export interface PendingCodexQuestion {
   readonly reject: (error: Error) => void
   readonly timer: NodeJS.Timeout | undefined
   readonly respond: (answers: NonNullable<QuestionAnswer["answers"]>) => unknown
+  readonly reply: (text: string | undefined) => CodexQuestionReply
   readonly cancelResponse?: unknown
+}
+
+export interface CodexQuestionReply {
+  readonly response: unknown
+  readonly carriedText: boolean
 }
 
 export interface AsyncCodexQuestion {

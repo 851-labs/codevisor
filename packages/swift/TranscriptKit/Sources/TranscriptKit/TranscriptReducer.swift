@@ -53,22 +53,10 @@ public enum TranscriptReducer {
       TranscriptEntryOrdering.applyContextCompaction(id: id, status: status, entries: &turn.entries)
 
     case let .question(request):
-      if let kind = TranscriptSetupRequest.kind(of: request.questions) {
-        turn.isThinking = false
-        turn.addSetupRequest(.init(id: request.questionId, kind: kind, state: .pending))
-      }
+      applyQuestion(request, to: &turn)
 
     case let .questionResolved(resolution):
-      if let kind = TranscriptSetupRequest.kind(of: resolution.questions) {
-        turn.upsertSetupRequest(
-          .init(
-            id: resolution.questionId,
-            kind: kind,
-            state: resolution.outcome == .cancelled ? .declined : .setUp
-          ))
-      } else {
-        TranscriptToolReduction.applyQuestion(resolution, to: &turn)
-      }
+      applyResolution(resolution, to: &turn)
 
     case .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
       .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
@@ -97,6 +85,27 @@ public enum TranscriptReducer {
   public static func settleToolCalls(_ turn: inout AssistantTurn, outcome: TurnOutcome) {
     TranscriptToolReduction.settleToolCalls(&turn, outcome: outcome)
   }
+
+  private static func applyQuestion(_ request: QuestionRequest, to turn: inout AssistantTurn) {
+    if let kind = TranscriptSetupRequest.kind(of: request.questions) {
+      turn.isThinking = false
+      turn.addSetupRequest(.init(id: request.questionId, kind: kind, state: .pending))
+    } else if TranscriptQuestion.asksInTranscript(request.questions) {
+      turn.isThinking = false
+      turn.interactions.ask(request)
+    }
+  }
+
+  private static func applyResolution(_ resolution: QuestionResolution, to turn: inout AssistantTurn) {
+    if let kind = TranscriptSetupRequest.kind(of: resolution.questions) {
+      let state: TranscriptSetupRequest.State = resolution.outcome == .cancelled ? .declined : .setUp
+      turn.upsertSetupRequest(.init(id: resolution.questionId, kind: kind, state: state))
+    } else if TranscriptQuestion.asksInTranscript(resolution.questions) {
+      turn.interactions.resolve(resolution)
+    } else {
+      TranscriptToolReduction.applyQuestion(resolution, to: &turn)
+    }
+  }
 }
 
 public struct TranscriptTextState: Equatable, Sendable {
@@ -109,4 +118,5 @@ public struct TranscriptTextState: Equatable, Sendable {
     self.revision = revision
     self.resource = resource
   }
+
 }

@@ -41,6 +41,8 @@ export * from "./rows.js"
 
 export * from "./service.js"
 
+export { setupQuestionPresentation } from "./setup-questions.js"
+
 export type { AutoResumeRecord, AutoResumeState } from "./auto-resume-service.js"
 export type { FleetMessage, FleetPendingTurn, FleetPrompt } from "./fleet-outbox-service.js"
 

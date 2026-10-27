@@ -24,8 +24,8 @@ import { recordToolFileChanges } from "./file-change-projection.js"
 import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import { nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
-import { setupQuestionPresentation } from "./setup-questions.js"
 import { recordTextMedia, recordToolMedia } from "./tool-media-projection.js"
+import { splitsWorkedSection } from "./transcript-questions.js"
 
 const attachmentsRows = rowReader({ attachments: nullable(text) })
 
@@ -161,7 +161,7 @@ const continueTurnInNewSection = (
   setChatRoute(sqlite, sessionId, `steered:${itemId}`, closedItem)
 }
 
-const projectSetupSection = (
+const projectQuestionSection = (
   sqlite: Database.Database,
   event: SessionEventRow,
   payload: JsonRecord,
@@ -169,9 +169,8 @@ const projectSetupSection = (
   update: string | undefined,
   itemId: string
 ): void => {
-  if (typeof payload.questionId !== "string" || setupQuestionPresentation(payload) === undefined) {
-    return
-  }
+  if (typeof payload.questionId !== "string" || !splitsWorkedSection(payload)) return
+
   const isCurrent = chatState(sqlite, sessionId).current_item_id === itemId
   if (update === "question") {
     setChatRoute(sqlite, sessionId, `question:${payload.questionId}`, itemId)
@@ -271,7 +270,7 @@ const projectWorkedDetail = (
     appendCompletedImage(sqlite, payload, itemId, parent)
     recordToolMedia(sqlite, event, payload, itemId)
     recordToolFileChanges(sqlite, event, payload, itemId)
-    projectSetupSection(sqlite, event, payload, sessionId, update, itemId)
+    projectQuestionSection(sqlite, event, payload, sessionId, update, itemId)
     return itemId
   }
   return undefined

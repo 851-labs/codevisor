@@ -64,6 +64,7 @@ describe("Muse provider", () => {
     })
     await expect(prompted).resolves.toEqual({ stopReason: "cancelled" })
     await expect(run(handle.answerQuestion!("nope", { outcome: "cancelled" }))).rejects.toThrow()
+    await expect(run(handle.replyToQuestion!("nope", { text: "hi" }))).rejects.toThrow()
     await run(handle.close)
     expect(client.closed).toBe(true)
   })

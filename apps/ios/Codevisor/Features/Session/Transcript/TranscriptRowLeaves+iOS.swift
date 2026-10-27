@@ -58,13 +58,27 @@ extension TranscriptRowLeaves {
       setup: { phases in
         AnyView(SessionSetupView(phases: phases))
       },
-      setupRequest: { request, inBotConversation, controller in
-        AnyView(SetupRequestRow(request: request, inBotConversation: inBotConversation, controller: controller))
-      },
+      setupRequest: setupRequestRow,
+      interaction: questionRow,
       errorRow: { message, rowID in
         AnyView(SessionErrorRow(controller: controller, message: message, rowID: rowID))
       }
     )
+  }
+
+  @MainActor
+  private static func setupRequestRow(
+    _ request: TranscriptSetupRequest, _ inBotConversation: Bool, _ controller: SessionController
+  ) -> AnyView {
+    AnyView(SetupRequestRow(request: request, inBotConversation: inBotConversation, controller: controller))
+  }
+
+  @MainActor
+  private static func questionRow(
+    _ interaction: TranscriptInteraction, _ inBotConversation: Bool, _ controller: SessionController
+  ) -> AnyView {
+    AnyView(
+      TranscriptQuestionRow(interaction: interaction, inBotConversation: inBotConversation, controller: controller))
   }
 }
 

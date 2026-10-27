@@ -1,8 +1,8 @@
 import type { QuestionSpec } from "@codevisor/api"
 
-import type { QuestionAnswer } from "./types.js"
+import type { PromptInput, QuestionAnswer } from "./types.js"
 
-export type QuestionOutcome = QuestionAnswer["outcome"] | "autoResolved"
+export type QuestionOutcome = QuestionAnswer["outcome"] | "autoResolved" | "replied"
 
 export interface QuestionResolution {
   readonly outcome: QuestionOutcome
@@ -91,3 +91,9 @@ const presentDetails = (
   ...(details.message === undefined ? {} : { message: details.message }),
   ...(details.autoResolutionMs === undefined ? {} : { autoResolutionMs: details.autoResolutionMs })
 })
+
+export const questionReplyText = (reply: PromptInput): string | undefined => {
+  const text = reply.text.trim()
+  if (text.length === 0 || (reply.attachments?.length ?? 0) > 0) return undefined
+  return `The user replied instead: ${text}`
+}

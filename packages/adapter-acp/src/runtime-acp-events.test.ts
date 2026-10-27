@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import {
+  type PromptInput,
   type QuestionAnswer,
   type RuntimeEmit,
   type RuntimeEvent,
@@ -308,11 +309,15 @@ describe("@codevisor/agent-runtime", () => {
     await expect(
       run(runtime.answerQuestion(sessionId, "q-1", { outcome: "cancelled" }))
     ).rejects.toThrow("Questions are not supported by this harness")
+    await expect(
+      run(runtime.replyToQuestion(sessionId, "q-1", { text: "Do this instead" }))
+    ).rejects.toThrow("Questions are not supported by this harness")
     await expect(run(runtime.readSessionContext(sessionId))).resolves.toBeUndefined()
   })
 
   it("preserves optional question and goal methods through the generic ACP provider", async () => {
     const answered: Array<readonly [string, string, QuestionAnswer]> = []
+    const replied: Array<readonly [string, string, PromptInput]> = []
     const goalUpdates: Array<readonly [string, SetGoalUpdate]> = []
     const cleared: Array<string> = []
     const goal = {
@@ -328,6 +333,13 @@ describe("@codevisor/agent-runtime", () => {
       answerQuestion(sessionId: string, questionId: string, answer: QuestionAnswer) {
         return Effect.sync(() => {
           answered.push([sessionId, questionId, answer])
+        })
+      }
+
+      replyToQuestion(sessionId: string, questionId: string, reply: PromptInput) {
+        return Effect.sync(() => {
+          replied.push([sessionId, questionId, reply])
+          return true
         })
       }
 
@@ -362,10 +374,14 @@ describe("@codevisor/agent-runtime", () => {
     await expect(
       run(runtime.answerQuestion(sessionId, "question-1", answer))
     ).resolves.toBeUndefined()
+    await expect(
+      run(runtime.replyToQuestion(sessionId, "question-2", { text: "use B" }))
+    ).resolves.toBe(true)
     await expect(run(runtime.clearGoal(sessionId))).resolves.toBeUndefined()
 
     expect(goalUpdates).toEqual([[sessionId, { status: "paused" }]])
     expect(answered).toEqual([[sessionId, "question-1", answer]])
+    expect(replied).toEqual([[sessionId, "question-2", { text: "use B" }]])
     expect(cleared).toEqual([sessionId])
   })
 

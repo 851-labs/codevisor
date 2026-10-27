@@ -321,4 +321,74 @@ describe("ClaudeProvider", () => {
       sessionUpdate: "question_resolved"
     })
   })
+  it("replying to a question denies the tool with the user's reply", async () => {
+    const { fake, events, created } = await startTestSession()
+    const reply = { text: " Use magic links " }
+    const replied = "The user replied instead: Use magic links"
+
+    const question = fake.options!.canUseTool!(
+      "AskUserQuestion",
+      { questions: [{ options: [{ label: "A" }], question: "Which?" }] },
+      toolCheck()
+    )
+    await fake.drain()
+    const questionId = stringValue(payloadOf(events.at(-1)).questionId)
+    await expect(run(created.handle.replyToQuestion!(questionId, reply))).resolves.toBe(true)
+    await expect(question).resolves.toEqual({ behavior: "deny", message: replied })
+    expect(events.at(-1)?.payload).toEqual({
+      outcome: "replied",
+      questionId,
+      questions: expect.any(Array),
+      sessionUpdate: "question_resolved"
+    })
+
+    await run(created.handle.setMode("default"))
+    const approval = fake.options!.canUseTool!("Bash", { command: "ls" }, toolCheck())
+    await fake.drain()
+    const approvalId = stringValue(payloadOf(events.at(-1)).questionId)
+    await expect(run(created.handle.replyToQuestion!(approvalId, reply))).resolves.toBe(true)
+    await expect(approval).resolves.toEqual({ behavior: "deny", message: replied })
+
+    const plan = fake.options!.canUseTool!("ExitPlanMode", {}, toolCheck())
+    await fake.drain()
+    const planId = stringValue(payloadOf(events.at(-1)).questionId)
+    await expect(run(created.handle.replyToQuestion!(planId, reply))).resolves.toBe(true)
+    await expect(plan).resolves.toEqual({
+      behavior: "deny",
+      message:
+        "The user wants to keep refining the plan. Stay in plan mode and continue planning.\n\n" +
+        `The user's feedback on the plan:\n${replied}`
+    })
+
+    await expect(run(created.handle.replyToQuestion!("nope", reply))).rejects.toThrow(
+      "No pending question"
+    )
+  })
+
+  it("a reply that can't travel as text declines the question neutrally", async () => {
+    const { fake, events, created } = await startTestSession()
+    const neutral = { behavior: "deny", message: "The user replied instead of answering." }
+
+    const question = fake.options!.canUseTool!(
+      "AskUserQuestion",
+      { questions: [{ options: [{ label: "A" }], question: "Which?" }] },
+      toolCheck()
+    )
+    await fake.drain()
+    const questionId = stringValue(payloadOf(events.at(-1)).questionId)
+    await expect(run(created.handle.replyToQuestion!(questionId, { text: "  " }))).resolves.toBe(
+      false
+    )
+    await expect(question).resolves.toEqual(neutral)
+
+    const plan = fake.options!.canUseTool!("ExitPlanMode", {}, toolCheck())
+    await fake.drain()
+    const planId = stringValue(payloadOf(events.at(-1)).questionId)
+    await expect(run(created.handle.replyToQuestion!(planId, { text: "" }))).resolves.toBe(false)
+    await expect(plan).resolves.toEqual(neutral)
+    expect(events.at(-1)?.payload).toMatchObject({
+      outcome: "replied",
+      sessionUpdate: "question_resolved"
+    })
+  })
 })

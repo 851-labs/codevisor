@@ -45,6 +45,8 @@ const piSessionHandle = (session: PiSession): AgentSessionHandle => ({
     adapterPromise("setConfigOption", () => session.setConfigOption(configId, value)),
   answerQuestion: (questionId, answer) =>
     adapterPromise("answerQuestion", async () => session.answerQuestion(questionId, answer)),
+  replyToQuestion: (questionId, reply) =>
+    adapterPromise("replyToQuestion", async () => session.replyToQuestion(questionId, reply)),
   close: Effect.sync(() => session.close())
 })
 

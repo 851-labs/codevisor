@@ -44,8 +44,8 @@ extension SessionModel {
     stalledTurnWatch.restart(for: self)
   }
 
-  func applySetupUpdate(_ update: SessionUpdate, questionId: String) {
-    guard let owner = setupOwnerIndex(questionId: questionId),
+  func applyTurnQuestionUpdate(_ update: SessionUpdate, questionId: String) {
+    guard let owner = questionOwnerIndex(questionId: questionId),
       case .assistant(var message) = item(at: owner)
     else { return }
 
@@ -242,9 +242,10 @@ extension SessionModel {
 
   private func applyQuestion(_ request: QuestionRequest) {
     pendingQuestion = request
-    guard Self.isSetupQuestion(request.questions) else { return }
+    guard Self.asksInTurn(request.questions) else { return }
 
-    applySetupUpdate(.question(request), questionId: request.questionId)
+    if questionOwnerIndex(questionId: request.questionId) == nil { ensureAssistantTurn() }
+    applyTurnQuestionUpdate(.question(request), questionId: request.questionId)
     closeActiveSection()
     settleActiveItem()
   }
@@ -253,15 +254,15 @@ extension SessionModel {
     if pendingQuestion?.questionId == resolution.questionId { pendingQuestion = nil }
     markActivePlanResumedIfNeeded()
 
-    if Self.isSetupQuestion(resolution.questions) {
-      resolveSetupQuestion(resolution)
+    if Self.asksInTurn(resolution.questions) {
+      resolveTurnQuestion(resolution)
     } else if resolution.outcome == .answered {
       applyAnswer(resolution)
     }
   }
 
-  private func resolveSetupQuestion(_ resolution: QuestionResolution) {
-    applySetupUpdate(.questionResolved(resolution), questionId: resolution.questionId)
+  private func resolveTurnQuestion(_ resolution: QuestionResolution) {
+    applyTurnQuestionUpdate(.questionResolved(resolution), questionId: resolution.questionId)
     guard let continuation = resolution.assistantItemId.flatMap(UUID.init(uuidString:)),
       activeItem == nil
     else { return }
@@ -386,14 +387,15 @@ extension SessionModel {
     activeItem = .assistant(message)
   }
 
-  private func setupOwnerIndex(questionId: String) -> Int? {
+  private func questionOwnerIndex(questionId: String) -> Int? {
     let indices = (0..<itemCount).reversed()
-    return indices.first { asksSetupQuestion(questionId, at: $0) } ?? indices.first { isAssistantItem(at: $0) }
+    return indices.first { asksQuestion(questionId, at: $0) } ?? indices.first { isAssistantItem(at: $0) }
   }
 
-  private func asksSetupQuestion(_ questionId: String, at index: Int) -> Bool {
+  private func asksQuestion(_ questionId: String, at index: Int) -> Bool {
     guard case let .assistant(message) = item(at: index) else { return false }
     return message.turn.setupRequests.contains { $0.id == questionId }
+      || message.turn.interactions.contains(id: questionId)
   }
 
   private func isAssistantItem(at index: Int) -> Bool {
@@ -433,8 +435,8 @@ extension SessionModel {
     activeItem = .assistant(message)
   }
 
-  private nonisolated static func isSetupQuestion(_ questions: [QuestionSpec]) -> Bool {
-    TranscriptSetupRequest.kind(of: questions) != nil
+  nonisolated static func asksInTurn(_ questions: [QuestionSpec]) -> Bool {
+    TranscriptSetupRequest.kind(of: questions) != nil || TranscriptQuestion.asksInTranscript(questions)
   }
 
   private nonisolated static func planChanged(_ turn: AssistantTurn, revision: Int, document: String?) -> Bool {

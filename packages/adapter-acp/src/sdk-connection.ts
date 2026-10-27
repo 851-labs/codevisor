@@ -32,6 +32,11 @@ export interface AcpQuestionControls {
     questionId: string,
     answer: QuestionAnswer
   ) => Promise<void>
+  readonly replyToQuestion: (
+    sessionId: string,
+    questionId: string,
+    reply: PromptInput
+  ) => Promise<boolean>
   readonly cancelQuestions: (sessionId: string | undefined) => void
 }
 
@@ -179,6 +184,10 @@ export const sdkConnection = (
           answerQuestion: (sessionId: string, questionId: string, answer: QuestionAnswer) =>
             adapterPromise("answerQuestion", () =>
               questions.answerQuestion(sessionId, questionId, answer)
+            ),
+          replyToQuestion: (sessionId: string, questionId: string, reply: PromptInput) =>
+            adapterPromise("replyToQuestion", () =>
+              questions.replyToQuestion(sessionId, questionId, reply)
             )
         }),
     listSessions: adapterPromise("listSessions", async () => {

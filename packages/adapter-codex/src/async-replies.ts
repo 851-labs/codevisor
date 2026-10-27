@@ -1,8 +1,15 @@
-import type { QuestionAnswer } from "@codevisor/agent-runtime"
+import { questionReplyText } from "@codevisor/agent-runtime"
+import type { PromptInput, QuestionAnswer } from "@codevisor/agent-runtime"
 import type { QuestionAnswerEntry, QuestionSpec } from "@codevisor/api"
 
 import type { CodexInputItem } from "./attachments.js"
-import { answerCodexQuestion, dismissAsyncQuestion, emitQuestionResolved } from "./questions.js"
+import {
+  answerCodexQuestion,
+  dismissAsyncQuestion,
+  emitQuestionResolved,
+  REPLIED_WITHOUT_TEXT,
+  replyToCodexQuestion
+} from "./questions.js"
 import type { CodexSession } from "./session.js"
 import { completeNotificationTurn } from "./turn-notifications.js"
 import { startCodexTurn } from "./turn-start.js"
@@ -20,14 +27,10 @@ export const answerQuestion = async (
     return text === undefined ? [] : [questionReply(spec, text)]
   })
   if (replies.length === 0) {
-    const turnId = session.activeTurnId
-    if (turnId !== undefined) {
-      await steer(
-        session,
-        turnId,
-        replyInput(asked.questions.map((spec) => questionReply(spec, DISMISSED)))
-      )
-    }
+    await steerActiveTurn(
+      session,
+      replyInput(asked.questions.map((spec) => questionReply(spec, DISMISSED)))
+    )
     dismissAsyncQuestion(session)
     if (session.heldTurnId !== undefined && session.activeTurnId === undefined) {
       completeNotificationTurn(session, { turn: { status: "completed" } })
@@ -37,6 +40,30 @@ export const answerQuestion = async (
   await deliver(session, replyInput(replies))
   if (session.asyncQuestion === asked) session.asyncQuestion = undefined
   await emitQuestionResolved(session, questionId, "answered", asked.questions, answers)
+}
+
+export const replyToQuestion = async (
+  session: CodexSession,
+  questionId: string,
+  reply: PromptInput
+): Promise<boolean> => {
+  const text = questionReplyText(reply)
+  const asked = session.asyncQuestion
+  if (asked?.questionId !== questionId) return replyToCodexQuestion(session, questionId, text)
+  const replies = asked.questions.map((spec) => questionReply(spec, text ?? REPLIED_WITHOUT_TEXT))
+  await sendAsyncReply(session, replyInput(replies), text !== undefined)
+  if (session.asyncQuestion === asked) session.asyncQuestion = undefined
+  await emitQuestionResolved(session, questionId, "replied", asked.questions, undefined)
+  return text !== undefined
+}
+
+const sendAsyncReply = async (
+  session: CodexSession,
+  input: ReadonlyArray<CodexInputItem>,
+  carriedText: boolean
+): Promise<void> => {
+  if (carriedText) return deliver(session, input)
+  await steerActiveTurn(session, input)
 }
 
 const DISMISSED = "The user dismissed this question without answering."
@@ -78,6 +105,14 @@ const deliver = async (
   const turnId = session.activeTurnId
   if (turnId !== undefined && (await steer(session, turnId, input))) return
   await startCodexTurn(session, input)
+}
+
+const steerActiveTurn = async (
+  session: CodexSession,
+  input: ReadonlyArray<CodexInputItem>
+): Promise<void> => {
+  const turnId = session.activeTurnId
+  if (turnId !== undefined) await steer(session, turnId, input)
 }
 
 const steer = (

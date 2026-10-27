@@ -490,6 +490,7 @@ export const makeAgents = (): AgentRuntimeService & {
             sessionUpdate: "question_resolved"
           }
         })
-      })
+      }),
+    replyToQuestion: () => Effect.succeed(false)
   }
 }

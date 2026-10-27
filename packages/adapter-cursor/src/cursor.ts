@@ -1,4 +1,4 @@
-import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
+import type { AcpMappedQuestion, AcpQuestionReply } from "@codevisor/adapter-acp"
 import type { QuestionAnswer, RuntimeEvent } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
@@ -94,6 +94,15 @@ const cursorQuestionResponse = (
     : { outcome: { outcome: "answered", answers } }
 }
 
+const cursorQuestionReply = (
+  replyText: string | undefined
+): AcpQuestionReply<CursorAskQuestionResponse> => {
+  if (replyText === undefined) {
+    return { delivered: false, response: { outcome: { outcome: "skipped" } } }
+  }
+  return { delivered: true, response: { outcome: { outcome: "skipped", reason: replyText } } }
+}
+
 export const cursorAskQuestion = (
   params: unknown,
   sessionId: string
@@ -114,7 +123,8 @@ export const cursorAskQuestion = (
     sessionId,
     questions,
     cancelledResponse: { outcome: { outcome: "cancelled" } },
-    responseFor: (answer) => cursorQuestionResponse(sourceQuestions, answer)
+    responseFor: (answer) => cursorQuestionResponse(sourceQuestions, answer),
+    replyFor: cursorQuestionReply
   }
 }
 
@@ -136,6 +146,15 @@ const cursorPlanResponse = (answer: QuestionAnswer): CursorCreatePlanResponse =>
       ...(reason === undefined || reason.length === 0 ? {} : { reason })
     }
   }
+}
+
+const cursorPlanReply = (
+  replyText: string | undefined
+): AcpQuestionReply<CursorCreatePlanResponse> => {
+  if (replyText === undefined) {
+    return { delivered: false, response: { outcome: { outcome: "rejected" } } }
+  }
+  return { delivered: true, response: { outcome: { outcome: "rejected", reason: replyText } } }
 }
 
 export const cursorCreatePlanQuestion = (
@@ -166,7 +185,8 @@ export const cursorCreatePlanQuestion = (
     ],
     ...(request.plan.length === 0 ? {} : { planDocument: request.plan }),
     cancelledResponse: { outcome: { outcome: "cancelled" } },
-    responseFor: (answer) => cursorPlanResponse(answer)
+    responseFor: (answer) => cursorPlanResponse(answer),
+    replyFor: cursorPlanReply
   }
 }
 

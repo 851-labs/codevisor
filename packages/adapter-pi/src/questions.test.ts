@@ -53,6 +53,18 @@ describe("Pi dialogs as questions", () => {
     )
   })
 
+  it("takes a reply as an input's value and declines choices", () => {
+    const input = dialogQuestion({ method: "input" })!
+    expect(input.replyWithMessage("The user replied instead: 42")).toEqual({
+      response: { value: "The user replied instead: 42" },
+      delivered: true
+    })
+    const declined = { response: { cancelled: true }, delivered: false }
+    expect(input.replyWithMessage(undefined)).toEqual(declined)
+    expect(dialogQuestion({ method: "select" })!.replyWithMessage("pick")).toEqual(declined)
+    expect(dialogQuestion({ method: "confirm" })!.replyWithMessage("yes")).toEqual(declined)
+  })
+
   it("has nothing to ask for notifications and status", () => {
     for (const method of ["notify", "setStatus", "setWidget", "setTitle", "set_editor_text"])
       expect(dialogQuestion({ method, message: "hi" })).toBeUndefined()

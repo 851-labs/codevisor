@@ -30,7 +30,7 @@ import { record, type JsonRecord } from "./internal.js"
 import {
   makePermissionQuestions,
   permissionQuestion,
-  type PermissionDecision
+  type PermissionReply
 } from "./server-permissions.js"
 import { prepareSubmission, promptBody, type Readable } from "./server-prompt.js"
 import type { OpenCodeServer } from "./server.js"
@@ -169,15 +169,15 @@ export const openServerSession = (
     child: ChildSession | undefined
   ): Promise<void> => {
     const requestID = String(request.id)
-    let decision: PermissionDecision | undefined = "once"
+    let reply: PermissionReply | undefined = { decision: "once" }
     if (permissionsGated(catalog, selection)) {
-      decision = await questions.ask(permissionQuestion(request, tool, child), requestID)
+      reply = await questions.ask(permissionQuestion(request, tool, child), requestID)
     }
-    if (decision === undefined) return
+    if (reply === undefined) return
     const owner = encodeURIComponent(String(request.sessionID))
     await server
       .request(`/api/session/${owner}/permission/${encodeURIComponent(requestID)}/reply`, {
-        body: { decision }
+        body: reply
       })
       .catch(() => undefined)
   }
@@ -445,6 +445,8 @@ export const openServerSession = (
       }),
     answerQuestion: (questionId, answer) =>
       adapterPromise("answerQuestion", async () => questions.answer(questionId, answer)),
+    replyToQuestion: (questionId, reply) =>
+      adapterPromise("replyToQuestion", async () => questions.reply(questionId, reply)),
     close: adapterPromise("close", async () => {
       if (closed) return
       closed = true

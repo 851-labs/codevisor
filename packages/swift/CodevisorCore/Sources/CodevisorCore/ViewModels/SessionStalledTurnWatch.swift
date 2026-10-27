@@ -15,7 +15,7 @@ final class SessionStalledTurnWatch {
   func restart(for model: SessionModel) {
     schedule?.cancel()
     schedule = scheduler.schedule(Self.quietInterval) { [weak model] in
-      guard let model, model.isSending else { return }
+      guard let model, model.isSending, model.pendingQuestion == nil else { return }
       await Self.reloadStalledTurn(model)
     }
   }

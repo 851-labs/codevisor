@@ -362,4 +362,43 @@ describe("questions", () => {
       userInputQuestion({ ...request, autoResolutionMs: undefined }).autoResolutionMs
     ).toBeUndefined()
   })
+
+  it("declines an approval the user replied to without stopping the turn", () => {
+    const choices = [
+      { choiceId: "stop", label: "Stop", decision: "abort" },
+      ...approval.availableChoices
+    ]
+    const question = approvalQuestion({ ...approval, availableChoices: choices })
+    const reply = question.replyWithMessage("The user replied instead: wait")
+    expect(reply.delivered).toBe(false)
+    expect(reply.request.params.choiceId).toBe("deny")
+    const onlyAbort = approvalQuestion({ ...approval, availableChoices: [choices[0]!] })
+    expect(onlyAbort.replyWithMessage(undefined).request.params.choiceId).toBe("stop")
+  })
+
+  it("cancels a question the user replied to, with the reply as the reason", () => {
+    const question = userInputQuestion({
+      userInputId: "ui-1",
+      sessionId: "s-1",
+      questions: [
+        { id: "q", header: "", question: "Which?", options: [], selection: { mode: "single" } }
+      ]
+    })
+    expect(question.replyWithMessage("The user replied instead: neither")).toEqual({
+      request: {
+        method: "userInput/cancel",
+        params: {
+          commandId: expect.any(String),
+          sessionId: "s-1",
+          userInputId: "ui-1",
+          reason: "The user replied instead: neither"
+        }
+      },
+      delivered: true
+    })
+    expect(question.replyWithMessage(undefined)).toMatchObject({
+      request: { params: { reason: "The user replied instead of answering." } },
+      delivered: false
+    })
+  })
 })

@@ -7,6 +7,12 @@ export interface PendingAcpQuestion {
   readonly questions: ReadonlyArray<QuestionSpec>
   readonly answer: (answer: QuestionAnswer) => void
   readonly cancel: () => void
+  readonly reply: (replyText: string | undefined) => boolean
+}
+
+export interface AcpQuestionReply<Response> {
+  readonly response: Response
+  readonly delivered: boolean
 }
 
 export interface AcpMappedQuestion<Response> {
@@ -15,6 +21,7 @@ export interface AcpMappedQuestion<Response> {
   readonly planDocument?: string
   readonly cancelledResponse: Response
   readonly responseFor: (answer: QuestionAnswer) => Response
+  readonly replyFor: (replyText: string | undefined) => AcpQuestionReply<Response>
 }
 
 export type AcpPermissionOutcome =
@@ -29,6 +36,7 @@ export const acpPermissionQuestion = (
       readonly sessionId: string
       readonly spec: QuestionSpec
       readonly optionIds: ReadonlyMap<string, string>
+      readonly rejectOptionId: string | undefined
       readonly planDocument: string | undefined
     }
   | undefined => {
@@ -38,7 +46,7 @@ export const acpPermissionQuestion = (
   const options = rawOptions.flatMap((option) => {
     if (!isRecord(option)) return []
     return typeof option.optionId === "string" && typeof option.name === "string"
-      ? [{ name: option.name, optionId: option.optionId }]
+      ? [{ kind: option.kind, name: option.name, optionId: option.optionId }]
       : []
   })
   if (sessionId === undefined || options.length === 0) return undefined
@@ -49,6 +57,7 @@ export const acpPermissionQuestion = (
   return {
     optionIds: new Map(options.map((option) => [option.name, option.optionId])),
     planDocument,
+    rejectOptionId: acpRejectOptionId(options),
     sessionId,
     spec: {
       allowsOther: false,
@@ -87,3 +96,30 @@ export const acpPermissionOutcome = (
   return { outcome: { outcome: "cancelled" } }
 }
 /* v8 ignore stop */
+
+export interface AcpPermissionOption {
+  readonly kind: unknown
+  readonly optionId: string
+}
+
+export const acpRejectOptionId = (
+  options: ReadonlyArray<AcpPermissionOption>
+): string | undefined =>
+  optionIdOfKind(options, "reject_once") ?? optionIdOfKind(options, "reject_always")
+
+export const acpPermissionDecline = (
+  rejectOptionId: string | undefined
+): AcpQuestionReply<AcpPermissionOutcome> => {
+  if (rejectOptionId === undefined) {
+    return { delivered: false, response: { outcome: { outcome: "cancelled" } } }
+  }
+  return {
+    delivered: false,
+    response: { outcome: { optionId: rejectOptionId, outcome: "selected" } }
+  }
+}
+
+const optionIdOfKind = (
+  options: ReadonlyArray<AcpPermissionOption>,
+  kind: string
+): string | undefined => options.find((option) => option.kind === kind)?.optionId

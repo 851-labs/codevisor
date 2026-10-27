@@ -54,7 +54,7 @@ struct ComposerCard: View {
   var body: some View {
     ZStack {
       if let question = controller.composerQuestion {
-        QuestionPickerContent(
+        ComposerQuestionPicker(
           controller: controller,
           request: question,
           didStartResolving: $didStartResolvingQuestion,

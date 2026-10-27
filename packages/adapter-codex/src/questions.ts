@@ -10,7 +10,9 @@ import type { QuestionSpec } from "@codevisor/api"
 
 import { elicitationFields } from "./elicitation-schema.js"
 import { isRecord } from "./internal.js"
-import type { CodexSession, PendingCodexQuestion } from "./session.js"
+import type { CodexQuestionReply, CodexSession, PendingCodexQuestion } from "./session.js"
+
+export const REPLIED_WITHOUT_TEXT = "The user replied instead of answering."
 
 const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
@@ -104,6 +106,7 @@ const holdApprovalRequest = (
         const decision = approvalDecision(label)
         return { decision }
       },
+      reply: () => ({ carriedText: false, response: { decision: "decline" } }),
       timer: undefined
     })
     dismissQuestionOnAbort(session, questionId, signal)
@@ -154,11 +157,24 @@ const holdQuestionRequest = (
           ])
         )
       }),
+      reply: (text) => repliedAnswers(questions, text),
       timer
     })
     dismissQuestionOnAbort(session, questionId, signal)
   })
 }
+
+const repliedAnswers = (
+  questions: ReadonlyArray<QuestionSpec>,
+  text: string | undefined
+): CodexQuestionReply => ({
+  carriedText: text !== undefined,
+  response: {
+    answers: Object.fromEntries(
+      questions.map((spec) => [spec.id, { answers: [text ?? REPLIED_WITHOUT_TEXT] }])
+    )
+  }
+})
 
 const scheduleAutoResolutionIfRequested = (
   session: CodexSession,
@@ -216,6 +232,7 @@ const holdElicitationRequest = (
         }
         return { action: "accept", content }
       },
+      reply: () => ({ carriedText: false, response: { action: "decline", content: null } }),
       timer: undefined
     })
     dismissQuestionOnAbort(session, questionId, signal)
@@ -306,12 +323,7 @@ export const answerCodexQuestion = async (
   questionId: string,
   answer: QuestionAnswer
 ): Promise<void> => {
-  const pending = session.pendingQuestions.get(questionId)
-  if (pending === undefined) {
-    throw new Error(`No pending question: ${questionId}`)
-  }
-  session.pendingQuestions.delete(questionId)
-  if (pending.timer !== undefined) clearTimeout(pending.timer)
+  const pending = takePendingQuestion(session, questionId)
   if (answer.outcome === "cancelled") {
     dismissPendingQuestion(pending, "User dismissed the question without answering")
     await emitQuestionResolved(session, questionId, "cancelled", pending.questions, undefined)
@@ -320,6 +332,28 @@ export const answerCodexQuestion = async (
   const answers = answer.answers ?? {}
   pending.resolve(pending.respond(answers))
   await emitQuestionResolved(session, questionId, "answered", pending.questions, answers)
+}
+
+export const replyToCodexQuestion = async (
+  session: CodexSession,
+  questionId: string,
+  text: string | undefined
+): Promise<boolean> => {
+  const pending = takePendingQuestion(session, questionId)
+  const reply = pending.reply(text)
+  pending.resolve(reply.response)
+  await emitQuestionResolved(session, questionId, "replied", pending.questions, undefined)
+  return reply.carriedText
+}
+
+const takePendingQuestion = (session: CodexSession, questionId: string): PendingCodexQuestion => {
+  const pending = session.pendingQuestions.get(questionId)
+  if (pending === undefined) {
+    throw new Error(`No pending question: ${questionId}`)
+  }
+  session.pendingQuestions.delete(questionId)
+  if (pending.timer !== undefined) clearTimeout(pending.timer)
+  return pending
 }
 
 const dismissPendingQuestion = (pending: PendingCodexQuestion, reason: string): void => {

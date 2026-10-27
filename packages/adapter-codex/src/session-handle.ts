@@ -2,7 +2,12 @@ import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
-import { answerQuestion, cancelHeldTurn, continueHeldTurn } from "./async-replies.js"
+import {
+  answerQuestion,
+  cancelHeldTurn,
+  continueHeldTurn,
+  replyToQuestion
+} from "./async-replies.js"
 import { codexInput } from "./attachments.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"
 import { isRecord } from "./internal.js"
@@ -122,5 +127,7 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
   }),
   answerQuestion: (questionId, answer) =>
     adapterPromise("answerQuestion", () => answerQuestion(session, questionId, answer)),
+  replyToQuestion: (questionId, reply) =>
+    adapterPromise("replyToQuestion", () => replyToQuestion(session, questionId, reply)),
   readContext: Effect.sync(() => session.latestContext)
 })

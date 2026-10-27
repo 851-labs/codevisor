@@ -8,10 +8,13 @@ import {
   adapterPromise,
   answersIfDefined,
   questionIdFirstPayloads,
+  questionReplyText,
   skillsUpdateEvent,
   summarizeProcessFailure,
   type AgentSessionMetadata,
+  type PromptInput,
   type QuestionAnswer,
+  type QuestionOutcome,
   type RuntimeEmit,
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
@@ -25,6 +28,7 @@ import { isGenericConnectionClose } from "./internal.js"
 import { runtimeEventFromNotification } from "./notifications.js"
 import { makeAcpPermissionPolicy } from "./permission-policy.js"
 import {
+  acpPermissionDecline,
   acpPermissionOutcome,
   acpPermissionQuestion,
   type AcpMappedQuestion,
@@ -97,7 +101,7 @@ export const makeStdioAcpConnectorWithOptions = (
       const emitQuestionResolved = (
         questionId: string,
         pending: PendingAcpQuestion,
-        outcome: "answered" | "cancelled",
+        outcome: QuestionOutcome,
         answers: QuestionAnswer["answers"]
       ): void => {
         safeEmit({
@@ -129,6 +133,11 @@ export const makeStdioAcpConnectorWithOptions = (
           pendingQuestions.set(questionId, {
             answer: (answer) => resolve(question.responseFor(answer)),
             cancel: () => resolve(question.cancelledResponse),
+            reply: (replyText) => {
+              const reply = question.replyFor(replyText)
+              resolve(reply.response)
+              return reply.delivered
+            },
             questions: question.questions,
             sessionId: question.sessionId
           })
@@ -167,21 +176,26 @@ export const makeStdioAcpConnectorWithOptions = (
             questions: [question.spec],
             ...(question.planDocument === undefined ? {} : { planDocument: question.planDocument }),
             cancelledResponse: { outcome: { outcome: "cancelled" as const } },
-            responseFor: (answer) => acpPermissionOutcome(question.optionIds, answer)
+            responseFor: (answer) => acpPermissionOutcome(question.optionIds, answer),
+            replyFor: () => acpPermissionDecline(question.rejectOptionId)
           })
         },
         extension?.configureClientApp
       ).connect(acp.ndJsonStream(Writable.toWeb(child.stdin), agentOutputStream(extension, child)))
-      const answerQuestion = async (
-        sessionId: string,
-        questionId: string,
-        answer: QuestionAnswer
-      ): Promise<void> => {
+      const takePendingQuestion = (sessionId: string, questionId: string): PendingAcpQuestion => {
         const pending = pendingQuestions.get(questionId)
         if (pending === undefined || pending.sessionId !== sessionId) {
           throw new Error(`No pending question: ${questionId}`)
         }
         pendingQuestions.delete(questionId)
+        return pending
+      }
+      const answerQuestion = async (
+        sessionId: string,
+        questionId: string,
+        answer: QuestionAnswer
+      ): Promise<void> => {
+        const pending = takePendingQuestion(sessionId, questionId)
         pending.answer(answer)
         emitQuestionResolved(
           questionId,
@@ -189,6 +203,16 @@ export const makeStdioAcpConnectorWithOptions = (
           answer.outcome === "answered" ? "answered" : "cancelled",
           answer.outcome === "answered" ? answer.answers : undefined
         )
+      }
+      const replyToQuestion = async (
+        sessionId: string,
+        questionId: string,
+        reply: PromptInput
+      ): Promise<boolean> => {
+        const pending = takePendingQuestion(sessionId, questionId)
+        const delivered = pending.reply(questionReplyText(reply))
+        emitQuestionResolved(questionId, pending, "replied", undefined)
+        return delivered
       }
       const cancelQuestions = (sessionId: string | undefined): void => {
         for (const [questionId, pending] of pendingQuestions) {
@@ -247,7 +271,7 @@ export const makeStdioAcpConnectorWithOptions = (
         promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
         steering: advertisesSteering(initialized),
         canLoadSession: initialized?.agentCapabilities?.loadSession === true,
-        questions: { answerQuestion, cancelQuestions },
+        questions: { answerQuestion, replyToQuestion, cancelQuestions },
         skills,
         auth: {
           methods: (initialized?.authMethods ?? []).map((method) => ({

@@ -345,8 +345,8 @@ public final class SessionModel {
 
   private func restorePendingQuestion(_ question: QuestionRequest?) {
     pendingQuestion = question
-    guard let question, TranscriptSetupRequest.kind(of: question.questions) != nil else { return }
-    applySetupUpdate(.question(question), questionId: question.questionId)
+    guard let question, Self.asksInTurn(question.questions) else { return }
+    applyTurnQuestionUpdate(.question(question), questionId: question.questionId)
   }
 
   private func restoreSessionStatus(from page: TranscriptHistoryPage) {

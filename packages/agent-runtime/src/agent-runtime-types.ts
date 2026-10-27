@@ -117,6 +117,11 @@ export interface AgentRuntimeService {
     questionId: string,
     answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
+  readonly replyToQuestion: (
+    sessionId: string,
+    questionId: string,
+    reply: PromptInput
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly readSessionContext: (
     sessionId: string
   ) => Effect.Effect<SessionContext | undefined, AgentRuntimeError>

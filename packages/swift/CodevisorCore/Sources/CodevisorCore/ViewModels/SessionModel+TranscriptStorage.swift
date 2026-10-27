@@ -86,6 +86,7 @@ extension SessionModel {
       message.turn.setupRequests += missingSetupRequests
       carried = true
     }
+    if message.turn.interactions.adoptMissing(from: current.turn.interactions) { carried = true }
     return carried ? .assistant(message) : incoming
   }
 

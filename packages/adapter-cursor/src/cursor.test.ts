@@ -106,6 +106,41 @@ describe("Cursor ACP extensions", () => {
     ).toEqual({ outcome: { outcome: "rejected", reason: "Keep the old API" } })
   })
 
+  it("skips Cursor questions with a composer reply as the reason", () => {
+    const mapped = cursorAskQuestion(
+      {
+        toolCallId: "tool-ask",
+        questions: [{ id: "mode", prompt: "Which mode?", options: [{ id: "a", label: "Agent" }] }]
+      },
+      "session-1"
+    )!
+
+    expect(mapped.replyFor("The user replied instead: neither")).toEqual({
+      delivered: true,
+      response: { outcome: { outcome: "skipped", reason: "The user replied instead: neither" } }
+    })
+    expect(mapped.replyFor(undefined)).toEqual({
+      delivered: false,
+      response: { outcome: { outcome: "skipped" } }
+    })
+  })
+
+  it("rejects Cursor plans with a composer reply as the reason", () => {
+    const mapped = cursorCreatePlanQuestion(
+      { toolCallId: "tool-plan", plan: "1. Ship" },
+      "session-1"
+    )!
+
+    expect(mapped.replyFor("The user replied instead: add tests")).toEqual({
+      delivered: true,
+      response: { outcome: { outcome: "rejected", reason: "The user replied instead: add tests" } }
+    })
+    expect(mapped.replyFor(undefined)).toEqual({
+      delivered: false,
+      response: { outcome: { outcome: "rejected" } }
+    })
+  })
+
   it("maintains full todo snapshots when Cursor sends merge updates", () => {
     const tracker = new CursorTodoTracker()
     const first = tracker.update("session-1", {

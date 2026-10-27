@@ -145,6 +145,13 @@ final class TerminalFocusController {
     }
   }
 
+  func typeIntoComposer(_ event: NSEvent, forChat sessionId: UUID) {
+    guard let composer = chatComposers[sessionId]?.view, composer.isEditable,
+      let window = composer.window, window.makeFirstResponder(composer)
+    else { return }
+    composer.keyDown(with: event)
+  }
+
   private func isQuestionPickerNotesEditor(_ responder: NSResponder?) -> Bool {
     guard let textView = responder as? SubmittingTextView else { return false }
     if textView === composerTextView { return false }

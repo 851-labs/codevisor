@@ -16,7 +16,7 @@ public struct ServerSetupRequest: Decodable, Equatable, Sendable {
     switch outcome {
     case nil: .pending
     case .cancelled: .declined
-    case .answered, .autoResolved: .setUp
+    case .answered, .autoResolved, .replied: .setUp
     }
   }
 }

@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto"
 import {
   answersIfDefined,
   questionIdFirstPayloads,
+  questionReplyText,
+  type PromptInput,
   type QuestionAnswer,
+  type QuestionOutcome,
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
@@ -16,6 +19,13 @@ const questionPayloads = questionIdFirstPayloads(answersIfDefined)
 
 export type PermissionDecision = "once" | "always" | "reject"
 
+export interface PermissionReply {
+  readonly decision: PermissionDecision
+  readonly message?: string
+}
+
+const REPLIED_WITHOUT_TEXT = "The user replied instead of answering."
+
 const DECISIONS: ReadonlyArray<readonly [string, PermissionDecision]> = [
   ["Allow once", "once"],
   ["Always allow", "always"],
@@ -25,7 +35,7 @@ const DECISIONS: ReadonlyArray<readonly [string, PermissionDecision]> = [
 interface PendingQuestion {
   readonly requestID: string
   readonly questions: ReadonlyArray<QuestionSpec>
-  readonly settle: (decision: PermissionDecision | undefined) => void
+  readonly settle: (reply: PermissionReply | undefined) => void
 }
 
 const permissionTitle = (toolName: string, input: JsonRecord): string | undefined => {
@@ -79,7 +89,7 @@ export const makePermissionQuestions = (emit: (event: RuntimeEvent) => void, ses
   const resolved = (
     questionId: string,
     entry: PendingQuestion,
-    outcome: "answered" | "cancelled",
+    outcome: QuestionOutcome,
     answers?: QuestionAnswer["answers"]
   ) =>
     emit({
@@ -91,8 +101,15 @@ export const makePermissionQuestions = (emit: (event: RuntimeEvent) => void, ses
       })
     })
 
+  const take = (questionId: string): PendingQuestion => {
+    const entry = pending.get(questionId)
+    if (entry === undefined) throw new Error(`No pending question: ${questionId}`)
+    pending.delete(questionId)
+    return entry
+  }
+
   return {
-    ask: (spec: QuestionSpec, requestID: string): Promise<PermissionDecision | undefined> => {
+    ask: (spec: QuestionSpec, requestID: string): Promise<PermissionReply | undefined> => {
       const questionId = randomUUID()
       emit({
         kind: "session.output",
@@ -104,21 +121,26 @@ export const makePermissionQuestions = (emit: (event: RuntimeEvent) => void, ses
       })
     },
     answer: (questionId: string, answer: QuestionAnswer): void => {
-      const entry = pending.get(questionId)
-      if (entry === undefined) throw new Error(`No pending question: ${questionId}`)
-      pending.delete(questionId)
+      const entry = take(questionId)
       const label = Object.values(answer.answers ?? {}).flatMap((value) => [...value.answers])[0]
       const decision =
         answer.outcome === "answered"
           ? DECISIONS.find(([candidate]) => candidate === label)?.[1]
           : undefined
-      entry.settle(decision ?? "reject")
+      entry.settle({ decision: decision ?? "reject" })
       resolved(
         questionId,
         entry,
         answer.outcome === "answered" ? "answered" : "cancelled",
         answer.outcome === "answered" ? answer.answers : undefined
       )
+    },
+    reply: (questionId: string, reply: PromptInput): boolean => {
+      const entry = take(questionId)
+      const replyText = questionReplyText(reply)
+      entry.settle({ decision: "reject", message: replyText ?? REPLIED_WITHOUT_TEXT })
+      resolved(questionId, entry, "replied")
+      return replyText !== undefined
     },
     settled: (requestID: string): void => {
       for (const [questionId, entry] of pending) {
@@ -131,7 +153,7 @@ export const makePermissionQuestions = (emit: (event: RuntimeEvent) => void, ses
     cancelAll: (): void => {
       for (const [questionId, entry] of pending) {
         pending.delete(questionId)
-        entry.settle("reject")
+        entry.settle({ decision: "reject" })
         resolved(questionId, entry, "cancelled")
       }
     }

@@ -35,6 +35,25 @@ struct TranscriptRowProjectionTests {
     #expect(rows.filter { $0.finishedResponseItemId != nil }.count == 2)
   }
 
+  @Test func aTurnsQuestionFollowsItsResponseAndRemeasuresOnceAnswered() throws {
+    let request = QuestionRequest(questionId: "q", questions: [QuestionSpec(id: "db", question: "Which database?")])
+    var pending = AssistantTurn(entries: [.text(id: "lead", markdown: "Two questions first.")])
+    pending.interactions = TranscriptInteractions([.init(id: "q", content: .question(.init(request: request)))])
+    var answered = pending
+    answered.interactions = TranscriptInteractions([
+      .init(id: "q", content: .question(.init(request: request, answer: .init(outcome: .replied))))
+    ])
+
+    let pendingRows = try TranscriptRowProjectionCache.project(
+      makeInput(settled: [.assistant(AssistantMessage(turn: pending))]), options: .init(includesConnectingRow: true))
+    let answeredRows = try TranscriptRowProjectionCache.project(
+      makeInput(settled: [.assistant(AssistantMessage(turn: answered))]), options: .init(includesConnectingRow: true))
+
+    #expect(pendingRows.last?.id == .interaction("q"))
+    #expect(pendingRows.last?.content == .interaction(pending.interactions.items[0], inBotConversation: false))
+    #expect(pendingRows.last?.measurementRevision != answeredRows.last?.measurementRevision)
+  }
+
   @Test func settledAssistantMarkdownChunksCompatibleTextBlocks() throws {
     let message = AssistantMessage(
       turn: AssistantTurn(

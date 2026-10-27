@@ -106,4 +106,28 @@ describe("Muse chat questions", () => {
     await chat.answerQuestion("ui-9", answer)
     expect(client.sent("userInput/answer")).toHaveLength(2)
   })
+
+  it("resolves a question with the user's reply and says whether Muse got the text", async () => {
+    const { client, chat, events } = await start()
+    client.serverRequest("userInput/request", {
+      userInputId: "ui-2",
+      questions: [
+        { id: "q", header: "", question: "Which?", options: [], selection: { mode: "single" } }
+      ]
+    })
+    await expect(chat.replyToQuestion("ui-2", { text: "neither" })).resolves.toBe(true)
+    expect(client.sent("userInput/cancel").at(-1)).toMatchObject({
+      userInputId: "ui-2",
+      reason: "The user replied instead: neither"
+    })
+    expect(payloads(events).at(-1)).toEqual({
+      sessionUpdate: "question_resolved",
+      questionId: "ui-2",
+      outcome: "replied",
+      questions: expect.any(Array)
+    })
+    await expect(chat.replyToQuestion("ui-2", { text: "again" })).rejects.toThrow(
+      "No pending question: ui-2"
+    )
+  })
 })

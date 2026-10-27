@@ -1,20 +1,19 @@
-import type { QuestionOutcome, QuestionPresentation, TranscriptPage } from "@codevisor/api"
+import type { TranscriptPage } from "@codevisor/api"
 
 import { chatAssistantSummary, sessionGoalSnapshot } from "./chat-items.js"
 import { entryKeyRows, payloadRows } from "./common-rows.js"
-import { parseJsonRecord, type JsonRecord } from "./event-payloads.js"
 import {
   backgroundTasksFromRaw,
   pendingQuestionFromRaw,
   sessionPlanFromRaw
 } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
+import { itemQuestionSummaries } from "./item-question-summaries.js"
 import { transcriptFromChatRow } from "./row-mappers.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import { chatItemRows, type ChatItemRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import { readSessionSkills } from "./session-skills.js"
-import { setupQuestionPresentation } from "./setup-questions.js"
 import { sessionSetupState } from "./setup-state.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
@@ -85,66 +84,6 @@ const transcriptRowsWithinBudget = (
   return pageRows
 }
 
-const questionOutcomes: ReadonlySet<unknown> = new Set<QuestionOutcome>([
-  "answered",
-  "cancelled",
-  "autoResolved"
-])
-
-const isQuestionOutcome = (value: unknown): value is QuestionOutcome => questionOutcomes.has(value)
-
-const questionEntriesSql =
-  "select payload from transcript_entries where item_id = ? and category = 'question' order by position"
-
-const questionEntryPayloads = (
-  sqlite: ServiceContext["sqlite"],
-  itemId: string
-): ReadonlyArray<string> =>
-  payloadRows.all(sqlite.prepare(questionEntriesSql).all(itemId)).map((row) => row.payload)
-
-interface SetupRequestSummary {
-  readonly questionId: string
-  readonly presentation: QuestionPresentation
-  readonly outcome?: QuestionOutcome
-}
-
-const transcriptSetupRequests = (
-  sqlite: ServiceContext["sqlite"],
-  itemId: string,
-  pendingQuestionId: string | undefined
-): ReadonlyArray<SetupRequestSummary> =>
-  latestSetupRequests(questionEntryPayloads(sqlite, itemId)).map((request) =>
-    withAbandonedOutcome(request, pendingQuestionId)
-  )
-
-const latestSetupRequests = (
-  payloads: ReadonlyArray<string>
-): ReadonlyArray<SetupRequestSummary> => {
-  const byQuestion = new Map<string, SetupRequestSummary>()
-  for (const raw of payloads) {
-    const request = setupRequestSummary(parseJsonRecord(raw))
-    if (request !== undefined) byQuestion.set(request.questionId, request)
-  }
-  return [...byQuestion.values()]
-}
-
-const setupRequestSummary = (payload: JsonRecord | undefined): SetupRequestSummary | undefined => {
-  const questionId = payload?.questionId
-  const presentation = setupQuestionPresentation(payload)
-  if (typeof questionId !== "string" || presentation === undefined) return undefined
-
-  if (!isQuestionOutcome(payload?.outcome)) return { questionId, presentation }
-  return { questionId, presentation, outcome: payload.outcome }
-}
-
-const withAbandonedOutcome = (
-  request: SetupRequestSummary,
-  pendingQuestionId: string | undefined
-): SetupRequestSummary => {
-  if (request.outcome !== undefined || request.questionId === pendingQuestionId) return request
-  return { ...request, outcome: "cancelled" }
-}
-
 const transcriptPageItem = (
   sqlite: ServiceContext["sqlite"],
   sessionId: string,
@@ -157,9 +96,10 @@ const transcriptPageItem = (
     return { ...item, ...textResourceIfPresent(sqlite, row, entryKey) }
   }
   const summary = chatAssistantSummary(sqlite, sessionId, row.id)
-  const setupRequests = transcriptSetupRequests(sqlite, row.id, pendingQuestionId)
+  const { setupRequests, interactions } = itemQuestionSummaries(sqlite, row.id, pendingQuestionId)
   return {
     ...(setupRequests.length === 0 ? {} : { setupRequests }),
+    ...(interactions.length === 0 ? {} : { interactions }),
     ...item,
     text: summary.text,
     textResource: summary.textResource,

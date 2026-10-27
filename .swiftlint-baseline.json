@@ -142,7 +142,7 @@
         "file": "apps/ios/Codevisor/Features/Session/Transcript/TranscriptRowLeaves+iOS.swift",
         "line": 9
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -420,21 +420,6 @@
     }
   },
   {
-    "text": "  private func optionRow(",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/macos/Codevisor/Features/Composer/QuestionPickerContent+Sections.swift",
-        "line": 67
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  init(context: PaneContext, descriptor: PaneDescriptorState) {",
     "violation": {
       "location": {
@@ -577,7 +562,7 @@
         "file": "apps/macos/Codevisor/Features/Session/Transcript/TranscriptRowLeaves+macOS.swift",
         "line": 9
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 58 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1312,7 +1297,7 @@
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/SessionModelTests+GoalsQuestions.swift",
         "line": 204
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 74 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1387,7 +1372,7 @@
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/SessionModelTests+Streaming.swift",
         "line": 9
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 101 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 94 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1400,7 +1385,7 @@
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/SessionModelTests+Streaming.swift",
-        "line": 165
+        "line": 158
       },
       "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 102 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -2570,24 +2555,9 @@
       "location": {
         "character": 10,
         "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/TranscriptAssistantRowProjection.swift",
-        "line": 168
+        "line": 171
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  public static func apply(_ update: SessionUpdate, to turn: inout AssistantTurn) {",
-    "violation": {
-      "location": {
-        "character": 17,
-        "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/TranscriptReducer.swift",
-        "line": 5
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

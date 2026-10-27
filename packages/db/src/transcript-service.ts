@@ -247,7 +247,7 @@ const quietStreamingSessionIds = (
   quietSinceIso: string
 ): ReadonlyArray<string> =>
   sessionIdRows
-    .all(sqlite.prepare(chatItemSql.quietStreamingSessions).all(quietSinceIso))
+    .all(sqlite.prepare(chatItemSql.quietStreamingSessions).all(quietSinceIso, quietSinceIso))
     .map((row) => row.session_id)
 
 const staleStreamingAssistantIds = (
@@ -294,7 +294,10 @@ const chatItemSql = {
                limit 1`,
   quietStreamingSessions: `select distinct item.session_id from chat_items as item join sessions on sessions.id = item.session_id
                where item.role = 'assistant' and item.status = 'streaming'
-                 and coalesce(sessions.last_event_at, sessions.created_at) <= ?`,
+                 and coalesce(sessions.last_event_at, sessions.created_at) <= ?
+             union
+             select id from sessions
+               where pending_question is not null and coalesce(last_event_at, created_at) <= ?`,
   staleStreaming: `select id from chat_items
                where session_id = ? and role = 'assistant' and status = 'streaming' and id != ?
                order by position asc`

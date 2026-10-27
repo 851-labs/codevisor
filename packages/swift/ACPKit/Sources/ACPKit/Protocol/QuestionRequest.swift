@@ -95,6 +95,7 @@ public enum QuestionOutcome: String, Sendable, Codable, Equatable {
   case answered
   case cancelled
   case autoResolved
+  case replied
 }
 
 public struct QuestionAnswerEntry: Sendable, Codable, Equatable {

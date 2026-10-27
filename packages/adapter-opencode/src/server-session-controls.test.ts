@@ -248,4 +248,39 @@ describe("OpenCode server session controls", () => {
       run(s.handle.answerQuestion!(String(asked.questionId), { outcome: "cancelled" }))
     ).rejects.toThrow("No pending question")
   })
+
+  it("rejects a permission with the user's reply so the agent carries on with it", async () => {
+    const s = setup({ info: { agent: "plan" } })
+    const reply = async (id: string, text: string) => {
+      const from = s.events.length
+      s.queue.push(event("permission.asked", { id, sessionID: ROOT, action: "shell" }))
+      const asked = await s.emitted((entry) => payload(entry).sessionUpdate === "question", from)
+      const questionId = String(payload(asked).questionId)
+      const carried = await run(s.handle.replyToQuestion!(questionId, { text }))
+      const sent = await s.requested((request) => request.path.endsWith(`/${id}/reply`))
+      return { delivered: carried, body: sent.body, questionId }
+    }
+
+    const withText = await reply("per_1", "use make")
+    expect(withText).toMatchObject({
+      delivered: true,
+      body: { decision: "reject", message: "The user replied instead: use make" }
+    })
+    expect(await reply("per_2", " ")).toMatchObject({
+      delivered: false,
+      body: { decision: "reject", message: "The user replied instead of answering." }
+    })
+    expect(s.updates("question_resolved")).toEqual([
+      {
+        outcome: "replied",
+        questionId: withText.questionId,
+        questions: expect.any(Array),
+        sessionUpdate: "question_resolved"
+      },
+      expect.objectContaining({ outcome: "replied" })
+    ])
+    await expect(
+      run(s.handle.replyToQuestion!(withText.questionId, { text: "x" }))
+    ).rejects.toThrow("No pending question")
+  })
 })

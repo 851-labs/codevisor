@@ -12,7 +12,7 @@ extension SessionStore {
   }
 
   static func isActivelyWorking(_ controller: SessionController) -> Bool {
-    controller.isSending
+    (controller.isSending && !controller.isAwaitingAnswer)
       || controller.setupPhases.contains(where: \.isRunning)
   }
 

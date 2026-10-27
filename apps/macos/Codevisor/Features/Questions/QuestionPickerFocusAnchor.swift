@@ -15,19 +15,21 @@ enum QuestionPickerKey: Equatable {
 struct QuestionPickerFocusAnchor: NSViewRepresentable {
   var onAttach: (QuestionPickerKeyView) -> Void
   var onKey: (QuestionPickerKey) -> Bool
+  var onText: (NSEvent) -> Void
+  var onFocusChange: (Bool) -> Void
   var onDetach: (QuestionPickerKeyView) -> Void
 
   func makeNSView(context: Context) -> QuestionPickerKeyView {
     let view = QuestionPickerKeyView()
-    view.onAttach = onAttach
-    view.onKey = onKey
-    view.onDetach = onDetach
+    updateNSView(view, context: context)
     return view
   }
 
   func updateNSView(_ view: QuestionPickerKeyView, context: Context) {
     view.onAttach = onAttach
     view.onKey = onKey
+    view.onText = onText
+    view.onFocusChange = onFocusChange
     view.onDetach = onDetach
   }
 }
@@ -35,11 +37,23 @@ struct QuestionPickerFocusAnchor: NSViewRepresentable {
 final class QuestionPickerKeyView: NSView {
   var onAttach: ((QuestionPickerKeyView) -> Void)?
   var onKey: ((QuestionPickerKey) -> Bool)?
+  var onText: ((NSEvent) -> Void)?
+  var onFocusChange: ((Bool) -> Void)?
   var onDetach: ((QuestionPickerKeyView) -> Void)?
 
   override var acceptsFirstResponder: Bool { true }
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override func becomeFirstResponder() -> Bool {
+    onFocusChange?(true)
+    return true
+  }
+
+  override func resignFirstResponder() -> Bool {
+    onFocusChange?(false)
+    return true
+  }
 
   override func viewWillMove(toWindow newWindow: NSWindow?) {
     super.viewWillMove(toWindow: newWindow)
@@ -62,7 +76,8 @@ final class QuestionPickerKeyView: NSView {
     let mods = event.modifierFlags
       .intersection(.deviceIndependentFlagsMask)
       .subtracting([.numericPad])
-    if mods.isEmpty, event.charactersIgnoringModifiers?.isEmpty == false {
+    if mods.subtracting(.shift).isEmpty, event.charactersIgnoringModifiers?.isEmpty == false {
+      onText?(event)
       return
     }
     super.keyDown(with: event)

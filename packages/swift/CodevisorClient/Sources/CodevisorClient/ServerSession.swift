@@ -339,6 +339,7 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var textGeneration: Int?
   public var textPosition: Int? = nil
   public var setupRequests: [ServerSetupRequest]? = nil
+  public var interactions: [ServerTranscriptInteraction]? = nil
   public var textRevision: Int?
   public var textResource: ToolDetailResource?
   public var planResource: ToolDetailResource?

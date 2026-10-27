@@ -301,14 +301,14 @@ struct TranscriptReducerTests {
     #expect(turn.setupRequests == [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .declined)])
   }
 
-  @Test("Resolved questions become one inline tool-call row per id")
+  @Test("Resolved plan approvals become one inline tool-call row per id")
   func answeredQuestions() {
     var turn = AssistantTurn()
     let resolution = QuestionResolution(
       questionId: "q-1",
       outcome: .answered,
-      questions: [QuestionSpec(id: "a", question: "Pick one")],
-      answers: ["a": QuestionAnswerEntry(answers: ["Option A"])]
+      questions: [QuestionSpec(id: QuestionRequest.exitPlanModeId, question: "Pick one")],
+      answers: [QuestionRequest.exitPlanModeId: QuestionAnswerEntry(answers: ["Option A"])]
     )
     TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
     TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
@@ -326,12 +326,13 @@ struct TranscriptReducerTests {
 
   @Test("An answer's note is labelled, not listed as another option")
   func answeredQuestionNote() {
+    let plan = QuestionRequest.exitPlanModeId
     var turn = AssistantTurn()
     TranscriptReducer.apply(
       .questionResolved(
         QuestionResolution(
-          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Season?")],
-          answers: ["a": QuestionAnswerEntry(answers: ["Summer"], note: "Sunny")])), to: &turn)
+          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: plan, question: "Season?")],
+          answers: [plan: QuestionAnswerEntry(answers: ["Summer"], note: "Sunny")])), to: &turn)
     guard case let .tool(call) = turn.entries.first else {
       Issue.record("expected a synthesized question tool call")
       return
@@ -341,12 +342,13 @@ struct TranscriptReducerTests {
 
   @Test("Typed text with no selected option is the answer, not a note")
   func answeredQuestionFreeformOnly() {
+    let plan = QuestionRequest.exitPlanModeId
     var turn = AssistantTurn()
     TranscriptReducer.apply(
       .questionResolved(
         QuestionResolution(
-          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Fruit?")],
-          answers: ["a": QuestionAnswerEntry(answers: [], note: "Dragonfruit")])), to: &turn)
+          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: plan, question: "Fruit?")],
+          answers: [plan: QuestionAnswerEntry(answers: [], note: "Dragonfruit")])), to: &turn)
     guard case let .tool(call) = turn.entries.first else {
       Issue.record("expected a synthesized question tool call")
       return
@@ -356,6 +358,7 @@ struct TranscriptReducerTests {
 
   @Test("An answered question keeps its place when later tool calls arrive")
   func answeredQuestionStaysWhereItWasAsked() {
+    let plan = QuestionRequest.exitPlanModeId
     func tool(_ id: String, position: Int) -> SessionUpdate {
       var call = ToolCall(toolCallId: id, title: id)
       call.statePosition = position
@@ -364,7 +367,7 @@ struct TranscriptReducerTests {
     func resolved(position: Int?) -> SessionUpdate {
       .questionResolved(
         QuestionResolution(
-          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Pick")],
+          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: plan, question: "Pick")],
           statePosition: position))
     }
     for updates in [

@@ -118,7 +118,8 @@ describe("streaming turn sweeps and prompt gating", () => {
     owned.activePromptSessions.add(midTranscript.id)
     expect(await reconcileStaleStreamingTurns(services, fanout, owned, "server-a")).toBe(0)
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      items: [{ role: "assistant", isGenerating: true }]
+      items: [{ role: "assistant", isGenerating: false }],
+      pendingQuestion: { questionId: expect.any(String) }
     })
 
     const liveTurn = idleRouteState()
@@ -127,7 +128,8 @@ describe("streaming turn sweeps and prompt gating", () => {
     liveTurn.activeTurnSessions.add(midTranscript.id)
     expect(await reconcileStaleStreamingTurns(services, fanout, liveTurn, "server-a")).toBe(0)
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      items: [{ role: "assistant", isGenerating: true }]
+      items: [{ role: "assistant", isGenerating: false }],
+      pendingQuestion: { questionId: expect.any(String) }
     })
 
     const repaired = await reconcileStaleStreamingTurns(
@@ -138,10 +140,13 @@ describe("streaming turn sweeps and prompt gating", () => {
     )
     expect(repaired).toBe(3)
     const repairedPage = await run(services.db.getTranscriptPage(session.id, undefined, 8))
-    expect(repairedPage).toMatchObject({
-      items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
+    expect(repairedPage.items[0]?.interactions?.[0]?.answer).toEqual({ outcome: "cancelled" })
+    expect(repairedPage.items.at(-1)).toMatchObject({
+      role: "assistant",
+      isGenerating: false,
+      stopReason: "end_turn"
     })
-    expect(repairedPage.items[0]).not.toHaveProperty("stopDetail")
+    expect(repairedPage.items.at(-1)).not.toHaveProperty("stopDetail")
     expect(repairedPage.pendingQuestion).toBeUndefined()
     expect(await run(services.db.getTranscriptPage(turnless.id, undefined, 8))).toMatchObject({
       items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]

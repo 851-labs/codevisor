@@ -160,6 +160,10 @@ export interface AgentSessionHandle {
     questionId: string,
     answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
+  readonly replyToQuestion?: (
+    questionId: string,
+    reply: PromptInput
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly readContext?: Effect.Effect<SessionContext | undefined, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
 }

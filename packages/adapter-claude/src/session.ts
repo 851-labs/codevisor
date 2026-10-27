@@ -150,6 +150,7 @@ export interface PendingClaudeQuestion {
   readonly questions: ReadonlyArray<QuestionSpec>
   readonly resolve: (result: ClaudeToolDecision) => void
   readonly respond: (answer: QuestionAnswer) => ClaudeToolDecision
+  readonly reply: (replyText: string | undefined) => ClaudeToolDecision
 }
 
 export interface ClaudeSession {

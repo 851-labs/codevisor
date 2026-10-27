@@ -153,7 +153,7 @@ export const QuestionPayload = Schema.Struct({
 })
 export type QuestionPayload = typeof QuestionPayload.Type
 
-export const QuestionOutcome = Schema.Literals(["answered", "cancelled", "autoResolved"])
+export const QuestionOutcome = Schema.Literals(["answered", "cancelled", "autoResolved", "replied"])
 export type QuestionOutcome = typeof QuestionOutcome.Type
 
 export const QuestionAnswerEntry = Schema.Struct({

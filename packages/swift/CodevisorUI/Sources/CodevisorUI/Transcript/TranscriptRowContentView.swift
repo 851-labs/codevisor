@@ -44,6 +44,8 @@ public struct TranscriptRowLeaves {
   public var setup: (_ phases: [SessionSetupPhase]) -> AnyView
   public var setupRequest:
     (_ request: TranscriptSetupRequest, _ inBotConversation: Bool, _ controller: SessionController) -> AnyView
+  public var interaction:
+    (_ interaction: TranscriptInteraction, _ inBotConversation: Bool, _ controller: SessionController) -> AnyView
   public var errorRow: (_ message: String, _ rowID: TranscriptPresentationRow.ID) -> AnyView
 
   public init(
@@ -58,6 +60,7 @@ public struct TranscriptRowLeaves {
     attachmentThumbnail: @escaping (PreviewFile) -> AnyView,
     setup: @escaping ([SessionSetupPhase]) -> AnyView,
     setupRequest: @escaping (TranscriptSetupRequest, Bool, SessionController) -> AnyView,
+    interaction: @escaping (TranscriptInteraction, Bool, SessionController) -> AnyView,
     errorRow: @escaping (String, TranscriptPresentationRow.ID) -> AnyView
   ) {
     self.conversationItem = conversationItem
@@ -69,6 +72,7 @@ public struct TranscriptRowLeaves {
     self.attachmentThumbnail = attachmentThumbnail
     self.setup = setup
     self.setupRequest = setupRequest
+    self.interaction = interaction
     self.errorRow = errorRow
   }
 }
@@ -147,6 +151,8 @@ public struct TranscriptRowContentView: View {
       TranscriptBotTypingRow()
     case let .setupRequest(request, inBotConversation):
       leaves.setupRequest(request, inBotConversation, controller)
+    case let .interaction(interaction, inBotConversation):
+      leaves.interaction(interaction, inBotConversation, controller)
     case let .setup(phases):
       leaves.setup(phases)
     case let .optimistic(message):

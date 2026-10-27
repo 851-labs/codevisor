@@ -52,6 +52,11 @@ const isTurnState =
   (event: RuntimeEvent): boolean =>
     event.kind === "session.updated" && payloadField(event, "turnState") === state
 
+const replyEnvelope = (answer: string): string =>
+  `<send_user_message_question_reply>\n${JSON.stringify([
+    { answer, question: "What kind of shooter?", questionItemId: ARENA_ID }
+  ])}\n</send_user_message_question_reply>`
+
 const questionEvents = (events: ReadonlyArray<RuntimeEvent>, update: string) =>
   events.filter((event) => payloadField(event, "sessionUpdate") === update).map(payloadOf)
 
@@ -200,6 +205,67 @@ describe("Codex asynchronous questions", () => {
     expect(questionEvents(events, "question_resolved").at(-1)).toMatchObject({
       outcome: "cancelled",
       questionId: "call-1"
+    })
+  })
+
+  it.each([
+    {
+      carried: true,
+      input: { text: "Make it a battle royale" },
+      reply: "The user replied instead: Make it a battle royale"
+    },
+    {
+      carried: false,
+      input: { text: "   " },
+      reply: "The user replied instead of answering."
+    }
+  ])(
+    "steers a typed reply into the running turn (carried: $carried)",
+    async ({ carried, input, reply }) => {
+      const { client, events, handle, prompt } = await startTurn()
+      const steered = client.nextRequest("turn/steer")
+      await expect(run(handle.replyToQuestion!("call-1", input))).resolves.toBe(carried)
+      await steered
+      expect(client.requests.at(-1)).toMatchObject({
+        method: "turn/steer",
+        params: { expectedTurnId: "turn-1", input: [{ text: replyEnvelope(reply) }] }
+      })
+      expect(questionEvents(events, "question_resolved").at(-1)).toEqual({
+        outcome: "replied",
+        questionId: "call-1",
+        questions: expect.any(Array),
+        sessionUpdate: "question_resolved"
+      })
+      completeTurn(client, "turn-1")
+      await expect(prompt).resolves.toEqual({ stopReason: "end_turn" })
+    }
+  )
+
+  it("continues the held turn with a typed reply as the question's answer", async () => {
+    const { client, handle } = await startTurn()
+    completeTurn(client, "turn-1")
+    const continued = client.nextRequest("turn/start")
+    await expect(run(handle.replyToQuestion!("call-1", { text: "Arena" }))).resolves.toBe(true)
+    await continued
+    expect(recordOf(client.requests.at(-1)?.params)).toMatchObject({
+      input: [{ text: replyEnvelope("The user replied instead: Arena") }]
+    })
+  })
+
+  it("leaves the held turn open for the steer when the reply can't be carried", async () => {
+    const { client, events, handle } = await startTurn()
+    completeTurn(client, "turn-1")
+    await expect(run(handle.replyToQuestion!("call-1", { text: "" }))).resolves.toBe(false)
+    expect(client.requests.filter((request) => request.method === "turn/start")).toHaveLength(1)
+    expect(events.some(isTurnState("ended"))).toBe(false)
+    expect(questionEvents(events, "question_resolved")).toEqual([
+      expect.objectContaining({ outcome: "replied", questionId: "call-1" })
+    ])
+
+    await expect(run(handle.steer!("Let's do a battle royale"))).resolves.toBe(true)
+    expect(client.requests.at(-1)).toMatchObject({
+      method: "turn/start",
+      params: { input: [{ text: "Let's do a battle royale", type: "text" }] }
     })
   })
 

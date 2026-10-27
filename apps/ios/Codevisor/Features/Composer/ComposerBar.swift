@@ -291,10 +291,10 @@ extension ComposerBar {
 
   private var card: some View {
     Group {
-      if let question = controller.composerQuestion {
-        QuestionCardView(
+      if let question = controller.composerQuestion, let spec = question.questions.first {
+        PlanApprovalQuestionCard(
           controller: controller,
-          request: question,
+          question: spec,
           maxHeight: questionContentMaxHeight
         )
         .id(question.questionId)

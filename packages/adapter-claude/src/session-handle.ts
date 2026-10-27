@@ -18,7 +18,11 @@ import {
   resolveRequestedClaudeModel,
   supportsFastMode
 } from "./models.js"
-import { answerClaudeQuestion, cancelClaudePendingQuestions } from "./questions.js"
+import {
+  answerClaudeQuestion,
+  cancelClaudePendingQuestions,
+  replyToClaudeQuestion
+} from "./questions.js"
 import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import {
@@ -208,6 +212,8 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
     }),
   answerQuestion: (questionId, answer) =>
     adapterPromise("answerQuestion", () => answerClaudeQuestion(session, questionId, answer)),
+  replyToQuestion: (questionId, reply) =>
+    adapterPromise("replyToQuestion", () => replyToClaudeQuestion(session, questionId, reply)),
   setGoal: (update) =>
     adapterPromise("setGoal", async () => {
       if (update.objective !== undefined) {

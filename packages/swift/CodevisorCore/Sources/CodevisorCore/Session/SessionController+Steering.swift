@@ -7,7 +7,7 @@ extension SessionController {
   }
 
   public var canQueueMessages: Bool {
-    isSending && !presentsBotConversation
+    isSending && !presentsBotConversation && !isAwaitingAnswer
   }
 
   public var steersWhileWorking: Bool {

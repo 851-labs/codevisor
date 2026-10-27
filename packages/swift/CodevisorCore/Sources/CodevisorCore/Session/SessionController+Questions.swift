@@ -8,10 +8,50 @@ extension SessionController {
   public var pendingQuestion: QuestionRequest? { model?.pendingQuestion }
 
   public var composerQuestion: QuestionRequest? {
-    guard let pendingQuestion, TranscriptSetupRequest.kind(of: pendingQuestion.questions) != nil else {
+    guard let pendingQuestion, SessionModel.asksInTurn(pendingQuestion.questions) else {
       return activeQuestion
     }
     return planApprovalRequest
+  }
+
+  public var transcriptQuestion: QuestionRequest? {
+    guard let pendingQuestion, TranscriptQuestion.asksInTranscript(pendingQuestion.questions) else { return nil }
+    return pendingQuestion
+  }
+
+  public var isAwaitingAnswer: Bool { transcriptQuestion != nil }
+
+  public func questionDraft(for request: QuestionRequest) -> QuestionDraft {
+    if let draft = questionDrafts[request.questionId] { return draft }
+    let draft = QuestionDraft(request: request)
+    questionDrafts[request.questionId] = draft
+    return draft
+  }
+
+  public func revealTranscriptQuestion() {
+    transcriptQuestionRevealSignal &+= 1
+  }
+
+  public func submitTranscriptQuestion(_ id: String) async {
+    guard let draft = questionDrafts[id], transcriptQuestion?.questionId == id, draft.isSubmittable else { return }
+    await resolveTranscriptQuestion { await $0.answerQuestion(answers: draft.answers) }
+  }
+
+  public func answerTranscriptQuestion(_ id: String, with answers: [String: QuestionAnswerEntry]) async {
+    guard transcriptQuestion?.questionId == id else { return }
+    await resolveTranscriptQuestion { await $0.answerQuestion(answers: answers) }
+  }
+
+  public func skipTranscriptQuestion(_ id: String) async {
+    guard transcriptQuestion?.questionId == id else { return }
+    await resolveTranscriptQuestion { await $0.cancelQuestion() }
+  }
+
+  private func resolveTranscriptQuestion(_ resolve: (SessionModel) async -> Void) async {
+    guard !isResolvingQuestion, let model else { return }
+    isResolvingQuestion = true
+    defer { isResolvingQuestion = false }
+    await resolve(model)
   }
 
   public func setupRequest(id: String) -> TranscriptSetupRequest? {

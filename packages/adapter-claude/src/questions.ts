@@ -3,15 +3,20 @@ import { randomUUID } from "node:crypto"
 import {
   answersIfDefined,
   questionIdFirstPayloads,
-  type QuestionAnswer
+  questionReplyText,
+  type PromptInput,
+  type QuestionAnswer,
+  type QuestionOutcome
 } from "@codevisor/agent-runtime"
 import type { QuestionSpec } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
-import type { ClaudeSession, ClaudeToolDecision } from "./session.js"
+import type { ClaudeSession, ClaudeToolDecision, PendingClaudeQuestion } from "./session.js"
 import { toolTitle } from "./tool-presentation.js"
 
 const questionPayloads = questionIdFirstPayloads(answersIfDefined)
+
+const REPLIED_WITHOUT_TEXT = "The user replied instead of answering."
 
 const labelsWithNote = (labels: string, note: string): string =>
   note.length > 0 ? `${labels} — ${note}` : labels
@@ -51,7 +56,8 @@ export const holdClaudeQuestion = (
           }
         }
         return { behavior: "allow", updatedInput: { ...toolInput, answers } }
-      }
+      },
+      reply: deniedWithReply
     })
   })
 }
@@ -92,11 +98,7 @@ export const answerClaudeQuestion = async (
   questionId: string,
   answer: QuestionAnswer
 ): Promise<void> => {
-  const pending = session.pendingQuestions.get(questionId)
-  if (pending === undefined) {
-    throw new Error(`No pending question: ${questionId}`)
-  }
-  session.pendingQuestions.delete(questionId)
+  const pending = takePendingQuestion(session, questionId)
   pending.resolve(pending.respond(answer))
   await emitClaudeQuestionResolved(
     session,
@@ -107,10 +109,36 @@ export const answerClaudeQuestion = async (
   )
 }
 
+export const replyToClaudeQuestion = async (
+  session: ClaudeSession,
+  questionId: string,
+  reply: PromptInput
+): Promise<boolean> => {
+  const pending = takePendingQuestion(session, questionId)
+  const replyText = questionReplyText(reply)
+  pending.resolve(pending.reply(replyText))
+  await emitClaudeQuestionResolved(session, questionId, "replied", pending.questions, undefined)
+  return replyText !== undefined
+}
+
+const takePendingQuestion = (session: ClaudeSession, questionId: string): PendingClaudeQuestion => {
+  const pending = session.pendingQuestions.get(questionId)
+  if (pending === undefined) {
+    throw new Error(`No pending question: ${questionId}`)
+  }
+  session.pendingQuestions.delete(questionId)
+  return pending
+}
+
+const deniedWithReply = (replyText: string | undefined): ClaudeToolDecision => ({
+  behavior: "deny",
+  message: replyText ?? REPLIED_WITHOUT_TEXT
+})
+
 const emitClaudeQuestionResolved = (
   session: ClaudeSession,
   questionId: string,
-  outcome: "answered" | "cancelled",
+  outcome: QuestionOutcome,
   questions: ReadonlyArray<QuestionSpec>,
   answers: QuestionAnswer["answers"]
 ): Promise<void> =>
@@ -148,7 +176,8 @@ export const holdClaudeApproval = (
       respond: (answer) =>
         answer.outcome === "answered" && answer.answers?.[spec.id]?.answers[0] === "Allow"
           ? { behavior: "allow", updatedInput: toolInput }
-          : { behavior: "deny", message: "User denied permission." }
+          : { behavior: "deny", message: "User denied permission." },
+      reply: deniedWithReply
     })
   })
 }
@@ -195,18 +224,21 @@ export const holdClaudePlanApproval = (
         if (entry?.answers[0] === IMPLEMENT_PLAN_LABEL) {
           return { behavior: "allow", updatedInput: toolInput }
         }
-        const feedback = entry?.note?.trim()
-        return {
-          behavior: "deny",
-          message:
-            feedback === undefined || feedback === ""
-              ? KEEP_PLANNING_MESSAGE
-              : `${KEEP_PLANNING_MESSAGE}\n\nThe user's feedback on the plan:\n${feedback}`
-        }
-      }
+        return keepPlanning(entry?.note?.trim())
+      },
+      reply: (replyText) =>
+        replyText === undefined ? deniedWithReply(undefined) : keepPlanning(replyText)
     })
   })
 }
+
+const keepPlanning = (feedback: string | undefined): ClaudeToolDecision => ({
+  behavior: "deny",
+  message:
+    feedback === undefined || feedback === ""
+      ? KEEP_PLANNING_MESSAGE
+      : `${KEEP_PLANNING_MESSAGE}\n\nThe user's feedback on the plan:\n${feedback}`
+})
 
 export const cancelClaudePendingQuestions = (session: ClaudeSession): Promise<void> => {
   const emissions: Array<Promise<void>> = []

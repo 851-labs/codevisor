@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import {
   answersIfPresent,
   normalizePromptInput,
+  questionReplyText,
   sessionUpdateFirstPayloads,
   skillsUpdateEvent,
   type PromptInput,
@@ -25,7 +26,12 @@ import {
   type ModelCatalogEntry,
   type MuseSession as MuseSessionRecord
 } from "./protocol.js"
-import { approvalQuestion, userInputQuestion, type MuseQuestion } from "./questions.js"
+import {
+  approvalQuestion,
+  userInputQuestion,
+  type MuseQuestion,
+  type MuseQuestionReply
+} from "./questions.js"
 import { itemEdge } from "./rows.js"
 import { makeMuseSubagents } from "./subagents.js"
 import { completedOutcome, signedOutOutcome, type TurnOutcome } from "./turn-outcomes.js"
@@ -65,6 +71,7 @@ export interface MuseChat {
   readonly cancel: () => Promise<void>
   readonly setConfigOption: (configId: string, value: string) => Promise<Array<SessionConfigOption>>
   readonly answerQuestion: (questionId: string, answer: QuestionAnswer) => Promise<void>
+  readonly replyToQuestion: (questionId: string, reply: PromptInput) => Promise<boolean>
   readonly close: () => void
 }
 
@@ -167,6 +174,25 @@ export const startMuseChat = async (
         autoResolutionMs: question.autoResolutionMs
       })
     )
+  }
+
+  const settle = async (
+    questionId: string,
+    respond: (question: MuseQuestion) => MuseQuestionReply,
+    resolution: QuestionResolution
+  ): Promise<boolean> => {
+    const question = questions.get(questionId)
+    if (question === undefined) throw new Error(`No pending question: ${questionId}`)
+    questions.delete(questionId)
+    const { request, delivered } = respond(question)
+    try {
+      await client.request(request.method, request.params)
+    } catch (cause) {
+      questions.set(questionId, question)
+      throw cause
+    }
+    await resolved(questionId, question, resolution)
+    return delivered
   }
 
   const settledElsewhere = (value: unknown) => {
@@ -420,17 +446,17 @@ export const startMuseChat = async (
       return currentOptions()
     },
     answerQuestion: async (questionId, answer) => {
-      const question = questions.get(questionId)
-      if (question === undefined) throw new Error(`No pending question: ${questionId}`)
-      questions.delete(questionId)
-      const reply = question.reply(answer)
-      try {
-        await client.request(reply.method, reply.params)
-      } catch (cause) {
-        questions.set(questionId, question)
-        throw cause
-      }
-      await resolved(questionId, question, answer)
+      const respond = (question: MuseQuestion) => ({
+        request: question.reply(answer),
+        delivered: true
+      })
+      await settle(questionId, respond, answer)
+    },
+    replyToQuestion: (questionId, reply) => {
+      const replyText = questionReplyText(reply)
+      return settle(questionId, (question) => question.replyWithMessage(replyText), {
+        outcome: "replied"
+      })
     },
     close: () => {
       subagents.stop()

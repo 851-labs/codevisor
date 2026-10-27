@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto"
 import {
   answersIfDefined,
   normalizePromptInput,
+  questionReplyText,
   sessionSkills,
   sessionUpdateFirstPayloads,
   withAttachmentNotes,
   type PromptInput,
   type QuestionAnswer,
+  type QuestionResolution,
   type RuntimeEmit
 } from "@codevisor/agent-runtime"
 import type { EventKind, SessionConfigOption, SessionSkill, SessionSkills } from "@codevisor/api"
@@ -28,6 +30,8 @@ import { errorMessage, record } from "./values.js"
 const questionPayloads = sessionUpdateFirstPayloads(answersIfDefined)
 
 export const MINIMUM_PI_VERSION = "0.81.0"
+
+const dismissed: QuestionAnswer = { outcome: "cancelled" }
 
 interface OpenQuestion {
   readonly dialogId: string
@@ -50,6 +54,7 @@ export interface PiSession {
   readonly cancel: () => Promise<void>
   readonly setConfigOption: (configId: string, value: string) => Promise<Array<SessionConfigOption>>
   readonly answerQuestion: (questionId: string, answer: QuestionAnswer) => void
+  readonly replyToQuestion: (questionId: string, reply: PromptInput) => boolean
   readonly close: () => void
 }
 
@@ -140,10 +145,24 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
     return started
   }
 
-  const resolveQuestion = (questionId: string, open: OpenQuestion, answer: QuestionAnswer) => {
+  const resolveQuestion = (
+    questionId: string,
+    open: OpenQuestion,
+    response: Record<string, unknown>,
+    resolution: QuestionResolution
+  ) => {
     questions.delete(questionId)
-    client.respond({ id: open.dialogId, ...open.dialog.response(answer) })
-    void send("session.output", questionPayloads.resolved(questionId, [open.dialog.spec], answer))
+    client.respond({ id: open.dialogId, ...response })
+    void send(
+      "session.output",
+      questionPayloads.resolved(questionId, [open.dialog.spec], resolution)
+    )
+  }
+
+  const openQuestion = (questionId: string): OpenQuestion => {
+    const open = questions.get(questionId)
+    if (open === undefined) throw new Error(`No pending question: ${questionId}`)
+    return open
   }
 
   const endTurn = async (detail?: string): Promise<void> => {
@@ -151,7 +170,7 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
     if (ended === undefined) return
     turn = undefined
     for (const [questionId, open] of questions)
-      resolveQuestion(questionId, open, { outcome: "cancelled" })
+      resolveQuestion(questionId, open, open.dialog.response(dismissed), dismissed)
     const stopReason = ended.cancelled ? "cancelled" : "end_turn"
     const stopDetail = detail ?? failureDetail(ended.cancelled, mapper.outcome())
     await send("session.updated", {
@@ -287,9 +306,14 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
       return options()
     },
     answerQuestion: (questionId, answer) => {
-      const open = questions.get(questionId)
-      if (open === undefined) throw new Error(`No pending question: ${questionId}`)
-      resolveQuestion(questionId, open, answer)
+      const open = openQuestion(questionId)
+      resolveQuestion(questionId, open, open.dialog.response(answer), answer)
+    },
+    replyToQuestion: (questionId, reply) => {
+      const open = openQuestion(questionId)
+      const { response, delivered } = open.dialog.replyWithMessage(questionReplyText(reply))
+      resolveQuestion(questionId, open, response, { outcome: "replied" })
+      return delivered
     },
     close: () => client.close()
   }

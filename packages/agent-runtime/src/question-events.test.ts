@@ -5,6 +5,7 @@ import {
   answersIfDefined,
   answersIfPresent,
   questionIdFirstPayloads,
+  questionReplyText,
   sessionUpdateFirstPayloads,
   type QuestionResolution
 } from "./question-events.js"
@@ -103,5 +104,25 @@ describe("answer rules", () => {
     expect(answersIfPresent(hiddenAnswers())).toEqual({})
     expect(answersIfPresent({ outcome: "answered", answers: undefined })).toEqual({})
     expect(answersIfPresent({ outcome: "answered", answers })).toEqual({ answers })
+  })
+})
+
+describe("question reply text", () => {
+  it("quotes a text-only reply as the answer", () => {
+    expect(questionReplyText({ text: "  Use SQLite  " })).toBe(
+      "The user replied instead: Use SQLite"
+    )
+  })
+
+  it("has no answer text for an empty reply or one with attachments", () => {
+    const attachment = {
+      name: "a.png",
+      mimeType: "image/png",
+      kind: "image",
+      sizeBytes: 1,
+      path: "/a.png"
+    } as const
+    expect(questionReplyText({ text: "   " })).toBeUndefined()
+    expect(questionReplyText({ text: "See this", attachments: [attachment] })).toBeUndefined()
   })
 })

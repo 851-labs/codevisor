@@ -72,6 +72,11 @@ export interface AcpAgentConnection {
     questionId: string,
     answer: QuestionAnswer
   ) => Effect.Effect<void, AgentRuntimeError>
+  readonly replyToQuestion?: (
+    sessionId: string,
+    questionId: string,
+    reply: PromptInput
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly probeAuth: (cwd: string) => Effect.Effect<
     {
       readonly state: "authenticated" | "unauthenticated" | "notRequired" | "error"

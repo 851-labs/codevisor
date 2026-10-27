@@ -21,10 +21,10 @@ import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { projectSessionAttention, projectSessionSidebarState } from "./session-attention.js"
 import { linkSessionFiles } from "./session-files.js"
-import { setupQuestionPresentation } from "./setup-questions.js"
 import { projectSetupState } from "./setup-state.js"
 import { readSyncBatch, trimSyncJournal, type SyncBatch } from "./sync-journal.js"
 import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
+import { splitsWorkedSection } from "./transcript-questions.js"
 import { textPatchForEvent } from "./transcript-state.js"
 
 export const makeEventsService = (
@@ -243,7 +243,7 @@ const materializeSessionDelivery = (
     typeof update.questionId === "string"
   ) {
     const resolution = questionResolutionDelivery(sqlite, chatItemId, update, update.questionId)
-    deliveredPayload = withSetupContinuation(sqlite, sessionId, chatItemId, resolution)
+    deliveredPayload = withSectionContinuation(sqlite, sessionId, chatItemId, resolution)
   }
   if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
     deliveredPayload = planDocumentDelivery(sqlite, chatItemId, subjectRevision, update)
@@ -264,13 +264,13 @@ const questionResolutionDelivery = (
   return { ...update, statePosition }
 }
 
-const withSetupContinuation = (
+const withSectionContinuation = (
   sqlite: ServiceContext["sqlite"],
   sessionId: string,
   questionItemId: string,
   resolution: JsonRecord
 ): JsonRecord => {
-  if (setupQuestionPresentation(resolution) === undefined) return resolution
+  if (!splitsWorkedSection(resolution)) return resolution
 
   const continuation = chatState(sqlite, sessionId).current_item_id
   if (continuation === null || continuation === questionItemId) return resolution

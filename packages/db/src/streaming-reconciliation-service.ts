@@ -29,7 +29,9 @@ export const makeStreamingReconciliationService = (
           if (!quietSince(context.sqlite, id, quietSinceIso)) return { repaired: 0, events: [] }
           const page = Effect.runSync(transcript.getTranscriptPage(id, undefined, 1))
           const active = page.items.at(-1)
-          const orphaned = active?.role === "assistant" && active.isGenerating
+          const orphaned =
+            active?.role === "assistant" &&
+            (active.isGenerating || page.pendingQuestion !== undefined)
           const events: EventEnvelope[] = []
           const append = (kind: EventEnvelope["kind"], payload: unknown): void => {
             events.push(Effect.runSync(journal.appendEvent(kind, id, payload)))

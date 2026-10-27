@@ -16,12 +16,12 @@ enum TranscriptBotRowAssembly {
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(messages.count + 4)
     var previous: TranscriptBotMessage?
-    var setupBubbles = setupRequests(in: input)[...]
+    var turnBubbles = turnBubbles(in: input)[...]
     for (index, message) in messages.enumerated() {
       if index.isMultiple(of: 32), Task.isCancelled { throw CancellationError() }
-      while let next = setupBubbles.first, wasAsked(next.askedAt, before: message) {
-        rows.append(.setupRequest(next.request, inBotConversation: true, spacingAfter: groupTailSpacing))
-        setupBubbles.removeFirst()
+      while let next = turnBubbles.first, wasAsked(next.askedAt, before: message) {
+        rows.append(next.row)
+        turnBubbles.removeFirst()
       }
       if let sentAt = message.sentAt, startsNewMoment(sentAt, after: previous) {
         rows.append(
@@ -44,9 +44,7 @@ enum TranscriptBotRowAssembly {
       previous = message
     }
     appendPendingMessage(input, conversation: conversation, to: &rows)
-    for bubble in setupBubbles {
-      rows.append(.setupRequest(bubble.request, inBotConversation: true, spacingAfter: groupTailSpacing))
-    }
+    rows += turnBubbles.map(\.row)
     if let stoppedTurn {
       TranscriptAssistantRowProjection.appendStopDetail(stoppedTurn, to: &rows)
     }
@@ -85,14 +83,19 @@ enum TranscriptBotRowAssembly {
     return askedAt < sentAt
   }
 
-  private static func setupRequests(
+  private static func turnBubbles(
     in input: TranscriptProjectionInput
-  ) -> [(askedAt: Date?, request: TranscriptSetupRequest)] {
+  ) -> [(askedAt: Date?, row: TranscriptPresentationRow)] {
     (input.settledConversation + [input.activeItem].compactMap(\.self)).flatMap {
-      item -> [(askedAt: Date?, request: TranscriptSetupRequest)] in
+      item -> [(askedAt: Date?, row: TranscriptPresentationRow)] in
       guard case let .assistant(message) = item else { return [] }
-      return message.turn.setupRequests.map { (askedAt: message.turn.endedAt, request: $0) }
+      return bubbleRows(message.turn).map { (askedAt: message.turn.endedAt, row: $0) }
     }
+  }
+
+  private static func bubbleRows(_ turn: AssistantTurn) -> [TranscriptPresentationRow] {
+    turn.setupRequests.map { .setupRequest($0, inBotConversation: true, spacingAfter: groupTailSpacing) }
+      + turn.interactions.items.map { .interaction($0, inBotConversation: true, spacingAfter: groupTailSpacing) }
   }
 
   private static func row(

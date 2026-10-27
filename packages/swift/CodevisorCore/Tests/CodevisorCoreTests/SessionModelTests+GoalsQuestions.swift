@@ -268,17 +268,16 @@ extension SessionModelTests {
           ]),
         ])
       ))
-    await settleAssistant(model) { message in
-      message.turn.toolCalls.contains(where: { $0.kind == .question })
-    }
-    guard case let .assistant(assistant) = model.conversation.last else {
-      Issue.record("expected assistant")
+    await settleAssistant(model) { $0.turn.interactions.items.contains { !$0.isPending } }
+    guard case let .assistant(assistant) = model.conversation.last,
+      case let .question(question)? = assistant.turn.interactions.items.first?.content
+    else {
+      Issue.record("expected the answered question on the assistant turn")
       return
     }
-    let questionCall = assistant.turn.toolCalls.first { $0.kind == .question }
-    #expect(questionCall?.toolCallId == "question:q-1")
-    #expect(questionCall?.title == "Which approach?")
-    #expect(questionCall?.content == [.content(.text("MVP first"))])
+    let answer = QuestionAnswerEntry(answers: ["MVP first"])
+    #expect(question.answer == .init(outcome: .answered, entries: ["approach": answer]))
+    #expect(!assistant.turn.toolCalls.contains { $0.kind == .question })
   }
 
   @Test("Question resolution reports progress immediately and ignores duplicate submissions")

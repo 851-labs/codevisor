@@ -212,6 +212,12 @@ const acpSessionHandle = (
         answerQuestion: (questionId: string, answer: QuestionAnswer) =>
           connection.answerQuestion!(sessionId, questionId, answer)
       }),
+  ...(connection.replyToQuestion === undefined
+    ? {}
+    : {
+        replyToQuestion: (questionId: string, reply: PromptInput) =>
+          connection.replyToQuestion!(sessionId, questionId, reply)
+      }),
   ...(connection.setGoal === undefined
     ? {}
     : {

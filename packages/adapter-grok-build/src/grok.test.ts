@@ -113,6 +113,45 @@ describe("Grok Build compatibility", () => {
     })
   })
 
+  it("carries a composer reply as plan feedback, or keeps planning without one", () => {
+    const mapped = grokPlanApprovalQuestion({ sessionId: "s-1", toolCallId: "tool-1" })
+
+    expect(mapped?.replyFor("The user replied instead: add tests")).toEqual({
+      delivered: true,
+      response: { outcome: "cancelled", feedback: "The user replied instead: add tests" }
+    })
+    expect(mapped?.replyFor(undefined)).toEqual({
+      delivered: false,
+      response: { outcome: "cancelled" }
+    })
+  })
+
+  it("answers every Grok question with a composer reply, or cancels without one", () => {
+    const mapped = grokAskUserQuestion({
+      sessionId: "s-1",
+      toolCallId: "tool-1",
+      questions: [
+        { question: "Which database?", options: [{ label: "SQLite" }] },
+        { question: "Anything else?", options: [] }
+      ]
+    })
+
+    expect(mapped?.replyFor("The user replied instead: Postgres")).toEqual({
+      delivered: true,
+      response: {
+        outcome: "accepted",
+        answers: {
+          "Which database?": ["The user replied instead: Postgres"],
+          "Anything else?": ["The user replied instead: Postgres"]
+        }
+      }
+    })
+    expect(mapped?.replyFor(undefined)).toEqual({
+      delivered: false,
+      response: { outcome: "cancelled" }
+    })
+  })
+
   it("maps Grok goal progress and preserves the goal creation time", () => {
     const active = grokGoalNotification(
       {

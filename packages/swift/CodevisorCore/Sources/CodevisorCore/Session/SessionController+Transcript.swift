@@ -154,7 +154,7 @@ extension SessionController {
 
   public var isSending: Bool { model?.isSending ?? false }
   public var isCancelling: Bool { model?.isCancelling ?? false }
-  public var canStop: Bool { isSending && !presentsBotConversation }
+  public var canStop: Bool { isSending && !presentsBotConversation && !isAwaitingAnswer }
   public var isTakingLongerThanExpected: Bool {
     model?.isTakingLongerThanExpected ?? false
   }

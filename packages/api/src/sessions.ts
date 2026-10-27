@@ -11,6 +11,7 @@ import {
   QuestionOutcome,
   QuestionPayload,
   QuestionPresentation,
+  QuestionSpec,
   SessionPlan,
   TurnStopKind
 } from "./session-updates.js"
@@ -206,6 +207,25 @@ export const TranscriptSetupRequest = Schema.Struct({
 })
 export type TranscriptSetupRequest = typeof TranscriptSetupRequest.Type
 
+export const TranscriptQuestionInteraction = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literal("question"),
+  payload: Schema.Struct({
+    message: Schema.optional(Schema.String),
+    questions: Schema.Array(QuestionSpec)
+  }),
+  answer: Schema.optional(
+    Schema.Struct({
+      outcome: QuestionOutcome,
+      answers: Schema.optional(Schema.Record(Schema.String, QuestionAnswerEntry))
+    })
+  )
+})
+export type TranscriptQuestionInteraction = typeof TranscriptQuestionInteraction.Type
+
+export const TranscriptInteraction = Schema.Union([TranscriptQuestionInteraction])
+export type TranscriptInteraction = typeof TranscriptInteraction.Type
+
 export const TranscriptItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -236,6 +256,7 @@ export const TranscriptItem = Schema.Struct({
   textRevision: Schema.optional(Schema.Number),
   textPosition: Schema.optional(Schema.Number),
   setupRequests: Schema.optional(Schema.Array(TranscriptSetupRequest)),
+  interactions: Schema.optional(Schema.Array(TranscriptInteraction)),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type

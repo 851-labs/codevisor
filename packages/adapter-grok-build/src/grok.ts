@@ -1,4 +1,4 @@
-import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
+import type { AcpMappedQuestion, AcpQuestionReply } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { isRecord } from "@codevisor/api"
 import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
@@ -124,6 +124,13 @@ export const grokGoalNotification = (
   }
 }
 
+const grokPlanReply = (
+  replyText: string | undefined
+): AcpQuestionReply<GrokPlanApprovalResponse> => {
+  if (replyText === undefined) return { delivered: false, response: { outcome: "cancelled" } }
+  return { delivered: true, response: { outcome: "cancelled", feedback: replyText } }
+}
+
 export const grokPlanApprovalQuestion = (
   params: unknown
 ): GrokMappedQuestion<GrokPlanApprovalResponse> | undefined => {
@@ -148,6 +155,7 @@ export const grokPlanApprovalQuestion = (
     questions,
     ...(planDocument === undefined ? {} : { planDocument }),
     cancelledResponse: { outcome: "cancelled" },
+    replyFor: grokPlanReply,
     responseFor: (answer) => {
       if (answer.outcome === "cancelled") return { outcome: "cancelled" }
       const entry = answer.answers?.[GROK_PLAN_QUESTION_ID]
@@ -207,6 +215,17 @@ const parseGrokQuestions = (value: unknown): ReadonlyArray<GrokQuestion> => {
   })
 }
 
+const grokAskReply = (
+  grokQuestions: ReadonlyArray<GrokQuestion>,
+  replyText: string | undefined
+): AcpQuestionReply<GrokAskUserQuestionResponse> => {
+  if (replyText === undefined) return { delivered: false, response: { outcome: "cancelled" } }
+  const answers = Object.fromEntries(
+    grokQuestions.map((question) => [question.question, [replyText]])
+  )
+  return { delivered: true, response: { outcome: "accepted", answers } }
+}
+
 export const grokAskUserQuestion = (
   params: unknown
 ): GrokMappedQuestion<GrokAskUserQuestionResponse> | undefined => {
@@ -228,6 +247,7 @@ export const grokAskUserQuestion = (
     sessionId: request.sessionId,
     questions,
     cancelledResponse: { outcome: "cancelled" },
+    replyFor: (replyText) => grokAskReply(grokQuestions, replyText),
     responseFor: (answer) => {
       if (answer.outcome === "cancelled") return { outcome: "cancelled" }
       const answers: Record<string, ReadonlyArray<string>> = {}

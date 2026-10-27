@@ -24,12 +24,12 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import { coalesceReleasedWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
-import { transcriptOrigin } from "./prompt-origin.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
-import { materializeRuntimeEvent } from "./session-events.js"
+import { answeredPendingQuestion } from "./question-replies.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 import { pausedForUpdate, sessionHarnessId } from "./update-pause-gate.js"
+import { recordUserPrompt, steeredPrompt } from "./user-prompts.js"
 
 export const hasLiveTurn = (routeState: RouteState, sessionId: string): boolean =>
   routeState.activePromptSessions.has(sessionId) || routeState.activeTurnSessions.has(sessionId)
@@ -307,6 +307,11 @@ const steerClaimedPrompt = async (
   sessionId: string,
   item: PromptQueueItem
 ): Promise<boolean> => {
+  if (await answeredPendingQuestion(services, fanout, serverId, sessionId, item)) {
+    await run(services.db.completePromptQueueItem(sessionId, item.id))
+    return true
+  }
+
   const steered = await steerIntoRunningTurn(services, fanout, serverId, sessionId, item).catch(
     () => false
   )
@@ -315,13 +320,7 @@ const steerClaimedPrompt = async (
     return false
   }
 
-  await recordUserPrompt(services, fanout, serverId, sessionId, {
-    messageId: item.id,
-    text: item.text,
-    attachments: item.attachments,
-    origin: item.origin,
-    startsTurn: false
-  })
+  await recordUserPrompt(services, fanout, serverId, sessionId, steeredPrompt(item))
   await run(services.db.completePromptQueueItem(sessionId, item.id))
   return true
 }
@@ -354,43 +353,6 @@ const promptInput = async (
   else promptText = await withCodevisorSkills(services, sessionId, item.text, skills)
   if (refs.length === 0) return promptText
   return { attachments: await resolvePromptAttachments(services, refs), text: promptText }
-}
-
-interface RecordedPrompt {
-  readonly messageId: string
-  readonly text: string
-  readonly attachments: ReadonlyArray<AttachmentRef> | undefined
-  readonly origin: PromptOrigin | undefined
-  readonly startsTurn: boolean
-}
-
-const recordUserPrompt = (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
-  sessionId: string,
-  prompt: RecordedPrompt
-): Promise<void> => {
-  const { messageId, text, startsTurn } = prompt
-  const refs = prompt.attachments ?? []
-  return materializeRuntimeEvent(
-    services.db,
-    fanout,
-    serverId,
-    {
-      kind: "session.output",
-      subjectId: sessionId,
-      payload: {
-        role: "user",
-        messageId,
-        ...(startsTurn ? { startsTurn: true } : {}),
-        text,
-        ...(refs.length === 0 ? {} : { attachments: refs }),
-        ...transcriptOrigin(prompt.origin)
-      }
-    },
-    sessionId
-  )
 }
 
 const clientPlatform = (

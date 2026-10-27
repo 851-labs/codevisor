@@ -5,10 +5,19 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("A live question turn adopts the server transcript item identity")
+  @Test("A live question turn adopts the server transcript item identities on both sides of the question")
   func liveQuestionTurnAdoptsCanonicalItemIdentity() async {
     let sessionId = UUID()
     let assistantItemId = UUID()
+    let continuationItemId = UUID()
+    let questions: JSONValue = .array([
+      .object([
+        "id": .string("choice"),
+        "question": .string("Continue?"),
+        "allowsOther": .bool(false),
+        "options": .array([.object(["label": .string("Yes")])]),
+      ])
+    ])
     let client = FakeSessionServerClient(sessionId: sessionId)
     client.initialTranscriptPage = ServerTranscriptPage(
       items: [],
@@ -38,53 +47,32 @@ extension SessionModelTests {
     await settleUntil { model.activeItem?.id == assistantItemId }
 
     client.emit(
-      ServerEventEnvelope(
-        id: 2,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-08-19T00:00:01.000Z",
-        payload: .object([
+      outputEnvelope(
+        2, sessionId,
+        [
           "sessionUpdate": .string("question"),
           "questionId": .string("q-identity"),
-          "questions": .array([
-            .object([
-              "id": .string("choice"),
-              "question": .string("Continue?"),
-              "allowsOther": .bool(false),
-              "options": .array([.object(["label": .string("Yes")])]),
-            ])
-          ]),
-        ])
-      ))
+          "questions": questions,
+        ]))
     client.emit(
-      ServerEventEnvelope(
-        id: 3,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-08-19T00:00:02.000Z",
-        payload: .object([
+      outputEnvelope(
+        3, sessionId,
+        [
           "sessionUpdate": .string("question_resolved"),
           "questionId": .string("q-identity"),
           "outcome": .string("answered"),
-          "questions": .array([]),
-          "answers": .object([:]),
-        ])
-      ))
+          "questions": questions,
+          "answers": .object(["choice": .object(["answers": .array([.string("Yes")])])]),
+          "assistantItemId": .string(continuationItemId.uuidString),
+        ]))
     client.emit(
-      ServerEventEnvelope(
-        id: 4,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-08-19T00:00:03.000Z",
-        payload: .object([
+      outputEnvelope(
+        4, sessionId,
+        [
           "sessionUpdate": .string("agent_message_chunk"),
           "messageId": .string("answer-identity"),
           "content": .object(["type": .string("text"), "text": .string("Done")]),
-        ])
-      ))
+        ]))
     client.emit(
       ServerEventEnvelope(
         id: 5,
@@ -93,19 +81,24 @@ extension SessionModelTests {
         subjectId: sessionId.uuidString,
         createdAt: "2026-08-19T00:00:04.000Z",
         payload: .object([
-          "chatItemId": .string(assistantItemId.uuidString),
+          "chatItemId": .string(continuationItemId.uuidString),
           "stopReason": .string("end_turn"),
           "turnId": .string("turn-question"),
           "turnState": .string("ended"),
         ])
       ))
 
-    await settleAssistant(model) { !$0.turn.isGenerating }
+    await settleUntil { model.conversation.last?.id == continuationItemId && !model.isSending }
     guard case let .assistant(assistant) = model.conversation.last else {
       Issue.record("expected assistant")
       return
     }
-    #expect(assistant.id == assistantItemId)
+    let asked = model.conversation.first { $0.id == assistantItemId }
+    guard case let .assistant(question)? = asked else {
+      Issue.record("expected the question's section")
+      return
+    }
+    #expect(question.turn.interactions.items.map(\.isPending) == [false])
     guard case let .text(_, markdown) = assistant.turn.finalText else {
       Issue.record("expected final text")
       return
@@ -358,5 +351,16 @@ extension SessionModelTests {
 
     #expect(userMessages(model).map(\.text) == ["again", "again"])
     #expect(userMessages(model).map(\.id) == [directMessageId, queueItemId])
+  }
+
+  private func outputEnvelope(_ id: Int, _ sessionId: UUID, _ payload: [String: JSONValue]) -> ServerEventEnvelope {
+    ServerEventEnvelope(
+      id: id,
+      serverId: "local",
+      kind: "session.output",
+      subjectId: sessionId.uuidString,
+      createdAt: "2026-08-19T00:00:0\(id).000Z",
+      payload: .object(payload)
+    )
   }
 }
