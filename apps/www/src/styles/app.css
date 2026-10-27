@@ -43,7 +43,7 @@ body:has(.marketing-shell) {
 }
 
 html:has(.landing) {
-  color-scheme: light dark;
+  color-scheme: light dark !important;
   --landing-card-radius: 18px;
   --color-page: light-dark(#f5f5f7, #151517);
   --color-surface: light-dark(#ffffff, #1c1c1e);
@@ -53,6 +53,10 @@ html:has(.landing) {
   --color-hairline: light-dark(#e1e1e6, #27272b);
   --color-signal: #007aff;
   --color-go: light-dark(#1f8a4c, #3ccf7a);
+  background-color: var(--color-page);
+}
+
+body:has(.landing) {
   background-color: var(--color-page);
 }
 

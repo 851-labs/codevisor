@@ -32,6 +32,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build and typecheck
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bunx turbo run build typecheck --filter=@codevisor/www
       - name: Deploy to Cloudflare
         working-directory: apps/www
