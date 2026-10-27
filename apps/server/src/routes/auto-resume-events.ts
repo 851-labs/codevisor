@@ -7,11 +7,13 @@ export type AutoResumeTrigger =
   | { readonly kind: "turnStarted" }
   | { readonly kind: "turnFinished" }
   | { readonly kind: "sessionArchived" }
-  | { readonly kind: "accountActivated"; readonly accountId: string }
+  | { readonly kind: "accountsChanged" }
+  | { readonly kind: "signedIn"; readonly accountId: string }
 
 export const autoResumeTrigger = (event: EventEnvelope): AutoResumeTrigger | undefined => {
   const payload = isRecord(event.payload) ? event.payload : {}
-  if (event.kind === "harness.auth.updated") return accountActivated(payload)
+  if (event.kind === "harness.auth.updated") return { kind: "accountsChanged" }
+  if (event.kind === "harness.authFlow.updated") return signedIn(payload)
   if (event.kind === "session.archived") return { kind: "sessionArchived" }
   if (event.kind !== "session.updated" && event.kind !== "session.error") return undefined
 
@@ -30,7 +32,7 @@ const usageLimitStop = (payload: Record<string, unknown>): AutoResumeTrigger => 
   resetsAt: typeof payload.resetsAt === "string" ? payload.resetsAt : undefined
 })
 
-const accountActivated = (payload: Record<string, unknown>): AutoResumeTrigger | undefined => {
-  if (typeof payload.activeAccountId !== "string") return undefined
-  return { kind: "accountActivated", accountId: payload.activeAccountId }
+const signedIn = (payload: Record<string, unknown>): AutoResumeTrigger | undefined => {
+  if (payload.kind !== "complete" || typeof payload.accountId !== "string") return undefined
+  return { kind: "signedIn", accountId: payload.accountId }
 }

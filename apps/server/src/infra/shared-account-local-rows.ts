@@ -21,7 +21,11 @@ export const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
   return account
 }
 
+export type SelectionListener = (harnessId: string, accountId: string) => void
+
 export const makeLocalAccountRows = ({ db, store, localState }: LocalAccountRowsDeps) => {
+  const listeners = new Set<SelectionListener>()
+
   const save = async (account: SharedHarnessAccount, adopted?: SharedTokenBundle) => {
     const existing = await run(db.getHarnessAccount(account.id))
     const live = adopted !== undefined && adopted.expiresAt > Date.now() + liveGrantMarginMs
@@ -40,9 +44,17 @@ export const makeLocalAccountRows = ({ db, store, localState }: LocalAccountRows
       if (harnessId === "codex" && (await localState.hasAlias(previous.id))) continue
       await run(db.rebindHarnessAccountSessions(previous.id, selected))
     }
+    for (const listener of listeners) listener(harnessId, selected)
   }
 
-  return { save, applySelection }
+  const subscribeSelections = (listener: SelectionListener) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }
+
+  return { save, applySelection, subscribeSelections }
 }
 
 export type LocalAccountRows = ReturnType<typeof makeLocalAccountRows>

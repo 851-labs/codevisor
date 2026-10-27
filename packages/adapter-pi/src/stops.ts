@@ -1,4 +1,4 @@
-import { resetTimeIn, usageLimitStop } from "@codevisor/agent-runtime"
+import { isOutOfCreditsText, resetTimeIn, usageLimitStop } from "@codevisor/agent-runtime"
 
 import type { PiAssistantOutcome } from "./events.js"
 
@@ -34,4 +34,4 @@ const openCodeUsageLimit =
 const usageLimitPatterns = [chatGptUsageLimit, codexUsageLimit, openCodeUsageLimit]
 
 const isUsageLimit = (stopDetail: string): boolean =>
-  usageLimitPatterns.some((pattern) => pattern.test(stopDetail))
+  usageLimitPatterns.some((pattern) => pattern.test(stopDetail)) || isOutOfCreditsText(stopDetail)

@@ -187,3 +187,36 @@ describe("final assistant text", () => {
     expect(await finalAssistantText(router.services, session)).toBe(expected)
   })
 })
+
+describe("usage-limit turn ends", () => {
+  it("tells subscribers the agent paused at its usage limit instead of sending no final message", async () => {
+    const router = await setUpRouter()
+    const watcher = await router.chat()
+    const worker = await router.chat()
+    await run(
+      router.services.db.createSessionSubscription({
+        subscriberSessionId: watcher,
+        targetSessionId: worker,
+        events: ["turn_ended"],
+        once: false
+      })
+    )
+    const stopDetail = "You've hit your session limit · resets 4:30pm."
+
+    await router.emit(worker, { initiatedBy: "user", turnId: "turn-1", turnState: "started" })
+    await router.emit(worker, {
+      initiatedBy: "user",
+      stopReason: "end_turn",
+      stopKind: "usageLimit",
+      stopDetail,
+      turnId: "turn-1",
+      turnState: "ended"
+    })
+    await waitFor(() => router.eventPrompts().length > 0)
+
+    const [delivered] = router.eventPrompts()
+    expect(delivered).toContain('stopReason="end_turn" stopKind="usageLimit"')
+    expect(delivered).toContain(`Paused at its usage limit: ${stopDetail}`)
+    expect(delivered).not.toContain("(no final message)")
+  })
+})

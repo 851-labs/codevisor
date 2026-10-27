@@ -24,6 +24,9 @@ export const makeServerAutoResume = (
       const session = await run(services.db.getSessionSummary(sessionId))
       return (await readSessionUsageLimits(services, session)).limits
     },
+    activeAccountId: async (harnessId) =>
+      (await run(services.db.listHarnessAccounts(harnessId))).find((account) => account.isActive)
+        ?.id,
     resume: (sessionId) => resumeInterruptedTurn(services, fanout, routeState, serverId, sessionId)
   })
 

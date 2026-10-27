@@ -72,6 +72,8 @@ const makeFixture = async (db?: CodevisorDatabaseService): Promise<Fixture> => {
       if (limits.current instanceof Error) throw limits.current
       return limits.current
     },
+    activeAccountId: async (harnessId) =>
+      (await run(database.listHarnessAccounts(harnessId))).find((account) => account.isActive)?.id,
     resume: async (sessionId) => {
       if (failResume.has(sessionId)) throw new Error("The chat was archived")
       resumed.push(sessionId)
@@ -115,6 +117,39 @@ const stopAtLimit = (fixture: Fixture, sessionId: string, resetsAt?: string) =>
 const advance = async (fixture: Fixture, ms: number): Promise<void> => {
   await vi.advanceTimersByTimeAsync(ms)
   await settled(fixture)
+}
+
+const accountsChanged = async (fixture: Fixture, harnessId: string) => {
+  await appendAndPublish(fixture.db, fixture.fanout, "harness.auth.updated", harnessId, {})
+  await settled(fixture)
+}
+
+const signInFlow = async (fixture: Fixture, flow: Record<string, unknown>) => {
+  await appendAndPublish(
+    fixture.db,
+    fixture.fanout,
+    "harness.authFlow.updated",
+    "claude-code",
+    flow
+  )
+  await settled(fixture)
+}
+
+const saveAccounts = async (fixture: Fixture, ids: ReadonlyArray<string>) => {
+  for (const id of ids) {
+    await run(
+      fixture.db.saveHarnessAccount({
+        id,
+        harnessId: "claude-code",
+        profileKind: "managed",
+        profileKey: id,
+        label: id,
+        authState: "authenticated",
+        canLogin: true,
+        canLogout: true
+      })
+    )
+  }
 }
 
 const lastUpdate = (fixture: Fixture, sessionId: string): unknown =>
@@ -311,26 +346,60 @@ describe("auto-resume after a usage limit", () => {
     }
     await run(fixture.db.bindSessionHarnessAccount(claude, "personal"))
     await run(fixture.db.bindSessionHarnessAccount(codex, "codex-personal"))
+    await run(fixture.db.setActiveHarnessAccount("claude-code", "personal"))
     for (const chat of [claude, codex, unbound]) await stopAtLimit(fixture, chat, at(minutes(240)))
 
-    await appendAndPublish(fixture.db, fixture.fanout, "harness.auth.updated", "claude-code", {
-      activeAccountId: "personal"
-    })
-    await appendAndPublish(fixture.db, fixture.fanout, "harness.auth.updated", "claude-code", {
-      state: "unavailable"
-    })
-    await settled(fixture)
+    await accountsChanged(fixture, "claude-code")
+    await accountsChanged(fixture, "codex")
+    await accountsChanged(fixture, "gemini")
     expect(fixture.resumed).toEqual([])
 
-    await appendAndPublish(fixture.db, fixture.fanout, "harness.auth.updated", "claude-code", {
-      activeAccountId: "work"
-    })
+    await run(fixture.db.setActiveHarnessAccount("claude-code", "work"))
+    await accountsChanged(fixture, "claude-code")
     await advance(fixture, 0)
 
     expect(fixture.resumed).toEqual([claude])
     expect((await run(fixture.db.getSessionSummary(claude))).harnessAccountId).toBe("work")
     expect(await run(fixture.db.getAutoResume(codex))).toMatchObject({ state: "waiting" })
     expect(await run(fixture.db.getAutoResume(unbound))).toMatchObject({ state: "waiting" })
+  })
+
+  it("keeps waiting when the account the user switches to is limited too", async () => {
+    const fixture = await makeFixture()
+    const chat = await createChat(fixture)
+    await saveAccounts(fixture, ["personal", "work"])
+    await run(fixture.db.bindSessionHarnessAccount(chat, "personal"))
+    await stopAtLimit(fixture, chat, at(minutes(240)))
+    fixture.limits.current = exhaustedUntil(at(minutes(90)))
+
+    await run(fixture.db.setActiveHarnessAccount("claude-code", "work"))
+    await accountsChanged(fixture, "claude-code")
+    await advance(fixture, 0)
+
+    expect(fixture.resumed).toEqual([])
+    expect(lastUpdate(fixture, chat)).toEqual({ state: "scheduled", resumesAt: at(minutes(90)) })
+    expect((await run(fixture.db.getSessionSummary(chat))).harnessAccountId).toBe("work")
+  })
+
+  it("checks again right away when the stopped account finishes signing in", async () => {
+    const fixture = await makeFixture()
+    const [chat, other] = [await createChat(fixture), await createChat(fixture)]
+    await saveAccounts(fixture, ["personal", "work"])
+    await run(fixture.db.bindSessionHarnessAccount(chat, "personal"))
+    await run(fixture.db.bindSessionHarnessAccount(other, "work"))
+    for (const stopped of [chat, other]) await stopAtLimit(fixture, stopped, at(minutes(240)))
+
+    await signInFlow(fixture, { id: "flow", accountId: "personal", kind: "browser" })
+    await signInFlow(fixture, { id: "flow", kind: "complete" })
+    await signInFlow(fixture, { id: "flow", accountId: "nobody", kind: "complete" })
+    await advance(fixture, 0)
+    expect(fixture.resumed).toEqual([])
+
+    await signInFlow(fixture, { id: "flow", accountId: "personal", kind: "complete" })
+    await advance(fixture, 0)
+
+    expect(fixture.resumed).toEqual([chat])
+    expect(await run(fixture.db.getAutoResume(other))).toMatchObject({ state: "waiting" })
   })
 
   it("waits out a reset further away than one timer can span", async () => {

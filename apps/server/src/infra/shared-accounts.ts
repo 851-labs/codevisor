@@ -122,6 +122,7 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
     activate: roster.activate,
     gateway,
     subscribe: store.subscribe,
+    subscribeSelections: localRows.subscribeSelections,
     create: lifecycle.create,
     saveApiKey: imports.saveApiKey,
     prepareLogin: lifecycle.prepareLogin,

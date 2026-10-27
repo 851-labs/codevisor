@@ -19,7 +19,6 @@ import {
 } from "./infra/fleet-outbox.js"
 import { hasExistingListener } from "./infra/listener-probe.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
-import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
 import { forwardTerminalTitles } from "./infra/terminal-titles.js"
 import {
@@ -68,6 +67,7 @@ import {
   subscribeSessionActivity
 } from "./server-monitors.js"
 import { handleRequest } from "./server-router.js"
+import { forwardSharedAccountEvents } from "./shared-account-events.js"
 import { continueAfterUpdate, makeUpdateResumer } from "./update-resume.js"
 import { makeServerUpdateRun } from "./update-run-server.js"
 import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
@@ -201,18 +201,7 @@ export const makeCodevisorServerApp = (
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = subscribeSessionActivity(config, fanout, activeSessionIds)
   const authSyncRefresh = makeAuthSyncRefreshScheduler(services, config, fanout)
-  const unsubscribeSharedAccounts = services.sharedAccounts?.subscribe((entries) => {
-    void appendAndPublish(services.db, fanout, "sync.changed", SHARED_ACCOUNTS_NAMESPACE, {
-      namespace: SHARED_ACCOUNTS_NAMESPACE,
-      entries
-    }).catch(swallowError)
-    authSyncRefresh.request()
-  })
-  const unsubscribeNotices = services.sharedAccounts?.subscribeNotices((harnessId, notice) => {
-    void appendAndPublish(services.db, fanout, "harness.notice", harnessId, notice).catch(
-      swallowError
-    )
-  })
+  const unsubscribeSharedAccounts = forwardSharedAccountEvents(services, fanout, authSyncRefresh)
   let sharedAccountReconcile: Promise<void> | undefined
   const reconcileSharedAccounts = () => {
     sharedAccountReconcile = services.sharedAccounts?.reconcile().catch(swallowError)
@@ -329,8 +318,7 @@ export const makeCodevisorServerApp = (
       activeSessionIds.clear()
       config.sessionActivity?.stop()
       unsubscribeAuth?.()
-      unsubscribeSharedAccounts?.()
-      unsubscribeNotices?.()
+      unsubscribeSharedAccounts()
       clearInterval(sharedAccountSweep)
       services.sharedAccounts?.gateway.close()
       authSyncRefresh.close()

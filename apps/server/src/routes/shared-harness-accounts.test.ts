@@ -349,3 +349,27 @@ it("tells connected apps once it has signed this machine's Claude Code out", asy
     payload: await m.shared.notice("claude-code")
   })
 })
+
+it("tells connected apps and auto-resume when this machine switches shared accounts", async () => {
+  const m = await fleet().machine("a")
+  for (const label of ["Personal", "Work"]) {
+    const placeholder = await m.shared.create("claude-code", label)
+    await m.shared.saveApiKey(placeholder.id, `${label}-key`)
+  }
+  const accounts = await m.shared.accounts("claude-code", true)
+  const next = accounts?.find((account) => !account.isActive)
+  if (next === undefined) throw new Error("Expected an inactive shared account")
+  const fanout = await run(makeEventFanout)
+  const published = Promise.withResolvers<EventEnvelope>()
+  fanout.subscribe((event) => {
+    if (event.kind === "harness.auth.updated") published.resolve(event)
+  })
+  await startWithApp(m.services, fanout)
+
+  await m.shared.activate("claude-code", next.id, true)
+
+  expect(await published.promise).toMatchObject({
+    subjectId: "claude-code",
+    payload: { activeAccountId: next.id }
+  })
+})

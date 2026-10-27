@@ -46,7 +46,8 @@ const startServer = async () => {
     }
   })
   const server = await startWithApp({ ...services, auth })
-  const switchAccount = (accountId: string) => {
+  const switchAccount = async (accountId: string) => {
+    await run(services.db.setActiveHarnessAccount("codex", accountId))
     for (const listener of listeners) {
       listener({
         kind: "harness.auth.updated",
@@ -152,7 +153,7 @@ describe("auto-resume for chats stopped at a usage limit", () => {
     await waitFor(async () => (await detail(running, chat)).autoResume !== undefined)
     expect((await detail(running, chat)).autoResume).toEqual({})
 
-    running.switchAccount("work")
+    await running.switchAccount("work")
     await waitFor(() => resumePrompts(running).length === 1)
 
     expect(resumePrompts(running)[0]).toContain(
@@ -172,7 +173,7 @@ describe("auto-resume for chats stopped at a usage limit", () => {
     const { projectId } = await run(running.services.db.getSessionSummary(chat))
     await archiveSessionViaWorkspace(running.services, projectId, chat)
 
-    running.switchAccount("work")
+    await running.switchAccount("work")
     await waitFor(async () => (await run(running.services.db.getAutoResume(chat))) === undefined)
 
     expect(resumePrompts(running)).toEqual([])

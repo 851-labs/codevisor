@@ -16,6 +16,7 @@ export interface AutoResumeDependencies {
   readonly db: CodevisorDatabaseService
   readonly fanout: EventFanout
   readonly readLimits: (sessionId: string) => Promise<HarnessUsageLimits | undefined>
+  readonly activeAccountId: (harnessId: string) => Promise<string | undefined>
   readonly resume: (sessionId: string) => Promise<void>
 }
 
@@ -145,8 +146,11 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
       case "sessionArchived":
         await forget(subjectId)
         break
-      case "accountActivated":
-        await resumeOnAccount(subjectId, trigger.accountId)
+      case "accountsChanged":
+        await followActiveAccount(subjectId)
+        break
+      case "signedIn":
+        await recheckAccount(trigger.accountId)
         break
     }
   }
@@ -156,18 +160,30 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     if (resume?.state === "waiting") await forget(sessionId)
   }
 
-  const resumeOnAccount = async (harnessId: string, accountId: string): Promise<void> => {
+  const followActiveAccount = async (harnessId: string): Promise<void> => {
+    const accountId = await deps.activeAccountId(harnessId)
+    if (accountId === undefined) return
+
     const switched = (await run(db.listWaitingAutoResumes)).filter((resume) =>
       stoppedOnOtherAccount(resume, harnessId, accountId)
     )
-    if (switched.length === 0) return
-
     for (const resume of switched) {
       await run(db.bindSessionHarnessAccount(resume.sessionId, accountId))
-      await save({ ...withoutReset(resume), harnessAccountId: accountId, checks: 0 }, new Date())
+      await checkNow({ ...resume, harnessAccountId: accountId })
     }
-    await arm()
+    if (switched.length > 0) await arm()
   }
+
+  const recheckAccount = async (accountId: string): Promise<void> => {
+    const signedIn = (await run(db.listWaitingAutoResumes)).filter(
+      (resume) => resume.harnessAccountId === accountId
+    )
+    for (const resume of signedIn) await checkNow(resume)
+    if (signedIn.length > 0) await arm()
+  }
+
+  const checkNow = (resume: AutoResumeRecord) =>
+    save({ ...withoutReset(resume), checks: 0 }, new Date())
 
   const unsubscribe = deps.fanout.subscribe((event) => {
     const trigger = autoResumeTrigger(event)

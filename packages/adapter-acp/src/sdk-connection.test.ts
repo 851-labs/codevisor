@@ -180,6 +180,24 @@ describe("sdkConnection.prompt", () => {
         "You've hit your limit · resets 3pm (America/New_York)"
       ),
       stop: usageLimitEnd("You've hit your limit · resets 3pm (America/New_York)")
+    },
+    {
+      name: "Claude running out of credits",
+      error: acp.RequestError.internalError(
+        { errorKind: "billing_error" },
+        "Your org is out of usage · add funds to continue"
+      ),
+      stop: usageLimitEnd("Your org is out of usage · add funds to continue")
+    },
+    {
+      name: "Claude's billing error without limit copy",
+      error: acp.RequestError.internalError({ errorKind: "billing_error" }, "Billing problem"),
+      stop: usageLimitEnd("Billing problem")
+    },
+    {
+      name: "a provider's insufficient balance",
+      error: new acp.RequestError(402, "Insufficient Balance"),
+      stop: usageLimitEnd("Insufficient Balance")
     }
   ])("ends the turn at the account's usage limit for $name", async ({ error, stop }) => {
     expect(await promptRejectedWith(error)).toEqual(Result.succeed(stop))

@@ -12,21 +12,23 @@ const EVENT_OPENING = "<codevisor-event "
 export const attribute = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;")
 
+export interface TurnEnd {
+  readonly stopReason: string | undefined
+  readonly finalText: string
+  readonly usageLimitDetail?: string | undefined
+}
+
 export const turnEndedMessage = (
   target: Pick<SessionSummary, "id" | "title">,
-  stopReason: string | undefined,
-  finalText: string,
+  end: TurnEnd,
   subscriptionId?: string
-): SessionEventMessage => {
-  const stop = stopReason === undefined ? "" : ` stopReason="${attribute(stopReason)}"`
-  return {
-    key: `turn_ended:${target.id}`,
-    text: eventBlock(
-      `type="session.turn_ended" agentId="${attribute(target.id)}" title="${attribute(target.title)}"${stop}${subscriptionAttribute(subscriptionId)}`,
-      orPlaceholder(finalText, "(no final message)")
-    )
-  }
-}
+): SessionEventMessage => ({
+  key: `turn_ended:${target.id}`,
+  text: eventBlock(
+    `type="session.turn_ended" agentId="${attribute(target.id)}" title="${attribute(target.title)}"${stopAttributes(end)}${subscriptionAttribute(subscriptionId)}`,
+    turnEndBody(end)
+  )
+})
 
 export const waitingForUserMessage = (
   target: Pick<SessionSummary, "id" | "title">,
@@ -83,6 +85,21 @@ const eventBlock = (attributes: string, body: string): string =>
 
 const subscriptionAttribute = (subscriptionId: string | undefined): string =>
   subscriptionId === undefined ? "" : ` subscriptionId="${attribute(subscriptionId)}"`
+
+const stopAttributes = (end: TurnEnd): string => {
+  const reason = end.stopReason === undefined ? "" : ` stopReason="${attribute(end.stopReason)}"`
+  const kind = end.usageLimitDetail === undefined ? "" : ' stopKind="usageLimit"'
+  return `${reason}${kind}`
+}
+
+const turnEndBody = (end: TurnEnd): string => {
+  if (end.usageLimitDetail === undefined) return orPlaceholder(end.finalText, "(no final message)")
+
+  const paused = `Paused at its usage limit: ${end.usageLimitDetail}\n${resumesOnItsOwn}`
+  return [end.finalText, paused].filter((part) => part.length > 0).join("\n\n")
+}
+
+const resumesOnItsOwn = "It continues on its own once usage is available."
 
 const orPlaceholder = (text: string, empty: string): string => (text.length === 0 ? empty : text)
 

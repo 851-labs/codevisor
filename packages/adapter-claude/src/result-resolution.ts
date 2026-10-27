@@ -15,7 +15,6 @@ const TRUNCATION_STOP_REASONS = new Set(["max_tokens"])
 const PERMANENT_ASSISTANT_ERRORS = new Set([
   "authentication_failed",
   "oauth_org_not_allowed",
-  "billing_error",
   "invalid_request",
   "model_not_found"
 ])
@@ -105,8 +104,14 @@ const resolveUsageLimitDetail = (
     session.lastUsageLimitText ??
     (lastError === "rate_limit" || lastError === "billing_error"
       ? rejectedUsageLimitDetail(session.latestRateLimitInfo)
-      : undefined)
+      : undefined) ??
+    billingErrorDetail(session, lastError)
   )
+}
+
+const billingErrorDetail = (session: ClaudeSession, lastError: string): string | undefined => {
+  if (lastError !== "billing_error") return undefined
+  return session.lastErrorText ?? "Claude usage credits are required to continue."
 }
 
 const usageLimitResolution = (
@@ -214,8 +219,6 @@ const describeStop = (subtype: string, lastError: string): string => {
       return "Claude isn't signed in. Sign in to continue."
     case "oauth_org_not_allowed":
       return "This organization isn't allowed to use this model."
-    case "billing_error":
-      return "A billing error stopped the turn."
     case "invalid_request":
       return "The request was rejected as invalid."
     case "model_not_found":

@@ -25,7 +25,8 @@ import {
   jobFinishedMessage,
   turnEndedMessage,
   waitingForUserMessage,
-  type SessionEventMessage
+  type SessionEventMessage,
+  type TurnEnd
 } from "./session-event-messages.js"
 import { makeSessionEventOutbox, type SessionEventOutbox } from "./session-event-outbox.js"
 import { makeTurnEndHolds, stopReasonOf } from "./turn-end-holds.js"
@@ -38,12 +39,22 @@ export interface SessionEventRouter {
 export const finalAssistantText = async (
   services: CodevisorServerServices,
   sessionId: string
-): Promise<string> => {
-  const item = await lastAssistantItem(services, sessionId, undefined)
-  if (item === undefined) return ""
+): Promise<string> => (await latestTurnEnd(services, sessionId, undefined)).finalText
 
-  return (await completeText(services, sessionId, item)).trim()
+const latestTurnEnd = async (
+  services: CodevisorServerServices,
+  sessionId: string,
+  stopReason: string | undefined
+): Promise<TurnEnd> => {
+  const item = await lastAssistantItem(services, sessionId, undefined)
+  if (item === undefined) return { stopReason, finalText: "" }
+
+  const finalText = (await completeText(services, sessionId, item)).trim()
+  return { stopReason, finalText, usageLimitDetail: usageLimitDetailOf(item) }
 }
+
+const usageLimitDetailOf = (item: TranscriptItem): string | undefined =>
+  item.stopKind === "usageLimit" ? item.stopDetail : undefined
 
 export const makeSessionEventRouter = (
   services: CodevisorServerServices,
@@ -62,11 +73,11 @@ export const makeSessionEventRouter = (
     stale?: () => boolean
   ) => {
     const target = await run(services.db.getSessionSummary(sessionId))
-    const finalText = await finalAssistantText(services, sessionId)
+    const end = await latestTurnEnd(services, sessionId, stopReason)
     await publish(
       target,
       "turn_ended",
-      (subscriptionId) => turnEndedMessage(target, stopReason, finalText, subscriptionId),
+      (subscriptionId) => turnEndedMessage(target, end, subscriptionId),
       [],
       stale
     )

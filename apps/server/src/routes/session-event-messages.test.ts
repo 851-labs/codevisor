@@ -28,7 +28,7 @@ const job = (overrides: Partial<ExecutionJob>): ExecutionJob => ({
 describe("session event messages", () => {
   it("escapes attributes, keeps the whole final reply, and keys events per target", () => {
     const reply = "x".repeat(REPORT_LIMIT + 1)
-    const message = turnEndedMessage(target, undefined, reply, "sub-1")
+    const message = turnEndedMessage(target, { stopReason: undefined, finalText: reply }, "sub-1")
 
     expect(message.key).toBe("turn_ended:s1")
     expect(message.text.split("\n")).toEqual([
@@ -36,6 +36,28 @@ describe("session event messages", () => {
       reply,
       "</codevisor-event>"
     ])
+  })
+
+  it("reports a usage-limit pause instead of an empty final message", () => {
+    const usageLimitDetail = "You've hit your session limit · resets 4:30pm."
+    const empty = turnEndedMessage(target, {
+      stopReason: "end_turn",
+      finalText: "",
+      usageLimitDetail
+    })
+    const partial = turnEndedMessage(target, {
+      stopReason: "end_turn",
+      finalText: "Half done.",
+      usageLimitDetail
+    })
+    const paused = `Paused at its usage limit: ${usageLimitDetail}\nIt continues on its own once usage is available.`
+
+    expect(empty.text.split("\n")).toEqual([
+      '<codevisor-event type="session.turn_ended" agentId="s1" title="Fix &quot;login&quot; &lt;now>" stopReason="end_turn" stopKind="usageLimit">',
+      ...paused.split("\n"),
+      "</codevisor-event>"
+    ])
+    expect(partial.text).toContain(`Half done.\n\n${paused}`)
   })
 
   it("truncates a long error report", () => {
@@ -75,8 +97,11 @@ describe("session event messages", () => {
   })
 
   it("joins several events into one prompt", () => {
-    const first = turnEndedMessage(target, "end_turn", "")
-    const second = turnEndedMessage({ id: "s2", title: "Other" }, undefined, "done")
+    const first = turnEndedMessage(target, { stopReason: "end_turn", finalText: "" })
+    const second = turnEndedMessage(
+      { id: "s2", title: "Other" },
+      { stopReason: undefined, finalText: "done" }
+    )
 
     expect(combinedEventText([first, second])).toBe(`${first.text}\n\n${second.text}`)
     expect(first.text).toContain('stopReason="end_turn"')

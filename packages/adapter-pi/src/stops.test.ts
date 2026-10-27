@@ -45,7 +45,9 @@ describe("Pi usage-limit stops", () => {
       "You have hit your ChatGPT usage limit.",
       "Codex error: You've hit your usage limit for this period",
       "GoUsageLimitError: Monthly usage limit reached",
-      "FreeUsageLimitError"
+      "FreeUsageLimitError",
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}',
+      "429 You exceeded your current quota, please check your plan and billing details."
     ])
       expect(piStop(stopDetail)).toEqual({ stopDetail, stopKind: "usageLimit" })
   })

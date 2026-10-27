@@ -53,6 +53,17 @@ describe("Codex turn failures", () => {
       "a usage limit",
       { message: "You've hit your usage limit.", codexErrorInfo: "usageLimitExceeded" },
       { stopDetail: "You've hit your usage limit.", stopKind: "usageLimit" }
+    ],
+    [
+      "an API key out of quota",
+      {
+        message: "Quota exceeded. Check your plan and billing details.",
+        codexErrorInfo: "other"
+      },
+      {
+        stopDetail: "Quota exceeded. Check your plan and billing details.",
+        stopKind: "usageLimit"
+      }
     ]
   ])("ends the turn with the failure kind for %s", async (_, error, stop) => {
     expect(await failTurn(error)).toMatchObject({ ...stop, turnState: "ended" })

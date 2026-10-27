@@ -44,7 +44,7 @@ const turnMessage = async (
 
   const self = { id: sender.serverId, name: await machineName(sender) }
   const text = fromMachine(
-    turnEndedMessage(child, turn.stopReason, turn.finalText.trim()),
+    turnEndedMessage(child, { stopReason: turn.stopReason, finalText: turn.finalText.trim() }),
     self
   ).text
   return fleetMessage(self, { child, wake, turn, text })

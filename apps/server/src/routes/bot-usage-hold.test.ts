@@ -43,7 +43,8 @@ const startServerWithAccounts = async () => {
     }
   })
   const server = await startWithApp({ ...services, auth })
-  const switchAccount = (accountId: string) => {
+  const switchAccount = async (accountId: string) => {
+    await run(services.db.setActiveHarnessAccount("codex", accountId))
     for (const listener of listeners) {
       listener({
         kind: "harness.auth.updated",
@@ -145,7 +146,7 @@ describe("bots stopped at a usage limit", () => {
     await wakeUp(running, sessionId, "agent-b", 2)
     await wakeUp(running, sessionId, "agent-c", 3)
     expect(promptTexts(running)).toHaveLength(1)
-    running.switchAccount("work")
+    await running.switchAccount("work")
 
     await waitFor(() => queueDrained(running, sessionId))
     const [, released] = promptTexts(running)

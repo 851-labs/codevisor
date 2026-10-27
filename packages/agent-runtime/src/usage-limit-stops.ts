@@ -10,6 +10,9 @@ export const usageLimitStop = (stopDetail: string, resetsAt?: Date): UsageLimitS
   ...(resetsAt === undefined ? {} : { resetsAt: resetsAt.toISOString() })
 })
 
+export const isOutOfCreditsText = (text: string): boolean =>
+  outOfCreditsPatterns.some((pattern) => pattern.test(text))
+
 export const resetTimeIn = (text: string, now: Date = new Date()): Date | undefined => {
   const phrase = resetPhrase.exec(text)?.[1]
   if (phrase === undefined) return undefined
@@ -27,6 +30,14 @@ export const epochResetTime = (
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
   return new Date(unit === "seconds" ? value * millisecondsPerSecond : value)
 }
+
+const outOfCreditsPatterns = [
+  /\bcredits? balance is too low\b/i,
+  /\binsufficient[ _](?:account[ _])?balance\b/i,
+  /\binsufficient[ _]quota\b|\bexceeded your current quota\b/i,
+  /\bout of (?:usage |extra usage )?credits\b|\bout of (?:extra )?usage\b/i,
+  /\bQuota exceeded\. Check your plan and billing details\b/i
+]
 
 const millisecondsPerSecond = 1000
 const millisecondsPerMinute = 60 * millisecondsPerSecond

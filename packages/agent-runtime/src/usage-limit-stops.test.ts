@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { epochResetTime, resetTimeIn, usageLimitStop } from "./usage-limit-stops.js"
+import {
+  epochResetTime,
+  isOutOfCreditsText,
+  resetTimeIn,
+  usageLimitStop
+} from "./usage-limit-stops.js"
 
 const now = new Date("2026-10-20T12:00:00.000Z")
 
@@ -44,6 +49,32 @@ describe("usage limit stops", () => {
     expect(resetAfter("You've hit your usage limit. Try again later.")).toBeUndefined()
     expect(resetAfter("Resets in 0s")).toBeUndefined()
     expect(resetAfter("Rate limited by the API")).toBeUndefined()
+  })
+
+  it("recognizes out-of-credits and insufficient-balance errors from each provider", () => {
+    for (const text of [
+      "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+      "Your AI credits balance is too low to continue.",
+      "Error 402: Insufficient Balance",
+      "insufficient_account_balance",
+      "You exceeded your current quota, please check your plan and billing details.",
+      "Error code: 429 - {'error': {'code': 'insufficient_quota'}}",
+      "You're out of usage credits",
+      "You're out of extra usage · resets 5pm",
+      "Your org is out of usage · add funds to continue",
+      "You have run out of credits.",
+      "Quota exceeded. Check your plan and billing details."
+    ]) {
+      expect(isOutOfCreditsText(text), text).toBe(true)
+    }
+    for (const text of [
+      "Rate limited by the Claude API.",
+      "The request was rejected as invalid.",
+      "Disc quota exceeded",
+      "You're out of luck"
+    ]) {
+      expect(isOutOfCreditsText(text), text).toBe(false)
+    }
   })
 
   it("reads epoch reset times in seconds or milliseconds and ignores missing ones", () => {
