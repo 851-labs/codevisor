@@ -8,12 +8,11 @@ extension SidebarView {
 
   func sidebarRowsState() -> SidebarRows.State {
     SidebarRows.State(
-      bots: nil, canCreateBots: canCreateBots,
       groups: workspaceGroups,
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
-        bots: botsExpanded, pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
+        pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
         collapsedGroupIDs: Set(collapsedGroupIDs)),
-      selectedWorkspaceID: selectedWorkspaceID, selectedBotID: selectedBotID)
+      selectedWorkspaceID: selectedWorkspaceID)
   }
 }

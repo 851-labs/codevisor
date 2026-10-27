@@ -11,10 +11,6 @@ struct SidebarRowsTests {
     WorkspaceSidebarItem(id: UUID(), serverId: project.serverId, projectId: project.id, routingChatIds: [])
   }
 
-  private func bot(children: [WorkspaceSidebarItem] = []) -> SidebarRows.Bot {
-    SidebarRows.Bot(id: UUID(), serverId: "studio", workspaceId: UUID(), children: children)
-  }
-
   private func groups(
     _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping = .machine, pinned: [UUID] = []
   ) -> [SidebarWorkspaceGroup] {
@@ -38,40 +34,36 @@ struct SidebarRowsTests {
     Layout(rows: SidebarRows.derive(state))
   }
 
-  @Test("Every section renders in the sidebar's order: bots, pinned, the list header, groups, archived")
+  @Test("Every section renders in the sidebar's order: pinned, the list header, groups, archived")
   func sectionOrder() {
-    let child = item(studio)
-    let helper = bot(children: [child])
     let (pinned, onStudio, onLinux) = (item(studio), item(studio), item(linux))
     let archived = [item(studio), item(linux)]
 
     let layout = derive(
       SidebarRows.State(
-        bots: [helper], groups: groups([pinned, onStudio, onLinux], pinned: [pinned.id]), archived: archived,
+        groups: groups([pinned, onStudio, onLinux], pinned: [pinned.id]), archived: archived,
         expansion: SidebarRows.Expansion(archived: true)))
 
     #expect(
       layout.ids == [
-        .section(.bots), .bot(helper.id), .workspace(child.id),
         .section(.pinned), .workspace(pinned.id),
         .section(.list), .group("machine:studio"), .workspace(onStudio.id), .group("machine:linux"),
         .workspace(onLinux.id),
         .section(.archived), .workspace(archived[0].id), .workspace(archived[1].id),
       ])
-    #expect(layout.rows.map(\.depth) == [0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0])
+    #expect(layout.rows.map(\.depth) == [0, 0, 0, 0, 1, 0, 1, 0, 0, 0])
     #expect(
-      layout.rows.map(\.section) == [.bots, .bots, .bots, .pinned, .pinned, .list, .list, .list, .list, .list]
+      layout.rows.map(\.section) == [.pinned, .pinned, .list, .list, .list, .list, .list]
         + [.archived, .archived, .archived])
   }
 
-  @Test("A workspace keeps one row id whether it's in a group, Pinned, under a bot, or in Archived")
+  @Test("A workspace keeps one row id whether it's in a group, Pinned, or in Archived")
   func workspaceIdentitySurvivesEveryMove() {
     let moving = item(studio)
     let other = item(studio)
     let placements: [SidebarRows.State] = [
       SidebarRows.State(groups: groups([moving, other])),
       SidebarRows.State(groups: groups([moving, other], pinned: [moving.id])),
-      SidebarRows.State(bots: [bot(children: [moving])], groups: groups([other])),
       SidebarRows.State(
         groups: groups([other]), archived: [moving], expansion: SidebarRows.Expansion(archived: true)),
     ]
@@ -151,61 +143,6 @@ struct SidebarRowsTests {
     #expect(layout.rows.map(\.depth) == [0, 0, 0])
   }
 
-  @Test("Bots: collapsed sections keep the selected bot or child, and a bot's own toggle folds its children")
-  func botsKeepTheirSelection() {
-    let (first, second) = (item(studio), item(studio))
-    let busy = bot(children: [first, second])
-    let idle = bot()
-    let list = groups([])
-    func layout(
-      _ expansion: SidebarRows.Expansion, workspace: UUID? = nil, bot selectedBot: UUID? = nil
-    ) -> Layout {
-      derive(
-        SidebarRows.State(
-          bots: [busy, idle], groups: list, expansion: expansion, selectedWorkspaceID: workspace,
-          selectedBotID: selectedBot))
-    }
-
-    #expect(
-      layout(SidebarRows.Expansion(bots: false), workspace: second.id).ids == [
-        .section(.bots), .bot(busy.id), .workspace(second.id), .section(.list),
-      ])
-    #expect(
-      layout(SidebarRows.Expansion(bots: false), bot: idle.id).ids == [
-        .section(.bots), .bot(idle.id), .section(.list),
-      ])
-    #expect(
-      layout(SidebarRows.Expansion(bots: false), workspace: idle.workspaceId).ids == [
-        .section(.bots), .bot(idle.id), .section(.list),
-      ])
-
-    let folded = layout(SidebarRows.Expansion(collapsedGroupIDs: [busy.groupID]), workspace: first.id)
-    #expect(
-      folded.ids == [
-        .section(.bots), .bot(busy.id), .workspace(first.id), .bot(idle.id), .section(.list),
-      ])
-    #expect(folded.rows[1].kind == .bot(busy, isExpanded: false))
-    #expect(folded.rows[3].kind == .bot(idle, isExpanded: nil))
-    #expect(layout(SidebarRows.Expansion(bots: false), workspace: first.id).rows[1].kind == .bot(busy, isExpanded: nil))
-  }
-
-  @Test("The Bots section shows only when there are bots or one can be created, with New bot while it's empty")
-  func botsSectionVisibility() {
-    let list = groups([])
-
-    #expect(derive(SidebarRows.State(bots: nil, canCreateBots: true, groups: list)).ids == [.section(.list)])
-    #expect(derive(SidebarRows.State(bots: [], canCreateBots: false, groups: list)).ids == [.section(.list)])
-    #expect(
-      derive(SidebarRows.State(bots: [], canCreateBots: true, groups: list)).ids == [
-        .section(.bots), .newBot, .section(.list),
-      ])
-    #expect(
-      derive(
-        SidebarRows.State(
-          bots: [], canCreateBots: true, groups: list, expansion: SidebarRows.Expansion(bots: false))
-      ).ids == [.section(.bots), .section(.list)])
-  }
-
   @Test("Archived shows its visible pages, then Show More while more remain")
   func archivedPaging() {
     let archived = (0..<5).map { _ in item(studio) }
@@ -227,25 +164,23 @@ struct SidebarRowsTests {
 
   @Test("Row ids stay unique across every combination of grouping, expansion and selection")
   func rowIdsAreUnique() {
-    let child = item(studio)
-    let helper = bot(children: [child])
     let listed = [item(studio), item(linux), item(studio), item(linux)]
     let archived = [item(studio), item(linux), item(studio)]
-    let selections: [UUID?] = [nil, child.id, listed[0].id, listed[1].id, archived[1].id, helper.workspaceId]
+    let selections: [UUID?] = [nil, listed[0].id, listed[1].id, archived[1].id]
 
     for grouping in SidebarGrouping.allCases {
-      for mask in 0..<32 {
+      for mask in 0..<16 {
         for selected in selections {
           let expansion = SidebarRows.Expansion(
-            bots: mask & 1 != 0, pinned: mask & 2 != 0, list: mask & 4 != 0, archived: mask & 8 != 0,
-            collapsedGroupIDs: mask & 16 != 0 ? ["machine:studio", "machine:linux", helper.groupID] : [])
+            pinned: mask & 1 != 0, list: mask & 2 != 0, archived: mask & 4 != 0,
+            collapsedGroupIDs: mask & 8 != 0 ? ["machine:studio", "machine:linux"] : [])
           let ids = derive(
             SidebarRows.State(
-              bots: [helper], groups: groups(listed, grouping, pinned: [listed[0].id]), archived: archived,
+              groups: groups(listed, grouping, pinned: [listed[0].id]), archived: archived,
               archivedVisibleCount: 2, expansion: expansion, selectedWorkspaceID: selected)
           ).ids
           #expect(Set(ids).count == ids.count)
-          if let selected, selected != helper.workspaceId {
+          if let selected {
             #expect(ids.contains(.workspace(selected)))
           }
         }
@@ -253,17 +188,17 @@ struct SidebarRowsTests {
     }
   }
 
-  @Test("Archive selection sections are each bot's children, Pinned, then each group, without Archived")
+  @Test("Archive selection sections are Pinned, then each group, without Archived")
   func activeWorkspaceSections() {
-    let (child, pinned, first, second, other) = (item(studio), item(studio), item(studio), item(studio), item(linux))
+    let (pinned, first, second, other) = (item(studio), item(studio), item(studio), item(linux))
     let rows = SidebarRows.derive(
       SidebarRows.State(
-        bots: [bot(children: [child]), bot()], groups: groups([pinned, first, second, other], pinned: [pinned.id]),
+        groups: groups([pinned, first, second, other], pinned: [pinned.id]),
         archived: [item(studio)], expansion: SidebarRows.Expansion(archived: true)))
 
     #expect(
       SidebarRows.activeWorkspaceSections(rows).map { $0.map(\.id) } == [
-        [child.id], [pinned.id], [first.id, second.id], [other.id],
+        [pinned.id], [first.id, second.id], [other.id],
       ])
   }
 }

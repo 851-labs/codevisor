@@ -11,17 +11,14 @@ extension SidebarView {
   }
 
   var sidebarStops: [SidebarStop] {
-    let bots = Dictionary(botEntries.map { ($0.bot.id, $0.bot) }, uniquingKeysWith: { first, _ in first })
-    return [.newChat]
+    [.newChat]
       + sidebarRows.compactMap { row in
         switch row.kind {
-        case let .bot(bot, _):
-          bots[bot.id].map(SidebarStop.bot)
         case let .workspace(item, .archived):
           environment.navigationStore.workspaceEntries.entry(item.id).workspace.map(SidebarStop.archived)
         case let .workspace(item, _):
           listItem(for: item).map(SidebarStop.workspace)
-        case .section, .group, .newBot, .showMoreArchived:
+        case .section, .group, .showMoreArchived:
           nil
         }
       }
@@ -40,7 +37,7 @@ extension SidebarView {
     case .newChat:
       isNewChatSelected
     case let .bot(bot):
-      isBotSelected(bot)
+      selection == .bot(serverId: bot.serverId, id: bot.id)
     case let .workspace(item):
       routesSelectedSession(item.workspace)
     case let .archived(workspace):
@@ -50,7 +47,8 @@ extension SidebarView {
 
   var paletteDestinations: SidebarPaletteDestinations {
     SidebarPaletteDestinations(
-      groups: workspaceGroups, bots: botEntries.map(\.bot), rowContent: rowContent, activate: { activate($0) })
+      groups: workspaceGroups, bots: botsEnabled ? environment.bots.bots : [], rowContent: rowContent,
+      activate: { activate($0) })
   }
 
   private func activate(_ stop: SidebarStop) {
@@ -58,7 +56,6 @@ extension SidebarView {
     case .newChat:
       selection = .newChat(nil)
     case let .bot(bot):
-      revealRequest.rowID = bot.id
       selection = .bot(serverId: bot.serverId, id: bot.id)
     case let .workspace(item):
       revealRequest.rowID = item.workspace.id

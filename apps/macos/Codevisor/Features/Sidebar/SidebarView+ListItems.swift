@@ -4,6 +4,10 @@ import Foundation
 import SwiftUI
 
 extension SidebarView {
+  var botHomeWorkspaceIDs: Set<UUID> {
+    botsEnabled ? Set(environment.bots.bots.map(\.workspaceId)) : []
+  }
+
   var listedSidebarItems: [WorkspaceSidebarItem] {
     let botHomes = botHomeWorkspaceIDs
     return environment.navigationStore.workspaceEntries.sidebar.filter {

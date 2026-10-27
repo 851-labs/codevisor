@@ -22,10 +22,7 @@ struct SidebarView: View {
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
-  @ClientPreference(SidebarPreferenceKey.botsExpanded, default: true) var botsExpanded
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
-  @State var botEditor: BotEditorTarget?
-  @State var deletingBot: Bot?
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) var pinnedExpanded
   @ClientPreference(SidebarPreferenceKey.listExpanded, default: true) var listExpanded
   @State var archivedVisibleCount = sidebarArchivedPageSize
@@ -74,9 +71,6 @@ struct SidebarView: View {
         }
         .contextMenu { sidebarOptionsMenu }
         .onChange(of: selectedWorkspaceID) { _, current in
-          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-        }
-        .onChange(of: selectedBotID) { _, current in
           if let current, revealRequest.take(current) { proxy.scrollTo(current) }
         }
       }
@@ -157,7 +151,6 @@ struct SidebarView: View {
           offerSessionImport(for: project)
         }
       }
-      .modifier(SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection))
   }
 
   private var sidebarAlertsView: some View {
