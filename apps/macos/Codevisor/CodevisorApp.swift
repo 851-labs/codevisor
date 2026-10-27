@@ -225,7 +225,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      RootSidebar(selection: $selection, store: store)
+      RootSidebar(selection: $selection, store: store, isColumnVisible: isSidebarColumnVisible)
         .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
     } detail: {
       Group {
@@ -259,11 +259,13 @@ struct RootView: View {
     }
   }
 
+  private var isSidebarColumnVisible: Bool {
+    panelLayout.docksSidebar && !sidebarCollapsed
+  }
+
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
     Binding(
-      get: {
-        panelLayout.docksSidebar && !sidebarCollapsed ? .all : .detailOnly
-      },
+      get: { isSidebarColumnVisible ? .all : .detailOnly },
       set: { visibility in
         if panelLayout.docksSidebar {
           sidebarCollapsed = visibility == .detailOnly

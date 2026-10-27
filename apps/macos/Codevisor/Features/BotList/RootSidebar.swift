@@ -6,6 +6,7 @@ struct RootSidebar: View {
   let store: SessionStore?
   var publishesSceneActions = true
   var isDrawer = false
+  var isColumnVisible = true
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @State private var revealRequest = SidebarRevealRequest()
@@ -17,7 +18,7 @@ struct RootSidebar: View {
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
       .toolbar {
-        if botsEnabled && !isDrawer {
+        if botsEnabled && !isDrawer && isColumnVisible {
           ToolbarItem { SidebarModePicker(mode: $storedMode) }
         }
       }
