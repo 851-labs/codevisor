@@ -16,12 +16,6 @@ struct RootSidebar: View {
           ToolbarItem { SidebarModePicker(mode: $storedMode) }
         }
       }
-      .safeAreaInset(edge: .top, spacing: 0) {
-        if botsEnabled && isDrawer {
-          SidebarModePicker(mode: $storedMode)
-            .padding(.vertical, 8)
-        }
-      }
   }
 
   @ViewBuilder

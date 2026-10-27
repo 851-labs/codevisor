@@ -48,42 +48,48 @@ struct SidebarView: View {
   }
 
   private var sidebarContent: some View {
-    VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: 1) {
-        if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
-          SidebarDevelopmentWorktreeRow()
-        }
-
-        SidebarActionRow(
-          title: "New chat",
-          systemImage: "square.and.pencil",
-          isSelected: isNewChatSelected,
-          isHoverEnabled: !isReordering
-        ) {
-          selection = .newChat(nil)
-        }
-      }
-      .padding(.horizontal, 10)
-      .padding(.top, 8)
-
-      ScrollViewReader { proxy in
-        ScrollView {
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(spacing: 0) {
+          newChatRows
           workspaceGroupList(workspaceGroups)
         }
-        .contextMenu { sidebarOptionsMenu }
-        .onChange(of: selectedWorkspaceID) { _, current in
-          if let current, revealRequest.take(current) { proxy.scrollTo(current) }
-        }
       }
-      .scrollContentBackground(.hidden)
-      .scrollBounceBehavior(.basedOnSize)
-
-      SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
-      SidebarUpdateFooter(center: environment.updateCenter)
+      .contextMenu { sidebarOptionsMenu }
+      .onChange(of: selectedWorkspaceID) { _, current in
+        if let current, revealRequest.take(current) { proxy.scrollTo(current) }
+      }
+    }
+    .scrollContentBackground(.hidden)
+    .scrollBounceBehavior(.basedOnSize)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      VStack(spacing: 0) {
+        SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
+        SidebarUpdateFooter(center: environment.updateCenter)
+      }
     }
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { reorderOverlay }
     .overlay(alignment: .topLeading) { groupReorderOverlay }
+  }
+
+  private var newChatRows: some View {
+    VStack(alignment: .leading, spacing: 1) {
+      if CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
+        SidebarDevelopmentWorktreeRow()
+      }
+
+      SidebarActionRow(
+        title: "New chat",
+        systemImage: "square.and.pencil",
+        isSelected: isNewChatSelected,
+        isHoverEnabled: !isReordering
+      ) {
+        selection = .newChat(nil)
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.top, 8)
   }
 
   @ViewBuilder
@@ -141,6 +147,7 @@ struct SidebarView: View {
         .environment(environment)
         .environment(\.sidebarOpenSettings, SidebarOpenSettingsAction { open() })
     }
+    .ignoresSafeArea(.container, edges: .top)
   }
 
   private var sidebarInteractionView: some View {
