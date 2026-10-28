@@ -16,12 +16,17 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   var isPinned = false
   var isArchived = false
   let rows: [HomeSidebarTabRow]
+  var children: [HomeSidebarWorkspace] = []
 
   var displayName: String { name.isEmpty ? "Workspace" : name }
 
   var status: HomeSessionStatus { rows.map(\.status).min() ?? .idle }
 
   var listsTabs: Bool { rows.count > 1 }
+
+  var hasNestedRows: Bool { listsTabs || !children.isEmpty }
+
+  var subtree: [HomeSidebarWorkspace] { [self] + children.flatMap(\.subtree) }
 
   var primaryRow: HomeSidebarTabRow? {
     rows.first { $0.id == primaryRowId } ?? rows.first
@@ -98,11 +103,12 @@ struct HomeSidebarContent: Equatable {
   var showsBots: Bool { !bots.isEmpty || canCreateBots }
 
   var layout: [UUID] {
-    bots.flatMap { [$0.id] + $0.children.map(\.id) } + (pinned + groups.flatMap(\.workspaces) + archived).map(\.id)
+    bots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) }
+      + (pinned + groups.flatMap(\.workspaces)).flatMap(\.subtree).map(\.id) + archived.map(\.id)
   }
 
   private var openWorkspaces: [HomeSidebarWorkspace] {
-    bots.compactMap(\.home) + bots.flatMap(\.children) + pinned + groups.flatMap(\.workspaces)
+    bots.compactMap(\.home) + (bots.flatMap(\.children) + pinned + groups.flatMap(\.workspaces)).flatMap(\.subtree)
   }
 
   func bot(_ id: UUID) -> HomeSidebarBot? {
@@ -120,9 +126,19 @@ struct HomeSidebarContent: Equatable {
     return nil
   }
 
+  static func nesting(
+    _ item: WorkspaceSidebarItem, children: [UUID: [WorkspaceSidebarItem]],
+    build: (WorkspaceSidebarItem) -> HomeSidebarWorkspace?
+  ) -> HomeSidebarWorkspace? {
+    guard var workspace = build(item) else { return nil }
+    workspace.children = (children[item.id] ?? []).compactMap { nesting($0, children: children, build: build) }
+    return workspace
+  }
+
   @MainActor
   static func make(
     listed: [WorkspaceSidebarItem],
+    children: [UUID: [WorkspaceSidebarItem]] = [:],
     archived: [WorkspaceSidebarItem],
     preferences: HomeSidebarPreferences,
     projects: [Project],
@@ -139,11 +155,10 @@ struct HomeSidebarContent: Equatable {
     var content = HomeSidebarContent(listTitle: preferences.grouping.listTitle)
     for group in groups {
       if group.id == SidebarWorkspaceGroup.pinnedID {
-        content.pinned = group.items.compactMap { workspace($0, .pinned) }
+        content.pinned = group.items.compactMap { nesting($0, children: children) { workspace($0, .pinned) } }
       } else {
-        content.groups.append(
-          Group(id: group.id, heading: group.heading, workspaces: group.items.compactMap { workspace($0, .list) })
-        )
+        let workspaces = group.items.compactMap { nesting($0, children: children) { workspace($0, .list) } }
+        content.groups.append(Group(id: group.id, heading: group.heading, workspaces: workspaces))
       }
     }
     let archivedWorkspaces = archived.compactMap { workspace($0, .archived) }
