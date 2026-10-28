@@ -38,7 +38,10 @@ struct BotListSidebar: View {
   var body: some View {
     scrollingContent
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
+        VStack(spacing: 0) {
+          SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
+          SidebarUpdateFooter(center: environment.updateCenter)
+        }
       }
       .modifier(
         SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection, store: store)
