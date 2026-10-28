@@ -214,6 +214,8 @@
 
       private static let compactIconLeading: CGFloat = 7
 
+      private static let promptOpticalOffset: CGFloat = -1
+
       init(metrics: Autocomplete.Metrics, showsCheckmarks: Bool, showsIcons: Bool) {
         height = metrics.inputHeight
         super.init(frame: .zero)
@@ -269,7 +271,8 @@
           searchField.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -0.5),
           searchField.heightAnchor.constraint(
             equalToConstant: max(16, metrics.nativeMenuFont.ascender - metrics.nativeMenuFont.descender)),
-          promptLabel.leadingAnchor.constraint(equalTo: searchField.leadingAnchor, constant: Self.fieldTextInset),
+          promptLabel.leadingAnchor.constraint(
+            equalTo: searchField.leadingAnchor, constant: Self.fieldTextInset + Self.promptOpticalOffset),
           promptLabel.trailingAnchor.constraint(lessThanOrEqualTo: searchField.trailingAnchor),
           promptLabel.firstBaselineAnchor.constraint(equalTo: searchField.firstBaselineAnchor),
           filterIcon.centerXAnchor.constraint(
