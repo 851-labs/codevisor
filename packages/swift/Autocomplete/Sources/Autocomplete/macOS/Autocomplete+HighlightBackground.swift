@@ -5,8 +5,7 @@
   extension Autocomplete {
     struct HighlightBackground: View {
       let highlight: ItemHighlight
-      let topCornerRadius: CGFloat
-      let bottomCornerRadius: CGFloat
+      let cornerRadius: CGFloat
 
       var body: some View {
         switch highlight {
@@ -21,8 +20,8 @@
         }
       }
 
-      private var shape: UnevenRoundedRectangle {
-        Autocomplete.rowShape(topCornerRadius: topCornerRadius, bottomCornerRadius: bottomCornerRadius)
+      private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       }
     }
 
@@ -36,20 +35,16 @@
           Rectangle()
             .padding(.top, topCornerRadius)
             .padding(.bottom, bottomCornerRadius)
-          Autocomplete.rowShape(topCornerRadius: topCornerRadius, bottomCornerRadius: bottomCornerRadius)
-            .padding(.horizontal, horizontalInset)
+          UnevenRoundedRectangle(
+            topLeadingRadius: topCornerRadius,
+            bottomLeadingRadius: bottomCornerRadius,
+            bottomTrailingRadius: bottomCornerRadius,
+            topTrailingRadius: topCornerRadius,
+            style: .continuous
+          )
+          .padding(.horizontal, horizontalInset)
         }
       }
-    }
-
-    static func rowShape(topCornerRadius: CGFloat, bottomCornerRadius: CGFloat) -> UnevenRoundedRectangle {
-      UnevenRoundedRectangle(
-        topLeadingRadius: topCornerRadius,
-        bottomLeadingRadius: bottomCornerRadius,
-        bottomTrailingRadius: bottomCornerRadius,
-        topTrailingRadius: topCornerRadius,
-        style: .continuous
-      )
     }
 
     struct NativeMenuSelectionMaterial: NSViewRepresentable {
