@@ -252,7 +252,7 @@ private struct ComposerAttachmentChip: View {
       }
     }
     .transcriptSendAttachmentSource(
-      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 16, sentSize: CGSize(width: 56, height: 56)
+      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 16, sentSize: sentSize
     )
     .task(id: attachment.fileURL) {
       guard attachment.hasVisualPreview, thumbnail == nil, let fileURL = attachment.fileURL else {
@@ -279,6 +279,12 @@ private struct ComposerAttachmentChip: View {
       thumbnail = await attachmentImages?.image(for: PreviewFile(attachment: ref.attachment))?.image
     }
     .attachmentQuickLookPreview($quickLookURL)
+  }
+
+  private var sentSize: CGSize {
+    guard attachment.hasVisualPreview else { return .zero }
+    let aspectRatio = thumbnail.map { $0.size.width / max(1, $0.size.height) }
+    return AttachmentThumbnailView.sentSize(aspectRatio: aspectRatio, isPDF: attachment.isPDF)
   }
 
   private var previewHint: String {

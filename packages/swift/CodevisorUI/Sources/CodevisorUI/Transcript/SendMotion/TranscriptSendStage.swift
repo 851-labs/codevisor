@@ -87,10 +87,10 @@ public final class TranscriptSendStage {
   func beginMorph(toward landing: TranscriptSendLanding) {
     var landing = landing
     let spacing = TranscriptSendFlightGeometry.attachmentSpacing
-    let strip = TranscriptSendAttachmentGeometry.strip(
+    let column = TranscriptSendAttachmentGeometry.column(
       sizes: pieces.map(\.sentSize), trailing: landing.trailing, top: landing.top, spacing: spacing)
-    for (piece, frame) in zip(pieces, strip) { piece.fly(toward: frame) }
-    if let bottom = strip.map(\.maxY).max() { landing.top = bottom + spacing }
+    for (piece, frame) in zip(pieces, column) { piece.fly(toward: frame) }
+    if let bottom = column.map(\.maxY).max() { landing.top = bottom + spacing }
     var end = TranscriptSendMorphGeometry.predictedEnd(
       start: snapshot.frame, editorFrame: editorFrame, textRect: textRect,
       lineHeight: lineHeight, landing: landing)

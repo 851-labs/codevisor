@@ -156,7 +156,7 @@ public final class TranscriptSendFlight {
     TranscriptSendAttachmentDepartures.shared.arrive(strays)
     for stray in strays { stray.fadeOut() }
     for (piece, target, frame) in flying {
-      piece.fly(to: target, frame: frame, onSettle: landing)
+      piece.fly(to: target, in: proxy, frame: frame, onSettle: landing)
     }
     if let bubbleFrame {
       morphLanding = landing

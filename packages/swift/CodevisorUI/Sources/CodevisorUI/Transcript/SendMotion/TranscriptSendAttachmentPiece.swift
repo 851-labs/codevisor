@@ -81,14 +81,14 @@ public enum TranscriptSendAttachmentGeometry {
       : CGSize(width: size.height * aspectRatio, height: size.height)
   }
 
-  public static func strip(sizes: [CGSize], trailing: CGFloat, top: CGFloat, spacing: CGFloat) -> [CGRect] {
+  public static func column(sizes: [CGSize], trailing: CGFloat, top: CGFloat, spacing: CGFloat) -> [CGRect] {
     var frames: [CGRect] = []
-    var edge = trailing
-    for size in sizes.reversed() {
-      frames.append(CGRect(x: edge - size.width, y: top, width: size.width, height: size.height))
-      edge -= size.width + spacing
+    var edge = top
+    for size in sizes {
+      frames.append(CGRect(x: trailing - size.width, y: edge, width: size.width, height: size.height))
+      edge += size.height + spacing
     }
-    return frames.reversed()
+    return frames
   }
 
   public static func fitting(aspectRatio: CGFloat, in size: CGSize) -> CGSize {
@@ -171,7 +171,7 @@ final class TranscriptSendAttachmentAnchorView: TranscriptSendPlatformView {
 
   static func sources(in window: AnyObject, ids: Set<String>) -> [TranscriptSendAttachmentAnchorView] {
     sources.allObjects.filter { source in
-      guard source.window === window, let id = source.attachmentID, ids.contains(id), source.image != nil else {
+      guard source.window === window, let id = source.attachmentID, ids.contains(id) else {
         return false
       }
       #if canImport(UIKit)
@@ -200,16 +200,20 @@ final class TranscriptSendAttachmentPiece: TranscriptSendPlatformView {
   let sentSize: CGSize
   private let card = CALayer()
   private let picture = CALayer()
+  private let incoming = CALayer()
   private let aspectRatio: CGFloat
+  private let isSnapshot: Bool
   private var serial = 0
 
   init?(source: TranscriptSendAttachmentAnchorView, frame: CGRect) {
-    guard let attachmentID = source.attachmentID, let image = source.image,
-      let contents = Self.bitmap(of: image), contents.height > 0
+    guard let attachmentID = source.attachmentID,
+      let contents = source.image.flatMap(Self.bitmap(of:)) ?? TranscriptSendSnapshot.image(of: source),
+      contents.height > 0
     else { return nil }
     self.attachmentID = attachmentID
     sentSize = source.sentSize.width > 0 && source.sentSize.height > 0 ? source.sentSize : frame.size
     aspectRatio = CGFloat(contents.width) / CGFloat(contents.height)
+    isSnapshot = source.image == nil
     super.init(frame: frame)
     #if canImport(UIKit)
       isUserInteractionEnabled = false
@@ -223,13 +227,10 @@ final class TranscriptSendAttachmentPiece: TranscriptSendPlatformView {
     card.cornerRadius = source.cornerRadius
     picture.anchorPoint = CGPoint(x: 0.5, y: 0.5)
     picture.position = .zero
-    picture.contents = contents
-    picture.contentsGravity = .resize
+    show(contents, in: picture, pointWidth: frame.width)
     card.addSublayer(picture)
     transcriptSendLayer?.addSublayer(card)
-    layoutCard(
-      size: frame.size,
-      pictureSize: TranscriptSendAttachmentGeometry.filling(aspectRatio: aspectRatio, in: frame.size))
+    layoutCard(size: frame.size, pictureSize: pictureSize(in: frame.size, filling: true))
   }
 
   @available(*, unavailable)
@@ -241,25 +242,53 @@ final class TranscriptSendAttachmentPiece: TranscriptSendPlatformView {
   #endif
 
   func fly(toward end: CGRect) {
-    move(
-      to: end,
-      pictureSize: TranscriptSendAttachmentGeometry.filling(aspectRatio: aspectRatio, in: end.size),
-      cornerRadius: card.cornerRadius,
-      onSettle: nil)
+    move(to: end, pictureSize: pictureSize(in: end.size, filling: true), cornerRadius: card.cornerRadius, onSettle: nil)
   }
 
-  func fly(to target: TranscriptSendAttachmentAnchorView, frame end: CGRect, onSettle: @escaping () -> Void) {
+  func fly(
+    to target: TranscriptSendAttachmentAnchorView, in proxy: TranscriptSendPlatformView, frame end: CGRect,
+    onSettle: @escaping () -> Void
+  ) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    card.backgroundColor = target.resolved(target.fill)
-    card.borderColor = target.resolved(target.stroke)
-    card.borderWidth = 1
+    if isSnapshot {
+      crossfade(to: TranscriptSendSnapshot.image(of: target, in: proxy), pointWidth: target.bounds.width)
+    } else {
+      card.backgroundColor = target.resolved(target.fill)
+      card.borderColor = target.resolved(target.stroke)
+      card.borderWidth = 1
+    }
     move(
-      to: end,
-      pictureSize: TranscriptSendAttachmentGeometry.fitting(aspectRatio: aspectRatio, in: end.size),
-      cornerRadius: target.cornerRadius,
+      to: end, pictureSize: pictureSize(in: end.size, filling: false), cornerRadius: target.cornerRadius,
       onSettle: onSettle)
     CATransaction.commit()
+  }
+
+  private func pictureSize(in size: CGSize, filling: Bool) -> CGSize {
+    if isSnapshot { return size }
+    if filling { return TranscriptSendAttachmentGeometry.filling(aspectRatio: aspectRatio, in: size) }
+    return TranscriptSendAttachmentGeometry.fitting(aspectRatio: aspectRatio, in: size)
+  }
+
+  private func show(_ contents: CGImage, in layer: CALayer, pointWidth: CGFloat) {
+    layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+    layer.contents = contents
+    layer.contentsGravity = isSnapshot ? .left : .resize
+    if isSnapshot { layer.contentsScale = CGFloat(contents.width) / max(1, pointWidth) }
+  }
+
+  private func crossfade(to contents: CGImage?, pointWidth: CGFloat) {
+    guard let contents else { return }
+    show(contents, in: incoming, pointWidth: pointWidth)
+    incoming.position = picture.position
+    incoming.bounds = picture.bounds
+    card.addSublayer(incoming)
+    let duration = TranscriptSendMotion.followerFadeDuration
+    incoming.add(
+      TranscriptSendLayerAnimations.fade(from: 0, to: 1, duration: duration), forKey: "codevisor.send-attachment.in")
+    picture.add(
+      TranscriptSendLayerAnimations.fade(from: 1, to: 0, duration: duration), forKey: "codevisor.send-attachment.out")
+    picture.opacity = 0
   }
 
   private func move(to end: CGRect, pictureSize: CGSize, cornerRadius: CGFloat, onSettle: (() -> Void)?) {
@@ -298,6 +327,7 @@ final class TranscriptSendAttachmentPiece: TranscriptSendPlatformView {
       ]
       + Self.resize(card, named: "card", from: start.size, to: end.size, spring: grow)
       + Self.resize(picture, named: "picture", from: startPicture, to: pictureSize, spring: grow)
+      + Self.resize(incoming, named: "incoming", from: startPicture, to: pictureSize, spring: grow)
     if let onSettle {
       let settles = serial
       animations.max { $0.animation.duration < $1.animation.duration }?.animation.delegate =
@@ -338,6 +368,7 @@ final class TranscriptSendAttachmentPiece: TranscriptSendPlatformView {
     card.position = CGPoint(x: size.width / 2, y: size.height / 2)
     card.bounds = Self.centered(size)
     picture.bounds = Self.centered(pictureSize)
+    incoming.bounds = picture.bounds
   }
 
   private static func resize(

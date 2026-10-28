@@ -62,7 +62,7 @@ struct ComposerAttachmentThumb: View {
         .allowsHitTesting(isHovered)
     }
     .transcriptSendAttachmentSource(
-      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 8, sentSize: CGSize(width: 56, height: 56)
+      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 8, sentSize: sentSize
     )
     .onHover { hovering in
       guard hovering != isHovered else { return }
@@ -94,6 +94,12 @@ struct ComposerAttachmentThumb: View {
         Button("Retry Upload", action: onRetry)
       }
     }
+  }
+
+  private var sentSize: CGSize {
+    guard attachment.hasVisualPreview else { return .zero }
+    let aspectRatio = thumbnail.map { $0.size.width / max(1, $0.size.height) }
+    return AttachmentThumbnailView.sentSize(aspectRatio: aspectRatio, isPDF: attachment.isPDF)
   }
 
   private var uploadedPreviewFile: PreviewFile? {

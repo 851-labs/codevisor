@@ -4,16 +4,16 @@ import Testing
 
 @Suite("Transcript send attachment geometry")
 struct TranscriptSendAttachmentGeometryTests {
-  @Test("Sent attachments line up in composer order, the last one at the trailing edge")
-  func stripIsTrailingAnchoredInOrder() {
-    let frames = TranscriptSendAttachmentGeometry.strip(
-      sizes: [CGSize(width: 56, height: 56), CGSize(width: 120, height: 40)],
+  @Test("Sent attachments stack in composer order, each against the trailing edge")
+  func columnIsTrailingAlignedInOrder() {
+    let frames = TranscriptSendAttachmentGeometry.column(
+      sizes: [CGSize(width: 320, height: 200), CGSize(width: 120, height: 40)],
       trailing: 400, top: 100, spacing: 8)
 
     #expect(
       frames == [
-        CGRect(x: 216, y: 100, width: 56, height: 56),
-        CGRect(x: 280, y: 100, width: 120, height: 40),
+        CGRect(x: 80, y: 100, width: 320, height: 200),
+        CGRect(x: 280, y: 308, width: 120, height: 40),
       ])
   }
 
