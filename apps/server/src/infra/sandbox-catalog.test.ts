@@ -222,7 +222,7 @@ describe("sandbox profiles", () => {
     await deps.settings.putProfile(profile({ id: "d", provider: "modal", accountId: "m" }))
 
     expect(await profileAvailability(deps)).toEqual([
-      { profileId: "a", disabledReason: "Fake isn't installed here" },
+      { profileId: "a", disabledReason: "Fake can't run on this machine" },
       { profileId: "b" },
       { profileId: "c", disabledReason: "Its Fake provider was removed" },
       { profileId: "d" }

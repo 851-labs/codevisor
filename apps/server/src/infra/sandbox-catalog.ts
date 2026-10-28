@@ -204,7 +204,7 @@ const disabledReasonFor = async (
   if (runsElsewhere(definition, await placementOf(deps, profile), deps.serverId))
     return "Runs on another Mac"
   if (!deps.adapters.runsHere(definition.id))
-    return `${definition.displayName} isn't installed here`
+    return `${definition.displayName} can't run on this machine`
   if (await accountMissing(deps, definition, profile)) return missingAccountReason(definition)
 
   return checkedAvailability(deps, profile)

@@ -5,13 +5,14 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { imageSetupScript } from "./image-setup.js"
+import { imageSetupScript, imageToolsScript } from "./image-setup.js"
 import type { ExecResult } from "./provider.js"
 
-const release = imageSetupScript({
-  app: { bundleName: "Codevisor.app" },
-  agentCommands: ["npm install -g @openai/codex", "curl -fsSL https://example.test/install | bash"]
-})
+const release = imageSetupScript({ app: { bundleName: "Codevisor.app" } })
+const tools = imageToolsScript([
+  "npm install -g @openai/codex",
+  "curl -fsSL https://example.test/install | bash"
+])
 
 const development = imageSetupScript({
   app: {
@@ -19,12 +20,11 @@ const development = imageSetupScript({
     development: { instanceId: "dev-sandbox", serverPort: 49361 }
   },
   installUrl: "http://192.168.1.2:4000/install.sh",
-  installEnvironment: { CODEVISOR_VERSION: "dev" },
-  agentCommands: []
+  installEnvironment: { CODEVISOR_VERSION: "dev" }
 })
 
 describe("macOS image setup script", () => {
-  it("installs the app, the standalone server and each agent CLI", () => {
+  it("installs the app and the standalone server, and keeps the agent CLIs in their own layer", () => {
     expect(release).toContain("app='/Applications/Codevisor.app'")
     expect(release).toContain(
       '[ -d "$app" ] || { echo "error: $app was not copied into the VM" >&2; exit 1; }'
@@ -32,9 +32,11 @@ describe("macOS image setup script", () => {
     expect(release).toContain(
       'curl -fsSL \'https://www.codevisor.dev/install.sh\' -o "$installer"\nCODEVISOR_NO_SETUP=1 CODEVISOR_NO_SERVICE=1 CODEVISOR_INSTALL_SERVER=1 sh "$installer"'
     )
-    expect(release).toContain(
+    expect(tools).toContain(
       "/bin/zsh -lc 'curl -fsSL https://example.test/install | bash' </dev/null || echo 'warning: curl -fsSL https://example.test/install | bash failed; the agent installs on first use instead'"
     )
+    expect(release).not.toContain("npm install")
+    expect(tools).not.toContain("/Applications")
     expect(development).toContain(
       "CODEVISOR_INSTALL_SERVER=1 CODEVISOR_VERSION='dev' sh \"$installer\""
     )

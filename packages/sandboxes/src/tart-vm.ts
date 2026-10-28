@@ -15,10 +15,13 @@ export interface TartRunOptions {
 }
 
 export interface TartHost {
+  readonly installed: () => Promise<boolean>
+  readonly install: (log: (line: string) => void) => Promise<void>
   readonly run: (args: ReadonlyArray<string>, options?: TartRunOptions) => Promise<ExecResult>
   readonly start: (args: ReadonlyArray<string>) => void
   readonly copyIn: (vm: string, source: string, destination: string) => Promise<ExecResult>
   readonly freeDiskBytes: () => Promise<number>
+  readonly imageBytes: (image: string) => Promise<number | undefined>
   readonly sleep: (ms: number) => Promise<void>
 }
 
@@ -58,9 +61,13 @@ export const tartCommands = (host: TartHost) => {
   }
   const vms = async (): Promise<ReadonlyArray<TartVm>> =>
     decodeTartVms(await must(["list", "--source", "local", "--format", "json"]))
+  const pulled = async (): Promise<ReadonlyArray<TartVm>> =>
+    decodeTartVms(await must(["list", "--source", "oci", "--format", "json"]))
   return {
     must,
     vms,
+    cached: async (image: string): Promise<boolean> =>
+      (await pulled()).some((vm) => vm.Name === image),
     has: async (name: string): Promise<boolean> => (await vms()).some((vm) => vm.Name === name),
     platform: async (name: string): Promise<MachinePlatform> =>
       platformFor(decodeTartVmInfo(await must(["get", name, "--format", "json"]))),
@@ -111,12 +118,17 @@ export const assertMacOSSlot = async (tart: TartCommands): Promise<void> => {
 
 export const diskShortfall = async (
   host: TartHost,
-  sizing: TartSizing
+  sizing: TartSizing,
+  imageBytes = 0
 ): Promise<string | undefined> => {
   const freeGiB = (await host.freeDiskBytes()) / bytesPerGiB
-  if (freeGiB >= sizing.minFreeDiskGiB) return undefined
+  const neededGiB = sizing.minFreeDiskGiB + imageBytes / bytesPerGiB
+  if (freeGiB >= neededGiB) return undefined
 
-  return `Only ${freeGiB.toFixed(1)} GB of disk is free on this Mac; a Tart VM needs ${sizing.minFreeDiskGiB} GB`
+  if (imageBytes === 0) {
+    return `Only ${freeGiB.toFixed(1)} GB of disk is free on this Mac; a Tart VM needs ${sizing.minFreeDiskGiB} GB`
+  }
+  return `Only ${freeGiB.toFixed(1)} GB of disk is free on this Mac; downloading this image and running it needs ${Math.ceil(neededGiB)} GB`
 }
 
 export const macOSSlotsFull = async (tart: TartCommands): Promise<string | undefined> => {

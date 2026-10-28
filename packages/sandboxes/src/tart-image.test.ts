@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest"
 
 import type { ProvisionPlan, ProvisionProgress } from "./provider.js"
 import { fakeTart, result } from "./tart-test-support.js"
-import { IMAGE_PREFIX, makeTartProvider, vmName, type TartImageRecipe } from "./tart.js"
+import {
+  IMAGE_PREFIX,
+  makeTartProvider,
+  TOOLS_PREFIX,
+  vmName,
+  type TartImageRecipe
+} from "./tart.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const baseImage = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
@@ -35,6 +41,9 @@ const releaseRecipe: TartImageRecipe = {
 
 const images = (value: TartImageRecipe = recipe) => ({ recipe: () => Promise.resolve(value) })
 
+const toolsLayerOf = (tart: ReturnType<typeof fakeTart>): string =>
+  tart.vms.find((vm) => vm.Name.startsWith(TOOLS_PREFIX))?.Name ?? ""
+
 const imageNameOf = async (tart: ReturnType<typeof fakeTart>): Promise<string> => {
   const provider = makeTartProvider(tart.host, images())
   const prepared = await provider.prepare?.(options, withImage, recorder().progress)
@@ -54,7 +63,24 @@ describe("Tart macOS image", () => {
     })
   })
 
-  it("builds the image once: base clone, app share, setup, stop, rename, then clones VMs from it", async () => {
+  it("installs Tart as its own first step on a Mac that doesn't have it yet", async () => {
+    const tart = fakeTart({ installed: false, onScript: () => result("ready\n") })
+    const provider = makeTartProvider(tart.host, images())
+    const { events, progress } = recorder()
+
+    const plan = await provider.plan?.(options)
+    const availability = await provider.availability?.(options)
+    const listed = await provider.list("device-a")
+    await provider.prepare?.(options, plan ?? withImage, progress)
+
+    expect(plan).toEqual({ stages: ["tart", "image", "create", "boot"], preinstalled: true })
+    expect(availability).toBeUndefined()
+    expect(listed).toEqual([])
+    expect(events.slice(0, 3)).toEqual(["stage tart", "Installed Tart", "stage image"])
+    expect(tart.commands[0]).toBe("install")
+  })
+
+  it("builds a tools layer from the base image, then a Codevisor layer on top, then clones VMs from it", async () => {
     const scripts: string[] = []
     const tart = fakeTart({
       vms: [{ Name: `${IMAGE_PREFIX}older`, State: "stopped", OS: "darwin" }],
@@ -68,32 +94,52 @@ describe("Tart macOS image", () => {
     const { events, progress } = recorder()
 
     const prepared = await provider.prepare?.(options, withImage, progress)
-    const image = prepared?.["preparedImage"] ?? ""
+    const image = String(prepared?.["preparedImage"] ?? "")
     const created = await provider.create(spec, prepared ?? options)
 
-    const building = `${image}-building`
+    const tools = toolsLayerOf(tart)
     expect(image).toMatch(new RegExp(`^${IMAGE_PREFIX}[0-9a-f]{16}$`))
+    expect(tools).toMatch(new RegExp(`^${TOOLS_PREFIX}[0-9a-f]{16}$`))
     expect(events[0]).toBe("stage image")
     expect(events).toContain("stdout ==> Installing Codevisor (dev).app\n")
     expect(events).toContain(`Deleting the older image ${IMAGE_PREFIX}older`)
-    expect(tart.commands).toContain(`clone ${baseImage} ${building}`)
-    expect(tart.commands).toContain(`start run --no-graphics ${building}`)
+    expect(tart.commands).toContain(`clone ${baseImage} ${tools}-building`)
+    expect(tart.commands).toContain(`rename ${tools}-building ${tools}`)
+    expect(tart.commands).toContain(`clone ${tools} ${image}-building`)
     expect(tart.commands).toContain(
-      `copyIn ${building} /Builds/Debug/Codevisor (dev).app /Applications`
+      `copyIn ${image}-building /Builds/Debug/Codevisor (dev).app /Applications`
     )
-    expect(tart.commands).toContain(`stop ${building}`)
-    expect(tart.commands).toContain(`rename ${building} ${image}`)
-    expect(scripts[0]).toContain("app='/Applications/Codevisor (dev).app'")
+    expect(tart.commands).toContain(`rename ${image}-building ${image}`)
+    expect(scripts[0]).toContain("npm install -g @openai/codex")
+    expect(scripts[0]).not.toContain("/Applications")
+    expect(scripts[1]).toContain("app='/Applications/Codevisor (dev).app'")
     expect(created).toEqual({
       providerMachineId: vmName(spec),
       platform: "darwin",
       preinstalled: true
     })
-    expect(tart.commands).toContain(`clone ${image} ${vmName(spec)}`)
-    expect(tart.vms.map((vm) => vm.Name)).toEqual([image, vmName(spec)])
+    expect(tart.vms.map((vm) => vm.Name)).toEqual([tools, image, vmName(spec)])
   })
 
-  it("lets a second machine wait for the image another one is preparing", async () => {
+  it("rebuilds only the Codevisor layer when Codevisor updates", async () => {
+    const tart = fakeTart({ onScript: () => result("") })
+    const before = makeTartProvider(tart.host, images())
+    const after = makeTartProvider(tart.host, images({ ...recipe, fingerprint: "app-2+server-2" }))
+
+    const first = await before.prepare?.(options, withImage, recorder().progress)
+    const tools = toolsLayerOf(tart)
+    const cloned = tart.commands.length
+    const second = await after.prepare?.(options, withImage, recorder().progress)
+
+    const rebuild = tart.commands.slice(cloned)
+    expect(second?.["preparedImage"]).not.toBe(first?.["preparedImage"])
+    expect(rebuild.filter((command) => command.startsWith("clone "))).toEqual([
+      `clone ${tools} ${String(second?.["preparedImage"])}-building`
+    ])
+    expect(tart.vms.map((vm) => vm.Name)).toEqual([tools, second?.["preparedImage"]])
+  })
+
+  it("lets a second sandbox wait for the image another one is preparing", async () => {
     const tart = fakeTart({ onScript: () => result("") })
     const provider = makeTartProvider(tart.host, images())
     const second = recorder()
@@ -109,7 +155,7 @@ describe("Tart macOS image", () => {
     ).toHaveLength(1)
     expect(second.events).toEqual([
       "stage image",
-      "Waiting for the macOS image another machine is preparing"
+      "Waiting for another sandbox that's preparing this image"
     ])
   })
 
@@ -126,18 +172,21 @@ describe("Tart macOS image", () => {
 
   it("deletes the half-built VM and reports the end of the setup output when setup fails", async () => {
     const tart = fakeTart({
-      onScript: () => ({
-        exitCode: 1,
-        stdout: "==> Installing the Codevisor server\n",
-        stderr: "curl: (7) refused\n"
-      })
+      onScript: (script) =>
+        script.includes("/Applications")
+          ? {
+              exitCode: 1,
+              stdout: "==> Installing the Codevisor server\n",
+              stderr: "curl: (7) refused\n"
+            }
+          : result("")
     })
     const provider = makeTartProvider(tart.host, images(releaseRecipe))
 
     await expect(provider.prepare?.(options, withImage, recorder().progress)).rejects.toThrow(
-      "Preparing the macOS image failed (exit 1):\n==> Installing the Codevisor server\ncurl: (7) refused"
+      "Setting up macOS failed (exit 1):\n==> Installing the Codevisor server\ncurl: (7) refused"
     )
-    expect(tart.vms).toEqual([])
+    expect(tart.vms.map((vm) => vm.Name)).toEqual([toolsLayerOf(tart)])
   })
 
   it("stops and deletes the half-built VM when the app can't be copied in", async () => {
@@ -147,7 +196,7 @@ describe("Tart macOS image", () => {
     await expect(provider.prepare?.(options, withImage, recorder().progress)).rejects.toThrow(
       "Copying Codevisor into the macOS image failed (exit 2):\ntar: broken pipe"
     )
-    expect(tart.vms).toEqual([])
+    expect(tart.vms.map((vm) => vm.Name)).toEqual([toolsLayerOf(tart)])
   })
 
   it("keeps cloning the profile's image when there is no app to install, it isn't macOS, or it's already prepared", async () => {

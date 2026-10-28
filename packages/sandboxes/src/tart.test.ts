@@ -29,6 +29,7 @@ describe("Tart provider", () => {
 
     expect(created).toEqual({ providerMachineId: name, platform: "darwin", preinstalled: false })
     expect(tart.commands).toEqual([
+      "list --source oci --format json",
       `clone ${preparedImage} ${name}`,
       `get ${name} --format json`,
       "list --source local --format json",
@@ -199,5 +200,23 @@ describe("Tart provider", () => {
     await provider.destroy(name)
 
     expect(await provider.status(name)).toEqual({ state: "gone" })
+  })
+
+  it("still installs Tart when the plan was made before it went missing", async () => {
+    const tart = fakeTart({ installed: false })
+    const events: string[] = []
+
+    await makeTartProvider(tart.host).prepare?.(
+      options,
+      { stages: ["create", "boot"], preinstalled: false },
+      {
+        stage: (stage) => events.push(`stage ${stage}`),
+        log: (line) => events.push(line),
+        output: ignoreOutput
+      }
+    )
+
+    expect(events).toEqual(["Installed Tart"])
+    expect(tart.commands[0]).toBe("install")
   })
 })

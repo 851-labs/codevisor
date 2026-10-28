@@ -29,6 +29,7 @@ export const SandboxState = Schema.Literals([
 export type SandboxState = typeof SandboxState.Type
 
 export const SandboxSetupStage = Schema.Literals([
+  "tart",
   "image",
   "create",
   "boot",

@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
 import { CloudApiError, rewriteMachineInviteServer } from "@codevisor/cloud-client"
@@ -8,10 +8,13 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   daytonaAdapter,
   daytonaSdkClient,
+  downloadTart,
   e2bAdapter,
   e2bSdkClient,
+  managedTart,
   modalAdapter,
   modalSdkClient,
+  systemTart,
   tartAdapter,
   tartCliHost,
   tartOrchardAdapter,
@@ -20,7 +23,8 @@ import {
   vercelSdkClient,
   type SandboxAdapter,
   type SandboxProviderId,
-  type TartImages
+  type TartImages,
+  type TartInstall
 } from "@codevisor/sandboxes"
 import type { BlobStore } from "@codevisor/sync"
 
@@ -64,11 +68,12 @@ export const startSandboxes = (
 ): SandboxesService & { readonly start: () => void } => {
   const records = makeSandboxRecordStore(options.db)
   const settings = makeSandboxSettings(options.db, options.serverId)
-  const tartBinary = options.env["CODEVISOR_TART_PATH"] ?? "tart"
-  const tartHere = tartAvailable(tartBinary)
   const adapters = makeSandboxAdapters(
-    sandboxAdapters({ tartBinary, images: tartImages(imageSettings(options.env)) }),
-    (id) => id !== "tart" || tartHere
+    sandboxAdapters({
+      install: tartInstall(options),
+      images: tartImages(imageSettings(options.env))
+    }),
+    (id) => id !== "tart" || isAppleSilicon()
   )
   const connections = makeSandboxConnections(adapters, settings)
   const events: SandboxEvents = { publish: () => Promise.resolve() }
@@ -145,12 +150,12 @@ export const startSandboxes = (
 }
 
 interface TartSettings {
-  readonly tartBinary: string
+  readonly install: TartInstall
   readonly images: TartImages
 }
 
 const sandboxAdapters = (tart: TartSettings): ReadonlyArray<SandboxAdapter> => [
-  tartAdapter(tartCliHost(tart.tartBinary), tart.images),
+  tartAdapter(tartCliHost(tart.install), tart.images),
   tartOrchardAdapter(tartOrchardApiClient),
   e2bAdapter(e2bSdkClient),
   modalAdapter(modalSdkClient),
@@ -158,9 +163,14 @@ const sandboxAdapters = (tart: TartSettings): ReadonlyArray<SandboxAdapter> => [
   daytonaAdapter(daytonaSdkClient)
 ]
 
-const tartAvailable = (binary: string): boolean =>
-  process.platform === "darwin" &&
-  spawnSync(binary, ["--version"], { stdio: "ignore" }).status === 0
+const tartInstall = (options: SandboxBootOptions): TartInstall => {
+  const override = options.env["CODEVISOR_TART_PATH"]
+  return override === undefined
+    ? managedTart(join(options.dataDir, "tools"), downloadTart)
+    : systemTart(override)
+}
+
+const isAppleSilicon = (): boolean => process.platform === "darwin" && process.arch === "arm64"
 
 const inviteFor = async (
   options: SandboxBootOptions,

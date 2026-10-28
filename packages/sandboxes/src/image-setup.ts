@@ -14,7 +14,6 @@ export interface ImageSetup {
   readonly app: ImageApp
   readonly installUrl?: string
   readonly installEnvironment?: Readonly<Record<string, string>>
-  readonly agentCommands: ReadonlyArray<string>
 }
 
 const grantedServices = [
@@ -27,16 +26,24 @@ const grantedServices = [
 const bridgeWaitSeconds = 120
 const tccBusyTimeoutMs = 30_000
 const tccWriteAttempts = 5
+const scriptPrelude = ["set -eu", "step() { printf '==> %s\\n' \"$*\"; }"]
+
+export const imageToolsScript = (agentCommands: ReadonlyArray<string>): string =>
+  [
+    ...scriptPrelude,
+    ...agentCommands.flatMap(agentInstallLines),
+    "sync",
+    "step 'The agent CLIs are installed'",
+    ""
+  ].join("\n")
 
 export const imageSetupScript = (setup: ImageSetup): string =>
   [
-    "set -eu",
-    "step() { printf '==> %s\\n' \"$*\"; }",
+    ...scriptPrelude,
     `app=${shellQuote(`/Applications/${setup.app.bundleName}`)}`,
     ...appIdentityLines(),
     ...tccWriteLines(),
     ...serverInstallLines(setup),
-    ...setup.agentCommands.flatMap(agentInstallLines),
     ...grantLines(),
     ...appLauncherLines(setup.app),
     ...startAppLines(),

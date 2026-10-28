@@ -16,7 +16,8 @@ import type {
   MachinePlatform,
   ProviderMachineState,
   ProvisionPlan,
-  ProvisionProgress
+  ProvisionProgress,
+  ProvisionStage
 } from "./provider.js"
 import {
   ensureImage,
@@ -25,8 +26,8 @@ import {
   type PreparedImage,
   type TartImages
 } from "./tart-image.js"
+import { ensurePulled } from "./tart-pull.js"
 import {
-  assertDiskRoom,
   assertMacOSSlot,
   boot,
   diskShortfall,
@@ -40,7 +41,7 @@ import {
 } from "./tart-vm.js"
 
 export { MAX_RUNNING_MACOS_VMS, type TartHost, type TartRunOptions } from "./tart-vm.js"
-export { IMAGE_PREFIX, type TartImageRecipe, type TartImages } from "./tart-image.js"
+export { IMAGE_PREFIX, TOOLS_PREFIX, type TartImageRecipe, type TartImages } from "./tart-image.js"
 
 export const DEFAULT_TART_BASE_IMAGE = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
 
@@ -116,7 +117,7 @@ export const makeTartProvider = (
     streamsOutput: true,
     availability: async (values) => {
       const options = tartOptions(values)
-      if (looksLikeMacOS(options)) {
+      if (looksLikeMacOS(options) && (await host.installed())) {
         const full = await macOSSlotsFull(tart)
         if (full !== undefined) return full
       }
@@ -124,9 +125,10 @@ export const makeTartProvider = (
     },
     plan: async (values) => {
       const options = tartOptions(values)
-      return planFor(tart, options, await imageFor(options))
+      return planFor(tart, options, await imageFor(options), await host.installed())
     },
     prepare: async (values, plan, progress) => {
+      await installTart(host, plan, progress)
       const options = tartOptions(values)
       const image = await imageFor(options)
       if (image === undefined) return withPreparedImage(values, options.image ?? options.baseImage)
@@ -137,8 +139,8 @@ export const makeTartProvider = (
     },
     create: async (spec, values, progress = silentProgress) => {
       const options = tartOptions(values)
-      await assertDiskRoom(host, options)
       const image = options.image ?? options.baseImage
+      await ensurePulled(host, tart, image, options, progress)
       const name = vmName(spec)
       progress.log(`tart clone ${image} ${name}`)
       await tart.must(["clone", image, name])
@@ -161,7 +163,10 @@ export const makeTartProvider = (
     }),
     destroy: (name) => tart.remove(name),
     resume: (name) => boot(host, tart, name, silentProgress),
-    list: async (owner) => (await tart.vms()).flatMap((vm) => ownedMachine(vm.Name, owner)),
+    list: async (owner) => {
+      if (!(await host.installed())) return []
+      return (await tart.vms()).flatMap((vm) => ownedMachine(vm.Name, owner))
+    },
     gui: async (name) => ({ vncUrl: `vnc://${await tart.ip(name)}:5900` })
   }
 }
@@ -177,13 +182,32 @@ const looksLikeMacOS = (options: TartOptions): boolean =>
 const planFor = async (
   tart: TartCommands,
   options: TartOptions,
-  image: PreparedImage | undefined
+  image: PreparedImage | undefined,
+  installed: boolean
 ): Promise<ProvisionPlan> => {
+  const install: ReadonlyArray<ProvisionStage> = installed ? [] : ["tart"]
   if (image === undefined) {
-    return { stages: bootStages, preinstalled: isPreparedImage(options.image ?? "") }
+    return {
+      stages: [...install, ...bootStages],
+      preinstalled: isPreparedImage(options.image ?? "")
+    }
   }
-  const stages = (await tart.has(image.name)) ? bootStages : ["image" as const, ...bootStages]
-  return { stages, preinstalled: true }
+  const imageReady = installed && (await tart.has(image.name))
+  return {
+    stages: [...install, ...(imageReady ? [] : ["image" as const]), ...bootStages],
+    preinstalled: true
+  }
+}
+
+const installTart = async (
+  host: TartHost,
+  plan: ProvisionPlan,
+  progress: ProvisionProgress
+): Promise<void> => {
+  if (await host.installed()) return
+
+  if (plan.stages.includes("tart")) progress.stage("tart")
+  await host.install(progress.log)
 }
 
 const bootClone = async (

@@ -50,7 +50,7 @@ export interface ExecRequest {
   readonly onOutput?: (stream: OutputStream, text: string) => void
 }
 
-export type ProvisionStage = "image" | "create" | "boot"
+export type ProvisionStage = "tart" | "image" | "create" | "boot"
 
 export interface ProvisionProgress {
   readonly stage: (stage: ProvisionStage) => void

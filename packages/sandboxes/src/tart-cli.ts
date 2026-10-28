@@ -4,15 +4,28 @@ import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
+import { imageDiskBytes, type ManifestFetch } from "./oci-manifest.js"
 import type { ExecResult } from "./provider.js"
+import type { TartDownload, TartInstall } from "./tart-install.js"
 import type { TartHost, TartRunOptions } from "./tart.js"
 
 const outputLimitChars = 256_000
+const downloadTimeoutMs = 10 * 60_000
+const manifestTimeoutMs = 15_000
 
-export const tartCliHost = (binary = "tart"): TartHost => {
+export const downloadTart: TartDownload = async (url) => {
+  const response = await fetch(url, { signal: AbortSignal.timeout(downloadTimeoutMs) })
+  if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
+  return Buffer.from(await response.arrayBuffer())
+}
+
+export const tartCliHost = (tart: TartInstall): TartHost => {
   const { TMPDIR: _ownTemporaryDirectory, ...inherited } = process.env
   const environment = { ...inherited, TART_NO_AUTO_PRUNE: "1" }
+  const binary = tart.binary
   return {
+    installed: tart.installed,
+    install: tart.install,
     run: (args, options) => runTart(binary, args, environment, options),
     start: (args) => {
       const child = spawn(
@@ -35,6 +48,7 @@ export const tartCliHost = (binary = "tart"): TartHost => {
       const stats = await statfs(home)
       return stats.bavail * stats.bsize
     },
+    imageBytes: (image) => imageDiskBytes(image, fetchManifest),
     sleep: (ms) => delay(ms)
   }
 }
@@ -106,3 +120,6 @@ const copyIntoVm = (
     unpack.on("error", (cause) => resolve({ exitCode: 127, stdout: "", stderr: cause.message }))
     unpack.on("close", (code) => resolve({ exitCode: code ?? 1, stdout: "", stderr }))
   })
+
+const fetchManifest: ManifestFetch = (url, headers) =>
+  fetch(url, { headers, signal: AbortSignal.timeout(manifestTimeoutMs) })
