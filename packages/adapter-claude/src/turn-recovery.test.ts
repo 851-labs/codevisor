@@ -81,7 +81,7 @@ describe("ClaudeProvider", () => {
     expect(continuations).toHaveLength(12)
   })
 
-  it("auto-retries a transient API error after backoff, then ends on success", async () => {
+  it("keeps retrying a transient error despite background completions before and after backoff", async () => {
     vi.useFakeTimers()
     const { fake, events, created } = await startTestSession()
 
@@ -114,9 +114,25 @@ describe("ClaudeProvider", () => {
       }
     })
 
-    await vi.advanceTimersByTimeAsync(1000)
+    fake.push(streamEvent({ message: { id: "bg-before-retry" }, type: "message_start" }))
+    fake.push(streamEvent({ delta: { stop_reason: "end_turn" }, type: "message_delta" }))
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await fake.drain()
+    expect(endedEvents()).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(continuations()).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(1)
     await fake.drain()
     expect(continuations()).toHaveLength(1)
+    expect(endedEvents()).toHaveLength(0)
+
+    fake.push(streamEvent({ message: { id: "bg-during-retry" }, type: "message_start" }))
+    fake.push(streamEvent({ delta: { stop_reason: "end_turn" }, type: "message_delta" }))
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await fake.drain()
     expect(endedEvents()).toHaveLength(0)
 
     fake.push(resultMessage("success"))

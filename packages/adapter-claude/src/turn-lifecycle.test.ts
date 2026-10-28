@@ -10,7 +10,9 @@ import {
   resultMessage,
   run,
   sdkMessage,
+  startTestSession,
   streamEvent,
+  systemMessage,
   turnPayloads
 } from "./test-support.js"
 
@@ -113,6 +115,97 @@ describe("ClaudeProvider", () => {
     await prompt
     expect(promptResolved).toBe(true)
     expect(events.filter((event) => payloadOf(event).turnState === "ended")).toHaveLength(1)
+  })
+
+  it.each(["streamed", "complete"])(
+    "finishes a %s reply at idle with only a task-notification result",
+    async (delivery) => {
+      const { fake, created, events } = await startTestSession()
+      if (delivery === "complete") {
+        await run(created.handle.setGoal!({ objective: "finish the change" }))
+        await fake.nextPrompt()
+      }
+      let completed = false
+      const prompt = run(created.handle.prompt("finish the change")).then(() => {
+        completed = true
+      })
+      await fake.nextPrompt()
+
+      if (delivery === "streamed") {
+        fake.push(streamEvent({ message: { id: "msg-final" }, type: "message_start" }))
+        fake.push(streamEvent({ delta: { stop_reason: "end_turn" }, type: "message_delta" }))
+      }
+      fake.push(
+        sdkMessage({
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: {
+            id: "msg-final",
+            role: "assistant",
+            content: [{ type: "text", text: "Finished the change." }],
+            stop_reason: delivery === "complete" ? "end_turn" : null
+          }
+        })
+      )
+      fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
+      fake.push(systemMessage("session_state_changed", { state: "requires_action" }))
+      await fake.drain()
+      expect(completed).toBe(false)
+
+      fake.push(systemMessage("session_state_changed", { state: "idle" }))
+      await fake.drain()
+      expect(
+        events.map(payloadOf).filter((payload) => payload.turnState === "ended")
+      ).toMatchObject([{ initiatedBy: "user", stopReason: "end_turn" }])
+      await prompt
+      if (delivery === "complete") {
+        const goals = events.map(payloadOf).filter((payload) => payload.goal !== undefined)
+        expect(goals.at(-1)).toMatchObject({ goal: { status: "complete" } })
+      }
+      await run(created.handle.close)
+    }
+  )
+
+  it.each(["premature", "failed"])("ignores a %s background completion", async (completion) => {
+    const { fake, created, events } = await startTestSession()
+    const prompt = run(created.handle.prompt("new request"))
+    await fake.nextPrompt()
+
+    if (completion === "failed") {
+      fake.push(streamEvent({ message: { id: "msg-final" }, type: "message_start" }))
+      fake.push(streamEvent({ delta: { stop_reason: "end_turn" }, type: "message_delta" }))
+    }
+    const subtype = completion === "failed" ? "error_during_execution" : "success"
+    fake.push(sdkMessage({ ...resultMessage(subtype), origin: { kind: "task-notification" } }))
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await fake.drain()
+    expect(events.map(payloadOf).filter((payload) => payload.turnState === "ended")).toHaveLength(0)
+    expect(events.map(payloadOf).filter((payload) => payload.retrying !== undefined)).toHaveLength(
+      0
+    )
+
+    fake.push(resultMessage())
+    await prompt
+    await run(created.handle.close)
+  })
+
+  it("discards a deferred background result when the user result arrives before idle", async () => {
+    const { fake, created, events } = await startTestSession()
+    const prompt = run(created.handle.prompt("finish the change"))
+    await fake.nextPrompt()
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
+    fake.push(resultMessage())
+    await prompt
+
+    const next = run(created.handle.prompt("next change"))
+    await fake.nextPrompt()
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await fake.drain()
+    expect(events.map(payloadOf).filter((payload) => payload.turnState === "ended")).toHaveLength(1)
+
+    fake.push(resultMessage())
+    await next
+    await run(created.handle.close)
   })
 
   it("defers a prompt sent during an agent-initiated turn until that turn ends", async () => {

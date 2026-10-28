@@ -167,6 +167,9 @@ export interface ClaudeSession {
   turnId: string
   initiatedBy: "user" | "agent"
   pendingPrompt: Deferred<{ stopReason: string }> | undefined
+  deferredTaskResult: Extract<SDKMessage, { type: "result" }> | undefined
+  awaitingRecoveryResult: boolean
+  rootReplyComplete: boolean
   readonly deferredPrompts: Array<DeferredClaudePrompt>
   turnCompletion: Deferred<void> | undefined
   cancelInFlight: Promise<CancelResult> | undefined

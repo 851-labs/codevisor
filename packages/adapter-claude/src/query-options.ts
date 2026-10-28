@@ -25,7 +25,7 @@ export const claudeQueryOptions = (launch: QueryLaunch): ClaudeOptions => ({
   ...launch.startOptions,
   abortController: launch.abort,
   cwd: launch.cwd,
-  env: launch.env,
+  env: { ...launch.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
   includePartialMessages: true,
   pathToClaudeCodeExecutable: launch.claudePath,
   systemPrompt: { type: "preset", preset: "claude_code" },
