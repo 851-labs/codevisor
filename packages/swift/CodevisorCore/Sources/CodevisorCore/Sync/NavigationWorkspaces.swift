@@ -27,10 +27,11 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let routingChatIds: [UUID]
   public let botId: UUID?
   public let botMachineId: String?
+  public let parentWorkspaceId: UUID?
 
   public init(
     id: UUID, serverId: String, projectId: UUID, routingChatIds: [UUID], botId: UUID? = nil,
-    botMachineId: String? = nil
+    botMachineId: String? = nil, parentWorkspaceId: UUID? = nil
   ) {
     self.id = id
     self.serverId = serverId
@@ -38,6 +39,7 @@ public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
     self.routingChatIds = routingChatIds
     self.botId = botId
     self.botMachineId = botMachineId
+    self.parentWorkspaceId = parentWorkspaceId
   }
 
   public var belongsToSameMachineBot: Bool { botId != nil && botMachineId == nil }
@@ -51,6 +53,7 @@ public final class NavigationWorkspaces {
   public private(set) var archived: [WorkspaceSidebarItem] = []
   public private(set) var botChildren: [UUID: [WorkspaceSidebarItem]] = [:]
   @ObservationIgnored private var sidebarIndex: [UUID: UUID] = [:]
+  @ObservationIgnored private var parentIndex: [UUID: UUID] = [:]
   @ObservationIgnored var lookup: (UUID) -> Workspace? = { _ in nil }
 
   init() {}
@@ -65,9 +68,12 @@ public final class NavigationWorkspaces {
   func apply(_ projection: NavigationProjection, changed: Set<UUID>, removed: Set<UUID>) {
     for id in changed { entries[id]?.update(projection.workspacesById[id]) }
     for id in removed { entries[id]?.update(nil) }
-    guard !changed.isEmpty || !removed.isEmpty || projection.sessionIndex != sidebarIndex else { return }
+    let parents = Self.parentWorkspaceIds(in: projection)
+    guard !changed.isEmpty || !removed.isEmpty || projection.sessionIndex != sidebarIndex || parents != parentIndex
+    else { return }
     sidebarIndex = projection.sessionIndex
-    let live = Self.live(from: projection)
+    parentIndex = parents
+    let live = Self.live(from: projection, parents: parents)
     if live != sidebar { sidebar = live }
     let nextChildren = Dictionary(grouping: live.filter { $0.botId != nil }) { $0.botId! }
     if nextChildren != botChildren { botChildren = nextChildren }
@@ -97,7 +103,7 @@ public final class NavigationWorkspaces {
       WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
         routingChatIds: routed.isEmpty ? current.routingChatIds : routed, botId: current.botId,
-        botMachineId: current.botMachineId)
+        botMachineId: current.botMachineId, parentWorkspaceId: current.parentWorkspaceId)
     }
     if let index = sidebar.firstIndex(where: { $0.id == workspace.id }) {
       let item = refreshed(sidebar[index])
@@ -112,7 +118,7 @@ public final class NavigationWorkspaces {
     }
   }
 
-  static func live(from projection: NavigationProjection) -> [WorkspaceSidebarItem] {
+  static func live(from projection: NavigationProjection, parents: [UUID: UUID]) -> [WorkspaceSidebarItem] {
     var indexedChats: [UUID: UUID] = [:]
     for session in projection.sessions {
       guard let workspaceId = projection.sessionIndex[session.id], indexedChats[workspaceId] == nil else { continue }
@@ -134,8 +140,23 @@ public final class NavigationWorkspaces {
       return WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
         routingChatIds: routed.isEmpty ? fallback : routed, botId: workspace.botId,
-        botMachineId: workspace.botMachineId)
+        botMachineId: workspace.botMachineId, parentWorkspaceId: parents[workspace.id])
     }
+  }
+
+  static func parentWorkspaceIds(in projection: NavigationProjection) -> [UUID: UUID] {
+    var parents: [UUID: (workspaceId: UUID, startedAt: Date)] = [:]
+    for session in projection.sessions {
+      guard let parentSessionId = session.parentSessionId.flatMap(UUID.init(uuidString:)),
+        let workspaceId = projection.sessionIndex[session.id],
+        let parentId = projection.sessionIndex[parentSessionId], parentId != workspaceId,
+        let workspace = projection.workspacesById[workspaceId],
+        projection.workspacesById[parentId]?.serverId == workspace.serverId,
+        parents[workspaceId].map({ session.createdAt < $0.startedAt }) ?? true
+      else { continue }
+      parents[workspaceId] = (parentId, session.createdAt)
+    }
+    return parents.mapValues(\.workspaceId)
   }
 
   func remove(_ id: UUID) {

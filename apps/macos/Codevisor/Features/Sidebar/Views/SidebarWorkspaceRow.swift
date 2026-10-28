@@ -19,6 +19,8 @@ struct SidebarWorkspaceRow: View {
   var machine: SidebarRowMachine? = nil
   let isSelected: Bool
   let isReordering: Bool
+  var disclosure: SidebarRow.Disclosure? = nil
+  var onToggleChildren: () -> Void = {}
   let onActivate: () -> Void
   let lifecycle: Lifecycle
   @GestureState private var isPressed = false
@@ -54,6 +56,9 @@ struct SidebarWorkspaceRow: View {
           .accessibilityValue("Archived", isEnabled: isArchived)
           .accessibilityAction(.default, onActivate)
           .accessibilityActions {
+            if let disclosure {
+              Button(disclosure.isExpanded ? "Collapse" : "Expand", action: onToggleChildren)
+            }
             switch lifecycle {
             case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
               Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
@@ -64,6 +69,9 @@ struct SidebarWorkspaceRow: View {
               Button("Restore", action: onRestore)
             }
           }
+        if let disclosure {
+          SidebarChildrenDisclosure(disclosure: disclosure, onToggle: onToggleChildren)
+        }
         ZStack(alignment: .trailing) {
           properties
             .opacity(isHovered ? 0 : 1)

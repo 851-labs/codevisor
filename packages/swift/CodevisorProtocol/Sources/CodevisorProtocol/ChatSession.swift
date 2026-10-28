@@ -60,6 +60,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var actionRequiredKind: String?
   public var pendingPlanApproval: Bool
   public var latestBotMessage: BotMessagePreview?
+  public var parentSessionId: String?
 
   public var hasAgentSession: Bool {
     agentSessionId?.isEmpty == false
@@ -89,7 +90,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequired: Bool = false,
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool = false,
-    latestBotMessage: BotMessagePreview? = nil
+    latestBotMessage: BotMessagePreview? = nil,
+    parentSessionId: String? = nil
   ) {
     self.id = id
     self.projectId = projectId
@@ -115,6 +117,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.actionRequiredKind = actionRequiredKind
     self.pendingPlanApproval = pendingPlanApproval
     self.latestBotMessage = latestBotMessage
+    self.parentSessionId = parentSessionId
   }
 
   private enum Keys: String, CodingKey {
@@ -122,7 +125,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case worktreeName, cwd, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
-    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage
+    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, parentSessionId
     case workspaceId
   }
 
@@ -162,6 +165,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequiredKind = try container.decodeIfPresent(String.self, forKey: .actionRequiredKind)
     pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
     latestBotMessage = try container.decodeIfPresent(BotMessagePreview.self, forKey: .latestBotMessage)
+    parentSessionId = try container.decodeIfPresent(String.self, forKey: .parentSessionId)
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -190,5 +194,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encodeIfPresent(actionRequiredKind, forKey: .actionRequiredKind)
     try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
     try container.encodeIfPresent(latestBotMessage, forKey: .latestBotMessage)
+    try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
   }
 }

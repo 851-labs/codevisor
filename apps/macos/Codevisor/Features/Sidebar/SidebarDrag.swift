@@ -40,7 +40,8 @@ extension SidebarView {
         retarget()
         guard let finished = drag else { return }
         if let target = finished.targetIndex {
-          commitWorkspaceMove(finished.workspaceID, toIndex: target, within: dropCandidates(for: finished.workspaceID))
+          commitWorkspaceMove(
+            finished.workspaceID, toIndex: target, within: dropTargets(for: finished.workspaceID).order)
         }
         withAnimation(Motion.quick(reduceMotion: reduceMotion)) { drag = nil }
       }
@@ -54,17 +55,25 @@ extension SidebarView {
     dragGeometry.workspaces[id] = nil
   }
 
-  private func dropCandidates(for id: UUID) -> [UUID] {
-    let group = workspaceGroups.first { $0.items.contains { $0.id == id } }?.items ?? []
-    return group.map(\.id).filter { dragGeometry.workspaces[$0] != nil }
+  private func dropTargets(for id: UUID) -> (order: [UUID], frames: [UUID: CGRect]) {
+    let rows = sidebarRows
+    var order: [UUID] = []
+    var frames: [UUID: CGRect] = [:]
+    for sibling in SidebarRows.siblings(of: id, in: rows) {
+      guard let frame = dragGeometry.workspaces[sibling] else { continue }
+      order.append(sibling)
+      frames[sibling] = SidebarRows.subtree(of: sibling, in: rows).compactMap { dragGeometry.workspaces[$0] }
+        .reduce(frame) { $0.union($1) }
+    }
+    return (order, frames)
   }
 
   private func retarget() {
     guard let current = drag else { return }
-    let order = dropCandidates(for: current.workspaceID)
+    let (order, frames) = dropTargets(for: current.workspaceID)
     guard
       let index = ListReorder.destinationIndex(
-        of: current.workspaceID, in: order, frames: dragGeometry.workspaces, midY: current.ghostFrame.midY
+        of: current.workspaceID, in: order, frames: frames, midY: current.ghostFrame.midY
       )
     else { return }
     let target = order.firstIndex(of: current.workspaceID) == index ? nil : index
@@ -74,9 +83,8 @@ extension SidebarView {
 
   private func insertionLine(for drag: SidebarDrag) -> CGRect? {
     guard let index = drag.targetIndex else { return nil }
-    let others = dropCandidates(for: drag.workspaceID)
-      .filter { $0 != drag.workspaceID }
-      .compactMap { dragGeometry.workspaces[$0] }
+    let (order, frames) = dropTargets(for: drag.workspaceID)
+    let others = order.filter { $0 != drag.workspaceID }.compactMap { frames[$0] }
     return SidebarInsertionLine.frame(at: index, among: others)
   }
 

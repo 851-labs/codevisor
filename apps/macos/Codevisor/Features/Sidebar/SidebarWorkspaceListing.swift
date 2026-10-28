@@ -19,8 +19,16 @@ struct SidebarWorkspaceListing {
   }
 
   var groups: [SidebarWorkspaceGroup] {
+    groups(of: listedItems)
+  }
+
+  var tree: SidebarWorkspaceTree {
+    SidebarWorkspaceTree(listedItems, pinnedIDs: pinnedIDs)
+  }
+
+  func groups(of items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
     SidebarWorkspaceGroup.groups(
-      listedItems, grouping: grouping, pinnedIDs: pinnedIDs, projects: environment.projectList.projects,
+      items, grouping: grouping, pinnedIDs: pinnedIDs, projects: environment.projectList.projects,
       defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder, machineKey: machineKey,
       projectOrder: projectOrder, machineHeading: heading)
   }

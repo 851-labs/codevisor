@@ -41,7 +41,7 @@ extension SidebarView {
       SidebarWorkspaceSection(
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
         isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
-        isPinned: placement == .pinned, isReordering: isReordering, actions: actions
+        isPinned: placement == .pinned, isReordering: isReordering, disclosure: row.disclosure, actions: actions
       )
       .equatable()
       .opacity(draggingID == item.id ? 0.4 : 1)
@@ -53,7 +53,7 @@ extension SidebarView {
       .onDisappear { forgetWorkspaceGeometry(for: item.id) }
       .simultaneousGesture(reorderGesture(for: item.id))
       .geometryGroup()
-      .padding(.leading, Self.groupIndent * CGFloat(row.depth))
+      .padding(.leading, Self.groupIndent * CGFloat(row.depth - row.nesting) + Self.nestIndent * CGFloat(row.nesting))
       .id(item.id)
     }
   }
