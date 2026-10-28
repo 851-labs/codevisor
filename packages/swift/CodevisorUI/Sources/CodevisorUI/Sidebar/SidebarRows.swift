@@ -102,7 +102,7 @@ public enum SidebarRows {
     let expansion = state.expansion
 
     func visible(_ items: [WorkspaceSidebarItem], showing: Bool) -> [WorkspaceSidebarItem] {
-      showing ? items : items.filter { $0.id == state.selectedWorkspaceID }
+      SidebarCollapse.shown(items, isExpanded: showing, keeping: state.selectedWorkspaceID)
     }
 
     if let pinned = state.groups.first(where: { $0.id == SidebarWorkspaceGroup.pinnedID }) {

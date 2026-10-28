@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
   let rows: [Row]
   let id: (Row) -> ID
+  var spacing: CGFloat = 1
   let animation: Animation?
   @ViewBuilder let content: (Row) -> Content
   @State private var shown: [Shown] = []
@@ -19,7 +20,7 @@ struct SidebarRowList<Row: Equatable, ID: Hashable, Content: View>: View {
 
   var body: some View {
     let displayed = isPrimed ? shown : rows.map { Shown(id: id($0), row: $0, visibility: .shown) }
-    SidebarRowStack(spacing: 1, progress: progress, batch: batch) {
+    SidebarRowStack(spacing: spacing, progress: progress, batch: batch) {
       ForEach(displayed) { item in
         content(item.row)
           .modifier(SidebarRowFoldModifier(visibility: item.visibility))

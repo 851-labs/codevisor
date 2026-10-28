@@ -5,7 +5,6 @@ struct BotTypingIndicator: View {
   private static let dotDiameter: CGFloat = 6
   private static let stepInterval: TimeInterval = 0.35
 
-  let isHighlighted: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -14,7 +13,7 @@ struct BotTypingIndicator: View {
     }
     .padding(.horizontal, 9)
     .padding(.vertical, 6)
-    .background(bubble, in: .capsule)
+    .background(.quaternary, in: .capsule)
     .accessibilityElement()
     .accessibilityLabel("Working")
   }
@@ -27,7 +26,7 @@ struct BotTypingIndicator: View {
           .opacity(index == lit ? 1 : 0.4)
       }
     }
-    .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+    .foregroundStyle(.secondary)
     .animation(.easeInOut(duration: Self.stepInterval), value: lit)
   }
 
@@ -36,9 +35,5 @@ struct BotTypingIndicator: View {
 
     let step = Int(date.timeIntervalSinceReferenceDate / Self.stepInterval)
     return step % Self.dotCount
-  }
-
-  private var bubble: AnyShapeStyle {
-    isHighlighted ? AnyShapeStyle(.white.opacity(0.25)) : AnyShapeStyle(.quaternary)
   }
 }
