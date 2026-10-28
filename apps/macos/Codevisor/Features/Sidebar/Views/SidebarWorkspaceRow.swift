@@ -69,11 +69,10 @@ struct SidebarWorkspaceRow: View {
             .opacity(isHovered ? 0 : 1)
             .allowsHitTesting(!isHovered)
           if isHovered {
-            hoverActions.transition(.opacity)
+            hoverActions
           }
         }
         .frame(minWidth: hoverActionsWidth, alignment: .trailing)
-        .animation(.easeOut(duration: 0.12), value: isHovered)
       }
       .padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
