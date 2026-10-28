@@ -56,7 +56,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         )
       ) {
         if let store, let inspected {
-          inspectorView(store, inspected)
+          inspectorView(store, inspected, isVisible: panelLayout.docksInspector && isVisible)
             .inspectorColumnWidth(min: 220, ideal: idealInspectorWidth, max: 400)
             .toolbar {
               ToolbarSpacer(.flexible)
@@ -72,7 +72,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .overlay {
         AdaptiveDrawerLayer(isPresented: showsDrawer, edge: .trailing, width: min(300, panelLayout.windowWidth - 16)) {
           if let store, let inspected {
-            inspectorView(store, inspected)
+            inspectorView(store, inspected, isVisible: showsDrawer)
           }
         }
       }
@@ -119,7 +119,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     }
   }
 
-  private func inspectorView(_ store: SessionStore, _ inspected: Inspected) -> some View {
+  private func inspectorView(_ store: SessionStore, _ inspected: Inspected, isVisible: Bool) -> some View {
     let workspace = inspected.workspace
     let chatSessionId = focusedChatSessionId(in: workspace)
     let desktop = MachineDesktopRegistry.shared.session(
@@ -163,6 +163,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       }
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
+    .environment(\.isWorkspaceInspectorVisible, isVisible)
   }
 
   private func refreshKey(for inspected: Inspected) -> RefreshKey {
