@@ -80,6 +80,7 @@ struct BotListSidebar: View {
       }
       list
     }
+    .padding(.top, 8)
   }
 
   @ViewBuilder
@@ -115,7 +116,6 @@ struct BotListSidebar: View {
     } else {
       collapsedSectionIDs.append(key)
     }
-    .padding(.top, 8)
   }
 
   private var actions: BotListActions {
