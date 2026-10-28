@@ -184,3 +184,79 @@ export const makeShellEnvCache = (resolve: () => Promise<NodeJS.ProcessEnv>) => 
   const refresh = () => (latest = resolve())
   return { refresh, current: () => latest ?? refresh() }
 }
+
+const DIRECTORY_ENV_MAX_AGE_MS = 10 * 60_000
+const DIRECTORY_ENV_LIMIT = 200
+
+interface DirectoryEnvEntry {
+  readonly env: Promise<NodeJS.ProcessEnv>
+  readonly resolvedAt: number
+  revalidating: boolean
+}
+
+export interface DirectoryShellEnvCacheOptions {
+  readonly fallback?: () => Promise<NodeJS.ProcessEnv>
+  readonly maxAgeMs?: number
+  readonly limit?: number
+  readonly now?: () => number
+}
+
+export const makeDirectoryShellEnvCache = (
+  resolve: (directory: string) => Promise<NodeJS.ProcessEnv>,
+  options: DirectoryShellEnvCacheOptions = {}
+) => {
+  const maxAgeMs = options.maxAgeMs ?? DIRECTORY_ENV_MAX_AGE_MS
+  const limit = options.limit ?? DIRECTORY_ENV_LIMIT
+  const now = options.now ?? Date.now
+  const entries = new Map<string, DirectoryEnvEntry>()
+
+  const store = (
+    directory: string,
+    env: Promise<NodeJS.ProcessEnv>,
+    resolvedAt = now()
+  ): DirectoryEnvEntry => {
+    const entry = { env, resolvedAt, revalidating: false }
+    entries.delete(directory)
+    entries.set(directory, entry)
+    for (const oldest of entries.keys()) {
+      if (entries.size <= limit) break
+      entries.delete(oldest)
+    }
+    return entry
+  }
+
+  const load = (directory: string): Promise<NodeJS.ProcessEnv> => {
+    const entry = store(directory, resolve(directory))
+    entry.env.catch(() => {
+      if (entries.get(directory) === entry) entries.delete(directory)
+    })
+    return entry.env
+  }
+
+  const revalidate = (directory: string, entry: DirectoryEnvEntry): void => {
+    entry.revalidating = true
+    resolve(directory).then(
+      (env) => {
+        if (entries.get(directory) === entry) store(directory, Promise.resolve(env))
+      },
+      () => {
+        entry.revalidating = false
+      }
+    )
+  }
+
+  return {
+    current: (directory: string): Promise<NodeJS.ProcessEnv> => {
+      const entry = entries.get(directory)
+      if (entry === undefined && options.fallback !== undefined) {
+        const placeholder = store(directory, options.fallback(), Number.NEGATIVE_INFINITY)
+        revalidate(directory, placeholder)
+        return placeholder.env
+      }
+      if (entry === undefined) return load(directory)
+      if (!entry.revalidating && now() - entry.resolvedAt >= maxAgeMs) revalidate(directory, entry)
+      return entry.env
+    },
+    clear: (): void => entries.clear()
+  }
+}

@@ -3,7 +3,12 @@ import { homedir, hostname } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 
-import { makeAgentRuntime, makeShellEnvCache, resolveShellEnv } from "@codevisor/agent-runtime"
+import {
+  makeAgentRuntime,
+  makeDirectoryShellEnvCache,
+  makeShellEnvCache,
+  resolveShellEnv
+} from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress } from "@codevisor/api"
 import { installServerNativeHost } from "@codevisor/automation"
 import {
@@ -250,11 +255,17 @@ export const runServe = (
       )
     const icon = yield* Effect.promise(() => iconGuess)
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
+    const directoryEnv = makeDirectoryShellEnvCache((cwd) => resolveShellEnv({ cwd }), {
+      fallback: shellEnv.current
+    })
     const gitEnvironment = shellEnv.current()
     const agents = makeAgentRuntime({
       providerFactories: agentProviderFactories,
-      resolveEnv: shellEnv.refresh,
-      resolveDirectoryEnv: (cwd) => resolveShellEnv({ cwd })
+      resolveEnv: () => {
+        directoryEnv.clear()
+        return shellEnv.refresh()
+      },
+      resolveDirectoryEnv: directoryEnv.current
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
     let sharedAccounts: SharedAccounts | undefined
@@ -386,7 +397,7 @@ export const runServe = (
         db,
         resolveGitEnvironment: (directory) => {
           if (directory === undefined) return gitEnvironment
-          return resolveShellEnv({ cwd: directory })
+          return directoryEnv.current(directory)
         },
         gitHosts: makeGitHosts({ toolsDir: join(dirname(databasePath), "tools") }),
         terminal,
