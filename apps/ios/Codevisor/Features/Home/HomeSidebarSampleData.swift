@@ -33,9 +33,12 @@
       let projectId: UUID
       var branch: String? = nil
       var pullRequest: ServerGitPullRequest? = nil
+      var parentId: UUID? = nil
 
       var item: WorkspaceSidebarItem {
-        WorkspaceSidebarItem(id: workspace.id, serverId: workspace.serverId, projectId: projectId, routingChatIds: [])
+        WorkspaceSidebarItem(
+          id: workspace.id, serverId: workspace.serverId, projectId: projectId, routingChatIds: [],
+          parentWorkspaceId: parentId)
       }
     }
 
@@ -93,8 +96,10 @@
       _ entries: [Entry], archived: [Entry], preferences: HomeSidebarPreferences
     ) -> HomeSidebarContent {
       let byID = Dictionary(uniqueKeysWithValues: (entries + archived).map { ($0.workspace.id, $0) })
+      let tree = SidebarWorkspaceTree(entries.map(\.item), pinnedIDs: preferences.pinnedIDs)
       return HomeSidebarContent.make(
-        listed: entries.map(\.item),
+        listed: tree.roots,
+        children: tree.children,
         archived: archived.map(\.item),
         preferences: preferences,
         projects: projects,
@@ -198,7 +203,7 @@
               .chat(harnessId: "codex", fallbackSymbolName: "chevron.left.forwardslash.chevron.right"))
           ]),
         projectId: codevisorProject.id, branch: "fix-onboarding-crash",
-        pullRequest: pullRequest(605, "Fix onboarding crash", state: .open, checks: .passing)
+        pullRequest: pullRequest(605, "Fix onboarding crash", state: .open, checks: .passing), parentId: id(1)
       ),
       Entry(
         workspace: workspace(
@@ -206,11 +211,11 @@
           rows: [row(51, "Restructure docs navigation", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle"))]
         ),
         projectId: landingProject.id, branch: "docs-nav",
-        pullRequest: pullRequest(91, "Restructure docs navigation", state: .merged)
+        pullRequest: pullRequest(91, "Restructure docs navigation", state: .merged), parentId: id(4)
       ),
       Entry(
         workspace: workspace(6, "scratch", serverId: linux, rows: [row(61, "New Tab", .newTab)]),
-        projectId: apiProject.id, branch: "main"
+        projectId: apiProject.id, branch: "main", parentId: id(3)
       ),
     ]
 
