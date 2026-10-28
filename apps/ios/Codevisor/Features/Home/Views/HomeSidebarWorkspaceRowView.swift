@@ -42,6 +42,7 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       }
       trailingDetails
     }
+    .opacity(workspace.isArchived ? 0.6 : 1)
     .swipeActions(edge: .leading, allowsFullSwipe: true) {
       if !workspace.isArchived {
         Button(action: onTogglePin) {
@@ -137,7 +138,6 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
           HomeSidebarRowSubtitle(text: subtitle)
         }
       }
-      .opacity(workspace.isArchived ? 0.8 : 1)
       .frame(maxWidth: .infinity, alignment: .leading)
     } icon: {
       leadingIcon

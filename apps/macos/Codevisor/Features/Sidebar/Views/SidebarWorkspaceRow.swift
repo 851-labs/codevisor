@@ -32,6 +32,8 @@ struct SidebarWorkspaceRow: View {
     return false
   }
 
+  private var archivedOpacity: Double { isArchived ? 0.6 : 1 }
+
   var body: some View {
     HoverableRow(
       isSelected: isSelected,
@@ -43,7 +45,7 @@ struct SidebarWorkspaceRow: View {
           name: name, subtitle: subtitle, icon: icon, store: store, isExpanded: isExpanded,
           showsChevron: isExpanded != nil && isHovered && !isReordering, onToggle: onToggleChildren
         )
-        .opacity(isArchived ? 0.8 : 1)
+        .opacity(archivedOpacity)
         .padding(.vertical, 5)
         .contentShape(Rectangle())
         .gesture(
@@ -74,6 +76,7 @@ struct SidebarWorkspaceRow: View {
         }
         ZStack(alignment: .trailing) {
           properties
+            .opacity(archivedOpacity)
             .opacity(isHovered ? 0 : 1)
             .allowsHitTesting(!isHovered)
           if isHovered {
