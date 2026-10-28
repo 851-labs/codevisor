@@ -25,6 +25,8 @@ const grantedServices = [
   "kTCCServiceSystemPolicyAllFiles"
 ]
 const bridgeWaitSeconds = 120
+const tccBusyTimeoutMs = 30_000
+const tccWriteAttempts = 5
 
 export const imageSetupScript = (setup: ImageSetup): string =>
   [
@@ -32,6 +34,7 @@ export const imageSetupScript = (setup: ImageSetup): string =>
     "step() { printf '==> %s\\n' \"$*\"; }",
     `app=${shellQuote(`/Applications/${setup.app.bundleName}`)}`,
     ...appIdentityLines(),
+    ...tccWriteLines(),
     ...serverInstallLines(setup),
     ...setup.agentCommands.flatMap(agentInstallLines),
     ...grantLines(),
@@ -47,6 +50,20 @@ export const imageSetupScript = (setup: ImageSetup): string =>
 const appIdentityLines = (): ReadonlyArray<string> => [
   '[ -d "$app" ] || { echo "error: $app was not copied into the VM" >&2; exit 1; }',
   'bundle_id=$(defaults read "$app/Contents/Info.plist" CFBundleIdentifier)'
+]
+
+const tccWriteLines = (): ReadonlyArray<string> => [
+  "tcc_write() {",
+  `  for attempt in $(seq 1 ${tccWriteAttempts}); do`,
+  `    tcc_error=$("$1" sqlite3 -cmd ".timeout ${tccBusyTimeoutMs}" "$2" "$3" 2>&1) && return 0`,
+  '    case "$tcc_error" in',
+  "      *locked*) sleep 2 ;;",
+  "      *) printf 'error: %s\\n' \"$tcc_error\" >&2; exit 1 ;;",
+  "    esac",
+  "  done",
+  `  echo "error: $2 was still locked after ${tccWriteAttempts} tries of ${tccBusyTimeoutMs / 1000} s each, so macOS permissions were not granted" >&2`,
+  "  exit 1",
+  "}"
 ]
 
 const serverInstallLines = (setup: ImageSetup): ReadonlyArray<string> => [
@@ -70,7 +87,7 @@ const grantLines = (): ReadonlyArray<string> => [
   'csreq_hex=$(xxd -p "$csreq_file" | tr -d "\\n")',
   'tcc_db="/Library/Application Support/com.apple.TCC/TCC.db"',
   `for service in ${grantedServices.join(" ")}; do`,
-  "  sudo sqlite3 \"$tcc_db\" \"insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags) values ('$service', '$bundle_id', 0, 2, 4, 1, X'$csreq_hex', 0)\"",
+  "  tcc_write sudo \"$tcc_db\" \"insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, flags) values ('$service', '$bundle_id', 0, 2, 4, 1, X'$csreq_hex', 0)\"",
   "done"
 ]
 
@@ -107,7 +124,7 @@ const startAppLines = (): ReadonlyArray<string> => [
 const localNetworkLines = (): ReadonlyArray<string> => [
   "step 'Allowing Codevisor and the Tart guest agent on the local network'",
   'agent=$(readlink -f "$(command -v tart-guest-agent)")',
-  "sqlite3 \"$HOME/Library/Application Support/com.apple.TCC/TCC.db\" \"insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags) values ('kTCCServiceAppleEvents', '$agent', 1, 2, 4, 1, 0, 'com.apple.systemevents', 0)\"",
+  "tcc_write env \"$HOME/Library/Application Support/com.apple.TCC/TCC.db\" \"insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags) values ('kTCCServiceAppleEvents', '$agent', 1, 2, 4, 1, 0, 'com.apple.systemevents', 0)\"",
   "killall tccd 2>/dev/null || true",
   'bridge_socket=$(ls /tmp/codevisor-cu-"$(id -u)"-*.sock | head -1)',
   `( for attempt in 1 2 3; do node -e ${shellQuote(primeClient)} "$bridge_socket" "$HOME/.codevisor/data/computer-use-token"; node -e ${shellQuote(multicastProbe)}; sleep 10; done ) &`,
