@@ -15,6 +15,8 @@ struct CommandPaletteItemIcon: View {
     switch icon {
     case let .symbol(name):
       Image(systemName: name)
+    case let .harness(id):
+      HarnessIcon(harnessId: id ?? "", fallbackSymbolName: WorkspaceInspectorTab.harness.systemImage)
     case let .workspace(icon):
       SidebarWorkspaceLeadingIcon(
         icon: icon, store: store, color: highlightColor ?? .secondary, statusColor: highlightColor)

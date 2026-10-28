@@ -3,6 +3,7 @@ import SwiftUI
 struct CommandPaletteItem: Identifiable {
   enum Icon {
     case symbol(String)
+    case harness(String?)
     case workspace(SidebarWorkspaceIcon)
   }
 
