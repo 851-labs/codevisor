@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { LegalPage } from "../components/legal-page"
+import { privacyPluginsSection } from "../components/privacy-plugins-section"
 
 export const Route = createFileRoute("/privacy")({
   head: () => ({
@@ -165,47 +166,7 @@ const sections = [
       </>
     )
   },
-  {
-    id: "plugins",
-    title: "Plugins and connected services",
-    body: (
-      <>
-        <p>
-          When you install a plugin through the app, we record your permission for that individual
-          plugin in your Cloud account so it applies across your devices. The record includes its
-          identifier, a hash identifying its source, the notice version, and the time you agreed. We
-          keep an account-only index with its name, description, version, age rating, pane titles,
-          and tool descriptions, including for unlisted plugins you approve. The consent record does
-          not contain your workspace files, local paths, or repository credentials. We also store
-          publishers you block so your iOS devices respect that choice.
-        </p>
-        <p>
-          Plugin reports include your account identifier, the plugin’s identifier and name, your
-          selected reason, any details you enter, and the report time. We store reports in our Cloud
-          database and notify our team through Slack with the report identifier, plugin, reason, and
-          details. Avoid including secrets or sensitive personal information. We use these records
-          to investigate abuse, enforce our terms, and maintain safety. Account deletion removes
-          consent and publisher-block records and removes your account link from retained reports.
-          Reports and related Slack notifications may be retained as needed for investigations,
-          repeat-abuse prevention, legal obligations, and resolving disputes.
-        </p>
-        <p>
-          Plugins run on your connected computer and can display a pane inside Codevisor or add
-          agent tools. Their panes receive workspace context, including the working directory and
-          pane identifiers. Installing a plugin runs its declared commands on that computer.
-          Depending on its code, a plugin can access files and other resources available to its
-          process and send information to external services.
-        </p>
-        <p>
-          Review the source, commands, tools, and privacy information of a plugin before installing
-          it. Removing a plugin or a service credential stops the access that depends on it; it does
-          not delete information the provider already holds. Use that provider’s controls or contact
-          it for deletion. Browsing the plugin directory requests catalog information from Cloud,
-          and installation can download code from the source repository and package services.
-        </p>
-      </>
-    )
-  },
+  privacyPluginsSection,
   {
     id: "analytics",
     title: "Optional usage analytics",
@@ -336,6 +297,11 @@ const sections = [
           reconnection session ends.
         </p>
         <p>
+          Encrypted webhook inbox items are deleted when each listening computer has collected them
+          or after 7 days, and encrypted sign-in codes after 10 minutes. Encrypted plugin
+          credentials remain until you remove the account or credential.
+        </p>
+        <p>
           Operational logs, support correspondence, analytics, and diagnostics have retention
           criteria based on their purpose: maintaining the service, investigating failures or abuse,
           resolving your request, and understanding product usage. Provider retention settings and
@@ -463,7 +429,7 @@ function PrivacyPolicy() {
     <LegalPage
       title="Privacy, in plain language."
       description="Understand what stays on your devices, what Codevisor Cloud handles, and what reaches your AI providers and connected services — plus your choices for sharing and deletion."
-      effectiveDate="September 11, 2026"
+      effectiveDate="October 28, 2026"
       sectionsLabel="Privacy sections"
       sections={sections}
     />

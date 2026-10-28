@@ -133,47 +133,81 @@ const sections = [
           not guarantee a third party’s quality or safety.
         </p>
         <p>
-          Installing a plugin can run code on your connected computer. Browser features can make
-          signed-in website sessions available to an agent. Review what you install and connect, and
-          grant only the access you intend. We are responsible for the Services we provide; third
-          parties are responsible for their products, subject to applicable law.
+          Plugins are MCP servers. A plugin can run as a program on your connected computer or
+          connect to a service hosted by its publisher. Installing a local plugin runs its code on
+          that computer; connecting a hosted plugin sends it the requests your agents make. A plugin
+          can also show its own interface inside a chat or as a pane, and can send events that start
+          agent work. Browser features can make signed-in website sessions available to an agent.
+          Review what you install and connect, and grant only the access you intend. We are
+          responsible for the Services we provide; third parties are responsible for their products,
+          subject to applicable law.
         </p>
       </>
     )
   },
   {
     id: "plugins",
-    title: "Publishing and using plugins",
+    title: "Plugins in Codevisor",
     body: (
       <>
         <p>
-          By submitting a plugin to our registry, including by publishing a repository with the
-          codevisor-plugin topic, you agree to these publisher requirements. You must have the
-          rights to distribute the plugin, describe its functionality and data practices accurately,
-          and keep its source, metadata, and age rating current. Do not publish unlawful, abusive,
-          deceptive, malicious, or objectionable content, or code that bypasses our safeguards.
+          <strong>Where plugins come from.</strong> Codevisor’s plugin catalog combines three
+          sources: plugins we build and ship with Codevisor (“Codevisor plugins”), a short list of
+          popular plugins we choose (“Popular”), and search results from the public MCP Registry
+          operated by the Model Context Protocol project. You can also add any MCP server yourself
+          by its address or command (“custom plugins”). We don’t host or review third-party plugin
+          code. A catalog listing, including a Popular listing or a registry result, does not
+          guarantee a third party’s quality, safety, or data practices. Registry listings are
+          published under the MCP Registry’s own terms by their publishers, not by us.
         </p>
         <p>
-          Declare an ageRating of 4, 9, 13, 16, or 18 in the plugin manifest, reflecting its content
-          and functionality under Apple’s age-rating criteria. Plugins available in Codevisor on iOS
-          must fit within our supported 16+ rating. Plugins with a higher or missing rating cannot
-          open on iOS. Publishers must moderate any user-generated content their plugins provide and
-          must not conceal mature content behind an inaccurate rating.
+          <strong>Publishers.</strong> If you publish a plugin that appears in Codevisor, you must
+          have the rights to distribute it, describe its functionality and data practices
+          accurately, keep its metadata current, and must not publish unlawful, abusive, deceptive,
+          malicious, or objectionable content, or code that bypasses our safeguards. Plugins that
+          show user-generated content must moderate it and must not conceal mature content behind an
+          inaccurate rating.
         </p>
         <p>
-          We may review, filter, remove, or restrict any plugin or publisher from the registry or
-          iOS app, including for safety, privacy, age suitability, legal obligations, or App Store
-          requirements. Report a plugin using its flag button. We review reports and may contact its
-          publisher, correct its classification, or block it. These restrictions do not necessarily
-          disable software running independently on your Mac.
+          <strong>Age ratings.</strong> Plugins in the catalog carry an age rating of 4, 9, 13, 16,
+          or 18 under Apple’s age-rating criteria, set by us for Codevisor and Popular plugins and
+          adjustable by us for any plugin. Codevisor on iOS supports plugins rated 16+ or lower. On
+          iOS, a catalog plugin rated above that, or without a rating, cannot be installed from iOS,
+          and its in-chat interface and panes do not open on iOS; the reason is shown instead. Its
+          tools may still run on your computer when an agent uses them.
         </p>
         <p>
-          The installation notice names the individual plugin receiving your consent. Installing
-          allows that plugin to run on your computer, access resources available to its process, and
-          receive workspace context and information you provide through its panes or tools across
-          your connected devices. This permission does not grant iPhone system permissions. Plugins
-          must obtain any additional consent their own processing requires and provide appropriate
-          privacy information. Unlisted plugins are not endorsed by Codevisor.
+          <strong>Plugins you add yourself.</strong> A custom plugin you add by its address or
+          command is your own choice of software, not something Codevisor offers or lists. It is not
+          age-rated by us, and its in-chat interface and panes open on all your devices, including
+          iOS. You are responsible for the custom plugins you add. Report and Block still apply to
+          them, and blocks we or you place on their publisher still take effect.
+        </p>
+        <p>
+          <strong>Reporting and blocking.</strong> You can report or block any plugin you have
+          installed from Settings › Plugins, and block a publisher from its catalog page. We review
+          reports promptly and may contact the publisher, change the plugin’s age rating, or remove
+          or block it from the catalog or iOS app, including for safety, privacy, age suitability,
+          legal obligations, or App Store requirements. Blocking a publisher hides its plugins’
+          interfaces on your iOS devices. You can also reach us at{" "}
+          <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>. These restrictions do not
+          necessarily stop software already running independently on your Mac.
+        </p>
+        <p>
+          <strong>Your consent.</strong> Before a plugin is installed, Codevisor shows which plugin
+          will receive your consent. Installing allows that plugin to run on, or be called from,
+          your connected computers, to receive the requests your agents send it and the information
+          you enter in its interface, and, if you sign in to an account for it, to act with that
+          account’s access. It does not grant the plugin iPhone system permissions such as camera,
+          microphone, location, or contacts. Plugins must obtain any additional consent their own
+          processing requires and provide appropriate privacy information.
+        </p>
+        <p>
+          <strong>Accounts and events.</strong> When you connect an account to a plugin, the plugin
+          acts with that account’s access when your agents use it. If you or an agent subscribe to a
+          plugin’s events, matching events can start agent work without a new message from you,
+          within the limits Codevisor applies. You are responsible for what you ask agents to do
+          with those events, including messages they send on your behalf.
         </p>
       </>
     )
@@ -399,7 +433,7 @@ function TermsOfService() {
     <LegalPage
       title="Terms of Service"
       description="The terms for using Codevisor’s services, connecting your machines, and working with AI agents."
-      effectiveDate="September 11, 2026"
+      effectiveDate="October 28, 2026"
       sectionsLabel="Terms sections"
       sections={sections}
     />
