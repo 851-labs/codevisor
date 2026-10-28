@@ -68,6 +68,16 @@ describe("ACP permission policy", () => {
     )
   })
 
+  it("rejects a bot's mode switches without asking", () => {
+    const policy = makeAcpPermissionPolicy({ refusesModeSwitches: true })
+    const switchMode = { toolCall: { toolCallId: "t", kind: "switch_mode" } }
+    expect(policy.automaticOutcome(request(switchMode))).toEqual(selected("reject"))
+    expect(
+      policy.automaticOutcome(request({ ...switchMode, options: options.slice(0, 2) }))
+    ).toBeUndefined()
+    expect(policy.automaticOutcome(request())).toEqual(selected("once"))
+  })
+
   it("asks to leave plan mode, and when there's nothing to allow", () => {
     const policy = makeAcpPermissionPolicy()
     expect(

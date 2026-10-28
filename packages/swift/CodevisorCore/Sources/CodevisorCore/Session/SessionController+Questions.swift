@@ -193,6 +193,7 @@ extension SessionController {
   }
 
   private var planControl: PlanControl? {
+    if project.isBot { return nil }
     if let modeState,
       let plan = modeState.availableModes.first(where: { $0.canonicalMode == .plan }),
       let build = modeState.availableModes.first(where: { $0.canonicalMode == .fullAccess })

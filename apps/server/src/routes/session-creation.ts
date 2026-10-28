@@ -7,6 +7,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { withBotSessionOption } from "./bot-session-modes.js"
 import { sessionEventSink } from "./session-events.js"
 
 export const resolveSessionAccount = async (
@@ -75,9 +76,12 @@ export const startSessionAgent = async (
         sink,
         accountContext,
         toolGateway,
-        payload.configSelections === undefined
-          ? undefined
-          : { configSelections: payload.configSelections }
+        withBotSessionOption(
+          project,
+          payload.configSelections === undefined
+            ? undefined
+            : { configSelections: payload.configSelections }
+        )
       )
     ))
   )

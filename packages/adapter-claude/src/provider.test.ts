@@ -205,6 +205,53 @@ describe("ClaudeProvider", () => {
     expect(resumed.options?.disallowedTools).toEqual(subagentTools)
   })
 
+  it("turns off Claude's plan mode tools for bots, on every launch", async () => {
+    vi.useFakeTimers()
+    const botTools = [
+      "Agent",
+      "Task",
+      "ListAgents",
+      "SendMessage",
+      "Workflow",
+      "EnterPlanMode",
+      "ExitPlanMode"
+    ]
+    const fresh = new FakeQuery()
+    const recovered = new FakeQuery()
+    fresh.successors.push(recovered)
+    const started = run(
+      makeProvider(fresh).createSession(definition, "/tmp", async () => {}, undefined, undefined, {
+        bot: true
+      })
+    )
+    fresh.push(initMessage())
+    const created = await started
+    expect(fresh.options?.disallowedTools).toEqual(botTools)
+
+    const prompt = run(created.handle.prompt("do work"))
+    await fresh.nextPrompt()
+    fresh.finish()
+    await vi.advanceTimersByTimeAsync(STREAM_RECOVERY_BACKOFF_MS)
+    await recovered.nextPrompt()
+    expect(recovered.options?.disallowedTools).toEqual(botTools)
+    recovered.push(resultMessage())
+    await prompt
+
+    const resumed = new FakeQuery()
+    await run(
+      makeProvider(resumed).loadSession(
+        definition,
+        "previous-session",
+        "/tmp",
+        async () => {},
+        undefined,
+        undefined,
+        { bot: true }
+      )
+    )
+    expect(resumed.options?.disallowedTools).toEqual(botTools)
+  })
+
   it("resumes an in-flight turn on a fresh query when the SDK stream dies", async () => {
     vi.useFakeTimers()
     const fake = new FakeQuery()

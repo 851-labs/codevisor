@@ -5,7 +5,7 @@ extension SessionController {
   public var goal: SessionGoal? { model?.goal }
 
   public var supportsGoals: Bool {
-    guard let harnessId = connectedHarnessId ?? selectedHarnessId else { return false }
+    guard !project.isBot, let harnessId = connectedHarnessId ?? selectedHarnessId else { return false }
     return supportsGoalsByHarness[harnessId] ?? false
   }
 

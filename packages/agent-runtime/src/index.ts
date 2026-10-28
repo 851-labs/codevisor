@@ -5,6 +5,7 @@ import { Cause, Effect } from "effect"
 import { makeAgentRuntimeCore, withSteeringSupport } from "./agent-runtime-core.js"
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
+import { sessionGuardFor } from "./bot-session-guard.js"
 import { harnessCatalog } from "./harness-catalog.js"
 import { placeConfigValue } from "./model-selection.js"
 import { adapterPromise, runtimeError } from "./types.js"
@@ -21,6 +22,13 @@ export * from "./question-events.js"
 export * from "./usage-limits-events.js"
 export * from "./usage-limit-stops.js"
 export * from "./harness-failure-stops.js"
+export {
+  BOT_GOAL_REFUSAL,
+  BOT_PLAN_MODE_REFUSAL,
+  BOT_PLAN_OR_GOAL_REFUSAL,
+  isPlanModeId,
+  isPlanOrGoalCommand
+} from "./bot-session-guard.js"
 export * from "./agent-runtime-types.js"
 export { harnessCatalog, OPENCODE_INSTALL_PATH } from "./harness-catalog.js"
 export { locateExecutableOnPath, locateHarnessBinary } from "./executable-locator.js"
@@ -145,25 +153,19 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     createAgentSession: (harnessId, cwd, sink, account, toolGateway, sessionOptions) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
+        const guard = sessionGuardFor(sessionOptions)
         const events = createSessionEmitter()
         const created = yield* provider.createSession(
           definition,
           cwd,
-          events.emit,
+          guard.emit(events.emit),
           account,
           toolGateway,
           sessionOptions
         )
-        manageSession(
-          harnessId,
-          created.metadata,
-          cwd,
-          created.handle,
-          events.eventSource,
-          sink,
-          account
-        )
-        return created.metadata.sessionId
+        const { metadata, handle } = guard.adopt(created)
+        manageSession(harnessId, metadata, cwd, handle, events.eventSource, sink, account)
+        return metadata.sessionId
       }),
     inspectHarness: (harnessId, cwd, account, configSelections) =>
       Effect.gen(function* () {
@@ -266,28 +268,24 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           }
 
           const { definition, provider } = await Effect.runPromise(definitionFor(harnessId))
+          const guard = sessionGuardFor(sessionOptions)
           const events = createSessionEmitter()
           const loaded = await Effect.runPromise(
             provider.loadSession(
               definition,
               agentSessionId,
               cwd,
-              events.emit,
+              guard.emit(events.emit),
               account,
               toolGateway,
               sessionOptions
             )
           )
-          const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
-          return manageSession(
-            harnessId,
-            metadata,
-            cwd,
-            loaded.handle,
-            events.eventSource,
-            sink,
-            account
-          )
+          const { metadata, handle } = guard.adopt({
+            metadata: loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId },
+            handle: loaded.handle
+          })
+          return manageSession(harnessId, metadata, cwd, handle, events.eventSource, sink, account)
         })
       ),
     ...makeAgentSessionOperations(core)

@@ -85,7 +85,8 @@ export const makeCodexProvider = (
     definition: HarnessDefinition,
     cwd: string,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    disabledFeatures: ReadonlyArray<string> = []
   ): Promise<CodexClient> => {
     const command = locateCodex(definition)
     const parentEnv = { ...(await environment.envFor(cwd)) }
@@ -93,6 +94,7 @@ export const makeCodexProvider = (
     const client = await connector({
       command,
       cwd,
+      disabledFeatures,
       env: {
         ...withoutEnv(parentEnv, account?.unsetEnv),
         ...account?.env,
@@ -167,10 +169,19 @@ export const makeCodexProvider = (
       cwd,
       emit,
       account,
-      toolGateway
+      toolGateway,
+      sessionOptions
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       adapterPromise("createSession", async () => {
-        const session = await startSession(definition, cwd, emit, undefined, account, toolGateway)
+        const session = await startSession(
+          definition,
+          cwd,
+          emit,
+          undefined,
+          account,
+          toolGateway,
+          sessionOptions
+        )
         return {
           handle: handleFor(session),
           metadata: {
@@ -189,7 +200,8 @@ export const makeCodexProvider = (
       cwd,
       emit,
       account,
-      toolGateway
+      toolGateway,
+      sessionOptions
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
         const session = await startSession(
@@ -198,7 +210,8 @@ export const makeCodexProvider = (
           emit,
           agentSessionId,
           account,
-          toolGateway
+          toolGateway,
+          sessionOptions
         )
         return {
           handle: handleFor(session),

@@ -1,4 +1,5 @@
-import type { SessionConfigOption } from "@codevisor/api"
+import { decode, SessionConfigOption } from "@codevisor/api"
+import { Schema } from "effect"
 
 import {
   appendAndPublish,
@@ -36,3 +37,6 @@ export const publishSessionSelections = async (
   const session = await run(services.db.getSessionSummary(sessionId))
   await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
 }
+
+export const persistedConfigOptions = (runtime: unknown): ReadonlyArray<SessionConfigOption> =>
+  decode(Schema.Array(SessionConfigOption))(field(runtime, "configOptions"))

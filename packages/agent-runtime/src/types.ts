@@ -184,6 +184,7 @@ export interface CreateSessionOptions {
   readonly modelListTimeoutMs?: number
   readonly skillListTimeoutMs?: number
   readonly configSelections?: Readonly<Record<string, string>>
+  readonly bot?: boolean
 }
 
 export interface AgentProvider {

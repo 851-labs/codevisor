@@ -1,11 +1,13 @@
 import { placeConfigValue } from "@codevisor/agent-runtime"
-import { decode, SessionConfigOption, type SetConfigRequest } from "@codevisor/api"
-import { Schema } from "effect"
+import type { SessionConfigOption, SetConfigRequest } from "@codevisor/api"
 
 import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { run } from "../server-context.js"
-import { field } from "../unknown-values.js"
-import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
+import {
+  persistedConfigOptions,
+  publishSessionConfigOptions,
+  publishSessionSelections
+} from "./session-config-publish.js"
 import { configRestorePriority } from "./session-config-restore.js"
 import { withSessionMutation } from "./session-operations.js"
 import { loadAgentSessionFor } from "./session-workspace.js"
@@ -103,6 +105,3 @@ const persistPick = async (
   )
   await publishSessionSelections(services, fanout, sessionId)
 }
-
-const persistedConfigOptions = (runtime: unknown): ReadonlyArray<SessionConfigOption> =>
-  decode(Schema.Array(SessionConfigOption))(field(runtime, "configOptions"))

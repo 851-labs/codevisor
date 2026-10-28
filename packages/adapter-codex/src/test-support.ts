@@ -255,6 +255,7 @@ export const setup = async (
     listedSkills?: Array<Record<string, unknown>>
     toolGateway?: ToolGatewayConfig
     codexConfigToml?: string | null
+    bot?: boolean
   } = {}
 ) => {
   const client = new FakeCodexClient()
@@ -288,9 +289,17 @@ export const setup = async (
   const nextEvent = (matches: (event: RuntimeEvent) => boolean): Promise<RuntimeEvent> =>
     new Promise((resolve) => waiters.push({ matches, resolve }))
   const fixture = { client, events, nextEvent, provider, spawns }
+  const sessionOptions = options.bot === undefined ? undefined : { bot: options.bot }
   if (options.resume === undefined) {
     const created = await run(
-      provider.createSession(definition, "/tmp/project", emit, undefined, options.toolGateway)
+      provider.createSession(
+        definition,
+        "/tmp/project",
+        emit,
+        undefined,
+        options.toolGateway,
+        sessionOptions
+      )
     )
     return { ...fixture, created, loaded: undefined }
   }
@@ -301,7 +310,8 @@ export const setup = async (
       "/tmp/project",
       emit,
       undefined,
-      options.toolGateway
+      options.toolGateway,
+      sessionOptions
     )
   )
   return { ...fixture, created: undefined, loaded }

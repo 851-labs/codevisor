@@ -2,6 +2,7 @@ import { isRecord } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type { AgentRuntimeConfig } from "./agent-runtime-types.js"
+import { announcedModeId } from "./bot-session-guard.js"
 import {
   locateExecutableOnPath,
   locateHarnessBinary as locateDefinitionBinary
@@ -40,20 +41,6 @@ export interface ManagedSession {
 export interface AgentRuntimeState {
   currentEnv: NodeJS.ProcessEnv
   envRefresh: Promise<void> | undefined
-}
-
-const announcedModeId = (
-  event: RuntimeEvent,
-  payload: Record<string, unknown>
-): string | undefined => {
-  if (event.kind === "session.updated" && typeof payload.modeId === "string") return payload.modeId
-  if (
-    event.kind === "session.output" &&
-    payload.sessionUpdate === "current_mode_update" &&
-    typeof payload.currentModeId === "string"
-  )
-    return payload.currentModeId
-  return undefined
 }
 
 export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
@@ -129,7 +116,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
           configOptions: payload.configOptions as AgentSessionMetadata["configOptions"]
         }
       }
-      const modeId = announcedModeId(event, payload)
+      const modeId = announcedModeId(event)
       if (modeId !== undefined && session.metadata.modes !== undefined) {
         session.metadata = {
           ...session.metadata,

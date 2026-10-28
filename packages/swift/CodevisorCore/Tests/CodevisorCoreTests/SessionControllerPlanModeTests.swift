@@ -26,6 +26,19 @@ struct SessionControllerPlanModeTests {
     #expect(controller.modeState?.currentModeId == "build")
   }
 
+  @Test("A bot's chat offers neither plan mode nor goals, even when its harness supports both")
+  func botChatHasNoPlanOrGoal() async {
+    let controller = makeController(isBot: true)
+    controller.supportsGoalsByHarness["codex"] = true
+
+    await controller.togglePlanMode()
+
+    #expect(!controller.hasPlanMode)
+    #expect(!controller.supportsGoals)
+    #expect(!controller.canEditGoal)
+    #expect(controller.modeState?.currentModeId == "build")
+  }
+
   @Test("Entering plan mode disarms the goal composer")
   func planAndGoalAreMutuallyExclusive() async {
     let controller = makeController()
@@ -96,9 +109,11 @@ struct SessionControllerPlanModeTests {
 
   private func makeController(
     model: SessionModel? = nil,
-    currentModeId: String = "build"
+    currentModeId: String = "build",
+    isBot: Bool = false
   ) -> SessionController {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/plan-mode-tests"))
+    var project = Project.fromFolder(URL(fileURLWithPath: "/tmp/plan-mode-tests"))
+    project.isBot = isBot
     let controller = SessionController(
       project: project,
       configCache: ConfigOptionCache(store: InMemoryStore())

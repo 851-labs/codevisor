@@ -90,6 +90,16 @@ describe("CodexProvider", () => {
     expect(config).not.toHaveProperty("mcp_servers")
   })
 
+  it("launches bots' Codex app-server with goals turned off, on new and resumed threads", async () => {
+    const { spawns } = await setup({ bot: true })
+    const { spawns: resumedSpawns } = await setup({ bot: true, resume: "thread-existing" })
+    const { spawns: chatSpawns } = await setup()
+
+    expect(spawns[0]?.disabledFeatures).toEqual(["goals"])
+    expect(resumedSpawns[0]?.disabledFeatures).toEqual(["goals"])
+    expect(chatSpawns[0]?.disabledFeatures).toEqual([])
+  })
+
   it("omits native automation disables when the codex config does not define those servers", async () => {
     const toolGateway: ToolGatewayConfig = {
       name: "codevisor",

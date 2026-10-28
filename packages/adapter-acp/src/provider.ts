@@ -246,7 +246,8 @@ export const makeAcpProvider = (
     cwd: string,
     emit: RuntimeEmit,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    sessionOptions?: CreateSessionOptions
   ): Effect.Effect<AcpAgentConnection, AgentRuntimeError> =>
     Effect.gen(function* () {
       const launch = yield* runtimeEffect("resolveHarness", () => {
@@ -273,7 +274,8 @@ export const makeAcpProvider = (
             },
             toolGateway === undefined ? {} : { toolGateway }
           ),
-          harnessId: definition.id
+          harnessId: definition.id,
+          ...(sessionOptions?.bot === true ? { bot: true } : {})
         },
         emit
       )
@@ -297,7 +299,14 @@ export const makeAcpProvider = (
       sessionOptions
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
-        const connection = yield* connect(definition, cwd, emit, account, toolGateway)
+        const connection = yield* connect(
+          definition,
+          cwd,
+          emit,
+          account,
+          toolGateway,
+          sessionOptions
+        )
         return yield* connection
           .createSession(cwd, toolGateway, skillListTimeoutMs(sessionOptions))
           .pipe(
@@ -324,7 +333,14 @@ export const makeAcpProvider = (
       sessionOptions
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
-        const connection = yield* connect(definition, cwd, emit, account, toolGateway)
+        const connection = yield* connect(
+          definition,
+          cwd,
+          emit,
+          account,
+          toolGateway,
+          sessionOptions
+        )
         return yield* connection
           .loadSession(agentSessionId, cwd, toolGateway, skillListTimeoutMs(sessionOptions))
           .pipe(

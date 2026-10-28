@@ -96,7 +96,7 @@ export const makeStdioAcpConnectorWithOptions = (
       spawnFailure.catch(() => undefined)
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
-      const permissions = makeAcpPermissionPolicy()
+      const permissions = makeAcpPermissionPolicy({ refusesModeSwitches: request.bot === true })
       const safeEmit = ignoringEmitFailures(emit)
       const emitQuestionResolved = (
         questionId: string,

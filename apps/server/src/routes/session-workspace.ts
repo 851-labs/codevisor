@@ -29,6 +29,7 @@ import {
   assertNotMovingIntoRemoteBot,
   botForParentSession
 } from "./bot-guards.js"
+import { withBotSessionOption } from "./bot-session-modes.js"
 import { assertRemoteParentVerified } from "./fleet-calls.js"
 import { restoreSessionConfigSelections } from "./session-config-restore.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
@@ -314,7 +315,9 @@ export const loadAgentSessionFor = async (
   if (session.harnessAccountId === undefined && accountContext !== undefined) {
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
-  const startOptions = { configSelections: session.configSelections ?? {} }
+  const startOptions = withBotSessionOption(project, {
+    configSelections: session.configSelections ?? {}
+  })
   const sink = sessionEventSink(services, fanout, serverId, sessionId)
   const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
   const load = (agentSessionId: string) =>

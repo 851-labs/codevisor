@@ -7,6 +7,7 @@ import { claudeToolPermission } from "./tool-permission.js"
 
 export interface QueryLaunch {
   readonly abort: AbortController
+  readonly bot: boolean
   readonly claudePath: string
   readonly currentSession: CurrentSession
   readonly cwd: string
@@ -18,6 +19,7 @@ export interface QueryLaunch {
 }
 
 const nativeSubagentTools = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow"]
+const planModeTools = ["EnterPlanMode", "ExitPlanMode"]
 
 export const claudeQueryOptions = (launch: QueryLaunch): ClaudeOptions => ({
   ...launch.startOptions,
@@ -27,7 +29,7 @@ export const claudeQueryOptions = (launch: QueryLaunch): ClaudeOptions => ({
   includePartialMessages: true,
   pathToClaudeCodeExecutable: launch.claudePath,
   systemPrompt: { type: "preset", preset: "claude_code" },
-  disallowedTools: nativeSubagentTools,
+  disallowedTools: disallowedToolsFor(launch),
   ...gatewayMcpOptions(launch.toolGateway),
   canUseTool: claudeToolPermission(launch.currentSession),
   permissionMode: "bypassPermissions",
@@ -35,6 +37,11 @@ export const claudeQueryOptions = (launch: QueryLaunch): ClaudeOptions => ({
   hooks: claudeSessionHooks(launch.currentSession),
   ...sessionArgs(launch)
 })
+
+const disallowedToolsFor = (launch: QueryLaunch): Array<string> => {
+  if (!launch.bot) return nativeSubagentTools
+  return [...nativeSubagentTools, ...planModeTools]
+}
 
 const gatewayMcpOptions = (
   toolGateway: ToolGatewayConfig | undefined

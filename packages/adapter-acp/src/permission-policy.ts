@@ -22,6 +22,9 @@ const spawnsNativeSubagent = (toolCall: Record<string, unknown> | undefined): bo
   return tool === "spawn_agent" || tool.startsWith("subagent_")
 }
 
+const switchesMode = (toolCall: Record<string, unknown> | undefined): boolean =>
+  toolCall?.kind === "switch_mode"
+
 const choose = (
   request: Record<string, unknown>,
   kinds: ReadonlyArray<string>
@@ -34,7 +37,13 @@ const choose = (
   return { outcome: { optionId: String(option.optionId), outcome: "selected" } }
 }
 
-export const makeAcpPermissionPolicy = (): AcpPermissionPolicy => {
+export interface AcpPermissionPolicyOptions {
+  readonly refusesModeSwitches?: boolean
+}
+
+export const makeAcpPermissionPolicy = (
+  options: AcpPermissionPolicyOptions = {}
+): AcpPermissionPolicy => {
   const modes = new Map<string, SessionModeState>()
 
   const gated = (sessionId: string): boolean => {
@@ -58,7 +67,10 @@ export const makeAcpPermissionPolicy = (): AcpPermissionPolicy => {
 
       const toolCall = record(request.toolCall)
       if (spawnsNativeSubagent(toolCall)) return choose(request, ["reject_once", "reject_always"])
-      if (gated(request.sessionId) || toolCall?.kind === "switch_mode") return undefined
+      if (switchesMode(toolCall) && options.refusesModeSwitches === true) {
+        return choose(request, ["reject_once", "reject_always"])
+      }
+      if (gated(request.sessionId) || switchesMode(toolCall)) return undefined
 
       return choose(request, ["allow_once", "allow_always"])
     }

@@ -27,6 +27,11 @@ import {
 } from "../server-context.js"
 import type { CodevisorServerConfig, CodevisorServerServices } from "../server-context.js"
 import { routeBotConversation } from "./bot-conversation.js"
+import {
+  refuseGoalForBot,
+  refusePlanConfigForBot,
+  refusePlanModeForBot
+} from "./bot-session-modes.js"
 import { refuseWhileUpdating } from "./prompt-delivery.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
@@ -149,6 +154,7 @@ export const cancelTurn = async (route: RouteContext, sessionId: string): Promis
 
 const setMode = async (route: RouteContext, sessionId: string): Promise<boolean> => {
   const payload = await readSchema(route.request, SetModeRequest)
+  await refusePlanModeForBot(route.services, sessionId, payload.modeId)
   await writeIdempotentAction(route.services, route.response, sessionId, "mode", payload, () =>
     applyMode(route, sessionId, payload)
   )
@@ -168,6 +174,7 @@ const applyMode = async (
 const setConfig = async (route: RouteContext, sessionId: string): Promise<boolean> => {
   const { services, fanout, request, response, config } = route
   const payload = await readSchema(request, SetConfigRequest)
+  await refusePlanConfigForBot(services, sessionId, payload)
   await writeIdempotentAction(services, response, sessionId, "config", payload, async () =>
     applySessionConfigPick(services, fanout, config.id, sessionId, payload)
   )
@@ -177,6 +184,7 @@ const setConfig = async (route: RouteContext, sessionId: string): Promise<boolea
 const setGoal = async (route: RouteContext, sessionId: string): Promise<boolean> => {
   await refuseWhileUpdating(route.services, route.routeState, sessionId)
   const payload = await readSchema(route.request, SetGoalRequest)
+  await refuseGoalForBot(route.services, sessionId)
   await writeIdempotentAction(route.services, route.response, sessionId, "goal", payload, () =>
     applyGoal(route, sessionId, payload)
   )

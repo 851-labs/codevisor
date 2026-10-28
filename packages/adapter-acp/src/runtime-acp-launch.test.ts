@@ -45,4 +45,23 @@ describe("ACP harness launch", () => {
       await rm(launchFilesDirectory, { force: true, recursive: true })
     }
   })
+
+  it("launches bots so their mode switches are refused, on new and resumed sessions", async () => {
+    const connector = makeConnector()
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const bot = { bot: true }
+
+    await run(runtime.createAgentSession("gemini", "/tmp/chat", sink))
+    await run(runtime.createAgentSession("gemini", "/tmp/bot", sink, undefined, undefined, bot))
+    await run(
+      runtime.loadAgentSession("gemini", "agent-1", "/tmp/bot", sink, undefined, undefined, bot)
+    )
+
+    expect(connector.requests.map((request) => request.bot)).toEqual([undefined, true, true])
+  })
 })

@@ -148,9 +148,15 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "GET",
     "/v1/sessions/:id/usage-limits"
   ),
-  apiTool("agents.debug.mode_set", "Set an agent's mode.", "POST", "/v1/sessions/:id/mode", {
-    body: SetModeRequest
-  }),
+  apiTool(
+    "agents.debug.mode_set",
+    "Set an agent's mode. Bots can't use plan mode.",
+    "POST",
+    "/v1/sessions/:id/mode",
+    {
+      body: SetModeRequest
+    }
+  ),
   apiTool(
     "agents.debug.config_set",
     "Set one of an agent's configuration options, such as its model.",
@@ -160,7 +166,7 @@ export const codevisorAgentApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "agents.debug.goal_set",
-    "Create or update an agent's persistent goal.",
+    "Create or update an agent's persistent goal. Bots can't have goals.",
     "POST",
     "/v1/sessions/:id/goal",
     { body: SetGoalRequest }

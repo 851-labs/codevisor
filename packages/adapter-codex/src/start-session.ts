@@ -1,5 +1,6 @@
 import {
   sanitizeModelValue,
+  type CreateSessionOptions,
   type HarnessAccountContext,
   type HarnessDefinition,
   type ProviderEnvironment,
@@ -23,11 +24,16 @@ export interface CodexStartSessionDeps {
     definition: HarnessDefinition,
     cwd: string,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    disabledFeatures?: ReadonlyArray<string>
   ) => Promise<CodexClient>
   readonly environment: ProviderEnvironment
   readonly readConfigFile: (path: string) => string | undefined
 }
+
+const disabledFeaturesFor = (
+  sessionOptions: CreateSessionOptions | undefined
+): ReadonlyArray<string> => (sessionOptions?.bot === true ? ["goals"] : [])
 
 export const makeStartSession = ({
   connect,
@@ -40,9 +46,16 @@ export const makeStartSession = ({
     emit: RuntimeEmit,
     resumeThreadId: string | undefined,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    sessionOptions?: CreateSessionOptions
   ): Promise<CodexSession> => {
-    const client = await connect(definition, cwd, account, toolGateway)
+    const client = await connect(
+      definition,
+      cwd,
+      account,
+      toolGateway,
+      disabledFeaturesFor(sessionOptions)
+    )
     const config = codexThreadConfig({ environment, readConfigFile, account, toolGateway })
     const response: unknown = await openThread(client, cwd, resumeThreadId, config)
 

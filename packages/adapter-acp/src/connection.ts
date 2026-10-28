@@ -23,6 +23,7 @@ export interface AcpHarnessLaunchRequest {
   readonly args: ReadonlyArray<string>
   readonly cwd: string
   readonly env: NodeJS.ProcessEnv
+  readonly bot?: boolean
 }
 
 export interface AcpPromptResult {

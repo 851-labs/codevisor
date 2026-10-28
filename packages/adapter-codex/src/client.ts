@@ -28,6 +28,7 @@ export interface CodexSpawnRequest {
   readonly command: string
   readonly cwd: string
   readonly env: NodeJS.ProcessEnv
+  readonly disabledFeatures?: ReadonlyArray<string>
 }
 
 export type CodexConnector = (request: CodexSpawnRequest) => Promise<CodexClient>
@@ -46,7 +47,8 @@ export const spawnCodexClient: CodexConnector = async (request) => {
       "-c",
       "features.apply_patch_streaming_events=true",
       "-c",
-      "features.default_mode_request_user_input=true"
+      "features.default_mode_request_user_input=true",
+      ...(request.disabledFeatures ?? []).flatMap((feature) => ["-c", `features.${feature}=false`])
     ],
     {
       cwd: request.cwd,

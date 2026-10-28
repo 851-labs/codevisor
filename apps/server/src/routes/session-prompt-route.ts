@@ -11,6 +11,7 @@ import { PromptRequest } from "@codevisor/api"
 import { HttpFailure, readSchema, run, sessionIsArchived, writeJson } from "../server-context.js"
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { agentMessageEvent } from "./bot-conversation.js"
+import { refusePlanOrGoalCommandForBot } from "./bot-session-modes.js"
 import { conversationalBotForSession, postBotMessage } from "./bot-turns.js"
 import type { PromptDeliveryOutcome } from "./prompt-delivery.js"
 import {
@@ -40,6 +41,7 @@ export const sendPrompt = async (route: RouteContext, sessionId: string): Promis
     if (existing !== undefined) return writeAccepted(response, existing)
   }
 
+  await refusePlanOrGoalCommandForBot(services, sessionId, payload.text)
   await refuseWhileUpdating(services, routeState, sessionId)
   /* v8 ignore next 3 */
   if (promptActionPending(routeState, actionKey)) {

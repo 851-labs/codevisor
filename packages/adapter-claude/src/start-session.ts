@@ -74,6 +74,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     let session: ClaudeSession | undefined
     const options = claudeQueryOptions({
       abort,
+      bot: sessionOptions?.bot === true,
       claudePath,
       currentSession: () => session,
       cwd,
