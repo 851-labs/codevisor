@@ -5,7 +5,8 @@ import {
   highestThinkingLevel,
   offeredConfigValues,
   placeConfigValue,
-  sanitizeModelValue
+  sanitizeModelValue,
+  withRunningThoughtLevel
 } from "./model-selection.js"
 
 describe("model-selection", () => {
@@ -68,5 +69,46 @@ describe("model-selection", () => {
         value === "old-haiku" ? "haiku" : undefined
       )
     ).toBeUndefined()
+  })
+})
+
+const thoughtOption = (category: string, currentValue: string, id = "effort") => ({
+  category,
+  currentValue,
+  id,
+  name: id,
+  options: [
+    { name: "Medium", value: "medium" },
+    { name: "High", value: "high" }
+  ]
+})
+
+describe("withRunningThoughtLevel", () => {
+  it("adds the level a session is running when its picks have none", () => {
+    const runtime = {
+      configOptions: [
+        thoughtOption("model", "medium", "model"),
+        thoughtOption("thought_level", "medium")
+      ]
+    }
+    expect(withRunningThoughtLevel({ model: "opus" }, runtime)).toEqual({
+      effort: "medium",
+      model: "opus"
+    })
+    expect(withRunningThoughtLevel(undefined, runtime)).toEqual({ effort: "medium" })
+  })
+
+  it("keeps an explicit pick and ignores runtime state it cannot read", () => {
+    const runtime = { configOptions: [thoughtOption("thought_level", "medium")] }
+    expect(withRunningThoughtLevel({ effort: "high" }, runtime)).toEqual({ effort: "high" })
+    expect(withRunningThoughtLevel({ model: "opus" }, { configOptions: "broken" })).toEqual({
+      model: "opus"
+    })
+    expect(withRunningThoughtLevel(undefined, undefined)).toBeUndefined()
+  })
+
+  it("skips a running level the option does not offer", () => {
+    const runtime = { configOptions: [thoughtOption("thought_level", "")] }
+    expect(withRunningThoughtLevel({ model: "opus" }, runtime)).toEqual({ model: "opus" })
   })
 })

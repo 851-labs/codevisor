@@ -1,4 +1,5 @@
-import type { SessionConfigOption } from "@codevisor/api"
+import { SessionConfigOption } from "@codevisor/api"
+import { Option, Schema } from "effect"
 
 const ansiEscapePattern =
   // oxlint-disable-next-line no-control-regex
@@ -65,4 +66,21 @@ export const placeConfigValue = (
   if (offered.has(value)) return value
   const reconciled = reconcile?.(option, value)
   return reconciled !== undefined && offered.has(reconciled) ? reconciled : undefined
+}
+
+const RuntimeConfigOptions = Schema.Struct({ configOptions: Schema.Array(SessionConfigOption) })
+
+export const withRunningThoughtLevel = (
+  selections: Readonly<Record<string, string>> | undefined,
+  runtimeState: unknown
+): Readonly<Record<string, string>> | undefined => {
+  const runtime = Schema.decodeUnknownOption(RuntimeConfigOptions)(runtimeState)
+  if (Option.isNone(runtime)) return selections
+  const running = runtime.value.configOptions.find(
+    (option) =>
+      option.category === "thought_level" && offeredConfigValues(option).has(option.currentValue)
+  )
+  if (running === undefined || selections?.[running.id] !== undefined) return selections
+
+  return { ...selections, [running.id]: running.currentValue }
 }

@@ -1,4 +1,4 @@
-import type { HarnessAccountContext } from "@codevisor/agent-runtime"
+import { withRunningThoughtLevel, type HarnessAccountContext } from "@codevisor/agent-runtime"
 import type { CreateSessionRequest, Project } from "@codevisor/api"
 
 import {
@@ -48,9 +48,9 @@ export const withStartPicks = async (
   const inherited = Object.entries(parent.configSelections ?? {}).filter(
     ([configId, value]) => unavailable[configId] !== value
   )
-  return inherited.length === 0
-    ? payload
-    : { ...payload, configSelections: Object.fromEntries(inherited) }
+  const runtime = await run(services.db.getSessionRuntimeState(parent.id))
+  const picks = { ...withRunningThoughtLevel(undefined, runtime), ...Object.fromEntries(inherited) }
+  return Object.keys(picks).length === 0 ? payload : { ...payload, configSelections: picks }
 }
 
 export const startSessionAgent = async (

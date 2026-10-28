@@ -72,9 +72,7 @@ export const metadataFor = (
   if (effortLevels.length > 0) {
     options.push({
       category: "thought_level",
-      currentValue: effortLevels.includes(session.currentEffort)
-        ? session.currentEffort
-        : defaultEffortFor(effortLevels),
+      currentValue: displayedEffort(session, effortLevels),
       id: "effort",
       name: "Effort",
       options: effortLevels.map((level) => ({
@@ -100,6 +98,38 @@ export const metadataFor = (
     modes: { ...PERMISSION_MODES, currentModeId: session.currentModeId },
     supportsGoals: true
   }
+}
+
+export const isSettableEffort = (effort: string | undefined): effort is string =>
+  effort !== undefined && SETTABLE_EFFORT_LEVELS.has(effort)
+
+export const adoptReportedEffort = async (
+  session: ClaudeSession,
+  level: string | undefined
+): Promise<void> => {
+  if (session.effortPicked || !isSettableEffort(level)) return
+  session.effortDefaults.set(session.currentModel, level)
+  if (session.onDefaultModel) session.effortDefaults.set("", level)
+  if (session.currentEffort === level) return
+
+  session.currentEffort = level
+  await session.emit({
+    kind: "session.updated",
+    payload: {
+      configId: "effort",
+      configOptions: metadataFor(session).configOptions,
+      value: level
+    },
+    subjectId: session.key
+  })
+}
+
+const displayedEffort = (session: ClaudeSession, levels: ReadonlyArray<string>): string => {
+  if (levels.includes(session.currentEffort)) return session.currentEffort
+  const learned = session.effortDefaults.get(session.currentModel)
+  if (learned !== undefined && levels.includes(learned)) return learned
+
+  return defaultEffortFor(levels)
 }
 
 export const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>
@@ -202,7 +232,7 @@ export const claudeStartOptions = (
 ): Pick<ClaudeOptions, "model" | "settings"> => {
   const model = selections.model === undefined ? "" : sanitizeModelValue(selections.model)
   const settings: Record<string, unknown> = {}
-  if (selections.effort !== undefined && SETTABLE_EFFORT_LEVELS.has(selections.effort)) {
+  if (isSettableEffort(selections.effort)) {
     settings.effortLevel = selections.effort
   }
   if (selections.speed === "fast" || selections.speed === "standard") {

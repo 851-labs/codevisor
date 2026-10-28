@@ -12,7 +12,7 @@ import type {
 
 import { claudeAccountEnv } from "./account-env.js"
 import { emitBackgroundTasks } from "./background-tasks.js"
-import { alignStartModel, SETTABLE_EFFORT_LEVELS } from "./models.js"
+import { alignStartModel, isSettableEffort } from "./models.js"
 import { claudeQueryOptions } from "./query-options.js"
 import { InputQueue, type ClaudeQuery, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { makeClaudeCommandCatalog, trackClaudeSkills, type ClaudeCommandCatalog } from "./skills.js"
@@ -21,6 +21,7 @@ import {
   adoptModelsWhenListed,
   modelsWithin,
   savedStartOptions,
+  startEffortFor,
   type ConfigSelections,
   type KnownClaudeModels
 } from "./start-models.js"
@@ -48,6 +49,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     subagentTranscripts
   } = deps
   const knownModels: KnownClaudeModels = { list: [] }
+  const effortDefaults = new Map<string, string>()
   const commandCatalog = makeClaudeCommandCatalog()
 
   const startSession = async (
@@ -67,7 +69,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     const abort = new AbortController()
     const env = claudeAccountEnv(await environment.envFor(cwd), account)
     const saved = sessionOptions?.configSelections ?? {}
-    const startOptions = savedStartOptions(saved, knownModels.list, toolGateway)
+    const startOptions = savedStartOptions(saved, knownModels.list, effortDefaults, toolGateway)
 
     let session: ClaudeSession | undefined
     const options = claudeQueryOptions({
@@ -88,6 +90,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       claudePath,
       commandCatalog,
       cwd,
+      effortDefaults,
       emit,
       env,
       getSessionInfo,
@@ -125,6 +128,7 @@ interface ClaudeSessionSeed {
   readonly claudePath: string
   readonly commandCatalog: ClaudeCommandCatalog
   readonly cwd: string
+  readonly effortDefaults: Map<string, string>
   readonly emit: RuntimeEmit
   readonly env: Record<string, string>
   readonly getSessionInfo: typeof sdkGetSessionInfo
@@ -150,7 +154,10 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   accumulators: new Map(),
   backgroundTasks: new Map(),
   hiddenBackgroundTaskIds: new Set(),
-  currentEffort: savedEffort(seed.saved),
+  currentEffort: startEffortFor(seed.saved, seed.startModel, seed.effortDefaults),
+  effortPicked: isSettableEffort(seed.saved.effort),
+  effortDefaults: seed.effortDefaults,
+  onDefaultModel: seed.startModel === undefined,
   currentMessageId: undefined,
   currentMessageTextStreamed: false,
   currentModel: seed.startModel ?? "",
@@ -194,10 +201,3 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   turnActive: false,
   turnId: randomUUID()
 })
-
-const savedEffort = (saved: ConfigSelections): string => {
-  if (saved.effort === undefined) return "default"
-  if (!SETTABLE_EFFORT_LEVELS.has(saved.effort)) return "default"
-
-  return saved.effort
-}

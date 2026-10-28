@@ -1,3 +1,4 @@
+import { withRunningThoughtLevel } from "@codevisor/agent-runtime"
 import type { ExecutionJob } from "@codevisor/api"
 import type {
   AutomationToolProvider,
@@ -264,13 +265,13 @@ const withCallerDefaults = async (
   if (path !== remoteAgentStartPath || !isRecord(args) || "callerDefaults" in args) return args
   const caller = await run(deps.config.db.getSessionSummary(sessionId)).catch(() => undefined)
   if (caller === undefined) return args
+  const runtime = await run(deps.config.db.getSessionRuntimeState(sessionId))
+  const configSelections = withRunningThoughtLevel(caller.configSelections, runtime)
   return {
     ...args,
     callerDefaults: {
       harness: caller.harnessId,
-      ...(caller.configSelections === undefined
-        ? {}
-        : { configSelections: caller.configSelections })
+      ...(configSelections === undefined ? {} : { configSelections })
     }
   }
 }

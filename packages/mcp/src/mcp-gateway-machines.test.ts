@@ -385,7 +385,7 @@ describe("gateway machines and execution annotations", () => {
     }
   })
 
-  it("starts an agent on another machine with the caller's harness and config", async () => {
+  it("starts an agent on another machine with the caller's harness, picks and running effort", async () => {
     const { db, manager, remoteCalls } = await studioGateway()
     const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-remote-start" }))
     const session = await run(
@@ -393,7 +393,20 @@ describe("gateway machines and execution annotations", () => {
         harnessId: "codex",
         projectId: project.id,
         title: "Plan it",
-        configSelections: { model: "gpt-6", reasoning: "high" }
+        configSelections: { model: "gpt-6" }
+      })
+    )
+    await run(
+      db.saveSessionRuntimeState(session.id, {
+        configOptions: [
+          {
+            category: "thought_level",
+            currentValue: "high",
+            id: "reasoning",
+            name: "Reasoning",
+            options: [{ name: "High", value: "high" }]
+          }
+        ]
       })
     )
     const issued = await manager.issueGateway(session.id, project.id)

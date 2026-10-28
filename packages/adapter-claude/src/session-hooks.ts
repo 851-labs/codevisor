@@ -1,15 +1,21 @@
 import type { HookCallbackMatcher, HookEvent, HookInput } from "@anthropic-ai/claude-agent-sdk"
 
 import { emitAuthoritativeDiff } from "./diff-stats.js"
+import { adoptReportedEffort } from "./models.js"
 import type { ClaudeSession, ClaudeTaskEntry, CurrentSession } from "./session.js"
 import { applyTaskCreate, emitTaskPlanUpdate } from "./tasks.js"
 
 export type ClaudeSessionHooks = Partial<Record<HookEvent, Array<HookCallbackMatcher>>>
 
-type SessionHook = (session: ClaudeSession | undefined, hookInput: HookInput) => void
+type SessionHook = (
+  session: ClaudeSession | undefined,
+  hookInput: HookInput
+) => Promise<void> | void
 
 export const claudeSessionHooks = (currentSession: CurrentSession): ClaudeSessionHooks => ({
+  PreToolUse: hookOn(currentSession, adoptHookEffort),
   PostToolUse: hookOn(currentSession, emitToolDiff),
+  Stop: hookOn(currentSession, adoptHookEffort),
   TaskCreated: hookOn(currentSession, recordCreatedTask),
   TaskCompleted: hookOn(currentSession, recordCompletedTask)
 })
@@ -18,12 +24,21 @@ const hookOn = (currentSession: CurrentSession, hook: SessionHook): Array<HookCa
   {
     hooks: [
       async (hookInput) => {
-        hook(currentSession(), hookInput)
+        await hook(currentSession(), hookInput)
         return {}
       }
     ]
   }
 ]
+
+const adoptHookEffort = async (
+  session: ClaudeSession | undefined,
+  hookInput: HookInput
+): Promise<void> => {
+  if (session === undefined || hookInput.agent_id !== undefined) return
+
+  await adoptReportedEffort(session, hookInput.effort?.level)
+}
 
 const emitToolDiff = (session: ClaudeSession | undefined, hookInput: HookInput): void => {
   if (hookInput.hook_event_name !== "PostToolUse") return

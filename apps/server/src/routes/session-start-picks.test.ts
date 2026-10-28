@@ -69,4 +69,46 @@ describe("a new chat's starting picks", () => {
       inherited
     ])
   })
+
+  it("starts a child on the effort its parent is running when the parent never picked one", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const parent = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    await run(
+      services.db.saveSessionRuntimeState(parent.id, {
+        configOptions: [
+          {
+            category: "thought_level",
+            currentValue: "medium",
+            id: "reasoning",
+            name: "Reasoning",
+            options: [
+              { name: "Medium", value: "medium" },
+              { name: "High", value: "high" }
+            ]
+          }
+        ]
+      })
+    )
+    const server = await startWithApp(services)
+
+    const created = decode(SessionSummary)(
+      (
+        await jsonRequest(server, "/v1/sessions", {
+          body: JSON.stringify({
+            projectId: project.id,
+            harnessId: "codex",
+            parentSessionId: parent.id
+          }),
+          method: "POST"
+        })
+      ).body
+    )
+
+    expect(created.configSelections).toEqual({ reasoning: "medium" })
+  })
 })

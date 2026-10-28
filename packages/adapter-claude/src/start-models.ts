@@ -7,6 +7,7 @@ import {
   applyClaudeModelFromProvider,
   claudeStartOptions,
   currentClaudeModelFor,
+  isSettableEffort,
   metadataFor,
   resolveClaudeModel
 } from "./models.js"
@@ -28,15 +29,26 @@ const DEFAULT_MODEL_LIST_TIMEOUT_MS = 3000
 export const savedStartOptions = (
   saved: ConfigSelections,
   known: ReadonlyArray<ClaudeModel>,
+  effortDefaults: ReadonlyMap<string, string>,
   toolGateway: ToolGatewayConfig | undefined
 ): Pick<ClaudeOptions, "model" | "settings"> => {
   const model = savedModelChoice(saved, known)
   return claudeStartOptions({
-    effort: saved.effort,
+    effort: startEffortFor(saved, model, effortDefaults),
     model,
     speed: saved.speed,
     ...(toolGateway === undefined ? {} : { skillOverrides: supersededSkillsOff })
   })
+}
+
+export const startEffortFor = (
+  saved: ConfigSelections,
+  model: string | undefined,
+  effortDefaults: ReadonlyMap<string, string>
+): string => {
+  if (isSettableEffort(saved.effort)) return saved.effort
+
+  return effortDefaults.get(model ?? "") ?? "default"
 }
 
 export const modelsWithin = (

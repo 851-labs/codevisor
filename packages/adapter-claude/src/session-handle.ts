@@ -170,8 +170,12 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
         const model = resolveRequestedClaudeModel(session, value)
         await session.q.setModel(model)
         session.currentModel = model
-        if (!effortLevelsFor(session).includes(session.currentEffort)) {
+        session.onDefaultModel = false
+        if (!session.effortPicked) {
+          await followModelDefaultEffort(session)
+        } else if (!effortLevelsFor(session).includes(session.currentEffort)) {
           session.currentEffort = "default"
+          session.effortPicked = false
         }
         if (session.currentSpeed === "fast" && !supportsFastMode(session)) {
           await session.q.applyFlagSettings({ fastMode: false })
@@ -181,6 +185,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
         const flags: Record<string, unknown> = { effortLevel: value === "default" ? null : value }
         await session.q.applyFlagSettings(flags)
         session.currentEffort = value
+        session.effortPicked = value !== "default"
       } else if (configId === "speed") {
         await session.q.applyFlagSettings({ fastMode: value === "fast" })
         session.currentSpeed = value === "fast" ? "fast" : "standard"
@@ -266,3 +271,12 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
     claudeSessionContextFrom(await session.q.getContextUsage())
   )
 })
+
+const followModelDefaultEffort = async (session: ClaudeSession): Promise<void> => {
+  const effort = session.effortDefaults.get(session.currentModel) ?? "default"
+  if (effort === session.currentEffort) return
+
+  const flags: Record<string, unknown> = { effortLevel: effort === "default" ? null : effort }
+  await session.q.applyFlagSettings(flags)
+  session.currentEffort = effort
+}

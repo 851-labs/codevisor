@@ -171,6 +171,38 @@ describe("POST /v1/agents", () => {
     ).toMatchObject({ error: expect.stringContaining("Pass project") })
   })
 
+  it("starts a same-harness agent on the effort its caller is running", async () => {
+    const { services, caller, startAgent } = await startable()
+    await run(
+      services.db.saveSessionRuntimeState(caller, {
+        configOptions: [
+          {
+            category: "thought_level",
+            currentValue: "medium",
+            id: "reasoning",
+            name: "Reasoning",
+            options: [
+              { name: "Medium", value: "medium" },
+              { name: "High", value: "high" }
+            ]
+          }
+        ]
+      })
+    )
+
+    const withModel = decode(StartedAgent)(
+      (await startAgent({ model: "gpt-6", isolation: "project" })).body
+    )
+    const withoutModel = decode(StartedAgent)((await startAgent({ isolation: "project" })).body)
+
+    expect(await run(services.db.getSessionSummary(withModel.agentId))).toMatchObject({
+      configSelections: { reasoning: "medium", model: "gpt-6" }
+    })
+    expect(await run(services.db.getSessionSummary(withoutModel.agentId))).toMatchObject({
+      configSelections: { reasoning: "medium" }
+    })
+  })
+
   it("uses only the model when the new agent runs another harness", async () => {
     const { services, startAgent } = await startable()
 

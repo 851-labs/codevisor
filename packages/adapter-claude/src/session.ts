@@ -190,6 +190,9 @@ export interface ClaudeSession {
   currentModel: string
   currentModeId: string
   currentEffort: string
+  effortPicked: boolean
+  onDefaultModel: boolean
+  readonly effortDefaults: Map<string, string>
   currentSpeed: "standard" | "fast"
   models: ReadonlyArray<ClaudeModel>
   readonly skills: ClaudeSkills

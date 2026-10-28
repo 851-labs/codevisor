@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 
+import { withRunningThoughtLevel } from "@codevisor/agent-runtime"
 import {
   DEFAULT_SUBSCRIPTION_EVENTS,
   StartAgentRequest,
@@ -95,7 +96,8 @@ const callerOf = async (route: RouteContext, request: StartAgentRequest): Promis
   if (request.callerAgentId === undefined) return remoteCaller(request)
   const session = await findSession(route.services.db, request.callerAgentId)
   if (session === undefined) throw new HttpFailure(422, `Unknown caller: ${request.callerAgentId}`)
-  return localCaller(session)
+  const runtime = await run(route.services.db.getSessionRuntimeState(session.id))
+  return localCaller(session, runtime)
 }
 
 const remoteCaller = ({ callerDefaults, remoteParentAgentId }: StartAgentRequest): AgentCaller => ({
@@ -108,14 +110,14 @@ const remoteCaller = ({ callerDefaults, remoteParentAgentId }: StartAgentRequest
   configSelections: callerDefaults?.configSelections
 })
 
-const localCaller = (session: SessionSummary): AgentCaller => ({
+const localCaller = (session: SessionSummary, runtime: unknown): AgentCaller => ({
   sessionId: session.id,
   parentKey: session.id,
   projectId: session.projectId,
   workspaceId: session.workspaceId,
   worktreeName: session.worktreeName,
   harnessId: session.harnessId,
-  configSelections: session.configSelections
+  configSelections: withRunningThoughtLevel(session.configSelections, runtime)
 })
 
 const projectIdFor = async (
