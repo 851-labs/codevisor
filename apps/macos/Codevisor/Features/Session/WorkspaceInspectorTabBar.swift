@@ -90,11 +90,12 @@ struct WorkspaceInspectorTabBar: View {
   }
 
   private func label(for tab: WorkspaceInspectorTab, highlighted: Bool) -> some View {
-    HStack(spacing: 4) {
+    let weight: NSFont.Weight = highlighted ? .semibold : .regular
+    return HStack(spacing: 4) {
       if tab == .harness {
-        HarnessIcon(
-          harnessId: harnessId ?? "", fallbackSymbolName: tab.systemImage, size: 10,
-          weight: highlighted ? .semibold : .regular)
+        HarnessIcon(harnessId: harnessId ?? "", fallbackSymbolName: tab.systemImage, size: 10, weight: weight)
+      } else {
+        MenuSymbolIcon(systemName: tab.systemImage, size: 10, weight: weight)
       }
       Text(tab.title)
     }
