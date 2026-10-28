@@ -283,7 +283,8 @@ func serverSession(from session: ChatSession) -> ServerSession {
     latestAttentionSequence: session.latestAttentionSequence,
     lastSeenAttentionSequence: session.lastSeenAttentionSequence,
     unreadCount: session.unreadCount,
-    hasUnreadError: session.hasUnreadError
+    hasUnreadError: session.hasUnreadError,
+    parentSessionId: session.parentSessionId
   )
 }
 

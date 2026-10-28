@@ -16,7 +16,8 @@ extension SidebarView {
         workspaceRenameTitle = workspace.name
         renamingWorkspace = workspace
       },
-      archive: { archiveWorkspace($0) }
+      archive: { archiveWorkspace($0) },
+      toggleChildren: { toggleChildren(of: $0) }
     )
   }
 
@@ -138,6 +139,7 @@ extension SidebarView {
     moveSelection(awayFrom: workspace)
     environment.archiveWorkspace(workspace)
     pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
+    collapsedGroupIDs.removeAll { $0 == SidebarRows.childrenGroupID(workspace.id) }
   }
 
 }

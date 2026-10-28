@@ -41,7 +41,7 @@ extension SidebarView {
       SidebarWorkspaceSection(
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
         isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
-        isPinned: placement == .pinned, isReordering: isReordering, actions: actions
+        isPinned: placement == .pinned, isReordering: isReordering, isExpanded: row.isExpanded, actions: actions
       )
       .equatable()
       .opacity(draggingID == item.id ? 0.4 : 1)

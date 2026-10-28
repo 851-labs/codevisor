@@ -10,6 +10,7 @@ struct SidebarWorkspaceSection: View, Equatable {
     let newTab: @MainActor (SidebarWorkspaceListItem) -> Void
     let rename: @MainActor (Workspace) -> Void
     let archive: @MainActor (Workspace) -> Void
+    let toggleChildren: @MainActor (UUID) -> Void
   }
 
   let item: WorkspaceSidebarItem
@@ -19,13 +20,14 @@ struct SidebarWorkspaceSection: View, Equatable {
   let isSelected: Bool
   let isPinned: Bool
   let isReordering: Bool
+  let isExpanded: Bool?
   let actions: Actions
   @Environment(AppEnvironment.self) private var environment
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
       && lhs.rowDetails == rhs.rowDetails && lhs.isSelected == rhs.isSelected && lhs.isPinned == rhs.isPinned
-      && lhs.isReordering == rhs.isReordering
+      && lhs.isReordering == rhs.isReordering && lhs.isExpanded == rhs.isExpanded
   }
 
   var body: some View {
@@ -41,6 +43,8 @@ struct SidebarWorkspaceSection: View, Equatable {
         machine: content.machine(for: workspace, isPinned: isPinned),
         isSelected: isSelected,
         isReordering: isReordering,
+        isExpanded: isExpanded,
+        onToggleChildren: { actions.toggleChildren(workspace.id) },
         onActivate: { actions.activate(listItem) },
         lifecycle: .active(
           isPinned: isPinned,

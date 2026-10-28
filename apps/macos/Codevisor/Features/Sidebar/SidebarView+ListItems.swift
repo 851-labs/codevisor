@@ -23,7 +23,8 @@ extension SidebarView {
   }
 
   var workspaceGroups: [SidebarWorkspaceGroup] {
-    workspaceListing.groups
+    let listing = workspaceListing
+    return listing.groups(of: listing.tree.roots)
   }
 
   func isPinned(_ workspace: Workspace) -> Bool {
@@ -37,6 +38,10 @@ extension SidebarView {
     } else {
       pinnedWorkspaceIDs.append(id)
     }
+  }
+
+  func toggleChildren(of id: UUID) {
+    toggleGroup(SidebarRows.childrenGroupID(id))
   }
 
   func toggleGroup(_ id: String) {
