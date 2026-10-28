@@ -141,7 +141,9 @@ struct RootView: View {
       .focusedSceneValue(
         \.sidebarVisibility, SidebarVisibilityToggle(isVisible: clientSidebarVisible, setVisible: setSidebarVisible)
       )
-      .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
+      .background(
+        WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
+      )
       .onChange(of: selection) { _, newValue in
         guard let store else { return }
         if case let .session(serverId, sessionId) = newValue {
@@ -226,7 +228,6 @@ struct RootView: View {
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
       RootSidebar(selection: $selection, store: store)
-        .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
     } detail: {
       Group {
         if let store {

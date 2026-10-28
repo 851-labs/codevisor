@@ -14,3 +14,16 @@ struct SidebarModePicker: View {
     .fixedSize()
   }
 }
+
+extension SidebarModePicker {
+  static func sidebarWidthFitting(pickerWidth: CGFloat?, showsWindowControls: Bool) -> CGFloat {
+    let windowControls: CGFloat = 92
+    let fullScreenLeadingInset: CGFloat = 6
+    let fallbackPickerWidth: CGFloat = 111
+    let toolbarItemPadding: CGFloat = 4
+    let sidebarToggle: CGFloat = 44
+    let trailingInset: CGFloat = 4
+    return (showsWindowControls ? windowControls : fullScreenLeadingInset) + toolbarItemPadding
+      + (pickerWidth ?? fallbackPickerWidth) + toolbarItemPadding + sidebarToggle + trailingInset
+  }
+}
