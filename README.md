@@ -33,7 +33,10 @@
 
 ---
 
-![Codevisor showing active coding-agent chats across several projects with a detailed response in the main workspace.](.github/images/codevisor-workspace-2026-07-17-v2.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/images/codevisor-hero-dark.png">
+  <img src=".github/images/codevisor-hero-light.png" alt="Codevisor on Mac, iPad, and iPhone with the same “Add skin tones to the picker” chat open on each, and projects on This Mac, Mac Studio, and VPS in the sidebar">
+</picture>
 
 **Run Claude Code, Codex, Pi, and any ACP-compatible coding agent on your machines in one native macOS app.**
 
