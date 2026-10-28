@@ -37,4 +37,9 @@ public enum SandboxFieldValue: Codable, Equatable, Hashable, Sendable {
     if case let .string(value) = self { return value }
     return nil
   }
+
+  public var numberValue: Double? {
+    if case let .number(value) = self { return value }
+    return nil
+  }
 }

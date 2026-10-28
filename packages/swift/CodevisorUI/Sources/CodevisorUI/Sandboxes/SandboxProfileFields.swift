@@ -10,7 +10,9 @@ struct SandboxProfileFields: View {
     Section {
       SandboxTextInput(label: "Name", prompt: "", text: $draft.name)
       ForEach(vendor.profileFields) { field in
-        SandboxFieldRow(field: field, draft: $draft.fields, hosts: model.hosts(for: field.capability))
+        SandboxFieldRow(
+          field: field, draft: $draft.fields, hosts: model.hosts(for: field.capability),
+          steps: model.steps(for: field, in: draft))
       }
     }
   }

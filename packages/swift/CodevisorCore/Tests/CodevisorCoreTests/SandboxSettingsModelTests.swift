@@ -115,6 +115,39 @@ struct SandboxSettingsModelTests {
     #expect(back == ["sandboxes", "addProfile"])
   }
 
+  @Test("Memory offers the steps up to the provider Mac's limit, falls back without it, and fits a saved size")
+  func memorySteps() async throws {
+    let tart = SettingsFakeServerClient.tart
+    let bigOnStudio = Self.tartProfile(id: "a", on: "studio", memoryGiB: 24)
+    let bigOnUnknownMac = Self.tartProfile(id: "b", on: "gone", memoryGiB: 24)
+    let model = SandboxSettingsModel()
+    let studio = SandboxMachine(name: "Mac Studio", client: SettingsFakeServerClient(serverId: "studio"))
+    await model.load(from: SettingsFakeServerClient(profiles: [bigOnStudio, bigOnUnknownMac]), machines: [studio])
+    let memory = try #require(tart.profileFields.first)
+    let studioProvider = try #require(model.provider("studio"))
+    let unknownMacProvider = try #require(model.provider("gone"))
+
+    let newOnStudio = try #require(
+      model.steps(for: memory, in: SandboxProfileDraft(provider: studioProvider, vendor: tart)))
+    let newOnUnknownMac = model.steps(
+      for: memory, in: SandboxProfileDraft(provider: unknownMacProvider, vendor: tart))
+    let savedOnStudio = model.steps(for: memory, in: SandboxProfileDraft(profile: bigOnStudio, vendor: tart))
+    let savedOnUnknownMac = model.steps(for: memory, in: SandboxProfileDraft(profile: bigOnUnknownMac, vendor: tart))
+
+    #expect(newOnStudio.values == [4, 6, 8, 12, 16, 20])
+    #expect(newOnUnknownMac?.values == [4, 6, 8])
+    #expect(savedOnStudio?.fitted(24) == 20)
+    #expect(savedOnUnknownMac?.values == [4, 6, 8, 12, 16, 24])
+    #expect(newOnStudio.fitted(10) == 8)
+    #expect(newOnStudio.fitted(2) == 4)
+    #expect(newOnStudio.fitted(nil) == 4)
+  }
+
+  private static func tartProfile(id: String, on providerId: String, memoryGiB: Double) -> ServerSandboxProfile {
+    ServerSandboxProfile(
+      id: id, name: id, vendor: "tart", providerId: providerId, values: ["memoryGiB": .number(memoryGiB)])
+  }
+
   @Test("Deleting a profile removes its provider once no other profile uses it")
   func deletingTheLastProfile() async {
     let client = SettingsFakeServerClient(
@@ -140,7 +173,11 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   static let tart = ServerSandboxVendor(
     id: "tart", displayName: "Tart", sandboxNoun: "Tart VM", platform: "darwin", tested: true,
     providerFields: [.init(key: "machineId", label: "Mac", type: .machine, required: true, capability: "tart")],
-    profileFields: [])
+    profileFields: [
+      .init(
+        key: "memoryGiB", label: "Memory", type: .number, defaultValue: .number(4), min: 4, max: 512,
+        steps: [4, 6, 8, 12, 16, 24, 32], fallbackMax: 8, unit: "GB")
+    ])
   static let e2b = ServerSandboxVendor(
     id: "e2b", displayName: "E2B", sandboxNoun: "E2B sandbox", platform: "linux", tested: true,
     providerFields: [.init(key: "apiKey", label: "API key", type: .secret, required: true)],
@@ -168,7 +205,9 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   }
 
   func sandboxVendors() async throws -> ServerSandboxVendors {
-    ServerSandboxVendors(vendors: [Self.tart, Self.e2b], capabilities: serverId == "local" ? [] : ["tart"])
+    guard serverId != "local" else { return ServerSandboxVendors(vendors: [Self.tart, Self.e2b]) }
+    return ServerSandboxVendors(
+      vendors: [Self.tart, Self.e2b], capabilities: ["tart"], maximums: ["tart": ["memoryGiB": 20]])
   }
 
   func sandboxProviders() async throws -> [ServerSandboxProvider] { providers }

@@ -6,6 +6,7 @@ struct SandboxFieldRow: View {
   @Binding var draft: SandboxFieldDraft
   var secretSaved = false
   var hosts: [SandboxHost] = []
+  var steps: SandboxFieldSteps?
 
   var body: some View {
     switch field.type {
@@ -20,7 +21,11 @@ struct SandboxFieldRow: View {
     case .secret:
       SandboxTextInput(label: field.label, prompt: secretPrompt, text: text, isSecret: true)
     case .number:
-      SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .number)
+      if let steps {
+        SandboxStepPicker(field: field, steps: steps, text: text)
+      } else {
+        SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .number)
+      }
     case .url:
       SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .url)
     case .string:

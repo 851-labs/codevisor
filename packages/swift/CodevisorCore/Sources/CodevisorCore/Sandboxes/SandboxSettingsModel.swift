@@ -39,6 +39,14 @@ public final class SandboxSettingsModel {
     return hosts.filter { $0.capabilities.contains(capability) }
   }
 
+  public func steps(for field: ServerSandboxField, in draft: SandboxProfileDraft) -> SandboxFieldSteps? {
+    guard field.steps != nil else { return nil }
+
+    let saved = profile(draft.profileId ?? "")?.values[field.key]?.numberValue
+    return SandboxFieldSteps(
+      field: field, hostMaximum: hostMaximum(of: field, providerId: draft.providerId), keeping: saved)
+  }
+
   public func title(of provider: ServerSandboxProvider) -> String {
     let vendor = vendor(provider.vendor)
     let vendorName = vendor?.displayName ?? provider.vendor
@@ -97,6 +105,13 @@ public final class SandboxSettingsModel {
     hosts.first { $0.serverId == serverId }?.name ?? "another Mac"
   }
 
+  private func hostMaximum(of field: ServerSandboxField, providerId: String?) -> Double? {
+    guard let provider = provider(providerId),
+      let machineId = provider.machineId(for: vendor(provider.vendor))
+    else { return nil }
+    return hosts.first { $0.serverId == machineId }?.maximums[provider.vendor]?[field.key]
+  }
+
   private func attempt(_ work: () async throws -> Void) async -> Bool {
     do {
       try await work()
@@ -126,9 +141,10 @@ public final class SandboxSettingsModel {
 
   private static func host(_ machine: SandboxMachine) async -> SandboxHost? {
     guard let info = try? await machine.client.info(),
-      let capabilities = try? await machine.client.sandboxVendors().capabilities,
-      !capabilities.isEmpty
+      let vendors = try? await machine.client.sandboxVendors(),
+      !vendors.capabilities.isEmpty
     else { return nil }
-    return SandboxHost(serverId: info.id, name: machine.name, capabilities: Set(capabilities))
+    return SandboxHost(
+      serverId: info.id, name: machine.name, capabilities: Set(vendors.capabilities), maximums: vendors.maximums)
   }
 }
