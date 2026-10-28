@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillFinishLaunching(_ notification: Notification) {
     guard !AppPreview.rendersFixtures else { return }
+    if SandboxMode.isEnabled { NSApp.setActivationPolicy(.accessory) }
     let bundleURL = Bundle.main.bundleURL
     do {
       if let lease = try AppInstanceLease.acquireDefault(for: bundleURL) {
@@ -51,6 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Log.updates.fault("launch: could not acquire the app instance lease: \(error)")
       NSApp.terminate(nil)
     }
+  }
+
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    !SandboxMode.isEnabled
   }
 
   private func activateExistingInstance(from bundleURL: URL) -> Bool {
