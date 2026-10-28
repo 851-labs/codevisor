@@ -214,8 +214,8 @@ cp "$runtime_dir/apps/server/dist/"*.js "$runtime_dir/"
 cp "$runtime_dir/apps/server/dist/"*.d.ts "$runtime_dir/" 2>/dev/null || true
 for subdir in "$runtime_dir/apps/server/dist"/*/; do
   subdir_name="$(basename "$subdir")"
-  rm -rf "${runtime_dir:?}/$subdir_name"
-  cp -R "$subdir" "$runtime_dir/$subdir_name"
+  mkdir -p "$runtime_dir/$subdir_name"
+  cp -R "$subdir". "$runtime_dir/$subdir_name/"
 done
 
 write_launcher() {
