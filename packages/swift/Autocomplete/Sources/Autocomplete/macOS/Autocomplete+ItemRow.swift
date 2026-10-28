@@ -2,14 +2,6 @@
   import SwiftUI
 
   extension Autocomplete {
-    struct BottomEdge: Sendable {
-      let isLast: Bool
-      let height: CGFloat
-      let inset: CGFloat
-      let coordinateSpace: UUID
-      func contains(bottom: CGFloat) -> Bool { isLast && height > 0 && abs(height - bottom - inset) <= 1 }
-    }
-
     struct ItemRow: View {
       let item: CatalogItem
       let host: Host
@@ -17,11 +9,10 @@
       let showsChecks: Bool
       let showsIcons: Bool
       let isScrolling: Bool
-      let bottomEdge: BottomEdge
+      let clip: ListClip
       @Environment(\.autocompleteStyle) private var style
       @Environment(\.isEnabled) private var isEnabled
       @State private var pointerInside = false
-      @State private var rowBottom: CGFloat = 0
 
       private var disabled: Bool { !isEnabled || item.definition.isDisabled }
       private var hovering: Bool { pointerInside && !isScrolling }
@@ -33,16 +24,12 @@
       private var iconForeground: AnyShapeStyle {
         highlighted ? AnyShapeStyle(style.itemHighlight.foreground) : AnyShapeStyle(.secondary)
       }
-      private var bottomRadius: CGFloat {
-        bottomEdge.contains(bottom: rowBottom) ? style.metrics.bottomCornerRadius : style.metrics.itemCornerRadius
-      }
       private var showsAccessories: Bool {
         style.showsAccessories && !disabled && (hovering || highlighted || focus.wrappedValue?.itemID == item.id)
       }
 
       var body: some View {
         let metrics = style.metrics
-        let edge = bottomEdge
         ZStack(alignment: .trailing) {
           Button(role: item.definition.role) {
             _ = host.activate(item.id)
@@ -79,9 +66,7 @@
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
               if highlighted {
-                HighlightBackground(
-                  highlight: style.itemHighlight,
-                  topCornerRadius: metrics.itemCornerRadius, bottomCornerRadius: bottomRadius)
+                HighlightBackground(highlight: style.itemHighlight, cornerRadius: metrics.itemCornerRadius, clip: clip)
               }
             }
             .contentShape(Rectangle())
@@ -143,15 +128,6 @@
             host.hover(item.id)
           } else if !isScrolling || host.highlight.source == .pointer {
             host.endHover(item.id)
-          }
-        }
-        .background {
-          if edge.isLast {
-            Color.clear.onGeometryChange(for: CGFloat.self) { geometry in
-              geometry.frame(in: .named(edge.coordinateSpace)).maxY
-            } action: {
-              rowBottom = $0
-            }
           }
         }
       }

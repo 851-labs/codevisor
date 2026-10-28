@@ -319,22 +319,6 @@
       }
     }
 
-    @Test("Only a visually bottom-aligned final row receives concentric corners")
-    func bottomCorners() {
-      let coordinateSpace = UUID()
-      let edge = Autocomplete.BottomEdge(isLast: true, height: 300, inset: 4, coordinateSpace: coordinateSpace)
-      #expect(edge.contains(bottom: 296))
-      #expect(edge.contains(bottom: 295.5))
-      #expect(!edge.contains(bottom: 88))
-      #expect(!edge.contains(bottom: 320))
-      #expect(
-        !Autocomplete.BottomEdge(isLast: false, height: 300, inset: 4, coordinateSpace: coordinateSpace).contains(
-          bottom: 296))
-      #expect(
-        !Autocomplete.BottomEdge(isLast: true, height: 0, inset: 4, coordinateSpace: coordinateSpace).contains(
-          bottom: -4))
-    }
-
     @Test("Small layout bounds never produce negative heights")
     func constrainedSize() {
       var metrics = Autocomplete.Metrics()

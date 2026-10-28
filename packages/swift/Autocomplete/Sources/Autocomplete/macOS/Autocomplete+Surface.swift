@@ -68,8 +68,6 @@
       @State private var host = Host()
       @State private var prepared = PreparedCatalog()
       @State private var measurements = Measurements()
-      @State private var coordinateSpace = UUID()
-      @State private var footerCoordinateSpace = UUID()
       @State private var isScrolling = false
       @State private var inputFocus = InputFocus()
       @FocusState private var focusedRow: FocusTarget?
@@ -114,12 +112,14 @@
             Rectangle().fill(.separator).frame(height: 1).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
               rows(
-                snapshot.footerRows, catalog: catalog, metrics: metrics, footer: true,
-                lastID: snapshot.footerItems.last?.id, height: footerHeight - 1)
+                snapshot.footerRows, catalog: catalog, metrics: metrics,
+                clip: ListClip(
+                  footer: true, horizontalInset: metrics.listHorizontalInset,
+                  topCornerRadius: metrics.itemCornerRadius, bottomCornerRadius: metrics.bottomCornerRadius))
             }
             .padding(.horizontal, metrics.listHorizontalInset)
+            .coordinateSpace(ListClip.footerSpace)
             .padding(.vertical, metrics.listVerticalInset)
-            .coordinateSpace(name: footerCoordinateSpace)
           }
         }
         .autocompleteStyle(
@@ -196,14 +196,18 @@
                   .frame(height: max(0, height - 2 * metrics.listVerticalInset))
               }
               rows(
-                snapshot.rows, catalog: catalog, metrics: metrics, footer: false,
-                lastID: snapshot.footerItems.isEmpty ? snapshot.resultItems.last?.id : nil, height: height)
+                snapshot.rows, catalog: catalog, metrics: metrics,
+                clip: ListClip(
+                  footer: false, horizontalInset: metrics.listHorizontalInset,
+                  topCornerRadius: metrics.itemCornerRadius,
+                  bottomCornerRadius: snapshot.footerItems.isEmpty
+                    ? metrics.bottomCornerRadius : metrics.itemCornerRadius))
             }
             .padding(.horizontal, metrics.listHorizontalInset)
-            .padding(.vertical, metrics.listVerticalInset)
             .background { ScrollConfigurator(usesMiniScroller: style.usesMiniScroller, onResolve: host.linkResults) }
           }
           .scrollBounceBehavior(.basedOnSize)
+          .padding(.vertical, metrics.listVerticalInset)
           .onScrollPhaseChange { _, phase in isScrolling = phase != .idle }
           .onChange(of: host.highlight.highlighted) { _, target in
             guard let target, host.highlight.source == .keyboard else { return }
@@ -216,13 +220,9 @@
           .accessibilityValue(Strings.resultCount(snapshot.resultItems.count))
         }
         .frame(height: height)
-        .coordinateSpace(name: coordinateSpace)
       }
 
-      private func rows(
-        _ rows: [PresentationRow], catalog: Catalog, metrics: Metrics,
-        footer: Bool, lastID: NodeID?, height: CGFloat
-      ) -> some View {
+      private func rows(_ rows: [PresentationRow], catalog: Catalog, metrics: Metrics, clip: ListClip) -> some View {
         ForEach(rows) { row in
           switch row.kind {
           case let .heading(title):
@@ -252,10 +252,7 @@
             ItemRow(
               item: item, host: host, focus: $focusedRow,
               showsChecks: catalog.showsCheckmarks, showsIcons: catalog.showsIcons,
-              isScrolling: !footer && isScrolling,
-              bottomEdge: BottomEdge(
-                isLast: item.id == lastID, height: height,
-                inset: metrics.listVerticalInset, coordinateSpace: footer ? footerCoordinateSpace : coordinateSpace)
+              isScrolling: !clip.footer && isScrolling, clip: clip
             )
             .id(item.id)
           }
