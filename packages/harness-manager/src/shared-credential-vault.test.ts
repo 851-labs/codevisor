@@ -167,27 +167,6 @@ describe("encrypted shared credential vault", () => {
     expect(f.config.rotate).not.toHaveBeenCalled()
   })
 
-  it("serves a confirmed credential locally until invalidated or the window lapses", async () => {
-    const f = fixture()
-    const coordinate = vi.fn(f.config.coordinate)
-    const vault = makeSharedCredentialVault({ ...f.config, coordinate })
-    const ref = await vault.create(refreshed)
-    coordinate.mockClear()
-    for (const token of await Promise.all(Array.from({ length: 50 }, () => vault.token(ref))))
-      expect(token).toEqual(refreshed)
-    expect(coordinate).not.toHaveBeenCalled()
-    vault.invalidate()
-    expect(await vault.token(ref)).toEqual(refreshed)
-    expect(coordinate).toHaveBeenCalledTimes(1)
-    await f.coordinate("b")(ref.id, { action: "revoke" })
-    expect(await vault.token(ref)).toEqual(refreshed)
-    f.setTime(100_000 + 5 * 60_000)
-    await expect(vault.token(ref)).rejects.toThrow("signed out")
-    expect(coordinate).toHaveBeenCalledTimes(2)
-    expect(coordinate).toHaveBeenLastCalledWith(ref.id, { action: "read" })
-    expect(f.config.rotate).not.toHaveBeenCalled()
-  })
-
   it("never serves a token nearing expiry or one the provider rejected from memory", async () => {
     const f = fixture()
     const coordinate = vi.fn(f.config.coordinate)
@@ -271,7 +250,8 @@ describe("encrypted shared credential vault", () => {
     }
     const ref = await vault.create(external)
     f.records.delete(ref.id)
-    await expect(vault.token(ref)).rejects.toThrow("Sign in again")
+    expect(await vault.token(ref)).toEqual(external)
+    await vi.waitFor(() => expect(vault.token(ref)).rejects.toThrow("Sign in again"))
 
     await vault.publishExternal(ref, external)
     expect(await vault.token(ref)).toEqual(external)

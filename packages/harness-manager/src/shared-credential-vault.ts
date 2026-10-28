@@ -97,6 +97,14 @@ const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
   ["pi", "opencode", "grok-build", "mcp"].includes(harnessId) ? 6 * 60_000 : 60_000
 
 const OFFLINE_VALIDITY_MS = 30_000
+const retriesRejectedAccess: ReadonlySet<SharedTokenBundle["harnessId"]> = new Set([
+  "claude-code",
+  "codex"
+])
+const signedOutReasons: ReadonlySet<SharedCredentialError["reason"]> = new Set([
+  "reauthenticate",
+  "revoked"
+])
 const LEASE_WAIT_MS = 8_000
 
 const cannotRefresh = (bundle: SharedTokenBundle): boolean =>
@@ -208,6 +216,16 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
     const bundle = held(reference)
     return bundle !== undefined && serves(bundle, rejectedAccessToken) ? bundle : undefined
   }
+  const servingStale = (
+    reference: SharedCredentialReference,
+    rejectedAccessToken: string | undefined
+  ): SharedTokenBundle | undefined => {
+    const entry = cached.get(reference.id)
+    if (entry === undefined || pendingReceipts.has(reference.id)) return undefined
+    if (!retriesRejectedAccess.has(entry.bundle.harnessId)) return undefined
+    if (now() - entry.verifiedAt < revalidateAfterMs) return undefined
+    return serves(entry.bundle, rejectedAccessToken) ? entry.bundle : undefined
+  }
   const coordinatorFor = (reference: SharedCredentialReference) => ({
     read: () => config.coordinate(reference.id, { action: "read" }),
     acquire: (generation: number, operationId: string) =>
@@ -295,6 +313,18 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       return remember(reference, committed.credential)
     }
   }
+  const forgetUnusable = (reference: SharedCredentialReference) => (cause: unknown) => {
+    if (cause instanceof SharedCredentialError && signedOutReasons.has(cause.reason))
+      cached.delete(reference.id)
+  }
+  const fly = (
+    reference: SharedCredentialReference,
+    rejectedAccessToken?: string
+  ): Promise<SharedTokenBundle> => {
+    const pending = read(reference, rejectedAccessToken).finally(() => flights.delete(reference.id))
+    flights.set(reference.id, pending)
+    return pending
+  }
   return {
     create: async (bundle: SharedTokenBundle): Promise<SharedCredentialReference> => {
       const reference = { id: randomUUID(), key: randomBytes(32).toString("base64url") }
@@ -310,16 +340,17 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       rejectedAccessToken?: string
     ): Promise<SharedTokenBundle> => {
       const existing = flights.get(reference.id)
+      const stale = servingStale(reference, rejectedAccessToken)
+      if (stale !== undefined) {
+        if (existing === undefined) fly(reference).catch(forgetUnusable(reference))
+        return stale
+      }
       if (existing !== undefined) {
         const token = await existing
         if (token.accessToken !== rejectedAccessToken) return token
         return read(reference, rejectedAccessToken)
       }
-      const pending = read(reference, rejectedAccessToken).finally(() =>
-        flights.delete(reference.id)
-      )
-      flights.set(reference.id, pending)
-      return pending
+      return fly(reference, rejectedAccessToken)
     },
     publishExternal: async (
       reference: SharedCredentialReference,
