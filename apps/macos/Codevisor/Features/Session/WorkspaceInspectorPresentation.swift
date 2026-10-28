@@ -40,7 +40,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var usage = WorkspaceInspectorUsageModel()
   @State private var lastOpenedChats: [UUID: UUID] = [:]
   let store: SessionStore?
-  let selection: SidebarSelection?
+  @Binding var selection: SidebarSelection?
+  var revealRequest: SidebarRevealRequest?
   var idealInspectorWidth: CGFloat = 260
 
   func body(content: Content) -> some View {
@@ -122,6 +123,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected, isVisible: Bool) -> some View {
     let workspace = inspected.workspace
     let chat = harnessChat(for: inspected)
+    let bot = botsEnabled ? environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId) : nil
     let desktop = MachineDesktopRegistry.shared.session(
       for: workspace, project: inspected.project, environment: environment)
     return WorkspaceInspectorView(
@@ -132,9 +134,10 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       machineName: environment.machines.fleetMachineName(for: workspace.serverId),
       machineSymbol: environment.machines.machine(for: workspace.serverId)?.icon.systemImage,
       showsDebugSection: developerMode,
-      showsBotTranscript: botsEnabled
-        && environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)?.isConversational == true,
+      showsBotTranscript: bot?.isConversational == true,
       harnessChat: chat,
+      agents: shownTab(for: inspected) == .info ? agents(of: workspace, bot: bot, store: store) : [],
+      store: store,
       usage: usage,
       tabs: tabs(for: inspected),
       tab: Binding(get: { shownTab(for: inspected) }, set: { tab = $0 }),
@@ -162,6 +165,30 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
     .environment(\.isWorkspaceInspectorVisible, isVisible)
+  }
+
+  private func agents(of workspace: Workspace, bot: Bot?, store: SessionStore) -> [WorkspaceInspectorAgent] {
+    let content = SidebarRowContent(environment: environment, store: store, grouping: .flat, rowDetails: [])
+    let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
+    return agentItems(of: workspace, bot: bot)
+      .compactMap { content.listItem(for: $0) }
+      .map { item in
+        WorkspaceInspectorAgent(
+          id: item.workspace.id, name: item.workspace.name, icon: content.icon(for: item)
+        ) {
+          revealRequest?.rowID = item.workspace.id
+          navigator.activate(item)
+        }
+      }
+  }
+
+  private func agentItems(of workspace: Workspace, bot: Bot?) -> [WorkspaceSidebarItem] {
+    let children = environment.navigationStore.workspaceEntries.sidebar.filter { $0.parentWorkspaceId == workspace.id }
+    guard let bot else { return children }
+
+    let botChildren = environment.botSidebarEntries.first { $0.bot.id == bot.id }?.children ?? []
+    let listed = Set(botChildren.map(\.id))
+    return botChildren + children.filter { !listed.contains($0.id) }
   }
 
   private func refreshKey(for inspected: Inspected) -> RefreshKey {

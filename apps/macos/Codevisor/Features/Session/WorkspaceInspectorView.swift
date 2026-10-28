@@ -18,6 +18,8 @@ struct WorkspaceInspectorView: View {
   let showsDebugSection: Bool
   let showsBotTranscript: Bool
   let harnessChat: ChatSession?
+  let agents: [WorkspaceInspectorAgent]
+  let store: SessionStore
   let usage: WorkspaceInspectorUsageModel
   let tabs: [WorkspaceInspectorTab]
   @Binding var tab: WorkspaceInspectorTab
@@ -238,6 +240,10 @@ struct WorkspaceInspectorView: View {
           if let machineName {
             detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
           }
+        }
+
+        if !agents.isEmpty {
+          WorkspaceInspectorAgentsSection(agents: agents, store: store, isExpanded: expansion("Agents"))
         }
       }
       .padding(.vertical, 10)
