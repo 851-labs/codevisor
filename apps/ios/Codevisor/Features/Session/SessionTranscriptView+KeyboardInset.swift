@@ -44,11 +44,17 @@ extension SessionTranscriptView {
   func adoptKeyboardOverlap(_ overlap: CGFloat) {
     guard keyboardFreeChatHeight > 0, keyboardAvoidingChatHeight > 0 else { return }
     let adoption = keyboardInset.adoption(of: overlap, from: keyboardOverlap) {
-      adoptKeyboardOverlap(measuredKeyboardOverlap)
+      withAnimation(ChatKeyboardInset.animation) {
+        adoptKeyboardOverlap(measuredKeyboardOverlap)
+      }
     }
     guard case let .apply(animated) = adoption, abs(overlap - keyboardOverlap) > 0.5 else { return }
-    withAnimation(animated ? ChatKeyboardInset.animation : nil) {
+    if !animated {
+      withAnimation(nil) { keyboardOverlap = overlap }
+    } else if overlap > keyboardOverlap {
       keyboardOverlap = overlap
+    } else {
+      withAnimation(ChatKeyboardInset.animation) { keyboardOverlap = overlap }
     }
   }
 }
