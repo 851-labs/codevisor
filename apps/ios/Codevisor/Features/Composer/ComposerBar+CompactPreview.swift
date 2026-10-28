@@ -32,6 +32,7 @@ extension ComposerBar {
 
   func isCompact(editorFocused: Bool?) -> Bool {
     editorFocused == false
+      && !usesBotLayout
       && !holdsFoldUntilFlight
       && !isExpanded
       && initialFocusRequest == nil

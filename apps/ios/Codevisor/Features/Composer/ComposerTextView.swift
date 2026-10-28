@@ -21,9 +21,9 @@ struct ComposerTextView: UIViewRepresentable {
   var isComposerExpanded: Bool
   @Binding var contentHeight: CGFloat
   var onFocusChange: (Bool) -> Void
-  var onResizePanChanged: (CGFloat) -> Void
-  var onResizePanEnded: (CGFloat, CGFloat) -> Void
-  var onResizePanCancelled: () -> Void
+  var onResizePanChanged: ((CGFloat) -> Void)?
+  var onResizePanEnded: ((CGFloat, CGFloat) -> Void)?
+  var onResizePanCancelled: (() -> Void)?
   var onHardwareReturn: (() -> Void)?
   var onHardwareQueue: (() -> Void)?
   var topInset: CGFloat = ComposerBar.editorTopBleed

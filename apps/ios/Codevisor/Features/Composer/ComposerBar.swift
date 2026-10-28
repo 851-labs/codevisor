@@ -30,12 +30,12 @@ struct ComposerBar: View {
   @State var selection = NSRange(location: 0, length: 0)
   @State var pendingTextEdit: ComposerTextEdit?
   @State var slashMenuContentHeight: CGFloat = 0
-  @State private var measuredTextHeight: CGFloat = 0
+  @State var measuredTextHeight: CGFloat = 0
   @State private var runPickersHeight: CGFloat = 0
   @State private var toolbarHeight: CGFloat = 44
   @State private var attachmentStripHeight: CGFloat = 0
   @GestureState private var dragTranslation: CGFloat = 0
-  @State private var panTranslation: CGFloat = 0
+  @State var panTranslation: CGFloat = 0
   @State private var releaseHeight: CGFloat?
   @State private var photoItems: [PhotosPickerItem] = []
   @State var isPickingPhotos = false
@@ -60,6 +60,10 @@ struct ComposerBar: View {
 
   var trimmed: String {
     text.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var hasDraft: Bool {
+    !trimmed.isEmpty || !controller.composerAttachments.isEmpty
   }
 
   var canSend: Bool {
@@ -152,7 +156,11 @@ struct ComposerBar: View {
       }
       VStack(alignment: .leading, spacing: 8) {
         pasteFailureRail
-        card
+        if usesBotLayout {
+          botComposer
+        } else {
+          card
+        }
       }
     }
     .overlay(alignment: .top) {
@@ -346,53 +354,24 @@ extension ComposerBar {
       }
 
       ZStack(alignment: .topLeading) {
-        ComposerTextView(
-          text: $text,
-          selection: $selection,
-          pendingEdit: pendingTextEdit,
-          handoffID: textEditorHandoffID,
-          handoffRole: textEditorHandoffRole,
-          isEditable: textEditorHandoffRole != .none
-            || !(controller.isResolvingQuestion || isClearingGoal),
-          focusRequest: goalEditFocusRequest ?? initialFocusRequest ?? previewFocusRequest,
-          onFocusRequestFulfilled: fulfillFocusRequest,
-          onPasteAttachmentEvent: handlePasteAttachmentEvent,
-          isComposerExpanded: isExpanded,
-          contentHeight: $measuredTextHeight,
-          onFocusChange: updateEditorFocus,
-          onResizePanChanged: { translation in
-            var live = Transaction()
-            live.disablesAnimations = true
-            withTransaction(live) { panTranslation = translation }
-          },
-          onResizePanEnded: { translation, velocity in
-            endDrag(translation: translation, velocity: velocity)
-          },
-          onResizePanCancelled: {
-            withAnimation(.snappy(duration: 0.28)) { panTranslation = 0 }
-          },
-          onHardwareReturn: {
-            if canSend { submitOrAcceptSlashCommand() }
-          },
-          onHardwareQueue: hardwareQueueAction
-        )
-        .frame(height: isCompact ? 0 : editorHeight)
-        .animation(editorFadeAnimation) { $0.opacity(isCompact ? 0 : 1) }
-        .allowsHitTesting(!isCompact)
-        .accessibilityHidden(isCompact)
-        .onGeometryChange(for: CGRect?.self) { [isCompact] proxy in
-          guard !isCompact else { return nil }
-          let frame = proxy.frame(in: .global)
-          return CGRect(
-            x: frame.minX,
-            y: frame.minY + Self.editorTopBleed,
-            width: frame.width,
-            height: max(0, frame.height - Self.editorTopBleed)
-          )
-        } action: { frame in
-          guard let frame else { return }
-          onSendSourceFrameChange?(frame)
-        }
+        composerTextView(topInset: Self.editorTopBleed, resizesComposer: true)
+          .frame(height: isCompact ? 0 : editorHeight)
+          .animation(editorFadeAnimation) { $0.opacity(isCompact ? 0 : 1) }
+          .allowsHitTesting(!isCompact)
+          .accessibilityHidden(isCompact)
+          .onGeometryChange(for: CGRect?.self) { [isCompact] proxy in
+            guard !isCompact else { return nil }
+            let frame = proxy.frame(in: .global)
+            return CGRect(
+              x: frame.minX,
+              y: frame.minY + Self.editorTopBleed,
+              width: frame.width,
+              height: max(0, frame.height - Self.editorTopBleed)
+            )
+          } action: { frame in
+            guard let frame else { return }
+            onSendSourceFrameChange?(frame)
+          }
 
         if !isCompact {
           Text(controller.composerPlaceholder)
@@ -489,7 +468,7 @@ extension ComposerBar {
       }
   }
 
-  private func endDrag(translation: CGFloat, velocity: CGFloat) {
+  func endDrag(translation: CGFloat, velocity: CGFloat) {
     let base = baseEditorHeight
     let height = min(
       maxEditorHeight,

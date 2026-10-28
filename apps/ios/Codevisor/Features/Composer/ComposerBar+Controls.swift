@@ -95,25 +95,30 @@ extension ComposerBar {
     )
   }
 
+  @ViewBuilder
+  var attachMenuItems: some View {
+    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+      Button {
+        isCapturingPhoto = true
+      } label: {
+        Label("Camera", systemImage: "camera")
+      }
+    }
+    Button {
+      isPickingPhotos = true
+    } label: {
+      Label("Photos", systemImage: "photo.on.rectangle")
+    }
+    Button {
+      isPickingFiles = true
+    } label: {
+      Label("Files", systemImage: "folder")
+    }
+  }
+
   var attachButton: some View {
     Menu {
-      if UIImagePickerController.isSourceTypeAvailable(.camera) {
-        Button {
-          isCapturingPhoto = true
-        } label: {
-          Label("Camera", systemImage: "camera")
-        }
-      }
-      Button {
-        isPickingPhotos = true
-      } label: {
-        Label("Photos", systemImage: "photo.on.rectangle")
-      }
-      Button {
-        isPickingFiles = true
-      } label: {
-        Label("Files", systemImage: "folder")
-      }
+      attachMenuItems
     } label: {
       Image(systemName: "paperclip")
         .font(.subheadline.weight(.medium))
@@ -142,7 +147,7 @@ extension ComposerBar {
       }
       .menuStyle(.button)
       .buttonStyle(.plain)
-      .pointerHighlight(Circle())
+      .pointerHighlight(Capsule())
       .disabled(!canSend)
       .accessibilityLabel("Steer")
       .accessibilityHint(
@@ -157,16 +162,21 @@ extension ComposerBar {
         sendButtonLabel
       }
       .buttonStyle(.plain)
-      .pointerHighlight(Circle())
+      .pointerHighlight(Capsule())
       .disabled(!canSend)
       .accessibilityLabel(sendButtonAccessibilityLabel)
       .accessibilityHint(sendButtonAccessibilityHint)
     }
   }
 
+  @ViewBuilder
   private var sendButtonLabel: some View {
-    Image(systemName: controller.isGoalEditing || controller.isEditingQueuedPrompt ? "checkmark" : "arrow.up")
-      .composerCircleActionLabel(.primary, isEnabled: canSend)
+    if usesBotLayout {
+      botSendButtonLabel
+    } else {
+      Image(systemName: controller.isGoalEditing || controller.isEditingQueuedPrompt ? "checkmark" : "arrow.up")
+        .composerCircleActionLabel(.primary, isEnabled: canSend)
+    }
   }
 
   private var offersQueueOnSend: Bool {

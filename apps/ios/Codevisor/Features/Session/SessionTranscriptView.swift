@@ -15,6 +15,8 @@ struct SessionTranscriptView: View {
   static let transcriptMeasurementSchemaVersion = 3
   static let transcriptBottomBreathingRoom: CGFloat = 8
   static let composerBottomMargin: CGFloat = 6
+  static let composerSideMargin: CGFloat = 10
+  static let botComposerSideMargin: CGFloat = 20
 
   @Bindable var controller: SessionController
   let presentationSurface: TranscriptPresentationSurface
@@ -483,7 +485,10 @@ extension SessionTranscriptView {
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleEarlierHistoryCollapse)
-    .padding(.horizontal, 10)
+    .padding(
+      .horizontal,
+      controller.presentsBotConversation ? Self.botComposerSideMargin : Self.composerSideMargin
+    )
     .padding(.bottom, Self.composerBottomMargin)
   }
 

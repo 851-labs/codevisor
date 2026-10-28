@@ -216,6 +216,7 @@ final class HeightReportingTextView: UITextView {
   }
 
   private func edgeClaimingDrag(fingerDelta delta: CGFloat) -> ResizeEdge? {
+    guard onResizePanChanged != nil else { return nil }
     if delta < 0, !isComposerExpanded, contentOffset.y >= maximumOffsetY - 1 {
       return .expand
     }
