@@ -23,6 +23,8 @@ struct SidebarWorkspaceRow: View {
   let lifecycle: Lifecycle
   @GestureState private var isPressed = false
 
+  private static let trailingSpacing: CGFloat = 7
+
   private var isArchived: Bool {
     if case .archived = lifecycle { return true }
     return false
@@ -62,22 +64,16 @@ struct SidebarWorkspaceRow: View {
               Button("Restore", action: onRestore)
             }
           }
-        if let pullRequest {
-          PullRequestBadge(
-            pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
+        ZStack(alignment: .trailing) {
+          properties
+            .opacity(isHovered ? 0 : 1)
+            .allowsHitTesting(!isHovered)
+          if isHovered {
+            hoverActions.transition(.opacity)
+          }
         }
-        if let machine {
-          Image(systemName: machine.systemImage)
-            .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-            .symbolRenderingMode(.monochrome)
-            .foregroundStyle(.secondary)
-            .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-            .help(machine.name)
-            .accessibilityLabel("On \(machine.name)")
-        }
-        if isHovered {
-          hoverAction
-        }
+        .frame(minWidth: hoverActionsWidth, alignment: .trailing)
+        .animation(.easeOut(duration: 0.12), value: isHovered)
       }
       .padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -109,15 +105,45 @@ struct SidebarWorkspaceRow: View {
     }
   }
 
-  @ViewBuilder
-  private var hoverAction: some View {
-    switch lifecycle {
-    case let .active(_, _, _, _, onArchive):
-      hoverButton(systemImage: "archivebox", help: "Archive workspace", label: "Archive", action: onArchive)
-    case let .archived(onRestore):
-      hoverButton(
-        systemImage: "arrow.uturn.backward", help: "Restore workspace", label: "Restore", action: onRestore
-      )
+  private var hoverActionsWidth: CGFloat {
+    let slots: CGFloat = isArchived ? 1 : 2
+    return slots * SidebarRowIcon.trailingSlot + (slots - 1) * Self.trailingSpacing
+  }
+
+  private var properties: some View {
+    HStack(spacing: Self.trailingSpacing) {
+      if let pullRequest {
+        PullRequestBadge(
+          pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
+      }
+      if let machine {
+        Image(systemName: machine.systemImage)
+          .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
+          .symbolRenderingMode(.monochrome)
+          .foregroundStyle(.secondary)
+          .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
+          .help(machine.name)
+          .accessibilityLabel("On \(machine.name)")
+      }
+    }
+  }
+
+  private var hoverActions: some View {
+    HStack(spacing: Self.trailingSpacing) {
+      switch lifecycle {
+      case let .active(isPinned, onTogglePin, _, _, onArchive):
+        hoverButton(
+          systemImage: isPinned ? "pin.slash" : "pin",
+          help: isPinned ? "Unpin workspace" : "Pin workspace",
+          label: isPinned ? "Unpin" : "Pin",
+          action: onTogglePin
+        )
+        hoverButton(systemImage: "archivebox", help: "Archive workspace", label: "Archive", action: onArchive)
+      case let .archived(onRestore):
+        hoverButton(
+          systemImage: "arrow.uturn.backward", help: "Restore workspace", label: "Restore", action: onRestore
+        )
+      }
     }
   }
 
