@@ -1,6 +1,7 @@
 import ACPKit
 import CodevisorClient
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorContextSection: View {
@@ -62,15 +63,20 @@ private struct WorkspaceInspectorContextOverview: View {
 private struct WorkspaceInspectorContextSummary: View {
   let used: Double
   let size: Double
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     HStack(alignment: .firstTextBaseline) {
       Text("\(Int((used / size * 100).rounded()))% used")
+        .monospacedDigit()
+        .contentTransition(.numericText(value: used / size))
       Spacer(minLength: 8)
       Text("\(WorkspaceInspectorContextTokens.format(used)) / \(WorkspaceInspectorContextTokens.format(size))")
         .foregroundStyle(.secondary)
         .monospacedDigit()
+        .contentTransition(.numericText(value: used))
     }
+    .animation(Motion.meter(reduceMotion: reduceMotion), value: [used, size])
   }
 }
 
@@ -92,6 +98,7 @@ private struct WorkspaceInspectorContextBar: View {
 private struct WorkspaceInspectorContextRow: View {
   let category: ServerSessionContext.Category
   let maxTokens: Double
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -107,11 +114,14 @@ private struct WorkspaceInspectorContextRow: View {
       Text(WorkspaceInspectorContextTokens.format(category.tokens))
         .foregroundStyle(.secondary)
         .monospacedDigit()
+        .contentTransition(.numericText(value: category.tokens))
       Text(category.isDeferred == true ? "—" : percent)
         .foregroundStyle(category.isDeferred == true ? .secondary : .primary)
         .monospacedDigit()
+        .contentTransition(.numericText(value: category.tokens / maxTokens))
         .frame(minWidth: 44, alignment: .trailing)
     }
+    .animation(Motion.meter(reduceMotion: reduceMotion), value: [category.tokens, maxTokens])
     .accessibilityElement(children: .combine)
   }
 

@@ -1,5 +1,6 @@
 import CodevisorClient
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorUsageSection: View {
@@ -39,6 +40,7 @@ struct WorkspaceInspectorUsageSection: View {
 private struct WorkspaceInspectorUsageWindowRow: View {
   let window: ServerHarnessUsageWindow
   @Environment(AppEnvironment.self) private var environment: AppEnvironment?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var used: Double { min(max(window.usedPercent, 0), 100) }
 
@@ -61,6 +63,8 @@ private struct WorkspaceInspectorUsageWindowRow: View {
           Text(used / 100, format: .percent.precision(.fractionLength(0)))
             .monospacedDigit()
             .foregroundStyle(.secondary)
+            .contentTransition(.numericText(value: used))
+            .animation(Motion.meter(reduceMotion: reduceMotion), value: used)
         }
         WorkspaceInspectorMeter(
           segments: [.init(color: tint, value: used)],
