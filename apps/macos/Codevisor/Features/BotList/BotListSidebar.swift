@@ -11,10 +11,21 @@ struct BotListSidebar: View {
   @State private var showingAddProject = false
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
+  @State private var sectionPrompt: BotSectionPrompt?
+  @ClientPreference(SidebarPreferenceKey.collapsedBotSections, default: []) private var collapsedSectionIDs: [String]
 
-  private var rows: [BotSidebarRow] {
-    let conversations = BotConversationList(environment: environment, store: store).conversations()
-    return BotSidebarRows.derive(BotSidebarRows.State(conversations: conversations))
+  private var conversations: [BotConversation] {
+    BotConversationList(environment: environment, store: store).conversations()
+  }
+
+  private var sections: BotSectionStore { environment.botSections }
+
+  private func rows(_ conversations: [BotConversation]) -> [BotSidebarRow] {
+    BotSidebarRows.derive(
+      BotSidebarRows.State(
+        conversations: conversations, sections: sections.sections, membership: sections.membership,
+        collapsedSectionIDs: Set(collapsedSectionIDs.compactMap(UUID.init(uuidString:))),
+        selectedBotID: selectedBotID))
   }
 
   private var selectedBotID: UUID? {
@@ -32,6 +43,7 @@ struct BotListSidebar: View {
       .modifier(
         SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection, store: store)
       )
+      .modifier(BotSectionPromptModifier(prompt: $sectionPrompt))
       .sheet(isPresented: $showingAddProject) {
         NewProjectSheet(serverId: environment.defaultComposerServerId) { _ in }
       }
@@ -51,6 +63,9 @@ struct BotListSidebar: View {
         content
       }
       .scrollContentBackground(.hidden)
+      .contextMenu {
+        Button("New Section…", systemImage: "folder.badge.plus") { sectionPrompt = .create(moving: nil) }
+      }
       .onChange(of: selectedBotID) { _, id in
         if let id { proxy.scrollTo(id) }
       }
@@ -63,15 +78,44 @@ struct BotListSidebar: View {
         SidebarDevelopmentWorktreeRow()
           .padding(.horizontal, 10)
       }
-      BotConversationRows(
-        rows: rows,
-        selectedBotID: selectedBotID,
-        onSelect: select,
-        onEdit: { botEditor = .edit($0) },
-        onDelete: { deletingBot = $0 }
-      )
+      list
     }
     .padding(.top, 8)
+  }
+
+  @ViewBuilder
+  private var list: some View {
+    let conversations = conversations
+    if conversations.isEmpty {
+      BotListPlaceholder()
+        .containerRelativeFrame(.vertical)
+    } else {
+      BotConversationRows(
+        rows: rows(conversations), sections: sections.sections, selectedBotID: selectedBotID, actions: rowActions)
+    }
+  }
+
+  private var rowActions: BotSidebarRowActions {
+    BotSidebarRowActions(
+      select: select,
+      edit: { botEditor = .edit($0) },
+      delete: { deletingBot = $0 },
+      moveBot: { sections.move(bot: $0, to: $1) },
+      newSection: { sectionPrompt = .create(moving: $0) },
+      toggleSection: toggleSection,
+      renameSection: { sectionPrompt = .rename($0) },
+      deleteSection: { sections.delete($0.id) },
+      moveSection: { sections.moveSection($0, toIndex: $1) }
+    )
+  }
+
+  private func toggleSection(_ id: UUID) {
+    let key = id.uuidString
+    if collapsedSectionIDs.contains(key) {
+      collapsedSectionIDs.removeAll { $0 == key }
+    } else {
+      collapsedSectionIDs.append(key)
+    }
   }
 
   private var actions: BotListActions {
@@ -89,7 +133,7 @@ struct BotListSidebar: View {
   }
 
   private func step(_ offset: Int) {
-    guard let target = BotSidebarRows.step(from: selectedBotID, by: offset, in: rows) else { return }
+    guard let target = BotSidebarRows.step(from: selectedBotID, by: offset, in: rows(conversations)) else { return }
     select(target)
   }
 }

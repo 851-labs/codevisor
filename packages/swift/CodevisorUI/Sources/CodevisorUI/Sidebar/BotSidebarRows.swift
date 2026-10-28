@@ -3,11 +3,13 @@ import Foundation
 
 public enum BotSidebarRowID: Hashable, Sendable {
   case bot(UUID)
+  case section(UUID)
 }
 
 public struct BotSidebarRow: Identifiable, Equatable {
   public enum Kind: Equatable {
-    case bot(BotConversation)
+    case bot(BotConversation, section: UUID?)
+    case section(BotSection, isExpanded: Bool)
   }
 
   public let kind: Kind
@@ -18,13 +20,15 @@ public struct BotSidebarRow: Identifiable, Equatable {
 
   public var id: BotSidebarRowID {
     switch kind {
-    case let .bot(conversation): .bot(conversation.id)
+    case let .bot(conversation, _): .bot(conversation.id)
+    case let .section(section, _): .section(section.id)
     }
   }
 
   public var bot: Bot? {
     switch kind {
-    case let .bot(conversation): conversation.bot
+    case let .bot(conversation, _): conversation.bot
+    case .section: nil
     }
   }
 }
@@ -32,14 +36,37 @@ public struct BotSidebarRow: Identifiable, Equatable {
 public enum BotSidebarRows {
   public struct State: Equatable {
     public var conversations: [BotConversation]
+    public var sections: [BotSection]
+    public var membership: [UUID: UUID]
+    public var collapsedSectionIDs: Set<UUID>
+    public var selectedBotID: UUID?
 
-    public init(conversations: [BotConversation]) {
+    public init(
+      conversations: [BotConversation], sections: [BotSection] = [], membership: [UUID: UUID] = [:],
+      collapsedSectionIDs: Set<UUID> = [], selectedBotID: UUID? = nil
+    ) {
       self.conversations = conversations
+      self.sections = sections
+      self.membership = membership
+      self.collapsedSectionIDs = collapsedSectionIDs
+      self.selectedBotID = selectedBotID
     }
   }
 
   public static func derive(_ state: State) -> [BotSidebarRow] {
-    state.conversations.map { BotSidebarRow(.bot($0)) }
+    let known = Set(state.sections.map(\.id))
+    let bySection = Dictionary(grouping: state.conversations) { conversation in
+      state.membership[conversation.id].flatMap { known.contains($0) ? $0 : nil }
+    }
+    var rows = (bySection[nil] ?? []).map { BotSidebarRow(.bot($0, section: nil)) }
+    for section in state.sections {
+      let isExpanded = !state.collapsedSectionIDs.contains(section.id)
+      rows.append(BotSidebarRow(.section(section, isExpanded: isExpanded)))
+      let shown = SidebarCollapse.shown(
+        bySection[section.id] ?? [], isExpanded: isExpanded, keeping: state.selectedBotID)
+      rows += shown.map { BotSidebarRow(.bot($0, section: section.id)) }
+    }
+    return rows
   }
 
   public static func step(from selectedID: UUID?, by offset: Int, in rows: [BotSidebarRow]) -> Bot? {

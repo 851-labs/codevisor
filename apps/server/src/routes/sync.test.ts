@@ -88,6 +88,35 @@ describe("/v1/sync", () => {
     expect((await jsonRequest(server, "/v1/sync/settings", { method: "POST" })).status).toBe(405)
   })
 
+  it("merges bot sections per entity: edits to a section never touch a bot's membership", async () => {
+    const { services } = await makeServices("server-bot-sections")
+    const server = await startWithApp(services)
+    const section = "section:2f1c9b1e-4d1a-4a8e-9d55-1b7f0f6a2c01"
+    const member = "member:7c0e2b9a-1f6d-4c3e-8a2b-5d9e4f1a6b02"
+    const put = (entries: ReadonlyArray<unknown>) =>
+      jsonRequest(server, "/v1/sync/bot-sections", {
+        body: JSON.stringify({ entries }),
+        method: "PUT"
+      })
+
+    await put([entry(section, { name: "Work", position: "8" }, 10)])
+    await put([entry(section, { name: "Office", position: "8" }, 20, "device-b")])
+    await put([entry(member, { section: "2f1c9b1e-4d1a-4a8e-9d55-1b7f0f6a2c01" }, 15)])
+    const deleted = await put([{ ...entry(section, null, 30), deleted: true }])
+
+    expect(deleted.body).toMatchObject({
+      namespace: "bot-sections",
+      entries: [
+        { ...entry(member, { section: "2f1c9b1e-4d1a-4a8e-9d55-1b7f0f6a2c01" }, 15) },
+        { ...entry(section, null, 30), deleted: true }
+      ]
+    })
+    const events = await readWebSocketEvents(server, 4, 0)
+    expect(events.map((event) => field(field(event, "payload"), "namespace"))).toEqual(
+      Array(4).fill("bot-sections")
+    )
+  })
+
   it("serves and verifies skill blobs, and reconciles over HTTP", async () => {
     const { services } = await makeServices("server-skills")
     const home = mkdtempSync(join(tmpdir(), "skills-home-"))
