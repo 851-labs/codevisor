@@ -4,12 +4,12 @@ import SwiftUI
 struct RootSidebar: View {
   @Binding var selection: SidebarSelection?
   let store: SessionStore?
+  let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
   var isDrawer = false
   @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
-  @State private var revealRequest = SidebarRevealRequest()
   @State private var visibleColumnWidth: CGFloat = 0
   @State private var modePickerWidth: CGFloat?
   @State private var visitedModes: Set<SidebarMode> = []

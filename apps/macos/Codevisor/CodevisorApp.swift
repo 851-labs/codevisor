@@ -42,6 +42,7 @@ struct RootView: View {
   @Environment(\.openSettings) var openClientSettings
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
+  @State private var sidebarRevealRequest = SidebarRevealRequest()
   static let sidebarCollapsedKey = "sidebar.collapsed"
   @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
@@ -163,7 +164,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      RootSidebar(selection: $selection, store: store)
+      RootSidebar(selection: $selection, store: store, revealRequest: sidebarRevealRequest)
     } detail: {
       Group {
         if let store {
@@ -178,14 +179,16 @@ struct RootView: View {
         }
       }
     }
-    .modifier(WorkspaceInspectorPresentation(store: store, selection: selection))
+    .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
         edge: .leading,
         width: min(270, panelLayout.windowWidth - 16)
       ) {
-        RootSidebar(selection: $selection, store: store, publishesSceneActions: false, isDrawer: true)
+        RootSidebar(
+          selection: $selection, store: store, revealRequest: sidebarRevealRequest, publishesSceneActions: false,
+          isDrawer: true)
       }
     }
     .onChange(of: clientSidebarVisible, initial: true) { _, visible in

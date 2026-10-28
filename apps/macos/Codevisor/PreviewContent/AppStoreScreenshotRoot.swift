@@ -52,7 +52,7 @@ import CodevisorUI
       if AppStoreScreenshotData.showsInspector {
         splitView.modifier(
           WorkspaceInspectorPresentation(
-            store: fixture.store, selection: inspectedSelection,
+            store: fixture.store, selection: .constant(inspectedSelection),
             idealInspectorWidth: AppStoreScreenshotData.inspectorWidth ?? 260))
       } else {
         splitView
