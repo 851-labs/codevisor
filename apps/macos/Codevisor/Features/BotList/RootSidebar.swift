@@ -24,7 +24,7 @@ struct RootSidebar: View {
           SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0)
         }
       }
-      .navigationSplitViewColumnWidth(min: minimumWidth, ideal: max(270, minimumWidth), max: max(360, minimumWidth))
+      .navigationSplitViewColumnWidth(min: Self.minimumWidth, ideal: 270, max: 360)
       .toolbar {
         if showsToolbarModePicker {
           ToolbarItem {
@@ -43,9 +43,7 @@ struct RootSidebar: View {
     botsEnabled && !isDrawer && visibleColumnWidth >= widthFittingModePicker
   }
 
-  private var minimumWidth: CGFloat {
-    botsEnabled ? max(230, widthFittingModePicker) : 230
-  }
+  private static let minimumWidth = SidebarModePicker.sidebarWidthFitting(pickerWidth: nil, showsWindowControls: true)
 
   private var widthFittingModePicker: CGFloat {
     SidebarModePicker.sidebarWidthFitting(pickerWidth: modePickerWidth, showsWindowControls: !panelLayout.isFullScreen)

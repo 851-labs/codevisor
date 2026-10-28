@@ -62,7 +62,6 @@ struct BotListSidebar: View {
       if CodevisorAppVariant.isDevelopment {
         SidebarDevelopmentWorktreeRow()
           .padding(.horizontal, 10)
-          .padding(.top, 8)
       }
       BotConversationRows(
         rows: rows,
@@ -72,6 +71,7 @@ struct BotListSidebar: View {
         onDelete: { deletingBot = $0 }
       )
     }
+    .padding(.top, 8)
   }
 
   private var actions: BotListActions {
