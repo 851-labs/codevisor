@@ -177,5 +177,6 @@ describe("auto-resume for chats stopped at a usage limit", () => {
     await waitFor(async () => (await run(running.services.db.getAutoResume(chat))) === undefined)
 
     expect(resumePrompts(running)).toEqual([])
+    expect((await detail(running, chat)).autoResume).toEqual({ state: "failed" })
   })
 })

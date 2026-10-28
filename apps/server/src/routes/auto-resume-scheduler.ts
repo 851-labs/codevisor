@@ -3,13 +3,13 @@ import type { AutoResumeRecord, CodevisorDatabaseService } from "@codevisor/db"
 
 import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
 import { autoResumeTrigger, type AutoResumeTrigger } from "./auto-resume-events.js"
+import { makeStartSlots } from "./auto-resume-slots.js"
 import {
   checkAfterBackoff,
   checkAfterReset,
   futureReset,
   limitState,
-  maxUnknownResetChecks,
-  nextFireAt
+  maxUnknownResetChecks
 } from "./auto-resume-timing.js"
 
 export interface AutoResumeDependencies {
@@ -20,9 +20,12 @@ export interface AutoResumeDependencies {
   readonly resume: (sessionId: string) => Promise<void>
 }
 
+export type ResumeProgress = "resuming" | "failed"
+
 export interface AutoResumeScheduler {
   readonly recover: () => Promise<void>
   readonly cancel: (sessionId: string) => Promise<boolean>
+  readonly progress: (sessionId: string) => ResumeProgress | undefined
   readonly close: () => void
 }
 
@@ -30,7 +33,8 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
   const { db } = deps
   const timer = makeTimer()
   const serialized = makeSerialQueue()
-  let lastResumeAt: number | undefined
+  const progress = new Map<string, ResumeProgress>()
+  const slots = makeStartSlots(() => serialized(arm))
 
   const publish = async (sessionId: string, update: SessionAutoResumeUpdate): Promise<void> => {
     await appendAndPublish(db, deps.fanout, "session.autoResume.updated", sessionId, update)
@@ -38,14 +42,14 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
 
   const arm = async (): Promise<void> => {
     const [next] = await run(db.listWaitingAutoResumes)
-    if (next === undefined) return timer.clear()
+    if (next === undefined || slots.free() === 0) return timer.clear()
 
-    timer.set(nextFireAt(next.checkAt, lastResumeAt), () => serialized(checkDue))
+    timer.set(Date.parse(next.checkAt), () => serialized(checkDue))
   }
 
   const checkDue = async (): Promise<void> => {
-    const [due] = await run(db.listWaitingAutoResumes)
-    if (due !== undefined && isDue(due, lastResumeAt)) await check(due)
+    const due = (await run(db.listWaitingAutoResumes)).filter(isDue).slice(0, slots.free())
+    await Promise.all(due.map(check))
     await arm()
   }
 
@@ -58,6 +62,7 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
 
   const waitForReset = async (resume: AutoResumeRecord, resetsAt: Date): Promise<void> => {
     const resumesAt = resetsAt.toISOString()
+    progress.delete(resume.sessionId)
     await save({ ...resume, resetsAt: resumesAt }, checkAfterReset(resetsAt, Date.now()))
     await publish(resume.sessionId, { state: "scheduled", resumesAt })
   }
@@ -70,13 +75,32 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     }
 
     await save({ ...withoutReset(resume), checks }, checkAfterBackoff(checks, Date.now()))
+    if (progress.delete(resume.sessionId)) await publish(resume.sessionId, { state: "scheduled" })
   }
 
   const resumeNow = async (resume: AutoResumeRecord): Promise<void> => {
     await run(db.saveAutoResume({ ...resume, state: "resuming" }))
-    await publish(resume.sessionId, { state: "cleared" })
-    lastResumeAt = Date.now()
-    await deps.resume(resume.sessionId).catch(() => forget(resume.sessionId))
+    await markResuming(resume.sessionId)
+    slots.hold(resume.sessionId)
+    await deps.resume(resume.sessionId).catch(() => failResume(resume.sessionId))
+  }
+
+  const markResuming = async (sessionId: string): Promise<void> => {
+    if (progress.get(sessionId) === "resuming") return
+
+    progress.set(sessionId, "resuming")
+    await publish(sessionId, { state: "resuming" })
+  }
+
+  const failResume = async (sessionId: string): Promise<void> => {
+    slots.release(sessionId)
+    await run(db.deleteAutoResume(sessionId))
+    progress.set(sessionId, "failed")
+    await publish(sessionId, { state: "failed" })
+  }
+
+  const releaseSlot = async (sessionId: string): Promise<void> => {
+    if (slots.release(sessionId)) await arm()
   }
 
   const save = (resume: PendingResume, checkAt: Date) =>
@@ -86,12 +110,18 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     deps.readLimits(sessionId).catch(() => undefined)
 
   const forget = async (sessionId: string): Promise<boolean> => {
-    if (!(await run(db.deleteAutoResume(sessionId)))) return false
+    const hadProgress = progress.delete(sessionId)
+    await releaseSlot(sessionId)
+    const deleted = await run(db.deleteAutoResume(sessionId))
+    if (!deleted && !hadProgress) return false
+
     await publish(sessionId, { state: "cleared" })
     return true
   }
 
   const scheduleAfterStop = async (sessionId: string, reportedReset: string | undefined) => {
+    progress.delete(sessionId)
+    slots.release(sessionId)
     const checks = await checksAfterStop(sessionId)
     if (checks > maxUnknownResetChecks) {
       await forget(sessionId)
@@ -128,8 +158,12 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
   }
 
   const finishResume = async (sessionId: string): Promise<void> => {
+    await releaseSlot(sessionId)
     const resume = await run(db.getAutoResume(sessionId))
-    if (resume?.state === "resuming") await run(db.deleteAutoResume(sessionId))
+    if (resume?.state !== "resuming") return
+
+    if (progress.get(sessionId) === "resuming") return failResume(sessionId)
+    await run(db.deleteAutoResume(sessionId))
   }
 
   const handle = async (subjectId: string, trigger: AutoResumeTrigger): Promise<void> => {
@@ -138,7 +172,7 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
         await scheduleAfterStop(subjectId, trigger.resetsAt)
         break
       case "turnStarted":
-        await settleWaiting(subjectId)
+        await settleStarted(subjectId)
         break
       case "turnFinished":
         await finishResume(subjectId)
@@ -155,9 +189,15 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     }
   }
 
-  const settleWaiting = async (sessionId: string): Promise<void> => {
+  const settleStarted = async (sessionId: string): Promise<void> => {
+    await releaseSlot(sessionId)
     const resume = await run(db.getAutoResume(sessionId))
-    if (resume?.state === "waiting") await forget(sessionId)
+    if (resume?.state === "waiting") {
+      await forget(sessionId)
+      return
+    }
+
+    if (progress.delete(sessionId)) await publish(sessionId, { state: "cleared" })
   }
 
   const followActiveAccount = async (harnessId: string): Promise<void> => {
@@ -182,8 +222,10 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
     if (signedIn.length > 0) await arm()
   }
 
-  const checkNow = (resume: AutoResumeRecord) =>
-    save({ ...withoutReset(resume), checks: 0 }, new Date())
+  const checkNow = async (resume: AutoResumeRecord): Promise<void> => {
+    await save({ ...withoutReset(resume), checks: 0 }, new Date())
+    await markResuming(resume.sessionId)
+  }
 
   const unsubscribe = deps.fanout.subscribe((event) => {
     const trigger = autoResumeTrigger(event)
@@ -194,15 +236,16 @@ export const makeAutoResumeScheduler = (deps: AutoResumeDependencies): AutoResum
   return {
     recover: () => serialized(arm),
     cancel: (sessionId) => serialized(() => forget(sessionId)),
+    progress: (sessionId) => progress.get(sessionId),
     close: () => {
       unsubscribe()
       timer.close()
+      slots.close()
     }
   }
 }
 
-const isDue = (resume: AutoResumeRecord, lastResumeAt: number | undefined): boolean =>
-  nextFireAt(resume.checkAt, lastResumeAt) <= Date.now()
+const isDue = (resume: AutoResumeRecord): boolean => Date.parse(resume.checkAt) <= Date.now()
 
 const stoppedOnOtherAccount = (
   resume: AutoResumeRecord,

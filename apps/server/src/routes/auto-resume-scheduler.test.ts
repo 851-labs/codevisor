@@ -1,159 +1,24 @@
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { EventEnvelope, HarnessUsageLimits } from "@codevisor/api"
-import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
-
-import { appendAndPublish, makeEventFanout, type EventFanout } from "../server-context.js"
-import { run, tempDirs } from "../test-support.js"
-import { makeAutoResumeScheduler, type AutoResumeScheduler } from "./auto-resume-scheduler.js"
-
-const start = new Date("2026-10-20T12:00:00.000Z")
-const minutes = (count: number): number => count * 60_000
-const at = (offsetMs: number): string => new Date(start.getTime() + offsetMs).toISOString()
-
-const unavailable: HarnessUsageLimits = {
-  state: "unavailable",
-  harnessId: "claude-code",
-  windows: [],
-  fetchedAt: start.toISOString()
-}
-
-const exhaustedUntil = (resetsAt: string | undefined): HarnessUsageLimits => ({
-  state: "available",
-  harnessId: "claude-code",
-  windows: [
-    { id: "five-hour", label: "5-hour limit", usedPercent: 100, ...(resetsAt ? { resetsAt } : {}) },
-    { id: "seven-day", label: "Weekly limit", usedPercent: 40, resetsAt: at(minutes(9000)) }
-  ],
-  fetchedAt: start.toISOString()
-})
-
-interface Fixture {
-  readonly db: CodevisorDatabaseService
-  readonly fanout: EventFanout
-  readonly scheduler: AutoResumeScheduler
-  readonly resumed: Array<string>
-  readonly updates: Array<{ readonly sessionId: string; readonly payload: unknown }>
-  readonly limits: { current: HarnessUsageLimits | Error }
-  readonly failResume: Set<string>
-}
-
-const openDatabase = async (filename: string) => {
-  const db = await run(makeDatabase({ filename, serverId: "server-a" }))
-  onTestFinished(() => run(db.close))
-  return db
-}
-
-const newDatabaseFile = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "codevisor-auto-resume-"))
-  tempDirs.push(dir)
-  return join(dir, "codevisor.sqlite")
-}
-
-const makeFixture = async (db?: CodevisorDatabaseService): Promise<Fixture> => {
-  const database = db ?? (await openDatabase(newDatabaseFile()))
-  const fanout = await run(makeEventFanout)
-  const resumed: Array<string> = []
-  const updates: Array<{ readonly sessionId: string; readonly payload: unknown }> = []
-  const limits: { current: HarnessUsageLimits | Error } = { current: unavailable }
-  const failResume = new Set<string>()
-  fanout.subscribe((event: EventEnvelope) => {
-    if (event.kind === "session.autoResume.updated") {
-      updates.push({ sessionId: event.subjectId, payload: event.payload })
-    }
-  })
-  const scheduler = makeAutoResumeScheduler({
-    db: database,
-    fanout,
-    readLimits: async () => {
-      if (limits.current instanceof Error) throw limits.current
-      return limits.current
-    },
-    activeAccountId: async (harnessId) =>
-      (await run(database.listHarnessAccounts(harnessId))).find((account) => account.isActive)?.id,
-    resume: async (sessionId) => {
-      if (failResume.has(sessionId)) throw new Error("The chat was archived")
-      resumed.push(sessionId)
-    }
-  })
-  onTestFinished(() => scheduler.close())
-  return { db: database, fanout, scheduler, resumed, updates, limits, failResume }
-}
-
-const createChat = async (fixture: Fixture, harnessId = "claude-code"): Promise<string> => {
-  const project = await run(fixture.db.createProject({ folderPath: "/tmp/auto-resume" }))
-  return (await run(fixture.db.createSession({ projectId: project.id, harnessId }))).id
-}
-
-const settled = (fixture: Fixture): Promise<void> => fixture.scheduler.recover()
-
-const publishTurn = async (fixture: Fixture, sessionId: string, ended: Record<string, unknown>) => {
-  const turnId = `turn-${Date.now()}`
-  await appendAndPublish(fixture.db, fixture.fanout, "session.updated", sessionId, {
-    initiatedBy: "user",
-    turnId,
-    turnState: "started"
-  })
-  await appendAndPublish(fixture.db, fixture.fanout, "session.updated", sessionId, {
-    initiatedBy: "user",
-    turnId,
-    turnState: "ended",
-    stopReason: "end_turn",
-    ...ended
-  })
-  await settled(fixture)
-}
-
-const stopAtLimit = (fixture: Fixture, sessionId: string, resetsAt?: string) =>
-  publishTurn(fixture, sessionId, {
-    stopKind: "usageLimit",
-    stopDetail: "You've hit your session limit",
-    ...(resetsAt === undefined ? {} : { resetsAt })
-  })
-
-const advance = async (fixture: Fixture, ms: number): Promise<void> => {
-  await vi.advanceTimersByTimeAsync(ms)
-  await settled(fixture)
-}
-
-const accountsChanged = async (fixture: Fixture, harnessId: string) => {
-  await appendAndPublish(fixture.db, fixture.fanout, "harness.auth.updated", harnessId, {})
-  await settled(fixture)
-}
-
-const signInFlow = async (fixture: Fixture, flow: Record<string, unknown>) => {
-  await appendAndPublish(
-    fixture.db,
-    fixture.fanout,
-    "harness.authFlow.updated",
-    "claude-code",
-    flow
-  )
-  await settled(fixture)
-}
-
-const saveAccounts = async (fixture: Fixture, ids: ReadonlyArray<string>) => {
-  for (const id of ids) {
-    await run(
-      fixture.db.saveHarnessAccount({
-        id,
-        harnessId: "claude-code",
-        profileKind: "managed",
-        profileKey: id,
-        label: id,
-        authState: "authenticated",
-        canLogin: true,
-        canLogout: true
-      })
-    )
-  }
-}
-
-const lastUpdate = (fixture: Fixture, sessionId: string): unknown =>
-  fixture.updates.findLast((update) => update.sessionId === sessionId)?.payload
+import { appendAndPublish } from "../server-context.js"
+import { run } from "../test-support.js"
+import {
+  advance,
+  at,
+  createChat,
+  exhaustedUntil,
+  lastUpdate,
+  makeFixture,
+  minutes,
+  newDatabaseFile,
+  openDatabase,
+  publishTurn,
+  settled,
+  start,
+  startTurn,
+  stopAtLimit,
+  unavailable
+} from "./auto-resume-scheduler-test-support.js"
 
 describe("auto-resume after a usage limit", () => {
   beforeEach(() => {
@@ -168,12 +33,22 @@ describe("auto-resume after a usage limit", () => {
 
     await stopAtLimit(fixture, chat, at(minutes(60)))
 
-    expect(lastUpdate(fixture, chat)).toEqual({ state: "scheduled", resumesAt: at(minutes(60)) })
+    expect(lastUpdate(fixture, chat)).toEqual({
+      state: "scheduled",
+      resumesAt: at(minutes(60))
+    })
     await advance(fixture, minutes(60))
     expect(fixture.resumed).toEqual([])
     await advance(fixture, 30_000)
     expect(fixture.resumed).toEqual([chat])
+    expect(lastUpdate(fixture, chat)).toEqual({ state: "resuming" })
+    expect(fixture.scheduler.progress(chat)).toBe("resuming")
+
+    await startTurn(fixture, chat)
     expect(lastUpdate(fixture, chat)).toEqual({ state: "cleared" })
+    expect(fixture.scheduler.progress(chat)).toBeUndefined()
+    await publishTurn(fixture, chat, {})
+    expect(await run(fixture.db.getAutoResume(chat))).toBeUndefined()
   })
 
   it("takes the reset time from the account's exhausted usage window when the stop has none", async () => {
@@ -183,7 +58,10 @@ describe("auto-resume after a usage limit", () => {
 
     await stopAtLimit(fixture, chat, at(-minutes(5)))
 
-    expect(lastUpdate(fixture, chat)).toEqual({ state: "scheduled", resumesAt: at(minutes(90)) })
+    expect(lastUpdate(fixture, chat)).toEqual({
+      state: "scheduled",
+      resumesAt: at(minutes(90))
+    })
     fixture.limits.current = unavailable
     await advance(fixture, minutes(90) + 30_000)
     expect(fixture.resumed).toEqual([chat])
@@ -219,23 +97,59 @@ describe("auto-resume after a usage limit", () => {
     await advance(fixture, minutes(30) + 30_000)
 
     expect(fixture.resumed).toEqual([])
-    expect(lastUpdate(fixture, chat)).toEqual({ state: "scheduled", resumesAt: at(minutes(120)) })
+    expect(lastUpdate(fixture, chat)).toEqual({
+      state: "scheduled",
+      resumesAt: at(minutes(120))
+    })
     fixture.limits.current = unavailable
     await advance(fixture, minutes(90))
     expect(fixture.resumed).toEqual([chat])
   })
 
-  it("resumes chats that hit the limit together one at a time, in the order they stopped", async () => {
+  it("starts four chats that hit the limit together at once, and the next as each one starts", async () => {
     const fixture = await makeFixture()
-    const chats = [await createChat(fixture), await createChat(fixture), await createChat(fixture)]
+    const chats: Array<string> = []
+    for (let index = 0; index < 6; index += 1) chats.push(await createChat(fixture))
     for (const chat of chats) await stopAtLimit(fixture, chat, at(minutes(10)))
 
     await advance(fixture, minutes(10) + 30_000)
-    expect(fixture.resumed).toEqual(chats.slice(0, 1))
-    await advance(fixture, 15_000)
-    expect(fixture.resumed).toEqual(chats.slice(0, 2))
-    await advance(fixture, 15_000)
+    expect(fixture.resumed).toEqual(chats.slice(0, 4))
+
+    await startTurn(fixture, chats[0]!)
+    await advance(fixture, 0)
+    expect(fixture.resumed).toEqual(chats.slice(0, 5))
+
+    await advance(fixture, minutes(2))
+    await advance(fixture, 0)
     expect(fixture.resumed).toEqual(chats)
+  })
+
+  it("hands a chat's slot to the next one when its resume fails, it's archived, or it hits the limit again", async () => {
+    const fixture = await makeFixture()
+    const chats: Array<string> = []
+    for (let index = 0; index < 7; index += 1) chats.push(await createChat(fixture))
+    for (const chat of chats) await stopAtLimit(fixture, chat, at(minutes(10)))
+    await advance(fixture, minutes(10) + 30_000)
+    const [crashed, archived, limited] = chats
+
+    await appendAndPublish(fixture.db, fixture.fanout, "session.error", crashed!, "Claude crashed")
+    await advance(fixture, 0)
+    expect(fixture.resumed).toEqual(chats.slice(0, 5))
+    expect(fixture.scheduler.progress(crashed!)).toBe("failed")
+
+    await appendAndPublish(fixture.db, fixture.fanout, "session.archived", archived!, {})
+    await advance(fixture, 0)
+    expect(fixture.resumed).toEqual(chats.slice(0, 6))
+
+    await appendAndPublish(fixture.db, fixture.fanout, "session.updated", limited!, {
+      turnState: "ended",
+      stopReason: "end_turn",
+      stopKind: "usageLimit",
+      stopDetail: "You've hit your session limit"
+    })
+    await advance(fixture, 0)
+    expect(fixture.resumed).toEqual(chats)
+    expect(lastUpdate(fixture, limited!)).toMatchObject({ state: "scheduled" })
   })
 
   it("cancels the pending resume when the user sends a message, archives the chat, or chooses not to resume", async () => {
@@ -305,6 +219,8 @@ describe("auto-resume after a usage limit", () => {
     await stopAtLimit(fixture, gone, at(minutes(1)))
     await advance(fixture, minutes(2))
     expect(await run(fixture.db.getAutoResume(gone))).toBeUndefined()
+    expect(lastUpdate(fixture, gone)).toEqual({ state: "failed" })
+    expect(fixture.scheduler.progress(gone)).toBe("failed")
 
     await run(
       fixture.db.saveAutoResume({
@@ -319,87 +235,19 @@ describe("auto-resume after a usage limit", () => {
     expect(await run(fixture.db.getAutoResume(stuck))).toBeUndefined()
   })
 
-  it("resumes right away on the account the user switches to, leaving other harnesses waiting", async () => {
-    const fixture = await makeFixture()
-    const [claude, codex, unbound] = [
-      await createChat(fixture),
-      await createChat(fixture, "codex"),
-      await createChat(fixture)
-    ]
-    for (const [id, harnessId] of [
-      ["personal", "claude-code"],
-      ["work", "claude-code"],
-      ["codex-personal", "codex"]
-    ] as const) {
-      await run(
-        fixture.db.saveHarnessAccount({
-          id,
-          harnessId,
-          profileKind: "managed",
-          profileKey: id,
-          label: id,
-          authState: "authenticated",
-          canLogin: true,
-          canLogout: true
-        })
-      )
-    }
-    await run(fixture.db.bindSessionHarnessAccount(claude, "personal"))
-    await run(fixture.db.bindSessionHarnessAccount(codex, "codex-personal"))
-    await run(fixture.db.setActiveHarnessAccount("claude-code", "personal"))
-    for (const chat of [claude, codex, unbound]) await stopAtLimit(fixture, chat, at(minutes(240)))
-
-    await accountsChanged(fixture, "claude-code")
-    await accountsChanged(fixture, "codex")
-    await accountsChanged(fixture, "gemini")
-    expect(fixture.resumed).toEqual([])
-
-    await run(fixture.db.setActiveHarnessAccount("claude-code", "work"))
-    await accountsChanged(fixture, "claude-code")
-    await advance(fixture, 0)
-
-    expect(fixture.resumed).toEqual([claude])
-    expect((await run(fixture.db.getSessionSummary(claude))).harnessAccountId).toBe("work")
-    expect(await run(fixture.db.getAutoResume(codex))).toMatchObject({ state: "waiting" })
-    expect(await run(fixture.db.getAutoResume(unbound))).toMatchObject({ state: "waiting" })
-  })
-
-  it("keeps waiting when the account the user switches to is limited too", async () => {
+  it("shows the resume as failed when the resumed turn ends before it starts", async () => {
     const fixture = await makeFixture()
     const chat = await createChat(fixture)
-    await saveAccounts(fixture, ["personal", "work"])
-    await run(fixture.db.bindSessionHarnessAccount(chat, "personal"))
-    await stopAtLimit(fixture, chat, at(minutes(240)))
-    fixture.limits.current = exhaustedUntil(at(minutes(90)))
+    await stopAtLimit(fixture, chat, at(minutes(1)))
+    await advance(fixture, minutes(2))
 
-    await run(fixture.db.setActiveHarnessAccount("claude-code", "work"))
-    await accountsChanged(fixture, "claude-code")
-    await advance(fixture, 0)
+    await appendAndPublish(fixture.db, fixture.fanout, "session.error", chat, "Claude crashed")
+    await settled(fixture)
 
-    expect(fixture.resumed).toEqual([])
-    expect(lastUpdate(fixture, chat)).toEqual({ state: "scheduled", resumesAt: at(minutes(90)) })
-    expect((await run(fixture.db.getSessionSummary(chat))).harnessAccountId).toBe("work")
-  })
-
-  it("checks again right away when the stopped account finishes signing in", async () => {
-    const fixture = await makeFixture()
-    const [chat, other] = [await createChat(fixture), await createChat(fixture)]
-    await saveAccounts(fixture, ["personal", "work"])
-    await run(fixture.db.bindSessionHarnessAccount(chat, "personal"))
-    await run(fixture.db.bindSessionHarnessAccount(other, "work"))
-    for (const stopped of [chat, other]) await stopAtLimit(fixture, stopped, at(minutes(240)))
-
-    await signInFlow(fixture, { id: "flow", accountId: "personal", kind: "browser" })
-    await signInFlow(fixture, { id: "flow", kind: "complete" })
-    await signInFlow(fixture, { id: "flow", accountId: "nobody", kind: "complete" })
-    await advance(fixture, 0)
-    expect(fixture.resumed).toEqual([])
-
-    await signInFlow(fixture, { id: "flow", accountId: "personal", kind: "complete" })
-    await advance(fixture, 0)
-
-    expect(fixture.resumed).toEqual([chat])
-    expect(await run(fixture.db.getAutoResume(other))).toMatchObject({ state: "waiting" })
+    expect(lastUpdate(fixture, chat)).toEqual({ state: "failed" })
+    expect(await run(fixture.db.getAutoResume(chat))).toBeUndefined()
+    await startTurn(fixture, chat)
+    expect(lastUpdate(fixture, chat)).toEqual({ state: "cleared" })
   })
 
   it("waits out a reset further away than one timer can span", async () => {

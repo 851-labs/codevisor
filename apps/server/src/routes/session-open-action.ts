@@ -44,6 +44,7 @@ export const openSessionAction = async (
   }
   const transcript = await withAutoResume(
     services.db,
+    routeState.autoResume,
     withUpdateGate(
       await run(services.db.getTranscriptPage(openSessionId, undefined, limit)),
       services,

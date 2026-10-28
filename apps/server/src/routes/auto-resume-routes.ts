@@ -4,6 +4,7 @@ import type { SessionAutoResume } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 
 import { matchRoute, run, writeJson, type RouteState } from "../server-context.js"
+import type { AutoResumeScheduler } from "./auto-resume-scheduler.js"
 
 export const routeAutoResume = async (
   routeState: RouteState,
@@ -21,9 +22,13 @@ export const routeAutoResume = async (
 
 export const withAutoResume = async <T extends object>(
   db: CodevisorDatabaseService,
+  scheduler: AutoResumeScheduler | undefined,
   snapshot: T,
   sessionId: string
 ): Promise<T & { readonly autoResume?: SessionAutoResume }> => {
+  const progress = scheduler?.progress(sessionId)
+  if (progress !== undefined) return { ...snapshot, autoResume: { state: progress } }
+
   const resume = await run(db.getAutoResume(sessionId))
   if (resume?.state !== "waiting") return snapshot
 

@@ -6,7 +6,6 @@ export type LimitState =
   | { readonly kind: "blockedWithoutReset" }
 
 export const resetGraceMs = 30_000
-export const resumeStaggerMs = 15_000
 export const maxUnknownResetChecks = 24
 
 export const limitState = (limits: HarnessUsageLimits | undefined, now: number): LimitState => {
@@ -33,9 +32,6 @@ export const checkAfterReset = (resetsAt: Date, now: number): Date =>
 
 export const checkAfterBackoff = (checks: number, now: number): Date =>
   new Date(now + Math.min(backoffBaseMs * 2 ** checks, backoffCapMs))
-
-export const nextFireAt = (checkAt: string, lastResumeAt: number | undefined): number =>
-  Math.max(Date.parse(checkAt), (lastResumeAt ?? 0) + resumeStaggerMs)
 
 const backoffBaseMs = 5 * 60_000
 const backoffCapMs = 60 * 60_000

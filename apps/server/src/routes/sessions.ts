@@ -216,6 +216,7 @@ const readSession = async (
     200,
     await withAutoResume(
       services.db,
+      routeState.autoResume,
       withUpdateGate(
         await run(services.db.getSessionDetail(sessionId)),
         services,

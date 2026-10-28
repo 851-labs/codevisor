@@ -95,6 +95,7 @@ const readTranscriptPage = async (
     200,
     await withAutoResume(
       services.db,
+      routeState.autoResume,
       withUpdateGate(
         await run(services.db.getTranscriptPage(transcriptSessionId, before, limit, forward)),
         services,

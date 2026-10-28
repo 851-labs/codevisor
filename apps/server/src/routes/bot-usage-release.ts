@@ -19,17 +19,19 @@ export const makeUsageHoldReleaseListener =
     serverId: string
   ) =>
   (event: EventEnvelope): void => {
-    if (!autoResumeCleared(event)) return
+    if (!autoResumeEnded(event)) return
 
     void releaseHeldWakeUps(services, fanout, routeState, serverId, event.subjectId).catch(
       swallowError
     )
   }
 
-const autoResumeCleared = (event: EventEnvelope): boolean =>
+const autoResumeEnded = (event: EventEnvelope): boolean =>
   event.kind === "session.autoResume.updated" &&
   isRecord(event.payload) &&
-  event.payload.state === "cleared"
+  endedStates.has(event.payload.state)
+
+const endedStates = new Set<unknown>(["cleared", "failed"])
 
 const releaseHeldWakeUps = async (
   services: CodevisorServerServices,
