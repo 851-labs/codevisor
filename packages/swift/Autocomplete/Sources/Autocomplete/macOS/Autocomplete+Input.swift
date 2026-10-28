@@ -178,7 +178,6 @@
     final class InputCapsuleView: NSView {
       let searchField = SearchField()
       private let promptLabel = NSTextField(labelWithString: "")
-      private let capsuleLayer = CAGradientLayer()
       private let filterIcon = NSImageView()
       private var height: CGFloat
       private var configuration: Configuration?
@@ -219,8 +218,6 @@
       init(metrics: Autocomplete.Metrics, showsCheckmarks: Bool, showsIcons: Bool) {
         height = metrics.inputHeight
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.addSublayer(capsuleLayer)
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(searchField)
@@ -296,42 +293,10 @@
         fatalError("init(coder:) has not been implemented")
       }
 
-      override var wantsUpdateLayer: Bool { true }
-
-      override func layout() {
-        super.layout()
-        capsuleLayer.frame = bounds
-        capsuleLayer.cornerRadius = bounds.height / 2
-      }
-
       override func hitTest(_ point: NSPoint) -> NSView? {
         guard bounds.contains(point) else { return nil }
         let searchPoint = convert(point, to: searchField)
         return searchField.hitTest(searchPoint) ?? searchField
-      }
-
-      override func updateLayer() {
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        if NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
-          let fill = NSColor.controlBackgroundColor.cgColor
-          capsuleLayer.colors = [fill, fill]
-          capsuleLayer.borderColor = NSColor.labelColor.cgColor
-        } else if isDark {
-          let fill = NSColor(calibratedWhite: 0.22, alpha: 1).cgColor
-          capsuleLayer.colors = [fill, fill]
-          capsuleLayer.borderColor = NSColor(calibratedWhite: 0.39, alpha: 1).cgColor
-        } else {
-          capsuleLayer.colors = [
-            NSColor(srgbRed: 227 / 255, green: 223 / 255, blue: 224 / 255, alpha: 1).cgColor,
-            NSColor(srgbRed: 230 / 255, green: 227 / 255, blue: 228 / 255, alpha: 1).cgColor,
-          ]
-          capsuleLayer.borderColor = NSColor(srgbRed: 174 / 255, green: 173 / 255, blue: 173 / 255, alpha: 1).cgColor
-        }
-        capsuleLayer.locations = [0, 0.45]
-        capsuleLayer.startPoint = CGPoint(x: 0.5, y: 1)
-        capsuleLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        capsuleLayer.borderWidth = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 1 : 0.5
-        capsuleLayer.cornerCurve = .continuous
       }
     }
   }
