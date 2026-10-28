@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorProtocol
 import Foundation
 import Testing
@@ -34,6 +35,18 @@ struct TranscriptHiddenEventProjectionTests {
 
     #expect(rows.first?.id == .setup)
     #expect(!rows.contains { $0.id.messageID == event.id })
+  }
+
+  @Test("A question the user replied past instead of answering projects no row")
+  func repliedPastQuestionsAreInvisible() throws {
+    let request = QuestionRequest(questionId: "q", questions: [QuestionSpec(id: "db", question: "Which database?")])
+    let plain = reply("One question first.")
+    var asked = plain
+    asked.turn.interactions = TranscriptInteractions([
+      .init(id: "q", content: .question(.init(request: request, answer: .init(outcome: .replied))))
+    ])
+
+    #expect(try project([.assistant(asked)]).map(\.id) == project([.assistant(plain)]).map(\.id))
   }
 
   private func reply(_ text: String) -> AssistantMessage {

@@ -43,10 +43,9 @@ struct TranscriptQuestionSummaryTests {
 
   @Test("Questions resolved without answers say how they ended")
   func unansweredTitles() {
-    #expect(summary(.replied).title == "Skipped · you replied instead")
     #expect(summary(.cancelled).title == "Questions dismissed")
     #expect(summary(.autoResolved).title == "No answer · the agent moved on")
     #expect(summary(.answered).title == "Answered")
-    #expect(summary(.replied).lines.isEmpty)
+    #expect(summary(.cancelled).lines.isEmpty)
   }
 }

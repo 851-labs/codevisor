@@ -41,7 +41,7 @@ struct TranscriptRowProjectionTests {
     pending.interactions = TranscriptInteractions([.init(id: "q", content: .question(.init(request: request)))])
     var answered = pending
     answered.interactions = TranscriptInteractions([
-      .init(id: "q", content: .question(.init(request: request, answer: .init(outcome: .replied))))
+      .init(id: "q", content: .question(.init(request: request, answer: .init(outcome: .answered))))
     ])
 
     let pendingRows = try TranscriptRowProjectionCache.project(

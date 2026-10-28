@@ -18,4 +18,10 @@ public struct TranscriptInteraction: Sendable, Equatable, Identifiable {
     case let .question(question): question.answer == nil
     }
   }
+
+  public var isShownInTranscript: Bool {
+    switch content {
+    case let .question(question): question.answer?.outcome != .replied
+    }
+  }
 }

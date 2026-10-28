@@ -136,6 +136,23 @@ struct TranscriptBotRowAssemblyTests {
     #expect(rows[3].content == .interaction(turn.interactions.items[0], inBotConversation: true))
   }
 
+  @Test func leavesNoBubbleForAQuestionTheUserRepliedPast() throws {
+    var turn = AssistantTurn()
+    let request = QuestionRequest(questionId: "q", questions: [QuestionSpec(id: "db", question: "Which database?")])
+    turn.interactions = TranscriptInteractions([
+      .init(id: "q", content: .question(.init(request: request, answer: .init(outcome: .replied))))
+    ])
+    let conversation = TranscriptBotConversation(
+      messages: [message("b1", .bot, "One thing first.", at: 0)], isWorking: true)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.assistant(AssistantMessage(turn: turn))], conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(rows.map(\.id) == [.botTimestamp("b1"), .botMessage("b1"), .botTyping])
+  }
+
   @Test func dropsThePendingRowOnceTheServerEchoesTheSend() throws {
     let echoed = message(pendingID.uuidString.lowercased(), .user, "yes", at: 0)
 

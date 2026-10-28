@@ -9,6 +9,10 @@ public struct TranscriptInteractions: Sendable, Equatable {
 
   public var isEmpty: Bool { items.isEmpty }
 
+  public var shownInTranscript: [TranscriptInteraction] {
+    items.filter(\.isShownInTranscript)
+  }
+
   public func contains(id: String) -> Bool {
     items.contains { $0.id == id }
   }

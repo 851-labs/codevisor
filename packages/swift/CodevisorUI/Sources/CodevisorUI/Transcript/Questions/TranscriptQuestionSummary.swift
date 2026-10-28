@@ -4,7 +4,6 @@ import TranscriptKit
 public struct TranscriptQuestionSummary: Equatable, Sendable {
   public enum Status: Equatable, Sendable {
     case answered
-    case replied
     case dismissed
     case timedOut
   }
@@ -30,7 +29,6 @@ public struct TranscriptQuestionSummary: Equatable, Sendable {
   public var title: String {
     switch status {
     case .answered: lines.isEmpty ? "Answered" : "You answered"
-    case .replied: "Skipped · you replied instead"
     case .dismissed: questionCount == 1 ? "Question dismissed" : "Questions dismissed"
     case .timedOut: "No answer · the agent moved on"
     }
@@ -39,7 +37,6 @@ public struct TranscriptQuestionSummary: Equatable, Sendable {
   public var symbolName: String {
     switch status {
     case .answered: "checkmark.circle.fill"
-    case .replied: "arrowshape.turn.up.left.circle"
     case .dismissed, .timedOut: "minus.circle"
     }
   }
@@ -47,8 +44,7 @@ public struct TranscriptQuestionSummary: Equatable, Sendable {
   private static func status(of outcome: QuestionOutcome?) -> Status {
     switch outcome {
     case .answered, nil: .answered
-    case .replied: .replied
-    case .cancelled: .dismissed
+    case .cancelled, .replied: .dismissed
     case .autoResolved: .timedOut
     }
   }

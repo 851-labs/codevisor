@@ -141,10 +141,11 @@ enum TranscriptAssistantRowProjection {
     for request in message.turn.setupRequests {
       rows.append(.setupRequest(request, inBotConversation: false))
     }
-    for interaction in message.turn.interactions.items {
+    let interactions = message.turn.interactions.shownInTranscript
+    for interaction in interactions {
       rows.append(.interaction(interaction, inBotConversation: false))
     }
-    return projectedContent || !message.turn.setupRequests.isEmpty || !message.turn.interactions.isEmpty
+    return projectedContent || !message.turn.setupRequests.isEmpty || !interactions.isEmpty
   }
 
   static func appendStopDetailEpilogueIfNeeded(

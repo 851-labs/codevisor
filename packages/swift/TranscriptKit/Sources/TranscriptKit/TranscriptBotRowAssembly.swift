@@ -95,7 +95,9 @@ enum TranscriptBotRowAssembly {
 
   private static func bubbleRows(_ turn: AssistantTurn) -> [TranscriptPresentationRow] {
     turn.setupRequests.map { .setupRequest($0, inBotConversation: true, spacingAfter: groupTailSpacing) }
-      + turn.interactions.items.map { .interaction($0, inBotConversation: true, spacingAfter: groupTailSpacing) }
+      + turn.interactions.shownInTranscript.map {
+        .interaction($0, inBotConversation: true, spacingAfter: groupTailSpacing)
+      }
   }
 
   private static func row(
