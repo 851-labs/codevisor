@@ -33,9 +33,13 @@ struct BotSidebarRowsTests {
     BotSection(id: UUID(), name: name, position: position)
   }
 
-  @Test("The default list comes first, then each section in order; a bot whose section is gone falls back to the default list")
+  @Test(
+    "The default list comes first, then each section in order; a bot whose section is gone falls back to the default list"
+  )
   func sectionLayout() {
-    let (atlas, scout, ledger, patch) = (conversation("Atlas"), conversation("Scout"), conversation("Ledger"), conversation("Patch"))
+    let (atlas, scout, ledger, patch) = (
+      conversation("Atlas"), conversation("Scout"), conversation("Ledger"), conversation("Patch")
+    )
     let (work, home) = (section("Work", at: "4000000000008"), section("Home", at: "8000000000008"))
     let state = BotSidebarRows.State(
       conversations: [atlas, scout, ledger, patch], sections: [work, home],
@@ -51,7 +55,9 @@ struct BotSidebarRowsTests {
 
   @Test("A collapsed section keeps only the selected bot, and stepping skips headers and hidden bots")
   func collapsedSectionKeepsSelection() {
-    let (atlas, scout, ledger, patch) = (conversation("Atlas"), conversation("Scout"), conversation("Ledger"), conversation("Patch"))
+    let (atlas, scout, ledger, patch) = (
+      conversation("Atlas"), conversation("Scout"), conversation("Ledger"), conversation("Patch")
+    )
     let work = section("Work", at: "8000000000008")
     let state = BotSidebarRows.State(
       conversations: [atlas, scout, ledger, patch], sections: [work],
