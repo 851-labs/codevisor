@@ -12,6 +12,7 @@ import { setUpWith } from "../routes/bot-test-support.js"
 import type { CloudServerControl, CodevisorServerServices } from "../server-context-types.js"
 import { jsonRequest, makeServices, startWithApp, waitFor } from "../test-support.js"
 import { makePluginCatalog, type PluginCatalogOptions } from "./plugin-catalog.js"
+import { fixtureCatalogOptions } from "./plugin-fixture-catalog.js"
 import { makePluginPlatform } from "./plugin-platform.js"
 
 export const localBaseUrl = "http://127.0.0.1:43210"
@@ -55,7 +56,12 @@ export const pluginServices = async (options: PluginServicesOptions = {}) => {
   const dataDir = dirname(services.attachments.root)
   const clock = manualOAuthClock()
   const vault = mcpCredentialVault(dataDir, sharedCoordinator(clock).machine("server-a"), clock.now)
-  const catalog = makePluginCatalog({ dev: true, execPath: process.execPath, ...options.catalog })
+  const catalog = makePluginCatalog({
+    dev: true,
+    execPath: process.execPath,
+    ...fixtureCatalogOptions(),
+    ...options.catalog
+  })
   const platform = makePluginPlatform({
     db: services.db,
     serverId: "server-a",

@@ -455,28 +455,6 @@
         "vitest": "4.1.6",
       },
     },
-    "plugins/gmail": {
-      "name": "@codevisor/plugin-gmail",
-      "dependencies": {
-        "@codevisor/plugin-kit": "workspace:*",
-        "@modelcontextprotocol/sdk": "1.29.0",
-        "zod": "4.4.3",
-      },
-      "devDependencies": {
-        "vitest": "4.1.6",
-      },
-    },
-    "plugins/grafana": {
-      "name": "@codevisor/plugin-grafana",
-      "dependencies": {
-        "@codevisor/plugin-kit": "workspace:*",
-        "@modelcontextprotocol/sdk": "1.29.0",
-        "zod": "4.4.3",
-      },
-      "devDependencies": {
-        "vitest": "4.1.6",
-      },
-    },
     "plugins/kit": {
       "name": "@codevisor/plugin-kit",
       "dependencies": {
@@ -724,10 +702,6 @@
     "@codevisor/mcp": ["@codevisor/mcp@workspace:packages/mcp"],
 
     "@codevisor/net": ["@codevisor/net@workspace:packages/net"],
-
-    "@codevisor/plugin-gmail": ["@codevisor/plugin-gmail@workspace:plugins/gmail"],
-
-    "@codevisor/plugin-grafana": ["@codevisor/plugin-grafana@workspace:plugins/grafana"],
 
     "@codevisor/plugin-kit": ["@codevisor/plugin-kit@workspace:plugins/kit"],
 

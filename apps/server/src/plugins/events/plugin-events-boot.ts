@@ -2,16 +2,12 @@ import type { McpManager } from "@codevisor/mcp"
 
 import type { SessionEventOutbox } from "../../routes/session-event-outbox.js"
 import { swallowError, type CodevisorServerServices } from "../../server-context.js"
-import { asRecord } from "../../unknown-values.js"
 import { pluginKeyOf } from "../accounts/plugin-accounts.js"
 import type { PluginPlatform } from "../plugin-platform.js"
+import { cloudInboxApi } from "./cloud-inbox-api.js"
 import type { PluginEventConnections } from "./plugin-event-connections.js"
 import type { PluginEventIngest } from "./plugin-event-ingest.js"
-import {
-  makePluginEventIngress,
-  type CloudInboxApi,
-  type PluginEventIngress
-} from "./plugin-event-ingress.js"
+import { makePluginEventIngress, type PluginEventIngress } from "./plugin-event-ingress.js"
 import type { EventTimers } from "./plugin-event-sources.js"
 import { makePluginEventWebhooks } from "./plugin-event-webhooks.js"
 import { makePluginEvents, type PluginEvents } from "./plugin-events.js"
@@ -82,26 +78,6 @@ const platformWebhooks = (
     inbox.onWebhook((webhook) => webhooks.receive(webhook))
     return webhooks
   }
-}
-
-const cloudInboxApi = (
-  request: (method: string, path: string, body?: unknown) => Promise<unknown>
-): CloudInboxApi => ({
-  ensure: async (target) => inboxOf(await request("POST", "/api/machine/inboxes", target)),
-  subscribe: async (inboxId) => {
-    await request("PUT", `/api/machine/inboxes/${encodeURIComponent(inboxId)}/devices/self`)
-  },
-  unsubscribe: async (inboxId) => {
-    await request("DELETE", `/api/machine/inboxes/${encodeURIComponent(inboxId)}/devices/self`)
-  }
-})
-
-const inboxOf = (value: unknown): { readonly id: string; readonly url: string } => {
-  const record = asRecord(value)
-  if (typeof record.id !== "string" || typeof record.url !== "string") {
-    throw new Error("The cloud didn't return an inbox")
-  }
-  return { id: record.id, url: record.url }
 }
 
 const accountHooks = (platform: PluginPlatform) => ({

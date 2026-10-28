@@ -143,4 +143,11 @@ describe("plugin catalog", () => {
 
     expect(ids(catalog.entries())).toContain("dev.codevisor/test-events")
   })
+
+  it("never lists the repository's dev-only plugins outside development", () => {
+    const published = ids(makePluginCatalog({ dev: false, execPath: "/opt/node" }).entries())
+
+    expect(published).toContain("app.linear/linear")
+    expect(published).not.toContain("dev.codevisor/test-events")
+  })
 })

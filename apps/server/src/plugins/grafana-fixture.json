@@ -5,11 +5,6 @@
   "description": "Query Grafana alerts and data sources, and wake agents when alerts fire.",
   "version": "1.0.0",
   "websiteUrl": "https://codevisor.dev",
-  "repository": {
-    "url": "https://github.com/851-labs/codevisor",
-    "source": "github",
-    "subfolder": "plugins/grafana"
-  },
   "_meta": {
     "dev.codevisor/plugin": {
       "bundled": "grafana",

@@ -112,6 +112,23 @@ test("first-party plugins ship their package.json, server.json and dist, and are
   ])
 })
 
+test("dev-only plugins stay out of the packaged runtime", async (t) => {
+  const devOnly = {
+    name: "dev.codevisor/test-events",
+    _meta: { "dev.codevisor/plugin": { devOnly: true } }
+  }
+  const { result, runtime } = await packageRuntime(t, {
+    "plugins/popular.json": JSON.stringify({ servers: [] }),
+    "plugins/test-events/package.json": JSON.stringify({ name: "@codevisor/plugin-test-events" }),
+    "plugins/test-events/server.json": JSON.stringify(devOnly),
+    "plugins/test-events/dist/main.js": "export {}\n"
+  })
+
+  assert.equal(result.status, 73, result.stderr)
+  await assert.rejects(access(join(runtime, "plugins/test-events/server.json")))
+  await assert.rejects(access(join(runtime, "plugins/test-events/dist")))
+})
+
 test("packaging fails when a plugin was not built", async (t) => {
   const { result } = await packageRuntime(t, {
     "plugins/gmail/package.json": JSON.stringify({ name: "@codevisor/plugin-gmail" })

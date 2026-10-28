@@ -7,6 +7,7 @@ import { makeServices, run, waitFor } from "../../test-support.js"
 import { stringField } from "../../unknown-values.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
 import { makePluginCatalog } from "../plugin-catalog.js"
+import { fixtureCatalogOptions } from "../plugin-fixture-catalog.js"
 import { pluginServices } from "../plugin-test-support.js"
 import { makePluginDirectory } from "./plugin-directory.js"
 import { startPluginDiscovery } from "./plugin-discovery-boot.js"
@@ -18,7 +19,11 @@ const brokerFixture = async (options: { readonly failResolutions?: boolean } = {
   const labels = new Map<string, ReadonlyArray<string>>()
   const emitted: Array<unknown> = observableFixture([])
   const directory = makePluginDirectory({
-    catalog: makePluginCatalog({ dev: true, execPath: process.execPath }),
+    catalog: makePluginCatalog({
+      dev: true,
+      execPath: process.execPath,
+      ...fixtureCatalogOptions()
+    }),
     servers: async () => servers,
     accountLabels: async (serverId) => labels.get(serverId) ?? [],
     tools: async () => [],

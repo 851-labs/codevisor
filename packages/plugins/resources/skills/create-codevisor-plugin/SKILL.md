@@ -25,7 +25,7 @@ through the `execute` gateway, and reads the extensions it declares in
 1. **Scaffold** a single-file server with `@modelcontextprotocol/sdk` and `zod`
    (template below). Start with tools; add extensions only when needed.
 2. **Check it** with the MCP Inspector: `npx @modelcontextprotocol/inspector node server.ts`.
-3. **Add it in Codevisor** from Settings › Plugins › **Add Custom…**. The
+3. **Add it in Codevisor** from Settings › Plugins › **Add MCP…**. The
    plugin syncs to the user's other Macs like any other. Choose one:
    - **Command** (stdio): `node /absolute/path/server.ts` (Node ≥ 22.18 runs
      TypeScript directly; otherwise compile first).
@@ -49,12 +49,12 @@ workspace package under the top-level `plugins/` folder:
 ```
 plugins/
   kit/                 @codevisor/plugin-kit: event streams, skills, resources, stdio, test support
-  gmail/               @codevisor/plugin-gmail
+  test-events/         @codevisor/plugin-test-events
     package.json       build "tsc -b tsconfig.json"; depends on @codevisor/plugin-kit
     server.json        MCP Registry server.json; the catalog reads it
     tsconfig.json      extends ../../tsconfig.base.json; references ../kit
     vitest.config.ts   100% coverage thresholds
-    src/main.ts        serveStdio(createGmailServer(), process.stdin, process.stdout)
+    src/main.ts        serveStdio(createTestEventsServer(), process.stdin, process.stdout)
     src/*-server.ts    createXServer(deps): a pure factory, tested in-process
 ```
 

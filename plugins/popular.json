@@ -104,26 +104,6 @@
           }
         }
       }
-    },
-    {
-      "server": {
-        "name": "com.zillow/mcp",
-        "title": "Zillow",
-        "description": "Search homes, Zestimates, neighborhoods and affordability, with interactive results.",
-        "version": "2",
-        "websiteUrl": "https://www.zillow.com",
-        "remotes": [
-          {
-            "type": "streamable-http",
-            "url": "https://mcp.zillow.com/api/v2"
-          }
-        ],
-        "_meta": {
-          "dev.codevisor/plugin": {
-            "ageRating": 4
-          }
-        }
-      }
     }
   ]
 }

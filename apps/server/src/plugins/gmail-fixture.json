@@ -5,11 +5,6 @@
   "description": "Search, read, draft and reply to email, and wake agents when new mail arrives.",
   "version": "1.0.0",
   "websiteUrl": "https://codevisor.dev",
-  "repository": {
-    "url": "https://github.com/851-labs/codevisor",
-    "source": "github",
-    "subfolder": "plugins/gmail"
-  },
   "_meta": {
     "dev.codevisor/plugin": {
       "bundled": "gmail",

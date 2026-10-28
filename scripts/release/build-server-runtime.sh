@@ -114,9 +114,17 @@ for catalog_file in "$repo_root"/plugins/*.json; do
   mkdir -p "$runtime_dir/plugins"
   cp "$catalog_file" "$runtime_dir/plugins/"
 done
+is_dev_only_plugin() {
+  [[ -f "$1" ]] && node -e '
+    const meta = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))._meta
+    process.exit(meta?.["dev.codevisor/plugin"]?.devOnly === true ? 0 : 1)
+  ' "$1"
+}
+
 for plugin_dir in "$repo_root"/plugins/*/; do
   plugin_name="$(basename "$plugin_dir")"
   [[ -f "$plugin_dir/package.json" ]] || continue
+  is_dev_only_plugin "$plugin_dir/server.json" && continue
   if [[ ! -d "$plugin_dir/dist" ]]; then
     echo "error: plugin $plugin_name has no dist; build it before packaging the runtime" >&2
     exit 1

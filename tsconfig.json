@@ -75,12 +75,6 @@
     },
     {
       "path": "./plugins/test-events"
-    },
-    {
-      "path": "./plugins/grafana"
-    },
-    {
-      "path": "./plugins/gmail"
     }
   ]
 }
