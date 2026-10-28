@@ -349,6 +349,10 @@ extension SessionController {
     composerText = ""
   }
 
+  public var hasUnsentBotMessages: Bool {
+    !botSends.unsentMessages.isEmpty
+  }
+
   var botSendReadiness: BotSendQueue.Readiness {
     if case let .failed(message) = configurationValidationState { return .failed(message) }
     let isSettled = isServerReady && !isConnecting && !isPausedForUpdate && configurationValidationState == .ready

@@ -67,6 +67,10 @@ struct ComposerBar: View {
   }
 
   var canSend: Bool {
+    controller.presentsBotConversation ? hasDraft : canSendToAgent
+  }
+
+  private var canSendToAgent: Bool {
     (controller.isGoalComposerArmed
       ? !trimmed.isEmpty
       : !trimmed.isEmpty || !controller.composerAttachments.isEmpty)

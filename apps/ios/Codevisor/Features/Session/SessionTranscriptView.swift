@@ -209,7 +209,8 @@ struct SessionTranscriptView: View {
       || (!showsWatermark && !presentationSurface.hasPresentedContent)
       || (controller.isLoadingInitialHistory
         && controller.settledConversation.isEmpty
-        && !controller.hasActiveItem)
+        && !controller.hasActiveItem
+        && !controller.hasUnsentBotMessages)
   }
 
   func installAttachmentImageStoreIfNeeded() {
@@ -383,7 +384,7 @@ struct SessionTranscriptView: View {
               sourceFrame: sendAnimationSourceFrame ?? .zero,
               style: userBubbleStyle,
               followsComposer: !preservesComposerFocusOnSend,
-              attachmentIDs: controller.composerAttachments.compactMap(\.uploadedFileID)
+              attachmentIDs: flyingAttachmentIDs
             )
           }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)
@@ -414,6 +415,12 @@ struct SessionTranscriptView: View {
 }
 
 extension SessionTranscriptView {
+  var flyingAttachmentIDs: [String] {
+    let attachments = controller.composerAttachments
+    guard controller.presentsBotConversation else { return attachments.compactMap(\.uploadedFileID) }
+    return attachments.map(\.sentFileID)
+  }
+
   var composerMaxHeight: CGFloat {
     max(
       160,

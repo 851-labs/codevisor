@@ -126,9 +126,8 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
   }
 
   func sendTransitionWillPresent() {
-    if initialPresentationGate.openForSendPresentation(
-      isHydrating: isLoadingInitialHistory || isPreparingInitialProjection
-    ) {
+    let waitsForHistory = !stacksFromBottom && (isLoadingInitialHistory || isPreparingInitialProjection)
+    if initialPresentationGate.openForSendPresentation(isHydrating: waitsForHistory) {
       presentInitialTranscript()
     }
   }
