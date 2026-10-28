@@ -1,8 +1,6 @@
-import CodevisorTestSupport
 import Foundation
 import Testing
 import ScreenSharingTesting
-@testable import ScreenSharing
 
 struct RFBRecordingTests {
   static let fixtures: [URL] = {
@@ -31,42 +29,5 @@ struct RFBRecordingTests {
     #expect(events.contains("cursor 0x0 hotspot 0,0"), "hidden until this client moves the pointer")
     #expect(events.contains("desktop 1024x768 server ok screens 1"))
     #expect(events.contains("cursor 10x16 hotspot 1,1"), "left_ptr after the move")
-  }
-
-  @Test func aRecordingOfTheReferenceServerReplaysToTheLiveFramebuffer() async throws {
-    var configuration = RFBLoopbackServer.Configuration()
-    configuration.encoding = .zrle
-    configuration.cursor = .referenceArrow
-    let server = try await RFBLoopbackServer(configuration: configuration)
-    defer { server.stop() }
-    let transport = RFBRecordingTransport(try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port))
-    let client = try RFBClient(transport: transport)
-    let outcome = try await client.connect(password: "secret")
-    transport.start()
-    let (updates, continuation) = AsyncStream<Void>.makeStream()
-    let run = Task { try await client.run(onUpdate: { _, _ in continuation.yield() }, onEvent: { _ in }) }
-    defer {
-      run.cancel()
-      client.close()
-    }
-    var iterator = updates.makeAsyncIterator()
-    _ = await iterator.next()
-    var scene = RFBLoopbackScene(kind: .scroll, seed: 9)
-    for _ in 0..<5 {
-      #expect(try server.play(&scene))
-      _ = await iterator.next()
-    }
-    transport.stop()
-    let recording = RFBRecording(
-      source: "reference", width: outcome.parameters.width, height: outcome.parameters.height,
-      server: transport.recorded)
-    let replayed = try await recording.replay()
-    #expect(replayed.updates == 6)
-    #expect(replayed.framebuffer == RFBRecording.digest(client.framebuffer))
-    #expect(replayed.events.contains("cursor 11x16 hotspot 0,0"))
-    let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
-    try recording.write(to: file)
-    #expect(try RFBRecording.load(file) == recording)
   }
 }

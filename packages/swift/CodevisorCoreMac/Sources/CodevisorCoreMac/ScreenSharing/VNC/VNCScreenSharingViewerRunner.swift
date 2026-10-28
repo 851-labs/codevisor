@@ -9,8 +9,7 @@ extension ScreenSharingViewerBackend {
   public static func vnc(
     displayId: String, open: @escaping VNCOpen,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface = {
-      try ScreenSharingVideoSurface(
-        mailbox: $0.frames, metrics: $0.metrics, profile: ScreenSharingDiagnosticProfile.process())
+      try ScreenSharingVideoSurface(mailbox: $0.frames, metrics: $0.metrics)
     }
   ) -> Self {
     let runner = VNCScreenSharingViewerRunner(displayId: displayId, open: open, makeSurface: makeSurface)

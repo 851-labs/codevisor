@@ -10,9 +10,7 @@
       let video = try ScreenSharingVideoConfiguration(
         width: 1920, height: 1200, framesPerSecond: 60, bitrate: 20_000_000)
       return ScreenSharingCapture.streamConfiguration(
-        video,
-        interval: try ScreenSharingCaptureIntervalRequest(videoFramesPerSecond: 60, overrideFramesPerSecond: nil),
-        pixelFormat: kCVPixelFormatType_32BGRA, showsCursor: false, capturesAudio: false,
+        video, pixelFormat: kCVPixelFormatType_32BGRA, showsCursor: false, capturesAudio: false,
         dynamicRange: range)
     }
 

@@ -196,7 +196,7 @@ final class ScreenSharingStream {
   ) async throws
     -> ScreenSharingReceiver
   {
-    try ScreenSharingFieldTrials.process.install(profile: try ScreenSharingDiagnosticProfile.process())
+    ScreenSharingFieldTrials.process.installProduct()
     let ice = try connectivity.map { connectivity in
       try ScreenSharingICEConfiguration(
         servers: connectivity.servers.map {

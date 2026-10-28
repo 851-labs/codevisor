@@ -1,11 +1,12 @@
 # RFB recordings
 
-Real servers' bytes, replayed by `RFBRecordingTests` with no server
-(behaviour seen only on a real server becomes an L1 fixture). Each file is an `RFBRecording` (JSON): `source`, the
-framebuffer size after the handshake, the bytes the client read (base64
-chunks) and the `expected` outcome of replaying them (updates, SHA-256 of the
-final framebuffer's colour bytes, and the pseudo-rectangles and events in
-order). Recording starts after authentication, so no credentials are stored.
+Real servers' bytes, replayed by `RFBRecordingTests` with no server. Each file
+is an `RFBRecording` (JSON): `source`, the framebuffer size after the
+handshake, the bytes the client read (base64 chunks) and the `expected`
+outcome of replaying them (updates, SHA-256 of the final framebuffer's colour
+bytes, and the pseudo-rectangles and events in order). The bytes were recorded
+after authentication, so no credentials are stored. The recorder has been
+removed; `git log -S RFBRecordingTransport` finds it if a new fixture is needed.
 
 | Fixture | What it pins |
 | --- | --- |

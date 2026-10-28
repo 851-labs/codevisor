@@ -136,10 +136,9 @@ final class ScreenSharingHostService {
         guard let display = available.first(where: { $0.description.id == displayId }) else {
           return .init(status: "unavailable", message: "The selected display is no longer available.")
         }
-        let profile = try ScreenSharingDiagnosticProfile.process()
         let session = try await ScreenSharingHostSession(
           request: request, display: display.description, displayID: display.id,
-          connectivity: connectivity.make(viewerId: request.viewerId), profile: profile)
+          connectivity: connectivity.make(viewerId: request.viewerId))
         if Task.isCancelled {
           session.peer.close()
           throw CancellationError()
@@ -197,9 +196,7 @@ final class ScreenSharingHostService {
           guard let session else { return false }
           session.peer.updateVideoConfiguration(configuration)
           do {
-            try await session.capture.update(
-              configuration: configuration,
-              captureIntervalFPS: session.profile?.captureIntervalFPS(adaptiveLevel: level))
+            try await session.capture.update(configuration: configuration)
           } catch {
             if !Task.isCancelled {
               session.metrics.label("captureError", "Unable to adjust capture quality.")

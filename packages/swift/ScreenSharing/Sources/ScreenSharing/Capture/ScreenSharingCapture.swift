@@ -18,8 +18,6 @@
     private var output: ScreenSharingCaptureOutput?
     private static let queueDepth = 3
     public var pixelFormat: OSType
-    private(set) var requestState: ScreenSharingCaptureRequestState
-    private var captureIntervalFPS: Int? { requestState.overrideFramesPerSecond }
     public private(set) var showsCursor = true
     public private(set) var dynamicRange = ScreenSharingDynamicRange.standard
     public private(set) var capturesAudio = false
@@ -28,11 +26,8 @@
     private var restart:
       (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
-    public init(
-      pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, captureIntervalFPS: Int? = nil
-    ) {
+    public init(pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
       self.pixelFormat = pixelFormat
-      self.requestState = ScreenSharingCaptureRequestState(overrideFramesPerSecond: captureIntervalFPS)
     }
 
     public static func displays() async throws -> [(id: UInt32, width: Int, height: Int)] {
@@ -83,11 +78,9 @@
       guard [kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA].contains(pixelFormat) else {
         throw ScreenSharingError.invalid("Unsupported capture pixel format.")
       }
-      let interval = try requestState.validated(video: configuration, override: captureIntervalFPS)
       let streamConfiguration = Self.streamConfiguration(
-        configuration, interval: interval, pixelFormat: pixelFormat, showsCursor: showsCursor,
+        configuration, pixelFormat: pixelFormat, showsCursor: showsCursor,
         capturesAudio: capturesAudio, dynamicRange: dynamicRange)
-      requestState.commit(override: captureIntervalFPS, request: interval, metrics: metrics)
       metrics.label("captureQueueDepth", String(Self.queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
       metrics.label("captureDynamicRange", dynamicRange.rawValue)
@@ -121,20 +114,13 @@
     }
 
     public func update(configuration: ScreenSharingVideoConfiguration) async throws {
-      try await update(configuration: configuration, captureIntervalFPS: captureIntervalFPS)
-    }
-
-    public func update(configuration: ScreenSharingVideoConfiguration, captureIntervalFPS: Int?) async throws {
-      guard let stream, let output else { throw ScreenSharingError.unavailable("Capture is not running.") }
+      guard let stream, output != nil else { throw ScreenSharingError.unavailable("Capture is not running.") }
       let generation = generation
-      try await applyIntervalUpdate(
-        configuration: configuration, override: captureIntervalFPS, metrics: output.metrics,
-        apply: { interval in
-          try await stream.updateConfiguration(
-            Self.streamConfiguration(
-              configuration, interval: interval, pixelFormat: self.pixelFormat,
-              showsCursor: self.showsCursor, capturesAudio: self.capturesAudio, dynamicRange: self.dynamicRange))
-        }, isCurrent: { self.generation == generation })
+      try await stream.updateConfiguration(
+        Self.streamConfiguration(
+          configuration, pixelFormat: pixelFormat, showsCursor: showsCursor, capturesAudio: capturesAudio,
+          dynamicRange: dynamicRange))
+      guard self.generation == generation else { throw CancellationError() }
       video = configuration
     }
 
@@ -206,22 +192,12 @@
     private func reconfigure() async throws {
       await startSettled()
       guard let video, stream != nil else { return }
-      try await update(configuration: video, captureIntervalFPS: captureIntervalFPS)
-    }
-
-    func applyIntervalUpdate(
-      configuration: ScreenSharingVideoConfiguration, override: Int?, metrics: ScreenSharingMetrics,
-      apply: (ScreenSharingCaptureIntervalRequest) async throws -> Void, isCurrent: () -> Bool
-    ) async throws {
-      let interval = try requestState.validated(video: configuration, override: override)
-      try await apply(interval)
-      guard isCurrent() else { throw CancellationError() }
-      requestState.commit(override: override, request: interval, metrics: metrics)
+      try await update(configuration: video)
     }
 
     static func streamConfiguration(
-      _ video: ScreenSharingVideoConfiguration, interval: ScreenSharingCaptureIntervalRequest,
-      pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool, dynamicRange: ScreenSharingDynamicRange = .standard
+      _ video: ScreenSharingVideoConfiguration, pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool,
+      dynamicRange: ScreenSharingDynamicRange = .standard
     ) -> SCStreamConfiguration {
       let config: SCStreamConfiguration
       if dynamicRange == .high {
@@ -233,7 +209,7 @@
         config.colorSpaceName = CGColorSpace.sRGB
       }
       config.width = video.width; config.height = video.height
-      config.minimumFrameInterval = interval.minimumFrameInterval
+      config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(video.framesPerSecond))
       config.queueDepth = Self.queueDepth
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio

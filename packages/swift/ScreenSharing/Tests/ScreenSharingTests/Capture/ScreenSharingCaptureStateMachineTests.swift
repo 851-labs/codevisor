@@ -26,18 +26,7 @@
       #expect(labels["captureContentHeightPoints"] == "900.0")
       #expect(labels["captureContentPixelScale"] == "2.0")
       #expect(labels["captureQueueDepth"] == "3")
-      #expect(labels["captureRequestedMinimumFrameIntervalFPS"] == "60")
-      #expect(labels["captureRequestedFrameIntervalOverride"] == "none")
       #expect(labels["captureStartedAtNs"] != nil)
-    }
-
-    @Test func aConstructionOverrideIsRequestedOfTheStreamAndDescribedAsAnOverride() async throws {
-      let fixture = CaptureFixture(captureIntervalFPS: 120)
-      try await fixture.start()
-      #expect(fixture.target.settings?.interval == CMTime(value: 1, timescale: 120))
-      let labels = fixture.metrics.snapshot().labels
-      #expect(labels["captureRequestedMinimumFrameIntervalFPS"] == "120")
-      #expect(labels["captureRequestedFrameIntervalOverride"] == "120")
     }
 
     @Test func aSecondStartIsRefusedWhileTheFirstIsStillStarting() async throws {
@@ -92,44 +81,25 @@
       #expect(fixture.metrics.snapshot().labels.isEmpty)
     }
 
-    @Test func anInvalidIntervalRequestIsRefusedBeforeTheStreamIsBuilt() async throws {
-      let fixture = CaptureFixture(captureIntervalFPS: 30)
-      await #expect(throws: ScreenSharingError.self) {
-        try await fixture.start(configuration: .init(framesPerSecond: 60))
-      }
-      #expect(fixture.target.settings == nil)
-      #expect(fixture.metrics.snapshot().labels["captureRequestedMinimumFrameIntervalFPS"] == nil)
-    }
-
-    @Test func anIntervalUpdateReconfiguresTheLiveStreamAndThenCommitsItsRequest() async throws {
-      let fixture = CaptureFixture(captureIntervalFPS: 120)
+    @Test func anUpdateReconfiguresTheLiveStreamAtTheNewVideoRate() async throws {
+      let fixture = CaptureFixture()
       try await fixture.start()
       try await fixture.capture.update(configuration: .init(width: 1280, height: 720, framesPerSecond: 30))
       #expect(fixture.stream.calls == [.start, .update])
       let updated = try #require(fixture.stream.updated)
       #expect(updated.width == 1280 && updated.height == 720)
-      #expect(updated.interval == CMTime(value: 1, timescale: 120))
-      #expect(fixture.capture.requestState.overrideFramesPerSecond == 120)
-      try await fixture.capture.update(configuration: .init(framesPerSecond: 30), captureIntervalFPS: nil)
-      #expect(fixture.stream.updated?.interval == CMTime(value: 1, timescale: 30))
-      #expect(fixture.capture.requestState.overrideFramesPerSecond == nil)
-      #expect(fixture.metrics.snapshot().labels["captureRequestedFrameIntervalOverride"] == "none")
+      #expect(updated.interval == CMTime(value: 1, timescale: 30))
     }
 
-    @Test func aRefusedUpdateLeavesTheRequestAndTheStreamExactlyAsTheyWere() async throws {
-      let fixture = CaptureFixture(captureIntervalFPS: 120)
+    @Test func aFailedUpdateLeavesTheLabelsExactlyAsTheyWere() async throws {
+      let fixture = CaptureFixture()
       try await fixture.start()
       let before = fixture.metrics.snapshot().labels
-      await #expect(throws: ScreenSharingError.self) {
-        try await fixture.capture.update(configuration: .init(framesPerSecond: 30), captureIntervalFPS: 20)
-      }
-      #expect(fixture.stream.calls == [.start])
       fixture.stream.updateFailure = CaptureFailure.update
       await #expect(throws: CaptureFailure.update) {
         try await fixture.capture.update(configuration: .init(framesPerSecond: 30))
       }
       #expect(fixture.stream.calls == [.start, .update])
-      #expect(fixture.capture.requestState.overrideFramesPerSecond == 120)
       #expect(fixture.metrics.snapshot().labels == before)
     }
 
@@ -353,10 +323,7 @@
     let target = CaptureTargetDouble(style: "test-display")
     var stream: CaptureStreamDouble { target.stream }
 
-    init(capture: ScreenSharingCapture) { self.capture = capture }
-    convenience init(captureIntervalFPS: Int? = nil) {
-      self.init(capture: ScreenSharingCapture(captureIntervalFPS: captureIntervalFPS))
-    }
+    init(capture: ScreenSharingCapture = ScreenSharingCapture()) { self.capture = capture }
 
     func start(configuration: ScreenSharingVideoConfiguration? = nil) async throws {
       try await capture.start(
