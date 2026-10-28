@@ -245,7 +245,8 @@ struct SidebarRowsTests {
       Array(expanded.ids.dropFirst(2))
         == [parent, child, grandchild, sibling, next].map { .workspace($0.id) })
     #expect([parent, child, grandchild, sibling, next].map { expanded.depth(of: $0.id) } == [1, 2, 3, 2, 1])
-    #expect([parent, child, grandchild, sibling, next].map { expanded.isExpanded($0.id) } == [true, true, nil, nil, nil])
+    #expect(
+      [parent, child, grandchild, sibling, next].map { expanded.isExpanded($0.id) } == [true, true, nil, nil, nil])
     #expect(expanded.rows.compactMap(\.parentID) == [parent.id, child.id, parent.id])
 
     let collapsed = nested(all, collapsed: [parent])
@@ -286,22 +287,30 @@ struct SidebarRowsTests {
     #expect(SidebarWorkspaceTree([selfParent], pinnedIDs: []).roots == [selfParent])
   }
 
-  @Test("A collapsed parent, group or section keeps only the selected descendant, at its nested indent")
+  @Test("A collapsed parent, group or section keeps only the selected descendant, one step under the nearest shown row")
   func collapsedParentKeepsTheSelectedDescendant() {
     let parent = item(studio)
     let child = item(studio, parent: parent)
     let grandchild = item(studio, parent: child)
     let all = [parent, child, grandchild]
 
+    #expect(nested(all, selecting: grandchild.id).depth(of: grandchild.id) == 3)
+    #expect(nested(all, collapsed: [child], selecting: grandchild.id).depth(of: grandchild.id) == 3)
+
     let parentCollapsed = nested(all, collapsed: [parent], selecting: grandchild.id)
     #expect(parentCollapsed.ids.dropFirst(2) == [.workspace(parent.id), .workspace(grandchild.id)])
-    #expect(parentCollapsed.depth(of: grandchild.id) == 3)
+    #expect(parentCollapsed.depth(of: grandchild.id) == 2)
     #expect(parentCollapsed.isExpanded(parent.id) == false)
+    #expect(nested(all, collapsed: [parent, child], selecting: grandchild.id).depth(of: grandchild.id) == 2)
 
     let groupCollapsed = nested(
-      all, expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]), selecting: grandchild.id)
+      all, collapsed: [parent], expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]),
+      selecting: grandchild.id)
     #expect(groupCollapsed.ids == [.section(.list), .group("machine:studio"), .workspace(grandchild.id)])
-    #expect(groupCollapsed.depth(of: grandchild.id) == 3)
+    #expect(groupCollapsed.depth(of: grandchild.id) == 1)
+
+    let listCollapsed = nested(all, expansion: SidebarRows.Expansion(list: false), selecting: grandchild.id)
+    #expect(listCollapsed.depth(of: grandchild.id) == 0)
   }
 
   @Test("Pinning a child pins just that one; a pinned parent keeps its unpinned children")

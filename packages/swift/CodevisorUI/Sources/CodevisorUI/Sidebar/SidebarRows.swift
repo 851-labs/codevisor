@@ -120,7 +120,8 @@ public enum SidebarRows {
         rows.append(SidebarRow(.workspace(item, placement), depth: depth, parentID: parentID, isExpanded: isExpanded))
       }
       for child in children {
-        appendWorkspace(child, placement, depth: depth + 1, parentID: item.id, showing: showing && childrenExpanded)
+        appendWorkspace(
+          child, placement, depth: showing ? depth + 1 : depth, parentID: item.id, showing: showing && childrenExpanded)
       }
     }
 
