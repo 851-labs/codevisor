@@ -9,7 +9,11 @@ import type {
   BrowserSetupBroker,
   ComputerUseApp
 } from "@codevisor/automation"
-import { browserResultPageUrl, CodeExecutionToolError } from "@codevisor/automation"
+import {
+  browserResultPageUrl,
+  CodeExecutionToolError,
+  codevisorToolName
+} from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
 import { type CallToolResult, CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 
@@ -93,6 +97,9 @@ const reportBrowserPage = (
   const pageUrl = browserResultPageUrl(result)
   if (pageUrl !== undefined) onPage?.(pageUrl)
 }
+
+const providerToolName = (serverId: string, toolName: string): string =>
+  serverId === "codevisor" ? codevisorToolName(toolName) : toolName
 
 const assertAutomationToolArguments = (
   provider: AutomationToolProvider,
@@ -301,7 +308,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
       throw new Error(`Invalid tool path: ${path}`)
     }
     const serverId = path.slice(0, separator)
-    const toolName = path.slice(separator + 1)
+    const toolName = providerToolName(serverId, path.slice(separator + 1))
     const installed = await record(serverId)
     const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
     if (!installed.enabled || !allowed) {

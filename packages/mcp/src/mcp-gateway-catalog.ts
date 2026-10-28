@@ -1,6 +1,7 @@
 import {
   CODEVISOR_BOT_TOOL_NAMES,
   CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES,
+  codevisorToolName,
   SANDBOX_GLOBALS,
   type AutomationToolProvider
 } from "@codevisor/automation"
@@ -286,7 +287,8 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     if (separator <= 0 || separator === path.length - 1)
       throw new Error(`Invalid tool path: ${path}`)
     const serverId = path.slice(0, separator)
-    const toolName = path.slice(separator + 1)
+    const requested = path.slice(separator + 1)
+    const toolName = serverId === "codevisor" ? codevisorToolName(requested) : requested
     const server = (await enabledServers(projectId, sessionId)).find(
       (candidate) => candidate.id === serverId
     )

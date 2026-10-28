@@ -98,6 +98,41 @@ describe("Codevisor built-in tools", () => {
     expect(await view(agent.id)).toEqual({ skill: false, send: false, add: false, remove: false })
   })
 
+  it("still finds plugin tools by their old mcps.* names", async () => {
+    const { db, manager } = await testManager(providers)
+    manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-legacy-names" }))
+    const agent = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "Agent" })
+    )
+    const issued = await manager.issueGateway(agent.id, project.id)
+    const client = new Client({ name: "legacy-names-test", version: "1" })
+    await client.connect(
+      sdkTransport(
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        })
+      )
+    )
+    const describedName = async (path: string) =>
+      executeResultValue(
+        await client.callTool({
+          name: "execute",
+          arguments: {
+            description: "Describe a tool by its old name",
+            code: `async () => (await machines.current.tools.describe.tool({ path: ${JSON.stringify(path)} })).name`
+          }
+        })
+      )
+
+    try {
+      expect(await describedName("codevisor.mcps.list")).toBe("plugins.list")
+      expect(await describedName("codevisor.mcps.create")).toBe("plugins.add_custom")
+    } finally {
+      await client.close()
+    }
+  })
+
   it("lists its tools in settings and preserves a disabled provider across restarts", async () => {
     const { db, manager, directory } = await testManager(providers)
     const tools = await manager.tools("codevisor")

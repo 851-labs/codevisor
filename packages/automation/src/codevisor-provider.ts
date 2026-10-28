@@ -9,10 +9,12 @@ import { resourceResult, responseError, textResult } from "./codevisor-api-respo
 import { CODEVISOR_API_TOOLS, type CodevisorApiToolSpec } from "./codevisor-api-tools.js"
 import { codevisorEventTools } from "./codevisor-event-tools.js"
 import { codevisorPluginTools } from "./codevisor-plugin-tools.js"
+import { codevisorToolName } from "./codevisor-tool-aliases.js"
 import { toolInputSchema } from "./codevisor-tool-schema.js"
 import { shapedToolResult } from "./codevisor-tool-shapes.js"
 import type { UnknownRecord } from "./unknown-values.js"
 
+export { CODEVISOR_TOOL_ALIASES, codevisorToolName } from "./codevisor-tool-aliases.js"
 export {
   CODEVISOR_BOT_TOOL_NAMES,
   CODEVISOR_CONVERSATIONAL_BOT_TOOL_NAMES
@@ -106,7 +108,8 @@ export const makeCodevisorProvider = (
 ): AutomationToolProvider => ({
   id: "codevisor",
   tools,
-  invoke: async (context, toolName, args) => {
+  invoke: async (context, requestedName, args) => {
+    const toolName = codevisorToolName(requestedName)
     if (toolName === "context.current") {
       const extra = (await options.currentContext?.(context)) ?? {}
       return textToolResult(
