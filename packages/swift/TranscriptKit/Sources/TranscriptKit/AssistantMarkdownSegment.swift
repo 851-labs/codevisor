@@ -204,17 +204,29 @@ public func assistantMarkdownSegments(
   includeUnreferencedAttachments: Bool = true,
   localImagesPendingCapture: Bool = false
 ) -> [AssistantMarkdownSegment] {
+  let request = AssistantMarkdownSegmentCache.Key(
+    markdown: markdown, attachments: attachments, includeUnreferencedAttachments: includeUnreferencedAttachments,
+    localImagesPendingCapture: localImagesPendingCapture)
+  return AssistantMarkdownSegmentCache.shared.segments(for: request) { key in
+    segmentAssistantMarkdown(
+      key.markdown, attachments: key.attachments, includeUnreferencedAttachments: key.includeUnreferencedAttachments,
+      localImagesPendingCapture: key.localImagesPendingCapture)
+  }
+}
+
+private func segmentAssistantMarkdown(
+  _ markdown: String,
+  attachments: [Attachment],
+  includeUnreferencedAttachments: Bool,
+  localImagesPendingCapture: Bool
+) -> [AssistantMarkdownSegment] {
   let byID = Dictionary(uniqueKeysWithValues: attachments.map { ($0.fileId, $0) })
-  var referenced = Set<String>()
   var segments: [AssistantMarkdownSegment] = []
   var offset = markdown.startIndex
   let fullRange = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
   let codeRanges = markdownCodeRanges(markdown)
   let parsed = markdown.contains("|") ? MarkdownParser().parseWithTableRanges(markdown) : nil
-  for target in parsed?.blocks.flatMap(\.imageSources) ?? [] where target.hasPrefix(attachmentOrigin) {
-    let id = String(target.dropFirst(attachmentOrigin.count).prefix(while: { $0 != "?" }))
-    if byID[id] != nil { referenced.insert(id) }
-  }
+  var referenced = attachmentIDs(in: parsed?.blocks.flatMap(\.imageSources) ?? [], knownIDs: byID)
 
   for match in assistantLinkExpression.matches(in: markdown, range: fullRange) {
     guard !MarkdownInlineCodeRanges.characterIsEscaped(at: match.range.location, in: markdown as NSString),
@@ -245,21 +257,38 @@ public func assistantMarkdownSegments(
     if offset < matchRange.lowerBound {
       segments.append(.markdown(String(markdown[offset..<matchRange.lowerBound])))
     }
-    let label =
-      Range(match.range(at: 1), in: markdown)
-      .map { String(markdown[$0]) }
-      .flatMap { $0.isEmpty ? nil : $0 }
-      ?? file.name
-    segments.append(.file(file, label: label))
+    segments.append(.file(file, label: linkLabel(match, in: markdown) ?? file.name))
     offset = matchRange.upperBound
   }
   if offset < markdown.endIndex {
     segments.append(.markdown(String(markdown[offset...])))
   }
   if includeUnreferencedAttachments {
-    for attachment in attachments where !referenced.contains(attachment.fileId) {
-      segments.append(.file(PreviewFile(attachment: attachment), label: attachment.name))
-    }
+    segments += unreferencedAttachmentSegments(attachments, referenced: referenced)
   }
   return segments
+}
+
+private func linkLabel(_ match: NSTextCheckingResult, in markdown: String) -> String? {
+  Range(match.range(at: 1), in: markdown)
+    .map { String(markdown[$0]) }
+    .flatMap { $0.isEmpty ? nil : $0 }
+}
+
+private func attachmentIDs(in imageSources: [String], knownIDs: [String: Attachment]) -> Set<String> {
+  Set(
+    imageSources
+      .filter { $0.hasPrefix(attachmentOrigin) }
+      .map { String($0.dropFirst(attachmentOrigin.count).prefix(while: { $0 != "?" })) }
+      .filter { knownIDs[$0] != nil }
+  )
+}
+
+private func unreferencedAttachmentSegments(
+  _ attachments: [Attachment],
+  referenced: Set<String>
+) -> [AssistantMarkdownSegment] {
+  attachments
+    .filter { !referenced.contains($0.fileId) }
+    .map { .file(PreviewFile(attachment: $0), label: $0.name) }
 }

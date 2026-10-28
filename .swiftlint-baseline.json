@@ -2460,21 +2460,6 @@
     }
   },
   {
-    "text": "public func assistantMarkdownSegments(",
-    "violation": {
-      "location": {
-        "character": 8,
-        "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/AssistantMarkdownSegment.swift",
-        "line": 201
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  static func appendAssistantResponse(",
     "violation": {
       "location": {

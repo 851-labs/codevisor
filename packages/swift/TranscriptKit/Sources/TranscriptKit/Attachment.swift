@@ -1,8 +1,8 @@
 import Foundation
 import UniformTypeIdentifiers
 
-public struct Attachment: Identifiable, Sendable, Equatable {
-  public enum Kind: String, Sendable, Equatable {
+public struct Attachment: Identifiable, Sendable, Hashable {
+  public enum Kind: String, Sendable, Hashable {
     case image
     case file
   }
