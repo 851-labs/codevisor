@@ -102,13 +102,7 @@ struct NativeTranscriptView: NSViewRepresentable {
   ) {
     let scrollView = presentationSurface.ensureScrollView()
     guard scrollView.superview !== container else { return }
-
-    if scrollView.superview?.window != nil,
-      container.window == nil,
-      container.superview == nil
-    {
-      return
-    }
+    guard container.window != nil else { return }
 
     (scrollView.superview as? SurfaceContainerView)?
       .relinquishSurface(presentationSurface)
