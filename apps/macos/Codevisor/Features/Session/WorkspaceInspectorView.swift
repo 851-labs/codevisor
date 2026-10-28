@@ -51,7 +51,8 @@ struct WorkspaceInspectorView: View {
   @State private var tabViewport = TabViewport()
   @State private var tabFrames: [WorkspaceInspectorTab: CGRect] = [:]
   @State private var visited: Set<WorkspaceInspectorTab> = []
-  @State private var chatContext: (sessionId: UUID, context: ServerSessionContext)?
+  @State private var chatContexts: [UUID: ServerSessionContext] = [:]
+  @State private var lastLoadedChatId: UUID?
   @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
   var body: some View {
@@ -252,9 +253,9 @@ struct WorkspaceInspectorView: View {
           WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
         }
 
-        if chatSessionId != nil {
+        if let chatSessionId {
           WorkspaceInspectorContextSection(
-            context: chatContext?.context, usage: chatUsage,
+            context: chatContexts[chatSessionId] ?? lastLoadedChatId.flatMap { chatContexts[$0] }, usage: chatUsage,
             isExpanded: expansion("Context"))
         }
       }
@@ -267,8 +268,9 @@ struct WorkspaceInspectorView: View {
     ) {
       guard let chatSessionId else { return }
       let context = try? await client.sessionContext(id: chatSessionId)
-      guard !Task.isCancelled, context != nil || chatContext?.sessionId != chatSessionId else { return }
-      chatContext = context.map { (chatSessionId, $0) }
+      guard !Task.isCancelled else { return }
+      if let context { chatContexts[chatSessionId] = context }
+      lastLoadedChatId = chatSessionId
     }
   }
 
