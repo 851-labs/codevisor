@@ -112,6 +112,7 @@ struct HomeSidebarList: View {
         shown += group.workspaces
       }
     }
+    shown = shown.flatMap(\.subtree)
     if archivedExpanded { shown += content.archived }
     return shown.map(\.id)
   }
@@ -205,11 +206,16 @@ struct HomeSidebarList: View {
     let row = HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
       .equatable()
       .tag(workspace.id)
-    if !workspace.listsTabs {
+    if !workspace.hasNestedRows {
       row
     } else {
-      DisclosureGroup(isExpanded: workspaceExpansion(workspace.id)) {
-        tabRows(workspace)
+      DisclosureGroup(isExpanded: workspaceExpansion(workspace)) {
+        if workspace.listsTabs {
+          tabRows(workspace)
+        }
+        if !workspace.children.isEmpty {
+          AnyView(workspaceRows(workspace.children))
+        }
       } label: {
         row
       }
@@ -224,7 +230,7 @@ struct HomeSidebarList: View {
     if !bot.hasNestedRows {
       row
     } else {
-      DisclosureGroup(isExpanded: workspaceExpansion(bot.id)) {
+      DisclosureGroup(isExpanded: tabExpansion(bot.id)) {
         if let home = bot.home {
           ForEach(bot.tabs) { tab in
             HomeSidebarTabRowView(row: tab, workspace: home.workspace, actions: actions, isSelectionRow: isSelectable)
@@ -275,7 +281,18 @@ struct HomeSidebarList: View {
       ))
   }
 
-  private func workspaceExpansion(_ id: UUID) -> Binding<Bool> {
+  private func workspaceExpansion(_ workspace: HomeSidebarWorkspace) -> Binding<Bool> {
+    guard !workspace.children.isEmpty else { return tabExpansion(workspace.id) }
+    return groupExpansion(SidebarRows.childrenGroupID(workspace.id))
+  }
+
+  private func isExpanded(_ workspace: HomeSidebarWorkspace) -> Bool {
+    workspace.children.isEmpty
+      ? expandedWorkspaceIDs.contains(workspace.id.uuidString)
+      : !collapsedGroupIDs.contains(SidebarRows.childrenGroupID(workspace.id))
+  }
+
+  private func tabExpansion(_ id: UUID) -> Binding<Bool> {
     let key = id.uuidString
     return animated(
       Binding(
@@ -294,8 +311,8 @@ struct HomeSidebarList: View {
     case let .bot(botId):
       return botId
     case let .workspace(workspaceId, paneId):
-      if let paneId, content.workspace(workspaceId)?.listsTabs == true,
-        expandedWorkspaceIDs.contains(workspaceId.uuidString), content.row(paneId) != nil
+      if let paneId, let workspace = content.workspace(workspaceId), workspace.listsTabs, isExpanded(workspace),
+        content.row(paneId) != nil
       {
         return paneId
       }

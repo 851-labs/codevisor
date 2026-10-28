@@ -26,8 +26,13 @@ struct HomeSidebarContentBuilder {
 
   func content(_ preferences: HomeSidebarPreferences) -> HomeSidebarContent {
     let projectGroups = ProjectGroup.grouping(environment.projectList.projects)
+    let listed = listedItems
+    let botChildren = Set(botEntries.flatMap(\.children).map(\.id))
+    let tree = SidebarWorkspaceTree(listed + botEntries.flatMap(\.children), pinnedIDs: preferences.pinnedIDs)
+    let children = tree.children.mapValues { $0.filter { !botChildren.contains($0.id) } }
     var content = HomeSidebarContent.make(
-      listed: listedItems,
+      listed: tree.roots.filter { !botChildren.contains($0.id) },
+      children: children,
       archived: archivedItems,
       preferences: preferences,
       projects: environment.projectList.projects,
@@ -51,8 +56,10 @@ struct HomeSidebarContentBuilder {
         machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: entry.bot.serverId) : nil,
         home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == entry.bot.workspaceId }
           .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
-        children: entry.children.compactMap {
-          botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
+        children: entry.children.compactMap { child in
+          HomeSidebarContent.nesting(child, children: children) {
+            botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
+          }
         }
       )
     }
