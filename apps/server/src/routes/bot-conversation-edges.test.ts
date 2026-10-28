@@ -215,40 +215,55 @@ describe("bot conversation edges", () => {
     expect(failure()?.payload).toMatchObject({ stopKind })
   })
 
-  it.each([undefined, "usageLimit"])(
-    "posts a stopped turn's reason with stop kind %s but none of the bot's own reply",
-    async (stopKind) => {
-      const { running, bot } = await startBot()
-      const image = await storeImage(running)
-      const agentSessionId = await holdTurn(running, bot.sessionId)
+  it("posts a stopped turn's reason but none of the bot's own reply", async () => {
+    const { running, bot } = await startBot()
+    const image = await storeImage(running)
+    const agentSessionId = await holdTurn(running, bot.sessionId)
 
-      await running.agents.emit(agentSessionId, {
-        kind: "session.output",
-        subjectId: agentSessionId,
-        payload: {
-          sessionUpdate: "agent_message_chunk",
-          messageId: "reply-1",
-          content: {
-            type: "text",
-            text: `Here it is ![shot](https://attachments.codevisor.invalid/${image.fileId})`
-          }
+    await running.agents.emit(agentSessionId, {
+      kind: "session.output",
+      subjectId: agentSessionId,
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "reply-1",
+        content: {
+          type: "text",
+          text: `Here it is ![shot](https://attachments.codevisor.invalid/${image.fileId})`
         }
-      })
-      await endTurn(running, agentSessionId, { stopReason: "end_turn" })
-      await endTurn(running, agentSessionId, {
-        stopReason: "refusal",
-        ...(stopKind === undefined ? {} : { stopKind }),
-        stopDetail: "You've hit your usage limit"
-      })
+      }
+    })
+    await endTurn(running, agentSessionId, { stopReason: "end_turn" })
+    await endTurn(running, agentSessionId, { stopReason: "refusal", stopDetail: "Refused" })
 
-      await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
-      expect(await transcript(running, bot.sessionId)).toEqual([
-        ["user", "prompt until cancelled"],
-        ["notice", "You've hit your usage limit"]
-      ])
-      await cancel(running, bot.sessionId)
-    }
-  )
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "prompt until cancelled"],
+      ["notice", "Refused"]
+    ])
+    await cancel(running, bot.sessionId)
+  })
+
+  it("posts a repeated stop notice once, and a different or later one again", async () => {
+    const { running, bot } = await startBot()
+    const agentSessionId = await holdTurn(running, bot.sessionId)
+
+    await endTurn(running, agentSessionId, { stopReason: "refusal", stopDetail: "Refused" })
+    await endTurn(running, agentSessionId, { stopReason: "refusal", stopDetail: "Refused" })
+    await endTurn(running, agentSessionId, { stopReason: "max_tokens", stopDetail: "Too long" })
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 3)
+    await send(running, bot.sessionId, { text: "Still here" })
+    await endTurn(running, agentSessionId, { stopReason: "max_tokens", stopDetail: "Too long" })
+
+    await waitFor(async () => (await transcript(running, bot.sessionId)).length === 5)
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "prompt until cancelled"],
+      ["notice", "Refused"],
+      ["notice", "Too long"],
+      ["bot", "Still here"],
+      ["notice", "Too long"]
+    ])
+    await cancel(running, bot.sessionId)
+  })
 
   it("shows the files a user sends and replays a resent message only once", async () => {
     const { running, bot } = await startBot()

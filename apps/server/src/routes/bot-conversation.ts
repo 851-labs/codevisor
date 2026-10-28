@@ -143,6 +143,7 @@ const turnNotice = (event: EventEnvelope): string | undefined => {
 }
 
 const stopNotice = (payload: Record<string, unknown>): string | undefined => {
+  if (payload.stopKind === "usageLimit") return undefined
   return typeof payload.stopDetail === "string" ? payload.stopDetail : undefined
 }
 

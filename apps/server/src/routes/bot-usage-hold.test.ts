@@ -119,23 +119,26 @@ const conversation = async (running: Running, sessionId: string) =>
   ).messages.map((message) => [message.sender, message.text])
 
 describe("bots stopped at a usage limit", () => {
-  it("posts a repeated limit notice once, and a different or later one again", async () => {
+  it("posts no notice for a limit stop, since the turn shows the limit card", async () => {
     const { running, sessionId, agentSessionId } = await startLimitedBot()
 
-    await stopAtLimit(running, agentSessionId, weeklyLimit)
-    await stopAtLimit(running, agentSessionId, weeklyLimit)
     await stopAtLimit(running, agentSessionId, "You've hit your 5-hour limit")
-    await waitFor(async () => (await conversation(running, sessionId)).length === 3)
-    await post(running, `/v1/sessions/${sessionId}/messages`, { text: "Still here" })
-    await stopAtLimit(running, agentSessionId, "You've hit your 5-hour limit")
+    await running.agents.emit(agentSessionId, {
+      kind: "session.updated",
+      subjectId: agentSessionId,
+      payload: {
+        initiatedBy: "user",
+        turnId: "refused",
+        turnState: "ended",
+        stopReason: "refusal",
+        stopDetail: "Refused"
+      }
+    })
 
-    await waitFor(async () => (await conversation(running, sessionId)).length === 5)
+    await waitFor(async () => (await conversation(running, sessionId)).length === 2)
     expect(await conversation(running, sessionId)).toEqual([
       ["user", "Check the release"],
-      ["notice", weeklyLimit],
-      ["notice", "You've hit your 5-hour limit"],
-      ["bot", "Still here"],
-      ["notice", "You've hit your 5-hour limit"]
+      ["notice", "Refused"]
     ])
   })
 
