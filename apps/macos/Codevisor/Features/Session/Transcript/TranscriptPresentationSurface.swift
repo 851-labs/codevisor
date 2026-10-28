@@ -68,7 +68,6 @@ final class TranscriptPresentationSurface {
 @MainActor
 final class TranscriptPresentationSurfaceCache {
   struct Key: Hashable {
-    let serverID: String
     let sessionID: UUID
     let paneID: UUID
   }
@@ -104,10 +103,8 @@ final class TranscriptPresentationSurfaceCache {
     return surface
   }
 
-  func remove(serverID: String, sessionID: UUID) {
-    cache.remove {
-      $0.serverID == serverID && $0.sessionID == sessionID
-    }
+  func remove(sessionID: UUID) {
+    cache.remove { $0.sessionID == sessionID }
   }
 
   private func scheduleTrim(excluding protectedKey: Key) {

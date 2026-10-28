@@ -200,6 +200,19 @@ extension SessionController {
     await reconnect()
   }
 
+  func handOff(to project: Project, serverClient client: any CodevisorServerClienting) {
+    retargetRevision &+= 1
+    modelConfigurationResolutionRevision &+= 1
+    isResolvingModelConfiguration = false
+    harnessCapabilityRequestRevision &+= 1
+    isRefreshingHarnessCapabilities = false
+    serverClient = client
+    self.project = project
+    attachments.reuploadAllAttachments()
+    sessionCwdOverride = nil
+    worktreeName = nil
+  }
+
   public func adoptServerClient(_ client: any CodevisorServerClienting, forServer serverId: String) {
     guard project.serverId == serverId else { return }
     serverClient = client

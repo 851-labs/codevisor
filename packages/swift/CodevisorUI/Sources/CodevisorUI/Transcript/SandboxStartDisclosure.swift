@@ -3,16 +3,19 @@ import SwiftUI
 
 public struct SandboxStartDisclosure: View {
   let summary: SandboxStartSummary
-  @State private var isExpanded = false
+  @Environment(\.transcriptDisclosure) private var disclosureStore
 
   public init(summary: SandboxStartSummary) {
     self.summary = summary
   }
 
+  private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
+  private var isExpanded: Bool { store.isExpanded(.sandboxStart, default: false) }
+
   public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Button {
-        isExpanded.toggle()
+        store.toggle(.sandboxStart, default: false)
       } label: {
         header
           .contentShape(Rectangle())

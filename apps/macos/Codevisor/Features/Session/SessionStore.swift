@@ -173,7 +173,6 @@ final class SessionStore {
   ) -> TranscriptPresentationSurface {
     transcriptSurfaces.surface(
       for: .init(
-        serverID: session.serverId,
         sessionID: session.id,
         paneID: paneID
       ),
@@ -205,7 +204,7 @@ final class SessionStore {
 
   @ObservationIgnored var ephemeralWorkspaces: [UUID: Workspace] = [:]
 
-  private var paneGroupFactory: PaneGroupFactory {
+  var paneGroupFactory: PaneGroupFactory {
     PaneGroupFactory(environment: environment, browserPanes: browserPanes, browserHost: self)
   }
 

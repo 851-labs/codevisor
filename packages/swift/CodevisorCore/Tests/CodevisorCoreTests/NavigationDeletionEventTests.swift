@@ -88,7 +88,7 @@ struct NavigationDeletionEventTests {
     #expect(fixture.sync.routeDisposition(sessionId: fixture.anchorSessionId, serverId: "local") == .dismiss)
     #expect(
       fixture.sync.routeDisposition(
-        workspaceId: fixture.workspace.id, anchorSessionId: fixture.anchorSessionId, serverId: "local",
+        workspaceId: fixture.workspace.id, anchorSessionId: fixture.anchorSessionId,
         preservingSelectedPane: true) == .dismiss)
   }
 

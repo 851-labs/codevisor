@@ -188,8 +188,7 @@ struct MachineControllerServerEventTests {
     #expect(
       workspaceSync.routeDisposition(
         workspaceId: workspaceId,
-        anchorSessionId: sessionId,
-        serverId: "local"
+        anchorSessionId: sessionId
       ) == .keep
     )
 
@@ -205,8 +204,7 @@ struct MachineControllerServerEventTests {
     #expect(
       workspaceSync.routeDisposition(
         workspaceId: workspaceId,
-        anchorSessionId: sessionId,
-        serverId: "local"
+        anchorSessionId: sessionId
       ) == .dismiss
     )
 

@@ -47,7 +47,7 @@ final class WorkspaceEventFixture {
 
   var routeDisposition: WorkspaceRouteDisposition {
     sync.routeDisposition(
-      workspaceId: workspace.id, anchorSessionId: anchorSessionId, serverId: serverId,
+      workspaceId: workspace.id, anchorSessionId: anchorSessionId,
       preservingSelectedPane: true)
   }
 

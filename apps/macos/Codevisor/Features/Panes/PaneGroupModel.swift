@@ -21,8 +21,8 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored var wiring: PaneGroupWiring?
   @ObservationIgnored private let repository: any PaneGroupRepository
   @ObservationIgnored private var makeContext: (PaneDescriptorState) -> PaneContext
-  @ObservationIgnored let pluginIconClient: (any CodevisorServerClienting)?
-  @ObservationIgnored let pluginIconCacheNamespace: String
+  @ObservationIgnored private(set) var pluginIconClient: (any CodevisorServerClienting)?
+  @ObservationIgnored private(set) var pluginIconCacheNamespace: String
   @ObservationIgnored var requestComposerFocus: (() -> Void)?
   @ObservationIgnored var requestBackgroundFocus: (() -> Void)?
   @ObservationIgnored private var newTabFocusHandlers: [UUID: () -> Void] = [:]
@@ -439,6 +439,21 @@ final class PaneGroupModel: Identifiable {
       return previous.documentPath != next.documentPath
     default:
       return true
+    }
+  }
+}
+
+extension PaneGroupModel {
+  func retarget(
+    pluginIconClient: (any CodevisorServerClienting)?,
+    pluginIconCacheNamespace: String,
+    makeContext: @escaping (PaneDescriptorState) -> PaneContext
+  ) {
+    self.pluginIconClient = pluginIconClient
+    self.pluginIconCacheNamespace = pluginIconCacheNamespace
+    self.makeContext = makeContext
+    for pane in state.panes where !(live[pane.id] is ChatPane) {
+      discardLivePane(id: pane.id)
     }
   }
 }

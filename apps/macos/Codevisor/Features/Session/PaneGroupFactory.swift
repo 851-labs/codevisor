@@ -54,6 +54,26 @@ struct PaneGroupFactory {
     installBrowserHooks(on: model, session: session, project: project)
   }
 
+  func retarget(
+    _ model: PaneGroupModel,
+    to workspace: Workspace,
+    session: ChatSession,
+    project: Project
+  ) {
+    let serverId = workspace.serverId
+    let client = environment.machines.client(for: serverId)
+    model.retarget(
+      pluginIconClient: client,
+      pluginIconCacheNamespace: serverId,
+      makeContext: contextFactory(
+        session: session, project: project, machine: machine(for: serverId, assumingLocal: false), client: client,
+        workspace: workspace))
+    if model.sessionId != nil {
+      installBrowserHooks(on: model, session: session, project: project)
+    }
+    installSyncHooks(on: model, workspaceId: workspace.id, serverId: serverId)
+  }
+
   private func machine(for serverId: String, assumingLocal: Bool) -> CodevisorMachine {
     if let machine = environment.machines.machine(for: serverId) { return machine }
     if assumingLocal || serverId == CodevisorMachine.local.id { return .local }

@@ -29,7 +29,7 @@ struct SessionRouteView: View {
           store: store,
           onFocusedChatChanged: onFocusedChatChanged
         )
-        .id("\(session.serverId):\(workspace.id.uuidString)")
+        .id(workspace.id)
         .task(id: SessionStore.SessionKey(session)) {
           store.noteAccess(SessionStore.SessionKey(session))
         }
@@ -84,7 +84,7 @@ struct WorkspaceRouteView: View {
         store: store,
         onFocusedChatChanged: onFocusedChatChanged
       )
-      .id("\(serverId):\(workspaceId.uuidString)")
+      .id(workspaceId)
     } else {
       ContentUnavailableView(
         "Workspace Unavailable",

@@ -219,7 +219,6 @@ extension SessionController {
   }
 
   func adoptHarnessCapability(_ capability: ServerHarnessCapability) {
-    guard !harnesses.contains(where: { $0.id == capability.harness.id }) else { return }
     applyHarnessCapabilities([capability])
     preparationState = .ready
   }

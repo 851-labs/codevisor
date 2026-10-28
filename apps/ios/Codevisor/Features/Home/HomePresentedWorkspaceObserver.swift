@@ -31,19 +31,18 @@ struct HomePresentedWorkspaceObserver: View {
   }
 
   private var disposition: WorkspaceRouteDisposition {
-    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _, _)? = route else {
+    guard case let .workspace(_, workspaceId, anchorSessionId, _, _, _)? = route else {
       return .keep
     }
     guard let anchorSessionId else {
       guard let workspace = environment.navigationStore.workspaceEntries.entry(workspaceId).workspace,
-        workspace.serverId == serverId, !workspace.isArchived
+        !workspace.isArchived
       else { return .dismiss }
       return .keep
     }
     return environment.workspaceSync.routeDisposition(
       workspaceId: workspaceId,
-      anchorSessionId: anchorSessionId,
-      serverId: serverId
+      anchorSessionId: anchorSessionId
     )
   }
 }

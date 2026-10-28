@@ -56,14 +56,15 @@ struct WorkspaceScreen: View {
   }
 
   var resolvedServerId: String {
-    serverId ?? draftController?.project.serverId ?? environment.defaultComposerServerId
+    workspaceId.flatMap { environment.navigationStore.workspaceEntries.entry($0).workspace?.serverId }
+      ?? serverId ?? draftController?.project.serverId ?? environment.defaultComposerServerId
   }
 
   var workspaceEntry: WorkspaceEntry? {
     let entries = environment.navigationStore.workspaceEntries
     if let workspaceId {
       let entry = entries.entry(workspaceId)
-      if entry.workspace?.serverId == resolvedServerId { return entry }
+      if entry.workspace != nil { return entry }
     }
     guard let activeSessionId, let indexed = environment.workspaces.workspaceId(forSession: activeSessionId)
     else { return nil }

@@ -147,6 +147,8 @@ final class ChatControllerCache {
     setController(nil, for: old)
     accessOrder.removeAll { $0 == old }
     let key = Key(serverId: relocated.serverId, id: relocated.id)
+    scrollStates[key] = scrollStates.removeValue(forKey: old)
+    todoExpansionStates[key] = todoExpansionStates.removeValue(forKey: old)
     noteAccess(key)
     setController(controller, for: key)
     bindRetainedSessionState(controller, to: key)

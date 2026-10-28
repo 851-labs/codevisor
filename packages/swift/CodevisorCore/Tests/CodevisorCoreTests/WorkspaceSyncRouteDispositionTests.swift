@@ -63,8 +63,7 @@ struct WorkspaceSyncRouteDispositionTests {
     #expect(
       sync.routeDisposition(
         workspaceId: fixture.workspaceId,
-        anchorSessionId: fixture.sessionId,
-        serverId: "local"
+        anchorSessionId: fixture.sessionId
       ) == .keep
     )
     #expect(sync.routeDisposition(sessionId: fixture.sessionId, serverId: "local") == .keep)
@@ -87,8 +86,7 @@ struct WorkspaceSyncRouteDispositionTests {
     #expect(
       sync.routeDisposition(
         workspaceId: fixture.workspaceId,
-        anchorSessionId: fixture.sessionId,
-        serverId: "local"
+        anchorSessionId: fixture.sessionId
       ) == .dismiss
     )
     #expect(sync.routeDisposition(sessionId: fixture.sessionId, serverId: "local") == .dismiss)
@@ -108,8 +106,7 @@ struct WorkspaceSyncRouteDispositionTests {
     #expect(
       sync.routeDisposition(
         workspaceId: fixture.workspaceId,
-        anchorSessionId: UUID(),
-        serverId: "local"
+        anchorSessionId: UUID()
       ) == .dismiss
     )
   }
@@ -121,11 +118,11 @@ struct WorkspaceSyncRouteDispositionTests {
     #expect(sync.routeDisposition(sessionId: fixture.sessionId, serverId: "local") == .keep)
     #expect(sync.routeDisposition(sessionId: UUID(), serverId: "local") == .dismiss)
     #expect(
-      sync.routeDisposition(workspaceId: UUID(), anchorSessionId: fixture.sessionId, serverId: "local") == .dismiss)
+      sync.routeDisposition(workspaceId: UUID(), anchorSessionId: fixture.sessionId) == .dismiss)
     _ = await fixture.navigation.store.apply(
       .fixture(cursor: 2, deleted: [("workspaces", fixture.workspaceId.uuidString)]), machineId: "local")
     #expect(
-      sync.routeDisposition(workspaceId: fixture.workspaceId, anchorSessionId: fixture.sessionId, serverId: "local")
+      sync.routeDisposition(workspaceId: fixture.workspaceId, anchorSessionId: fixture.sessionId)
         == .dismiss)
   }
 }

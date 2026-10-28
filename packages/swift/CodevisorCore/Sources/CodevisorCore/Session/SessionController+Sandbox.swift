@@ -158,7 +158,7 @@ extension SessionController {
     relocateSession(to: remote)
     sandboxTarget = nil
     tracker.begin(.agent)
-    await retarget(to: remote, serverClient: client)
+    handOff(to: remote, serverClient: client)
     try await restoreAgent(agent, target: target, tracker: tracker)
     tracker.succeed(.agent)
   }
@@ -171,7 +171,7 @@ extension SessionController {
     guard let agent else { return }
     let deadline = ContinuousClock.now + .seconds(180)
     var lastDetail: String?
-    while !harnesses.contains(where: { $0.id == agent.harnessId }) {
+    while true {
       guard ContinuousClock.now < deadline else {
         throw SandboxSetupError(message: "The chosen agent isn't ready on the \(target.machineNoun)")
       }

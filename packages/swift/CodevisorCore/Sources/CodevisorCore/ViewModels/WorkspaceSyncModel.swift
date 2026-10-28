@@ -45,7 +45,6 @@ public final class WorkspaceSyncModel {
     return routeDisposition(
       workspaceId: workspaceId,
       anchorSessionId: sessionId,
-      serverId: serverId,
       preservingSelectedPane: preservingSelectedPane
     )
   }
@@ -53,13 +52,10 @@ public final class WorkspaceSyncModel {
   public func routeDisposition(
     workspaceId: UUID,
     anchorSessionId: UUID,
-    serverId: String,
     preservingSelectedPane: Bool = false
   ) -> WorkspaceRouteDisposition {
-    guard let workspace = repository.workspace(id: workspaceId),
-      workspace.serverId == serverId,
-      !workspace.isArchived
-    else { return .dismiss }
+    guard let workspace = repository.workspace(id: workspaceId), !workspace.isArchived else { return .dismiss }
+    let serverId = workspace.serverId
 
     let hasAnchor = projectList.sessions.contains {
       $0.serverId == serverId && $0.id == anchorSessionId

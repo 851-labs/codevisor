@@ -29,7 +29,7 @@ extension SessionStore {
       controller?.onScrollStateChange = nil
       controller?.model?.shutdown()
       scrollStates[id] = nil
-      transcriptSurfaces.remove(serverID: id.serverId, sessionID: id.sessionId)
+      transcriptSurfaces.remove(sessionID: id.sessionId)
     }
   }
 }

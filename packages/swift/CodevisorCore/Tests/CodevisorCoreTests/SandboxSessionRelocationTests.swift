@@ -29,6 +29,19 @@ struct SandboxSessionRelocationTests {
         sessionId: relocated.id, serverId: remote.serverId, preservingSelectedPane: true) == .keep)
   }
 
+  @Test("A route opened on the old machine keeps showing the chat the moment it moves")
+  func routeFollowsTheMovedWorkspace() async {
+    await navigation.install(projects: [owner])
+    let previous = navigation.projectList.newSession(in: owner, title: "Hi", syncToServer: false)
+    let draft = draftWorkspace(for: previous)
+
+    SandboxSessionRelocation.relocate(
+      previous, to: moved(previous), project: remote,
+      projectList: navigation.projectList, workspaces: navigation.workspaces)
+
+    #expect(navigation.workspaceSync.routeDisposition(workspaceId: draft.id, anchorSessionId: previous.id) == .keep)
+  }
+
   private func draftWorkspace(for session: ChatSession) -> Workspace {
     navigation.workspaces.ensureWorkspace(
       for: WorkspaceSessionSeed(

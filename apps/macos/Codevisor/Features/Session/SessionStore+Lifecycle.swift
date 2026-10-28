@@ -28,9 +28,29 @@ extension SessionStore {
   }
 
   func reregister(_ controller: SessionController, from previous: ChatSession, to relocated: ChatSession) {
-    controllers[SessionKey(previous)] = nil
+    let previousKey = SessionKey(previous)
+    let relocatedKey = SessionKey(relocated)
+    controllers[previousKey] = nil
+    scrollStates[relocatedKey] = scrollStates.removeValue(forKey: previousKey)
+    todoExpansionStates[relocatedKey] = todoExpansionStates.removeValue(forKey: previousKey)
+    accessOrder = accessOrder.map { $0 == previousKey ? relocatedKey : $0 }
     register(controller, for: relocated)
-    detachCenterLeaves(for: relocated)
+    retargetCenterLeaves(for: relocated)
+  }
+
+  private func retargetCenterLeaves(for session: ChatSession) {
+    guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id),
+      let workspace = environment.workspaces.workspace(id: workspaceId),
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == session.serverId && $0.id == session.projectId
+      })
+    else {
+      detachCenterLeaves(for: session)
+      return
+    }
+    for (key, model) in centerLeafGroups where key.workspaceId == workspaceId {
+      paneGroupFactory.retarget(model, to: workspace, session: session, project: project)
+    }
   }
 
   func restoreDraftPersistence(_ controller: SessionController) {
@@ -53,7 +73,7 @@ extension SessionStore {
     let key = SessionKey(session)
     controllers[key]?.model?.shutdown()
     controllers[key] = nil
-    transcriptSurfaces.remove(serverID: key.serverId, sessionID: key.sessionId)
+    transcriptSurfaces.remove(sessionID: key.sessionId)
     ephemeralWorkspaces[session.id] = nil
     detachCenterLeaves(for: session)
     scrollStates[key] = nil
