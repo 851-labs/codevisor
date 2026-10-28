@@ -213,7 +213,7 @@
 
       private static let compactIconLeading: CGFloat = 7
 
-      private static let promptOpticalOffset: CGFloat = -1
+      private static let caretOpticalOffset: CGFloat = 1
 
       init(metrics: Autocomplete.Metrics, showsCheckmarks: Bool, showsIcons: Bool) {
         height = metrics.inputHeight
@@ -262,14 +262,14 @@
         }
         layoutConstraints = [
           searchField.leadingAnchor.constraint(
-            equalTo: leadingAnchor, constant: textLeading - Self.fieldTextInset
+            equalTo: leadingAnchor, constant: textLeading - Self.fieldTextInset + Self.caretOpticalOffset
           ),
           searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
           searchField.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -0.5),
           searchField.heightAnchor.constraint(
             equalToConstant: max(16, metrics.nativeMenuFont.ascender - metrics.nativeMenuFont.descender)),
           promptLabel.leadingAnchor.constraint(
-            equalTo: searchField.leadingAnchor, constant: Self.fieldTextInset + Self.promptOpticalOffset),
+            equalTo: searchField.leadingAnchor, constant: Self.fieldTextInset - Self.caretOpticalOffset),
           promptLabel.trailingAnchor.constraint(lessThanOrEqualTo: searchField.trailingAnchor),
           promptLabel.firstBaselineAnchor.constraint(equalTo: searchField.firstBaselineAnchor),
           filterIcon.centerXAnchor.constraint(
