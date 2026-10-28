@@ -36,6 +36,7 @@ public struct ScreenSharingViewer {
 
   public enum Action {
     case connectionEvent(ScreenSharingViewerEvent)
+    case connectionFinished
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
     case displaySelected(String)
     case dynamicResolutionToggled
@@ -112,6 +113,10 @@ public struct ScreenSharingViewer {
       case .connectionEvent(.ended(let message)):
         dropEndpoint(&state)
         return .merge(.cancel(id: CancelID.controlEvents), fail(&state, message))
+
+      case .connectionFinished:
+        guard Self.keepsConnection(state.phase) else { return .none }
+        return state.visible ? refresh(&state) : disconnect(&state)
 
       case .discoveryResponse(.success(let displays)):
         guard state.phase == .loading else { return .none }
@@ -249,8 +254,10 @@ public struct ScreenSharingViewer {
     state.message = nil
     return .merge(
       .cancel(id: CancelID.controlEvents),
-      .run { [backend] send in
+      .run { [backend, clock] send in
         for await event in await backend.connect(display) { await send(.connectionEvent(event)) }
+        try await clock.sleep(for: ScreenSharingTransientRetry.delay)
+        await send(.connectionFinished)
       }
       .cancellable(id: CancelID.connection, cancelInFlight: true))
   }

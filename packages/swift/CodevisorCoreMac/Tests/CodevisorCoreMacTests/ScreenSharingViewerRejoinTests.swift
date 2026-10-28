@@ -46,4 +46,37 @@ struct ScreenSharingViewerRejoinTests {
       await store.finish()
     }
   }
+
+  @Test func aMirrorWhoseStreamEndsWithoutAReasonReconnects() async {
+    await withMainSerialExecutor {
+      let backend = FakeBackend(displays: [display])
+      let clock = Clocks.TestClock()
+      let store = await viewer.makeConnectingStore(backend, FakeEndpointClient(), clock: clock)
+      let endpoint = backend.open()
+      await store.receive(\.connectionEvent.opened) {
+        $0.endpoint = endpoint
+        $0.lease = ControlLease.State(endpoint: endpoint.id)
+      }
+      backend.emit(.elsewhere(endpoint))
+      await store.receive(\.connectionEvent.elsewhere) {
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .elsewhere
+        $0.mirror = endpoint
+      }
+      backend.end()
+      await clock.advance(by: ScreenSharingTransientRetry.delay)
+      await store.receive(\.connectionFinished) {
+        $0.mirror = nil
+        $0.phase = .loading
+      }
+      await store.receive(\.discoveryResponse.success) { $0.phase = .connecting }
+      expectNoDifference(backend.connections, ["display", "display"])
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.phase = .suspended
+      }
+      await store.finish()
+    }
+  }
 }

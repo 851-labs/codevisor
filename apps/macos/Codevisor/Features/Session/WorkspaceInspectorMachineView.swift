@@ -17,7 +17,9 @@ struct WorkspaceInspectorMachineView: View {
         if let desktop {
           WorkspaceInspectorCard(title: "Desktop", isExpanded: desktopExpansion) {
             MachineDesktopPreview(
-              session: desktop, isStreaming: isActive, onOpen: onOpenDesktop)
+              session: desktop, isStreaming: isActive, onOpen: onOpenDesktop
+            )
+            .id(ObjectIdentifier(desktop))
           }
         }
         if let stats, stats.serverId == serverId {
