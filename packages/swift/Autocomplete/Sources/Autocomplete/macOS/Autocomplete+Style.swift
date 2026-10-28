@@ -8,8 +8,8 @@
       public var maximumWidth: CGFloat = 402
       public var maximumHeight: CGFloat = 430
       public var inputHeight: CGFloat = 28
-      public var inputHorizontalInset: CGFloat = 8
-      public var inputTopInset: CGFloat = 8
+      public var inputHorizontalInset: CGFloat = 5
+      public var inputTopInset: CGFloat = 5
       public var inputBottomInset: CGFloat = 0
       public var listHorizontalInset: CGFloat = 5
       public var listVerticalInset: CGFloat = 4
