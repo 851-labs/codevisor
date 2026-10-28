@@ -73,6 +73,8 @@ export function spawnCloudDev({ cloud, listensBeyondLoopback, repoRoot, worktree
       "--var",
       `PUBLIC_BASE_URL:${cloud.cloudUrl}`,
       "--var",
+      `HOOKS_BASE_URL:${cloud.cloudUrl}/hooks`,
+      "--var",
       `INSTANCE_NAME:Codevisor Cloud (${worktreeName})`,
       ...cloud.cloudExtraVariables,
       "--show-interactive-dev-session=false"

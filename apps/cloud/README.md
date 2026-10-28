@@ -25,8 +25,9 @@ One Cloudflare Worker contains the whole plane:
 - **Pages** — three tiny server-rendered pages (`/`, `/login`, `/device`,
   `/auth/handoff`); everything else is native-app UI.
 - **Plugin inboxes** — machines provision public webhook URLs
-  (`POST /api/machine/inboxes`, served at `<HOOKS_BASE_URL>/i/:id`). Without
-  `HOOKS_BASE_URL` inboxes are off: provisioning and deliveries answer 503.
+  (`POST /api/machine/inboxes`, served at `<HOOKS_BASE_URL>/i/:id`, normally
+  `<PUBLIC_BASE_URL>/hooks`). Without `HOOKS_BASE_URL` inboxes are off:
+  provisioning and deliveries answer 503.
   Each request is sealed to every subscribed device's public key and kept in
   that device's queue in `UserHub` until it acks (7-day TTL). The same queue
   relays OAuth redirects (`GET /oauth/callback`) to the machine that started
@@ -86,12 +87,12 @@ wrangler secret put BETTER_AUTH_SECRET    # openssl rand -base64 32
 wrangler secret put GITHUB_CLIENT_ID      # your own GitHub OAuth app
 wrangler secret put GITHUB_CLIENT_SECRET  # callback: <your-url>/api/auth/callback/github
 wrangler secret put PLUGIN_REPORT_SLACK_WEBHOOK # optional: plugin report notifications
-wrangler secret put HOOKS_BASE_URL        # optional: webhook inbox base, e.g. https://hooks.example.com
 wrangler deploy
 ```
 
-Set `PUBLIC_BASE_URL` (and a route/custom domain) in `wrangler.jsonc` to your
-domain, then point clients at it (`codevisor auth login --server …`, or the
+Set `PUBLIC_BASE_URL` (and a route/custom domain) and `HOOKS_BASE_URL`
+(`<PUBLIC_BASE_URL>/hooks`, or leave it out to keep webhook inboxes off) in
+`wrangler.jsonc` to your domain, then point clients at it (`codevisor auth login --server …`, or the
 "Use a self-hosted server" option in app settings). `GET
 /.well-known/codevisor` is the discovery endpoint clients validate before
 trusting a server.

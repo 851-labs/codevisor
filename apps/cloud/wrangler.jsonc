@@ -29,6 +29,7 @@
   "vars": {
     "APPLE_NATIVE_CLIENT_ID": "com.dylanplayer.codevisor.ios",
     "PUBLIC_BASE_URL": "https://cloud.codevisor.dev",
+    "HOOKS_BASE_URL": "https://cloud.codevisor.dev/hooks",
     "INSTANCE_NAME": "Codevisor Cloud"
   }
 }

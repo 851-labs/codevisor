@@ -152,6 +152,8 @@ if (externalCloudURL === undefined) {
       "--var",
       `PUBLIC_BASE_URL:${cloudURL}`,
       "--var",
+      `HOOKS_BASE_URL:${cloudURL}/hooks`,
+      "--var",
       `INSTANCE_NAME:Codevisor Cloud (${worktreeName})`,
       ...cloudExtraVariables,
       "--show-interactive-dev-session=false"
