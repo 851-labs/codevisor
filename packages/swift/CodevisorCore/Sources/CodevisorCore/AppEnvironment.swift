@@ -20,6 +20,7 @@ public final class AppEnvironment {
   public let updateCenter: UpdateCenter
   public let configSync: ConfigSync
   public let bots: BotListModel
+  public let botSections: BotSectionStore
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored var failedDialRefresh = CloudRosterRefreshThrottle()
@@ -95,6 +96,7 @@ public final class AppEnvironment {
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines)
+    botSections = BotSectionStore(configSync: configSync)
     updateCenter.listedHarnessIds = { [configSync] in
       guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
       return Set(HarnessFleet.settings(configSync).map(\.id))
