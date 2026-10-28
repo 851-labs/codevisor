@@ -97,15 +97,19 @@ public final class AppEnvironment {
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines)
     botSections = BotSectionStore(configSync: configSync)
-    updateCenter.listedHarnessIds = { [configSync] in
-      guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
-      return Set(HarnessFleet.settings(configSync).map(\.id))
-    }
     self.cloud = CloudAccountController(
       credentialStore: cloudCredentialStore ?? InMemoryCloudCredentialStore()
     )
     self.pluginAccess = PluginAccessController(cloud: cloud, store: machineStore)
     self.directMachineAdoption = DirectMachineCloudAdoption(store: machineStore)
+    configureServices()
+  }
+
+  private func configureServices() {
+    updateCenter.listedHarnessIds = { [configSync] in
+      guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
+      return Set(HarnessFleet.settings(configSync).map(\.id))
+    }
     #if os(iOS)
       updateCenter.reviewPluginUpdate = { [pluginAccess] _, plan in
         try await pluginAccess.requireEligible(pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)

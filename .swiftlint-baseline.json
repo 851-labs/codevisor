@@ -855,21 +855,6 @@
     }
   },
   {
-    "text": "  public init(",
-    "violation": {
-      "location": {
-        "character": 10,
-        "file": "packages/swift/CodevisorCore/Sources/CodevisorCore/AppEnvironment.swift",
-        "line": 41
-      },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  public mutating func convertNewTabPane(",
     "violation": {
       "location": {
