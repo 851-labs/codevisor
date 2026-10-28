@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorMachineSection: View {
@@ -7,6 +8,7 @@ struct WorkspaceInspectorMachineSection: View {
 
   let stats: ServerMachineStats
   @Binding var isExpanded: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     WorkspaceInspectorCard(title: "Stats", isExpanded: $isExpanded) {
@@ -22,7 +24,13 @@ struct WorkspaceInspectorMachineSection: View {
       if let disk = stats.disk {
         WorkspaceInspectorMachineUsageRow(title: "Disk", usage: disk, style: .file)
       }
-      LabeledContent("Uptime", value: Self.uptimeText(stats.uptimeSeconds))
+      let uptime = Self.uptimeText(stats.uptimeSeconds)
+      LabeledContent("Uptime") {
+        Text(uptime)
+          .monospacedDigit()
+          .contentTransition(.numericText(value: stats.uptimeSeconds))
+      }
+      .animation(Motion.meter(reduceMotion: reduceMotion), value: uptime)
     }
   }
 
@@ -48,6 +56,7 @@ private struct WorkspaceInspectorMachineLoad: View {
   let usedPercent: Double?
   let history: [ServerMachineStats.LoadSample]
   let detail: String
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -56,7 +65,8 @@ private struct WorkspaceInspectorMachineLoad: View {
         Spacer()
         Group {
           if let usedPercent {
-            Text(usedPercent / 100, format: .percent.precision(.fractionLength(0)))
+            Text(Self.percentText(usedPercent))
+              .contentTransition(.numericText(value: usedPercent))
           } else {
             Text("Measuring…")
           }
@@ -64,6 +74,7 @@ private struct WorkspaceInspectorMachineLoad: View {
         .monospacedDigit()
         .foregroundStyle(.secondary)
       }
+      .animation(Motion.meter(reduceMotion: reduceMotion), value: usedPercent)
       WorkspaceInspectorSparkline(
         values: history.map(\.usedPercent),
         slots: WorkspaceInspectorMachineSection.historySlots,
@@ -83,6 +94,11 @@ private struct WorkspaceInspectorMachineLoad: View {
     .accessibilityValue(usedPercent.map { "\(Int($0.rounded())) percent" } ?? "Measuring")
   }
 
+  private static func percentText(_ percent: Double) -> String {
+    let text = (percent / 100).formatted(.percent.precision(.fractionLength(0)))
+    return String(repeating: "\u{2007}", count: max(0, 3 - text.filter(\.isNumber).count)) + text
+  }
+
   private static func windowText(_ history: [ServerMachineStats.LoadSample]) -> String? {
     guard let first = history.first.flatMap({ try? ServerDateCoding.date(from: $0.at) }),
       let last = history.last.flatMap({ try? ServerDateCoding.date(from: $0.at) }),
@@ -97,6 +113,7 @@ private struct WorkspaceInspectorMachineUsageRow: View {
   let title: String
   let usage: ServerMachineStats.Usage
   let style: ByteCountFormatStyle.Style
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var percent: Double {
     usage.totalBytes > 0 ? usage.usedBytes / usage.totalBytes * 100 : 0
@@ -107,10 +124,12 @@ private struct WorkspaceInspectorMachineUsageRow: View {
       HStack(alignment: .firstTextBaseline) {
         Text(title)
         Spacer()
-        Text("\(bytes(usage.usedBytes)) of \(bytes(usage.totalBytes))")
+        Text(text)
           .monospacedDigit()
           .foregroundStyle(.secondary)
+          .contentTransition(.numericText(value: usage.usedBytes))
       }
+      .animation(Motion.meter(reduceMotion: reduceMotion), value: text)
       WorkspaceInspectorMeter(
         segments: [.init(color: WorkspaceInspectorMachineSection.tint(forPercent: percent), value: usage.usedBytes)],
         total: usage.totalBytes
@@ -118,6 +137,10 @@ private struct WorkspaceInspectorMachineUsageRow: View {
     }
     .padding(.vertical, 2)
     .accessibilityElement(children: .combine)
+  }
+
+  private var text: String {
+    "\(bytes(usage.usedBytes)) of \(bytes(usage.totalBytes))"
   }
 
   private func bytes(_ value: Double) -> String {
