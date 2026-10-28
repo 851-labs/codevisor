@@ -9,7 +9,6 @@ final class ScreenSharingHostSession {
   let owner: ScreenSharingHostLease.Owner
   let peer: ScreenSharingSender
   let capture: ScreenSharingCapture
-  let profile: ScreenSharingDiagnosticProfile?
   let metrics: ScreenSharingMetrics
   let display: ServerScreenSharingDisplay
   var displayID: UInt32
@@ -41,26 +40,18 @@ final class ScreenSharingHostSession {
 
   init(
     request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
-    connectivity: ServerScreenSharingConnectivity, profile: ScreenSharingDiagnosticProfile?
+    connectivity: ServerScreenSharingConnectivity
   ) async throws {
     owner = .init(request)
-    self.profile = profile
     self.display = display; self.displayID = displayID
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
-    capture = ScreenSharingCapture(captureIntervalFPS: profile?.captureIntervalFPS(adaptiveLevel: 0))
+    capture = ScreenSharingCapture()
     let size = ScreenSharingHostService.physicalCaptureSize(width: display.width, height: display.height)
     configuration = try ScreenSharingVideoConfiguration(
       width: size.width, height: size.height, bitrate: ScreenSharingHostService.bitrateCeiling)
     physicalConfiguration = configuration
     metrics = ScreenSharingMetrics()
-    try ScreenSharingFieldTrials.process.install(profile: profile)
-    metrics.label("diagnosticProfileRequested", profile?.name ?? "none")
-    metrics.label("diagnosticProfileActive", profile?.name ?? "none")
-    if let profile {
-      metrics.label(
-        "diagnosticProfileCaptureRequest",
-        "\(profile.captureIntervalFPSAtLevel0) fps at adaptive level 0, video rate below")
-    }
+    ScreenSharingFieldTrials.process.installProduct()
     peer = try await ScreenSharingSender(
       configuration: configuration, metrics: metrics, connectivity: connectivity.native())
   }

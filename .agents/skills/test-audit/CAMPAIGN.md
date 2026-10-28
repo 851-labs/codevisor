@@ -20,7 +20,7 @@ Done when every in-scope test file has a recorded baseline result.
 Split the surface into **lanes** along production owner boundaries, not file
 prefixes. Include the subsystem's cases at shared boundaries (server route
 tests, cross-package coverage suites such as agent-runtime running the adapter
-tests) and its manual or live-proof harnesses (`tophat`, `vnc-change`).
+tests) and its manual or live-proof harnesses (such as `tophat`).
 
 Done when every test file and harness scenario the subsystem owns belongs to
 exactly one lane.

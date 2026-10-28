@@ -89,7 +89,7 @@ Before judging a candidate, read the complete test and production owner, its
 entry point, callers, callees, sibling implementations, overlapping tests,
 coverage configuration, and relevant history (`git log -S <symbol>` finds the
 commit that removed the last production caller). Read the `deterministic-tests`
-skill and any area skill (`vnc-change`, `ios-development`) that owns the code.
+skill and any area skill (such as `ios-development`) that owns the code.
 When the test claims dependency-backed behavior, inspect the dependency source
 or types directly; use the `use-reference-repos` skill for upstream code.
 

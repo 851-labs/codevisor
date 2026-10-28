@@ -58,8 +58,7 @@ extension ScreenSharingViewerBackend {
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
-        try ScreenSharingVideoSurface(
-          mailbox: session.frames, metrics: session.metrics, profile: ScreenSharingDiagnosticProfile.process())
+        try ScreenSharingVideoSurface(mailbox: session.frames, metrics: session.metrics)
       },
       vncOpen: { displayId in
         let socket = try client.screenSharingVNCSocket(displayId: displayId)

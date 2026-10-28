@@ -53,13 +53,9 @@
     var remoteCursorOverlayFrame: CGRect? { cursorOverlay.isHidden ? nil : cursorOverlay.frame }
     public var letterboxColor: NSColor = .windowBackgroundColor { didSet { applyLetterboxColor() } }
 
-    public init(
-      mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, profile: ScreenSharingDiagnosticProfile? = nil
-    ) throws {
+    public init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {
       metal = try ScreenSharingMetalView(
-        mailbox: mailbox, metrics: metrics, renderOnArrival: profile?.renderOnArrival ?? true,
-        maximumDrawableCount: profile?.maximumDrawableCount ?? 3,
-        offMainPreparation: profile?.offMainPreparation ?? true)
+        mailbox: mailbox, metrics: metrics, renderOnArrival: true, offMainPreparation: true)
       super.init(frame: .zero)
       addSubview(metal)
       cursorOverlay.isHidden = true

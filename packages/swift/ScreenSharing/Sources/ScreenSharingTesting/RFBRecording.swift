@@ -2,8 +2,8 @@ import CryptoKit
 import Foundation
 import ScreenSharing
 
-public struct RFBRecording: Codable, Equatable, Sendable {
-  public struct Outcome: Codable, Equatable, Sendable {
+public struct RFBRecording: Decodable, Sendable {
+  public struct Outcome: Decodable, Equatable, Sendable {
     public var updates: Int
     public var framebuffer: String
     public var events: [String]
@@ -22,16 +22,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
   public var server: [Data]
   public var expected: Outcome?
 
-  public init(source: String, width: Int, height: Int, server: [Data], expected: Outcome? = nil) {
-    self.source = source
-    self.width = width
-    self.height = height
-    self.server = server
-    self.expected = expected
-  }
-
-  public var byteCount: Int { server.reduce(0) { $0 + $1.count } }
-
   public static func comparable(_ outcome: Outcome, lossy: Bool) -> Outcome {
     guard lossy else { return outcome }
     var copy = outcome
@@ -41,12 +31,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
 
   public static func load(_ url: URL) throws -> RFBRecording {
     try JSONDecoder().decode(RFBRecording.self, from: Data(contentsOf: url))
-  }
-
-  public func write(to url: URL) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(self).write(to: url)
   }
 
   public func replay() async throws -> Outcome {
@@ -62,7 +46,7 @@ public struct RFBRecording: Codable, Equatable, Sendable {
     return Outcome(updates: log.updates, framebuffer: Self.digest(client.framebuffer), events: log.events)
   }
 
-  public static func digest(_ framebuffer: RFBFramebuffer) -> String {
+  private static func digest(_ framebuffer: RFBFramebuffer) -> String {
     var hash = SHA256()
     framebuffer.withPixels { pixels, _ in
       var colour = [UInt8]()
@@ -106,30 +90,6 @@ public struct RFBRecording: Codable, Equatable, Sendable {
       lock.withLock { events.append(text) }
     }
   }
-}
-
-public final class RFBRecordingTransport: RFBTransport, @unchecked Sendable {
-  private let inner: any RFBTransport
-  private let lock = NSLock()
-  private var recording = false
-  private var chunks: [Data] = []
-
-  public init(_ inner: any RFBTransport) { self.inner = inner }
-
-  public var name: String { inner.name }
-  public var recorded: [Data] { lock.withLock { chunks } }
-
-  public func start() { lock.withLock { recording = true } }
-  public func stop() { lock.withLock { recording = false } }
-
-  public func read(maximum: Int) async throws -> [UInt8] {
-    let bytes = try await inner.read(maximum: maximum)
-    lock.withLock { if recording, !bytes.isEmpty { chunks.append(Data(bytes)) } }
-    return bytes
-  }
-
-  public func write(_ bytes: [UInt8]) async throws { try await inner.write(bytes) }
-  public func close() { inner.close() }
 }
 
 final class RFBReplayTransport: RFBTransport, @unchecked Sendable {

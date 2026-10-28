@@ -1387,7 +1387,7 @@
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingHostService.swift",
         "line": 50
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 125 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 124 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1400,9 +1400,9 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingHostService.swift",
-        "line": 190
+        "line": 189
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 104 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 102 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1415,7 +1415,7 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerBackend.swift",
-        "line": 234
+        "line": 233
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 88 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -2090,9 +2090,9 @@
       "location": {
         "character": 10,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Render/ScreenSharingMetalView.swift",
-        "line": 25
+        "line": 26
       },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

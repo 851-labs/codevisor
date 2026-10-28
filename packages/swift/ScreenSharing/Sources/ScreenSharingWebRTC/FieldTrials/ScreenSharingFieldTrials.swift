@@ -1,5 +1,4 @@
 import Foundation
-import ScreenSharing
 import WebRTCProcessFieldTrials
 
 public final class ScreenSharingFieldTrials: @unchecked Sendable {
@@ -17,7 +16,6 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
     public var playoutExperimentLabel: String? {
       trials["WebRTC-ForcePlayoutDelay"].map { "WebRTC-ForcePlayoutDelay \($0)" }
     }
-    public func installs(_ other: Selection) -> Bool { trials == other.trials }
   }
 
   private enum State {
@@ -37,31 +35,8 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
     if !trials.isEmpty { CodevisorInstallWebRTCProcessFieldTrials(trials) }
   })
 
-  public var installed: Selection? {
-    condition.lock(); defer { condition.unlock() }
-    if case .installed(let selection) = state { return selection }
-    return nil
-  }
-
-  @discardableResult
-  func install(_ selection: Selection) throws -> Selection {
-    let inForce = applyOrWaitForFirst(selection)
-    guard inForce.installs(selection) else {
-      throw ScreenSharingError.invalid(
-        "WebRTC field trials are already initialized for \"\(inForce.name)\" in this process and cannot be "
-          + "replaced with \"\(selection.name)\". Quit and start a fresh app process to change the selection.")
-    }
-    return inForce
-  }
-
   @discardableResult
   public func ensureInstalled() -> Selection { applyOrWaitForFirst(.default) }
-
-  @discardableResult
-  public func install(profile: ScreenSharingDiagnosticProfile?) throws -> Selection {
-    guard let profile else { return installProduct() }
-    return try install(profile.trialSelection)
-  }
 
   @discardableResult
   public func installProduct() -> Selection { applyOrWaitForFirst(.product) }
