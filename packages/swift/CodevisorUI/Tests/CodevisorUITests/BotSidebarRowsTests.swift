@@ -10,7 +10,8 @@ struct BotSidebarRowsTests {
       id: UUID().uuidString, serverId: "studio", name: name, symbolName: "sparkles", harnessId: "claude-code",
       projectId: UUID().uuidString, sessionId: UUID().uuidString, workspaceId: UUID().uuidString,
       rootPath: "/bots/\(name)", projects: [], createdAt: "2026-10-27T00:00:00Z")
-    return BotConversation(bot: Bot(serverId: "studio", record: record)!, session: nil, activity: .idle, isUnread: false)
+    return BotConversation(
+      bot: Bot(serverId: "studio", record: record)!, session: nil, activity: .idle, isUnread: false)
   }
 
   @Test("Stepping walks the derived rows: no selection picks the first bot, and the ends don't wrap")

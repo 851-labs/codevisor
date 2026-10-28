@@ -57,7 +57,7 @@ extension TranscriptRowLeaves {
           ))
       },
       attachmentThumbnail: { file in
-        AnyView(AttachmentThumbnailView(file: file, inline: true))
+        AnyView(AttachmentThumbnailView(file: file))
       },
       setup: { phases in
         AnyView(SessionSetupView(phases: phases))

@@ -22,19 +22,12 @@ struct AttachmentThumbnailView: View {
   @Environment(\.quickLook) private var quickLook
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let file: PreviewFile
-  var inline: Bool
 
   @State private var image: UIImage?
   @State private var geometry = AttachmentPreviewGeometryState()
 
-  init(attachment: Attachment, inline: Bool = false) {
-    file = PreviewFile(attachment: attachment)
-    self.inline = inline
-  }
-
-  init(file: PreviewFile, inline: Bool = false) {
+  init(file: PreviewFile) {
     self.file = file
-    self.inline = inline
   }
 
   var body: some View {
@@ -71,27 +64,25 @@ struct AttachmentThumbnailView: View {
       }
     }
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
-      guard inline, file.hasVisualPreview, attachmentImages != nil else { return }
+      guard file.hasVisualPreview, attachmentImages != nil else { return }
       try? await Task.sleep(for: .milliseconds(450))
       guard !Task.isCancelled else { return }
       resolveFallbackGeometry()
     }
     .preference(
       key: AttachmentGeometryReadinessPreferenceKey.self,
-      value: inline && file.hasVisualPreview && !geometry.isResolved ? 1 : 0
+      value: file.hasVisualPreview && !geometry.isResolved ? 1 : 0
     )
   }
 
   private var imageThumb: some View {
     let size = thumbnailSize
     return ZStack {
-      if !inline || file.kind != .image {
+      if file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
           .fill(Color.bubbleBackground)
       }
-      if let image = image ?? attachmentImages?.memoryPreview(for: file)?.image
-        ?? SentAttachmentThumbnails.image(for: file)
-      {
+      if let image = image ?? knownImage {
         Image(uiImage: image)
           .resizable()
           .aspectRatio(contentMode: .fit)
@@ -103,13 +94,14 @@ struct AttachmentThumbnailView: View {
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
-      if !inline || file.kind != .image {
+      if file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
           .strokeBorder(.separator, lineWidth: 1)
       }
     }
     .transcriptSendAttachmentTarget(
-      id: inline ? nil : sentFileID, cornerRadius: 8, fill: .bubbleBackground, stroke: Color(uiColor: .separator)
+      id: sentFileID, cornerRadius: 8, fill: hasCard ? .bubbleBackground : .clear,
+      stroke: hasCard ? Color(uiColor: .separator) : .clear
     )
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture { preview() }
@@ -120,14 +112,34 @@ struct AttachmentThumbnailView: View {
     .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
   }
 
+  static let maximumSize = CGSize(width: 280, height: 280)
+
+  static func sentSize(aspectRatio: CGFloat?, isPDF: Bool) -> CGSize {
+    boundedAttachmentPreviewSize(
+      aspectRatio: aspectRatio, maximumSize: maximumSize, fallbackAspectRatio: fallbackAspectRatio(isPDF: isPDF))
+  }
+
+  private static func fallbackAspectRatio(isPDF: Bool) -> CGFloat {
+    isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+  }
+
   private var thumbnailSize: CGSize {
-    guard inline else { return CGSize(width: 56, height: 56) }
-    return boundedAttachmentPreviewSize(
-      aspectRatio: geometry.aspectRatio,
-      maximumSize: CGSize(width: 280, height: 280),
+    boundedAttachmentPreviewSize(
+      aspectRatio: geometry.aspectRatio ?? knownAspectRatio,
+      maximumSize: Self.maximumSize,
       fallbackAspectRatio: fallbackAspectRatio
     )
   }
+
+  private var knownImage: OSImage? {
+    attachmentImages?.memoryPreview(for: file)?.image ?? SentAttachmentThumbnails.image(for: file)
+  }
+
+  private var knownAspectRatio: CGFloat? {
+    attachmentImages?.memoryPreview(for: file)?.aspectRatio ?? SentAttachmentThumbnails.aspectRatio(for: file)
+  }
+
+  private var hasCard: Bool { file.kind != .image }
 
   private var sentFileID: String? {
     guard case let .attachment(fileId) = file.source else { return nil }
@@ -135,7 +147,7 @@ struct AttachmentThumbnailView: View {
   }
 
   private var fallbackAspectRatio: CGFloat {
-    file.isPDF ? 8.5 / 11.0 : 16.0 / 9.0
+    Self.fallbackAspectRatio(isPDF: file.isPDF)
   }
 
   private func apply(_ preview: AttachmentPreviewImage) {
@@ -147,7 +159,7 @@ struct AttachmentThumbnailView: View {
   }
 
   private func resolveFallbackGeometry() {
-    guard inline, file.hasVisualPreview else { return }
+    guard file.hasVisualPreview else { return }
     geometry.resolve(aspectRatio: nil, fallbackAspectRatio: fallbackAspectRatio)
   }
 
@@ -176,6 +188,8 @@ struct AttachmentThumbnailView: View {
         RoundedRectangle(cornerRadius: 8)
           .strokeBorder(.separator, lineWidth: 1)
       )
+      .transcriptSendAttachmentTarget(
+        id: sentFileID, cornerRadius: 8, fill: .bubbleBackground, stroke: Color(uiColor: .separator))
     }
     .buttonStyle(.plain)
     .pointerHighlight(RoundedRectangle(cornerRadius: 8))

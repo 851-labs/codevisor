@@ -66,7 +66,7 @@ struct BotMessageView: View {
         MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: message.id)
           .transcriptBotMessageWidth(fitting: content)
       }
-      TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0, inline: true) }
+      TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0) }
     }
   }
 }
@@ -86,6 +86,8 @@ struct MessageBubbleView<Content: View>: View {
   var fill = Color.bubbleBackground
   @ViewBuilder let content: () -> Content
 
+  private var alignment: HorizontalAlignment { side == .trailing ? .trailing : .leading }
+
   private var isMenuTarget: Bool {
     TranscriptMessageMenuHighlight.shared.messageID == messageID
   }
@@ -94,14 +96,10 @@ struct MessageBubbleView<Content: View>: View {
     HStack {
       if side == .trailing { Spacer(minLength: 40) }
       VStack(
-        alignment: side == .trailing ? .trailing : .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing
+        alignment: alignment, spacing: TranscriptSendFlightGeometry.attachmentSpacing
       ) {
-        if !attachments.isEmpty {
-          HStack(spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
-            ForEach(attachments) { attachment in
-              AttachmentThumbnailView(attachment: attachment)
-            }
-          }
+        TranscriptInlineFileStack(files: attachments.map(PreviewFile.init(attachment:)), alignment: alignment) {
+          AttachmentThumbnailView(file: $0)
         }
         if !text.isEmpty {
           content()

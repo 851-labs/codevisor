@@ -159,7 +159,7 @@ struct AssistantTurnBody: View {
       animationEnabled: animationEnabled
     ) { file, label in
       TranscriptInlineFile(file: file, label: label) {
-        AttachmentThumbnailView(file: file, inline: true)
+        AttachmentThumbnailView(file: file)
       }
     }
   }

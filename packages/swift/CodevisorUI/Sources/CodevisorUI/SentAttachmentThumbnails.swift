@@ -13,6 +13,7 @@ public enum SentAttachmentThumbnails {
   private static let capacity = 16
   nonisolated private static let maxPixelSize = 480
   private static var images: [(fileId: String, image: OSImage)] = []
+  private static var aspectRatios: [(fileId: String, aspectRatio: CGFloat)] = []
 
   public static func prepare(_ attachments: [ComposerAttachment]) {
     for attachment in attachments where attachment.isImage {
@@ -21,6 +22,7 @@ public enum SentAttachmentThumbnails {
         !images.contains(where: { $0.fileId == ref.fileId })
       else { continue }
       let fileId = ref.fileId
+      remember(aspectRatio: headerAspectRatio(data), for: fileId)
       Task {
         guard
           let image = await Task.detached(priority: .userInitiated, operation: { decode(data) }).value?.image
@@ -30,6 +32,29 @@ public enum SentAttachmentThumbnails {
         if images.count > capacity { images.removeFirst(images.count - capacity) }
       }
     }
+  }
+
+  public static func aspectRatio(for file: PreviewFile) -> CGFloat? {
+    guard case let .attachment(fileId) = file.source else { return nil }
+    return aspectRatios.last { $0.fileId == fileId }?.aspectRatio
+  }
+
+  private static func remember(aspectRatio: CGFloat?, for fileId: String) {
+    guard let aspectRatio else { return }
+    aspectRatios.removeAll { $0.fileId == fileId }
+    aspectRatios.append((fileId, aspectRatio))
+    if aspectRatios.count > capacity { aspectRatios.removeFirst(aspectRatios.count - capacity) }
+  }
+
+  nonisolated private static func headerAspectRatio(_ data: Data) -> CGFloat? {
+    guard
+      let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+      let height = properties[kCGImagePropertyPixelHeight] as? CGFloat, width > 0, height > 0
+    else { return nil }
+    let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+    return orientation >= 5 ? height / width : width / height
   }
 
   public static func image(for file: PreviewFile) -> OSImage? {
