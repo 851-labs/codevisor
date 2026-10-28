@@ -7,6 +7,7 @@
       let label: Label
       let presentation: Binding<Bool>?
       @State private var isPresented = false
+      @State private var popper = PopperController()
       @Environment(\.isEnabled) private var isEnabled
 
       public init(
@@ -21,13 +22,16 @@
       private var presented: Binding<Bool> { presentation ?? $isPresented }
       public var body: some View {
         Button {
+          guard !popper.consumeClosingTriggerClick() else { return }
           presented.wrappedValue.toggle()
         } label: {
           label
         }
-        .popover(isPresented: presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-          Surface(entries: entries, mode: .menu, onDismiss: { presented.wrappedValue = false })
-            .disabled(!isEnabled)
+        .background {
+          Popper(controller: popper, isPresented: presented) {
+            Surface(entries: entries, mode: .menu, onDismiss: { presented.wrappedValue = false })
+              .disabled(!isEnabled)
+          }
         }
         .onChange(of: isEnabled) { _, enabled in
           if !enabled { presented.wrappedValue = false }

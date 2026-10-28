@@ -28,7 +28,7 @@
       public var dividerHeight: CGFloat = 11
       public var itemAccessoryWidth: CGFloat = 22
       public var itemAccessoryTrailingInset: CGFloat = 2
-      public var bottomCornerRadius: CGFloat = 14
+      public var bottomCornerRadius: CGFloat = 8
 
       public init() {}
 

@@ -77,6 +77,8 @@
       settle(view)
     }
 
+    private let concentricCornerInset: CGFloat = 6
+
     private struct HighlightGeometry {
       let bottomGap: CGFloat
       let bottomCornerInset: CGFloat
@@ -117,7 +119,7 @@
         settle(view)
         let geometry = try highlightGeometry(in: view)
         #expect(abs(geometry.bottomGap - options.value.metrics.listVerticalInset) <= 0.5, "Font size: \(size)")
-        #expect(geometry.bottomCornerInset > 8, "Font size: \(size)")
+        #expect(geometry.bottomCornerInset > concentricCornerInset, "Font size: \(size)")
       }
     }
 
@@ -132,16 +134,16 @@
       let view = try #require(window.contentView)
       settle(view)
       try highlightLast(in: view)
-      #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
+      #expect(try highlightGeometry(in: view).bottomCornerInset > concentricCornerInset)
       options.value.query = "المشروع"
       settle(view)
       let filtered = try highlightGeometry(in: view)
       #expect(filtered.bottomGap > 50)
-      #expect(filtered.bottomCornerInset < 8)
+      #expect(filtered.bottomCornerInset < concentricCornerInset)
       options.value.sizing = .fitResults
       settle(view)
       #expect(try highlightGeometry(in: view).bottomGap <= 4.5)
-      #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
+      #expect(try highlightGeometry(in: view).bottomCornerInset > concentricCornerInset)
       options.value.query = ""
       options.value.sizing = .stable
       settle(view)
@@ -150,10 +152,10 @@
       settle(view)
       let promoted = try highlightGeometry(in: view)
       #expect(promoted.bottomGap > 50)
-      #expect(promoted.bottomCornerInset < 8)
+      #expect(promoted.bottomCornerInset < concentricCornerInset)
       options.value.favorites = []
       settle(view)
-      #expect(try highlightGeometry(in: view).bottomCornerInset > 8)
+      #expect(try highlightGeometry(in: view).bottomCornerInset > concentricCornerInset)
     }
 
     private struct LongList: View {
@@ -227,7 +229,7 @@
       settle(view)
       let geometry = try highlightGeometry(in: view)
       #expect(geometry.bottomGap <= 4.5)
-      #expect(geometry.bottomCornerInset > 8)
+      #expect(geometry.bottomCornerInset > concentricCornerInset)
     }
   }
 #endif
