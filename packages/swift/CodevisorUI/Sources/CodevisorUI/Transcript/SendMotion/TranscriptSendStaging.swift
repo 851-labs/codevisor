@@ -57,7 +57,8 @@ public final class TranscriptSendStaging {
     provider: LandingProvider,
     in overlay: TranscriptSendOverlayView
   ) {
-    let corner = overlay.point(inHostWindow: CGPoint(x: landing.trailing, y: landing.top))
+    let corner = stage.track.convert(
+      overlay.point(inHostWindow: CGPoint(x: landing.trailing, y: landing.top)), from: overlay)
     stage.beginMorph(
       toward: TranscriptSendLanding(
         trailing: corner.x, top: corner.y, maxBubbleWidth: landing.maxBubbleWidth))
@@ -70,14 +71,18 @@ public final class TranscriptSendStaging {
   private func scheduleTimeout(for stage: TranscriptSendStage, after delay: TimeInterval) {
     guard let timeout = stage.timeout else { return }
     timeout.cancel()
-    let session = stages.first { $0.value === stage }?.key
-    let next = DispatchWorkItem { [weak self, weak stage] in
-      guard let self, let stage, let session, stages[session] === stage else { return }
+    guard let session = stages.first(where: { $0.value === stage })?.key else { return }
+    let next = removal(of: stage, session: session)
+    stage.timeout = next
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: next)
+  }
+
+  private func removal(of stage: TranscriptSendStage, session: ObjectIdentifier) -> DispatchWorkItem {
+    DispatchWorkItem { [weak self, weak stage] in
+      guard let self, let stage, stages[session] === stage else { return }
       stages[session] = nil
       stage.remove(animated: true)
     }
-    stage.timeout = next
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: next)
   }
 
   private func landing(for session: ObjectIdentifier) -> (TranscriptSendLanding, LandingProvider)? {
@@ -112,8 +117,9 @@ public final class TranscriptSendStaging {
         "stage failed: window=\(textView.window != nil) visible=\(Self.visibleBounds(of: textView).debugDescription)")
       return
     }
-    let editorFrame = overlay.rect(of: textView, Self.visibleBounds(of: textView))
-    let glyphRect = overlay.rect(of: textView, textRect)
+    let track = overlay.makeTrack()
+    let editorFrame = track.convert(Self.visibleBounds(of: textView), from: textView)
+    let glyphRect = track.convert(textRect, from: textView)
     let pill = TranscriptSendPillView(
       frame: TranscriptSendMorphGeometry.startBubble(editorFrame: editorFrame, textRect: glyphRect),
       cornerRadius: UserBubbleBackground.cornerRadius(for: Self.dynamicTypeSize(of: textView)))
@@ -125,10 +131,10 @@ public final class TranscriptSendStaging {
     pill.addSubview(glyphs)
     let sources = TranscriptSendAttachmentAnchorView.sources(in: window, ids: Set(attachmentIDs))
     let pieces = attachmentIDs.compactMap { id in sources.first { $0.attachmentID == id } }
-      .compactMap { TranscriptSendAttachmentPiece(source: $0, frame: overlay.rect(of: $0, $0.bounds)) }
-    for piece in pieces { overlay.addSubview(piece) }
+      .compactMap { TranscriptSendAttachmentPiece(source: $0, frame: track.convert($0.bounds, from: $0)) }
+    for piece in pieces { track.addSubview(piece) }
     TranscriptSendAttachmentDepartures.shared.depart(pieces)
-    overlay.addSubview(pill)
+    track.addSubview(pill)
     transcriptSendLog.debug("staged composer glyphs with \(pieces.count) attachments")
     let stage = TranscriptSendStage(
       snapshot: pill,
@@ -137,13 +143,9 @@ public final class TranscriptSendStaging {
       lineHeight: lineHeight,
       text: Self.attributedText(of: textView),
       pieces: pieces,
-      overlay: overlay
+      track: track
     )
-    let timeout = DispatchWorkItem { [weak self, weak stage] in
-      guard let self, let stage, stages[session] === stage else { return }
-      stages[session] = nil
-      stage.remove(animated: true)
-    }
+    let timeout = removal(of: stage, session: session)
     stage.timeout = timeout
     stages[session] = stage
     let isHeld = holds(session)

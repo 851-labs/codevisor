@@ -9,6 +9,8 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
 
   var sendTransitionViewportHeight: CGFloat { contentView.bounds.height }
 
+  var sendTransitionDocumentView: TranscriptSendPlatformView { transcriptDocumentView }
+
   func sendTransitionRowIndex(for key: String) -> Int? {
     virtualLayout.indexByKey[key]
   }
@@ -59,6 +61,18 @@ extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
 }
 
 extension VirtualizedTranscriptScrollView {
+  func clipBoundsDidChange() {
+    layoutBottomFadeMask()
+    carrySendFlightsWithUserScroll()
+    viewportDidScroll()
+  }
+
+  func carrySendFlightsWithUserScroll() {
+    let isUserMovement = isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling
+    guard !isDetaching, !isApplyingPosition, !hasPendingViewportResize, isUserMovement else { return }
+    sendTransitions.userDidScroll()
+  }
+
   func requestDisplayFrameOrLayout() {
     guard !isDetaching else { return }
     if presentationDisplayLink != nil {

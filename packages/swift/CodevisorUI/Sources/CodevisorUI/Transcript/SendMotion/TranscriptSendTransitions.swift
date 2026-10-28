@@ -14,6 +14,7 @@ public protocol TranscriptSendTransitionAdapter: AnyObject {
   func sendTransitionIsReady(_ host: Host) -> Bool
   func sendTransitionRowContent(for key: String) -> AnyView?
   func sendTransitionLiftOffset(for host: Host) -> CGFloat
+  var sendTransitionDocumentView: TranscriptSendPlatformView { get }
   func sendTransitionWillPresent()
   var sendTransitionLanding: TranscriptSendLanding? { get }
   var sendTransitionPushDistance: CGFloat? { get }
@@ -183,9 +184,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
         TranscriptSendLayerAnimations.hide(duration: TranscriptSendMotion.targetHoldLimit),
         forKey: TranscriptSendAnimationKeys.hide)
     case let .flying(flight):
-      layer.add(
-        TranscriptSendLayerAnimations.hide(duration: TranscriptSendFlight.duration + 0.5),
-        forKey: TranscriptSendAnimationKeys.hide)
+      layer.add(TranscriptSendLayerAnimations.hideUntilLanded(), forKey: TranscriptSendAnimationKeys.hide)
       flight.follow(host)
     case .lifting, .landed:
       break
@@ -318,6 +317,14 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
   }
 
+  public func userDidScroll() {
+    guard let adapter else { return }
+    for case let (key, .flying(flight)) in entries.map({ ($0.rowKey, $0.phase) }) {
+      guard let host = adapter.sendTransitionMountedHosts[key] else { continue }
+      flight.rideScroll(of: host, in: adapter.sendTransitionDocumentView)
+    }
+  }
+
   private func syncCarriers() {
     guard TranscriptSendFlight.ridesTranscript else { return }
     if let session { TranscriptSendStaging.shared.syncCarrier(session: session) }
@@ -354,12 +361,7 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       lift(host, entryIndex: index)
       return
     }
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    layer.add(
-      TranscriptSendLayerAnimations.hide(duration: TranscriptSendFlight.duration + 0.5),
-      forKey: TranscriptSendAnimationKeys.hide)
-    CATransaction.commit()
+    layer.add(TranscriptSendLayerAnimations.hideUntilLanded(), forKey: TranscriptSendAnimationKeys.hide)
     entries[index].phase = .flying(flight)
     transcriptSendLog.debug("flight began")
     notifyStart(index: index)

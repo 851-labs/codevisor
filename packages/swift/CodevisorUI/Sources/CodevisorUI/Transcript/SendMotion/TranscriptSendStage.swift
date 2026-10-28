@@ -16,7 +16,7 @@ public final class TranscriptSendStage {
   let text: NSAttributedString?
   private(set) var pieces: [TranscriptSendAttachmentPiece]
   private(set) var wrappedTextWidth: CGFloat?
-  weak var overlay: TranscriptSendOverlayView?
+  let track: TranscriptSendTrack
   var timeout: DispatchWorkItem?
   #if canImport(UIKit)
     private(set) var carrier: TranscriptSendCarrier?
@@ -30,7 +30,7 @@ public final class TranscriptSendStage {
     lineHeight: CGFloat,
     text: NSAttributedString?,
     pieces: [TranscriptSendAttachmentPiece],
-    overlay: TranscriptSendOverlayView
+    track: TranscriptSendTrack
   ) {
     self.snapshot = snapshot
     self.editorFrame = editorFrame
@@ -38,8 +38,10 @@ public final class TranscriptSendStage {
     self.lineHeight = lineHeight
     self.text = text
     self.pieces = pieces
-    self.overlay = overlay
+    self.track = track
   }
+
+  var overlay: TranscriptSendOverlayView? { track.superview as? TranscriptSendOverlayView }
 
   func releasePieces() -> [TranscriptSendAttachmentPiece] {
     defer { pieces = [] }
@@ -105,7 +107,7 @@ public final class TranscriptSendStage {
   #if canImport(UIKit)
     func board(_ carrier: TranscriptSendCarrier?) {
       guard let overlay else { return }
-      let space: UIView = carrier?.view ?? overlay
+      let space: UIView = carrier?.view ?? track
       func boarded(_ view: UIView) -> CGRect {
         let onScreen: CGRect
         if let layer = view.layer.presentation(), let overlayLayer = overlay.layer.presentation() {
@@ -113,7 +115,7 @@ public final class TranscriptSendStage {
         } else {
           onScreen = overlay.convert(view.bounds, from: view)
         }
-        return carrier?.rect(displayedAt: onScreen, in: overlay) ?? onScreen
+        return carrier?.rect(displayedAt: onScreen, in: overlay) ?? track.convert(onScreen, from: overlay)
       }
       let frame = boarded(snapshot)
       let pieceFrames = pieces.map(boarded)
@@ -138,6 +140,7 @@ public final class TranscriptSendStage {
     timeout?.cancel()
     timeout = nil
     let snapshot = snapshot
+    let track = track
     let overlay = overlay
     let pieces = releasePieces()
     TranscriptSendAttachmentDepartures.shared.arrive(pieces)
@@ -148,6 +151,7 @@ public final class TranscriptSendStage {
     guard animated, snapshot.superview != nil else {
       for piece in pieces { piece.removeFromSuperview() }
       snapshot.removeFromSuperview()
+      track.removeFromSuperview()
       #if canImport(UIKit)
         carrier?.remove()
       #endif
@@ -159,6 +163,7 @@ public final class TranscriptSendStage {
       MainActor.assumeIsolated {
         for piece in pieces { piece.removeFromSuperview() }
         snapshot.removeFromSuperview()
+        track.removeFromSuperview()
         #if canImport(UIKit)
           carrier?.remove()
         #endif

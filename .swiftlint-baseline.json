@@ -607,7 +607,7 @@
         "file": "apps/macos/Codevisor/Features/Session/Transcript/VirtualizedTranscriptScrollView.swift",
         "line": 177
       },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 77 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 76 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1940,7 +1940,7 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Transcript/SendMotion/TranscriptSendFlight.swift",
-        "line": 72
+        "line": 66
       },
       "reason": "Initializer body should span 100 lines or less excluding comments and whitespace: currently spans 139 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1970,9 +1970,9 @@
       "location": {
         "character": 10,
         "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Transcript/SendMotion/TranscriptSendStaging.swift",
-        "line": 96
+        "line": 101
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1985,7 +1985,7 @@
       "location": {
         "character": 10,
         "file": "packages/swift/CodevisorUI/Sources/CodevisorUI/Transcript/SendMotion/TranscriptSendTransitions.swift",
-        "line": 216
+        "line": 215
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
       "ruleDescription": "Function bodies should not span too many lines",

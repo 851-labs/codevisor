@@ -31,10 +31,6 @@ public final class TranscriptSendFlight {
   private var pieces: [TranscriptSendAttachmentPiece] = []
   private var pendingSettles = 1
 
-  public static var duration: TimeInterval {
-    max(TranscriptSendMotion.bubble.settlingDuration(), TranscriptSendAttachmentPiece.duration)
-  }
-
   public static func begin(
     session: ObjectIdentifier,
     rowContent: AnyView,
@@ -55,9 +51,7 @@ public final class TranscriptSendFlight {
       return nil
     }
     if stage.overlay !== overlay, !Self.rides(stage) {
-      for piece in stage.pieces { overlay.addSubview(piece) }
-      overlay.addSubview(stage.snapshot)
-      stage.overlay = overlay
+      overlay.addSubview(stage.track)
     }
     return TranscriptSendFlight(
       stage: stage,
@@ -84,12 +78,12 @@ public final class TranscriptSendFlight {
       if stage.morph == nil, stage.carrier != nil {
         stage.board(TranscriptSendCarrier(content: target, overlay: overlay))
       }
-      let space: TranscriptSendPlatformView = stage.carrier?.view ?? overlay
+      let space: TranscriptSendPlatformView = stage.carrier?.view ?? stage.track
     #else
-      let space: TranscriptSendPlatformView = overlay
+      let space: TranscriptSendPlatformView = stage.track
     #endif
     self.space = space
-    var rowFrame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
+    var rowFrame = Self.rect(of: target, target.bounds, in: space)
     targetOrigin = rowFrame.origin
     let content = AnyView(rowContent.environment(\.isTranscriptSendProxy, true))
 
@@ -118,7 +112,7 @@ public final class TranscriptSendFlight {
       container.wantsLayer = true
       container.addSubview(hosting)
       proxy = container
-      overlay.addSubview(container)
+      space.addSubview(container)
       container.layoutSubtreeIfNeeded()
     #endif
 
@@ -127,7 +121,7 @@ public final class TranscriptSendFlight {
       #if canImport(UIKit)
         stage.carrier?.sync()
       #endif
-      rowFrame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
+      rowFrame = Self.rect(of: target, target.bounds, in: space)
       proxy.frame.origin = rowFrame.origin
       targetOrigin = rowFrame.origin
     }
@@ -135,7 +129,7 @@ public final class TranscriptSendFlight {
     let anchor = proxy.transcriptSendDescendant(ofType: UserBubbleAnchorView.self)
     let bubbleFrame =
       anchor
-      .map { Self.rect(of: $0, $0.bounds, in: space, overlay: overlay) }
+      .map { Self.rect(of: $0, $0.bounds, in: space) }
       .flatMap { $0.isEmpty ? nil : $0 }
     let targets = proxy.transcriptSendDescendants(ofType: TranscriptSendAttachmentAnchorView.self)
       .filter { $0.role == .target }
@@ -144,7 +138,7 @@ public final class TranscriptSendFlight {
     var strays: [TranscriptSendAttachmentPiece] = []
     for piece in stage.releasePieces() {
       if let target = targets.first(where: { $0.attachmentID == piece.attachmentID }) {
-        let frame = Self.rect(of: target, target.bounds, in: space, overlay: overlay)
+        let frame = Self.rect(of: target, target.bounds, in: space)
         if !frame.isEmpty {
           flying.append((piece, target, frame))
           continue
@@ -174,7 +168,7 @@ public final class TranscriptSendFlight {
       if let textView = proxy.transcriptSendDescendant(ofType: TranscriptSendTextView.self),
         let glyphs = TranscriptSendStaging.renderedGlyphs(of: textView)
       {
-        let textFrame = Self.rect(of: textView, textView.bounds, in: space, overlay: overlay)
+        let textFrame = Self.rect(of: textView, textView.bounds, in: space)
         stage.adoptGlyphs(glyphs, frame: textFrame.offsetBy(dx: -bubbleFrame.minX, dy: -bubbleFrame.minY))
       } else if stage.isMultiline {
         stage.rewrap(
@@ -224,7 +218,7 @@ public final class TranscriptSendFlight {
 
   public func follow(_ target: TranscriptSendPlatformView) {
     guard !hasEnded, let overlay, let space else { return }
-    guard target.window != nil, target.window === overlay.hostWindow else {
+    guard target.window != nil, target.window === overlay.window else {
       transcriptSendLog.debug("flight target left its window; landing")
       land()
       return
@@ -240,7 +234,7 @@ public final class TranscriptSendFlight {
         return
       }
     #endif
-    let origin = Self.rect(of: target, target.bounds, in: space, overlay: overlay).origin
+    let origin = Self.rect(of: target, target.bounds, in: space).origin
     let delta = CGSize(width: origin.x - targetOrigin.x, height: origin.y - targetOrigin.y)
     guard abs(delta.width) > 0.5 || abs(delta.height) > 0.5 else { return }
     targetOrigin = origin
@@ -263,6 +257,15 @@ public final class TranscriptSendFlight {
         TranscriptSendLayerAnimations.translation(back, spring: TranscriptSendMotion.content), forKey: key)
     }
     CATransaction.commit()
+  }
+
+  public func rideScroll(of target: TranscriptSendPlatformView, in document: TranscriptSendPlatformView) {
+    guard !hasEnded, !Self.rides(stage), let space, stage.track.superview !== document,
+      target.window === space.window, document.window === space.window
+    else { return }
+    let origin = Self.rect(of: target, target.bounds, in: space).origin
+    stage.track.shift(by: CGSize(width: origin.x - targetOrigin.x, height: origin.y - targetOrigin.y))
+    stage.track.move(into: document)
   }
 
   public func syncCarrier() {
@@ -290,14 +293,9 @@ public final class TranscriptSendFlight {
   private static func rect(
     of view: TranscriptSendPlatformView,
     _ rect: CGRect,
-    in space: TranscriptSendPlatformView,
-    overlay: TranscriptSendOverlayView
+    in space: TranscriptSendPlatformView
   ) -> CGRect {
-    #if canImport(UIKit)
-      space.convert(rect, from: view)
-    #else
-      overlay.rect(of: view, rect)
-    #endif
+    space.convert(rect, from: view)
   }
 
   private func settle() {

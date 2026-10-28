@@ -100,10 +100,9 @@ struct TranscriptSendTransitionTests {
     view.sendTransitions.advance()
     #expect(fixture.events.started.isEmpty)
     view.sendTransitions.startReadyFlights()
-    let overlayWindow = try #require(fixture.window.childWindows?.first)
-    let overlay = try #require(
-      overlayWindow.contentView?.subviews.first { $0 is TranscriptSendOverlayView })
-    #expect(overlay.subviews.count == 2)
+    let track = try fixture.track()
+    #expect(track.subviews.count == 2)
+    #expect(fixture.window.childWindows?.isEmpty != false)
     #expect(!TranscriptSendStaging.shared.hasStage(for: session))
     #expect(fixture.events.started == [fixture.request.token])
     #expect(target.animation(forKey: TranscriptSendAnimationKeys.hide) != nil)
@@ -111,11 +110,64 @@ struct TranscriptSendTransitionTests {
     fixture.window.displayIfNeeded()
     RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     #expect(fixture.events.completed.isEmpty)
-    #expect(overlay.subviews.count == 2)
+    #expect(track.subviews.count == 2)
 
     view.sendTransitions.interrupt()
-    #expect(overlay.subviews.isEmpty)
-    #expect(fixture.window.childWindows?.isEmpty != false)
+    #expect(track.subviews.isEmpty)
+    #expect(fixture.overlay == nil)
+    #expect(target.animation(forKey: TranscriptSendAnimationKeys.hide) == nil)
+    #expect(fixture.events.completed == [fixture.request.token])
+  }
+
+  @Test("A user scroll hands the flying bubble to the transcript, which carries it with its row")
+  func userScrollCarriesFlightRigidly() throws {
+    let fixture = SendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    let session = ObjectIdentifier(fixture)
+    view.sendTransitions.session = session
+    TranscriptSendStaging.shared.stage(
+      session: session, textView: fixture.editor, textRect: fixture.editor.bounds, lineHeight: 17,
+      bubble: .gray)
+    view.sendTransitions.receive(fixture.request, isForeground: true)
+    view.sendTransitions.startReadyFlights()
+    let row = try #require(view.mountedHosts[fixture.userRow.layoutKey])
+    let bubble = try #require(fixture.track().subviews.last)
+    let animations = bubble.layer?.animationKeys()
+    let rowBefore = row.convert(row.bounds, to: nil)
+    let bubbleBefore = bubble.convert(bubble.bounds, to: nil)
+
+    view.isHandlingUserInput = true
+    view.contentView.scroll(to: .zero)
+    view.reflectScrolledClipView(view.contentView)
+    view.isHandlingUserInput = false
+    view.sendTransitions.advance()
+
+    let rowMove = row.convert(row.bounds, to: nil).minY - rowBefore.minY
+    #expect(abs(rowMove) > 1)
+    #expect(bubble.convert(bubble.bounds, to: nil) == bubbleBefore.offsetBy(dx: 0, dy: rowMove))
+    #expect(bubble.layer?.animationKeys() == animations)
+    #expect(bubble.isDescendant(of: view.transcriptDocumentView))
+  }
+
+  @Test("The sent row stays hidden for as long as its bubble is in flight")
+  func sentRowStaysHiddenUntilLanding() throws {
+    let fixture = SendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    let session = ObjectIdentifier(fixture)
+    view.sendTransitions.session = session
+    TranscriptSendStaging.shared.stage(
+      session: session, textView: fixture.editor, textRect: fixture.editor.bounds, lineHeight: 17,
+      bubble: .gray)
+    view.sendTransitions.receive(fixture.request, isForeground: true)
+    view.sendTransitions.startReadyFlights()
+    let target = try #require(view.mountedHosts[fixture.userRow.layoutKey]?.layer)
+
+    let hide = try #require(target.animation(forKey: TranscriptSendAnimationKeys.hide))
+    #expect(hide.repeatCount.isInfinite)
+
+    view.sendTransitions.landFlights()
     #expect(target.animation(forKey: TranscriptSendAnimationKeys.hide) == nil)
     #expect(fixture.events.completed == [fixture.request.token])
   }
@@ -271,10 +323,15 @@ private final class SendFixture {
   func stagedBubbleFrame(session: ObjectIdentifier) throws -> CGRect {
     TranscriptSendStaging.shared.stage(
       session: session, textView: editor, textRect: editor.bounds, lineHeight: 17, bubble: .gray)
-    let overlayWindow = try #require(window.childWindows?.first)
-    let overlay = try #require(
-      overlayWindow.contentView?.subviews.first { $0 is TranscriptSendOverlayView })
-    return try #require(overlay.subviews.last).frame
+    return try #require(track().subviews.last).frame
+  }
+
+  var overlay: TranscriptSendOverlayView? {
+    window.contentView?.superview?.subviews.lazy.compactMap { $0 as? TranscriptSendOverlayView }.first
+  }
+
+  func track() throws -> NSView {
+    try #require(overlay?.subviews.last)
   }
 
   func tearDown() {

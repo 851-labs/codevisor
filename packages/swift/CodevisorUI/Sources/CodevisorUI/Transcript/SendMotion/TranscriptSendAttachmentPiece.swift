@@ -240,11 +240,6 @@ final class TranscriptSendAttachmentPiece: TranscriptSendPlatformView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
   #endif
 
-  static var duration: TimeInterval {
-    [TranscriptSendMotion.attachmentRise, TranscriptSendMotion.attachmentSlide, TranscriptSendMotion.attachmentGrow]
-      .map { $0.settlingDuration() }.max() ?? 0
-  }
-
   func fly(toward end: CGRect) {
     move(
       to: end,

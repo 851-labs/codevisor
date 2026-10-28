@@ -212,8 +212,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       queue: .main
     ) { [weak self] _ in
       Self.onMain { [weak self] in
-        self?.layoutBottomFadeMask()
-        self?.viewportDidScroll()
+        self?.clipBoundsDidChange()
       }
     }
     liveScrollObservers = [

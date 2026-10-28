@@ -33,6 +33,7 @@ extension VirtualizedTranscriptScrollView {
 
   func scrollViewDidScroll(_: UIScrollView) {
     guard !isDetaching else { return }
+    carrySendFlightsWithUserScroll()
     holdForKeyboardDrag()
     let previousDistance = lastDistanceFromBottom
     let distance = currentDistanceFromBottom()

@@ -16,12 +16,19 @@ extension VirtualizedTranscriptScrollView {
       requestMountedRowsUpdate()
     }
   }
+
+  func carrySendFlightsWithUserScroll() {
+    guard !isApplyingPosition, isTracking || isDragging || isDecelerating else { return }
+    sendTransitions.userDidScroll()
+  }
 }
 
 extension VirtualizedTranscriptScrollView: TranscriptSendTransitionAdapter {
   var sendTransitionMountedHosts: [String: TranscriptRowHost] { mountedHosts }
 
   var sendTransitionViewportHeight: CGFloat { viewportHeight }
+
+  var sendTransitionDocumentView: TranscriptSendPlatformView { canvasView }
 
   var stacksFromBottom: Bool { sessionController?.presentsBotConversation == true }
 

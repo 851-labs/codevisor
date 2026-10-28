@@ -29,7 +29,11 @@ struct RootSidebar: View {
         if showsToolbarModePicker {
           ToolbarItem {
             SidebarModePicker(mode: $storedMode)
-              .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { modePickerWidth = $0 }
+              .onGeometryChange(for: CGFloat.self) {
+                $0.size.width
+              } action: {
+                modePickerWidth = $0
+              }
           }
         }
       }

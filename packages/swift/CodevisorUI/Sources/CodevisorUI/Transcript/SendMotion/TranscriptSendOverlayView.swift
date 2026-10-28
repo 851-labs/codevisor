@@ -26,89 +26,52 @@ public final class TranscriptSendOverlayView: TranscriptSendPlatformView {
       return overlay
     }
 
-    var hostWindow: UIWindow? { window }
-
     func releaseIfIdle() {}
   #else
     init() {
       super.init(frame: .zero)
       autoresizingMask = [.width, .height]
       wantsLayer = true
+      setAccessibilityHidden(true)
     }
 
     override public var isFlipped: Bool { true }
     override public func hitTest(_: NSPoint) -> NSView? { nil }
 
-    private(set) weak var hostWindow: NSWindow?
-
     static func overlay(in window: NSWindow) -> TranscriptSendOverlayView? {
-      let overlayWindow =
-        (window.childWindows ?? []).lazy.compactMap { $0 as? TranscriptSendOverlayWindow }.first
-        ?? TranscriptSendOverlayWindow()
-      overlayWindow.level = window.level
-      overlayWindow.setFrame(window.frame, display: false)
-      if overlayWindow.parent !== window {
-        window.addChildWindow(overlayWindow, ordered: .above)
+      guard let root = window.contentView?.superview else { return nil }
+      let overlay =
+        root.subviews.lazy.compactMap { $0 as? TranscriptSendOverlayView }.first
+        ?? TranscriptSendOverlayView()
+      if overlay.superview !== root {
+        root.addSubview(overlay, positioned: .above, relativeTo: nil)
       }
-      let overlay = overlayWindow.overlay
-      overlay.hostWindow = window
-      overlay.frame = overlayWindow.contentView?.bounds ?? .zero
+      overlay.frame = root.bounds
       return overlay
     }
 
     func releaseIfIdle() {
-      guard subviews.isEmpty, let overlayWindow = window, let parent = overlayWindow.parent else { return }
-      parent.removeChildWindow(overlayWindow)
-      overlayWindow.orderOut(nil)
+      guard subviews.isEmpty else { return }
+      removeFromSuperview()
     }
   #endif
 
   @available(*, unavailable)
   required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
+  func makeTrack() -> TranscriptSendTrack {
+    let track = TranscriptSendTrack(frame: bounds)
+    addSubview(track)
+    return track
+  }
+
   func point(inHostWindow point: CGPoint) -> CGPoint {
     #if canImport(UIKit)
       return convert(point, from: nil)
     #else
-      guard let content = hostWindow?.contentView else { return point }
+      guard let content = window?.contentView else { return point }
       let local = content.isFlipped ? point : CGPoint(x: point.x, y: content.bounds.height - point.y)
-      return rect(of: content, CGRect(origin: local, size: .zero)).origin
-    #endif
-  }
-
-  func rect(of view: TranscriptSendPlatformView, _ rect: CGRect) -> CGRect {
-    #if canImport(UIKit)
-      return convert(rect, from: view)
-    #else
-      guard let viewWindow = view.window, let ownWindow = window, viewWindow !== ownWindow else {
-        return convert(rect, from: view)
-      }
-      let onScreen = viewWindow.convertToScreen(view.convert(rect, to: nil))
-      return convert(ownWindow.convertFromScreen(onScreen), from: nil)
+      return convert(local, from: content)
     #endif
   }
 }
-
-#if canImport(AppKit) && !canImport(UIKit)
-  final class TranscriptSendOverlayWindow: NSWindow {
-    let overlay = TranscriptSendOverlayView()
-
-    init() {
-      super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
-      isOpaque = false
-      backgroundColor = .clear
-      hasShadow = false
-      ignoresMouseEvents = true
-      isReleasedWhenClosed = false
-      collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-      let content = NSView()
-      content.wantsLayer = true
-      contentView = content
-      overlay.frame = content.bounds
-      content.addSubview(overlay)
-    }
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-  }
-#endif

@@ -133,6 +133,12 @@ public enum TranscriptSendLayerAnimations {
     return hold
   }
 
+  public static func hideUntilLanded() -> CABasicAnimation {
+    let hold = hide(duration: 1)
+    hold.repeatCount = .infinity
+    return hold
+  }
+
   public static func replay(_ shift: TranscriptSendShift, on layer: CALayer) {
     layer.add(
       verticalShift(shift.offset, spring: shift.spring, beginTime: shift.beginTime), forKey: shift.key)
