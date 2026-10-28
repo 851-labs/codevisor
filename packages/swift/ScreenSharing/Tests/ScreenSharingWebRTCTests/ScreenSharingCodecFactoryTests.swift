@@ -134,9 +134,10 @@ struct ScreenSharingCodecFallbackTests {
     offerer: [ScreenSharingVideoCodec], answerer: [ScreenSharingVideoCodec]
   ) async throws -> ScreenSharingVideoCodec? {
     func connection(_ codecs: [ScreenSharingVideoCodec]) -> (RTCPeerConnectionFactory, RTCPeerConnection) {
+      let metrics = ScreenSharingMetrics()
       let codecFactory = ScreenSharingCodecFactory(
-        metrics: ScreenSharingMetrics(), codec: codecs[0], fallbackCodecs: Array(codecs.dropFirst()))
-      let factory = RTCPeerConnectionFactory(encoderFactory: codecFactory, decoderFactory: codecFactory)
+        metrics: metrics, codec: codecs[0], fallbackCodecs: Array(codecs.dropFirst()))
+      let factory = ScreenSharingFieldTrials.process.makeFactory(codecFactory: codecFactory, metrics: metrics)
       let configuration = RTCConfiguration()
       configuration.sdpSemantics = .unifiedPlan
       let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)

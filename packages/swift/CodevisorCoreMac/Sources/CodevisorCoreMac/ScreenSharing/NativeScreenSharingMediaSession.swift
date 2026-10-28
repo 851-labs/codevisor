@@ -14,8 +14,7 @@ extension ScreenSharingReceiver: NativeScreenSharingMediaSession {
   func accept(_ answer: String) async throws { try await accept(.init(kind: "answer", sdp: answer)) }
 
   static func process(connectivity: ServerScreenSharingConnectivity?) async throws -> ScreenSharingReceiver {
-    ScreenSharingFieldTrials.process.installProduct()
-    return try await ScreenSharingReceiver(
+    try await ScreenSharingReceiver(
       configuration: .init(), metrics: ScreenSharingMetrics(), connectivity: connectivity?.native())
   }
 }

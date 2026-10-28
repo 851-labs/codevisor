@@ -31,8 +31,9 @@ struct ScreenSharingPeerContractTests {
   }
 
   private func stagedConnection() throws -> DelegateFixture {
-    _ = ScreenSharingFieldTrials.process.ensureInstalled()
-    let factory = RTCPeerConnectionFactory()
+    let metrics = ScreenSharingMetrics()
+    let factory = ScreenSharingFieldTrials.process.makeFactory(
+      codecFactory: ScreenSharingCodecFactory(metrics: metrics), metrics: metrics)
     let delegate = ScreenSharingPeerDelegate()
     let configuration = RTCConfiguration()
     configuration.sdpSemantics = .unifiedPlan

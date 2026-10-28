@@ -73,10 +73,10 @@ struct ScreenSharingOwnershipTests {
   }
 
   @Test @MainActor func senderReleasesCacheOnConfigurationAndRejectsFramesAfterStop() throws {
-    ScreenSharingFieldTrials.process.ensureInstalled()
-    let factory = RTCPeerConnectionFactory()
-    let source = factory.videoSource(forScreenCast: true)
     let metrics = ScreenSharingMetrics()
+    let factory = ScreenSharingFieldTrials.process.makeFactory(
+      codecFactory: ScreenSharingCodecFactory(metrics: metrics), metrics: metrics)
+    let source = factory.videoSource(forScreenCast: true)
     let sender = ScreenSharingFrameSender(
       source: source, metrics: metrics, idleMonitor: ScreenSharingSourceIdleMonitor())
     sender.configure(try ScreenSharingVideoConfiguration(width: 128, height: 64))

@@ -31,7 +31,6 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
   let sink: any ComputerUseFrameSink
 
   init(size: CGSize, connectivity: ServerScreenSharingConnectivity) async throws {
-    ScreenSharingFieldTrials.process.installProduct()
     let metrics = ScreenSharingMetrics()
     let configuration = try computerUseStreamVideoConfiguration(size: size)
     var options = ScreenSharingPeerOptions()

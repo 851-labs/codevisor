@@ -21,7 +21,6 @@ final class SimulatorSenderPeer: SimulatorFrameSink {
   private(set) var configuration: ScreenSharingVideoConfiguration
 
   init(size: CGSize, connectivity: ServerScreenSharingConnectivity) async throws {
-    ScreenSharingFieldTrials.process.installProduct()
     var options = ScreenSharingPeerOptions()
     options.codec = .hevc
     options.fallbackCodecs = [.h264]

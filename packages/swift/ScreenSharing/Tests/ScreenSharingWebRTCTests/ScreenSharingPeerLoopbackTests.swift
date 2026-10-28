@@ -280,7 +280,7 @@ struct ScreenSharingPeerLoopbackTests {
     #expect(!staged.controlChannel.isAvailable && !staged.clipboardChannel.isAvailable)
     #expect(!staged.cursorChannel.isAvailable && !staged.audioChannel.isAvailable)
     #expect(!staged.videoRefresh.isAvailable)
-    #expect(metrics.snapshot().labels["fieldTrialProvenance"] != nil)
+    #expect(metrics.snapshot().labels["fieldTrials"] == ScreenSharingFieldTrials.productString)
     await release(staged)
 
     let (relayed, relayedShape) = try await stage(
