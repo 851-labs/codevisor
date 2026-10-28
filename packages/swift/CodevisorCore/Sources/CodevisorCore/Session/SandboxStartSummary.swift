@@ -20,6 +20,10 @@ public struct SandboxStartSummary: Equatable, Sendable {
 
   public var shownSteps: [SessionSetupPhase] { steps.filter { !$0.isPending } }
 
+  public var log: String {
+    shownSteps.flatMap(Self.logLines).joined(separator: "\n")
+  }
+
   public var startedAt: Date {
     (steps.first { !$0.isPending } ?? steps[0]).startedAt
   }
@@ -27,6 +31,12 @@ public struct SandboxStartSummary: Equatable, Sendable {
   public var duration: TimeInterval? {
     guard state != .running, let end = steps.compactMap(\.endedAt).max() else { return nil }
     return end.timeIntervalSince(startedAt)
+  }
+
+  private static func logLines(_ step: SessionSetupPhase) -> [String] {
+    var lines = ["==> \(step.activeTitle)"] + step.logs.map(\.text)
+    if let failure = step.failureMessage, lines.last != failure { lines.append(failure) }
+    return lines
   }
 
   public var title: String {

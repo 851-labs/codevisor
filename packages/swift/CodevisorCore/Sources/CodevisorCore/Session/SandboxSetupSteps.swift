@@ -2,6 +2,7 @@ import CodevisorClient
 import Foundation
 
 public enum SandboxSetupStage: String, CaseIterable, Sendable {
+  case tart
   case image
   case create
   case boot
@@ -84,7 +85,8 @@ public struct SandboxSetupSteps: Sendable {
 
   private func titles(for stage: SandboxSetupStage) -> Titles {
     switch stage {
-    case .image: titled("Preparing", "Prepared", "prepare", "the macOS image")
+    case .tart: titled("Installing", "Installed", "install", "Tart")
+    case .image: titled("Setting up", "Set up", "set up", "macOS")
     case .create: titled("Creating", "Created", "create", target.machineNoun)
     case .boot: titled("Booting", "Booted", "boot", target.machineNoun)
     case .install: titled("Installing", "Installed", "install", "Codevisor")

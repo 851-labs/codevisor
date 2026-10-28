@@ -36,6 +36,27 @@ struct SessionSetupGroupTests {
     #expect(started.startedAt == start)
   }
 
+  @Test("Every step that has started streams into one log, with its error at the end")
+  func oneLog() throws {
+    var create = steps.phase(.create, startedAt: start)
+    create.appendLog(stream: "stdout", line: "tart pull ghcr.io/cirruslabs/ubuntu:latest")
+    create.appendLog(stream: "stdout", line: "Downloaded 0.2 of 3.1 GB (5%)")
+    create.succeed(at: start.addingTimeInterval(30))
+    var boot = steps.phase(.boot, startedAt: start.addingTimeInterval(30))
+    boot.fail(message: "The Tart guest agent never answered", at: start.addingTimeInterval(90))
+
+    let summary = try #require(SandboxStartSummary(steps: [create, boot, steps.phase(.clone, isPending: true)]))
+
+    #expect(
+      summary.log == """
+        ==> Creating Tart VM
+        tart pull ghcr.io/cirruslabs/ubuntu:latest
+        Downloaded 0.2 of 3.1 GB (5%)
+        ==> Booting Tart VM
+        The Tart guest agent never answered
+        """)
+  }
+
   @Test("A failed step fails the whole start, which then reads how long it tried")
   func failed() throws {
     var boot = steps.phase(.boot, startedAt: start)

@@ -42,14 +42,14 @@ struct SandboxSetupStepsTests {
     let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world", agentName: "OpenCode")
     let phases = SandboxSetupStage.allCases.map { steps.phase($0) }
 
-    #expect(phases.map(\.id).first == "sandbox-image")
+    #expect(phases.map(\.id).first == "sandbox-tart")
     #expect(
       phases.map(\.activeTitle) == [
-        "Preparing the macOS image", "Creating Tart VM", "Booting Tart VM",
+        "Installing Tart", "Setting up macOS", "Creating Tart VM", "Booting Tart VM",
         "Installing Codevisor", "Signing in to Codevisor", "Syncing your setup",
         "Cloning hello-world", "Connecting to Tart VM", "Preparing OpenCode",
       ])
-    #expect(phases.map(\.failedTitle).first == "Could not prepare the macOS image")
+    #expect(phases.map(\.failedTitle).first == "Could not install Tart")
     #expect(steps.phase(.signIn).completedTitle == "Signed in to Codevisor")
     #expect(steps.phase(.signIn, isPending: true).upcomingTitle == "Sign in to Codevisor")
     #expect(steps.status(.clone) == "Cloning hello-world…")

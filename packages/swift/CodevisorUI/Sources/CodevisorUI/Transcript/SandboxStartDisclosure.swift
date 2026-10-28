@@ -18,15 +18,15 @@ public struct SandboxStartDisclosure: View {
           .contentShape(Rectangle())
       }
       .buttonStyle(TranscriptWorkedSectionButtonStyle())
-      .accessibilityHint(isExpanded ? "Hides the steps" : "Shows each step")
+      .accessibilityHint(isExpanded ? "Hides the log" : "Shows the log")
       TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-        VStack(alignment: .leading, spacing: 12) {
-          ForEach(summary.shownSteps) { phase in
-            SandboxStepView(phase: phase)
+        VStack(alignment: .leading, spacing: 8) {
+          PlainOutputView(title: "Logs", text: summary.log, followsTail: summary.state == .running)
+          ForEach(Array(summary.shownSteps.compactMap(\.logResource).enumerated()), id: \.offset) { _, resource in
+            TranscriptBodyView(resource: resource)
           }
         }
         .padding(.top, 12)
-        .padding(.leading, 14)
       }
     }
   }
