@@ -23,6 +23,8 @@ struct SidebarWorkspaceRow: View {
   let lifecycle: Lifecycle
   @GestureState private var isPressed = false
 
+  private static let trailingSpacing: CGFloat = 7
+
   private var isArchived: Bool {
     if case .archived = lifecycle { return true }
     return false
@@ -63,7 +65,6 @@ struct SidebarWorkspaceRow: View {
             }
           }
         ZStack(alignment: .trailing) {
-          hoverActions.hidden()
           properties
             .opacity(isHovered ? 0 : 1)
             .allowsHitTesting(!isHovered)
@@ -71,6 +72,7 @@ struct SidebarWorkspaceRow: View {
             hoverActions.transition(.opacity)
           }
         }
+        .frame(minWidth: hoverActionsWidth, alignment: .trailing)
         .animation(.easeOut(duration: 0.12), value: isHovered)
       }
       .padding(.horizontal, 10)
@@ -103,8 +105,13 @@ struct SidebarWorkspaceRow: View {
     }
   }
 
+  private var hoverActionsWidth: CGFloat {
+    let slots: CGFloat = isArchived ? 1 : 2
+    return slots * SidebarRowIcon.trailingSlot + (slots - 1) * Self.trailingSpacing
+  }
+
   private var properties: some View {
-    HStack(spacing: 7) {
+    HStack(spacing: Self.trailingSpacing) {
       if let pullRequest {
         PullRequestBadge(
           pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
@@ -122,7 +129,7 @@ struct SidebarWorkspaceRow: View {
   }
 
   private var hoverActions: some View {
-    HStack(spacing: 7) {
+    HStack(spacing: Self.trailingSpacing) {
       switch lifecycle {
       case let .active(isPinned, onTogglePin, _, _, onArchive):
         hoverButton(
