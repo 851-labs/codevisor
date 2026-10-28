@@ -145,7 +145,7 @@ private extension ComposerCard {
   private var slimContent: some View {
     ComposerSlimBar(
       field: editorStack, action: slimAction, glassNamespace: glassNamespace,
-      onAttachPhotos: { isPickingPhotos = true }, onAttachFiles: pickFiles,
+      onAttachPhotos: pickPhotos, onAttachFiles: pickFiles,
       onStop: { Task { await controller.stop() } }, onSend: submitOrAcceptSlash)
   }
 
@@ -286,16 +286,25 @@ private extension ComposerCard {
   }
 
   private var attachButton: some View {
-    Button(action: pickFiles) {
-      Image(systemName: "paperclip")
-        .font(.system(size: 13, weight: .medium))
+    Menu {
+      ComposerAttachMenuItems(onPhotos: pickPhotos, onFiles: pickFiles)
+    } label: {
+      Image(systemName: "plus")
+        .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)
         .frame(width: 26, height: 26)
         .contentShape(Rectangle())
     }
+    .menuStyle(.button)
     .buttonStyle(HoverIconButtonStyle())
-    .help("Attach files")
-    .accessibilityLabel("Attach files")
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help("Attach")
+    .accessibilityLabel("Attach")
+  }
+
+  private func pickPhotos() {
+    isPickingPhotos = true
   }
 
   private func pickFiles() {
