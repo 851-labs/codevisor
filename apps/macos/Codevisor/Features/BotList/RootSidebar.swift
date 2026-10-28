@@ -57,7 +57,8 @@ struct RootSidebar: View {
     if isDrawer && botsEnabled {
       VStack(spacing: 0) {
         SidebarModePicker(mode: $storedMode)
-          .controlSize(.large)
+          .controlSize(.extraLarge)
+          .glassEffect(.regular, in: .capsule)
           .padding(.top, 10)
         content
       }
