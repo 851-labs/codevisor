@@ -76,28 +76,6 @@ public struct WebPaneThemeTokens: Equatable, Sendable {
 
 }
 
-private struct WebPaneOrigin: Equatable {
-  var scheme: String
-  var host: String
-  var port: Int
-
-  init?(url: URL) {
-    guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased()
-    else { return nil }
-    self.scheme = scheme
-    self.host = host
-    self.port = url.port ?? Self.defaultPort(scheme: scheme)
-  }
-
-  private static func defaultPort(scheme: String) -> Int {
-    switch scheme {
-    case "https": 443
-    case "http": 80
-    default: -1
-    }
-  }
-}
-
 private final class WebPaneMessageProxy: NSObject, WKScriptMessageHandler {
   weak var controller: WebPaneController?
 
@@ -193,7 +171,7 @@ public final class WebPaneController: NSObject {
     let value = payload["value"] as? String ?? ""
     switch type {
     case "openUrl":
-      guard let url = URL(string: value), let external = Self.externalURL(url)
+      guard let url = URL(string: value), let external = WebPaneNavigation.externalURL(url)
       else { return }
       openExternally(external)
     case "setTitle":
@@ -283,15 +261,6 @@ public final class WebPaneController: NSObject {
     return json
   }
 
-  private static func externalURL(_ url: URL) -> URL? {
-    switch url.scheme?.lowercased() {
-    case "http", "https", "mailto":
-      url
-    default:
-      nil
-    }
-  }
-
   private func openExternally(_ url: URL) {
     #if canImport(AppKit)
       NSWorkspace.shared.open(url)
@@ -341,15 +310,20 @@ extension WebPaneController: WKNavigationDelegate {
     if navigationAction.targetFrame?.isMainFrame == true {
       mainFrameMethod = navigationAction.request.httpMethod
     }
-    guard let url = navigationAction.request.url else { return .cancel }
-    if url.scheme?.lowercased() == "about" { return .allow }
-    if let allowedOrigin, WebPaneOrigin(url: url) == allowedOrigin { return .allow }
-    if navigationAction.targetFrame?.isMainFrame != false,
-      let external = Self.externalURL(url)
-    {
-      openExternally(external)
+    let decision = WebPaneNavigation.decide(
+      url: navigationAction.request.url,
+      isMainFrame: navigationAction.targetFrame?.isMainFrame,
+      allowedOrigin: allowedOrigin
+    )
+    switch decision {
+    case .allow:
+      return .allow
+    case .cancel:
+      return .cancel
+    case let .openExternally(url):
+      openExternally(url)
+      return .cancel
     }
-    return .cancel
   }
 
   public func webView(
@@ -378,7 +352,7 @@ extension WebPaneController: WKUIDelegate {
     for navigationAction: WKNavigationAction,
     windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
-    if let url = navigationAction.request.url, let external = Self.externalURL(url) {
+    if let url = navigationAction.request.url, let external = WebPaneNavigation.externalURL(url) {
       openExternally(external)
     }
     return nil
