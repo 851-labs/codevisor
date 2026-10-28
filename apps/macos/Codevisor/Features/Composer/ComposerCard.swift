@@ -81,7 +81,7 @@ struct ComposerCard: View {
             onContentHeightChange: { slashMenuContentHeight = $0 },
             onSelect: acceptSlashCommand
           )
-          .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+          .transition(.opacity)
         }
       }
       .offset(y: -(paletteHeight + ComposerGlassStyle.clusterSpacing))
