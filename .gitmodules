@@ -152,3 +152,15 @@
 [submodule ".repos/agy-acp-musicode1"]
 	path = .repos/agy-acp-musicode1
 	url = https://github.com/MusiCode1/agy-acp.git
+[submodule ".repos/moonlight-common-c"]
+	path = .repos/moonlight-common-c
+	url = https://github.com/moonlight-stream/moonlight-common-c.git
+[submodule ".repos/moonlight-qt"]
+	path = .repos/moonlight-qt
+	url = https://github.com/moonlight-stream/moonlight-qt.git
+[submodule ".repos/ALVR"]
+	path = .repos/ALVR
+	url = https://github.com/alvr-org/ALVR.git
+[submodule ".repos/pippin"]
+	path = .repos/pippin
+	url = https://github.com/rubas/pippin.git
