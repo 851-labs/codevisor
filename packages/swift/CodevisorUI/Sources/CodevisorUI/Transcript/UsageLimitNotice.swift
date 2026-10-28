@@ -22,21 +22,29 @@ public struct UsageLimitNotice: View {
   }
 
   public var body: some View {
-    TranscriptInlineCard(
-      title: "Usage limit reached",
-      state: .pending(message: message, actions: actions),
-      inBotConversation: inBotConversation
-    )
+    if autoResume?.state == .resuming {
+      AssistantTurnActivityView(AssistantTurnActivity(message: "Resuming…", followsResponse: false))
+    } else {
+      TranscriptInlineCard(
+        title: "Usage limit reached",
+        state: .pending(message: message, actions: actions),
+        inBotConversation: inBotConversation,
+        tone: resumeFailed ? .error : .neutral
+      )
+    }
   }
+
+  private var resumeFailed: Bool { autoResume?.state == .failed }
 
   private var message: String {
     guard let autoResume else { return "Won't resume automatically." }
+    if resumeFailed { return "Couldn't resume." }
     return UsageLimitResumeText.detail(resumesAt: autoResume.resumesAt, now: environment?.now() ?? .now)
   }
 
   private var actions: [TranscriptInlineCard.Action] {
     let switchAccount = TranscriptInlineCard.Action("Switch Account", emphasis: .primary, perform: switchAccount)
-    guard autoResume != nil else { return [switchAccount] }
+    guard autoResume != nil, !resumeFailed else { return [switchAccount] }
     return [TranscriptInlineCard.Action("Don't Resume", emphasis: .quiet, perform: cancelAutoResume), switchAccount]
   }
 }

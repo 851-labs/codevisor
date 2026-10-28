@@ -5,7 +5,7 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("A pending auto-resume follows the history page and the server's live updates")
+  @Test("A pending, resuming or failed auto-resume follows the history page and the server's live updates")
   func autoResumeFollowsServer() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
@@ -31,6 +31,14 @@ extension SessionModelTests {
     client.emit(autoResumeEvent(sessionId, id: 4, payload: ["state": .string("scheduled")]))
     await settleUntil { model.autoResume != nil }
     #expect(model.autoResume == SessionAutoResume(resumesAt: nil))
+
+    client.emit(autoResumeEvent(sessionId, id: 5, payload: ["state": .string("resuming")]))
+    await settleUntil { model.autoResume?.state == .resuming }
+    #expect(model.autoResume == SessionAutoResume(state: .resuming))
+
+    client.emit(autoResumeEvent(sessionId, id: 6, payload: ["state": .string("failed")]))
+    await settleUntil { model.autoResume?.state == .failed }
+    #expect(model.autoResume == SessionAutoResume(state: .failed))
   }
 
   @Test("Declining the auto-resume hides it at once and brings it back if the server refuses")

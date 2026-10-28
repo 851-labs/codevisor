@@ -12,21 +12,27 @@ struct ServerSessionAutoResumeTests {
   func transcriptPage() throws {
     let scheduled = try decodePage(#", "autoResume": { "resumesAt": "2026-10-20T22:00:00.000Z" }"#)
     let unknownTime = try decodePage(#", "autoResume": {}"#)
+    let resuming = try decodePage(#", "autoResume": { "state": "resuming" }"#)
     let none = try decodePage("")
 
     #expect(scheduled.autoResume?.sessionAutoResume == SessionAutoResume(resumesAt: resetsAt))
     #expect(unknownTime.autoResume?.sessionAutoResume == SessionAutoResume())
+    #expect(resuming.autoResume?.sessionAutoResume == SessionAutoResume(state: .resuming))
     #expect(none.autoResume == nil)
   }
 
-  @Test("Live updates schedule the auto-resume or clear it")
+  @Test("Live updates schedule the auto-resume, show it resuming or failed, or clear it")
   func liveUpdates() {
     let scheduled = decode(["state": .string("scheduled"), "resumesAt": .string("2026-10-20T22:00:00Z")])
     let unknownTime = decode(["state": .string("scheduled")])
+    let resuming = decode(["state": .string("resuming")])
+    let failed = decode(["state": .string("failed")])
     let cleared = decode(["state": .string("cleared")])
 
     #expect(scheduled == [.autoResume(SessionAutoResume(resumesAt: resetsAt))])
     #expect(unknownTime == [.autoResume(SessionAutoResume())])
+    #expect(resuming == [.autoResume(SessionAutoResume(state: .resuming))])
+    #expect(failed == [.autoResume(SessionAutoResume(state: .failed))])
     #expect(cleared == [.autoResume(nil)])
   }
 

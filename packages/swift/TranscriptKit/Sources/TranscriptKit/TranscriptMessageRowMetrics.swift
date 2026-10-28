@@ -59,6 +59,7 @@ enum TranscriptMessageRowMetrics {
       hasher.combine(turn.stopKind)
       hasher.combine(turn.autoResume != nil)
       hasher.combine(turn.autoResume?.resumesAt)
+      hasher.combine(turn.autoResume?.state)
       hasher.combine(turn.subagentActivityFingerprint)
       hasher.combine(turn.attachments.count)
       for attachment in turn.attachments {

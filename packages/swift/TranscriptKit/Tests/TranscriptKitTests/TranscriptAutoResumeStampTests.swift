@@ -36,6 +36,19 @@ struct TranscriptAutoResumeStampTests {
     #expect(TranscriptAutoResumeStamp.stamping(pending, onto: empty) == empty)
   }
 
+  @Test func remeasuresTheStoppedTurnWhenItsResumeStartsOrFails() {
+    let limited = assistant(stopKind: "usageLimit")
+    let states: [SessionAutoResume.State] = [.scheduled, .resuming, .failed]
+
+    let revisions = states.compactMap { state in
+      TranscriptAutoResumeStamp.stamping(SessionAutoResume(state: state), onto: limited).map {
+        TranscriptMessageRowMetrics.measurementRevision(for: $0, waitingOnBackgroundTask: nil)
+      }
+    }
+
+    #expect(Set(revisions).count == states.count)
+  }
+
   private func assistant(stopKind: String?) -> ConversationItem {
     .assistant(
       AssistantMessage(
