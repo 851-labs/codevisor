@@ -99,6 +99,7 @@ struct ChatScreen: View {
       .sheet(item: $controller.presentedSetupRequest) { request in
         SetupRequestSheet(request: request, controller: controller)
       }
+      .modifier(ProjectCloneSheetPresenter(controller: controller))
       .pointerStyle(.default)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)

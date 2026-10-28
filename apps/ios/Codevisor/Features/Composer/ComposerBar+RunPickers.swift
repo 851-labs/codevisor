@@ -30,7 +30,7 @@ extension ComposerBar {
       onSetUpProject: selectSetUpGroup,
       onLocation: selectRunLocation,
       onManageMachines: { settingsDestination = .machines(focusedMachineID: nil) },
-      onManageProject: { managedProject = liveProject },
+      onManageProject: { managedProject = pendingCloneGroup?.primary ?? liveProject },
       onProjectDeleted: projectDeleted,
       sandboxes: sandboxPicks
     )
@@ -133,6 +133,7 @@ extension ComposerBar {
       } else {
         await controller.selectProject(project)
       }
+      preferCloneRunLocation()
     }
     Task {
       await environment.projectList.refreshFromServer(
@@ -144,7 +145,7 @@ extension ComposerBar {
 
   func selectSetUpGroup(_ group: ProjectGroup) {
     pendingSetupGroupID = group.id
-    guard !controller.project.isRunTargetPlaceholder else { return }
+    guard !controller.project.isRunTargetPlaceholder else { return preferCloneRunLocation() }
     applyRunTarget(.runTargetPlaceholder(serverId: controller.project.serverId), wantsWorktree: false)
   }
 
@@ -157,9 +158,24 @@ extension ComposerBar {
   }
 
   private func selectRunLocation(_ newWorktree: Bool) {
-    guard liveProject.isGitRepository else { return }
-    environment.rememberRunLocation(newWorktree: newWorktree, for: liveProject)
+    if let group = pendingCloneGroup {
+      environment.rememberRunLocation(newWorktree: newWorktree, for: group)
+    } else {
+      guard liveProject.isGitRepository else { return }
+      environment.rememberRunLocation(newWorktree: newWorktree, for: liveProject)
+    }
     controller.wantsNewWorktree = newWorktree
+  }
+
+  private var pendingCloneGroup: ProjectGroup? {
+    guard controller.project.isRunTargetPlaceholder, let group = pendingSetupGroup, group.repoUrl != nil
+    else { return nil }
+    return group
+  }
+
+  private func preferCloneRunLocation() {
+    guard let group = pendingCloneGroup else { return }
+    controller.wantsNewWorktree = environment.prefersNewWorktree(for: group)
   }
 
   func projectDeleted(_ group: ProjectGroup) {

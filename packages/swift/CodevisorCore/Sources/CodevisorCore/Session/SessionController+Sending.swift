@@ -98,6 +98,11 @@ extension SessionController {
     isSubmitting = false
 
     guard
+      await cloneRequestedProject(
+        showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
+    else { return nil }
+
+    guard
       await createRequestedSandbox(
         showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
     else { return nil }
@@ -121,6 +126,10 @@ extension SessionController {
 
   private func materializeRunTarget(restoreComposer: () -> Void) async -> Bool {
     guard project.isRunTargetPlaceholder else { return true }
+    if let provisional = provisionalCloneProject() {
+      project = provisional
+      return true
+    }
     guard let failure = await materializeScratchProject() else { return true }
 
     restoreComposer()
@@ -224,7 +233,7 @@ extension SessionController {
       return "Worktrees need the Codevisor server. Start it and try again."
     }
     let worktreeId = UUID().uuidString.lowercased()
-    if showsSetupPhase { beginSetupPhase(.worktree()) }
+    if showsSetupPhase, !hasRunningWorktreePhase { beginSetupPhase(.worktree()) }
     status = .connecting("Setting up worktree…")
     let log = WorktreeSetupEvent.liveLog(serverClient, worktreeId: worktreeId)
     let follow = Task { [weak self] in
@@ -257,6 +266,10 @@ extension SessionController {
     } catch {
       return serverErrorMessage(error)
     }
+  }
+
+  private var hasRunningWorktreePhase: Bool {
+    setupPhases.contains { $0.id == SessionSetupPhase.worktreePhaseId && $0.isRunning }
   }
 
   func materializeScratchProject() async -> String? {

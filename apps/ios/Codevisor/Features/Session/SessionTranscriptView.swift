@@ -92,6 +92,7 @@ struct SessionTranscriptView: View {
   var body: some View {
     chat
       .overlay { PluginAppPipOverlay(chatSessionId: controller.serverSession?.id) }
+      .modifier(ProjectCloneSheetPresenter(controller: controller))
       .attachmentQuickLookPreview(
         Binding(get: { quickLook.previewURL }, set: { quickLook.updatePreviewURL($0) })
       )

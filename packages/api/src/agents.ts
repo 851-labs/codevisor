@@ -96,9 +96,16 @@ export type ClosedAgent = typeof ClosedAgent.Type
 export const AgentIsolation = Schema.Literals(["worktree", "shared", "project"])
 export type AgentIsolation = typeof AgentIsolation.Type
 
+export const AgentProjectSource = Schema.Struct({
+  name: Schema.String,
+  repoUrl: Schema.String
+})
+export type AgentProjectSource = typeof AgentProjectSource.Type
+
 export const AgentCallerDefaults = Schema.Struct({
   harness: Schema.String,
-  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  project: Schema.optional(AgentProjectSource)
 })
 export type AgentCallerDefaults = typeof AgentCallerDefaults.Type
 

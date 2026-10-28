@@ -4,12 +4,12 @@ import { withRunningThoughtLevel } from "@codevisor/agent-runtime"
 import {
   DEFAULT_SUBSCRIPTION_EVENTS,
   StartAgentRequest,
-  type Project,
   type SessionSummary,
   type StartedAgent
 } from "@codevisor/api"
 
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
+import { agentProjectId } from "./agent-start-project.js"
 import { startAgentOnSandbox } from "./agent-start-sandbox.js"
 import { verifiedRemoteParent } from "./fleet-calls.js"
 import { allocateProjectWorktree } from "./project-worktree-create.js"
@@ -28,7 +28,7 @@ export const AGENT_START_CLEANUP_MS = 30_000
 export const startAgent = async (route: RouteContext): Promise<boolean> => {
   const request = await readSchema(route.request, StartAgentRequest)
   const caller = await callerOf(route, request)
-  const projectId = await projectIdFor(route, request.project, caller)
+  const projectId = await agentProjectId(route, request, caller.projectId)
   const harnessId = harnessFor(request, caller)
   const { sandboxProfile } = request
   if (sandboxProfile !== undefined) {
@@ -133,29 +133,6 @@ const localCaller = (session: SessionSummary, runtime: unknown): AgentCaller => 
   harnessId: session.harnessId,
   configSelections: withRunningThoughtLevel(session.configSelections, runtime)
 })
-
-const projectIdFor = async (
-  route: RouteContext,
-  project: string | undefined,
-  caller: AgentCaller
-): Promise<string> => {
-  if (project === undefined && caller.projectId !== undefined) return caller.projectId
-  const projects = await run(route.services.db.listProjects)
-  const wanted = project?.toLowerCase()
-  const found = projects.find((candidate) => matchesProject(candidate, wanted))
-  if (found !== undefined) return found.id
-  throw new HttpFailure(422, projectHint(project, projects))
-}
-
-const matchesProject = (project: Project, wanted: string | undefined): boolean =>
-  project.id.toLowerCase() === wanted || project.name.toLowerCase() === wanted
-
-const projectHint = (project: string | undefined, projects: ReadonlyArray<Project>): string => {
-  const names = projects.map((candidate) => `${candidate.name} (${candidate.id})`).join(", ")
-  if (project === undefined)
-    return `Pass project: an id or name. Projects on this machine: ${names}`
-  return `No project matches "${project}". Projects on this machine: ${names}`
-}
 
 const harnessFor = (request: StartAgentRequest, caller: AgentCaller): string => {
   const harnessId = request.harness ?? caller.harnessId

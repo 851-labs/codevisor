@@ -55,7 +55,7 @@ public final class ProjectMachineSetup {
     public var isReady: Bool { !needsRemote || GitRemoteURL.isValid(repoUrl) }
   }
 
-  public struct Failure: Equatable, Sendable {
+  public struct Failure: Error, Equatable, Sendable {
     public let message: String
     public let code: String?
     public let host: String?
@@ -111,6 +111,7 @@ public final class ProjectMachineSetup {
   public private(set) var phase: Phase = .idle
   public private(set) var progress = SetupProgress(label: "")
   @ObservationIgnored public var onFinished: ((Project) -> Void)?
+  @ObservationIgnored public var retryHandler: (() -> Void)?
   @ObservationIgnored private var task: Task<Void, Never>?
   @ObservationIgnored private var activeProjectId: UUID?
 
@@ -118,6 +119,7 @@ public final class ProjectMachineSetup {
   @ObservationIgnored private let machineName: (String) -> String
   @ObservationIgnored private let isReachable: (String) -> Bool
   @ObservationIgnored private let adopt: (Project) -> Void
+  @ObservationIgnored let cloner: ProjectCloner
 
   public init(
     clientFor: @escaping (String) -> any CodevisorServerClienting,
@@ -129,6 +131,7 @@ public final class ProjectMachineSetup {
     self.machineName = machineName
     self.isReachable = isReachable
     self.adopt = adopt
+    cloner = ProjectCloner(clientFor: clientFor, machineName: machineName)
   }
 
   public var isPresented: Bool {
@@ -162,33 +165,15 @@ public final class ProjectMachineSetup {
 
   public func prepare(group: ProjectGroup, targetServerId: String, preferredSource: Project?) async {
     guard !isPresented else { return }
-    let target = machineName(targetServerId)
-    let repoUrl = group.members.lazy.compactMap(\.repoUrl).first
-    let candidates = group.members.filter { $0.serverId != targetServerId && isReachable($0.serverId) }
-    let source =
-      preferredSource.flatMap { preferred in candidates.first { $0 == preferred } }
-      ?? candidates.first { $0.isGitRepository }
-      ?? candidates.first
-    guard repoUrl != nil || source != nil else {
-      phase = .unavailable(projectName: group.name, machineName: target)
+    guard let pending = draftPlan(group: group, targetServerId: targetServerId, preferredSource: preferredSource)
+    else {
+      phase = .unavailable(projectName: group.name, machineName: machineName(targetServerId))
       return
     }
-    let pending = Plan(
-      projectName: group.name,
-      repoUrl: repoUrl ?? "",
-      needsRemote: repoUrl == nil,
-      targetServerId: targetServerId,
-      targetMachineName: target,
-      sourceServerId: source?.serverId,
-      sourceMachineName: source.map { machineName($0.serverId) },
-      sourceProjectId: source?.id,
-      worktreeBase: group.members.filter(\.isGitRepository).lazy.compactMap(\.worktreeBase).first,
-      defaultRunLocation: group.defaultRunLocation
-    )
     phase = .preparing(pending)
     var details: ServerProjectSetupSource?
-    if let source {
-      details = try? await clientFor(source.serverId).projectSetupSource(projectId: source.id)
+    if let sourceServerId = pending.sourceServerId, let sourceProjectId = pending.sourceProjectId {
+      details = try? await clientFor(sourceServerId).projectSetupSource(projectId: sourceProjectId)
     }
     guard case let .preparing(current) = phase else { return }
     phase = .confirming(
@@ -198,7 +183,7 @@ public final class ProjectMachineSetup {
         needsRemote: current.needsRemote,
         needsInitialCommit: current.needsRemote && details?.needsInitialCommit == true,
         targetServerId: targetServerId,
-        targetMachineName: target,
+        targetMachineName: current.targetMachineName,
         sourceServerId: current.sourceServerId,
         sourceMachineName: current.sourceMachineName,
         sourceProjectId: current.sourceProjectId,
@@ -207,6 +192,40 @@ public final class ProjectMachineSetup {
         defaultRunLocation: current.defaultRunLocation,
         copiesEnvFiles: current.copiesEnvFiles
       ))
+  }
+
+  public func clonePlan(group: ProjectGroup, targetServerId: String, preferredSource: Project?) -> Plan? {
+    guard let plan = draftPlan(group: group, targetServerId: targetServerId, preferredSource: preferredSource),
+      !plan.needsRemote
+    else { return nil }
+    return plan
+  }
+
+  public func present(_ plan: Plan, failure: Failure) {
+    guard !isPresented else { return }
+    fail(plan, failure)
+  }
+
+  private func draftPlan(group: ProjectGroup, targetServerId: String, preferredSource: Project?) -> Plan? {
+    let repoUrl = group.repoUrl
+    let candidates = group.members.filter { $0.serverId != targetServerId && isReachable($0.serverId) }
+    let source =
+      preferredSource.flatMap { preferred in candidates.first { $0 == preferred } }
+      ?? candidates.first { $0.isGitRepository }
+      ?? candidates.first
+    guard repoUrl != nil || source != nil else { return nil }
+    return Plan(
+      projectName: group.name,
+      repoUrl: repoUrl ?? "",
+      needsRemote: repoUrl == nil,
+      targetServerId: targetServerId,
+      targetMachineName: machineName(targetServerId),
+      sourceServerId: source?.serverId,
+      sourceMachineName: source.map { machineName($0.serverId) },
+      sourceProjectId: source?.id,
+      worktreeBase: group.members.filter(\.isGitRepository).lazy.compactMap(\.worktreeBase).first,
+      defaultRunLocation: group.defaultRunLocation
+    )
   }
 
   public func setCopiesEnvFiles(_ copies: Bool) {
@@ -239,9 +258,16 @@ public final class ProjectMachineSetup {
 
   public func retry() {
     switch phase {
-    case let .failed(plan, _), let .signingIn(plan, _): start(plan)
+    case let .failed(plan, _), let .signingIn(plan, _): retry(plan)
     default: break
     }
+  }
+
+  private func retry(_ plan: Plan) {
+    guard let retryHandler else { return start(plan) }
+
+    phase = .idle
+    retryHandler()
   }
 
   public func signIn() {
@@ -300,92 +326,27 @@ public final class ProjectMachineSetup {
       await publishRemote(plan)
       return
     }
-    var envFiles: [ServerProjectEnvFileContent] = []
-    if plan.copiesEnvFiles, let sourceServerId = plan.sourceServerId,
-      let sourceProjectId = plan.sourceProjectId
-    {
-      do {
-        let source = clientFor(sourceServerId)
-        let paths = try await source.projectSetupSource(projectId: sourceProjectId).envFiles.map(\.path)
-        if !paths.isEmpty {
-          envFiles = try await source.readProjectEnvFiles(projectId: sourceProjectId, paths: paths)
-        }
-      } catch {
-        guard !Task.isCancelled else { return }
-        phase = .failed(
-          plan,
-          Failure(
-            message: "Couldn't read env files",
-            code: nil,
-            host: nil
-          ))
-        return
-      }
-    }
     let projectId = UUID()
     activeProjectId = projectId
-    progress = SetupProgress(label: "Connecting…")
-    let target = clientFor(plan.targetServerId)
-    let (outcomes, outcomeSink) = AsyncStream.makeStream(of: ProjectCloneOutcome.self)
-    let tail = ServerSetupEventTail.follow(
-      target, kinds: ["project.setup", "project.created"], subjectId: projectId.uuidString)
-    let follow = Task {
-      for await item in tail {
-        guard case let .event(envelope) = item else { continue }
-        if case let .progress(clone) = ProjectSetupEvent.from(envelope, projectId: projectId.uuidString) {
-          progress = Self.progress(for: clone)
-        }
-        if let outcome = ProjectCloneOutcome.from(envelope, projectId: projectId.uuidString) {
-          outcomeSink.yield(outcome)
-        }
-      }
-      outcomeSink.finish()
+    defer { activeProjectId = nil }
+    let result = await cloner.clone(plan, projectId: projectId) { [weak self] event in
+      self?.show(event)
     }
-    defer {
-      follow.cancel()
-      activeProjectId = nil
+    guard !Task.isCancelled else { return }
+    switch result {
+    case let .success(project): finish(project)
+    case let .failure(failure): fail(plan, failure)
     }
-    do {
-      let created = try await target.setUpProjectFromGit(
-        ServerProjectSetupRequest(
-          id: projectId,
-          url: plan.repoUrl,
-          name: plan.projectName,
-          homeRelativePath: plan.homeRelativePath,
-          envFiles: envFiles.isEmpty ? nil : envFiles,
-          worktreeBase: plan.worktreeBase,
-          defaultRunLocation: plan.defaultRunLocation
-        ))
-      guard !Task.isCancelled else { return }
-      finish(try created.project(serverId: plan.targetServerId))
-    } catch let error as CodevisorServerClientError {
-      guard !Task.isCancelled else { return }
-      fail(plan, code: serverErrorCode(error))
-    } catch {
-      guard !Task.isCancelled else { return }
-      for await outcome in outcomes {
-        switch outcome {
-        case let .failed(_, code):
-          fail(plan, code: code)
-        case .created:
-          let listed = try? await target.listProjects().first {
-            $0.id.caseInsensitiveCompare(projectId.uuidString) == .orderedSame
-          }
-          if let project = try? listed?.project(serverId: plan.targetServerId) {
-            finish(project)
-          } else {
-            fail(plan, code: nil)
-          }
-        }
-        return
-      }
-      fail(plan, code: nil)
-    }
+  }
+
+  private func show(_ event: ProjectSetupEvent) {
+    guard case let .progress(clone) = event else { return }
+    progress = Self.progress(for: clone)
   }
 
   private func publishRemote(_ plan: Plan) async {
     guard let sourceServerId = plan.sourceServerId, let sourceProjectId = plan.sourceProjectId else {
-      fail(plan, code: nil)
+      fail(plan, cloner.failure(plan, code: nil))
       return
     }
     let url = plan.repoUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -394,7 +355,7 @@ public final class ProjectMachineSetup {
         projectId: sourceProjectId, url: url, initialize: plan.needsInitialCommit)
     } catch {
       guard !Task.isCancelled else { return }
-      fail(plan, code: serverErrorCode(error), serverId: sourceServerId)
+      fail(plan, cloner.failure(plan, code: serverErrorCode(error), serverId: sourceServerId))
       return
     }
     guard !Task.isCancelled else { return }
@@ -412,15 +373,11 @@ public final class ProjectMachineSetup {
     onFinished?(project)
   }
 
-  private func fail(_ plan: Plan, code: String?, serverId: String? = nil) {
-    if code == "cancelled" {
+  private func fail(_ plan: Plan, _ failure: Failure) {
+    if failure.code == "cancelled" {
       phase = .idle
       return
     }
-    let machine = serverId.map(machineName) ?? plan.targetMachineName
-    let failure = Failure(
-      message: Self.message(plan: plan, code: code, machine: machine), code: code, host: plan.host,
-      serverId: serverId)
     phase = .failed(plan, failure)
     if failure.needsSignIn { signIn() }
   }

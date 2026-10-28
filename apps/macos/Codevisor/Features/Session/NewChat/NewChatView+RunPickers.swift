@@ -240,6 +240,11 @@ extension NewChatView {
   private static let noProjectTitle = "No project"
   private static let noProjectFavoriteID = "no-project"
 
+  func showsRunLocationPicker(_ controller: SessionController) -> Bool {
+    guard controller.sandboxTarget == nil else { return false }
+    return liveProject(for: controller).isGitRepository || pendingCloneGroup != nil
+  }
+
   func runLocationPicker(_ controller: SessionController) -> some View {
     let current = RunLocationOption.all.first { $0.newWorktree == controller.wantsNewWorktree } ?? .projectDirectory
     let selection = Binding(
@@ -255,7 +260,7 @@ extension NewChatView {
       .labelsHidden()
       Autocomplete.Footer(id: "actions") {
         Autocomplete.Action("Manage Project…", systemImage: "gearshape.fill") {
-          SettingsRouter.shared.showProject(liveProject(for: controller))
+          SettingsRouter.shared.showProject(pendingCloneGroup?.primary ?? liveProject(for: controller))
           openSettings()
         }
         .help("Open this project's settings")
@@ -293,6 +298,7 @@ extension NewChatView {
           to: .runTargetPlaceholder(serverId: machine.id),
           serverClient: environment.machines.client(for: machine.id)
         )
+        preferCloneRunLocation(of: currentGroup, controller: controller)
       }
       return
     }
@@ -322,9 +328,9 @@ extension NewChatView {
     let serverId = controller.project.serverId
     pendingSetupGroupID = group.id
     selectedProjectId = nil
-    guard !controller.project.isRunTargetPlaceholder else { return }
     Task {
       await controller.selectProject(.runTargetPlaceholder(serverId: serverId))
+      preferCloneRunLocation(of: group, controller: controller)
     }
   }
 
@@ -385,8 +391,17 @@ extension NewChatView {
   }
 
   private func selectRunLocation(newWorktree: Bool, controller: SessionController) {
-    environment.rememberRunLocation(newWorktree: newWorktree, for: controller.project)
+    if let group = pendingCloneGroup {
+      environment.rememberRunLocation(newWorktree: newWorktree, for: group)
+    } else {
+      environment.rememberRunLocation(newWorktree: newWorktree, for: controller.project)
+    }
     controller.wantsNewWorktree = newWorktree
+  }
+
+  private func preferCloneRunLocation(of group: ProjectGroup, controller: SessionController) {
+    guard group.repoUrl != nil, controller.project.isRunTargetPlaceholder else { return }
+    controller.wantsNewWorktree = environment.prefersNewWorktree(for: group)
   }
 }
 

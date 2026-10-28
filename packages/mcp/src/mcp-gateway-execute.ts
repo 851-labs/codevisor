@@ -1,4 +1,3 @@
-import { withRunningThoughtLevel } from "@codevisor/agent-runtime"
 import type { ExecutionJob } from "@codevisor/api"
 import type {
   AutomationToolProvider,
@@ -10,6 +9,7 @@ import type {
 import type { McpServerRecord } from "@codevisor/db"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
+import { withCallerDefaults } from "./mcp-gateway-agent-start.js"
 import { gatewayToolError, type makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
 import {
   EXECUTE_DEFAULT_TIMEOUT_MS,
@@ -20,7 +20,6 @@ import {
 import type { ExecutionJobs, ExecutionRun, RunOutcome } from "./mcp-gateway-jobs.js"
 import { makeExecutionSteps } from "./mcp-gateway-steps.js"
 import type { GatewayRuntime } from "./mcp-gateway.js"
-import { isRecord } from "./mcp-guards.js"
 import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { sandboxOutputContent } from "./mcp-sandbox-results.js"
 import { run, type UpstreamConnection } from "./mcp-support.js"
@@ -159,7 +158,7 @@ const makeExecuteCall = (
         value = await deps.dispatch.invokeOnMachine(
           machine,
           path,
-          await withCallerDefaults(deps, sessionId, path, args),
+          await withCallerDefaults(deps.config.db, sessionId, path, args),
           await remoteOrigin(),
           execution.signal
         )
@@ -252,28 +251,6 @@ const describedOrigin = async (
     ...origin,
     ...(session === undefined ? {} : { sessionTitle: session.title }),
     ...bot
-  }
-}
-
-const remoteAgentStartPath = "codevisor.agents.start"
-
-const withCallerDefaults = async (
-  deps: ExecuteToolDeps,
-  sessionId: string,
-  path: string,
-  args: unknown
-): Promise<unknown> => {
-  if (path !== remoteAgentStartPath || !isRecord(args) || "callerDefaults" in args) return args
-  const caller = await run(deps.config.db.getSessionSummary(sessionId)).catch(() => undefined)
-  if (caller === undefined) return args
-  const runtime = await run(deps.config.db.getSessionRuntimeState(sessionId))
-  const configSelections = withRunningThoughtLevel(caller.configSelections, runtime)
-  return {
-    ...args,
-    callerDefaults: {
-      harness: caller.harnessId,
-      ...(configSelections === undefined ? {} : { configSelections })
-    }
   }
 }
 

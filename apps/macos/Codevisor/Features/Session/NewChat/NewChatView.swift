@@ -127,7 +127,7 @@ struct NewChatView: View {
                         runPickerDivider(between: .machine, and: .project)
                       }
                       projectPicker(controller)
-                      if liveProject(for: controller).isGitRepository, controller.sandboxTarget == nil {
+                      if showsRunLocationPicker(controller) {
                         runPickerDivider(between: .project, and: .location)
                         runLocationPicker(controller)
                       }

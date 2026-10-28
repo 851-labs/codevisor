@@ -34,23 +34,39 @@ extension ComposerBar {
 
   private func projectSetupModel() -> ProjectMachineSetup {
     if let projectSetup { return projectSetup }
+    let setup = makeProjectSetup()
+    projectSetupState.setup = setup
+    return setup
+  }
+
+  private func makeProjectSetup() -> ProjectMachineSetup {
     let machines = environment.machines
-    let setup = ProjectMachineSetup(
+    return ProjectMachineSetup(
       clientFor: { machines.client(for: $0) },
       machineName: { machines.machine(for: $0)?.name ?? "this machine" },
       isReachable: { machines.availability(for: $0) == .ready },
       adopt: { _ in }
     )
-    projectSetupState.setup = setup
-    return setup
   }
 
   func beginProjectSetupIfNeeded() -> Bool {
-    guard controller.project.isRunTargetPlaceholder, let group = pendingSetupGroup else { return false }
+    guard controller.project.isRunTargetPlaceholder else { return false }
+    controller.projectClone = nil
+    guard let group = pendingSetupGroup else { return false }
+    let targetServerId = controller.project.serverId
+    let preferredSource = environment.projectList.mostRecentlyUsedMember(of: group)
+    let cloneSetup = makeProjectSetup()
+    if let plan = cloneSetup.clonePlan(
+      group: group, targetServerId: targetServerId, preferredSource: preferredSource)
+    {
+      controller.projectClone = ProjectCloneRequest(
+        plan: plan, setup: cloneSetup, projectList: environment.projectList)
+      controller.onProjectCloned = { project in adoptClonedProject(project) }
+      return false
+    }
     let setup = projectSetupModel()
     guard !setup.isPresented else { return true }
     setup.onFinished = { project in adoptSetUpProject(project) }
-    let targetServerId = controller.project.serverId
     Task {
       await setup.prepare(
         group: group,
@@ -59,6 +75,17 @@ extension ComposerBar {
       )
     }
     return true
+  }
+
+  private func adoptClonedProject(_ project: Project) {
+    pendingSetupGroupID = nil
+    environment.composerDefaults.rememberNewWorkspaceProject(serverId: project.serverId, projectId: project.id)
+    Task {
+      await environment.projectList.refreshFromServer(
+        serverId: project.serverId,
+        client: environment.machines.client(for: project.serverId)
+      )
+    }
   }
 
   private func adoptSetUpProject(_ project: Project) {

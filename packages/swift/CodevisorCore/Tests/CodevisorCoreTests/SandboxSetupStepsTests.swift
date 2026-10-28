@@ -63,7 +63,7 @@ struct SandboxSetupStepsTests {
     #expect(upcoming == [.create, .boot, .signIn, .sync, .clone, .connect, .agent])
   }
 
-  @Test("The machine's own record of the clone folds into the Clone step instead of trailing the list")
+  @Test("The machine's own record of the clone folds into the live Clone or worktree step instead of trailing the list")
   func cloneCoversProjectSetup() {
     let steps = SandboxSetupSteps(target: .tartVM, projectName: "hello-world")
     let live = [steps.phase(.clone), steps.phase(.connect)]
@@ -79,7 +79,7 @@ struct SandboxSetupStepsTests {
     #expect(merged.map(\.id) == ["sandbox-clone", "sandbox-connect", "worktree.setup:w1"])
     #expect(
       SessionSetupPhases.merging(live: [.worktree()], persisted: [worktree, project]).map(\.id)
-        == ["worktree", "project.setup:p1"])
+        == ["worktree"])
   }
 
   @Test("A profile's picker row is New plus its name, and a Tart profile runs on its provider's Mac")

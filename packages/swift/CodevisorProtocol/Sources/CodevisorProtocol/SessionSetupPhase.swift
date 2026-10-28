@@ -106,4 +106,16 @@ extension SessionSetupPhase {
       startedAt: startedAt
     )
   }
+
+  public static let projectSetupPhaseId = "project-setup"
+
+  public static func projectSetup(startedAt: Date = Date()) -> SessionSetupPhase {
+    SessionSetupPhase(
+      id: projectSetupPhaseId,
+      activeTitle: "Setting up project",
+      completedTitle: "Set up project",
+      failedTitle: "Could not set up project",
+      startedAt: startedAt
+    )
+  }
 }

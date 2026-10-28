@@ -30,6 +30,10 @@ extension SessionController {
   }
 
   public func retrySandboxStart() {
+    resendHeldSend()
+  }
+
+  func resendHeldSend() {
     guard let held = heldSend else { return }
 
     Task { await resend(held) }

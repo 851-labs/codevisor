@@ -94,6 +94,15 @@ private struct SessionErrorRow: View {
         inBotConversation: controller.presentsBotConversation,
         retry: controller.retrySandboxStart
       )
+    } else if rowID == .statusError, message == controller.projectCloneFailureMessage {
+      ProjectCloneFailureNotice(
+        projectName: controller.projectClone?.plan.projectName ?? controller.project.name,
+        message: message,
+        offersSignIn: controller.projectCloneFailureOffersSignIn,
+        inBotConversation: controller.presentsBotConversation,
+        retry: controller.retryProjectClone,
+        signIn: controller.signInForProjectClone
+      )
     } else if rowID == .statusError {
       ChatErrorRow(
         message,

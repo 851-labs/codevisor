@@ -5,6 +5,8 @@ import Observation
 @Observable
 public final class ProjectListModel {
   public internal(set) var projects: [Project] = []
+  @ObservationIgnored private var projectedProjects: [Project] = []
+  @ObservationIgnored private var cloningProjects: [Project] = []
   public internal(set) var sessions: [ChatSession] = [] {
     didSet { sessionPositions = Self.positions(of: sessions) }
   }
@@ -209,8 +211,26 @@ public final class ProjectListModel {
 
   public var fleetActiveProjects: [Project] {
     projects
-      .filter { !$0.isBot && ($0.origin == .codevisor || !fleetSessions(in: $0).isEmpty) }
+      .filter { !$0.isBot && !isCloning($0) && ($0.origin == .codevisor || !fleetSessions(in: $0).isEmpty) }
       .sorted { $0.createdAt > $1.createdAt }
+  }
+
+  public func showCloningProject(_ project: Project) {
+    cloningProjects.removeAll { $0.serverId == project.serverId && $0.id == project.id }
+    cloningProjects.append(project)
+    publishProjects()
+  }
+
+  private func isCloning(_ project: Project) -> Bool {
+    cloningProjects.contains { $0.serverId == project.serverId && $0.id == project.id }
+  }
+
+  private func publishProjects() {
+    cloningProjects.removeAll { cloning in
+      projectedProjects.contains { $0.serverId == cloning.serverId && $0.id == cloning.id }
+    }
+    let next = projectedProjects + cloningProjects
+    if next != projects { projects = next }
   }
 
   public func fleetActiveProjectsByWorkspaceRecency(
@@ -313,7 +333,8 @@ public final class ProjectListModel {
     projects nextProjects: [Project], sessions nextSessions: [ChatSession],
     origin: SessionAttentionTransition.Origin
   ) {
-    if nextProjects != projects { projects = nextProjects }
+    projectedProjects = nextProjects
+    publishProjects()
     guard nextSessions != sessions else { return }
     let previous = sessions
     sessions = nextSessions

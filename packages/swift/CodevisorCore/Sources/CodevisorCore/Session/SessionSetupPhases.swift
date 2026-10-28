@@ -6,13 +6,14 @@ enum SessionSetupPhases {
   }
 
   private static let coveringPrefixes = [
-    SessionSetupPhase.worktreePhaseId: "worktree.setup:",
-    SandboxSetupSteps.phaseId(.clone): "project.setup:",
+    SessionSetupPhase.worktreePhaseId: ["worktree.setup:", "project.setup:"],
+    SandboxSetupSteps.phaseId(.clone): ["project.setup:"],
+    SessionSetupPhase.projectSetupPhaseId: ["project.setup:"],
   ]
 
   private static func covers(_ live: SessionSetupPhase, _ persisted: SessionSetupPhase) -> Bool {
     guard live.id != persisted.id else { return true }
-    guard let prefix = coveringPrefixes[live.id] else { return false }
-    return persisted.id.hasPrefix(prefix)
+    guard let prefixes = coveringPrefixes[live.id] else { return false }
+    return prefixes.contains { persisted.id.hasPrefix($0) }
   }
 }

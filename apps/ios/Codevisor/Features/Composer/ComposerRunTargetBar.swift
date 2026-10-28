@@ -69,7 +69,7 @@ struct ComposerRunTargetBar: View {
       .accessibilityValue(projectName)
       .accessibilityIdentifier("newChat.projectPicker")
       .layoutValue(key: RunTargetPickerRoleKey.self, value: .project)
-      if !isPlaceholder && pendingSetupGroup == nil && project.isGitRepository {
+      if showsLocationPicker {
         pickerDivider
         Menu {
           Section {
@@ -108,6 +108,12 @@ struct ComposerRunTargetBar: View {
 
   private var locationSymbol: String {
     wantsNewWorktree ? "arrow.triangle.branch" : "folder.fill"
+  }
+
+  private var showsLocationPicker: Bool {
+    guard !isPlaceholder else { return false }
+    guard let pendingSetupGroup else { return project.isGitRepository }
+    return pendingSetupGroup.repoUrl != nil
   }
 
   private var isPlaceholder: Bool {

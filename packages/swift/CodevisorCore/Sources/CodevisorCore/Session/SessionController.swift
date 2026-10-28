@@ -136,6 +136,9 @@ final public class SessionController {
   }
   public var onFirstSend: ((String) -> Void)?
   public var onScratchProjectCreated: ((Project) -> Void)?
+  public var projectClone: ProjectCloneRequest?
+  public internal(set) var projectCloneFailure: ProjectMachineSetup.Failure?
+  public var onProjectCloned: ((Project) -> Void)?
   public var onSetupFailed: (() -> Void)?
   @ObservationIgnored public var sendInterceptor: ((ServerPromptDelivery) -> Bool)?
   public internal(set) var submitRequest = 0
