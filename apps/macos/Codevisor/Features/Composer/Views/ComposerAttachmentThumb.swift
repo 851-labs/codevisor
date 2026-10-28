@@ -62,7 +62,7 @@ struct ComposerAttachmentThumb: View {
         .allowsHitTesting(isHovered)
     }
     .transcriptSendAttachmentSource(
-      id: attachment.uploadedFileID, image: thumbnail, cornerRadius: 8, sentSize: sentSize
+      id: attachment.sentFileID, image: thumbnail, cornerRadius: 8, sentSize: sentSize
     )
     .onHover { hovering in
       guard hovering != isHovered else { return }

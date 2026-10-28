@@ -194,7 +194,7 @@ enum TranscriptRowAssembly {
     _ id: UUID, _ delivery: TranscriptDelivery, to rows: inout [TranscriptPresentationRow]
   ) {
     if let bubble = rows.popLast() { rows.append(bubble.spaced(TranscriptPresentationRow.deliveryGap)) }
-    rows.append(.delivery(id, delivery))
+    rows.append(.delivery(id, delivery, inBotConversation: false))
   }
 
   private static func appendWaitingRows(

@@ -25,7 +25,7 @@ final class AttachmentUploads {
         Log.attachments.error(
           "attachment upload failed for \(attachment.name, privacy: .public): \(String(describing: error), privacy: .public)"
         )
-        completed(.failed(serverErrorMessage(error)))
+        completed(.failed(humanServerErrorMessage(error, fallback: "The server didn’t accept it.")))
       }
       self?.tasks[attachment.id] = nil
     }

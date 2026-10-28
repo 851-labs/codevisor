@@ -58,7 +58,7 @@ extension SessionModelTests {
     await model.send(message)
 
     #expect(client.sendAttempts.actionIds == [id, id, id])
-    #expect(deliveries(model) == ["b1": nil, id: .failed])
+    #expect(deliveries(model) == ["b1": nil, id: .failed(reason: SessionModel.undeliveredReason)])
     #expect(model.transcriptBotConversation?.isWorking == false)
 
     await model.retryUnsentMessage(id: message.id)
@@ -69,6 +69,21 @@ extension SessionModelTests {
     client.emit(botEnvelope(1, client.sessionId, "bot.message", ["message": botJSON(echo)]))
     await settleUntil { model.botMessages.count == 2 }
     #expect(model.outgoingMessages.isEmpty)
+    model.shutdown()
+  }
+
+  @Test("A bot message that wasn't delivered stays where it was sent, and newer messages come after it")
+  func undeliveredBotMessageKeepsItsPlace() async {
+    let (client, model) = await loadedBotModel()
+    client.promptFailure = .httpStatus(409, "Restore the workspace before sending a prompt")
+    let message = UserMessage(text: "hello?")
+    await model.send(message)
+
+    let reply = botFeedMessage("b2", .bot, "Anyone there?", sequence: 2, sessionId: client.sessionId)
+    client.emit(botEnvelope(1, client.sessionId, "bot.message", ["message": botJSON(reply)]))
+    await settleUntil { model.botMessages.count == 2 }
+
+    #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1", message.id.uuidString.lowercased(), "b2"])
     model.shutdown()
   }
 
@@ -90,14 +105,14 @@ extension SessionModelTests {
   @Test("A message the server refuses isn't retried, and Delete removes it")
   func refusedBotMessageIsNotRetried() async {
     let (client, model) = await loadedBotModel()
-    client.promptFailure = .httpStatus(409, "Restore the workspace before sending a prompt")
+    client.promptFailure = .httpStatus(409, #"{"error":"Restore the workspace before sending a prompt"}"#)
     let message = UserMessage(text: "hello?")
     let id = message.id.uuidString.lowercased()
 
     await model.send(message)
 
     #expect(client.sendAttempts.actionIds == [id])
-    #expect(deliveries(model) == ["b1": nil, id: .failed])
+    #expect(deliveries(model) == ["b1": nil, id: .failed(reason: "Restore the workspace before sending a prompt")])
 
     model.deleteUnsentMessage(id: message.id)
 
@@ -112,7 +127,7 @@ extension SessionModelTests {
     let message = UserMessage(text: "still there?")
     let id = message.id.uuidString.lowercased()
     await model.send(message)
-    #expect(deliveries(model)[id] == .failed)
+    #expect(deliveries(model)[id] == .failed(reason: SessionModel.undeliveredReason))
 
     let (gate, release) = AsyncStream.makeStream(of: Void.self)
     client.holdPrompts(until: gate)
@@ -211,7 +226,7 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  private func loadedBotModel() async -> (FakeSessionServerClient, SessionModel) {
+  func loadedBotModel() async -> (FakeSessionServerClient, SessionModel) {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
     client.initialTranscriptPage = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 0)

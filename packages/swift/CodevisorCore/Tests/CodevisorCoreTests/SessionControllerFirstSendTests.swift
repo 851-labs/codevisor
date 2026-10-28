@@ -281,7 +281,8 @@ struct SessionControllerFirstSendTests {
       controller.onFirstSend = { [unowned self] text in
         promotions += 1
         #expect(controller.composerText.isEmpty)
-        #expect(controller.pendingUserMessage?.text == text)
+        let botMessage = controller.transcriptProjectionInput.botConversation?.messages.last
+        #expect((controller.pendingUserMessage?.text ?? botMessage?.text) == text)
         #expect(controller.userSendAnimationRequest != nil)
         controller.serverSession = ChatSession(
           id: sessionID, projectId: project.id, serverId: project.serverId,

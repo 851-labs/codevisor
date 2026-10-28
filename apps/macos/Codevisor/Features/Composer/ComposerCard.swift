@@ -144,15 +144,7 @@ private extension ComposerCard {
 
   private var slimContent: some View {
     ComposerSlimBar(
-      field: editorStack, action: slimAction, glassNamespace: glassNamespace,
-      onAttachPhotos: pickPhotos, onAttachFiles: pickFiles,
-      onStop: { Task { await controller.stop() } }, onSend: submitOrAcceptSlash)
-  }
-
-  private var slimAction: ComposerSlimAction {
-    if controller.canStop, !hasComposerDraft { return .stop(isCancelling: controller.isCancelling) }
-    let isBusy = isAcceptingSubmission || controller.isResolvingQuestion
-    return .send(isEnabled: sendAvailability.isEnabled, isBusy: isBusy, help: sendAvailability.help)
+      field: editorStack, glassNamespace: glassNamespace, onAttachPhotos: pickPhotos, onAttachFiles: pickFiles)
   }
 
   private var standardContent: some View {
@@ -454,7 +446,7 @@ private extension ComposerCard {
   }
 
   private func sendDraft(delivery: ServerPromptDelivery) {
-    guard controller.canSend, !isAppUpdateInProgress else { return }
+    guard acceptsSend, !isAppUpdateInProgress else { return }
     if controller.interceptsSend(delivery) { return }
     didAcceptSubmission = true
     if !reduceMotion, !controller.sendLandsInQueue(delivery) {
@@ -465,6 +457,10 @@ private extension ComposerCard {
       await controller.send(delivery: delivery)
       didAcceptSubmission = false
     }
+  }
+
+  private var acceptsSend: Bool {
+    controller.presentsBotConversation ? hasComposerDraft : controller.canSend
   }
 
   private var selectedSlashCommand: ComposerSlashItem? {

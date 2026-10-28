@@ -12,6 +12,7 @@ extension SessionController {
   }
 
   public func send(delivery: ServerPromptDelivery = .steer) async {
+    if presentsBotConversation { return sendToBot() }
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !composerAttachments.isEmpty, isReadyToSubmit else { return }
     beginSubmission()
@@ -329,5 +330,61 @@ extension SessionController {
     } else {
       pendingConfiguration.setMode(modeId)
     }
+  }
+}
+
+extension SessionController {
+  static let closedChatReason = "This chat was closed."
+
+  private func sendToBot() {
+    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty || !composerAttachments.isEmpty else { return }
+
+    let sent = attachments.detachForSend()
+    let message = UserMessage(text: text, attachments: sent.map(\.sentAttachment))
+    rememberSentPreviews(of: sent)
+    userSendSignal &+= 1
+    requestUserSendAnimation(for: message.id)
+    botSends.enqueue(message, attachmentIDs: sent.map(\.id), afterSequence: model?.botMessages.last?.sequence)
+    composerText = ""
+  }
+
+  var botSendReadiness: BotSendQueue.Readiness {
+    if case let .failed(message) = configurationValidationState { return .failed(message) }
+    let isSettled = isServerReady && !isConnecting && !isPausedForUpdate && configurationValidationState == .ready
+    return isSettled ? .ready : .waiting(botUnreachableReason)
+  }
+
+  func connectBot(for message: UserMessage) async -> BotSendQueue.Preparation {
+    guard let model = await prepareSession(for: message.text, restoreComposer: {}) else {
+      return .failed(botConnectionFailure)
+    }
+    guard !requiresModelSelection else { return .failed("Pick a model for this bot in its settings, then try again.") }
+
+    return .ready(model)
+  }
+
+  func rememberUploaded(_ uploaded: Attachment, sentAs sentFileID: String) {
+    guard uploaded.fileId != sentFileID else { return }
+
+    SentAttachmentAliases.remember(uploaded: uploaded.fileId, sentAs: sentFileID)
+    guard let preview = sentAttachmentPreviews.preview(for: sentFileID) else { return }
+    sentAttachmentPreviews.remember(preview, for: uploaded.fileId)
+  }
+
+  private func rememberSentPreviews(of sent: [ComposerAttachment]) {
+    for attachment in sent where attachment.isImage {
+      guard let preview = attachment.sentPreviewData else { continue }
+      sentAttachmentPreviews.remember(preview, for: attachment.sentFileID)
+    }
+  }
+
+  private var botUnreachableReason: String {
+    serverWaitMessage ?? "The bot isn’t reachable right now. Try again in a moment."
+  }
+
+  private var botConnectionFailure: String {
+    if case let .failed(message) = status { return message }
+    return "Couldn’t start the bot. Try again in a moment."
   }
 }

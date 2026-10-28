@@ -19,9 +19,15 @@ final class ComposerSendSource {
       lineHeight: textView.firstLineHeight,
       bubble: style.fill,
       revealsBubbleInFlight: style == .accent,
-      attachmentIDs: controller.composerAttachments.compactMap(\.uploadedFileID)
+      attachmentIDs: Self.flyingAttachmentIDs(controller)
     )
     (textView as? SubmittingTextView)?.hideSentText()
+  }
+
+  private static func flyingAttachmentIDs(_ controller: SessionController) -> [String] {
+    let attachments = controller.composerAttachments
+    guard controller.presentsBotConversation else { return attachments.compactMap(\.uploadedFileID) }
+    return attachments.map(\.sentFileID)
   }
 }
 

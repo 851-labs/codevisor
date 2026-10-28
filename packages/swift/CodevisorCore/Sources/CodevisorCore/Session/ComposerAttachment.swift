@@ -45,6 +45,15 @@ public struct ComposerAttachment: Identifiable, Equatable {
     return nil
   }
 
+  public var sentFileID: String { uploadedFileID ?? pendingFileID }
+
+  public var pendingFileID: String { "pending-\(id.uuidString.lowercased())" }
+
+  var sentAttachment: Attachment {
+    if case let .uploaded(ref) = state { return ref.attachment }
+    return Attachment(fileId: pendingFileID, name: name, mimeType: mimeType, sizeBytes: 0, kind: kind)
+  }
+
   public var isPDF: Bool {
     mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
   }

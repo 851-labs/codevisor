@@ -173,7 +173,8 @@ struct TranscriptBotRowAssemblyTests {
       messages: [
         message("b1", .bot, "Hi", at: 0),
         TranscriptBotMessage(id: userID.uuidString.lowercased(), sender: .user, text: "slow", delivery: .sending),
-        TranscriptBotMessage(id: failedID.uuidString.lowercased(), sender: .user, text: "lost", delivery: .failed),
+        TranscriptBotMessage(
+          id: failedID.uuidString.lowercased(), sender: .user, text: "lost", delivery: .failed(reason: nil)),
       ],
       isWorking: false
     )
@@ -192,8 +193,8 @@ struct TranscriptBotRowAssemblyTests {
         .message(failedID),
         .delivery(failedID),
       ])
-    #expect(rows[3].content == .delivery(userID, .sending))
-    #expect(rows[5].content == .delivery(failedID, .failed))
+    #expect(rows[3].content == .delivery(userID, .sending, inBotConversation: true))
+    #expect(rows[5].content == .delivery(failedID, .failed(reason: nil), inBotConversation: true))
     #expect(rows.filter(\.isUserMessage).map(\.spacingAfter) == [2, 2])
   }
 
@@ -211,14 +212,14 @@ struct TranscriptBotRowAssemblyTests {
       sessionErrorMessage: nil,
       status: .idle,
       outgoingMessages: [UserMessage(id: steerID, text: "also this")],
-      deliveries: [userID: .sending, steerID: .failed]
+      deliveries: [userID: .sending, steerID: .failed(reason: nil)]
     )
 
     let rows = try TranscriptRowProjectionCache.project(input, options: .init(includesConnectingRow: false))
 
     #expect(rows.map(\.id) == [.message(userID), .delivery(userID), .message(steerID), .delivery(steerID)])
-    #expect(rows[1].content == .delivery(userID, .sending))
-    #expect(rows[3].content == .delivery(steerID, .failed))
+    #expect(rows[1].content == .delivery(userID, .sending, inBotConversation: false))
+    #expect(rows[3].content == .delivery(steerID, .failed(reason: nil), inBotConversation: false))
     #expect(rows.map(\.spacingAfter) == [2, nil, 2, nil])
   }
 

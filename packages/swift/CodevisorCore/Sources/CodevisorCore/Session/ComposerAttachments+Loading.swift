@@ -48,7 +48,7 @@ extension ComposerAttachments {
         return
       }
       guard self.loads[id] == work else {
-        if !self.items.contains(where: { $0.id == id }) { files.remove(id: id) }
+        if !self.entries.contains(where: { $0.id == id }) { files.remove(id: id) }
         return
       }
       self.loads[id] = nil
@@ -59,7 +59,7 @@ extension ComposerAttachments {
   private func completeLoad(_ result: Result<LoadedAttachmentFile, any Error>, id: UUID) {
     switch result {
     case let .success(loaded):
-      guard items.contains(where: { $0.id == id && $0.state == .loading }) else {
+      guard entries.contains(where: { $0.id == id && $0.state == .loading }) else {
         files.remove(id: id)
         loaders[id] = nil
         return
@@ -74,7 +74,7 @@ extension ComposerAttachments {
       )
     case let .failure(error):
       files.remove(id: id)
-      guard let attachment = items.first(where: { $0.id == id && $0.state == .loading }) else {
+      guard let attachment = entries.first(where: { $0.id == id && $0.state == .loading }) else {
         loaders[id] = nil
         return
       }

@@ -68,9 +68,9 @@ public final class SessionModel {
       if slowMessageIDs != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
-  var failedMessageIDs: Set<UUID> = [] {
+  var failedMessageReasons: [UUID: String] = [:] {
     didSet {
-      if failedMessageIDs != oldValue { transcriptProjectionRevision &+= 1 }
+      if failedMessageReasons != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
   var unreachedSend: UnreachedSend?

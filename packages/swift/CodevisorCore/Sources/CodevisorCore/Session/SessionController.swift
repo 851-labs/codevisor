@@ -51,6 +51,13 @@ final public class SessionController {
     }
   )
   @ObservationIgnored var sentAttachmentPreviews = SentAttachmentPreviews()
+  @ObservationIgnored lazy var botSends = BotSendQueue(
+    attachments: attachments,
+    readiness: { [weak self] in self?.botSendReadiness ?? .failed(Self.closedChatReason) },
+    connect: { [weak self] message in await self?.connectBot(for: message) ?? .failed(Self.closedChatReason) },
+    onUploaded: { [weak self] uploaded, sentFileID in self?.rememberUploaded(uploaded, sentAs: sentFileID) },
+    onChange: { [weak self] in self?.transcriptProjectionRevision &+= 1 }
+  )
   public let attachmentFiles: ComposerAttachmentFileStore
   public internal(set) var harnesses: [ServerHarness] = []
   public internal(set) var preparationState: PreparationState = .loading

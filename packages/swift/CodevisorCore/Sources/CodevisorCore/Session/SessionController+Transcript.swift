@@ -45,11 +45,16 @@ extension SessionController {
       sessionErrorMessage: sessionErrorMessage,
       status: projectionStatus,
       activityMessage: transcriptActivityOverride,
-      botConversation: model?.transcriptBotConversation
-        ?? (presentsBotConversation ? TranscriptBotConversation(messages: [], isWorking: false) : nil),
+      botConversation: presentedBotConversation,
       outgoingMessages: model?.transcriptOutgoingMessages ?? [],
       deliveries: model?.transcriptDeliveries ?? [:]
     )
+  }
+
+  private var presentedBotConversation: TranscriptBotConversation? {
+    if let conversation = model?.transcriptBotConversation(adding: botSends.unsentMessages) { return conversation }
+    guard presentsBotConversation else { return nil }
+    return TranscriptBotConversation(messages: botSends.unsentMessages.map(\.message), isWorking: false)
   }
 
   public var hasOlderBotMessages: Bool { model?.hasOlderBotMessages ?? false }
@@ -241,10 +246,12 @@ extension SessionController {
   }
 
   public func retryUnsentMessage(id: UUID) async {
+    if botSends.holdsFailure(id) { return botSends.retry(id) }
     await model?.retryUnsentMessage(id: id)
   }
 
   public func deleteUnsentMessage(id: UUID) {
+    if botSends.holdsFailure(id) { return botSends.delete(id) }
     model?.deleteUnsentMessage(id: id)
   }
 }

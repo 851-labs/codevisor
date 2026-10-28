@@ -10,6 +10,9 @@ extension SessionController {
     if case let .attachment(fileId) = source, let local = sentAttachmentPreviews.preview(for: fileId) {
       return local
     }
+    if case let .attachment(fileId) = source, let pending = await attachments.sentPreview(pendingFileID: fileId) {
+      return pending
+    }
     guard let serverClient else { throw SessionControllerError.serverUnavailable }
     switch source {
     case let .attachment(fileId): return try await serverClient.filePreview(id: fileId)

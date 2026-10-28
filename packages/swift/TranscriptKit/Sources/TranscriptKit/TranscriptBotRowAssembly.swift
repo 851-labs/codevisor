@@ -36,7 +36,8 @@ enum TranscriptBotRowAssembly {
       if let delivery = message.delivery, message.sender == .user, let id = UUID(uuidString: message.id) {
         rows.append(row(for: message, isGroupTail: isGroupTail, spacingAfter: TranscriptPresentationRow.deliveryGap))
         rows.append(
-          .delivery(id, delivery, spacingAfter: isGroupTail ? groupTailSpacing : groupedSpacing + 4))
+          .delivery(
+            id, delivery, inBotConversation: true, spacingAfter: isGroupTail ? groupTailSpacing : groupedSpacing + 4))
       } else {
         rows.append(
           row(for: message, isGroupTail: isGroupTail, spacingAfter: isGroupTail ? groupTailSpacing : groupedSpacing))

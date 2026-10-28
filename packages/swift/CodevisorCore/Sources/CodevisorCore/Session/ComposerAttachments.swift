@@ -7,7 +7,9 @@ import os
 @MainActor
 @Observable
 public final class ComposerAttachments {
-  public private(set) var items: [ComposerAttachment] = [] { didSet { onChange() } }
+  public var items: [ComposerAttachment] { entries.filter { !sentIDs.contains($0.id) } }
+  private(set) var entries: [ComposerAttachment] = [] { didSet { onChange() } }
+  private var sentIDs: Set<UUID> = [] { didSet { onChange() } }
   @ObservationIgnored private let uploads = AttachmentUploads()
   @ObservationIgnored var loaders: [UUID: ComposerAttachmentLoader] = [:]
   @ObservationIgnored var loads: [UUID: Task<LoadedAttachmentFile, any Error>] = [:]
@@ -35,18 +37,18 @@ public final class ComposerAttachments {
   }
 
   func clearAfterCollecting() {
-    items = []
-    forgetLoaders(keeping: [])
+    entries = sentEntries
+    forgetLoaders(keeping: sentIDs)
   }
 
   func restore(_ staged: [ComposerAttachment]) {
-    items = staged
-    forgetLoaders(keeping: Set(staged.map(\.id)))
+    entries = sentEntries + staged
+    forgetLoaders(keeping: sentIDs.union(staged.map(\.id)))
   }
 
   func restoreDraft(_ staged: [ComposerAttachment]) {
-    items = staged
-    forgetLoaders(keeping: Set(staged.map(\.id)))
+    entries = sentEntries + staged
+    forgetLoaders(keeping: sentIDs.union(staged.map(\.id)))
     for attachment in staged where attachment.state == .uploading {
       uploads.cancel(id: attachment.id)
       startUpload(attachment)
@@ -84,7 +86,7 @@ public final class ComposerAttachments {
   @discardableResult
   public func resolveLoadingAttachment(id: UUID, fromFileURL url: URL) -> Task<Void, Never> {
     let metadata = AttachmentFileStager.metadata(for: url)
-    guard items.contains(where: { $0.id == id && $0.state == .loading }) else {
+    guard entries.contains(where: { $0.id == id && $0.state == .loading }) else {
       return Task {}
     }
     let files = files
@@ -143,8 +145,8 @@ public final class ComposerAttachments {
   }
 
   public func showLoadingPreview(_ data: Data, for id: UUID) {
-    guard let index = items.firstIndex(where: { $0.id == id }), items[index].fileURL == nil else { return }
-    items[index].loadingPreviewData = data
+    guard let index = entries.firstIndex(where: { $0.id == id }), entries[index].fileURL == nil else { return }
+    entries[index].loadingPreviewData = data
   }
 
   public func attachImageData(
@@ -179,7 +181,7 @@ public final class ComposerAttachments {
     kind: Attachment.Kind
   ) -> Bool {
     guard items.count < Self.maxAttachments else { return false }
-    items.append(
+    entries.append(
       ComposerAttachment(
         id: id,
         name: name,
@@ -199,7 +201,7 @@ public final class ComposerAttachments {
     kind: Attachment.Kind,
     data: Data
   ) -> String? {
-    guard items.contains(where: { $0.id == id && $0.state == .loading }) else {
+    guard entries.contains(where: { $0.id == id && $0.state == .loading }) else {
       return nil
     }
     let limit = uploadLimitBytes()
@@ -240,24 +242,24 @@ public final class ComposerAttachments {
     kind: Attachment.Kind,
     stagedFileURL: URL
   ) -> String? {
-    guard let index = items.firstIndex(where: { $0.id == id }) else {
+    guard let index = entries.firstIndex(where: { $0.id == id }) else {
       files.remove(id: id)
       return nil
     }
-    guard items[index].state == .loading else { return nil }
+    guard entries[index].state == .loading else { return nil }
     let limit = uploadLimitBytes()
     guard let size = ComposerAttachmentFileStore.byteCount(of: stagedFileURL), size <= limit else {
       files.remove(id: id)
       discardLoadingAttachment(id: id)
       return AttachmentFileStager.tooLargeMessage(name: name, limitBytes: limit)
     }
-    var attachment = items[index]
+    var attachment = entries[index]
     attachment.name = name
     attachment.mimeType = mimeType
     attachment.kind = kind
     attachment.fileURL = stagedFileURL
     attachment.state = .uploading
-    items[index] = attachment
+    entries[index] = attachment
     startUpload(attachment)
     prepareSentPreview(for: attachment)
     return nil
@@ -301,10 +303,10 @@ public final class ComposerAttachments {
 
   @discardableResult
   public func discardLoadingAttachment(id: UUID) -> Bool {
-    guard let index = items.firstIndex(where: { $0.id == id }),
-      items[index].state == .loading
+    guard let index = entries.firstIndex(where: { $0.id == id }),
+      entries[index].state == .loading
     else { return false }
-    items.remove(at: index)
+    entries.remove(at: index)
     return true
   }
 
@@ -315,37 +317,37 @@ public final class ComposerAttachments {
     kind: Attachment.Kind,
     message: String
   ) {
-    guard let index = items.firstIndex(where: { $0.id == id }),
-      items[index].state == .loading
+    guard let index = entries.firstIndex(where: { $0.id == id }),
+      entries[index].state == .loading
     else { return }
-    var attachment = items[index]
+    var attachment = entries[index]
     attachment.name = name
     attachment.mimeType = mimeType
     attachment.kind = kind
     attachment.state = .failed(message)
-    items[index] = attachment
+    entries[index] = attachment
   }
 
   public func removeAttachment(id: UUID) {
     uploads.cancel(id: id)
     loads.removeValue(forKey: id)?.cancel()
     loaders[id] = nil
-    items.removeAll { $0.id == id }
+    entries.removeAll { $0.id == id }
     files.remove(id: id)
   }
 
   public func retryAttachment(id: UUID) {
-    guard let index = items.firstIndex(where: { $0.id == id }),
-      case .failed = items[index].state
+    guard let index = entries.firstIndex(where: { $0.id == id }),
+      case .failed = entries[index].state
     else { return }
-    if items[index].fileURL == nil, loaders[id] != nil {
-      items[index].state = .loading
+    if entries[index].fileURL == nil, loaders[id] != nil {
+      entries[index].state = .loading
       startLoad(id: id)
       return
     }
-    guard items[index].fileURL != nil else { return }
-    items[index].state = .uploading
-    startUpload(items[index])
+    guard entries[index].fileURL != nil else { return }
+    entries[index].state = .uploading
+    startUpload(entries[index])
   }
 
   private func startUpload(_ attachment: ComposerAttachment) {
@@ -371,18 +373,18 @@ public final class ComposerAttachments {
 
   func reuploadAllAttachments() {
     uploads.cancelAll()
-    for index in items.indices {
-      guard items[index].state != .loading,
-        items[index].fileURL != nil
+    for index in entries.indices {
+      guard entries[index].state != .loading,
+        entries[index].fileURL != nil
       else { continue }
-      items[index].state = .uploading
-      startUpload(items[index])
+      entries[index].state = .uploading
+      startUpload(entries[index])
     }
   }
 
   func setAttachmentState(_ id: UUID, _ state: ComposerAttachment.State) {
-    guard let index = items.firstIndex(where: { $0.id == id }) else { return }
-    items[index].state = state
+    guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+    entries[index].state = state
   }
 
   private func prepareSentPreview(for attachment: ComposerAttachment) {
@@ -394,9 +396,9 @@ public final class ComposerAttachments {
         SentAttachmentPreviews.encodePreview(of: fileURL)
       }.value
       guard let self, let preview,
-        let index = self.items.firstIndex(where: { $0.id == id && $0.fileURL == fileURL })
+        let index = self.entries.firstIndex(where: { $0.id == id && $0.fileURL == fileURL })
       else { return }
-      self.items[index].sentPreviewData = preview
+      self.entries[index].sentPreviewData = preview
     }
   }
 
@@ -427,5 +429,34 @@ public final class ComposerAttachments {
       }
     }
     return attachments
+  }
+}
+
+extension ComposerAttachments {
+  func detachForSend() -> [ComposerAttachment] {
+    let sent = items
+    sentIDs.formUnion(sent.map(\.id))
+    return sent
+  }
+
+  func sentAttachments(_ ids: [UUID]) -> [ComposerAttachment] {
+    ids.compactMap { id in entries.first { $0.id == id } }
+  }
+
+  func releaseSent(_ ids: [UUID]) {
+    for id in ids { removeAttachment(id: id) }
+    sentIDs.subtract(ids)
+  }
+
+  func sentPreview(pendingFileID: String) async -> Data? {
+    guard let attachment = entries.first(where: { $0.pendingFileID == pendingFileID }) else { return nil }
+    if let preview = attachment.sentPreviewData { return preview }
+
+    guard attachment.isImage, let fileURL = attachment.fileURL else { return nil }
+    return await Task.detached(priority: .userInitiated) { SentAttachmentPreviews.encodePreview(of: fileURL) }.value
+  }
+
+  private var sentEntries: [ComposerAttachment] {
+    entries.filter { sentIDs.contains($0.id) }
   }
 }

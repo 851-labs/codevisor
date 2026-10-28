@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ComposerSlimAttachMenu: View {
+  static let diameter: CGFloat = 36
+
   let onPhotos: () -> Void
   let onFiles: () -> Void
 
@@ -18,7 +20,7 @@ struct ComposerSlimAttachMenu: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
-    .frame(width: ComposerSlimCircleButton.diameter, height: ComposerSlimCircleButton.diameter)
+    .frame(width: Self.diameter, height: Self.diameter)
     .glassEffect(.regular.interactive(), in: .circle)
     .accessibilityLabel("Attach")
   }

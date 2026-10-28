@@ -41,6 +41,12 @@ public func serverErrorCode(_ error: any Error) -> String? {
 
 public let serverUnreachableErrorMessage = "Can't connect to the Codevisor server."
 
+public func humanServerErrorMessage(_ error: any Error, fallback: String) -> String {
+  if case let CodevisorServerClientError.httpStatus(_, body) = error { return serverErrorMessage(body) ?? fallback }
+  if error is URLError { return serverErrorMessage(error) }
+  return fallback
+}
+
 public func isTaskCancellation(_ error: any Error) -> Bool {
   if error is CancellationError { return true }
   if let urlError = error as? URLError, urlError.code == .cancelled { return true }

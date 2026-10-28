@@ -4,6 +4,7 @@ import Foundation
 struct OutgoingMessage: Equatable {
   let message: UserMessage
   let delivery: ServerPromptDelivery?
+  var afterBotSequence: Int? = nil
 }
 
 struct UnreachedSend: Equatable {
@@ -17,43 +18,45 @@ enum SendOutcome {
 }
 
 extension SessionModel {
+  static let undeliveredReason = "Codevisor couldn’t deliver this message. Try again in a moment."
+
   var transcriptOutgoingMessages: [UserMessage] {
     guard !presentsBotConversation else { return [] }
     return outgoingMessages.filter { outgoing in
       let id = outgoing.message.id
-      return outgoing.delivery != .queue || slowMessageIDs.contains(id) || failedMessageIDs.contains(id)
+      return outgoing.delivery != .queue || slowMessageIDs.contains(id) || failedMessageReasons[id] != nil
     }.map(\.message)
   }
 
   var transcriptDeliveries: [UUID: TranscriptDelivery] {
     var deliveries: [UUID: TranscriptDelivery] = [:]
     for id in slowMessageIDs where !acceptedMessageIDs.contains(id) { deliveries[id] = .sending }
-    for id in failedMessageIDs { deliveries[id] = .failed }
+    for (id, reason) in failedMessageReasons { deliveries[id] = .failed(reason: reason) }
     return deliveries
   }
 
-  func sendOutgoing(_ message: UserMessage, delivery: ServerPromptDelivery?) async {
-    outgoingMessages.append(OutgoingMessage(message: message, delivery: delivery))
+  func sendOutgoing(_ message: UserMessage, delivery: ServerPromptDelivery?, afterBotSequence: Int? = nil) async {
+    outgoingMessages.append(OutgoingMessage(message: message, delivery: delivery, afterBotSequence: afterBotSequence))
     if delivery != .queue { onLocalUserMessageAppended?(message.id) }
     await startConsumer()
     await deliverOutgoing(message.id)
   }
 
   public func retryUnsentMessage(id: UUID) async {
-    guard failedMessageIDs.contains(id), outgoingMessages.contains(where: { $0.message.id == id }) else { return }
-    failedMessageIDs.remove(id)
+    guard failedMessageReasons[id] != nil, outgoingMessages.contains(where: { $0.message.id == id }) else { return }
+    failedMessageReasons[id] = nil
     slowMessageIDs.insert(id)
     await deliverOutgoing(id)
   }
 
   public func deleteUnsentMessage(id: UUID) {
-    guard failedMessageIDs.remove(id) != nil else { return }
+    guard failedMessageReasons.removeValue(forKey: id) != nil else { return }
     slowMessageIDs.remove(id)
     outgoingMessages.removeAll { $0.message.id == id }
   }
 
   func resendAfterReconnect() async {
-    for outgoing in outgoingMessages where failedMessageIDs.contains(outgoing.message.id) {
+    for outgoing in outgoingMessages where failedMessageReasons[outgoing.message.id] != nil {
       await retryUnsentMessage(id: outgoing.message.id)
     }
     guard !presentsBotConversation, !isSending, let unreached = unreachedSend,
@@ -67,7 +70,7 @@ extension SessionModel {
     outgoingMessages.removeAll { $0.message.id == id }
     acceptedMessageIDs.remove(id)
     slowMessageIDs.remove(id)
-    failedMessageIDs.remove(id)
+    failedMessageReasons[id] = nil
   }
 
   func deliver(_ message: UserMessage, delivery: ServerPromptDelivery?, actionID: String) async -> SendOutcome {
@@ -111,9 +114,10 @@ extension SessionModel {
       onPromptAccepted?(message.attachments.count, notSteered)
       if notSteered { onPromptNotSteered?(id) }
       settleAccepted(id)
-    case .failed:
+    case let .failed(error):
       slowMessageIDs.remove(id)
-      if outgoingMessages.contains(where: { $0.message.id == id }) { failedMessageIDs.insert(id) }
+      guard outgoingMessages.contains(where: { $0.message.id == id }) else { return }
+      failedMessageReasons[id] = humanServerErrorMessage(error, fallback: Self.undeliveredReason)
     }
   }
 

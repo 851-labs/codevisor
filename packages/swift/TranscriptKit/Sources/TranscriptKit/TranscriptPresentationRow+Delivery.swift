@@ -4,13 +4,13 @@ extension TranscriptPresentationRow {
   static let deliveryGap: CGFloat = 2
 
   static func delivery(
-    _ id: UUID, _ delivery: TranscriptDelivery, spacingAfter: CGFloat? = nil
+    _ id: UUID, _ delivery: TranscriptDelivery, inBotConversation: Bool, spacingAfter: CGFloat? = nil
   ) -> TranscriptPresentationRow {
     .init(
       id: .delivery(id),
-      content: .delivery(id, delivery),
+      content: .delivery(id, delivery, inBotConversation: inBotConversation),
       estimatedHeight: 20,
-      measurementRevision: delivery == .failed ? 1 : 0,
+      measurementRevision: delivery == .sending ? 0 : 1,
       spacingAfter: spacingAfter
     )
   }

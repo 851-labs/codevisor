@@ -18,7 +18,7 @@ extension SessionModelTests {
 
     #expect(client.sendAttempts.actionIds.dropFirst() == [id, id, id])
     #expect(model.transcriptOutgoingMessages.map(\.text) == ["also check the tests"])
-    #expect(model.transcriptDeliveries == [message.id: .failed])
+    #expect(model.transcriptDeliveries == [message.id: .failed(reason: SessionModel.undeliveredReason)])
     #expect(model.errorMessage == nil)
 
     await model.retryUnsentMessage(id: message.id)
@@ -45,7 +45,7 @@ extension SessionModelTests {
     await send.value
 
     #expect(model.transcriptOutgoingMessages.map(\.text) == ["after that, ship it"])
-    #expect(model.transcriptDeliveries == [message.id: .failed])
+    #expect(model.transcriptDeliveries == [message.id: .failed(reason: SessionModel.undeliveredReason)])
 
     model.deleteUnsentMessage(id: message.id)
 

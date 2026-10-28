@@ -3,7 +3,7 @@ import Foundation
 
 public enum TranscriptDelivery: Equatable, Sendable {
   case sending
-  case failed
+  case failed(reason: String?)
 }
 
 public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {

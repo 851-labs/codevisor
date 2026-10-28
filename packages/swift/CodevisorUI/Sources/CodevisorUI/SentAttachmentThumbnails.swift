@@ -17,11 +17,8 @@ public enum SentAttachmentThumbnails {
 
   public static func prepare(_ attachments: [ComposerAttachment]) {
     for attachment in attachments where attachment.isImage {
-      guard case let .uploaded(ref) = attachment.state,
-        let data = attachment.sentPreviewData,
-        !images.contains(where: { $0.fileId == ref.fileId })
-      else { continue }
-      let fileId = ref.fileId
+      let fileId = attachment.sentFileID
+      guard let data = attachment.sentPreviewData, !images.contains(where: { $0.fileId == fileId }) else { continue }
       remember(aspectRatio: headerAspectRatio(data), for: fileId)
       Task {
         guard
@@ -35,8 +32,8 @@ public enum SentAttachmentThumbnails {
   }
 
   public static func aspectRatio(for file: PreviewFile) -> CGFloat? {
-    guard case let .attachment(fileId) = file.source else { return nil }
-    return aspectRatios.last { $0.fileId == fileId }?.aspectRatio
+    let ids = knownFileIDs(for: file)
+    return aspectRatios.last { ids.contains($0.fileId) }?.aspectRatio
   }
 
   private static func remember(aspectRatio: CGFloat?, for fileId: String) {
@@ -58,8 +55,13 @@ public enum SentAttachmentThumbnails {
   }
 
   public static func image(for file: PreviewFile) -> OSImage? {
-    guard case let .attachment(fileId) = file.source else { return nil }
-    return images.last { $0.fileId == fileId }?.image
+    let ids = knownFileIDs(for: file)
+    return images.last { ids.contains($0.fileId) }?.image
+  }
+
+  private static func knownFileIDs(for file: PreviewFile) -> [String] {
+    guard case let .attachment(fileId) = file.source else { return [] }
+    return [fileId] + [SentAttachmentAliases.sentFileID(forUploaded: fileId)].compactMap(\.self)
   }
 
   nonisolated private static func decode(_ data: Data) -> AttachmentPreviewImage? {

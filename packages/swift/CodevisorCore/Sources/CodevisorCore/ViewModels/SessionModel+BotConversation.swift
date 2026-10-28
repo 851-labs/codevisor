@@ -5,22 +5,43 @@ extension SessionModel {
   static let botConversationPageSize = 50
 
   public var transcriptBotConversation: TranscriptBotConversation? {
+    transcriptBotConversation(adding: [])
+  }
+
+  func transcriptBotConversation(adding queued: [UnsentBotMessage]) -> TranscriptBotConversation? {
     guard presentsBotConversation else { return nil }
-    let sentIDs = Set(botMessages.map { $0.id.lowercased() })
-    let deliveries = transcriptDeliveries
-    let unsent =
-      outgoingMessages
-      .map(\.message)
-      .filter { !sentIDs.contains($0.id.uuidString.lowercased()) }
-      .map {
-        TranscriptBotMessage(
-          id: $0.id.uuidString.lowercased(), sender: .user, text: $0.text, attachments: $0.attachments,
-          delivery: deliveries[$0.id])
-      }
+    let deliveredIDs = Set(botMessages.map { $0.id.lowercased() })
+    let unsent = BotConversationTimeline.merging(
+      queued, into: unsentBotMessages(excluding: deliveredIDs), deliveredIDs: deliveredIDs)
     return TranscriptBotConversation(
-      messages: botMessages.map(Self.transcriptBotMessage) + unsent,
+      messages: BotConversationTimeline.messages(delivered: deliveredBotMessages, unsent: unsent),
       isWorking: isSending
     )
+  }
+
+  func sendBotMessage(_ message: UserMessage, afterSequence: Int?) async {
+    errorMessage = nil
+    harnessAuthenticationErrorMessage = nil
+    await sendOutgoing(message, delivery: nil, afterBotSequence: afterSequence)
+  }
+
+  private var deliveredBotMessages: [DeliveredBotMessage] {
+    botMessages.map { DeliveredBotMessage(sequence: $0.sequence, message: Self.transcriptBotMessage($0)) }
+  }
+
+  private func unsentBotMessages(excluding deliveredIDs: Set<String>) -> [UnsentBotMessage] {
+    let deliveries = transcriptDeliveries
+    let unsent = outgoingMessages.filter { !deliveredIDs.contains($0.message.id.uuidString.lowercased()) }
+    return unsent.map { Self.unsentBotMessage($0, delivery: deliveries[$0.message.id]) }
+  }
+
+  private static func unsentBotMessage(_ outgoing: OutgoingMessage, delivery: TranscriptDelivery?) -> UnsentBotMessage {
+    let message = outgoing.message
+    return UnsentBotMessage(
+      message: TranscriptBotMessage(
+        id: message.id.uuidString.lowercased(), sender: .user, text: message.text,
+        attachments: message.attachments, delivery: delivery),
+      afterSequence: outgoing.afterBotSequence)
   }
 
   public func presentBotConversation() {
