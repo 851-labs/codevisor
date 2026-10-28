@@ -2,6 +2,7 @@ import AppKit
 import CodevisorClient
 import CodevisorCore
 import CodevisorUI
+import StreamMarkdown
 import SwiftUI
 
 struct WorkspaceInspectorMediaView: View {
@@ -70,15 +71,18 @@ private struct WorkspaceInspectorMediaTile: View {
             .padding(4)
         }
       }
+      .overlay {
+        AttachmentLoadingOverlay(isLoading: isLoadingPreview)
+      }
       .clipShape(RoundedRectangle(cornerRadius: 6))
       .contentShape(RoundedRectangle(cornerRadius: 6))
-      .onTapGesture {
-        _ = quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
-      }
+      .onTapGesture(perform: preview)
       .help(file.name)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(file.isVideo ? "Video \(file.name)" : file.name)
       .accessibilityAddTraits([.isImage, .isButton])
+      .accessibilityAction(.default, preview)
+      .accessibilityValue(isLoadingPreview ? "Loading" : "")
       .attachmentContextMenu(file: file, image: image)
       .task(id: file.name + file.mimeType + String(describing: file.source)) {
         guard let attachmentImages else { return }
@@ -89,6 +93,15 @@ private struct WorkspaceInspectorMediaTile: View {
           image = loaded.image
         }
       }
+  }
+
+  private var isLoadingPreview: Bool {
+    quickLook?.isLoading(QuickLookItem(file)) ?? false
+  }
+
+  private func preview() {
+    guard !isLoadingPreview else { return }
+    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
   }
 }
 
