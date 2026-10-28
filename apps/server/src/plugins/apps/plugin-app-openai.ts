@@ -149,4 +149,5 @@ export const installOpenAiShim = (env: ShimEnv): void => {
   })
 
   env.window.openai = api
+  post({ method: "codevisor/frame-ready" })
 }

@@ -52,10 +52,23 @@ const bootScript = (boot: BridgeBoot): string =>
     "fetch: (url, init) => window.fetch(url, init),",
     "post: (message) => { if (native === undefined) return false; native.postMessage(message); return true },",
     'open: (url) => { window.open(url, "_blank", "noopener") },',
-    "hasUserActivation: () => window.navigator?.userActivation?.isActive === true",
+    "hasUserActivation: () => window.navigator?.userActivation?.isActive === true,",
+    "schedule: (callback, delayMs) => { window.setTimeout(callback, delayMs) }",
     "};",
-    `window.codevisorHost = (${installAppBridge.toString()})({ boot, frame, host, pathname: window.location.pathname });`
+    `const frameOrigin = (${appFrameOrigin.toString()})(window.location.href);`,
+    `window.codevisorHost = (${installAppBridge.toString()})({ boot, frame, host, pathname: window.location.pathname, search: window.location.search, frameOrigin });`
   ].join("\n")
+
+export const appFrameOrigin = (href: string): string | undefined => {
+  const url = new URL(href)
+  const twin = new Map([
+    ["127.0.0.1", "localhost"],
+    ["localhost", "127.0.0.1"]
+  ]).get(url.hostname)
+  if (twin === undefined) return undefined
+  url.hostname = twin
+  return url.origin
+}
 
 const insertAfter = (html: string, match: RegExpExecArray, text: string): string => {
   const end = match.index + match[0].length

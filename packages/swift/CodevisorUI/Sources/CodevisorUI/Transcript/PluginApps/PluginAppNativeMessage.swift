@@ -7,6 +7,7 @@ public enum PluginAppNativeMessage: Equatable, Sendable {
   case message(String, viewId: String)
   case displayMode(PluginAppDisplayMode, requestId: String?)
   case appModes(Set<PluginAppDisplayMode>)
+  case frameFailed
 
   public static let heightRange: ClosedRange<CGFloat> = 80...720
 
@@ -21,6 +22,7 @@ public enum PluginAppNativeMessage: Equatable, Sendable {
     case "message": self.init(text: payload["text"], viewId: payload["viewId"])
     case "displayMode": self.init(mode: payload["mode"], requestId: payload["requestId"])
     case "appModes": self.init(modes: payload["modes"])
+    case "frameFailed": self = .frameFailed
     default: return nil
     }
   }

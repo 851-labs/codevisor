@@ -48,4 +48,9 @@ struct PluginAppNativeMessageTests {
       PluginAppNativeMessage(body: ["type": "appModes", "modes": ["inline", "pip", "theater"]])
         == .appModes([.inline, .pip]))
   }
+
+  @Test("The shell reports an app frame that never loaded")
+  func frameFailed() {
+    #expect(PluginAppNativeMessage(body: ["type": "frameFailed"]) == .frameFailed)
+  }
 }

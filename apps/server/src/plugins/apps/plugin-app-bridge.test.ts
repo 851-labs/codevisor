@@ -20,6 +20,7 @@ const boot: BridgeBoot = {
   html: "<p>app</p>",
   allow: "",
   token: "session-token",
+  framePath: "/v1/plugins/apps/view-1/frame?token=session-token",
   viewId: "view-1",
   toolInput: { range: "1h" },
   toolResult: { content: [{ type: "text", text: "2 alerts" }] },
@@ -42,6 +43,7 @@ const bridged = (
     readonly pathname?: string
     readonly gesture?: boolean
     readonly respond?: (url: string, init: BridgeRequestInit) => Promise<BridgeResponse>
+    readonly frameOrigin?: string
   } = {}
 ) => {
   const toApp: Array<Record<string, unknown>> = []
@@ -49,6 +51,7 @@ const bridged = (
   const opened: Array<string> = []
   const fetched: Array<{ readonly url: string; readonly init: BridgeRequestInit }> = []
   const attributes: Record<string, string> = {}
+  const timers: Array<() => void> = []
   const replies = new Map<unknown, PromiseWithResolvers<Record<string, unknown>>>()
   let listener: ((event: BridgeEvent) => void) | undefined
   const contentWindow = {
@@ -68,6 +71,8 @@ const bridged = (
 
   const api = installAppBridge({
     pathname: options.pathname ?? "/v1/plugins/apps/view-1",
+    search: "?token=launch&theme=dark",
+    frameOrigin: options.frameOrigin,
     boot: options.boot ?? boot,
     frame,
     host: {
@@ -84,7 +89,11 @@ const bridged = (
         return true
       },
       open: (url) => opened.push(url),
-      hasUserActivation: () => options.gesture ?? true
+      hasUserActivation: () => options.gesture ?? true,
+      schedule: (callback, delayMs) => {
+        expect(delayMs).toBe(10_000)
+        timers.push(callback)
+      }
     }
   })
 
@@ -96,7 +105,9 @@ const bridged = (
     return reply.promise
   }
 
-  return { api, attributes, fetched, frame, fromApp, opened, request, toApp, toNative }
+  const fireTimers = () => timers.splice(0).forEach((callback) => callback())
+
+  return { api, attributes, fetched, fireTimers, frame, fromApp, opened, request, toApp, toNative }
 }
 
 describe("plugin app bridge", () => {
@@ -121,13 +132,9 @@ describe("plugin app bridge", () => {
     })
   })
 
-  it("sends the tool input and result once the app is initialized", () => {
+  it("sends the tool input and result each time the app initializes, so a reloaded app gets them too", () => {
     const { fromApp, toApp } = bridged()
-
-    fromApp({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
-    fromApp({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
-
-    expect(toApp).toEqual([
+    const toolData = [
       {
         jsonrpc: "2.0",
         method: "ui/notifications/tool-input",
@@ -138,7 +145,13 @@ describe("plugin app bridge", () => {
         method: "ui/notifications/tool-result",
         params: { content: [{ type: "text", text: "2 alerts" }] }
       }
-    ])
+    ]
+
+    expect(toApp).toEqual([])
+    fromApp({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
+    fromApp({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
+
+    expect(toApp).toEqual([...toolData, ...toolData])
   })
 
   it("sends panes no tool data", () => {

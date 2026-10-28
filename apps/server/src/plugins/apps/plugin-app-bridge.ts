@@ -9,6 +9,7 @@ export interface BridgeBoot {
   readonly viewId?: string
   readonly toolInput?: Readonly<Record<string, unknown>>
   readonly toolResult?: Readonly<Record<string, unknown>>
+  readonly framePath: string
   readonly endpoints: {
     readonly toolsCall: string
     readonly resourcesRead: string
@@ -54,11 +55,14 @@ export interface BridgeHost {
   readonly post: (message: Readonly<Record<string, unknown>>) => boolean
   readonly open: (url: string) => void
   readonly hasUserActivation: () => boolean
+  readonly schedule: (callback: () => void, delayMs: number) => void
 }
 
 export interface BridgeEnv {
   readonly boot: BridgeBoot
   readonly pathname: string
+  readonly search: string
+  readonly frameOrigin: string | undefined
   readonly frame: BridgeFrame
   readonly host: BridgeHost
 }
@@ -160,7 +164,6 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
   ])
 
   const deliverToolData = (): void => {
-    if (initialized) return
     initialized = true
     if (boot.toolInput !== undefined) {
       send({ method: "ui/notifications/tool-input", params: { arguments: boot.toolInput } })
@@ -193,8 +196,12 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
     }
   }
 
+  let frameAlive = false
+  let frameAttempts = 0
+
   host.listen((event) => {
     if (event.source !== frame.contentWindow) return
+    frameAlive = true
     const message = recordOf(event.data)
     if (typeof message.method !== "string") return
     const params = recordOf(message.params)
@@ -226,7 +233,32 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
     }
   }
 
+  const mountFrame = (): void => {
+    frameAttempts += 1
+    if (env.frameOrigin === undefined) {
+      frame.srcdoc = boot.html
+    } else {
+      const display = env.search.replace(/^\?/, "")
+      const separator = boot.framePath.includes("?") ? "&" : "?"
+      frame.setAttribute("sandbox", "allow-scripts allow-forms allow-same-origin")
+      frame.setAttribute(
+        "src",
+        `${env.frameOrigin}${basePath}${boot.framePath}${separator}${display}`
+      )
+    }
+    host.schedule(checkFrame, 10_000)
+  }
+
+  const checkFrame = (): void => {
+    if (frameAlive) return
+    if (frameAttempts < 2) {
+      mountFrame()
+      return
+    }
+    host.post({ type: "frameFailed" })
+  }
+
   if (boot.allow !== "") frame.setAttribute("allow", boot.allow)
-  frame.srcdoc = boot.html
+  mountFrame()
   return { displayModeChanged, setTheme }
 }

@@ -13,6 +13,7 @@ const boot: BridgeBoot = {
   html: "<p>app</p></script><script>alert(1)</script>",
   allow: "clipboard-write",
   token: "session-token",
+  framePath: "/frame",
   endpoints: { toolsCall: "/call", resourcesRead: "/read", modelContext: "/context" }
 }
 
@@ -31,7 +32,11 @@ const shellReply = async (navigator: unknown, method: string, params: unknown) =
     addEventListener: (_type: string, listener: (event: unknown) => void) => {
       handler = listener
     },
-    location: { pathname: "/v1/plugins/apps/view-1" },
+    location: {
+      pathname: "/v1/plugins/apps/view-1",
+      href: "https://codevisor.test/v1/plugins/apps/view-1"
+    },
+    setTimeout: () => 0,
     navigator,
     webkit: {
       messageHandlers: {
@@ -42,6 +47,7 @@ const shellReply = async (navigator: unknown, method: string, params: unknown) =
   const html = appShellHtml({ ...boot, viewId: "view-1" })
   runInNewContext(shellScript(html), {
     window,
+    URL,
     document: { getElementById: () => ({ contentWindow, srcdoc: "", setAttribute: () => {} }) }
   })
   handler?.({
@@ -97,7 +103,11 @@ describe("plugin app shell", () => {
       addEventListener: (_type: string, listener: (event: unknown) => void) => {
         handler = listener
       },
-      location: { pathname: "/v1/plugins/apps/view-1" },
+      location: {
+        pathname: "/v1/plugins/apps/view-1",
+        href: "https://codevisor.test/v1/plugins/apps/view-1"
+      },
+      setTimeout: () => 0,
       fetch: () => Promise.reject(new Error("offline")),
       open: (...args: Array<unknown>) => opened.push(args),
       webkit: {
@@ -107,7 +117,7 @@ describe("plugin app shell", () => {
       }
     }
 
-    runInNewContext(shellScript(html), { window, document: { getElementById: () => frame } })
+    runInNewContext(shellScript(html), { window, URL, document: { getElementById: () => frame } })
     handler?.({
       source: frame.contentWindow,
       data: { method: "ui/notifications/size-changed", params: { height: 120 } }

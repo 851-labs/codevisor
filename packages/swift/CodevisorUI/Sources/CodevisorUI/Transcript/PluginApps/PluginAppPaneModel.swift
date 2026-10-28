@@ -98,7 +98,7 @@ public final class PluginAppPaneModel {
       appModes = modes
     case let .message(text, viewId) where viewId == app.viewId:
       connection.sendMessage(text, from: app)
-    case .message, .size, .openLink:
+    case .message, .size, .openLink, .frameFailed:
       break
     }
   }

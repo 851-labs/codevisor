@@ -45,7 +45,7 @@ export const routePluginApps = async (route: RouteContext): Promise<boolean> => 
   return true
 }
 
-type AppAction = "shell" | "tools/call" | "resources/read" | "model-context"
+type AppAction = "shell" | "frame" | "tools/call" | "resources/read" | "model-context"
 
 interface ScopedRequest {
   readonly action: AppAction
@@ -58,6 +58,7 @@ const actionRoutes: ReadonlyArray<{
   readonly action: AppAction
 }> = [
   { suffix: "", method: "GET", action: "shell" },
+  { suffix: "/frame", method: "GET", action: "frame" },
   { suffix: "/tools/call", method: "POST", action: "tools/call" },
   { suffix: "/resources/read", method: "POST", action: "resources/read" },
   { suffix: "/model-context", method: "POST", action: "model-context" }
@@ -127,6 +128,10 @@ const appActions: Readonly<
   shell: async (route, scope) => {
     const shell = await appsFor(route).render(scope, display(route.url))
     writeHtml(route.response, shell.html, shell.policy)
+  },
+  frame: async (route, scope) => {
+    const frame = await appsFor(route).renderFrame(scope, display(route.url))
+    writeHtml(route.response, frame.html, frame.policy)
   },
   "tools/call": async (route, scope) => {
     const body = await readSchema(route.request, ToolCallBody)

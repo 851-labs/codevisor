@@ -38,7 +38,12 @@ const openedPage = (html: string, documentUrl: URL) => {
     }
   }
   const window = {
-    location: { pathname: documentUrl.pathname },
+    location: {
+      pathname: documentUrl.pathname,
+      href: documentUrl.href,
+      search: documentUrl.search
+    },
+    setTimeout: () => 0,
     addEventListener: (_type: string, handler: (event: unknown) => void) => {
       listener = handler
     },
@@ -50,6 +55,7 @@ const openedPage = (html: string, documentUrl: URL) => {
   }
   runInNewContext(shellScript(html), {
     window,
+    URL,
     document: { getElementById: () => ({ contentWindow, srcdoc: "", setAttribute: () => {} }) }
   })
   const request = (id: number, method: string, params: Record<string, unknown>) => {
@@ -78,8 +84,14 @@ const openedApp = (shellHtml: string, appHtml: string, documentUrl: URL) => {
     postMessage: (message: unknown) => shellListener?.({ source: contentWindow, data: message })
   }
   runInNewContext(shellScript(shellHtml), {
+    URL,
     window: {
-      location: { pathname: documentUrl.pathname },
+      location: {
+        pathname: documentUrl.pathname,
+        href: documentUrl.href,
+        search: documentUrl.search
+      },
+      setTimeout: () => 0,
       addEventListener: (_type: string, handler: (event: unknown) => void) => {
         shellListener = handler
       },
@@ -106,9 +118,7 @@ const throughRelay = (setup: Secured, relayUrl: string): Secured => ({
 
 const machineLocal = (setup: Secured): ReadonlyArray<string> => [
   new URL(setup.server.url).host,
-  new URL(setup.plugin.url).host,
-  "127.0.0.1",
-  "localhost"
+  new URL(setup.plugin.url).host
 ]
 
 describe("plugin apps through a client relay", () => {

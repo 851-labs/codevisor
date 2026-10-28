@@ -53,6 +53,7 @@ const shimmed = (globals: Record<string, unknown> = { theme: "dark" }) => {
     }
   }
   installOpenAiShim({ window, parent, globals, globalsEvent: (changes) => ({ changes }) })
+  expect(toParent.splice(0)).toEqual([{ jsonrpc: "2.0", method: "codevisor/frame-ready" }])
   const openai = isRecord(window.openai) ? window.openai : {}
   const fromHost = (data: unknown, source: unknown = parent) => listener?.({ source, data })
   const method = (name: string): ShimFunction => {

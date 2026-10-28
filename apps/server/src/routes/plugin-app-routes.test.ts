@@ -70,6 +70,24 @@ describe("plugin app views", () => {
     expect(loaded.boot?.html).toContain(alertsHtml.slice(alertsHtml.indexOf("<title>")))
   })
 
+  it("serves the app document itself for the frame on its own origin, with no route back to the server", async () => {
+    const setup = await secured()
+    const viewId = await capturedView(setup)
+    const loaded = await shell(
+      setup,
+      `${await launch(setup, `/v1/plugins/apps/${viewId}/token`)}&theme=dark`
+    )
+
+    const frame = await shell(setup, `${loaded.boot!.framePath}&theme=dark`)
+
+    expect(loaded.policy).toContain("frame-src http://127.0.0.1:* http://localhost:*;")
+    expect(loaded.boot!.framePath).toMatch(new RegExp(`^/v1/plugins/apps/${viewId}/frame\\?token=`))
+    expect(frame.status).toBe(200)
+    expect(frame.html).toBe(loaded.boot!.html)
+    expect(frame.policy).toContain("connect-src https://grafana.example;")
+    expect(frame.policy).toContain("frame-src 'none';")
+  })
+
   it("defaults the display and rejects links for other views or without a token", async () => {
     const setup = await secured()
     const viewId = await capturedView(setup)
@@ -169,6 +187,7 @@ describe("plugin app panes", () => {
     expect(loaded.boot).not.toHaveProperty("toolInput")
     expect(loaded.boot).toMatchObject({ allow: "", hostContext: { displayMode: "fullscreen" } })
     expect(loaded.boot?.html).toContain(boardHtml)
+    expect(loaded.boot?.framePath).toMatch(/^\/v1\/plugins\/panes\/[\w-]+\.[\w-]+\/frame$/)
     expect(called.status).toBe(200)
     expect(read.status).toBe(200)
   })

@@ -59,6 +59,7 @@ export interface PluginApps {
   readonly launchPane: (serverId: string, paneType: string) => Promise<AppLaunch>
   readonly authorize: (token: string | null, expected?: PluginAppScope) => PluginAppScope
   readonly render: (scope: PluginAppScope, display: AppDisplay) => Promise<RenderedShell>
+  readonly renderFrame: (scope: PluginAppScope, display: AppDisplay) => Promise<RenderedShell>
   readonly callTool: (scope: PluginAppScope, body: ToolCallBody) => Promise<unknown>
   readonly readResource: (scope: PluginAppScope, uri: string) => Promise<ReadResourceResult>
   readonly saveModelContext: (scope: PluginAppScope, body: ModelContextBody) => Promise<void>
@@ -72,6 +73,15 @@ export const makePluginApps = (
   const target = (scope: PluginAppScope): Promise<AppTarget> => {
     if (scope.kind === "view") return viewTarget(mcp, scope.viewId)
     return paneTarget(mcp, scope.serverId, scope.paneType)
+  }
+
+  const loadApp = async (scope: PluginAppScope, display: AppDisplay): Promise<LoadedApp> => {
+    const found = await target(scope)
+    const resource = appResource(
+      found.resourceUri,
+      await mcp.readResource(found.serverId, found.resourceUri, found.accountId)
+    )
+    return { found, html: resource.html, sandbox: appSandbox(resource.meta), display }
   }
 
   return {
@@ -95,22 +105,14 @@ export const makePluginApps = (
       return scope
     },
     render: async (scope, display) => {
-      const found = await target(scope)
-      const resource = appResource(
-        found.resourceUri,
-        await mcp.readResource(found.serverId, found.resourceUri, found.accountId)
-      )
-      const sandbox = appSandbox(resource.meta)
+      const app = await loadApp(scope, display)
       const session = tokens.issue(scope, APP_SESSION_TTL_MS)
-      const boot = shellBoot({
-        found,
-        html: resource.html,
-        sandbox,
-        display,
-        scope,
-        token: session.token
-      })
-      return { html: appShellHtml(boot), policy: shellPolicy(sandbox.csp) }
+      const boot = shellBoot({ ...app, scope, token: session.token })
+      return { html: appShellHtml(boot), policy: shellPolicy(app.sandbox.csp) }
+    },
+    renderFrame: async (scope, display) => {
+      const app = await loadApp(scope, display)
+      return { html: appDocument(app), policy: appPolicy(app.sandbox.csp) }
     },
     callTool: async (scope, body) => {
       const found = await target(scope)
@@ -191,6 +193,11 @@ const appResource = (uri: string, result: ReadResourceResult): AppResource => {
   return { html, meta: content._meta }
 }
 
+const framePath = (scope: PluginAppScope, token: string): string =>
+  scope.kind === "view"
+    ? `${viewPath(scope.viewId)}/frame?token=${token}`
+    : `${panePath(token)}/frame`
+
 const endpoints = (scope: PluginAppScope, token: string): BridgeBoot["endpoints"] => {
   if (scope.kind === "view") {
     const base = viewPath(scope.viewId)
@@ -207,16 +214,23 @@ const endpoints = (scope: PluginAppScope, token: string): BridgeBoot["endpoints"
   }
 }
 
-interface ShellParts {
+interface LoadedApp {
   readonly found: AppTarget
   readonly html: string
   readonly sandbox: AppSandbox
   readonly display: AppDisplay
+}
+
+interface ShellParts extends LoadedApp {
   readonly scope: PluginAppScope
   readonly token: string
 }
 
-const shellBoot = ({ found, html, sandbox, display, scope, token }: ShellParts): BridgeBoot => {
+const appDocument = ({ found, html, sandbox, display }: LoadedApp): string =>
+  withPreamble(html, appPreamble(sandbox, hostContext(found, display), found.view))
+
+const shellBoot = (parts: ShellParts): BridgeBoot => {
+  const { found, sandbox, display, scope, token } = parts
   const context = hostContext(found, display)
   return {
     protocolVersion: APP_PROTOCOL_VERSION,
@@ -229,9 +243,10 @@ const shellBoot = ({ found, html, sandbox, display, scope, token }: ShellParts):
       sandbox: { permissions: sandbox.permissions, csp: sandbox.csp }
     },
     hostContext: context,
-    html: withPreamble(html, appPreamble(sandbox, context, found.view)),
+    html: appDocument(parts),
     allow: frameAllow(sandbox.permissions),
     token,
+    framePath: framePath(scope, token),
     endpoints: endpoints(scope, token),
     ...(found.view === undefined
       ? {}

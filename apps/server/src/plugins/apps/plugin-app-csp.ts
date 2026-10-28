@@ -29,9 +29,12 @@ export const appSandbox = (resourceMeta: unknown): AppSandbox => {
   }
 }
 
-export const appPolicy = (csp: AppCsp): string => policy(csp, csp.connectDomains)
+export const appPolicy = (csp: AppCsp): string => policy(csp, csp.connectDomains, csp.frameDomains)
 
-export const shellPolicy = (csp: AppCsp): string => policy(csp, ["'self'", ...csp.connectDomains])
+export const shellPolicy = (csp: AppCsp): string =>
+  policy(csp, ["'self'", ...csp.connectDomains], [...loopbackFrames, ...csp.frameDomains])
+
+const loopbackFrames = ["http://127.0.0.1:*", "http://localhost:*"]
 
 export const frameAllow = (permissions: AppPermissions): string =>
   permissions.clipboardWrite === undefined ? "" : "clipboard-write"
@@ -72,7 +75,11 @@ const allowedOrigins = (domains: ReadonlyArray<string> | undefined): ReadonlyArr
 const sources = (values: ReadonlyArray<string>): string =>
   values.length === 0 ? "'none'" : values.join(" ")
 
-const policy = (csp: AppCsp, connect: ReadonlyArray<string>): string => {
+const policy = (
+  csp: AppCsp,
+  connect: ReadonlyArray<string>,
+  frames: ReadonlyArray<string>
+): string => {
   const withResources = (directive: string): string => [directive, ...csp.resourceDomains].join(" ")
   return [
     "default-src 'none'",
@@ -82,7 +89,7 @@ const policy = (csp: AppCsp, connect: ReadonlyArray<string>): string => {
     withResources("font-src data:"),
     withResources("media-src data: blob:"),
     `connect-src ${sources(connect)}`,
-    `frame-src ${sources(csp.frameDomains)}`,
+    `frame-src ${sources(frames)}`,
     `base-uri ${sources(csp.baseUriDomains)}`,
     "object-src 'none'",
     "form-action 'none'"

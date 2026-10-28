@@ -28,6 +28,7 @@ export const Boot = Schema.Struct({
   hostCapabilities: Schema.Record(Schema.String, Schema.Unknown),
   toolInput: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   toolResult: Schema.optional(Schema.Unknown),
+  framePath: Schema.String,
   endpoints: Schema.Struct({
     toolsCall: Schema.String,
     resourcesRead: Schema.String,

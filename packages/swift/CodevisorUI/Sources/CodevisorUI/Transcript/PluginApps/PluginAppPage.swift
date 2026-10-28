@@ -151,6 +151,8 @@ public final class PluginAppPage {
       self.height = height
     case let .openLink(url):
       PluginAppWebController.openExternally(url)
+    case .frameFailed:
+      phase = .failed("The app couldn’t load.")
     case .message, .displayMode, .appModes:
       onMessage?(message)
     }
