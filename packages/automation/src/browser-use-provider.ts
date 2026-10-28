@@ -1,8 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 
-import type { CodevisorDatabaseService } from "@codevisor/db"
-
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
 import { discardTargetState, jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
@@ -26,10 +24,18 @@ import {
   type BrowserExtensionInstallation
 } from "./browser-extension-relay.js"
 import { hasUnpackedInstall } from "./browser-extension-unpacked.js"
-import { makeBrowserHostRegistry, type BrowserHostRegistry } from "./browser-host-registry.js"
+import {
+  chosenBrowserHost,
+  probedBrowserHost,
+  makeBrowserHostRegistry,
+  unreachableBrowserHostReason,
+  type BrowserHostProbe,
+  type BrowserHostRegistry
+} from "./browser-host-registry.js"
 import { authenticateNativeHost, readNativeHostSecret } from "./browser-native-host.js"
 import { makeBrowserPreviews } from "./browser-preview.js"
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
+import { labelBrowserResult } from "./browser-result-label.js"
 import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
 import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 import { finishSessionTabs, trackPopups } from "./browser-tab-cleanup.js"
@@ -40,6 +46,7 @@ import {
 } from "./browser-use-invoke.js"
 import {
   browserExtensionState,
+  browserLabel,
   browserStatusReport,
   chromeNotConnectedResult,
   builtinLostResult,
@@ -73,7 +80,6 @@ const chromiumBackend = (browsersDir: string): string => {
 export const makeBrowserUseProvider = (
   dataDir: string,
   serverBaseUrl: string,
-  db?: CodevisorDatabaseService,
   hosts: BrowserHostRegistry = makeBrowserHostRegistry()
 ): BrowserUseProvider => {
   const repls = makeBrowserRepls()
@@ -86,8 +92,7 @@ export const makeBrowserUseProvider = (
   mkdirSync(profilesDir, { recursive: true, mode: 0o700 })
   mkdirSync(downloadsDir, { recursive: true, mode: 0o700 })
   mkdirSync(assetsDir, { recursive: true, mode: 0o700 })
-  const fallbackReasons = new Map<string, string>()
-  const retiredRuntimes = new Set<BrowserRuntime>()
+  const pendingReroutes = new Set<string>()
   const runtimes = new Map<string, Promise<BrowserRuntime>>()
   const sessionBackends = new Map<string, BrowserBackend>()
   const clientPlatforms = new Map<string, BrowserClientPlatform>()
@@ -147,11 +152,9 @@ export const makeBrowserUseProvider = (
   }
 
   const createRuntime = makeBrowserRuntimeFactory({
-    db,
     profilesDir,
     browsersDir,
     downloadsDir,
-    fallbackReasons,
     ensureSetup,
     connectNative: hosts.connect,
     connectExtension: () => {
@@ -177,7 +180,6 @@ export const makeBrowserUseProvider = (
     }
     const created = createRuntime(context, backend)
       .then((active) => {
-        if (!active) throw new Error("Browser initialization did not produce a connection")
         trackPopups(sessionTargets, key, active)
         return active
       })
@@ -191,20 +193,35 @@ export const makeBrowserUseProvider = (
 
   const extensionConnected = () => extensionEndpoint() !== undefined || extensionRelay.connected()
 
-  const builtinState = (context: AutomationProviderContext): BuiltinBrowserState => {
-    const { host, lostHost } = hosts.state(context.sessionId)
-    const fallback = fallbackReasons.get(context.sessionId)
-    return {
-      ready: fallback === undefined && host !== undefined,
-      ...(host === undefined ? {} : { host: host.name }),
-      ...(lostHost === undefined ? {} : { lostHost }),
-      ...(fallback === undefined && host !== undefined
-        ? {}
-        : { reason: fallback ?? "No Codevisor Mac app is connected to this server." })
-    }
+  const liveBuiltinRuntime = async (context: AutomationProviderContext) => {
+    const active = await runtimes.get(runtimeKey(context, "builtin"))?.catch(() => undefined)
+    if (active === undefined || active.connection.closed) return undefined
+    return active
   }
 
-  const dropNativeRuntime = async (context: AutomationProviderContext, active: BrowserRuntime) => {
+  const builtinState = async (context: AutomationProviderContext): Promise<BuiltinBrowserState> => {
+    const probes = await hosts.probe(context.sessionId)
+    const lostHost = hosts.lostHost(context.sessionId)
+    const host = nextBuiltinHost(context.sessionId, probes, await liveBuiltinRuntime(context))
+    if (host === undefined)
+      return { probes, lostHost, reason: unreachableBrowserHostReason(probes) }
+    return { probes, lostHost, host }
+  }
+
+  const nextBuiltinHost = (
+    sessionId: string,
+    probes: ReadonlyArray<BrowserHostProbe>,
+    live: BrowserRuntime | undefined
+  ) => {
+    const current = live?.nativeHost
+    if (current === undefined || pendingReroutes.has(sessionId)) return chosenBrowserHost(probes)
+    return probedBrowserHost(probes, current.id)
+  }
+
+  const retireNativeRuntime = async (
+    context: AutomationProviderContext,
+    active: BrowserRuntime
+  ) => {
     const key = runtimeKey(context, "builtin")
     if (runtimes.has(key)) runtimes.delete(key)
     for (const dispose of active.eventDisposers) dispose()
@@ -214,7 +231,17 @@ export const makeBrowserUseProvider = (
     sessionTargets.delete(handles)
     sessionDispositions.delete(handles)
     await repls.reset(context.sessionId)
-    return builtinLostResult(hosts.state(context.sessionId))
+  }
+
+  const dropNativeRuntime = async (context: AutomationProviderContext, active: BrowserRuntime) => {
+    await retireNativeRuntime(context, active)
+    return builtinLostResult(hosts.lostHost(context.sessionId))
+  }
+
+  const rerouteBuiltin = async (context: AutomationProviderContext, current: BrowserRuntime) => {
+    const best = chosenBrowserHost(await hosts.probe(context.sessionId))
+    if (best !== undefined && best.id === current.nativeHost?.id) current.nativeHost = best
+    else await retireNativeRuntime(context, current)
   }
 
   const browserStatus = async (context: AutomationProviderContext) =>
@@ -222,7 +249,7 @@ export const makeBrowserUseProvider = (
       selected: sessionBackends.get(context.sessionId),
       platform: clientPlatforms.get(context.sessionId),
       managedError: setupError,
-      builtin: builtinState(context),
+      builtin: await builtinState(context),
       extension: extensionReport(browserExtensionInstallation())
     })
 
@@ -232,14 +259,6 @@ export const makeBrowserUseProvider = (
       chromeAvailable: chromeBrowserAvailable(),
       installationState: installation.installationState
     })
-
-  const discardSessionHandles = async (sessionId: string) => {
-    await repls.reset(sessionId)
-    const suffix = `:${sessionId}`
-    for (const map of [selectedTargets, sessionTargets, sessionDispositions]) {
-      for (const key of map.keys()) if (key.endsWith(suffix)) map.delete(key)
-    }
-  }
 
   const invokeTool = makeBrowserToolInvoker({
     assetInventories,
@@ -261,22 +280,7 @@ export const makeBrowserUseProvider = (
     beginTurn: async (sessionId, options) => {
       if (options?.clientPlatform === undefined) clientPlatforms.delete(sessionId)
       else clientPlatforms.set(sessionId, options.clientPlatform)
-      const context = contexts.get(sessionId)
-      if (context === undefined || sessionBackends.get(sessionId) !== "builtin") return
-      const key = runtimeKey(context, "builtin")
-      const current = await runtimes.get(key)?.catch(() => undefined)
-      let changed = !current && fallbackReasons.has(sessionId)
-      fallbackReasons.delete(sessionId)
-      if (current && (!current.native || current.connection.closed)) {
-        const native = await createRuntime(context, "builtin", true)
-        if (native || current.connection.closed) {
-          runtimes.delete(key)
-          retiredRuntimes.add(current)
-          if (native) runtimes.set(key, Promise.resolve(native))
-          changed = true
-        }
-      }
-      if (changed) await discardSessionHandles(sessionId)
+      pendingReroutes.add(sessionId)
     },
     acceptBrowserHost: hosts.accept,
     acceptExtensionConnection: (socket) => {
@@ -349,7 +353,12 @@ export const makeBrowserUseProvider = (
         (backend === undefined ||
           !sessionTargets.has(`${runtimeKey(context, backend)}:${context.sessionId}`))
       )
-        return jsonResult({ finalized: true, kept: [], closed: [], released: [] })
+        return jsonResult({
+          finalized: true,
+          kept: [],
+          closed: [],
+          released: []
+        })
       if (backend === undefined) return noBrowserSelectedResult(await browserStatus(context))
       let effectiveTool = toolName
       let effectiveArgs = args
@@ -369,8 +378,9 @@ export const makeBrowserUseProvider = (
         return chromeNotConnectedResult(await browserStatus(context))
       if (backend === "builtin") {
         const previous = await runtimes.get(runtimeKey(context, backend))?.catch(() => undefined)
-        if (previous?.native === true && previous.connection.closed)
-          return dropNativeRuntime(context, previous)
+        if (previous?.connection.closed === true) return dropNativeRuntime(context, previous)
+        const reroute = pendingReroutes.delete(context.sessionId)
+        if (previous !== undefined && reroute) await rerouteBuiltin(context, previous)
       }
       let active: BrowserRuntime | undefined
       try {
@@ -391,7 +401,7 @@ export const makeBrowserUseProvider = (
         const named = effectiveArgs.tabId
         const shown = typeof named === "string" ? named : selectedTargets.get(key)
         if (shown !== undefined) void previews.activity(context.sessionId, ready, shown)
-        return result
+        return labelBrowserResult(effectiveTool, result, browserLabel(backend, ready.nativeHost))
       } catch (cause) {
         if (
           active?.native &&
@@ -417,7 +427,7 @@ export const makeBrowserUseProvider = (
       await repls.reset(sessionId)
       sessionBackends.delete(sessionId)
       clientPlatforms.delete(sessionId)
-      fallbackReasons.delete(sessionId)
+      pendingReroutes.delete(sessionId)
       hosts.forgetSession(sessionId)
       const suffix = `:${sessionId}`
       const keys = new Set(
@@ -456,11 +466,7 @@ export const makeBrowserUseProvider = (
     close: async () => {
       await repls.close()
       contexts.clear()
-      const active = [
-        ...runtimes.values(),
-        ...[...retiredRuntimes].map((retired) => Promise.resolve(retired))
-      ]
-      retiredRuntimes.clear()
+      const active = [...runtimes.values()]
       runtimes.clear()
       stopRelayLifecycle()
       hosts.close()

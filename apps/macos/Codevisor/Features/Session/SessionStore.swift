@@ -307,6 +307,11 @@ final class SessionStore {
     backgroundBrowserTarget(serverId: serverId, sessionId: sessionId) != nil
   }
 
+  func showsChat(serverId: String, sessionId: String) -> Bool {
+    guard let shown = attentionFocus.session, shown.serverId == serverId else { return false }
+    return shown.sessionId.uuidString.lowercased() == sessionId.lowercased()
+  }
+
   func createBackgroundBrowserTab(serverId: String, sessionId: String, url: String) -> ChromiumBrowserModel? {
     guard let (session, project) = backgroundBrowserTarget(serverId: serverId, sessionId: sessionId) else {
       return nil

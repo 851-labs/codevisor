@@ -84,6 +84,14 @@ final class ChromiumAutomationBridge {
     group(session, machineId: machineId) != nil
       || store?.canHostBackgroundBrowser(serverId: machineId, sessionId: session) == true
   }
+  fileprivate func presence(_ session: String, machineId: String) -> [String: Bool] {
+    let showing = stores.compactMap(\.value).filter { $0.showsChat(serverId: machineId, sessionId: session) }
+    return [
+      "available": isAvailable(session, machineId: machineId),
+      "showing": !showing.isEmpty,
+      "focused": showing.contains { $0.isWindowFocused },
+    ]
+  }
   fileprivate func createTarget(session: String, machineId: String, url: String) -> ChromiumBrowserModel? {
     let created =
       group(session, machineId: machineId)?.createBrowserTab?(url)
@@ -291,7 +299,7 @@ actor ChromiumAutomationConnection {
       else { return reply(request.id, error: "Connect a chat before using the browser") }
       self.session = session; authenticated = true
       let bridge = bridge, id = request.id, machineId = machineId
-      Task { reply(id, result: ["available": await bridge.isAvailable(session, machineId: machineId)]) }
+      Task { reply(id, result: await bridge.presence(session, machineId: machineId)) }
       return
     }
     if let sessionId = request.sessionId, !Self.browserMethods.contains(method) {

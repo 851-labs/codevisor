@@ -19,8 +19,15 @@ export interface BrowserSnapshot {
   readonly targets: ReadonlyMap<string, number>
 }
 
+export interface NativeBrowserHost {
+  readonly id: string
+  readonly name: string
+  readonly showing: boolean
+}
+
 export interface BrowserRuntime {
   readonly native?: boolean
+  nativeHost?: NativeBrowserHost
   synchronizeCookies?: () => Promise<void>
   readonly connection: CdpConnection
   readonly processHandle: ChildProcess | undefined

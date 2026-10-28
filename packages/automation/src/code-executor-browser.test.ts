@@ -60,7 +60,7 @@ describe.sequential("Codevisor browser facade", () => {
     ])
   })
 
-  it("returns usable tab objects from tabs.list and names unsupported members", async () => {
+  it("returns usable tab objects from tabs.list that say which browser they live in", async () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(
       `async () => {
@@ -76,7 +76,7 @@ describe.sequential("Codevisor browser facade", () => {
         ]) {
           try { probe(); errors.push("no error"); } catch (error) { errors.push(error.message); }
         }
-        return { id: tab.id, origin: tab.info.origin, hasPlaywright: !!tab.playwright, errors };
+        return { id: tab.id, origin: tab.info.origin, browser: tab.info.browser, hasPlaywright: !!tab.playwright, errors };
       }`,
       {
         invoke: async (call) => {
@@ -99,7 +99,8 @@ describe.sequential("Codevisor browser facade", () => {
                   url: "https://excalidraw.com/",
                   origin: "created"
                 }
-              ]
+              ],
+              browser: { backend: "builtin", host: "Codevisor on Mac Studio" }
             }
           }
           return {}
@@ -110,6 +111,7 @@ describe.sequential("Codevisor browser facade", () => {
       result: {
         id: "tab-2",
         origin: "created",
+        browser: { backend: "builtin", host: "Codevisor on Mac Studio" },
         hasPlaywright: true,
         errors: [
           expect.stringContaining("frameLocator.mouse is not supported"),

@@ -3,21 +3,27 @@ import { createHash } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 
-import type { CodevisorDatabaseService } from "@codevisor/db"
-
 import type { AutomationProviderContext } from "./automation-provider.js"
-import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import { CdpConnection } from "./browser-cdp.js"
+import type { BrowserRuntime, NativeBrowserHost } from "./browser-cdp-engine.js"
+import type { CdpConnection } from "./browser-cdp.js"
 import {
   downloadedChromiumPath,
   launchManagedBrowser,
   systemChromePath
 } from "./browser-chromium.js"
-import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
 import type { BrowserHostConnection } from "./browser-host-registry.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"
-import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 import type { BrowserBackend } from "./browser-use-provider-types.js"
+import { builtinUnreachableMessage } from "./browser-use-status.js"
+
+class BuiltinBrowserUnreachable extends Error {
+  constructor(reason: string) {
+    super(builtinUnreachableMessage(reason))
+    this.name = "BuiltinBrowserUnreachable"
+  }
+}
+
+const nativeSetupTimeoutMs = 5000
 
 const profileKey = (context: AutomationProviderContext): string =>
   createHash("sha256")
@@ -25,120 +31,103 @@ const profileKey = (context: AutomationProviderContext): string =>
     .digest("hex")
     .slice(0, 24)
 
+interface OpenedBrowser {
+  readonly connection: CdpConnection
+  readonly processHandle?: ChildProcess | undefined
+  readonly nativeHost?: NativeBrowserHost
+}
+
 export const makeBrowserRuntimeFactory = (options: {
-  db: CodevisorDatabaseService | undefined
   profilesDir: string
   browsersDir: string
   downloadsDir: string
-  fallbackReasons: Map<string, string>
   ensureSetup: () => Promise<void>
   connectNative: (sessionId: string) => Promise<BrowserHostConnection>
   connectExtension: () => Promise<CdpConnection>
 }) => {
-  const { db, profilesDir, browsersDir, downloadsDir, fallbackReasons, ensureSetup } = options
+  const { profilesDir, browsersDir, downloadsDir, ensureSetup } = options
 
-  let fallbackLaunch: Promise<unknown> = Promise.resolve()
+  const openNative = async (context: AutomationProviderContext): Promise<OpenedBrowser> => {
+    const local = await options.connectNative(context.sessionId)
+    if (local.connection === undefined) throw new BuiltinBrowserUnreachable(local.reason)
 
-  const createRuntime = async (
+    const { host, showing } = local
+    return { connection: local.connection, nativeHost: { id: host.id, name: host.name, showing } }
+  }
+
+  const openManaged = async (context: AutomationProviderContext): Promise<OpenedBrowser> => {
+    await ensureSetup()
+    const executablePath = systemChromePath() ?? downloadedChromiumPath(browsersDir)
+    if (executablePath === undefined) throw new Error("No managed Chromium is installed")
+
+    const profileDir = join(profilesDir, profileKey(context))
+    mkdirSync(profileDir, { recursive: true, mode: 0o700 })
+    return launchManagedBrowser(executablePath, profileDir)
+  }
+
+  const open = (context: AutomationProviderContext, backend: BrowserBackend) => {
+    if (backend === "extension")
+      return options.connectExtension().then((connection) => ({ connection }))
+    if (backend === "builtin") return openNative(context)
+    return openManaged(context)
+  }
+
+  return async (
     context: AutomationProviderContext,
-    backend: BrowserBackend,
-    nativeOnly = false
-  ): Promise<BrowserRuntime | undefined> => {
-    let connection: CdpConnection
-    let processHandle: ChildProcess | undefined
-    let owned = false
-    let native = false
-    if (backend === "extension") {
-      connection = await options.connectExtension()
-    } else {
-      let local: BrowserHostConnection | undefined
-      if (backend === "builtin" && !fallbackReasons.has(context.sessionId)) {
-        local = await options.connectNative(context.sessionId)
-      }
-      if (local?.connection) {
-        connection = local.connection
-        native = true
-      } else {
-        if (backend === "builtin" && local?.reason)
-          fallbackReasons.set(context.sessionId, local.reason)
-        if (nativeOnly) return undefined
-        await ensureSetup()
-        const executablePath = systemChromePath() ?? downloadedChromiumPath(browsersDir)
-        if (executablePath === undefined) throw new Error("No managed Chromium is installed")
-        const profileDir = join(
-          profilesDir,
-          backend === "builtin" ? "builtin" : profileKey(context)
-        )
-        mkdirSync(profileDir, { recursive: true, mode: 0o700 })
-        const launch = () => launchManagedBrowser(executablePath, profileDir)
-        let pendingLaunch: ReturnType<typeof launch>
-        if (backend === "builtin") {
-          pendingLaunch = fallbackLaunch.then(launch, launch)
-          fallbackLaunch = pendingLaunch.catch(() => undefined)
-        } else {
-          pendingLaunch = launch()
-        }
-        const launched = await pendingLaunch
-        connection = launched.connection
-        processHandle = launched.processHandle
-        owned = launched.processHandle !== undefined
-      }
-    }
-    try {
-      await connection.send(
-        "Target.setDiscoverTargets",
-        { discover: true },
-        undefined,
-        native ? 5000 : undefined
-      )
-    } catch (cause) {
-      await connection.close().catch(() => undefined)
-      if (native) {
-        fallbackReasons.set(
-          context.sessionId,
-          "The local built-in browser is not ready. Check the Codevisor app on this machine for a blocking dialog or browser error."
-        )
-        if (nativeOnly) return undefined
-        return createRuntime(context, backend)
-      }
-      processHandle?.kill("SIGTERM")
-      throw cause
-    }
-    const active: BrowserRuntime = {
-      connection,
-      native,
-      processHandle,
-      owned,
-      sessions: new Map(),
-      staleSessions: new Map(),
-      snapshots: new Map(),
-      eventLog: [],
-      logs: new Map(),
-      dialogs: new Map(),
-      fileChoosers: new Map(),
-      downloads: new Map(),
-      eventDisposers: [],
-      eventSequence: 0,
-      tabOrder: [],
-      queue: Promise.resolve()
-    }
-    if (native)
-      active.synchronizeCookies = async () => {
-        await connection.send("Codevisor.synchronizeCookies")
-      }
-    if (db && backend === "builtin" && !native) {
-      try {
-        const sync = await synchronizeManagedCookies(connection, db)
-        active.synchronizeCookies = sync.synchronize
-        active.eventDisposers.push(sync.stop)
-      } catch (cause) {
-        await closeBrowserRuntime(active)
-        throw cause
-      }
-    }
+    backend: BrowserBackend
+  ): Promise<BrowserRuntime> => {
+    const opened = await open(context, backend)
+    await discoverTargets(opened)
+    const active = runtimeFor(opened)
     observeBrowserRuntime(active, downloadsDir, backend === "extension")
     return active
   }
+}
 
-  return createRuntime
+const discoverTargets = async (opened: OpenedBrowser): Promise<void> => {
+  try {
+    await opened.connection.send(
+      "Target.setDiscoverTargets",
+      { discover: true },
+      undefined,
+      opened.nativeHost === undefined ? undefined : nativeSetupTimeoutMs
+    )
+  } catch (cause) {
+    await opened.connection.close().catch(() => undefined)
+    opened.processHandle?.kill("SIGTERM")
+    if (opened.nativeHost === undefined) throw cause
+    throw new BuiltinBrowserUnreachable(
+      `The Codevisor app on ${opened.nativeHost.name} didn't start its built-in browser. Check that Mac for a blocking dialog or browser error.`
+    )
+  }
+}
+
+const runtimeFor = ({ connection, processHandle, nativeHost }: OpenedBrowser): BrowserRuntime => ({
+  connection,
+  native: nativeHost !== undefined,
+  ...nativeFields(connection, nativeHost),
+  processHandle,
+  owned: processHandle !== undefined,
+  sessions: new Map(),
+  staleSessions: new Map(),
+  snapshots: new Map(),
+  eventLog: [],
+  logs: new Map(),
+  dialogs: new Map(),
+  fileChoosers: new Map(),
+  downloads: new Map(),
+  eventDisposers: [],
+  eventSequence: 0,
+  tabOrder: [],
+  queue: Promise.resolve()
+})
+
+const nativeFields = (connection: CdpConnection, nativeHost: NativeBrowserHost | undefined) => {
+  if (nativeHost === undefined) return {}
+  return {
+    nativeHost,
+    synchronizeCookies: async () => {
+      await connection.send("Codevisor.synchronizeCookies")
+    }
+  }
 }

@@ -16,11 +16,11 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tablessTool(
     "status",
-    "Show which browsers are available right now and whether the user can see each: managed (headless, never visible), builtin (this chat's browser pane in the Codevisor Mac app) and extension (the user's own Chrome: connected, installed but not connected, or not installed). Also reports the browser selected for this chat. Fast; never waits or prompts."
+    "Show which browsers are available right now and whether the user can see each: managed (headless, never visible), builtin (this chat's browser pane in the Codevisor Mac app: host names the Mac and window calls go to, macs lists what each connected Mac app answered) and extension (the user's own Chrome: connected, installed but not connected, or not installed). Also reports the browser selected for this chat. Checks each Mac app live, taking up to 5 seconds when one doesn't answer; never prompts."
   ),
   tablessTool(
     "use_backend",
-    "Pick the browser for this chat; it stays selected until you pick another. There is no default: browser calls fail until you pick one. managed: headless Chromium with no window, the user cannot see it; use it for background work they don't need to watch. builtin: the browser pane in the Codevisor Mac app, which the user can watch and use; use it when they should watch, take over, or log in. extension: the user's real Chrome, already signed in to their accounts; use it when the task needs their existing sessions.",
+    "Pick the browser for this chat; it stays selected until you pick another. There is no default: browser calls fail until you pick one. managed: headless Chromium with no window, the user cannot see it; use it for background work they don't need to watch. builtin: this chat's browser pane in the Codevisor window that shows the chat, which the user can watch and use; use it when they should watch, take over, or log in. builtin never falls back to another browser: its calls fail with the reason when no Mac app can open this chat. Returns the same report as status, so confirm where calls will run. extension: the user's real Chrome, already signed in to their accounts; use it when the task needs their existing sessions.",
     objectSchema({ backend: { type: "string", enum: ["managed", "builtin", "extension"] } }, [
       "backend"
     ])
