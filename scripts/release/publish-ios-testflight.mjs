@@ -69,7 +69,9 @@ const upload = () =>
 
 let result
 try {
-  result = await deliverInternalBuild(client, { ...configuration, appId: app.id }, upload)
+  result = await deliverInternalBuild(client, { ...configuration, appId: app.id }, upload, {
+    groupId: process.env.CODEVISOR_TESTFLIGHT_INTERNAL_GROUP_ID || undefined
+  })
 } catch (error) {
   if (!(error instanceof UploadLimitReached)) throw error
   const message = `Skipped TestFlight upload of ${configuration.version} (${configuration.buildNumber}): Apple's daily upload limit is reached.`

@@ -179,6 +179,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          CODEVISOR_TESTFLIGHT_INTERNAL_GROUP_ID: ${{ vars.IOS_TESTFLIGHT_INTERNAL_GROUP_ID }}
         run: bun scripts/release/publish-ios-testflight.mjs "$VERSION"
       - name: Mark the Alpha as on TestFlight
         if: steps.upload.outputs.uploaded == 'true'

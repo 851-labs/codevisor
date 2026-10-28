@@ -183,17 +183,46 @@ function assertInternalTestingUsable(internalState, build) {
   }
 }
 
-export async function internalGroup(client, appId, name) {
-  const { data } = await client("betaGroups", {
-    query: { "filter[app]": appId, "filter[name]": name }
-  })
-  if (data.length > 1) throw new Error(`Multiple TestFlight groups are named ${name}.`)
-  if (data.length === 1) {
-    if (!data[0].attributes.isInternalGroup) {
-      throw new Error(`TestFlight group ${name} is external; an internal group is required.`)
-    }
-    return data[0]
+export async function internalGroup(client, appId, { name = "Alpha", id } = {}) {
+  if (id) return configuredInternalGroup(client, appId, id)
+
+  const named = await groupsNamed(client, appId, name)
+  const internal = named.filter((group) => group.attributes.isInternalGroup)
+  if (internal.length > 1) throw new Error(ambiguousGroupMessage(name, internal))
+  if (internal.length === 1) return internal[0]
+  if (named.length > 0) {
+    throw new Error(`TestFlight group ${name} is external; an internal group is required.`)
   }
+
+  return createInternalGroup(client, appId, name)
+}
+
+async function configuredInternalGroup(client, appId, id) {
+  const { data } = await client("betaGroups", {
+    query: { "filter[app]": appId, "filter[id]": id }
+  })
+  const group = data.find((candidate) => candidate.id === id)
+  if (!group) throw new Error(`TestFlight group ${id} does not exist in this app.`)
+  if (!group.attributes.isInternalGroup) {
+    throw new Error(`TestFlight group ${id} is external; an internal group is required.`)
+  }
+  return group
+}
+
+async function groupsNamed(client, appId, name) {
+  const { data } = await client("betaGroups", {
+    query: { "filter[app]": appId, "filter[name]": name, limit: String(maxGroupsPerPage) }
+  })
+  return data.filter((group) => group.attributes.name === name)
+}
+
+const maxGroupsPerPage = 200
+
+const ambiguousGroupMessage = (name, groups) =>
+  `Multiple internal TestFlight groups are named ${name}: ${groups.map((group) => group.id).join(", ")}. ` +
+  "Set the IOS_TESTFLIGHT_INTERNAL_GROUP_ID repository variable to the intended group's ID."
+
+async function createInternalGroup(client, appId, name) {
   const created = await client("betaGroups", {
     method: "POST",
     body: {
@@ -299,7 +328,10 @@ export async function assignBuildToGroup(
 export async function deliverInternalBuild(client, build, upload, options = {}) {
   if (!(await findBuild(client, build))) await upload()
   const processed = await waitForBuild(client, build, options)
-  const group = await internalGroup(client, build.appId, options.groupName ?? "Alpha")
+  const group = await internalGroup(client, build.appId, {
+    name: options.groupName,
+    id: options.groupId
+  })
   await assignBuildToGroup(client, processed, group, options)
   return { build: processed, group }
 }

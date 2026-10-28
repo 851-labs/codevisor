@@ -369,16 +369,99 @@ test("assignment does not retry unrelated resources, authorization, validation, 
   }
 })
 
+function groupLister(groups, queries = []) {
+  return async (path, options = {}) => {
+    assert.equal(path, "betaGroups")
+    assert.equal(options.method, undefined)
+    queries.push(options.query)
+    return { data: groups }
+  }
+}
+
+const betaGroup = (id, name, isInternalGroup) => ({
+  id,
+  type: "betaGroups",
+  attributes: { name, isInternalGroup }
+})
+
 test("a matching external group is never used for internal delivery", async () => {
   await assert.rejects(
-    internalGroup(
-      async (path, options = {}) => {
-        assert.equal(options.method, undefined)
-        return { data: [{ ...group, attributes: { ...group.attributes, isInternalGroup: false } }] }
-      },
-      "app",
-      "Alpha"
-    ),
+    internalGroup(groupLister([betaGroup("external", "Alpha", false)]), "app"),
     /group Alpha is external/
   )
+})
+
+test("the internal group is chosen by exact name when other groups share the name", async () => {
+  const queries = []
+  const chosen = await internalGroup(
+    groupLister(
+      [
+        betaGroup("external", "Alpha", false),
+        betaGroup("prefixed", "Alpha Testers", true),
+        betaGroup("internal", "Alpha", true)
+      ],
+      queries
+    ),
+    "app"
+  )
+  assert.equal(chosen.id, "internal")
+  assert.equal(queries[0]["filter[app]"], "app")
+  assert.equal(queries[0]["filter[name]"], "Alpha")
+})
+
+test("several internal groups with the name fail with their IDs", async () => {
+  await assert.rejects(
+    internalGroup(
+      groupLister([betaGroup("first", "Alpha", true), betaGroup("second", "Alpha", true)]),
+      "app"
+    ),
+    /Multiple internal TestFlight groups are named Alpha: first, second\. Set the IOS_TESTFLIGHT_INTERNAL_GROUP_ID/
+  )
+})
+
+test("a configured group ID wins over name matching", async () => {
+  const queries = []
+  const chosen = await internalGroup(
+    groupLister([betaGroup("second", "Alpha", true)], queries),
+    "app",
+    { id: "second" }
+  )
+  assert.equal(chosen.id, "second")
+  assert.deepEqual(queries, [{ "filter[app]": "app", "filter[id]": "second" }])
+})
+
+test("a configured group ID must name an internal group in the app", async () => {
+  await assert.rejects(
+    internalGroup(groupLister([]), "app", { id: "missing" }),
+    /group missing does not exist in this app/
+  )
+  await assert.rejects(
+    internalGroup(groupLister([betaGroup("external", "Beta", false)]), "app", { id: "external" }),
+    /group external is external/
+  )
+})
+
+test("delivery assigns the configured group", async () => {
+  let assigned = false
+  const client = async (path, options = {}) => {
+    if (path === "builds" && options.query["filter[betaGroups]"]) {
+      assert.equal(options.query["filter[betaGroups]"], "second")
+      return { data: assigned ? [validBuild] : [] }
+    }
+    if (path === "builds") return buildResponse()
+    if (path === "betaGroups") {
+      assert.equal(options.query["filter[id]"], "second")
+      return { data: [betaGroup("second", "Alpha", true)] }
+    }
+    assert.equal(path, "betaGroups/second/relationships/builds")
+    assigned = true
+    return undefined
+  }
+  const result = await deliverInternalBuild(
+    client,
+    build,
+    async () => assert.fail("Existing builds must not upload"),
+    { groupId: "second" }
+  )
+  assert.equal(result.group.id, "second")
 })
