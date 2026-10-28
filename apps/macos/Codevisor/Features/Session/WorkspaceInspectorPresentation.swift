@@ -188,8 +188,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private func showsHarness(_ inspected: Inspected) -> Bool {
-    guard let tab = inspected.workspace.selectedCenterTab else { return inspected.chat != nil }
-    return tab.root.group(id: tab.activeLeafId)?.selectedPane?.kind == .chat
+    guard inspected.workspace.selectedCenterTab != nil else { return inspected.chat != nil }
+    let pane = focusedPane(in: inspected.workspace)
+    return pane?.kind == .chat && pane?.chatSessionId != nil
   }
 
   private func tabs(for inspected: Inspected) -> [WorkspaceInspectorTab] {
@@ -235,20 +236,18 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .max { $0.sidebarStateChangedAt < $1.sidebarStateChangedAt }
   }
 
+  private func focusedPane(in workspace: Workspace) -> PaneDescriptorState? {
+    guard let tab = workspace.selectedCenterTab else { return nil }
+    return tab.root.group(id: tab.activeLeafId)?.selectedPane
+  }
+
   private func activeDocumentPath(in workspace: Workspace) -> String? {
-    guard let tab = workspace.selectedCenterTab,
-      let pane = tab.root.group(id: tab.activeLeafId)?.selectedPane,
-      pane.kind == .document
-    else { return nil }
+    guard let pane = focusedPane(in: workspace), pane.kind == .document else { return nil }
     return pane.documentPath
   }
 
   private func focusedChatSessionId(in workspace: Workspace) -> UUID? {
-    if let tab = workspace.selectedCenterTab,
-      let pane = tab.root.group(id: tab.activeLeafId)?.selectedPane,
-      pane.kind == .chat,
-      let sessionId = pane.chatSessionId
-    {
+    if let pane = focusedPane(in: workspace), pane.kind == .chat, let sessionId = pane.chatSessionId {
       return sessionId
     }
     return workspace.allPanes.first { $0.kind == .chat && $0.chatSessionId != nil }?.chatSessionId
