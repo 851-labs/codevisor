@@ -141,7 +141,9 @@ struct RootView: View {
       .focusedSceneValue(
         \.sidebarVisibility, SidebarVisibilityToggle(isVisible: clientSidebarVisible, setVisible: setSidebarVisible)
       )
-      .background(WindowWidthReader { panelLayout.updateWindowWidth($0) }.frame(width: 0, height: 0))
+      .background(
+        WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
+      )
       .onChange(of: selection) { _, newValue in
         guard let store else { return }
         if case let .session(serverId, sessionId) = newValue {
@@ -225,8 +227,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      RootSidebar(selection: $selection, store: store, isColumnVisible: isSidebarColumnVisible)
-        .navigationSplitViewColumnWidth(min: sidebarMinimumWidth, ideal: 270, max: 360)
+      RootSidebar(selection: $selection, store: store)
     } detail: {
       Group {
         if let store {
@@ -259,17 +260,11 @@ struct RootView: View {
     }
   }
 
-  private var sidebarMinimumWidth: CGFloat {
-    botsEnabled ? SidebarModePicker.minimumSidebarWidth : 230
-  }
-
-  private var isSidebarColumnVisible: Bool {
-    panelLayout.docksSidebar && !sidebarCollapsed
-  }
-
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
     Binding(
-      get: { isSidebarColumnVisible ? .all : .detailOnly },
+      get: {
+        panelLayout.docksSidebar && !sidebarCollapsed ? .all : .detailOnly
+      },
       set: { visibility in
         if panelLayout.docksSidebar {
           sidebarCollapsed = visibility == .detailOnly

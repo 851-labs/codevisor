@@ -16,11 +16,17 @@ final class AdaptivePanelLayout {
   private static let sidebarRestoreWidth: CGFloat = 760
 
   private(set) var windowWidth: CGFloat = 1_280
+  private(set) var isFullScreen = false
   private(set) var docksSidebar = true
   private(set) var docksInspector = true
   private(set) var activeDrawer: AdaptiveDrawer?
 
-  func updateWindowWidth(_ width: CGFloat) {
+  func updateWindow(width: CGFloat, isFullScreen: Bool) {
+    if self.isFullScreen != isFullScreen { self.isFullScreen = isFullScreen }
+    updateWindowWidth(width)
+  }
+
+  private func updateWindowWidth(_ width: CGFloat) {
     guard width.isFinite, width > 0, abs(width - windowWidth) > 0.5 else { return }
     windowWidth = width
 
@@ -49,17 +55,17 @@ final class AdaptivePanelLayout {
   }
 }
 
-struct WindowWidthReader: NSViewRepresentable {
-  let onChange: @MainActor (CGFloat) -> Void
+struct WindowLayoutReader: NSViewRepresentable {
+  let onChange: @MainActor (_ width: CGFloat, _ isFullScreen: Bool) -> Void
 
   func makeNSView(context: Context) -> Probe { Probe(onChange: onChange) }
   func updateNSView(_ nsView: Probe, context: Context) { nsView.onChange = onChange }
 
   final class Probe: NSView {
-    var onChange: @MainActor (CGFloat) -> Void
-    private var observer: NSObjectProtocol?
+    var onChange: @MainActor (_ width: CGFloat, _ isFullScreen: Bool) -> Void
+    private var observers: [NSObjectProtocol] = []
 
-    init(onChange: @escaping @MainActor (CGFloat) -> Void) {
+    init(onChange: @escaping @MainActor (_ width: CGFloat, _ isFullScreen: Bool) -> Void) {
       self.onChange = onChange
       super.init(frame: .zero)
     }
@@ -68,20 +74,24 @@ struct WindowWidthReader: NSViewRepresentable {
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      if let observer { NotificationCenter.default.removeObserver(observer) }
-      observer = nil
+      observers.forEach(NotificationCenter.default.removeObserver)
+      observers = []
       guard let window else { return }
-      observer = NotificationCenter.default.addObserver(
-        forName: NSWindow.didResizeNotification, object: window, queue: .main
-      ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.report() }
+      let notifications = [
+        NSWindow.didResizeNotification, NSWindow.didEnterFullScreenNotification,
+        NSWindow.didExitFullScreenNotification,
+      ]
+      observers = notifications.map { name in
+        NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.report() }
+        }
       }
       report()
     }
 
     private func report() {
       guard let window else { return }
-      onChange(window.contentLayoutRect.width)
+      onChange(window.contentLayoutRect.width, window.styleMask.contains(.fullScreen))
     }
   }
 }

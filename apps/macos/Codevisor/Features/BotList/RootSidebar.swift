@@ -6,10 +6,12 @@ struct RootSidebar: View {
   let store: SessionStore?
   var publishesSceneActions = true
   var isDrawer = false
-  var isColumnVisible = true
+  @Environment(AdaptivePanelLayout.self) private var panelLayout
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) private var storedMode
   @State private var revealRequest = SidebarRevealRequest()
+  @State private var visibleColumnWidth: CGFloat = 0
+  @State private var modePickerWidth: CGFloat?
 
   var body: some View {
     layout
@@ -17,11 +19,28 @@ struct RootSidebar: View {
         PaletteDestinationsPublisher(
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
+      .background(SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0))
+      .navigationSplitViewColumnWidth(min: minimumWidth, ideal: 270, max: 360)
       .toolbar {
-        if botsEnabled && !isDrawer && isColumnVisible {
-          ToolbarItem { SidebarModePicker(mode: $storedMode) }
+        if showsToolbarModePicker {
+          ToolbarItem {
+            SidebarModePicker(mode: $storedMode)
+              .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { modePickerWidth = $0 }
+          }
         }
       }
+  }
+
+  private var showsToolbarModePicker: Bool {
+    botsEnabled && !isDrawer && visibleColumnWidth >= widthFittingModePicker
+  }
+
+  private var minimumWidth: CGFloat {
+    botsEnabled ? max(230, widthFittingModePicker) : 230
+  }
+
+  private var widthFittingModePicker: CGFloat {
+    SidebarModePicker.sidebarWidthFitting(pickerWidth: modePickerWidth, showsWindowControls: !panelLayout.isFullScreen)
   }
 
   @ViewBuilder
