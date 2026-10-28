@@ -76,7 +76,7 @@ struct HomeSidebarContentBuilder {
     return SidebarWorkspaceGroup.Heading(
       title: machine?.name ?? "Unknown Machine",
       systemImage: machine?.icon.systemImage ?? "questionmark.circle",
-      newChatTarget: machine.map { NewChatTarget(machine: $0.id) }
+      newChatTarget: environment.machines.chatMachine(for: serverId).map { NewChatTarget(machine: $0.id) }
     )
   }
 

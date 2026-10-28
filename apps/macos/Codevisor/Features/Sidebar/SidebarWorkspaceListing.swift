@@ -46,7 +46,7 @@ struct SidebarWorkspaceListing {
     return SidebarWorkspaceGroup.Heading(
       title: machine.map(SidebarRowContent.machineName) ?? "Unknown Machine",
       systemImage: machine?.icon.systemImage ?? "questionmark.circle",
-      newChatTarget: machine.map { NewChatTarget(machine: $0.id) }
+      newChatTarget: environment.machines.chatMachine(for: serverId).map { NewChatTarget(machine: $0.id) }
     )
   }
 }

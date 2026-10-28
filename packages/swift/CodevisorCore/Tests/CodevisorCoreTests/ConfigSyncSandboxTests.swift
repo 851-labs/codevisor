@@ -45,6 +45,8 @@ struct ConfigSyncSandboxTests {
     #expect(controller.chatMachines.map(\.id).contains(regular.id))
     #expect(!controller.chatMachines.map(\.id).contains(sandbox.id))
     #expect(controller.allMachines.map(\.id).contains(sandbox.id))
+    #expect(controller.chatMachine(for: regular.id)?.id == regular.id)
+    #expect(controller.chatMachine(for: sandbox.id) == nil)
   }
 
   private func markingSandboxSandbox(_ machine: CloudMachine) -> CloudMachine {

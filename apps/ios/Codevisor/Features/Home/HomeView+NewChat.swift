@@ -4,7 +4,8 @@ import SwiftUI
 import UIKit
 
 extension HomeView {
-  func presentNewChat(serverId: String? = nil) {
+  func presentNewChat(serverId requestedServerId: String? = nil) {
+    let serverId = requestedServerId.flatMap { machines.isSandbox($0) ? nil : $0 }
     if layoutMode == .split {
       defer { dismissOverlaySidebarAfterSelection() }
       if navigation.selection?.isNewChat ?? false, promotedDraftSessionId == nil {

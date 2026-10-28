@@ -109,6 +109,9 @@ extension HomeView {
       guard presentedSettingsDestination == nil else {
         throw ClientControlError("Dismiss Settings before opening New Chat")
       }
+      guard !machines.isSandbox(serverId) else {
+        throw ClientControlError("New Chat can't target a sandbox machine")
+      }
       if let id = request.projectId {
         guard let project = projectList.projects.first(where: { $0.serverId == serverId && $0.id == id }) else {
           throw ClientControlError("Project is unavailable on this machine")

@@ -102,6 +102,9 @@ extension RootView {
     let router = SettingsRouter.shared
     switch request.page {
     case "home", "new_chat":
+      guard !environment.machines.isSandbox(serverId) else {
+        throw ClientControlError("New Chat can't target a sandbox machine")
+      }
       let target: NewChatTarget?
       if let id = request.projectId {
         guard environment.projectList.projects.contains(where: { $0.serverId == serverId && $0.id == id }) else {

@@ -378,7 +378,7 @@ struct RootView: View {
     NewChatView(
       store: store,
       selection: $selection,
-      initialProjectTarget: target,
+      initialProjectTarget: target.flatMap { environment.machines.isSandbox($0.serverId) ? nil : $0 },
       requiresInitialProjectResolution: requiresInitialNewChatProjectResolution,
       onInitialProjectResolutionCompleted: {
         requiresInitialNewChatProjectResolution = false
