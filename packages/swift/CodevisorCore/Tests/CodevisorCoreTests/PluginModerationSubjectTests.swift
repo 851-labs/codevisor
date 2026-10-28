@@ -9,9 +9,9 @@ struct PluginModerationSubjectTests {
   func catalogIdentity() {
     let entry = ServerPluginCatalogEntry(
       id: "io.github.Acme/notes", name: "Notes", description: "", publisher: "Acme", version: "1.2.0",
-      transport: "stdio")
+      transport: "stdio", ageRating: 4)
 
-    let subject = PluginModerationSubject(catalogEntry: entry, declaredAgeRating: 4)
+    let subject = PluginModerationSubject(catalogEntry: entry)
 
     #expect(subject.pluginId == "io.github.Acme/notes")
     #expect(subject.publisher == "io.github.acme")

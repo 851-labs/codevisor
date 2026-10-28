@@ -14,6 +14,7 @@ public struct ServerPluginCatalogEntry: Codable, Equatable, Identifiable, Sendab
   public var source: String?
   public var install: ServerPluginInstallSpec?
   public var accounts: ServerPluginAccountSpec?
+  public var ageRating: Int?
 
   public init(
     id: String,
@@ -28,7 +29,8 @@ public struct ServerPluginCatalogEntry: Codable, Equatable, Identifiable, Sendab
     capabilities: ServerPluginCapabilities = .init(),
     source: String? = nil,
     install: ServerPluginInstallSpec? = nil,
-    accounts: ServerPluginAccountSpec? = nil
+    accounts: ServerPluginAccountSpec? = nil,
+    ageRating: Int? = nil
   ) {
     self.id = id
     self.name = name
@@ -43,6 +45,7 @@ public struct ServerPluginCatalogEntry: Codable, Equatable, Identifiable, Sendab
     self.source = source
     self.install = install
     self.accounts = accounts
+    self.ageRating = ageRating
   }
 
   public var installFields: [ServerConfigField] { install?.fields ?? [] }

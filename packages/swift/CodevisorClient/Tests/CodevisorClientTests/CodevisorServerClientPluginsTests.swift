@@ -19,6 +19,7 @@ struct CodevisorServerClientPluginsTests {
     #expect(request.url?.query == nil)
     let grafana = try #require(entries.first)
     #expect(grafana.publisher == "Codevisor")
+    #expect(grafana.ageRating == 9)
     #expect(grafana.capabilities.tools == [ServerPluginToolDigest(name: "alerts", effects: "read", app: true)])
     #expect(grafana.capabilities.panes == [ServerPluginPane(type: "board", title: "Alerts", resourceUri: "ui://g/a")])
     #expect(grafana.capabilities.skills.isEmpty)
@@ -113,7 +114,7 @@ struct CodevisorServerClientPluginsTests {
 
   private static let catalogJSON = """
     {"entries":[{"id":"grafana","name":"Grafana","description":"Alerts","publisher":"Codevisor",
-    "version":"1.0.0","transport":"stdio","capabilities":{"tools":[{"name":"alerts","effects":"read","app":true}],
+    "version":"1.0.0","transport":"stdio","ageRating":9,"capabilities":{"tools":[{"name":"alerts","effects":"read","app":true}],
     "events":[],"skills":[],"panes":[{"type":"board","title":"Alerts","resourceUri":"ui://g/a"}],"ingress":[]}}]}
     """
 

@@ -20,12 +20,12 @@ public struct PluginModerationSubject: Equatable, Hashable, Sendable {
     self.consentKey = Self.digest("\(pluginId)|\(revision)")
   }
 
-  public init(catalogEntry entry: ServerPluginCatalogEntry, declaredAgeRating: Int? = nil) {
+  public init(catalogEntry entry: ServerPluginCatalogEntry) {
     self.init(
       pluginId: entry.id,
       name: entry.name,
       publisher: Self.publisher(ofCatalogId: entry.id),
-      declaredAgeRating: declaredAgeRating,
+      declaredAgeRating: entry.ageRating,
       revision: entry.version)
   }
 
