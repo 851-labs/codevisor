@@ -51,7 +51,6 @@ final class ScreenSharingHostSession {
       width: size.width, height: size.height, bitrate: ScreenSharingHostService.bitrateCeiling)
     physicalConfiguration = configuration
     metrics = ScreenSharingMetrics()
-    ScreenSharingFieldTrials.process.installProduct()
     peer = try await ScreenSharingSender(
       configuration: configuration, metrics: metrics, connectivity: connectivity.native())
   }

@@ -13,19 +13,20 @@ struct ScreenSharingSenderRecoveryTests {
     let clock = TestClock()
     let metrics = ScreenSharingMetrics()
     let codecFactory: ScreenSharingCodecFactory
+    let factory: RTCPeerConnectionFactory
     let frameSender: ScreenSharingFrameSender
     let channel = RefreshChannelDouble()
     let recovery: ScreenSharingSenderRecovery
     var monitor: ScreenSharingSourceIdleMonitor { codecFactory.sourceIdleMonitor }
 
     init() {
-      _ = ScreenSharingFieldTrials.process.ensureInstalled()
       let clock = clock
       let origin = clock.now
       let metrics = metrics
       codecFactory = ScreenSharingCodecFactory(metrics: metrics)
+      factory = ScreenSharingFieldTrials.process.makeFactory(codecFactory: codecFactory, metrics: metrics)
       frameSender = ScreenSharingFrameSender(
-        source: RTCPeerConnectionFactory().videoSource(forScreenCast: true), metrics: metrics,
+        source: factory.videoSource(forScreenCast: true), metrics: metrics,
         idleMonitor: codecFactory.sourceIdleMonitor)
       recovery = ScreenSharingSenderRecovery(
         metrics: metrics, codecFactory: codecFactory, frameSender: frameSender, videoRefresh: channel,

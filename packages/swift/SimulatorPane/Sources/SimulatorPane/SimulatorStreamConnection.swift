@@ -219,7 +219,6 @@ public final class SimulatorStreamConnection: SimulatorSharedConnection {
   ) async throws
     -> ScreenSharingReceiver
   {
-    ScreenSharingFieldTrials.process.installProduct()
     let ice = try connectivity.map { connectivity in
       try ScreenSharingICEConfiguration(
         servers: connectivity.servers.map {

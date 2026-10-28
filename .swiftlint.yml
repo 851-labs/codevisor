@@ -66,3 +66,13 @@ custom_rules:
     excluded:
       - Command(s|Items)\.swift$
       - Sheet\.swift$
+  webrtc_factory_installs_field_trials:
+    name: WebRTC factory installs field trials
+    message: >-
+      Build RTCPeerConnectionFactory through ScreenSharingFieldTrials.makeFactory, so the product
+      field trials are installed before the first peer.
+    regex: 'RTCPeerConnectionFactory(\.init)?\s*\('
+    excluded_match_kinds: [comment, doccomment, string]
+    severity: error
+    excluded:
+      - ScreenSharing/Sources/ScreenSharingWebRTC/FieldTrials/ScreenSharingFieldTrials\.swift$

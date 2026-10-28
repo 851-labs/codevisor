@@ -237,10 +237,9 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
   ) throws {
     self.metrics = metrics
     self.transport = transport
-    ScreenSharingPeer.bootstrapTrials(publishingInto: metrics)
     codecFactory = ScreenSharingCodecFactory(
       metrics: metrics, codec: options.codec, fallbackCodecs: options.fallbackCodecs)
-    factory = RTCPeerConnectionFactory(encoderFactory: codecFactory, decoderFactory: codecFactory)
+    factory = options.fieldTrials.makeFactory(codecFactory: codecFactory, metrics: metrics)
     delegate = ScreenSharingPeerDelegate()
     let rtcConfiguration = RTCConfiguration()
     rtcConfiguration.sdpSemantics = .unifiedPlan
