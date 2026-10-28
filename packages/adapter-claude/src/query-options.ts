@@ -47,7 +47,8 @@ const gatewayMcpOptions = (
       [toolGateway.name]: {
         type: "http",
         url: toolGateway.url,
-        headers: { Authorization: `Bearer ${toolGateway.bearerToken}` }
+        headers: { Authorization: `Bearer ${toolGateway.bearerToken}` },
+        alwaysLoad: true
       }
     }
   }

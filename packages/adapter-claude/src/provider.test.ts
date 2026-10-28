@@ -107,6 +107,25 @@ describe("ClaudeProvider", () => {
     ).rejects.toThrow("older than the required")
   })
 
+  it("loads Codevisor's gateway tools up front instead of behind tool search", async () => {
+    const gateway = { bearerToken: "secret", name: "codevisor", url: "http://127.0.0.1:1/mcp" }
+    const fake = new FakeQuery()
+    const started = run(
+      makeProvider(fake).createSession(definition, "/tmp", async () => {}, undefined, gateway)
+    )
+    fake.push(initMessage())
+    await started
+    expect(fake.options?.strictMcpConfig).toBe(true)
+    expect(fake.options?.mcpServers).toEqual({
+      codevisor: {
+        type: "http",
+        url: "http://127.0.0.1:1/mcp",
+        headers: { Authorization: "Bearer secret" },
+        alwaysLoad: true
+      }
+    })
+  })
+
   it("turns off Claude's own browser and desktop tools whenever Codevisor's are attached", async () => {
     vi.useFakeTimers()
     const gateway = { bearerToken: "secret", name: "codevisor", url: "http://127.0.0.1:1/mcp" }
