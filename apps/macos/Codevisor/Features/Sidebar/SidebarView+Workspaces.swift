@@ -139,7 +139,7 @@ extension SidebarView {
     moveSelection(awayFrom: workspace)
     environment.archiveWorkspace(workspace)
     pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
-    expandedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
+    collapsedGroupIDs.removeAll { $0 == SidebarRows.childrenGroupID(workspace.id) }
   }
 
 }

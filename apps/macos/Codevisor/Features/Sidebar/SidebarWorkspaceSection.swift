@@ -20,14 +20,14 @@ struct SidebarWorkspaceSection: View, Equatable {
   let isSelected: Bool
   let isPinned: Bool
   let isReordering: Bool
-  let disclosure: SidebarRow.Disclosure?
+  let isExpanded: Bool?
   let actions: Actions
   @Environment(AppEnvironment.self) private var environment
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
       && lhs.rowDetails == rhs.rowDetails && lhs.isSelected == rhs.isSelected && lhs.isPinned == rhs.isPinned
-      && lhs.isReordering == rhs.isReordering && lhs.disclosure == rhs.disclosure
+      && lhs.isReordering == rhs.isReordering && lhs.isExpanded == rhs.isExpanded
   }
 
   var body: some View {
@@ -43,7 +43,7 @@ struct SidebarWorkspaceSection: View, Equatable {
         machine: content.machine(for: workspace, isPinned: isPinned),
         isSelected: isSelected,
         isReordering: isReordering,
-        disclosure: disclosure,
+        isExpanded: isExpanded,
         onToggleChildren: { actions.toggleChildren(workspace.id) },
         onActivate: { actions.activate(listItem) },
         lifecycle: .active(

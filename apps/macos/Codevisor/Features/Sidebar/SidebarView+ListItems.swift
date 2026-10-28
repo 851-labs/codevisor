@@ -41,12 +41,7 @@ extension SidebarView {
   }
 
   func toggleChildren(of id: UUID) {
-    let key = id.uuidString
-    if expandedWorkspaceIDs.contains(key) {
-      expandedWorkspaceIDs.removeAll { $0 == key }
-    } else {
-      expandedWorkspaceIDs.append(key)
-    }
+    toggleGroup(SidebarRows.childrenGroupID(id))
   }
 
   func toggleGroup(_ id: String) {

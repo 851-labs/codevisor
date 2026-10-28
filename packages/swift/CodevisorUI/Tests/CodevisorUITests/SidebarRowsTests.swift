@@ -29,12 +29,12 @@ struct SidebarRowsTests {
   private func nested(
     _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping = .machine, pinned: [UUID] = [],
     archived: [WorkspaceSidebarItem] = [], archivedVisibleCount: Int = sidebarArchivedPageSize,
-    expanded: [WorkspaceSidebarItem] = [],
+    collapsed: [WorkspaceSidebarItem] = [],
     expansion: SidebarRows.Expansion = SidebarRows.Expansion(), selecting selected: UUID? = nil
   ) -> Layout {
     let tree = SidebarWorkspaceTree(items, pinnedIDs: pinned.map(\.uuidString))
     var expansion = expansion
-    expansion.expandedWorkspaceIDs = Set(expanded.map(\.id))
+    expansion.collapsedGroupIDs.formUnion(collapsed.map { SidebarRows.childrenGroupID($0.id) })
     return derive(
       SidebarRows.State(
         groups: groups(tree.roots, grouping, pinned: pinned), children: tree.children, archived: archived,
@@ -50,8 +50,8 @@ struct SidebarRowsTests {
       row(id)?.depth
     }
 
-    func disclosure(of id: UUID) -> SidebarRow.Disclosure? {
-      row(id)?.disclosure
+    func isExpanded(_ id: UUID) -> Bool? {
+      row(id)?.isExpanded
     }
 
     private func row(_ id: UUID) -> SidebarRow? {
@@ -207,7 +207,7 @@ struct SidebarRowsTests {
             collapsedGroupIDs: mask & 8 != 0 ? ["machine:studio", "machine:linux"] : [])
           let ids = nested(
             listed, grouping, pinned: [listed[0].id], archived: archived, archivedVisibleCount: 2,
-            expanded: mask & 16 != 0 ? [parent, child] : [], expansion: expansion, selecting: selected
+            collapsed: mask & 16 != 0 ? [parent, child] : [], expansion: expansion, selecting: selected
           ).ids
           #expect(Set(ids).count == ids.count)
           if let selected {
@@ -232,28 +232,30 @@ struct SidebarRowsTests {
       ])
   }
 
-  @Test("Subagent workspaces nest under their parent at any depth, collapsed by default with a child count")
-  func nestingIsRecursiveAndCollapsedByDefault() {
+  @Test("Subagent workspaces nest under their parent at any depth, expanded until the parent is collapsed")
+  func nestingIsRecursiveAndExpandedByDefault() {
     let parent = item(studio)
     let (child, sibling) = (item(studio, parent: parent), item(studio, parent: parent))
     let grandchild = item(studio, parent: child)
     let next = item(studio)
     let all = [parent, child, grandchild, sibling, next]
 
-    let collapsed = nested(all)
-    #expect(
-      collapsed.ids == [.section(.list), .group("machine:studio"), .workspace(parent.id), .workspace(next.id)])
-    #expect(collapsed.disclosure(of: parent.id) == SidebarRow.Disclosure(childCount: 2, isExpanded: false))
-    #expect(collapsed.disclosure(of: next.id) == nil)
-
-    let expanded = nested(all, expanded: [parent, child])
+    let expanded = nested(all)
     #expect(
       Array(expanded.ids.dropFirst(2))
         == [parent, child, grandchild, sibling, next].map { .workspace($0.id) })
     #expect([parent, child, grandchild, sibling, next].map { expanded.depth(of: $0.id) } == [1, 2, 3, 2, 1])
-    #expect(expanded.disclosure(of: child.id) == SidebarRow.Disclosure(childCount: 1, isExpanded: true))
+    #expect([parent, child, grandchild, sibling, next].map { expanded.isExpanded($0.id) } == [true, true, nil, nil, nil])
     #expect(expanded.rows.compactMap(\.parentID) == [parent.id, child.id, parent.id])
-    #expect(expanded.rows.map(\.nesting) == [0, 0, 0, 1, 2, 1, 0])
+
+    let collapsed = nested(all, collapsed: [parent])
+    #expect(
+      collapsed.ids == [.section(.list), .group("machine:studio"), .workspace(parent.id), .workspace(next.id)])
+    #expect(collapsed.isExpanded(parent.id) == false)
+
+    let childCollapsed = nested(all, collapsed: [child])
+    #expect(childCollapsed.ids.contains(.workspace(grandchild.id)) == false)
+    #expect(childCollapsed.isExpanded(child.id) == false)
   }
 
   @Test("A child nests under its parent even when it belongs to another group, and its own group drops out")
@@ -261,7 +263,7 @@ struct SidebarRowsTests {
     let parent = item(studio)
     let child = item(site, parent: parent)
 
-    let layout = nested([parent, child], .project, expanded: [parent])
+    let layout = nested([parent, child], .project)
 
     let headings = layout.rows.filter { if case .group = $0.kind { true } else { false } }
     #expect(headings.map(\.id) == [.group("project:\(ProjectGroup.groupID(for: studio))")])
@@ -291,13 +293,13 @@ struct SidebarRowsTests {
     let grandchild = item(studio, parent: child)
     let all = [parent, child, grandchild]
 
-    let parentCollapsed = nested(all, selecting: grandchild.id)
+    let parentCollapsed = nested(all, collapsed: [parent], selecting: grandchild.id)
     #expect(parentCollapsed.ids.dropFirst(2) == [.workspace(parent.id), .workspace(grandchild.id)])
     #expect(parentCollapsed.depth(of: grandchild.id) == 3)
+    #expect(parentCollapsed.isExpanded(parent.id) == false)
 
     let groupCollapsed = nested(
-      all, expanded: [parent, child], expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]),
-      selecting: grandchild.id)
+      all, expansion: SidebarRows.Expansion(collapsedGroupIDs: ["machine:studio"]), selecting: grandchild.id)
     #expect(groupCollapsed.ids == [.section(.list), .group("machine:studio"), .workspace(grandchild.id)])
     #expect(groupCollapsed.depth(of: grandchild.id) == 3)
   }
@@ -307,15 +309,15 @@ struct SidebarRowsTests {
     let parent = item(studio)
     let (pinnedChild, child) = (item(studio, parent: parent), item(studio, parent: parent))
 
-    let childPinned = nested([parent, pinnedChild, child], pinned: [pinnedChild.id], expanded: [parent])
+    let childPinned = nested([parent, pinnedChild, child], pinned: [pinnedChild.id])
     #expect(
       childPinned.ids == [
         .section(.pinned), .workspace(pinnedChild.id), .section(.list), .group("machine:studio"),
         .workspace(parent.id), .workspace(child.id),
       ])
-    #expect(childPinned.disclosure(of: parent.id)?.childCount == 1)
+    #expect(childPinned.isExpanded(parent.id) == true)
 
-    let parentPinned = nested([parent, pinnedChild, child], pinned: [parent.id], expanded: [parent])
+    let parentPinned = nested([parent, pinnedChild, child], pinned: [parent.id])
     #expect(
       parentPinned.ids == [.section(.pinned), .workspace(parent.id), .workspace(pinnedChild.id), .workspace(child.id)]
         + [.section(.list)])
@@ -329,8 +331,8 @@ struct SidebarRowsTests {
     let liveChild = item(studio, parent: archivedChild)
 
     let layout = nested(
-      [parent], archived: [archivedChild], expanded: [parent], expansion: SidebarRows.Expansion(archived: true))
-    #expect(layout.disclosure(of: parent.id) == nil)
+      [parent], archived: [archivedChild], expansion: SidebarRows.Expansion(archived: true))
+    #expect(layout.isExpanded(parent.id) == nil)
     #expect(layout.depth(of: archivedChild.id) == 0)
 
     let orphaned = nested([liveChild], archived: [archivedChild])
@@ -344,7 +346,7 @@ struct SidebarRowsTests {
     let grandchild = item(studio, parent: child)
     let (after, other) = (item(studio), item(linux))
 
-    let rows = nested([parent, child, grandchild, after, other], expanded: [parent, child]).rows
+    let rows = nested([parent, child, grandchild, after, other]).rows
 
     #expect(
       SidebarRows.activeWorkspaceSections(rows).map { $0.map(\.id) } == [
@@ -359,7 +361,7 @@ struct SidebarRowsTests {
     let nephew = item(studio, parent: first)
     let root = item(studio)
     let all = [parent, first, nephew, second, root]
-    let rows = nested(all, expanded: [parent, first]).rows
+    let rows = nested(all).rows
 
     #expect(SidebarRows.siblings(of: second.id, in: rows) == [first.id, second.id])
     #expect(SidebarRows.siblings(of: root.id, in: rows) == [parent.id, root.id])

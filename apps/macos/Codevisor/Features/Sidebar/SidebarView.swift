@@ -22,7 +22,6 @@ struct SidebarView: View {
   @State var revealRequest = SidebarRevealRequest()
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
-  @ClientPreference(SidebarPreferenceKey.expandedWorkspaces, default: []) var expandedWorkspaceIDs: [String]
   @ClientPreference(SidebarPreferenceKey.archivedExpanded, default: false) var archivedExpanded
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
   @ClientPreference(SidebarPreferenceKey.pinnedExpanded, default: true) var pinnedExpanded
@@ -140,7 +139,6 @@ struct SidebarView: View {
   }
 
   static let groupIndent: CGFloat = 8
-  static let nestIndent: CGFloat = 16
 
   private var vibrantContent: some View {
     let open = openSettings

@@ -31,7 +31,6 @@ public enum SidebarPreferenceKey {
   public static let pinnedExpanded = "sidebar.pinnedExpanded"
   public static let listExpanded = "sidebar.listExpanded"
   public static let archivedExpanded = "sidebar.archivedExpanded"
-  public static let expandedWorkspaces = "sidebar.expandedWorkspaces"
   public static let botsExpanded = "sidebar.botsExpanded"
   public static let machineOrder = "sidebar.machineOrder"
   public static let projectOrder = "sidebar.projectOrder"

@@ -14,8 +14,7 @@ extension SidebarView {
       archived: archivedSidebarItems, archivedVisibleCount: archivedVisibleCount,
       expansion: SidebarRows.Expansion(
         pinned: pinnedExpanded, list: listExpanded, archived: archivedExpanded,
-        collapsedGroupIDs: Set(collapsedGroupIDs),
-        expandedWorkspaceIDs: Set(expandedWorkspaceIDs.compactMap(UUID.init(uuidString:)))),
+        collapsedGroupIDs: Set(collapsedGroupIDs)),
       selectedWorkspaceID: selectedWorkspaceID)
   }
 }
