@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotConversationPreview: View {
@@ -13,7 +14,7 @@ struct BotConversationPreview: View {
           Text(verbatim: " ")
             .lineLimit(Self.lineCount, reservesSpace: true)
             .hidden()
-          BotTypingIndicator()
+          BotTypingBubble()
         }
       } else {
         Text(text)
