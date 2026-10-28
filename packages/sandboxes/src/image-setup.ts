@@ -24,6 +24,8 @@ const grantedServices = [
   "kTCCServiceSystemPolicyAllFiles"
 ]
 const bridgeWaitSeconds = 120
+const bannerWatchSeconds = 120
+const relaunchListWaitSeconds = 30
 const tccBusyTimeoutMs = 30_000
 const tccWriteAttempts = 5
 const scriptPrelude = ["set -eu", "step() { printf '==> %s\\n' \"$*\"; }"]
@@ -45,10 +47,12 @@ export const imageSetupScript = (setup: ImageSetup): string =>
     ...tccWriteLines(),
     ...serverInstallLines(setup),
     ...grantLines(),
+    ...systemEventsGrantLines(),
     ...appLauncherLines(setup.app),
     ...startAppLines(),
     ...localNetworkLines(),
     ...screenCaptureApprovalLines(),
+    ...clearDesktopLines(),
     "sync",
     "step 'The macOS image is ready'",
     ""
@@ -98,28 +102,58 @@ const grantLines = (): ReadonlyArray<string> => [
   "done"
 ]
 
+const systemEventsGrantLines = (): ReadonlyArray<string> => [
+  "step 'Allowing the Tart guest agent to script System Events'",
+  'agent=$(readlink -f "$(command -v tart-guest-agent)")',
+  "tcc_write env \"$HOME/Library/Application Support/com.apple.TCC/TCC.db\" \"insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags) values ('kTCCServiceAppleEvents', '$agent', 1, 2, 4, 1, 0, 'com.apple.systemevents', 0)\"",
+  "killall tccd 2>/dev/null || true"
+]
+
 const appLauncherLines = (app: ImageApp): ReadonlyArray<string> => [
   "step 'Opening Codevisor whenever the VM starts'",
   `launcher=${shellQuote(APP_LAUNCHER)}`,
   'launcher="$HOME/${launcher#\\~/}"',
   'mkdir -p "$(dirname "$launcher")"',
-  `printf '#!/bin/sh\\nexec /usr/bin/open %s -a %s\\n' "${developmentEnvironment(app)}" "'$app'" > "$launcher"`,
+  'cat > "$launcher" <<LAUNCHER',
+  "#!/bin/sh",
+  openAppCommand(app),
+  `/usr/bin/osascript -e ${shellQuote(dismissNotificationBanners)} >/dev/null 2>&1 </dev/null &`,
+  "LAUNCHER",
   'chmod +x "$launcher"'
 ]
 
-const developmentEnvironment = (app: ImageApp): string => {
-  if (app.development === undefined) return ""
+const dismissNotificationBanners = [
+  `repeat ${bannerWatchSeconds} times`,
+  "  try",
+  '    tell application "System Events" to tell process "NotificationCenter"',
+  '      repeat with banner in (every group of scroll area 1 of group 1 of group 1 of window "Notification Center")',
+  "        repeat with bannerAction in (actions of banner)",
+  '          if name of bannerAction contains "Close" then perform bannerAction',
+  "        end repeat",
+  "      end repeat",
+  "    end tell",
+  "  end try",
+  "  delay 1",
+  "end repeat"
+].join("\n")
+
+const openAppCommand = (app: ImageApp): string =>
+  ["/usr/bin/open", ...developmentEnvironment(app), "-a", '"$app"'].join(" ")
+
+const developmentEnvironment = (app: ImageApp): ReadonlyArray<string> => {
+  if (app.development === undefined) return []
 
   return [
     `--env CODEVISOR_DEV_INSTANCE_ID=${app.development.instanceId}`,
     `--env CODEVISOR_DEV_PORT=${app.development.serverPort}`,
     "--env CODEVISOR_DEV_DATA_DIR=$HOME/.codevisor/data"
-  ].join(" ")
+  ]
 }
 
 const startAppLines = (): ReadonlyArray<string> => [
   "step 'Starting Codevisor'",
   'defaults write "$bundle_id" CodevisorUsesStandaloneServer -bool true',
+  'defaults write "$bundle_id" CodevisorRunsAsSandbox -bool true',
   '"$launcher"',
   `for attempt in $(seq 1 ${bridgeWaitSeconds}); do`,
   '  [ -s "$HOME/.codevisor/data/computer-use-token" ] && ls /tmp/codevisor-cu-"$(id -u)"-*.sock >/dev/null 2>&1 && break',
@@ -130,9 +164,6 @@ const startAppLines = (): ReadonlyArray<string> => [
 
 const localNetworkLines = (): ReadonlyArray<string> => [
   "step 'Allowing Codevisor and the Tart guest agent on the local network'",
-  'agent=$(readlink -f "$(command -v tart-guest-agent)")',
-  "tcc_write env \"$HOME/Library/Application Support/com.apple.TCC/TCC.db\" \"insert or replace into access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier_type, indirect_object_identifier, flags) values ('kTCCServiceAppleEvents', '$agent', 1, 2, 4, 1, 0, 'com.apple.systemevents', 0)\"",
-  "killall tccd 2>/dev/null || true",
   'bridge_socket=$(ls /tmp/codevisor-cu-"$(id -u)"-*.sock | head -1)',
   `( for attempt in 1 2 3; do node -e ${shellQuote(primeClient)} "$bridge_socket" "$HOME/.codevisor/data/computer-use-token"; node -e ${shellQuote(multicastProbe)}; sleep 10; done ) &`,
   `osascript -e ${shellQuote(answerLocalNetworkPrompts)} "$(basename "$app" .app)"`,
@@ -194,3 +225,21 @@ const screenCaptureApprovalLines = (): ReadonlyArray<string> => [
   "PLIST",
   'plutil -lint "$approvals" >/dev/null'
 ]
+
+const clearDesktopLines = (): ReadonlyArray<string> => [
+  "step 'Closing the setup windows'",
+  `lsappinfo list | awk -F'"' -v app="$bundle_id" ${shellQuote(setupAppPids)} | xargs kill 2>/dev/null || true`,
+  'relaunch_list="$HOME/Library/Group Containers/group.com.apple.loginwindow.persistent-apps/persistantApps"',
+  `for attempt in $(seq 1 ${relaunchListWaitSeconds}); do`,
+  '  plutil -p "$relaunch_list" 2>/dev/null | grep \'"BundleID"\' | grep -qv \'"com.apple.finder"\' || break',
+  "  sleep 1",
+  "done",
+  "defaults write com.apple.dock show-recents -bool false",
+  "defaults delete com.apple.dock recent-apps 2>/dev/null || true",
+  "killall Dock"
+]
+
+const setupAppPids = [
+  "/bundleID=/ { bundle = $2 }",
+  '/type="Foreground"/ && bundle != "com.apple.finder" && bundle != app { sub(/.*pid = /, ""); print $0 + 0 }'
+].join(" ")

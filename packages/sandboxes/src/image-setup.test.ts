@@ -54,9 +54,7 @@ describe("macOS image setup script", () => {
   })
 
   it("opens the app whenever the VM starts and approves screen capture so macOS never asks", () => {
-    expect(release).toContain(
-      `printf '#!/bin/sh\\nexec /usr/bin/open %s -a %s\\n' "" "'$app'" > "$launcher"`
-    )
+    expect(release).toContain('cat > "$launcher" <<LAUNCHER\n#!/bin/sh\n/usr/bin/open -a "$app"\n')
     expect(release).toContain(
       'defaults write "$bundle_id" CodevisorUsesStandaloneServer -bool true'
     )
@@ -65,6 +63,20 @@ describe("macOS image setup script", () => {
       "<key>kScreenCapturePrivacyHintDate</key><date>2100-01-01T00:00:00Z</date>"
     )
     expect(release.trimEnd().endsWith("step 'The macOS image is ready'")).toBe(true)
+  })
+
+  it("runs the app as a menu bar sandbox and dismisses the notification banners macOS shows at login", () => {
+    expect(release).toContain('defaults write "$bundle_id" CodevisorRunsAsSandbox -bool true')
+    expect(release).toContain('if name of bannerAction contains "Close" then perform bannerAction')
+    expect(release).toMatch(/end repeat' >\/dev\/null 2>&1 <\/dev\/null &\nLAUNCHER\n/)
+    expect(release.indexOf("'kTCCServiceAppleEvents'")).toBeLessThan(
+      release.indexOf('\n"$launcher"\n')
+    )
+  })
+
+  it("hides the Dock's recent apps so the menu bar app never shows there", () => {
+    expect(release).toContain("defaults write com.apple.dock show-recents -bool false")
+    expect(release).toContain("killall Dock")
   })
 
   it("answers the local network prompts once so every VM made from the image inherits them", () => {
@@ -82,7 +94,7 @@ describe("macOS image setup script", () => {
 
   it("launches a development build against the VM's own server and data", () => {
     expect(development).toContain(
-      '"--env CODEVISOR_DEV_INSTANCE_ID=dev-sandbox --env CODEVISOR_DEV_PORT=49361 --env CODEVISOR_DEV_DATA_DIR=$HOME/.codevisor/data"'
+      '/usr/bin/open --env CODEVISOR_DEV_INSTANCE_ID=dev-sandbox --env CODEVISOR_DEV_PORT=49361 --env CODEVISOR_DEV_DATA_DIR=$HOME/.codevisor/data -a "$app"'
     )
   })
 })
@@ -158,6 +170,48 @@ describe("TCC database writes in the macOS image setup script", () => {
     ])
   })
 })
+
+describe("closing the setup windows in the macOS image setup script", () => {
+  const dirs: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
+  it("quits every app setup left open except Finder and Codevisor", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codevisor-image-desktop-"))
+    dirs.push(dir)
+    await stub(dir, "lsappinfo", `cat <<'APPS'\n${lsappinfoList}\nAPPS`)
+    await stub(dir, "kill", 'echo "kill $*"')
+
+    const result = await shell(`bundle_id=com.851labs.Codevisor\n${closeSetupApps}`, dir)
+
+    expect(result).toEqual({ exitCode: 0, stdout: "kill 391 512\n", stderr: "" })
+  })
+})
+
+const lsappinfoList = [
+  ' 1) "loginwindow" ASN:0x0-0x2002: ',
+  '    bundleID="com.apple.loginwindow"',
+  '    pid = 195 type="UIElement" flavor=3 Version="3085.6.3" fileType="APPL"',
+  ' 2) "Terminal" ASN:0x0-0x9009: ',
+  '    bundleID="com.apple.Terminal"',
+  '    pid = 391 type="Foreground" flavor=3 Version="470.2" fileType="APPL"',
+  ' 3) "Finder" ASN:0x0-0x10010: ',
+  '    bundleID="com.apple.finder"',
+  '    pid = 401 type="Foreground" flavor=3 Version="1828.6.1" fileType="FNDR"',
+  ' 4) "Codevisor" ASN:0x0-0x35035: ',
+  '    bundleID="com.851labs.Codevisor"',
+  '    pid = 910 type="Foreground" flavor=3 Version="1" fileType="APPL"',
+  ' 5) "System Settings" ASN:0x0-0x36036: ',
+  '    bundleID="com.apple.systempreferences"',
+  '    pid = 512 type="Foreground" flavor=3 Version="15.0" fileType="APPL"',
+  ' 6) "universalaccessd" ASN:0x0-0x6006: ',
+  "    bundleID=[ NULL ] ",
+  '    pid = 377 !signalled type="BackgroundOnly" flavor=3 Version=[ NULL ]'
+].join("\n")
+
+const closeSetupApps = /^lsappinfo list .*$/m.exec(release)?.[0] ?? ""
 
 const tccWriteFunction = /^tcc_write\(\) \{\n[\s\S]*?\n\}$/m.exec(release)?.[0] ?? ""
 
