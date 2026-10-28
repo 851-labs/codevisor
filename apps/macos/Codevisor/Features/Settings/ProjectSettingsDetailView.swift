@@ -197,7 +197,7 @@ private struct ProjectBaseBranchMenu: View {
       }
       .labelsHidden()
       Autocomplete.Footer(id: "actions") {
-        Autocomplete.Action("Reload Branches", systemImage: "arrow.clockwise", action: reload)
+        Autocomplete.Action("Reload Branches", action: reload)
           .disabled(branches.isLoading)
       }
     } label: {
