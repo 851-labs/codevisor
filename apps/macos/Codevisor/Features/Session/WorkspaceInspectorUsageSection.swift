@@ -67,7 +67,7 @@ private struct WorkspaceInspectorUsageWindowRow: View {
             .animation(Motion.meter(reduceMotion: reduceMotion), value: used)
         }
         WorkspaceInspectorMeter(
-          segments: [.init(color: tint, value: used)],
+          segments: [.init(id: "Used", color: tint, value: used)],
           total: 100,
           markers: pace.map { [.init(color: $0.reservePercent >= 0 ? .green : .red, value: $0.expectedPercent)] } ?? []
         )

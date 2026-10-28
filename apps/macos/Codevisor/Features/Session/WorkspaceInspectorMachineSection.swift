@@ -131,7 +131,9 @@ private struct WorkspaceInspectorMachineUsageRow: View {
       }
       .animation(Motion.meter(reduceMotion: reduceMotion), value: text)
       WorkspaceInspectorMeter(
-        segments: [.init(color: WorkspaceInspectorMachineSection.tint(forPercent: percent), value: usage.usedBytes)],
+        segments: [
+          .init(id: "Used", color: WorkspaceInspectorMachineSection.tint(forPercent: percent), value: usage.usedBytes)
+        ],
         total: usage.totalBytes
       )
     }
