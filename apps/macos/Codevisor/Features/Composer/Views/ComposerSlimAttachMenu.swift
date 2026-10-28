@@ -5,20 +5,21 @@ struct ComposerSlimAttachMenu: View {
   let onFiles: () -> Void
 
   var body: some View {
-    Menu {
-      ComposerAttachMenuItems(onPhotos: onPhotos, onFiles: onFiles)
-    } label: {
+    PullDownMenuButton(
+      help: "Attach",
+      items: [
+        .init(title: "Photos", systemImage: "photo.on.rectangle", action: onPhotos),
+        .init(title: "Files", systemImage: "folder", action: onFiles),
+      ]
+    )
+    .overlay {
       Image(systemName: "plus")
         .font(.system(size: 15, weight: .semibold))
-        .frame(width: ComposerSlimCircleButton.diameter, height: ComposerSlimCircleButton.diameter)
-        .contentShape(.circle)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
+    .frame(width: ComposerSlimCircleButton.diameter, height: ComposerSlimCircleButton.diameter)
     .glassEffect(.regular.interactive(), in: .circle)
-    .help("Attach")
     .accessibilityLabel("Attach")
   }
 }
