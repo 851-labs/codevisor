@@ -21,6 +21,7 @@ export interface BootstrapRequest {
 
 const bootstrapTimeoutMs = 15 * 60 * 1000
 const outputTailLines = 30
+const swapFloorKb = 2 * 1024 * 1024
 
 export const bootstrapMachine = async (
   provider: SandboxProvider,
@@ -53,6 +54,7 @@ const installLines = (request: BootstrapRequest): ReadonlyArray<string> => {
   if (request.preinstalled === true) return []
 
   return [
+    ...swapLines,
     "export CODEVISOR_NO_SETUP=1 CODEVISOR_NO_SERVICE=1 CODEVISOR_INSTALL_SERVER=1",
     "unset SUDO_USER",
     'installer="$(mktemp)"',
@@ -60,6 +62,12 @@ const installLines = (request: BootstrapRequest): ReadonlyArray<string> => {
     `${environmentAssignments(request.installEnvironment)}sh "$installer"`
   ]
 }
+
+const swapLines: ReadonlyArray<string> = [
+  `if [ "$(id -u)" = 0 ] && [ -r /proc/meminfo ] && [ "$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)" -lt ${swapFloorKb} ] && [ -z "$(swapon --noheadings 2>/dev/null)" ]; then`,
+  "  { fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile && echo 'Added 2 GB of swap'; } || rm -f /swapfile",
+  "fi"
+]
 
 export const startServerScript = (serverEnvironment?: Readonly<Record<string, string>>): string =>
   ["set -eu", ...serverStartLines(serverEnvironment), ""].join("\n")

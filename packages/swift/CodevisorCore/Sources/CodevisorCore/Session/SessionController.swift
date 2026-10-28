@@ -136,6 +136,7 @@ final public class SessionController {
   public var serverSession: ChatSession?
   public var wantsNewWorktree = false {
     didSet {
+      if wantsNewWorktree, sandboxTarget != nil { wantsNewWorktree = false }
       if !wantsNewWorktree {
         sessionCwdOverride = nil
         worktreeName = nil

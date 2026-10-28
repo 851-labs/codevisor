@@ -42,6 +42,53 @@ struct SandboxFailedSendTests {
     #expect(controller.composerText.isEmpty)
   }
 
+  @Test("A sandbox that can't be reached after it starts fails its connect step and holds the message for Retry")
+  func connectFailureHoldsTheMessage() async throws {
+    let client = FailingSandboxServerClient(state: "ready")
+    let controller = makeController(client: client)
+
+    await controller.send()
+
+    let connect = controller.setupPhases.first { $0.id == SandboxSetupSteps.phaseId(.connect) }
+    #expect(connect?.failureMessage == "The Tart VM didn't report where its project is")
+    #expect(controller.sandboxStartFailure == "The Tart VM didn't report where its project is")
+    #expect(controller.transcriptProjectionInput.pendingUserMessage?.text == "Which machine are you running on?")
+    #expect(controller.composerText.isEmpty)
+  }
+
+  @Test("A worktree that fails on the started sandbox keeps the chat and its steps, and Retry tries it again")
+  func worktreeFailureOnTheSandboxKeepsTheChat() async throws {
+    let client = FailingSandboxServerClient()
+    let controller = makeController(client: client)
+    controller.sandboxTarget = nil
+    controller.wantsNewWorktree = true
+    var connected = SandboxSetupSteps(target: .tartVM, projectName: "hello-world").phase(.connect)
+    connected.succeed()
+    controller.beginSetupPhase(connected)
+
+    await controller.send()
+    let worktree = controller.setupPhases.first { $0.id == SessionSetupPhase.worktreePhaseId }
+    let failure = controller.sandboxStartFailure
+    let showsNewChat = controller.shouldShowNewChatComposer
+    controller.retrySandboxStart()
+    await client.worktrees.wait(for: 2)
+
+    #expect(failure == "fatal: could not create work tree dir")
+    #expect(worktree?.failureMessage == failure)
+    #expect(!showsNewChat)
+    #expect(controller.setupPhases.contains { $0.id == connected.id })
+    #expect(controller.transcriptProjectionInput.pendingUserMessage?.text == "Which machine are you running on?")
+  }
+
+  @Test("A chat headed for a sandbox never sets up a worktree, even when a project pick asks for one afterwards")
+  func sandboxChatsRefuseWorktrees() {
+    let controller = makeController(client: FailingSandboxServerClient())
+
+    controller.wantsNewWorktree = true
+
+    #expect(!controller.wantsNewWorktree)
+  }
+
   private func makeController(client: FailingSandboxServerClient) -> SessionController {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/hello-world"), serverId: "local")
     let controller = SessionController(
@@ -62,8 +109,14 @@ struct SandboxFailedSendTests {
 
 private final class FailingSandboxServerClient: CodevisorServerClienting, @unchecked Sendable {
   let creates = TestSignal()
+  let worktrees = TestSignal()
+  private let state: String
   private let lock = NSLock()
   private var created: [String] = []
+
+  init(state: String = "failed") {
+    self.state = state
+  }
 
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
     lock.withLock { created.append(request.id) }
@@ -74,10 +127,15 @@ private final class FailingSandboxServerClient: CodevisorServerClienting, @unche
   func sandboxes() async throws -> [ServerSandbox] {
     lock.withLock { created }.map { id in
       ServerSandbox(
-        id: id, vendor: "tart", name: "Tart", state: "failed",
+        id: id, vendor: "tart", name: "Tart", state: state,
         steps: [ServerSandboxSetupStep(stage: "create", startedAt: "2026-10-27T00:00:00.000Z")],
-        error: "Couldn't connect to the dev cloud")
+        error: state == "failed" ? "Couldn't connect to the dev cloud" : nil)
     }
+  }
+
+  func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree {
+    worktrees.signal()
+    throw CodevisorServerClientError.httpStatus(422, #"{"error":"fatal: could not create work tree dir"}"#)
   }
 
   func destroySandbox(id: String) async throws {}

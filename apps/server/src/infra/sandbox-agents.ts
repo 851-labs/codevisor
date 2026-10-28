@@ -1,3 +1,5 @@
+import type { SyncEntryRecord } from "@codevisor/sync"
+
 import { run } from "../server-context.js"
 import type { SandboxRemote } from "./sandbox-remote.js"
 import { HARNESSES_NAMESPACE, type OneWaySyncSource } from "./sandbox-sync.js"
@@ -9,6 +11,7 @@ export interface AgentWait {
 }
 
 export const FIRST_AGENT_WAIT = { attempts: 150, intervalMs: 2000 }
+export const NEXT_AGENT_ATTEMPTS = 45
 
 export const pushRemainingAgents = async (
   source: OneWaySyncSource,
@@ -18,9 +21,25 @@ export const pushRemainingAgents = async (
 ): Promise<void> => {
   await waitForAgent(remote, firstHarness, wait)
   const entries = await run(source.db.getSyncEntries(HARNESSES_NAMESPACE))
+  const pushed = entries.filter((entry) => entry.key === firstHarness)
+  for (const entry of entries.filter((candidate) => candidate.key !== firstHarness)) {
+    pushed.push(entry)
+    await installOnRemote(remote, pushed)
+    if (wantsInstall(entry))
+      await waitForAgent(remote, entry.key, { ...wait, attempts: NEXT_AGENT_ATTEMPTS })
+  }
+}
+
+const installOnRemote = async (
+  remote: SandboxRemote,
+  entries: ReadonlyArray<SyncEntryRecord>
+): Promise<void> => {
   await remote.request("PUT", `/v1/sync/${HARNESSES_NAMESPACE}`, { entries })
   await remote.request("POST", `/v1/sync/${HARNESSES_NAMESPACE}/reconcile`)
 }
+
+const wantsInstall = (entry: SyncEntryRecord): boolean =>
+  isRecord(entry.value) && entry.value["installed"] === true && entry.value["enabled"] !== false
 
 const waitForAgent = async (
   remote: SandboxRemote,

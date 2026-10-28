@@ -32,6 +32,13 @@ const remoteAnswering = (
 
 const ready = JSON.stringify([{ id: "codex", readiness: { state: "ready" } }])
 const installing = JSON.stringify([{ id: "codex", readiness: { state: "unavailable" } }])
+const bothReady = JSON.stringify([
+  { id: "codex", readiness: { state: "ready" } },
+  { id: "gemini", readiness: { state: "ready" } }
+])
+
+const keysIn = (body: string | undefined): ReadonlyArray<string> =>
+  [...(body ?? "").matchAll(/"key":"([^"]+)"/g)].map((match) => match[1] ?? "")
 
 const seeded = async () => {
   const { services } = await makeServices("server-owner")
@@ -45,12 +52,19 @@ const seeded = async () => {
 }
 
 describe("installing the remaining agents on a sandbox", () => {
-  it("waits for the chat's agent to be ready, then pushes every agent and reconciles", async () => {
+  it("installs them one at a time, each once the agent before it is ready", async () => {
     const services = await seeded()
+    await run(
+      services.db.mergeSyncEntries("harnesses", [
+        { key: "droid", value: { installed: false }, timestamp: stamp(3) }
+      ])
+    )
     const { requests, remote } = remoteAnswering([
       { exitCode: 7, stdout: "" },
       { exitCode: 0, stdout: installing },
-      { exitCode: 0, stdout: ready }
+      { exitCode: 0, stdout: ready },
+      { exitCode: 0, stdout: ready },
+      { exitCode: 0, stdout: bothReady }
     ])
     const sleeps: number[] = []
 
@@ -63,9 +77,13 @@ describe("installing the remaining agents on a sandbox", () => {
       }
     })
 
-    expect(sleeps).toEqual([50, 50])
-    expect(requests.at(-2)?.stdin).toContain('"gemini"')
-    expect(requests.at(-1)?.script).toContain("/v1/sync/harnesses/reconcile")
+    const pushes = requests.filter((request) => request.script.includes("/v1/sync/harnesses'"))
+    expect(sleeps).toEqual([50, 50, 50])
+    expect(pushes.map((push) => keysIn(push.stdin))).toEqual([
+      ["codex", "droid"],
+      ["codex", "droid", "gemini"]
+    ])
+    expect(requests.at(-1)?.script).toContain("/v1/harnesses'")
   })
 
   it("pushes every agent when the chat's agent has no setting of its own", async () => {

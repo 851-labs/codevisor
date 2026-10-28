@@ -20,7 +20,11 @@ public enum SessionSetupGroup: Equatable, Identifiable, Sendable {
   }
 
   public static func failedSandboxStart(in phases: [SessionSetupPhase]) -> Bool {
-    SandboxStartSummary(steps: phases.filter(isSandboxStep))?.state == .failed
+    startedSandbox(in: phases) && phases.contains { $0.failureMessage != nil }
+  }
+
+  static func startedSandbox(in phases: [SessionSetupPhase]) -> Bool {
+    phases.contains(where: isSandboxStep)
   }
 
   private static func isSandboxStep(_ phase: SessionSetupPhase) -> Bool {

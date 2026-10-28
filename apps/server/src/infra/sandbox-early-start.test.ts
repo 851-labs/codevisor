@@ -29,8 +29,9 @@ describe("starting a machine before the first send", () => {
     await harness.machines.create({ ...request, harnessId: "codex" })
     await harness.machines.settled()
 
+    const lastPush = harness.curls.findLastIndex(isHarnessPush)
     expect(harnessPushes(harness.curls)).toEqual([["codex"], ["claude-code", "codex"]])
-    expect(harness.curls.at(-1)?.script).toContain("/v1/sync/harnesses/reconcile")
+    expect(harness.curls[lastPush + 1]?.script).toContain("/v1/sync/harnesses/reconcile")
   })
 
   it("leaves the workspace for the chat to claim once the machine is ready", async () => {
@@ -64,6 +65,12 @@ describe("starting a machine before the first send", () => {
         return { exitCode: fails ? 7 : 0, stdout: "{}", stderr: fails ? "connection reset" : "" }
       }
     })
+    await run(
+      harness.services.db.mergeSyncEntries("harnesses", [
+        { key: "codex", value: { installed: true }, timestamp: stamp(1) },
+        { key: "claude-code", value: { installed: true }, timestamp: stamp(2) }
+      ])
+    )
 
     await harness.machines.create({ ...request, harnessId: "codex" })
     await harness.machines.settled()

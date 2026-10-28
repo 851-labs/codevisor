@@ -89,6 +89,18 @@ describe("bootstrapMachine", () => {
     expect(created.preinstalled).toBe(true)
   })
 
+  it("gives a small Linux machine swap before installing, so agents don't run it out of memory", () => {
+    const lines = bootstrapScript({ inviteCode: invite, machineName: "box" }).split("\n")
+
+    const swap = lines.findIndex((line) => line.includes("swapon /swapfile"))
+    const install = lines.findIndex((line) => line.endsWith('sh "$installer"'))
+    expect(lines[swap - 1]).toContain(
+      `-lt 2097152 ] && [ -z "$(swapon --noheadings 2>/dev/null)" ]`
+    )
+    expect(lines[swap]).toContain("|| rm -f /swapfile")
+    expect(swap).toBeLessThan(install)
+  })
+
   it("opens the app after starting the server when the machine has one", () => {
     expect(startServerScript()).toContain(
       'if [ -x "$home/.codevisor/open-app" ]; then "$home/.codevisor/open-app"; fi'

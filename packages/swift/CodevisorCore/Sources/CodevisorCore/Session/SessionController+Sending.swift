@@ -101,7 +101,9 @@ extension SessionController {
         showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
     else { return nil }
 
-    guard await createRequestedWorktree(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
+    guard
+      await createRequestedWorktree(
+        showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
     else { return nil }
 
     guard let model = await sessionModel(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
@@ -138,12 +140,20 @@ extension SessionController {
     onFirstSend = nil
   }
 
-  private func createRequestedWorktree(showsSetupPhases: Bool, restoreComposer: () -> Void) async -> Bool {
+  private func createRequestedWorktree(
+    showsSetupPhases: Bool, restoreComposer: () -> Void, holdForRetry: (() -> Void)?
+  ) async -> Bool {
     guard wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch else { return true }
     guard let failure = await createWorktree(showsSetupPhase: showsSetupPhases) else { return true }
 
-    restoreComposer()
-    handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
+    guard SessionSetupGroup.startedSandbox(in: setupPhases) else {
+      restoreComposer()
+      handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
+      return false
+    }
+    mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.fail(message: failure) }
+    if let holdForRetry { holdForRetry() } else { restoreComposer() }
+    handleSetupFailure(failure, returnsToNewChat: false)
     return false
   }
 

@@ -79,8 +79,10 @@ extension SessionController {
       try await adoptSandbox(try await claimWorkspace(ready, client: client), target: target, tracker: tracker)
       return nil
     } catch {
+      let message = serverErrorMessage(error)
+      tracker.failCurrent(message)
       try? await client.destroySandbox(id: prewarm.machineId)
-      return serverErrorMessage(error)
+      return message
     }
   }
 
@@ -145,10 +147,10 @@ extension SessionController {
     target: SandboxTarget,
     tracker: SandboxSetupTracker
   ) async throws {
+    tracker.begin(.connect)
     guard let deviceId = machine.deviceId, let remoteProjectId = machine.remoteProjectId, let machines else {
       throw SandboxSetupError(message: "The \(target.machineNoun) didn't report where its project is")
     }
-    tracker.begin(.connect)
     let (remote, client) = try await reachProject(
       remoteProjectId, on: CodevisorMachine.cloudIdPrefix + deviceId, machines: machines, target: target)
     tracker.succeed(.connect)
