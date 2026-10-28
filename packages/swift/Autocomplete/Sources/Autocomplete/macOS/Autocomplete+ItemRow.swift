@@ -154,7 +154,6 @@
             }
           }
         }
-        .help(item.definition.help ?? item.definition.title)
       }
 
       private var accessoryWidth: CGFloat {
