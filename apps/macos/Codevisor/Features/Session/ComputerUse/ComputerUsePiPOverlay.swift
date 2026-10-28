@@ -248,7 +248,6 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
         .frame(width: 28, height: 28)
     }
     .buttonStyle(.plain)
-    .foregroundStyle(.white)
     .glassEffect(.regular.interactive(), in: .circle)
     .help("Close live view")
     .accessibilityLabel("Close live view of \(model.title)")
