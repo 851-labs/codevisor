@@ -113,7 +113,11 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   })
   const browserProvider = initializeAutomationProvider(
     "Browser Use",
-    config.makeBrowserProvider ?? (() => makeBrowserUseProvider(config.dataDir, config.baseUrl)),
+    config.makeBrowserProvider ??
+      (() =>
+        makeBrowserUseProvider(config.dataDir, config.baseUrl, {
+          exchangeCookies: (mutations) => run(config.db.exchangeBrowserCookies(mutations))
+        })),
     unavailableBrowserProvider
   )
   const computerProvider = initializeAutomationProvider(

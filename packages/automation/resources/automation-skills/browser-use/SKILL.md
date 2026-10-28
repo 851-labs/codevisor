@@ -13,7 +13,7 @@ Explicit browser intent wins. If the user asks to open, show, navigate, visually
 
 There is no default browser. Pick one for the chat with `browser.use_backend({ backend })` before your first browser call; it stays selected until you pick another, so switch whenever a new task needs a different one. Browser calls fail until you pick.
 
-- `managed`: headless Chromium on the server. It has no window, so the user cannot see it. Use it for background work they don't need to watch or touch: research, reading docs, checking or testing a page, screenshots.
+- `managed`: headless Chromium on the server. It has no window, so the user cannot see it. Use it for background work they don't need to watch or touch: research, reading docs, checking or testing a page, screenshots. It shares sign-ins with the built-in pane on the same server: a site the user signed in to in the pane is signed in here too, and the other way around.
 - `builtin`: this chat's browser pane in the Codevisor Mac app. Calls go to the Codevisor window that shows this chat (the focused one first). If no window shows it, they go to the most recently used Mac app that can open the chat; its tabs run in the background there and appear in the chat's pane when the user opens it. Use it when the user should watch, take over, or log in on their Mac. It never falls back to another browser: when no Mac app can open this chat, every call fails and says why, and nothing runs.
 - `extension`: the user's real Chrome, already signed in to their accounts. Use it when the task needs their existing sessions or a tab they already have open.
 

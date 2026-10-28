@@ -82,7 +82,9 @@ const builtinProvider = (directory: string) => {
   const hosts = hostRegistry()
   mocks.probe.mockResolvedValue([])
   return {
-    provider: makeBrowserUseProvider(directory, "http://127.0.0.1:43210", hosts.registry),
+    provider: makeBrowserUseProvider(directory, "http://127.0.0.1:43210", {
+      hosts: hosts.registry
+    }),
     hosts
   }
 }

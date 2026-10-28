@@ -11,6 +11,7 @@ import {
   systemChromePath,
   userChromiumIsRunning
 } from "./browser-chromium.js"
+import type { ExchangeBrowserCookies } from "./browser-cookie-sync.js"
 import {
   browserExtensionArchivePath,
   browserExtensionInstallation,
@@ -77,10 +78,15 @@ const chromiumBackend = (browsersDir: string): string => {
   return "missing"
 }
 
+export interface BrowserUseProviderOptions {
+  readonly hosts?: BrowserHostRegistry
+  readonly exchangeCookies?: ExchangeBrowserCookies
+}
+
 export const makeBrowserUseProvider = (
   dataDir: string,
   serverBaseUrl: string,
-  hosts: BrowserHostRegistry = makeBrowserHostRegistry()
+  { hosts = makeBrowserHostRegistry(), exchangeCookies }: BrowserUseProviderOptions = {}
 ): BrowserUseProvider => {
   const repls = makeBrowserRepls()
   const contexts = new Map<string, AutomationProviderContext>()
@@ -161,7 +167,8 @@ export const makeBrowserUseProvider = (
       const endpoint = extensionEndpoint()
       if (endpoint === undefined) return extensionRelay.connect()
       return CdpConnection.connect(endpoint)
-    }
+    },
+    exchangeCookies
   })
 
   const runtime = (

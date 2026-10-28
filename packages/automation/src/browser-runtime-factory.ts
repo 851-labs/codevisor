@@ -11,8 +11,10 @@ import {
   launchManagedBrowser,
   systemChromePath
 } from "./browser-chromium.js"
+import { synchronizeManagedCookies, type ExchangeBrowserCookies } from "./browser-cookie-sync.js"
 import type { BrowserHostConnection } from "./browser-host-registry.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"
+import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 import type { BrowserBackend } from "./browser-use-provider-types.js"
 import { builtinUnreachableMessage } from "./browser-use-status.js"
 
@@ -44,6 +46,7 @@ export const makeBrowserRuntimeFactory = (options: {
   ensureSetup: () => Promise<void>
   connectNative: (sessionId: string) => Promise<BrowserHostConnection>
   connectExtension: () => Promise<CdpConnection>
+  exchangeCookies?: ExchangeBrowserCookies | undefined
 }) => {
   const { profilesDir, browsersDir, downloadsDir, ensureSetup } = options
 
@@ -79,6 +82,7 @@ export const makeBrowserRuntimeFactory = (options: {
     const opened = await open(context, backend)
     await discoverTargets(opened)
     const active = runtimeFor(opened)
+    if (backend === "managed") await shareCookies(active, options.exchangeCookies)
     observeBrowserRuntime(active, downloadsDir, backend === "extension")
     return active
   }
@@ -99,6 +103,21 @@ const discoverTargets = async (opened: OpenedBrowser): Promise<void> => {
     throw new BuiltinBrowserUnreachable(
       `The Codevisor app on ${opened.nativeHost.name} didn't start its built-in browser. Check that Mac for a blocking dialog or browser error.`
     )
+  }
+}
+
+const shareCookies = async (
+  active: BrowserRuntime,
+  exchange: ExchangeBrowserCookies | undefined
+): Promise<void> => {
+  if (exchange === undefined) return
+  try {
+    const sync = await synchronizeManagedCookies(active.connection, exchange)
+    active.synchronizeCookies = sync.synchronize
+    active.eventDisposers.push(sync.stop)
+  } catch (cause) {
+    await closeBrowserRuntime(active)
+    throw cause
   }
 }
 
