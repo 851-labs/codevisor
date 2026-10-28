@@ -11,10 +11,11 @@ public struct PluginAppMachineConnection: PluginAppConnecting {
 
   public init(environment: AppEnvironment, machineId: String, chatSessionId: UUID? = nil, chatMachineId: String? = nil)
   {
+    let owner = environment.machines.machineId(forSyncKey: machineId) ?? machineId
     self.environment = environment
-    self.machineId = machineId
+    self.machineId = owner
     self.chatSessionId = chatSessionId
-    self.chatMachineId = chatMachineId ?? machineId
+    self.chatMachineId = chatMachineId ?? owner
   }
 
   public var canOpenFullscreen: Bool { false }

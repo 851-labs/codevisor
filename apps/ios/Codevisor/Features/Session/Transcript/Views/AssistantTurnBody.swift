@@ -79,7 +79,7 @@ struct AssistantTurnBody: View {
           items: turn.workedItemsBeforePlan,
           kind: .planning
         )
-        PluginAppInlineList(items: turn.workedItemsBeforePlan)
+        PluginAppInlineList(apps: TranscriptPluginApps.apps(of: turn))
       }
       if presentation.showsPlanDocument, let planDocument = turn.planDocument {
         PlanDocumentView(markdown: planDocument)
@@ -89,7 +89,6 @@ struct AssistantTurnBody: View {
           items: turn.workedItemsAfterPlan,
           kind: .implementation
         )
-        PluginAppInlineList(items: turn.workedItemsAfterPlan)
       }
       if presentation.showsActivity, activity.map({ !$0.followsResponse }) ?? turn.reservesActivitySlot {
         AssistantTurnActivitySlot(activity, turn: turn)

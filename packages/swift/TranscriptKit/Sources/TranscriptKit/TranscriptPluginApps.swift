@@ -9,8 +9,16 @@ public enum TranscriptPluginApps {
   }
 
   public static func apps(in items: [WorkedItem]) -> [CodevisorExecutionApp] {
+    unique(items.flatMap(calls(of:)).flatMap(apps(of:)))
+  }
+
+  public static func apps(of turn: AssistantTurn) -> [CodevisorExecutionApp] {
+    unique(turn.pluginApps + apps(in: turn.workedItemsBeforePlan + turn.workedItemsAfterPlan))
+  }
+
+  private static func unique(_ apps: [CodevisorExecutionApp]) -> [CodevisorExecutionApp] {
     var seen: Set<String> = []
-    return items.flatMap(calls(of:)).flatMap(apps(of:)).filter { seen.insert($0.viewId).inserted }
+    return apps.filter { seen.insert($0.viewId).inserted }
   }
 
   private static func calls(of item: WorkedItem) -> [ToolCall] {

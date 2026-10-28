@@ -8,6 +8,7 @@ import {
   sessionPlanFromRaw
 } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
+import { itemPluginApps } from "./item-plugin-apps.js"
 import { itemQuestionSummaries } from "./item-question-summaries.js"
 import { transcriptFromChatRow } from "./row-mappers.js"
 import { integer, nullable, rowReader, text } from "./row-reader.js"
@@ -97,9 +98,11 @@ const transcriptPageItem = (
   }
   const summary = chatAssistantSummary(sqlite, sessionId, row.id)
   const { setupRequests, interactions } = itemQuestionSummaries(sqlite, row.id, pendingQuestionId)
+  const apps = itemPluginApps(sqlite, row.id)
   return {
     ...(setupRequests.length === 0 ? {} : { setupRequests }),
     ...(interactions.length === 0 ? {} : { interactions }),
+    ...(apps.length === 0 ? {} : { apps }),
     ...item,
     text: summary.text,
     textResource: summary.textResource,

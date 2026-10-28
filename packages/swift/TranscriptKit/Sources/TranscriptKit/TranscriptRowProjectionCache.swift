@@ -98,6 +98,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case activeMarkdown(UUID, sourceID: String, ordinal: Int, fragment: String?)
     case assistantAttachment(UUID, sourceID: String, ordinal: Int)
     case activeAttachment(UUID, sourceID: String, ordinal: Int)
+    case assistantPluginApps(UUID)
+    case activePluginApps(UUID)
     case active(UUID)
     case botMessage(String)
     case botTimestamp(String)
@@ -142,6 +144,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .assistantAttachment(id, sourceID, ordinal),
         let .activeAttachment(id, sourceID, ordinal):
         "message:\(id.uuidString):attachment:\(sourceID):\(ordinal)"
+      case let .assistantPluginApps(id), let .activePluginApps(id):
+        "message:\(id.uuidString):apps"
       case let .active(id): "message:\(id.uuidString)"
       case let .botMessage(id): "bot:\(id)"
       case let .botTimestamp(id): "bot:\(id):timestamp"
@@ -169,11 +173,12 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       switch self {
       case .message, .assistantPlanning, .plan, .planHeader, .planMarkdown,
         .assistantResult, .assistantWorkedHeader, .assistantWorkedItem,
-        .assistantChrome, .assistantMarkdown, .assistantAttachment, .botMessage, .botTimestamp:
+        .assistantChrome, .assistantMarkdown, .assistantAttachment, .assistantPluginApps, .botMessage,
+        .botTimestamp:
         true
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment, .setupRequest, .interaction, .setup, .startingAgent,
+        .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .startingAgent,
         .backgroundTask, .updateGate, .connecting, .serverWait, .error,
         .statusError, .bottomSpacer:
         false
@@ -184,7 +189,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       switch self {
       case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment:
+        .activeMarkdown, .activeAttachment, .activePluginApps:
         true
       default: false
       }
@@ -202,7 +207,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         id
       case let .assistantChrome(id, _), let .activeChrome(id, _),
         let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
-        let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
+        let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _),
+        let .assistantPluginApps(id), let .activePluginApps(id):
         id
       case .botMessage, .botTimestamp, .delivery, .botTyping, .setupRequest, .interaction, .setup, .startingAgent,
         .backgroundTask,
@@ -229,6 +235,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     )
     case markdownChunk(TranscriptMarkdownChunk)
     case assistantAttachment(TranscriptAssistantAttachment)
+    case pluginApps([CodevisorExecutionApp])
     case active(ConversationItem)
     case botMessage(TranscriptBotMessage, TranscriptBotMessageContent, isGroupTail: Bool)
     case botTimestamp(Date)
@@ -296,7 +303,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
           slice == .epilogue && !message.turn.isGenerating ? message.id : nil
         case .assistantWorkedHeader, .activeWorkedHeader, .assistantWorkedItem,
-          .activeWorkedItem, .planHeader, .markdownChunk, .assistantAttachment:
+          .activeWorkedItem, .planHeader, .markdownChunk, .assistantAttachment, .pluginApps:
           nil
         case let .active(item):
           if case let .assistant(message) = item, !message.turn.isGenerating {

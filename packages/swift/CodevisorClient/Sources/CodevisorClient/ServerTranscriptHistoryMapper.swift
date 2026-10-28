@@ -64,6 +64,7 @@ nonisolated enum ServerTranscriptHistoryMapper {
     addTextState(of: item, textId: textId, to: &turn)
     turn.setupRequests = (item.setupRequests ?? []).compactMap(\.transcriptRequest)
     turn.interactions = TranscriptInteractions((item.interactions ?? []).compactMap(\.transcriptInteraction))
+    turn.pluginApps = item.apps ?? []
     addPlanState(of: item, to: &turn)
     return turn
   }

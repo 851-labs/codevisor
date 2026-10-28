@@ -1,7 +1,7 @@
 import ACPKit
 import Foundation
 
-public struct CodevisorExecutionApp: Equatable, Hashable, Identifiable, Sendable {
+public struct CodevisorExecutionApp: Decodable, Equatable, Hashable, Identifiable, Sendable {
   public var viewId: String
   public var machineId: String?
   public var serverId: String

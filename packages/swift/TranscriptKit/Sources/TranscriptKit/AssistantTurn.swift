@@ -51,6 +51,7 @@ public struct AssistantTurn: Sendable, Equatable {
   public var textStates: [String: TranscriptTextState] = [:]
   public var setupRequests: [TranscriptSetupRequest] = []
   public var interactions = TranscriptInteractions()
+  public var pluginApps: [CodevisorExecutionApp] = []
   public var deferredDetailItemId: String?
   public var hasDeferredWorkedDetails: Bool
   public var detailRevision: Int

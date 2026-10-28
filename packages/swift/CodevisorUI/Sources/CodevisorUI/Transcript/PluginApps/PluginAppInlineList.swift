@@ -5,8 +5,8 @@ public struct PluginAppInlineList: View {
   @Environment(\.pluginAppHost) private var host
   let apps: [CodevisorExecutionApp]
 
-  public init(items: [WorkedItem]) {
-    apps = TranscriptPluginApps.apps(in: items)
+  public init(apps: [CodevisorExecutionApp]) {
+    self.apps = apps
   }
 
   public var body: some View {

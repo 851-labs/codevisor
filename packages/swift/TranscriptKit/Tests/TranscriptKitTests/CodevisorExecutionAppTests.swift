@@ -64,4 +64,23 @@ struct CodevisorExecutionAppTests {
 
     #expect(TranscriptPluginApps.apps(in: items).map(\.viewId) == ["v1"])
   }
+
+  @Test("A settled turn shows its apps from the item summary even before its tool calls load")
+  func settledSummaryApps() throws {
+    let summary = try JSONDecoder().decode(CodevisorExecutionApp.self, from: Data(Self.zillow.utf8))
+    var turn = AssistantTurn(entries: [.text(id: "answer", markdown: "Here are homes.")], isGenerating: false)
+    turn.pluginApps = [summary]
+    let message = AssistantMessage(turn: turn)
+    var rows: [TranscriptPresentationRow] = []
+
+    TranscriptAssistantRowProjection.appendSettled(.assistant(message), waitingOnBackgroundTask: nil, to: &rows)
+
+    let index = try #require(rows.firstIndex { $0.id == .assistantPluginApps(message.id) })
+    #expect(rows[index].content == .pluginApps([summary]))
+    #expect(
+      rows.suffix(from: index + 1).contains { row in
+        if case .markdownChunk = row.content { return true }
+        return false
+      })
+  }
 }

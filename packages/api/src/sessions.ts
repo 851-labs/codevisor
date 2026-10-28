@@ -233,6 +233,16 @@ export const PromptAttribution = Schema.Struct({
 })
 export type PromptAttribution = typeof PromptAttribution.Type
 
+export const TranscriptPluginApp = Schema.Struct({
+  viewId: Schema.String,
+  machineId: Schema.String,
+  serverId: Schema.String,
+  serverName: Schema.String,
+  toolName: Schema.String,
+  resourceUri: Schema.String
+})
+export type TranscriptPluginApp = typeof TranscriptPluginApp.Type
+
 export const TranscriptItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -265,6 +275,7 @@ export const TranscriptItem = Schema.Struct({
   textPosition: Schema.optional(Schema.Number),
   setupRequests: Schema.optional(Schema.Array(TranscriptSetupRequest)),
   interactions: Schema.optional(Schema.Array(TranscriptInteraction)),
+  apps: Schema.optional(Schema.Array(TranscriptPluginApp)),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type

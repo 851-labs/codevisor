@@ -131,6 +131,8 @@ public struct TranscriptRowContentView: View {
       TranscriptInlineFile(file: attachment.file, label: attachment.label) {
         leaves.attachmentThumbnail(attachment.file)
       }
+    case let .pluginApps(apps):
+      PluginAppInlineList(apps: apps)
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
     case let .botMessage(message, content, _):
