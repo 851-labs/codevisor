@@ -8,7 +8,7 @@ struct SandboxProviderFields: View {
 
   var body: some View {
     Section {
-      ForEach(vendor.providerFields) { field in
+      ForEach(draft.shownFields) { field in
         SandboxFieldRow(
           field: field, draft: $draft.fields, secretSaved: draft.secretsSet.contains(field.key),
           hosts: model.hosts(for: field.capability))

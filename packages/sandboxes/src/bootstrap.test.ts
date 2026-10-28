@@ -24,6 +24,7 @@ describe("bootstrapMachine", () => {
     expect(run?.request.script).toContain(
       "export CODEVISOR_NO_SETUP=1 CODEVISOR_NO_SERVICE=1 CODEVISOR_INSTALL_SERVER=1"
     )
+    expect(run?.request.script).toContain("unset SUDO_USER\n")
     expect(run?.request.script).toContain(
       `curl -fsSL '${DEFAULT_INSTALL_URL}' -o "$installer"\nsh "$installer"`
     )

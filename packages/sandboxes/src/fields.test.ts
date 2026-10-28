@@ -7,6 +7,7 @@ import {
   fieldDefaults,
   keepingSecrets,
   machineField,
+  offeredChoiceField,
   numberField,
   numberValue,
   optionalString,
@@ -67,10 +68,16 @@ describe("sandbox fields", () => {
       [{ ...valid, name: 7 }, "Service account must be text"],
       [{ ...valid, region: "mars" }, "Region must be one of United States, Europe"]
     ]
-    const unlisted = { key: "size", label: "Size", type: "choice" as const, required: false }
 
     for (const [raw, message] of failures) expect(() => readFields(fields, raw)).toThrow(message)
-    expect(() => readFields([unlisted], { size: "xl" })).toThrow("Size must be one of ")
+  })
+
+  it("takes any value for a choice whose options the provider offers at setup", () => {
+    const team = offeredChoiceField("teamId", "Team")
+
+    expect(team).toEqual({ key: "teamId", label: "Team", type: "choice", required: false })
+    expect(readFields([team], { teamId: " team_labs " })).toEqual({ teamId: "team_labs" })
+    expect(readFields([team], {})).toEqual({})
   })
 
   it("lowers a field's maximum to the host's, never raises it, and leaves other fields alone", () => {

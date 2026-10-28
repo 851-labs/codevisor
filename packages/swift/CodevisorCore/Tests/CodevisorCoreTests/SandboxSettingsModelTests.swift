@@ -67,7 +67,11 @@ struct SandboxSettingsModelTests {
     var setUp = SandboxProviderDraft(vendor: SettingsFakeServerClient.e2b)
     setUp.fields.text["apiKey"] = "key"
 
-    let provider = try #require(await model.save(setUp, using: client))
+    let added = await model.save(setUp, using: client)
+    guard case let .saved(provider) = added else {
+      Issue.record("Expected the provider to save, got \(added)")
+      return
+    }
     let draft = SandboxProfileDraft(provider: provider, vendor: SettingsFakeServerClient.e2b)
     let saved = await model.save(draft, using: client)
 
@@ -91,9 +95,36 @@ struct SandboxSettingsModelTests {
       SandboxProfileDraft(profile: profile, vendor: SettingsFakeServerClient.e2b), using: client)
 
     #expect(editProvider.canSave)
-    #expect(providerSaved?.id == "labs")
+    #expect(providerSaved == .saved(ServerSandboxProvider(id: "labs", vendor: "e2b", secretsSet: ["apiKey"])))
     #expect(profileSaved)
     #expect(client.calls == ["update provider labs", "update profile Work on labs"])
+  }
+
+  @Test("A provider needs only its token until the server offers a choice, which then starts on its default")
+  func offeredChoice() async {
+    let client = SettingsFakeServerClient(providers: [])
+    let model = SandboxSettingsModel()
+    var draft = SandboxProviderDraft(vendor: SettingsFakeServerClient.vercel)
+    draft.fields.text["token"] = "tok"
+    let fieldsBefore = draft.shownFields.map(\.key)
+    let couldSave = draft.canSave
+
+    let first = await model.save(draft, using: client)
+    let message = model.errorMessage
+    if case let .choose(field) = first { draft.offer(field) }
+    let fieldsAfter = draft.shownFields.map(\.key)
+    let chosen = draft.request?.values["teamId"]
+    let second = await model.save(draft, using: client)
+
+    #expect(fieldsBefore == ["token"])
+    #expect(couldSave)
+    #expect(first == .choose(SettingsFakeServerClient.teamChoice))
+    #expect(message == "Choose the team for your sandboxes.")
+    #expect(fieldsAfter == ["token", "teamId"])
+    #expect(chosen == .string("team_labs"))
+    #expect(second == .saved(ServerSandboxProvider(id: "new", vendor: "vercel", secretsSet: ["apiKey"])))
+    #expect(model.errorMessage == nil)
+    #expect(client.calls == ["create provider vercel", "create provider vercel"])
   }
 
   @Test("Settings pages push, go back, and after adding something jump to the next page or back to Sandboxes")
@@ -183,6 +214,22 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
     providerFields: [.init(key: "apiKey", label: "API key", type: .secret, required: true)],
     profileFields: [.init(key: "template", label: "Template", type: .string)])
 
+  static let vercel = ServerSandboxVendor(
+    id: "vercel", displayName: "Vercel Sandbox", sandboxNoun: "Vercel sandbox", platform: "linux", tested: true,
+    providerFields: [
+      .init(key: "token", label: "Access token", type: .secret, required: true),
+      .init(key: "teamId", label: "Team", type: .choice),
+    ],
+    profileFields: [])
+  static let teamChoice = ServerSandboxField(
+    key: "teamId", label: "Team", type: .choice, required: true, defaultValue: .string("team_labs"),
+    choices: [.init(value: "team_me", label: "Mine"), .init(value: "team_labs", label: "851 Labs")])
+  static let teamChoiceReply = """
+    {"error":"Choose the team for your sandboxes.","code":"sandboxChoiceNeeded","details":{"field":\
+    {"key":"teamId","label":"Team","type":"choice","required":true,"default":"team_labs",\
+    "choices":[{"value":"team_me","label":"Mine"},{"value":"team_labs","label":"851 Labs"}]}}}
+    """
+
   static let existingProviders = [
     ServerSandboxProvider(id: "labs", vendor: "e2b", label: "851 Labs", secretsSet: ["apiKey"]),
     ServerSandboxProvider(id: "personal", vendor: "e2b", secretsSet: ["apiKey"]),
@@ -216,6 +263,9 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
 
   func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider {
     calls.append("create provider \(request.vendor)")
+    if request.vendor == "vercel", request.values["teamId"] == nil {
+      throw CodevisorServerClientError.httpStatus(409, Self.teamChoiceReply)
+    }
     return ServerSandboxProvider(id: "new", vendor: request.vendor, label: request.label, secretsSet: ["apiKey"])
   }
 

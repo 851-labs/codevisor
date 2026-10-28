@@ -38,9 +38,13 @@ struct SandboxEditProviderPage: View {
   private func save() {
     status = "Saving…"
     Task {
-      let saved = await model.save(draft, using: client)
+      let outcome = await model.save(draft, using: client)
       status = nil
-      if saved != nil { navigate(.pop) }
+      switch outcome {
+      case .saved: navigate(.pop)
+      case let .choose(field): draft.offer(field)
+      case .failed: break
+      }
     }
   }
 }

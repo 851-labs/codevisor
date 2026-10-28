@@ -19,6 +19,7 @@ import {
   tartCliHost,
   tartOrchardAdapter,
   tartOrchardApiClient,
+  vercelAccountApi,
   vercelAdapter,
   vercelSdkClient,
   type SandboxAdapter,
@@ -159,7 +160,7 @@ const sandboxAdapters = (tart: TartSettings): ReadonlyArray<SandboxAdapter> => [
   tartOrchardAdapter(tartOrchardApiClient),
   e2bAdapter(e2bSdkClient),
   modalAdapter(modalSdkClient),
-  vercelAdapter(vercelSdkClient),
+  vercelAdapter(vercelSdkClient, vercelAccountApi),
   daytonaAdapter(daytonaSdkClient)
 ]
 

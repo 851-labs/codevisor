@@ -32,6 +32,16 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
 
   public var id: String { key }
 
+  public var awaitsChoices: Bool { type == .choice && choices == nil }
+
+  public static func offered(in error: any Error) -> ServerSandboxField? {
+    guard case let CodevisorServerClientError.httpStatus(_, body) = error,
+      let reply = try? JSONDecoder().decode(ChoiceNeeded.self, from: Data(body.utf8)),
+      reply.code == "sandboxChoiceNeeded"
+    else { return nil }
+    return reply.details.field
+  }
+
   public init(
     key: String,
     label: String,
@@ -68,4 +78,13 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
     case key, label, type, required, choices, placeholder, help, min, max, steps, fallbackMax, unit, capability
     case defaultValue = "default"
   }
+}
+
+private struct ChoiceNeeded: Decodable {
+  struct Details: Decodable {
+    var field: ServerSandboxField
+  }
+
+  var code: String
+  var details: Details
 }

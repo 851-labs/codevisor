@@ -2,6 +2,12 @@ import CodevisorClient
 import Foundation
 import Observation
 
+public enum SandboxProviderSave: Equatable, Sendable {
+  case saved(ServerSandboxProvider)
+  case choose(ServerSandboxField)
+  case failed
+}
+
 @MainActor
 @Observable
 public final class SandboxSettingsModel {
@@ -57,12 +63,11 @@ public final class SandboxSettingsModel {
   public func save(
     _ draft: SandboxProviderDraft, using client: any CodevisorServerClienting
   ) async
-    -> ServerSandboxProvider?
+    -> SandboxProviderSave
   {
-    guard let request = draft.request else { return nil }
+    guard let request = draft.request else { return .failed }
 
-    var saved: ServerSandboxProvider?
-    _ = await attempt {
+    do {
       let provider =
         if let id = draft.providerId {
           try await client.updateSandboxProvider(id: id, request)
@@ -70,9 +75,12 @@ public final class SandboxSettingsModel {
           try await client.createSandboxProvider(request)
         }
       providers = Self.replacing(provider, in: providers)
-      saved = provider
+      errorMessage = nil
+      return .saved(provider)
+    } catch {
+      errorMessage = ErrorReporter.userFacingMessage(for: error)
+      return ServerSandboxField.offered(in: error).map(SandboxProviderSave.choose) ?? .failed
     }
-    return saved
   }
 
   public func save(_ draft: SandboxProfileDraft, using client: any CodevisorServerClienting) async -> Bool {

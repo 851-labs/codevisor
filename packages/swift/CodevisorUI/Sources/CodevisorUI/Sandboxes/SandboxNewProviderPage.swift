@@ -35,9 +35,13 @@ struct SandboxNewProviderPage: View {
   private func add() {
     status = "Adding…"
     Task {
-      let saved = await model.save(draft, using: client)
+      let outcome = await model.save(draft, using: client)
       status = nil
-      if let saved { navigate(.reset(to: .newProfile(providerId: saved.id))) }
+      switch outcome {
+      case let .saved(provider): navigate(.reset(to: .newProfile(providerId: provider.id)))
+      case let .choose(field): draft.offer(field)
+      case .failed: break
+      }
     }
   }
 }

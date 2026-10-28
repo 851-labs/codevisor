@@ -11,6 +11,10 @@ public struct SandboxProviderDraft: Equatable, Identifiable, Sendable {
   public var id: String { providerId ?? "new" }
   public var isNew: Bool { providerId == nil }
 
+  public var shownFields: [ServerSandboxField] {
+    (vendor?.providerFields ?? []).filter { !$0.awaitsChoices }
+  }
+
   public var canSave: Bool {
     guard let vendor else { return false }
     return fields.isFilled(vendor.providerFields, secretsSet: secretsSet)
@@ -27,6 +31,15 @@ public struct SandboxProviderDraft: Equatable, Identifiable, Sendable {
   public mutating func choose(_ vendor: ServerSandboxVendor) {
     guard vendor.id != self.vendor?.id else { return }
     self = SandboxProviderDraft(vendor: vendor)
+  }
+
+  public mutating func offer(_ field: ServerSandboxField) {
+    guard var vendor else { return }
+    vendor.providerFields = vendor.providerFields.map { $0.key == field.key ? field : $0 }
+    self.vendor = vendor
+    if fields.text[field.key, default: ""].isEmpty {
+      fields.text[field.key] = field.defaultValue?.text ?? ""
+    }
   }
 
   public var request: ServerSandboxProviderRequest? {

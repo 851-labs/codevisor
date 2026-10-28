@@ -66,6 +66,12 @@ export const choiceField = (
   details: FieldDetails = {}
 ): SandboxField => field(key, label, "choice", { ...details, choices })
 
+export const offeredChoiceField = (
+  key: string,
+  label: string,
+  details: FieldDetails = {}
+): SandboxField => field(key, label, "choice", details)
+
 export const machineField = (
   key: string,
   label: string,
@@ -185,8 +191,9 @@ const urlIn = (entry: SandboxField, text: string): string => {
 }
 
 const choiceIn = (entry: SandboxField, text: string): string => {
-  if (entry.choices?.some((choice) => choice.value === text) === true) return text
-  throw new SandboxFieldError(`${entry.label} must be one of ${choiceLabels(entry)}`)
+  const { choices } = entry
+  if (choices === undefined || choices.some((choice) => choice.value === text)) return text
+  throw new SandboxFieldError(`${entry.label} must be one of ${choiceLabels(choices)}`)
 }
 
 const outOfRange = (entry: SandboxField, number: number): boolean =>
@@ -208,8 +215,8 @@ const rangeMessage = (entry: SandboxField): string => {
   return `${entry.label} must be at most ${String(entry.max)}`
 }
 
-const choiceLabels = (entry: SandboxField): string =>
-  (entry.choices ?? []).map((choice) => choice.label).join(", ")
+const choiceLabels = (choices: ReadonlyArray<SandboxFieldChoice>): string =>
+  choices.map((choice) => choice.label).join(", ")
 
 const hasValue = (value: unknown): boolean =>
   value !== undefined && value !== null && !(typeof value === "string" && value.trim() === "")

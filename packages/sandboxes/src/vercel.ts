@@ -2,25 +2,27 @@ import {
   choiceField,
   numberField,
   numberValue,
+  offeredChoiceField,
   optionalString,
   secretField,
   stringValue,
   textField,
-  type SandboxFieldChoice,
-  type SandboxFieldValues
+  type SandboxField,
+  type SandboxFieldChoice
 } from "./fields.js"
-import type {
-  ExecResult,
-  ProviderMachineState,
-  ProviderMachineStatus,
-  SandboxAccountIdentity,
-  SandboxAdapter,
-  SandboxProvider,
-  SandboxProviderDefinition
+import {
+  SandboxChoiceNeeded,
+  type ExecResult,
+  type ProviderMachineState,
+  type ProviderMachineStatus,
+  type SandboxAdapter,
+  type SandboxProvider,
+  type SandboxProviderDefinition
 } from "./provider.js"
 import { listedMachine, ownerFilter, tagsToRecord } from "./tags.js"
 
 export const VERCEL_DEFAULT_IMAGE = "vercel/sandbox/universal"
+export const VERCEL_PROJECT_NAME = "codevisor-sandboxes"
 
 const defaultVcpus = "2"
 const memoryGBPerVcpu = 2
@@ -29,6 +31,9 @@ const vcpuChoices: ReadonlyArray<SandboxFieldChoice> = [1, 2, 4, 8, 16, 32].map(
   label: `${vcpus} ${vcpus === 1 ? "vCPU" : "vCPUs"} · ${vcpus * memoryGBPerVcpu} GB`
 }))
 const defaultSessionMinutes = 45
+const teamField = offeredChoiceField("teamId", "Team", {
+  help: "This token can reach more than one team. Sandboxes go in this one."
+})
 
 export const VERCEL_DEFINITION: SandboxProviderDefinition = {
   id: "vercel",
@@ -39,18 +44,9 @@ export const VERCEL_DEFINITION: SandboxProviderDefinition = {
   accountFields: [
     secretField("token", "Access token", {
       required: true,
-      help: "Create one in Vercel under Account Settings › Tokens, scoped to the team below."
+      help: `Create one in Vercel under Account Settings › Tokens. Sandboxes go in a ${VERCEL_PROJECT_NAME} project on its team.`
     }),
-    textField("teamId", "Team ID", {
-      required: true,
-      placeholder: "team_…",
-      help: "Shown in your team's Settings › General."
-    }),
-    textField("projectId", "Project ID", {
-      required: true,
-      placeholder: "prj_…",
-      help: "Sandboxes belong to this project. Shown in its Settings › General."
-    })
+    teamField
   ],
   profileFields: [
     textField("image", "Image", {
@@ -95,7 +91,6 @@ export interface VercelClient {
   readonly resume: (name: string) => Promise<void>
   readonly remove: (name: string) => Promise<void>
   readonly list: (tags: Record<string, string>) => Promise<ReadonlyArray<VercelSandboxInfo>>
-  readonly email: () => Promise<string | undefined>
 }
 
 export interface VercelCredentials {
@@ -104,28 +99,48 @@ export interface VercelCredentials {
   readonly projectId: string
 }
 
+export interface VercelUser {
+  readonly email?: string
+  readonly defaultTeamId?: string
+}
+
+export interface VercelTeam {
+  readonly id: string
+  readonly name: string
+}
+
+export interface VercelAccount {
+  readonly user: () => Promise<VercelUser>
+  readonly teams: () => Promise<ReadonlyArray<VercelTeam>>
+  readonly project: (teamId: string, name: string) => Promise<string>
+}
+
 const defaultExecTimeoutMs = 10 * 60 * 1000
 const millisecondsPerMinute = 60 * 1000
 
 export const vercelAdapter = (
-  connectClient: (credentials: VercelCredentials) => VercelClient
-): SandboxAdapter => {
-  const clientFor = (account: SandboxFieldValues) =>
-    connectClient({
-      token: stringValue(account, "token"),
-      teamId: stringValue(account, "teamId"),
-      projectId: stringValue(account, "projectId")
-    })
-  return {
-    definition: VERCEL_DEFINITION,
-    connect: (account) => makeVercelProvider(clientFor(account)),
-    verify: async (account) => {
-      const client = clientFor(account)
-      await client.list(ownerFilter("codevisor-verify"))
-      return identityFor(await client.email())
-    }
+  connectClient: (credentials: VercelCredentials) => VercelClient,
+  connectAccount: (token: string) => VercelAccount
+): SandboxAdapter => ({
+  definition: VERCEL_DEFINITION,
+  connect: (account) =>
+    makeVercelProvider(
+      connectClient({
+        token: stringValue(account, "token"),
+        teamId: stringValue(account, "teamId"),
+        projectId: stringValue(account, "projectId")
+      })
+    ),
+  verify: async (account) => {
+    const token = stringValue(account, "token")
+    const vercel = connectAccount(token)
+    const [user, teams] = await Promise.all([vercel.user(), vercel.teams()])
+    const teamId = teamFor(teams, user.defaultTeamId, optionalString(account, "teamId"))
+    const projectId = await vercel.project(teamId, VERCEL_PROJECT_NAME)
+    await connectClient({ token, teamId, projectId }).list(ownerFilter("codevisor-verify"))
+    return { ...identityFor(user.email), resolved: { teamId, projectId } }
   }
-}
+})
 
 export const makeVercelProvider = (client: VercelClient): SandboxProvider => ({
   definition: VERCEL_DEFINITION,
@@ -174,5 +189,34 @@ const statusFor = (sandbox: VercelSandboxInfo | undefined): ProviderMachineStatu
 const expiry = (sandbox: VercelSandboxInfo): { readonly expiresAt?: string } =>
   sandbox.expiresAt === undefined ? {} : { expiresAt: sandbox.expiresAt.toISOString() }
 
-const identityFor = (email: string | undefined): SandboxAccountIdentity =>
+const teamFor = (
+  teams: ReadonlyArray<VercelTeam>,
+  defaultTeamId: string | undefined,
+  chosen: string | undefined
+): string => {
+  if (chosen !== undefined && teams.some((team) => team.id === chosen)) return chosen
+  const [only, ...others] = teams
+  if (only === undefined) throw new Error("This token can't reach any Vercel team")
+  if (others.length > 0) {
+    throw new SandboxChoiceNeeded(
+      teamChoice(teams, defaultTeamId),
+      "This token can reach more than one Vercel team. Choose the team for your sandboxes."
+    )
+  }
+  return only.id
+}
+
+const teamChoice = (
+  teams: ReadonlyArray<VercelTeam>,
+  defaultTeamId: string | undefined
+): SandboxField => ({
+  ...teamField,
+  required: true,
+  choices: teams.map((team) => ({ value: team.id, label: team.name })),
+  ...(defaultTeamId !== undefined && teams.some((team) => team.id === defaultTeamId)
+    ? { default: defaultTeamId }
+    : {})
+})
+
+const identityFor = (email: string | undefined): { readonly identity?: string } =>
   email === undefined ? {} : { identity: email }

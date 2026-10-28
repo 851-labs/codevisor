@@ -49,12 +49,7 @@ public func isTaskCancellation(_ error: any Error) -> Bool {
 
 public func serverErrorMessage(_ error: any Error) -> String {
   if case let CodevisorServerClientError.httpStatus(_, body) = error {
-    if let data = body.data(using: .utf8),
-      let payload = try? JSONDecoder().decode([String: String].self, from: data),
-      let message = payload["error"]
-    {
-      return message
-    }
+    if let message = serverErrorMessage(body) { return message }
     return body.isEmpty ? "The Codevisor server rejected the request." : body
   }
   if let urlError = error as? URLError {

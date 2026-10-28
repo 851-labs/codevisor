@@ -89,6 +89,7 @@ export interface SandboxProviderDefinition {
 
 export interface SandboxAccountIdentity {
   readonly identity?: string
+  readonly resolved?: SandboxFieldValues
 }
 
 export interface SandboxProvider {
@@ -128,6 +129,17 @@ export class SandboxProviderError extends Error {
 
   constructor(
     readonly provider: SandboxProviderId,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+export class SandboxChoiceNeeded extends Error {
+  override readonly name = "SandboxChoiceNeeded"
+
+  constructor(
+    readonly field: SandboxField,
     message: string
   ) {
     super(message)

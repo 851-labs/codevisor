@@ -4,6 +4,7 @@ import {
   machineField,
   makeFakeSandboxProvider,
   numberField,
+  SandboxChoiceNeeded,
   type SandboxAdapter,
   type SandboxProviderDefinition
 } from "@codevisor/sandboxes"
@@ -110,6 +111,34 @@ describe("sandbox accounts", () => {
       new HttpFailure(400, "Fake didn't accept these credentials: bad key"),
       new HttpFailure(400, "Fake didn't accept these credentials: expired")
     ])
+  })
+
+  it("keeps the values the provider finds from the credentials, and asks for a choice it can't make", async () => {
+    const team = { key: "teamId", label: "Team", type: "choice" as const, required: true }
+    const deps = await catalogWith([
+      adapterFor(fakeDefinition(), {
+        verify: () => Promise.resolve({ resolved: { teamId: "team_1", projectId: "prj_1" } })
+      }),
+      adapterFor(fakeDefinition("vercel"), {
+        verify: () => Promise.reject(new SandboxChoiceNeeded(team, "Choose a team"))
+      })
+    ])
+
+    const { account } = await createAccount(deps, { provider: "e2b", values: { apiKey: "k" } })
+    const asked = await failure(
+      createAccount(deps, { provider: "vercel", values: { apiKey: "k" } })
+    )
+
+    expect(account.values).toEqual({ teamId: "team_1", projectId: "prj_1" })
+    expect((await deps.settings.account("id-1"))?.values).toEqual({
+      apiKey: "k",
+      teamId: "team_1",
+      projectId: "prj_1"
+    })
+    expect(asked).toEqual(
+      new HttpFailure(409, "Choose a team", "sandboxChoiceNeeded", { field: team })
+    )
+    expect(asked).toMatchObject({ code: "sandboxChoiceNeeded", details: { field: team } })
   })
 
   it("refuses accounts for providers that don't use them, unknown accounts and provider moves", async () => {

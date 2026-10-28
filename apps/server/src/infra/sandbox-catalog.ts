@@ -10,6 +10,7 @@ import {
   keepingSecrets,
   readAccountValues,
   readProfileOptions,
+  SandboxChoiceNeeded,
   secretsSet,
   withoutSecrets,
   type SandboxAdapter,
@@ -92,7 +93,6 @@ export const createAccount = async (
     provider: request.provider,
     ...labelOf(request),
     ...(await verified(adapter, values)),
-    values,
     createdAt: new Date(deps.now()).toISOString()
   }
   return saveAccount(deps, adapter.definition, account)
@@ -115,7 +115,6 @@ export const updateAccount = async (
     provider: previous.provider,
     ...labelOf(request),
     ...(await verified(adapter, values)),
-    values,
     createdAt: previous.createdAt
   }
   return saveAccount(deps, adapter.definition, account)
@@ -315,11 +314,14 @@ const saveAccount = async (
 const verified = async (
   adapter: SandboxAdapter,
   values: SandboxFieldValues
-): Promise<{ readonly identity?: string }> => {
+): Promise<{ readonly identity?: string; readonly values: SandboxFieldValues }> => {
   try {
-    const { identity } = (await adapter.verify?.(values)) ?? {}
-    return identity === undefined ? {} : { identity }
+    const { identity, resolved } = (await adapter.verify?.(values)) ?? {}
+    return { ...(identity === undefined ? {} : { identity }), values: { ...values, ...resolved } }
   } catch (cause) {
+    if (cause instanceof SandboxChoiceNeeded) {
+      throw new HttpFailure(409, cause.message, "sandboxChoiceNeeded", { field: cause.field })
+    }
     throw new HttpFailure(
       400,
       `${adapter.definition.displayName} didn't accept these credentials: ${messageOf(cause)}`

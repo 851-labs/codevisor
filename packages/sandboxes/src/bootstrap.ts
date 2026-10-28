@@ -54,6 +54,7 @@ const installLines = (request: BootstrapRequest): ReadonlyArray<string> => {
 
   return [
     "export CODEVISOR_NO_SETUP=1 CODEVISOR_NO_SERVICE=1 CODEVISOR_INSTALL_SERVER=1",
+    "unset SUDO_USER",
     'installer="$(mktemp)"',
     `curl -fsSL ${shellQuote(request.installUrl ?? DEFAULT_INSTALL_URL)} -o "$installer"`,
     `${environmentAssignments(request.installEnvironment)}sh "$installer"`
