@@ -64,7 +64,6 @@ struct SettingsView: View {
   @Bindable private var router = SettingsRouter.shared
   @Environment(AppEnvironment.self) private var environment
   @ClientPreference(SandboxesFeature.preferenceKey, default: false) private var sandboxesEnabled
-  @State private var sandboxes = SandboxSettingsModel()
 
   var body: some View {
     NavigationSplitView {
@@ -103,7 +102,8 @@ struct SettingsView: View {
                 .settingsNavigationToolbar()
             case let .sandbox(page):
               SandboxSettingsPageView(
-                page: page, model: sandboxes, client: environment.machines.client(for: CodevisorMachine.local.id),
+                page: page, model: environment.sandboxSettings,
+                client: environment.machines.client(for: CodevisorMachine.local.id),
                 navigate: router.navigate
               )
               .navigationBarBackButtonHidden(true)
@@ -166,7 +166,7 @@ struct SettingsView: View {
       MachinesSettingsView()
         .navigationTitle("Machines")
     case .sandboxes where sandboxesEnabled:
-      SandboxesSettingsView(model: sandboxes)
+      SandboxesSettingsView(model: environment.sandboxSettings)
         .navigationTitle("Sandboxes")
     case .sandboxes:
       DeveloperSettingsView()

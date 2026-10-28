@@ -20,6 +20,25 @@ struct SandboxSettingsModelTests {
       ])
   }
 
+  @Test("Profiles show before a slow Mac answers, and its name fills in once it does")
+  func slowMachine() async throws {
+    let gate = FetchGate()
+    let model = SandboxSettingsModel()
+    let studio = SandboxMachine(
+      name: "Mac Studio", client: SettingsFakeServerClient(serverId: "studio", infoGate: gate))
+    let loading = Task { await model.load(from: SettingsFakeServerClient(), machines: [studio]) }
+
+    await gate.awaitWaiter()
+    let loadedWhileWaiting = model.hasLoaded
+    let titleWhileWaiting = model.provider("studio").map(model.title(of:))
+    await gate.release()
+    await loading.value
+
+    #expect(loadedWhileWaiting)
+    #expect(titleWhileWaiting == "Tart · another Mac")
+    #expect(model.provider("studio").map(model.title(of:)) == "Tart · Mac Studio")
+  }
+
   @Test("A new profile starts on its provider's vendor, and switching vendor starts its fields over")
   func choosingProviders() async throws {
     let model = SandboxSettingsModel()
@@ -240,15 +259,17 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   let serverId: String
   let providers: [ServerSandboxProvider]
   let profiles: [ServerSandboxProfile]
+  let infoGate: FetchGate?
   var calls: [String] = []
 
   init(
     serverId: String = "local", providers: [ServerSandboxProvider] = existingProviders,
-    profiles: [ServerSandboxProfile] = []
+    profiles: [ServerSandboxProfile] = [], infoGate: FetchGate? = nil
   ) {
     self.serverId = serverId
     self.providers = providers
     self.profiles = profiles
+    self.infoGate = infoGate
   }
 
   func sandboxVendors() async throws -> ServerSandboxVendors {
@@ -297,7 +318,9 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   }
 
   func info() async throws -> ServerInfo {
-    ServerInfo(id: serverId, name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "0.0.0.0")
+    await infoGate?.wait()
+    return ServerInfo(
+      id: serverId, name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "0.0.0.0")
   }
   func health() async throws -> ServerHealth {
     ServerHealth(ok: true, version: "0.1.0", database: "ready", bootId: nil)

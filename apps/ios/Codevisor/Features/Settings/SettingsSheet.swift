@@ -33,7 +33,6 @@ struct SettingsSheet: View {
   @State private var path: [SettingsDestination]
   @State private var selection: SettingsDestination?
   @State private var detailPath: [SettingsDestination] = []
-  @State private var sandboxes = SandboxSettingsModel()
   @State private var showsEmailFallback = false
   var onSectionChange: ((String) -> Void)?
 
@@ -152,7 +151,8 @@ struct SettingsSheet: View {
     case let .machines(focusedMachineID):
       MachinesSettingsScreen(focusedMachineID: focusedMachineID)
     case let .sandbox(page):
-      SandboxSettingsPageView(page: page, model: sandboxes, client: sandboxClient, navigate: navigateSandboxes)
+      SandboxSettingsPageView(
+        page: page, model: environment.sandboxSettings, client: sandboxClient, navigate: navigateSandboxes)
     }
   }
 
@@ -283,7 +283,7 @@ struct SettingsSheet: View {
   private func clientSection(_ section: String) -> some View {
     switch section {
     case "account": CloudAccountScreen(dismissSettings: { dismiss() })
-    case "sandboxes": SandboxesSettingsScreen(model: sandboxes, navigate: navigateSandboxes)
+    case "sandboxes": SandboxesSettingsScreen(model: environment.sandboxSettings, navigate: navigateSandboxes)
     case "projects": ProjectsSettingsScreen()
     case "updates": UpdatesSettingsScreen()
     case "agents": HarnessesSettingsScreen()

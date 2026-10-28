@@ -21,6 +21,7 @@ public final class AppEnvironment {
   public let configSync: ConfigSync
   public let bots: BotListModel
   public let botSections: BotSectionStore
+  public let sandboxSettings = SandboxSettingsModel()
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored var failedDialRefresh = CloudRosterRefreshThrottle()

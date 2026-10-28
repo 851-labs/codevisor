@@ -23,11 +23,15 @@ public final class SandboxSettingsModel {
   public init() {}
 
   public func load(from client: any CodevisorServerClienting, machines: [SandboxMachine]) async {
-    vendors = (try? await client.sandboxVendors()) ?? vendors
-    providers = (try? await client.sandboxProviders()) ?? providers
-    profiles = (try? await client.sandboxProfiles()) ?? profiles
-    hosts = await Self.hosts(on: machines)
+    async let vendors = try? client.sandboxVendors()
+    async let providers = try? client.sandboxProviders()
+    async let profiles = try? client.sandboxProfiles()
+    self.vendors = await vendors ?? self.vendors
+    self.providers = await providers ?? self.providers
+    self.profiles = await profiles ?? self.profiles
+    guard !Task.isCancelled else { return }
     hasLoaded = true
+    await loadHosts(on: machines)
   }
 
   public func vendor(_ id: String) -> ServerSandboxVendor? { vendors.vendor(id) }
@@ -138,20 +142,26 @@ public final class SandboxSettingsModel {
     return updated
   }
 
-  private static func hosts(on machines: [SandboxMachine]) async -> [SandboxHost] {
-    var hosts: [SandboxHost] = []
-    for machine in machines {
-      guard let host = await host(machine) else { continue }
-      hosts.append(host)
+  private func loadHosts(on machines: [SandboxMachine]) async {
+    var found: [Int: SandboxHost] = [:]
+    await withTaskGroup(of: (Int, SandboxHost?).self) { group in
+      for (index, machine) in machines.enumerated() {
+        group.addTask { (index, await Self.host(machine)) }
+      }
+      for await (index, host) in group {
+        guard let host else { continue }
+        found[index] = host
+        hosts = hosts.filter { $0.serverId != host.serverId } + [host]
+      }
     }
-    return hosts
+    guard !Task.isCancelled else { return }
+    hosts = found.sorted { $0.key < $1.key }.map(\.value)
   }
 
   private static func host(_ machine: SandboxMachine) async -> SandboxHost? {
-    guard let info = try? await machine.client.info(),
-      let vendors = try? await machine.client.sandboxVendors(),
-      !vendors.capabilities.isEmpty
-    else { return nil }
+    async let info = try? machine.client.info()
+    async let vendors = try? machine.client.sandboxVendors()
+    guard let info = await info, let vendors = await vendors, !vendors.capabilities.isEmpty else { return nil }
     return SandboxHost(
       serverId: info.id, name: machine.name, capabilities: Set(vendors.capabilities), maximums: vendors.maximums)
   }
