@@ -19,8 +19,12 @@ struct RootSidebar: View {
         PaletteDestinationsPublisher(
           selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
-      .background(SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0))
-      .navigationSplitViewColumnWidth(min: minimumWidth, ideal: 270, max: 360)
+      .background {
+        if !isDrawer {
+          SplitColumnExtentReader { visibleColumnWidth = $0 }.frame(width: 0, height: 0)
+        }
+      }
+      .navigationSplitViewColumnWidth(min: minimumWidth, ideal: max(270, minimumWidth), max: max(360, minimumWidth))
       .toolbar {
         if showsToolbarModePicker {
           ToolbarItem {

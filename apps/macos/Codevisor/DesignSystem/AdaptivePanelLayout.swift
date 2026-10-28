@@ -72,6 +72,10 @@ struct WindowLayoutReader: NSViewRepresentable {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    isolated deinit {
+      observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
       observers.forEach(NotificationCenter.default.removeObserver)

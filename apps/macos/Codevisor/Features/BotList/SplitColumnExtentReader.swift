@@ -11,7 +11,7 @@ struct SplitColumnExtentReader: NSViewRepresentable {
     var onChange: @MainActor (CGFloat) -> Void
     private weak var column: NSView?
     private weak var splitView: NSSplitView?
-    private var observer: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
 
     init(onChange: @escaping @MainActor (CGFloat) -> Void) {
       self.onChange = onChange
@@ -21,20 +21,32 @@ struct SplitColumnExtentReader: NSViewRepresentable {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     isolated deinit {
-      if let observer { NotificationCenter.default.removeObserver(observer) }
+      observers.forEach(NotificationCenter.default.removeObserver)
     }
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      if let observer { NotificationCenter.default.removeObserver(observer) }
-      observer = nil
+      attach()
+    }
+
+    override func viewDidMoveToSuperview() {
+      super.viewDidMoveToSuperview()
+      attach()
+    }
+
+    private func attach() {
+      observers.forEach(NotificationCenter.default.removeObserver)
+      observers = []
       (column, splitView) = enclosingSplitColumn()
-      guard let column else { return }
+      guard let column, let splitView else { return }
       column.postsFrameChangedNotifications = true
-      observer = NotificationCenter.default.addObserver(
-        forName: NSView.frameDidChangeNotification, object: column, queue: .main
-      ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.report() }
+      let sources: [(Notification.Name, NSView)] = [
+        (NSView.frameDidChangeNotification, column), (NSSplitView.didResizeSubviewsNotification, splitView),
+      ]
+      observers = sources.map { name, object in
+        NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.report() }
+        }
       }
       report()
     }
