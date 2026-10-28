@@ -285,7 +285,7 @@ struct TranscriptReducerTests {
       turn.setupRequests == [
         TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .declined),
         TranscriptSetupRequest(id: "chrome", kind: .chromeExtension, state: .setUp),
-        TranscriptSetupRequest(id: "update", kind: .chromeExtensionUpdate, state: .pending),
+        TranscriptSetupRequest(id: "update", kind: .chromeExtension, state: .pending),
       ])
     #expect(turn.entries.isEmpty)
   }

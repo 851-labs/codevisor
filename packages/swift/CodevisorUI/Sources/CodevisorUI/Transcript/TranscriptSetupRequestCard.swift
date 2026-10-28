@@ -6,6 +6,8 @@ public struct TranscriptSetupRequestCard: View {
   let inBotConversation: Bool
   let handoffMachineName: String?
   let machineName: String?
+  let chromeSetup: TranscriptChromeSetup
+  let icon: Image?
   let onSetUp: () -> Void
   let onDecline: () -> Void
 
@@ -14,6 +16,8 @@ public struct TranscriptSetupRequestCard: View {
     inBotConversation: Bool,
     handoffMachineName: String?,
     machineName: String? = nil,
+    chromeSetup: TranscriptChromeSetup = .dragIn,
+    icon: Image? = nil,
     onSetUp: @escaping () -> Void,
     onDecline: @escaping () -> Void
   ) {
@@ -21,6 +25,8 @@ public struct TranscriptSetupRequestCard: View {
     self.inBotConversation = inBotConversation
     self.handoffMachineName = handoffMachineName
     self.machineName = machineName
+    self.chromeSetup = chromeSetup
+    self.icon = icon
     self.onSetUp = onSetUp
     self.onDecline = onDecline
   }
@@ -29,12 +35,14 @@ public struct TranscriptSetupRequestCard: View {
     TranscriptInlineCard(
       title: copy.headline,
       state: state,
-      inBotConversation: inBotConversation
+      inBotConversation: inBotConversation,
+      leadingIcon: copy.isPending ? icon : nil
     )
   }
 
   private var copy: SetupRequestCopy {
-    SetupRequestCopy(request: request, handoffMachineName: handoffMachineName, machineName: machineName)
+    SetupRequestCopy(
+      request: request, handoffMachineName: handoffMachineName, machineName: machineName, chromeSetup: chromeSetup)
   }
 
   private var state: TranscriptInlineCard.State {

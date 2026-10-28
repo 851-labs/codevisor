@@ -9,7 +9,7 @@ struct McpBrowserExtensionInstallButton: View {
   var body: some View {
     if let configuration = model.browserByMachine[machineId], offersInstall(configuration) {
       Button("Install Chrome Extension…") {
-        Task { await installExtension() }
+        Task { await installExtension(configuration) }
       }
       .controlSize(.small)
       .fixedSize()
@@ -17,13 +17,18 @@ struct McpBrowserExtensionInstallButton: View {
   }
 
   private func offersInstall(_ configuration: ServerBrowserUseConfiguration) -> Bool {
-    configuration.chromeAvailable && !configuration.chromeConnected
-      && configuration.supportsExtensionFlow && configuration.developmentExtensionPath != nil
+    configuration.chromeAvailable && !configuration.chromeConnected && configuration.supportsExtensionFlow
+      && (configuration.installsFromWebStore || configuration.developmentExtensionPath != nil)
   }
 
-  private func installExtension() async {
+  private func installExtension(_ configuration: ServerBrowserUseConfiguration) async {
     do {
-      _ = try await environment.machines.client(for: machineId).installDevelopmentBrowserExtension()
+      let client = environment.machines.client(for: machineId)
+      if configuration.installsFromWebStore {
+        _ = try await client.openBrowserExtensionWebStore()
+      } else {
+        _ = try await client.installDevelopmentBrowserExtension()
+      }
       model.actionError = nil
       await model.load(in: environment)
     } catch {

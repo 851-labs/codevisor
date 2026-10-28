@@ -17,7 +17,7 @@ struct ChromeExtensionSetupSheet: View {
   var body: some View {
     SetupSheet(
       symbol: "puzzlepiece.extension",
-      title: title,
+      title: "Connect Chrome",
       primaryTitle: "Done",
       canContinue: state == .setUp,
       onCancel: decline,
@@ -45,10 +45,6 @@ struct ChromeExtensionSetupSheet: View {
     .onChange(of: state) { _, state in
       if state == .declined { dismiss() }
     }
-  }
-
-  private var title: String {
-    request.kind == .chromeExtensionUpdate ? "Update Chrome Extension" : "Connect Chrome"
   }
 
   private func decline() {

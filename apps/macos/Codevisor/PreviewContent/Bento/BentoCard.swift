@@ -1,4 +1,5 @@
 #if DEBUG
+  import AppKit
   import CodevisorCore
   import CodevisorUI
   import SwiftUI
@@ -66,9 +67,7 @@
         return AnyView(SettingsView().themedRoot())
       },
       BentoCard(name: "usage-limit", width: 420) { AnyView(usageLimitNotice.padding(20)) },
-      BentoCard(name: "chrome-extension", width: 600, presentation: .sheet) {
-        AnyView(ChromeExtensionSetupSheet(request: setupRequest(.chromeExtension), controller: sessionController()))
-      },
+      BentoCard(name: "chrome-extension", width: 460) { AnyView(chromeExtensionCard.padding(20)) },
       BentoCard(name: "computer-use", width: 600, presentation: .sheet) {
         AnyView(ComputerUseSetupSheet(request: setupRequest(.computerUse), controller: sessionController()))
       },
@@ -114,6 +113,14 @@
         autoResume: SessionAutoResume(resumesAt: usageLimitReset), inBotConversation: false,
         switchAccount: {},
         cancelAutoResume: {})
+    }
+
+    @MainActor
+    private static var chromeExtensionCard: some View {
+      TranscriptSetupRequestCard(
+        request: setupRequest(.chromeExtension), inBotConversation: false, handoffMachineName: nil,
+        chromeSetup: .webStore(hasOldCopy: false), icon: Image(nsImage: NSApp.applicationIconImage),
+        onSetUp: {}, onDecline: {})
     }
 
     private static let usageLimitResetDelay = DateComponents(hour: 2)

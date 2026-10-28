@@ -36,6 +36,8 @@ export const BrowserUseConfiguration = Schema.Struct({
   chromeConnected: Schema.Boolean,
   managedAvailable: Schema.Boolean,
   extensionFlowSupported: Schema.optional(Schema.Boolean),
+  extensionSetupMode: Schema.optional(Schema.Literals(["development", "webStore"])),
+  unpackedExtensionInstalled: Schema.optional(Schema.Boolean),
   developmentExtensionPath: Schema.optional(Schema.String)
 })
 export type BrowserUseConfiguration = typeof BrowserUseConfiguration.Type

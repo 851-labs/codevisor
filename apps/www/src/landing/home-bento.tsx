@@ -217,7 +217,7 @@ export function FeatureBento() {
             name="chrome-extension"
             width={460}
             height={296}
-            alt="The Connect Chrome sheet: open Chrome's Extensions page, then drag Codevisor.zip into Chrome"
+            alt="The Add Codevisor to Chrome card in a chat, with an Add to Chrome button that opens the Chrome Web Store"
           />
         </div>
         <Label>Browser Use in your own Chrome</Label>

@@ -20,12 +20,16 @@ public struct TranscriptInlineCard: View {
   private let state: State
   private let inBotConversation: Bool
   private let tone: Tone
+  private let leadingIcon: Image?
 
-  public init(title: String, state: State, inBotConversation: Bool, tone: Tone = .neutral) {
+  public init(
+    title: String, state: State, inBotConversation: Bool, tone: Tone = .neutral, leadingIcon: Image? = nil
+  ) {
     self.title = title
     self.state = state
     self.inBotConversation = inBotConversation
     self.tone = tone
+    self.leadingIcon = leadingIcon
   }
 
   public var body: some View {
@@ -46,7 +50,12 @@ public struct TranscriptInlineCard: View {
     switch state {
     case let .pending(message, actions):
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
-        TranscriptInlineCardText(title: title, message: message, tone: tone)
+        HStack(alignment: .center, spacing: TranscriptInlineCardMetrics.iconSpacing) {
+          if let leadingIcon {
+            TranscriptInlineCardIcon(image: leadingIcon)
+          }
+          TranscriptInlineCardText(title: title, message: message, tone: tone)
+        }
         if !actions.isEmpty {
           TranscriptInlineCardActions(actions: actions)
             .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)

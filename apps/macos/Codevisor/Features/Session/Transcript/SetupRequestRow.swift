@@ -17,14 +17,23 @@ struct SetupRequestRow: View {
     return machineName
   }
 
+  private var setsUpChromeHere: Bool {
+    request.kind == .chromeExtension && handoffMachineName == nil
+  }
+
   var body: some View {
-    TranscriptSetupRequestCard(
-      request: request,
-      inBotConversation: inBotConversation,
-      handoffMachineName: handoffMachineName,
-      machineName: machineName,
-      onSetUp: { controller.presentedSetupRequest = request },
-      onDecline: { Task { await controller.declineSetupRequest(request.id) } }
-    )
+    if setsUpChromeHere {
+      ChromeSetupRequestRow(
+        request: request, inBotConversation: inBotConversation, machineName: machineName, controller: controller)
+    } else {
+      TranscriptSetupRequestCard(
+        request: request,
+        inBotConversation: inBotConversation,
+        handoffMachineName: handoffMachineName,
+        machineName: machineName,
+        onSetUp: { controller.presentedSetupRequest = request },
+        onDecline: { Task { await controller.declineSetupRequest(request.id) } }
+      )
+    }
   }
 }

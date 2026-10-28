@@ -36,21 +36,28 @@ public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {
   public var chromeConnected: Bool
   public var managedAvailable: Bool
   public var extensionFlowSupported: Bool?
+  public var extensionSetupMode: String?
+  public var unpackedExtensionInstalled: Bool?
   public var developmentExtensionPath: String?
 
   public var supportsExtensionFlow: Bool { extensionFlowSupported ?? true }
+  public var installsFromWebStore: Bool { extensionSetupMode == "webStore" }
 
   public init(
     chromeAvailable: Bool,
     chromeConnected: Bool,
     managedAvailable: Bool,
     extensionFlowSupported: Bool? = nil,
+    extensionSetupMode: String? = nil,
+    unpackedExtensionInstalled: Bool? = nil,
     developmentExtensionPath: String? = nil
   ) {
     self.chromeAvailable = chromeAvailable
     self.chromeConnected = chromeConnected
     self.managedAvailable = managedAvailable
     self.extensionFlowSupported = extensionFlowSupported
+    self.extensionSetupMode = extensionSetupMode
+    self.unpackedExtensionInstalled = unpackedExtensionInstalled
     self.developmentExtensionPath = developmentExtensionPath
   }
 }

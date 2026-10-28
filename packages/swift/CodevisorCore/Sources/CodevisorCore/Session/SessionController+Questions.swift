@@ -124,6 +124,13 @@ extension SessionController {
     }
   }
 
+  public func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration {
+    guard let serverClient else {
+      throw CodevisorServerClientError.invalidResponse
+    }
+    return try await serverClient.browserUseConfiguration()
+  }
+
   public func browserExtensionArchive() async throws -> URL {
     guard let serverClient else {
       throw CodevisorServerClientError.invalidResponse

@@ -37,6 +37,10 @@
     func listHarnesses() async throws -> [ServerHarness] { DemoServerRecords.harnesses(on: machine) }
     func listHarnessesWithLifecycle() async throws -> [ServerHarness] { try await listHarnesses() }
 
+    func browserUseConfiguration() async throws -> ServerBrowserUseConfiguration {
+      .init(chromeAvailable: true, chromeConnected: false, managedAvailable: true, extensionSetupMode: "webStore")
+    }
+
     func browserExtensionArchive() async throws -> URL {
       let archive = FileManager.default.temporaryDirectory.appendingPathComponent("Codevisor Chrome Extension.zip")
       FileManager.default.createFile(atPath: archive.path, contents: Data())

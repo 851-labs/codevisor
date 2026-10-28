@@ -5,6 +5,8 @@ nonisolated enum TranscriptInlineCardMetrics {
   static let actionSpacing: CGFloat = 12
   static let resolvedVerticalPadding: CGFloat = 8
   static let actionLabelMinimumScale: CGFloat = 0.8
+  static let iconSize: CGFloat = 40
+  static let iconSpacing: CGFloat = 12
 
   #if os(iOS)
     static let maxWidth: CGFloat = 560

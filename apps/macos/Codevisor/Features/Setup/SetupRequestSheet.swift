@@ -9,7 +9,7 @@ struct SetupRequestSheet: View {
     switch request.kind {
     case .computerUse:
       ComputerUseSetupSheet(request: request, controller: controller)
-    case .chromeExtension, .chromeExtensionUpdate:
+    case .chromeExtension:
       ChromeExtensionSetupSheet(request: request, controller: controller)
     }
   }

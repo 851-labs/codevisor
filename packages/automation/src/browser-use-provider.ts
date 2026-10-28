@@ -25,7 +25,7 @@ import {
   prepareBrowserExtension,
   type BrowserExtensionInstallation
 } from "./browser-extension-relay.js"
-import { extensionNeedsUpdate } from "./browser-extension-update.js"
+import { hasUnpackedInstall } from "./browser-extension-unpacked.js"
 import { makeBrowserHostRegistry, type BrowserHostRegistry } from "./browser-host-registry.js"
 import { authenticateNativeHost, readNativeHostSecret } from "./browser-native-host.js"
 import { makeBrowserPreviews } from "./browser-preview.js"
@@ -98,7 +98,6 @@ export const makeBrowserUseProvider = (
   const extensionRelay = makeBrowserExtensionRelay()
   const previews = makeBrowserPreviews()
   const developmentExtensionPath = prepareBrowserExtension(dataDir, serverBaseUrl)
-  let relayBaseUrl = serverBaseUrl
   const extensionArchive = browserExtensionArchivePath(developmentExtensionPath)
   const extensionSetupMode: BrowserExtensionSetupMode =
     process.env.CODEVISOR_DEV_WORKTREE !== undefined ||
@@ -120,8 +119,8 @@ export const makeBrowserUseProvider = (
       extensionInstalled: extension.installed,
       extensionInstallationState: extension.installationState,
       extensionConnected: extensionConnected(),
-      extensionNeedsUpdate: updateRequired(extension),
       extensionSetupMode,
+      unpackedExtensionInstalled: hasUnpackedInstall(extension.profiles),
       chromeAvailable: chromeBrowserAvailable(),
       developmentExtensionPath,
       extensionArchivePath: extensionArchive,
@@ -231,15 +230,7 @@ export const makeBrowserUseProvider = (
     browserExtensionState({
       connected: extensionConnected(),
       chromeAvailable: chromeBrowserAvailable(),
-      installationState: installation.installationState,
-      needsUpdate: updateRequired(installation)
-    })
-
-  const updateRequired = (installation: BrowserExtensionInstallation): boolean =>
-    extensionNeedsUpdate({
-      connected: extensionConnected(),
-      relayBaseUrl,
-      profiles: installation.profiles
+      installationState: installation.installationState
     })
 
   const discardSessionHandles = async (sessionId: string) => {
@@ -313,7 +304,6 @@ export const makeBrowserUseProvider = (
     extensionArchivePath: () => extensionArchive,
     extensionIconPath: () => join(developmentExtensionPath, "icons", "128.png"),
     configureExtensionRelay: (baseUrl) => {
-      relayBaseUrl = baseUrl
       prepareBrowserExtension(dataDir, baseUrl)
     },
     subscribePreview: previews.subscribe,

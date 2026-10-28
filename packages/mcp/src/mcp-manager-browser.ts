@@ -36,6 +36,8 @@ export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperat
       chromeConnected: status.extensionConnected,
       managedAvailable: status.backend !== "missing",
       extensionFlowSupported,
+      extensionSetupMode: status.extensionSetupMode,
+      unpackedExtensionInstalled: status.unpackedExtensionInstalled ?? false,
       ...(status.developmentExtensionPath === undefined
         ? {}
         : { developmentExtensionPath: status.developmentExtensionPath })
