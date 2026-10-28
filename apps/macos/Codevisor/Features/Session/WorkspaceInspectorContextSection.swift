@@ -15,23 +15,27 @@ struct WorkspaceInspectorContextSection: View {
   @Binding var isExpanded: Bool
 
   var body: some View {
-    if let context {
+    if let totals {
       WorkspaceInspectorCard(title: "Context", isExpanded: $isExpanded) {
         WorkspaceInspectorContextOverview(
-          used: context.totalTokens,
-          size: context.maxTokens,
-          segments: active(in: context).filter { !$0.isFreeSpace }.map { ($0.tint, $0.tokens) }
+          used: totals.used,
+          size: totals.size,
+          segments: context.map { active(in: $0).filter { !$0.isFreeSpace }.map { ($0.tint, $0.tokens) } } ?? []
         )
-        ForEach(active(in: context) + context.categories.filter { $0.isDeferred == true }, id: \.name) {
-          category in
-          WorkspaceInspectorContextRow(category: category, maxTokens: context.maxTokens)
+        if let context {
+          ForEach(active(in: context) + context.categories.filter { $0.isDeferred == true }, id: \.name) {
+            category in
+            WorkspaceInspectorContextRow(category: category, maxTokens: context.maxTokens)
+          }
         }
       }
-    } else if let used = usage?.used, let size = usage?.size, size > 0 {
-      WorkspaceInspectorCard(title: "Context", isExpanded: $isExpanded) {
-        WorkspaceInspectorContextOverview(used: Double(used), size: Double(size), segments: [])
-      }
     }
+  }
+
+  private var totals: (used: Double, size: Double)? {
+    if let context { return (context.totalTokens, context.maxTokens) }
+    guard let used = usage?.used, let size = usage?.size, size > 0 else { return nil }
+    return (Double(used), Double(size))
   }
 
   private func active(in context: ServerSessionContext) -> [ServerSessionContext.Category] {

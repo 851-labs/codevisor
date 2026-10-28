@@ -20,7 +20,7 @@ struct WorkspaceInspectorUsageSection: View {
         }
         .accessibilityElement(children: .combine)
       }
-      ForEach(limits.windows) { window in
+      ForEach(Array(limits.windows.enumerated()), id: \.offset) { _, window in
         WorkspaceInspectorUsageWindowRow(window: window)
       }
       if let credits = limits.credits, credits.hasCredits || credits.unlimited {

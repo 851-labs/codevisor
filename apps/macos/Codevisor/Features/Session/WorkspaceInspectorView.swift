@@ -252,9 +252,9 @@ struct WorkspaceInspectorView: View {
           WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
         }
 
-        if let chatSessionId {
+        if chatSessionId != nil {
           WorkspaceInspectorContextSection(
-            context: chatContext?.sessionId == chatSessionId ? chatContext?.context : nil, usage: chatUsage,
+            context: chatContext?.context, usage: chatUsage,
             isExpanded: expansion("Context"))
         }
       }
@@ -265,11 +265,10 @@ struct WorkspaceInspectorView: View {
         WorkspaceInspectorContextSection.LoadKey(sessionId: $0, usage: chatUsage, activity: activity)
       }
     ) {
-      guard let chatSessionId,
-        let context = try? await client.sessionContext(id: chatSessionId),
-        !Task.isCancelled
-      else { return }
-      chatContext = (chatSessionId, context)
+      guard let chatSessionId else { return }
+      let context = try? await client.sessionContext(id: chatSessionId)
+      guard !Task.isCancelled, context != nil || chatContext?.sessionId != chatSessionId else { return }
+      chatContext = context.map { (chatSessionId, $0) }
     }
   }
 
