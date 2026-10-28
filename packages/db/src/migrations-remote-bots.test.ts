@@ -9,10 +9,15 @@ import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js
 import { run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
+  drop index session_attention_finished_turns;
+  alter table session_attention drop column turn_end_state;
+  alter table session_attention drop column turn_end_revision;
+  alter table session_attention drop column turn_end_stop_reason;
+  alter table session_attention drop column turn_end_item_id;
+  alter table session_attention drop column turn_end_at;
   drop table session_files;
   alter table files drop column purge_with_chats;
   drop table browser_favicons;
-  drop trigger fleet_turn_ended;
   drop table fleet_pending_turns;
   drop table fleet_deliveries;
   drop table fleet_outbox;

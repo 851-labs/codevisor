@@ -72,7 +72,7 @@ const gitProject = async () => {
 }
 
 describe("agent lifecycle routes", () => {
-  it("counts an agent with a live background task as working in list and wait", async () => {
+  it("reads an agent as working until its turn ends, even if it leaves a dev server running", async () => {
     const { server, services } = await start()
     const project = idOf(
       (
@@ -92,62 +92,41 @@ describe("agent lifecycle routes", () => {
         })
       ).body
     )
-    await run(services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell] }))
     const wait = (until: ReadonlyArray<string>) =>
       jsonRequest(server, "/v1/agents/wait", {
         body: JSON.stringify({ agentIds: [agentId], until, timeoutMs: 0 }),
         method: "POST"
       })
+    const emit = (payload: object) =>
+      run(services.db.appendEvent("session.updated", agentId, payload))
 
+    await emit({ initiatedBy: "user", turnId: "t-1", turnState: "started" })
+    await emit({ backgroundTasks: [shell] })
+    const whileRunning = {
+      list: (await jsonRequest(server, "/v1/agents")).body,
+      idle: (await jsonRequest(server, "/v1/agents?state=idle")).body,
+      waitIdle: (await wait(["idle"])).body,
+      waitWorking: (await wait(["working"])).body
+    }
+    await emit({ stopReason: "end_turn", turnId: "t-1", turnState: "ended" })
+
+    expect(whileRunning).toEqual({
+      list: { items: [expect.objectContaining({ agentId, state: "working" })] },
+      idle: { items: [] },
+      waitIdle: { items: [{ agentId, state: "working" }], timedOut: true },
+      waitWorking: { items: [{ agentId, state: "working" }], timedOut: false }
+    })
     expect((await jsonRequest(server, "/v1/agents")).body).toMatchObject({
-      items: [{ agentId, state: "working" }]
+      items: [{ agentId, state: "idle" }]
     })
-    expect((await jsonRequest(server, "/v1/agents?state=idle")).body).toEqual({ items: [] })
-    expect((await wait(["idle"])).body).toEqual({
-      items: [{ agentId, state: "working" }],
-      timedOut: true
-    })
-    expect((await wait(["working"])).body).toMatchObject({ timedOut: false })
-    expect((await jsonRequest(server, "/v1/agents?state=busy")).status).toBe(400)
-  })
-
-  it("reads an agent as idle once its harness closes, though its tasks are still on record", async () => {
-    const { server, services } = await start()
-    const project = idOf(
-      (
-        await jsonRequest(server, "/v1/projects", {
-          body: JSON.stringify({
-            folderPath: mkdtempSync(join(tmpdir(), "codevisor-agent-closed-"))
-          }),
-          method: "POST"
-        })
-      ).body
-    )
-    const agentId = idOf(
-      (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ projectId: project, harnessId: "codex" }),
-          method: "POST"
-        })
-      ).body
-    )
-    await run(services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell] }))
-    const { agentSessionId } = await run(services.db.getSessionSummary(agentId))
-
-    await run(services.agents.closeAgentSession(agentSessionId!))
-
-    expect((await jsonRequest(server, "/v1/agents?state=working")).body).toEqual({ items: [] })
     expect((await jsonRequest(server, `/v1/agents/${agentId}`)).body).toMatchObject({
       state: "idle"
     })
-    expect(
-      (
-        await jsonRequest(server, "/v1/agents/wait", {
-          body: JSON.stringify({ agentIds: [agentId], timeoutMs: 0 }),
-          method: "POST"
-        })
-      ).body
-    ).toEqual({ items: [{ agentId, state: "idle" }], timedOut: false })
+    expect((await wait(["idle"])).body).toEqual({
+      items: [{ agentId, state: "idle" }],
+      timedOut: false
+    })
+    expect((await jsonRequest(server, "/v1/agents?state=busy")).status).toBe(400)
   })
 
   it("clears an archived agent's background tasks so it doesn't read as working", async () => {

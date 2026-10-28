@@ -56,9 +56,10 @@ Starting an agent subscribes you, so end your turn instead of waiting. When the 
 </codevisor-event>
 ```
 
-- A turn that ends while the agent still runs background work (a background shell, a monitor) doesn't wake you. You hear once it stops with nothing left running.
+- You hear as soon as its turn is done, the same moment the user would see it as finished. Background work it leaves running, such as a dev server or a monitor, doesn't hold the event back. If that work later wakes the agent, its new turn sends a new event.
+- Only a turn still waiting on its own sub-agents, an active goal, or messages queued to it isn't done yet.
 - `session.waiting_for_user` carries a pending question, and `session.errored` carries the error.
-- Several events from one agent while you're busy are combined, so you get its latest state once.
+- Events that arrive while you're busy wait for your turn to end, then arrive together in the order they happened. None are dropped.
 - The user never sees these events as messages they typed.
 
 To check on an agent yourself:
@@ -80,7 +81,8 @@ To check on an agent yourself:
 
 - An idle agent starts a turn with your message.
 - While it is working, `delivery: "steer"` (the default) adds it to the running turn, so the agent reads it at its next step. Use that for corrections ("also cover the error path").
-- `delivery: "queue"` waits until the turn finishes. Use that for the next, separate task.
+- `delivery: "queue"` waits until the turn finishes. Use that for the next, separate task. Queued messages go in the order you sent them, each once.
+- A steer never overtakes messages you queued earlier: they go into the running turn first, in order, then the steer.
 - `steerDeclined: true` with `delivered: "queued"` means the turn couldn't take it, because its harness can't steer or is updating. If it can't wait, `agents.cancel({ agentId })` stops the turn.
 - While Codevisor itself is updating, messages fail with an `updating` error. Chats the update paused continue on their own; send yours again once the update finishes.
 

@@ -63,6 +63,7 @@ import type { SessionStateService } from "./session-state-types.js"
 import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
+import type { FinishedTurn } from "./turn-finish.js"
 import type {
   WorkspaceFileEdit,
   WorkspaceMediaCursor,
@@ -199,6 +200,9 @@ export interface CodevisorDatabaseService
   readonly getAttentionSettleDeadline: (
     id: string
   ) => Effect.Effect<string | undefined, DatabaseError>
+  readonly getFinishedTurn: (id: string) => Effect.Effect<FinishedTurn | undefined, DatabaseError>
+  readonly listFinishedTurns: Effect.Effect<ReadonlyArray<FinishedTurn>, DatabaseError>
+  readonly markTurnAnnounced: (id: string, revision: number) => Effect.Effect<void, DatabaseError>
   readonly getSessionConfigSelections: (
     id: string
   ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>

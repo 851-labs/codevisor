@@ -23,7 +23,7 @@ import {
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
-import { coalesceReleasedWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
+import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { answeredPendingQuestion } from "./question-replies.js"
@@ -214,10 +214,10 @@ export const drainPromptQueue = async (
         await publishPromptQueue(services.db, fanout, sessionId)
         return
       }
-      await coalesceReleasedWakeUps(services, sessionId)
-      const item = await onSteerChain(sessionId, () =>
-        run(services.db.claimPromptQueueItem(sessionId))
-      )
+      const item = await onSteerChain(sessionId, async () => {
+        await coalesceWakeUps(services, sessionId)
+        return run(services.db.claimPromptQueueItem(sessionId))
+      })
       if (item === undefined) {
         await publishPromptQueue(services.db, fanout, sessionId)
         return
@@ -278,6 +278,25 @@ export const steerQueuedPrompt = (
     /* v8 ignore next */
     if (item === undefined) return false
     return steerClaimedPrompt(services, fanout, serverId, sessionId, item)
+  })
+
+export const steerQueuedPromptsThrough = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  queueItemId: string
+): Promise<boolean> =>
+  onSteerChain(sessionId, async () => {
+    const queue = await run(services.db.listPromptQueue(sessionId))
+    const through = queue.findIndex((item) => item.id === queueItemId)
+    for (const queued of queue.slice(0, through + 1)) {
+      const item = await run(services.db.claimPromptQueueItem(sessionId, queued.id))
+      /* v8 ignore next */
+      if (item === undefined) return false
+      if (!(await steerClaimedPrompt(services, fanout, serverId, sessionId, item))) return false
+    }
+    return through !== -1
   })
 
 const steerPendingPrompts = async (

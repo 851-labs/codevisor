@@ -90,7 +90,7 @@ export const codevisorAgentTools: ReadonlyArray<AgentTool> = [
   ),
   agentTool(
     "agents.wait",
-    "Wait inside this call until any listed agent reaches one of the until states (default idle, waitingForUser, errored). Returns every listed agent's state (an idle agent with live background tasks counts as working, and an idle one with queued messages hasn't settled) and pendingQuestion, and timedOut when none matched in time. timeoutMs defaults to 60000, is capped at 300000, and shrinks to fit this execute call's budget (clampedToMs). For anything longer than a minute or two, end your turn and let the event arrive instead.",
+    "Wait inside this call until any listed agent reaches one of the until states (default idle, waitingForUser, errored). Returns every listed agent's state (background work an agent left running doesn't count as working, and an idle one with queued messages hasn't settled) and pendingQuestion, and timedOut when none matched in time. timeoutMs defaults to 60000, is capped at 300000, and shrinks to fit this execute call's budget (clampedToMs). For anything longer than a minute or two, end your turn and let the event arrive instead.",
     WaitArgs,
     (tool, args) => waitForAgents(tool, Schema.decodeUnknownSync(WaitArgs)(args))
   ),

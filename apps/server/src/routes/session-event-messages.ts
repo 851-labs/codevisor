@@ -1,7 +1,6 @@
 import type { ExecutionJob, QuestionPayload, SessionSummary } from "@codevisor/api"
 
 export interface SessionEventMessage {
-  readonly key: string
   readonly text: string
 }
 
@@ -23,7 +22,6 @@ export const turnEndedMessage = (
   end: TurnEnd,
   subscriptionId?: string
 ): SessionEventMessage => ({
-  key: `turn_ended:${target.id}`,
   text: eventBlock(
     `type="session.turn_ended" agentId="${attribute(target.id)}" title="${attribute(target.title)}"${stopAttributes(end)}${subscriptionAttribute(subscriptionId)}`,
     turnEndBody(end)
@@ -36,7 +34,6 @@ export const waitingForUserMessage = (
   question: QuestionPayload | undefined,
   subscriptionId?: string
 ): SessionEventMessage => ({
-  key: `waiting_for_user:${target.id}`,
   text: eventBlock(
     `type="session.waiting_for_user" agentId="${attribute(target.id)}" title="${attribute(target.title)}" kind="${attribute(kind)}"${subscriptionAttribute(subscriptionId)}`,
     waitingBody(kind, question)
@@ -48,7 +45,6 @@ export const erroredMessage = (
   message: string,
   subscriptionId?: string
 ): SessionEventMessage => ({
-  key: `errored:${target.id}`,
   text: eventBlock(
     `type="session.errored" agentId="${attribute(target.id)}" title="${attribute(target.title)}"${subscriptionAttribute(subscriptionId)}`,
     bounded(message, "(no error message)")
@@ -59,7 +55,6 @@ export const jobFinishedMessage = (
   job: ExecutionJob,
   subscriptionId?: string
 ): SessionEventMessage => ({
-  key: `job_finished:${job.jobId}`,
   text: eventBlock(
     `type="execution.job_finished" jobId="${attribute(job.jobId)}" agentId="${attribute(job.sessionId)}" state="${job.state}" description="${attribute(job.description)}"${subscriptionAttribute(subscriptionId)}`,
     [bounded(jobOutcome(job), "(no result)"), `Full output: ${job.outputPath}`].join("\n")
@@ -70,15 +65,11 @@ export const fromMachine = (
   message: SessionEventMessage,
   machine: { readonly id: string; readonly name: string }
 ): SessionEventMessage => ({
-  key: message.key,
   text: message.text.replace(
     EVENT_OPENING,
     `${EVENT_OPENING}machine="${attribute(machine.name)}" machineId="${attribute(machine.id)}" `
   )
 })
-
-export const combinedEventText = (messages: ReadonlyArray<SessionEventMessage>): string =>
-  messages.map((message) => message.text).join("\n\n")
 
 const eventBlock = (attributes: string, body: string): string =>
   [`${EVENT_OPENING}${attributes}>`, body, "</codevisor-event>"].join("\n")

@@ -11,6 +11,14 @@ import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./
 import { integer, nullable, rowReader, text } from "./row-reader.js"
 import type { SessionEventRow } from "./rows.js"
 import { holdsInProgress, projectSessionSidebarState } from "./session-sidebar-state.js"
+import {
+  announceFinishedTurn,
+  endsAnnouncedTurn,
+  isUpdatePause,
+  recordTurnEnd,
+  sessionIsBotOwned,
+  turnWasRunning
+} from "./turn-finish.js"
 
 export { projectSessionSidebarState } from "./session-sidebar-state.js"
 
@@ -69,6 +77,13 @@ const bumpAttentionRevision = (sqlite: Database.Database, sessionId: string): vo
   sqlite.prepare(attentionSql.bumpRevision).run(sessionId)
 }
 
+const finishTurn = (sqlite: Database.Database, sessionId: string): void => {
+  if (sessionIsBotOwned(sqlite, sessionId))
+    sqlite.prepare(attentionSql.settleQuietly).run(sessionId)
+  else bumpAttentionRevision(sqlite, sessionId)
+  announceFinishedTurn(sqlite, sessionId)
+}
+
 const clearSettleDue = (sqlite: Database.Database, sessionId: string): void => {
   sqlite.prepare(attentionSql.clearSettleDue).run(sessionId)
 }
@@ -102,7 +117,7 @@ const reevaluatePendingFinish = (
     return
   }
   if (state.settle_due_at <= now) {
-    bumpAttentionRevision(sqlite, sessionId)
+    finishTurn(sqlite, sessionId)
   }
 }
 
@@ -124,7 +139,7 @@ export const settleSessionAttention = (
     state.settle_due_at ?? new Date(Date.parse(now) + ATTENTION_SETTLE_GRACE_MS).toISOString()
   if (state.settle_due_at === null) scheduleSettle(sqlite, sessionId, dueAt)
   if (dueAt > now) return { settled: false, nextDueAt: dueAt }
-  bumpAttentionRevision(sqlite, sessionId)
+  finishTurn(sqlite, sessionId)
   projectSessionSidebarState(sqlite, sessionId, now)
   return { settled: true }
 }
@@ -159,8 +174,11 @@ export const projectSessionAttention = (
   projectAttentionRuntime(sqlite, event, payload)
   projectAttentionTurnStart(sqlite, event, payload)
   projectUserConversationAttention(sqlite, event, payload)
+  const announced = endsAnnouncedTurn(event, payload) && turnWasRunning(sqlite, event.session_id)
+  if (announced) recordTurnEnd(sqlite, event, payload)
   if (isBotConversation(sqlite, event.session_id)) {
     projectBotConversationAttention(sqlite, event, payload)
+    if (announced) announceFinishedTurn(sqlite, event.session_id)
     return
   }
   projectTerminalAttention(sqlite, event, payload)
@@ -241,6 +259,10 @@ const projectTerminalAttention = (
   event: SessionEventRow,
   payload: JsonRecord
 ): void => {
+  if (isTurnEnd(event, payload) && isUpdatePause(payload)) {
+    sqlite.prepare(attentionSql.endTurn).run(event.session_id)
+    return
+  }
   if (isTurnEnd(event, payload)) {
     const initiatedBy = payload.initiatedBy === "agent" ? "agent" : "user"
     const failed = terminalAttentionError(event, payload)
@@ -250,7 +272,7 @@ const projectTerminalAttention = (
 
     if (failed) {
       sqlite.prepare(attentionSql.markErrored).run(event.session_id)
-      bumpAttentionRevision(sqlite, event.session_id)
+      finishTurn(sqlite, event.session_id)
     } else if (needsPlanApproval) {
       sqlite.prepare(attentionSql.awaitPlanApproval).run(event.session_id)
     } else if (sessionIsHeld(sqlite, event.session_id)) {
@@ -258,7 +280,7 @@ const projectTerminalAttention = (
     } else if (sessionHasQueuedPrompts(sqlite, event.session_id)) {
       sqlite.prepare(attentionSql.queueFinish).run(event.created_at, event.session_id)
     } else {
-      bumpAttentionRevision(sqlite, event.session_id)
+      finishTurn(sqlite, event.session_id)
     }
   }
 }
@@ -290,6 +312,8 @@ const attentionSql = {
   bySession: "select * from session_attention where session_id = ?",
   bumpRevision: `update session_attention set attention_revision = attention_revision + 1,
          pending_finish = 0, settle_due_at = null where session_id = ?`,
+  settleQuietly:
+    "update session_attention set pending_finish = 0, settle_due_at = null where session_id = ?",
   clearSettleDue: "update session_attention set settle_due_at = null where session_id = ?",
   scheduleSettle: "update session_attention set settle_due_at = ? where session_id = ?",
   pendingSettles:

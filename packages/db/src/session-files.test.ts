@@ -48,7 +48,7 @@ const rewindToV78 = (filename: string): void => {
     sqlite.exec(`
       drop table session_files;
       alter table files drop column purge_with_chats;
-      delete from schema_migrations where id >= 79;
+      delete from schema_migrations where id = 79;
     `)
   } finally {
     sqlite.close()

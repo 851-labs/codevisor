@@ -11,7 +11,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Schema } from "effect"
 
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
-import { agentState, harnessIsLoaded } from "./agent-state.js"
+import { agentState } from "./agent-state.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import type { RouteContext } from "./route-context.js"
 import { waitUntilSettled } from "./session-wait.js"
@@ -110,11 +110,7 @@ export const currentState = async (
   services: RouteContext["services"],
   session: SessionSummary
 ): Promise<AgentState> =>
-  agentState(
-    session,
-    await run(services.db.getTranscriptPage(session.id, undefined, 1)),
-    harnessIsLoaded(services.agents, session)
-  )
+  agentState(session, await run(services.db.getTranscriptPage(session.id, undefined, 1)))
 
 const settledIn = async (
   services: RouteContext["services"],
@@ -137,7 +133,7 @@ const waitedAgent = async (
   const page = await run(services.db.getTranscriptPage(session.id, undefined, 1))
   return {
     agentId: session.id,
-    state: agentState(session, page, harnessIsLoaded(services.agents, session)),
+    state: agentState(session, page),
     ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
   }
 }

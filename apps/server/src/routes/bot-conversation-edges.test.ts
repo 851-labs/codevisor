@@ -286,10 +286,17 @@ describe("bot conversation edges", () => {
     const chatty = await createChat(running, { parentSessionId: bot.sessionId, title: "Chatty" })
     const quietAgent = await holdTurn(running, quiet)
 
-    await endTurn(running, quietAgent, {})
+    await cancel(running, quiet)
+    await waitFor(() => reports(running).length === 1)
+    await running.agents.emit(quietAgent, {
+      kind: "session.updated",
+      subjectId: quietAgent,
+      payload: { initiatedBy: "agent", turnId: "turn-2", turnState: "started" }
+    })
+    await endTurn(running, quietAgent, { turnId: "turn-2" })
     await prompt(running, chatty, { text: "x".repeat(4_100) })
 
-    await waitFor(() => reports(running).length >= 2)
+    await waitFor(() => reports(running).length >= 3)
     expect(reports(running)).toEqual(
       expect.arrayContaining([
         `<codevisor-event type="session.turn_ended" agentId="${quiet}" title="Fix login">\n(no final message)\n</codevisor-event>`,
@@ -298,6 +305,5 @@ describe("bot conversation edges", () => {
         )
       ])
     )
-    await cancel(running, quiet)
   })
 })

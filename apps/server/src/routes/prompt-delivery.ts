@@ -8,7 +8,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { conversationalBotForSession } from "./bot-turns.js"
-import { hasLiveTurn, steerQueuedPrompt } from "./prompt-queue.js"
+import { hasLiveTurn, steerQueuedPrompt, steerQueuedPromptsThrough } from "./prompt-queue.js"
 import { pausedForUpdate } from "./update-pause-gate.js"
 
 export const defaultPromptDelivery: PromptDelivery = "steer"
@@ -40,7 +40,8 @@ export const deliverQueuedPrompt = async (
   serverId: string,
   sessionId: string,
   queueItemId: string,
-  delivery: PromptDelivery
+  delivery: PromptDelivery,
+  inOrder = false
 ): Promise<PromptDeliveryOutcome> => {
   if (!hasLiveTurn(routeState, sessionId)) {
     return idleOutcome(services, routeState, sessionId, queueItemId)
@@ -48,7 +49,8 @@ export const deliverQueuedPrompt = async (
   if (!(await steersRunningTurn(services, sessionId, delivery))) return { delivered: "queued" }
   if (await promptsAreHeld(services, routeState, sessionId)) return steerDeclined
 
-  if (await steerQueuedPrompt(services, fanout, serverId, sessionId, queueItemId)) {
+  const steer = inOrder ? steerQueuedPromptsThrough : steerQueuedPrompt
+  if (await steer(services, fanout, serverId, sessionId, queueItemId)) {
     return { delivered: "steered" }
   }
   if (!hasLiveTurn(routeState, sessionId)) {

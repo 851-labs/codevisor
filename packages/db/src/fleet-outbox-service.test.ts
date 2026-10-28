@@ -1,8 +1,9 @@
 import Database from "better-sqlite3"
-import { describe, expect, it, onTestFinished } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
 import { rowReader, text } from "./row-reader.js"
+import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
 
 const planRows = rowReader({ detail: text })
@@ -147,6 +148,34 @@ describe("fleet outbox storage", () => {
     ])
   })
 
+  it("sends a remote bot's held child turn once it settles, without marking it unread", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const db = await openDatabase()
+    const { child } = await linkedChild(db)
+    const event = (payload: object) => run(db.appendEvent("session.updated", child.id, payload))
+
+    await event({ turnState: "started", turnId: "t-1" })
+    await event({
+      backgroundTasks: [
+        { id: "a-1", description: "Research", status: "running", taskType: "subagent" }
+      ]
+    })
+    const ended = await event({ turnState: "ended", turnId: "t-1", stopReason: "end_turn" })
+    const whileHeld = await run(db.listFleetPendingTurns)
+    await event({ backgroundTasks: [] })
+    vi.setSystemTime(new Date(Date.now() + ATTENTION_SETTLE_GRACE_MS))
+    await run(db.settleSessionAttention(child.id))
+
+    expect(whileHeld).toEqual([])
+    expect(await run(db.listFleetPendingTurns)).toEqual([
+      expect.objectContaining({ sessionId: child.id, revision: ended.subjectRevision })
+    ])
+    expect((await run(db.getSessionSummary(child.id))).latestAttentionSequence).toBe(0)
+  })
+
   it("finds a machine's next message through an index, without scanning the outbox", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
@@ -175,8 +204,10 @@ describe("fleet outbox storage", () => {
   it("promotes a pending turn once, never after its message was acknowledged, and expires old turns", async () => {
     const db = await openDatabase()
     const { child } = await linkedChild(db)
-    await run(db.appendEvent("session.updated", child.id, { turnState: "ended" }))
-    await run(db.appendEvent("session.updated", child.id, { turnState: "ended" }))
+    for (const turnId of ["t-1", "t-2"]) {
+      await run(db.appendEvent("session.updated", child.id, { turnState: "started", turnId }))
+      await run(db.appendEvent("session.updated", child.id, { turnState: "ended", turnId }))
+    }
     const [first, second] = await run(db.listFleetPendingTurns)
 
     await run(db.promoteFleetTurn(first!, message("turn-1", "machine-b")))

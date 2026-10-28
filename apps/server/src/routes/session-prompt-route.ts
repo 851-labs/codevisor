@@ -158,5 +158,6 @@ const deliverPrompt = (
     config.id,
     sessionId,
     queueItem.id,
-    payload.delivery ?? defaultPromptDelivery
+    payload.delivery ?? defaultPromptDelivery,
+    payload.fromSessionId !== undefined
   )

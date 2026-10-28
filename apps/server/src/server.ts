@@ -197,6 +197,7 @@ export const makeCodevisorServerApp = (
   const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
   const workspaceGit = startWorkspaceGitMonitorIfEnabled(services, config, fanout)
   void attentionSettle.recover().catch(swallowError)
+  void sessionEvents.recover().catch(swallowError)
   void autoResume.recover().catch(swallowError)
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = subscribeSessionActivity(config, fanout, activeSessionIds)

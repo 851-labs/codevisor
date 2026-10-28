@@ -15,7 +15,7 @@ import {
   startWithApp,
   waitFor
 } from "../test-support.js"
-import { endedTurns, setUp, type Running } from "./bot-test-support.js"
+import { setUp, type Running } from "./bot-test-support.js"
 
 const post = (running: Running, path: string, body: Record<string, unknown>) =>
   jsonRequest(running.server, path, { body: JSON.stringify(body), method: "POST" })
@@ -224,7 +224,7 @@ describe("session event subscriptions", () => {
     )
   })
 
-  it("waits out a target's background work and reports only the follow-up turn", async () => {
+  it("reports a turn that leaves a dev server running right away, and a later wake-up as its own turn", async () => {
     const running = await startServer()
     const watcher = await createChat(running, "Watcher")
     const worker = await createChat(running, "Run the tests")
@@ -233,16 +233,15 @@ describe("session event subscriptions", () => {
     const workerAgent = running.agents.prompts.at(-1)![0]
     await emitTasks(running, workerAgent, [shellTask])
     await post(running, `/v1/sessions/${worker}/cancel`, {})
-    await waitFor(() => endedTurns(running, worker) === 1)
+    await waitFor(async () => (await hiddenEvents(running, watcher)).length === 1)
 
-    await emitTasks(running, workerAgent, [])
     await followUpTurnAfterTasks(running, workerAgent, "All 312 tests passed.")
-    await waitFor(async () => (await hiddenEvents(running, watcher)).length > 0)
+    await waitFor(async () => (await hiddenEvents(running, watcher)).length === 2)
 
-    const delivered = await hiddenEvents(running, watcher)
-    expect(delivered).toHaveLength(1)
-    expect(delivered[0]).toContain('stopReason="end_turn"')
-    expect(delivered[0]).toContain("\nAll 312 tests passed.\n")
+    const [first, second] = await hiddenEvents(running, watcher)
+    expect(first).toContain('stopReason="cancelled"')
+    expect(second).toContain('stopReason="end_turn"')
+    expect(second).toContain("\nAll 312 tests passed.\n")
   })
 
   it("reports a target's error to subscribers that asked for errors", async () => {

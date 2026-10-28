@@ -16,7 +16,7 @@ import {
 } from "./agent-debug.js"
 import { listAgents, waitForAgents } from "./agent-lifecycle.js"
 import { startAgent } from "./agent-start.js"
-import { agentState, harnessIsLoaded } from "./agent-state.js"
+import { agentState } from "./agent-state.js"
 import { rejectSyncThrows, type RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
 import { finalAssistantText } from "./session-event-router.js"
@@ -89,22 +89,16 @@ const agentStatus = async (
   session: SessionSummary,
   page: TranscriptPage
 ): Promise<AgentStatus> =>
-  agentStatusOf(
-    session,
-    page,
-    harnessIsLoaded(services.agents, session),
-    await finalAssistantText(services, session.id)
-  )
+  agentStatusOf(session, page, await finalAssistantText(services, session.id))
 
 export const agentStatusOf = (
   session: SessionSummary,
-  page: Pick<TranscriptPage, "pendingQuestion" | "backgroundTasks">,
-  harnessLoaded: boolean,
+  page: Pick<TranscriptPage, "pendingQuestion">,
   lastReply: string
 ): AgentStatus => ({
   agentId: session.id,
   title: session.title,
-  state: agentState(session, page, harnessLoaded),
+  state: agentState(session, page),
   ...(lastReply.length === 0 ? {} : { lastReply }),
   ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
 })

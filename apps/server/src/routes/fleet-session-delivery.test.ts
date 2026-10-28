@@ -136,7 +136,14 @@ describe("fleet session events", () => {
 
     await run(
       remote.services.db.appendEvent("session.updated", child.id, {
+        turnState: "started",
+        turnId: "late"
+      })
+    )
+    await run(
+      remote.services.db.appendEvent("session.updated", child.id, {
         turnState: "ended",
+        turnId: "late",
         stopReason: "end_turn"
       })
     )

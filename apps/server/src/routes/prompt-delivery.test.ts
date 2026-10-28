@@ -132,6 +132,66 @@ describe("prompt delivery", () => {
     expect(prompted()).toEqual(["slow prompt", "urgent", "earlier"])
   })
 
+  it("steers an agent's message in only after the messages it queued earlier, in order", async () => {
+    const { server, sessionId, queue, steered } = await sessionRunning("prompt until cancelled")
+    const fromAgent = { fromSessionId: "parent-agent" }
+    for (const text of ["progress bar", "disk is full", "image sizes"]) {
+      await prompt(server, sessionId, { text, delivery: "queue", ...fromAgent })
+    }
+
+    const result = await prompt(server, sessionId, {
+      text: "treat it all as one task",
+      ...fromAgent
+    })
+
+    expect(result.delivered).toBe("steered")
+    expect(steered()).toEqual([
+      "progress bar",
+      "disk is full",
+      "image sizes",
+      "treat it all as one task"
+    ])
+    expect(await queue()).toEqual([])
+  })
+
+  it("lets a person's steer go ahead of what they queued", async () => {
+    const { server, sessionId, queue, steered } = await sessionRunning("prompt until cancelled")
+    await prompt(server, sessionId, { text: "next task", delivery: "queue" })
+
+    await prompt(server, sessionId, { text: "also check the tests" })
+
+    expect(steered()).toEqual(["also check the tests"])
+    expect((await queue()).map((item) => item.text)).toEqual(["next task"])
+  })
+
+  it("keeps an agent's declined steer behind its earlier queued messages", async () => {
+    const { agents, server, sessionId, prompted } = await sessionRunning("slow prompt")
+    const fromAgent = { fromSessionId: "parent-agent" }
+    await prompt(server, sessionId, { text: "earlier", delivery: "queue", ...fromAgent })
+
+    const declined = await prompt(server, sessionId, { text: "urgent", ...fromAgent })
+    agents.releasePrompt()
+    await waitFor(() => agents.prompts.length === 3)
+
+    expect(declined).toMatchObject({ delivered: "queued", steerDeclined: true })
+    expect(prompted()).toEqual(["slow prompt", "earlier", "urgent"])
+  })
+
+  it("runs every queued message to a working agent once, in order, after its turn", async () => {
+    const { agents, server, sessionId, prompted, queue } =
+      await sessionRunning("prompt until cancelled")
+    const messages = ["one", "two", "three", "four"]
+    for (const text of messages) {
+      await prompt(server, sessionId, { text, delivery: "queue", fromSessionId: "parent-agent" })
+    }
+
+    await jsonRequest(server, `/v1/sessions/${sessionId}/cancel`, { method: "POST" })
+    await waitFor(() => agents.prompts.length === 5)
+
+    expect(prompted()).toEqual(["prompt until cancelled", ...messages])
+    await waitFor(async () => (await queue()).length === 0)
+  })
+
   it("sends a declined steer at once when the turn ends while it is declined", async () => {
     const { agents, services, state, fanout } = await runningTurn()
     const item = await run(services.db.createPromptQueueItem("chat", "after the agent's turn"))

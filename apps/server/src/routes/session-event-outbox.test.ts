@@ -8,25 +8,31 @@ import { makeEventFanout } from "../server-context.js"
 import { idleRouteState, makeServices, run, tempDirs } from "../test-support.js"
 import { makeSessionEventOutbox } from "./session-event-outbox.js"
 
-it("wakes no one with an event that went stale before it could be delivered", async () => {
+it("queues every event for a busy subscriber in order, replacing none", async () => {
   const { services } = await makeServices("server-a")
   const folder = mkdtempSync(join(tmpdir(), "codevisor-event-outbox-"))
   tempDirs.push(folder)
   const project = await run(services.db.createProject({ folderPath: folder }))
-  const caller = await run(services.db.createSession({ projectId: project.id, harnessId: "codex" }))
+  const create = () => run(services.db.createSession({ projectId: project.id, harnessId: "codex" }))
+  const [subscriber, worker] = [await create(), await create()]
+  const routeState = idleRouteState()
+  routeState.activeTurnSessions.add(subscriber.id)
   const outbox = makeSessionEventOutbox(
     services,
     await run(makeEventFanout),
-    idleRouteState(),
+    routeState,
     "server-a"
   )
 
-  await outbox.deliver(caller.id, {
-    message: { key: "job:collected", text: "The job the caller already collected finished" },
-    sourceSessionId: caller.id,
-    stale: () => true
-  })
+  for (const text of ["first turn ended", "second turn ended"]) {
+    await outbox.deliver(subscriber.id, { message: { text }, sourceSessionId: worker.id })
+  }
 
-  expect(outbox.wokenBy(caller.id)).toEqual(new Set())
-  expect(await run(services.db.listPromptQueue(caller.id))).toEqual([])
+  expect(
+    (await run(services.db.listPromptQueue(subscriber.id))).map((item) => [item.text, item.origin])
+  ).toEqual([
+    ["first turn ended", "system"],
+    ["second turn ended", "system"]
+  ])
+  expect(outbox.wokenBy(subscriber.id)).toEqual(new Set([worker.id]))
 })

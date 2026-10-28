@@ -2,7 +2,6 @@ import type { ExecutionJob } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
-  combinedEventText,
   erroredMessage,
   jobFinishedMessage,
   REPORT_LIMIT,
@@ -26,11 +25,10 @@ const job = (overrides: Partial<ExecutionJob>): ExecutionJob => ({
 })
 
 describe("session event messages", () => {
-  it("escapes attributes, keeps the whole final reply, and keys events per target", () => {
+  it("escapes attributes and keeps the whole final reply", () => {
     const reply = "x".repeat(REPORT_LIMIT + 1)
     const message = turnEndedMessage(target, { stopReason: undefined, finalText: reply }, "sub-1")
 
-    expect(message.key).toBe("turn_ended:s1")
     expect(message.text.split("\n")).toEqual([
       '<codevisor-event type="session.turn_ended" agentId="s1" title="Fix &quot;login&quot; &lt;now>" subscriptionId="sub-1">',
       reply,
@@ -96,14 +94,9 @@ describe("session event messages", () => {
     expect(jobFinishedMessage(job({})).text).toContain("Result: undefined")
   })
 
-  it("joins several events into one prompt", () => {
+  it("says when a turn ended with no final message", () => {
     const first = turnEndedMessage(target, { stopReason: "end_turn", finalText: "" })
-    const second = turnEndedMessage(
-      { id: "s2", title: "Other" },
-      { stopReason: undefined, finalText: "done" }
-    )
 
-    expect(combinedEventText([first, second])).toBe(`${first.text}\n\n${second.text}`)
     expect(first.text).toContain('stopReason="end_turn"')
     expect(first.text).toContain("(no final message)")
   })

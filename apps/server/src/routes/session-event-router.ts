@@ -17,9 +17,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
-import { isUpdatePause } from "../update-pauses.js"
 import { conversationalBotForSession } from "./bot-turns.js"
-import { hasLiveTurn } from "./prompt-queue.js"
 import {
   erroredMessage,
   jobFinishedMessage,
@@ -29,11 +27,11 @@ import {
   type TurnEnd
 } from "./session-event-messages.js"
 import { makeSessionEventOutbox, type SessionEventOutbox } from "./session-event-outbox.js"
-import { makeTurnEndHolds, stopReasonOf } from "./turn-end-holds.js"
 
 export interface SessionEventRouter {
   readonly listener: (event: EventEnvelope) => void
   readonly onJobFinished: (finished: ExecutionJobFinished) => void
+  readonly recover: () => Promise<void>
 }
 
 export const finalAssistantText = async (
@@ -61,36 +59,36 @@ export const makeSessionEventRouter = (
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
-  afterTurnEnded: () => Promise<void>
+  afterTurnFinished: () => Promise<void>
 ): SessionEventRouter => {
   const outbox = makeSessionEventOutbox(services, fanout, routeState, serverId)
   const actionKinds = new Map<string, string | undefined>()
   const publish = makePublisher(services, outbox)
+  const announcements = new Map<string, Promise<void>>()
 
-  const announceTurnEnd = async (
-    sessionId: string,
-    stopReason: string | undefined,
-    stale?: () => boolean
-  ) => {
+  const announceFinishedTurn = async (sessionId: string) => {
+    const finished = await run(services.db.getFinishedTurn(sessionId))
+    if (finished === undefined) return
+
     const target = await run(services.db.getSessionSummary(sessionId))
-    const end = await latestTurnEnd(services, sessionId, stopReason)
-    await publish(
-      target,
-      "turn_ended",
-      (subscriptionId) => turnEndedMessage(target, end, subscriptionId),
-      [],
-      stale
+    const end = await latestTurnEnd(services, sessionId, finished.stopReason)
+    await publish(target, "turn_ended", (subscriptionId) =>
+      turnEndedMessage(target, end, subscriptionId)
     )
+    await run(services.db.markTurnAnnounced(sessionId, finished.revision))
     outbox.forgetWake(sessionId)
+    void afterTurnFinished().catch(swallowError)
   }
-  const holds = makeTurnEndHolds(
-    announceTurnEnd,
-    (sessionId) => !hasLiveTurn(routeState, sessionId)
-  )
 
-  const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {
-    if (!holds.isHeld(sessionId)) await announceTurnEnd(sessionId, stopReasonOf(payload))
-    await outbox.flushHeld(sessionId)
+  const announceInOrder = (sessionId: string): Promise<void> => {
+    const next = (announcements.get(sessionId) ?? Promise.resolve())
+      .then(() => announceFinishedTurn(sessionId))
+      .catch(swallowError)
+    announcements.set(sessionId, next)
+    void next.finally(() => {
+      if (announcements.get(sessionId) === next) announcements.delete(sessionId)
+    })
+    return next
   }
 
   const onError = async (sessionId: string, message: string) => {
@@ -98,7 +96,6 @@ export const makeSessionEventRouter = (
     await publish(target, "errored", (subscriptionId) =>
       erroredMessage(target, message, subscriptionId)
     )
-    await outbox.flushHeld(sessionId)
   }
 
   const onAttention = async (summary: Record<string, unknown>, sessionId: string) => {
@@ -118,25 +115,16 @@ export const makeSessionEventRouter = (
   const onJobFinished = async ({ job, collected }: ExecutionJobFinished) => {
     const owner = await run(services.db.getSessionSummary(job.sessionId)).catch(() => undefined)
     if (owner === undefined) return
-    const caller: Recipient = { subscriberId: owner.id, stale: collected }
+    const caller: ReadonlyArray<Recipient> = collected() ? [] : [{ subscriberId: owner.id }]
     await publish(
       owner,
       "job_finished",
       (subscriptionId) => jobFinishedMessage(job, subscriptionId),
-      [caller]
+      caller
     )
   }
 
   const routeEvent = async (event: EventEnvelope, payload: Record<string, unknown>) => {
-    if (event.kind === "session.updated" && payload.turnState === "ended") {
-      if (isUpdatePause(payload)) {
-        await outbox.flushHeld(event.subjectId)
-        return
-      }
-      void afterTurnEnded().catch(swallowError)
-      await onTurnEnded(event.subjectId, payload)
-      return
-    }
     if (event.kind === "session.error") {
       await onError(event.subjectId, String(payload.message))
       return
@@ -151,11 +139,15 @@ export const makeSessionEventRouter = (
   return {
     listener: (event) => {
       const payload = isRecord(event.payload) ? event.payload : {}
-      holds.track(event, payload)
       void routeEvent(event, payload).catch(swallowError)
+      if (event.kind.startsWith("session.")) void announceInOrder(event.subjectId)
     },
     onJobFinished: (finished) => {
       void onJobFinished(finished).catch(swallowError)
+    },
+    recover: async () => {
+      const finished = await run(services.db.listFinishedTurns)
+      await Promise.all(finished.map((turn) => announceInOrder(turn.sessionId)))
     }
   }
 }
@@ -165,7 +157,6 @@ const FINAL_REPLY_PAGE = 32
 interface Recipient {
   readonly subscriberId: string
   readonly subscription?: SessionSubscription
-  readonly stale?: () => boolean
 }
 
 type BuildMessage = (subscriptionId?: string) => SessionEventMessage
@@ -176,8 +167,7 @@ const makePublisher =
     target: SessionSummary,
     type: SessionEventType,
     build: BuildMessage,
-    extra: ReadonlyArray<Recipient> = [],
-    superseded?: () => boolean
+    extra: ReadonlyArray<Recipient> = []
   ): Promise<void> => {
     const recipients = await recipientsFor(services, target, type, extra)
     for (const recipient of recipients) {
@@ -185,11 +175,9 @@ const makePublisher =
       if (recipient.subscription?.once === true) {
         await run(services.db.deleteSessionSubscription(recipient.subscription.id))
       }
-      const stale = superseded ?? recipient.stale
       await outbox.deliver(recipient.subscriberId, {
         message: build(recipient.subscription?.id),
-        sourceSessionId: target.id,
-        ...(stale === undefined ? {} : { stale })
+        sourceSessionId: target.id
       })
     }
   }

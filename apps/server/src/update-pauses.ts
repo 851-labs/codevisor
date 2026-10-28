@@ -31,6 +31,3 @@ export const withUpdatePauseStop = (
   if (payload.stopKind !== undefined) return event
   return { ...event, payload: { ...payload, stopKind: "pausedForUpdate" } }
 }
-
-export const isUpdatePause = (payload: Readonly<Record<string, unknown>>): boolean =>
-  payload.stopKind === "pausedForUpdate"

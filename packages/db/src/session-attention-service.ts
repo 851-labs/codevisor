@@ -12,6 +12,7 @@ import {
   projectSessionSidebarState,
   settleSessionAttention
 } from "./session-attention.js"
+import { finishedTurn, listFinishedTurns, markTurnAnnounced } from "./turn-finish.js"
 
 export const makeSessionAttentionService = (
   sqlite: ServiceContext["sqlite"],
@@ -24,6 +25,9 @@ export const makeSessionAttentionService = (
   | "settleSessionAttention"
   | "listPendingAttentionSettles"
   | "getAttentionSettleDeadline"
+  | "getFinishedTurn"
+  | "listFinishedTurns"
+  | "markTurnAnnounced"
 > => ({
   markSessionRead: (rawId, throughSequence) =>
     attempt("markSessionRead", () => {
@@ -73,7 +77,12 @@ export const makeSessionAttentionService = (
   getAttentionSettleDeadline: (rawId) =>
     attempt("getAttentionSettleDeadline", () =>
       attentionSettleDeadline(sqlite, canonicalUuid(rawId))
-    )
+    ),
+  getFinishedTurn: (rawId) =>
+    attempt("getFinishedTurn", () => finishedTurn(sqlite, canonicalUuid(rawId))),
+  listFinishedTurns: attempt("listFinishedTurns", () => listFinishedTurns(sqlite)),
+  markTurnAnnounced: (rawId, revision) =>
+    attempt("markTurnAnnounced", () => markTurnAnnounced(sqlite, canonicalUuid(rawId), revision))
 })
 
 const readLatestAttentionRevision = (sqlite: ServiceContext["sqlite"], id: string): number => {

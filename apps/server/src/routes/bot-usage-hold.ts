@@ -8,18 +8,13 @@ export const heldForUsageLimit = async (
   sessionId: string
 ): Promise<boolean> => {
   if (!(await botAwaitsReset(services, sessionId))) return false
-  if (await userPromptQueued(services, sessionId)) return false
-
-  heldBots.add(sessionId)
-  return true
+  return !(await userPromptQueued(services, sessionId))
 }
 
-export const coalesceReleasedWakeUps = async (
+export const coalesceWakeUps = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<void> => {
-  if (!heldBots.delete(sessionId)) return
-
   const wakeUps = leadingWakeUps(await run(services.db.listPromptQueue(sessionId)))
   if (wakeUps.length < 2) return
 
@@ -37,8 +32,6 @@ const botAwaitsReset = async (
 
   return (await conversationalBotForSession(services, sessionId)) !== undefined
 }
-
-const heldBots = new Set<string>()
 
 const userPromptQueued = async (
   services: CodevisorServerServices,
