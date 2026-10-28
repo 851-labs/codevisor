@@ -21,7 +21,7 @@ struct WorkspaceInspectorContextSection: View {
         WorkspaceInspectorContextOverview(
           used: totals.used,
           size: totals.size,
-          segments: context.map { active(in: $0).filter { !$0.isFreeSpace }.map { ($0.tint, $0.tokens) } } ?? []
+          segments: context.map { active(in: $0).filter { !$0.isFreeSpace }.map(\.segment) } ?? []
         )
         if let context {
           ForEach(active(in: context) + context.categories.filter { $0.isDeferred == true }, id: \.name) {
@@ -49,7 +49,7 @@ struct WorkspaceInspectorContextSection: View {
 private struct WorkspaceInspectorContextOverview: View {
   let used: Double
   let size: Double
-  let segments: [(Color, Double)]
+  let segments: [WorkspaceInspectorMeter.Segment]
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -81,14 +81,13 @@ private struct WorkspaceInspectorContextSummary: View {
 }
 
 private struct WorkspaceInspectorContextBar: View {
-  let segments: [(Color, Double)]
+  let segments: [WorkspaceInspectorMeter.Segment]
   let used: Double
   let size: Double
 
   var body: some View {
     WorkspaceInspectorMeter(
-      segments: segments.isEmpty
-        ? [.init(color: .accentColor, value: used)] : segments.map { .init(color: $0.0, value: $0.1) },
+      segments: segments.isEmpty ? [.init(id: "Used", color: .accentColor, value: used)] : segments,
       total: size
     )
     .accessibilityLabel("Context used")
@@ -145,6 +144,10 @@ enum WorkspaceInspectorContextTokens {
 
 extension ServerSessionContext.Category {
   fileprivate var isFreeSpace: Bool { name == "Free space" }
+
+  fileprivate var segment: WorkspaceInspectorMeter.Segment {
+    .init(id: name, color: tint, value: tokens)
+  }
 
   fileprivate var rank: Int {
     switch name {

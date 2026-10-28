@@ -3,7 +3,8 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorMeter: View {
-  struct Segment: Equatable {
+  struct Segment: Equatable, Identifiable {
+    let id: String
     let color: Color
     let value: Double
   }
@@ -65,7 +66,7 @@ struct WorkspaceInspectorMeter: View {
           .fill(Self.track)
           .overlay(Capsule().strokeBorder(Self.rim, lineWidth: 0.5))
         HStack(spacing: 0) {
-          ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+          ForEach(segments) { segment in
             let span = span(segment, width: width) * progress
             WorkspaceInspectorMeterFill(shape: Rectangle(), color: segment.color.resolve(in: environment))
               .frame(width: max(span - 1, 0))
