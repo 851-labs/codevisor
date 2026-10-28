@@ -41,12 +41,12 @@ struct BotEditorView: View {
           machineSection
         }
         projectsSection
-        if isCreating {
+        if let bot = editor.editedBot {
+          editedBotModelSection(bot)
+          deleteSection(bot)
+        } else {
           modelSection
           conversationSection
-        }
-        if let bot = editor.editedBot {
-          deleteSection(bot)
         }
         if let errorMessage = editor.errorMessage {
           Section {
@@ -242,6 +242,7 @@ struct BotEditorView: View {
               Text(value.name).tag(value.value)
             }
           }
+          .pickerStyle(.navigationLink)
         }
       } else if editor.models == nil {
         HStack {
@@ -255,6 +256,24 @@ struct BotEditorView: View {
           .foregroundStyle(.secondary)
       }
     }
+  }
+
+  @ViewBuilder
+  private func editedBotModelSection(_ bot: Bot) -> some View {
+    if let controller = sessionController(for: bot) {
+      BotSessionModelSection(controller: controller, harnessId: bot.harnessId)
+        .task { await controller.connectIfNeeded() }
+    }
+  }
+
+  private func sessionController(for bot: Bot) -> SessionController? {
+    guard let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId),
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == bot.serverId && $0.id == session.projectId
+      })
+    else { return nil }
+    return ChatControllerCache.shared.controller(
+      for: session, project: project, workspaceId: bot.workspaceId, environment: environment)
   }
 
   private var conversationSection: some View {

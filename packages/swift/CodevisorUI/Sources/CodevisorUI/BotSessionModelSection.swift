@@ -2,11 +2,16 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-struct BotSessionModelSection: View {
+public struct BotSessionModelSection: View {
   @Bindable var controller: SessionController
   let harnessId: String
 
-  var body: some View {
+  public init(controller: SessionController, harnessId: String) {
+    self.controller = controller
+    self.harnessId = harnessId
+  }
+
+  public var body: some View {
     Section("Model") {
       if let model = controller.modelOption {
         Picker("Model", selection: modelSelection(model)) {
@@ -14,17 +19,22 @@ struct BotSessionModelSection: View {
             Text(option.name).tag(option.value)
           }
         }
-        .pickerStyle(.menu)
-        ForEach(ModelParameterMenu.options(from: controller.configOptions)) { option in
+        .botSettingsPickerStyle()
+        ForEach(ConfigParameterOptions.ordered(controller.configOptions)) { option in
           Picker(option.name, selection: parameterSelection(option)) {
             ForEach(option.options) { value in
               Text(value.name).tag(value.value)
             }
           }
-          .pickerStyle(.menu)
+          .botSettingsPickerStyle()
         }
       } else {
-        ProgressView().controlSize(.small)
+        HStack {
+          Text("Loading Models…")
+            .foregroundStyle(.secondary)
+          Spacer()
+          ProgressView().controlSize(.small)
+        }
       }
     }
     .disabled(controller.pendingModelPick != nil)
@@ -54,5 +64,16 @@ struct BotSessionModelSection: View {
 
   private var activeHarnessId: String {
     controller.activeHarnessId ?? harnessId
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func botSettingsPickerStyle() -> some View {
+    #if os(iOS)
+      pickerStyle(.navigationLink)
+    #else
+      pickerStyle(.menu)
+    #endif
   }
 }
