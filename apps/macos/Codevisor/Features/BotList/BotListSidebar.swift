@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotListSidebar: View {
@@ -11,8 +12,9 @@ struct BotListSidebar: View {
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
 
-  private var conversations: [BotConversation] {
-    BotConversationList(environment: environment, store: store).conversations()
+  private var rows: [BotSidebarRow] {
+    let conversations = BotConversationList(environment: environment, store: store).conversations()
+    return BotSidebarRows.derive(BotSidebarRows.State(conversations: conversations))
   }
 
   private var selectedBotID: UUID? {
@@ -63,7 +65,7 @@ struct BotListSidebar: View {
           .padding(.top, 8)
       }
       BotConversationRows(
-        conversations: conversations,
+        rows: rows,
         selectedBotID: selectedBotID,
         onSelect: select,
         onEdit: { botEditor = .edit($0) },
@@ -87,14 +89,7 @@ struct BotListSidebar: View {
   }
 
   private func step(_ offset: Int) {
-    let bots = conversations.map(\.bot)
-    guard let current = bots.firstIndex(where: { $0.id == selectedBotID }) else {
-      if let first = bots.first { select(first) }
-      return
-    }
-
-    let target = current + offset
-    guard bots.indices.contains(target) else { return }
-    select(bots[target])
+    guard let target = BotSidebarRows.step(from: selectedBotID, by: offset, in: rows) else { return }
+    select(target)
   }
 }

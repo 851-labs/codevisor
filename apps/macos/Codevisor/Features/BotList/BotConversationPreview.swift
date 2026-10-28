@@ -5,7 +5,6 @@ struct BotConversationPreview: View {
   private static let lineCount = 2
 
   let conversation: BotConversation
-  let isHighlighted: Bool
 
   var body: some View {
     Group {
@@ -14,7 +13,7 @@ struct BotConversationPreview: View {
           Text(verbatim: " ")
             .lineLimit(Self.lineCount, reservesSpace: true)
             .hidden()
-          BotTypingIndicator(isHighlighted: isHighlighted)
+          BotTypingIndicator()
         }
       } else {
         Text(text)
@@ -35,11 +34,10 @@ struct BotConversationPreview: View {
   }
 
   private var foreground: AnyShapeStyle {
-    if isHighlighted { return AnyShapeStyle(.white.opacity(0.8)) }
     switch conversation.activity {
-    case .waitingOnUser: return AnyShapeStyle(.orange)
-    case .failed: return AnyShapeStyle(.red)
-    case .idle, .working: return AnyShapeStyle(.secondary)
+    case .waitingOnUser: AnyShapeStyle(.orange)
+    case .failed: AnyShapeStyle(.red)
+    case .idle, .working: AnyShapeStyle(.secondary)
     }
   }
 }

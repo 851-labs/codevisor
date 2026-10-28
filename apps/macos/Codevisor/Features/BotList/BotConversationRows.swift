@@ -1,15 +1,17 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotConversationRows: View {
-  let conversations: [BotConversation]
+  let rows: [BotSidebarRow]
   let selectedBotID: UUID?
   let onSelect: (Bot) -> Void
   let onEdit: (Bot) -> Void
   let onDelete: (Bot) -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    if conversations.isEmpty {
+    if rows.isEmpty {
       BotListPlaceholder()
         .containerRelativeFrame(.vertical)
     } else {
@@ -19,17 +21,23 @@ struct BotConversationRows: View {
 
   private var list: some View {
     TimelineView(.everyMinute) { context in
-      LazyVStack(spacing: 2) {
-        ForEach(conversations) { conversation in
-          row(conversation, now: context.date)
-        }
+      SidebarRowList(rows: rows, id: \.id, spacing: 2, animation: Motion.listReflow(reduceMotion: reduceMotion)) {
+        row($0, now: context.date)
       }
       .padding(.horizontal, 8)
       .padding(.bottom, 8)
     }
   }
 
-  private func row(_ conversation: BotConversation, now: Date) -> some View {
+  @ViewBuilder
+  private func row(_ row: BotSidebarRow, now: Date) -> some View {
+    switch row.kind {
+    case let .bot(conversation):
+      botRow(conversation, now: now)
+    }
+  }
+
+  private func botRow(_ conversation: BotConversation, now: Date) -> some View {
     let bot = conversation.bot
     return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID, now: now)
       .onTapGesture { onSelect(bot) }
