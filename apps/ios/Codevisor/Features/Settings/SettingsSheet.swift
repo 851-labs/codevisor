@@ -29,7 +29,6 @@ struct SettingsSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-  @ClientPreference(SandboxesFeature.preferenceKey, default: false) private var sandboxesEnabled
   @State private var path: [SettingsDestination]
   @State private var selection: SettingsDestination?
   @State private var detailPath: [SettingsDestination] = []
@@ -44,12 +43,10 @@ struct SettingsSheet: View {
     return "\(version) (\(buildNumber))"
   }
 
-  static var clientSections: [String] {
-    [
-      "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "mcps",
-      "skills", "plugins",
-    ].filter { $0 != "sandboxes" || SandboxesFeature.isEnabled }
-  }
+  static let clientSections = [
+    "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "mcps",
+    "skills", "plugins",
+  ]
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
     self.onSectionChange = onSectionChange
@@ -183,10 +180,8 @@ struct SettingsSheet: View {
       NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
         sectionLabel("Machines", icon: .machines)
       }
-      if sandboxesEnabled {
-        NavigationLink(value: SettingsDestination.section("sandboxes")) {
-          sectionLabel("Sandboxes", icon: .sandboxes)
-        }
+      NavigationLink(value: SettingsDestination.section("sandboxes")) {
+        sectionLabel("Sandboxes", icon: .sandboxes)
       }
       NavigationLink(value: SettingsDestination.section("projects")) {
         sectionLabel("Projects", icon: .projects)

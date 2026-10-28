@@ -3,7 +3,6 @@ import SwiftUI
 
 enum FeatureFlag: String, CaseIterable, Identifiable {
   case bots
-  case sandboxes
   case developerMode
 
   var id: String { rawValue }
@@ -13,7 +12,6 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .bots: "Bots"
-    case .sandboxes: "Sandboxes"
     case .developerMode: "Developer Mode"
     }
   }
@@ -21,7 +19,6 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
   var detail: String {
     switch self {
     case .bots: "Adds a Chat mode to the sidebar for long-lived bots that work across several projects."
-    case .sandboxes: "Starts chats on throwaway machines from Tart, E2B, Modal and other vendors."
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
     }
   }

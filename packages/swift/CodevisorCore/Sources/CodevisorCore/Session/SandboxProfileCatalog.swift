@@ -24,13 +24,8 @@ public final class SandboxProfileCatalog {
 
   public func load(
     from composer: any CodevisorServerClienting,
-    enabled: Bool,
     host: (String) -> (any CodevisorServerClienting)?
   ) async {
-    guard enabled else {
-      choices = []
-      return
-    }
     let vendors = (try? await composer.sandboxVendors()) ?? ServerSandboxVendors()
     let providers = (try? await composer.sandboxProviders()) ?? []
     let profiles = (try? await composer.sandboxProfiles()) ?? []

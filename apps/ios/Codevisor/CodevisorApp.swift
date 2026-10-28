@@ -98,10 +98,10 @@ struct CodevisorApp: App {
     )
     #if DEBUG
       if !HomeSidebarSampleData.isEnabled {
-        environment.syncClientPreferences(SidebarPreferenceKey.synced.union([SandboxesFeature.preferenceKey]))
+        environment.syncClientPreferences(SidebarPreferenceKey.synced)
       }
     #else
-      environment.syncClientPreferences(SidebarPreferenceKey.synced.union([SandboxesFeature.preferenceKey]))
+      environment.syncClientPreferences(SidebarPreferenceKey.synced)
     #endif
     return environment
   }

@@ -63,13 +63,12 @@ extension EnvironmentValues {
 struct SettingsView: View {
   @Bindable private var router = SettingsRouter.shared
   @Environment(AppEnvironment.self) private var environment
-  @ClientPreference(SandboxesFeature.preferenceKey, default: false) private var sandboxesEnabled
 
   var body: some View {
     NavigationSplitView {
       ScrollView {
         VStack(spacing: 14) {
-          ForEach(SettingsTab.visibleGroups(sandboxesEnabled: sandboxesEnabled), id: \.self) { group in
+          ForEach(SettingsTab.sidebarGroups, id: \.self) { group in
             VStack(spacing: 2) {
               ForEach(group) { tab in
                 SettingsSidebarRow(
@@ -165,12 +164,9 @@ struct SettingsView: View {
     case .machines:
       MachinesSettingsView()
         .navigationTitle("Machines")
-    case .sandboxes where sandboxesEnabled:
+    case .sandboxes:
       SandboxesSettingsView(model: environment.sandboxSettings)
         .navigationTitle("Sandboxes")
-    case .sandboxes:
-      DeveloperSettingsView()
-        .navigationTitle("Developer")
     case .developer:
       DeveloperSettingsView()
         .navigationTitle("Developer")

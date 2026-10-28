@@ -202,20 +202,3 @@ export const SandboxAvailabilityResponse = Schema.Struct({
   profiles: Schema.Array(SandboxProfileAvailability)
 })
 export type SandboxAvailabilityResponse = typeof SandboxAvailabilityResponse.Type
-
-export const SANDBOXES_FEATURE_FLAG = {
-  namespace: "client-preferences",
-  key: "featureFlags.sandboxes"
-} as const
-
-interface FeatureFlagEntry {
-  readonly key: string
-  readonly value: unknown
-  readonly deleted?: boolean | undefined
-}
-
-export const sandboxesFlagOn = (entries: ReadonlyArray<FeatureFlagEntry>): boolean =>
-  entries.some(
-    (entry) =>
-      entry.key === SANDBOXES_FEATURE_FLAG.key && entry.deleted !== true && entry.value === true
-  )

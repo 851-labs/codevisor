@@ -46,7 +46,7 @@ struct ComposerRunTargetBar: View {
               onMachine: onMachine,
               onSandbox: sandboxes.onPick,
               onManageMachines: onManageMachines,
-              onManageSandboxes: sandboxes.enabled ? sandboxes.onManage : nil
+              onManageSandboxes: sandboxes.onManage
             )
           }
           .layoutValue(key: RunTargetPickerRoleKey.self, value: .machine)
@@ -103,7 +103,7 @@ struct ComposerRunTargetBar: View {
     .buttonStyle(.plain)
     .padding(.horizontal, 4)
     .accessibilityElement(children: .contain)
-    .task(id: "\(selectedServerId)|\(sandboxes.enabled)") { await sandboxes.load(sandboxProfiles) }
+    .task(id: selectedServerId) { await sandboxes.load(sandboxProfiles) }
   }
 
   private var locationSymbol: String {

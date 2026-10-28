@@ -65,7 +65,6 @@ struct NewChatView: View {
   @State var pendingSetupGroupID: ProjectGroup.ID?
   @State var projectSetup: ProjectMachineSetup?
   @State var sandboxProfiles = SandboxProfileCatalog()
-  @ClientPreference(SandboxesFeature.preferenceKey, default: false) var sandboxesEnabled
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [CodevisorMachine.ID]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
@@ -188,12 +187,9 @@ struct NewChatView: View {
     }
     .attachmentDropTarget(controller)
     .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
-    .task(id: "\(composerServerId)|\(sandboxesEnabled)") {
+    .task(id: composerServerId) {
       let machines = environment.machines
-      await sandboxProfiles.load(from: machines.client(for: composerServerId), enabled: sandboxesEnabled) {
-        machines.client(forServerId: $0)
-      }
-      if !sandboxesEnabled { controller?.sandboxTarget = nil }
+      await sandboxProfiles.load(from: machines.client(for: composerServerId)) { machines.client(forServerId: $0) }
     }
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {
