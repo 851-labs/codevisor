@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   booleanField,
+  cappedFields,
   choiceField,
   fieldDefaults,
   keepingSecrets,
@@ -70,6 +71,19 @@ describe("sandbox fields", () => {
 
     for (const [raw, message] of failures) expect(() => readFields(fields, raw)).toThrow(message)
     expect(() => readFields([unlisted], { size: "xl" })).toThrow("Size must be one of ")
+  })
+
+  it("lowers a field's maximum to the host's, never raises it, and leaves other fields alone", () => {
+    const capped = cappedFields(fields, { cpu: 8, disk: 64, lifetime: 90 })
+
+    expect(() => readFields(capped, { ...valid, cpu: 9 })).toThrow("CPUs must be between 1 and 8")
+    expect(() => readFields(capped, { ...valid, disk: 65 })).toThrow(
+      "Disk (GB) must be between 20 and 64"
+    )
+    expect(readFields(capped, { ...valid, lifetime: 45 })).toMatchObject({ lifetime: 45 })
+    expect(() => readFields(capped, { ...valid, lifetime: 46 })).toThrow(
+      "Lifetime must be at most 45"
+    )
   })
 
   it("never hands secrets back, and keeps a saved secret when an edit leaves it blank", () => {

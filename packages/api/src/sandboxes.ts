@@ -125,6 +125,9 @@ export const SandboxField = Schema.Struct({
   help: Schema.optional(Schema.String),
   min: Schema.optional(Schema.Number),
   max: Schema.optional(Schema.Number),
+  steps: Schema.optional(Schema.Array(Schema.Number)),
+  fallbackMax: Schema.optional(Schema.Number),
+  unit: Schema.optional(Schema.String),
   capability: Schema.optional(Schema.String)
 })
 export type SandboxField = typeof SandboxField.Type
@@ -142,7 +145,8 @@ export type SandboxProviderInfo = typeof SandboxProviderInfo.Type
 
 export const SandboxProvidersResponse = Schema.Struct({
   providers: Schema.Array(SandboxProviderInfo),
-  capabilities: Schema.Array(Schema.String)
+  capabilities: Schema.Array(Schema.String),
+  maximums: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number))
 })
 export type SandboxProvidersResponse = typeof SandboxProvidersResponse.Type
 

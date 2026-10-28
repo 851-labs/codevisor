@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { readProfileOptions } from "./options.js"
 import { fakeTart, result } from "./tart-test-support.js"
 import {
   DEFAULT_TART_BASE_IMAGE,
@@ -20,6 +21,10 @@ const options = {
   memoryGiB: 8
 }
 const ignoreOutput = () => undefined
+const hostMaximums = (cpus: number, memoryGiB: number) =>
+  tartAdapter(
+    fakeTart({ hardware: { cpus, memoryBytes: memoryGiB * 1024 ** 3 } }).host
+  ).hostMaximums?.()
 
 describe("Tart provider", () => {
   it("clones, sizes, boots headless and waits for the guest agent", async () => {
@@ -218,5 +223,26 @@ describe("Tart provider", () => {
 
     expect(events).toEqual(["Installed Tart"])
     expect(tart.commands[0]).toBe("install")
+  })
+})
+
+describe("Tart profile sizes", () => {
+  it("start at the macOS guest minimums and take whole numbers at or above them", () => {
+    expect(readProfileOptions(TART_DEFINITION, {})).toMatchObject({ cpu: 2, memoryGiB: 4 })
+    expect(() => readProfileOptions(TART_DEFINITION, { cpu: 1 })).toThrow(
+      "CPUs must be between 2 and 64"
+    )
+    expect(() => readProfileOptions(TART_DEFINITION, { memoryGiB: 3 })).toThrow(
+      "Memory must be between 4 and 512"
+    )
+    expect(() => readProfileOptions(TART_DEFINITION, { cpu: 2.5 })).toThrow(
+      "CPUs must be a whole number"
+    )
+  })
+
+  it("leave the host two cores and 4 GB, but never drop below the minimums", () => {
+    expect(hostMaximums(10, 16)).toEqual({ cpu: 8, memoryGiB: 12 })
+    expect(hostMaximums(32, 512)).toEqual({ cpu: 30, memoryGiB: 508 })
+    expect(hostMaximums(3, 6)).toEqual({ cpu: 2, memoryGiB: 4 })
   })
 })

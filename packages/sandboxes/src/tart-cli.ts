@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { mkdir, statfs } from "node:fs/promises"
-import { homedir } from "node:os"
+import { cpus, homedir, totalmem } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
@@ -48,6 +48,7 @@ export const tartCliHost = (tart: TartInstall): TartHost => {
       const stats = await statfs(home)
       return stats.bavail * stats.bsize
     },
+    hardware: () => ({ cpus: cpus().length, memoryBytes: totalmem() }),
     imageBytes: (image) => imageDiskBytes(image, fetchManifest),
     sleep: (ms) => delay(ms)
   }

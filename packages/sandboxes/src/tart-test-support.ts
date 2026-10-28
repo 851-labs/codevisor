@@ -1,5 +1,5 @@
 import type { ExecResult } from "./provider.js"
-import type { TartHost, TartRunOptions } from "./tart-vm.js"
+import type { TartHost, TartHostHardware, TartRunOptions } from "./tart-vm.js"
 
 export interface FakeVm {
   Name: string
@@ -19,6 +19,7 @@ export interface FakeTartSetup {
   readonly pulled?: ReadonlyArray<string>
   readonly pullOutput?: string
   readonly imageBytes?: number
+  readonly hardware?: TartHostHardware
 }
 
 const gib = 1024 ** 3
@@ -101,6 +102,7 @@ export const fakeTart = (setup: FakeTartSetup = {}) => {
       if (vm !== undefined) vm.State = "running"
     },
     freeDiskBytes: () => Promise.resolve((setup.freeGiB ?? 90) * gib),
+    hardware: () => setup.hardware ?? { cpus: 10, memoryBytes: 16 * gib },
     imageBytes: () => Promise.resolve(setup.imageBytes),
     sleep: (ms) => {
       sleeps.push(ms)

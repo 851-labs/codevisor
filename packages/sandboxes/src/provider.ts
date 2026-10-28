@@ -1,4 +1,4 @@
-import type { SandboxField, SandboxFieldValues } from "./fields.js"
+import type { SandboxField, SandboxFieldMaximums, SandboxFieldValues } from "./fields.js"
 
 export const SANDBOX_PROVIDER_IDS = [
   "tart",
@@ -120,6 +120,7 @@ export interface SandboxAdapter {
   readonly definition: SandboxProviderDefinition
   readonly connect: (account: SandboxFieldValues) => SandboxProvider
   readonly verify?: (account: SandboxFieldValues) => Promise<SandboxAccountIdentity>
+  readonly hostMaximums?: () => SandboxFieldMaximums
 }
 
 export class SandboxProviderError extends Error {

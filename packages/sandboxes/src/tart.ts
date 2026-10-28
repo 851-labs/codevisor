@@ -4,6 +4,7 @@ import {
   numberValue,
   optionalString,
   textField,
+  type SandboxFieldMaximums,
   type SandboxFieldValues
 } from "./fields.js"
 import type {
@@ -37,15 +38,37 @@ import {
   tartCommands,
   type TartCommands,
   type TartHost,
+  type TartHostHardware,
   type TartVm
 } from "./tart-vm.js"
 
-export { MAX_RUNNING_MACOS_VMS, type TartHost, type TartRunOptions } from "./tart-vm.js"
+export {
+  MAX_RUNNING_MACOS_VMS,
+  type TartHost,
+  type TartHostHardware,
+  type TartRunOptions
+} from "./tart-vm.js"
 export { IMAGE_PREFIX, TOOLS_PREFIX, type TartImageRecipe, type TartImages } from "./tart-image.js"
 
 export const DEFAULT_TART_BASE_IMAGE = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
 
 export const TART_CAPABILITY = "tart"
+
+export const TART_MIN_CPUS = 2
+export const TART_MIN_MEMORY_GIB = 4
+
+const tartMaxCpus = 64
+const tartMaxMemoryGiB = 512
+const fallbackMaxCpus = 4
+const fallbackMaxMemoryGiB = 8
+const hostCpuHeadroom = 2
+const hostMemoryHeadroomGiB = 4
+const bytesPerGiB = 1024 ** 3
+const cpuSteps = Array.from(
+  { length: tartMaxCpus - TART_MIN_CPUS + 1 },
+  (_, index) => TART_MIN_CPUS + index
+)
+const memoryStepsGiB = [4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]
 
 export const TART_DEFINITION: SandboxProviderDefinition = {
   id: "tart",
@@ -64,10 +87,28 @@ export const TART_DEFINITION: SandboxProviderDefinition = {
       default: DEFAULT_TART_BASE_IMAGE,
       help: "A Tart image. macOS images get Codevisor and its permissions built in on first use."
     }),
-    numberField("cpu", "CPUs", { default: 4, min: 1, max: 32 }),
-    numberField("memoryGiB", "Memory (GiB)", { default: 8, min: 2, max: 128 })
+    numberField("cpu", "CPUs", {
+      default: TART_MIN_CPUS,
+      min: TART_MIN_CPUS,
+      max: tartMaxCpus,
+      steps: cpuSteps,
+      fallbackMax: fallbackMaxCpus
+    }),
+    numberField("memoryGiB", "Memory", {
+      default: TART_MIN_MEMORY_GIB,
+      min: TART_MIN_MEMORY_GIB,
+      max: tartMaxMemoryGiB,
+      steps: memoryStepsGiB,
+      fallbackMax: fallbackMaxMemoryGiB,
+      unit: "GB"
+    })
   ]
 }
+
+export const tartHostMaximums = (hardware: TartHostHardware): SandboxFieldMaximums => ({
+  cpu: Math.max(TART_MIN_CPUS, hardware.cpus - hostCpuHeadroom),
+  memoryGiB: Math.max(TART_MIN_MEMORY_GIB, wholeGiB(hardware.memoryBytes) - hostMemoryHeadroomGiB)
+})
 
 export interface TartOptions {
   readonly image?: string
@@ -82,15 +123,16 @@ export const tartOptions = (values: SandboxFieldValues): TartOptions => {
   return {
     ...(image === undefined ? {} : { image }),
     baseImage: optionalString(values, "image") ?? DEFAULT_TART_BASE_IMAGE,
-    cpu: numberValue(values, "cpu", 4),
-    memoryGiB: numberValue(values, "memoryGiB", 8),
+    cpu: numberValue(values, "cpu", TART_MIN_CPUS),
+    memoryGiB: numberValue(values, "memoryGiB", TART_MIN_MEMORY_GIB),
     minFreeDiskGiB: numberValue(values, "minFreeDiskGiB", 40)
   }
 }
 
 export const tartAdapter = (host: TartHost, images: TartImages = noImages): SandboxAdapter => ({
   definition: TART_DEFINITION,
-  connect: () => makeTartProvider(host, images)
+  connect: () => makeTartProvider(host, images),
+  hostMaximums: () => tartHostMaximums(host.hardware())
 })
 
 const PREPARED_IMAGE_KEY = "preparedImage"
@@ -248,3 +290,5 @@ const stateFor = (vm: TartVm | undefined): ProviderMachineState => {
   if (vm === undefined) return "gone"
   return vm.State === "running" ? "running" : "stopped"
 }
+
+const wholeGiB = (bytes: number): number => Math.round(bytes / bytesPerGiB)

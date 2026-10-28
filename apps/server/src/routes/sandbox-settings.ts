@@ -6,6 +6,7 @@ import {
   deleteAccount,
   deleteProfile,
   hostCapabilities,
+  hostMaximums,
   listAccounts,
   profileAvailability,
   providerInfos,
@@ -26,7 +27,8 @@ export const routeSandboxSettings = async (
     const { adapters } = catalog
     writeJson(response, 200, {
       providers: providerInfos(adapters),
-      capabilities: hostCapabilities(adapters)
+      capabilities: hostCapabilities(adapters),
+      maximums: hostMaximums(adapters)
     })
     return true
   }

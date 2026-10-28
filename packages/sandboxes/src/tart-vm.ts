@@ -21,8 +21,14 @@ export interface TartHost {
   readonly start: (args: ReadonlyArray<string>) => void
   readonly copyIn: (vm: string, source: string, destination: string) => Promise<ExecResult>
   readonly freeDiskBytes: () => Promise<number>
+  readonly hardware: () => TartHostHardware
   readonly imageBytes: (image: string) => Promise<number | undefined>
   readonly sleep: (ms: number) => Promise<void>
+}
+
+export interface TartHostHardware {
+  readonly cpus: number
+  readonly memoryBytes: number
 }
 
 export interface TartSizing {

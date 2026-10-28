@@ -13,6 +13,7 @@ import {
   secretsSet,
   withoutSecrets,
   type SandboxAdapter,
+  type SandboxFieldMaximums,
   type SandboxFieldValues,
   type SandboxProviderDefinition
 } from "@codevisor/sandboxes"
@@ -61,6 +62,16 @@ export const hostCapabilities = (adapters: SandboxAdapters): ReadonlyArray<strin
     .all()
     .filter((adapter) => adapters.runsHere(adapter.definition.id))
     .flatMap((adapter) => machineCapabilities(adapter.definition))
+
+export const hostMaximums = (
+  adapters: SandboxAdapters
+): Readonly<Record<string, SandboxFieldMaximums>> =>
+  Object.fromEntries(
+    adapters
+      .all()
+      .filter((adapter) => adapters.runsHere(adapter.definition.id))
+      .flatMap((adapter) => maximumsOf(adapter))
+  )
 
 export const listAccounts = async (
   deps: SandboxCatalogDeps
@@ -238,15 +249,27 @@ const validProfile = async (
   const name = request.name.trim()
   if (name === "") throw new HttpFailure(400, "Name is required")
 
-  const { definition } = requireAdapter(deps.adapters, request.provider)
-  const values = asFieldInput(() => readProfileOptions(definition, request.values))
+  const adapter = requireAdapter(deps.adapters, request.provider)
+  const { definition } = adapter
   const accountId = await profileAccount(deps, definition, request.accountId)
+  const maximums = await maximumsForProfile(deps, adapter, accountId)
+  const values = asFieldInput(() => readProfileOptions(definition, request.values, maximums))
   return {
     name,
     provider: request.provider,
     ...(accountId === undefined ? {} : { accountId }),
     values
   }
+}
+
+const maximumsForProfile = async (
+  deps: SandboxCatalogDeps,
+  adapter: SandboxAdapter,
+  accountId: string | undefined
+): Promise<SandboxFieldMaximums> => {
+  const account = await accountById(deps.settings, accountId)
+  if (runsElsewhere(adapter.definition, account?.values ?? {}, deps.serverId)) return {}
+  return adapter.hostMaximums?.() ?? {}
 }
 
 const profileAccount = async (
@@ -316,6 +339,13 @@ const accountSummary = (
 const labelOf = (request: SaveSandboxAccountRequest): { readonly label?: string } => {
   const label = request.label?.trim() ?? ""
   return label === "" ? {} : { label }
+}
+
+const maximumsOf = (
+  adapter: SandboxAdapter
+): ReadonlyArray<readonly [string, SandboxFieldMaximums]> => {
+  const maximums = adapter.hostMaximums?.()
+  return maximums === undefined ? [] : [[adapter.definition.id, maximums]]
 }
 
 const machineCapabilities = (definition: SandboxProviderDefinition): ReadonlyArray<string> =>

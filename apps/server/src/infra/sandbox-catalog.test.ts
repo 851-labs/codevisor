@@ -3,6 +3,7 @@ import {
   fakeDefinition,
   machineField,
   makeFakeSandboxProvider,
+  numberField,
   type SandboxAdapter,
   type SandboxProviderDefinition
 } from "@codevisor/sandboxes"
@@ -16,6 +17,7 @@ import {
   deleteAccount,
   deleteProfile,
   hostCapabilities,
+  hostMaximums,
   listAccounts,
   profileAvailability,
   updateAccount,
@@ -264,6 +266,26 @@ describe("providers that live on a Mac", () => {
     expect(hostCapabilities(deps.adapters)).toEqual(["tart"])
     expect(await deps.connections.all()).toEqual([{ provider: "tart" }])
     expect(withoutProvider).toEqual(new HttpFailure(400, "Choose a Mac provider"))
+  })
+
+  it("cap profiles at the limits of their provider's Mac when it is this one", async () => {
+    const macs: SandboxProviderDefinition = {
+      ...fakeDefinition("tart", "darwin"),
+      displayName: "Mac",
+      accountFields: [machineField("machineId", "Mac", "tart")],
+      profileFields: [numberField("cpu", "CPUs", { min: 2, max: 64 })]
+    }
+    const deps = await catalogWith([adapterFor(macs, { hostMaximums: () => ({ cpu: 8 }) })])
+    await createAccount(deps, { provider: "tart", values: { machineId: "server-a" } })
+    await createAccount(deps, { provider: "tart", values: { machineId: "server-b" } })
+    const request = { name: "Big", provider: "tart" as const, values: { cpu: 12 } }
+
+    const here = await failure(createProfile(deps, { ...request, accountId: "id-1" }))
+    const there = await createProfile(deps, { ...request, accountId: "id-2" })
+
+    expect(hostMaximums(deps.adapters)).toEqual({ tart: { cpu: 8 } })
+    expect(here).toEqual(new HttpFailure(400, "CPUs must be between 2 and 8"))
+    expect(there.profile.values).toEqual({ cpu: 12 })
   })
 })
 

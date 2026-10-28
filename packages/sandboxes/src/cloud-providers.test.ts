@@ -253,7 +253,7 @@ describe("provider catalog", () => {
 
     expect(summary).toEqual({
       Tart: {
-        defaults: { image: "ghcr.io/cirruslabs/macos-tahoe-base:latest", cpu: 4, memoryGiB: 8 },
+        defaults: { image: "ghcr.io/cirruslabs/macos-tahoe-base:latest", cpu: 2, memoryGiB: 4 },
         secrets: 0
       },
       "Tart Orchard": {

@@ -27,8 +27,13 @@ export interface SandboxField {
   readonly help?: string
   readonly min?: number
   readonly max?: number
+  readonly steps?: ReadonlyArray<number>
+  readonly fallbackMax?: number
+  readonly unit?: string
   readonly capability?: string
 }
+
+export type SandboxFieldMaximums = Readonly<Record<string, number>>
 
 export class SandboxFieldError extends Error {
   override readonly name = "SandboxFieldError"
@@ -79,6 +84,11 @@ export const readFields = (
   }
   return values
 }
+
+export const cappedFields = (
+  fields: ReadonlyArray<SandboxField>,
+  maximums: SandboxFieldMaximums
+): ReadonlyArray<SandboxField> => fields.map((entry) => capped(entry, maximums[entry.key]))
 
 export const fieldDefaults = (fields: ReadonlyArray<SandboxField>): SandboxFieldValues =>
   Object.fromEntries(
@@ -150,6 +160,7 @@ const numberIn = (entry: SandboxField, value: unknown): number => {
     throw new SandboxFieldError(`${entry.label} must be a number`)
   }
   if (outOfRange(entry, number)) throw new SandboxFieldError(rangeMessage(entry))
+  if (notAStep(entry, number)) throw new SandboxFieldError(`${entry.label} must be a whole number`)
   return number
 }
 
@@ -180,6 +191,14 @@ const choiceIn = (entry: SandboxField, text: string): string => {
 
 const outOfRange = (entry: SandboxField, number: number): boolean =>
   (entry.min !== undefined && number < entry.min) || (entry.max !== undefined && number > entry.max)
+
+const notAStep = (entry: SandboxField, number: number): boolean =>
+  entry.steps !== undefined && !Number.isInteger(number)
+
+const capped = (entry: SandboxField, maximum: number | undefined): SandboxField => {
+  if (maximum === undefined) return entry
+  return { ...entry, max: Math.min(entry.max ?? maximum, maximum) }
+}
 
 const rangeMessage = (entry: SandboxField): string => {
   if (entry.min !== undefined && entry.max !== undefined) {
