@@ -21,7 +21,7 @@ struct SandboxProfileCatalogTests {
 
     await catalog.load(from: composer) { $0 == "server-studio" ? studio : nil }
 
-    #expect(catalog.choices.map(\.target.pickerTitle) == ["New Ubuntu Sandbox", "New Studio VM", "New Laptop VM"])
+    #expect(catalog.choices.map(\.target.profileName) == ["Ubuntu Sandbox", "Studio VM", "Laptop VM"])
     #expect(
       catalog.choices.map(\.disabledReason) == [
         nil, "This Mac already runs 2 macOS VMs", "Its Mac isn't connected",

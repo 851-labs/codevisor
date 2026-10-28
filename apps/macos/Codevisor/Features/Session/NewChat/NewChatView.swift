@@ -66,7 +66,7 @@ struct NewChatView: View {
   @State var projectSetup: ProjectMachineSetup?
   @State var sandboxProfiles = SandboxProfileCatalog()
   @ClientPreference("composer.favoriteMachines", default: [])
-  var favoriteMachineIDs: [CodevisorMachine.ID]
+  var favoriteMachineIDs: [String]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
   var favoriteProjectIDs: [ProjectGroup.ID]
   @Namespace private var composerGlassNamespace

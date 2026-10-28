@@ -101,7 +101,6 @@ struct SandboxSetupStepsTests {
     let unknown = SandboxTarget(
       profile: ServerSandboxProfile(id: "p2", name: "Ubuntu", vendor: "acme"), vendor: nil, provider: nil)
 
-    #expect(target.pickerTitle == "New macOS 27 Tart VM")
     #expect(target.machineNoun == "Tart VM")
     #expect(target.hostMachineId == "server-studio")
     #expect(olderTarget.hostMachineId == "server-laptop")

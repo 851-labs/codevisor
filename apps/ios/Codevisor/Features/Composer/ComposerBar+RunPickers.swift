@@ -11,7 +11,7 @@ extension ComposerBar {
     let machine = environment.machines.machine(for: controller.project.serverId)
     let sandbox = controller.sandboxTarget
     return ComposerRunTargetBar(
-      machineName: sandbox?.pickerTitle ?? machine?.name ?? "Machine",
+      machineName: sandbox?.profileName ?? machine?.name ?? "Machine",
       hasOtherMachines: environment.machines.chatMachines.count > 1,
       machineIcon: sandbox.map { CodevisorSymbol.sandboxVendor($0.vendorId) }
         ?? Image(systemName: (machine?.icon ?? .fallback).systemImage),

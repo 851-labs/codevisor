@@ -63,7 +63,7 @@ struct ComposerMachineMenu: UIViewRepresentable {
   private var sandboxActions: [UIAction] {
     sandboxChoices.map { choice in
       let action = UIAction(
-        title: choice.target.pickerTitle,
+        title: choice.target.profileName,
         image: CodevisorSymbol.sandboxVendorImage(choice.target.vendorId),
         attributes: choice.isEnabled ? [] : .disabled,
         state: choice.id == selectedProfileId ? .on : .off

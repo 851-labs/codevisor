@@ -6,7 +6,7 @@ struct SandboxChoiceLabel: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 1) {
-      Text(choice.target.pickerTitle)
+      Text(choice.target.profileName)
       if let reason = choice.disabledReason {
         Text(reason)
           .font(.caption)

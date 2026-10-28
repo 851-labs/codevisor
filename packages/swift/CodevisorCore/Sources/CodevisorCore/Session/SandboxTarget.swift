@@ -9,7 +9,6 @@ public struct SandboxTarget: Equatable, Hashable, Sendable, Identifiable {
   public let hostMachineId: String?
 
   public var id: String { profileId }
-  public var pickerTitle: String { "New \(profileName)" }
 
   public init(
     profileId: String,

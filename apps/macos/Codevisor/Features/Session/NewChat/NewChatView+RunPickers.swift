@@ -17,9 +17,21 @@ extension NewChatView {
     case machine(CodevisorMachine.ID)
     case sandbox(String)
 
-    var machineId: CodevisorMachine.ID? {
-      if case let .machine(id) = self { return id }
-      return nil
+    private static let sandboxFavoritePrefix = "sandbox:"
+
+    init(favoriteID: String) {
+      if favoriteID.hasPrefix(Self.sandboxFavoritePrefix) {
+        self = .sandbox(String(favoriteID.dropFirst(Self.sandboxFavoritePrefix.count)))
+      } else {
+        self = .machine(favoriteID)
+      }
+    }
+
+    var favoriteID: String {
+      switch self {
+      case let .machine(id): id
+      case let .sandbox(profileId): Self.sandboxFavoritePrefix + profileId
+      }
     }
   }
 
@@ -74,7 +86,7 @@ extension NewChatView {
     let selectedMachine = environment.machines.machine(for: controller.project.serverId)
     let sandbox = controller.sandboxTarget
     let selection = machineSelection(controller)
-    let chipText = sandbox?.pickerTitle ?? selectedMachine?.name ?? "Machine"
+    let chipText = sandbox?.profileName ?? selectedMachine?.name ?? "Machine"
     return RunPickerMenu(
       chipText: chipText,
       chipIcon: sandbox.map { CodevisorSymbol.sandboxVendor($0.vendorId) }
@@ -102,6 +114,7 @@ extension NewChatView {
             sandboxChoice(choice)
           }
         }
+        .favorites(machineFavorites)
         .labelsHidden()
       }
       machinePickerFooter
@@ -130,14 +143,13 @@ extension NewChatView {
   }
 
   private func sandboxChoice(_ choice: SandboxProfileChoice) -> Autocomplete.Choice<MachinePickerTarget> {
-    Autocomplete.Choice(choice.target.pickerTitle, value: MachinePickerTarget.sandbox(choice.id)) {
+    Autocomplete.Choice(choice.target.profileName, value: MachinePickerTarget.sandbox(choice.id)) {
       CodevisorSymbol.sandboxVendor(choice.target.vendorId)
     } label: {
       SandboxChoiceLabel(choice: choice)
     }
     .disabled(!choice.isEnabled)
     .help(choice.disabledReason ?? "Start a new sandbox from this profile")
-    .favoritable(false)
   }
 
   private func machineSelection(_ controller: SessionController) -> Binding<MachinePickerTarget> {
@@ -149,8 +161,8 @@ extension NewChatView {
 
   private var machineFavorites: Binding<[MachinePickerTarget]> {
     Binding(
-      get: { favoriteMachineIDs.map { .machine($0) } },
-      set: { favoriteMachineIDs = $0.compactMap(\.machineId) }
+      get: { favoriteMachineIDs.map(MachinePickerTarget.init(favoriteID:)) },
+      set: { favoriteMachineIDs = $0.map(\.favoriteID) }
     )
   }
 
