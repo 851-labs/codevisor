@@ -6,7 +6,6 @@ struct SidebarModeLayer: ViewModifier {
   func body(content: Content) -> some View {
     content
       .opacity(isActive ? 1 : 0)
-      .allowsHitTesting(isActive)
       .accessibilityHidden(!isActive)
   }
 }

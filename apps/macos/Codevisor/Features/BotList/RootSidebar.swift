@@ -71,6 +71,7 @@ struct RootSidebar: View {
       ForEach(SidebarMode.allCases, id: \.self) { mode in
         if isMounted(mode) {
           modeList(mode)
+            .allowsHitTesting(mode == activeMode)
             .environment(\.isActiveSidebarMode, mode == activeMode)
         }
       }
