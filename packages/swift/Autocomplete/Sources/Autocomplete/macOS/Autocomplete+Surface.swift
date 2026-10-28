@@ -106,6 +106,7 @@
             canTakeFocus: { (focus ?? inputFocus).isCurrent() }
           )
           .frame(height: metrics.inputHeight)
+          .background(InputCapsuleBackground())
           .padding(.horizontal, metrics.inputHorizontalInset)
           .padding(.top, metrics.inputTopInset)
           .padding(.bottom, metrics.inputBottomInset)
