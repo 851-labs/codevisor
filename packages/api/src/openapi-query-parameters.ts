@@ -23,6 +23,7 @@ const queryParameterBuilders: Partial<Record<Endpoint, QueryParameterBuilder>> =
     stringQuery("last"),
     stringQuery("next")
   ],
+  "GET /v1/sandboxes/:id/log": () => [stringQuery("last")],
   "GET /v1/sessions/:id/transcript": () => transcriptPageQuery(),
   "GET /v1/sessions/:id/transcript/:itemId/details": () => transcriptDetailsQuery(),
   "GET /v1/sessions/:id/transcript/:itemId/body": () => transcriptBodyQuery(),

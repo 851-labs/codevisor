@@ -41,7 +41,7 @@ const installOnRemote = async (
 const wantsInstall = (entry: SyncEntryRecord): boolean =>
   isRecord(entry.value) && entry.value["installed"] === true && entry.value["enabled"] !== false
 
-const waitForAgent = async (
+export const waitForAgent = async (
   remote: SandboxRemote,
   harnessId: string,
   wait: AgentWait

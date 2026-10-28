@@ -28,7 +28,14 @@ export const profileOrMissing = async (
   return profile
 }
 
-type OptionalLink = "projectName" | "repoUrl" | "profileId" | "profileName" | "accountId"
+type OptionalLink =
+  | "projectName"
+  | "repoUrl"
+  | "profileId"
+  | "profileName"
+  | "accountId"
+  | "workspaceId"
+  | "harnessId"
 
 export const OPTIONAL_LINKS: ReadonlyArray<OptionalLink> = [
   "projectName",

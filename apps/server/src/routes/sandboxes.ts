@@ -1,4 +1,10 @@
-import { ClaimSandboxWorkspaceRequest, CreateSandboxRequest } from "@codevisor/api"
+import {
+  ClaimSandboxWorkspaceRequest,
+  CreateSandboxRequest,
+  DEFAULT_SANDBOX_WAIT_TIMEOUT_MS,
+  MAX_SANDBOX_WAIT_TIMEOUT_MS,
+  WaitForSandboxRequest
+} from "@codevisor/api"
 
 import type { SandboxCatalogDeps } from "../infra/sandbox-catalog.js"
 import type { SandboxEventPublisher } from "../infra/sandbox-local-workspaces.js"
@@ -46,6 +52,18 @@ const dispatchSandboxes = async (route: RouteContext, sandboxes: Sandboxes): Pro
     writeJson(response, 200, { destroyed: destroyId })
     return true
   }
+  if (await readSandbox(route, sandboxes)) return true
+  const waitId = methodRouteId(route, "POST", "/v1/sandboxes/:id/wait")
+  if (waitId !== undefined) {
+    const { timeoutMs } = await readSchema(request, WaitForSandboxRequest)
+    writeJson(response, 200, await sandboxes.wait(waitId, waitTimeout(timeoutMs)))
+    return true
+  }
+  const retryId = methodRouteId(route, "POST", "/v1/sandboxes/:id/retry")
+  if (retryId !== undefined) {
+    writeJson(response, 202, await sandboxes.retry(retryId, setupPublisher(route)))
+    return true
+  }
   const claimId = methodRouteId(route, "POST", "/v1/sandboxes/:id/workspace")
   if (claimId === undefined) return false
 
@@ -54,7 +72,33 @@ const dispatchSandboxes = async (route: RouteContext, sandboxes: Sandboxes): Pro
   return true
 }
 
-const setupPublisher =
+const readSandbox = async (route: RouteContext, sandboxes: Sandboxes): Promise<boolean> => {
+  const getId = methodRouteId(route, "GET", "/v1/sandboxes/:id")
+  if (getId !== undefined) {
+    writeJson(route.response, 200, await sandboxes.get(getId))
+    return true
+  }
+  const logId = methodRouteId(route, "GET", "/v1/sandboxes/:id/log")
+  if (logId === undefined) return false
+
+  writeJson(route.response, 200, { lines: await sandboxes.log(logId, lastLines(route.url)) })
+  return true
+}
+
+const waitTimeout = (timeoutMs: number | undefined): number =>
+  Math.min(Math.max(timeoutMs ?? DEFAULT_SANDBOX_WAIT_TIMEOUT_MS, 0), MAX_SANDBOX_WAIT_TIMEOUT_MS)
+
+const lastLines = (url: URL): number | undefined => {
+  const raw = url.searchParams.get("last")
+  if (raw === null || raw === "") return undefined
+  const last = Number(raw)
+  if (!Number.isSafeInteger(last) || last < 1) {
+    throw new HttpFailure(400, "last must be a positive integer")
+  }
+  return last
+}
+
+export const setupPublisher =
   (route: RouteContext): SandboxSetupPublisher =>
   async (log) => {
     await appendAndPublish(route.services.db, route.fanout, "sandbox.setup", log.machineId, log)

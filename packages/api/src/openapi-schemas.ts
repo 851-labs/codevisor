@@ -9,6 +9,7 @@ import {
   ClosedAgent,
   StartAgentRequest,
   StartedAgent,
+  StartedSandboxAgent,
   WaitForAgentsRequest,
   WaitForAgentsResponse
 } from "./agents.js"
@@ -178,10 +179,13 @@ import {
   SandboxAvailabilityResponse,
   SandboxesResponse,
   SandboxProfile,
+  SandboxSetupLogResponse,
   SandboxProfilesResponse,
   SandboxProvidersResponse,
   SaveSandboxAccountRequest,
-  SaveSandboxProfileRequest
+  SaveSandboxProfileRequest,
+  WaitForSandboxRequest,
+  WaitForSandboxResponse
 } from "./sandboxes.js"
 import { PutSyncRequest, SyncDocument } from "./sync.js"
 
@@ -263,6 +267,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/sandbox-profiles": SaveSandboxProfileRequest,
   "PUT /v1/sandbox-profiles/:id": SaveSandboxProfileRequest,
   "POST /v1/sandboxes": CreateSandboxRequest,
+  "POST /v1/sandboxes/:id/wait": WaitForSandboxRequest,
   "POST /v1/sandboxes/:id/workspace": ClaimSandboxWorkspaceRequest,
   "POST /v1/gateway/invoke": GatewayInvokeRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
@@ -406,7 +411,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "DELETE /v1/skills/:name": SkillsList,
   "GET /v1/navigation": NavigationSnapshot,
   "GET /v1/agents": AgentList,
-  "POST /v1/agents": StartedAgent,
+  "POST /v1/agents": Schema.Union([StartedAgent, StartedSandboxAgent]),
   "POST /v1/agents/wait": WaitForAgentsResponse,
   "GET /v1/agents/:id": AgentStatus,
   "POST /v1/agents/:id/close": ClosedAgent,
@@ -437,7 +442,11 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/sandbox-profiles/availability": SandboxAvailabilityResponse,
   "GET /v1/sandboxes": SandboxesResponse,
   "POST /v1/sandboxes": Sandbox,
+  "GET /v1/sandboxes/:id": Sandbox,
   "DELETE /v1/sandboxes/:id": DestroySandboxResponse,
+  "GET /v1/sandboxes/:id/log": SandboxSetupLogResponse,
+  "POST /v1/sandboxes/:id/retry": Sandbox,
+  "POST /v1/sandboxes/:id/wait": WaitForSandboxResponse,
   "POST /v1/sandboxes/:id/workspace": Sandbox,
   "POST /v1/gateway/invoke": GatewayInvokeResponse,
   "GET /v1/sessions/:id": SessionDetail,

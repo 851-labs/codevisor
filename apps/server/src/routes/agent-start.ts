@@ -10,6 +10,7 @@ import {
 } from "@codevisor/api"
 
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
+import { startAgentOnSandbox } from "./agent-start-sandbox.js"
 import { verifiedRemoteParent } from "./fleet-calls.js"
 import { allocateProjectWorktree } from "./project-worktree-create.js"
 import {
@@ -29,6 +30,19 @@ export const startAgent = async (route: RouteContext): Promise<boolean> => {
   const caller = await callerOf(route, request)
   const projectId = await projectIdFor(route, request.project, caller)
   const harnessId = harnessFor(request, caller)
+  const { sandboxProfile } = request
+  if (sandboxProfile !== undefined) {
+    return startAgentOnSandbox(
+      route,
+      { ...request, sandboxProfile },
+      {
+        projectId,
+        harnessId,
+        callerSessionId: caller.sessionId,
+        callerModel: inheritedModel(caller, harnessId)
+      }
+    )
+  }
 
   const created: Array<() => Promise<unknown>> = []
   try {
@@ -201,6 +215,9 @@ const configSelectionsFor = (
   if (caller.sessionId === undefined) return inherited
   return undefined
 }
+
+const inheritedModel = (caller: AgentCaller, harnessId: string): string | undefined =>
+  caller.harnessId === harnessId ? caller.configSelections?.["model"] : undefined
 
 const subscribeCaller = async (
   { services }: RouteContext,

@@ -1,3 +1,4 @@
+import { decode, SandboxSetupLogResponse } from "@codevisor/api"
 import { machineField } from "@codevisor/sandboxes"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -303,6 +304,63 @@ describe("sandbox routes", () => {
 
     expect(bound.length).toBeGreaterThan(0)
     expect(after.body).not.toEqual(before.body)
+  })
+
+  it("reads one sandbox, its start log and starts a failed one again", async () => {
+    const { harness, server } = await startSandboxServer()
+    harness.controls.createFails = true
+    await jsonRequest(
+      server,
+      "/v1/sandboxes",
+      send("POST", { profileId: "profile-1", projectId: "project-1", name: "box" })
+    )
+    await harness.machines.settled()
+    harness.controls.createFails = false
+
+    const one = await jsonRequest(server, "/v1/sandboxes/id-1")
+    const retried = await jsonRequest(server, "/v1/sandboxes/id-1/retry", { method: "POST" })
+    await harness.machines.settled()
+    const log = await jsonRequest(server, "/v1/sandboxes/id-1/log?last=1")
+    const all = await jsonRequest(server, "/v1/sandboxes/id-1/log?last=")
+
+    expect(one).toMatchObject({ status: 200, body: { id: "id-1", state: "failed" } })
+    expect(retried).toMatchObject({ status: 202, body: { id: "id-1", state: "creating" } })
+    expect(log).toMatchObject({ status: 200, body: { lines: [{ machineId: "id-1" }] } })
+    expect(decode(SandboxSetupLogResponse)(all.body).lines.length).toBeGreaterThan(1)
+  })
+
+  it("waits for a sandbox within the longest wait it allows", async () => {
+    const { harness, server } = await startSandboxServer()
+    await harness.machines.create({ profileId: "profile-1", projectId: "project-1" })
+    await harness.machines.settled()
+    const waits: number[] = []
+    const wait = harness.machines.wait
+    vi.spyOn(harness.machines, "wait").mockImplementation((id, timeoutMs) => {
+      waits.push(timeoutMs)
+      return wait(id, timeoutMs)
+    })
+
+    const waited = await jsonRequest(server, "/v1/sandboxes/id-1/wait", send("POST", {}))
+    await jsonRequest(server, "/v1/sandboxes/id-1/wait", send("POST", { timeoutMs: 900_000 }))
+    await jsonRequest(server, "/v1/sandboxes/id-1/wait", send("POST", { timeoutMs: -5 }))
+
+    expect(waited).toMatchObject({
+      status: 200,
+      body: { id: "id-1", state: "ready", timedOut: false }
+    })
+    expect(waits).toEqual([60_000, 300_000, 0])
+  })
+
+  it("refuses a log length that isn't a positive whole number", async () => {
+    const { harness, server } = await startSandboxServer()
+    await harness.machines.create({ profileId: "profile-1", projectId: "project-1" })
+    await harness.machines.settled()
+
+    const refused = await Promise.all(
+      ["0", "1.5", "x"].map((last) => jsonRequest(server, `/v1/sandboxes/id-1/log?last=${last}`))
+    )
+
+    expect(refused.map((response) => response.status)).toEqual([400, 400, 400])
   })
 
   it("leaves other methods on sandbox paths to the rest of the router", async () => {

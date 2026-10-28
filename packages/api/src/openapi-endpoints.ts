@@ -29,7 +29,11 @@ export const endpoints = [
   "GET /v1/sandbox-profiles/availability",
   "GET /v1/sandboxes",
   "POST /v1/sandboxes",
+  "GET /v1/sandboxes/:id",
   "DELETE /v1/sandboxes/:id",
+  "GET /v1/sandboxes/:id/log",
+  "POST /v1/sandboxes/:id/retry",
+  "POST /v1/sandboxes/:id/wait",
   "POST /v1/sandboxes/:id/workspace",
   "POST /v1/gateway/invoke",
   "GET /v1/openapi.json",
@@ -260,7 +264,13 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/sandboxes": "List this machine's sandboxes and their setup state",
   "POST /v1/sandboxes":
     "Start a sandbox from a profile with a workspace for a project; setup continues in the background",
+  "GET /v1/sandboxes/:id": "Get one sandbox and its setup state",
   "DELETE /v1/sandboxes/:id": "Destroy a sandbox and remove it from the account",
+  "GET /v1/sandboxes/:id/log":
+    "Read a sandbox's recent start log since this server started, with secrets redacted",
+  "POST /v1/sandboxes/:id/retry":
+    "Start a failed sandbox again from the same profile, project and agent",
+  "POST /v1/sandboxes/:id/wait": "Wait until a sandbox is ready or failed, or the timeout passes",
   "POST /v1/gateway/invoke": "Run a gateway tool call from another machine's sandbox",
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "POST /v1/bots/:id/projects": "Add a project to a bot and check its repository out for the bot",
@@ -338,6 +348,7 @@ export const created = new Set<Endpoint>([
 
 export const accepted = new Set<Endpoint>([
   "POST /v1/sandboxes",
+  "POST /v1/sandboxes/:id/retry",
   "POST /v1/update/apply",
   "POST /v1/updates/run",
   "POST /v1/restart/drain",

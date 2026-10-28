@@ -26,8 +26,18 @@ const agentNamed = (value: unknown): unknown => {
 }
 
 export const recordIdName = (path: string): string | undefined => {
-  const resource = lastLiteralSegment(path)
+  const resource = resourceSegment(path)
   return resource === undefined ? undefined : recordIdNames[resource]
+}
+
+const actionSegments: ReadonlySet<string> = new Set(["retry", "wait"])
+
+const resourceSegment = (path: string): string | undefined => {
+  const literals = path
+    .split("/")
+    .filter((segment) => segment.length > 0 && !segment.startsWith(":"))
+  const last = literals.at(-1)
+  return last !== undefined && actionSegments.has(last) ? literals.at(-2) : last
 }
 
 const fieldName = (key: string, idName: string | undefined): string => {
@@ -57,6 +67,8 @@ const recordIdNames: Readonly<Record<string, string>> = {
   projects: "projectId",
   queue: "queueId",
   removals: "removalId",
+  "sandbox-accounts": "accountId",
+  "sandbox-profiles": "profileId",
   sessions: "agentId",
   subscriptions: "subscriptionId",
   "workspace-panes": "paneId",
@@ -71,10 +83,16 @@ interface ListShape extends UnknownRecord {
   readonly items: ReadonlyArray<unknown>
 }
 
+const listKeys: Readonly<Record<string, string>> = {
+  "sandbox-accounts": "accounts",
+  "sandbox-profiles": "profiles"
+}
+
 const listShape = (path: string, body: unknown): ListShape | undefined => {
   if (Array.isArray(body)) return { items: body }
   if (!isPlainRecord(body)) return undefined
-  const key = lastLiteralSegment(path)
+  const literal = lastLiteralSegment(path)
+  const key = literal === undefined ? undefined : (listKeys[literal] ?? literal)
   const items = key === undefined ? undefined : body[key]
   if (key === undefined || !Array.isArray(items)) return undefined
   return { ...withoutKey(body, key), items }

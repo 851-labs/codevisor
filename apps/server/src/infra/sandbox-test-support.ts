@@ -43,6 +43,7 @@ export interface ToolCall {
   readonly machineId: string
   readonly tool: string
   readonly args: Record<string, unknown>
+  readonly sessionId?: string
 }
 
 export interface SandboxHarnessOptions {
@@ -62,7 +63,14 @@ export interface SandboxHarnessOptions {
   readonly runsHere?: boolean
 }
 
-const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
+export const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
+
+export const readyHarness =
+  (harnessId: string) =>
+  (request: ExecRequest): ExecResult =>
+    request.script.includes("/v1/harnesses'")
+      ? ok(JSON.stringify([{ id: harnessId, readiness: { state: "ready" } }]))
+      : ok()
 
 export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   const { services } = await makeServices("server-owner")
@@ -136,7 +144,9 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   )
   const projectLookup = {
     get: (id: string) =>
-      Promise.resolve(id === project.id ? { ...project, id: stored.id } : undefined)
+      Promise.resolve(
+        id === project.id || id === stored.id ? { ...project, id: stored.id } : undefined
+      )
   }
   const deps: SandboxDeps = {
     records,
@@ -158,10 +168,15 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       }
     },
     remoteTools: {
-      call: (machineId, tool, args) => {
+      call: (machineId, tool, args, sessionId) => {
         if (controls.offline) return Promise.reject(new Error("offline"))
         const record = recordOf(args)
-        toolCalls.push({ machineId, tool, args: record })
+        toolCalls.push({
+          machineId,
+          tool,
+          args: record,
+          ...(sessionId === undefined ? {} : { sessionId })
+        })
         return Promise.resolve(controls.answer?.(tool) ?? remoteTool(workspaces, tool, record))
       }
     },
@@ -202,6 +217,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   }
   return {
     services,
+    storedProjectId: stored.id,
     deps,
     catalog,
     settings,
@@ -277,6 +293,8 @@ const remoteTool = (
 ): unknown => {
   if (tool === "codevisor.projects.clone") return { id: "remote-project" }
   if (tool === "codevisor.projects.create_scratch") return { id: "remote-scratch" }
+  if (tool === "codevisor.agents.start")
+    return { agentId: "remote-agent", workspaceId: "REMOTE-WS" }
   if (tool === "codevisor.workspaces.upsert") {
     workspaces.push({ id: String(args.workspaceId), name: String(args.name), isArchived: false })
     return { id: args.workspaceId }

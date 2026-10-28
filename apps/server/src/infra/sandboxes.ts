@@ -2,6 +2,8 @@ import type {
   CloudMachinePresence,
   CreateSandboxRequest,
   Sandbox,
+  SandboxSetupLog,
+  WaitForSandboxResponse,
   SandboxProfile,
   Project
 } from "@codevisor/api"
@@ -17,15 +19,19 @@ import {
 import { HttpFailure } from "../server-context.js"
 import { forgetAbandoned, makeAbandonments, type Abandonments } from "./sandbox-abandon.js"
 import { joinAccount, requireOwner, teardownMachine } from "./sandbox-account.js"
+import { startRequestedAgent } from "./sandbox-agent-start.js"
 import { placementOf, runsElsewhere } from "./sandbox-catalog.js"
 import type { SandboxConnection, SandboxConnections } from "./sandbox-connections.js"
-import {
-  connectionOf,
-  optionalLinks,
-  profileOrMissing,
-  profileRecordFields
-} from "./sandbox-profile-record.js"
+import { makeSandboxLogBook } from "./sandbox-log-book.js"
+import { connectionOf, profileOrMissing } from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
+import {
+  harnessOf,
+  newRecord,
+  restoredFields,
+  restoreRequest,
+  retryRequest
+} from "./sandbox-requests.js"
 import {
   makeSandboxSetupProgress,
   type SandboxSetupProgress,
@@ -33,6 +39,7 @@ import {
 } from "./sandbox-setup-log.js"
 import type { SandboxRecordStore } from "./sandbox-store.js"
 import type { OneWaySyncReport } from "./sandbox-sync.js"
+import { waitForSandbox } from "./sandbox-wait.js"
 import { isPlaced, teardownRecord, watchOne } from "./sandbox-watch.js"
 import { isoNow, placeWorkspace } from "./sandbox-workspace.js"
 
@@ -48,7 +55,12 @@ export interface SandboxDeps {
     readonly remove: (deviceId: string) => Promise<void>
   }
   readonly remoteTools: {
-    readonly call: (machineId: string, tool: string, args: unknown) => Promise<unknown>
+    readonly call: (
+      machineId: string,
+      tool: string,
+      args: unknown,
+      sessionId?: string
+    ) => Promise<unknown>
   }
   readonly projects: { readonly get: (projectId: string) => Promise<Project | undefined> }
   readonly localWorkspaces: {
@@ -72,10 +84,14 @@ export interface ArchivedWorkspace {
 
 export interface Sandboxes {
   readonly list: () => Promise<ReadonlyArray<Sandbox>>
+  readonly get: (id: string) => Promise<Sandbox>
+  readonly log: (id: string, last?: number) => Promise<ReadonlyArray<SandboxSetupLog>>
   readonly create: (
     request: CreateSandboxRequest,
     publish?: SandboxSetupPublisher
   ) => Promise<Sandbox>
+  readonly retry: (id: string, publish?: SandboxSetupPublisher) => Promise<Sandbox>
+  readonly wait: (id: string, timeoutMs: number) => Promise<WaitForSandboxResponse>
   readonly destroy: (id: string) => Promise<void>
   readonly claimWorkspace: (id: string, workspaceId: string) => Promise<Sandbox>
   readonly restore: (workspaceId: string) => Promise<void>
@@ -95,6 +111,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   const pipelines = new Set<Promise<void>>()
   const busy = new Set<string>()
   const abandonments = makeAbandonments()
+  const logs = makeSandboxLogBook()
 
   const exclusively = async (id: string, work: () => Promise<void>): Promise<void> => {
     if (busy.has(id)) return
@@ -107,8 +124,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   }
 
   const destroy = async (id: string): Promise<void> => {
-    const machine = await deps.records.get(id)
-    if (machine === undefined) throw new HttpFailure(404, `No sandbox ${id}`)
+    const machine = await existing(deps, id)
     if (busy.has(id)) {
       abandonWhileSettingUp(abandonments, machine)
       return
@@ -135,11 +151,13 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
       throw new HttpFailure(409, `A sandbox ${machine.id} already exists`)
     }
     await deps.records.put(machine)
+    logs.start(machine.id)
     const planned = { options, plan, abandonments, ...harnessOf(request) }
+    const recorded = logs.recording(publish)
     track(
       pipelines,
       exclusively(machine.id, async () => {
-        const remote = await runPipeline(deps, provider, machine, planned, publish)
+        const remote = await runPipeline(deps, provider, machine, planned, recorded)
         if (remote !== undefined && planned.harnessId !== undefined)
           track(pipelines, installRemainingAgents(deps, remote, planned.harnessId))
       })
@@ -147,9 +165,26 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     return machine
   }
 
+  const retry = async (id: string, publish?: SandboxSetupPublisher): Promise<Sandbox> => {
+    const failed = await existing(deps, id)
+    const request = retryRequest(failed)
+    await deps.records.remove(id)
+    return create(request, publish).catch(async (cause: unknown) => {
+      await deps.records.put(failed)
+      throw cause
+    })
+  }
+
   return {
     list: deps.records.list,
+    get: (id) => existing(deps, id),
+    log: async (id, last) => {
+      await existing(deps, id)
+      return logs.lines(id, last)
+    },
     create,
+    retry,
+    wait: (id, timeoutMs) => waitForSandbox(deps, id, timeoutMs),
     destroy,
     claimWorkspace: (id, workspaceId) => claimWorkspace(deps, id, workspaceId),
     restore: async (workspaceId) => {
@@ -266,8 +301,16 @@ const provision = async (
   checkpoint()
   setup.stage("clone")
   const placed = await placeWorkspace(deps, { ...record.current(), ...joined })
+  checkpoint()
+  const started = await startRequestedAgent(
+    deps,
+    remote,
+    { ...record.current(), ...joined },
+    placed,
+    setup
+  )
   setup.finish()
-  await record.advance({ ...placed, state: "ready" })
+  await record.advance({ ...placed, ...started, state: "ready" })
   return remote
 }
 
@@ -305,8 +348,11 @@ const abandonWhileSettingUp = (abandonments: Abandonments, machine: Sandbox): vo
   abandonments.abandon(machine.id)
 }
 
-const harnessOf = (request: CreateSandboxRequest): { readonly harnessId?: string } =>
-  request.harnessId === undefined ? {} : { harnessId: request.harnessId }
+const existing = async (deps: SandboxDeps, id: string): Promise<Sandbox> => {
+  const machine = await deps.records.get(id)
+  if (machine === undefined) throw new HttpFailure(404, `No sandbox ${id}`)
+  return machine
+}
 
 const planFor = async (
   provider: SandboxProvider,
@@ -384,62 +430,6 @@ const archivedFor = async (deps: SandboxDeps, workspaceId: string): Promise<Sand
   (await deps.records.list()).find(
     (machine) => machine.state === "archived" && machine.workspaceId === workspaceId.toLowerCase()
   )
-
-const restoreRequest = (
-  archived: Sandbox,
-  profileId: string,
-  workspaceId: string
-): CreateSandboxRequest => {
-  return {
-    profileId,
-    projectId: archived.projectId,
-    name: archived.name,
-    workspaceId,
-    ...optionalLinks(archived, ["projectName", "repoUrl"])
-  }
-}
-
-const restoredFields = (archived: Sandbox): Partial<Sandbox> => ({
-  restoresWorkspace: true,
-  ...(archived.workspaceName === undefined ? {} : { workspaceName: archived.workspaceName })
-})
-
-const newRecord = (
-  deps: SandboxDeps,
-  request: CreateSandboxRequest,
-  profile: SandboxProfile,
-  plan: ProvisionPlan
-): Sandbox => {
-  const id = request.id?.toLowerCase() ?? deps.newId()
-  return {
-    id,
-    name: request.name?.trim() || `${profile.name} ${id.slice(0, 8)}`,
-    projectId: request.projectId,
-    ...projectSourceOf(request),
-    ...profileRecordFields(profile),
-    state: "creating",
-    createdAt: isoNow(deps),
-    plan: [
-      ...plan.stages,
-      ...(plan.preinstalled ? [] : ["install" as const]),
-      "signIn",
-      "sync",
-      "clone"
-    ],
-    ...(request.workspaceId === undefined
-      ? {}
-      : { workspaceId: request.workspaceId.toLowerCase() }),
-    ...(defersWorkspace(request) ? { defersWorkspace: true } : {})
-  }
-}
-
-const projectSourceOf = (request: CreateSandboxRequest) => ({
-  ...(request.projectName === undefined ? {} : { projectName: request.projectName }),
-  ...(request.repoUrl === undefined ? {} : { repoUrl: request.repoUrl })
-})
-
-const defersWorkspace = (request: CreateSandboxRequest): boolean =>
-  request.defersWorkspace === true && request.workspaceId === undefined
 
 const specFor = (deps: SandboxDeps, machine: Sandbox) => ({
   name: machine.name,

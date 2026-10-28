@@ -95,11 +95,12 @@ export const startSandboxes = (
       remove: async (deviceId) => removeQuietly(options, deviceId)
     },
     remoteTools: {
-      call: async (machineId, tool, args) =>
+      call: async (machineId, tool, args, sessionId) =>
         toolJson(
           await options.link.invoke(machineId, tool, args, {
             machineId: options.serverId,
-            machineName: options.machineName()
+            machineName: options.machineName(),
+            ...(sessionId === undefined ? {} : { sessionId })
           })
         )
     },

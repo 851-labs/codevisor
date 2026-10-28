@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { Labels } from "./labels.js"
+
 export const SandboxProviderKind = Schema.Literals([
   "tart",
   "tart-orchard",
@@ -55,6 +57,19 @@ export const SandboxSetupLog = Schema.Struct({
 })
 export type SandboxSetupLog = typeof SandboxSetupLog.Type
 
+export const SandboxSetupLogResponse = Schema.Struct({ lines: Schema.Array(SandboxSetupLog) })
+export type SandboxSetupLogResponse = typeof SandboxSetupLogResponse.Type
+
+export const SandboxAgentStart = Schema.Struct({
+  prompt: Schema.String,
+  title: Schema.String,
+  harness: Schema.String,
+  model: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels),
+  parentSessionId: Schema.optional(Schema.String)
+})
+export type SandboxAgentStart = typeof SandboxAgentStart.Type
+
 export const Sandbox = Schema.Struct({
   id: Schema.String,
   provider: SandboxProviderKind,
@@ -80,12 +95,27 @@ export const Sandbox = Schema.Struct({
   workspaceOpenedAt: Schema.optional(Schema.String),
   plan: Schema.optional(Schema.Array(SandboxSetupStage)),
   steps: Schema.optional(Schema.Array(SandboxSetupStep)),
+  harnessId: Schema.optional(Schema.String),
+  agent: Schema.optional(SandboxAgentStart),
+  agentId: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String)
 })
 export type Sandbox = typeof Sandbox.Type
 
 export const SandboxesResponse = Schema.Array(Sandbox)
 export type SandboxesResponse = typeof SandboxesResponse.Type
+
+export const DEFAULT_SANDBOX_WAIT_TIMEOUT_MS = 60_000
+export const MAX_SANDBOX_WAIT_TIMEOUT_MS = 300_000
+
+export const WaitForSandboxRequest = Schema.Struct({ timeoutMs: Schema.optional(Schema.Number) })
+export type WaitForSandboxRequest = typeof WaitForSandboxRequest.Type
+
+export const WaitForSandboxResponse = Schema.Struct({
+  ...Sandbox.fields,
+  timedOut: Schema.Boolean
+})
+export type WaitForSandboxResponse = typeof WaitForSandboxResponse.Type
 
 export const DestroySandboxResponse = Schema.Struct({ destroyed: Schema.String })
 export type DestroySandboxResponse = typeof DestroySandboxResponse.Type
@@ -99,7 +129,8 @@ export const CreateSandboxRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
   defersWorkspace: Schema.optional(Schema.Boolean),
-  harnessId: Schema.optional(Schema.String)
+  harnessId: Schema.optional(Schema.String),
+  agent: Schema.optional(SandboxAgentStart)
 })
 export type CreateSandboxRequest = typeof CreateSandboxRequest.Type
 

@@ -46,6 +46,8 @@ One call creates the checkout, the chat, and its first message, and subscribes y
 
 Harness, model, reasoning, and project default to yours. Pass `harness` (an id from `machine.tools.codevisor.harnesses.list()`), `model`, or `project` (an id or name) to pick others. `labels` are free-form key/value pairs that help you find your agents again later.
 
+To run it on a new sandbox, pass `sandboxProfile` (a profile id or name from `machine.tools.codevisor.sandboxes.profiles_list()`). The call returns at once with `{ sandboxId, state: "creating" }`; `isolation` is ignored because the agent works in a fresh clone of the project on the sandbox. A few minutes later the agent starts and you're subscribed to it as usual. `machine.tools.codevisor.sandboxes.wait({ sandboxId })` returns once the sandbox is ready, with `agentId` and `machineId`, so `(await machines.get(machineId)).agents.status({ agentId })` reaches it. If setup fails the sandbox shows `state: "failed"` with `error`: read `sandboxes.log({ sandboxId })` and call `sandboxes.retry({ sandboxId })`. See `codevisor-machines` for sandboxes.
+
 ## Get its final reply
 
 Starting an agent subscribes you, so end your turn instead of waiting. When the agent finishes, its complete final reply arrives as a hidden message:

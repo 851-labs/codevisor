@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 
 import { Labels } from "./labels.js"
+import { SandboxState } from "./sandboxes.js"
 import { QuestionPayload } from "./session-updates.js"
 
 export const AgentState = Schema.Literals(["working", "waitingForUser", "idle", "errored"])
@@ -111,7 +112,8 @@ export const StartAgentRequest = Schema.Struct({
   labels: Schema.optional(Labels),
   callerAgentId: Schema.optional(Schema.String),
   remoteParentAgentId: Schema.optional(Schema.String),
-  callerDefaults: Schema.optional(AgentCallerDefaults)
+  callerDefaults: Schema.optional(AgentCallerDefaults),
+  sandboxProfile: Schema.optional(Schema.String)
 })
 export type StartAgentRequest = typeof StartAgentRequest.Type
 
@@ -125,3 +127,12 @@ export const StartedAgent = Schema.Struct({
   subscribed: Schema.Boolean
 })
 export type StartedAgent = typeof StartedAgent.Type
+
+export const StartedSandboxAgent = Schema.Struct({
+  sandboxId: Schema.String,
+  title: Schema.String,
+  projectId: Schema.String,
+  profileId: Schema.String,
+  state: SandboxState
+})
+export type StartedSandboxAgent = typeof StartedSandboxAgent.Type

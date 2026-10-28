@@ -16,7 +16,9 @@ const idArgumentNames = {
   harnesses: "harnessId",
   "native-mcps": "removalId",
   files: "fileId",
-  sandboxes: "sandboxId"
+  sandboxes: "sandboxId",
+  "sandbox-accounts": "accountId",
+  "sandbox-profiles": "profileId"
 } as const
 
 const isIdResource = (segment: string | undefined): segment is keyof typeof idArgumentNames =>
