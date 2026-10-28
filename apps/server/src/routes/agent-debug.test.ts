@@ -278,7 +278,6 @@ describe("agent transcript records", () => {
 
 describe("agent state", () => {
   const idle = { sidebarState: "idle" } as const satisfies Partial<SessionSummary>
-  const task = { id: "t", description: "Monitor CI", status: "running", taskType: "shell" }
 
   it("reports the last reply and a pending question only when there are some", () => {
     const question = {
@@ -287,12 +286,12 @@ describe("agent state", () => {
       questions: [{ id: "a", question: "Ship it?", options: [], allowsOther: true }]
     }
 
-    expect(agentStatusOf(summary(idle), {}, true, "")).toEqual({
+    expect(agentStatusOf(summary(idle), {}, false, "")).toEqual({
       agentId: "agent",
       title: "Agent",
       state: "idle"
     })
-    expect(agentStatusOf(summary(idle), { pendingQuestion: question }, true, "Done.")).toEqual({
+    expect(agentStatusOf(summary(idle), { pendingQuestion: question }, false, "Done.")).toEqual({
       agentId: "agent",
       title: "Agent",
       state: "waitingForUser",
@@ -301,16 +300,10 @@ describe("agent state", () => {
     })
   })
 
-  it("counts an idle agent with live background tasks as working", () => {
-    expect(agentState(summary(idle), {}, true)).toBe("idle")
-    expect(agentState(summary(idle), { backgroundTasks: [task] }, true)).toBe("working")
-    expect(
-      agentState(summary({ sidebarState: "errored" }), { backgroundTasks: [task] }, true)
-    ).toBe("errored")
+  it("counts an idle agent as working while its turn end waits on background work", () => {
+    expect(agentState(summary(idle), {}, false)).toBe("idle")
+    expect(agentState(summary(idle), {}, true)).toBe("working")
+    expect(agentState(summary({ sidebarState: "errored" }), {}, true)).toBe("errored")
     expect(agentState(summary({ ...idle, actionRequired: true }), {}, true)).toBe("waitingForUser")
-  })
-
-  it("doesn't count background tasks left behind by a harness that isn't loaded", () => {
-    expect(agentState(summary(idle), { backgroundTasks: [task] }, false)).toBe("idle")
   })
 })

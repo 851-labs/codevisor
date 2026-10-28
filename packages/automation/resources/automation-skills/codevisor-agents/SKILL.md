@@ -56,7 +56,7 @@ Starting an agent subscribes you, so end your turn instead of waiting. When the 
 </codevisor-event>
 ```
 
-- A turn that ends while the agent still runs background work (a background shell, a monitor) doesn't wake you. You hear once it stops with nothing left running.
+- A turn that ends while the agent still runs background work (a background shell, a monitor) doesn't wake you right away. You hear once it stops with nothing left running, or after 3 minutes if it is still running then (a dev server, say).
 - `session.waiting_for_user` carries a pending question, and `session.errored` carries the error.
 - Several events from one agent while you're busy are combined, so you get its latest state once.
 - The user never sees these events as messages they typed.

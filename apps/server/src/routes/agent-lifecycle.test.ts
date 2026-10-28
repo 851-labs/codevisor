@@ -5,10 +5,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { decode, Worktree } from "@codevisor/api"
+import { AgentStatus, decode, Worktree } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
 import { idOf } from "./response-test-support.js"
 
 const execFileAsync = promisify(execFile)
@@ -72,8 +72,8 @@ const gitProject = async () => {
 }
 
 describe("agent lifecycle routes", () => {
-  it("counts an agent with a live background task as working in list and wait", async () => {
-    const { server, services } = await start()
+  it("counts an agent whose turn end waits on background work as working in list and wait", async () => {
+    const { agents, server } = await start()
     const project = idOf(
       (
         await jsonRequest(server, "/v1/projects", {
@@ -92,7 +92,21 @@ describe("agent lifecycle routes", () => {
         })
       ).body
     )
-    await run(services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell] }))
+    await jsonRequest(server, `/v1/sessions/${agentId}/prompt`, {
+      body: JSON.stringify({ text: "work" }),
+      method: "POST"
+    })
+    await waitFor(
+      async () =>
+        decode(AgentStatus)((await jsonRequest(server, `/v1/agents/${agentId}`)).body).state ===
+        "idle"
+    )
+    const agentSessionId = agents.prompts.at(-1)![0]
+    const emit = (payload: Record<string, unknown>) =>
+      agents.emit(agentSessionId, { kind: "session.updated", subjectId: agentSessionId, payload })
+    await emit({ backgroundTasks: [shell] })
+    await emit({ initiatedBy: "agent", turnId: "t-2", turnState: "started" })
+    await emit({ initiatedBy: "agent", stopReason: "end_turn", turnId: "t-2", turnState: "ended" })
     const wait = (until: ReadonlyArray<string>) =>
       jsonRequest(server, "/v1/agents/wait", {
         body: JSON.stringify({ agentIds: [agentId], until, timeoutMs: 0 }),
@@ -109,45 +123,6 @@ describe("agent lifecycle routes", () => {
     })
     expect((await wait(["working"])).body).toMatchObject({ timedOut: false })
     expect((await jsonRequest(server, "/v1/agents?state=busy")).status).toBe(400)
-  })
-
-  it("reads an agent as idle once its harness closes, though its tasks are still on record", async () => {
-    const { server, services } = await start()
-    const project = idOf(
-      (
-        await jsonRequest(server, "/v1/projects", {
-          body: JSON.stringify({
-            folderPath: mkdtempSync(join(tmpdir(), "codevisor-agent-closed-"))
-          }),
-          method: "POST"
-        })
-      ).body
-    )
-    const agentId = idOf(
-      (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ projectId: project, harnessId: "codex" }),
-          method: "POST"
-        })
-      ).body
-    )
-    await run(services.db.appendEvent("session.updated", agentId, { backgroundTasks: [shell] }))
-    const { agentSessionId } = await run(services.db.getSessionSummary(agentId))
-
-    await run(services.agents.closeAgentSession(agentSessionId!))
-
-    expect((await jsonRequest(server, "/v1/agents?state=working")).body).toEqual({ items: [] })
-    expect((await jsonRequest(server, `/v1/agents/${agentId}`)).body).toMatchObject({
-      state: "idle"
-    })
-    expect(
-      (
-        await jsonRequest(server, "/v1/agents/wait", {
-          body: JSON.stringify({ agentIds: [agentId], timeoutMs: 0 }),
-          method: "POST"
-        })
-      ).body
-    ).toEqual({ items: [{ agentId, state: "idle" }], timedOut: false })
   })
 
   it("clears an archived agent's background tasks so it doesn't read as working", async () => {

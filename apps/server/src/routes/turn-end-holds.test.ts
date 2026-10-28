@@ -23,7 +23,7 @@ const updated = (payload: Record<string, unknown>): [EventEnvelope, Record<strin
 const shell = { id: "task-1", description: "npm test", status: "running", taskType: "shell" }
 
 const heldAndDrained = (release: ReleaseTurnEnd, idle: () => boolean = () => true) => {
-  const holds = makeTurnEndHolds(release, idle)
+  const holds = makeTurnEndHolds(release, idle, new Set())
   holds.track(...updated({ backgroundTasks: [shell] }))
   holds.track(...updated({ turnState: "ended", stopReason: "end_turn" }))
   holds.track(...updated({ backgroundTasks: [] }))

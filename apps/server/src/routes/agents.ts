@@ -16,7 +16,7 @@ import {
 } from "./agent-debug.js"
 import { listAgents, waitForAgents } from "./agent-lifecycle.js"
 import { startAgent } from "./agent-start.js"
-import { agentState, harnessIsLoaded } from "./agent-state.js"
+import { agentState, turnEndIsHeld } from "./agent-state.js"
 import { rejectSyncThrows, type RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
 import { finalAssistantText } from "./session-event-router.js"
@@ -49,12 +49,12 @@ const dispatchAgentRoute = (route: RouteContext): Promise<boolean> => {
 }
 
 const readStatus = async (
-  { services, response }: RouteContext,
+  { services, routeState, response }: RouteContext,
   agentId: string
 ): Promise<boolean> => {
   const session = await knownAgent(services.db, agentId)
   const page = await run(services.db.getTranscriptPage(agentId, undefined, 1))
-  writeJson(response, 200, await agentStatus(services, session, page))
+  writeJson(response, 200, await agentStatus(services, routeState, session, page))
   return true
 }
 
@@ -86,25 +86,26 @@ const readItem = async (
 
 const agentStatus = async (
   services: RouteContext["services"],
+  routeState: RouteContext["routeState"],
   session: SessionSummary,
   page: TranscriptPage
 ): Promise<AgentStatus> =>
   agentStatusOf(
     session,
     page,
-    harnessIsLoaded(services.agents, session),
+    turnEndIsHeld(routeState, session),
     await finalAssistantText(services, session.id)
   )
 
 export const agentStatusOf = (
   session: SessionSummary,
-  page: Pick<TranscriptPage, "pendingQuestion" | "backgroundTasks">,
-  harnessLoaded: boolean,
+  page: Pick<TranscriptPage, "pendingQuestion">,
+  turnEndHeld: boolean,
   lastReply: string
 ): AgentStatus => ({
   agentId: session.id,
   title: session.title,
-  state: agentState(session, page, harnessLoaded),
+  state: agentState(session, page, turnEndHeld),
   ...(lastReply.length === 0 ? {} : { lastReply }),
   ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
 })

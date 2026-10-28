@@ -74,8 +74,8 @@ const clearPromptQueue = async ({ services, fanout }: RouteContext, agentId: str
   await publishPromptQueue(services.db, fanout, agentId)
 }
 
-const isRunning = async ({ services }: RouteContext, agent: SessionSummary) => {
-  const state = await currentState(services, agent)
+const isRunning = async (route: RouteContext, agent: SessionSummary) => {
+  const state = await currentState(route, agent)
   return state === "working" || state === "waitingForUser"
 }
 

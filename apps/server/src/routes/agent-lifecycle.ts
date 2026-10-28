@@ -11,29 +11,26 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Schema } from "effect"
 
 import { HttpFailure, readSchema, run, writeJson } from "../server-context.js"
-import { agentState, harnessIsLoaded } from "./agent-state.js"
+import { agentState, turnEndIsHeld } from "./agent-state.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import type { RouteContext } from "./route-context.js"
 import { waitUntilSettled } from "./session-wait.js"
 
-export const listAgents = async ({ services, response, url }: RouteContext): Promise<boolean> => {
+export const listAgents = async (route: RouteContext): Promise<boolean> => {
+  const { services, response, url } = route
   const filters = listFilters(url, await run(services.db.listProjects))
   const sessions = (await run(services.db.listSessions)).filter((session) =>
     listedSession(session, filters, url)
   )
-  const items = await Promise.all(sessions.map((session) => agentSummary(services, session)))
+  const items = await Promise.all(sessions.map((session) => agentSummary(route, session)))
   writeJson(response, 200, {
     items: items.filter((item) => filters.state === undefined || item.state === filters.state)
   })
   return true
 }
 
-export const waitForAgents = async ({
-  services,
-  fanout,
-  request,
-  response
-}: RouteContext): Promise<boolean> => {
+export const waitForAgents = async (route: RouteContext): Promise<boolean> => {
+  const { services, fanout, request, response } = route
   const payload = await readSchema(request, WaitForAgentsRequest)
   const until = new Set(payload.until ?? defaultWaitUntil)
   const abort = new AbortController()
@@ -42,8 +39,8 @@ export const waitForAgents = async ({
     ids: payload.agentIds,
     timeoutMs: payload.timeoutMs,
     signal: abort.signal,
-    settled: (session) => settledIn(services, session, until),
-    describe: (session) => waitedAgent(services, session)
+    settled: (session) => settledIn(route, session, until),
+    describe: (session) => waitedAgent(route, session)
   })
   writeJson(response, 200, waited)
   return true
@@ -91,12 +88,12 @@ const matchesOptional = (value: string | undefined, wanted: string | undefined):
   wanted === undefined || value?.toLowerCase() === wanted
 
 const agentSummary = async (
-  services: RouteContext["services"],
+  route: RouteContext,
   session: SessionSummary
 ): Promise<AgentSummary> => ({
   agentId: session.id,
   title: session.title,
-  state: await currentState(services, session),
+  state: await currentState(route, session),
   projectId: session.projectId,
   harness: session.harnessId,
   ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
@@ -107,23 +104,23 @@ const agentSummary = async (
 })
 
 export const currentState = async (
-  services: RouteContext["services"],
+  { services, routeState }: RouteContext,
   session: SessionSummary
 ): Promise<AgentState> =>
   agentState(
     session,
     await run(services.db.getTranscriptPage(session.id, undefined, 1)),
-    harnessIsLoaded(services.agents, session)
+    turnEndIsHeld(routeState, session)
   )
 
 const settledIn = async (
-  services: RouteContext["services"],
+  route: RouteContext,
   session: SessionSummary,
   until: ReadonlySet<AgentState>
 ): Promise<boolean> => {
-  const state = await currentState(services, session)
+  const state = await currentState(route, session)
   if (!until.has(state)) return false
-  return state !== "idle" || !(await hasQueuedPrompts(services.db, session.id))
+  return state !== "idle" || !(await hasQueuedPrompts(route.services.db, session.id))
 }
 
 const hasQueuedPrompts = async (db: CodevisorDatabaseService, agentId: string): Promise<boolean> =>
@@ -131,13 +128,13 @@ const hasQueuedPrompts = async (db: CodevisorDatabaseService, agentId: string): 
   (await run(db.listProcessingPromptQueue(agentId))).length > 0
 
 const waitedAgent = async (
-  services: RouteContext["services"],
+  { services, routeState }: RouteContext,
   session: SessionSummary
 ): Promise<WaitedAgent> => {
   const page = await run(services.db.getTranscriptPage(session.id, undefined, 1))
   return {
     agentId: session.id,
-    state: agentState(session, page, harnessIsLoaded(services.agents, session)),
+    state: agentState(session, page, turnEndIsHeld(routeState, session)),
     ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
   }
 }

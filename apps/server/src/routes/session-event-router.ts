@@ -74,7 +74,8 @@ export const makeSessionEventRouter = (
   }
   const holds = makeTurnEndHolds(
     announceTurnEnd,
-    (sessionId) => !hasLiveTurn(routeState, sessionId)
+    (sessionId) => !hasLiveTurn(routeState, sessionId),
+    routeState.heldTurnEnds
   )
 
   const onTurnEnded = async (sessionId: string, payload: Record<string, unknown>) => {

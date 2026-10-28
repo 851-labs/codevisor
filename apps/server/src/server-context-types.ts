@@ -177,6 +177,7 @@ export interface RouteState {
   readonly gatedSessions: Map<string, string>
   readonly activeTurnSessions: Set<string>
   readonly turnHeldSessions: Set<string>
+  readonly heldTurnEnds: Set<string>
   readonly restartHeldSessions: Map<string, SessionUpdateGate>
   readonly restart: RestartCoordinator
   readonly updateRun: UpdateRun

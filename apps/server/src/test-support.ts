@@ -44,6 +44,7 @@ export const idleRouteState = (): RouteState => ({
   pendingPromptActions: new Set(),
   pendingSessionCreates: new Map(),
   turnHeldSessions: new Set(),
+  heldTurnEnds: new Set(),
   updateSignature: {},
   restartHeldSessions: new Map(),
   restart: idleRestartCoordinator(),

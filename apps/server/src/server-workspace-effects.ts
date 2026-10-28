@@ -1,4 +1,4 @@
-import type { ArchivedWorktree, SessionSummary, Workspace } from "@codevisor/api"
+import type { ArchivedWorktree, SessionSummary, SessionUpdateGate, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import {
   legacyWorktreeTrashRoot,
@@ -80,6 +80,14 @@ export const retireSessionRuntime = async (
   ])
   if (failure !== undefined) throw failure
 }
+
+export const makeTurnState = () => ({
+  activePromptSessions: new Set<string>(),
+  promptTurnReleases: new Map<string, () => void>(),
+  activeTurnSessions: new Set<string>(),
+  restartHeldSessions: new Map<string, SessionUpdateGate>(),
+  heldTurnEnds: new Set<string>()
+})
 
 export type RetiredTurnState = Pick<
   RouteState,

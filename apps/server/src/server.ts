@@ -2,7 +2,6 @@ import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import { Socket, type AddressInfo } from "node:net"
 
-import type { SessionUpdateGate } from "@codevisor/api"
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
 
@@ -68,6 +67,7 @@ import {
   subscribeSessionActivity
 } from "./server-monitors.js"
 import { handleRequest } from "./server-router.js"
+import { makeTurnState } from "./server-workspace-effects.js"
 import { continueAfterUpdate, makeUpdateResumer } from "./update-resume.js"
 import { makeServerUpdateRun } from "./update-run-server.js"
 import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
@@ -82,12 +82,7 @@ export const makeCodevisorServerApp = (
   fanout: EventFanout,
   webSocketServer = new WebSocketServer({ noServer: true })
 ): CodevisorServerApp => {
-  const turns = {
-    activePromptSessions: new Set<string>(),
-    promptTurnReleases: new Map<string, () => void>(),
-    activeTurnSessions: new Set<string>(),
-    restartHeldSessions: new Map<string, SessionUpdateGate>()
-  }
+  const turns = makeTurnState()
   const restartSnapshot =
     config.restartSnapshotPath === undefined
       ? makeMemoryRestartSnapshotStore()
