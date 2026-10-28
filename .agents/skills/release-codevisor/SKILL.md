@@ -20,9 +20,11 @@ Stable is a promotion, never a rebuild. Three workflows produce every release:
   and cannot be promoted.
 - `Publish Stable` (`publish-stable.yml`) takes a published Alpha tag, verifies
   it, and ships the same bytes as Stable: tag, Stable Sparkle and server feeds,
-  Homebrew, and a versioned Chrome extension package. Chrome Web Store
-  publication is a separate, explicit workflow and must not run as part of an
-  app release.
+  Homebrew, and a versioned Chrome extension package. After that it calls
+  `Publish Chrome Extension` with `only_if_changed`, which submits the
+  extension to the Chrome Web Store only when
+  `packages/automation/resources/browser-extension` changed since the newest
+  `browser-extension-v<version>` tag, then tags the submitted version.
 
 After publication verification passes, `Publish Stable` marks the release as
 GitHub `latest`. Alpha releases remain prereleases and never advance `latest`.
@@ -101,8 +103,10 @@ Verify all of the following before reporting success:
 - macOS artifacts are Developer ID signed, notarized, and stapled.
 - Homebrew points to the same Stable artifacts and keeps `auto_updates true`.
 - The versioned Chrome extension ZIP and checksum are attached to the Stable
-  release. Do not dispatch `Publish Chrome Extension` unless the user explicitly
-  says the store listing is ready and asks to publish it.
+  release, and the `submit-browser-extension` job either logged why it skipped
+  or pushed `browser-extension-v<VERSION>`. Dispatch `Publish Chrome Extension`
+  by hand only to re-run a submission the user asks for; `dry_run` checks the
+  package and Google sign-in without submitting.
 - GitHub `latest` points to the promoted Stable release, and both architecture
   download URLs under `releases/latest/download` resolve to that release.
 

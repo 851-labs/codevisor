@@ -11,10 +11,11 @@ const FAILED_UPLOAD_STATES = new Set(["FAILED", "UPLOAD_FAILED"])
 
 const usage = () => {
   console.error(
-    "usage: scripts/release/publish-browser-extension.mjs [--staged] <extension.zip> | [--staged] --publish-only | --status-only"
+    "usage: scripts/release/publish-browser-extension.mjs [--staged] [--dry-run] <extension.zip> | [--staged] [--dry-run] --publish-only | --status-only"
   )
   console.error()
   console.error("--staged holds the approved version until it is published from the dashboard.")
+  console.error("--dry-run checks the configuration and package, then prints what it would submit.")
   console.error()
   console.error("Required environment variables:")
   console.error("  CHROME_WEBSTORE_ACCESS_TOKEN")
@@ -149,6 +150,17 @@ export const publishItem = async (
     fetchImplementation
   )
 
+const reportDryRun = async (archivePath, publishType) => {
+  if (archivePath === undefined) {
+    console.log(`Dry run: would submit the uploaded package (${publishType}).`)
+    return
+  }
+  const archive = await readFile(archivePath)
+  console.log(
+    `Dry run: would upload ${basename(archivePath)} (${archive.byteLength} bytes) and submit it (${publishType}).`
+  )
+}
+
 const reportPublication = (publication) => {
   console.log(`Chrome Web Store submission state: ${publication.state}`)
   if (publication.warningInfo?.warnings?.length) {
@@ -165,13 +177,15 @@ export const main = async (args = process.argv.slice(2), environment = process.e
   const statusOnly = args.includes("--status-only")
   const publishOnly = args.includes("--publish-only")
   const staged = args.includes("--staged")
+  const dryRun = args.includes("--dry-run")
   const publishType = staged ? "STAGED_PUBLISH" : "DEFAULT_PUBLISH"
   const positionalArguments = args.filter(
-    (argument) => !["--status-only", "--publish-only", "--staged"].includes(argument)
+    (argument) => !["--status-only", "--publish-only", "--staged", "--dry-run"].includes(argument)
   )
   if (
     (statusOnly && publishOnly) ||
     (statusOnly && staged) ||
+    (statusOnly && dryRun) ||
     (!statusOnly && !publishOnly && positionalArguments.length !== 1) ||
     ((statusOnly || publishOnly) && positionalArguments.length !== 0)
   ) {
@@ -188,6 +202,11 @@ export const main = async (args = process.argv.slice(2), environment = process.e
   if (statusOnly) {
     const status = await fetchStatus(configuration)
     console.log(JSON.stringify(status, null, 2))
+    return
+  }
+
+  if (dryRun) {
+    await reportDryRun(publishOnly ? undefined : resolve(positionalArguments[0]), publishType)
     return
   }
 

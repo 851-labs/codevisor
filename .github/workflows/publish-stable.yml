@@ -189,3 +189,13 @@ jobs:
             -f context=publish/stable -f state=success \
             -f description="Stable $VERSION published" \
             -f target_url="$GITHUB_SERVER_URL/$REPOSITORY/releases/tag/$TAG" >/dev/null
+
+  submit-browser-extension:
+    needs: [metadata, publish]
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/publish-browser-extension.yml
+    with:
+      version: ${{ needs.metadata.outputs.version }}
+      only_if_changed: true

@@ -22,28 +22,60 @@ on:
         required: true
         default: false
         type: boolean
+      only_if_changed:
+        description: Skip the submission when the extension source is unchanged since the last submitted version.
+        required: true
+        default: false
+        type: boolean
+      dry_run:
+        description: Check the release package and Google sign-in, then print what would be submitted without submitting.
+        required: true
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      confirm_publish:
+        required: false
+        default: true
+        type: boolean
+      upload_package:
+        required: false
+        default: true
+        type: boolean
+      stage_only:
+        required: false
+        default: false
+        type: boolean
+      only_if_changed:
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
-concurrency:
-  group: chrome-web-store-publication
-  cancel-in-progress: false
-
 jobs:
-  publish:
+  decide:
     if: ${{ inputs.confirm_publish }}
     runs-on: ubuntu-24.04
-    environment: chrome-web-store-production
-    permissions:
-      contents: read
-      id-token: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      submit: ${{ steps.decision.outputs.submit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-node
-      - name: Download the extension attached to the Stable release
+      - name: Check the version
+        id: version
         env:
-          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
@@ -52,6 +84,44 @@ jobs:
             echo "Version must be numeric semver." >&2
             exit 1
           }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Decide whether to submit
+        id: decision
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ONLY_IF_CHANGED: ${{ inputs.only_if_changed }}
+        shell: bash
+        run: |
+          if [[ "$ONLY_IF_CHANGED" == true ]]; then
+            node scripts/release/browser-extension-submission.mjs "$VERSION"
+          else
+            echo "Submitting $VERSION: requested without a change check."
+            echo "submit=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: decide
+    if: ${{ needs.decide.outputs.submit == 'true' }}
+    runs-on: ubuntu-24.04
+    environment: chrome-web-store-production
+    concurrency:
+      group: chrome-web-store-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      version: ${{ needs.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node
+      - name: Download the extension attached to the Stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
           tag="v$version"
           mkdir -p dist/release
           release_json="$(gh release view "$tag" --json isDraft,isPrerelease)"
@@ -66,7 +136,6 @@ jobs:
             cd dist/release
             shasum -a 256 -c "Codevisor-Chrome-$version.zip.sha256"
           )
-          echo "version=$version" >> "$GITHUB_ENV"
       - name: Authenticate to Google Cloud
         id: google-auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
@@ -82,13 +151,21 @@ jobs:
           CHROME_WEBSTORE_EXTENSION_ID: ${{ vars.CHROME_WEBSTORE_EXTENSION_ID }}
           UPLOAD_PACKAGE: ${{ inputs.upload_package }}
           STAGE_ONLY: ${{ inputs.stage_only }}
+          DRY_RUN: ${{ inputs.dry_run }}
         shell: bash
         run: |
           flags=()
           [[ "$STAGE_ONLY" == true ]] && flags+=(--staged)
+          [[ "$DRY_RUN" == true ]] && flags+=(--dry-run)
           if [[ "$UPLOAD_PACKAGE" == true ]]; then
             node scripts/release/publish-browser-extension.mjs "${flags[@]}" \
               "dist/release/Codevisor-Chrome-$version.zip"
           else
             node scripts/release/publish-browser-extension.mjs "${flags[@]}" --publish-only
           fi
+      - name: Record the submitted version
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          source_sha="$(git rev-parse "v$version^{commit}")"
+          git push origin "$source_sha:refs/tags/browser-extension-v$version"

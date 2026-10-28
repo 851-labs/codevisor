@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 import {
   fetchStatus,
+  main,
   publishItem,
   uploadPackage,
   waitForUpload
@@ -13,6 +14,18 @@ const configuration = {
   accessToken: "test-token",
   publisherId: "test-publisher",
   extensionId: "test-extension"
+}
+
+const environment = {
+  CHROME_WEBSTORE_ACCESS_TOKEN: "test-token",
+  CHROME_WEBSTORE_PUBLISHER_ID: "test-publisher",
+  CHROME_WEBSTORE_EXTENSION_ID: "test-extension"
+}
+
+const packagePath = fileURLToPath(new URL("../../package.json", import.meta.url))
+
+const unexpectedFetch = () => {
+  throw new Error("A dry run must not call the Chrome Web Store")
 }
 
 const jsonResponse = (body, status = 200) =>
@@ -38,14 +51,10 @@ test("fetchStatus calls the Chrome Web Store v2 item endpoint", async () => {
 
 test("uploadPackage sends the ZIP as a media upload", async () => {
   const calls = []
-  const upload = await uploadPackage(
-    fileURLToPath(new URL("../../package.json", import.meta.url)),
-    configuration,
-    async (url, options) => {
-      calls.push({ url, options })
-      return jsonResponse({ crxVersion: "1.2.3", uploadState: "SUCCEEDED" })
-    }
-  )
+  const upload = await uploadPackage(packagePath, configuration, async (url, options) => {
+    calls.push({ url, options })
+    return jsonResponse({ crxVersion: "1.2.3", uploadState: "SUCCEEDED" })
+  })
 
   assert.equal(upload.uploadState, "SUCCEEDED")
   assert.equal(
@@ -118,5 +127,38 @@ test("API errors surface the Chrome Web Store message", async () => {
       jsonResponse({ error: { message: "permission denied" } }, 403)
     ),
     /permission denied/
+  )
+})
+
+test("a dry run checks the package without calling the Chrome Web Store", async (context) => {
+  context.mock.method(globalThis, "fetch", unexpectedFetch)
+  const logged = context.mock.method(console, "log", () => {})
+
+  await main(["--staged", "--dry-run", packagePath], environment)
+
+  assert.match(
+    logged.mock.calls[0].arguments[0],
+    /^Dry run: would upload package\.json \(\d+ bytes\) and submit it \(STAGED_PUBLISH\)\.$/
+  )
+})
+
+test("a dry run of a publish-only submission calls nothing", async (context) => {
+  context.mock.method(globalThis, "fetch", unexpectedFetch)
+  const logged = context.mock.method(console, "log", () => {})
+
+  await main(["--publish-only", "--dry-run"], environment)
+
+  assert.equal(
+    logged.mock.calls[0].arguments[0],
+    "Dry run: would submit the uploaded package (DEFAULT_PUBLISH)."
+  )
+})
+
+test("a dry run still requires the store configuration", async (context) => {
+  context.mock.method(globalThis, "fetch", unexpectedFetch)
+
+  await assert.rejects(
+    main(["--dry-run", packagePath], {}),
+    /CHROME_WEBSTORE_ACCESS_TOKEN is required/
   )
 })
