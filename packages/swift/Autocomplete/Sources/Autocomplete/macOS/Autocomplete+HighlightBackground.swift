@@ -5,16 +5,10 @@
   extension Autocomplete {
     struct HighlightBackground: View {
       let highlight: ItemHighlight
-      let cornerRadius: CGFloat
-      let clip: ListClip
+      let topCornerRadius: CGFloat
+      let bottomCornerRadius: CGFloat
 
       var body: some View {
-        GeometryReader { proxy in
-          fill.clipShape(ListClip.Viewport(clip: clip, viewport: proxy.bounds(of: clip.coordinateSpace)))
-        }
-      }
-
-      @ViewBuilder private var fill: some View {
         switch highlight {
         case .menuSelection:
           NativeMenuSelectionMaterial()
@@ -27,35 +21,14 @@
         }
       }
 
-      private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-      }
-    }
-
-    struct ListClip: Sendable {
-      static var footerSpace: NamedCoordinateSpace { .named("Autocomplete.Footer") }
-
-      let footer: Bool
-      let horizontalInset: CGFloat
-      let topCornerRadius: CGFloat
-      let bottomCornerRadius: CGFloat
-      var coordinateSpace: NamedCoordinateSpace { footer ? Self.footerSpace : .scrollView }
-
-      struct Viewport: Shape {
-        let clip: ListClip
-        let viewport: CGRect?
-
-        func path(in rect: CGRect) -> Path {
-          guard let viewport else { return Path(rect) }
-          return UnevenRoundedRectangle(
-            topLeadingRadius: clip.topCornerRadius,
-            bottomLeadingRadius: clip.bottomCornerRadius,
-            bottomTrailingRadius: clip.bottomCornerRadius,
-            topTrailingRadius: clip.topCornerRadius,
-            style: .continuous
-          )
-          .path(in: viewport.insetBy(dx: clip.horizontalInset, dy: 0))
-        }
+      private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+          topLeadingRadius: topCornerRadius,
+          bottomLeadingRadius: bottomCornerRadius,
+          bottomTrailingRadius: bottomCornerRadius,
+          topTrailingRadius: topCornerRadius,
+          style: .continuous
+        )
       }
     }
 
