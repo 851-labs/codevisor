@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
+import { z } from "zod"
+
 const pluginsDir = path.resolve(import.meta.dirname, "../../../plugins")
 const outputFile = path.resolve(import.meta.dirname, "../src/generated/plugin-catalog.json")
 
@@ -15,7 +17,18 @@ const serverJsonFiles = (): string[] =>
 
 const popularServers = (): unknown => readJson(path.join(pluginsDir, "popular.json"))
 
-const catalog = { firstParty: serverJsonFiles().map(readJson), popular: popularServers() }
+const DevOnlyServer = z.object({
+  _meta: z.object({ "dev.codevisor/plugin": z.object({ devOnly: z.literal(true) }) })
+})
+
+const isDevOnly = (server: unknown): boolean => DevOnlyServer.safeParse(server).success
+
+const firstPartyServers = (): unknown[] =>
+  serverJsonFiles()
+    .map(readJson)
+    .filter((server) => !isDevOnly(server))
+
+const catalog = { firstParty: firstPartyServers(), popular: popularServers() }
 
 mkdirSync(path.dirname(outputFile), { recursive: true })
 writeFileSync(outputFile, `${JSON.stringify(catalog, null, 2)}\n`)

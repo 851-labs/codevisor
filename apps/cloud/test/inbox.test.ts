@@ -1,6 +1,9 @@
-import { SELF } from "cloudflare:test"
+import { env, SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
+import { inboxIngress } from "../src/inbox-ingress.js"
+import { inboxRoutes } from "../src/inbox-routes.js"
+import { INBOXES_OFF } from "../src/inbox-store.js"
 import { BASE, devLogin, disconnect } from "./cloud-test-support.js"
 import {
   connectInboxMachine,
@@ -217,5 +220,37 @@ describe("MCP webhook receiver discovery", () => {
     const response = await SELF.fetch(`${BASE}/.well-known/mcp-webhook-receiver.json`)
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ receivers: ["/i/", "/hooks/i/"] })
+  })
+})
+
+describe("webhook inboxes without HOOKS_BASE_URL", () => {
+  const unconfigured = { ...env, HOOKS_BASE_URL: undefined }
+
+  it("refuses to hand out an inbox and says why", async () => {
+    const machine = await machineIdentity(await devLogin())
+
+    const response = await inboxRoutes.request(
+      `${BASE}/api/machine/inboxes`,
+      {
+        method: "POST",
+        headers: { "x-api-key": machine.apiKey, "content-type": "application/json" },
+        body: JSON.stringify({ plugin: "alerts", accountId: "a", ingress: "alerts" })
+      },
+      unconfigured
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: INBOXES_OFF })
+  })
+
+  it("turns away webhook deliveries", async () => {
+    const response = await inboxIngress.request(
+      `${BASE}/hooks/i/any-inbox`,
+      { method: "POST", body: "{}" },
+      unconfigured
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: INBOXES_OFF })
   })
 })

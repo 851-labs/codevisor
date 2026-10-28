@@ -6,9 +6,12 @@ import { BASE } from "./cloud-test-support.js"
 import { readJson } from "./json-test-support.js"
 
 const official = {
-  "io.modelcontextprotocol.registry/official": { status: "active", isLatest: true }
+  "io.modelcontextprotocol.registry/official": {
+    status: "active",
+    isLatest: true
+  }
 }
-const ratedIds = ["dev.codevisor/grafana", "app.linear/linear"]
+const ratedIds = ["co.huggingface/hf-mcp-server", "app.linear/linear"]
 
 const ServerBody = z.looseObject({
   name: z.string(),
@@ -47,21 +50,19 @@ afterEach(async () => {
 })
 
 describe("plugin catalog", () => {
-  it("lists first-party and popular plugins in MCP Registry format without dev-only plugins", async () => {
+  it("lists catalog plugins in MCP Registry format without dev-only plugins", async () => {
     const response = await SELF.fetch(`${BASE}/v0/servers`)
     const body = await readJson(response, ServerListBody)
 
     expect(response.headers.get("cache-control")).toBe("public, max-age=300")
-    expect(names(body)).toEqual(
-      expect.arrayContaining(["dev.codevisor/grafana", "app.linear/linear", "com.notion/mcp"])
-    )
+    expect(names(body)).toEqual(expect.arrayContaining(["app.linear/linear", "com.notion/mcp"]))
     expect(names(body)).not.toContain("dev.codevisor/test-events")
     expect(body.metadata.count).toBe(body.servers.length)
     expect(body.servers.map((entry) => entry._meta)).toEqual(body.servers.map(() => official))
   })
 
   it("filters by name or title, ignoring case", async () => {
-    expect(names(await listServers("?search=GRAF"))).toEqual(["dev.codevisor/grafana"])
+    expect(names(await listServers("?search=LINEAR"))).toEqual(["app.linear/linear"])
     expect(names(await listServers("?search=hugging%20face"))).toEqual([
       "co.huggingface/hf-mcp-server"
     ])
@@ -72,18 +73,21 @@ describe("plugin catalog", () => {
   })
 
   it("merges age ratings into the Codevisor plugin metadata", async () => {
-    const unrated = pluginMeta(serverNamed(await listServers(), "dev.codevisor/grafana"))
-    await rate("dev.codevisor/grafana", 13)
+    const huggingFace = "co.huggingface/hf-mcp-server"
+    const unrated = pluginMeta(serverNamed(await listServers(), huggingFace))
+    await rate(huggingFace, 16)
     await rate("app.linear/linear", 18)
 
     const body = await listServers()
 
-    expect(unrated).toHaveProperty("accounts")
-    expect(pluginMeta(serverNamed(body, "dev.codevisor/grafana"))).toEqual({
+    expect(unrated).toEqual({ ageRating: 13 })
+    expect(pluginMeta(serverNamed(body, huggingFace))).toEqual({
       ...unrated,
-      ageRating: 13
+      ageRating: 16
     })
-    expect(pluginMeta(serverNamed(body, "app.linear/linear"))).toEqual({ ageRating: 18 })
+    expect(pluginMeta(serverNamed(body, "app.linear/linear"))).toEqual({
+      ageRating: 18
+    })
   })
 
   it("serves the latest version of one server by its encoded name", async () => {
@@ -98,9 +102,16 @@ describe("plugin catalog", () => {
       title: "Linear",
       _meta: { "dev.codevisor/plugin": { ageRating: 18 } }
     })
-    expect(
-      (await SELF.fetch(`${BASE}/v0/servers/dev.codevisor%2Fgrafana/versions/latest`)).status
-    ).toBe(200)
+    expect((await SELF.fetch(`${BASE}/v0/servers/com.notion%2Fmcp/versions/latest`)).status).toBe(
+      200
+    )
+  })
+
+  it("answers older apps with an empty index of the retired plugin registry", async () => {
+    const response = await SELF.fetch(`${BASE}/plugins/index.json`)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ generatedAt: null, entries: [], rejected: [] })
   })
 
   it("does not serve unknown or dev-only servers", async () => {

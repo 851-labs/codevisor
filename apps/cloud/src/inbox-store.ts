@@ -12,10 +12,12 @@ export const MAX_INBOXES_PER_USER = 1_000
 
 const INBOX_ID_BYTES = 16
 
-export const inboxUrl = (env: CloudEnv, inboxId: string): string => {
-  if (env.HOOKS_BASE_URL) return `${env.HOOKS_BASE_URL}/i/${inboxId}`
-  return `${env.PUBLIC_BASE_URL}/hooks/i/${inboxId}`
-}
+export const INBOXES_OFF =
+  "Webhook inboxes are turned off on this Codevisor Cloud: HOOKS_BASE_URL isn't set"
+
+export const hooksBaseUrl = (env: CloudEnv): string | undefined => env.HOOKS_BASE_URL || undefined
+
+export const inboxUrl = (hooksBase: string, inboxId: string): string => `${hooksBase}/i/${inboxId}`
 
 export const provisionInbox = async (
   db: D1Database,

@@ -15,6 +15,7 @@ export default defineConfig(async () => {
             DEV_AUTH: "1",
             RESEND_API_KEY: "",
             PUBLIC_BASE_URL: "http://localhost:8787",
+            HOOKS_BASE_URL: "http://localhost:8787/hooks",
             INSTANCE_NAME: "Codevisor Cloud (test)",
             RELAY_MAP: JSON.stringify([
               { url: "https://relay-test.codevisor.dev", quicPort: 7842 }

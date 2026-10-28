@@ -2,7 +2,14 @@ import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 
-import { deleteInbox, inboxUrl, ownsInbox, provisionInbox } from "./inbox-store.js"
+import {
+  deleteInbox,
+  hooksBaseUrl,
+  INBOXES_OFF,
+  inboxUrl,
+  ownsInbox,
+  provisionInbox
+} from "./inbox-store.js"
 import { userHub } from "./location-hint.js"
 import { requireMachine, type MachineEnv } from "./machine-auth.js"
 
@@ -12,6 +19,9 @@ inboxRoutes.use("/api/machine/inboxes", requireMachine)
 inboxRoutes.use("/api/machine/inboxes/*", requireMachine)
 
 inboxRoutes.post("/api/machine/inboxes", bodyLimit({ maxSize: 8_192 }), async (c) => {
+  const hooksBase = hooksBaseUrl(c.env)
+  if (hooksBase === undefined) return c.json({ error: INBOXES_OFF }, 503)
+
   const target = InboxTargetBody.safeParse(await c.req.json<unknown>().catch(() => undefined))
   if (!target.success) return c.json({ error: "invalid inbox" }, 400)
 
@@ -19,7 +29,7 @@ inboxRoutes.post("/api/machine/inboxes", bodyLimit({ maxSize: 8_192 }), async (c
   if (id === undefined) return c.json({ error: "too many inboxes" }, 409)
 
   c.header("Cache-Control", "no-store")
-  return c.json({ id, url: inboxUrl(c.env, id) })
+  return c.json({ id, url: inboxUrl(hooksBase, id) })
 })
 
 inboxRoutes.put("/api/machine/inboxes/:id/devices/self", async (c) => {

@@ -141,6 +141,27 @@ describe("plugin reports", () => {
     expect(await tableCount("plugin_reports")).toBe(1)
   })
 
+  it("stores reports and posts nothing while no Slack webhook is set", async () => {
+    const token = await devLogin()
+    const fetcher = vi.fn(async () => new Response("ok"))
+    const unconfigured = { ...env, PLUGIN_REPORT_FETCH: fetcher }
+    const ctx = createExecutionContext()
+
+    const created = await worker.fetch(
+      request("/api/plugins/reports", token, report),
+      unconfigured,
+      ctx
+    )
+    await waitOnExecutionContext(ctx)
+    const cron = createExecutionContext()
+    worker.scheduled(createScheduledController(), unconfigured, cron)
+    await waitOnExecutionContext(cron)
+
+    expect(created.status).toBe(201)
+    expect(await reportRow(report.id)).toEqual({ plugin_id: report.pluginId, notified_at: null })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it("rejects a report id that belongs to someone else", async () => {
     const token = await devLogin()
     await env.DB.prepare(

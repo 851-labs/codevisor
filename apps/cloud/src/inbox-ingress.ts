@@ -4,7 +4,7 @@ import { bodyLimit } from "hono/body-limit"
 import type { CloudEnv } from "./env.js"
 import type { IngestOutcome } from "./hub-inbox.js"
 import type { InboxRequest } from "./inbox-frames.js"
-import { inboxOwner } from "./inbox-store.js"
+import { hooksBaseUrl, INBOXES_OFF, inboxOwner } from "./inbox-store.js"
 import { userHub } from "./location-hint.js"
 
 export const INBOX_BODY_LIMIT = 256 * 1024
@@ -17,6 +17,8 @@ inboxIngress.on(
   ["/i/:id", "/hooks/i/:id"],
   bodyLimit({ maxSize: INBOX_BODY_LIMIT }),
   async (c) => {
+    if (hooksBaseUrl(c.env) === undefined) return c.json({ error: INBOXES_OFF }, 503)
+
     const inboxId = c.req.param("id")
     const userId = await inboxOwner(c.env.DB, inboxId)
     if (userId === undefined) return c.json({ error: "not found" }, 404)

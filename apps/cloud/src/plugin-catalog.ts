@@ -34,7 +34,12 @@ pluginCatalog.get("/v0/servers/:name{.+}/versions/latest", async (c) => {
   return catalogJson(c, serverResponse(server))
 })
 
+pluginCatalog.get("/plugins/index.json", (c) =>
+  c.json(retiredPluginIndex, 200, { "cache-control": cacheControl })
+)
+
 const cacheControl = "public, max-age=300"
+const retiredPluginIndex = { generatedAt: null, entries: [], rejected: [] }
 const metaRecord = z.record(z.string(), z.unknown())
 
 const RegistryServer = z.looseObject({
