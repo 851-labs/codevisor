@@ -63,6 +63,7 @@ extension EnvironmentValues {
 struct SettingsView: View {
   @Bindable private var router = SettingsRouter.shared
   @Environment(AppEnvironment.self) private var environment
+  @State private var plugins = PluginSettingsModel()
 
   var body: some View {
     NavigationSplitView {
@@ -107,6 +108,14 @@ struct SettingsView: View {
               )
               .navigationBarBackButtonHidden(true)
               .settingsNavigationToolbar()
+            case .pluginCatalog:
+              PluginCatalogPage(catalog: pluginCatalog, plugins: plugins, client: localClient)
+                .navigationBarBackButtonHidden(true)
+                .settingsNavigationToolbar()
+            case let .pluginCatalogEntry(id):
+              PluginCatalogEntryPage(entryId: id, catalog: pluginCatalog, plugins: plugins, client: localClient)
+                .navigationBarBackButtonHidden(true)
+                .settingsNavigationToolbar()
             }
           }
       }
@@ -120,6 +129,14 @@ struct SettingsView: View {
     }
     .frame(minWidth: 780, idealWidth: 780, minHeight: 560, idealHeight: 560)
     .settingsWindowToolbarStyle()
+  }
+
+  private var localClient: any CodevisorServerClienting {
+    environment.machines.client(for: CodevisorMachine.local.id)
+  }
+
+  private var pluginCatalog: PluginCatalogModel {
+    plugins.catalog(using: localClient)
   }
 
   private func selectSidebarTab(_ tab: SettingsTab) {
@@ -150,7 +167,7 @@ struct SettingsView: View {
       SkillsSettingsView()
         .navigationTitle("Skills")
     case .plugins:
-      McpSettingsView()
+      McpSettingsView(plugins: plugins)
         .navigationTitle("Plugins")
     case .projects:
       ProjectsSettingsView()

@@ -8,6 +8,8 @@ struct PluginCatalogScreen: View {
   @State private var catalog: PluginCatalogModel
   @State private var query = ""
   @State private var installTarget: ServerPluginCatalogEntry?
+  @State private var detailId: String?
+  let client: any CodevisorServerClienting
   let installedCatalogIds: Set<String>
   let onInstalled: (ServerMcpServer) async -> Void
 
@@ -17,21 +19,33 @@ struct PluginCatalogScreen: View {
     onInstalled: @escaping (ServerMcpServer) async -> Void
   ) {
     _catalog = State(initialValue: PluginCatalogModel(client: client))
+    self.client = client
     self.installedCatalogIds = installedCatalogIds
     self.onInstalled = onInstalled
   }
 
   var body: some View {
     NavigationStack {
-      List {
-        PluginCatalogList(catalog: catalog, installedCatalogIds: installedCatalogIds) { installTarget = $0 }
-      }
-      .navigationTitle("Browse Plugins")
+      PluginCatalogBrowser(
+        catalog: catalog, client: client, installedCatalogIds: installedCatalogIds,
+        onAdd: { installTarget = $0 }, onOpen: { detailId = $0.id }
+      )
+      .navigationTitle("Plugins")
       .navigationBarTitleDisplayMode(.inline)
-      .searchable(text: $query, prompt: "Plugins and MCP Registry")
+      .searchable(text: $query, prompt: "Search plugins")
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }
+        }
+      }
+      .navigationDestination(item: $detailId) { id in
+        if let entry = catalog.entries.first(where: { $0.id == id }) {
+          PluginCatalogDetail(
+            entry: entry, client: client, isInstalled: installedCatalogIds.contains(id),
+            isInstalling: catalog.installing.contains(id)
+          ) {
+            installTarget = entry
+          }
         }
       }
       .task { await catalog.load() }

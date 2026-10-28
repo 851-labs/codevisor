@@ -24,7 +24,9 @@ struct McpSettingsScreen: View {
   }
 
   private var authoringMachineId: String {
-    environment.machines.selectedMachineId
+    let selected = environment.machines.selectedMachineId
+    guard !supportsPlugins(selected) else { return selected }
+    return environment.machines.allMachines.map(\.id).first(where: supportsPlugins) ?? selected
   }
   @Environment(\.openURL) private var openURL
 
@@ -48,7 +50,7 @@ struct McpSettingsScreen: View {
           if supportsCatalog {
             Button("Browse Plugins…") { showingCatalog = true }
           }
-          Button("Add Custom…") { editing = McpEditorTarget(entry: nil) }
+          Button("Add MCP…") { editing = McpEditorTarget(entry: nil) }
         } label: {
           Label("Add", systemImage: "plus")
         }
@@ -123,7 +125,11 @@ struct McpSettingsScreen: View {
   }
 
   private var supportsCatalog: Bool {
-    environment.machines.statusByMachineId[authoringMachineId]?.supportsPlugins == true
+    supportsPlugins(authoringMachineId)
+  }
+
+  private func supportsPlugins(_ machineId: String) -> Bool {
+    environment.machines.statusByMachineId[machineId]?.supportsPlugins == true
   }
 
   private func showDetails(_ entry: McpFleetEntry) {

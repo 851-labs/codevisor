@@ -62,7 +62,7 @@ struct McpServerEditorSheet: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Text(initialServer == nil ? "Add Custom Plugin" : "Edit Plugin")
+      Text(initialServer == nil ? "Add MCP" : "Edit Plugin")
         .font(.headline)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)

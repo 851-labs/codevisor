@@ -48,6 +48,7 @@ import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
 import { isDevInstance, makePluginCatalog, startCatalogRefresh } from "./plugins/plugin-catalog.js"
+import { pluginIconSources } from "./plugins/plugin-icon-sources.js"
 import { makePluginPlatform } from "./plugins/plugin-platform.js"
 import { startSandboxes } from "./sandbox-boot.js"
 import {
@@ -412,7 +413,7 @@ export const runServe = (
         toolIcons: makeToolIconStore({
           dir: join(dirname(databasePath), "tool-icons"),
           ...(process.platform === "darwin" ? { appIcon: makeAppIconLoader() } : {}),
-          ...(mcp === undefined ? {} : { mcpSources: mcp.iconSources })
+          mcpSources: pluginIconSources(mcp?.iconSources, pluginCatalog)
         }),
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machineStats: makeMachineStatsSampler(),

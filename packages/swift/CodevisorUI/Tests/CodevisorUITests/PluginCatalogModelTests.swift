@@ -7,13 +7,13 @@ import Testing
 
 @MainActor
 struct PluginCatalogModelTests {
-  @Test("Without a query the catalog shows Codevisor then Popular, and never registry results")
+  @Test("Without a query the catalog shows Recommended then Popular, and never registry results")
   func featuredSections() async {
     let model = PluginCatalogModel(client: Self.client(CatalogTransport()))
 
     await model.load()
 
-    #expect(model.sections(hiding: []).map(\.title) == ["Codevisor", "Popular"])
+    #expect(model.sections(hiding: []).map(\.title) == ["Recommended", "Popular"])
     #expect(!model.isLoading)
   }
 
@@ -32,7 +32,7 @@ struct PluginCatalogModelTests {
     await model.settleSearch()
 
     #expect(transport.queries == [nil, "linear"])
-    #expect(model.sections(hiding: []).map(\.title) == ["Codevisor", "Popular", "MCP Registry"])
+    #expect(model.sections(hiding: []).map(\.title) == ["Recommended", "Popular", "MCP Registry"])
   }
 
   @Test("Blocked publishers disappear from Browse")
@@ -40,7 +40,15 @@ struct PluginCatalogModelTests {
     let model = PluginCatalogModel(client: Self.client(CatalogTransport()))
     await model.load()
 
-    #expect(model.sections(hiding: ["popular-co"]).map(\.title) == ["Codevisor"])
+    #expect(model.sections(hiding: ["popular-co"]).map(\.title) == ["Recommended"])
+  }
+
+  @Test("Recommended is hidden when the catalog has no first-party plugins")
+  func hidesEmptyRecommended() async {
+    let model = PluginCatalogModel(client: Self.client(CatalogTransport(firstParty: false)))
+    await model.load()
+
+    #expect(model.sections(hiding: []).map(\.title) == ["Popular"])
   }
 
   @Test("Capability chips count each kind and skip the empty ones")
@@ -107,6 +115,11 @@ private final class SleepGate: Sendable {
 
 private final class CatalogTransport: ServerRequestTransport, Sendable {
   private let recorded = Mutex<[String?]>([])
+  private let firstParty: Bool
+
+  init(firstParty: Bool = true) {
+    self.firstParty = firstParty
+  }
 
   var queries: [String?] { recorded.withLock { $0 } }
 
@@ -115,13 +128,14 @@ private final class CatalogTransport: ServerRequestTransport, Sendable {
     let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value
     recorded.withLock { $0.append(query) }
     let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil))
-    return (Data(Self.body(searching: query != nil).utf8), response)
+    return (Data(body(searching: query != nil).utf8), response)
   }
 
-  private static func body(searching: Bool) -> String {
-    let registry = searching ? "," + entry(id: "io.github.x/linear", source: "registry") : ""
-    return #"{"entries":["# + entry(id: "grafana", source: "first-party") + ","
-      + entry(id: "popular-co/linear", source: "popular") + registry + "]}"
+  private func body(searching: Bool) -> String {
+    let featured = firstParty ? [Self.entry(id: "codevisor/tools", source: "first-party")] : []
+    let registry = searching ? [Self.entry(id: "io.github.x/linear", source: "registry")] : []
+    let entries = featured + [Self.entry(id: "popular-co/linear", source: "popular")] + registry
+    return #"{"entries":["# + entries.joined(separator: ",") + "]}"
   }
 
   private static func entry(id: String, source: String) -> String {

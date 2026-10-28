@@ -200,8 +200,8 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     guard let url = request.url,
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { throw CloudRelayTransportError.invalidRequest }
-    var path = components.path.isEmpty ? "/" : components.path
-    if let query = components.query, !query.isEmpty {
+    var path = components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
+    if let query = components.percentEncodedQuery, !query.isEmpty {
       path += "?\(query)"
     }
     let headers = request.allHTTPHeaderFields ?? [:]

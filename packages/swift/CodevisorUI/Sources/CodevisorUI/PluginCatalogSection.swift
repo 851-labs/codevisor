@@ -7,7 +7,7 @@ public struct PluginCatalogSection: Identifiable, Equatable, Sendable {
   public let entries: [ServerPluginCatalogEntry]
 
   static let ordered: [(source: String, title: String)] = [
-    ("first-party", "Codevisor"), ("popular", "Popular"), ("registry", "MCP Registry"),
+    ("first-party", "Recommended"), ("popular", "Popular"), ("registry", "MCP Registry"),
   ]
 
   static func sections(

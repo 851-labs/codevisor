@@ -126,7 +126,7 @@ public struct McpServerEditor: View {
           }
         }
       }
-      .navigationTitle(isEditing ? "Edit Plugin" : "Add Custom Plugin")
+      .navigationTitle(isEditing ? "Edit Plugin" : "Add MCP")
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
       #endif

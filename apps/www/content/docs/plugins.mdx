@@ -28,7 +28,7 @@ Plugins live on one **Plugins** page in Settings, on macOS and iOS.
   of popular MCP servers. Plugins that run locally ship with Codevisor itself; hosted ones connect to
   the publisher's MCP URL. The [plugin directory](/plugins) lists every catalog plugin with its
   capabilities.
-- **Add Custom…** takes a Streamable HTTP URL such as `https://mcp.example.com/mcp`, or a command
+- **Add MCP…** takes a Streamable HTTP URL such as `https://mcp.example.com/mcp`, or a command
   such as `node /absolute/path/server.js` that Codevisor starts on the machine.
 
 Installed plugins sync to every Mac signed in to your Codevisor account. Turn a plugin off and on to
@@ -76,7 +76,7 @@ that renders the plugin's `ui://` page through the same Apps bridge.
 
 Ask an agent in Codevisor to build one. The built-in `create-codevisor-plugin` skill covers the
 server template, every extension, accounts, and testing with the MCP Inspector, and ends by adding
-the server through **Add Custom…**.
+the server through **Add MCP…**.
 
 Plugins are stored as MCP servers, so the [MCP server routes](/docs/mcp) manage installed plugins.
 The [Plugins API](/docs/api-reference/plugins/get-plugins-catalog) covers the catalog, accounts, and

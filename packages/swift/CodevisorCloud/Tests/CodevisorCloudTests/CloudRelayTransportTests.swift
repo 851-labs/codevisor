@@ -44,7 +44,7 @@ struct CloudRelayTransportTests {
     }
   }
 
-  @Test("HTTP requests round-trip: method, path+query, headers, chunked bodies")
+  @Test("HTTP requests round-trip: method, still-encoded path+query, headers, chunked bodies")
   func httpRoundTrip() async throws {
     let scriptedMachine = ScriptedHttpMachine()
     let responseBody = Data("{\"ok\":true,\"version\":\"1.2.3\"}".utf8)
@@ -61,7 +61,7 @@ struct CloudRelayTransportTests {
 
       let requestBody = Data((0..<(CloudRelayRequestTransport.chunkSize + 1000)).map { UInt8($0 % 251) })
       var request = URLRequest(
-        url: URL(string: "https://cloud-relay.invalid/v1/health?probe=1")!
+        url: URL(string: "https://cloud-relay.invalid/v1/tool-icons/mcp/com.zillow%2Fmcp?probe=a%26b")!
       )
       request.httpMethod = "POST"
       request.httpBody = requestBody
@@ -75,7 +75,7 @@ struct CloudRelayTransportTests {
       #expect(scriptedMachine.completedRequests.count == 1)
       let received = try #require(scriptedMachine.completedRequests.first)
       #expect(received.method == "POST")
-      #expect(received.path == "/v1/health?probe=1")
+      #expect(received.path == "/v1/tool-icons/mcp/com.zillow%2Fmcp?probe=a%26b")
       #expect(received.headers["Authorization"] == "Bearer secret")
       #expect(received.body == requestBody)
       await pipe.shutdown()

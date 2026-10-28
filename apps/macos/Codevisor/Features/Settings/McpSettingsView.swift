@@ -1,4 +1,3 @@
-import AppKit
 import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
@@ -12,17 +11,19 @@ struct McpSettingsView: View {
   }
 
   @Environment(AppEnvironment.self) private var environment
-  @State private var model = McpGlobalModel()
   @State private var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live)
   @State private var showingCustom = false
-  @State private var showingCatalog = false
   @State private var showingBlockedPublishers = false
   @State private var editing: McpFleetEntry?
   @State private var details: McpDetailTarget?
   @State private var pendingRemoval: McpFleetEntry?
   @State private var showsOtherServers = false
   @State private var actionError: String?
+
+  let plugins: PluginSettingsModel
+
+  private var model: McpGlobalModel { plugins.fleet }
 
   private var localClient: any CodevisorServerClienting {
     environment.machines.client(for: CodevisorMachine.local.id)
@@ -42,7 +43,7 @@ struct McpSettingsView: View {
           Button("Blocked Publishers…") { showingBlockedPublishers = true }
           PluginAddMenu(
             canBrowse: supportsCatalog,
-            onBrowse: { showingCatalog = true },
+            onBrowse: { SettingsRouter.shared.panePath.append(.pluginCatalog) },
             onAddCustom: { showingCustom = true })
         }
       }
@@ -57,15 +58,11 @@ struct McpSettingsView: View {
     .sheet(isPresented: $showingCustom) {
       McpServerEditorSheet(initialServer: nil) { values in
         try await recordConsent(for: values)
-        await didAdd(try await localClient.createMcpServer(values.createBody))
+        await plugins.didInstall(try await localClient.createMcpServer(values.createBody), in: environment)
       }
     }
     .sheet(isPresented: $showingBlockedPublishers) {
       BlockedPublishersSheet()
-    }
-    .sheet(isPresented: $showingCatalog) {
-      PluginCatalogSheet(
-        client: localClient, installedCatalogIds: model.installedCatalogIds, onInstalled: didAdd)
     }
     .sheet(item: $editing) { entry in
       McpServerEditorSheet(initialServer: entry.representative) { values in
@@ -76,7 +73,7 @@ struct McpSettingsView: View {
           .updateMcpServer(id: serverId, request: values.updateBody)
         await model.load(in: environment)
         if updated.authType == "oauth" && updated.connectionState == "needsAuthorization" {
-          await beginOAuth(serverId: serverId, machineId: machineId)
+          await plugins.beginOAuth(serverId: serverId, machineId: machineId, in: environment)
         }
       }
     }
@@ -112,7 +109,7 @@ struct McpSettingsView: View {
       onRemove: { pendingRemoval = $0 },
       onConnect: { entry, machineId in
         guard let serverId = entry.idByMachine[machineId] else { return }
-        Task { await beginOAuth(serverId: serverId, machineId: machineId) }
+        Task { await plugins.beginOAuth(serverId: serverId, machineId: machineId, in: environment) }
       },
       toggleDisabledReason: { entry, machineId in
         guard entry.kind == "computerUse", machineId == CodevisorMachine.local.id,
@@ -143,27 +140,8 @@ struct McpSettingsView: View {
     try await environment.pluginAccess.recordConsent(subject, metadata: PluginConsentMetadata(custom: subject))
   }
 
-  private func didAdd(_ created: ServerMcpServer) async {
-    await model.load(in: environment)
-    guard created.awaitsAuthorization else { return }
-
-    await beginOAuth(serverId: created.id, machineId: CodevisorMachine.local.id)
-  }
-
   private var mcpStateRevisions: [UInt64] {
     environment.machines.allMachines.map { environment.mcpStateRevision(for: $0.id) }
-  }
-
-  private func beginOAuth(serverId: String, machineId: String) async {
-    let client = environment.machines.client(for: machineId)
-    do {
-      let flow = try await client.startMcpOAuth(id: serverId)
-      guard let url = URL(string: flow.authorizationUrl) else { return }
-      NSWorkspace.shared.open(url)
-      actionError = nil
-    } catch {
-      actionError = ErrorReporter.userFacingMessage(for: error)
-    }
   }
 
   private func remove(_ entry: McpFleetEntry) async {
@@ -182,7 +160,7 @@ struct McpSettingsView: View {
 }
 
 #Preview("Plugins Settings") {
-  McpSettingsView()
+  McpSettingsView(plugins: PluginSettingsModel())
     .environment(AppEnvironment.preview())
     .frame(width: 560, height: 460)
 }

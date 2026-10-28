@@ -10,7 +10,7 @@ struct PluginAddMenu: View {
       if canBrowse {
         Button("Browse Plugins…", action: onBrowse)
       }
-      Button("Add Custom…", action: onAddCustom)
+      Button("Add MCP…", action: onAddCustom)
     } label: {
       Label("Add", systemImage: "plus")
     }
