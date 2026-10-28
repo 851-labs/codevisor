@@ -86,7 +86,7 @@ struct ChatInputEditor: NSViewRepresentable {
       name: NSView.frameDidChangeNotification,
       object: textView
     )
-    DispatchQueue.main.async { recalculateHeight(textView) }
+    context.coordinator.scheduleHeightUpdate()
     return scroll
   }
 
@@ -136,17 +136,13 @@ struct ChatInputEditor: NSViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-  private func recalculateHeight(_ textView: NSTextView, synchronously: Bool = false) {
+  private func applyFittingHeight(of textView: NSTextView) {
     guard let layoutManager = textView.layoutManager, let container = textView.textContainer else { return }
     layoutManager.ensureLayout(for: container)
     let used = layoutManager.usedRect(for: container).height + textView.textContainerInset.height * 2
     let clamped = min(max(used, minHeight), maxHeight)
     if abs(clamped - calculatedHeight) > 0.5 {
-      if synchronously {
-        calculatedHeight = clamped
-      } else {
-        DispatchQueue.main.async { calculatedHeight = clamped }
-      }
+      calculatedHeight = clamped
     }
   }
 
@@ -156,6 +152,7 @@ struct ChatInputEditor: NSViewRepresentable {
     var isApplyingUpdate = false
     private var measuredText: String?
     private var measuredWidth: CGFloat = -1
+    private var isHeightUpdateScheduled = false
 
     init(_ parent: ChatInputEditor) { self.parent = parent }
 
@@ -168,14 +165,25 @@ struct ChatInputEditor: NSViewRepresentable {
       let width = textView.bounds.width
       guard measuredText != textView.string || abs(measuredWidth - width) > 0.5 else { return }
       recordMeasurement(textView)
-      parent.recalculateHeight(textView)
+      scheduleHeightUpdate()
+    }
+
+    func scheduleHeightUpdate() {
+      guard !isHeightUpdateScheduled else { return }
+      isHeightUpdateScheduled = true
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        isHeightUpdateScheduled = false
+        guard let textView else { return }
+        parent.applyFittingHeight(of: textView)
+      }
     }
 
     @objc func textViewFrameDidChange(_ notification: Notification) {
       guard let textView else { return }
       guard abs(measuredWidth - textView.bounds.width) > 0.5 else { return }
       recordMeasurement(textView)
-      parent.recalculateHeight(textView)
+      scheduleHeightUpdate()
     }
 
     private func recordMeasurement(_ textView: NSTextView) {
@@ -187,14 +195,14 @@ struct ChatInputEditor: NSViewRepresentable {
       guard let textView = notification.object as? NSTextView else { return }
       recordMeasurement(textView)
       parent.text = textView.string
-      parent.recalculateHeight(textView, synchronously: true)
+      parent.applyFittingHeight(of: textView)
     }
 
     func markedTextDidChange() {
       guard !isApplyingUpdate, let textView, parent.text != textView.string else { return }
       recordMeasurement(textView)
       parent.text = textView.string
-      parent.recalculateHeight(textView, synchronously: true)
+      parent.applyFittingHeight(of: textView)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
