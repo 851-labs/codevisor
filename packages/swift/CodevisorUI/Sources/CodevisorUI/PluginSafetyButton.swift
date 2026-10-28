@@ -26,7 +26,6 @@ public struct PluginSafetyButton: View {
 }
 
 public struct PluginSafetyMenuItems: View {
-  @Environment(AppEnvironment.self) private var environment
   let subject: PluginModerationSubject
   let onReport: () -> Void
   let onBlock: () -> Void
@@ -39,24 +38,38 @@ public struct PluginSafetyMenuItems: View {
 
   public var body: some View {
     Button("Report…", action: onReport)
-    Button(isBlocked ? "Unblock Publisher…" : "Block Publisher…", action: onBlock)
+    PluginBlockMenuItem(subject: subject, action: onBlock)
   }
-
-  private var isBlocked: Bool { environment.pluginAccess.isBlocked(publisher: subject.publisher) }
 }
 
 public extension View {
   func pluginSafetyActions(
     subject: PluginModerationSubject, reporting: Binding<Bool>, confirmingBlock: Binding<Bool>
   ) -> some View {
-    modifier(PluginSafetyActions(subject: subject, reporting: reporting, confirmingBlock: confirmingBlock))
+    modifier(PluginReportSheetPresenter(subject: subject, isPresented: reporting))
+      .pluginBlockConfirmation(subject: subject, isPresented: confirmingBlock)
+  }
+
+  func pluginBlockConfirmation(subject: PluginModerationSubject, isPresented: Binding<Bool>) -> some View {
+    modifier(PluginBlockConfirmation(subject: subject, confirmingBlock: isPresented))
   }
 }
 
-private struct PluginSafetyActions: ViewModifier {
+private struct PluginReportSheetPresenter: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   let subject: PluginModerationSubject
-  @Binding var reporting: Bool
+  @Binding var isPresented: Bool
+
+  func body(content: Content) -> some View {
+    content.sheet(isPresented: $isPresented) {
+      PluginReportSheet(subject: subject).environment(environment)
+    }
+  }
+}
+
+private struct PluginBlockConfirmation: ViewModifier {
+  @Environment(AppEnvironment.self) private var environment
+  let subject: PluginModerationSubject
   @Binding var confirmingBlock: Bool
   @State private var errorMessage: String?
 
@@ -64,9 +77,6 @@ private struct PluginSafetyActions: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .sheet(isPresented: $reporting) {
-        PluginReportSheet(subject: subject).environment(environment)
-      }
       .confirmationDialog(
         isBlocked ? "Unblock \(subject.publisher)?" : "Block \(subject.publisher)?",
         isPresented: $confirmingBlock, titleVisibility: .visible

@@ -47,8 +47,8 @@ software, not something Codevisor offers or lists. It is not age-rated by us, an
 and panes open on all your devices, including iOS. You are responsible for the custom plugins you add.
 Report and Block still apply to them, and blocks we or you place on their publisher still take effect.
 
-**Reporting and blocking.** Every plugin has Report and Block options: in the catalog, in Settings ›
-Plugins, and next to any plugin interface shown in a chat or pane. We review reports promptly and may
+**Reporting and blocking.** You can report or block any plugin you have installed from Settings ›
+Plugins, and block a publisher from its catalog page. We review reports promptly and may
 contact the publisher, change the plugin's age rating, or remove or block it from the catalog or iOS
 app, including for safety, privacy, age suitability, legal obligations, or App Store requirements.
 Blocking a publisher hides its plugins' interfaces on your iOS devices. You can also reach us at

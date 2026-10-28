@@ -26,14 +26,6 @@ struct PluginPaneView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .overlay(alignment: .bottomTrailing) {
-      if let subject = model.subject {
-        PluginSafetyButton(subject: subject)
-          .padding(10)
-          .background(.regularMaterial, in: Circle())
-          .padding(12)
-      }
-    }
     .task(id: environment.pluginAccess.revision) {
       guard model.phase != .idle else { return }
       model.retry(theme: tokens)

@@ -4,24 +4,35 @@ import SwiftUI
 struct PluginAppInlineView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
+  @State private var confirmingBlock = false
   let model: PluginAppInlineModel
   let host: PluginAppHost
 
   var body: some View {
     let restriction = self.restriction
-    VStack(alignment: .leading, spacing: 6) {
-      PluginAppInlineHeader(model: model, isRestricted: restriction != nil)
-      PluginAppInlineContent(model: model, restriction: restriction)
-    }
-    .environment(host.environment)
-    .task { await prepare() }
-    .onChange(of: loadRequest(restriction: restriction), initial: true) { _, request in apply(request) }
-    .onChange(of: model.page.height) { _, _ in invalidateRowMeasurement?() }
-    .onChange(of: model.page.phase) { _, _ in invalidateRowMeasurement?() }
-    .onChange(of: model.mode) { _, _ in invalidateRowMeasurement?() }
+    PluginAppInlineContent(model: model, restriction: restriction)
+      .environment(host.environment)
+      .task { await prepare() }
+      .task(id: model.subject) { model.page.contextActions = contextActions }
+      .modifier(
+        PluginAppInlineSafety(subject: model.subject, confirmingBlock: $confirmingBlock)
+      )
+      .onChange(of: loadRequest(restriction: restriction), initial: true) { _, request in apply(request) }
+      .onChange(of: model.page.height) { _, _ in invalidateRowMeasurement?() }
+      .onChange(of: model.page.phase) { _, _ in invalidateRowMeasurement?() }
+      .onChange(of: model.mode) { _, _ in invalidateRowMeasurement?() }
   }
 
   private var access: PluginAccessController { host.environment.pluginAccess }
+
+  private var contextActions: [PluginAppContextAction] {
+    guard let subject = model.subject else { return [] }
+    return [
+      PluginAppContextAction(title: "Block \(subject.publisher)…", systemImage: "hand.raised") {
+        confirmingBlock = true
+      }
+    ]
+  }
 
   private var restriction: String? {
     model.subject.flatMap(access.restriction(for:))
@@ -51,5 +62,18 @@ struct PluginAppInlineView: View {
     }
 
     model.show(display: request.display)
+  }
+}
+
+private struct PluginAppInlineSafety: ViewModifier {
+  let subject: PluginModerationSubject?
+  @Binding var confirmingBlock: Bool
+
+  func body(content: Content) -> some View {
+    if let subject {
+      content.pluginBlockConfirmation(subject: subject, isPresented: $confirmingBlock)
+    } else {
+      content
+    }
   }
 }

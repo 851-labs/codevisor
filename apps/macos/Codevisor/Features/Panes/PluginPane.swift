@@ -23,7 +23,6 @@ final class PluginPane: Pane, Identifiable {
   @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
   private(set) var phase: Phase = .idle
-  private(set) var subject: PluginModerationSubject?
 
   @ObservationIgnored private let context: PaneContext
   @ObservationIgnored let pluginId: String
@@ -102,7 +101,7 @@ final class PluginPane: Pane, Identifiable {
     loadTask = Task { [weak self] in
       guard let self else { return }
       do {
-        self.subject = try await self.installedSubject()
+        try await self.requireInstalled()
         let response = try await self.client.issuePluginPaneToken(
           serverId: self.pluginId,
           paneType: self.paneType,
@@ -135,11 +134,10 @@ final class PluginPane: Pane, Identifiable {
     }
   }
 
-  private func installedSubject() async throws -> PluginModerationSubject {
-    guard let plugin = try await client.listMcpServers().first(where: { $0.id == pluginId }) else {
+  private func requireInstalled() async throws {
+    guard try await client.listMcpServers().contains(where: { $0.id == pluginId }) else {
       throw PluginAccessError("This plugin is no longer installed.")
     }
-    return PluginModerationSubject(server: plugin)
   }
 
   private func resolveBaseURL() async -> URL? {
@@ -195,14 +193,6 @@ struct PluginPaneView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .overlay(alignment: .bottomTrailing) {
-      if let subject = pane.subject {
-        PluginSafetyButton(subject: subject)
-          .padding(6)
-          .background(.regularMaterial, in: Capsule())
-          .padding(10)
-      }
-    }
     .task(id: pane.id) {
       pane.loadIfNeeded(theme: tokens)
     }

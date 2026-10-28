@@ -21,11 +21,6 @@ struct PluginAppPipHeader: View {
       if !isRestricted, model.canPresent(.fullscreen) {
         PluginAppModeButton(mode: .fullscreen) { model.request(.fullscreen) }
       }
-      if let subject = model.subject {
-        PluginSafetyButton(subject: subject)
-          .buttonStyle(.borderless)
-          .controlSize(.small)
-      }
     }
     .font(.callout)
     .foregroundStyle(.secondary)

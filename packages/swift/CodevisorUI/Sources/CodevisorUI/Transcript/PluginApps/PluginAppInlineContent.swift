@@ -29,7 +29,6 @@ struct PluginAppInlineContent: View {
       .frame(maxWidth: .infinity)
       .frame(height: model.page.height)
       .clipShape(RoundedRectangle(cornerRadius: 10))
-      .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
       .animation(reduceMotion ? nil : .snappy, value: model.page.height)
   }
 }

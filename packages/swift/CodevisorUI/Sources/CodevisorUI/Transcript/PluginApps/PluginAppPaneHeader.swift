@@ -20,11 +20,6 @@ struct PluginAppPaneHeader: View {
       if !isRestricted, model.subject != nil, model.canEnterPip() {
         PluginAppModeButton(mode: .pip, action: model.enterPip)
       }
-      if let subject = model.subject {
-        PluginSafetyButton(subject: subject)
-          .buttonStyle(.borderless)
-          .controlSize(.small)
-      }
     }
     .font(.callout)
     .padding(.horizontal, 12)

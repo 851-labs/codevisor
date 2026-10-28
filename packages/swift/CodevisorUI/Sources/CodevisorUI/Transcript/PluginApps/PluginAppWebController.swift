@@ -28,6 +28,14 @@ public final class PluginAppWebController: NSObject {
 
   private var allowedOrigin: PluginAppOrigin?
 
+  var contextActions: [PluginAppContextAction] = [] {
+    didSet {
+      #if os(macOS)
+        (webView as? PluginAppNativeWebView)?.contextActions = contextActions
+      #endif
+    }
+  }
+
   override public init() {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = Self.dataStore
@@ -36,7 +44,11 @@ public final class PluginAppWebController: NSObject {
       configuration.allowsInlineMediaPlayback = true
       configuration.dataDetectorTypes = []
     #endif
-    webView = WKWebView(frame: .zero, configuration: configuration)
+    #if os(macOS)
+      webView = PluginAppNativeWebView(frame: .zero, configuration: configuration)
+    #else
+      webView = WKWebView(frame: .zero, configuration: configuration)
+    #endif
     super.init()
     configuration.userContentController.add(PluginAppMessageProxy(controller: self), name: Self.messageName)
     webView.navigationDelegate = self
@@ -49,6 +61,12 @@ public final class PluginAppWebController: NSObject {
 
   public func load(_ url: URL) {
     allowedOrigin = PluginAppOrigin(url: url)
+    #if os(macOS)
+      if let menuView = webView as? PluginAppNativeWebView, !menuView.isWindowVisible {
+        menuView.whenVisible { [weak self] in self?.webView.load(URLRequest(url: url)) }
+        return
+      }
+    #endif
     webView.load(URLRequest(url: url))
   }
 

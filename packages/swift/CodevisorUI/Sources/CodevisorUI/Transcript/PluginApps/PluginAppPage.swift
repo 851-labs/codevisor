@@ -21,6 +21,9 @@ public final class PluginAppPage {
   public private(set) var height: CGFloat
 
   @ObservationIgnored var onMessage: ((PluginAppNativeMessage) -> Void)?
+  @ObservationIgnored var contextActions: [PluginAppContextAction] = [] {
+    didSet { controller?.contextActions = contextActions }
+  }
   @ObservationIgnored private var connection: (any PluginAppConnecting)?
   @ObservationIgnored private var controller: PluginAppWebController?
   @ObservationIgnored private var launch: PluginAppLaunch?
@@ -87,11 +90,12 @@ public final class PluginAppPage {
   private func loadPage() async {
     guard let connection, let display else { return }
 
+    let controller = ensureController()
     phase = .loading
     do {
       let url = try await pageURL(connection, display: display)
       guard !Task.isCancelled else { return }
-      ensureController().load(url)
+      controller.load(url)
     } catch {
       guard !Task.isCancelled else { return }
       phase = .failed(ErrorReporter.userFacingMessage(for: error))
@@ -119,6 +123,7 @@ public final class PluginAppPage {
     if let controller { return controller }
 
     let controller = PluginAppWebController()
+    controller.contextActions = contextActions
     controller.onMessage = { [weak self] message in self?.receive(message) }
     controller.onLoaded = { [weak self] in self?.loaded() }
     controller.onFailed = { [weak self] failure in self?.failed(failure) }

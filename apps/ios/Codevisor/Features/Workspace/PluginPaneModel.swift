@@ -21,7 +21,6 @@ final class PluginPaneModel: Identifiable {
   @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
   private(set) var phase: Phase = .idle
-  private(set) var subject: PluginModerationSubject?
 
   @ObservationIgnored let serverId: String
   @ObservationIgnored let pluginId: String
@@ -179,9 +178,7 @@ final class PluginPaneModel: Identifiable {
     guard let plugin = try await client.listMcpServers().first(where: { $0.id == pluginId }) else {
       throw PluginAccessError("This plugin is no longer installed.")
     }
-    let subject = PluginModerationSubject(server: plugin)
-    self.subject = subject
-    try await access.requireEligible(subject)
+    try await access.requireEligible(PluginModerationSubject(server: plugin))
   }
 
   func teardown() {
