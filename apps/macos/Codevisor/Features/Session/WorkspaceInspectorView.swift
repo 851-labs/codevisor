@@ -17,15 +17,13 @@ struct WorkspaceInspectorView: View {
   let machineSymbol: String?
   let showsDebugSection: Bool
   let showsBotTranscript: Bool
-  let usageChat: ChatSession?
+  let harnessChat: ChatSession?
   let usage: WorkspaceInspectorUsageModel
   let tabs: [WorkspaceInspectorTab]
-  let harnessId: String?
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
   let activeFilePath: String?
-  let chatSessionId: UUID?
   let chatUsage: SessionUsage?
   let activity: Date?
   let client: any CodevisorServerClienting
@@ -70,7 +68,7 @@ struct WorkspaceInspectorView: View {
     .onChange(of: tab, initial: true) { _, selected in visited.insert(selected) }
     .safeAreaBar(edge: .top, spacing: 0) {
       ScrollView(.horizontal, showsIndicators: false) {
-        WorkspaceInspectorTabBar(selection: $tab, tabs: tabs, harnessId: harnessId) { tabFrames = $0 }
+        WorkspaceInspectorTabBar(selection: $tab, tabs: tabs, harnessId: harnessChat?.harnessId) { tabFrames = $0 }
           .padding(.horizontal, WorkspaceInspectorTabBar.scrollMargin)
           .padding(.vertical, 8)
           .frame(minWidth: tabBarWidth)
@@ -249,28 +247,28 @@ struct WorkspaceInspectorView: View {
   private var harness: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 10) {
-        if let usageChat, let limits = usage.limits(for: usageChat) {
+        if let harnessChat, let limits = usage.limits(for: harnessChat) {
           WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
         }
 
-        if let chatSessionId {
+        if let harnessChat {
           WorkspaceInspectorContextSection(
-            context: chatContexts[chatSessionId] ?? lastLoadedChatId.flatMap { chatContexts[$0] }, usage: chatUsage,
+            context: chatContexts[harnessChat.id] ?? lastLoadedChatId.flatMap { chatContexts[$0] }, usage: chatUsage,
             isExpanded: expansion("Context"))
         }
       }
       .padding(.vertical, 10)
     }
     .task(
-      id: chatSessionId.map {
-        WorkspaceInspectorContextSection.LoadKey(sessionId: $0, usage: chatUsage, activity: activity)
+      id: harnessChat.map {
+        WorkspaceInspectorContextSection.LoadKey(sessionId: $0.id, usage: chatUsage, activity: activity)
       }
     ) {
-      guard let chatSessionId else { return }
-      let context = try? await client.sessionContext(id: chatSessionId)
+      guard let harnessChat else { return }
+      let context = try? await client.sessionContext(id: harnessChat.id)
       guard !Task.isCancelled else { return }
-      if let context { chatContexts[chatSessionId] = context }
-      lastLoadedChatId = chatSessionId
+      if let context { chatContexts[harnessChat.id] = context }
+      lastLoadedChatId = harnessChat.id
     }
   }
 

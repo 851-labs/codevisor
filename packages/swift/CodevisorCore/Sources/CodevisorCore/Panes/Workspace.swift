@@ -177,6 +177,17 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     centerTabs.lazy.compactMap { $0.root.group(id: leafId)?.selectedPane }.first
   }
 
+  public var focusedPane: PaneDescriptorState? {
+    selectedCenterTab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPane }
+  }
+
+  public var focusedChatSessionId: UUID? {
+    if let pane = focusedPane, pane.kind == .chat, let sessionId = pane.chatSessionId {
+      return sessionId
+    }
+    return allPanes.first { $0.kind == .chat && $0.chatSessionId != nil }?.chatSessionId
+  }
+
   public func pane(containingChat sessionId: UUID) -> PaneDescriptorState? {
     centerTabs.lazy
       .flatMap { $0.root.allGroups }

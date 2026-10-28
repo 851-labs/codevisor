@@ -20,8 +20,8 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let workspaceId: UUID
     let tab: WorkspaceInspectorTab
     let activity: Date?
-    let chatId: UUID?
-    let accountId: String?
+    let usageChatId: UUID?
+    let usageAccount: WorkspaceInspectorUsageModel.Account?
   }
 
   static let usageRefreshInterval: Duration = .seconds(120)
@@ -79,7 +79,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .task(id: inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }) {
         guard let inspected, isVisible else { return }
         await reload(inspected)
-        guard visibleTab == .harness, inspected.chat != nil else { return }
+        guard visibleTab == .harness, harnessChat(for: inspected) != nil else { return }
         while true {
           do { try await Task.sleep(for: Self.usageRefreshInterval) } catch { return }
           await reloadUsage(inspected)
@@ -121,7 +121,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func inspectorView(_ store: SessionStore, _ inspected: Inspected, isVisible: Bool) -> some View {
     let workspace = inspected.workspace
-    let chatSessionId = focusedChatSessionId(in: workspace)
+    let chat = harnessChat(for: inspected)
     let desktop = MachineDesktopRegistry.shared.session(
       for: workspace, project: inspected.project, environment: environment)
     return WorkspaceInspectorView(
@@ -134,17 +134,15 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       showsDebugSection: developerMode,
       showsBotTranscript: botsEnabled
         && environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)?.isConversational == true,
-      usageChat: inspected.chat,
+      harnessChat: chat,
       usage: usage,
       tabs: tabs(for: inspected),
-      harnessId: harnessChat(for: inspected)?.harnessId,
       tab: Binding(get: { shownTab(for: inspected) }, set: { tab = $0 }),
       media: media,
       fileTree: fileTree,
       activeFilePath: activeDocumentPath(in: workspace),
-      chatSessionId: chatSessionId,
-      chatUsage: chatSessionId.flatMap {
-        store.controllers[SessionStore.SessionKey(serverId: workspace.serverId, sessionId: $0)]?.model?.usage
+      chatUsage: chat.flatMap {
+        store.controllers[SessionStore.SessionKey(serverId: $0.serverId, sessionId: $0.id)]?.model?.usage
       },
       activity: activity(in: workspace),
       client: environment.machines.client(for: workspace.serverId),
@@ -167,9 +165,11 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private func refreshKey(for inspected: Inspected) -> RefreshKey {
-    RefreshKey(
-      workspaceId: inspected.workspace.id, tab: shownTab(for: inspected), activity: activity(in: inspected.workspace),
-      chatId: inspected.chat?.id, accountId: inspected.chat?.harnessAccountId)
+    let tab = shownTab(for: inspected)
+    let usageChat = tab == .harness ? harnessChat(for: inspected) : nil
+    return RefreshKey(
+      workspaceId: inspected.workspace.id, tab: tab, activity: activity(in: inspected.workspace),
+      usageChatId: usageChat?.id, usageAccount: usageChat.map(WorkspaceInspectorUsageModel.Account.init))
   }
 
   private func reload(_ inspected: Inspected) async {
@@ -190,7 +190,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func showsHarness(_ inspected: Inspected) -> Bool {
     guard inspected.workspace.selectedCenterTab != nil else { return inspected.chat != nil }
-    let pane = focusedPane(in: inspected.workspace)
+    let pane = inspected.workspace.focusedPane
     return pane?.kind == .chat && pane?.chatSessionId != nil
   }
 
@@ -204,13 +204,13 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func harnessChat(for inspected: Inspected) -> ChatSession? {
     let workspace = inspected.workspace
-    return focusedChatSessionId(in: workspace).flatMap {
+    return workspace.focusedChatSessionId.flatMap {
       environment.projectList.session($0, serverId: workspace.serverId)
     } ?? inspected.chat
   }
 
   private func reloadUsage(_ inspected: Inspected) async {
-    guard let chat = inspected.chat else { return }
+    guard let chat = harnessChat(for: inspected) else { return }
     await usage.reload(chat, client: environment.machines.client(for: chat.serverId))
   }
 
@@ -237,21 +237,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .max { $0.sidebarStateChangedAt < $1.sidebarStateChangedAt }
   }
 
-  private func focusedPane(in workspace: Workspace) -> PaneDescriptorState? {
-    guard let tab = workspace.selectedCenterTab else { return nil }
-    return tab.root.group(id: tab.activeLeafId)?.selectedPane
-  }
-
   private func activeDocumentPath(in workspace: Workspace) -> String? {
-    guard let pane = focusedPane(in: workspace), pane.kind == .document else { return nil }
+    guard let pane = workspace.focusedPane, pane.kind == .document else { return nil }
     return pane.documentPath
-  }
-
-  private func focusedChatSessionId(in workspace: Workspace) -> UUID? {
-    if let pane = focusedPane(in: workspace), pane.kind == .chat, let sessionId = pane.chatSessionId {
-      return sessionId
-    }
-    return workspace.allPanes.first { $0.kind == .chat && $0.chatSessionId != nil }?.chatSessionId
   }
 
   private func activity(in workspace: Workspace) -> Date? {
