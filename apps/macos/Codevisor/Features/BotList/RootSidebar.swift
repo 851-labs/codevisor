@@ -12,6 +12,9 @@ struct RootSidebar: View {
   @State private var revealRequest = SidebarRevealRequest()
   @State private var visibleColumnWidth: CGFloat = 0
   @State private var modePickerWidth: CGFloat?
+  @State private var visitedModes: Set<SidebarMode> = []
+
+  private var activeMode: SidebarMode { SidebarMode.active(storedMode, botsEnabled: botsEnabled) }
 
   var body: some View {
     layout
@@ -63,11 +66,29 @@ struct RootSidebar: View {
     }
   }
 
-  @ViewBuilder
   private var content: some View {
-    if SidebarMode.active(storedMode, botsEnabled: botsEnabled) == .chat {
+    ZStack {
+      ForEach(SidebarMode.allCases, id: \.self) { mode in
+        if isMounted(mode) {
+          modeList(mode)
+            .environment(\.isActiveSidebarMode, mode == activeMode)
+        }
+      }
+    }
+    .onChange(of: activeMode, initial: true) { _, mode in visitedModes.insert(mode) }
+  }
+
+  private func isMounted(_ mode: SidebarMode) -> Bool {
+    mode == activeMode || (botsEnabled && visitedModes.contains(mode))
+  }
+
+  @ViewBuilder
+  private func modeList(_ mode: SidebarMode) -> some View {
+    switch mode {
+    case .chat:
       BotListSidebar(selection: $selection, store: store, publishesSceneActions: publishesSceneActions)
-    } else {
+        .modifier(SidebarModeLayer(isActive: mode == activeMode))
+    case .code:
       SidebarView(
         selection: $selection, store: store, publishesSceneActions: publishesSceneActions,
         revealRequest: revealRequest)

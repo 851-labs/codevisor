@@ -47,11 +47,11 @@ struct BotListSidebar: View {
       .sheet(isPresented: $showingAddProject) {
         NewProjectSheet(serverId: environment.defaultComposerServerId) { _ in }
       }
-      .focusedSceneValue(\.botListActions, publishesSceneActions ? actions : nil)
-      .task(id: store.map(ObjectIdentifier.init)) {
-        guard publishesSceneActions else { return }
-        store?.setWorkspaceStepHandler(owner: stepHandlerOwner) { offset in step(offset) }
-      }
+      .modifier(
+        SidebarModeSceneActions(
+          key: \.botListActions, actions: publishesSceneActions ? actions : nil,
+          store: publishesSceneActions ? store : nil, stepHandlerOwner: stepHandlerOwner, step: step)
+      )
       .onDisappear {
         if publishesSceneActions { store?.clearWorkspaceStepHandler(owner: stepHandlerOwner) }
       }

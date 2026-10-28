@@ -180,10 +180,6 @@ struct SidebarView: View {
 
   private var sidebarConfiguredView: some View {
     sidebarAlertsView
-      .task(id: store.map(ObjectIdentifier.init)) {
-        guard publishesSceneActions else { return }
-        store?.setWorkspaceStepHandler(owner: stepHandlerOwner) { offset in stepWorkspace(offset) }
-      }
       .onDisappear {
         if publishesSceneActions {
           store?.clearWorkspaceStepHandler(owner: stepHandlerOwner)
@@ -199,7 +195,11 @@ struct SidebarView: View {
       .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
         if publishesSceneActions, gitLookupRefreshKey != nil { refreshGitLookups() }
       }
-      .focusedSceneValue(\.sidebarActions, publishesSceneActions && store != nil ? sceneActions : nil)
+      .modifier(
+        SidebarModeSceneActions(
+          key: \.sidebarActions, actions: publishesSceneActions && store != nil ? sceneActions : nil,
+          store: publishesSceneActions ? store : nil, stepHandlerOwner: stepHandlerOwner, step: stepWorkspace)
+      )
   }
 
   private var sceneActions: SidebarActions {
