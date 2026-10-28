@@ -23,6 +23,8 @@ const startStreamMessage = (
     session.currentMessageId = innerId
     session.currentMessageTextStreamed = false
     void ensureObservedTurnStarted(session)
+    session.rootReplyComplete = false
+    session.deferredTaskResult = undefined
   } else if (innerId !== undefined && innerId !== "") {
     session.subagentMessageIds.set(parentId, innerId)
   }
@@ -82,6 +84,7 @@ const finishStreamMessage = (
   parentId: string | undefined
 ): void => {
   if (recordOf(event.delta).stop_reason === "end_turn") {
+    if (parentId === undefined) session.rootReplyComplete = true
     labelStreamedText(session, parentId, "final")
   }
 }

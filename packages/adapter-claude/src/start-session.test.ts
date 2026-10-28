@@ -63,7 +63,7 @@ describe("Claude session start", () => {
     async ({ account, env }) => {
       const claudeEnv = await claudeEnvFor(account)
 
-      expect(claudeEnv).toStrictEqual(env)
+      expect(claudeEnv).toStrictEqual({ ...env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" })
     }
   )
 

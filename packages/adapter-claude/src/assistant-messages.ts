@@ -24,6 +24,11 @@ export const handleAssistantMessage = (
   const content = message.message.content
   if (!Array.isArray(content)) return
   const inner = recordOf(message.message)
+  const hasRootStopReason = parentId === undefined && typeof inner.stop_reason === "string"
+  if (hasRootStopReason) {
+    session.rootReplyComplete = !isErrorReply && inner.stop_reason === "end_turn"
+  }
+  if (isErrorReply) session.rootReplyComplete = false
   const messageId = typeof inner.id === "string" ? inner.id : undefined
   const alreadyStreamed =
     parentId !== undefined &&

@@ -11,6 +11,7 @@ import {
 } from "./background-tasks.js"
 import type { ClaudeSession } from "./session.js"
 import { updateClaudeCommands } from "./skills.js"
+import { finishDeferredTaskResult } from "./turn-recovery.js"
 
 type SystemMessage = Extract<SDKMessage, { type: "system" }>
 
@@ -151,4 +152,5 @@ const emitRuntimeState = (session: ClaudeSession, message: SessionStateMessage):
     payload: { runtimeState: message.state },
     subjectId: session.key
   })
+  if (message.state === "idle") finishDeferredTaskResult(session)
 }

@@ -36,7 +36,33 @@ export const pushResumeAfterInterruptionPrompt = (session: ClaudeSession): void 
 export const handleResult = (session: ClaudeSession, message: ResultMessage): void => {
   const isTaskNotification = message.origin?.kind === "task-notification"
   emitResultUsage(session, message)
-  if (ignoresTaskNotification(session, isTaskNotification)) return
+  if (ignoresTaskNotification(session, isTaskNotification)) {
+    if (session.turnActive) {
+      session.deferredTaskResult = message
+      logDeferredTaskResult(session, message, "deferred")
+    }
+    return
+  }
+  session.awaitingRecoveryResult = false
+  resolveTurnResult(session, message, isTaskNotification)
+}
+
+export const finishDeferredTaskResult = (session: ClaudeSession): void => {
+  const message = session.deferredTaskResult
+  if (message === undefined || !session.turnActive) return
+  if (session.awaitingRecoveryResult || !session.rootReplyComplete) return
+  if (message.subtype !== "success" || message.is_error) return
+
+  logDeferredTaskResult(session, message, "resolved_at_idle")
+  resolveTurnResult(session, message, false)
+}
+
+const resolveTurnResult = (
+  session: ClaudeSession,
+  message: ResultMessage,
+  isTaskNotification: boolean
+): void => {
+  session.deferredTaskResult = undefined
   if (!session.turnActive) void ensureObservedTurnStarted(session)
 
   const assistantError = session.lastAssistantError
@@ -57,6 +83,23 @@ export const handleResult = (session: ClaudeSession, message: ResultMessage): vo
   endTurn(session, message, resolution, isTaskNotification)
 }
 
+const logDeferredTaskResult = (
+  session: ClaudeSession,
+  message: ResultMessage,
+  action: "deferred" | "resolved_at_idle"
+): void => {
+  console.info(
+    JSON.stringify({
+      event: "claude_task_result",
+      sessionId: session.key,
+      turnId: session.turnId,
+      subtype: message.subtype,
+      stopReason: message.stop_reason,
+      action
+    })
+  )
+}
+
 const pushHiddenUserMessage = (session: ClaudeSession, content: string): void => {
   session.input.push({
     message: { content, role: "user" },
@@ -70,12 +113,16 @@ const pushContinuePrompt = (session: ClaudeSession): void =>
   pushHiddenUserMessage(session, CONTINUE_PROMPT)
 
 const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
+  session.awaitingRecoveryResult = true
+  session.rootReplyComplete = false
+  const turnId = session.turnId
   if (delayMs <= 0) {
     pushContinuePrompt(session)
     return
   }
   setTimeout(() => {
     if (session.abort.signal.aborted || !session.turnActive) return
+    if (session.turnId !== turnId) return
     pushContinuePrompt(session)
   }, delayMs)
 }

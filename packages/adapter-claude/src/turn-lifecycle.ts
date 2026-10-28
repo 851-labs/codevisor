@@ -37,6 +37,9 @@ export const finishActiveTurn = (
   if (!session.turnActive) return completion?.promise ?? Promise.resolve()
 
   session.turnActive = false
+  session.deferredTaskResult = undefined
+  session.awaitingRecoveryResult = false
+  session.rootReplyComplete = false
   const wasInterrupted = session.interruptRequested
   const pending = session.pendingPrompt
   session.pendingPrompt = undefined
@@ -128,6 +131,9 @@ export const ensureTurnStarted = (
 ): Promise<void> => {
   if (session.turnActive) return Promise.resolve()
   session.turnActive = true
+  session.deferredTaskResult = undefined
+  session.awaitingRecoveryResult = false
+  session.rootReplyComplete = false
   session.turnCompletion = deferred<void>()
   session.turnId = randomUUID()
   session.initiatedBy = initiatedBy
