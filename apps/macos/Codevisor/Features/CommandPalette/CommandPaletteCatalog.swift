@@ -205,9 +205,10 @@ struct CommandPaletteCatalog {
   private var inspectorTabCommands: [CommandPaletteItem] {
     guard let inspector else { return [] }
 
-    return WorkspaceInspectorTab.allCases.map { tab in
+    return inspector.tabs.map { tab in
       CommandPaletteItem(
-        id: "inspector:\(tab.rawValue)", title: tab.title, icon: .symbol(tab.systemImage),
+        id: "inspector:\(tab.rawValue)", title: tab.title,
+        icon: tab == .harness ? .harness(inspector.harnessId) : .symbol(tab.systemImage),
         searchTerms: ["Show \(tab.title) Inspector"]
       ) { inspector.show(tab) }
     }

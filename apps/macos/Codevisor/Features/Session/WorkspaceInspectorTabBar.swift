@@ -2,6 +2,8 @@ import SwiftUI
 
 struct WorkspaceInspectorTabBar: View {
   @Binding var selection: WorkspaceInspectorTab
+  var tabs = WorkspaceInspectorTab.allCases
+  var harnessId: String?
   var onTabFrames: (([WorkspaceInspectorTab: CGRect]) -> Void)?
 
   @State private var frames: [WorkspaceInspectorTab: CGRect] = [:]
@@ -49,10 +51,11 @@ struct WorkspaceInspectorTabBar: View {
     .onKeyPress(.leftArrow) { step(-1) }
     .onKeyPress(.rightArrow) { step(1) }
     .onChange(of: selection) { _, tab in move(to: tab) }
+    .onChange(of: tabs) { _, tabs in frames = frames.filter { tabs.contains($0.key) } }
     .onChange(of: frames, initial: true) { _, frames in onTabFrames?(frames) }
     .accessibilityRepresentation {
       Picker("Inspector Section", selection: $selection) {
-        ForEach(WorkspaceInspectorTab.allCases) { tab in
+        ForEach(tabs) { tab in
           Text(tab.title).tag(tab)
         }
       }
@@ -68,9 +71,8 @@ struct WorkspaceInspectorTabBar: View {
 
   private func labels(highlighted: Bool) -> some View {
     HStack(spacing: 0) {
-      ForEach(WorkspaceInspectorTab.allCases) { tab in
-        Text(tab.title)
-          .font(.system(size: 11, weight: highlighted ? .semibold : .regular))
+      ForEach(tabs) { tab in
+        label(for: tab, highlighted: highlighted)
           .foregroundStyle(highlighted ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
           .fixedSize()
           .frame(width: highlighted ? frames[tab]?.width : nil, height: highlighted ? frames[tab]?.height : nil)
@@ -87,8 +89,19 @@ struct WorkspaceInspectorTabBar: View {
     }
   }
 
+  private func label(for tab: WorkspaceInspectorTab, highlighted: Bool) -> some View {
+    HStack(spacing: 4) {
+      if tab == .harness {
+        HarnessIcon(
+          harnessId: harnessId ?? "", fallbackSymbolName: tab.systemImage, size: 10,
+          weight: highlighted ? .semibold : .regular)
+      }
+      Text(tab.title)
+    }
+    .font(.system(size: 11, weight: highlighted ? .semibold : .regular))
+  }
+
   private func step(_ offset: Int) -> KeyPress.Result {
-    let tabs = WorkspaceInspectorTab.allCases
     guard let index = tabs.firstIndex(of: selection), tabs.indices.contains(index + offset) else {
       return .ignored
     }

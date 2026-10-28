@@ -19,6 +19,8 @@ struct WorkspaceInspectorView: View {
   let showsBotTranscript: Bool
   let usageChat: ChatSession?
   let usage: WorkspaceInspectorUsageModel
+  let tabs: [WorkspaceInspectorTab]
+  let harnessId: String?
   @Binding var tab: WorkspaceInspectorTab
   let media: WorkspaceInspectorMediaModel
   let fileTree: WorkspaceInspectorFileTreeModel
@@ -54,7 +56,7 @@ struct WorkspaceInspectorView: View {
 
   var body: some View {
     ZStack {
-      ForEach(WorkspaceInspectorTab.allCases.filter { $0 == tab || visited.contains($0) }) { candidate in
+      ForEach(tabs.filter { $0 == tab || visited.contains($0) }) { candidate in
         content(for: candidate)
           .opacity(candidate == tab ? 1 : 0)
           .allowsHitTesting(candidate == tab)
@@ -67,7 +69,7 @@ struct WorkspaceInspectorView: View {
     .onChange(of: tab, initial: true) { _, selected in visited.insert(selected) }
     .safeAreaBar(edge: .top, spacing: 0) {
       ScrollView(.horizontal, showsIndicators: false) {
-        WorkspaceInspectorTabBar(selection: $tab) { tabFrames = $0 }
+        WorkspaceInspectorTabBar(selection: $tab, tabs: tabs, harnessId: harnessId) { tabFrames = $0 }
           .padding(.horizontal, WorkspaceInspectorTabBar.scrollMargin)
           .padding(.vertical, 8)
           .frame(minWidth: tabBarWidth)
@@ -189,6 +191,7 @@ struct WorkspaceInspectorView: View {
   private func content(for tab: WorkspaceInspectorTab) -> some View {
     switch tab {
     case .info: info
+    case .harness: harness
     case .machine:
       WorkspaceInspectorMachineView(
         serverId: workspace.serverId, isActive: self.tab == .machine, client: client, desktop: desktop,
@@ -237,7 +240,14 @@ struct WorkspaceInspectorView: View {
             detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
           }
         }
+      }
+      .padding(.vertical, 10)
+    }
+  }
 
+  private var harness: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 10) {
         if let usageChat, let limits = usage.limits(for: usageChat) {
           WorkspaceInspectorUsageSection(limits: limits, isExpanded: expansion("Usage"))
         }

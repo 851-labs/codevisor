@@ -47,6 +47,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let inspected = inspectedWorkspace
     let showsDrawer = inspected != nil && !panelLayout.docksInspector && panelLayout.activeDrawer == .trailing
     let isVisible = panelLayout.docksInspector ? isPresented : showsDrawer
+    let visibleTab = inspected.map { shownTab(for: $0) } ?? tab
     content
       .inspector(
         isPresented: Binding(
@@ -78,25 +79,27 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .task(id: inspected.flatMap { isVisible ? refreshKey(for: $0) : nil }) {
         guard let inspected, isVisible else { return }
         await reload(inspected)
-        guard tab == .info, inspected.chat != nil else { return }
+        guard visibleTab == .harness, inspected.chat != nil else { return }
         while true {
           do { try await Task.sleep(for: Self.usageRefreshInterval) } catch { return }
           await reloadUsage(inspected)
         }
       }
-      .task(id: isVisible && tab == .info ? usageAccounts : nil) {
-        guard isVisible, tab == .info else { return }
+      .task(id: isVisible && visibleTab == .harness ? usageAccounts : nil) {
+        guard isVisible, visibleTab == .harness else { return }
         await usage.prefetch(usageCandidates) { environment.machines.client(for: $0) }
       }
       .onChange(of: selection, initial: true) { _, selection in
         guard case let .session(_, sessionId) = selection, let inspected = inspectedWorkspace else { return }
         lastOpenedChats[inspected.workspace.id] = sessionId
       }
-      .focusedSceneValue(\.workspaceInspector, inspected == nil ? nil : actions(isVisible: isVisible))
+      .focusedSceneValue(\.workspaceInspector, inspected.map { actions(for: $0, isVisible: isVisible) })
   }
 
-  private func actions(isVisible: Bool) -> WorkspaceInspectorActions {
-    WorkspaceInspectorActions(isVisible: isVisible, toggle: toggleInspector, show: showInspector)
+  private func actions(for inspected: Inspected, isVisible: Bool) -> WorkspaceInspectorActions {
+    WorkspaceInspectorActions(
+      isVisible: isVisible, tabs: tabs(for: inspected), harnessId: harnessChat(for: inspected)?.harnessId,
+      toggle: toggleInspector, show: showInspector)
   }
 
   private func toggleInspector() {
@@ -133,7 +136,9 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         && environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)?.isConversational == true,
       usageChat: inspected.chat,
       usage: usage,
-      tab: $tab,
+      tabs: tabs(for: inspected),
+      harnessId: harnessChat(for: inspected)?.harnessId,
+      tab: Binding(get: { shownTab(for: inspected) }, set: { tab = $0 }),
       media: media,
       fileTree: fileTree,
       activeFilePath: activeDocumentPath(in: workspace),
@@ -162,24 +167,44 @@ struct WorkspaceInspectorPresentation: ViewModifier {
 
   private func refreshKey(for inspected: Inspected) -> RefreshKey {
     RefreshKey(
-      workspaceId: inspected.workspace.id, tab: tab, activity: activity(in: inspected.workspace),
+      workspaceId: inspected.workspace.id, tab: shownTab(for: inspected), activity: activity(in: inspected.workspace),
       chatId: inspected.chat?.id, accountId: inspected.chat?.harnessAccountId)
   }
 
   private func reload(_ inspected: Inspected) async {
     let workspace = inspected.workspace
     let client = environment.machines.client(for: workspace.serverId)
+    let tab = shownTab(for: inspected)
     switch tab {
     case .files:
       await fileTree.show(root: workspace.rootDirectory, client: client)
-    case .info:
+    case .info, .media, .links:
       await media.reload(tab, workspaceId: workspace.id, client: client)
+    case .harness:
       await reloadUsage(inspected)
-    case .media, .links:
-      await media.reload(tab, workspaceId: workspace.id, client: client)
     case .machine:
       break
     }
+  }
+
+  private func showsHarness(_ inspected: Inspected) -> Bool {
+    guard let tab = inspected.workspace.selectedCenterTab else { return inspected.chat != nil }
+    return tab.root.group(id: tab.activeLeafId)?.selectedPane?.kind == .chat
+  }
+
+  private func tabs(for inspected: Inspected) -> [WorkspaceInspectorTab] {
+    WorkspaceInspectorTab.available(showsHarness: showsHarness(inspected))
+  }
+
+  private func shownTab(for inspected: Inspected) -> WorkspaceInspectorTab {
+    tab == .harness && !showsHarness(inspected) ? .info : tab
+  }
+
+  private func harnessChat(for inspected: Inspected) -> ChatSession? {
+    let workspace = inspected.workspace
+    return focusedChatSessionId(in: workspace).flatMap {
+      environment.projectList.session($0, serverId: workspace.serverId)
+    } ?? inspected.chat
   }
 
   private func reloadUsage(_ inspected: Inspected) async {

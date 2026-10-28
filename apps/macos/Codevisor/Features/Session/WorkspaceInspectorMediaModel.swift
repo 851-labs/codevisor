@@ -3,13 +3,18 @@ import Foundation
 import Observation
 
 enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
-  case info, machine, media = "photos", links, files
+  case info, harness, machine, media = "photos", links, files
 
   var id: Self { self }
+
+  static func available(showsHarness: Bool) -> [Self] {
+    allCases.filter { $0 != .harness || showsHarness }
+  }
 
   var title: String {
     switch self {
     case .info: "Info"
+    case .harness: "Harness"
     case .machine: "Machine"
     case .media: "Media"
     case .links: "Links"
@@ -20,6 +25,7 @@ enum WorkspaceInspectorTab: String, Codable, CaseIterable, Identifiable {
   var systemImage: String {
     switch self {
     case .info: "info.circle"
+    case .harness: "sparkle"
     case .machine: "desktopcomputer"
     case .media: "photo.on.rectangle"
     case .links: "link"
@@ -60,7 +66,7 @@ final class WorkspaceInspectorMediaModel {
     }
     self.client = client
     switch tab {
-    case .info, .machine: break
+    case .info, .harness, .machine: break
     case .media: await loadMedia(before: nil)
     case .links: await loadLinks(before: nil)
     case .files: break
