@@ -5,8 +5,7 @@
   extension Autocomplete {
     struct HighlightBackground: View {
       let highlight: ItemHighlight
-      let topCornerRadius: CGFloat
-      let bottomCornerRadius: CGFloat
+      let cornerRadius: CGFloat
 
       var body: some View {
         switch highlight {
@@ -21,14 +20,30 @@
         }
       }
 
-      private var shape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-          topLeadingRadius: topCornerRadius,
-          bottomLeadingRadius: bottomCornerRadius,
-          bottomTrailingRadius: bottomCornerRadius,
-          topTrailingRadius: topCornerRadius,
-          style: .continuous
-        )
+      private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      }
+    }
+
+    struct ListClip: View {
+      let horizontalInset: CGFloat
+      let topCornerRadius: CGFloat
+      let bottomCornerRadius: CGFloat
+
+      var body: some View {
+        ZStack {
+          Rectangle()
+            .padding(.top, topCornerRadius)
+            .padding(.bottom, bottomCornerRadius)
+          UnevenRoundedRectangle(
+            topLeadingRadius: topCornerRadius,
+            bottomLeadingRadius: bottomCornerRadius,
+            bottomTrailingRadius: bottomCornerRadius,
+            topTrailingRadius: topCornerRadius,
+            style: .continuous
+          )
+          .padding(.horizontal, horizontalInset)
+        }
       }
     }
 

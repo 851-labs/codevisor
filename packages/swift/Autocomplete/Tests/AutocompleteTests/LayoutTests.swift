@@ -78,6 +78,8 @@
     }
 
     private struct HighlightGeometry {
+      let top: CGFloat
+      let topCornerInset: CGFloat
       let bottomGap: CGFloat
       let bottomCornerInset: CGFloat
     }
@@ -90,14 +92,16 @@
         guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return false }
         return color.redComponent > 0.8 && color.greenComponent > 0.65 && color.blueComponent < 0.5
       }
-      let bottom = try #require(
-        (0..<rep.pixelsHigh).reversed().first { y in
-          isHighlight(rep.pixelsWide / 2, y)
-        })
-      let firstPixel = try #require((0..<rep.pixelsWide).first { isHighlight($0, bottom) })
+      let rows = (0..<rep.pixelsHigh).filter { isHighlight(rep.pixelsWide / 2, $0) }
+      let top = try #require(rows.first)
+      let bottom = try #require(rows.last)
+      func cornerInset(_ y: Int) throws -> CGFloat {
+        let firstPixel = try #require((0..<rep.pixelsWide).first { isHighlight($0, y) })
+        return CGFloat(firstPixel) / scale - Autocomplete.Metrics.xcodeMenu.listHorizontalInset
+      }
       return HighlightGeometry(
-        bottomGap: CGFloat(rep.pixelsHigh - bottom - 1) / scale,
-        bottomCornerInset: CGFloat(firstPixel) / scale - Autocomplete.Metrics.xcodeMenu.listHorizontalInset)
+        top: CGFloat(top) / scale, topCornerInset: try cornerInset(top),
+        bottomGap: CGFloat(rep.pixelsHigh - bottom - 1) / scale, bottomCornerInset: try cornerInset(bottom))
     }
 
     @Test("The final highlight hugs the bottom while font size changes repeatedly in both directions")
@@ -208,6 +212,50 @@
       let viewportCenterY = view.isFlipped ? viewport.midY : view.bounds.height - viewport.midY
       let rowHeight = Autocomplete.Metrics.xcodeMenu.itemHeight
       #expect(abs(try highlightCenterY(in: view) - viewportCenterY) <= rowHeight / 2)
+    }
+
+    @Test("A highlighted row scrolled against either edge keeps the list's inset and rounded corners")
+    func scrolledEdges() throws {
+      _ = NSApplication.shared
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 600, height: 600),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = NSHostingView(rootView: LongList())
+      defer {
+        window.contentView = nil
+        window.close()
+      }
+      let view = try #require(window.contentView)
+      settle(view)
+      let field = try #require(find(NSSearchField.self, in: view))
+      let coordinator = try #require(field.delegate as? Autocomplete.InputField.Coordinator)
+      for _ in 0..<20 {
+        _ = coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:)))
+      }
+      settle(view)
+      let scrollView = try #require(find(NSScrollView.self, in: view))
+      let document = try #require(scrollView.documentView)
+      func scroll(by offset: CGFloat) {
+        var origin = scrollView.contentView.bounds.origin
+        origin.y += document.isFlipped ? offset : -offset
+        scrollView.contentView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        settle(view)
+      }
+      let metrics = Options(maximumHeight: 200).metrics.resolved()
+      let listTop = metrics.inputTopInset + metrics.inputHeight + metrics.inputBottomInset
+      let center = try highlightCenterY(in: view)
+
+      scroll(by: center - view.bounds.height)
+      let bottom = try highlightGeometry(in: view)
+      #expect(abs(bottom.bottomGap - metrics.listVerticalInset) <= 0.5)
+      #expect(bottom.bottomCornerInset > 8)
+
+      scroll(by: view.bounds.height - listTop)
+      let top = try highlightGeometry(in: view)
+      #expect(abs(top.top - listTop - metrics.listVerticalInset) <= 0.5)
+      #expect(top.topCornerInset > 2)
     }
 
     @Test("The last row gains concentric corners after scrolling to the end of a capped list")
