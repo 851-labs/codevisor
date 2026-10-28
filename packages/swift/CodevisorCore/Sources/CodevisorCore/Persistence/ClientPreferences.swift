@@ -8,9 +8,10 @@ public final class ClientPreferences {
   public static let shared = ClientPreferences()
 
   private var database: ClientDatabase?
-  private var fallback: [String: Data] = [:]
+  @ObservationIgnored private var fallback: [String: Data] = [:]
   private var revision: UInt64 = 0
   @ObservationIgnored private var cache: [String: Data?] = [:]
+  @ObservationIgnored private var keyRevisions: [String: PreferenceRevision] = [:]
   @ObservationIgnored private var cacheIsComplete = false
   @ObservationIgnored private var pendingWrites = PendingPreferenceWrites()
   @ObservationIgnored private let persistenceOwner = UUID()
@@ -32,7 +33,7 @@ public final class ClientPreferences {
     forKey key: String,
     default defaultValue: Value
   ) -> Value {
-    _ = revision
+    observe(key)
     guard let data = data(forKey: key),
       let decoded = try? JSONDecoder().decode(Value.self, from: data)
     else { return defaultValue }
@@ -43,7 +44,7 @@ public final class ClientPreferences {
     forKey key: String,
     as type: Value.Type = Value.self
   ) -> Value? {
-    _ = revision
+    observe(key)
     guard let data = data(forKey: key) else { return nil }
     return try? JSONDecoder().decode(Value.self, from: data)
   }
@@ -85,7 +86,19 @@ public final class ClientPreferences {
       fallback[key] = data
     }
     cache.updateValue(data, forKey: key)
-    revision &+= 1
+    keyRevisions[key]?.value &+= 1
+  }
+
+  private func observe(_ key: String) {
+    _ = revision
+    _ = keyRevision(for: key).value
+  }
+
+  private func keyRevision(for key: String) -> PreferenceRevision {
+    if let existing = keyRevisions[key] { return existing }
+    let created = PreferenceRevision()
+    keyRevisions[key] = created
+    return created
   }
 
   private func persist(_ change: (PendingPreferenceWrites) -> Void) {
@@ -118,6 +131,12 @@ public final class ClientPreferences {
     cache[key] = data
     return data
   }
+}
+
+@MainActor
+@Observable
+private final class PreferenceRevision {
+  var value: UInt64 = 0
 }
 
 struct LocalPreferenceChange {

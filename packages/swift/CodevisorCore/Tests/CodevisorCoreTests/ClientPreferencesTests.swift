@@ -1,5 +1,7 @@
 import CodevisorTestSupport
 import Foundation
+import Observation
+import Synchronization
 import Testing
 
 @testable import CodevisorCore
@@ -71,6 +73,45 @@ struct ClientPreferencesTests {
     #expect(preferences.value(forKey: "stored", default: false))
     #expect(preferences.valueIfPresent(forKey: "missing", as: Bool.self) == nil)
     #expect(await holder.release())
+  }
+
+  @Test("A reader is invalidated by changes to the keys it read, not by other keys")
+  func observationIsScopedToTheKeysRead() {
+    let preferences = ClientPreferences()
+    let modeReader = observeChanges { _ = preferences.value(forKey: "sidebar.mode", default: "code") }
+    let groupingReader = observeChanges { _ = preferences.valueIfPresent(forKey: "sidebar.grouping", as: String.self) }
+
+    preferences.set("chat", forKey: "sidebar.mode")
+
+    #expect(modeReader.hasFired)
+    #expect(!groupingReader.hasFired)
+  }
+
+  @Test("Clearing every preference invalidates readers of any key")
+  func removeAllInvalidatesEveryReader() {
+    let preferences = ClientPreferences()
+    preferences.set("chat", forKey: "sidebar.mode")
+    let reader = observeChanges { _ = preferences.value(forKey: "sidebar.mode", default: "code") }
+
+    preferences.removeAll()
+
+    #expect(reader.hasFired)
+  }
+
+  private func observeChanges(_ read: () -> Void) -> ObservedChange {
+    let change = ObservedChange()
+    withObservationTracking(read) { change.fire() }
+    return change
+  }
+}
+
+private final class ObservedChange: Sendable {
+  private let fired = Mutex(false)
+
+  var hasFired: Bool { fired.withLock { $0 } }
+
+  func fire() {
+    fired.withLock { $0 = true }
   }
 }
 
