@@ -220,7 +220,10 @@ struct ChatInputEditor: NSViewRepresentable {
         else { return false }
         return parent.onKeyCommand?(.recallNextPrompt) == true
       case #selector(NSResponder.insertTab(_:)):
-        return parent.onKeyCommand?(.acceptSelection) == true
+        _ = parent.onKeyCommand?(.acceptSelection)
+        return true
+      case #selector(NSResponder.insertBacktab(_:)):
+        return true
       case #selector(NSResponder.cancelOperation(_:)):
         return parent.onKeyCommand?(.dismissSelection) == true
       default:
