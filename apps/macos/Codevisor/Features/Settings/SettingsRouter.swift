@@ -65,6 +65,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 enum SettingsPaneRoute: Hashable {
   case project(ProjectGroup.ID)
+  case sandbox(SandboxSettingsPage)
 }
 
 struct SettingsLocation: Equatable {
@@ -130,6 +131,13 @@ final class SettingsRouter {
   func showSandboxes() {
     panePath = []
     selectedTab = .sandboxes
+  }
+
+  func navigate(_ navigation: SandboxSettingsNavigation) {
+    panePath = navigation.applied(to: panePath, route: SettingsPaneRoute.sandbox) { route in
+      if case .sandbox = route { return true }
+      return false
+    }
   }
 
   func showProjects(machineId: String? = nil) {

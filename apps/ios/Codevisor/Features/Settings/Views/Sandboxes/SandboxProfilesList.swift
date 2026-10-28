@@ -5,7 +5,6 @@ import SwiftUI
 struct SandboxProfilesList: View {
   let model: SandboxSettingsModel
   let onEdit: (ServerSandboxProfile) -> Void
-  let onEditProvider: (ServerSandboxProfile) -> Void
   let onDelete: (ServerSandboxProfile) -> Void
 
   var body: some View {
@@ -27,10 +26,6 @@ struct SandboxProfilesList: View {
         }
         .contextMenu {
           Button("Edit", systemImage: "pencil") { onEdit(profile) }
-          if model.provider(profile.providerId) != nil {
-            Button("Edit Provider", systemImage: "key") { onEditProvider(profile) }
-          }
-          Divider()
           Button("Delete", systemImage: "trash", role: .destructive) { onDelete(profile) }
         }
       }

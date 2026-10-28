@@ -4,52 +4,59 @@ import SwiftUI
 
 struct SandboxesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var model = SandboxSettingsModel()
-  @State private var providerDraft: SandboxProviderDraft?
-  @State private var profileDraft: SandboxProfileDraft?
+  let model: SandboxSettingsModel
+  let navigate: (SandboxSettingsNavigation) -> Void
   @State private var removingProfile: ServerSandboxProfile?
 
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: settingsMachineId)
+  static func machineId(in machines: MachineController) -> String {
+    if machines.availability(for: machines.selectedMachineId) == .ready { return machines.selectedMachineId }
+    let ready = machines.chatMachines.first { machines.availability(for: $0.id) == .ready }
+    return ready?.id ?? machines.selectedMachineId
   }
 
-  private var settingsMachineId: String {
-    let machines = environment.machines
-    if machines.availability(for: machines.selectedMachineId) == .ready { return machines.selectedMachineId }
-    return reachableMachines.first?.id ?? machines.selectedMachineId
+  private var client: any CodevisorServerClienting {
+    environment.machines.client(for: Self.machineId(in: environment.machines))
+  }
+
+  private var isFirstRun: Bool {
+    model.hasLoaded && model.profiles.isEmpty && model.providers.isEmpty
   }
 
   var body: some View {
     List {
-      SandboxProfilesList(
-        model: model,
-        onEdit: edit,
-        onEditProvider: editProvider,
-        onDelete: { removingProfile = $0 }
-      )
+      if isFirstRun {
+        Section("Choose a sandbox vendor") {
+          SandboxVendorList(vendors: model.vendors.vendors) { vendor in
+            navigate(.push(.newProvider(vendorId: vendor.id)))
+          }
+        }
+      } else {
+        SandboxProfilesList(
+          model: model,
+          onEdit: { navigate(.push(.editProfile(profileId: $0.id))) },
+          onDelete: { removingProfile = $0 }
+        )
+      }
     }
     .navigationTitle("Sandboxes")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button("Add Profile", systemImage: "plus") { profileDraft = SandboxProfileDraft() }
+      if !isFirstRun {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Add Profile", systemImage: "plus") {
+            navigate(.push(model.providers.isEmpty ? .vendors : .addProfile))
+          }
           .labelStyle(.iconOnly)
           .disabled(!model.hasLoaded)
+        }
       }
     }
-    .sheet(item: $providerDraft) { SandboxProviderSheet(draft: $0, model: model, client: client, onSaved: { _ in }) }
-    .sheet(item: $profileDraft) { SandboxProfileSheet(draft: $0, model: model, client: client) }
     .alert("Delete “\(removingProfile?.name ?? "")”?", isPresented: presence($removingProfile)) {
       Button("Delete", role: .destructive) {
         guard let profile = removingProfile else { return }
         Task { await model.delete(profile, using: client) }
       }
       Button("Cancel", role: .cancel) {}
-    }
-    .alert("Couldn’t change sandboxes", isPresented: errorShown) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(model.errorMessage ?? "")
     }
     .task(id: reloadKey) {
       await model.load(from: client, machines: reachableMachines.map(sandboxMachine))
@@ -67,22 +74,6 @@ struct SandboxesSettingsScreen: View {
 
   private func sandboxMachine(_ machine: CodevisorMachine) -> SandboxMachine {
     SandboxMachine(name: machine.name, client: environment.machines.client(for: machine.id))
-  }
-
-  private func edit(_ profile: ServerSandboxProfile) {
-    profileDraft = SandboxProfileDraft(profile: profile, vendor: model.vendor(profile.vendor))
-  }
-
-  private func editProvider(_ profile: ServerSandboxProfile) {
-    guard let provider = model.provider(profile.providerId) else { return }
-    providerDraft = SandboxProviderDraft(vendor: model.vendor(provider.vendor), provider: provider)
-  }
-
-  private var errorShown: Binding<Bool> {
-    Binding(
-      get: { model.errorMessage != nil && providerDraft == nil && profileDraft == nil },
-      set: { if !$0 { model.errorMessage = nil } }
-    )
   }
 
   private func presence<Value>(_ state: Binding<Value?>) -> Binding<Bool> {

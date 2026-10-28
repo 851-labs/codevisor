@@ -26,6 +26,10 @@ public final class SandboxSettingsModel {
 
   public func vendor(_ id: String) -> ServerSandboxVendor? { vendors.vendor(id) }
 
+  public func profile(_ id: String) -> ServerSandboxProfile? {
+    profiles.first { $0.id == id }
+  }
+
   public func provider(_ id: String?) -> ServerSandboxProvider? {
     id.flatMap { id in providers.first { $0.id == id } }
   }
@@ -39,7 +43,7 @@ public final class SandboxSettingsModel {
     let vendor = vendor(provider.vendor)
     let vendorName = vendor?.displayName ?? provider.vendor
     guard let machineId = provider.machineId(for: vendor) else { return provider.title(vendorName: vendorName) }
-    return "\(vendorName) on \(hostName(machineId))"
+    return "\(vendorName) · \(hostName(machineId))"
   }
 
   public func save(
@@ -77,18 +81,16 @@ public final class SandboxSettingsModel {
     }
   }
 
-  public func delete(_ provider: ServerSandboxProvider, using client: any CodevisorServerClienting) async -> Bool {
-    await attempt {
-      try await client.deleteSandboxProvider(id: provider.id)
-      providers.removeAll { $0.id == provider.id }
-    }
-  }
-
   public func delete(_ profile: ServerSandboxProfile, using client: any CodevisorServerClienting) async {
-    _ = await attempt {
+    let deleted = await attempt {
       try await client.deleteSandboxProfile(id: profile.id)
       profiles.removeAll { $0.id == profile.id }
     }
+    guard deleted, let provider = provider(profile.providerId),
+      !profiles.contains(where: { $0.providerId == provider.id })
+    else { return }
+    guard (try? await client.deleteSandboxProvider(id: provider.id)) != nil else { return }
+    providers.removeAll { $0.id == provider.id }
   }
 
   private func hostName(_ serverId: String) -> String {

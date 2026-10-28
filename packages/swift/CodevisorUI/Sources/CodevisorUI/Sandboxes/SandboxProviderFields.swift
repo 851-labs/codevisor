@@ -8,9 +8,6 @@ struct SandboxProviderFields: View {
 
   var body: some View {
     Section {
-      if !vendor.runsOnAMac {
-        SandboxTextInput(label: "Name", prompt: "Optional", text: $draft.label)
-      }
       ForEach(vendor.providerFields) { field in
         SandboxFieldRow(
           field: field, draft: $draft.fields, secretSaved: draft.secretsSet.contains(field.key),

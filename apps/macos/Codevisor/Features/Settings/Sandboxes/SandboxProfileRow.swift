@@ -4,9 +4,7 @@ import SwiftUI
 
 struct SandboxProfileRow: View {
   let profile: ServerSandboxProfile
-  let hasProvider: Bool
   let onEdit: () -> Void
-  let onEditProvider: () -> Void
   let onDelete: () -> Void
 
   var body: some View {
@@ -35,10 +33,6 @@ struct SandboxProfileRow: View {
   @ViewBuilder
   private var actions: some View {
     Button("Edit…", action: onEdit)
-    if hasProvider {
-      Button("Edit Provider…", action: onEditProvider)
-    }
-    Divider()
     Button("Delete…", role: .destructive, action: onDelete)
   }
 }

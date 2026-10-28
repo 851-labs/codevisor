@@ -16,9 +16,10 @@ public struct SandboxProfileDraft: Equatable, Identifiable, Sendable {
     return !trimmedName.isEmpty && fields.isFilled(vendor.profileFields)
   }
 
-  public init() {
+  public init(provider: ServerSandboxProvider, vendor: ServerSandboxVendor) {
     name = ""
     fields = SandboxFieldDraft()
+    choose(provider, vendor: vendor)
   }
 
   public init(profile: ServerSandboxProfile, vendor: ServerSandboxVendor?) {
@@ -31,17 +32,21 @@ public struct SandboxProfileDraft: Equatable, Identifiable, Sendable {
 
   public mutating func choose(_ provider: ServerSandboxProvider, vendor: ServerSandboxVendor) {
     providerId = provider.id
-    guard vendor.id != self.vendor?.id else { return }
-
-    if name.isEmpty || name == self.vendor.map(Self.defaultName) { name = Self.defaultName(vendor) }
-    self.vendor = vendor
-    fields = SandboxFieldDraft(fields: vendor.profileFields, values: [:])
+    adopt(vendor)
   }
 
   public var request: ServerSandboxProfileRequest? {
     guard let vendor else { return nil }
     return ServerSandboxProfileRequest(
       name: trimmedName, vendor: vendor.id, providerId: providerId, values: fields.values(for: vendor.profileFields))
+  }
+
+  private mutating func adopt(_ vendor: ServerSandboxVendor) {
+    guard vendor.id != self.vendor?.id else { return }
+
+    if name.isEmpty || name == self.vendor.map(Self.defaultName) { name = Self.defaultName(vendor) }
+    self.vendor = vendor
+    fields = SandboxFieldDraft(fields: vendor.profileFields, values: [:])
   }
 
   private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }

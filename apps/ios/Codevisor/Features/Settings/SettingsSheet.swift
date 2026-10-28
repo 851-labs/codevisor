@@ -8,6 +8,7 @@ enum SettingsDestination: Hashable, Identifiable {
   case root
   case section(String)
   case machines(focusedMachineID: String?)
+  case sandbox(SandboxSettingsPage)
 
   var id: String {
     switch self {
@@ -17,6 +18,8 @@ enum SettingsDestination: Hashable, Identifiable {
       section
     case let .machines(machineID):
       "machines:\(machineID ?? "all")"
+    case let .sandbox(page):
+      "sandbox:\(page)"
     }
   }
 }
@@ -29,6 +32,8 @@ struct SettingsSheet: View {
   @ClientPreference(SandboxesFeature.preferenceKey, default: false) private var sandboxesEnabled
   @State private var path: [SettingsDestination]
   @State private var selection: SettingsDestination?
+  @State private var detailPath: [SettingsDestination] = []
+  @State private var sandboxes = SandboxSettingsModel()
   @State private var showsEmailFallback = false
   var onSectionChange: ((String) -> Void)?
 
@@ -56,6 +61,9 @@ struct SettingsSheet: View {
     case .machines, .section:
       _path = State(initialValue: [initialDestination])
       _selection = State(initialValue: initialDestination)
+    case .sandbox:
+      _path = State(initialValue: [.section("sandboxes"), initialDestination])
+      _selection = State(initialValue: .section("sandboxes"))
     }
   }
 
@@ -80,6 +88,7 @@ struct SettingsSheet: View {
       switch destination {
       case .section(let value): section = value
       case .machines: section = "machines"
+      case .sandbox: section = "sandboxes"
       default: section = "root"
       }
       onSectionChange?(section)
@@ -114,11 +123,15 @@ struct SettingsSheet: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
     } detail: {
-      NavigationStack {
+      NavigationStack(path: $detailPath) {
         destinationScreen(selectedDetail)
           .toolbar { doneButton }
+          .navigationDestination(for: SettingsDestination.self) { destination in
+            destinationScreen(destination)
+          }
       }
       .id(selectedDetail)
+      .onChange(of: selectedDetail) { _, _ in detailPath = [] }
     }
     .navigationSplitViewStyle(.balanced)
   }
@@ -138,7 +151,27 @@ struct SettingsSheet: View {
       clientSection(section)
     case let .machines(focusedMachineID):
       MachinesSettingsScreen(focusedMachineID: focusedMachineID)
+    case let .sandbox(page):
+      SandboxSettingsPageView(page: page, model: sandboxes, client: sandboxClient, navigate: navigateSandboxes)
     }
+  }
+
+  private var sandboxClient: any CodevisorServerClienting {
+    environment.machines.client(for: SandboxesSettingsScreen.machineId(in: environment.machines))
+  }
+
+  private func navigateSandboxes(_ navigation: SandboxSettingsNavigation) {
+    if horizontalSizeClass == .regular {
+      detailPath = navigation.applied(
+        to: detailPath, route: SettingsDestination.sandbox, isSandboxPage: Self.isSandboxPage)
+    } else {
+      path = navigation.applied(to: path, route: SettingsDestination.sandbox, isSandboxPage: Self.isSandboxPage)
+    }
+  }
+
+  private static func isSandboxPage(_ destination: SettingsDestination) -> Bool {
+    if case .sandbox = destination { return true }
+    return false
   }
 
   @ViewBuilder
@@ -250,7 +283,7 @@ struct SettingsSheet: View {
   private func clientSection(_ section: String) -> some View {
     switch section {
     case "account": CloudAccountScreen(dismissSettings: { dismiss() })
-    case "sandboxes": SandboxesSettingsScreen()
+    case "sandboxes": SandboxesSettingsScreen(model: sandboxes, navigate: navigateSandboxes)
     case "projects": ProjectsSettingsScreen()
     case "updates": UpdatesSettingsScreen()
     case "agents": HarnessesSettingsScreen()

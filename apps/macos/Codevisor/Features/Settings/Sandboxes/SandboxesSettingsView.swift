@@ -4,47 +4,32 @@ import SwiftUI
 
 struct SandboxesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var model = SandboxSettingsModel()
-  @State private var providerDraft: SandboxProviderDraft?
-  @State private var profileDraft: SandboxProfileDraft?
+  let model: SandboxSettingsModel
   @State private var removingProfile: ServerSandboxProfile?
+
+  private var router: SettingsRouter { SettingsRouter.shared }
 
   private var client: any CodevisorServerClienting {
     environment.machines.client(for: CodevisorMachine.local.id)
   }
 
+  private var isFirstRun: Bool {
+    model.hasLoaded && model.profiles.isEmpty && model.providers.isEmpty
+  }
+
   var body: some View {
     Form {
-      Section {
-        if model.profiles.isEmpty, model.hasLoaded {
-          Text("No Profiles")
-            .foregroundStyle(.secondary)
-        }
-        ForEach(model.profiles) { profile in
-          SandboxProfileRow(
-            profile: profile,
-            hasProvider: model.provider(profile.providerId) != nil,
-            onEdit: { edit(profile) },
-            onEditProvider: { editProvider(of: profile) },
-            onDelete: { removingProfile = profile }
-          )
-        }
-      } header: {
-        Text("Profiles")
-      } footer: {
-        SettingsListActions {
-          Button {
-            profileDraft = SandboxProfileDraft()
-          } label: {
-            Label("Add Profile…", systemImage: "plus")
+      if isFirstRun {
+        Section("Choose a sandbox vendor") {
+          SandboxVendorList(vendors: model.vendors.vendors) { vendor in
+            router.navigate(.push(.newProvider(vendorId: vendor.id)))
           }
-          .disabled(!model.hasLoaded)
         }
+      } else {
+        profilesSection
       }
     }
     .formStyle(.grouped)
-    .sheet(item: $providerDraft) { SandboxProviderSheet(draft: $0, model: model, client: client, onSaved: { _ in }) }
-    .sheet(item: $profileDraft) { SandboxProfileSheet(draft: $0, model: model, client: client) }
     .confirmationDialog(
       "Delete “\(removingProfile?.name ?? "")”?",
       isPresented: presence($removingProfile), titleVisibility: .visible, presenting: removingProfile
@@ -62,6 +47,33 @@ struct SandboxesSettingsView: View {
     }
   }
 
+  private var profilesSection: some View {
+    Section {
+      if model.profiles.isEmpty, model.hasLoaded {
+        Text("No Profiles")
+          .foregroundStyle(.secondary)
+      }
+      ForEach(model.profiles) { profile in
+        SandboxProfileRow(
+          profile: profile,
+          onEdit: { router.navigate(.push(.editProfile(profileId: profile.id))) },
+          onDelete: { removingProfile = profile }
+        )
+      }
+    } header: {
+      Text("Profiles")
+    } footer: {
+      SettingsListActions {
+        Button {
+          router.navigate(.push(model.providers.isEmpty ? .vendors : .addProfile))
+        } label: {
+          Label("Add Profile…", systemImage: "plus")
+        }
+        .disabled(!model.hasLoaded)
+      }
+    }
+  }
+
   private var reloadKey: [String] {
     let revisions = SandboxSettingsModel.syncNamespaces.map { environment.configSync.revisionsByNamespace[$0] ?? 0 }
     return environment.machines.allMachines.map(\.id) + revisions.map(String.init)
@@ -73,18 +85,9 @@ struct SandboxesSettingsView: View {
       .map { SandboxMachine(name: $0.name, client: environment.machines.client(for: $0.id)) }
   }
 
-  private func edit(_ profile: ServerSandboxProfile) {
-    profileDraft = SandboxProfileDraft(profile: profile, vendor: model.vendor(profile.vendor))
-  }
-
-  private func editProvider(of profile: ServerSandboxProfile) {
-    guard let provider = model.provider(profile.providerId) else { return }
-    providerDraft = SandboxProviderDraft(vendor: model.vendor(provider.vendor), provider: provider)
-  }
-
   private var errorShown: Binding<Bool> {
     Binding(
-      get: { model.errorMessage != nil && providerDraft == nil && profileDraft == nil },
+      get: { model.errorMessage != nil && router.panePath.isEmpty },
       set: { if !$0 { model.errorMessage = nil } }
     )
   }

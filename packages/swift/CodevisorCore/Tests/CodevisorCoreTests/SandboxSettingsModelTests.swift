@@ -16,25 +16,23 @@ struct SandboxSettingsModelTests {
 
     #expect(
       model.providers.map(model.title(of:)) == [
-        "E2B (851 Labs)", "E2B", "Tart on Dylan's Mac Studio", "Tart on another Mac",
+        "E2B · 851 Labs", "E2B", "Tart · Dylan's Mac Studio", "Tart · another Mac",
       ])
   }
 
-  @Test("Choosing a provider shows its vendor's fields, and switching vendor starts them over")
+  @Test("A new profile starts on its provider's vendor, and switching vendor starts its fields over")
   func choosingProviders() async throws {
     let model = SandboxSettingsModel()
     await model.load(from: SettingsFakeServerClient(), machines: [])
-    var draft = SandboxProfileDraft()
-    let unchosen = draft.canSave
+    var draft = SandboxProfileDraft(
+      provider: try #require(model.provider("labs")), vendor: SettingsFakeServerClient.e2b)
 
-    draft.choose(try #require(model.provider("labs")), vendor: SettingsFakeServerClient.e2b)
     let e2bName = draft.name
     draft.fields.text["template"] = "custom"
     draft.choose(try #require(model.provider("personal")), vendor: SettingsFakeServerClient.e2b)
     let keptTemplate = draft.fields.text["template"]
     draft.choose(try #require(model.provider("studio")), vendor: SettingsFakeServerClient.tart)
 
-    #expect(!unchosen)
     #expect(e2bName == "E2B sandbox")
     #expect(keptTemplate == "custom")
     #expect(draft.name == "Tart VM")
@@ -61,19 +59,80 @@ struct SandboxSettingsModelTests {
       draft.request == ServerSandboxProviderRequest(vendor: "e2b", label: "Work", values: ["apiKey": .string("key")]))
   }
 
-  @Test("Saving a provider hands it back so the profile can select it")
-  func savingProviders() async throws {
+  @Test("Setting up a vendor adds its provider, and the profile then saves on that provider")
+  func firstProfile() async throws {
+    let client = SettingsFakeServerClient(providers: [])
+    let model = SandboxSettingsModel()
+    await model.load(from: client, machines: [])
+    var setUp = SandboxProviderDraft(vendor: SettingsFakeServerClient.e2b)
+    setUp.fields.text["apiKey"] = "key"
+
+    let provider = try #require(await model.save(setUp, using: client))
+    let draft = SandboxProfileDraft(provider: provider, vendor: SettingsFakeServerClient.e2b)
+    let saved = await model.save(draft, using: client)
+
+    #expect(saved)
+    #expect(client.calls == ["create provider e2b", "create profile E2B sandbox on new"])
+    #expect(model.providers.map(\.id) == ["new"])
+    #expect(model.profiles.map(\.name) == ["E2B sandbox"])
+  }
+
+  @Test("Editing a profile saves it on the same provider, and editing that provider updates it in place")
+  func editingTheProvider() async throws {
     let client = SettingsFakeServerClient()
     let model = SandboxSettingsModel()
     await model.load(from: client, machines: [])
-    var draft = SandboxProviderDraft()
-    draft.choose(SettingsFakeServerClient.e2b)
-    draft.fields.text["apiKey"] = "key"
+    let profile = ServerSandboxProfile(id: "p1", name: "Work", vendor: "e2b", providerId: "labs")
+    let provider = try #require(model.provider("labs"))
+    let editProvider = SandboxProviderDraft(vendor: SettingsFakeServerClient.e2b, provider: provider)
 
-    let saved = try #require(await model.save(draft, using: client))
+    let providerSaved = await model.save(editProvider, using: client)
+    let profileSaved = await model.save(
+      SandboxProfileDraft(profile: profile, vendor: SettingsFakeServerClient.e2b), using: client)
 
-    #expect(saved.vendor == "e2b")
-    #expect(model.provider(saved.id) == saved)
+    #expect(editProvider.canSave)
+    #expect(providerSaved?.id == "labs")
+    #expect(profileSaved)
+    #expect(client.calls == ["update provider labs", "update profile Work on labs"])
+  }
+
+  @Test("Settings pages push, go back, and after adding something jump to the next page or back to Sandboxes")
+  func pageNavigation() {
+    let start = ["sandboxes", "addProfile", "vendors"]
+    let route: (SandboxSettingsPage) -> String = { "\($0)" }
+    let isPage: (String) -> Bool = { $0 != "sandboxes" }
+
+    let pushed = SandboxSettingsNavigation.push(.newProvider(vendorId: "tart")).applied(
+      to: start, route: route, isSandboxPage: isPage)
+    let next = SandboxSettingsNavigation.reset(to: .newProfile(providerId: "p")).applied(
+      to: pushed, route: route, isSandboxPage: isPage)
+    let done = SandboxSettingsNavigation.reset(to: nil).applied(to: next, route: route, isSandboxPage: isPage)
+    let back = SandboxSettingsNavigation.pop.applied(to: start, route: route, isSandboxPage: isPage)
+
+    #expect(pushed == start + ["newProvider(vendorId: \"tart\")"])
+    #expect(next == ["sandboxes", "newProfile(providerId: \"p\")"])
+    #expect(done == ["sandboxes"])
+    #expect(back == ["sandboxes", "addProfile"])
+  }
+
+  @Test("Deleting a profile removes its provider once no other profile uses it")
+  func deletingTheLastProfile() async {
+    let client = SettingsFakeServerClient(
+      profiles: [
+        ServerSandboxProfile(id: "a", name: "A", vendor: "e2b", providerId: "labs"),
+        ServerSandboxProfile(id: "b", name: "B", vendor: "e2b", providerId: "labs"),
+        ServerSandboxProfile(id: "c", name: "C", vendor: "e2b", providerId: "personal"),
+      ])
+    let model = SandboxSettingsModel()
+    await model.load(from: client, machines: [])
+
+    for id in ["a", "c"] {
+      guard let profile = model.profiles.first(where: { $0.id == id }) else { continue }
+      await model.delete(profile, using: client)
+    }
+
+    #expect(client.calls == ["delete profile a", "delete profile c", "delete provider personal"])
+    #expect(model.providers.map(\.id) == ["labs", "studio", "gone"])
   }
 }
 
@@ -87,27 +146,65 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
     providerFields: [.init(key: "apiKey", label: "API key", type: .secret, required: true)],
     profileFields: [.init(key: "template", label: "Template", type: .string)])
 
-  let serverId: String
+  static let existingProviders = [
+    ServerSandboxProvider(id: "labs", vendor: "e2b", label: "851 Labs", secretsSet: ["apiKey"]),
+    ServerSandboxProvider(id: "personal", vendor: "e2b", secretsSet: ["apiKey"]),
+    ServerSandboxProvider(id: "studio", vendor: "tart", values: ["machineId": .string("studio")]),
+    ServerSandboxProvider(id: "gone", vendor: "tart", values: ["machineId": .string("gone")]),
+  ]
 
-  init(serverId: String = "local") {
+  let serverId: String
+  let providers: [ServerSandboxProvider]
+  let profiles: [ServerSandboxProfile]
+  var calls: [String] = []
+
+  init(
+    serverId: String = "local", providers: [ServerSandboxProvider] = existingProviders,
+    profiles: [ServerSandboxProfile] = []
+  ) {
     self.serverId = serverId
+    self.providers = providers
+    self.profiles = profiles
   }
 
   func sandboxVendors() async throws -> ServerSandboxVendors {
     ServerSandboxVendors(vendors: [Self.tart, Self.e2b], capabilities: serverId == "local" ? [] : ["tart"])
   }
 
-  func sandboxProviders() async throws -> [ServerSandboxProvider] {
-    [
-      ServerSandboxProvider(id: "labs", vendor: "e2b", label: "851 Labs", secretsSet: ["apiKey"]),
-      ServerSandboxProvider(id: "personal", vendor: "e2b", secretsSet: ["apiKey"]),
-      ServerSandboxProvider(id: "studio", vendor: "tart", values: ["machineId": .string("studio")]),
-      ServerSandboxProvider(id: "gone", vendor: "tart", values: ["machineId": .string("gone")]),
-    ]
-  }
+  func sandboxProviders() async throws -> [ServerSandboxProvider] { providers }
+
+  func sandboxProfiles() async throws -> [ServerSandboxProfile] { profiles }
 
   func createSandboxProvider(_ request: ServerSandboxProviderRequest) async throws -> ServerSandboxProvider {
-    ServerSandboxProvider(id: "new", vendor: request.vendor, label: request.label, secretsSet: ["apiKey"])
+    calls.append("create provider \(request.vendor)")
+    return ServerSandboxProvider(id: "new", vendor: request.vendor, label: request.label, secretsSet: ["apiKey"])
+  }
+
+  func updateSandboxProvider(
+    id: String, _ request: ServerSandboxProviderRequest
+  ) async throws
+    -> ServerSandboxProvider
+  {
+    calls.append("update provider \(id)")
+    return ServerSandboxProvider(id: id, vendor: request.vendor, secretsSet: ["apiKey"])
+  }
+
+  func deleteSandboxProvider(id: String) async throws {
+    calls.append("delete provider \(id)")
+  }
+
+  func createSandboxProfile(_ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile {
+    calls.append("create profile \(request.name) on \(request.providerId ?? "nothing")")
+    return ServerSandboxProfile(id: "p-new", name: request.name, vendor: request.vendor, providerId: request.providerId)
+  }
+
+  func updateSandboxProfile(id: String, _ request: ServerSandboxProfileRequest) async throws -> ServerSandboxProfile {
+    calls.append("update profile \(request.name) on \(request.providerId ?? "nothing")")
+    return ServerSandboxProfile(id: id, name: request.name, vendor: request.vendor, providerId: request.providerId)
+  }
+
+  func deleteSandboxProfile(id: String) async throws {
+    calls.append("delete profile \(id)")
   }
 
   func info() async throws -> ServerInfo {

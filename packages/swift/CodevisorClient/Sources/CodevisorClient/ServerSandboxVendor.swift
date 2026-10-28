@@ -31,6 +31,4 @@ public struct ServerSandboxVendor: Decodable, Equatable, Sendable, Identifiable 
     self.providerFields = providerFields
     self.profileFields = profileFields
   }
-
-  public var runsOnAMac: Bool { providerFields.contains { $0.type == .machine } }
 }

@@ -34,7 +34,7 @@ public struct ServerSandboxProvider: Decodable, Equatable, Sendable, Identifiabl
 
   public func title(vendorName: String) -> String {
     guard let detail = identity ?? label else { return vendorName }
-    return "\(vendorName) (\(detail))"
+    return "\(vendorName) · \(detail)"
   }
 
   public func machineId(for vendor: ServerSandboxVendor?) -> String? {
