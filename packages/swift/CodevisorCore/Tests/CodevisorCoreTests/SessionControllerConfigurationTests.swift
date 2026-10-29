@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ACPKit
+import CodevisorTestSupport
 @testable import CodevisorCore
 
 @MainActor
@@ -270,9 +271,11 @@ struct SessionControllerConfigurationTests {
     controller.onFirstSend = { submittedText = $0 }
 
     await controller.send()
+    await awaitObserved { controller.hasAcceptedFirstSend }
 
     #expect(submittedText == "Preserve this title\nwith more detail")
-    #expect(controller.composerText == "Preserve this title\nwith more detail")
+    #expect(controller.composerText.isEmpty)
+    #expect(controller.transcriptProjectionInput.pendingUserMessage?.text == "Preserve this title\nwith more detail")
   }
 
   @Test("A deferred durable chat cannot connect before first send")

@@ -16,6 +16,7 @@ struct ProjectCloneSendTests {
     controller.onProjectCloned = { clonedWith = ($0, controller.setupPhases) }
 
     await controller.send()
+    await client.worktreeRequests.wait(for: 1)
 
     let cloned = try #require(clonedWith)
     #expect(client.setupRequests.map(\.id) == [request.projectId.uuidString])
@@ -35,18 +36,24 @@ struct ProjectCloneSendTests {
     controller.onProjectCloned = { _ in phases = controller.setupPhases }
 
     await controller.send()
+    await awaitObserved { controller.setupPhases.first?.isSucceeded == true }
 
     #expect(phases.map(\.completedTitle) == ["Set up project"])
     #expect(phases.first?.isSucceeded == true)
     #expect(client.worktreeProjectIds.isEmpty)
   }
 
-  @Test("A repository the machine can't see keeps the chat, explains why in the sheet, and Retry clones again")
+  @Test("A repository the machine can't see keeps the chat and its Not Delivered message, and Retry clones again")
   func cloneFailureHoldsTheSendForRetry() async throws {
     let client = CloningServerClient(outcomes: [.repositoryMissing, .cloned])
     let (controller, request) = try makeController(client: client)
 
     await controller.send()
+    let sent = try #require(controller.transcriptProjectionInput.pendingUserMessage)
+    await awaitObserved {
+      controller.projectCloneFailureMessage != nil
+        && controller.transcriptProjectionInput.deliveries[sent.id]?.isFailed == true
+    }
     let failedStep = controller.setupPhases.first { $0.id == SessionSetupPhase.worktreePhaseId }
     let sheet = request.setup.phase
     let held = controller.transcriptProjectionInput.pendingUserMessage

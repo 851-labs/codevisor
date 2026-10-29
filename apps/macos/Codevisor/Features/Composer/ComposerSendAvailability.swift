@@ -7,14 +7,15 @@ struct ComposerSendAvailability {
   let isAppUpdateInProgress: Bool
 
   var isEnabled: Bool {
-    !isAppUpdateInProgress
-      && controller.isServerReady
-      && !controller.isPausedForUpdate
-      && (controller.isGoalComposerArmed ? canSubmitGoal : canSendMessage)
+    guard !isAppUpdateInProgress else { return false }
+    return controller.isGoalComposerArmed ? canSubmitGoal : controller.canSend || hasSlashMatches
   }
 
   var help: String {
     if isAppUpdateInProgress { return "Updating… you can send once the update finishes." }
+    guard controller.isGoalComposerArmed else {
+      return controller.canSend || !hasDraft ? "Send (↩)" : "Connecting… you can send once the machine is ready."
+    }
     if controller.isPausedForUpdate { return "\(controller.updatingName) is updating" }
     if hasSubmittableContent && controller.isConnectingToHarness { return "Connecting to harness…" }
     if controller.isConnecting { return "Connecting… you can send once the agent is ready." }
@@ -29,13 +30,11 @@ struct ComposerSendAvailability {
 
   private var canSubmitGoal: Bool {
     hasSubmittableContent
+      && controller.isServerReady
+      && !controller.isPausedForUpdate
       && (controller.isConnected || controller.selectedHarness != nil)
       && !controller.isConnecting
       && !controller.isConnectingToHarness
       && !controller.requiresModelSelection
-  }
-
-  private var canSendMessage: Bool {
-    !controller.isConnectingToHarness && (controller.canSend || hasSlashMatches)
   }
 }

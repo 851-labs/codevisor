@@ -12,13 +12,7 @@ extension ChatScreen {
 
   @ViewBuilder
   func errorBanner(_ message: String) -> some View {
-    if message == controller.sandboxStartFailure {
-      SandboxStartFailureNotice(
-        message: message,
-        inBotConversation: controller.presentsBotConversation,
-        retry: controller.retrySandboxStart
-      )
-    } else if message == controller.projectCloneFailureMessage {
+    if message == controller.projectCloneFailureMessage {
       ProjectCloneFailureNotice(
         projectName: controller.projectClone?.plan.projectName ?? controller.project.name,
         message: message,

@@ -20,7 +20,7 @@ final class IOSQueueSendAnimation {
 
   private static let watchdogDuration: TimeInterval = 0.71
 
-  func stage(text: String, queue: [ServerPromptQueueItem], sourceFrame: CGRect, in window: UIWindow?) {
+  func stage(text: String, queue: [QueuedMessagePreview], sourceFrame: CGRect, in window: UIWindow?) {
     cancel()
     guard let window, !sourceFrame.isEmpty, !UIAccessibility.isReduceMotionEnabled else { return }
     self.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,7 +41,7 @@ final class IOSQueueSendAnimation {
     )
   }
 
-  func queueDidChange(_ queue: [ServerPromptQueueItem]) {
+  func queueDidChange(_ queue: [QueuedMessagePreview]) {
     guard proxy != nil else { return }
     if let acceptedID {
       if !queue.contains(where: { $0.id == acceptedID }) { cancel() }

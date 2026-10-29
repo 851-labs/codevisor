@@ -67,13 +67,14 @@ struct ComposerBar: View {
   }
 
   var canSend: Bool {
-    controller.presentsBotConversation ? hasDraft : canSendToAgent
+    guard !controller.presentsBotConversation, controller.isGoalComposerArmed else {
+      return hasDraft && controller.acceptsSends && !isClearingGoal
+    }
+    return canSubmitGoal
   }
 
-  private var canSendToAgent: Bool {
-    (controller.isGoalComposerArmed
-      ? !trimmed.isEmpty
-      : !trimmed.isEmpty || !controller.composerAttachments.isEmpty)
+  private var canSubmitGoal: Bool {
+    !trimmed.isEmpty
       && !controller.isSubmitting
       && !controller.isConnecting
       && controller.isServerReady

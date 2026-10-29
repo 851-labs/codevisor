@@ -36,11 +36,6 @@ public final class ComposerAttachments {
     self.rememberPreview = rememberPreview
   }
 
-  func clearAfterCollecting() {
-    entries = sentEntries
-    forgetLoaders(keeping: sentIDs)
-  }
-
   func restore(_ staged: [ComposerAttachment]) {
     entries = sentEntries + staged
     forgetLoaders(keeping: sentIDs.union(staged.map(\.id)))
@@ -402,12 +397,6 @@ public final class ComposerAttachments {
     }
   }
 
-  func releaseStagedFiles(of attachments: [ComposerAttachment]) {
-    for attachment in attachments {
-      files.remove(id: attachment.id)
-    }
-  }
-
   func collectAttachmentsForSend() async -> [Attachment]? {
     await uploads.waitForCurrentUploads()
     var attachments: [Attachment] = []
@@ -441,6 +430,10 @@ extension ComposerAttachments {
 
   func sentAttachments(_ ids: [UUID]) -> [ComposerAttachment] {
     ids.compactMap { id in entries.first { $0.id == id } }
+  }
+
+  func returnToDraft(_ ids: [UUID]) {
+    sentIDs.subtract(ids)
   }
 
   func releaseSent(_ ids: [UUID]) {

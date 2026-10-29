@@ -33,9 +33,10 @@ extension SessionController {
     case let .failed(message):
       projectionStatus = .failed(message)
     }
+    let outgoing = transcriptOutgoing
     return TranscriptProjectionInput(
       settledConversation: settledConversation,
-      pendingUserMessage: pendingUserMessage ?? heldSend?.message,
+      pendingUserMessage: outgoing.opening,
       activeItem: activeItem,
       setupPhases: SessionSetupPhases.merging(live: setupPhases, persisted: model?.persistedSetupPhases ?? []),
       waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
@@ -46,15 +47,35 @@ extension SessionController {
       status: projectionStatus,
       activityMessage: transcriptActivityOverride,
       botConversation: presentedBotConversation,
-      outgoingMessages: model?.transcriptOutgoingMessages ?? [],
-      deliveries: model?.transcriptDeliveries ?? [:]
+      outgoingMessages: outgoing.messages,
+      deliveries: outgoing.deliveries
     )
   }
 
+  public var pendingUserMessage: UserMessage? {
+    let outgoing = transcriptOutgoing
+    guard let opening = outgoing.opening, outgoing.deliveries[opening.id]?.isFailed != true else { return nil }
+    return opening
+  }
+
+  private var transcriptOutgoing: TranscriptOutgoing {
+    let queued = unsentAgentSends
+    var messages = (model?.transcriptOutgoingMessages ?? []) + queued.map(\.message)
+    var deliveries = model?.transcriptDeliveries ?? [:]
+    for entry in sends.unsent where !entry.route.landsInPromptQueue {
+      guard case .agent = entry.route, deliveries[entry.message.id] == nil else { continue }
+      deliveries[entry.message.id] = entry.delivery
+    }
+    let opensChat = model.map { $0.settledConversation.isEmpty && $0.activeItem == nil } ?? true
+    let opening = opensChat && !messages.isEmpty ? messages.removeFirst() : nil
+    return TranscriptOutgoing(opening: opening, messages: messages, deliveries: deliveries)
+  }
+
   private var presentedBotConversation: TranscriptBotConversation? {
-    if let conversation = model?.transcriptBotConversation(adding: botSends.unsentMessages) { return conversation }
+    let unsent = sends.unsentBotMessages
+    if let conversation = model?.transcriptBotConversation(adding: unsent) { return conversation }
     guard presentsBotConversation else { return nil }
-    return TranscriptBotConversation(messages: botSends.unsentMessages.map(\.message), isWorking: false)
+    return TranscriptBotConversation(messages: unsent.map(\.message), isWorking: false)
   }
 
   public var hasOlderBotMessages: Bool { model?.hasOlderBotMessages ?? false }
@@ -225,17 +246,6 @@ extension SessionController {
 
   public var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
 
-  public var canSend: Bool {
-    (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || !composerAttachments.isEmpty)
-      && !isConnecting
-      && isServerReady
-      && !isPausedForUpdate
-      && !composerAttachments.contains { $0.state == .loading }
-      && configurationValidationState == .ready
-      && !requiresModelSelection
-      && (isConnected || selectedHarness != nil)
-  }
 }
 
 extension SessionController {
@@ -246,12 +256,18 @@ extension SessionController {
   }
 
   public func retryUnsentMessage(id: UUID) async {
-    if botSends.holdsFailure(id) { return botSends.retry(id) }
+    if sends.holdsFailure(id) { return sends.retry(id) }
     await model?.retryUnsentMessage(id: id)
   }
 
   public func deleteUnsentMessage(id: UUID) {
-    if botSends.holdsFailure(id) { return botSends.delete(id) }
+    if sends.holdsFailure(id) { return sends.delete(id) }
     model?.deleteUnsentMessage(id: id)
   }
+}
+
+private struct TranscriptOutgoing {
+  let opening: UserMessage?
+  let messages: [UserMessage]
+  let deliveries: [UUID: TranscriptDelivery]
 }

@@ -88,13 +88,7 @@ private struct SessionErrorRow: View {
   let rowID: TranscriptVirtualRow.ID
 
   var body: some View {
-    if rowID == .statusError, message == controller.sandboxStartFailure {
-      SandboxStartFailureNotice(
-        message: message,
-        inBotConversation: controller.presentsBotConversation,
-        retry: controller.retrySandboxStart
-      )
-    } else if rowID == .statusError, message == controller.projectCloneFailureMessage {
+    if rowID == .statusError, message == controller.projectCloneFailureMessage {
       ProjectCloneFailureNotice(
         projectName: controller.projectClone?.plan.projectName ?? controller.project.name,
         message: message,

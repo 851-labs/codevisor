@@ -22,9 +22,7 @@ extension SessionController {
       self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
     }
     model.onLocalUserMessageAppended = { [weak self] messageID in
-      guard let self, pendingUserMessage?.id == messageID else { return }
-      pendingUserMessage = nil
-      guard userSendAnimationRequest?.messageID != messageID else { return }
+      guard let self, sends.route(of: messageID)?.landsInPromptQueue == true else { return }
       requestUserSendAnimation(for: messageID)
     }
     model.onPromptNotSteered = { [weak self] messageID in

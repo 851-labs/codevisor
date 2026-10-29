@@ -25,9 +25,7 @@ final class ComposerSendSource {
   }
 
   private static func flyingAttachmentIDs(_ controller: SessionController) -> [String] {
-    let attachments = controller.composerAttachments
-    guard controller.presentsBotConversation else { return attachments.compactMap(\.uploadedFileID) }
-    return attachments.map(\.sentFileID)
+    controller.composerAttachments.map(\.sentFileID)
   }
 }
 

@@ -11,7 +11,7 @@ extension SessionController {
   }
 
   public func retryProjectClone() {
-    resendHeldSend()
+    sends.retryFailures()
   }
 
   public func signInForProjectClone() {
@@ -29,10 +29,8 @@ extension SessionController {
     return provisional
   }
 
-  func cloneRequestedProject(
-    showsSetupPhases: Bool, restoreComposer: () -> Void, holdForRetry: (() -> Void)?
-  ) async -> Bool {
-    guard let request = projectClone, request.projectId == project.id else { return true }
+  func cloneRequestedProject(showsSetupPhases: Bool) async -> String? {
+    guard let request = projectClone, request.projectId == project.id else { return nil }
 
     projectCloneFailure = nil
     let phase = cloneSetupPhase
@@ -46,11 +44,11 @@ extension SessionController {
     switch result {
     case let .success(cloned):
       adoptClonedProject(cloned, phaseId: phase.id)
-      return true
+      return nil
     case let .failure(failure):
       mutateSetupPhase(id: phase.id) { $0.fail(message: failure.message) }
-      failClone(request, failure: failure, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
-      return false
+      failClone(request, failure: failure)
+      return failure.message
     }
   }
 
@@ -72,15 +70,8 @@ extension SessionController {
     onProjectCloned?(cloned)
   }
 
-  private func failClone(
-    _ request: ProjectCloneRequest,
-    failure: ProjectMachineSetup.Failure,
-    restoreComposer: () -> Void,
-    holdForRetry: (() -> Void)?
-  ) {
+  private func failClone(_ request: ProjectCloneRequest, failure: ProjectMachineSetup.Failure) {
     projectCloneFailure = failure
-    if let holdForRetry { holdForRetry() } else { restoreComposer() }
-    handleSetupFailure(failure.message, returnsToNewChat: false)
     request.setup.retryHandler = { [weak self] in self?.retryProjectClone() }
     request.setup.present(request.plan, failure: failure)
   }

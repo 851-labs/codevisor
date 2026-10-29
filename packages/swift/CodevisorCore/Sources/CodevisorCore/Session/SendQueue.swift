@@ -4,7 +4,7 @@ import Observation
 
 @MainActor
 @Observable
-final class BotSendQueue {
+final class SendQueue {
   enum Readiness: Equatable {
     case ready
     case waiting(String)
@@ -14,6 +14,20 @@ final class BotSendQueue {
   enum Preparation {
     case ready(SessionModel)
     case failed(String)
+    case withdrawn
+  }
+
+  enum Route: Equatable {
+    case bot(afterSequence: Int?)
+    case agent(ServerPromptDelivery)
+
+    var landsInPromptQueue: Bool { self == .agent(.queue) }
+  }
+
+  struct Unsent: Equatable {
+    let message: UserMessage
+    let route: Route
+    let delivery: TranscriptDelivery?
   }
 
   static let readinessTimeout: Duration = .seconds(60)
@@ -34,7 +48,7 @@ final class BotSendQueue {
   private struct Entry {
     let message: UserMessage
     let attachmentIDs: [UUID]
-    let afterSequence: Int?
+    let route: Route
     var stage = Stage.preparing
     var showsProgress = false
 
@@ -50,6 +64,7 @@ final class BotSendQueue {
   @ObservationIgnored private let clock: any Clock<Duration>
   @ObservationIgnored private let readiness: @MainActor () -> Readiness
   @ObservationIgnored private let connect: @MainActor (UserMessage) async -> Preparation
+  @ObservationIgnored private let deliver: @MainActor (UserMessage, Route, SessionModel) async -> Void
   @ObservationIgnored private let onUploaded: (_ uploaded: Attachment, _ sentFileID: String) -> Void
   @ObservationIgnored private let onChange: () -> Void
 
@@ -58,6 +73,7 @@ final class BotSendQueue {
     clock: any Clock<Duration> = ContinuousClock(),
     readiness: @escaping @MainActor () -> Readiness,
     connect: @escaping @MainActor (UserMessage) async -> Preparation,
+    deliver: @escaping @MainActor (UserMessage, Route, SessionModel) async -> Void,
     onUploaded: @escaping (_ uploaded: Attachment, _ sentFileID: String) -> Void,
     onChange: @escaping () -> Void
   ) {
@@ -65,12 +81,13 @@ final class BotSendQueue {
     self.clock = clock
     self.readiness = readiness
     self.connect = connect
+    self.deliver = deliver
     self.onUploaded = onUploaded
     self.onChange = onChange
   }
 
-  func enqueue(_ message: UserMessage, attachmentIDs: [UUID], afterSequence: Int?) {
-    entries.append(Entry(message: message, attachmentIDs: attachmentIDs, afterSequence: afterSequence))
+  func enqueue(_ message: UserMessage, attachmentIDs: [UUID], route: Route) {
+    entries.append(Entry(message: message, attachmentIDs: attachmentIDs, route: route))
     showProgress(for: message.id, after: Self.progressDelay)
     startWorker()
   }
@@ -78,6 +95,10 @@ final class BotSendQueue {
   func holdsFailure(_ id: UUID) -> Bool {
     guard let index = index(of: id), case .failed = entries[index].stage else { return false }
     return true
+  }
+
+  func route(of id: UUID) -> Route? {
+    index(of: id).map { entries[$0].route }
   }
 
   func retry(_ id: UUID) {
@@ -89,6 +110,12 @@ final class BotSendQueue {
     startWorker()
   }
 
+  func retryFailures() {
+    for entry in entries where entry.stage != .preparing && entry.stage != .handedOff {
+      retry(entry.message.id)
+    }
+  }
+
   func delete(_ id: UUID) {
     guard holdsFailure(id), let index = index(of: id) else { return }
 
@@ -96,13 +123,18 @@ final class BotSendQueue {
     attachments.releaseSent(entry.attachmentIDs)
   }
 
-  var unsentMessages: [UnsentBotMessage] {
-    entries.map { entry in
-      UnsentBotMessage(
+  var unsent: [Unsent] {
+    entries.map { Unsent(message: $0.message, route: $0.route, delivery: $0.delivery) }
+  }
+
+  var unsentBotMessages: [UnsentBotMessage] {
+    entries.compactMap { entry in
+      guard case let .bot(afterSequence) = entry.route else { return nil }
+      return UnsentBotMessage(
         message: TranscriptBotMessage(
           id: entry.message.id.uuidString.lowercased(), sender: .user, text: entry.message.text,
           attachments: entry.message.attachments, delivery: entry.delivery),
-        afterSequence: entry.afterSequence)
+        afterSequence: afterSequence)
     }
   }
 
@@ -125,6 +157,7 @@ final class BotSendQueue {
     switch await preparedModel(for: message) {
     case let .ready(model): await send(message.id, through: model)
     case let .failed(reason): failPreparing(reason)
+    case .withdrawn: withdraw(message.id)
     }
   }
 
@@ -161,9 +194,8 @@ final class BotSendQueue {
     zip(entry.message.attachments, uploaded).forEach { onUploaded($1, $0.fileId) }
     entries[index].stage = .handedOff
     let message = UserMessage(id: id, text: entry.message.text, attachments: uploaded)
-    let anchor = entry.afterSequence ?? model.botMessages.last?.sequence
-    Task { [weak self] in
-      await model.sendBotMessage(message, afterSequence: anchor)
+    Task { [weak self, deliver] in
+      await deliver(message, entry.route, model)
       self?.finish(id)
     }
   }
@@ -173,6 +205,13 @@ final class BotSendQueue {
 
     let entry = entries.remove(at: index)
     attachments.releaseSent(entry.attachmentIDs)
+  }
+
+  private func withdraw(_ id: UUID) {
+    guard let index = index(of: id) else { return }
+
+    let entry = entries.remove(at: index)
+    attachments.returnToDraft(entry.attachmentIDs)
   }
 
   private func fail(_ id: UUID, _ reason: String) {

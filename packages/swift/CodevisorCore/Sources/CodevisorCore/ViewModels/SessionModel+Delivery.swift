@@ -22,10 +22,21 @@ extension SessionModel {
 
   var transcriptOutgoingMessages: [UserMessage] {
     guard !presentsBotConversation else { return [] }
-    return outgoingMessages.filter { outgoing in
-      let id = outgoing.message.id
-      return outgoing.delivery != .queue || slowMessageIDs.contains(id) || failedMessageReasons[id] != nil
-    }.map(\.message)
+    return outgoingMessages.filter { $0.delivery != .queue }.map(\.message)
+  }
+
+  var unsentQueuedMessages: [UnsentQueuedMessage] {
+    guard !presentsBotConversation else { return [] }
+    let deliveries = transcriptDeliveries
+    return outgoingMessages.filter { $0.delivery == .queue }.map { outgoing in
+      UnsentQueuedMessage(
+        id: outgoing.message.id, text: outgoing.message.text, attachmentCount: outgoing.message.attachments.count,
+        delivery: deliveries[outgoing.message.id])
+    }
+  }
+
+  func holdsLocalUserMessage(_ id: UUID) -> Bool {
+    settledIndexById[id] != nil || outgoingMessages.contains { $0.message.id == id }
   }
 
   var transcriptDeliveries: [UUID: TranscriptDelivery] {
@@ -43,8 +54,13 @@ extension SessionModel {
   }
 
   public func retryUnsentMessage(id: UUID) async {
-    guard failedMessageReasons[id] != nil, outgoingMessages.contains(where: { $0.message.id == id }) else { return }
+    guard failedMessageReasons[id] != nil, let outgoing = outgoingMessages.first(where: { $0.message.id == id })
+    else { return }
     failedMessageReasons[id] = nil
+    if outgoing.delivery == nil, !presentsBotConversation, !isSending {
+      outgoingMessages.removeAll { $0.message.id == id }
+      return await send(outgoing.message)
+    }
     slowMessageIDs.insert(id)
     await deliverOutgoing(id)
   }

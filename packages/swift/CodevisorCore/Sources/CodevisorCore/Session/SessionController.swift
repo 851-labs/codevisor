@@ -51,10 +51,11 @@ final public class SessionController {
     }
   )
   @ObservationIgnored var sentAttachmentPreviews = SentAttachmentPreviews()
-  @ObservationIgnored lazy var botSends = BotSendQueue(
+  @ObservationIgnored lazy var sends = SendQueue(
     attachments: attachments,
-    readiness: { [weak self] in self?.botSendReadiness ?? .failed(Self.closedChatReason) },
-    connect: { [weak self] message in await self?.connectBot(for: message) ?? .failed(Self.closedChatReason) },
+    readiness: { [weak self] in self?.sendReadiness ?? .failed(Self.closedChatReason) },
+    connect: { [weak self] message in await self?.connectForSend(message) ?? .failed(Self.closedChatReason) },
+    deliver: { [weak self] message, route, model in await self?.deliverSend(message, route: route, to: model) },
     onUploaded: { [weak self] uploaded, sentFileID in self?.rememberUploaded(uploaded, sentAs: sentFileID) },
     onChange: { [weak self] in self?.transcriptProjectionRevision &+= 1 }
   )
@@ -103,16 +104,6 @@ final public class SessionController {
   public internal(set) var presentsBotConversation = false {
     didSet {
       if presentsBotConversation != oldValue { transcriptProjectionRevision &+= 1 }
-    }
-  }
-  public internal(set) var pendingUserMessage: UserMessage? {
-    didSet {
-      if pendingUserMessage != oldValue { transcriptProjectionRevision &+= 1 }
-    }
-  }
-  var heldSend: OutgoingSend? {
-    didSet {
-      if heldSend?.message != oldValue?.message { transcriptProjectionRevision &+= 1 }
     }
   }
   @ObservationIgnored public var scrollState: SessionScrollState? {

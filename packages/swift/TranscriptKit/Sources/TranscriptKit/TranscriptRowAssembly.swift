@@ -81,12 +81,14 @@ enum TranscriptRowAssembly {
     to rows: inout [TranscriptPresentationRow]
   ) {
     if let message = pendingMessage {
-      appendOptimisticMessage(message, to: &rows)
+      appendOptimisticMessage(message, input: input, to: &rows)
     }
     if hasSetup {
       appendSetupPhases(input.setupPhases, to: &rows)
     }
-    if pendingMessage != nil, TranscriptRowProjectionCache.showsOptimisticAgentActivity(input) {
+    if let message = pendingMessage, input.deliveries[message.id]?.isFailed != true,
+      TranscriptRowProjectionCache.showsOptimisticAgentActivity(input)
+    {
       rows.append(
         .init(
           id: .startingAgent,
@@ -179,7 +181,7 @@ enum TranscriptRowAssembly {
         ))
     }
     if !pendingIsOpeningRow, let message = pendingMessage {
-      appendOptimisticMessage(message, to: &rows)
+      appendOptimisticMessage(message, input: input, to: &rows)
     }
     for message in input.outgoingMessages {
       TranscriptAssistantRowProjection.appendSettled(
@@ -257,6 +259,7 @@ enum TranscriptRowAssembly {
 
   private static func appendOptimisticMessage(
     _ message: UserMessage,
+    input: TranscriptProjectionInput,
     to rows: inout [TranscriptPresentationRow]
   ) {
     rows.append(
@@ -268,6 +271,9 @@ enum TranscriptRowAssembly {
           for: message
         )
       ))
+    if let delivery = input.deliveries[message.id] {
+      appendDelivery(message.id, delivery, to: &rows)
+    }
   }
 
   private static func appendSetupPhases(

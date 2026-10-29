@@ -31,7 +31,7 @@ extension ChatScreen {
           )
         }
       }
-      if !presentsBotConversation, !controller.queuedPrompts.isEmpty {
+      if !presentsBotConversation, controller.hasQueuedMessages {
         PromptQueueView(
           controller: controller,
           glassNamespace: composerGlassNamespace,
@@ -72,7 +72,7 @@ extension ChatScreen {
       presentationSurface.updateComposerHeight($0)
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleComposerGlassElements)
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.hasQueuedMessages)
   }
 
   @ViewBuilder
@@ -116,7 +116,7 @@ extension ChatScreen {
       hasTodos: hasTodos,
       showsGoal: controller.supportsGoals && !controller.isGoalEditing
         && (controller.goal ?? controller.draftGoal) != nil,
-      hasQueuedPrompts: !presentsBotConversation && !controller.queuedPrompts.isEmpty
+      hasQueuedPrompts: !presentsBotConversation && controller.hasQueuedMessages
     )
   }
 }

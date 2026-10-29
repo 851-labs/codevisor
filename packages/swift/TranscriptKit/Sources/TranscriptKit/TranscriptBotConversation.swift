@@ -4,6 +4,11 @@ import Foundation
 public enum TranscriptDelivery: Equatable, Sendable {
   case sending
   case failed(reason: String?)
+
+  public var isFailed: Bool {
+    if case .failed = self { return true }
+    return false
+  }
 }
 
 public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {

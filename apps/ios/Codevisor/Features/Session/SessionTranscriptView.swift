@@ -270,7 +270,7 @@ struct SessionTranscriptView: View {
 
   var showsWatermark: Bool {
     guard !controller.presentsBotConversation else { return false }
-    guard controller.pendingUserMessage == nil, controller.setupPhases.isEmpty else { return false }
+    guard !controller.hasUnsentMessages, controller.setupPhases.isEmpty else { return false }
     guard controller.sessionErrorMessage == nil else { return false }
     guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
     switch controller.status {
@@ -372,7 +372,7 @@ struct SessionTranscriptView: View {
             if !reduceMotion {
               queueSendAnimation.stage(
                 text: text,
-                queue: controller.queuedPrompts,
+                queue: controller.queuedMessagePreviews,
                 sourceFrame: sendAnimationSourceFrame ?? .zero,
                 in: UIWindow.codevisorKeyWindow
               )
@@ -395,7 +395,7 @@ struct SessionTranscriptView: View {
       )
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: composerExpanded)
-    .onChange(of: controller.queuedPrompts) { _, queue in
+    .onChange(of: controller.queuedMessagePreviews) { _, queue in
       queueSendAnimation.queueDidChange(queue)
     }
     .onChange(of: controller.errorMessage) { _, error in
@@ -419,9 +419,7 @@ struct SessionTranscriptView: View {
 
 extension SessionTranscriptView {
   var flyingAttachmentIDs: [String] {
-    let attachments = controller.composerAttachments
-    guard controller.presentsBotConversation else { return attachments.compactMap(\.uploadedFileID) }
-    return attachments.map(\.sentFileID)
+    controller.composerAttachments.map(\.sentFileID)
   }
 
   var composerMaxHeight: CGFloat {

@@ -6,54 +6,9 @@ struct SandboxSetupError: LocalizedError {
 }
 
 extension SessionController {
-  func createRequestedSandbox(
-    showsSetupPhases: Bool, restoreComposer: () -> Void, holdForRetry: (() -> Void)?
-  ) async -> Bool {
-    guard let sandboxTarget else { return true }
-    guard let failure = await sandboxFailure(sandboxTarget, showsSetupPhases: showsSetupPhases)
-    else { return true }
-
-    if let holdForRetry, SessionSetupGroup.failedSandboxStart(in: setupPhases) {
-      holdForRetry()
-    } else {
-      restoreComposer()
-    }
-    handleSetupFailure(failure, returnsToNewChat: false)
-    return false
-  }
-
-  public var sandboxStartFailure: String? {
-    guard case let .failed(message) = status, SessionSetupGroup.failedSandboxStart(in: setupPhases) else {
-      return nil
-    }
-    return message
-  }
-
-  public func retrySandboxStart() {
-    resendHeldSend()
-  }
-
-  func resendHeldSend() {
-    guard let held = heldSend else { return }
-
-    Task { await resend(held) }
-  }
-
-  func discardHeldSend() {
-    guard let held = heldSend else { return }
-
-    attachments.releaseStagedFiles(of: held.staged)
-    heldSend = nil
-  }
-
-  private func resend(_ held: OutgoingSend) async {
-    guard isReadyToSubmit, heldSend?.message == held.message else { return }
-
-    pendingUserMessage = held.message
-    heldSend = nil
-    beginSubmission()
-    pendingSendStartedAt = Date()
-    await deliver(held, delivery: resolvedDelivery(for: .steer))
+  func createRequestedSandbox(showsSetupPhases: Bool) async -> String? {
+    guard let sandboxTarget else { return nil }
+    return await sandboxFailure(sandboxTarget, showsSetupPhases: showsSetupPhases)
   }
 
   private func sandboxFailure(_ target: SandboxTarget, showsSetupPhases: Bool) async -> String? {

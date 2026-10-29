@@ -2,61 +2,50 @@ import CodevisorClient
 import CodevisorTestSupport
 import Foundation
 import Testing
+import TranscriptKit
 
 @testable import CodevisorCore
 
 @MainActor
 @Suite("A send whose sandbox fails to start")
 struct SandboxFailedSendTests {
-  @Test("The message stays in the chat, and Retry sends it again without going through the composer")
-  func retryResendsTheHeldMessage() async throws {
+  @Test("The message stays in the chat as Not Delivered, and Try Again starts the sandbox again")
+  func retryResendsTheFailedMessage() async throws {
     let client = FailingSandboxServerClient()
     let controller = makeController(client: client)
 
     await controller.send()
     let held = try #require(controller.transcriptProjectionInput.pendingUserMessage)
-    let failure = controller.sandboxStartFailure
-    let composerAfterFailure = controller.composerText
-    controller.retrySandboxStart()
+    let failed = TranscriptDelivery.failed(reason: "Couldn't connect to the dev cloud")
+    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == failed }
+    await controller.retryUnsentMessage(id: held.id)
     await client.creates.wait(for: 2)
-    await awaitObserved { controller.sandboxStartFailure != nil }
+    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == failed }
 
     #expect(held.text == "Which machine are you running on?")
-    #expect(failure == "Couldn't connect to the dev cloud")
-    #expect(composerAfterFailure.isEmpty)
-    #expect(controller.pendingUserMessage == nil)
     #expect(controller.transcriptProjectionInput.pendingUserMessage?.id == held.id)
+    #expect(controller.pendingUserMessage == nil)
     #expect(controller.composerText.isEmpty)
+    #expect(!controller.shouldShowNewChatComposer)
   }
 
-  @Test("Sending something else instead replaces the failed message")
-  func newSendReplacesTheHeldMessage() async throws {
-    let client = FailingSandboxServerClient()
-    let controller = makeController(client: client)
-    await controller.send()
-
-    controller.composerText = "Try again on macOS"
-    await controller.send()
-
-    #expect(controller.transcriptProjectionInput.pendingUserMessage?.text == "Try again on macOS")
-    #expect(controller.composerText.isEmpty)
-  }
-
-  @Test("A sandbox that can't be reached after it starts fails its connect step and holds the message for Retry")
-  func connectFailureHoldsTheMessage() async throws {
+  @Test("A sandbox that can't be reached after it starts fails its connect step and the message")
+  func connectFailureFailsTheMessage() async throws {
     let client = FailingSandboxServerClient(state: "ready")
     let controller = makeController(client: client)
 
     await controller.send()
+    let held = try #require(controller.transcriptProjectionInput.pendingUserMessage)
+    let reason = "The Tart VM didn't report where its project is"
+    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == .failed(reason: reason) }
 
     let connect = controller.setupPhases.first { $0.id == SandboxSetupSteps.phaseId(.connect) }
-    #expect(connect?.failureMessage == "The Tart VM didn't report where its project is")
-    #expect(controller.sandboxStartFailure == "The Tart VM didn't report where its project is")
-    #expect(controller.transcriptProjectionInput.pendingUserMessage?.text == "Which machine are you running on?")
+    #expect(connect?.failureMessage == reason)
+    #expect(controller.status == .idle)
     #expect(controller.composerText.isEmpty)
   }
 
-  @Test("A worktree that fails on the started sandbox keeps the chat and its steps, and Retry tries it again")
+  @Test("A worktree that fails on the started sandbox keeps the chat and its steps, and Try Again tries it again")
   func worktreeFailureOnTheSandboxKeepsTheChat() async throws {
     let client = FailingSandboxServerClient()
     let controller = makeController(client: client)
@@ -67,17 +56,17 @@ struct SandboxFailedSendTests {
     controller.beginSetupPhase(connected)
 
     await controller.send()
+    let held = try #require(controller.transcriptProjectionInput.pendingUserMessage)
+    let failed = TranscriptDelivery.failed(reason: "fatal: could not create work tree dir")
+    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == failed }
     let worktree = controller.setupPhases.first { $0.id == SessionSetupPhase.worktreePhaseId }
-    let failure = controller.sandboxStartFailure
-    let showsNewChat = controller.shouldShowNewChatComposer
-    controller.retrySandboxStart()
+    await controller.retryUnsentMessage(id: held.id)
     await client.worktrees.wait(for: 2)
 
-    #expect(failure == "fatal: could not create work tree dir")
-    #expect(worktree?.failureMessage == failure)
-    #expect(!showsNewChat)
+    #expect(worktree?.failureMessage == "fatal: could not create work tree dir")
+    #expect(!controller.shouldShowNewChatComposer)
     #expect(controller.setupPhases.contains { $0.id == connected.id })
-    #expect(controller.transcriptProjectionInput.pendingUserMessage?.text == "Which machine are you running on?")
+    #expect(held.text == "Which machine are you running on?")
   }
 
   @Test("A chat headed for a sandbox never sets up a worktree, even when a project pick asks for one afterwards")

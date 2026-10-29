@@ -56,11 +56,24 @@ extension SessionModel {
       await drain()
     case let .failed(error):
       slowMessageIDs.remove(message.id)
-      unreachedSend = UnreachedSend(messageID: message.id, actionID: actionID)
       await drain()
       pendingOptimisticUserMessageIDs.remove(message.id)
-      failTurn(serverErrorMessage(error))
+      holdUndelivered(message, reason: humanServerErrorMessage(error, fallback: Self.undeliveredReason))
     }
+  }
+
+  private func holdUndelivered(_ message: UserMessage, reason: String) {
+    if let index = settledIndexById[message.id] {
+      settledConversation.remove(at: index)
+      rebuildSettledIndex()
+    }
+    if case let .assistant(active)? = activeItem, active.turn.entries.isEmpty {
+      activeItem = nil
+      hasActiveItem = false
+    }
+    endTurn()
+    outgoingMessages.append(OutgoingMessage(message: message, delivery: nil))
+    failedMessageReasons[message.id] = reason
   }
 
   private func failTurn(_ detail: String) {

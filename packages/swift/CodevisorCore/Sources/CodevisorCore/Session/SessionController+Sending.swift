@@ -13,57 +13,45 @@ extension SessionController {
 
   public func send(delivery: ServerPromptDelivery = .steer) async {
     if presentsBotConversation { return sendToBot() }
-    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || !composerAttachments.isEmpty, isReadyToSubmit else { return }
-    beginSubmission()
-    defer { isFirstSendConnecting = false }
-
-    let attachments: [Attachment]
-    if composerAttachments.isEmpty {
-      attachments = []
-    } else {
-      guard let collected = await self.attachments.collectAttachmentsForSend() else {
-        isSubmitting = false
-        return
-      }
-      attachments = collected
-    }
-    let outgoingMessage = UserMessage(text: text, attachments: attachments)
-    let resolvedDelivery = resolvedDelivery(for: delivery)
-    let shouldAnimateTranscriptSend = !sendLandsInQueue(delivery)
-    userSendSignal &+= 1
-
-    if shouldAnimateTranscriptSend {
-      requestUserSendAnimation(for: outgoingMessage.id)
-      pendingSendStartedAt = Date()
-      pendingUserMessage = outgoingMessage
-    }
-
-    let staged = composerAttachments
-    composerText = ""
-    self.attachments.clearAfterCollecting()
-    await deliver(OutgoingSend(message: outgoingMessage, staged: staged), delivery: resolvedDelivery)
+    sendToAgent(delivery: resolvedDelivery(for: delivery))
   }
 
-  func deliver(_ outgoing: OutgoingSend, delivery: ServerPromptDelivery) async {
-    func restoreComposer() {
-      composerText = outgoing.message.text
-      attachments.restore(outgoing.staged)
-      pendingUserMessage = nil
-      cancelUserSendAnimation(for: outgoing.message.id)
-    }
+  private func sendToAgent(delivery: ServerPromptDelivery) {
+    guard canSend else { return }
 
-    func holdForRetry() {
-      heldSend = outgoing
-      pendingUserMessage = nil
+    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let sent = attachments.detachForSend()
+    let message = UserMessage(text: text, attachments: sent.map(\.sentAttachment))
+    rememberSentPreviews(of: sent)
+    beginOptimisticSend()
+    userSendSignal &+= 1
+    if delivery != .queue {
+      requestUserSendAnimation(for: message.id)
+      pendingSendStartedAt = Date()
     }
+    sends.enqueue(message, attachmentIDs: sent.map(\.id), route: .agent(delivery))
+    composerText = ""
+    startChat(for: message.text)
+  }
 
-    guard
-      let model = await prepareSession(
-        for: outgoing.message.text, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
-    else { return }
-    await submit(outgoing.message, to: model, delivery: delivery)
-    attachments.releaseStagedFiles(of: outgoing.staged)
+  private func beginOptimisticSend() {
+    showsNewChatAfterSetupFailure = false
+    if case .failed = status { status = .idle }
+    if let notificationDelivery {
+      Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
+    }
+  }
+
+  private func startChat(for prompt: String) {
+    guard !hasSentFirst else { return }
+
+    isFirstSendConnecting = true
+    if project.isRunTargetPlaceholder, let provisional = provisionalCloneProject() { project = provisional }
+    guard !project.isRunTargetPlaceholder else {
+      isSubmitting = true
+      return
+    }
+    Task { [weak self] in self?.acceptFirstSend(prompt) }
   }
 
   var isReadyToSubmit: Bool {
@@ -76,7 +64,6 @@ extension SessionController {
   }
 
   func beginSubmission() {
-    discardHeldSend()
     showsNewChatAfterSetupFailure = false
     status = .idle
     if let notificationDelivery {
@@ -88,35 +75,43 @@ extension SessionController {
     }
   }
 
-  @discardableResult
-  func prepareSession(
-    for prompt: String, restoreComposer: () -> Void, holdForRetry: (() -> Void)? = nil
-  ) async -> SessionModel? {
+  func prepareSession(for prompt: String) async -> SessionPreparation {
     let showsSetupPhases = showsSetupPhasesForSubmission
-    guard await materializeRunTarget(restoreComposer: restoreComposer) else { return nil }
+    if let failure = await materializeRunTarget() { return .notStarted(failure) }
     acceptFirstSend(prompt)
     isSubmitting = false
 
-    guard
-      await cloneRequestedProject(
-        showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
-    else { return nil }
+    if let failure = await cloneRequestedProject(showsSetupPhases: showsSetupPhases) {
+      return .failed(failure, returnsToNewChat: false)
+    }
+    if let failure = await createRequestedSandbox(showsSetupPhases: showsSetupPhases) {
+      return .failed(failure, returnsToNewChat: false)
+    }
+    if let failure = await createRequestedWorktree(showsSetupPhases: showsSetupPhases) {
+      return .failed(failure, returnsToNewChat: showsSetupPhases && !SessionSetupGroup.startedSandbox(in: setupPhases))
+    }
+    switch await sessionModel() {
+    case let .success(model):
+      await pendingConfiguration.apply(to: model)
+      await applyPendingGoal(to: model)
+      return .ready(model)
+    case let .failure(failure):
+      return .failed(failure.message, returnsToNewChat: showsSetupPhases)
+    }
+  }
 
-    guard
-      await createRequestedSandbox(
-        showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
-    else { return nil }
-
-    guard
-      await createRequestedWorktree(
-        showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer, holdForRetry: holdForRetry)
-    else { return nil }
-
-    guard let model = await sessionModel(showsSetupPhases: showsSetupPhases, restoreComposer: restoreComposer)
-    else { return nil }
-    await pendingConfiguration.apply(to: model)
-    await applyPendingGoal(to: model)
-    return model
+  func applySetupFailure(_ preparation: SessionPreparation, restoreComposer: () -> Void) {
+    switch preparation {
+    case .ready:
+      return
+    case let .notStarted(message):
+      restoreComposer()
+      isSubmitting = false
+      status = .failed(message)
+    case let .failed(message, returnsToNewChat):
+      restoreComposer()
+      handleSetupFailure(message, returnsToNewChat: returnsToNewChat)
+    }
   }
 
   private var showsSetupPhasesForSubmission: Bool {
@@ -124,18 +119,13 @@ extension SessionController {
       && resumeAgentSessionId?.isEmpty != false
   }
 
-  private func materializeRunTarget(restoreComposer: () -> Void) async -> Bool {
-    guard project.isRunTargetPlaceholder else { return true }
+  private func materializeRunTarget() async -> String? {
+    guard project.isRunTargetPlaceholder else { return nil }
     if let provisional = provisionalCloneProject() {
       project = provisional
-      return true
+      return nil
     }
-    guard let failure = await materializeScratchProject() else { return true }
-
-    restoreComposer()
-    isSubmitting = false
-    status = .failed(failure)
-    return false
+    return await materializeScratchProject()
   }
 
   private func acceptFirstSend(_ prompt: String) {
@@ -150,30 +140,19 @@ extension SessionController {
     onFirstSend = nil
   }
 
-  private func createRequestedWorktree(
-    showsSetupPhases: Bool, restoreComposer: () -> Void, holdForRetry: (() -> Void)?
-  ) async -> Bool {
-    guard wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch else { return true }
-    guard let failure = await createWorktree(showsSetupPhase: showsSetupPhases) else { return true }
+  private func createRequestedWorktree(showsSetupPhases: Bool) async -> String? {
+    guard wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch else { return nil }
+    guard let failure = await createWorktree(showsSetupPhase: showsSetupPhases) else { return nil }
 
-    guard SessionSetupGroup.startedSandbox(in: setupPhases) else {
-      restoreComposer()
-      handleSetupFailure(failure, returnsToNewChat: showsSetupPhases)
-      return false
-    }
     mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) { $0.fail(message: failure) }
-    if let holdForRetry { holdForRetry() } else { restoreComposer() }
-    handleSetupFailure(failure, returnsToNewChat: false)
-    return false
+    return failure
   }
 
-  private func sessionModel(showsSetupPhases: Bool, restoreComposer: () -> Void) async -> SessionModel? {
-    if let model { return model }
+  private func sessionModel() async -> Result<SessionModel, SessionSetupFailure> {
+    if let model { return .success(model) }
     guard let harness = selectedHarness else {
-      let message = "No agent is installed. Install Claude Code or Codex and try again."
-      restoreComposer()
-      handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
-      return nil
+      return .failure(
+        SessionSetupFailure(message: "No agent is installed. Install Claude Code or Codex and try again."))
     }
 
     status = .connecting("Starting \(harness.name)…")
@@ -181,22 +160,9 @@ extension SessionController {
       let model = try await connect(harnessId: harness.id)
       self.model = model
       status = .idle
-      return model
+      return .success(model)
     } catch {
-      let message = serverErrorMessage(error)
-      restoreComposer()
-      handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
-      return nil
-    }
-  }
-
-  private func submit(_ message: UserMessage, to model: SessionModel, delivery: ServerPromptDelivery) async {
-    let startedAt = pendingSendStartedAt
-    Task { [weak self] in
-      await model.send(message, startedAt: startedAt, delivery: delivery)
-      if self?.pendingUserMessage?.id == message.id {
-        self?.pendingUserMessage = nil
-      }
+      return .failure(SessionSetupFailure(message: serverErrorMessage(error)))
     }
   }
 
@@ -343,65 +309,5 @@ extension SessionController {
     } else {
       pendingConfiguration.setMode(modeId)
     }
-  }
-}
-
-extension SessionController {
-  static let closedChatReason = "This chat was closed."
-
-  private func sendToBot() {
-    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || !composerAttachments.isEmpty else { return }
-
-    let sent = attachments.detachForSend()
-    let message = UserMessage(text: text, attachments: sent.map(\.sentAttachment))
-    rememberSentPreviews(of: sent)
-    userSendSignal &+= 1
-    requestUserSendAnimation(for: message.id)
-    botSends.enqueue(message, attachmentIDs: sent.map(\.id), afterSequence: model?.botMessages.last?.sequence)
-    composerText = ""
-  }
-
-  public var hasUnsentBotMessages: Bool {
-    !botSends.unsentMessages.isEmpty
-  }
-
-  var botSendReadiness: BotSendQueue.Readiness {
-    if case let .failed(message) = configurationValidationState { return .failed(message) }
-    let isSettled = isServerReady && !isConnecting && !isPausedForUpdate && configurationValidationState == .ready
-    return isSettled ? .ready : .waiting(botUnreachableReason)
-  }
-
-  func connectBot(for message: UserMessage) async -> BotSendQueue.Preparation {
-    guard let model = await prepareSession(for: message.text, restoreComposer: {}) else {
-      return .failed(botConnectionFailure)
-    }
-    guard !requiresModelSelection else { return .failed("Pick a model for this bot in its settings, then try again.") }
-
-    return .ready(model)
-  }
-
-  func rememberUploaded(_ uploaded: Attachment, sentAs sentFileID: String) {
-    guard uploaded.fileId != sentFileID else { return }
-
-    SentAttachmentAliases.remember(uploaded: uploaded.fileId, sentAs: sentFileID)
-    guard let preview = sentAttachmentPreviews.preview(for: sentFileID) else { return }
-    sentAttachmentPreviews.remember(preview, for: uploaded.fileId)
-  }
-
-  private func rememberSentPreviews(of sent: [ComposerAttachment]) {
-    for attachment in sent where attachment.isImage {
-      guard let preview = attachment.sentPreviewData else { continue }
-      sentAttachmentPreviews.remember(preview, for: attachment.sentFileID)
-    }
-  }
-
-  private var botUnreachableReason: String {
-    serverWaitMessage ?? "The bot isn’t reachable right now. Try again in a moment."
-  }
-
-  private var botConnectionFailure: String {
-    if case let .failed(message) = status { return message }
-    return "Couldn’t start the bot. Try again in a moment."
   }
 }

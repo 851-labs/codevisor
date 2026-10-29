@@ -126,7 +126,6 @@ struct ModelSelectionTests {
     #expect(
       controller.modelUnavailableMessage == "GPT-5.5 is no longer available. Select another model.")
     #expect(controller.requiresModelSelection)
-    #expect(!controller.canSend)
 
     await controller.chooseModel("gpt-5.6", name: "GPT-5.6", harnessId: "codex")
 

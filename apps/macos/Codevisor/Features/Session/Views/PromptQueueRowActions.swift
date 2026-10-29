@@ -27,7 +27,7 @@ struct PromptQueueRowActions: View {
   }
 }
 
-private struct PromptQueueIconButton: View {
+struct PromptQueueIconButton: View {
   let systemImage: String
   let help: String
   let isRowHovered: Bool

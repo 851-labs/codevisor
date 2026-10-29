@@ -27,6 +27,14 @@ struct IOSPromptQueueSheet: View {
           )
         }
         .onMove(perform: moveQueue)
+        ForEach(controller.unsentQueuedMessages) { message in
+          IOSPromptQueueUnsentRow(
+            message: message,
+            retry: { Task { await controller.retryUnsentMessage(id: message.id) } },
+            delete: { controller.deleteUnsentMessage(id: message.id) }
+          )
+          .moveDisabled(true)
+        }
       }
       .contentMargins(.top, 8, for: .scrollContent)
       .navigationTitle("Queued")
@@ -49,6 +57,9 @@ struct IOSPromptQueueSheet: View {
     }
     .onChange(of: controller.queuedPrompts) { _, queue in
       reconcile(with: queue)
+    }
+    .onChange(of: controller.hasQueuedMessages) { _, hasQueuedMessages in
+      if !hasQueuedMessages { dismiss() }
     }
   }
 
@@ -121,6 +132,6 @@ struct IOSPromptQueueSheet: View {
     displayedQueue = queue
     let currentIDs = Set(queue.map(\.id))
     busyIDs.formIntersection(currentIDs)
-    if queue.isEmpty { dismiss() }
+    if !controller.hasQueuedMessages { dismiss() }
   }
 }

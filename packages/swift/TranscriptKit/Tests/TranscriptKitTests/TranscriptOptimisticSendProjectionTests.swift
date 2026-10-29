@@ -45,6 +45,23 @@ struct TranscriptOptimisticSendProjectionTests {
     #expect(!withoutPending.contains { $0.id == .startingAgent })
   }
 
+  @Test func anUndeliveredOpeningMessageShowsWhyAboveItsSetupAndStopsTheAgentPlaceholder() throws {
+    let user = UserMessage(text: "hi")
+    var worktree = SessionSetupPhase.worktree()
+    worktree.fail(message: "fatal: could not create work tree dir")
+    let reason = "fatal: could not create work tree dir"
+
+    let rows = try TranscriptRowProjectionCache.project(
+      makeInput(pending: user, setup: [worktree], deliveries: [user.id: .failed(reason: reason)]),
+      options: .init(includesConnectingRow: false))
+    let sending = try TranscriptRowProjectionCache.project(
+      makeInput(pending: user, deliveries: [user.id: .sending]), options: .init(includesConnectingRow: false))
+
+    #expect(rows.map(\.id) == [.message(user.id), .delivery(user.id), .setup])
+    #expect(rows[1].content == .delivery(user.id, .failed(reason: reason)))
+    #expect(sending.map(\.id) == [.message(user.id), .delivery(user.id), .startingAgent])
+  }
+
   @Test func liveActiveTurnReplacesTheOptimisticHarnessPlaceholderInPlace() throws {
     let user = UserMessage(text: "hi")
     var worktree = SessionSetupPhase.worktree()
@@ -62,7 +79,8 @@ struct TranscriptOptimisticSendProjectionTests {
     pending: UserMessage? = nil,
     active: ConversationItem? = nil,
     setup: [SessionSetupPhase] = [],
-    status: TranscriptProjectionInput.ConnectionStatus = .idle
+    status: TranscriptProjectionInput.ConnectionStatus = .idle,
+    deliveries: [UUID: TranscriptDelivery] = [:]
   ) -> TranscriptProjectionInput {
     TranscriptProjectionInput(
       settledConversation: settled,
@@ -74,7 +92,8 @@ struct TranscriptOptimisticSendProjectionTests {
       isLoadingInitialHistory: false,
       serverWaitMessage: nil,
       sessionErrorMessage: nil,
-      status: status
+      status: status,
+      deliveries: deliveries
     )
   }
 }

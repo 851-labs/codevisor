@@ -14,19 +14,19 @@ extension SessionModelTests {
     fixture.readiness.state = .waiting("Connecting…")
     let message = UserMessage(text: "are you there?")
 
-    fixture.queue.enqueue(message, attachmentIDs: [], afterSequence: 1)
+    fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
 
     #expect(fixture.shownDeliveries == [nil])
-    await fixture.clock.waitForSleep(BotSendQueue.progressDelay)
-    fixture.clock.advance(by: BotSendQueue.progressDelay)
+    await fixture.clock.waitForSleep(SendQueue.progressDelay)
+    fixture.clock.advance(by: SendQueue.progressDelay)
     await settleUntil { fixture.shownDeliveries == [.sending] }
-    await fixture.clock.waitForSleep(BotSendQueue.readinessTimeout)
+    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
     #expect(fixture.client.promptedTexts.isEmpty)
 
     fixture.readiness.state = .ready
     await fixture.client.promptRequests.wait()
     #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
-    await settleUntil { fixture.queue.unsentMessages.isEmpty }
+    await settleUntil { fixture.queue.unsentBotMessages.isEmpty }
     fixture.model.shutdown()
   }
 
@@ -35,10 +35,10 @@ extension SessionModelTests {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
     fixture.readiness.state = .waiting("Dylan’s Mac is offline.")
 
-    fixture.queue.enqueue(UserMessage(text: "first"), attachmentIDs: [], afterSequence: 1)
-    fixture.queue.enqueue(UserMessage(text: "second"), attachmentIDs: [], afterSequence: 1)
-    await fixture.clock.waitForSleep(BotSendQueue.readinessTimeout)
-    fixture.clock.advance(by: BotSendQueue.readinessTimeout)
+    fixture.queue.enqueue(UserMessage(text: "first"), attachmentIDs: [], route: .bot(afterSequence: 1))
+    fixture.queue.enqueue(UserMessage(text: "second"), attachmentIDs: [], route: .bot(afterSequence: 1))
+    await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
+    fixture.clock.advance(by: SendQueue.readinessTimeout)
 
     let failed = TranscriptDelivery.failed(reason: "Dylan’s Mac is offline.")
     await settleUntil { fixture.shownDeliveries == [failed, failed] }
@@ -52,7 +52,7 @@ extension SessionModelTests {
     fixture.connection = .failed("Pick a model for this bot in its settings, then try again.")
     let message = UserMessage(text: "hello")
 
-    fixture.queue.enqueue(message, attachmentIDs: [], afterSequence: 1)
+    fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
 
     await settleUntil {
       fixture.shownDeliveries == [.failed(reason: "Pick a model for this bot in its settings, then try again.")]
@@ -70,9 +70,9 @@ extension SessionModelTests {
     let photo = try fixture.uploadingPhoto()
     let message = UserMessage(text: "look", attachments: [photo.sentAttachment])
 
-    fixture.queue.enqueue(message, attachmentIDs: [photo.id], afterSequence: 1)
+    fixture.queue.enqueue(message, attachmentIDs: [photo.id], route: .bot(afterSequence: 1))
 
-    #expect(fixture.queue.unsentMessages.first?.message.attachments.map(\.fileId) == [photo.pendingFileID])
+    #expect(fixture.queue.unsentBotMessages.first?.message.attachments.map(\.fileId) == [photo.pendingFileID])
     let ref = ServerAttachmentRef(
       fileId: "file-1", name: photo.name, mimeType: photo.mimeType, sizeBytes: 3, kind: .image)
     fixture.attachments.setAttachmentState(photo.id, .uploaded(ref))
@@ -89,7 +89,8 @@ extension SessionModelTests {
     let photo = try fixture.uploadingPhoto()
 
     fixture.queue.enqueue(
-      UserMessage(text: "look", attachments: [photo.sentAttachment]), attachmentIDs: [photo.id], afterSequence: 1)
+      UserMessage(text: "look", attachments: [photo.sentAttachment]), attachmentIDs: [photo.id],
+      route: .bot(afterSequence: 1))
     fixture.attachments.setAttachmentState(photo.id, .failed("The disk is full."))
 
     await settleUntil {
@@ -103,7 +104,7 @@ extension SessionModelTests {
 @MainActor
 @Observable
 private final class BotReadinessState {
-  var state = BotSendQueue.Readiness.ready
+  var state = SendQueue.Readiness.ready
 }
 
 @MainActor
@@ -113,7 +114,7 @@ private final class BotSendFixture {
   let readiness = BotReadinessState()
   let client: FakeSessionServerClient
   let model: SessionModel
-  var connection: BotSendQueue.Preparation
+  var connection: SendQueue.Preparation
   var uploads: [(uploaded: TranscriptKit.Attachment, sentFileID: String)] = []
 
   lazy var attachments = ComposerAttachments(
@@ -125,11 +126,12 @@ private final class BotSendFixture {
     rememberPreview: { _, _ in }
   )
 
-  lazy var queue = BotSendQueue(
+  lazy var queue = SendQueue(
     attachments: attachments,
     clock: clock,
     readiness: { [unowned self] in readiness.state },
     connect: { [unowned self] _ in connection },
+    deliver: { message, _, model in await model.sendBotMessage(message, afterSequence: 1) },
     onUploaded: { [unowned self] uploaded, sentFileID in uploads.append((uploaded, sentFileID)) },
     onChange: {}
   )
@@ -148,7 +150,7 @@ private final class BotSendFixture {
   }
 
   var shownDeliveries: [TranscriptDelivery?] {
-    queue.unsentMessages.map(\.message.delivery)
+    queue.unsentBotMessages.map(\.message.delivery)
   }
 
   func uploadingPhoto() throws -> ComposerAttachment {

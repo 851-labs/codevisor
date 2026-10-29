@@ -33,23 +33,25 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("A queued message only shows in the transcript once it fails, and Delete removes it")
-  func failedQueueSendShowsOnlyWhenFailed() async {
+  @Test("A queued message waits in the queue row, never the transcript, and shows its failure there until Delete")
+  func failedQueueSendStaysInTheQueueRow() async {
     let (client, model) = await busyNormalModel()
     client.promptFailure = .httpStatus(409, "Conflict")
     let message = UserMessage(text: "after that, ship it")
 
     let send = Task { await model.send(message, delivery: .queue) }
     await client.promptRequests.wait(for: 2)
-    #expect(model.transcriptOutgoingMessages.isEmpty)
+    let waiting = model.unsentQueuedMessages
     await send.value
 
-    #expect(model.transcriptOutgoingMessages.map(\.text) == ["after that, ship it"])
-    #expect(model.transcriptDeliveries == [message.id: .failed(reason: SessionModel.undeliveredReason)])
+    #expect(waiting.map(\.text) == ["after that, ship it"])
+    #expect(waiting.map(\.delivery) == [nil])
+    #expect(model.transcriptOutgoingMessages.isEmpty)
+    #expect(model.unsentQueuedMessages.map(\.delivery) == [.failed(reason: SessionModel.undeliveredReason)])
 
     model.deleteUnsentMessage(id: message.id)
 
-    #expect(model.transcriptOutgoingMessages.isEmpty)
+    #expect(model.unsentQueuedMessages.isEmpty)
     #expect(model.transcriptDeliveries.isEmpty)
     model.shutdown()
   }
@@ -119,7 +121,7 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("An idle send that can't reach the server fails its turn, then resends itself once the connection is back")
+  @Test("An idle send that can't reach the server is Not Delivered, then resends itself once the connection is back")
   func idleSendResendsAfterReconnect() async {
     let (client, model) = normalModel()
     client.sendAttempts.failuresLeft = 3
@@ -128,16 +130,21 @@ extension SessionModelTests {
 
     await model.send(message)
 
-    #expect(failedTurn(model))
-    #expect(model.errorMessage == "Machine unreachable")
+    #expect(!failedTurn(model))
+    #expect(model.errorMessage == nil)
     #expect(!model.isSending)
+    #expect(model.activeItem == nil)
+    #expect(userMessages(model).isEmpty)
+    #expect(model.transcriptOutgoingMessages.map(\.text) == ["fix the build"])
+    #expect(model.transcriptDeliveries == [message.id: .failed(reason: SessionModel.undeliveredReason)])
 
     model.apply(.synchronization(.caughtUp))
 
-    await settleUntil { model.isSending }
-    await settleUntil { model.unreachedSend == nil }
+    await client.promptRequests.wait()
     #expect(client.sendAttempts.actionIds == [id, id, id, id])
-    #expect(model.errorMessage == nil)
+    #expect(model.isSending)
+    #expect(userMessages(model).map(\.text) == ["fix the build"])
+    #expect(model.transcriptDeliveries.isEmpty)
     model.shutdown()
   }
 

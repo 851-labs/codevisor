@@ -67,7 +67,7 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
-  @Test("Submission failure keeps the optimistic message and its attachments in chat")
+  @Test("A send the server refuses stays in the chat as Not Delivered with its attachments")
   func failedSubmissionRemainsInChat() async throws {
     let fixture = try Fixture()
     let staged = try attachment(in: fixture.controller.attachmentFiles)
@@ -75,19 +75,21 @@ struct SessionControllerFirstSendTests {
     fixture.client.promptFailure = .httpStatus(422, "Please retry")
 
     await fixture.controller.send()
-    await awaitObserved { fixture.controller.model?.errorMessage != nil }
+    let message = try #require(fixture.controller.transcriptProjectionInput.pendingUserMessage)
+    await awaitObserved {
+      fixture.controller.transcriptProjectionInput.deliveries[message.id]
+        == .failed(reason: SessionModel.undeliveredReason)
+    }
 
     #expect(fixture.promotions == 1)
     #expect(fixture.controller.hasAcceptedFirstSend)
     #expect(!fixture.controller.shouldShowNewChatComposer)
     #expect(fixture.controller.composerText.isEmpty)
     #expect(fixture.controller.composerAttachments.isEmpty)
-    #expect(fixture.controller.model?.errorMessage == "Please retry")
-    let message = try #require(userMessages(in: fixture.controller).first)
+    #expect(fixture.controller.model?.errorMessage == nil)
+    #expect(fixture.controller.transcriptProjectionInput.pendingUserMessage?.attachments.map(\.name) == ["note.txt"])
     #expect(message.text == "Send this message")
-    #expect(message.attachments.map(\.name) == ["note.txt"])
-    #expect(userMessages(in: fixture.controller).count == 1)
-    #expect(!FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
+    #expect(userMessages(in: fixture.controller).isEmpty)
     fixture.controller.model?.shutdown()
   }
 
@@ -111,8 +113,8 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
-  @Test("Setup failure restores the submitted draft and attachments like macOS")
-  func setupFailureRestoresDraft() async throws {
+  @Test("A setup failure keeps the new chat open with the message Not Delivered, and Try Again sets it up again")
+  func setupFailureKeepsTheChat() async throws {
     let fixture = try Fixture()
     let staged = try attachment(in: fixture.controller.attachmentFiles)
     fixture.controller.attachments.restore([staged])
@@ -121,18 +123,28 @@ struct SessionControllerFirstSendTests {
     fixture.controller.onSetupFailed = { didFailSetup = true }
 
     await fixture.controller.send()
+    let message = try #require(fixture.controller.transcriptProjectionInput.pendingUserMessage)
+    await awaitObserved { fixture.controller.transcriptProjectionInput.deliveries[message.id]?.isFailed == true }
 
     #expect(fixture.promotions == 1)
-    #expect(didFailSetup)
-    #expect(!fixture.controller.hasAcceptedFirstSend)
-    #expect(fixture.controller.shouldShowNewChatComposer)
-    #expect(fixture.controller.composerText == "Send this message")
-    #expect(fixture.controller.composerAttachments == [staged])
+    #expect(!didFailSetup)
+    #expect(fixture.controller.hasAcceptedFirstSend)
+    #expect(!fixture.controller.shouldShowNewChatComposer)
+    #expect(fixture.controller.status == .idle)
+    #expect(fixture.controller.composerText.isEmpty)
+    #expect(fixture.controller.composerAttachments.isEmpty)
+    #expect(message.attachments.map(\.name) == ["note.txt"])
     #expect(FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
     #expect(fixture.controller.model == nil)
-    #expect(fixture.controller.pendingUserMessage == nil)
-    #expect(fixture.controller.userSendAnimationRequest == nil)
     #expect(fixture.client.promptedTexts.isEmpty)
+
+    fixture.client.openSessionFailure = nil
+    await fixture.controller.retryUnsentMessage(id: message.id)
+    await fixture.client.promptRequests.wait()
+
+    #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
+    #expect(fixture.promotions == 1)
+    fixture.controller.model?.shutdown()
   }
 
   @Test("An early assistant response uses the already-promoted chat")

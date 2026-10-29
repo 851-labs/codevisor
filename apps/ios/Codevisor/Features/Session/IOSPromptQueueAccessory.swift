@@ -9,12 +9,16 @@ struct IOSPromptQueueAccessory: View {
   @Binding var isPresentingQueue: Bool
   let sendAnimation: IOSQueueSendAnimation
 
-  private var firstItem: ServerPromptQueueItem? {
-    controller.queuedPrompts.first
+  private var firstItem: QueuedMessagePreview? {
+    controller.queuedMessagePreviews.first
   }
 
   private var count: Int {
-    controller.queuedPrompts.count
+    controller.queuedMessagePreviews.count
+  }
+
+  private var hasUndelivered: Bool {
+    controller.unsentQueuedMessages.contains { $0.delivery?.isFailed == true }
   }
 
   private var countText: String {
@@ -26,9 +30,9 @@ struct IOSPromptQueueAccessory: View {
       isPresentingQueue = true
     } label: {
       HStack(spacing: 8) {
-        Image(systemName: "clock")
+        Image(systemName: hasUndelivered ? "exclamationmark.circle.fill" : "clock")
           .font(.subheadline.weight(.medium))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(hasUndelivered ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
         if let firstItem {
           Text(PromptQueuePreviewText.singleLine(firstItem.text))
             .font(.subheadline)
@@ -65,7 +69,7 @@ struct IOSPromptQueueAccessory: View {
       SpringKeyframe(1, duration: 0.3, spring: .smooth)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Queued, \(countText)")
+    .accessibilityLabel(hasUndelivered ? "Queued, \(countText), some not delivered" : "Queued, \(countText)")
     .accessibilityValue(firstItem.map { "Next: \($0.text)" } ?? "")
     .accessibilityHint("Shows queued messages")
   }

@@ -33,7 +33,7 @@ struct IOSComposerAccessoryStack: View {
   }
 
   private var showsQueue: Bool {
-    !controller.presentsBotConversation && !controller.queuedPrompts.isEmpty
+    !controller.presentsBotConversation && controller.hasQueuedMessages
   }
 
   private var hasVisibleAccessory: Bool {
@@ -123,7 +123,7 @@ struct IOSComposerAccessoryStack: View {
     .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleGoal?.status)
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
-      value: controller.queuedPrompts.map(\.id)
+      value: controller.queuedMessagePreviews.map(\.id)
     )
     .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.modelFallbackMessage)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.modelUnavailableMessage)

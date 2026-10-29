@@ -404,7 +404,7 @@ private extension ComposerCard {
   }
 
   private var isAcceptingSubmission: Bool {
-    didAcceptSubmission || controller.isSubmitting
+    didAcceptSubmission
   }
 
   private func submitOrAcceptSlash() {
@@ -446,21 +446,13 @@ private extension ComposerCard {
   }
 
   private func sendDraft(delivery: ServerPromptDelivery) {
-    guard acceptsSend, !isAppUpdateInProgress else { return }
+    guard controller.canSend, !isAppUpdateInProgress else { return }
     if controller.interceptsSend(delivery) { return }
-    didAcceptSubmission = true
     if !reduceMotion, !controller.sendLandsInQueue(delivery) {
       sendSource.stage(controller: controller)
     }
     controller.promptClientId = clientControlId?.uuidString.lowercased()
-    Task {
-      await controller.send(delivery: delivery)
-      didAcceptSubmission = false
-    }
-  }
-
-  private var acceptsSend: Bool {
-    controller.presentsBotConversation ? hasComposerDraft : controller.canSend
+    Task { await controller.send(delivery: delivery) }
   }
 
   private var selectedSlashCommand: ComposerSlashItem? {

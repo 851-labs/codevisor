@@ -74,7 +74,7 @@ extension SessionController {
       isGoalComposerArmed = true
     }
 
-    await prepareSession(for: objective, restoreComposer: restoreComposer)
+    applySetupFailure(await prepareSession(for: objective), restoreComposer: restoreComposer)
   }
 
   @discardableResult

@@ -57,14 +57,30 @@ struct PromptQueueView: View {
           delegate: PromptQueueDropDelegate(targetID: item.id, draggingID: $draggingID, move: move)
         )
       }
+      ForEach(controller.unsentQueuedMessages) { message in
+        PromptQueueUnsentRow(
+          controller: controller,
+          message: message,
+          selectionShape: selectionShape(for: message.id.uuidString.lowercased())
+        )
+      }
     }
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.queuedPrompts.map(\.id))
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: rowIDs)
+  }
+
+  private var rowIDs: [String] {
+    controller.queuedPrompts.map(\.id) + controller.unsentQueuedMessages.map { $0.id.uuidString.lowercased() }
   }
 
   private func selectionShape(for item: ServerPromptQueueItem) -> UnevenRoundedRectangle {
+    selectionShape(for: item.id)
+  }
+
+  private func selectionShape(for id: String) -> UnevenRoundedRectangle {
     let nested = cardStyle.cornerRadius - Self.rowInset
-    let top = item.id == controller.queuedPrompts.first?.id ? nested : RowSelectionStyle.cornerRadius
-    let bottom = item.id == controller.queuedPrompts.last?.id ? nested : RowSelectionStyle.cornerRadius
+    let ids = rowIDs
+    let top = id == ids.first ? nested : RowSelectionStyle.cornerRadius
+    let bottom = id == ids.last ? nested : RowSelectionStyle.cornerRadius
     return UnevenRoundedRectangle(
       topLeadingRadius: top,
       bottomLeadingRadius: bottom,

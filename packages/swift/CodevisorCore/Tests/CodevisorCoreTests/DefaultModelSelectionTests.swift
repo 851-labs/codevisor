@@ -47,7 +47,6 @@ struct DefaultModelSelectionTests {
     #expect(controller.modelOption?.currentValue == "")
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
     #expect(controller.requiresModelSelection)
-    #expect(!controller.canSend)
     #expect(controller.pendingConfiguration.values(for: harnessId) == nil)
   }
 
