@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorUI
 import SwiftUI
 
 public struct SimulatorPaneToolbar: ToolbarContent {
@@ -128,6 +129,7 @@ struct SimulatorActionsMenu: View {
       Button("Cancel", role: .cancel) {}
       Button("Rename") { model.rename(to: name) }
     }
+    .focusesAlertTextField(when: renaming)
     .confirmationDialog("Delete \(device.name)?", isPresented: $confirmingDelete, titleVisibility: .visible) {
       Button("Delete Simulator", role: .destructive) { model.perform(.delete) }
     } message: {

@@ -69,6 +69,7 @@ public struct FilePaneView: View {
       Button("Go") { model.editor.goToLine(Int(model.lineText) ?? 1) }
       Button("Cancel", role: .cancel) {}
     }
+    .focusesAlertTextField(when: model.showsGoToLine)
     #if !canImport(AppKit)
       .sheet(isPresented: $model.showsExplorer) {
         FileBrowserSheet(model: model)

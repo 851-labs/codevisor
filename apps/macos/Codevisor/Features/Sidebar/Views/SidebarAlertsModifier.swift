@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct SidebarAlertsModifier: ViewModifier {
@@ -44,6 +45,7 @@ struct SidebarAlertsModifier: ViewModifier {
         }
         Button("Cancel", role: .cancel) {}
       }
+      .focusesAlertTextField(when: renamingWorkspace != nil)
   }
 
   private func importPromptMessage(for pending: PendingSessionImport) -> String {
