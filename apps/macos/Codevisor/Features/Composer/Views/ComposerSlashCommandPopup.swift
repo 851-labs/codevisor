@@ -36,7 +36,6 @@ struct ComposerSlashCommandPopup: View {
       } action: {
         onContentHeightChange($0)
       }
-      .background(Color.windowBackgroundColor, in: cardStyle.shape)
       .composerGlassSurface(shape: cardStyle.shape)
       .accessibilityElement(children: .combine)
       .accessibilityLabel("Connecting to harness")
@@ -69,7 +68,6 @@ struct ComposerSlashCommandPopup: View {
       }
     }
     .clipShape(cardStyle.shape)
-    .background(Color.windowBackgroundColor, in: cardStyle.shape)
     .composerGlassSurface(shape: cardStyle.shape)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Commands and skills")
