@@ -1,14 +1,15 @@
 import ScreenSharingBench
 
 enum Tier2Result {
-  static let resolution = "R1"
+  static let defaultResolution = "R1"
   static let network = "N0"
 
   static func make(_ measurement: Tier2Measurement, system: BenchSystem, analysis: BenchSharingAnalysis) -> BenchResult
   {
     let meta = measurement.files.meta
     var result = BenchResult(
-      system: system, scene: meta.scene, resolution: resolution, network: network, repetition: meta.repetition,
+      system: system, scene: meta.scene, resolution: meta.resolution ?? defaultResolution, network: network,
+      repetition: meta.repetition,
       seed: meta.seed)
     result.imageAgeMs = analysis.imageAgeMs
     result.updatesPerS = analysis.updatesPerS

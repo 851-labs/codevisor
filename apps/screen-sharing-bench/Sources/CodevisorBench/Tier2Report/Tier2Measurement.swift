@@ -56,6 +56,20 @@ struct Tier2Measurement {
     return BenchUsageSummary(mapped, in: window, processes: Tier2Processes.host(files.meta.system))
   }
 
+  static let hpVirtualDisplay = "1920x1080@60 2x"
+
+  var encodedPixels: String? {
+    switch files.meta.system {
+    case .codevisor: files.share?["capture_size"]?.string
+    case .appleHP: files.hostDisplayDuringRun.map { "\($0) shown; HP's encoded size isn't visible" }
+    case .floor: nil
+    }
+  }
+
+  private static func hpDisplayMatches(_ files: Tier2RunFiles) -> Bool {
+    files.hostDisplayDuringRun?.hasPrefix(hpVirtualDisplay) == true
+  }
+
   private static func invalidReason(
     _ files: Tier2RunFiles, clock: BenchClockTrack?, analysis: BenchSharingAnalysis?
   ) -> String? {
@@ -69,6 +83,7 @@ struct Tier2Measurement {
     guard files.meta.system != .appleHP || files.ranHighPerformance else {
       return "the bench did not choose High Performance"
     }
+    guard files.meta.system != .appleHP || hpDisplayMatches(files) else { return "HP's display wasn't 1920x1080 @2x" }
     guard analysis.viewerUnreadableFraction <= unreadableLimit || files.meta.scene == unreadableExempt else {
       return "viewer unreadable fraction above 1%"
     }

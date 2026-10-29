@@ -11,6 +11,7 @@ struct Tier2RunFiles {
   let viewerUsage: [BenchUsageSecond]
   let preflights: [String: Tier2Preflight]
   let system: [String: JSONValue]?
+  let share: [String: JSONValue]?
 
   init(directory: URL) throws {
     self.directory = directory
@@ -21,6 +22,9 @@ struct Tier2RunFiles {
     hostUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "host-usage.jsonl"), Self.plain)
     viewerUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "viewer-usage.jsonl"), Self.plain)
     preflights = try Self.preflights(directory)
+    share = Self.optional(directory, "share.json").flatMap {
+      try? Self.plain.decode([String: JSONValue].self, from: $0)
+    }
     system = Self.optional(directory, "system.json").flatMap {
       try? Self.plain.decode([String: JSONValue].self, from: $0)
     }
@@ -38,6 +42,10 @@ struct Tier2RunFiles {
 
   var ranHighPerformance: Bool {
     system?["chose_high_performance"]?.bool == true
+  }
+
+  var hostDisplayDuringRun: String? {
+    preflights["host-during-preflight.json"]?.mainDisplay
   }
 
   var highestLoad: Double? {

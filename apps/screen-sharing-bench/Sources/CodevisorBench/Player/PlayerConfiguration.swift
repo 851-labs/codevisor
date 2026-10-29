@@ -1,3 +1,4 @@
+import CoreGraphics
 import ScreenSharingBenchScenes
 
 struct PlayerConfiguration {
@@ -6,6 +7,7 @@ struct PlayerConfiguration {
   let duration: Int
   let resolution: SceneResolutionChoice
   let display: PlayerDisplayChoice
+  let displayID: CGDirectDisplayID?
   let inputRegion: BenchInputRegion
   let hashLog: String?
   let selfInputHz: Int

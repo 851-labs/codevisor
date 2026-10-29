@@ -4,7 +4,7 @@ import ScreenSharingWebRTC
 
 @MainActor
 final class ShareHost {
-  private let displayID = CGMainDisplayID()
+  let displayID: CGDirectDisplayID
   private let metrics = ScreenSharingMetrics()
   private let capture = ScreenSharingCapture()
   private let sender: ScreenSharingSender
@@ -16,9 +16,12 @@ final class ShareHost {
   private var connectedNs: Int64?
   private var codec: ScreenSharingVideoCodec?
 
-  init() async throws {
+  init(displayID: CGDirectDisplayID) async throws {
+    self.displayID = displayID
+    let mode = CGDisplayCopyDisplayMode(displayID)
     configuration = try ScreenSharingProductProfile.captureConfiguration(
-      width: CGDisplayPixelsWide(displayID), height: CGDisplayPixelsHigh(displayID))
+      width: mode?.pixelWidth ?? CGDisplayPixelsWide(displayID),
+      height: mode?.pixelHeight ?? CGDisplayPixelsHigh(displayID))
     sender = try await ScreenSharingSender(configuration: configuration, metrics: metrics)
     sender.onConnectionChanged = { [weak self] state in self?.connectionChanged(state) }
   }
@@ -39,7 +42,8 @@ final class ShareHost {
     sender.close()
     _ = await sender.awaitClosed()
     return ShareResult(
-      viewer: viewer, codec: codec, configuration: configuration, connectedNs: connectedNs,
+      viewer: viewer, display: ShareDisplay(displayID), codec: codec, configuration: configuration,
+      connectedNs: connectedNs,
       captureError: captureError, metrics: metrics.snapshot(), statistics: statistics)
   }
 

@@ -32,6 +32,9 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
    options from `BenchOptions`, `presentsWindows`, and `run()`.
 2. Add the type to `BenchCommands.all`.
 
+Every command runs inside a `.userInitiated`, `.latencyCritical` `ProcessInfo` activity, so macOS doesn't App Nap
+the windowless ones (the observers, samplers, clock probes and `share`) while they measure.
+
 `init(options:)` reads every option it accepts (`string`, `integer`, `flag`, `choice`); the launcher then
 rejects any option nobody read. Throw `BenchUsageError` for a bad value. The process exits 0 on success,
 1 on a thrown error and 64 on a usage error. A command says whether it
@@ -149,7 +152,7 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
 - **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
   the first `--warm-up` seconds (5) are left out. `--repetitions <n>` runs the whole list n times, interleaved (every
   cell once, then every cell again), and each result carries its `repetition`; consumers take the median per cell
-  (`BenchCellSummary`). The report's `run.method` records duration, warm-up, repetitions and the plan (`--plan`). `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
+  (`BenchCellSummary`). The report's `run.method` records duration, warm-up and repetitions. `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
   with `--onscreen`. `stages_ms` comes from the 851-3583 timeline: capture, capture queue, encode, network (the
   encoder output to decoder input span: send, the relay, receive and the jitter buffer, exact on one clock),
   decode, render queue and present. The relay also notes when it delivers the last RTP packet of each video frame
@@ -179,9 +182,18 @@ so no CI job overlaps a run. Deploy the app to both minis first (`scripts/deploy
 ssh are for development only.
 
 The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
-walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then Apple HP and Codevisor
-alternately (`repetitions`, default 3, `duration` seconds each), and with `c4` S5 once per system with the
-host observer off. The host job serves `rendezvous` and the clock probes; the viewer job connects for up to
+walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition
+(`repetitions`, default 3, `duration` seconds each) Apple HP, Codevisor on a virtual display and Codevisor on
+the physical display, and with `c4` S5 once per primary system with the host observer off.
+
+Apple HP has no mode that shares the host's physical display: its Display Type offers only "1 Virtual Display"
+and "2 Virtual Displays", and with one virtual display the host's main display becomes "Screen Sharing Virtual
+Display" at 1920×1080 pt @2x (3840×2160 px). So the primary rows compare like for like at `R1x2`: Apple HP on
+its virtual display, and Codevisor on a 1920×1080 @2x `CGVirtualDisplay` that `share --virtual-display R1x2`
+creates (the player and host observer draw on and watch it by display ID; the product then scales it to its
+2560×1440 capture box, as it would for any such display). Codevisor on the physical 1920×1080 @1x display is an
+extra `R1` row. On croissant both `R1x2` streams are shown at half size, so the viewer observer reads 8 px
+barcode blocks. The floor runs on the physical display, so "above floor" for `R1x2` rows uses the R1 floor. The host job serves `rendezvous` and the clock probes; the viewer job connects for up to
 30 minutes, and the two first agree that they run the same CodevisorBench build. Before each run, the two jobs meet at named barriers: `start` (both preflights pass), `system`
 (the host's `share` is listening), `ready` (the viewer shows Apple HP full screen, the Codevisor stream or the
 floor window), `measure` (the host's preflight during the run) and `done`. Measurement starts at `measure`:
@@ -238,11 +250,7 @@ grants apply, and `~/Applications/CodevisorBench.app` is never touched.
 - **Nightly** at 03:00 Pacific (two UTC crons; the `plan` job keeps the one that is 03:00 in Los Angeles), and
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
   (C5), then runs `scripts/tier1.sh nightly`: the `core` report (S1–S6 at N0 and N3, 3 interleaved repetitions of
-  30 s with 10 s warm-up, about 20 min), the `gate` report (exactly the PR gate's run: S2, S3 and S5 at N0 and N3,
-  about 10 min) and the `matrix` report (N1, N2 and N4–N7, 1 repetition, about 20 min). Each report records its plan
-  in `run.method.plan`, and a baseline only uses nightlies of the same plan: the same cell measured among other
-  scenes differs, for example typing's N3 p95 is about 35 ms in `core` and about 52 ms in the gate's run. Reports
-  from before plans existed match no plan, so a new plan's baseline starts empty (`-f plans=gate` seeds it).
+  30 s with 10 s warm-up, about 20 min) and the `matrix` report (N1, N2 and N4–N7, 1 repetition, about 20 min).
   A dispatch with `scenes` or `networks` set runs one `custom` report instead (`source` picks `own-window`).
 - **`benchmark-results`.** On `main`, `scripts/publish.sh` commits each report to the orphan branch
   `benchmark-results` as `runs/YYYY/MM/DD/<run id>-tier1.json`, with its chart (`.svg`), and appends a line to
@@ -255,27 +263,21 @@ grants apply, and `~/Applications/CodevisorBench.app` is never touched.
   per cell) is the committed `.svg`, linked at that commit.
 - **PR gate.** A pull request touching `packages/swift/ScreenSharing`, the CodevisorCoreMac screen sharing sources,
   this app or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
-  queued nightly or Tier 2 run; the runner takes one job at a time). The job measures the `gate` plan twice (about
-  20 min), and the `gate` subcommand compares both runs with the nightly `gate` baseline using the design §4.2
-  rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more
-  than max(15%, 3 ms), p95 up more than max(20%, 5 ms)) is judged on e2e outside the jitter buffer once the runs and
-  every baseline nightly split it out, and the jitter buffer gets its own rule (p50 up more than max(100%, 40 ms));
-  N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. At N0, WebRTC's
-  jitter estimate for scroll, video and test cards sits at the product's 80 ms playout cap, and each process lands
-  either at the cap or well below it, so whole e2e there can move by 30% between unchanged runs. The summary also
-  says how long the gate waited for tamale and which bench runs were active meanwhile.
+  queued nightly or Tier 2 run; the runner takes one job at a time). It runs S2, S3 and S5 at N0 and N3 twice with
+  the nightly method (about 20 min) and `gate` compares both runs with the nightly baseline using the design §4.2
+  rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. The summary also says how long
+  the gate waited for tamale and which bench runs were active meanwhile.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
   night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. They still use the installed app.
 
 `preflight --quiet` is C5. It waits at least `--settle` seconds (60) and up to `--settle-limit` (300) for the
-1-minute load to drop to 2.0 and Spotlight to stop indexing (a fresh build sets it off), then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
+1-minute load to drop to 2.0, then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
 `mdworker*` above 5% CPU), Time Machine or `softwareupdate` running, en0 not up at 1000baseT, other regular apps
 open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
 offscreen Tier 1). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`.
 
 ```sh
 gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
-gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate      # only the gate's baseline (about 12 min)
 gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0    # an ad hoc run
 CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>

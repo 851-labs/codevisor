@@ -6,7 +6,7 @@ struct PlayerCommand: BenchCommand {
   static let summary = "Draw a scripted scene full screen, one barcode version per content change"
   static let usage = """
     [--scene \(BenchScene.allCases.map(\.rawValue).joined(separator: "|"))] [--seed <n>] [--duration <seconds>]
-      [--resolution native|R1|R2|R3] [--display main|virtual] [--input-region large|small]
+      [--resolution native|R1|R1x2|R2|R3] [--display main|virtual] [--display-id <id>] [--input-region large|small]
       [--hash-log <path>] [--self-input-hz <n>]
     """
 
@@ -23,6 +23,7 @@ struct PlayerCommand: BenchCommand {
       duration: try options.integer("duration", default: 60, in: Self.durations),
       resolution: try options.choice("resolution", default: SceneResolutionChoice.native),
       display: try options.choice("display", default: PlayerDisplayChoice.main),
+      displayID: try DisplayOption.id(from: options, named: "display-id"),
       inputRegion: try options.choice("input-region", default: BenchInputRegion.large),
       hashLog: try options.string("hash-log"),
       selfInputHz: try options.integer("self-input-hz", default: 0, in: Self.selfInputRates))

@@ -3,6 +3,7 @@ import ScreenSharing
 struct ShareResult: Encodable {
   let role = "codevisor-host"
   let viewer: String
+  let display: ShareDisplay
   let codec: String?
   let captureSize: String
   let bitrateCeiling: Int
@@ -13,11 +14,13 @@ struct ShareResult: Encodable {
   let selectedCandidates: [String: String]
 
   init(
-    viewer: String, codec: ScreenSharingVideoCodec?, configuration: ScreenSharingVideoConfiguration,
+    viewer: String, display: ShareDisplay, codec: ScreenSharingVideoCodec?,
+    configuration: ScreenSharingVideoConfiguration,
     connectedNs: Int64?, captureError: (any Error)?, metrics: ScreenSharingMetrics.Snapshot,
     statistics: [String: String]
   ) {
     self.viewer = viewer
+    self.display = display
     self.codec = codec?.rawValue
     captureSize = "\(configuration.width)x\(configuration.height)"
     bitrateCeiling = configuration.bitrate

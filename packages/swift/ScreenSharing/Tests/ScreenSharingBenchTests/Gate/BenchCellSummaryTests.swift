@@ -36,18 +36,14 @@ struct BenchCellSummaryTests {
     #expect(summary.e2eP50Ms == 28)
   }
 
-  @Test(arguments: [("N0", nil, 12), ("N3", 0.04, nil)] as [(String, Double?, Double?)])
-  func gateSamplesJudgeFreezesOnLossAndTheJitterBufferSplitOnACleanLink(
-    network: String, gatedRatio: Double?, outsideP50Ms: Double?
-  ) {
+  @Test(arguments: [("N0", nil), ("N3", 0.04)])
+  func gateSamplesJudgeFreezesOnlyOnTheLossyNetwork(network: String, gatedRatio: Double?) {
     var result = Self.result("scroll", network, repetition: 1, e2eMs: [27, 91], network: 15)
     result.freezes = BenchFreezes(count: 3, totalMs: 280, ratio: 0.04, perMinute: 26, pauses: 0, pausesTotalMs: 0)
-    result.e2eOutsideJitterBufferMs = BenchDistribution([12, 20])
 
     let sample = BenchGateSample(BenchCellSummary.summaries([result])[0])
 
     #expect(sample.freezeRatio == gatedRatio)
-    #expect(sample.e2eOutsideJitterBufferP50Ms == outsideP50Ms)
     #expect(sample.e2eP50Ms == 27 && sample.updatesPerS == 60)
   }
 

@@ -7,6 +7,7 @@ struct Tier2RunMeta: Decodable {
 
   let index: Int
   let scene: String
+  let resolution: String?
   let system: System
   let repetition: Int
   let seed: UInt64

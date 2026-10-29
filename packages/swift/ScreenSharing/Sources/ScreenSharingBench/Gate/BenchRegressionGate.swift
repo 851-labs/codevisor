@@ -12,18 +12,8 @@ public enum BenchRegressionGate {
   ) -> [BenchGateRegression] {
     let runs = [first, second]
     let recentBaseline = Array(baseline.suffix(baselineRuns))
-    let rules = latencyRules(baseline: recentBaseline, runs: runs) + BenchGateRule.delivery
-    let metricRegressions = rules.compactMap { regression(of: $0, baseline: recentBaseline, runs: runs) }
+    let metricRegressions = BenchGateRule.all.compactMap { regression(of: $0, baseline: recentBaseline, runs: runs) }
     return metricRegressions + [errorRegression(runs)].compactMap(\.self)
-  }
-
-  public static func judgesOutsideTheJitterBuffer(baseline: [BenchGateSample], runs: [BenchGateSample]) -> Bool {
-    !baseline.isEmpty && (baseline + runs).allSatisfy(\.isSplitAtTheJitterBuffer)
-  }
-
-  private static func latencyRules(baseline: [BenchGateSample], runs: [BenchGateSample]) -> [BenchGateRule] {
-    judgesOutsideTheJitterBuffer(baseline: baseline, runs: runs)
-      ? BenchGateRule.splitAtTheJitterBuffer : BenchGateRule.e2e
   }
 
   private static func regression(

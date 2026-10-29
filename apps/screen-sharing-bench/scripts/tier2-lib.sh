@@ -34,12 +34,13 @@ tier2_plan() {
     done
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
       index=$((index + 1)); echo "$index $scene apple-hp $rep 1"
+      index=$((index + 1)); echo "$index $scene codevisor-r1x2 $rep 1"
       index=$((index + 1)); echo "$index $scene codevisor $rep 1"
     done
   done
   if ((TIER2_C4)); then
     index=$((index + 1)); echo "$index video apple-hp 1 0"
-    index=$((index + 1)); echo "$index video codevisor 1 0"
+    index=$((index + 1)); echo "$index video codevisor-r1x2 1 0"
   fi
 }
 
@@ -49,6 +50,20 @@ tier2_name() {
   name=$(printf '%02d-%s-%s-%d' "$index" "$scene" "$system" "$rep")
   ((observed)) || name="$name-unobserved"
   echo "$name"
+}
+
+tier2_resolution() {
+  case "$1" in
+    apple-hp | codevisor-r1x2) echo R1x2 ;;
+    *) echo R1 ;;
+  esac
+}
+
+tier2_viewer_block_size() {
+  case "$(tier2_resolution "$1")" in
+    R1x2) echo 8 ;;
+    *) echo 16 ;;
+  esac
 }
 
 meet() {

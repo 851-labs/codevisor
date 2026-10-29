@@ -19,20 +19,29 @@ viewer_addresses() {
 }
 
 start_share() {
-  local dir=$1
+  local dir=$1 system=$2
+  local virtual=()
+  [[ "$system" == codevisor-r1x2 ]] && virtual=(--virtual-display R1x2)
   bench share --duration "$((TIER2_DURATION + 240))" --ready-file "$work/ready" --stop-file "$work/stop" \
-    >"$dir/share.json" 2>"$dir/share.err" &
+    ${virtual[@]+"${virtual[@]}"} >"$dir/share.json" 2>"$dir/share.err" &
   share_job=$!
-  wait_for_file "$work/ready" 30 "$share_job"
+  wait_for_file "$work/ready" 30 "$share_job" || return 1
+  shared_display=$(awk '{ print $3 }' "$work/ready")
 }
+
 
 measure() {
   local scene=$1 system=$2 dir=$3 observed=$4
-  local pids=()
+  local pids=() display=() player_display=()
+  if [[ "$system" == codevisor-r1x2 && -n "$shared_display" ]]; then
+    display=(--display "$shared_display")
+    player_display=(--display-id "$shared_display")
+  fi
   if ((observed)); then
     local relay=()
     [[ "$system" == floor ]] && relay=(--relay "$TIER2_VIEWER_IP:$TIER2_FLOOR_PORT")
     bench observe --duration "$((TIER2_DURATION + 12))" --output "$dir/host.jsonl" ${relay[@]+"${relay[@]}"} \
+      ${display[@]+"${display[@]}"} \
       >"$dir/host-observe.json" 2>"$dir/host-observe.err" &
     pids+=($!)
   fi
@@ -41,6 +50,7 @@ measure() {
   pids+=($!)
   sleep 3
   bench player --scene "$scene" --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \
+    ${player_display[@]+"${player_display[@]}"} \
     >"$dir/player.json" 2>"$dir/player.err" &
   pids+=($!)
   local failed=0
@@ -51,7 +61,7 @@ measure() {
 stop_share() {
   touch "$work/stop"
   if [[ -n "${share_job:-}" ]]; then wait "$share_job" || true; fi
-  share_job=""
+  share_job="" shared_display=""
 }
 
 run_one() {
@@ -64,7 +74,7 @@ run_one() {
   share_job=""
   preflight "$dir/host-before-preflight.json" --allow-screen-sharing-from "$(viewer_addresses)" || status="host preflight failed"
   meet host "$name-start" "$status" || return 0
-  if [[ "$system" == codevisor ]] && ! start_share "$dir"; then status="share did not start"; fi
+  if [[ "$system" == codevisor* ]] && ! start_share "$dir" "$system"; then status="share did not start"; fi
   meet host "$name-system" "$status" || { stop_share; return 0; }
   meet host "$name-ready" || { stop_share; return 0; }
   preflight "$dir/host-during-preflight.json" --allow-screen-sharing-from "$(viewer_addresses)" || status="host preflight failed"
