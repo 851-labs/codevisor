@@ -74,6 +74,16 @@ final class LoopbackListener: @unchecked Sendable {
       connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
     }
   }
+
+  static func resetOnFirstByte(_ connection: NWConnection) {
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in connection.forceCancel() }
+  }
+
+  static func replyToFirstByteThenClose(_ connection: NWConnection) {
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { data, _, _, _ in
+      connection.send(content: data, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
+    }
+  }
 }
 
 struct RFBNetworkTransportTests {
@@ -139,14 +149,25 @@ struct RFBNetworkTransportTests {
     #expect(chunk.allSatisfy { $0 == 9 })
   }
 
-  @Test func aPeerClosingMidReadEndsTheStreamWithNoBytes() async throws {
-    let listener = try await LoopbackListener(handle: LoopbackListener.closeOnFirstByte)
+  @Test func aPeerClosingAfterItsLastBytesEndsTheStreamForGood() async throws {
+    let listener = try await LoopbackListener(handle: LoopbackListener.replyToFirstByteThenClose)
+    defer { listener.stop() }
+    let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
+    defer { transport.close() }
+    try await transport.write([7])
+    #expect(try await transport.read(maximum: 64) == [7])
+    #expect(try await transport.read(maximum: 64) == [])
+    #expect(try await transport.read(maximum: 64) == [])
+  }
+
+  @Test func writingAfterThePeerResetTheConnectionReportsItClosed() async throws {
+    let listener = try await LoopbackListener(handle: LoopbackListener.resetOnFirstByte)
     defer { listener.stop() }
     let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
     defer { transport.close() }
     try await transport.write([0])
     #expect(try await transport.read(maximum: 64) == [])
-    await #expect(throws: RFBError.self) { _ = try await transport.read(maximum: 64) }
+    await #expect(throws: RFBError.connectionClosed) { try await transport.write([1]) }
   }
 
   @Test func theStreamLayerTurnsThatEmptyReadIntoAClosedConnection() async throws {

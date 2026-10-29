@@ -8,6 +8,7 @@ import Testing
 @testable import CodevisorCoreMac
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct NativeScreenSharingViewerBackendTests {
   @Test func discoveryReportsDisplaysAndRejectsAnUnavailableHost() async throws {
     let available = NativeBackendHarness()
@@ -222,9 +223,12 @@ struct NativeScreenSharingViewerBackendTests {
     let harness = NativeBackendHarness(transport: SharingTransport(startNotice: "TextEdit is hidden"))
     harness.configureSession = { $0.deliversVideo = false }
     harness.connect()
-    await harness.clock.waitForSleep(.seconds(8))
+    await awaitObserved { harness.log.events.contains(.hostNotice("TextEdit is hidden")) }
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(harness.log.events, [.opened(endpoint), .hostNotice("TextEdit is hidden")])
+    #expect(await harness.transport.requests.map(\.operation) == [.capabilities, .start])
+    await harness.cancelConsumers()
+    await harness.transport.stopped.wait()
   }
 
   @Test func aFasterHeartbeatStillWaitsTheFullTimeForTheFirstFrame() async throws {

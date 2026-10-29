@@ -16,6 +16,8 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
   public var name: String { "TCP" }
   private let connection: NWConnection
   private let queue = DispatchQueue(label: "com.851labs.Codevisor.rfb")
+  private let lock = NSLock()
+  private var streamEnded = false
 
   public static func connect(host: String, port: UInt16, timeout: TimeInterval = 10) async throws -> RFBNetworkTransport
   {
@@ -56,8 +58,10 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
   }
 
   public func read(maximum: Int) async throws -> [UInt8] {
-    try await withCheckedThrowingContinuation { continuation in
+    guard !lock.withLock({ streamEnded }) else { return [] }
+    return try await withCheckedThrowingContinuation { continuation in
       connection.receive(minimumIncompleteLength: 1, maximumLength: max(1, maximum)) { data, _, complete, error in
+        if complete { self.markStreamEnded() }
         if let data, !data.isEmpty {
           continuation.resume(returning: [UInt8](data))
         } else if let error, !complete {
@@ -75,7 +79,7 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
         content: Data(bytes),
         completion: .contentProcessed { error in
           if let error {
-            continuation.resume(throwing: RFBError.transport(Self.describe(error)))
+            continuation.resume(throwing: Self.writeFailure(error))
           } else {
             continuation.resume()
           }
@@ -84,6 +88,15 @@ public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
   }
 
   public func close() { connection.cancel() }
+
+  private func markStreamEnded() { lock.withLock { streamEnded = true } }
+
+  private static let peerGoneCodes: Set<POSIXErrorCode> = [.EPIPE, .ECONNRESET, .ENOTCONN]
+
+  private static func writeFailure(_ error: NWError) -> RFBError {
+    guard case .posix(let code) = error, peerGoneCodes.contains(code) else { return .transport(describe(error)) }
+    return .connectionClosed
+  }
 
   private static func describe(_ error: NWError) -> String {
     switch error {
