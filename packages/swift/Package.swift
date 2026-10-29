@@ -112,7 +112,10 @@ let package = Package(
       name: "CodevisorBenchTests",
       dependencies: ["CodevisorBench"],
       path: "ScreenSharing/Tests/CodevisorBenchTests",
-      swiftSettings: strictSwiftSettings
+      swiftSettings: strictSwiftSettings,
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
     ),
     .testTarget(
       name: "ScreenSharingWebRTCTests",
