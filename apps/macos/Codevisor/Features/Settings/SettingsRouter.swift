@@ -58,6 +58,7 @@ enum SettingsPaneRoute: Hashable {
   case sandbox(SandboxSettingsPage)
   case pluginCatalog
   case pluginCatalogEntry(String)
+  case plugin(String)
 }
 
 struct SettingsLocation: Equatable {

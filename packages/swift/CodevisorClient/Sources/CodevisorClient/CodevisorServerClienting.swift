@@ -103,11 +103,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer
   func removeMcpServer(id: String) async throws
   func listMcpTools(id: String) async throws -> [ServerMcpTool]
-  func listNativeMcps() async throws -> ServerNativeMcpScan
-  func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult
-  func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult
-  func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan
-  func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan
   func listSkills() async throws -> ServerSkillsList
   func composerSkills(projectId: UUID?, sessionId: UUID?) async throws -> [ServerComposerSkill]
   func skillContent(directoryName: String) async throws -> String

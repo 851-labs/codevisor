@@ -13,11 +13,9 @@
     var body: some View {
       Form {
         Section(title) {
-          McpFleetSection(
-            model: model, builtIn: builtIn, onDetails: { _ in }, onEdit: { _ in }, onRemove: { _ in },
-            onConnect: { _, _ in },
-            icon: { McpEntryIcon(entry: $0) },
-            machineExtras: { _, _ in EmptyView() })
+          McpFleetSection(model: model, builtIn: builtIn) { entry in
+            McpFleetEntryLabel(entry: entry, model: model) { McpEntryIcon(entry: entry) }
+          }
         }
       }
       .formStyle(.grouped)

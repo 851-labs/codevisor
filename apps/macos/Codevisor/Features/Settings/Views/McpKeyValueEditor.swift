@@ -9,6 +9,7 @@ struct McpKeyValueEditor: View {
   let valuePrompt: String
   let emptyLabel: String
   let addLabel: String
+  var onCommit: () -> Void = {}
   @State private var selection: UUID?
 
   var body: some View {
@@ -47,7 +48,8 @@ struct McpKeyValueEditor: View {
                     placeholder: namePrompt,
                     isEditable: !entry.existing,
                     isSelected: isSelected,
-                    onFocus: { selection = entryID }
+                    onFocus: { selection = entryID },
+                    onEndEditing: onCommit
                   )
                   .padding(.horizontal, 12)
                   .accessibilityLabel(nameHeading)
@@ -57,7 +59,8 @@ struct McpKeyValueEditor: View {
                     placeholder: entry.existing ? "Keep saved value" : valuePrompt,
                     isEditable: true,
                     isSelected: isSelected,
-                    onFocus: { selection = entryID }
+                    onFocus: { selection = entryID },
+                    onEndEditing: onCommit
                   )
                   .padding(.horizontal, 12)
                   .accessibilityLabel(
@@ -108,6 +111,7 @@ struct McpKeyValueEditor: View {
           guard let selection else { return }
           entries.removeAll { $0.id == selection }
           self.selection = nil
+          onCommit()
         } label: {
           Image(systemName: "minus")
             .frame(width: 28, height: 24)

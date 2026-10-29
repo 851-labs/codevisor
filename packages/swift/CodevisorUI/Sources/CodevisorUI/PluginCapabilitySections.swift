@@ -10,7 +10,7 @@ public struct PluginCapabilitySections: View {
 
   public var body: some View {
     if !capabilities.tools.isEmpty {
-      Section("Tools") {
+      PluginToolsDisclosure(count: capabilities.tools.count) {
         ForEach(capabilities.tools) { tool in
           PluginCapabilityRow(name: tool.name, detail: tool.description, isApp: tool.app == true)
         }
@@ -29,30 +29,6 @@ public struct PluginCapabilitySections: View {
     if !capabilities.panes.isEmpty {
       Section("Panes") {
         ForEach(capabilities.panes) { PluginCapabilityRow(name: $0.title, detail: nil) }
-      }
-    }
-  }
-}
-
-private struct PluginCapabilityRow: View {
-  let name: String
-  let detail: String?
-  var isApp = false
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      HStack(spacing: 6) {
-        Text(name)
-        if isApp {
-          Text("App")
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .background(.quaternary, in: Capsule())
-        }
-      }
-      if let detail {
-        Text(detail).font(.callout).foregroundStyle(.secondary)
       }
     }
   }

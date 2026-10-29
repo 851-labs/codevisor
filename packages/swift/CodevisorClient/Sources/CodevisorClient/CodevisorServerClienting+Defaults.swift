@@ -374,21 +374,6 @@ public extension CodevisorServerClienting {
   }
   func removeMcpServer(id: String) async throws {}
   func listMcpTools(id: String) async throws -> [ServerMcpTool] { [] }
-  func listNativeMcps() async throws -> ServerNativeMcpScan {
-    ServerNativeMcpScan(candidates: [], harnesses: [])
-  }
-  func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
 
   func promptSession(id: UUID, text: String, attachments: [ServerAttachmentRef]) async throws -> ServerPromptAccepted {
     try await promptSession(id: id, text: text)

@@ -5,17 +5,20 @@ public struct FleetMachineRow<Trailing: View>: View {
   private let name: String
   private let status: FleetRowStatus
   private let details: FleetBlockedMachine?
+  private let leadingInset: CGFloat
   private let trailing: Trailing
 
   public init(
     name: String,
     status: FleetRowStatus,
     details: FleetBlockedMachine? = nil,
+    leadingInset: CGFloat = FleetRowMetrics.iconColumnWidth,
     @ViewBuilder trailing: () -> Trailing
   ) {
     self.name = name
     self.status = status
     self.details = details
+    self.leadingInset = leadingInset
     self.trailing = trailing()
   }
 
@@ -31,7 +34,7 @@ public struct FleetMachineRow<Trailing: View>: View {
     }
     .frame(minHeight: FleetRowMetrics.minContentHeight)
     .padding(.vertical, 4)
-    .padding(.leading, FleetRowMetrics.iconColumnWidth)
+    .padding(.leading, leadingInset)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("\(name), \(status.label)")
   }

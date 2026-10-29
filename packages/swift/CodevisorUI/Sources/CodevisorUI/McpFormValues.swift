@@ -13,8 +13,6 @@ public struct McpFormValues {
   public var oauthClientSecret: String?
   public var headers: [String: String]
   public var environment: [String: String]
-  public var removedHeaders: [String]
-  public var removedEnvironment: [String]
 
   public init(
     name: String,
@@ -28,9 +26,7 @@ public struct McpFormValues {
     oauthClientId: String?,
     oauthClientSecret: String?,
     headers: [String: String],
-    environment: [String: String],
-    removedHeaders: [String],
-    removedEnvironment: [String]
+    environment: [String: String]
   ) {
     self.name = name
     self.transport = transport
@@ -44,8 +40,6 @@ public struct McpFormValues {
     self.oauthClientSecret = oauthClientSecret
     self.headers = headers
     self.environment = environment
-    self.removedHeaders = removedHeaders
-    self.removedEnvironment = removedEnvironment
   }
 
   public var customLocation: CustomPluginLocation {
@@ -76,23 +70,5 @@ public struct McpFormValues {
   private var createAuthType: String? {
     guard transport == "http" else { return "none" }
     return authSelection == "auto" ? nil : authSelection
-  }
-
-  public var updateBody: UpdateMcpServerBody {
-    UpdateMcpServerBody(
-      name: name,
-      url: transport == "http" ? location : nil,
-      command: transport == "stdio" ? location : nil,
-      args: transport == "stdio" ? arguments : nil,
-      env: transport == "stdio" && !environment.isEmpty ? environment : nil,
-      headers: transport == "http" && !headers.isEmpty ? headers : nil,
-      removeEnv: transport == "stdio" && !removedEnvironment.isEmpty ? removedEnvironment : nil,
-      removeHeaders: transport == "http" && !removedHeaders.isEmpty ? removedHeaders : nil,
-      authType: transport == "http" ? effectiveAuthType : "none",
-      bearerToken: transport == "http" ? bearerToken : nil,
-      oauthScope: transport == "http" ? oauthScope : nil,
-      oauthClientId: transport == "http" ? oauthClientId : nil,
-      oauthClientSecret: transport == "http" ? oauthClientSecret : nil
-    )
   }
 }

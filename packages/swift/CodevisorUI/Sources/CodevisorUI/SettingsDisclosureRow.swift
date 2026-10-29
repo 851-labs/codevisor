@@ -1,13 +1,12 @@
 import SwiftUI
-import CodevisorUI
 
-struct SettingsDisclosureRow<Label: View, Content: View>: View {
+public struct SettingsDisclosureRow<Label: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var isExpanded: Bool
   @ViewBuilder let label: () -> Label
   @ViewBuilder let content: () -> Content
 
-  init(
+  public init(
     isExpanded: Binding<Bool>,
     @ViewBuilder label: @escaping () -> Label,
     @ViewBuilder content: @escaping () -> Content
@@ -17,7 +16,7 @@ struct SettingsDisclosureRow<Label: View, Content: View>: View {
     self.content = content
   }
 
-  var body: some View {
+  public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Button {
         var transaction = Transaction()
@@ -49,7 +48,7 @@ struct SettingsDisclosureRow<Label: View, Content: View>: View {
   }
 }
 
-extension SettingsDisclosureRow where Label == SettingsDisclosureTitle {
+public extension SettingsDisclosureRow where Label == SettingsDisclosureTitle {
   init(
     _ title: String,
     systemImage: String? = nil,
@@ -64,11 +63,16 @@ extension SettingsDisclosureRow where Label == SettingsDisclosureTitle {
   }
 }
 
-struct SettingsDisclosureTitle: View {
+public struct SettingsDisclosureTitle: View {
   let systemImage: String?
   let title: String
 
-  var body: some View {
+  public init(systemImage: String?, title: String) {
+    self.systemImage = systemImage
+    self.title = title
+  }
+
+  public var body: some View {
     HStack(spacing: 7) {
       if let systemImage {
         Image(systemName: systemImage)

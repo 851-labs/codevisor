@@ -20,6 +20,7 @@ struct PluginCatalogEntryPage: View {
       .sheet(item: $installTarget) { entry in
         PluginCatalogInstallSheet(entry: entry, catalog: catalog, plugins: plugins)
       }
+      .pluginConnectErrorAlert(plugins.fleet)
     } else {
       ContentUnavailableView("Plugin Unavailable", systemImage: "puzzlepiece.extension")
     }

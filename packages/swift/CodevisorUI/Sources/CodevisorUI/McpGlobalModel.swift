@@ -101,6 +101,20 @@ public final class McpGlobalModel {
     await load(in: environment)
   }
 
+  public func disconnect(_ entry: McpFleetEntry, in environment: AppEnvironment) async {
+    guard let machineId = entry.machineId(preferring: CodevisorMachine.local.id),
+      let serverId = entry.idByMachine[machineId]
+    else { return }
+
+    do {
+      _ = try await environment.machines.client(for: machineId).disconnectMcpOAuth(id: serverId)
+      actionError = nil
+    } catch {
+      actionError = ErrorReporter.userFacingMessage(for: error)
+    }
+    await load(in: environment)
+  }
+
   private func signInTarget(
     serverId: String, on machineId: String, in environment: AppEnvironment
   ) throws -> (serverId: String, machineId: String) {

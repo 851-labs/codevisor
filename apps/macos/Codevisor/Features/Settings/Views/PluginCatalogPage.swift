@@ -17,6 +17,7 @@ struct PluginCatalogPage: View {
     .navigationTitle("Browse Plugins")
     .searchable(text: query, placement: .toolbar, prompt: "Search plugins")
     .task { await catalog.load() }
+    .pluginConnectErrorAlert(plugins.fleet)
     .sheet(item: $installTarget) { entry in
       PluginCatalogInstallSheet(entry: entry, catalog: catalog, plugins: plugins)
     }

@@ -116,6 +116,10 @@ struct SettingsView: View {
               PluginCatalogEntryPage(entryId: id, catalog: pluginCatalog, plugins: plugins, client: localClient)
                 .navigationBarBackButtonHidden(true)
                 .settingsNavigationToolbar()
+            case let .plugin(name):
+              McpPluginDetailView(entryName: name, plugins: plugins)
+                .navigationBarBackButtonHidden(true)
+                .settingsNavigationToolbar()
             }
           }
       }

@@ -7,6 +7,7 @@ struct McpScrollingTextField: NSViewRepresentable {
   let isEditable: Bool
   let isSelected: Bool
   let onFocus: () -> Void
+  var onEndEditing: () -> Void = {}
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -51,6 +52,10 @@ struct McpScrollingTextField: NSViewRepresentable {
 
     func controlTextDidBeginEditing(_ notification: Notification) {
       parent.onFocus()
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+      parent.onEndEditing()
     }
   }
 }

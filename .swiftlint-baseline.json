@@ -1080,21 +1080,6 @@
     }
   },
   {
-    "text": "  func decodesNativeMcpScan() throws {",
-    "violation": {
-      "location": {
-        "character": 3,
-        "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/NativeMcpSkillsModelTests.swift",
-        "line": 10
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func activeTurnHydrationPreservesSnapshotBoundary() async {",
     "violation": {
       "location": {

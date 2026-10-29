@@ -6,82 +6,40 @@ struct McpServerEditorSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Environment(\.settingsMachineId) private var settingsMachineId
-  let initialServer: ServerMcpServer?
   let save: (McpFormValues) async throws -> Void
-  @State private var name: String
-  @State private var transport: String
-  @State private var location: String
-  @State private var authSelection: String
+  @State private var name = ""
+  @State private var transport = "http"
+  @State private var location = ""
+  @State private var authSelection = "auto"
   @State private var detectedAuthType: String?
   @State private var isDetecting = false
-  @State private var bearerToken: String
-  @State private var oauthScope: String
+  @State private var bearerToken = ""
+  @State private var oauthScope = ""
   @State private var clientId = ""
   @State private var clientSecret = ""
-  @State private var headerEntries: [McpSecretEntry]
-  @State private var environmentEntries: [McpSecretEntry]
+  @State private var headerEntries: [McpSecretEntry] = []
+  @State private var environmentEntries: [McpSecretEntry] = []
   @State private var isOAuthAdvancedExpanded = false
   @State private var isKeyValueEditorExpanded = false
-  private let initialHeaderNames: Set<String>
-  private let initialEnvironmentNames: Set<String>
-  @State private var nameWasEdited: Bool
+  @State private var nameWasEdited = false
   @State private var isSaving = false
   @State private var errorMessage: String?
 
-  init(
-    initialServer: ServerMcpServer?,
-    save: @escaping (McpFormValues) async throws -> Void
-  ) {
-    self.initialServer = initialServer
-    self.save = save
-    _name = State(initialValue: initialServer?.name ?? "")
-    _transport = State(initialValue: initialServer?.transport ?? "http")
-    _location = State(
-      initialValue: initialServer?.url
-        ?? CommandLineCodec.format(
-          [initialServer?.command].compactMap { $0 } + (initialServer?.args ?? [])
-        ))
-    _authSelection = State(initialValue: initialServer?.authType ?? "auto")
-    _detectedAuthType = State(initialValue: initialServer?.authType)
-    _bearerToken = State(initialValue: "")
-    _oauthScope = State(initialValue: initialServer?.oauthScope ?? "")
-    _nameWasEdited = State(initialValue: initialServer != nil)
-    let headerNames = Set(initialServer?.headerNames ?? [])
-    let environmentNames = Set(initialServer?.environmentNames ?? [])
-    initialHeaderNames = headerNames
-    initialEnvironmentNames = environmentNames
-    _headerEntries = State(
-      initialValue: headerNames.sorted().map {
-        McpSecretEntry(name: $0, value: "", existing: true)
-      })
-    _environmentEntries = State(
-      initialValue: environmentNames.sorted().map {
-        McpSecretEntry(name: $0, value: "", existing: true)
-      })
-  }
-
   var body: some View {
     VStack(spacing: 0) {
-      Text(initialServer == nil ? "Add MCP" : "Edit Plugin")
+      Text("Add MCP")
         .font(.headline)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
         .padding(.top, 18)
       Form {
         Section("Connection") {
-          if initialServer == nil {
-            transportPicker
-              .onChange(of: transport) { _, value in
-                if value == "stdio" && authSelection == "oauth" {
-                  authSelection = "auto"
-                }
+          transportPicker
+            .onChange(of: transport) { _, value in
+              if value == "stdio" && authSelection == "oauth" {
+                authSelection = "auto"
               }
-          } else {
-            LabeledContent(
-              "Transport",
-              value: transport == "http" ? "HTTP" : "STDIO"
-            )
-          }
+            }
           if transport == "http" {
             TextField(
               "Server URL",
@@ -173,9 +131,7 @@ struct McpServerEditorSheet: View {
           }
         }
 
-        if initialServer == nil {
-          Section { PluginConsentNotice(name: name.isEmpty ? "this plugin" : name) }
-        }
+        Section { PluginConsentNotice(name: name.isEmpty ? "this plugin" : name) }
 
         if let errorMessage {
           Section {
@@ -190,7 +146,7 @@ struct McpServerEditorSheet: View {
       HStack {
         Spacer()
         cancelButton
-        Button(initialServer == nil ? "Add" : "Save") { Task { await submit() } }
+        Button("Add") { Task { await submit() } }
           .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
           .disabled(!isValid || isSaving)
@@ -318,9 +274,7 @@ struct McpServerEditorSheet: View {
           oauthClientId: clientId.isEmpty ? nil : clientId,
           oauthClientSecret: clientSecret.isEmpty ? nil : clientSecret,
           headers: changedValues(headerEntries),
-          environment: changedValues(environmentEntries),
-          removedHeaders: Array(initialHeaderNames.subtracting(headerEntries.map(\.name))),
-          removedEnvironment: Array(initialEnvironmentNames.subtracting(environmentEntries.map(\.name)))
+          environment: changedValues(environmentEntries)
         ))
       dismiss()
     } catch let error as CommandLineCodec.ParseError {
