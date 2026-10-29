@@ -18,9 +18,10 @@ struct PreflightReport: Encodable {
   let mainDisplayName: String?
   let displays: [String]
   let screenSharingPeers: [String]
+  let quiet: QuietMachine?
   let problems: [String]
 
-  init(allowedPeers: Set<String>, peers: [String]) {
+  init(allowedPeers: Set<String>, peers: [String], allowsLocked: Bool = false, quiet: QuietMachine? = nil) {
     load1 = Self.loadAverage()
     thermal = Self.thermalState()
     ciJobs = BenchProcesses.pids(named: "Runner.Worker").count
@@ -29,7 +30,11 @@ struct PreflightReport: Encodable {
     mainDisplayName = Self.mainScreen()?.localizedName
     displays = NSScreen.screens.map(Self.describe)
     screenSharingPeers = peers
-    problems = Self.problems(locked: locked, mainDisplay: mainDisplayName, peers: peers, allowed: allowedPeers)
+    self.quiet = quiet
+    problems =
+      Self.problems(
+        locked: locked && !allowsLocked, mainDisplay: mainDisplayName, peers: peers, allowed: allowedPeers)
+      + Self.quietProblems(quiet, thermal: thermal)
   }
 
   private static func problems(locked: Bool, mainDisplay: String?, peers: [String], allowed: Set<String>) -> [String] {
@@ -40,6 +45,12 @@ struct PreflightReport: Encodable {
     let ours = peers.contains(where: allowed.contains)
     if mainDisplay == virtualDisplayName, !ours { problems.append("the main display is \(virtualDisplayName)") }
     return problems
+  }
+
+  private static func quietProblems(_ quiet: QuietMachine?, thermal: String) -> [String] {
+    guard let quiet else { return [] }
+
+    return quiet.problems + (thermal == "nominal" ? [] : ["the thermal state is \(thermal)"])
   }
 
   private static func describe(_ screen: NSScreen) -> String {

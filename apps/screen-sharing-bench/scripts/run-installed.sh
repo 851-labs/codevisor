@@ -13,7 +13,7 @@ stop_app() {
 trap stop_app EXIT
 trap "exit 130" INT HUP TERM
 echo 1 >"$logs/status"
-open -W -n -a "$HOME/Applications/CodevisorBench.app" \
+open -W -n -a "${CODEVISOR_BENCH_APP:-$HOME/Applications/CodevisorBench.app}" \
   --env "CODEVISOR_BENCH_PID_FILE=$logs/pid" --env "CODEVISOR_BENCH_STATUS_FILE=$logs/status" \
   --stdout "$logs/stdout" --stderr "$logs/stderr" --args "$@" &
 opener=$!

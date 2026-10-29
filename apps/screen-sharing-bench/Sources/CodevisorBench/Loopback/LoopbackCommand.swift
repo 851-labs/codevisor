@@ -7,16 +7,19 @@ struct LoopbackCommand: BenchCommand {
   static let summary =
     "Tier 1: stream synthetic scenes through the product sender and receiver over an emulated network"
   static let usage = [
-    "[--scenes <scene,…>] [--networks <N0,…>] [--duration <seconds>] [--warm-up <seconds>] [--seed <n>]",
+    "[--scenes <scene,…>] [--networks <N0,…>] [--duration <seconds>] [--warm-up <seconds>] [--repetitions <n>]",
+    "[--seed <n>]",
     "[--resolution R1] [--source synthetic|own-window] [--display main|virtual] [--onscreen]",
     "[--output <report.json>] [--frames <frames.jsonl>] [--run-id <id>] [--trigger <name>]",
   ].joined(separator: " ")
 
   private static let durations = 2...600
+  private static let repetitionCounts = 1...9
 
   private let scenes: [BenchScene]
   private let networks: [BenchNetworkConditions]
   private let settings: LoopbackSettings
+  private let repetitions: Int
   private let output: String?
   private let framesPath: String?
   private let runID: String?
@@ -33,6 +36,7 @@ struct LoopbackCommand: BenchCommand {
       endpoint: try options.flag("onscreen") ? .onGlass : .committed,
       source: try options.choice("source", default: .synthetic),
       display: try options.choice("display", default: .main))
+    repetitions = try options.integer("repetitions", default: 1, in: Self.repetitionCounts)
     output = try LoopbackMatrix.writablePath(try options.string("output"))
     framesPath = try LoopbackMatrix.writablePath(try options.string("frames"))
     runID = try options.string("run-id")
@@ -47,7 +51,7 @@ struct LoopbackCommand: BenchCommand {
     let started = Date()
     let clock = ContinuousClock()
     let began = clock.now
-    let environment = LoopbackEnvironment.current(settings)
+    let environment = try await LoopbackEnvironment.current(settings)
     let outcomes = try await runMatrix()
     let report = BenchReport(run: run(startedAt: started), environment: environment, results: outcomes.map(\.result))
 
@@ -57,8 +61,10 @@ struct LoopbackCommand: BenchCommand {
   }
 
   private func runMatrix() async throws -> [LoopbackOutcome] {
-    let cells = scenes.flatMap { scene in
-      networks.map { LoopbackCell(scene: scene, conditions: $0, settings: settings) }
+    let cells = (1...repetitions).flatMap { repetition in
+      scenes.flatMap { scene in
+        networks.map { LoopbackCell(scene: scene, conditions: $0, settings: settings, repetition: repetition) }
+      }
     }
     var outcomes: [LoopbackOutcome] = []
     for (index, cell) in cells.enumerated() {
@@ -73,7 +79,11 @@ struct LoopbackCommand: BenchCommand {
     let commit = Bundle.main.object(forInfoDictionaryKey: "CodevisorBenchCommit") as? String
     return BenchRun(
       id: runID ?? "local-\(Int(started.timeIntervalSince1970))", tier: 1, startedAt: started,
-      gitSha: commit ?? "unknown", trigger: trigger)
+      gitSha: commit ?? "unknown", trigger: trigger, method: method)
+  }
+
+  private var method: BenchMethod {
+    BenchMethod(durationS: settings.durationSeconds, warmUpS: settings.warmUpSeconds, repetitions: repetitions)
   }
 
   private func write(_ report: BenchReport, frames: [LoopbackFrameLine]) throws {

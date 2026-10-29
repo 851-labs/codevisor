@@ -13,6 +13,9 @@ enum BenchCommands {
     AppleHPCommand.self,
     Tier2ReportCommand.self,
     RendezvousCommand.self,
+    RecordCommand.self,
+    SummarizeCommand.self,
+    GateCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {

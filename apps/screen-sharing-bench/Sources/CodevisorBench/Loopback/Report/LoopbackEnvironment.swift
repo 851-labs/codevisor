@@ -5,11 +5,11 @@ import ScreenSharingBench
 enum LoopbackEnvironment {
   static let link = "in-process UDP relay"
 
-  static func current(_ settings: LoopbackSettings) -> BenchEnvironment {
+  static func current(_ settings: LoopbackSettings) async throws -> BenchEnvironment {
     let host = BenchMachine(
       name: BenchHostName.current, chip: chip, os: operatingSystem,
       display: display(settings), load1AtStart: loadAverage,
-      thermal: thermal, spotlightBusy: false)
+      thermal: thermal, spotlightBusy: !(try await QuietMachine.busyIndexers().isEmpty))
     return BenchEnvironment(host: host, link: link)
   }
 

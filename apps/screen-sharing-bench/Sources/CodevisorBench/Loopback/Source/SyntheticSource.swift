@@ -3,73 +3,72 @@ import ScreenSharingBench
 import ScreenSharingBenchScenes
 
 actor SyntheticSource: LoopbackSource {
-  private static let tick = Duration.nanoseconds(1_000_000_000 / BenchSceneTimeline.ticksPerSecond)
-  private static let ticksRenderedAhead = 3
+  private static let framesRenderedAhead = 3
 
   private let generator: BenchSceneGenerator
   private let timeline: BenchSceneTimeline
-  private let sink: any ScreenSharingFrameSink
-  private var scaler: FrameScaler?
-  private var ticksPerFrame = 1
-  private var lastVersion: Int?
-  private var prepared: [Int: Task<BenchSceneFrame, any Error>] = [:]
-  private(set) var produced: [BenchVersionEvent] = []
+  private let pusher: SourcePusher
+  private var rendering: [Int: Task<Void, Never>] = [:]
+  private var finished = false
 
   init(setup: BenchSceneSetup, sink: any ScreenSharingFrameSink) throws {
     generator = try BenchSceneGenerator(setup: setup)
     timeline = setup.scene.timeline
-    self.sink = sink
+    pusher = SourcePusher(timeline: setup.scene.timeline, sink: sink)
+  }
+
+  var produced: [BenchVersionEvent] {
+    pusher.shelf.withLock { $0.produced }
   }
 
   func run(for duration: Duration) async throws {
-    let clock = ContinuousClock()
-    let start = clock.now
-    var deadline = start
-    while deadline < start + duration {
-      try await clock.sleep(until: deadline, tolerance: .zero)
-      let tick = Int((clock.now - start) / Self.tick)
-      if tick.isMultiple(of: ticksPerFrame) { try await show(version: timeline.version(atTick: tick)) }
-      prepare(ticksAfter: tick)
-      deadline = start + Self.tick * (tick + 1)
+    let ticks = Int(duration / .nanoseconds(SourcePusher.tickNs))
+    for version in upcoming(after: -1) { try await prepare(version) }
+    await pusher.run(ticks: ticks) { tick in Task { await self.prepareAhead(after: tick) } }
+    finished = true
+    for task in rendering.values { task.cancel() }
+    let missed = pusher.shelf.withLock { $0.missed }
+    if missed > 0 {
+      BenchConsole.error("synthetic source: \(missed) versions weren't rendered in time and were skipped")
     }
   }
 
   func adapt(to configuration: ScreenSharingVideoConfiguration) throws {
     let canvas = generator.setup.canvas
     let isCanvasSize = configuration.width == canvas.pixelWidth && configuration.height == canvas.pixelHeight
-    scaler = isCanvasSize ? nil : try FrameScaler(width: configuration.width, height: configuration.height)
-    ticksPerFrame = max(1, BenchSceneTimeline.ticksPerSecond / configuration.framesPerSecond)
+    let scaler = isCanvasSize ? nil : try FrameScaler(width: configuration.width, height: configuration.height)
+    let ticksPerFrame = max(1, BenchSceneTimeline.ticksPerSecond / configuration.framesPerSecond)
+    pusher.shelf.withLock { shelf in
+      shelf.scaler = scaler
+      shelf.ticksPerFrame = ticksPerFrame
+    }
   }
 
-  private func show(version: Int) async throws {
-    guard version != lastVersion else { return }
+  private func prepareAhead(after tick: Int) {
+    guard !finished else { return }
 
-    let frame = try await frame(forVersion: version)
-    let pixels = try scaler?.scaled(frame.pixelBuffer) ?? frame.pixelBuffer
-    let timestampNs = ScreenSharingMetrics.nowNs
-    sink.push(ScreenSharingVideoFrame(pixelBuffer: pixels, timestampNs: timestampNs))
-    lastVersion = version
-    produced.append(BenchVersionEvent(version: version, ns: timestampNs))
+    let versions = upcoming(after: tick)
+    pusher.shelf.withLock { shelf in shelf.ready = shelf.ready.filter { versions.contains($0.key) } }
+    for version in versions where rendering[version] == nil && !isReady(version) {
+      rendering[version] = Task { try? await self.prepare(version) }
+    }
   }
 
-  private func frame(forVersion version: Int) async throws -> BenchSceneFrame {
-    guard let rendering = prepared.removeValue(forKey: version) else {
-      return try await generator.frame(forVersion: version)
-    }
-
-    return try await rendering.value
+  private func prepare(_ version: Int) async throws {
+    let frame = try await generator.frame(forVersion: version)
+    let ready = SourcePusher.ReadyFrame(pixels: frame.pixelBuffer)
+    pusher.shelf.withLock { $0.ready[version] = ready }
+    rendering[version] = nil
   }
 
-  private func prepare(ticksAfter tick: Int) {
-    let shownTicks = (1...Self.ticksRenderedAhead).map { tick + $0 * ticksPerFrame }
-    let upcoming = Set(shownTicks.map { timeline.version(atTick: $0 - $0 % ticksPerFrame) })
-    for (version, stale) in prepared where !upcoming.contains(version) {
-      stale.cancel()
-      prepared[version] = nil
-    }
-    let generator = generator
-    for version in upcoming where version != lastVersion && prepared[version] == nil {
-      prepared[version] = Task { try await generator.frame(forVersion: version) }
-    }
+  private func upcoming(after tick: Int) -> Set<Int> {
+    let (ticksPerFrame, lastVersion) = pusher.shelf.withLock { ($0.ticksPerFrame, $0.lastVersion) }
+    let nextShown = (tick + ticksPerFrame) / ticksPerFrame * ticksPerFrame
+    let shown = (0..<Self.framesRenderedAhead).map { nextShown + $0 * ticksPerFrame }
+    return Set(shown.map(timeline.version(atTick:))).subtracting([lastVersion].compactMap(\.self))
+  }
+
+  private func isReady(_ version: Int) -> Bool {
+    pusher.shelf.withLock { $0.ready[version] != nil }
   }
 }

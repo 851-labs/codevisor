@@ -3,7 +3,7 @@ set -euo pipefail
 
 results=${1:-}
 [[ -n "$results" ]] || { echo "Usage: $0 <results-directory>" >&2; exit 2; }
-installed="$HOME/Applications/CodevisorBench.app"
+installed="${CODEVISOR_BENCH_APP:-$HOME/Applications/CodevisorBench.app}"
 
 commit="$(plutil -extract CodevisorBenchCommit raw "$installed/Contents/Info.plist")"
 echo "$commit" >"$results/installed-commit.txt"

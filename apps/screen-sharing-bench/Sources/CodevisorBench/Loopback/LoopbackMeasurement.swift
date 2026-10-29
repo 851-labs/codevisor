@@ -8,6 +8,7 @@ struct LoopbackMeasurement {
   let scene: BenchScene
   let conditions: BenchNetworkConditions
   let settings: LoopbackSettings
+  let repetition: Int
   let clockOffsetNs: Int64
   let relayOriginNs: Int64
 
@@ -17,7 +18,7 @@ struct LoopbackMeasurement {
       windowNs: continuousWindow(recording), cadence: LoopbackCadence.of(scene), endpoint: settings.endpoint)
     var result = BenchResult(
       system: .codevisor, scene: scene.rawValue, resolution: settings.resolution.rawValue, network: conditions.id,
-      repetition: 1, seed: settings.seed)
+      repetition: repetition, seed: settings.seed)
     analysis.apply(to: &result)
     result.stagesMs?.timingFrameCheck = BenchTimingFrameCheck(
       timingFrames: Array(recording.readings.timingFrames), frames: analysis.frames, timingClockOffsetNs: clockOffsetNs)
@@ -64,7 +65,8 @@ struct LoopbackMeasurement {
   private func lines(_ analysis: BenchLoopbackAnalysis) -> [LoopbackFrameLine] {
     analysis.frames.compactMap { frame in
       analysis.versionsBySourceNs[frame.sourceNs].map {
-        LoopbackFrameLine(scene: scene.rawValue, network: conditions.id, version: $0, timestamps: frame)
+        LoopbackFrameLine(
+          scene: scene.rawValue, network: conditions.id, repetition: repetition, version: $0, timestamps: frame)
       }
     }
   }
