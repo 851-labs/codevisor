@@ -6,6 +6,7 @@ enum ComposerKeyCommand {
   case moveSelectionUp
   case moveSelectionDown
   case acceptSelection
+  case holdSelection
   case dismissSelection
   case recallPreviousPrompt
   case recallNextPrompt
@@ -228,9 +229,10 @@ struct ChatInputEditor: NSViewRepresentable {
         else { return false }
         return parent.onKeyCommand?(.recallNextPrompt) == true
       case #selector(NSResponder.insertTab(_:)):
-        _ = parent.onKeyCommand?(.acceptSelection)
+        if parent.onKeyCommand?(.acceptSelection) != true { textView.window?.selectNextKeyView(nil) }
         return true
       case #selector(NSResponder.insertBacktab(_:)):
+        if parent.onKeyCommand?(.holdSelection) != true { textView.window?.selectPreviousKeyView(nil) }
         return true
       case #selector(NSResponder.cancelOperation(_:)):
         return parent.onKeyCommand?(.dismissSelection) == true
