@@ -8,19 +8,38 @@ struct BenchSystemComparisonTests {
     let better: BenchSystemComparison.Better
     let noiseBand: Double
     let verdict: BenchComparison.Verdict
+    let basis: BenchSystemComparison.Basis?
   }
 
   @Test(arguments: [
-    Case(appleHp: [100, 104, 102], codevisor: [80, 83, 81], better: .lower, noiseBand: 4, verdict: .codevisorFaster),
-    Case(appleHp: [100, 104, 102], codevisor: [99, 101, 103], better: .lower, noiseBand: 4, verdict: .noDifference),
-    Case(appleHp: [50, 51, 50], codevisor: [70, 71, 72], better: .lower, noiseBand: 2, verdict: .appleFaster),
-    Case(appleHp: [30, 31, 30], codevisor: [59, 60, 60], better: .higher, noiseBand: 1, verdict: .codevisorFaster),
+    Case(
+      appleHp: [100, 104, 102], codevisor: [80, 83, 81], better: .lower, noiseBand: 4, verdict: .codevisorFaster,
+      basis: .noiseBand),
+    Case(
+      appleHp: [100, 104, 102], codevisor: [99, 101, 103], better: .lower, noiseBand: 4, verdict: .noDifference,
+      basis: nil),
+    Case(
+      appleHp: [50, 51, 50], codevisor: [70, 71, 72], better: .lower, noiseBand: 2, verdict: .appleFaster,
+      basis: .noiseBand),
+    Case(
+      appleHp: [30, 31, 30], codevisor: [59, 60, 60], better: .higher, noiseBand: 1, verdict: .codevisorFaster,
+      basis: .noiseBand),
+    Case(
+      appleHp: [23.9, 23.9, 23.9], codevisor: [324, 957, 341], better: .lower, noiseBand: 633, verdict: .appleFaster,
+      basis: .noOverlap),
+    Case(
+      appleHp: [100, 130, 110], codevisor: [125, 140, 135], better: .lower, noiseBand: 30, verdict: .noDifference,
+      basis: nil),
+    Case(
+      appleHp: [10, 30, 12], codevisor: [31, 33, 60], better: .lower, noiseBand: 29, verdict: .noDifference, basis: nil),
+    Case(appleHp: [61], codevisor: [40, 60, 49], better: .lower, noiseBand: 20, verdict: .noDifference, basis: nil),
   ])
-  func aDifferenceCountsOnlyBeyondTheWiderRepetitionSpread(_ example: Case) throws {
+  func aDifferenceNeedsAGapBeyondTheNoiseBandOrRepetitionsClearlyApart(_ example: Case) throws {
     let outcome = try #require(
       BenchSystemComparison.verdict(appleHp: example.appleHp, codevisor: example.codevisor, better: example.better))
 
     #expect(outcome.noiseBand == example.noiseBand)
     #expect(outcome.verdict == example.verdict)
+    #expect(outcome.basis == example.basis)
   }
 }
