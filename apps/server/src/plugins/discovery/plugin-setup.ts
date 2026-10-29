@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
 import type { PluginSetupRequest, QuestionSpec } from "@codevisor/api"
 
-import { HttpFailure } from "../../server-context.js"
+import { failureMessage, HttpFailure } from "../../server-context.js"
 import {
   authOf,
   capabilitiesOf,
@@ -42,6 +42,8 @@ export interface PluginSetupDeps {
   readonly emit: (sessionId: string, payload: unknown) => Promise<void>
   readonly machine: { readonly id: string; readonly name: string }
   readonly wait: (ms: number) => Promise<void>
+  readonly prepare: (target: PluginTarget) => Promise<void>
+  readonly isAsking: (sessionId: string, questionId: string) => Promise<boolean>
 }
 
 export const setupQuestionId = "plugin_setup"
@@ -63,14 +65,27 @@ export const makePluginSetupBroker = (deps: PluginSetupDeps): PluginSetupBroker 
     entry.settle(kind)
   }
 
-  const askOrReuse = async (
+  const stillAsking = async (
     input: PluginSetupInput,
     target: PluginTarget
-  ): Promise<PendingSetup> => {
+  ): Promise<PendingSetup | undefined> => {
     const existing = [...pending.values()].find(
       (entry) => entry.sessionId === input.sessionId && entry.plugin === target.plugin
     )
-    if (existing !== undefined) return existing
+    if (existing === undefined) return undefined
+    if (await deps.isAsking(existing.sessionId, existing.questionId)) return existing
+    pending.delete(existing.questionId)
+    existing.settle("declined")
+    return undefined
+  }
+
+  const ask = async (input: PluginSetupInput, target: PluginTarget): Promise<PendingSetup> => {
+    await deps.prepare(target).catch((cause: unknown) => {
+      throw new HttpFailure(
+        409,
+        `${nameOf(target)} can't start sign-in on ${deps.machine.name}: ${failureMessage(cause)}. No setup card was shown.`
+      )
+    })
     const entry = newPendingSetup(input, target, deps.machine)
     pending.set(entry.questionId, entry)
     await deps.emit(input.sessionId, {
@@ -102,9 +117,9 @@ export const makePluginSetupBroker = (deps: PluginSetupDeps): PluginSetupBroker 
 
   return {
     request: async (input) => {
-      const target = await requireTarget(deps.directory, input.plugin)
+      const target = await requireTarget(deps, input.plugin)
       if ((await deps.directory.item(target)).ready) return outcomeOf(input.plugin, "connected")
-      const entry = await askOrReuse(input, target)
+      const entry = (await stillAsking(input, target)) ?? (await ask(input, target))
       const kind = await Promise.race([
         entry.done,
         deps.wait(input.waitMs).then(() => "pending" as const)
@@ -166,7 +181,7 @@ const setupRequest = (
         description: target.entry.description
       }),
   ...(target.server === undefined ? {} : { serverId: target.server.id }),
-  name: target.server?.name ?? target.entry!.name,
+  name: nameOf(target),
   reason: input.reason,
   auth: authOf(target),
   capabilities: capabilitiesOf(target),
@@ -199,8 +214,15 @@ const isDecline = (answer: QuestionAnswer): boolean =>
   answer.outcome === "cancelled" ||
   answer.answers?.[setupQuestionId]?.answers.includes("Not Now") === true
 
-const requireTarget = async (directory: PluginDirectory, plugin: string): Promise<PluginTarget> => {
-  const target = await directory.find(plugin)
+const nameOf = (target: PluginTarget): string => target.server?.name ?? target.entry!.name
+
+const requireTarget = async (deps: PluginSetupDeps, plugin: string): Promise<PluginTarget> => {
+  const target = await deps.directory.find(plugin).catch((cause: unknown) => {
+    throw new HttpFailure(
+      503,
+      `Couldn't read the plugins on ${deps.machine.name}: ${failureMessage(cause)}. No setup card was shown.`
+    )
+  })
   if (target !== undefined) return target
   throw new HttpFailure(404, `No plugin named "${plugin}". Search with plugins.search.`)
 }

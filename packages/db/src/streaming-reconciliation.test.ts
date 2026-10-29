@@ -92,3 +92,41 @@ it("repairs stranded older rows without ending the latest user message", async (
     { role: "user", text: "later" }
   ])
 })
+
+it("leaves a plugin setup card waiting after its turn has ended", async () => {
+  const { db, session } = await memoryDatabase()
+  await run(db.appendEvent("session.updated", session.id, { turnId: "t", turnState: "started" }))
+  await run(
+    db.appendEvent("session.updated", session.id, {
+      turnId: "t",
+      turnState: "ended",
+      stopReason: "end_turn"
+    })
+  )
+  await run(
+    db.appendEvent("session.output", session.id, {
+      sessionUpdate: "question",
+      questionId: "plugin-setup:1",
+      questions: [
+        {
+          id: "plugin_setup",
+          question: "Sign in to Linear?",
+          options: [{ label: "Set Up" }, { label: "Not Now" }],
+          allowsOther: false,
+          presentation: "pluginSetup"
+        }
+      ]
+    })
+  )
+
+  const result = await run(
+    db.reconcileQuietStreamingSession(session.id, "2100-01-01T00:00:00.000Z")
+  )
+
+  expect(result.events.map((event) => event.kind)).not.toContain("session.output")
+  expect((await run(db.getTranscriptPage(session.id, undefined, 1))).pendingQuestion).toMatchObject(
+    {
+      questionId: "plugin-setup:1"
+    }
+  )
+})

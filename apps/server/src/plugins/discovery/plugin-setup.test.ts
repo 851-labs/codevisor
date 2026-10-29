@@ -1,13 +1,20 @@
 import { decode } from "@codevisor/api"
 import { Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
+import { fakeOAuthMcpServer, manualOAuthClock } from "../../infra/mcp-oauth-test-support.js"
 import { bodyId, jsonRequest, listSubjectEvents, waitFor } from "../../test-support.js"
 import { field, isRecord, stringField } from "../../unknown-values.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
 import { createChat, post, startPluginServer, type PluginServer } from "../plugin-test-support.js"
 
 const grafanaId = "dev.codevisor/grafana"
+const trackerServer = {
+  authType: "oauth",
+  enabled: true,
+  name: "Tracker",
+  transport: "http"
+} as const
 const reason = "To watch your production alerts"
 
 const setupUpdates = (
@@ -187,10 +194,8 @@ describe("plugin setup requests", () => {
 
   it("asks to sign in to an installed custom plugin by its server", async () => {
     const running = await startPluginServer()
-    const tracker = await savePluginRow(running.services.db, "Tracker", {
-      authType: "oauth",
-      connectionState: "needsAuthorization"
-    })
+    const provider = await fakeOAuthMcpServer(manualOAuthClock())
+    const tracker = await running.mcp.create({ ...trackerServer, url: provider.url })
     const chat = await createChat(running, "Chat")
 
     const requested = await requestSetup(running, chat, "Tracker", 0)
@@ -209,6 +214,34 @@ describe("plugin setup requests", () => {
       auth: "mcpOAuth"
     })
     expect(pluginSetup).not.toHaveProperty("catalogId")
+  })
+
+  it("tells the model why sign-in can't start instead of showing a card", async () => {
+    const running = await startPluginServer()
+    await running.mcp.create({ ...trackerServer, url: "http://127.0.0.1:9/mcp" })
+    const chat = await createChat(running, "Chat")
+
+    const requested = await requestSetup(running, chat, "Tracker", 0)
+
+    expect(requested.status).toBe(409)
+    expect(stringField(requested.body, "error")).toMatch(
+      /^Tracker can't start sign-in on .+: .+\. No setup card was shown\.$/
+    )
+    expect(setupUpdates(running, chat)).toEqual([])
+  })
+
+  it("explains when the machine's plugins can't be read", async () => {
+    const running = await startPluginServer()
+    const chat = await createChat(running, "Chat")
+    vi.spyOn(running.mcp, "list").mockRejectedValue(new Error("database busy"))
+
+    const requested = await requestSetup(running, chat, "Tracker", 0)
+
+    expect(requested.status).toBe(503)
+    expect(stringField(requested.body, "error")).toMatch(
+      /^Couldn't read the plugins on .+: database busy\. No setup card was shown\.$/
+    )
+    expect(setupUpdates(running, chat)).toEqual([])
   })
 
   it("lists no accounts while the account store can't be read", async () => {

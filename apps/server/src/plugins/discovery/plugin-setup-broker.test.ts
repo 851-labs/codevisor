@@ -13,7 +13,9 @@ import { makePluginDirectory } from "./plugin-directory.js"
 import { startPluginDiscovery } from "./plugin-discovery-boot.js"
 import { makePluginSetupBroker } from "./plugin-setup.js"
 
-const brokerFixture = async (options: { readonly failResolutions?: boolean } = {}) => {
+const brokerFixture = async (
+  options: { readonly failResolutions?: boolean; readonly asking?: () => boolean } = {}
+) => {
   const { services } = await makeServices("server-a")
   const servers: Array<McpServer> = []
   const labels = new Map<string, ReadonlyArray<string>>()
@@ -37,7 +39,9 @@ const brokerFixture = async (options: { readonly failResolutions?: boolean } = {
       if (options.failResolutions === true && resolution) throw new Error("chat is gone")
       emitted.push(payload)
     },
-    wait: () => new Promise(() => undefined)
+    wait: () => new Promise(() => undefined),
+    prepare: async () => undefined,
+    isAsking: async () => options.asking?.() ?? true
   })
   const install = async (name: string, overrides: Parameters<typeof savePluginRow>[2] = {}) => {
     const server = await savePluginRow(services.db, name, overrides)
@@ -54,6 +58,24 @@ const brokerFixture = async (options: { readonly failResolutions?: boolean } = {
 const request = { sessionId: "session-1", reason: "To read alerts", waitMs: 60_000 }
 
 describe("plugin setup broker", () => {
+  it("asks again when the earlier card is no longer waiting in the chat", async () => {
+    let asking = true
+    const fixture = await brokerFixture({ asking: () => asking })
+    const grafana = await fixture.install("Grafana", { catalogId: "dev.codevisor/grafana" })
+    const first = fixture.broker.request({ ...request, plugin: grafana.id })
+    await fixture.questionId()
+
+    asking = false
+    void fixture.broker.request({ ...request, plugin: grafana.id })
+
+    await waitFor(() => fixture.emitted.length === 2)
+    expect((await first).outcome).toBe("declined")
+    expect(stringField(fixture.emitted[1], "sessionUpdate")).toBe("question")
+    expect(stringField(fixture.emitted[1], "questionId")).not.toBe(
+      stringField(fixture.emitted[0], "questionId")
+    )
+  })
+
   it("resolves a question once when two refreshes see the plugin become ready", async () => {
     const fixture = await brokerFixture()
     const grafana = await fixture.install("Grafana", { catalogId: "dev.codevisor/grafana" })

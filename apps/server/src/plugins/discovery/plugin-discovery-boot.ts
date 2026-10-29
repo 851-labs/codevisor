@@ -1,11 +1,12 @@
 import {
   appendAndPublish,
+  run,
   swallowError,
   type CodevisorServerServices,
   type EventFanout
 } from "../../server-context.js"
 import type { PluginEvents } from "../events/plugin-events.js"
-import { makePluginDirectory, type PluginDirectory } from "./plugin-directory.js"
+import { authOf, makePluginDirectory, type PluginDirectory } from "./plugin-directory.js"
 import { makePluginSetupBroker, type PluginSetupBroker } from "./plugin-setup.js"
 
 export interface PluginDiscovery {
@@ -38,7 +39,14 @@ export const startPluginDiscovery = (
     emit: async (sessionId, payload) => {
       await appendAndPublish(services.db, fanout, "session.output", sessionId, payload)
     },
-    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref())
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref()),
+    prepare: async (target) => {
+      if (target.server === undefined || authOf(target) !== "mcpOAuth") return
+      await mcp.beginOAuth(target.server.id)
+    },
+    isAsking: async (sessionId, questionId) =>
+      (await run(services.db.getTranscriptPage(sessionId, undefined, 1))).pendingQuestion
+        ?.questionId === questionId
   })
   const refresh = () => {
     void setup.refresh().catch(swallowError)

@@ -29,9 +29,12 @@ export const makeStreamingReconciliationService = (
           if (!quietSince(context.sqlite, id, quietSinceIso)) return { repaired: 0, events: [] }
           const page = Effect.runSync(transcript.getTranscriptPage(id, undefined, 1))
           const active = page.items.at(-1)
+          const agentQuestion =
+            page.pendingQuestion === undefined || waitsOnPluginSetup(page.pendingQuestion)
+              ? undefined
+              : page.pendingQuestion
           const orphaned =
-            active?.role === "assistant" &&
-            (active.isGenerating || page.pendingQuestion !== undefined)
+            active?.role === "assistant" && (active.isGenerating || agentQuestion !== undefined)
           const events: EventEnvelope[] = []
           const append = (kind: EventEnvelope["kind"], payload: unknown): void => {
             events.push(Effect.runSync(journal.appendEvent(kind, id, payload)))
@@ -40,10 +43,10 @@ export const makeStreamingReconciliationService = (
             transcript.closeStaleAssistantChatItems(id, orphaned ? active.id : undefined)
           )
           if (orphaned) {
-            if (page.pendingQuestion !== undefined) {
+            if (agentQuestion !== undefined) {
               append("session.output", {
                 outcome: "cancelled",
-                ...page.pendingQuestion,
+                ...agentQuestion,
                 sessionUpdate: "question_resolved",
                 serverId: context.config.serverId
               })
@@ -63,6 +66,10 @@ export const makeStreamingReconciliationService = (
       )
   }
 }
+
+const waitsOnPluginSetup = (question: {
+  readonly questions: ReadonlyArray<{ readonly presentation?: string | undefined }>
+}): boolean => question.questions.some((spec) => spec.presentation === "pluginSetup")
 
 const quietSince = (sqlite: ServiceContext["sqlite"], id: string, quietSinceIso: string): boolean =>
   sqlite.prepare(quietSessionSql).get(id, quietSinceIso) !== undefined
