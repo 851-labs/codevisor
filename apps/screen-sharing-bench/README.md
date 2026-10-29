@@ -18,7 +18,8 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 - `Info.plist` is the bundle's plist. The bundle ID is `com.851labs.CodevisorBench`.
 - `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app`, embeds `WebRTC.framework` and signs it.
 - `scripts/build-pinned.sh <directory>` builds and copies the bundle there; CI runs it at the job's commit.
-- `scripts/deploy.sh <ssh-host>` builds, then installs `~/Applications/CodevisorBench.app` on that Mac.
+- `scripts/deploy.sh <ssh-host> [--force]` builds, then installs `~/Applications/CodevisorBench.app` on that Mac (it refuses
+  to replace an app signed by another team; see Signing and permissions).
 - `scripts/run.sh <ssh-host> <command> [--option value …]` runs a subcommand on that Mac's GUI session.
 - `scripts/run-installed.sh <command> [--option value …]` does the same on this Mac (`run.sh` runs it over ssh). It
   opens `CODEVISOR_BENCH_APP` when that is set, and `~/Applications/CodevisorBench.app` otherwise.
@@ -180,8 +181,9 @@ Numbers come only from the `Screen Sharing Bench Tier 2` workflow
 (`.github/workflows/screen-sharing-bench-tier2.yml`, `workflow_dispatch`). A runner takes one job at a time,
 so no CI job overlaps a run. Each job builds and signs CodevisorBench at the run's commit
 (`build-screen-sharing-bench`, as Tier 1 does), and the measuring jobs then install that build at
-`~/Applications/CodevisorBench.app` (`scripts/install-granted.sh`) and run it from there: Screen Recording and
-Accessibility are granted to that path, and a freshly built app elsewhere is refused both. The build stays
+`~/Applications/CodevisorBench.app` (`scripts/install-granted.sh`) and run it from there: the minis refused Screen
+Recording and Accessibility to the same build run from elsewhere, and the grants are for the CI signing team's app
+(see Signing and permissions). The build stays
 installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
 screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
 minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
@@ -254,11 +256,13 @@ band, the wider of the two systems' min–max spreads, is no difference.
 ## Benchmark workflow, results and gate (851-3594)
 
 `Screen Sharing Bench` (`.github/workflows/screen-sharing-bench.yml`) is the one workflow for numbers. Every job
-that measures builds CodevisorBench at its own commit and signs it with the team's Developer ID from the repository
-secrets (`.github/actions/build-screen-sharing-bench`, `scripts/signing-keychain.sh`), into `$RUNNER_TEMP`, and runs
-it through `CODEVISOR_BENCH_APP`. Synthetic Tier 1 needs no permission grant and never touches
-`~/Applications/CodevisorBench.app`; own-window Tier 1 and Tier 2 need Screen Recording and Accessibility, which a build outside that path
-is refused, so it installs its build there (see Tier 2).
+that measures builds CodevisorBench at its own commit and signs it with the Developer ID in the repository secrets
+(`APPLE_CODESIGN_IDENTITY`, team `C4M7D4G7LG`; `.github/actions/build-screen-sharing-bench`,
+`scripts/signing-keychain.sh`), into `$RUNNER_TEMP`, and runs it through `CODEVISOR_BENCH_APP`. Synthetic Tier 1
+needs no permission grant and never touches `~/Applications/CodevisorBench.app`. Own-window Tier 1 and Tier 2 need
+Screen Recording and Accessibility, so they install their build there first (`scripts/install-granted.sh`, see
+Tier 2): the minis refused those to a build run from elsewhere, and the grants must be for the CI signing team's app
+(see Signing and permissions).
 
 - **Nightly** at 03:00 Pacific (two UTC crons; the `plan` job keeps the one that is 03:00 in Los Angeles), and
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
@@ -316,12 +320,22 @@ CodevisorBench record --report report.json --results <benchmark-results checkout
 
 ## Signing and permissions
 
-The bundle is signed with the team's Developer ID Application identity (team `WH4QW9ND3J`), so its
-designated requirement is the bundle ID plus the team, not a hash of the binary. Screen Recording and
-Accessibility grants for `~/Applications/CodevisorBench.app` survive every rebuild and redeploy. Set
-`CODEVISOR_BENCH_SIGNING_IDENTITY` to sign with another identity (grants then have to be given again).
-The lab minis have no signing identity of their own: CI imports it into a temporary keychain for the build, and
-manual runs build on a developer Mac and deploy.
+A bundle signed with a Developer ID Application identity has a designated requirement of the bundle ID plus that
+identity's team, not a hash of the binary, so Screen Recording and Accessibility grants for
+`~/Applications/CodevisorBench.app` survive every rebuild signed by the same team. There are two teams in play, and
+macOS treats their builds as different apps:
+
+- CI signs with the repository secret `APPLE_CODESIGN_IDENTITY` (team `C4M7D4G7LG`), imported into a temporary
+  keychain for the build; the lab minis have no signing identity of their own. The grants on the minis must be for
+  this team's app for in-job builds to capture the screen.
+- `scripts/build.sh` on a developer Mac picks the team `WH4QW9ND3J` identity by default (set
+  `CODEVISOR_BENCH_SIGNING_IDENTITY` to choose another).
+
+macOS keeps one Screen Recording and one Accessibility grant per bundle ID (`com.851labs.CodevisorBench`), for one
+team. Granting a WH4QW9ND3J build replaces the C4M7D4G7LG grant, after which every CI job that captures the screen
+(own-window Tier 1, Tier 2, calibration through the installed app) is refused. So `scripts/deploy.sh` refuses to
+replace an installed app signed by another team unless given `--force`. To see which team an installed app
+belongs to, run `codesign -dv ~/Applications/CodevisorBench.app 2>&1 | grep TeamIdentifier` on the mini.
 
 ## Running on a lab Mac
 
