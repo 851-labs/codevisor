@@ -1,11 +1,17 @@
 import type { ServerResponse } from "node:http"
 
-import type { EventEnvelope, SessionSummary, Workspace, WorkspaceGit } from "@codevisor/api"
+import type {
+  EventEnvelope,
+  GitHead,
+  SessionSummary,
+  Workspace,
+  WorkspaceGit
+} from "@codevisor/api"
 import {
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
   UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema
 } from "@codevisor/api"
-import { gitCurrentBranch } from "@codevisor/worktrees"
+import { gitHead } from "@codevisor/worktrees"
 
 import { gitHostsOf } from "../infra/git-hosts.js"
 import {
@@ -194,13 +200,14 @@ const workspaceGit = async (
   }
 
   const env = await gitEnvironment(services, checkout)
-  const branch = await checkoutBranch(checkout, env)
-  if (!includePullRequest) return { branch }
-  if (branch === null) return { branch, pullRequest: null }
+  const head = await checkoutHead(checkout, env)
+  const branch = head.branch
+  if (!includePullRequest) return head
+  if (branch === null) return { ...head, pullRequest: null }
 
   const owned = checkout.ownedBranch
   return {
-    branch,
+    ...head,
     pullRequest: await cachedPullRequest(gitHostsOf(services), checkout.directory, env, {
       branch,
       owned
@@ -214,12 +221,9 @@ const gitEnvironment = (
 ): Promise<NodeJS.ProcessEnv> =>
   services.resolveGitEnvironment?.(checkout.directory) ?? Promise.resolve(process.env)
 
-const checkoutBranch = (
-  checkout: WorkspaceGitCheckout,
-  env: NodeJS.ProcessEnv
-): Promise<string | null> => {
-  if (checkout.branch === undefined) return gitCurrentBranch(checkout.directory, env)
-  return Promise.resolve(checkout.branch)
+const checkoutHead = (checkout: WorkspaceGitCheckout, env: NodeJS.ProcessEnv): Promise<GitHead> => {
+  if (checkout.branch === undefined) return gitHead(checkout.directory, env)
+  return Promise.resolve({ branch: checkout.branch })
 }
 
 const isArchivedIn = (workspaces: ReadonlyArray<Workspace>, workspaceId: string): boolean =>

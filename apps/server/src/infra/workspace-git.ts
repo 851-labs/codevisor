@@ -1,7 +1,7 @@
-import type { GitPullRequest, Workspace } from "@codevisor/api"
+import type { GitHead, GitPullRequest, Workspace } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { PullRequestHost } from "@codevisor/git-hosts"
-import { gitCurrentBranch } from "@codevisor/worktrees"
+import { gitHead } from "@codevisor/worktrees"
 
 import { failureMessage, run, type EventFanout } from "../server-context.js"
 import type { WorkspaceGitCheckout } from "../server-workspace-effects.js"
@@ -12,7 +12,7 @@ export interface WorkspaceGitMonitorOptions {
   readonly fanout: EventFanout
   readonly checkout: (workspace: Workspace) => Promise<WorkspaceGitCheckout | undefined>
   readonly environment: (directory: string) => Promise<NodeJS.ProcessEnv>
-  readonly branchOf?: (directory: string, env: NodeJS.ProcessEnv) => Promise<string | null>
+  readonly headOf?: (directory: string, env: NodeJS.ProcessEnv) => Promise<GitHead>
   readonly pullRequestOf: PullRequestHost["findPullRequest"]
   readonly branchIntervalMs?: number
   readonly pullRequestIntervalMs?: number
@@ -43,7 +43,7 @@ export const startWorkspaceGitMonitor = ({
   fanout,
   checkout,
   environment,
-  branchOf = gitCurrentBranch,
+  headOf = gitHead,
   pullRequestOf,
   branchIntervalMs = 30_000,
   pullRequestIntervalMs = 120_000
@@ -55,12 +55,20 @@ export const startWorkspaceGitMonitor = ({
 
   const record = async (
     workspaceId: string,
-    branch: string | null,
+    head: GitHead,
     pullRequest: GitPullRequest | null | undefined
   ): Promise<void> => {
-    for (const event of await run(db.setWorkspaceGit(workspaceId, branch, pullRequest))) {
+    for (const event of await run(db.setWorkspaceGit(workspaceId, head, pullRequest))) {
       await run(fanout.publish(event))
     }
+  }
+
+  const checkoutHead = async (
+    found: WorkspaceGitCheckout,
+    env: NodeJS.ProcessEnv
+  ): Promise<GitHead> => {
+    if (found.branch !== undefined) return { branch: found.branch }
+    return headOf(found.directory, env)
   }
 
   const inspect = async (workspace: Workspace, wantsPullRequest: boolean): Promise<void> => {
@@ -68,11 +76,12 @@ export const startWorkspaceGitMonitor = ({
     const found = await checkout(workspace)
     if (found === undefined) {
       if (!workspace.isArchived || workspace.git === undefined)
-        await record(workspace.id, null, null)
+        await record(workspace.id, { branch: null }, null)
       return
     }
     const env = await environment(found.directory)
-    const branch = found.branch ?? (await branchOf(found.directory, env))
+    const head = await checkoutHead(found, env)
+    const branch = head.branch
     const branchChanged = workspace.git?.branch !== branch
     let pullRequest: GitPullRequest | null | undefined
     if (branch === null) {
@@ -81,7 +90,7 @@ export const startWorkspaceGitMonitor = ({
       pullRequest = await pullRequestOf(found.directory, env, branch, found.ownedBranch)
       if (pullRequest === undefined && branchChanged) pullRequest = null
     }
-    await record(workspace.id, branch, pullRequest)
+    await record(workspace.id, head, pullRequest)
   }
 
   const drain = (): Promise<void> => {

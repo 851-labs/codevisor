@@ -31,6 +31,7 @@ const fixture = async () => {
   const published: Array<EventEnvelope> = []
   fanout.subscribe((event) => published.push(event))
   const branches = new Map<string, string | null>()
+  const detached = new Map<string, string>()
   const pullRequests = new Map<string, GitPullRequest | null | undefined>()
   const lookups: Array<string> = []
   const missing = new Set<string>()
@@ -45,7 +46,11 @@ const fixture = async () => {
           : { directory: record.rootDirectory }
       },
       environment: async () => ({}),
-      branchOf: async (directory) => branches.get(directory) ?? null,
+      headOf: async (directory) => {
+        const commit = detached.get(directory)
+        if (commit !== undefined) return { branch: null, detachedHead: commit }
+        return { branch: branches.get(directory) ?? null }
+      },
       pullRequestOf: async (directory, _env, branch) => {
         lookups.push(`${directory}@${branch}`)
         return pullRequests.get(directory)
@@ -58,7 +63,19 @@ const fixture = async () => {
   }
   const git = async (id: string) =>
     (await run(db.listWorkspaces)).find((candidate) => candidate.id === id)?.git
-  return { db, fanout, published, branches, pullRequests, lookups, missing, workspace, start, git }
+  return {
+    db,
+    fanout,
+    published,
+    branches,
+    detached,
+    pullRequests,
+    lookups,
+    missing,
+    workspace,
+    start,
+    git
+  }
 }
 
 it("records each workspace's branch and pull request at boot and publishes only changes", async () => {
@@ -179,14 +196,15 @@ it("re-checks a workspace's pull request when one of its chats finishes a turn",
   expect(await git(feature.id)).toEqual({ branch: "one", pullRequest: pullRequest(9) })
 })
 
-it("re-checks a workspace when it changes and records a detached checkout as having no branch", async () => {
-  const { db, fanout, branches, workspace, start, git } = await fixture()
+it("re-checks a workspace when it changes and records a detached checkout's commit", async () => {
+  const { db, fanout, branches, detached, workspace, start, git } = await fixture()
   const feature = await workspace("feature", "/repo/feature")
   branches.set("/repo/feature", "one")
   const monitor = start()
   await monitor.settled()
 
   branches.delete("/repo/feature")
+  detached.set("/repo/feature", "e6a622bef")
   const publish = async (subjectId: string) =>
     run(
       fanout.publish(await run(db.appendEvent("workspace.updated", subjectId, { id: subjectId })))
@@ -195,7 +213,11 @@ it("re-checks a workspace when it changes and records a detached checkout as hav
   await publish("00000000-0000-4000-8000-00000000dead")
   await monitor.settled()
 
-  expect(await git(feature.id)).toEqual({ branch: null, pullRequest: null })
+  expect(await git(feature.id)).toEqual({
+    branch: null,
+    detachedHead: "e6a622bef",
+    pullRequest: null
+  })
 })
 
 it("logs a failed check and keeps checking the other workspaces", async () => {

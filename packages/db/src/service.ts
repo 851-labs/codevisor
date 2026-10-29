@@ -12,6 +12,7 @@ import type {
   EventEnvelope,
   EventKind,
   FileMetadata,
+  GitHead,
   GitPullRequest,
   Harness,
   Project,
@@ -171,7 +172,7 @@ export interface CodevisorDatabaseService
   readonly clearTerminalPaneStatuses: Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly setWorkspaceGit: (
     workspaceId: string,
-    branch: string | null,
+    head: GitHead,
     pullRequest: GitPullRequest | null | undefined
   ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly setSessionWorkspace: (

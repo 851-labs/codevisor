@@ -137,10 +137,17 @@ const parsePullRequest = (raw: string | null | undefined): GitPullRequest | null
   }
 }
 
-const workspaceGitFromRow = (row: WorkspaceRow): WorkspaceGit | undefined =>
-  row.git_known !== 1
-    ? undefined
-    : { branch: row.git_branch ?? null, pullRequest: parsePullRequest(row.git_pull_request) }
+const workspaceGitFromRow = (row: WorkspaceRow): WorkspaceGit | undefined => {
+  if (row.git_known !== 1) return undefined
+
+  const git = {
+    branch: row.git_branch ?? null,
+    pullRequest: parsePullRequest(row.git_pull_request)
+  }
+  if (row.git_detached_head == null) return git
+
+  return { ...git, detachedHead: row.git_detached_head }
+}
 
 export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
   const labels = parseLabels(row.labels)

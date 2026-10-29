@@ -117,9 +117,14 @@ public final class SidebarGitLookups {
   }
 
   public func branch(for workspace: Workspace) -> String? {
-    if let git = workspace.git { return git.branch }
-    if workspace.isArchived, let archived = archivedGit.byWorkspace[workspace.id] { return archived.branch }
+    if let git = workspace.git { return Self.head(of: git) }
+    if workspace.isArchived, let archived = archivedGit.byWorkspace[workspace.id] { return Self.head(of: archived) }
     return branches.byWorkspace[workspace.id]
+  }
+
+  static func head(of git: ServerWorkspaceGit) -> String? {
+    if let branch = git.branch { return branch }
+    return git.detachedHead.map { "\($0) (detached)" }
   }
 
   public func pullRequest(for workspace: Workspace) -> ServerGitPullRequest? {

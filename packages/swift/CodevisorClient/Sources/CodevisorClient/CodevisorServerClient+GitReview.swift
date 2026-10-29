@@ -147,10 +147,12 @@ struct ServerGitPullRequestLookup: Decodable {
 
 public struct ServerWorkspaceGit: Codable, Hashable, Sendable {
   public let branch: String?
+  public let detachedHead: String?
   public let pullRequest: ServerGitPullRequest?
 
-  public init(branch: String?, pullRequest: ServerGitPullRequest?) {
+  public init(branch: String?, detachedHead: String? = nil, pullRequest: ServerGitPullRequest?) {
     self.branch = branch
+    self.detachedHead = detachedHead
     self.pullRequest = pullRequest
   }
 }

@@ -34,8 +34,10 @@ it("leaves a workspace's git unknown until the server has checked it", async () 
 it("records the branch and pull request and journals only real changes", async () => {
   const { db, workspace, read } = await workspaceFixture()
 
-  const first = await run(db.setWorkspaceGit(workspace.id.toUpperCase(), "feature", pullRequest))
-  const repeated = await run(db.setWorkspaceGit(workspace.id, "feature", pullRequest))
+  const first = await run(
+    db.setWorkspaceGit(workspace.id.toUpperCase(), { branch: "feature" }, pullRequest)
+  )
+  const repeated = await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
   expect((await read())?.git).toEqual({ branch: "feature", pullRequest })
   expect(first.map((event) => [event.kind, event.subjectId])).toEqual([
@@ -46,10 +48,10 @@ it("records the branch and pull request and journals only real changes", async (
 
 it("keeps the known pull request when only the branch is checked", async () => {
   const { db, workspace, read } = await workspaceFixture()
-  await run(db.setWorkspaceGit(workspace.id, "feature", pullRequest))
+  await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
-  const unchanged = await run(db.setWorkspaceGit(workspace.id, "feature", undefined))
-  await run(db.setWorkspaceGit(workspace.id, "renamed", undefined))
+  const unchanged = await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, undefined))
+  await run(db.setWorkspaceGit(workspace.id, { branch: "renamed" }, undefined))
 
   expect(unchanged).toEqual([])
   expect((await read())?.git).toEqual({ branch: "renamed", pullRequest })
@@ -58,15 +60,37 @@ it("keeps the known pull request when only the branch is checked", async () => {
 it("records a checkout with no branch or pull request as known", async () => {
   const { db, workspace, read } = await workspaceFixture()
 
-  const events = await run(db.setWorkspaceGit(workspace.id, null, null))
+  const events = await run(db.setWorkspaceGit(workspace.id, { branch: null }, null))
 
   expect(events).toHaveLength(1)
   expect((await read())?.git).toEqual({ branch: null, pullRequest: null })
 })
 
+it("records a detached HEAD's commit and clears it once a branch is checked out", async () => {
+  const { db, workspace, read } = await workspaceFixture()
+
+  const detached = await run(
+    db.setWorkspaceGit(workspace.id, { branch: null, detachedHead: "e6a622bef" }, null)
+  )
+  expect(detached).toHaveLength(1)
+  expect((await read())?.git).toEqual({
+    branch: null,
+    detachedHead: "e6a622bef",
+    pullRequest: null
+  })
+
+  const moved = await run(
+    db.setWorkspaceGit(workspace.id, { branch: null, detachedHead: "c1c800ab2" }, undefined)
+  )
+  expect(moved).toHaveLength(1)
+
+  await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, undefined))
+  expect((await read())?.git).toStrictEqual({ branch: "feature", pullRequest: null })
+})
+
 it("survives a client saving the workspace again", async () => {
   const { db, project, workspace, read } = await workspaceFixture()
-  await run(db.setWorkspaceGit(workspace.id, "feature", pullRequest))
+  await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
   await run(
     db.upsertWorkspace({
@@ -82,7 +106,7 @@ it("survives a client saving the workspace again", async () => {
 
 it("treats a stored pull request it can no longer read as none", async () => {
   const { db, sqlite, workspace, read } = await workspaceFixture()
-  await run(db.setWorkspaceGit(workspace.id, "feature", pullRequest))
+  await run(db.setWorkspaceGit(workspace.id, { branch: "feature" }, pullRequest))
 
   sqlite.prepare("update workspaces set git_pull_request = ? where id = ?").run("{", workspace.id)
 

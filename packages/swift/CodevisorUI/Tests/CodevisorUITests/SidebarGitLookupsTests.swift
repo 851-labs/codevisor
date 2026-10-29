@@ -24,12 +24,21 @@ struct SidebarGitLookupsTests {
   func serverGitAnswers() {
     let lookups = SidebarGitLookups()
     let reported = workspace("/repo/a", git: ServerWorkspaceGit(branch: "feature", pullRequest: pullRequest))
-    let detached = workspace("/repo/b", git: ServerWorkspaceGit(branch: nil, pullRequest: nil))
+    let noBranch = workspace("/repo/b", git: ServerWorkspaceGit(branch: nil, pullRequest: nil))
 
     #expect(lookups.branch(for: reported) == "feature")
     #expect(lookups.pullRequest(for: reported) == pullRequest)
-    #expect(lookups.branch(for: detached) == nil)
-    #expect(lookups.pullRequest(for: detached) == nil)
+    #expect(lookups.branch(for: noBranch) == nil)
+    #expect(lookups.pullRequest(for: noBranch) == nil)
+  }
+
+  @Test("A detached HEAD shows its commit instead of no branch")
+  func detachedHeadShowsCommit() {
+    let lookups = SidebarGitLookups()
+    let detached = workspace(
+      "/repo/a", git: ServerWorkspaceGit(branch: nil, detachedHead: "e6a622bef", pullRequest: nil))
+
+    #expect(lookups.branch(for: detached) == "e6a622bef (detached)")
   }
 
   @Test("Only workspaces from a server that doesn't report git are looked up")
