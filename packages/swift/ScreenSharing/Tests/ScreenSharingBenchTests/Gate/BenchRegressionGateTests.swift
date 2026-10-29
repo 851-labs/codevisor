@@ -51,10 +51,42 @@ struct BenchRegressionGateTests {
     #expect(regression.metric == "e2e_p50_ms" && regression.baseline == 10 && regression.observed == [30, 30])
   }
 
+  @Test func aJitterBufferSwitchingStateFailsNothingOnceTheStageIsSplit() {
+    let baseline = Array(repeating: Self.split(e2eP50Ms: 55, outsideMs: 20, jitterBufferMs: 35), count: 7)
+    let capped = Self.split(e2eP50Ms: 88, outsideMs: 20, jitterBufferMs: 68)
+    let slowerPipeline = Self.split(e2eP50Ms: 88, outsideMs: 23.01, jitterBufferMs: 65)
+    let largerBuffer = Self.split(e2eP50Ms: 100, outsideMs: 20, jitterBufferMs: 75.01)
+
+    #expect(BenchRegressionGate.regressions(baseline: baseline, first: capped, second: capped).isEmpty)
+    #expect(
+      BenchRegressionGate.regressions(baseline: baseline, first: slowerPipeline, second: slowerPipeline).map(\.metric)
+        == ["e2e_outside_jitter_buffer_p50_ms"])
+    #expect(
+      BenchRegressionGate.regressions(baseline: baseline, first: largerBuffer, second: largerBuffer).map(\.metric) == [
+        "jitter_buffer_p50_ms"
+      ])
+  }
+
+  @Test func aBaselineWithoutTheSplitIsJudgedOnWholeE2e() {
+    let capped = Self.split(e2eP50Ms: 88, outsideMs: 20, jitterBufferMs: 68)
+
+    let regressions = BenchRegressionGate.regressions(baseline: Self.baseline, first: capped, second: capped)
+
+    #expect(regressions.map(\.metric) == ["e2e_p50_ms", "e2e_p95_ms"])
+  }
+
   @Test func errorsInBothRunsFailWithoutABaseline() {
     let failing = BenchGateSample(e2eP50Ms: 10, e2eP95Ms: 20, updatesPerS: 60, errors: 2)
 
     #expect(BenchRegressionGate.regressions(baseline: [], first: failing, second: failing).map(\.metric) == ["errors"])
+  }
+
+  private static func split(e2eP50Ms: Double, outsideMs: Double, jitterBufferMs: Double) -> BenchGateSample {
+    var sample = BenchGateSample(e2eP50Ms: e2eP50Ms, e2eP95Ms: e2eP50Ms + 5, updatesPerS: 60)
+    sample.e2eOutsideJitterBufferP50Ms = outsideMs
+    sample.e2eOutsideJitterBufferP95Ms = outsideMs + 5
+    sample.jitterBufferP50Ms = jitterBufferMs
+    return sample
   }
 
   private static func sample(

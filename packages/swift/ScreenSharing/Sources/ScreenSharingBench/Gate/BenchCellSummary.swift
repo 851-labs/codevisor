@@ -8,6 +8,7 @@ public struct BenchCellSummary: Codable, Sendable, Equatable {
   public var e2eP50MinMs: Double?
   public var e2eP50MaxMs: Double?
   public var e2eOutsideJitterBufferP50Ms: Double?
+  public var e2eOutsideJitterBufferP95Ms: Double?
   public var updatesPerS: Double?
   public var freezeRatio: Double?
   public var psnrY: Double?
@@ -26,6 +27,7 @@ public struct BenchCellSummary: Codable, Sendable, Equatable {
     e2eP50MinMs = p50s.min()
     e2eP50MaxMs = p50s.max()
     e2eOutsideJitterBufferP50Ms = BenchMedian.of(measured.compactMap(\.e2eOutsideJitterBufferMs?.p50))
+    e2eOutsideJitterBufferP95Ms = BenchMedian.of(measured.compactMap(\.e2eOutsideJitterBufferMs?.p95))
     updatesPerS = BenchMedian.of(measured.map(\.updatesPerS))
     freezeRatio = BenchMedian.of(measured.compactMap(\.freezes?.ratio))
     psnrY = BenchMedian.of(measured.compactMap(\.text?.psnrY))

@@ -4,7 +4,8 @@ set -euo pipefail
 app_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo_root="$(cd "$app_root/../.." && pwd)"
 package_path="$repo_root/packages/swift"
-bundle="$app_root/.build/CodevisorBench.app"
+scratch="${CODEVISOR_BENCH_SCRATCH:-}"
+bundle="${scratch:-$app_root/.build}/CodevisorBench.app"
 team_id=WH4QW9ND3J
 
 signing_identity() {
@@ -37,8 +38,10 @@ fi
 
 cd "$repo_root"
 node scripts/net-artifact.mjs ensure-swift >&2
-swift build -c release --package-path "$package_path" --product CodevisorBench >&2
-products="$(swift build -c release --package-path "$package_path" --show-bin-path)"
+build_options=(-c release --package-path "$package_path")
+[[ -z "$scratch" ]] || build_options+=(--scratch-path "$scratch/swift")
+swift build "${build_options[@]}" --product CodevisorBench >&2
+products="$(swift build "${build_options[@]}" --show-bin-path)"
 
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Frameworks"
