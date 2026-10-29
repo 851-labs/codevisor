@@ -332,3 +332,4 @@ apps/screen-sharing-bench/scripts/run.sh tamale player --duration 5
 permissions to `CodevisorBench.app` rather than to `sshd`. It prints the app's stdout and stderr and exits
 with its status. The minis are also CI runners: check `ps -axo command | grep Runner.Worker` first and keep
 runs short.
+
