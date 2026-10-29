@@ -1,0 +1,71 @@
+name: Screen Sharing Bench Calibration
+
+on:
+  workflow_dispatch:
+    inputs:
+      clock-minutes:
+        description: Minutes of clock probes between the minis (C2), 1 to 60
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-sharing-bench
+  cancel-in-progress: false
+
+env:
+  HOST_IP: 192.168.10.78
+  CLOCK_MINUTES: ${{ inputs.clock-minutes }}
+  RENDEZVOUS_SECONDS: 1800
+  IDLE_EXIT_SECONDS: 60
+
+jobs:
+  host:
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 120
+    steps:
+      - name: Check the inputs
+        id: inputs
+        run: '[[ "$CLOCK_MINUTES" =~ ^[0-9]+$ ]] && (( CLOCK_MINUTES >= 1 && CLOCK_MINUTES <= 60 ))'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: apps/screen-sharing-bench/scripts
+          set-safe-directory: false
+      - name: Calibrate the observer on tamale
+        run: apps/screen-sharing-bench/scripts/calibrate-observer.sh "$RUNNER_TEMP/results/tamale"
+      - name: Serve clock probes
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' }}
+        run: |
+          apps/screen-sharing-bench/scripts/run-installed.sh calibrate --check c2 --serve \
+            --duration "$(( CLOCK_MINUTES * 60 + RENDEZVOUS_SECONDS ))" --idle-exit "$IDLE_EXIT_SECONDS" \
+            > "$RUNNER_TEMP/results/tamale/c2-responder.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: calibration-tamale
+          path: ${{ runner.temp }}/results/tamale
+
+  viewer:
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 120
+    steps:
+      - name: Check the inputs
+        id: inputs
+        run: '[[ "$CLOCK_MINUTES" =~ ^[0-9]+$ ]] && (( CLOCK_MINUTES >= 1 && CLOCK_MINUTES <= 60 ))'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: apps/screen-sharing-bench/scripts
+          set-safe-directory: false
+      - name: Calibrate the observer on croissant
+        run: apps/screen-sharing-bench/scripts/calibrate-observer.sh "$RUNNER_TEMP/results/croissant"
+      - name: Probe tamale's clock
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' }}
+        run: apps/screen-sharing-bench/scripts/calibrate-clock.sh "$HOST_IP" "$CLOCK_MINUTES" "$RENDEZVOUS_SECONDS" "$RUNNER_TEMP/results/croissant"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: calibration-croissant
+          path: ${{ runner.temp }}/results/croissant

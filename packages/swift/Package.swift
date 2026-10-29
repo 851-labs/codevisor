@@ -75,7 +75,7 @@ let package = Package(
     ),
     .executableTarget(
       name: "CodevisorBench",
-      dependencies: ["ScreenSharingBench", "ScreenSharingBenchScenes", "CGVirtualDisplayPrivate"],
+      dependencies: ["ScreenSharing", "ScreenSharingBench", "ScreenSharingBenchScenes", "CGVirtualDisplayPrivate"],
       path: "ScreenSharing/Sources/CodevisorBench",
       swiftSettings: strictSwiftSettings
     ),
