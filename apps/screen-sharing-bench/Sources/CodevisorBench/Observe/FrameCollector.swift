@@ -7,11 +7,13 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
   let queue = DispatchQueue(label: "CodevisorBench observer", qos: .userInteractive)
   let continuousMinusAbsoluteNs = BenchMachClock.continuousMinusAbsoluteNs()
   private let layout: BenchBarcodeLayout
+  private let relay: VersionRelay?
   private let observations = Mutex<[BenchObservation]>([])
   private let failure = Mutex<(any Error)?>(nil)
 
-  init(layout: BenchBarcodeLayout) {
+  init(layout: BenchBarcodeLayout, relay: VersionRelay?) {
     self.layout = layout
+    self.relay = relay
   }
 
   func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -26,6 +28,7 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
       else { return }
 
       observations.withLock { $0.append(observation) }
+      relay?.forward(observation)
     } catch {
       failure.withLock { $0 = $0 ?? error }
     }

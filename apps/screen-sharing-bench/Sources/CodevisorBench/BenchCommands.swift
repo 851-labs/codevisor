@@ -7,6 +7,12 @@ enum BenchCommands {
     CalibrateCommand.self,
     SampleCommand.self,
     LoopbackCommand.self,
+    PreflightCommand.self,
+    ShareCommand.self,
+    ViewCommand.self,
+    AppleHPCommand.self,
+    Tier2ReportCommand.self,
+    RendezvousCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {
