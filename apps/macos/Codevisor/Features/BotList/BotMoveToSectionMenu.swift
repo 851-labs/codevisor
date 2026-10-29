@@ -8,7 +8,7 @@ struct BotMoveToSectionMenu: View {
   let actions: BotSidebarRowActions
 
   var body: some View {
-    Menu("Move to Section", systemImage: "folder") {
+    Menu {
       Picker("Move to Section", selection: section) {
         Text("No Section").tag(UUID?.none)
         if !sections.isEmpty {
@@ -22,6 +22,9 @@ struct BotMoveToSectionMenu: View {
       .labelsHidden()
       Divider()
       Button("New Section…") { actions.newSection(bot) }
+    } label: {
+      Label("Move to Section", systemImage: "folder")
+        .labelStyle(.titleAndIcon)
     }
   }
 
