@@ -135,6 +135,7 @@ final class ScreenSharingViewerRegistry {
       run(entry, key: key, after: draining.removeValue(forKey: key))
     }
     entry.subscribers.append(share)
+    updateAudio(entry)
     if canTakeOver(share, in: entry) {
       claim(share, in: entry)
     } else {
@@ -148,6 +149,7 @@ final class ScreenSharingViewerRegistry {
     share.end()
     guard let entry = entries[key] else { return }
     entry.subscribers.removeAll { $0 === share }
+    updateAudio(entry)
     guard entry.subscribers.isEmpty else {
       if entry.active === share { handOff(from: share, in: entry) }
       return
@@ -236,6 +238,10 @@ final class ScreenSharingViewerRegistry {
     if let notice = entry.notice { share.emit(.hostNotice(notice)) }
   }
 
+  private func updateAudio(_ entry: Entry) {
+    entry.endpoint?.audio?.audible = entry.subscribers.contains { $0.role != .watcher }
+  }
+
   private func run(_ entry: Entry, key: Key, after: Task<Void, Never>?) {
     entry.generation += 1
     let generation = entry.generation
@@ -260,6 +266,7 @@ final class ScreenSharingViewerRegistry {
       entry.endpoint = endpoint
       entry.ready = false
       entry.notice = nil
+      updateAudio(entry)
       entry.active?.emit(event)
       for subscriber in entry.subscribers where subscriber !== entry.active { subscriber.emit(.elsewhere(endpoint)) }
       announceLive(entry.sponsor.machineId)

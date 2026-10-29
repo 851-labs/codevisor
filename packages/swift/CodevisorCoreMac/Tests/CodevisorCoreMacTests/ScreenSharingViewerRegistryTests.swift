@@ -67,9 +67,9 @@ struct ScreenSharingViewerRegistryTests {
   private let session = FakeMediaSession()
   private let surface = FakeSurface()
 
-  private func endpoint() -> ScreenSharingViewerEndpoint {
+  private func endpoint(sound: Bool = true) -> ScreenSharingViewerEndpoint {
     session.surface = surface
-    return ScreenSharingViewerEndpoint(session: session, surface: surface)
+    return ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
   }
 
   @Test func panesShowingTheSameDesktopShareTheFirstPanesConnection() async {
@@ -157,6 +157,27 @@ struct ScreenSharingViewerRegistryTests {
 
     await awaitObserved { tab.log.events == [.opened(endpoint)] }
     expectNoDifference(watcher.log.events, [.elsewhere(nil), .elsewhere(endpoint)])
+  }
+
+  @Test func theStreamPlaysSoundOnlyWhileAPaneOtherThanAWatcherShowsIt() async throws {
+    session.supportsAudio = true
+    let watcher = Pane(registry, role: .watcher)
+    let tab = Pane(registry)
+    watcher.show()
+    await watcher.runner.connected.wait()
+    let endpoint = endpoint(sound: false)
+    watcher.runner.send(.opened(endpoint))
+    await awaitObserved { watcher.log.events == [.elsewhere(nil), .elsewhere(endpoint)] }
+    let audio = try #require(endpoint.audio)
+    #expect(!session.audioRequests.contains(true))
+
+    tab.show()
+    audio.apply(.init(enabled: true, volume: 1))
+    #expect(session.audioRequests.last == true)
+
+    await tab.leave()
+    await awaitObserved { !audio.audible }
+    #expect(session.audioRequests.last == false && audio.enabled)
   }
 
   @Test func aDesktopWindowKeepsTheStreamOverATabUntilItCloses() async {
