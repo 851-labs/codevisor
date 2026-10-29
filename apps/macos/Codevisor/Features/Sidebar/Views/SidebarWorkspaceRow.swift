@@ -74,16 +74,12 @@ struct SidebarWorkspaceRow: View {
             Button("Restore", action: onRestore)
           }
         }
-        ZStack(alignment: .trailing) {
+        if isHovered {
+          hoverActions
+        } else {
           properties
             .opacity(archivedOpacity)
-            .opacity(isHovered ? 0 : 1)
-            .allowsHitTesting(!isHovered)
-          if isHovered {
-            hoverActions
-          }
         }
-        .frame(minWidth: hoverActionsWidth, alignment: .trailing)
       }
       .padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -120,26 +116,20 @@ struct SidebarWorkspaceRow: View {
     return isExpanded.map { $0 ? "Expanded" : "Collapsed" } ?? ""
   }
 
-  private var hoverActionsWidth: CGFloat {
-    let slots: CGFloat = isArchived ? 1 : 2
-    return slots * SidebarRowIcon.trailingSlot + (slots - 1) * Self.trailingSpacing
-  }
-
+  @ViewBuilder
   private var properties: some View {
-    HStack(spacing: Self.trailingSpacing) {
-      if let pullRequest {
-        PullRequestBadge(
-          pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
-      }
-      if let machine {
-        Image(systemName: machine.systemImage)
-          .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-          .symbolRenderingMode(.monochrome)
-          .foregroundStyle(.secondary)
-          .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-          .help(machine.name)
-          .accessibilityLabel("On \(machine.name)")
-      }
+    if let pullRequest {
+      PullRequestBadge(
+        pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
+    }
+    if let machine {
+      Image(systemName: machine.systemImage)
+        .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
+        .symbolRenderingMode(.monochrome)
+        .foregroundStyle(.secondary)
+        .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
+        .help(machine.name)
+        .accessibilityLabel("On \(machine.name)")
     }
   }
 
