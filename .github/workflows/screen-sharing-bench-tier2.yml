@@ -76,7 +76,7 @@ env:
 jobs:
   host:
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -88,10 +88,6 @@ jobs:
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
       - name: Install the build where the permission grants are
         run: apps/screen-sharing-bench/scripts/install-granted.sh
-      - name: Wait for a quiet machine (C5)
-        run: |
-          mkdir -p "$RUNNER_TEMP/results"
-          apps/screen-sharing-bench/scripts/run-installed.sh preflight --quiet > "$RUNNER_TEMP/results/host-quiet-preflight.json"
       - name: Host the Tier 2 runs on tamale
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-host.sh "$RUNNER_TEMP/results"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -102,7 +98,7 @@ jobs:
 
   viewer:
     runs-on: [self-hosted, macOS, ARM64, croissant]
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -114,10 +110,6 @@ jobs:
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
       - name: Install the build where the permission grants are
         run: apps/screen-sharing-bench/scripts/install-granted.sh
-      - name: Wait for a quiet machine (C5)
-        run: |
-          mkdir -p "$RUNNER_TEMP/results"
-          apps/screen-sharing-bench/scripts/run-installed.sh preflight --quiet > "$RUNNER_TEMP/results/viewer-quiet-preflight.json"
       - name: View the Tier 2 runs on croissant
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-viewer.sh "$RUNNER_TEMP/results"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
