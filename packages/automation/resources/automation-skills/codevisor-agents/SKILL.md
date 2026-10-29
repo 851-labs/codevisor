@@ -61,6 +61,17 @@ Harness, model, reasoning, and project default to yours. Pass `harness` (an id f
 
 To run it on a new sandbox, pass `sandboxProfile` (a profile id or name from `machine.tools.codevisor.sandboxes.profiles_list()`). The call returns at once with `{ sandboxId, state: "creating" }`; `isolation` is ignored because the agent works in a fresh clone of the project on the sandbox. A few minutes later the agent starts and you're subscribed to it as usual. `machine.tools.codevisor.sandboxes.wait({ sandboxId })` returns once the sandbox is ready, with `agentId` and `machineId`, so `(await machines.get(machineId)).agents.status({ agentId })` reaches it. If setup fails the sandbox shows `state: "failed"` with `error`: read `sandboxes.log({ sandboxId })` and call `sandboxes.retry({ sandboxId })`. See `codevisor-machines` for sandboxes.
 
+## Write its prompt
+
+The prompt is the agent's whole brief. Write it as concise, direct instructions about the work:
+
+- **Goal:** what to change, build, or find out.
+- **Requirements and constraints:** what must be true when it's done. Write each decision as a plain requirement, such as "Keep the CSV header byte-for-byte.", rather than as who said or approved it.
+- **Verification:** how to check the work, such as which tests to run or what behavior to confirm.
+- **Stopping point:** what to hand back, and what to hold for you, such as "Commit, but don't push."
+
+Your own coordination concerns, such as machine load, disk space, scheduling, or other agents' work, belong in the prompt only when they change how the task is done. Give one complete brief up front, then steer with `agents.message` only when something changes.
+
 ## Get its final reply
 
 Starting an agent subscribes you, so end your turn instead of waiting. When the agent finishes, its complete final reply arrives as a hidden message:
@@ -103,7 +114,13 @@ To check on an agent yourself:
 
 ## Answer its questions
 
-When `state` is `waitingForUser`, read `pendingQuestion` and answer it:
+A `session.waiting_for_user` event brings an agent's question. `agents.status` shows it too, as `pendingQuestion` while `state` is `waitingForUser`. The agent stays paused until the question is answered. First decide who answers it:
+
+- **Answer it yourself** when the answer is already settled: the user stated it, it was decided earlier in your conversation, it follows from the task's requirements, or it's a low-stakes implementation detail within the task.
+- **Ask the user** when the answer depends on the user's preferences or intent and nothing has settled it yet. The agent's recommendation helps the user choose. It doesn't settle the question.
+- **Bring a discovery to the user:** something the agent found that the user doesn't know about and would care about, such as "doing X breaks Y". If you already discussed it with the user, answer it from what they decided. Otherwise ask them, and explain plainly what the agent found and what it means before you give the options.
+
+To answer it yourself:
 
 ```js
 ;async () => {
@@ -119,6 +136,16 @@ When `state` is `waitingForUser`, read `pendingQuestion` and answer it:
 ```
 
 To give guidance instead of picking an answer, send it with `agents.message`.
+
+To ask the user, use your harness's own tool for asking the user questions. Ask the same question, reworded for the user if needed, with the same options, and mark which one the agent recommends. Then relay their choice with `agents.answer`, using the agent's option label. If you are a bot, ask in a message with `messages.send` instead, and relay their reply the same way.
+
+One `agents.answer` call answers every question in the prompt, so it can't answer some now and the rest later. When a prompt mixes settled questions with open ones, ask the user all the open ones together, then send every answer in one call. The agent stays paused while the user decides. Carry on with your other work in the meantime.
+
+Examples:
+
+- **Answer it yourself.** The user asked for the fix on the `release-2.4` branch. The agent asks whether to open its PR against `main` or `release-2.4`. Answer `release-2.4`.
+- **Ask the user.** The user asked for an export button. The agent asks whether it should export CSV or JSON, and recommends CSV. Nothing settled the format, so ask the user that question with both options, mark CSV as the agent's recommendation, and relay their choice.
+- **Discovery.** The user asked to raise the webhook retry limit to 10. The agent found that the payment webhook doesn't check for repeats, so every retry can charge the customer again, and it asks whether to add an idempotency key first. Tell the user what that means, such as "With 10 retries, one failed payment webhook can charge a customer up to 10 times. The agent suggests adding an idempotency key first.", then ask. If you had already talked through double charges with the user, answer from what they decided.
 
 ## Find your agents again
 
@@ -197,5 +224,8 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 ## Common mistakes
 
 - Blocking on `agents.wait` or polling `agents.status` for a long task. End your turn; the event carries the final reply.
+- Answering a question the user hasn't settled with your own guess or the agent's recommendation. Ask the user.
+- Answering a discovery without telling the user what the agent found.
+- Writing a prompt that retells your conversation instead of stating the task and its requirements.
 - Leaving shared helpers open or worktree workspaces unarchived after their work is done.
 - Archiving before the branch is pushed. Archiving releases the branch name.
