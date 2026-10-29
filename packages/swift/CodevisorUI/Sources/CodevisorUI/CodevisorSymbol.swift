@@ -15,6 +15,8 @@ public enum CodevisorSymbol: String {
   case gitPullRequestClosed = "git-pull-request-closed"
   case gitPullRequestDraft = "git-pull-request-draft"
 
+  public static let worktreeSystemName = "arrow.trianglehead.branch"
+
   public var image: Image { Image(rawValue, bundle: .module) }
 
   public static func harness(_ harnessId: String?, fallback systemName: String) -> Image {

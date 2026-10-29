@@ -80,7 +80,7 @@ struct ComposerRunTargetBar: View {
             selection: Binding(get: { wantsNewWorktree }, set: onLocation)
           ) {
             Label("Project directory", systemImage: "folder.fill").tag(false)
-            Label("New worktree", systemImage: "arrow.triangle.branch").tag(true)
+            Label("New worktree", systemImage: CodevisorSymbol.worktreeSystemName).tag(true)
           }
         } label: {
           ViewThatFits(in: .horizontal) {
@@ -107,7 +107,7 @@ struct ComposerRunTargetBar: View {
   }
 
   private var locationSymbol: String {
-    wantsNewWorktree ? "arrow.triangle.branch" : "folder.fill"
+    wantsNewWorktree ? CodevisorSymbol.worktreeSystemName : "folder.fill"
   }
 
   private var showsLocationPicker: Bool {
