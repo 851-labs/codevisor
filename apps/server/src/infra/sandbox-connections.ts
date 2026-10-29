@@ -67,6 +67,12 @@ export const requireAdapter = (
   return adapter
 }
 
+export const hostsLocally = (definition: SandboxProviderDefinition | undefined): boolean =>
+  definition !== undefined &&
+  [...definition.accountFields, ...definition.profileFields].some(
+    (field) => field.type === "machine"
+  )
+
 export const usesAccounts = (definition: SandboxProviderDefinition): boolean =>
   definition.accountFields.length > 0
 

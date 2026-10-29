@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 
 import { Labels } from "./labels.js"
+import { SyncEntry } from "./sync.js"
 
 export const SandboxProviderKind = Schema.Literals([
   "tart",
@@ -84,6 +85,7 @@ export const Sandbox = Schema.Struct({
   accountId: Schema.optional(Schema.String),
   state: SandboxState,
   createdAt: Schema.String,
+  createdOn: Schema.optional(Schema.String),
   providerMachineId: Schema.optional(Schema.String),
   platform: Schema.optional(Schema.Literals(["linux", "darwin"])),
   expiresAt: Schema.optional(Schema.String),
@@ -95,6 +97,7 @@ export const Sandbox = Schema.Struct({
   restoresWorkspace: Schema.optional(Schema.Boolean),
   defersWorkspace: Schema.optional(Schema.Boolean),
   workspaceOpenedAt: Schema.optional(Schema.String),
+  placeholderPending: Schema.optional(Schema.Boolean),
   plan: Schema.optional(Schema.Array(SandboxSetupStage)),
   steps: Schema.optional(Schema.Array(SandboxSetupStep)),
   harnessId: Schema.optional(Schema.String),
@@ -138,6 +141,31 @@ export type CreateSandboxRequest = typeof CreateSandboxRequest.Type
 
 export const ClaimSandboxWorkspaceRequest = Schema.Struct({ workspaceId: Schema.String })
 export type ClaimSandboxWorkspaceRequest = typeof ClaimSandboxWorkspaceRequest.Type
+
+export const SANDBOX_MANAGER_ROLE = "sandbox-manager"
+export const FLEET_SANDBOX_ACTION_PATH = "fleet.sandbox_action"
+
+export const FleetSandboxAction = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("destroy"), id: Schema.String }),
+  Schema.Struct({
+    action: Schema.Literal("claim-workspace"),
+    id: Schema.String,
+    workspaceId: Schema.String
+  })
+])
+export type FleetSandboxAction = typeof FleetSandboxAction.Type
+
+export const FleetSandboxRequest = Schema.Struct({
+  request: FleetSandboxAction,
+  record: SyncEntry
+})
+export type FleetSandboxRequest = typeof FleetSandboxRequest.Type
+
+export const FleetSandboxAnswer = Schema.Struct({
+  sandbox: Schema.optional(Sandbox),
+  record: SyncEntry
+})
+export type FleetSandboxAnswer = typeof FleetSandboxAnswer.Type
 
 export const SandboxFieldValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
 export type SandboxFieldValue = typeof SandboxFieldValue.Type

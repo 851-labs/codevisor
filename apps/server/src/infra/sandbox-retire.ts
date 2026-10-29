@@ -1,6 +1,7 @@
 import type { Sandbox } from "@codevisor/api"
 
 import { teardownMachine } from "./sandbox-account.js"
+import { leavePlaceholder } from "./sandbox-placeholder.js"
 import { connectionOf } from "./sandbox-profile-record.js"
 import { teardownRecord } from "./sandbox-watch.js"
 import { remoteWorkspace } from "./sandbox-workspace.js"
@@ -51,13 +52,8 @@ const retireWithWorkspace = async (
   const name = await workspaceName(deps, machine)
   await deps.records.put({ ...machine, state: "destroying" })
   await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
-  await deps.localWorkspaces.keepArchived({
-    workspaceId,
-    name,
-    projectId: machine.projectId,
-    sandboxId: machine.id
-  })
-  await deps.records.remove(machine.id)
+  const { profileId: _unrestorable, ...retired } = machine
+  await leavePlaceholder(deps, retired, { workspaceId, name })
 }
 
 const workspaceName = async (deps: SandboxDeps, machine: Sandbox): Promise<string> => {

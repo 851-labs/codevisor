@@ -8,6 +8,7 @@ import {
   type SandboxAdapter,
   type SandboxField
 } from "@codevisor/sandboxes"
+import type { SyncEntryRecord } from "@codevisor/sync"
 
 import { run } from "../server-context.js"
 import { makeServices } from "../test-support.js"
@@ -15,6 +16,7 @@ import { pushRemainingAgents } from "./sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
 import { makeSandboxLocalWorkspaces } from "./sandbox-local-workspaces.js"
+import type { SandboxManagement } from "./sandbox-manager.js"
 import { makeRetainedAccounts } from "./sandbox-retained-accounts.js"
 import { makeSandboxSettings } from "./sandbox-settings.js"
 import { makeSandboxRecordStore } from "./sandbox-store.js"
@@ -62,6 +64,15 @@ export interface SandboxHarnessOptions {
   readonly verify?: SandboxAdapter["verify"]
   readonly availability?: () => Promise<string | undefined>
   readonly runsHere?: boolean
+  readonly serverId?: string
+  readonly management?: Partial<SandboxManagement>
+  readonly sharing?: SharedSandboxWorld
+}
+
+export interface SharedSandboxWorld {
+  readonly provider: FakeSandboxProvider
+  readonly presences: CloudMachinePresence[]
+  readonly workspaces: RemoteWorkspace[]
 }
 
 export const ok = (stdout = "{}"): ExecResult => ({ exitCode: 0, stdout, stderr: "" })
@@ -74,12 +85,15 @@ export const readyHarness =
       : ok()
 
 export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
-  const { services } = await makeServices("server-owner")
-  const presences: CloudMachinePresence[] = [presence(OWNER, { serverId: "server-owner" })]
+  const serverId = options.serverId ?? "server-owner"
+  const { services } = await makeServices(serverId)
+  const presences: CloudMachinePresence[] = options.sharing?.presences ?? [
+    presence(OWNER, { serverId })
+  ]
   const removed: string[] = []
   const curls: ExecRequest[] = []
   const toolCalls: ToolCall[] = []
-  const workspaces: RemoteWorkspace[] = []
+  const workspaces: RemoteWorkspace[] = options.sharing?.workspaces ?? []
   const logs: string[] = []
   const controls: HarnessControls = {
     offline: false,
@@ -102,7 +116,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     ...(options.streams === true ? { streams: true } : {}),
     ...(options.prepares === true ? { prepares: true } : {})
   })
-  const provider: FakeSandboxProvider = {
+  const provider: FakeSandboxProvider = options.sharing?.provider ?? {
     ...fake,
     definition: {
       ...fake.definition,
@@ -119,8 +133,13 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       return fake.list(owner)
     }
   }
-  const records = makeSandboxRecordStore(services.db)
-  const settings = makeSandboxSettings(services.db, "server-owner", () => clock)
+  const changes: SyncEntryRecord[][] = []
+  const records = makeSandboxRecordStore(services.db, {
+    serverId,
+    now: () => clock,
+    changed: (entries) => changes.push([...entries])
+  })
+  const settings = makeSandboxSettings(services.db, serverId, () => clock)
   await settings.putAccount(FAKE_ACCOUNT)
   await settings.putProfile(FAKE_PROFILE)
   const adapter: SandboxAdapter = {
@@ -155,10 +174,17 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   }
   const deps: SandboxDeps = {
     records,
+    management: {
+      held: () => true,
+      holder: () => undefined,
+      hostLocal: () => false,
+      forward: () => Promise.reject(new Error("No other machine")),
+      ...options.management
+    },
     connections,
     providerAccounts,
     profiles: { get: settings.profile },
-    serverId: "server-owner",
+    serverId,
     account: {
       ownerDeviceId: () => ("owner" in options ? options.owner : OWNER),
       presences: () => presences,
@@ -216,7 +242,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     settings,
     adapters,
     connections,
-    serverId: "server-owner",
+    serverId,
     sandboxesUsing: async (accountId) =>
       (await records.list()).filter((record) => record.accountId === accountId).length,
     retireSandboxes: machines.retireProvider,
@@ -232,6 +258,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     events,
     provider,
     records,
+    changes,
     presences,
     removed,
     curls,

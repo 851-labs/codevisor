@@ -50,6 +50,7 @@ describe("creating a sandbox", () => {
         accountId: "account-1",
         state: "ready",
         createdAt: "2026-10-23T00:00:00.000Z",
+        createdOn: "server-owner",
         providerMachineId: "fake-1",
         platform: "linux",
         deviceId: JOINED_DEVICE,
@@ -261,6 +262,7 @@ describe("sandbox lifetime", () => {
         accountId: "account-1",
         state: "archived",
         createdAt: "2026-10-23T00:00:00.000Z",
+        createdOn: "server-owner",
         workspaceId: "id-2",
         workspaceName: "Renamed box"
       }

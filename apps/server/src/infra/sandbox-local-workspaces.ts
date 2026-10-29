@@ -6,7 +6,7 @@ import { SANDBOX_RESTORE_LABEL } from "./sandbox-watch.js"
 import type { ArchivedWorkspace, SandboxDeps } from "./sandboxes.js"
 
 export type SandboxEventPublisher = (
-  kind: "workspace.updated" | "workspace.deleted",
+  kind: "workspace.updated" | "workspace.deleted" | "sync.changed",
   id: string,
   payload: unknown
 ) => Promise<unknown>

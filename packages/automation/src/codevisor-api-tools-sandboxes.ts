@@ -106,10 +106,10 @@ export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "sandboxes.list",
-    "List this machine's sandboxes: id, name, vendor (provider), profile, project, state " +
-      "(creating, bootstrapping, syncing, cloning, ready, destroying, failed, archived), the " +
-      "setup steps so far, error, and once ready the sandbox's machineId, its remoteProjectId " +
-      "and workspaceId, and agentId when one was started on it.",
+    "List the account's sandboxes, whichever machine made them: id, name, vendor (provider), " +
+      "profile, project, state (creating, bootstrapping, syncing, cloning, ready, destroying, " +
+      "failed, archived), the setup steps so far, error, and once ready the sandbox's machineId, " +
+      "its remoteProjectId and workspaceId, and agentId when one was started on it.",
     "GET",
     "/v1/sandboxes"
   ),

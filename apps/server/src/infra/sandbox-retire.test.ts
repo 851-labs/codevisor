@@ -146,13 +146,13 @@ describe("a provider deleted on another Mac", () => {
     await harness.machines.watch()
 
     expect(await harness.machines.list()).toMatchObject([
-      { id: "unlinked", state: "ready" },
       {
         id: "other",
         state: "failed",
         error:
           "Its e2b provider was deleted before this Mac could tear it down. Delete fake-9 in your e2b account."
-      }
+      },
+      { id: "unlinked", state: "ready" }
     ])
   })
 

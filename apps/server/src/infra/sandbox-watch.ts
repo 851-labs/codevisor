@@ -6,7 +6,8 @@ import {
 } from "@codevisor/sandboxes"
 
 import { teardownMachine } from "./sandbox-account.js"
-import { connectionOf, OPTIONAL_LINKS, optionalLinks } from "./sandbox-profile-record.js"
+import { leavePlaceholder, type RetiredWorkspace } from "./sandbox-placeholder.js"
+import { connectionOf } from "./sandbox-profile-record.js"
 import { isoNow, remoteWorkspace } from "./sandbox-workspace.js"
 import type { SandboxDeps } from "./sandboxes.js"
 
@@ -19,7 +20,7 @@ export type PlacedMachine = Sandbox & {
 
 interface Ending {
   readonly reason: string
-  readonly archived?: { readonly workspaceId: string; readonly name: string }
+  readonly archived?: RetiredWorkspace
 }
 
 const unopenedWorkspaceGraceMs = 60 * 60 * 1000
@@ -53,33 +54,12 @@ export const teardownRecord = async (deps: SandboxDeps, machine: Sandbox): Promi
 const retireArchived = async (
   deps: SandboxDeps,
   machine: PlacedMachine,
-  workspace: { readonly workspaceId: string; readonly name: string }
+  workspace: RetiredWorkspace
 ): Promise<void> => {
   await deps.records.put({ ...machine, state: "destroying" })
   await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
-  const kept = await deps.localWorkspaces.keepArchived({
-    ...workspace,
-    projectId: machine.projectId,
-    sandboxId: machine.id
-  })
-  if (kept) await deps.records.put(archivedRecord(machine, workspace))
-  else await deps.records.remove(machine.id)
+  await leavePlaceholder(deps, machine, workspace)
 }
-
-const archivedRecord = (
-  machine: PlacedMachine,
-  workspace: { readonly workspaceId: string; readonly name: string }
-): Sandbox => ({
-  id: machine.id,
-  name: machine.name,
-  projectId: machine.projectId,
-  provider: machine.provider,
-  ...optionalLinks(machine, OPTIONAL_LINKS),
-  state: "archived",
-  createdAt: machine.createdAt,
-  workspaceId: workspace.workspaceId,
-  workspaceName: workspace.name
-})
 
 const resumeMachine = async (
   deps: SandboxDeps,

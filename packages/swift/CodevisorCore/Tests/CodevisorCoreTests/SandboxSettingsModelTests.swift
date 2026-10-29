@@ -268,7 +268,9 @@ struct SandboxSettingsModelTests {
     #expect(model.providers.map(\.id) == ["labs", "studio", "gone"])
   }
 
-  @Test("Deleting a provider counts its profiles and live workspaces on every reachable Mac, then deletes it on each")
+  @Test(
+    "Deleting a provider counts its profiles and live workspaces once across every reachable Mac, then deletes it on each"
+  )
   func deletingAProvider() async throws {
     let local = SettingsFakeServerClient(
       profiles: [
@@ -284,7 +286,11 @@ struct SandboxSettingsModelTests {
         Self.sandbox("other", on: "personal", workspaceId: "w4"),
       ])
     let studio = SettingsFakeServerClient(
-      serverId: "studio", sandboxes: [Self.sandbox("studio-live", on: "labs", workspaceId: "w5")])
+      serverId: "studio",
+      sandboxes: [
+        Self.sandbox("live", on: "labs", workspaceId: "w1"),
+        Self.sandbox("studio-live", on: "labs", workspaceId: "w5"),
+      ])
     let model = SandboxSettingsModel()
     await model.load(from: local, machines: [])
     let machines = [SandboxMachine(name: "Local", client: local), SandboxMachine(name: "Studio", client: studio)]

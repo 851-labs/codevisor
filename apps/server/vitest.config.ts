@@ -13,6 +13,7 @@ export default defineConfig({
         "**/*.test.ts",
         "src/test-support.ts",
         "src/infra/sandbox-test-support.ts",
+        "src/infra/sandbox-manager-test-support.ts",
         "src/changes-test-support.ts",
         "src/test-support-agents.ts",
         "src/test-support-stubs.ts",

@@ -23,6 +23,16 @@ import { startRequestedAgent } from "./sandbox-agent-start.js"
 import { placementOf, runsElsewhere } from "./sandbox-catalog.js"
 import type { SandboxConnection, SandboxConnections } from "./sandbox-connections.js"
 import { makeSandboxLogBook } from "./sandbox-log-book.js"
+import {
+  createdHere,
+  existingSandbox,
+  IN_PROGRESS,
+  makeSandboxRouting,
+  managesHere,
+  type SandboxManagement,
+  type SandboxRouting
+} from "./sandbox-manager.js"
+import { adoptPlaceholders } from "./sandbox-placeholder.js"
 import { connectionOf, profileOrMissing } from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
 import {
@@ -53,6 +63,7 @@ import { isoNow, placeWorkspace } from "./sandbox-workspace.js"
 
 export interface SandboxDeps {
   readonly records: SandboxRecordStore
+  readonly management: SandboxManagement
   readonly connections: SandboxConnections
   readonly providerAccounts: RetainedAccounts
   readonly profiles: { readonly get: (id: string) => Promise<SandboxProfile | undefined> }
@@ -91,7 +102,7 @@ export interface ArchivedWorkspace {
   readonly sandboxId: string
 }
 
-export interface Sandboxes {
+export interface Sandboxes extends SandboxRouting {
   readonly list: () => Promise<ReadonlyArray<Sandbox>>
   readonly get: (id: string) => Promise<Sandbox>
   readonly log: (id: string, last?: number) => Promise<ReadonlyArray<SandboxSetupLog>>
@@ -101,21 +112,12 @@ export interface Sandboxes {
   ) => Promise<Sandbox>
   readonly retry: (id: string, publish?: SandboxSetupPublisher) => Promise<Sandbox>
   readonly wait: (id: string, timeoutMs: number) => Promise<WaitForSandboxResponse>
-  readonly destroy: (id: string) => Promise<void>
-  readonly claimWorkspace: (id: string, workspaceId: string) => Promise<Sandbox>
   readonly restore: (workspaceId: string) => Promise<void>
   readonly retireProvider: (accountId: string) => Promise<void>
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
   readonly settled: () => Promise<void>
 }
-
-const inProgress: ReadonlySet<Sandbox["state"]> = new Set([
-  "creating",
-  "bootstrapping",
-  "syncing",
-  "cloning"
-])
 
 export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   const pipelines = new Set<Promise<unknown>>()
@@ -133,15 +135,16 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     }
   }
 
-  const destroy = async (id: string): Promise<void> => {
-    const machine = await existing(deps, id)
-    if (busy.has(id)) {
+  const destroyHere = async (machine: Sandbox): Promise<undefined> => {
+    if (busy.has(machine.id)) {
       abandonWhileSettingUp(abandonments, machine)
       return
     }
 
-    await exclusively(id, () => teardownRecord(deps, machine))
+    await exclusively(machine.id, () => teardownRecord(deps, machine))
   }
+
+  const routing = makeSandboxRouting(deps, destroyHere)
 
   const create = async (
     request: CreateSandboxRequest,
@@ -176,7 +179,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   }
 
   const retry = async (id: string, publish?: SandboxSetupPublisher): Promise<Sandbox> => {
-    const failed = await existing(deps, id)
+    const failed = await existingSandbox(deps, id)
     const request = retryRequest(failed)
     await deps.records.remove(id)
     return create(request, publish).catch(async (cause: unknown) => {
@@ -191,7 +194,8 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   ): Promise<void> => {
     for (const machine of machines) {
       if (isSettingUp(busy, machine)) abandonments.abandon(machine.id)
-      else await exclusively(machine.id, () => retireOne(deps, machine))
+      else if (managesHere(deps, machine))
+        await exclusively(machine.id, () => retireOne(deps, machine))
     }
   }
 
@@ -209,16 +213,15 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
 
   return {
     list: deps.records.list,
-    get: (id) => existing(deps, id),
+    get: (id) => existingSandbox(deps, id),
     log: async (id, last) => {
-      await existing(deps, id)
+      await existingSandbox(deps, id)
       return logs.lines(id, last)
     },
     create,
     retry,
     wait: (id, timeoutMs) => waitForSandbox(deps, id, timeoutMs),
-    destroy,
-    claimWorkspace: (id, workspaceId) => claimWorkspace(deps, id, workspaceId),
+    ...routing,
     restore: (workspaceId) => {
       const restoring = restoreArchived(workspaceId)
       track(pipelines, Promise.allSettled([restoring]))
@@ -230,9 +233,10 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     },
     watch: async () => {
       await retainProviderAccounts(deps)
+      await adoptPlaceholders(deps)
       await retire(await withDeletedProvider(deps), retireOrphan)
       for (const machine of (await deps.records.list()).filter(isPlaced)) {
-        await exclusively(machine.id, () => watchOne(deps, machine))
+        if (managesHere(deps, machine)) await exclusively(machine.id, () => watchOne(deps, machine))
       }
     },
     sweep: async () => {
@@ -356,38 +360,15 @@ const installRemainingAgents = async (
   })
 }
 
-const claimWorkspace = async (
-  deps: SandboxDeps,
-  id: string,
-  workspaceId: string
-): Promise<Sandbox> => {
-  const machine = await deps.records.get(id)
-  if (machine === undefined) throw new HttpFailure(404, `No sandbox ${id}`)
-  const wanted = workspaceId.toLowerCase()
-  if (machine.workspaceId === wanted) return machine
-  if (machine.state !== "ready" || machine.workspaceId !== undefined)
-    throw new HttpFailure(409, `${machine.name} can't move to another workspace`)
-
-  const claimed = { ...machine, workspaceId: wanted }
-  await deps.records.put(claimed)
-  return claimed
-}
-
 const abandonWhileSettingUp = (abandonments: Abandonments, machine: Sandbox): void => {
-  if (!inProgress.has(machine.state))
+  if (!IN_PROGRESS.has(machine.state))
     throw new HttpFailure(409, `${machine.name} is still being set up or torn down`)
 
   abandonments.abandon(machine.id)
 }
 
 const isSettingUp = (busy: ReadonlySet<string>, machine: Sandbox): boolean =>
-  busy.has(machine.id) && inProgress.has(machine.state)
-
-const existing = async (deps: SandboxDeps, id: string): Promise<Sandbox> => {
-  const machine = await deps.records.get(id)
-  if (machine === undefined) throw new HttpFailure(404, `No sandbox ${id}`)
-  return machine
-}
+  busy.has(machine.id) && IN_PROGRESS.has(machine.state)
 
 const planFor = async (
   provider: SandboxProvider,
@@ -427,7 +408,8 @@ const initialId = (record: RecordWriter): string => record.current().id
 
 const failInterrupted = async (deps: SandboxDeps, busy: ReadonlySet<string>): Promise<void> => {
   for (const machine of await deps.records.list()) {
-    if (!inProgress.has(machine.state) || busy.has(machine.id)) continue
+    if (!IN_PROGRESS.has(machine.state) || busy.has(machine.id) || !createdHere(deps, machine))
+      continue
     const provider = await deps.connections.connect(connectionOf(machine))
     await teardownMachine(deps, provider, machine).catch(() => undefined)
     await deps.records.put({

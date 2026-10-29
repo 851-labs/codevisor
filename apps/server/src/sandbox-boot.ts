@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
-import { CloudApiError, rewriteMachineInviteServer } from "@codevisor/cloud-client"
+import {
+  CloudApiError,
+  rewriteMachineInviteServer,
+  type MachineRoles
+} from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   appleContainerAdapter,
@@ -39,7 +43,11 @@ import type { MachineEnrollment } from "./infra/machine-enrollment.js"
 import type { MachineLink } from "./infra/machine-link.js"
 import { FIRST_AGENT_WAIT, pushRemainingAgents } from "./infra/sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./infra/sandbox-catalog.js"
-import { makeSandboxAdapters, makeSandboxConnections } from "./infra/sandbox-connections.js"
+import {
+  hostsLocally,
+  makeSandboxAdapters,
+  makeSandboxConnections
+} from "./infra/sandbox-connections.js"
 import {
   appBundleOf,
   containerImages,
@@ -48,9 +56,10 @@ import {
   type TartImageSettings
 } from "./infra/sandbox-image.js"
 import { makeSandboxLocalWorkspaces, type SandboxEvents } from "./infra/sandbox-local-workspaces.js"
+import { joinSandboxManagerElection, makeSandboxManagement } from "./infra/sandbox-manager-link.js"
 import { makeRetainedAccounts } from "./infra/sandbox-retained-accounts.js"
 import { makeSandboxSettings } from "./infra/sandbox-settings.js"
-import { makeSandboxRecordStore } from "./infra/sandbox-store.js"
+import { makeSandboxRecordStore, SANDBOX_RECORDS_NAMESPACE } from "./infra/sandbox-store.js"
 import { pushOneWaySync } from "./infra/sandbox-sync.js"
 import { makeSandboxes } from "./infra/sandboxes.js"
 import type { SandboxesService } from "./routes/sandboxes.js"
@@ -58,6 +67,7 @@ import type { CloudServerControl } from "./server-context-types.js"
 import { run } from "./server-context.js"
 
 const watchIntervalMs = 30 * 1000
+const electionRetryMs = 1000
 
 export interface SandboxBootOptions {
   readonly db: CodevisorDatabaseService
@@ -67,6 +77,7 @@ export interface SandboxBootOptions {
   readonly cloud: Required<Pick<CloudServerControl, "deviceId" | "machines" | "removePeer">>
   readonly enrollment: MachineEnrollment
   readonly link: MachineLink
+  readonly roles: MachineRoles
   readonly syncBlobs: BlobStore
   readonly env: NodeJS.ProcessEnv
 }
@@ -74,7 +85,16 @@ export interface SandboxBootOptions {
 export const startSandboxes = (
   options: SandboxBootOptions
 ): SandboxesService & { readonly start: () => void } => {
-  const records = makeSandboxRecordStore(options.db)
+  const events: SandboxEvents = { publish: () => Promise.resolve() }
+  const records = makeSandboxRecordStore(options.db, {
+    serverId: options.serverId,
+    changed: (entries) => {
+      void events.publish("sync.changed", SANDBOX_RECORDS_NAMESPACE, {
+        namespace: SANDBOX_RECORDS_NAMESPACE,
+        entries
+      })
+    }
+  })
   const settings = makeSandboxSettings(options.db, options.serverId)
   const adapters = makeSandboxAdapters(
     sandboxAdapters(
@@ -88,7 +108,6 @@ export const startSandboxes = (
     accounts: settings.accounts,
     account: providerAccounts.account
   })
-  const events: SandboxEvents = { publish: () => Promise.resolve() }
   const projects = {
     get: async (projectId: string) =>
       (await run(options.db.listProjects)).find(
@@ -97,6 +116,14 @@ export const startSandboxes = (
   }
   const machines = makeSandboxes({
     records,
+    management: makeSandboxManagement({
+      roles: options.roles,
+      cloud: options.cloud,
+      link: options.link,
+      serverId: options.serverId,
+      machineName: options.machineName,
+      hostLocal: (provider) => hostsLocally(adapters.get(provider)?.definition)
+    }),
     connections,
     providerAccounts,
     profiles: { get: settings.profile },
@@ -131,12 +158,26 @@ export const startSandboxes = (
     newId: randomUUID,
     log: (line) => console.log(line)
   })
+  let checking: Promise<void> | undefined
+  let again = false
   const tick = (): void => {
-    void machines
+    if (checking !== undefined) {
+      again = true
+      return
+    }
+    checking = machines
       .sweep()
       .then(() => machines.watch())
       .catch((cause: unknown) => console.log(`Sandbox check failed: ${String(cause)}`))
+      .finally(() => {
+        checking = undefined
+        if (again) {
+          again = false
+          tick()
+        }
+      })
   }
+  const joinElection = joinSandboxManagerElection(options, tick)
   const catalog: SandboxCatalogDeps = {
     settings,
     adapters,
@@ -157,6 +198,10 @@ export const startSandboxes = (
     start: () => {
       tick()
       setInterval(tick, watchIntervalMs).unref()
+      const joining = setInterval(() => {
+        if (joinElection()) clearInterval(joining)
+      }, electionRetryMs)
+      joining.unref()
     }
   }
 }

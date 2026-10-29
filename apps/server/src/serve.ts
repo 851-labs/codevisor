@@ -322,6 +322,7 @@ export const runServe = (
         cloud: cloudControl,
         enrollment: machineEnrollment,
         link: machineLink,
+        roles: machineRoles,
         syncBlobs,
         env: process.env
       })

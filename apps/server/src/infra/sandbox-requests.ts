@@ -61,6 +61,7 @@ export const newRecord = (
     ...profileRecordFields(profile),
     state: "creating",
     createdAt: isoNow(deps),
+    createdOn: deps.serverId,
     plan: [
       ...plan.stages,
       ...(plan.preinstalled ? [] : ["install" as const]),

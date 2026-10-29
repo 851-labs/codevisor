@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { FLEET_SESSION_EVENT_PATH } from "@codevisor/api"
+import { FLEET_SANDBOX_ACTION_PATH, FLEET_SESSION_EVENT_PATH } from "@codevisor/api"
 import type { GatewayOrigin } from "@codevisor/mcp"
 
 import {
@@ -12,6 +12,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { fleetCall, invokeForFleet } from "./fleet-calls.js"
+import { receiveSandboxAction } from "./fleet-sandbox-actions.js"
 import { receiveSessionEvent } from "./fleet-session-events.js"
 import { routeMachineEnrollment } from "./machines.js"
 
@@ -56,6 +57,19 @@ const writeError = (
   })
 }
 
+const answerSandboxAction = async (
+  response: ServerResponse,
+  receive: () => Promise<unknown>
+): Promise<void> => {
+  try {
+    writeJson(response, 200, { result: await receive() })
+  } catch (cause) {
+    writeError(response, cause instanceof HttpFailure ? cause.status : 500, {
+      message: failureMessage(cause)
+    })
+  }
+}
+
 export const routeGatewayInvoke = async (
   services: CodevisorServerServices,
   routeState: RouteState,
@@ -88,6 +102,10 @@ export const routeGatewayInvoke = async (
   if (path === FLEET_SESSION_EVENT_PATH) {
     const delivered = await receiveSessionEvent(services, routeState, call, body.args)
     writeJson(response, 200, { result: { delivered } })
+    return true
+  }
+  if (path === FLEET_SANDBOX_ACTION_PATH) {
+    await answerSandboxAction(response, () => receiveSandboxAction(services, call, body.args))
     return true
   }
   const controller = new AbortController()

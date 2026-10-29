@@ -158,9 +158,11 @@ public final class SandboxSettingsModel {
       for machine in machines {
         group.addTask { (try? await machine.client.sandboxes()) ?? [] }
       }
-      var all: [ServerSandbox] = []
-      for await listed in group { all += listed }
-      return all
+      var byId: [String: ServerSandbox] = [:]
+      for await listed in group {
+        for sandbox in listed { byId[sandbox.id] = sandbox }
+      }
+      return Array(byId.values)
     }
   }
 

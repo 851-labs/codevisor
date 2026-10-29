@@ -260,7 +260,7 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "POST /v1/sandbox-accounts": "Sign in to a sandbox provider; the credentials are checked first",
   "PUT /v1/sandbox-accounts/:id": "Change a sandbox provider account; blank secrets are kept",
   "DELETE /v1/sandbox-accounts/:id":
-    "Remove a sandbox provider account no profile uses; with cascade=true, also delete its profiles and archive this machine's sandboxes on it",
+    "Remove a sandbox provider account no profile uses; with cascade=true, also delete its profiles and archive its sandboxes",
   "GET /v1/sandbox-profiles": "List sandbox profiles",
   "POST /v1/sandbox-profiles": "Create a sandbox profile for a provider account and image",
   "PUT /v1/sandbox-profiles/:id": "Change a sandbox profile",
@@ -268,7 +268,7 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/sandbox-profiles/availability":
     "Say which sandbox profiles this machine can start now, with a reason for the others",
   "POST /v1/sandboxes/:id/workspace": "Give a sandbox started before the first send its workspace",
-  "GET /v1/sandboxes": "List this machine's sandboxes and their setup state",
+  "GET /v1/sandboxes": "List the account's sandboxes and their setup state",
   "POST /v1/sandboxes":
     "Start a sandbox from a profile with a workspace for a project; setup continues in the background",
   "GET /v1/sandboxes/:id": "Get one sandbox and its setup state",
