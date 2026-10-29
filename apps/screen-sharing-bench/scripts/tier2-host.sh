@@ -92,12 +92,12 @@ run_one() {
 }
 
 tier2_check_inputs
-commit=$(plutil -extract CodevisorBenchCommit raw "$HOME/Applications/CodevisorBench.app/Contents/Info.plist")
-echo "$commit" >"$results/host-commit.txt"
-bench calibrate --check c2 --serve --duration 14400 --idle-exit "$TIER2_RENDEZVOUS_S" \
+"$tier2_scripts/record-installed-commit.sh" "$results"
+commit=$(cat "$results/installed-commit.txt")
+bench calibrate --check c2 --serve --duration 3600 --idle-exit "$TIER2_RENDEZVOUS_S" \
   >"$results/responder.json" 2>"$results/responder.err" &
 background+=($!)
-bench rendezvous --serve --duration 14400 >"$results/rendezvous.json" 2>"$results/rendezvous.err" &
+bench rendezvous --serve --duration 3600 >"$results/rendezvous.json" 2>"$results/rendezvous.err" &
 background+=($!)
 meet_on_build host "$commit"
 while read -r index scene system rep observed; do

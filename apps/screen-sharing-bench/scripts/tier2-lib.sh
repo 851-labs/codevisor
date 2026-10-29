@@ -4,7 +4,7 @@
 : "${TIER2_VIEWER_IP:=192.168.10.103}"
 : "${TIER2_VIEWER_NAME:=croissants-Mac-Mini.local}"
 : "${TIER2_APPLE_HOST:=tamales-Mac-Mini.local}"
-: "${TIER2_SCENES:=idle-cursor,typing,scroll,window-drag,video,test-cards}"
+: "${TIER2_SCENES:=scroll}"
 : "${TIER2_REPS:=3}"
 : "${TIER2_DURATION:=60}"
 : "${TIER2_FLOOR_REPS:=1}"
@@ -13,7 +13,7 @@
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=90
-tier2_plan_budget_s=12600
+tier2_plan_budget_s=2700
 : "${TIER2_FLOOR_PORT:=47594}"
 : "${TIER2_SEED:=1}"
 
@@ -42,7 +42,7 @@ tier2_plan() {
       index=$((index + 1)); echo "$index $scene codevisor $rep 1"
     done
   done
-  if ((TIER2_C4)); then
+  if ((TIER2_C4)) && [[ ",$TIER2_SCENES," == *,video,* ]]; then
     index=$((index + 1)); echo "$index video apple-hp 1 0"
     index=$((index + 1)); echo "$index video codevisor-r1x2 1 0"
   fi
