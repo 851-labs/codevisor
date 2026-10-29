@@ -147,7 +147,7 @@ enum ShortcutCatalog {
     case .newChat:
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
     case .newProject:
-      ShortcutDefinition(.newProject, "New Project…", ShortcutCombo("n", [.command, .shift]), category: .chats)
+      ShortcutDefinition(.newProject, "New Project…", nil, category: .chats)
     case .archiveWorkspace:
       ShortcutDefinition(
         .archiveWorkspace, "Archive Workspace", ShortcutCombo("a", [.command, .shift]), category: .chats,
