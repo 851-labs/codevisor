@@ -32,9 +32,14 @@ const fixture = async () => {
   fanout.subscribe((event) => published.push(event))
   const branches = new Map<string, string | null>()
   const detached = new Map<string, string>()
+  const checkoutBranches = new Map<string, string>()
   const pullRequests = new Map<string, GitPullRequest | null | undefined>()
   const lookups: Array<string> = []
   const missing = new Set<string>()
+  const checkoutOf = (directory: string) => {
+    const branch = checkoutBranches.get(directory)
+    return branch === undefined ? { directory } : { directory, branch }
+  }
   const start = () => {
     const monitor = startWorkspaceGitMonitor({
       db,
@@ -43,7 +48,7 @@ const fixture = async () => {
         if (record.rootDirectory === "/repo/broken") throw new Error("checkout exploded")
         return record.rootDirectory === undefined || missing.has(record.rootDirectory)
           ? undefined
-          : { directory: record.rootDirectory }
+          : checkoutOf(record.rootDirectory)
       },
       environment: async () => ({}),
       headOf: async (directory) => {
@@ -69,6 +74,7 @@ const fixture = async () => {
     published,
     branches,
     detached,
+    checkoutBranches,
     pullRequests,
     lookups,
     missing,
@@ -99,6 +105,17 @@ it("records each workspace's branch and pull request at boot and publishes only 
     true
   )
   expect(published).toHaveLength(afterBoot)
+})
+
+it("uses the branch the checkout already knows instead of reading HEAD", async () => {
+  const { checkoutBranches, pullRequests, workspace, start, git } = await fixture()
+  const owned = await workspace("owned", "/repo/owned")
+  checkoutBranches.set("/repo/owned", "codevisor/owned")
+  pullRequests.set("/repo/owned", null)
+
+  await start().settled()
+
+  expect(await git(owned.id)).toEqual({ branch: "codevisor/owned", pullRequest: null })
 })
 
 it("checks pull requests on a branch-only sweep when the branch changed", async () => {
