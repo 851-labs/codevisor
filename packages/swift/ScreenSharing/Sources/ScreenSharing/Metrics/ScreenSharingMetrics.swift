@@ -8,6 +8,7 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   private var indices: [String: Int] = [:]
   private var previousEvents: [String: Int64] = [:]
   private let capacity = 1800
+  public let timeline = ScreenSharingFrameTimeline()
 
   public init() {}
   public static var nowNs: Int64 { Int64(DispatchTime.now().uptimeNanoseconds) }
@@ -57,7 +58,7 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     public let timings: [String: Timing]
   }
 
-  public struct Timing: Codable, Sendable {
+  public struct Timing: Codable, Equatable, Sendable {
     public let count: Int
     public let p50Ms: Double
     public let p95Ms: Double
@@ -71,7 +72,7 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     return Snapshot(counters: counters, labels: labels, timings: samples.mapValues(Self.timing))
   }
 
-  private static func timing(_ values: [Double]) -> Timing {
+  static func timing(_ values: [Double]) -> Timing {
     let sorted = values.sorted()
     return Timing(
       count: sorted.count, p50Ms: sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.5))],

@@ -142,6 +142,42 @@ struct ScreenSharingCodecRoundTripTests {
   }
 
   @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+  func theHostStagesRideInBandToTheViewersFrameRecord() async throws {
+    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+    defer { harness.stop() }
+    let identity = ScreenSharingMetrics.nowNs - 10_000_000
+    let encoded = try await harness.encode(
+      index: 0, timestampNs: 0, identity: identity, capturedAtNs: identity + 2_000_000)
+    _ = try await harness.decode(encoded)
+    harness.metrics.timeline.presented(
+      sourceTimestampNs: identity,
+      ScreenSharingFramePresentation(receivedAtNs: nil, submittedAtNs: identity, presentedAtNs: identity + 50_000_000))
+
+    let records = harness.metrics.timeline.records(after: 0)
+    #expect(records.count == 1)
+    let record = try #require(records.first)
+    #expect(record.stagesUs.capture == 2000)
+    #expect((record.stagesUs.hostQueue ?? -1) >= 8000 && (record.stagesUs.encode ?? -1) > 0)
+    #expect((record.stagesUs.decode ?? -1) > 0 && record.keyFrame)
+    #expect(record.sameClock && record.captureToPresentUs == 50_000)
+  }
+
+  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+  func aFrameWithoutACaptureArrivalCarriesNoHostStages() async throws {
+    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+    defer { harness.stop() }
+    let decoded = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 5))
+    harness.metrics.timeline.presented(
+      sourceTimestampNs: 5, ScreenSharingFramePresentation(receivedAtNs: nil, submittedAtNs: 6, presentedAtNs: 7))
+
+    let records = harness.metrics.timeline.records(after: 0)
+    #expect(records.count == 1)
+    let record = try #require(records.first)
+    #expect(decoded.sourceTimestampNs == 5)
+    #expect(record.stagesUs.capture == nil && !record.sameClock && record.captureToPresentUs == nil)
+  }
+
+  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
   func theDecoderFollowsAMidStreamResolutionChange() async throws {
     let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
     defer { harness.stop() }
@@ -238,7 +274,7 @@ private final class CodecHarness {
   }
 
   func encode(
-    index: Int, timestampNs: Int64, identity: Int64, forceKeyFrame: Bool = false
+    index: Int, timestampNs: Int64, identity: Int64, forceKeyFrame: Bool = false, capturedAtNs: Int64? = nil
   ) async throws
     -> ScreenSharingEncodedFrame
   {
@@ -249,7 +285,7 @@ private final class CodecHarness {
     let target = encoded.count + 1
     let admitted = try encoder.encode(
       ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: timestampNs, sourceTimestampNs: identity),
-      forceKeyFrame: forceKeyFrame)
+      forceKeyFrame: forceKeyFrame, capturedAtNs: capturedAtNs)
     #expect(admitted)
     await encoded.deliveries.wait(for: target)
     return encoded.frames[target - 1]

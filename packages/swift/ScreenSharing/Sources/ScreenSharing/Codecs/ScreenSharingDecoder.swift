@@ -5,26 +5,74 @@ import VideoToolbox
 public final class ScreenSharingDecoder: @unchecked Sendable {
   private final class Context {
     let frame: ScreenSharingEncodedFrame
-    let startedNs = ScreenSharingMetrics.nowNs
+    let receivedNs: Int64
+    let submittedNs = ScreenSharingMetrics.nowNs
     let output: @Sendable (ScreenSharingVideoFrame) -> Void
     let metrics: ScreenSharingMetrics
     let pixelFormat: OSType
     let refreshSignal: ScreenSharingRefreshSignal?
     let refreshGeneration: UInt64?
     let sourceTimestampNs: Int64?
+    let hostTiming: ScreenSharingHostFrameTiming?
 
     init(
-      _ frame: ScreenSharingEncodedFrame, metrics: ScreenSharingMetrics, pixelFormat: OSType,
-      refreshSignal: ScreenSharingRefreshSignal?, sourceTimestampNs: Int64?,
+      _ frame: ScreenSharingEncodedFrame, receivedNs: Int64, metrics: ScreenSharingMetrics, pixelFormat: OSType,
+      refreshSignal: ScreenSharingRefreshSignal?, sourceTimestampNs: Int64?, hostTiming: ScreenSharingHostFrameTiming?,
       output: @escaping @Sendable (ScreenSharingVideoFrame) -> Void
     ) {
       self.frame = frame
+      self.receivedNs = receivedNs
       self.metrics = metrics
       self.pixelFormat = pixelFormat
       self.output = output
       self.refreshSignal = refreshSignal
       self.refreshGeneration = frame.isKeyFrame ? refreshSignal?.keyframeGeneration : nil
       self.sourceTimestampNs = sourceTimestampNs
+      self.hostTiming = hostTiming
+    }
+
+    func deliver(status: OSStatus, flags: VTDecodeInfoFlags, image: CVImageBuffer?) {
+      guard status == noErr, !flags.contains(.frameDropped), let image else {
+        refreshSignal?.request(resetDecoder: true)
+        metrics.increment("decodeErrors")
+        return
+      }
+      guard CVPixelBufferGetPixelFormatType(image) == pixelFormat else {
+        metrics.increment("decodeErrors")
+        metrics.label("decoderError", "Hardware decoder returned an unexpected pixel format.")
+        refreshSignal?.request(resetDecoder: true)
+        return
+      }
+      let decodedNs = ScreenSharingMetrics.nowNs
+      metrics.increment("decodedFrames")
+      metrics.observe("decode", milliseconds: Double(decodedNs - submittedNs) / 1_000_000)
+      metrics.label("decodedPixelFormat", String(CVPixelBufferGetPixelFormatType(image)))
+      recordTimeline(decodedNs: decodedNs)
+      output(
+        ScreenSharingVideoFrame(
+          pixelBuffer: image, timestampNs: frame.timestampNs, rtpTimestamp: frame.rtpTimestamp,
+          sourceTimestampNs: sourceTimestampNs))
+      if frame.isKeyFrame { decodedKeyFrame() }
+    }
+
+    private func recordTimeline(decodedNs: Int64) {
+      guard let sourceTimestampNs else { return }
+
+      metrics.timeline.decoded(
+        ScreenSharingDecodedFrameTiming(
+          sourceTimestampNs: sourceTimestampNs, host: hostTiming, decodeInputNs: receivedNs,
+          decodeSubmitNs: submittedNs, decodedNs: decodedNs, isKeyFrame: frame.isKeyFrame))
+    }
+
+    private func decodedKeyFrame() {
+      let now = ScreenSharingMetrics.nowNs
+      if metrics.increment("decodedKeyFrames") == 1 {
+        metrics.label("firstDecodedKeyframeAtNs", String(now))
+      }
+      metrics.label("latestDecodedKeyframeAtNs", String(now))
+      if let refreshGeneration {
+        refreshSignal?.decodedKeyframe(generation: refreshGeneration)
+      }
     }
   }
 
@@ -51,6 +99,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
   package func useRefreshSignal(_ signal: ScreenSharingRefreshSignal) { refreshSignal = signal }
 
   public func decode(_ frame: ScreenSharingEncodedFrame) throws {
+    let receivedNs = ScreenSharingMetrics.nowNs
     if refreshSignal?.consumeDecoderReset() == true { stop() }
     let received = try NALUnitBitstream.nalUnits(frame.data)
     if codec != .h264 {
@@ -61,6 +110,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       }
     }
     let sourceTimestampNs = ScreenSharingSourceMarker.timestampNs(in: received, codec: codec)
+    let hostTiming = ScreenSharingHostTimingMarker.timing(in: received, codec: codec)
     let units = received.filter { !ScreenSharingSourceMarker.isMarker($0, codec: codec) }
     func type(_ unit: Data) -> Int {
       Int(codec == .h264 ? unit[unit.startIndex] & 0x1f : (unit[unit.startIndex] >> 1) & 0x3f)
@@ -75,7 +125,24 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     }
     let slices = units.filter { (codec == .h264 ? 1...5 : 0...31).contains(type($0)) }
     guard !slices.isEmpty else { return }
-    let bytes = try NALUnitBitstream.lengthPrefixed(units)
+    let sample = try sample(
+      NALUnitBitstream.lengthPrefixed(units), format: format, timestampNs: frame.timestampNs)
+    let context = Unmanaged.passRetained(
+      Context(
+        frame, receivedNs: receivedNs, metrics: metrics, pixelFormat: codec.decodedPixelFormat(dynamicRange),
+        refreshSignal: refreshSignal, sourceTimestampNs: sourceTimestampNs, hostTiming: hostTiming, output: output))
+    let status = VTDecompressionSessionDecodeFrame(
+      session, sampleBuffer: sample, flags: [], frameRefcon: context.toOpaque(), infoFlagsOut: nil)
+    if status != noErr {
+      context.release()
+      metrics.increment("decodeErrors")
+      try check(status, "Decode frame")
+    }
+  }
+
+  private func sample(
+    _ bytes: Data, format: CMVideoFormatDescription, timestampNs: Int64
+  ) throws -> CMSampleBuffer {
     var block: CMBlockBuffer?
     try check(
       CMBlockBufferCreateWithMemoryBlock(
@@ -91,7 +158,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     }
     var sample: CMSampleBuffer?
     var timing = CMSampleTimingInfo(
-      duration: .invalid, presentationTimeStamp: CMTime(value: frame.timestampNs, timescale: 1_000_000_000),
+      duration: .invalid, presentationTimeStamp: CMTime(value: timestampNs, timescale: 1_000_000_000),
       decodeTimeStamp: .invalid)
     var size = bytes.count
     try check(
@@ -100,17 +167,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
         sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 1,
         sampleSizeArray: &size, sampleBufferOut: &sample), "Create decode sample")
     guard let sample else { throw ScreenSharingError.unavailable("No decode sample.") }
-    let context = Unmanaged.passRetained(
-      Context(
-        frame, metrics: metrics, pixelFormat: codec.decodedPixelFormat(dynamicRange), refreshSignal: refreshSignal,
-        sourceTimestampNs: sourceTimestampNs, output: output))
-    let status = VTDecompressionSessionDecodeFrame(
-      session, sampleBuffer: sample, flags: [], frameRefcon: context.toOpaque(), infoFlagsOut: nil)
-    if status != noErr {
-      context.release()
-      metrics.increment("decodeErrors")
-      try check(status, "Decode frame")
-    }
+    return sample
   }
 
   public func stop() {
@@ -160,35 +217,8 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     var callback = VTDecompressionOutputCallbackRecord(
       decompressionOutputCallback: { _, sourceContext, status, flags, image, _, _ in
         guard let sourceContext else { return }
-        let context = Unmanaged<Context>.fromOpaque(sourceContext).takeRetainedValue()
-        guard status == noErr, !flags.contains(.frameDropped), let image else {
-          context.refreshSignal?.request(resetDecoder: true)
-          context.metrics.increment("decodeErrors"); return
-        }
-        guard CVPixelBufferGetPixelFormatType(image) == context.pixelFormat else {
-          context.metrics.increment("decodeErrors")
-          context.metrics.label("decoderError", "Hardware decoder returned an unexpected pixel format.")
-          context.refreshSignal?.request(resetDecoder: true)
-          return
-        }
-        context.metrics.increment("decodedFrames")
-        context.metrics.observe(
-          "decode", milliseconds: Double(ScreenSharingMetrics.nowNs - context.startedNs) / 1_000_000)
-        context.metrics.label("decodedPixelFormat", String(CVPixelBufferGetPixelFormatType(image)))
-        context.output(
-          ScreenSharingVideoFrame(
-            pixelBuffer: image, timestampNs: context.frame.timestampNs, rtpTimestamp: context.frame.rtpTimestamp,
-            sourceTimestampNs: context.sourceTimestampNs))
-        if context.frame.isKeyFrame {
-          let now = ScreenSharingMetrics.nowNs
-          if context.metrics.increment("decodedKeyFrames") == 1 {
-            context.metrics.label("firstDecodedKeyframeAtNs", String(now))
-          }
-          context.metrics.label("latestDecodedKeyframeAtNs", String(now))
-          if let generation = context.refreshGeneration {
-            context.refreshSignal?.decodedKeyframe(generation: generation)
-          }
-        }
+        Unmanaged<Context>.fromOpaque(sourceContext).takeRetainedValue()
+          .deliver(status: status, flags: flags, image: image)
       }, decompressionOutputRefCon: nil)
     let specification =
       [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: Self.requiresHardware]

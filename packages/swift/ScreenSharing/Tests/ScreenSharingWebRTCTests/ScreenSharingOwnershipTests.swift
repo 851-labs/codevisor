@@ -78,7 +78,8 @@ struct ScreenSharingOwnershipTests {
       codecFactory: ScreenSharingCodecFactory(metrics: metrics), metrics: metrics)
     let source = factory.videoSource(forScreenCast: true)
     let sender = ScreenSharingFrameSender(
-      source: source, metrics: metrics, idleMonitor: ScreenSharingSourceIdleMonitor())
+      source: source, metrics: metrics, idleMonitor: ScreenSharingSourceIdleMonitor(),
+      captureArrivals: ScreenSharingCaptureArrivals())
     sender.configure(try ScreenSharingVideoConfiguration(width: 128, height: 64))
     weak var weakOld: CVPixelBuffer?
     weak var weakNew: CVPixelBuffer?

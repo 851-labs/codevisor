@@ -90,6 +90,68 @@ The receiver also requests a refresh over the bounded negotiated `codevisor.vide
 
 Run the suites with `bun run swift:test`; `bun run check` runs them with the rest of the repository's checks.
 
+## Frame timeline
+
+Every presented frame gets a record of where its time went, following Moonlight: each machine times only its own stages, so no clocks are synchronised. The host measures three stages and sends them inside the frame, in a second SEI next to the content identity (same identifier, a kind byte of `0x81`, 7-bit groups so it never needs emulation prevention). Viewers that predate it strip it with the identity SEI and ignore it. The viewer times its own stages and joins them to the host's by the frame's content identity, `sourceTimestampNs`.
+
+| Stage | Machine | From → to |
+| --- | --- | --- |
+| `capture` | host | ScreenCaptureKit display time → capture callback |
+| `hostQueue` | host | capture callback → encoder submit (WebRTC's source and encoder queue) |
+| `encode` | host | encoder submit → VideoToolbox output |
+| `network` | estimate | half the selected candidate pair's current round-trip time |
+| `jitterBuffer` | estimate | WebRTC's mean jitter-buffer delay over the last statistics interval |
+| `decode` | viewer | decoder input → VideoToolbox output (`decodeSubmitNs` marks the VideoToolbox submit in between) |
+| `delivery` | viewer | decoder output → WebRTC renderer callback (mailbox put) |
+| `renderQueue` | viewer | mailbox put → Metal command buffer commit |
+| `present` | viewer | commit → on glass |
+
+`network` and `jitterBuffer` come from WebRTC statistics, polled once a second, not per frame. Packetization and pacing after the encoder are not timed, so they show up as residual. On glass is the drawable's `presentedTime` when it is nonzero (`onGlassSource: "presentedTime"`). Some setups report 0 for every drawable (851-3582 §9); there it is the display-link estimate, one refresh after the first refresh at or after the GPU finished the frame (`"displayLinkTarget"`). Every record carries that estimate as `displayLinkTargetNs`, so it can be checked against `presentedTime` and an outside observer. The display link runs at the view's draw rate and the GPU time is the command buffer's `gpuEndTime`; on a MacBook Pro's built-in display the estimate matched `presentedTime` to −0.014 ms at p50 (p5–p95 within 0.03 ms, 1,220 frames). Once any drawable has reported a `presentedTime`, a 0 means the drawable was dropped, and the frame gets no on-glass time. The host also sends a hash of its boot session. When it matches the viewer's, the two share a clock, as on a same-Mac loopback. The record then also carries `captureToPresentUs`, measured end to end, and the summary reports the residual (`captureToPresent − stageSum`) per frame.
+
+`ScreenSharingMetrics.timeline` keeps the last 1,800 records and the last 16 decoded-but-unpresented frames in fixed rings (the record ring is allocated with the first record); recording allocates nothing else and never hops to the main actor. `records(after:)` drains records by sequence number, and `summary()` is the rolling summary (format `version` 1): `frames` (records with every stage), `incompleteFrames`, `unpresentedFrames`, and count/p50/p95/max in milliseconds per stage, for `stageSum`, `captureToPresent` and `residual`. Percentiles cover complete records only, so the per-stage numbers and their sum describe the same frames. With `CODEVISOR_SCREEN_SHARING_STATS_LOG=<directory>` set (the dev runner passes it through), the viewer writes one JSON line a second to `<directory>/<viewer id>.jsonl`: `time`, `statistics`, `metrics`, `timeline` (the summary), and `frames`, the records completed since the previous line. A record:
+
+```json
+{
+  "captureToPresentUs": 57833,
+  "host": {
+    "captureCallbackNs": 5952666561166,
+    "encodeOutputNs": 5952673951166,
+    "encodeSubmitNs": 5952666636166,
+    "sckDisplayTimeNs": 5952663675166
+  },
+  "keyFrame": false,
+  "sameClock": true,
+  "sequence": 653,
+  "sourceTimestampNs": 5952663675166,
+  "stageSumUs": 56644,
+  "stagesUs": {
+    "capture": 2886,
+    "decode": 1688,
+    "delivery": 79,
+    "encode": 7315,
+    "hostQueue": 75,
+    "jitterBuffer": 21984,
+    "network": 0,
+    "present": 19615,
+    "renderQueue": 3002
+  },
+  "viewer": {
+    "decodeInputNs": 5952697123291,
+    "decodeOutputNs": 5952698811458,
+    "decodeSubmitNs": 5952697419875,
+    "displayLinkTargetNs": 5952721530958,
+    "gpuCompletedNs": 5952702659750,
+    "mailboxPutNs": 5952698891125,
+    "onGlassNs": 5952721508625,
+    "onGlassSource": "presentedTime",
+    "renderCommitNs": 5952701893500
+  }
+}
+```
+
+Timestamps are mach absolute time in nanoseconds: `host` on the host's clock (rebuilt from `sourceTimestampNs` and the in-band durations, to the microsecond), `viewer` on the viewer's. Stage durations are integer microseconds. A field that couldn't be measured is omitted, and `stageSumUs` with it.
+
+
 ## WebRTC dependency record
 
 | Item | Pin |

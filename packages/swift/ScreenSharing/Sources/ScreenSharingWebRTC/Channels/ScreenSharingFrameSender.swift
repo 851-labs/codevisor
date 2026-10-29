@@ -8,6 +8,7 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
   private let releaseQueue: DispatchQueue?
   private let metrics: ScreenSharingMetrics
   private let idleMonitor: ScreenSharingSourceIdleMonitor
+  private let captureArrivals: ScreenSharingCaptureArrivals
   private let lock = NSLock()
   private var active = true
   private var refreshFrames = ScreenSharingRefreshFrameStore()
@@ -16,17 +17,19 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
 
   init(
     source: RTCVideoSource, metrics: ScreenSharingMetrics, idleMonitor: ScreenSharingSourceIdleMonitor,
-    releaseQueue: DispatchQueue? = nil
+    captureArrivals: ScreenSharingCaptureArrivals, releaseQueue: DispatchQueue? = nil
   ) {
     media = (source, RTCVideoCapturer(delegate: source))
     self.metrics = metrics
     self.idleMonitor = idleMonitor
+    self.captureArrivals = captureArrivals
     self.releaseQueue = releaseQueue
   }
 
   func onActivity(_ callback: (@Sendable () -> Void)?) { lock.withLock { onActivity = callback } }
 
   public func push(_ frame: ScreenSharingVideoFrame) {
+    let arrivedNs = ScreenSharingMetrics.nowNs
     let activated: (@Sendable () -> Void)? = lock.withLock {
       guard active else { return nil }
       if let expectedSize,
@@ -40,6 +43,7 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
         metrics.increment("captureTimestampDrops"); return nil
       }
       ScreenSharingFrameIdentity.attach(sourceTimestampNs: frame.timestampNs, to: frame.pixelBuffer)
+      captureArrivals.record(sourceTimestampNs: frame.timestampNs, arrivedNs: arrivedNs)
       metrics.increment("capturedFrames")
       metrics.increment(wasHolding ? "refreshCacheReplacements" : "refreshCacheFills")
       metrics.label("latestCapturedTimestampNs", String(frame.timestampNs))

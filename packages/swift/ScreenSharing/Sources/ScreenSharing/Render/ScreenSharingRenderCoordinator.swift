@@ -4,7 +4,7 @@ import QuartzCore
 
 package protocol ScreenSharingRenderSubmission: Sendable {
   func onCompleted(_ handler: @escaping @Sendable (_ completed: Bool) -> Void)
-  func onPresented(_ handler: @escaping @Sendable (_ presentedTime: Double) -> Void)
+  func onPresented(_ handler: @escaping @Sendable (_ presentedTime: Double, _ gpuEndTime: Double?) -> Void)
   func commit()
 }
 
@@ -58,9 +58,20 @@ package final class ScreenSharingRenderCoordinator {
   package var preparationToken: Int? { pending?.token }
   private struct PendingPreparation {
     let token: Int
+    let frame: SubmittedFrame
+  }
+  private struct SubmittedFrame {
     let rtpTimestamp: UInt32
     let receivedAt: Double?
+    let sourceTimestampNs: Int64?
     let isNewFrame: Bool
+
+    init(_ frame: ScreenSharingVideoFrame, isNewFrame: Bool) {
+      rtpTimestamp = frame.rtpTimestamp
+      receivedAt = frame.receivedAtSeconds
+      sourceTimestampNs = frame.sourceTimestampNs
+      self.isNewFrame = isNewFrame
+    }
   }
   private var pending: PendingPreparation?
   private let redrawsOnDemand: Bool
@@ -149,8 +160,7 @@ package final class ScreenSharingRenderCoordinator {
     inFlight = true
     occupancy += 1
     submit(
-      submission, retaining: retained, rtpTimestamp: frame.rtpTimestamp, receivedAt: frame.receivedAtSeconds,
-      isNewFrame: isNewFrame, submittedAt: submittedAt)
+      submission, retaining: retained, frame: SubmittedFrame(frame, isNewFrame: isNewFrame), submittedAt: submittedAt)
     return true
   }
 
@@ -160,8 +170,7 @@ package final class ScreenSharingRenderCoordinator {
     inFlight = true
     occupancy += 1
     let token = occupancy
-    pending = .init(
-      token: token, rtpTimestamp: frame.rtpTimestamp, receivedAt: frame.receivedAtSeconds, isNewFrame: isNewFrame)
+    pending = .init(token: token, frame: SubmittedFrame(frame, isNewFrame: isNewFrame))
     let hop = hop
     preparer.prepare(
       .init(frame: frame, isNewFrame: isNewFrame, geometry: geometry, queuedAtNs: ScreenSharingMetrics.nowNs)
@@ -181,7 +190,7 @@ package final class ScreenSharingRenderCoordinator {
     guard let prepared else {
       metrics.increment("renderDrops")
       releaseSlot(occupancy: token)
-      if pending.isNewFrame { deferPresentation() }
+      if pending.frame.isNewFrame { deferPresentation() }
       return
     }
     reportSize(prepared.videoSize)
@@ -190,20 +199,20 @@ package final class ScreenSharingRenderCoordinator {
       return
     }
     submit(
-      prepared.submission, retaining: prepared.retained, rtpTimestamp: pending.rtpTimestamp,
-      receivedAt: pending.receivedAt, isNewFrame: pending.isNewFrame, submittedAt: CACurrentMediaTime())
+      prepared.submission, retaining: prepared.retained, frame: pending.frame, submittedAt: CACurrentMediaTime())
   }
 
   private func submit(
     _ submission: any ScreenSharingRenderSubmission, retaining retained: AnyObject & Sendable,
-    rtpTimestamp: UInt32, receivedAt: Double?, isNewFrame: Bool, submittedAt: Double
+    frame: SubmittedFrame, submittedAt: Double
   ) {
+    let isNewFrame = frame.isNewFrame
     let metrics = metrics
     let hop = hop
     let renderOnArrival = renderOnArrival
     let mine = occupancy
     let startedNs = ScreenSharingMetrics.nowNs
-    if isNewFrame, let receivedAt {
+    if isNewFrame, let receivedAt = frame.receivedAt {
       metrics.observe("receiverCallbackToSubmission", milliseconds: (submittedAt - receivedAt) * 1000)
     }
     submission.onCompleted { [weak self, retained] completed in
@@ -222,13 +231,14 @@ package final class ScreenSharingRenderCoordinator {
         self.requestDraw()
       }
     }
-    submission.onPresented { [weak self] presentedTime in
+    submission.onPresented { [weak self] presentedTime, gpuEndTime in
       metrics.recordPresentation(
-        isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: receivedAt)
+        isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: frame.receivedAt,
+        sourceTimestampNs: frame.sourceTimestampNs, gpuCompletedAt: gpuEndTime)
       guard isNewFrame else { return }
       hop {
         guard let self, !self.stopped else { return }
-        self.onPresented?(rtpTimestamp)
+        self.onPresented?(frame.rtpTimestamp)
       }
     }
     submission.commit()

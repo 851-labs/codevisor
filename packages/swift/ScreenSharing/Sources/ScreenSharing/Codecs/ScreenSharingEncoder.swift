@@ -8,12 +8,22 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     let sourceTimestampNs: Int64
     let rtpTimestamp: UInt32
     let keyframeAttempt: ScreenSharingKeyframeRequest.Attempt?
+    let capturedAtNs: Int64?
     let startedNs = ScreenSharingMetrics.nowNs
-    init(frame: ScreenSharingVideoFrame, keyframeAttempt: ScreenSharingKeyframeRequest.Attempt?) {
+    init(frame: ScreenSharingVideoFrame, keyframeAttempt: ScreenSharingKeyframeRequest.Attempt?, capturedAtNs: Int64?) {
       timestampNs = frame.timestampNs
       sourceTimestampNs = frame.sourceTimestampNs ?? frame.timestampNs
       rtpTimestamp = frame.rtpTimestamp
       self.keyframeAttempt = keyframeAttempt
+      self.capturedAtNs = capturedAtNs
+    }
+
+    func hostTiming(encodedNs: Int64) -> ScreenSharingHostFrameTiming? {
+      guard let capturedAtNs else { return nil }
+
+      return ScreenSharingHostFrameTiming(
+        sourceNs: sourceTimestampNs, capturedNs: capturedAtNs, submittedNs: startedNs, encodedNs: encodedNs,
+        clock: ScreenSharingClockIdentity.current)
     }
   }
 
@@ -150,7 +160,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   }
 
   @discardableResult
-  public func encode(_ frame: ScreenSharingVideoFrame, forceKeyFrame: Bool = false) throws -> Bool {
+  public func encode(
+    _ frame: ScreenSharingVideoFrame, forceKeyFrame: Bool = false, capturedAtNs: Int64? = nil
+  ) throws -> Bool {
     metrics.increment("encoderInputFrames")
     metrics.event("encoderInputInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
     metrics.event("encoderInputTimestampInterval", atNanoseconds: frame.timestampNs)
@@ -166,7 +178,8 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
         if keyframeRequest.isPending { metrics.increment("encoderDeferredKeyframeRequests") }
         return nil
       }
-      let metadata = Pending(frame: frame, keyframeAttempt: keyframeRequest.beginAttempt())
+      let metadata = Pending(
+        frame: frame, keyframeAttempt: keyframeRequest.beginAttempt(), capturedAtNs: capturedAtNs)
       pending[frame.timestampNs] = metadata
       if pending.count > pendingHighWater {
         pendingHighWater = pending.count
@@ -273,28 +286,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       try check(
         parameterSet(format, index: 0, pointer: nil, size: nil, count: &parameterCount, length: &lengthSize),
         "Read \(codec.payloadName) configuration")
-      if codec != .h264 {
-        let actual = try ScreenSharingHEVCFormat.read(format)
-        try actual.validate(for: codec)
-        guard actual.dynamicRange == dynamicRange else {
-          throw ScreenSharingError.invalid("HEVC output does not have the requested bit depth.")
-        }
-        metrics.label("encodedHEVCProfileIDC", String(actual.profile))
-        metrics.label("encodedChroma", actual.chroma == 3 ? "4:4:4" : "4:2:0")
-        metrics.label("encodedBitDepth", String(actual.lumaDepth))
-      }
-      if keyFrame {
-        for index in 0..<parameterCount {
-          var pointer: UnsafePointer<UInt8>?
-          var length = 0
-          try check(
-            parameterSet(format, index: index, pointer: &pointer, size: &length, count: nil, length: nil),
-            "Read \(codec.payloadName) parameter set")
-          if let pointer { data.append(contentsOf: [0, 0, 0, 1]); data.append(pointer, count: length) }
-        }
-      }
-      data.append(contentsOf: [0, 0, 0, 1])
-      data.append(ScreenSharingSourceMarker.nalUnit(timestampNs: metadata.sourceTimestampNs, codec: codec))
+      if codec != .h264 { try validateHEVC(format) }
+      if keyFrame { try appendParameterSets(format, count: parameterCount, to: &data) }
+      appendMarkers(metadata, encodedNs: callbackStarted, to: &data)
       data.append(try NALUnitBitstream.annexB(bytes, lengthSize: Int(lengthSize)))
       metrics.increment("encodedFrames")
       metrics.increment("encodedBytes", by: data.count)
@@ -311,6 +305,37 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
           sourceTimestampNs: metadata.sourceTimestampNs))
       producedKeyFrame = keyFrame && callback != nil
     } catch { metrics.increment("encodeErrors"); metrics.label("lastEncodeError", error.localizedDescription) }
+  }
+
+  private func validateHEVC(_ format: CMFormatDescription) throws {
+    let actual = try ScreenSharingHEVCFormat.read(format)
+    try actual.validate(for: codec)
+    guard actual.dynamicRange == dynamicRange else {
+      throw ScreenSharingError.invalid("HEVC output does not have the requested bit depth.")
+    }
+    metrics.label("encodedHEVCProfileIDC", String(actual.profile))
+    metrics.label("encodedChroma", actual.chroma == 3 ? "4:4:4" : "4:2:0")
+    metrics.label("encodedBitDepth", String(actual.lumaDepth))
+  }
+
+  private func appendParameterSets(_ format: CMFormatDescription, count: Int, to data: inout Data) throws {
+    for index in 0..<count {
+      var pointer: UnsafePointer<UInt8>?
+      var length = 0
+      try check(
+        parameterSet(format, index: index, pointer: &pointer, size: &length, count: nil, length: nil),
+        "Read \(codec.payloadName) parameter set")
+      if let pointer { data.append(contentsOf: [0, 0, 0, 1]); data.append(pointer, count: length) }
+    }
+  }
+
+  private func appendMarkers(_ metadata: Pending, encodedNs: Int64, to data: inout Data) {
+    data.append(contentsOf: [0, 0, 0, 1])
+    data.append(ScreenSharingSourceMarker.nalUnit(timestampNs: metadata.sourceTimestampNs, codec: codec))
+    guard let timing = metadata.hostTiming(encodedNs: encodedNs) else { return }
+
+    data.append(contentsOf: [0, 0, 0, 1])
+    ScreenSharingHostTimingMarker.append(timing, codec: codec, to: &data)
   }
 
   private func finishKeyframeAttempt(_ metadata: Pending, producedKeyFrame: Bool) {

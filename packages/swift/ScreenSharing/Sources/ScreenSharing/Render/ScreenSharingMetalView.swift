@@ -88,6 +88,10 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
   public func stop() {
     coordinator.stop()
     isPaused = true
+    #if os(macOS)
+      refreshObserver?.invalidate()
+      refreshObserver = nil
+    #endif
   }
 
   required init(coder: NSCoder) { fatalError("Use init(mailbox:metrics:).") }
@@ -102,6 +106,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
   #if os(macOS)
     private var screenObserver: (any NSObjectProtocol)?
     private var screenParametersObserver: (any NSObjectProtocol)?
+    private var refreshObserver: ScreenSharingRefreshObserver?
 
     public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
       didSet { reportedHighDynamicRange = nil; reportScreenHighDynamicRange() }
@@ -115,8 +120,14 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       }
       screenObserver = nil
       screenParametersObserver = nil
+      refreshObserver?.invalidate()
+      refreshObserver = nil
       guard let window else { return }
       matchDisplayRefresh()
+      if !coordinator.stopped {
+        refreshObserver = ScreenSharingRefreshObserver(
+          view: self, timeline: metrics.timeline, framesPerSecond: preferredFramesPerSecond)
+      }
       reportScreenHighDynamicRange()
       screenObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didChangeScreenNotification, object: window, queue: .main
@@ -144,6 +155,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       let rate = Self.drawRate(displayRefresh: refresh)
       guard rate != preferredFramesPerSecond else { return }
       preferredFramesPerSecond = rate
+      refreshObserver?.follow(framesPerSecond: rate)
       metrics.label("drawRate", "\(rate) per second on a \(refresh) Hz display")
     }
 
@@ -223,13 +235,15 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     let drawable: any CAMetalDrawable
     let metrics: ScreenSharingMetrics
 
+    private var gpuEndTime: Double? { buffer.gpuEndTime > 0 ? buffer.gpuEndTime : nil }
+
     func onCompleted(_ handler: @escaping @Sendable (Bool) -> Void) {
       buffer.addCompletedHandler { command in handler(command.status == .completed) }
     }
 
-    func onPresented(_ handler: @escaping @Sendable (Double) -> Void) {
+    func onPresented(_ handler: @escaping @Sendable (Double, Double?) -> Void) {
       #if !targetEnvironment(simulator)
-        drawable.addPresentedHandler { presented in handler(presented.presentedTime) }
+        drawable.addPresentedHandler { [self] presented in handler(presented.presentedTime, gpuEndTime) }
       #else
         _ = handler
         metrics.label("presentationTelemetry", "unavailable in simulator")
