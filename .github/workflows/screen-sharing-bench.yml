@@ -22,6 +22,11 @@ on:
         required: false
         default: ""
         type: string
+      plans:
+        description: Tier 1 plans for the nightly plan, comma-separated (core, gate, matrix)
+        required: false
+        default: core,gate,matrix
+        type: string
       source:
         description: Frame source for a custom run (own-window needs tamale's GUI session unlocked)
         required: false
@@ -117,6 +122,7 @@ jobs:
       SCENES: ${{ inputs.scenes }}
       NETWORKS: ${{ inputs.networks }}
       TIER1_SOURCE: ${{ inputs.source || 'synthetic' }}
+      TIER1_PLANS: ${{ inputs.plans || 'core,gate,matrix' }}
       MODE: ${{ needs.plan.outputs.mode }}
       PREFLIGHT: ${{ needs.plan.outputs.preflight }}
     steps:
@@ -124,6 +130,8 @@ jobs:
         run: |
           [[ "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]] || { echo "scenes must be a comma-separated list"; exit 1; }
           [[ "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]] || { echo "networks must be like N0,N3"; exit 1; }
+          plan="(core|gate|matrix)"
+          [[ "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core, gate and/or matrix"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
@@ -183,7 +191,7 @@ jobs:
       - name: Wait for a quiet machine (C5)
         run: apps/screen-sharing-bench/scripts/run-installed.sh preflight --quiet --allow-locked > "$RUNNER_TEMP/results/preflight.json"
       - name: Run the gate cells twice
-        run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh gate "$RUNNER_TEMP/results"
+        run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh pr_gate "$RUNNER_TEMP/results"
       - name: Compare with the nightly baseline
         run: |
           apps/screen-sharing-bench/scripts/results-branch.sh index "$RUNNER_TEMP/results/index.jsonl"
