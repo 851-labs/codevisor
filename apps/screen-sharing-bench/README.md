@@ -283,7 +283,10 @@ grants apply, and `~/Applications/CodevisorBench.app` is never touched.
 1-minute load to drop to 2.0 and Spotlight to stop indexing (a fresh build sets it off), then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
 `mdworker*` above 5% CPU), Time Machine or `softwareupdate` running, en0 not up at 1000baseT, other regular apps
 open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
-offscreen Tier 1). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`.
+offscreen Tier 1). It also fails when load and Spotlight never stayed quiet for 3 samples in a row before the
+limit (`reached_settle_limit`). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`. The
+`plans` dispatch input (empty: `core,gate,matrix`) applies to the nightly plan only; a dispatch with `scenes` or
+`networks` set runs one custom report and warns if `plans` was given.
 
 ```sh
 gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
