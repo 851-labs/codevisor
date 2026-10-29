@@ -131,9 +131,15 @@ public class ScreenSharingPeer {
   }
 
   public func statistics() async -> [String: String] {
+    await statistics(including: [])
+  }
+
+  package func statistics(including extraFields: [String]) async -> [String: String] {
     guard !closed else { return [:] }
     let values: [String: String]? = try? await transport.call { connection, done in
-      connection.statistics { report in done(.success(ScreenSharingPeerStatistics.values(report))) }
+      connection.statistics { report in
+        done(.success(ScreenSharingPeerStatistics.values(report, including: extraFields)))
+      }
     }
     return values ?? [:]
   }

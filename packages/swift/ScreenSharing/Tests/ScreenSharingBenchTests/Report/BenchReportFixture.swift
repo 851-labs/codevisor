@@ -59,6 +59,8 @@ enum BenchReportFixture {
     var result = BenchResult(
       system: .codevisor, scene: "test-cards", resolution: "R1", network: "N3", repetition: 2, seed: 7)
     result.imageAgeMs = distribution([60, 61, 75])
+    result.e2eMs = distribution([38, 40, 52])
+    result.e2eEndpoint = .committed
     result.updatesPerS = 31.5
     result.shownRatio = 0.97
     result.text = BenchTextFidelity(
@@ -67,8 +69,27 @@ enum BenchReportFixture {
     stages.encode = distribution([4.1, 5, 9.8])
     stages.decodeQueue = distribution([12, 15, 31])
     stages.networkResidual = distribution([0.4, 0.6, 2.2])
+    stages.timingFrameCheck = BenchTimingFrameCheck(
+      timingFrames: [BenchTimingFrame(statisticsValue: "1,100,100,105,0,0,0,0,0,0,120,121,130,0,1")!],
+      frames: [
+        BenchFrameTimestamps(
+          sourceNs: 0, captureCallbackNs: 0, encodeSubmitNs: 0, encodeOutputNs: 5_000_000, decodeInputNs: 20_000_000,
+          decodeOutputNs: 21_000_000, renderCommitNs: 22_000_000)
+      ], timingClockOffsetNs: -100_000_000)
     result.stagesMs = stages
     result.drops = .init(network: 3, jitter: 1, encoder: 0, capture: 0)
+    result.codecErrors = 0
+    var media = BenchRelayStatistics()
+    media.packets = 9_981
+    media.bytes = 11_204_311
+    media.lost = 104
+    media.firstLosses = [172, 212, 398]
+    var feedback = BenchRelayStatistics()
+    feedback.packets = 1_204
+    feedback.bytes = 96_320
+    feedback.lost = 11
+    feedback.firstLosses = [40]
+    result.relay = BenchRelayReport(media: media, feedback: feedback)
     result.unreadableFraction = 0.02
     result.valid = false
     result.invalidReason = "unreadable captures above 1%"

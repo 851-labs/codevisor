@@ -9,23 +9,24 @@ enum ScreenSharingPeerStatistics {
     let values: [String: NSObject]
   }
 
-  static func values(_ report: RTCStatisticsReport) -> [String: String] {
-    values(report.statistics.values.map { Entry(id: $0.id, type: $0.type, values: $0.values) })
+  static func values(_ report: RTCStatisticsReport, including extraFields: [String] = []) -> [String: String] {
+    values(report.statistics.values.map { Entry(id: $0.id, type: $0.type, values: $0.values) }, including: extraFields)
   }
 
-  static func values(_ entries: [Entry]) -> [String: String] {
+  static func values(_ entries: [Entry], including extraFields: [String] = []) -> [String: String] {
     var result: [String: String] = [:]
-    let fields = [
-      "framesEncoded", "framesDecoded", "framesDropped", "framesPerSecond", "bytesSent", "bytesReceived",
-      "packetsLost", "jitter", "currentRoundTripTime", "availableOutgoingBitrate", "encoderImplementation",
-      "decoderImplementation", "mimeType", "protocol", "relayProtocol", "candidateType", "state", "nominated",
-      "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay", "jitterBufferEmittedCount",
-      "totalDecodeTime", "totalProcessingDelay", "totalEncodeTime", "totalPacketSendDelay", "packetsSent",
-      "packetsReceived", "framesReceived", "keyFramesDecoded", "nackCount", "pliCount", "firCount",
-      "freezeCount", "totalFreezesDuration", "retransmittedPacketsSent", "qualityLimitationReason",
-      "networkType", "retransmittedPacketsReceived", "retransmittedBytesReceived", "rtxSsrc",
-      "retransmittedBytesSent", "headerBytesSent", "headerBytesReceived", "fecPacketsReceived",
-    ]
+    let fields =
+      extraFields + [
+        "framesEncoded", "framesDecoded", "framesDropped", "framesPerSecond", "bytesSent", "bytesReceived",
+        "packetsLost", "jitter", "currentRoundTripTime", "availableOutgoingBitrate", "encoderImplementation",
+        "decoderImplementation", "mimeType", "protocol", "relayProtocol", "candidateType", "state", "nominated",
+        "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay", "jitterBufferEmittedCount",
+        "totalDecodeTime", "totalProcessingDelay", "totalEncodeTime", "totalPacketSendDelay", "packetsSent",
+        "packetsReceived", "framesReceived", "keyFramesDecoded", "nackCount", "pliCount", "firCount",
+        "freezeCount", "totalFreezesDuration", "retransmittedPacketsSent", "qualityLimitationReason",
+        "networkType", "retransmittedPacketsReceived", "retransmittedBytesReceived", "rtxSsrc",
+        "retransmittedBytesSent", "headerBytesSent", "headerBytesReceived", "fecPacketsReceived",
+      ]
     let selectedIDs = Set(
       entries.filter { $0.type == "transport" }
         .compactMap { $0.values["selectedCandidatePairId"] as? String })

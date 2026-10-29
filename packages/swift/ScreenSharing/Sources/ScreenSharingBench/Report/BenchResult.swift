@@ -60,6 +60,8 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var repetition: Int
   public var seed: UInt64
   public var imageAgeMs: BenchDistribution?
+  public var e2eMs: BenchDistribution?
+  public var e2eEndpoint: BenchEndpoint?
   public var imageAgeAboveFloorMs: AboveFloor?
   public var i2pMs: BenchDistribution?
   public var updatesPerS: Double = 0
@@ -74,6 +76,8 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var text: BenchTextFidelity?
   public var stagesMs: BenchStageTimings?
   public var drops: Drops?
+  public var codecErrors: Int?
+  public var relay: BenchRelayReport?
   public var unreadableFraction: Double = 0
   public var valid = true
   public var invalidReason: String?

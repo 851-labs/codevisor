@@ -299,7 +299,7 @@ struct Surface {
   let pass: MTLRenderPassDescriptor
 }
 
-final class TextureFrame: @unchecked Sendable {
+package final class TextureFrame: @unchecked Sendable {
   let frame: ScreenSharingVideoFrame
   let textures: [CVMetalTexture]
   init(frame: ScreenSharingVideoFrame, textures: [CVMetalTexture]) { self.frame = frame; self.textures = textures }

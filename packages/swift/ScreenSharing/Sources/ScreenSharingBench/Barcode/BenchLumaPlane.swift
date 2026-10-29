@@ -71,7 +71,8 @@ struct BenchLumaPlane {
     switch format {
     case kCVPixelFormatType_32BGRA:
       return .bgra
-    case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+    case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+      kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange:
       return .luma8
     default:
       throw BenchBarcodeError.unsupportedPixelFormat(format)

@@ -57,6 +57,13 @@
         sink: sink, metrics: metrics, generation: generation)
     }
 
+    package func start(
+      filter: SCContentFilter, configuration: ScreenSharingVideoConfiguration, sink: any ScreenSharingFrameSink,
+      metrics: ScreenSharingMetrics
+    ) async throws {
+      try await start(target: filter, configuration: configuration, sink: sink, metrics: metrics)
+    }
+
     func start(
       target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics

@@ -6,6 +6,7 @@ enum BenchCommands {
     ObserveCommand.self,
     CalibrateCommand.self,
     SampleCommand.self,
+    LoopbackCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {

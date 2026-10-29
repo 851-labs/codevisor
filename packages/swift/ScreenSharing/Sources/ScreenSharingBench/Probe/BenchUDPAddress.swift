@@ -1,6 +1,6 @@
 import Darwin
 
-public struct BenchUDPAddress: Sendable, Equatable, CustomStringConvertible {
+public struct BenchUDPAddress: Sendable, Hashable, CustomStringConvertible {
   public let port: UInt16
   let networkOrderIPv4: in_addr_t
 
@@ -11,7 +11,7 @@ public struct BenchUDPAddress: Sendable, Equatable, CustomStringConvertible {
     self.init(networkOrderIPv4: address.s_addr, port: port)
   }
 
-  init(_ socketAddress: sockaddr_in) {
+  package init(_ socketAddress: sockaddr_in) {
     self.init(networkOrderIPv4: socketAddress.sin_addr.s_addr, port: UInt16(bigEndian: socketAddress.sin_port))
   }
 
@@ -31,7 +31,7 @@ public struct BenchUDPAddress: Sendable, Equatable, CustomStringConvertible {
     return String(decoding: text.prefix { $0 != 0 }.map(UInt8.init), as: UTF8.self)
   }
 
-  var socketAddress: sockaddr_in {
+  package var socketAddress: sockaddr_in {
     var address = sockaddr_in()
     address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
     address.sin_family = sa_family_t(AF_INET)

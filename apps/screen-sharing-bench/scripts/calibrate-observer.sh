@@ -4,7 +4,6 @@ set -uo pipefail
 results=${1:-}
 [[ -n "$results" ]] || { echo "Usage: $0 <results-directory>" >&2; exit 2; }
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-installed="$HOME/Applications/CodevisorBench.app"
 mkdir -p "$results"
 failed=0
 content=""
@@ -21,16 +20,7 @@ run_check() {
   "$scripts/run-installed.sh" "$@" >"$results/$name.json" || { echo "$name failed" >&2; failed=1; }
 }
 
-record_installed_commit() {
-  local commit
-  commit="$(plutil -extract CodevisorBenchCommit raw "$installed/Contents/Info.plist")"
-  echo "$commit" >"$results/installed-commit.txt"
-  if [[ -n "${GITHUB_SHA:-}" && "$commit" != "$GITHUB_SHA" ]]; then
-    echo "::warning::$(hostname -s) has CodevisorBench.app from $commit, not $GITHUB_SHA; redeploy with scripts/deploy.sh"
-  fi
-}
-
-record_installed_commit
+"$scripts/record-installed-commit.sh" "$results"
 uptime >"$results/load-before.txt"
 "$scripts/run-installed.sh" calibrate --check on-glass --duration 30 >"$results/on-glass.json" &
 content=$!
