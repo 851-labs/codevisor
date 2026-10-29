@@ -86,6 +86,8 @@ jobs:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Install the build where the permission grants are
+        run: apps/screen-sharing-bench/scripts/install-granted.sh
       - name: Wait for a quiet machine (C5)
         run: |
           mkdir -p "$RUNNER_TEMP/results"
@@ -110,6 +112,8 @@ jobs:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Install the build where the permission grants are
+        run: apps/screen-sharing-bench/scripts/install-granted.sh
       - name: Wait for a quiet machine (C5)
         run: |
           mkdir -p "$RUNNER_TEMP/results"
