@@ -18,6 +18,9 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 - `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app` and signs it.
 - `scripts/deploy.sh <ssh-host>` builds, then installs `~/Applications/CodevisorBench.app` on that Mac.
 - `scripts/run.sh <ssh-host> <command> [--option value …]` runs a subcommand on that Mac's GUI session.
+- `scripts/run-installed.sh <command> [--option value …]` does the same on this Mac (`run.sh` runs it over ssh).
+- `scripts/calibrate-observer.sh` and `scripts/calibrate-clock.sh` are the steps of the
+  `Screen Sharing Bench Calibration` workflow (`.github/workflows/screen-sharing-bench-calibration.yml`).
 
 ## Adding a subcommand
 
@@ -60,6 +63,48 @@ to run while the GUI session is locked, because macOS then never shows its frame
 `CGVirtualDisplay` at R1, R2 or R3 for the run. `--hash-log` hashes every drawable it presents; `generate --check`
 renders the same versions offscreen and compares the hashes. `--self-input-hz` posts key events to the player
 itself, to drive `input` without Accessibility.
+
+## Observe and calibrate (851-3592)
+
+Every time these commands print or write is mach **continuous** time in nanoseconds, the clock of the
+`ScreenSharingBench` library and the clock probes. ScreenCaptureKit stamps frames with mach absolute time
+(the PTS equals `SCStreamFrameInfo.displayTime` to the nanosecond), and so does the 851-3583 frame timeline;
+the observer converts each PTS by adding continuous − absolute, which only grows while the Mac sleeps.
+Each command prints one JSON result to stdout; a check that fails its pass criterion (C1, C2) then exits 1.
+
+- `observe [--duration 10] [--region barcode|full] [--display <id>] [--output <file.jsonl>]` streams the
+  display with ScreenCaptureKit, decodes the barcode of every complete frame and writes
+  `(version, pts_ns, callback_ns)` lines after a header naming the clock (`BenchObserverLog`). Unreadable
+  frames are kept, with the reason. `--region barcode` (the default) captures only the 512×32 px strip, so
+  the observer costs little; the summary reports the observer's own CPU and power from `proc_pid_rusage`.
+  `--barcode-x`, `--barcode-y` and `--block-size` move the strip.
+- `calibrate --check c1 [--duration 30]` runs two observers on the same display, the barcode strip and the
+  full display, and reports |ΔPTS| per version both saw. It passes when p95 ≤ 16.7 ms. Run it while the
+  player (or `--check on-glass`) draws.
+- `calibrate --check c2 --serve [--port 47592] [--duration <s>] [--idle-exit <s>]` answers clock probes
+  (and stops once no probe has come for `--idle-exit` seconds); on the other Mac,
+  `calibrate --check c2 --responder <ipv4> [--duration 600] [--interval 2] [--output <file.jsonl>]` sends a
+  burst of 16 every interval and reports ε (largest kept round trip / 2), the drift, and two residuals: the
+  windowed one (`BenchClockTrack`, each burst against a line fitted to the bursts within 30 s of it, itself
+  left out) and the single line over the whole run (`linear_residual_ms`). It passes when ε ≤ 0.5 ms and the
+  windowed residual ≤ 0.2 ms. Receive times are the kernel's (`SO_TIMESTAMP_MONOTONIC`), so wake-up latency
+  never counts. The minis' clocks don't keep one rate for ten minutes: under CI load the single line missed
+  by up to 0.87 ms while the windowed fit stayed within 0.10 ms, so convert times with `BenchClockTrack`.
+- `calibrate --check c6 [--events 200] [--seed 7] [--target window|frontmost]` posts space key presses
+  with `CGEventPost` 150–350 ms apart (seeded) and reports the delay to the first frame showing another
+  version (`BenchInputResponses`). `window` draws its own barcode window that advances on each key through
+  `ScreenSharingMetalView`, and stops early (reporting what it has, then exiting 1) if that window loses
+  focus; `frontmost` leaves the frontmost app, such as `player --scene input`, to react.
+- `calibrate --check on-glass [--duration 30]` presents a new barcode every refresh through
+  `ScreenSharingMetalView` and its frame timeline, observes it, and reports the timeline's on-glass time,
+  display-link estimate and `presentedTime` minus the observer's PTS, plus C1 for the same frames.
+- `sample [--duration 10] [--interface en0] [--processes <name>,<name>…]` reports each process's CPU (% of
+  one core) and power per second, summed over every process of that name alive in both samples (it looks
+  them up each second), and the interface's Mbit/s each way. Processes of other users (such as
+  `screensharingd`) can only be read as root.
+
+The checks that capture the screen need **Screen Recording**, C6 needs **Accessibility**, and C2 needs
+**Local Network** (without it, UDP to the other Mac fails with `EHOSTUNREACH`).
 
 ## Signing and permissions
 

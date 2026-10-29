@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>CodevisorBench exchanges clock probes with the other lab Mac to align their clocks.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

@@ -11,7 +11,7 @@ public struct BenchClockExchange: Sendable, Equatable {
     self.localReceiveNs = localReceiveNs
   }
 
-  var roundTripNs: Int64 {
+  public var roundTripNs: Int64 {
     (localReceiveNs - localSendNs) - (remoteSendNs - remoteReceiveNs)
   }
 

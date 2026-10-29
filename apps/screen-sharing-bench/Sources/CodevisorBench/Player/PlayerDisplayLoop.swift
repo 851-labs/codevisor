@@ -13,7 +13,7 @@ final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   private let versions: PlayerVersionSource
   private let hashes: PlayerHashRecorder?
   private let stats = PlayerStats()
-  private let cpu = PlayerCPUClock()
+  private var cpu: ProcessUsageMeter?
   private var link: CAMetalDisplayLink?
   private var firstTarget: CFTimeInterval?
   private var shownVersion: Int?
@@ -34,7 +34,7 @@ final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
     let link = CAMetalDisplayLink(metalLayer: layer)
     link.preferredFrameRateRange = Self.frameRate
     link.delegate = self
-    cpu.start()
+    cpu = ProcessUsageMeter()
     link.add(to: .main, forMode: .common)
     self.link = link
   }
@@ -42,7 +42,7 @@ final class PlayerDisplayLoop: NSObject, CAMetalDisplayLinkDelegate {
   func stop() async throws -> PlayerMeasurement {
     link?.invalidate()
     link = nil
-    let cpuPercent = cpu.percentOfOneCore()
+    let cpuPercent = cpu?.loadSinceStart()?.cpuPercent ?? 0
     await drain()
     if let failure { throw failure }
 
