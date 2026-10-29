@@ -5,34 +5,42 @@ branch=benchmark-results
 action=${1:-}
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 attempts=3
+network_attempts=4
+network_pause_s=20
 
 usage() {
   echo "Usage: $0 index <index.jsonl> | publish <report.json> <published.json>" >&2
   exit 2
 }
 
-branch_exists() {
-  local status=0
-  git ls-remote --exit-code -q origin "refs/heads/$branch" >/dev/null || status=$?
-  ((status == 0 || status == 2)) || { echo "can't reach origin to look for $branch" >&2; exit 1; }
-  ((status == 0))
+export GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=60
+
+fetch_branch() {
+  local try errors
+  branch_missing=0
+  for try in $(seq 1 "$network_attempts"); do
+    errors="$(git fetch -q origin "$branch" 2>&1)" && return 0
+    if [[ "$errors" == *"couldn't find remote ref"* ]]; then
+      branch_missing=1
+      return 0
+    fi
+    echo "fetching $branch failed (attempt $try of $network_attempts): $errors" >&2
+    ((try == network_attempts)) || sleep $((network_pause_s * try))
+  done
+  exit 1
 }
 
 fetch_index() {
   local output=$1
-  if branch_exists; then
-    git fetch -q origin "$branch"
-    git show FETCH_HEAD:index.jsonl >"$output"
-  else
-    : >"$output"
-  fi
+  fetch_branch
+  if ((branch_missing)); then : >"$output"; else git show FETCH_HEAD:index.jsonl >"$output"; fi
 }
 
 checkout() {
   local worktree=$1
   git worktree remove --force "$worktree" 2>/dev/null || true
-  if branch_exists; then
-    git fetch -q origin "$branch"
+  fetch_branch
+  if ((branch_missing == 0)); then
     git worktree add -q --detach "$worktree" FETCH_HEAD
   else
     git worktree add -q --detach "$worktree"
@@ -62,6 +70,7 @@ publish() {
       return 0
     fi
     echo "pushing $branch failed (attempt $attempt)" >&2
+    ((attempt == attempts)) || sleep $((network_pause_s * attempt))
   done
   return 1
 }
