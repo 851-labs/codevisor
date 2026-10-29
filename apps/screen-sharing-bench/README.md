@@ -177,9 +177,13 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
 
 Numbers come only from the `Screen Sharing Bench Tier 2` workflow
 (`.github/workflows/screen-sharing-bench-tier2.yml`, `workflow_dispatch`). A runner takes one job at a time,
-so no CI job overlaps a run. Deploy the app to both minis first (`scripts/deploy.sh tamale` and
-`scripts/deploy.sh croissant`), then `gh workflow run screen-sharing-bench-tier2.yml --ref <branch>`. Runs over
-ssh are for development only.
+so no CI job overlaps a run. Each job builds and signs CodevisorBench at the run's commit
+(`build-screen-sharing-bench`, as Tier 1 does) and runs it through `CODEVISOR_BENCH_APP`, so `gh workflow run
+screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
+minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
+and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine). C4 runs only when
+video is among the scenes. A plan longer than 45 minutes of runs fails at once. Runs over ssh are for
+development only.
 
 The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
 walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition
@@ -281,7 +285,8 @@ grants apply, and `~/Applications/CodevisorBench.app` is never touched.
   either at the cap or well below it, so whole e2e there can move by 30% between unchanged runs. The summary also
   says how long the gate waited for tamale and which bench runs were active meanwhile.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
-  night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. They still use the installed app.
+  night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. Calibration still uses the installed
+  app; Tier 2 builds its own.
 
 `preflight --quiet` is C5. It waits at least `--settle` seconds (60) and up to `--settle-limit` (300) for the
 1-minute load to drop to 2.0 and Spotlight to stop indexing (a fresh build sets it off), then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or

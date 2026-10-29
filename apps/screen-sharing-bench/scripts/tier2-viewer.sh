@@ -82,8 +82,8 @@ run_one() {
 }
 
 tier2_check_inputs
-commit=$(plutil -extract CodevisorBenchCommit raw "$HOME/Applications/CodevisorBench.app/Contents/Info.plist")
-echo "$commit" >"$results/viewer-commit.txt"
+"$tier2_scripts/record-installed-commit.sh" "$results"
+commit=$(cat "$results/installed-commit.txt")
 meet_on_build viewer "$commit"
 while read -r index scene system rep observed; do
   run_one "$index" "$scene" "$system" "$rep" "$observed"
