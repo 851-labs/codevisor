@@ -2,6 +2,56 @@
   "servers": [
     {
       "server": {
+        "name": "com.cloudflare/mcp",
+        "title": "Cloudflare",
+        "description": "Manage Cloudflare accounts, Workers, DNS and more through the Cloudflare API.",
+        "version": "remote",
+        "websiteUrl": "https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/",
+        "icons": [
+          {
+            "src": "https://developers.cloudflare.com/favicon.png"
+          }
+        ],
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.cloudflare.com/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "io.sentry/mcp",
+        "title": "Sentry",
+        "description": "Search Sentry issues and events, and read stack traces.",
+        "version": "remote",
+        "websiteUrl": "https://docs.sentry.io/product/sentry-mcp/",
+        "icons": [
+          {
+            "src": "https://github.com/getsentry.png"
+          }
+        ],
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.sentry.dev/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4
+          }
+        }
+      }
+    },
+    {
+      "server": {
         "name": "app.linear/linear",
         "title": "Linear",
         "description": "Find and manage issues, projects, and documents in your Linear workspace.",
@@ -27,51 +77,16 @@
     },
     {
       "server": {
-        "name": "com.notion/mcp",
-        "title": "Notion",
-        "description": "Search, read and edit Notion pages and databases.",
-        "version": "1.0.1",
-        "websiteUrl": "https://developers.notion.com/docs/mcp",
-        "remotes": [
-          {
-            "type": "streamable-http",
-            "url": "https://mcp.notion.com/mcp"
-          }
-        ],
-        "_meta": {
-          "dev.codevisor/plugin": {
-            "ageRating": 4
-          }
-        }
-      }
-    },
-    {
-      "server": {
-        "name": "io.sentry/mcp",
-        "title": "Sentry",
-        "description": "Search Sentry issues and events, and read stack traces.",
-        "version": "remote",
-        "websiteUrl": "https://docs.sentry.io/product/sentry-mcp/",
-        "remotes": [
-          {
-            "type": "streamable-http",
-            "url": "https://mcp.sentry.dev/mcp"
-          }
-        ],
-        "_meta": {
-          "dev.codevisor/plugin": {
-            "ageRating": 4
-          }
-        }
-      }
-    },
-    {
-      "server": {
         "name": "com.stripe/mcp",
         "title": "Stripe",
         "description": "Work with Stripe customers, products, payments and more.",
         "version": "0.2.4",
         "websiteUrl": "https://docs.stripe.com/mcp",
+        "icons": [
+          {
+            "src": "https://stripe.com/img/v3/home/twitter.png"
+          }
+        ],
         "remotes": [
           {
             "type": "streamable-http",
@@ -87,20 +102,25 @@
     },
     {
       "server": {
-        "name": "co.huggingface/hf-mcp-server",
-        "title": "Hugging Face",
-        "description": "Search models, datasets, Spaces and papers on Hugging Face.",
-        "version": "remote",
-        "websiteUrl": "https://huggingface.co/settings/mcp",
+        "name": "com.notion/mcp",
+        "title": "Notion",
+        "description": "Search, read and edit Notion pages and databases.",
+        "version": "1.0.1",
+        "websiteUrl": "https://developers.notion.com/docs/mcp",
+        "icons": [
+          {
+            "src": "https://www.notion.com/front-static/logo-ios.png"
+          }
+        ],
         "remotes": [
           {
             "type": "streamable-http",
-            "url": "https://huggingface.co/mcp?login"
+            "url": "https://mcp.notion.com/mcp"
           }
         ],
         "_meta": {
           "dev.codevisor/plugin": {
-            "ageRating": 13
+            "ageRating": 4
           }
         }
       }

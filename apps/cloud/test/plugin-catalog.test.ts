@@ -11,7 +11,7 @@ const official = {
     isLatest: true
   }
 }
-const ratedIds = ["co.huggingface/hf-mcp-server", "app.linear/linear"]
+const ratedIds = ["io.sentry/mcp", "app.linear/linear"]
 
 const ServerBody = z.looseObject({
   name: z.string(),
@@ -63,9 +63,7 @@ describe("plugin catalog", () => {
 
   it("filters by name or title, ignoring case", async () => {
     expect(names(await listServers("?search=LINEAR"))).toEqual(["app.linear/linear"])
-    expect(names(await listServers("?search=hugging%20face"))).toEqual([
-      "co.huggingface/hf-mcp-server"
-    ])
+    expect(names(await listServers("?search=sentry"))).toEqual(["io.sentry/mcp"])
     expect(await listServers("?search=no-such-plugin")).toEqual({
       servers: [],
       metadata: { count: 0 }
@@ -73,15 +71,15 @@ describe("plugin catalog", () => {
   })
 
   it("merges age ratings into the Codevisor plugin metadata", async () => {
-    const huggingFace = "co.huggingface/hf-mcp-server"
-    const unrated = pluginMeta(serverNamed(await listServers(), huggingFace))
-    await rate(huggingFace, 16)
+    const sentry = "io.sentry/mcp"
+    const unrated = pluginMeta(serverNamed(await listServers(), sentry))
+    await rate(sentry, 16)
     await rate("app.linear/linear", 18)
 
     const body = await listServers()
 
-    expect(unrated).toEqual({ ageRating: 13 })
-    expect(pluginMeta(serverNamed(body, huggingFace))).toEqual({
+    expect(unrated).toEqual({ ageRating: 4 })
+    expect(pluginMeta(serverNamed(body, sentry))).toEqual({
       ...unrated,
       ageRating: 16
     })
