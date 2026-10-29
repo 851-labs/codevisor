@@ -43,7 +43,7 @@ extension SidebarView {
       icon: icon,
       store: store,
       pullRequest: content.pullRequest(for: workspace),
-      machine: content.machine(for: workspace, isPinned: isPinned),
+      machine: content.machine(for: workspace, headingNamesMachine: false),
       isSelected: isSelected,
       isReordering: isReordering,
       onActivate: onActivate,

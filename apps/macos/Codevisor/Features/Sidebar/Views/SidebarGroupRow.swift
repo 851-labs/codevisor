@@ -1,8 +1,9 @@
+import CodevisorUI
 import SwiftUI
 
 struct SidebarGroupRow: View {
   let title: String
-  let systemImage: String
+  let icon: SidebarGroupIcon
   let isExpanded: Bool
   let isReordering: Bool
   let onToggle: () -> Void
@@ -14,7 +15,7 @@ struct SidebarGroupRow: View {
         Button(action: onToggle) {
           HStack(spacing: 7) {
             ZStack {
-              Image(systemName: systemImage)
+              icon.image
                 .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(.secondary)

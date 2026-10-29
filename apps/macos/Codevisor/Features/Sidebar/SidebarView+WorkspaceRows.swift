@@ -6,15 +6,24 @@ extension SidebarView {
   func workspaceRowList(_ rows: [SidebarRow]) -> some View {
     let routed = routedWorkspace
     let actions = rowActions
+    let namingMachine = Self.placementsNamingMachine(in: rows)
     return SidebarRowList(rows: rows, id: \.placedID, animation: Motion.listReflow(reduceMotion: reduceMotion)) { row in
-      workspaceRegionRow(row, routed: routed, actions: actions)
+      workspaceRegionRow(row, routed: routed, actions: actions, namingMachine: namingMachine)
     }
+  }
+
+  private static func placementsNamingMachine(in rows: [SidebarRow]) -> Set<SidebarRow.Placement> {
+    Set(
+      rows.compactMap { row in
+        guard case let .group(id, heading, _) = row.kind, heading.namesMachine else { return nil }
+        return .group(id)
+      })
   }
 
   @ViewBuilder
   private func workspaceRegionRow(
     _ row: SidebarRow, routed: (serverId: String, id: UUID)?,
-    actions: SidebarWorkspaceSection.Actions
+    actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>
   ) -> some View {
     switch row.kind {
     case let .section(.pinned, isExpanded):
@@ -41,7 +50,8 @@ extension SidebarView {
       SidebarWorkspaceSection(
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
         isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
-        isPinned: placement == .pinned, isReordering: isReordering, isExpanded: row.isExpanded, actions: actions
+        isPinned: placement == .pinned, headingNamesMachine: namingMachine.contains(placement),
+        isReordering: isReordering, isExpanded: row.isExpanded, actions: actions
       )
       .equatable()
       .opacity(draggingID == item.id ? 0.4 : 1)
@@ -61,7 +71,7 @@ extension SidebarView {
   private func groupHeadingRow(id: String, heading: SidebarWorkspaceGroup.Heading, isExpanded: Bool) -> some View {
     SidebarGroupRow(
       title: heading.title,
-      systemImage: heading.systemImage,
+      icon: heading.icon,
       isExpanded: isExpanded,
       isReordering: isReordering,
       onToggle: {

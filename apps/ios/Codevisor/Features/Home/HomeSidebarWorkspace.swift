@@ -80,10 +80,15 @@ struct HomeSidebarPreferences: Equatable {
 }
 
 struct HomeSidebarContent: Equatable {
-  enum Placement {
+  enum Placement: Equatable {
     case pinned
-    case list
+    case list(SidebarWorkspaceGroup.Heading?)
     case archived
+
+    var heading: SidebarWorkspaceGroup.Heading? {
+      guard case let .list(heading) = self else { return nil }
+      return heading
+    }
   }
 
   struct Group: Identifiable, Equatable {
@@ -143,21 +148,22 @@ struct HomeSidebarContent: Equatable {
     preferences: HomeSidebarPreferences,
     projects: [Project],
     defaultServerId: String,
-    machineKey: (String) -> String = { $0 },
-    machineHeading: (String) -> SidebarWorkspaceGroup.Heading,
+    machineGroup: (String) -> SidebarMachineGroup,
     workspace: (WorkspaceSidebarItem, Placement) -> HomeSidebarWorkspace?
   ) -> HomeSidebarContent {
     let groups = SidebarWorkspaceGroup.groups(
       listed, grouping: preferences.grouping, pinnedIDs: preferences.pinnedIDs, projects: projects,
-      defaultServerId: defaultServerId, machineOrder: preferences.machineOrder, machineKey: machineKey,
-      projectOrder: preferences.projectOrder, machineHeading: machineHeading
+      defaultServerId: defaultServerId, machineOrder: preferences.machineOrder,
+      projectOrder: preferences.projectOrder, machineGroup: machineGroup
     )
     var content = HomeSidebarContent(listTitle: preferences.grouping.listTitle)
     for group in groups {
       if group.id == SidebarWorkspaceGroup.pinnedID {
         content.pinned = group.items.compactMap { nesting($0, children: children) { workspace($0, .pinned) } }
       } else {
-        let workspaces = group.items.compactMap { nesting($0, children: children) { workspace($0, .list) } }
+        let workspaces = group.items.compactMap {
+          nesting($0, children: children) { workspace($0, .list(group.heading)) }
+        }
         content.groups.append(Group(id: group.id, heading: group.heading, workspaces: workspaces))
       }
     }

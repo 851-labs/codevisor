@@ -23,7 +23,11 @@ struct SidebarRowsTests {
     SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinned.map(\.uuidString), projects: [studio, linux, site],
       defaultServerId: "studio"
-    ) { serverId in SidebarWorkspaceGroup.Heading(title: serverId, systemImage: "desktopcomputer") }
+    ) { serverId in
+      SidebarMachineGroup(
+        key: serverId, orderKey: serverId,
+        heading: SidebarWorkspaceGroup.Heading(title: serverId, icon: .system("desktopcomputer")))
+    }
   }
 
   private func nested(

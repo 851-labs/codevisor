@@ -104,18 +104,19 @@
         preferences: preferences,
         projects: projects,
         defaultServerId: studio,
-        machineHeading: { serverId in
+        machineGroup: { serverId in
           let machine = machines[serverId]
-          return SidebarWorkspaceGroup.Heading(
+          let heading = SidebarWorkspaceGroup.Heading(
             title: machine?.name ?? "Unknown Machine",
-            systemImage: machine?.systemImage ?? "questionmark.circle",
+            icon: .system(machine?.systemImage ?? "questionmark.circle"),
             newChatTarget: NewChatTarget(machine: serverId)
           )
+          return SidebarMachineGroup(key: serverId, orderKey: serverId, heading: heading)
         }
       ) { item, placement in
         guard let entry = byID[item.id] else { return nil }
         let details = preferences.rowDetails
-        let underHeading = placement == .list
+        let heading = placement.heading
         var workspace = entry.workspace
         workspace.subtitle = SidebarRowSubtitle.make(
           details: details,
@@ -123,10 +124,10 @@
           projectName: projects.first { $0.id == entry.projectId }?.name,
           branch: entry.branch,
           worktreeName: nil,
-          groupNamesProject: preferences.grouping == .project && underHeading
+          groupNamesProject: preferences.grouping == .project && heading != nil
         )
         workspace.machine =
-          details.contains(.machine) && !(preferences.grouping == .machine && underHeading)
+          details.contains(.machine) && heading?.namesMachine != true
           ? machines[workspace.serverId] : nil
         workspace.pullRequest = details.contains(.pullRequest) ? entry.pullRequest : nil
         workspace.leadingRow =

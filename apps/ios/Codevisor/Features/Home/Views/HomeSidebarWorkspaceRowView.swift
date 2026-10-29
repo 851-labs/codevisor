@@ -197,7 +197,7 @@ struct HomeSidebarGroupLabel: View {
       HomeSidebarRowTitle(title: heading.title)
         .lineLimit(1)
     } icon: {
-      HomeSidebarSymbol(name: heading.systemImage)
+      HomeSidebarSymbol(image: heading.icon.image)
     }
     .contextMenu {
       if let onNewChat {
@@ -234,11 +234,19 @@ private struct HomeSidebarRowSubtitle: View {
 }
 
 struct HomeSidebarSymbol: View {
-  let name: String
+  let image: Image
   @Environment(\.backgroundProminence) private var backgroundProminence
 
+  init(name: String) {
+    image = Image(systemName: name)
+  }
+
+  init(image: Image) {
+    self.image = image
+  }
+
   var body: some View {
-    Image(systemName: name)
+    image
       .symbolRenderingMode(.monochrome)
       .foregroundStyle(backgroundProminence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
       .accessibilityHidden(true)

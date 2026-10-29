@@ -7,7 +7,9 @@ public final class MachineController {
   public internal(set) var registry: MachineRegistry
   public var serverUpdateChannel: ServerUpdateChannel = .stable
   public let sandboxProfiles = SandboxProfileCatalog()
+  public let sandboxMachineProfiles = SandboxMachineProfiles()
   var sandboxAvailabilityRevision = 0
+  var sandboxSettingsRevision = 0
 
   public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 
@@ -120,6 +122,11 @@ public final class MachineController {
 
   public func isSandbox(_ id: String) -> Bool { cloudMachine(forMachineId: id)?.ephemeral != nil }
   public func chatMachine(for id: String) -> CodevisorMachine? { isSandbox(id) ? nil : machine(for: id) }
+
+  public func sandboxProfile(forMachineId id: String) -> SandboxMachineProfile? {
+    guard let cloud = cloudMachine(forMachineId: id), let origin = cloud.ephemeral else { return nil }
+    return sandboxMachineProfiles.profile(forDevice: cloud.deviceId, ownedBy: origin.ownerDeviceId)
+  }
   public func icon(for cloud: CloudMachine) -> MachineIcon { catalog.icon(for: cloud) }
   public func canonicalComposerMachineId(for id: String) -> String? { catalog.canonicalComposerMachineId(for: id) }
   public func fleetMachineName(for serverId: String) -> String? { catalog.fleetMachineName(for: serverId) }
