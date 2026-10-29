@@ -175,33 +175,18 @@ struct WorkspaceRepositoryTests {
     #expect(restored.chatSessionIds == installed.chatSessionIds)
   }
 
-  @Test("Automatic names rename drafts locally and server workspaces through the outbox; custom names stay")
+  @Test("Automatic names rename drafts locally; server workspaces keep the name their main chat gives them")
   func automaticNameUpdates() async throws {
     let navigation = NavigationFixture()
     let repository = navigation.workspaces
     let draft = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
-    repository.setAutomaticName("rowland", forWorkspace: draft.id)
+    repository.setAutomaticName(" rowland ", forWorkspace: draft.id)
     #expect(repository.workspace(id: draft.id)?.name == "rowland")
-    #expect(navigation.store.pendingIntents.isEmpty)
 
     let installed = await install(navigation)
-    repository.setAutomaticName(" newton ", forWorkspace: installed.id)
-    #expect(repository.workspace(id: installed.id)?.name == "newton")
-    #expect(
-      navigation.store.pendingIntents.map(\.intent) == [
-        .renameWorkspace(workspaceId: installed.id, name: "newton", hasCustomName: false)
-      ])
-
-    let pinned = NavigationFixture()
-    var record = WorkspaceSyncModel.serverWorkspace(from: installed)
-    record.name = "My workspace"
-    record.hasCustomName = true
-    await pinned.store.replace(
-      ServerNavigationSnapshot(eventCursor: 1, projects: [], sessions: [], workspaces: [record], panes: []),
-      machineId: "local", requestedAt: Date())
-    pinned.workspaces.setAutomaticName("newton", forWorkspace: installed.id)
-    #expect(pinned.workspaces.workspace(id: installed.id)?.name == "My workspace")
-    #expect(pinned.store.pendingIntents.isEmpty)
+    repository.setAutomaticName("newton", forWorkspace: installed.id)
+    #expect(repository.workspace(id: installed.id)?.name == installed.name)
+    #expect(navigation.store.pendingIntents.isEmpty)
   }
 
   @Test("Workspace-backed group repository round-trips its leaf")

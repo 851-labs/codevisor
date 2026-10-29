@@ -67,18 +67,14 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
 
   public func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID) {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty, let workspace = workspace(id: workspaceId), !workspace.hasCustomName,
-      workspace.name != trimmed
+    guard !trimmed.isEmpty, let workspace = workspace(id: workspaceId), workspace.isDraft,
+      !workspace.hasCustomName, workspace.name != trimmed
     else { return }
     onMain { store in
-      if workspace.isServerSynced {
-        store.enqueue(
-          .renameWorkspace(workspaceId: workspaceId, name: trimmed, hasCustomName: false),
-          machineId: workspace.serverId)
-      } else if var draft = store.layouts.draft(id: workspaceId), let layout = store.layouts.layout(for: workspaceId) {
-        draft.name = trimmed
-        store.addDraft(draft, layout: layout)
-      }
+      guard var draft = store.layouts.draft(id: workspaceId), let layout = store.layouts.layout(for: workspaceId)
+      else { return }
+      draft.name = trimmed
+      store.addDraft(draft, layout: layout)
     }
   }
 
