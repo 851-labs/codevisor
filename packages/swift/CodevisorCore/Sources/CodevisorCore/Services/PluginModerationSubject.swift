@@ -10,7 +10,10 @@ public struct PluginModerationSubject: Equatable, Hashable, Sendable {
 
   public var isCustom: Bool { pluginId.hasPrefix(Self.customPrefix) }
 
+  public var isFirstParty: Bool { !isCustom && publisher == Self.codevisorPublisher }
+
   private static let customPrefix = "custom:"
+  private static let codevisorPublisher = "dev.codevisor"
 
   public init(pluginId: String, name: String, publisher: String, declaredAgeRating: Int?, revision: String) {
     self.pluginId = pluginId

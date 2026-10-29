@@ -31,4 +31,21 @@ describe("cloud inbox api", () => {
       "DELETE /api/machine/inboxes/inbox%2F1/devices/self"
     ])
   })
+
+  it("routes an inbox by key and keeps only the string settings the cloud returns", async () => {
+    const { api, requests } = recordingCloud({ config: { topic: "projects/p/topics/t", ttl: 7 } })
+    const bare = recordingCloud({})
+
+    expect(await api.route("inbox/1", "gmail", "abc")).toEqual({ topic: "projects/p/topics/t" })
+    expect(await bare.api.route("inbox-2", "gmail", "abc")).toEqual({})
+    expect(requests).toEqual(['PUT /api/machine/inboxes/inbox%2F1/routes/gmail {"key":"abc"}'])
+  })
+
+  it("deletes an inbox", async () => {
+    const { api, requests } = recordingCloud(undefined)
+
+    await api.remove("inbox/1")
+
+    expect(requests).toEqual(["DELETE /api/machine/inboxes/inbox%2F1"])
+  })
 })

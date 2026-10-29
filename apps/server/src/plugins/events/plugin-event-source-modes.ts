@@ -7,6 +7,7 @@ export interface SourceRun {
   readonly source: EventSource
   readonly signal: AbortSignal
   readonly connection: EventConnection
+  readonly meta: () => Promise<Record<string, unknown>>
   readonly cursor: () => Promise<string | undefined>
   readonly saveCursor: (cursor: string | undefined) => Promise<void>
   readonly ingest: (occurrences: ReadonlyArray<EventOccurrence>) => Promise<number>
@@ -45,7 +46,8 @@ export const streamUntilClosed = async (sourceRun: SourceRun): Promise<void> => 
     {
       name: sourceRun.source.eventName,
       arguments: sourceRun.source.arguments,
-      cursor: (await sourceRun.cursor()) ?? null
+      cursor: (await sourceRun.cursor()) ?? null,
+      ...streamMeta(await sourceRun.meta())
     },
     {
       ...requestOptions(sourceRun),
@@ -64,6 +66,9 @@ const onStreamMessage = async (
   if (method === "notifications/events/event") await sourceRun.ingest(occurrencesOf([params]))
   if (carriesCursor(method)) await sourceRun.saveCursor(cursorOf(params.cursor))
 }
+
+const streamMeta = (meta: Record<string, unknown>): { _meta?: Record<string, unknown> } =>
+  Object.keys(meta).length === 0 ? {} : { _meta: meta }
 
 const carriesCursor = (method: string): boolean =>
   method === "notifications/events/event" ||

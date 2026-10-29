@@ -89,7 +89,7 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     ingest,
     timers: deps.timers,
     ...(deps.webhooks === undefined ? {} : { webhooks: deps.webhooks(ingest) }),
-    ...(deps.ingress === undefined ? {} : { onSourcesChanged: deps.ingress.refresh })
+    ...(deps.ingress === undefined ? {} : ingressHooks(deps.ingress))
   })
   const subscriptionDeps: PluginEventSubscriptionsDeps = { db: deps.db, types, pluginName }
   const unsubscribeConnections = deps.connections.subscribeConnections((serverId) => {
@@ -129,6 +129,14 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
     }
   }
 }
+
+const ingressHooks = (ingress: PluginEventIngress) => ({
+  onSourcesChanged: ingress.refresh,
+  streamMeta: async (source: EventSource) => {
+    if (source.accountId === undefined) return {}
+    return ingress.meta(source.serverId, source.accountId)
+  }
+})
 
 const withAccount = async (
   deps: PluginEventsDeps,

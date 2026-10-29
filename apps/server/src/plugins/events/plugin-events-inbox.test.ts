@@ -57,3 +57,33 @@ it("explains when the cloud doesn't hand out an inbox", async () => {
     [500, { error: "The cloud didn't return an inbox" }]
   ])
 })
+
+it("keeps a routed ingress out of the paste list and deletes an account's inboxes when it's removed", async () => {
+  const { cloud, requests } = fakeCloud((method, path) =>
+    method === "POST" && path === "/api/machine/inboxes"
+      ? { id: "inbox-1", url: "https://in.example/i/1" }
+      : {}
+  )
+  const running = await startPluginApp({ cloud, inbox: makeCloudInbox() })
+  const grafana = await savePluginRow(running.services.db, "Grafana", {
+    catalogId: grafanaId,
+    enabled: false,
+    capabilities: capabilitiesWith({ ingress: [{ name: "push", route: "gmail" }] })
+  })
+  const account = await running.platform.accounts.saveFields(grafana.id, {
+    values: { url: "https://grafana.example.com", token: "glsa_secret" }
+  })
+
+  const listed = await jsonRequest(
+    running.server,
+    `/v1/plugins/${grafana.id}/accounts/${account.id}/ingress`
+  )
+  requests.splice(0)
+  await running.platform.accounts.remove(grafana.id, account.id)
+
+  expect([listed.status, listed.body]).toEqual([200, { ingress: [] }])
+  expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+    "POST /api/machine/inboxes",
+    "DELETE /api/machine/inboxes/inbox-1"
+  ])
+})

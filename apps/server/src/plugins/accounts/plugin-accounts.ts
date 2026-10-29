@@ -12,6 +12,7 @@ import type { SharedTokenBundle } from "@codevisor/harness-manager"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
 import { HttpFailure } from "../../server-context.js"
+import type { InstalledOAuthClients } from "./installed-oauth-clients.js"
 import { splitFieldValues } from "./plugin-account-fields.js"
 import { makePluginOAuthFlows, type OAuthRedirects } from "./plugin-account-flows.js"
 import {
@@ -41,6 +42,8 @@ export interface PluginAccountsDeps {
   readonly server: (serverId: string) => Promise<McpServer>
   readonly spec: (server: McpServer) => PluginAccountSpec | undefined
   readonly redirects: OAuthRedirects
+  readonly installedClients?: InstalledOAuthClients | undefined
+  readonly beforeRemove?: (serverId: string, accountId: string) => Promise<void>
   readonly onChanged: (entries: ReadonlyArray<SyncEntryRecord>) => void
   readonly now?: () => number
   readonly fetch?: typeof fetch
@@ -134,6 +137,7 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
     completeOAuth: flows.complete,
     remove: async (serverId, accountId) => {
       const account = await ownedAccount(serverId, accountId)
+      await deps.beforeRemove?.(serverId, account.id)
       if (account.credential !== undefined)
         await deps.vault.revoke(account.credential).catch(() => undefined)
       deps.onChanged(await deps.store.remove(account.id))

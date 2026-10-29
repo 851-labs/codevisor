@@ -22,6 +22,12 @@ const catalogOf = (
   entry: (id: string) => listed.find((candidate) => candidate.id === id)
 })
 
+const installedLocally: Parameters<typeof pluginIconSources>[0] = async (id) => {
+  if (id === "gmail-server") return { catalogId: "dev.codevisor/gmail" }
+  if (id === "unlisted-server") return { catalogId: "dev.codevisor/gone" }
+  return {}
+}
+
 describe("plugin icon sources", () => {
   it("prefers an installed server's own icons, then the catalog's icon and website", async () => {
     const catalog = catalogOf([
@@ -51,6 +57,20 @@ describe("plugin icon sources", () => {
     expect(await sources("dev.codevisor/plain")).toEqual({})
     expect(await sources("missing/plugin")).toBeUndefined()
     expect(await sources("4f1c-uuid")).toBeUndefined()
+  })
+
+  it("uses the catalog icon for an installed local plugin that has none of its own", async () => {
+    const catalog = catalogOf([
+      entry("dev.codevisor/gmail", { iconUrl: "https://www.gstatic.com/gmail.png" })
+    ])
+    const sources = pluginIconSources(installedLocally, catalog)
+
+    expect(await sources("gmail-server")).toEqual({
+      url: "https://www.gstatic.com/gmail.png",
+      icons: [{ src: "https://www.gstatic.com/gmail.png" }]
+    })
+    expect(await sources("unlisted-server")).toEqual({ catalogId: "dev.codevisor/gone" })
+    expect(await sources("custom-server")).toEqual({})
   })
 
   it("still finds catalog icons when MCP is unavailable", async () => {

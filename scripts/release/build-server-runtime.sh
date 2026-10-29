@@ -25,6 +25,10 @@ Optional environment:
                                 slow runners reuse it and only build native parts.
   CODEVISOR_NODE_GYP            node-gyp executable for native addons (default:
                                 the repository's node_modules/.bin/node-gyp).
+  CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON
+                                Google installed-app client JSON for Google plugin
+                                sign-in. Written to config/google-oauth-client.json;
+                                never printed.
 EOF
 }
 
@@ -136,6 +140,22 @@ for plugin_dir in "$repo_root"/plugins/*/; do
     cp "$plugin_dir/server.json" "$runtime_dir/plugins/$plugin_name/server.json"
   fi
 done
+
+if [[ -n "${CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON:-}" ]]; then
+  if ! printf '%s' "$CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON" | node -e '
+    try {
+      const client = JSON.parse(require("node:fs").readFileSync(0, "utf8")).installed
+      process.exit(typeof client?.client_id === "string" && client.client_id !== "" ? 0 : 1)
+    } catch {
+      process.exit(1)
+    }
+  '; then
+    echo "error: CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON isn't a Google installed-app client" >&2
+    exit 1
+  fi
+  mkdir -p "$runtime_dir/config"
+  (umask 077 && printf '%s' "$CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON" > "$runtime_dir/config/google-oauth-client.json")
+fi
 
 node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null
 mkdir -p "$runtime_dir/packages/net/native/$target"

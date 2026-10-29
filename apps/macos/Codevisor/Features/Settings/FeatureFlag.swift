@@ -4,6 +4,7 @@ import SwiftUI
 enum FeatureFlag: String, CaseIterable, Identifiable {
   case bots
   case developerMode
+  case gmailPlugin
 
   var id: String { rawValue }
 
@@ -13,6 +14,7 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
     switch self {
     case .bots: "Bots"
     case .developerMode: "Developer Mode"
+    case .gmailPlugin: "Gmail Plugin"
     }
   }
 
@@ -20,6 +22,8 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
     switch self {
     case .bots: "Adds a Chat mode to the sidebar for long-lived bots that work across several projects."
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
+    case .gmailPlugin:
+      "Shows Gmail in Browse Plugins on all your devices. In testing: only @851.sh Google accounts can sign in."
     }
   }
 

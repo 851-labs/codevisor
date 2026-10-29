@@ -1,9 +1,13 @@
 import { decode, McpServer, PluginCatalogResponse } from "@codevisor/api"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
+import { run } from "../server-context.js"
 import { jsonRequest } from "../test-support.js"
 import {
+  alertsServer,
   catalogFixture,
+  flaggedServer,
   openServer,
   ticketsServer,
   weatherServer
@@ -29,6 +33,76 @@ const entryIds = async (running: CatalogApp, path: string) =>
   decode(PluginCatalogResponse)((await jsonRequest(running.server, path)).body).entries.map(
     (entry) => entry.id
   )
+
+const flaggedApp = async () => {
+  const fixture = await catalogFixture([alertsServer, flaggedServer], [ticketsServer])
+  return { ...(await startPluginApp({ catalog: fixture.options })), fixture }
+}
+
+let flagWrites = 0
+
+const setFlag = (
+  running: Awaited<ReturnType<typeof flaggedApp>>,
+  value: unknown,
+  deleted = false
+) =>
+  run(
+    running.services.db.mergeSyncEntries("client-preferences", [
+      {
+        key: "featureFlags.mailPlugin",
+        value,
+        deleted,
+        timestamp: { wallMs: flagEpochMs + ++flagWrites, counter: 0, deviceId: "mac" }
+      }
+    ])
+  )
+
+const flagEpochMs = Date.parse("2026-10-29T12:00:00.000Z")
+
+const flaggedId = "dev.codevisor/mail"
+
+describe("feature-flagged catalog plugins", () => {
+  it("stay out of browsing, describing, installing and agent search until their flag is on", async () => {
+    const running = await flaggedApp()
+    await setFlag(running, false)
+
+    const listed = await entryIds(running, "/v1/plugins/catalog")
+    const described = await jsonRequest(
+      running.server,
+      `/v1/plugins/catalog/${encodeURIComponent(flaggedId)}`
+    )
+    const refused = await install(running, flaggedId)
+    const searched = await jsonRequest(running.server, "/v1/plugins/search?query=mail")
+    await setFlag(running, true)
+    const shown = await entryIds(running, "/v1/plugins/catalog")
+    const found = await jsonRequest(running.server, "/v1/plugins/search?query=mail")
+
+    expect(listed).toEqual(["dev.codevisor/alerts", "io.example/tickets"])
+    expect([described.status, refused.status]).toEqual([404, 404])
+    expect(JSON.stringify(searched.body)).not.toContain(flaggedId)
+    expect(shown).toEqual(["dev.codevisor/alerts", flaggedId, "io.example/tickets"])
+    expect(JSON.stringify(found.body)).toContain(flaggedId)
+  })
+
+  it("keeps an installed copy working after the flag is turned off", async () => {
+    const running = await flaggedApp()
+    await setFlag(running, true)
+    const copy = await installed(running, flaggedId)
+
+    await setFlag(running, true, true)
+    const searched = await jsonRequest(running.server, "/v1/plugins/search?query=mail")
+    const servers = decode(Schema.Array(McpServer))(
+      (await jsonRequest(running.server, "/v1/mcps")).body
+    )
+
+    expect(await entryIds(running, "/v1/plugins/catalog")).not.toContain(flaggedId)
+    expect(servers.map((server) => server.id)).toContain(copy.id)
+    expect(JSON.stringify(searched.body)).toContain(copy.id)
+    expect(running.services.pluginCatalog.entry(flaggedId)).toMatchObject({
+      featureFlag: "mailPlugin"
+    })
+  })
+})
 
 describe("plugin catalog routes", () => {
   it("lists the curated catalog and narrows it to a query", async () => {

@@ -47,11 +47,12 @@ import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts
 import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import { makeUsageLimitsCache, makeUsageLimitsFileStore } from "./infra/usage-limits-cache.js"
-import { isDevInstance, makePluginCatalog, startCatalogRefresh } from "./plugins/plugin-catalog.js"
 import { pluginIconSources } from "./plugins/plugin-icon-sources.js"
 import { makePluginPlatform } from "./plugins/plugin-platform.js"
 import { startSandboxes } from "./sandbox-boot.js"
 import {
+  bootInstalledOAuthClients,
+  bootPluginCatalog,
   restoreTerminalPersistence,
   screenSharingProvider,
   simulatorsProvider,
@@ -329,11 +330,7 @@ export const runServe = (
       initializeOptionalServerFeature("File delivery skill", attachingFilesSkill),
       initializeOptionalServerFeature("Plugin skill", () => pluginAuthoringSkill())
     ].filter((skill) => skill !== undefined)
-    const pluginCatalog = makePluginCatalog({
-      dev: isDevInstance(process.env),
-      execPath: process.execPath
-    })
-    startCatalogRefresh(pluginCatalog, () => cloudControl.serverUrl?.())
+    const pluginCatalog = bootPluginCatalog(db, () => cloudControl.serverUrl?.())
     const credentialVault = mcpCredentialVault(dirname(databasePath))
     const pluginPlatform = makePluginPlatform({
       db,
@@ -342,7 +339,8 @@ export const runServe = (
       catalog: pluginCatalog,
       cloud: cloudControl,
       inbox: cloudInbox,
-      localBaseUrl: `http://127.0.0.1:${port}`
+      localBaseUrl: `http://127.0.0.1:${port}`,
+      installedClients: bootInstalledOAuthClients()
     })
     const mcp = initializeOptionalServerFeature("MCP", () =>
       makeMcpManager({

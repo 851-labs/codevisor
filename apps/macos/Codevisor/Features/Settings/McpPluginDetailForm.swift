@@ -66,7 +66,7 @@ struct McpPluginDetailForm: View {
             addLabel: isHTTP ? "Add Header" : "Add Environment Variable",
             onCommit: onCommit)
         }
-      } else if !server.isBuiltIn {
+      } else if showsConnectionRows {
         McpServerConnectionRows(server: server)
       }
     } footer: {
@@ -90,6 +90,10 @@ struct McpPluginDetailForm: View {
   }
 
   private var isComputerUse: Bool { entry.kind == "computerUse" }
+
+  private var showsConnectionRows: Bool {
+    !server.isBuiltIn && !server.isBundledPlugin
+  }
 
   private var isEditable: Bool {
     entry.canEdit && !server.isBuiltIn && server.catalogId == nil

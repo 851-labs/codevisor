@@ -74,6 +74,7 @@ export type GatewayRemoteInvoker = (
 
 export interface McpServerIconSources {
   readonly url?: string
+  readonly catalogId?: string
   readonly icons?: ReadonlyArray<{
     readonly src: string
     readonly mimeType?: string | undefined

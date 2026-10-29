@@ -43,6 +43,11 @@ export const webhookRequest = z.object({
   })
 })
 
+export const accountRemoveRequest = z.object({
+  method: z.literal("codevisor/account/remove"),
+  params: z.object({}).loose().optional()
+})
+
 export const skillsListRequest = z.object({
   method: z.literal("skills/list"),
   params: z.object({ cursor: z.string().optional() }).optional()

@@ -26,12 +26,13 @@ public struct PluginAccountLabel: View {
     }
   }
 
-  private var title: String {
+  var title: String {
     account.label ?? account.identity ?? fallbackName
   }
 
-  private var subtitle: String? {
-    guard account.label != nil else { return nil }
-    return account.identity
+  var subtitle: String? {
+    guard let label = account.label, let identity = account.identity else { return nil }
+    guard label.caseInsensitiveCompare(identity) != .orderedSame else { return nil }
+    return identity
   }
 }

@@ -10,6 +10,7 @@ import {
 } from "@codevisor/api"
 
 import { HttpFailure } from "../../server-context.js"
+import { type InstalledOAuthClients, noInstalledOAuthClients } from "./installed-oauth-clients.js"
 import type { SplitFieldValues } from "./plugin-account-fields.js"
 import {
   beginPluginOAuth,
@@ -45,12 +46,14 @@ export interface OAuthStartInput {
 export interface PluginOAuthFlowsDeps {
   readonly vault: PluginVault
   readonly redirects: OAuthRedirects
+  readonly installedClients?: InstalledOAuthClients | undefined
   readonly now: () => number
   readonly fetch?: typeof fetch
   readonly save: (record: PluginAccountRecord) => Promise<PluginAccount>
 }
 
 export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
+  const installedClients = deps.installedClients ?? noInstalledOAuthClients
   const pending = new Map<
     string,
     { readonly flow: PendingOAuthFlow; readonly spec: PluginOAuthSpec }
@@ -87,10 +90,10 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
       input: OAuthStartInput
     ): Promise<PluginAccountOAuthStart> => {
       const oauth = requireOAuth(spec, server)
+      const client = await oauthClient(server, oauth, input.split, installedClients)
       const flowId = newFlowId()
       const nonce = newNonce()
       const redirect = await deps.redirects.prepare(flowId)
-      const client = oauthClient(oauth, input.split)
       const started = await beginPluginOAuth(
         oauth,
         client,
@@ -177,9 +180,31 @@ const requireOAuth = (spec: PluginAccountSpec, server: McpServer): PluginOAuthSp
   throw new HttpFailure(400, `${server.name} doesn't sign in with OAuth`)
 }
 
-const oauthClient = (oauth: PluginOAuthSpec, split: SplitFieldValues): OAuthClient => {
+const oauthClient = async (
+  server: McpServer,
+  oauth: PluginOAuthSpec,
+  split: SplitFieldValues,
+  installedClients: InstalledOAuthClients
+): Promise<OAuthClient> => {
   if (oauth.client === "managed")
     throw new HttpFailure(400, "Codevisor's shared client isn't available yet")
+  if (oauth.client === "installed") return installedClient(server, oauth, installedClients)
+
+  return userClient(split)
+}
+
+const installedClient = async (
+  server: McpServer,
+  oauth: PluginOAuthSpec,
+  installedClients: InstalledOAuthClients
+): Promise<OAuthClient> => {
+  const client = await installedClients(oauth.provider)
+  if (client !== undefined) return client
+
+  throw new HttpFailure(409, `${server.name} sign-in isn't set up in this build of Codevisor`)
+}
+
+const userClient = (split: SplitFieldValues): OAuthClient => {
   const clientId = split.values.clientId
   if (typeof clientId !== "string") throw new HttpFailure(400, "OAuth client ID is required")
   const clientSecret = split.secrets.clientSecret

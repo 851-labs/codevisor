@@ -2,13 +2,15 @@ import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 
+import { inboxRouteConfig } from "./inbox-route-configs.js"
 import {
   deleteInbox,
   hooksBaseUrl,
   INBOXES_OFF,
   inboxUrl,
   ownsInbox,
-  provisionInbox
+  provisionInbox,
+  routeInbox
 } from "./inbox-store.js"
 import { userHub } from "./location-hint.js"
 import { requireMachine, type MachineEnv } from "./machine-auth.js"
@@ -52,6 +54,26 @@ inboxRoutes.delete("/api/machine/inboxes/:id/devices/self", async (c) => {
   return c.json({ ok: true })
 })
 
+inboxRoutes.put(
+  "/api/machine/inboxes/:id/routes/:route",
+  bodyLimit({ maxSize: 1_024 }),
+  async (c) => {
+    const inboxId = c.req.param("id")
+    if (!(await ownsInbox(c.env.DB, c.var.machine.userId, inboxId)))
+      return c.json(unknownInbox, 404)
+
+    const route = inboxRouteConfig(c.env, c.req.param("route"))
+    if (route === undefined) return c.json({ error: "unknown route" }, 404)
+    if (route.config === undefined) return c.json({ error: route.unavailable }, 503)
+
+    const body = RouteBody.safeParse(await c.req.json<unknown>().catch(() => undefined))
+    if (!body.success) return c.json({ error: "invalid route key" }, 400)
+
+    await routeInbox(c.env.DB, inboxId, c.req.param("route"), body.data.key)
+    return c.json({ config: route.config })
+  }
+)
+
 inboxRoutes.delete("/api/machine/inboxes/:id", async (c) => {
   const inboxId = c.req.param("id")
   const { userId } = c.var.machine
@@ -64,6 +86,8 @@ inboxRoutes.delete("/api/machine/inboxes/:id", async (c) => {
 const unknownInbox = { error: "unknown inbox" }
 
 const targetPart = z.string().min(1).max(200)
+
+const RouteBody = z.object({ key: z.string().regex(/^[0-9a-f]{64}$/) })
 
 const InboxTargetBody = z.object({
   plugin: targetPart,

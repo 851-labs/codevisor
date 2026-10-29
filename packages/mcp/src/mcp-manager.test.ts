@@ -139,6 +139,24 @@ describe("MCP manager", () => {
     })
   })
 
+  it("names the catalog entry an installed server came from in its icon sources", async () => {
+    const { manager } = await testManager()
+
+    const created = await manager.create({
+      authType: "none",
+      enabled: false,
+      name: "Linear",
+      transport: "http",
+      url: "https://mcp.linear.app/mcp",
+      catalogId: "app.linear/linear"
+    })
+
+    expect(await manager.iconSources(created.id)).toEqual({
+      url: "https://mcp.linear.app/mcp",
+      catalogId: "app.linear/linear"
+    })
+  })
+
   it(
     "connects a working upstream and exposes its tools through execute",
     { timeout: 20_000 },

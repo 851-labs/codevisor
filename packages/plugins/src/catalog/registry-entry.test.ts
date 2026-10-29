@@ -182,3 +182,16 @@ describe("catalog age ratings", () => {
     expect(rated(7)).not.toHaveProperty("ageRating")
   })
 })
+
+const flagged = (featureFlag: unknown) =>
+  catalogEntryOf(
+    { ...packaged("npm"), _meta: { "dev.codevisor/plugin": { featureFlag } } },
+    "popular"
+  )
+
+describe("catalog feature flags", () => {
+  it("carries the feature flag a plugin waits behind, and ignores anything that isn't a name", () => {
+    expect(flagged("gmailPlugin")?.featureFlag).toBe("gmailPlugin")
+    expect(flagged(true)).not.toHaveProperty("featureFlag")
+  })
+})

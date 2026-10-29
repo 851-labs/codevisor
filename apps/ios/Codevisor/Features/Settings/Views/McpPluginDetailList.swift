@@ -33,8 +33,9 @@ struct McpPluginDetailList: View {
       if let accounts { PluginAccountsSection(model: accounts) }
       if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }
       McpServerToolSections(server: server, client: client, isConnected: isConnected)
+      if let accounts { PluginAccountSignOutSection(model: accounts) }
       if summary.isSignedIn { signOutSection }
-      if !server.isBuiltIn || entry.canRemove { manageSection }
+      if showsModeration || entry.canRemove { manageSection }
     }
     .toolbar {
       if summary.needsSignIn, let signInMachineId {
@@ -62,7 +63,7 @@ struct McpPluginDetailList: View {
 
   private var manageSection: some View {
     Section {
-      if !server.isBuiltIn {
+      if showsModeration {
         Button("Report…") { reporting = true }
         PluginBlockMenuItem(subject: subject) { confirmingBlock = true }
       }
@@ -93,6 +94,10 @@ struct McpPluginDetailList: View {
   }
 
   private var subject: PluginModerationSubject { PluginModerationSubject(server: server) }
+
+  private var showsModeration: Bool {
+    !server.isBuiltIn && !subject.isFirstParty
+  }
 
   private var isConnected: Bool {
     if case .ready = model.row(for: entry, on: machineId, in: environment)?.status { true } else { false }

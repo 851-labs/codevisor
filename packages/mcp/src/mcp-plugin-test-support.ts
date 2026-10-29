@@ -72,7 +72,10 @@ export const pluginExtensions: ServerCapabilities = {
       panes: [{ type: "dashboard", title: "Alerts", resourceUri: "ui://grafana/alerts.html" }]
     },
     "dev.codevisor/webhooks": {
-      ingress: [{ name: "alerts", title: "Grafana alert webhook" }, { name: "raw" }]
+      ingress: [
+        { name: "alerts", title: "Grafana alert webhook" },
+        { name: "raw", route: "gmail" }
+      ]
     }
   }
 }

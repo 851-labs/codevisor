@@ -100,6 +100,30 @@ describe("plugin platform", () => {
     expect(heard).toEqual([[expect.objectContaining({ key: saved.id, deleted: false })]])
   })
 
+  it("lets removal listeners use an account before it goes, even when one of them fails", async () => {
+    const started = await pluginServices()
+    const grafana = await savePluginRow(started.services.db, "Grafana", {
+      catalogId: "dev.codevisor/grafana",
+      enabled: false
+    })
+    const values = { url: "https://grafana.example.com", token: "glsa_secret" }
+    const first = await started.platform.accounts.saveFields(grafana.id, { values })
+    const second = await started.platform.accounts.saveFields(grafana.id, { values })
+    const heard: Array<string> = []
+    const stop = started.platform.onAccountRemoving(async (serverId, accountId) => {
+      const context = await started.platform.accounts.context(serverId, accountId)
+      heard.push(`${accountId} ${String(context?.fields.token)}`)
+    })
+    started.platform.onAccountRemoving(() => Promise.reject(new Error("plugin offline")))
+
+    await started.platform.accounts.remove(grafana.id, first.id)
+    stop()
+    await started.platform.accounts.remove(grafana.id, second.id)
+
+    expect(heard).toEqual([`${first.id} glsa_secret`])
+    expect(await started.platform.accounts.list(grafana.id)).toEqual([])
+  })
+
   it("reports no accounts for plugins it can't look up", async () => {
     const attached = await pluginServices()
     const detached = makePluginPlatform({

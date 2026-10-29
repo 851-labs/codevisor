@@ -208,6 +208,8 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: scripts/release/build-server-archive.sh "$VERSION" dist/release
+        env:
+          CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON }}
       - run: scripts/release/package-server-js.sh dist/release/build-inputs/codevisor-server-js.tar.gz
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -239,6 +241,8 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: scripts/release/build-server-archive.sh "$VERSION" dist/release
+        env:
+          CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-server-linux-arm64
@@ -278,6 +282,7 @@ jobs:
       - name: Build Intel macOS server archive
         env:
           CODEVISOR_PREBUILT_SERVER_JS: dist/release/build-inputs/codevisor-server-js.tar.gz
+          CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON }}
         run: |
           runtime_dir="dist/release/work/server-runtime-darwin-x64"
           scripts/release/build-server-runtime.sh "$VERSION" "$runtime_dir" darwin-x64
@@ -384,6 +389,7 @@ jobs:
         env:
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
           CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-unsigned-app.zip
+          CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON }}
         run: |
           for attempt in 1 2 3; do
             bun install --frozen-lockfile && break

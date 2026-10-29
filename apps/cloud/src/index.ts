@@ -6,6 +6,7 @@ import { createAuth } from "./auth.js"
 import { credentialRoutes, verifyMachineKey } from "./credential-routes.js"
 import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
+import { gmailPush } from "./gmail-push.js"
 import { isMachineIcon, type MachineUpdate } from "./hub-registry.js"
 import { relayMap } from "./hub-tunnel.js"
 import { inboxIngress } from "./inbox-ingress.js"
@@ -54,6 +55,7 @@ app.route("/", relayRoutes)
 app.route("/", machineInviteRoutes)
 app.route("/", inboxRoutes)
 app.route("/", inboxIngress)
+app.route("/", gmailPush)
 app.route("/", oauthClientRoutes)
 app.route("/", roleRoutes)
 

@@ -61,6 +61,29 @@ export const deleteInbox = async (
   return result.meta.changes > 0
 }
 
+export interface RoutedInbox {
+  readonly id: string
+  readonly userId: string
+}
+
+export const routeInbox = async (
+  db: D1Database,
+  inboxId: string,
+  route: string,
+  routeKey: string
+): Promise<void> => {
+  await db.prepare(inboxSql.route).bind(inboxId, route, routeKey, Date.now()).run()
+}
+
+export const routedInboxes = async (
+  db: D1Database,
+  route: string,
+  routeKey: string
+): Promise<ReadonlyArray<RoutedInbox>> => {
+  const rows = await db.prepare(inboxSql.routed).bind(route, routeKey).all<RoutedRow>()
+  return rows.results.map((row) => ({ id: row.id, userId: row.user_id }))
+}
+
 const newInboxId = (): string => toBase64Url(crypto.getRandomValues(new Uint8Array(INBOX_ID_BYTES)))
 
 interface IdRow {
@@ -68,6 +91,11 @@ interface IdRow {
 }
 
 interface OwnerRow {
+  user_id: string
+}
+
+interface RoutedRow {
+  id: string
   user_id: string
 }
 
@@ -79,5 +107,9 @@ const inboxSql = {
   byTarget:
     "SELECT id FROM inbox WHERE user_id = ? AND plugin = ? AND account_id = ? AND ingress = ?",
   owner: "SELECT user_id FROM inbox WHERE id = ?",
-  delete: "DELETE FROM inbox WHERE id = ? AND user_id = ?"
+  delete: "DELETE FROM inbox WHERE id = ? AND user_id = ?",
+  route: `INSERT INTO inbox_route (inbox_id, route, route_key, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(inbox_id, route) DO UPDATE SET route_key = excluded.route_key`,
+  routed: `SELECT inbox.id, inbox.user_id FROM inbox_route JOIN inbox ON inbox.id = inbox_route.inbox_id
+     WHERE inbox_route.route = ? AND inbox_route.route_key = ? ORDER BY inbox.id`
 }

@@ -17,6 +17,9 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID" | "RELAY_MA
   PLUGIN_REPORT_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   DEV_AUTH?: string
   HOOKS_BASE_URL?: string
+  GMAIL_PUSH_AUDIENCE?: string
+  GMAIL_PUSH_SERVICE_ACCOUNT?: string
+  GMAIL_PUSH_TOPIC?: string
   RESUME_GRACE_MS?: string
   RELAY_MAP?: string
   RELAY_AUTHORIZE_TOKEN?: string

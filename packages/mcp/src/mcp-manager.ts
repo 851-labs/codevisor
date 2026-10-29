@@ -106,6 +106,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       const info = core.connections.get(id)?.serverInfo
       return {
         ...(server.url === undefined ? {} : { url: server.url }),
+        ...(server.catalogId === undefined ? {} : { catalogId: server.catalogId }),
         ...(info?.icons === undefined ? {} : { icons: info.icons }),
         ...(info?.websiteUrl === undefined ? {} : { websiteUrl: info.websiteUrl })
       }

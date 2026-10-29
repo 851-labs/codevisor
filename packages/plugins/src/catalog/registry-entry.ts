@@ -22,6 +22,7 @@ export interface CodevisorPluginMeta {
   readonly ageRating?: number
   readonly entry?: string
   readonly devOnly?: boolean
+  readonly featureFlag?: string
   readonly oauthClient?: string
   readonly accounts?: PluginAccountSpec
   readonly capabilities?: PluginCapabilities
@@ -61,9 +62,13 @@ export const catalogEntryOf = (
     install,
     ...ageRatingOf(meta),
     ...(meta?.accounts === undefined ? {} : { accounts: meta.accounts }),
+    ...featureFlagOf(meta),
     capabilities: meta?.capabilities ?? emptyCapabilities
   }
 }
+
+const featureFlagOf = (meta: CodevisorPluginMeta | undefined): { readonly featureFlag?: string } =>
+  typeof meta?.featureFlag === "string" ? { featureFlag: meta.featureFlag } : {}
 
 const ageRatings: ReadonlyArray<PluginAgeRating> = [4, 9, 13, 16, 18]
 

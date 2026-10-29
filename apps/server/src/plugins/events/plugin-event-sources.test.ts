@@ -172,6 +172,38 @@ describe("streaming plugin events", () => {
     expect(fixture.outbox.delivered).toHaveLength(1)
   })
 
+  it("opens an account's stream with its ingress details and no extra details without an account", async () => {
+    const fixture = await eventsFixture()
+    const streamer = await streamingPlugin(fixture)
+    const ingressMeta = {
+      "dev.codevisor/ingress": { ingress: [{ name: "push", url: "https://in/i/1" }] }
+    }
+    const events = fixture.engine({
+      ingress: {
+        refresh: async () => undefined,
+        urls: async () => [],
+        meta: async (_serverId, accountId) => (accountId === "work" ? ingressMeta : {}),
+        forget: async () => undefined,
+        deliver: async () => undefined
+      }
+    })
+    const request = { sessionId: fixture.session.id, plugin: streamer.id, event: "ping" }
+
+    await events.subscribe({ ...request, accountId: "work" })
+    await events.subscribe({ ...request, accountId: "home" })
+    await events.subscribe({ ...request, arguments: { anyone: true } })
+    await waitFor(() => fixture.fake.streams.length === 3)
+
+    const opened = Object.fromEntries(
+      fixture.fake.streams.map((stream) => [stream.accountId ?? "none", stream.params])
+    )
+    expect(opened).toEqual({
+      work: { name: "ping", arguments: {}, cursor: null, _meta: ingressMeta },
+      home: { name: "ping", arguments: {}, cursor: null },
+      none: { name: "ping", arguments: { anyone: true }, cursor: null }
+    })
+  })
+
   it("shares one stream between subscriptions and closes it when the last one goes", async () => {
     const fixture = await eventsFixture()
     const streamer = await streamingPlugin(fixture)
@@ -183,6 +215,8 @@ describe("streaming plugin events", () => {
           fixtureChanged()
         },
         urls: async () => [],
+        meta: async () => ({}),
+        forget: async () => undefined,
         deliver: async () => undefined
       }
     })
@@ -258,6 +292,8 @@ describe("streaming plugin events", () => {
       ingress: {
         refresh: () => Promise.reject(new Error("cloud unreachable")),
         urls: async () => [],
+        meta: async () => ({}),
+        forget: async () => undefined,
         deliver: async () => undefined
       }
     })

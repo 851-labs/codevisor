@@ -288,3 +288,19 @@ export const inbox = sqliteTable(
     uniqueIndex("inbox_user_target").on(table.userId, table.plugin, table.accountId, table.ingress)
   ]
 )
+
+export const inboxRoute = sqliteTable(
+  "inbox_route",
+  {
+    inboxId: text("inbox_id")
+      .notNull()
+      .references(() => inbox.id, { onDelete: "cascade" }),
+    route: text("route").notNull(),
+    routeKey: text("route_key").notNull(),
+    createdAt: integer("created_at").notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.inboxId, table.route] }),
+    index("inbox_route_lookup").on(table.route, table.routeKey)
+  ]
+)

@@ -24,6 +24,7 @@ export interface PluginEventSourcesDeps {
   readonly timers: EventTimers
   readonly webhooks?: WebhookSources
   readonly onSourcesChanged?: (sources: ReadonlyArray<EventSource>) => Promise<void>
+  readonly streamMeta?: (source: EventSource) => Promise<Record<string, unknown>>
 }
 
 export interface PluginEventSources {
@@ -133,6 +134,7 @@ const sourceRunFor = async (
     source,
     signal,
     connection: await deps.connections.connection(source.serverId),
+    meta: () => deps.streamMeta?.(source) ?? Promise.resolve({}),
     cursor: () => run(deps.db.pluginEventCursor(key)),
     saveCursor: (cursor) => run(deps.db.savePluginEventCursor(key, cursor)),
     ingest: (occurrences) => deps.ingest.ingest(source, occurrences)

@@ -23,6 +23,17 @@ import { makeMachineLink } from "./infra/machine-link.js"
 import { machineReleaseChannel } from "./infra/release-channel.js"
 import type { ServerLease } from "./infra/server-lease.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
+import {
+  installedOAuthClients,
+  type InstalledOAuthClients
+} from "./plugins/accounts/installed-oauth-clients.js"
+import {
+  enabledFeatureFlags,
+  isDevInstance,
+  makePluginCatalog,
+  startCatalogRefresh,
+  type PluginCatalog
+} from "./plugins/plugin-catalog.js"
 import { systemScalerCommands, xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
 import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "./server-context-types.js"
@@ -374,4 +385,25 @@ const systemMachineRoles = (): MachineRoles =>
       return () => clearTimeout(timeout)
     },
     log: (line) => console.error(line)
+  })
+
+export const bootPluginCatalog = (
+  db: CodevisorDatabaseService,
+  cloudUrl: () => string | undefined
+): PluginCatalog => {
+  const catalog = makePluginCatalog({
+    dev: isDevInstance(process.env),
+    execPath: process.execPath,
+    enabledFlags: () => enabledFeatureFlags(db)
+  })
+  startCatalogRefresh(catalog, cloudUrl)
+  return catalog
+}
+
+export const bootInstalledOAuthClients = (): InstalledOAuthClients =>
+  installedOAuthClients({
+    env: process.env,
+    dev: isDevInstance(process.env),
+    home: homedir(),
+    runtimeRoot: fileURLToPath(new URL("../../..", import.meta.url))
   })

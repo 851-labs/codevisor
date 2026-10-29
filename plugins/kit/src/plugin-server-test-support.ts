@@ -162,7 +162,7 @@ export interface CapabilityDigest {
   events: Array<string>
   skills: Array<{ name: string; description: string }>
   panes: Array<{ type: string; title: string; resourceUri: string }>
-  ingress: Array<{ name: string; title?: string | undefined }>
+  ingress: Array<{ name: string; title?: string | undefined; route?: string | undefined }>
 }
 
 export const advertisedCapabilities = (serverJson: unknown): CapabilityDigest => {
@@ -206,7 +206,11 @@ const servedSkills = async (
 }
 
 const pane = z.object({ type: z.string(), title: z.string(), resourceUri: z.string() })
-const ingress = z.object({ name: z.string(), title: z.string().optional() })
+const ingress = z.object({
+  name: z.string(),
+  title: z.string().optional(),
+  route: z.string().optional()
+})
 const panesSetting = z.object({ panes: z.array(pane) })
 const ingressSetting = z.object({ ingress: z.array(ingress) })
 const servedApp = z.object({ ui: z.object({ resourceUri: z.string() }) })

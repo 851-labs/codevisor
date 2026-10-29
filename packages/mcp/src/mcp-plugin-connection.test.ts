@@ -86,7 +86,10 @@ describe("plugin connections", () => {
       ],
       skills: [],
       panes: [{ type: "dashboard", title: "Alerts", resourceUri: "ui://grafana/alerts.html" }],
-      ingress: [{ name: "alerts", title: "Grafana alert webhook" }, { name: "raw" }]
+      ingress: [
+        { name: "alerts", title: "Grafana alert webhook" },
+        { name: "raw", route: "gmail" }
+      ]
     })
   })
 

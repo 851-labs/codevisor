@@ -240,6 +240,14 @@ emit them on your open `events/stream` streams for that account. Return
 `{ accepted: <events emitted>, status?: <http status> }`, for example
 `{ accepted: 0, status: 401 }` on a bad signature.
 
+An ingress with a `route` (first-party only, today `"gmail"`) isn't pasted
+anywhere: Codevisor Cloud routes a provider's push notifications to it by the
+account's identity. Each `events/stream` request then carries
+`params._meta["dev.codevisor/ingress"] = { ingress: [{ name, url, route?: { name, ...settings } }] }`,
+where the route settings come from the cloud (for Gmail, the Pub/Sub `topic`).
+A stream may set a lifetime and end itself; Codevisor reopens it at once with a
+fresh token and its saved cursor, which is the place to renew upstream watches.
+
 ### Accounts
 
 Every host → plugin request (`tools/call`, `events/*`, `codevisor/webhook`)
@@ -251,6 +259,9 @@ In the SDK it is `extra._meta`.
 - Codevisor refreshes OAuth tokens. Plugins only ever see access tokens, never refresh tokens.
 - Scope stream state by `account.id` so one account's events never reach another's subscribers.
 - Missing or invalid account: return a tool error, or `-32024` from `events/*`.
+- Before an account is removed, Codevisor sends `codevisor/account/remove` with
+  that account's `_meta` while its token still works. Undo upstream setup there
+  (for example, stop a push watch) and return `{}`.
 
 ## Rules
 

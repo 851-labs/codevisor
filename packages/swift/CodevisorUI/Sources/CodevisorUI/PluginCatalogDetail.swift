@@ -57,11 +57,13 @@ public struct PluginCatalogDetail: View {
     .formStyle(.grouped)
     .navigationTitle(entry.name)
     .toolbar {
-      ToolbarItem {
-        Menu {
-          PluginBlockMenuItem(subject: subject) { confirmingBlock = true }
-        } label: {
-          Label("More", systemImage: "ellipsis.circle")
+      if !subject.isFirstParty {
+        ToolbarItem {
+          Menu {
+            PluginBlockMenuItem(subject: subject) { confirmingBlock = true }
+          } label: {
+            Label("More", systemImage: "ellipsis.circle")
+          }
         }
       }
     }

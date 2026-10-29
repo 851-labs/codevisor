@@ -7,7 +7,7 @@ export const PluginOAuthSpec = Schema.Struct({
   authorizeUrl: Schema.String,
   tokenUrl: Schema.String,
   scopes: Schema.Array(Schema.String),
-  client: Schema.Literals(["byo", "managed"]),
+  client: Schema.Literals(["byo", "managed", "installed"]),
   authorizeParams: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   userinfoUrl: Schema.optional(Schema.String),
   identityField: Schema.optional(Schema.String),
@@ -54,7 +54,8 @@ export type PluginPane = typeof PluginPane.Type
 
 export const PluginIngress = Schema.Struct({
   name: Schema.String,
-  title: Schema.optional(Schema.String)
+  title: Schema.optional(Schema.String),
+  route: Schema.optional(Schema.String)
 })
 export type PluginIngress = typeof PluginIngress.Type
 
@@ -104,6 +105,7 @@ export const PluginCatalogEntry = Schema.Struct({
   install: PluginInstallSpec,
   ageRating: Schema.optional(PluginAgeRating),
   accounts: Schema.optional(PluginAccountSpec),
+  featureFlag: Schema.optional(Schema.String),
   capabilities: PluginCapabilities
 })
 export type PluginCatalogEntry = typeof PluginCatalogEntry.Type

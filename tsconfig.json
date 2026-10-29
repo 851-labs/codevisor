@@ -74,6 +74,9 @@
       "path": "./plugins/kit"
     },
     {
+      "path": "./plugins/gmail"
+    },
+    {
       "path": "./plugins/test-events"
     }
   ]

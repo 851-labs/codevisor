@@ -40,6 +40,14 @@ export const devToolServer: FixtureServer = {
   _meta: { "dev.codevisor/plugin": { bundled: "devtool", devOnly: true } }
 }
 
+export const flaggedServer: FixtureServer = {
+  name: "dev.codevisor/mail",
+  title: "Mail",
+  description: "Read mail",
+  version: "1.0.0",
+  _meta: { "dev.codevisor/plugin": { bundled: "mail", featureFlag: "mailPlugin" } }
+}
+
 export const ticketsServer: FixtureServer = {
   name: "io.example/tickets",
   title: "Tickets",

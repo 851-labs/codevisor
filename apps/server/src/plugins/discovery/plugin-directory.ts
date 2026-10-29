@@ -74,8 +74,7 @@ export const makePluginDirectory = (deps: PluginDirectoryDeps) => {
     const servers = (await deps.servers()).filter((server) => server.kind === "managed")
     const installed = servers.map((server) => targetOfServer(deps.catalog, server))
     const installedCatalog = new Set(servers.map((server) => server.catalogId))
-    const available = deps.catalog
-      .search(query)
+    const available = (await deps.catalog.browse(query))
       .filter((entry) => !installedCatalog.has(entry.id))
       .map((entry) => ({ plugin: entry.id, entry }))
     return [...installed, ...available]

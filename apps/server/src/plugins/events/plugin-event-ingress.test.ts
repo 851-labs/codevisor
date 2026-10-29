@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto"
+
 import { describe, expect, it } from "vitest"
 
 import { pluginKeyOf } from "../accounts/plugin-accounts.js"
 import { makePluginEventIngress } from "./plugin-event-ingress.js"
+import { signOutOfPlugin } from "./plugin-events-boot.js"
 import {
   capabilitiesWith,
   eventsFixture,
@@ -30,10 +33,39 @@ const grafanaFixture = async () => {
   const ingress = makePluginEventIngress({
     connections: fixture.fake.connections,
     inboxes: cloud.inboxes,
-    pluginKey: pluginKeyOf
+    pluginKey: pluginKeyOf,
+    identity: async () => undefined
   })
   return { fixture, grafana, plain, undiscovered, cloud, ingress }
 }
+
+const gmailFixture = async () => {
+  const fixture = await eventsFixture()
+  const gmail = await savePluginRow(fixture.db, "Gmail", {
+    catalogId: "dev.codevisor/gmail",
+    capabilities: capabilitiesWith({
+      ingress: [{ name: "gmail", title: "Gmail push notifications", route: "gmail" }]
+    })
+  })
+  const removed: Array<string> = []
+  fixture.fake.add(gmail, {
+    "codevisor/account/remove": (params) => {
+      removed.push(JSON.stringify(params))
+      return {}
+    }
+  })
+  const cloud = fakeInboxes()
+  const identities: Record<string, string> = { work: " Dylan@851.sh " }
+  const ingress = makePluginEventIngress({
+    connections: fixture.fake.connections,
+    inboxes: cloud.inboxes,
+    pluginKey: pluginKeyOf,
+    identity: async (_serverId, accountId) => identities[accountId]
+  })
+  return { fixture, gmail, cloud, ingress, removed }
+}
+
+const addressKey = createHash("sha256").update("dylan@851.sh").digest("hex")
 
 const source = (serverId: string, accountId?: string, eventName = "alert.firing") => ({
   serverId,
@@ -124,5 +156,84 @@ describe("plugin webhook ingress", () => {
         accountId: "work"
       }
     ])
+  })
+})
+
+describe("routed ingress", () => {
+  it("routes an account's inbox by the hash of its address and hands the plugin the route settings", async () => {
+    const { gmail, cloud, ingress } = await gmailFixture()
+
+    const meta = await ingress.meta(gmail.id, "work")
+    const urls = await ingress.urls(gmail.id, "work")
+
+    expect(meta).toEqual({
+      "dev.codevisor/ingress": {
+        ingress: [
+          {
+            name: "gmail",
+            url: "https://inbox.example/i/work-gmail",
+            route: { name: "gmail", topic: "projects/test/topics/gmail" }
+          }
+        ]
+      }
+    })
+    expect(urls).toEqual([])
+    expect(cloud.calls.slice(0, 2)).toEqual([
+      "ensure dev.codevisor/gmail work gmail",
+      `route work-gmail gmail ${addressKey}`
+    ])
+  })
+
+  it("leaves an account without a known address unrouted, and unknown plugins without details", async () => {
+    const { gmail, cloud, ingress } = await gmailFixture()
+
+    const unrouted = await ingress.meta(gmail.id, "home")
+    const unknown = await ingress.meta("missing", "work")
+
+    expect(unrouted).toEqual({
+      "dev.codevisor/ingress": {
+        ingress: [{ name: "gmail", url: "https://inbox.example/i/home-gmail" }]
+      }
+    })
+    expect(unknown).toEqual({})
+    expect(cloud.calls).toEqual(["ensure dev.codevisor/gmail home gmail"])
+  })
+
+  it("signs a removed account out of its plugin, then deletes its inboxes and stops routing to them", async () => {
+    const { fixture, gmail, cloud, ingress, removed } = await gmailFixture()
+    await ingress.refresh([source(gmail.id, "work", "message.received")])
+    cloud.calls.splice(0)
+
+    await signOutOfPlugin(fixture.fake.connections, ingress, gmail.id, "work")
+    await ingress.deliver(webhookFor("work-gmail"))
+    await ingress.refresh([])
+
+    expect(removed).toEqual(["{}"])
+    expect(fixture.fake.requestsOf("codevisor/account/remove")).toMatchObject([
+      { accountId: "work" }
+    ])
+    expect(cloud.calls).toEqual(["ensure dev.codevisor/gmail work gmail", "remove work-gmail"])
+    expect(webhookRequests(fixture)).toEqual([])
+  })
+
+  it("still deletes inboxes when the plugin can't sign out, and ignores unknown plugins", async () => {
+    const { fixture, cloud, ingress } = await gmailFixture()
+    const grafana = await grafanaFixture()
+
+    await signOutOfPlugin(
+      grafana.fixture.fake.connections,
+      grafana.ingress,
+      grafana.grafana.id,
+      "work"
+    )
+    await signOutOfPlugin(fixture.fake.connections, ingress, "missing", "work")
+
+    expect(grafana.cloud.calls).toEqual([
+      "ensure codevisor.grafana work alerts",
+      "remove work-alerts",
+      "ensure codevisor.grafana work silences",
+      "remove work-silences"
+    ])
+    expect(cloud.calls).toEqual([])
   })
 })

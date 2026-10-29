@@ -36,6 +36,10 @@ public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
     connectionState == "needsAuthorization" || (authType == "oauth" && connectionState != "connected")
   }
 
+  public var isBundledPlugin: Bool {
+    catalogId != nil && command == "codevisor-plugin"
+  }
+
   public var isBuiltIn: Bool {
     switch kind {
     case "browserUse", "computerUse", "codevisor": true

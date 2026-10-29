@@ -50,11 +50,29 @@ const platformIngress = (
   const ingress = makePluginEventIngress({
     connections,
     inboxes: cloudInboxApi(request),
-    pluginKey: pluginKeyOf
+    pluginKey: pluginKeyOf,
+    identity: async (serverId, accountId) =>
+      (await platform.accounts.context(serverId, accountId))?.identity
   })
   platform.inbox.onWebhook((webhook) => ingress.deliver(webhook))
+  platform.onAccountRemoving((serverId, accountId) =>
+    signOutOfPlugin(connections, ingress, serverId, accountId)
+  )
   return ingress
 }
+
+export const signOutOfPlugin = async (
+  connections: PluginEventConnections,
+  ingress: PluginEventIngress,
+  serverId: string,
+  accountId: string
+): Promise<void> => {
+  const connection = await connections.connection(serverId).catch(() => undefined)
+  await connection?.request(accountRemoveMethod, {}, { accountId }).catch(() => undefined)
+  await ingress.forget(serverId, accountId)
+}
+
+const accountRemoveMethod = "codevisor/account/remove"
 
 const platformWebhooks = (
   services: CodevisorServerServices,

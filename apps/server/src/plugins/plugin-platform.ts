@@ -7,6 +7,7 @@ import type { CloudInbox } from "../infra/cloud-inbox.js"
 import type { CloudServerControl } from "../server-context-types.js"
 import { HttpFailure } from "../server-context.js"
 import { field } from "../unknown-values.js"
+import type { InstalledOAuthClients } from "./accounts/installed-oauth-clients.js"
 import type { OAuthRedirects } from "./accounts/plugin-account-flows.js"
 import { makePluginAccountStore } from "./accounts/plugin-account-store.js"
 import {
@@ -25,6 +26,7 @@ export interface PluginPlatform {
   readonly onAccountsChanged: (
     listener: (entries: ReadonlyArray<SyncEntryRecord>) => void
   ) => () => void
+  readonly onAccountRemoving: (listener: AccountRemovingListener) => () => void
   readonly managedOAuth: ManagedOAuthClients
   readonly accountSource: {
     readonly list: (serverId: string) => Promise<ReadonlyArray<{ id: string; label: string }>>
@@ -35,6 +37,8 @@ export interface PluginPlatform {
   }
 }
 
+export type AccountRemovingListener = (serverId: string, accountId: string) => Promise<void>
+
 export interface PluginPlatformDeps {
   readonly db: CodevisorDatabaseService
   readonly serverId: string
@@ -43,11 +47,13 @@ export interface PluginPlatformDeps {
   readonly cloud: CloudServerControl | undefined
   readonly inbox: CloudInbox | undefined
   readonly localBaseUrl: string
+  readonly installedClients?: InstalledOAuthClients
 }
 
 export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => {
   let mcp: McpManager | undefined
   const listeners = new Set<(entries: ReadonlyArray<SyncEntryRecord>) => void>()
+  const removing = new Set<AccountRemovingListener>()
 
   const server = async (serverId: string): Promise<McpServer> => {
     const found = (await requireMcp(mcp).list()).find((candidate) => candidate.id === serverId)
@@ -62,6 +68,10 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
     spec: (found) =>
       found.catalogId === undefined ? undefined : deps.catalog.entry(found.catalogId)?.accounts,
     redirects: oauthRedirects(deps),
+    installedClients: deps.installedClients,
+    beforeRemove: async (serverId, accountId) => {
+      await Promise.allSettled([...removing].map((listener) => listener(serverId, accountId)))
+    },
     onChanged: (entries) => {
       for (const listener of listeners) listener(entries)
     }
@@ -80,6 +90,12 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
+      }
+    },
+    onAccountRemoving: (listener) => {
+      removing.add(listener)
+      return () => {
+        removing.delete(listener)
       }
     },
     accountSource: {

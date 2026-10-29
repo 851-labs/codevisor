@@ -89,7 +89,9 @@ const PanesSchema = z.looseObject({
 })
 
 const IngressSchema = z.looseObject({
-  ingress: z.array(z.object({ name: z.string(), title: z.string().optional() }))
+  ingress: z.array(
+    z.object({ name: z.string(), title: z.string().optional(), route: z.string().optional() })
+  )
 })
 
 const ResultSchema = z.looseObject({})
@@ -167,6 +169,7 @@ const declaredIngress = (declared: ServerCapabilities | undefined): ReadonlyArra
   IngressSchema.safeParse(declared?.extensions?.[PLUGIN_EXTENSIONS.webhooks]).data?.ingress.map(
     (ingress) => ({
       name: ingress.name,
-      ...(ingress.title === undefined ? {} : { title: ingress.title })
+      ...(ingress.title === undefined ? {} : { title: ingress.title }),
+      ...(ingress.route === undefined ? {} : { route: ingress.route })
     })
   ) ?? []

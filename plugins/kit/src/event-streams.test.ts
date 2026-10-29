@@ -52,4 +52,51 @@ describe("createEventStreams", () => {
     expect(send).not.toHaveBeenCalled()
     expect(clock.timers()).toBe(0)
   })
+
+  it("ends a stream when its lifetime passes and stops its timers", async () => {
+    const clock = manualClock()
+    const streams = createEventStreams({ clock, heartbeatCursor: () => null })
+    const send = vi.fn(() => Promise.resolve())
+    const ended = vi.fn()
+
+    const closing = streams
+      .open({ ...opening, lifetimeMs: 60_000 }, extraFor(new AbortController().signal, send))
+      .then(ended)
+    clock.advance(59_999)
+    await Promise.resolve()
+    const openBeforeLifetime = streams.count()
+    clock.advance(1)
+    await closing
+
+    expect(openBeforeLifetime).toBe(1)
+    expect(ended).toHaveBeenCalledWith(closedResult)
+    expect(streams.count()).toBe(0)
+    expect(clock.timers()).toBe(0)
+  })
+
+  it("asks for each stream's own heartbeat cursor", async () => {
+    const clock = manualClock()
+    const streams = createEventStreams({
+      clock,
+      heartbeatCursor: (stream) => `cursor-${stream.accountId}`
+    })
+    const sent: Array<Notification> = []
+    const cancel = new AbortController()
+
+    const closing = streams.open(
+      { ...opening, accountId: "work" },
+      extraFor(cancel.signal, async (notification) => {
+        sent.push(notification)
+      })
+    )
+    clock.advance(15_000)
+    cancel.abort()
+    await closing
+
+    expect(sent.at(-1)).toMatchObject({
+      method: "notifications/events/heartbeat",
+      params: { cursor: "cursor-work" }
+    })
+    expect(clock.timers()).toBe(0)
+  })
 })

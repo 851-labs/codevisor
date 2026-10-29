@@ -21,6 +21,22 @@ struct PluginModerationSubjectTests {
     #expect(isHex)
   }
 
+  @Test("Only catalog plugins Codevisor publishes count as first party")
+  func firstParty() {
+    let gmail = PluginModerationSubject(
+      pluginId: "dev.codevisor/gmail", name: "Gmail", publisher: "dev.codevisor", declaredAgeRating: 4, revision: "1")
+    let linear = PluginModerationSubject(
+      pluginId: "app.linear/linear", name: "Linear", publisher: "app.linear", declaredAgeRating: 4, revision: "1")
+    let lookalike = PluginModerationSubject(
+      custom: CustomPluginLocation(transport: "http", url: "https://dev.codevisor/mcp", command: nil, args: []),
+      name: "Fake")
+
+    #expect(gmail.isFirstParty)
+    #expect(!linear.isFirstParty)
+    #expect(lookalike.publisher == "dev.codevisor")
+    #expect(!lookalike.isFirstParty)
+  }
+
   @Test("A new catalog version asks for consent again")
   func consentFollowsVersion() {
     let older = PluginModerationSubject(

@@ -8,6 +8,7 @@ export const webhooksExtension = "dev.codevisor/webhooks"
 
 export const subscriptionIdMeta = "io.modelcontextprotocol/subscriptionId"
 export const accountMeta = "dev.codevisor/account"
+export const ingressMeta = "dev.codevisor/ingress"
 
 export const mcpAppMimeType = "text/html;profile=mcp-app"
 

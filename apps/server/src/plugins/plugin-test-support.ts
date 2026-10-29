@@ -11,7 +11,11 @@ import { mcpCredentialVault } from "../infra/shared-account-storage.js"
 import { setUpWith } from "../routes/bot-test-support.js"
 import type { CloudServerControl, CodevisorServerServices } from "../server-context-types.js"
 import { jsonRequest, makeServices, startWithApp, waitFor } from "../test-support.js"
-import { makePluginCatalog, type PluginCatalogOptions } from "./plugin-catalog.js"
+import {
+  enabledFeatureFlags,
+  makePluginCatalog,
+  type PluginCatalogOptions
+} from "./plugin-catalog.js"
 import { fixtureCatalogOptions } from "./plugin-fixture-catalog.js"
 import { makePluginPlatform } from "./plugin-platform.js"
 
@@ -57,6 +61,7 @@ export const pluginServices = async (options: PluginServicesOptions = {}) => {
   const catalog = makePluginCatalog({
     dev: true,
     execPath: process.execPath,
+    enabledFlags: () => enabledFeatureFlags(services.db),
     ...fixtureCatalogOptions(),
     ...options.catalog
   })

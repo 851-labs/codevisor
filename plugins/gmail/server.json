@@ -1,0 +1,132 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.codevisor/gmail",
+  "title": "Gmail",
+  "description": "Search, read, draft, send and organize email. Mail stays on your devices.",
+  "version": "1.0.0",
+  "websiteUrl": "https://codevisor.dev",
+  "icons": [
+    {
+      "src": "https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_512dp.png"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/851-labs/codevisor",
+    "source": "github",
+    "subfolder": "plugins/gmail"
+  },
+  "_meta": {
+    "dev.codevisor/plugin": {
+      "bundled": "gmail",
+      "entry": "dist/main.js",
+      "ageRating": 4,
+      "featureFlag": "gmailPlugin",
+      "accounts": {
+        "label": "Google account",
+        "oauth": {
+          "provider": "google",
+          "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "tokenUrl": "https://oauth2.googleapis.com/token",
+          "scopes": ["https://www.googleapis.com/auth/gmail.modify", "openid", "email"],
+          "client": "installed",
+          "authorizeParams": {
+            "access_type": "offline",
+            "prompt": "consent"
+          },
+          "userinfoUrl": "https://openidconnect.googleapis.com/v1/userinfo",
+          "identityField": "email"
+        },
+        "fields": []
+      },
+      "capabilities": {
+        "tools": [
+          {
+            "name": "search_messages",
+            "description": "Search messages",
+            "effects": "read"
+          },
+          {
+            "name": "search_threads",
+            "description": "Search conversations",
+            "effects": "read"
+          },
+          {
+            "name": "read_message",
+            "description": "Read one message",
+            "effects": "read"
+          },
+          {
+            "name": "read_thread",
+            "description": "Read a whole conversation",
+            "effects": "read"
+          },
+          {
+            "name": "list_labels",
+            "description": "List labels",
+            "effects": "read"
+          },
+          {
+            "name": "create_draft",
+            "description": "Create a draft or draft reply",
+            "effects": "write"
+          },
+          {
+            "name": "update_draft",
+            "description": "Change a draft",
+            "effects": "write"
+          },
+          {
+            "name": "send",
+            "description": "Send a message or draft after approval",
+            "effects": "external-write"
+          },
+          {
+            "name": "reply",
+            "description": "Reply in a thread after approval",
+            "effects": "external-write"
+          },
+          {
+            "name": "archive",
+            "description": "Archive messages or threads",
+            "effects": "write"
+          },
+          {
+            "name": "modify_labels",
+            "description": "Add or remove labels",
+            "effects": "write"
+          },
+          {
+            "name": "mark_read",
+            "description": "Mark as read",
+            "effects": "write"
+          },
+          {
+            "name": "mark_unread",
+            "description": "Mark as unread",
+            "effects": "write"
+          }
+        ],
+        "events": [
+          {
+            "name": "message.received",
+            "description": "A new message arrived in the inbox"
+          }
+        ],
+        "skills": [
+          {
+            "name": "gmail",
+            "description": "Work in the user's Gmail safely: search, read whole threads, draft first, and send only with explicit approval."
+          }
+        ],
+        "panes": [],
+        "ingress": [
+          {
+            "name": "gmail",
+            "title": "Gmail push notifications",
+            "route": "gmail"
+          }
+        ]
+      }
+    }
+  }
+}

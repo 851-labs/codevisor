@@ -25,6 +25,7 @@ export interface StreamSubscription {
 export interface StreamOpening extends StreamSubscription {
   position: StreamPosition
   backlog: ReadonlyArray<EventOccurrence>
+  lifetimeMs?: number
 }
 
 export interface StreamClosed {
@@ -43,7 +44,7 @@ export interface EventStreams {
 
 export interface EventStreamsOptions {
   clock: Clock
-  heartbeatCursor: () => string | null
+  heartbeatCursor: (stream: StreamSubscription) => string | null
 }
 
 export const heartbeatIntervalMs = 15_000
@@ -86,25 +87,30 @@ const openStream = (
   })
 
 const liveStream = (
-  subscription: StreamSubscription,
+  opening: StreamOpening,
   extra: StreamExtra,
   options: EventStreamsOptions,
   onClose: () => void
 ): LiveStream => {
+  const timers: Array<() => void> = []
   const stream: LiveStream = {
-    name: subscription.name,
-    accountId: subscription.accountId,
+    name: opening.name,
+    accountId: opening.accountId,
     send: (method, params) => {
       extra.sendNotification(tagged(method, params, extra.requestId)).catch(() => stream.close())
     },
     close: () => {
-      stopHeartbeat()
+      for (const stop of timers.splice(0)) stop()
       onClose()
     }
   }
-  const stopHeartbeat = options.clock.every(heartbeatIntervalMs, () =>
-    stream.send("notifications/events/heartbeat", { cursor: options.heartbeatCursor() })
+  timers.push(
+    options.clock.every(heartbeatIntervalMs, () =>
+      stream.send("notifications/events/heartbeat", { cursor: options.heartbeatCursor(stream) })
+    )
   )
+  if (opening.lifetimeMs !== undefined)
+    timers.push(options.clock.every(opening.lifetimeMs, () => stream.close()))
   return stream
 }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
@@ -36,7 +36,7 @@ const baseFiles = {
   "bin/bun": fakeBun
 }
 
-const packageRuntime = async (t, extraFiles = {}) => {
+const packageRuntime = async (t, extraFiles = {}, extraEnv = {}) => {
   const root = await mkdtemp(join(tmpdir(), "codevisor runtime patches "))
   t.after(() => rm(root, { recursive: true, force: true }))
   const script = join(root, "scripts/release/build-server-runtime.sh")
@@ -64,7 +64,8 @@ const packageRuntime = async (t, extraFiles = {}) => {
       CODEVISOR_RELEASE_NODE: process.execPath,
       CODEVISOR_NODE_GYP: join(root, "bin/node-gyp"),
       PACKAGED_INSTALL_DIRECTORY: captured,
-      PACKAGED_INSTALL_ARGS: capturedArgs
+      PACKAGED_INSTALL_ARGS: capturedArgs,
+      ...extraEnv
     }
   })
   return { result, runtime, captured, capturedArgs }
@@ -127,6 +128,43 @@ test("dev-only plugins stay out of the packaged runtime", async (t) => {
   assert.equal(result.status, 73, result.stderr)
   await assert.rejects(access(join(runtime, "plugins/test-events/server.json")))
   await assert.rejects(access(join(runtime, "plugins/test-events/dist")))
+})
+
+test("bundles the Google sign-in client from the build's secret, readable only by its owner", async (t) => {
+  const client = JSON.stringify({ installed: { client_id: "client.apps.googleusercontent.com" } })
+  const { result, runtime } = await packageRuntime(
+    t,
+    {},
+    { CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: client }
+  )
+
+  assert.equal(result.status, 73, result.stderr)
+  const bundled = join(runtime, "config/google-oauth-client.json")
+  assert.equal(await readFile(bundled, "utf8"), client)
+  assert.equal((await stat(bundled)).mode & 0o777, 0o600)
+})
+
+test("refuses a Google client secret that isn't an installed-app client, without printing it", async (t) => {
+  const cases = ["not json secret-value", JSON.stringify({ web: { client_id: "secret-value" } })]
+  for (const secret of cases) {
+    const { result, runtime } = await packageRuntime(
+      t,
+      {},
+      { CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: secret }
+    )
+
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /isn't a Google installed-app client/)
+    assert.doesNotMatch(result.stderr + result.stdout, /secret-value/)
+    await assert.rejects(access(join(runtime, "config/google-oauth-client.json")))
+  }
+})
+
+test("leaves the Google client out when the build has no secret", async (t) => {
+  const { result, runtime } = await packageRuntime(t)
+
+  assert.equal(result.status, 73, result.stderr)
+  await assert.rejects(access(join(runtime, "config")))
 })
 
 test("packaging fails when a plugin was not built", async (t) => {

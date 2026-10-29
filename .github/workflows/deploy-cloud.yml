@@ -67,6 +67,21 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           MCP_GITHUB_CLIENT_ID: ${{ secrets.MCP_GITHUB_CLIENT_ID }}
           MCP_GITHUB_CLIENT_SECRET: ${{ secrets.MCP_GITHUB_CLIENT_SECRET }}
+      - name: Sync the Gmail push settings
+        working-directory: apps/cloud
+        run: |
+          if [ -z "$GMAIL_PUSH_TOPIC" ] || [ -z "$GMAIL_PUSH_AUDIENCE" ] || [ -z "$GMAIL_PUSH_SERVICE_ACCOUNT" ]; then
+            echo "GMAIL_PUSH_TOPIC, GMAIL_PUSH_AUDIENCE or GMAIL_PUSH_SERVICE_ACCOUNT isn't set; Gmail push stays off."
+            exit 0
+          fi
+          printf '%s' "$GMAIL_PUSH_TOPIC" | bunx wrangler secret put GMAIL_PUSH_TOPIC
+          printf '%s' "$GMAIL_PUSH_AUDIENCE" | bunx wrangler secret put GMAIL_PUSH_AUDIENCE
+          printf '%s' "$GMAIL_PUSH_SERVICE_ACCOUNT" | bunx wrangler secret put GMAIL_PUSH_SERVICE_ACCOUNT
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GMAIL_PUSH_TOPIC: ${{ secrets.GMAIL_PUSH_TOPIC }}
+          GMAIL_PUSH_AUDIENCE: ${{ secrets.GMAIL_PUSH_AUDIENCE }}
+          GMAIL_PUSH_SERVICE_ACCOUNT: ${{ secrets.GMAIL_PUSH_SERVICE_ACCOUNT }}
       - name: Deploy to Cloudflare
         working-directory: apps/cloud
         run: |

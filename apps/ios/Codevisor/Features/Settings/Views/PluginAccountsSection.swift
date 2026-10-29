@@ -6,21 +6,23 @@ struct PluginAccountsSection: View {
   @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   let model: PluginAccountsModel
   @State private var editing: PluginAccountEditing?
+  @State private var removalCandidates: [ServerPluginAccount] = []
 
   var body: some View {
     if let spec = model.spec {
+      let actions = PluginAccountActions(spec: spec, accounts: model.accounts)
       Section {
         ForEach(model.accounts) { account in
           PluginAccountRow(
             account: account,
             fallbackName: spec.label,
             ingress: model.ingress[account.id] ?? [],
+            actions: actions,
             onEdit: { edit(account, spec: spec) },
-            onRemove: { Task { await model.remove(account) } }
+            onRemove: { removalCandidates = [account] }
           )
         }
-        Button(spec.addTitle) { add(spec) }
-          .disabled(model.isWorking)
+        accountButtons(actions)
       } header: {
         Text("Accounts")
       } footer: {
@@ -30,6 +32,23 @@ struct PluginAccountsSection: View {
       }
       .onChange(of: environment?.pluginAccountsRevision) { Task { await model.reload() } }
       .sheet(item: $editing) { PluginAccountEditorScreen(editing: $0, model: model) }
+      .pluginAccountRemovalDialog(actions: actions, candidates: $removalCandidates) { remove($0) }
+    }
+  }
+
+  @ViewBuilder
+  private func accountButtons(_ actions: PluginAccountActions) -> some View {
+    if actions.needsFirstAccount {
+      Button(actions.spec.addTitle) { add(actions.spec) }
+        .fontWeight(.semibold)
+        .disabled(model.isWorking)
+    } else {
+      if let account = actions.revisitTarget {
+        Button(actions.revisitTitle(for: account)) { edit(account, spec: actions.spec) }
+          .disabled(model.isWorking)
+      }
+      Button(actions.addAnotherTitle) { add(actions.spec) }
+        .disabled(model.isWorking)
     }
   }
 
@@ -47,5 +66,10 @@ struct PluginAccountsSection: View {
       return
     }
     Task { await model.signIn() }
+  }
+
+  private func remove(_ account: ServerPluginAccount) {
+    removalCandidates = []
+    Task { await model.remove(account) }
   }
 }

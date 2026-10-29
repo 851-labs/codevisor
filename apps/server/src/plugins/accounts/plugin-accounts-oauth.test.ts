@@ -9,6 +9,7 @@ import { mcpCredentialVault } from "../../infra/shared-account-storage.js"
 import { HttpFailure } from "../../server-context.js"
 import { makeServices } from "../../test-support.js"
 import { savePluginRow } from "../events/plugin-events-test-support.js"
+import type { InstalledOAuthClients } from "./installed-oauth-clients.js"
 import { oauthFlowLifetimeMs } from "./plugin-account-oauth.js"
 import { makePluginAccountStore } from "./plugin-account-store.js"
 import { makePluginAccounts } from "./plugin-accounts.js"
@@ -28,6 +29,7 @@ const clientFields: PluginAccountSpec["fields"] = [
 interface FixtureOptions {
   readonly catalogId?: string
   readonly revokeFails?: boolean
+  readonly installedClients?: InstalledOAuthClients
 }
 
 const oauthFixture = async (
@@ -61,6 +63,9 @@ const oauthFixture = async (
     },
     spec: () => specFor(provider),
     redirects: { prepare: async () => ({ redirectUri: callbackUrl, deviceId: "local" }) },
+    ...(fixtureOptions.installedClients === undefined
+      ? {}
+      : { installedClients: fixtureOptions.installedClients }),
     onChanged: (entries) => changes.push(entries),
     now: clock.now
   })
@@ -238,6 +243,69 @@ describe("plugin account OAuth", () => {
     expect(await accounts.list(server.id)).toEqual([
       expect.objectContaining({ plugin: "Mail", secretsSet: [] })
     ])
+  })
+
+  it("signs in with the build's installed client and keeps it in the vault for refreshes", async () => {
+    const providers: Array<string> = []
+    const { accounts, provider, server, vault, signIn, storedCredential } = await oauthFixture(
+      (fake) => ({
+        label: "Google account",
+        oauth: fake.spec({ client: "installed" }),
+        fields: []
+      }),
+      {},
+      {
+        catalogId: "example.mail",
+        installedClients: async (name) => {
+          providers.push(name)
+          return { clientId: "desktop-client", clientSecret: "desktop-secret" }
+        }
+      }
+    )
+
+    const { started, grant } = await signIn({ values: {} })
+    await accounts.completeOAuth(grant.state, grant.code)
+
+    const [account] = await accounts.list(server.id)
+    const bundle = await vault.token(await storedCredential(account!.id))
+    expect(providers).toEqual(["example"])
+    expect(new URL(started.authorizationUrl).searchParams.get("client_id")).toBe("desktop-client")
+    expect(provider.tokenForms[0]).toMatchObject({
+      client_id: "desktop-client",
+      client_secret: "desktop-secret"
+    })
+    expect(account).toMatchObject({ identity: "dana@example.com", secretsSet: [] })
+    expect(bundle.credential).toMatchObject({
+      client: { client_id: "desktop-client", client_secret: "desktop-secret" }
+    })
+    expect((await accounts.context(server.id))?.fields).toEqual({})
+  })
+
+  it("explains that sign-in isn't set up when the build has no installed client", async () => {
+    const { accounts, server } = await oauthFixture(
+      (fake) => ({
+        label: "Google account",
+        oauth: fake.spec({ client: "installed" }),
+        fields: []
+      }),
+      {},
+      { catalogId: "example.mail", installedClients: async () => undefined }
+    )
+    const { accounts: defaults, server: defaultServer } = await oauthFixture((fake) => ({
+      label: "Google account",
+      oauth: fake.spec({ client: "installed" }),
+      fields: []
+    }))
+
+    const missing = accounts.startOAuth(server.id, { values: {} })
+    const unconfigured = defaults.startOAuth(defaultServer.id, { values: {} })
+
+    await expect(missing).rejects.toEqual(
+      failure(409, "Mail sign-in isn't set up in this build of Codevisor")
+    )
+    await expect(unconfigured).rejects.toEqual(
+      failure(409, "Mail sign-in isn't set up in this build of Codevisor")
+    )
   })
 
   it("re-authorizes even when the vault can't revoke the old grant", async () => {
