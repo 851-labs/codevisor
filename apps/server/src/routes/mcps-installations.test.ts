@@ -80,6 +80,33 @@ describe("mcp installation routes", () => {
     }
   })
 
+  it("words a sign-in that can't reach the plugin's server", async () => {
+    const closed = createServer()
+    await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve))
+    const address = closed.address()
+    if (address === null || typeof address === "string") throw new Error("Expected a TCP port")
+    await new Promise<void>((resolve) => closed.close(() => resolve()))
+    const { server } = await start()
+    const created = await jsonRequest(server, "/v1/mcps", {
+      method: "POST",
+      body: JSON.stringify({
+        authType: "oauth",
+        enabled: false,
+        name: "Offline",
+        transport: "http",
+        url: `http://127.0.0.1:${address.port}/mcp`
+      })
+    })
+
+    const started = await jsonRequest(server, `/v1/mcps/${idOf(created.body)}/oauth-start`, {
+      method: "POST"
+    })
+
+    expect(started.body).toEqual({
+      error: `Couldn't reach 127.0.0.1:${address.port}. Check your network connection and try again.`
+    })
+  })
+
   it("manages MCP installations without returning encrypted credentials", async () => {
     const { agents, server, services } = await start()
     const created = await jsonRequest(server, "/v1/mcps", {

@@ -7,6 +7,7 @@ import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-mana
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import type { makeMcpOAuthRuntime } from "./mcp-oauth.js"
+import { signInFailure } from "./mcp-sign-in-failure.js"
 import { reportBackgroundFailure, requireHttpUrl } from "./mcp-support.js"
 
 type OAuthRuntime = ReturnType<typeof makeMcpOAuthRuntime>
@@ -76,9 +77,12 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       oauth: { ...value.oauth, redirectUrl, state: oauthState }
     }))
     const provider = oauthProvider(id, redirectUrl)
+    const serverUrl = requireHttpUrl(server.url)
     const result = await auth(provider, {
-      serverUrl: requireHttpUrl(server.url),
+      serverUrl,
       ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
+    }).catch((cause: unknown) => {
+      throw signInFailure(cause, serverUrl)
     })
     if (result !== "REDIRECT" || provider.authorizationUrl === undefined) {
       throw new Error("OAuth did not return a URL")
