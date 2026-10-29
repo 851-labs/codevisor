@@ -30,11 +30,15 @@ struct AppleHPCommand: BenchCommand {
     let deadline = ContinuousClock.now + duration
     let app = try await ScreenSharingApp.connect(to: host)
     do {
-      let window = try await app.sessionWindow(showing: host, timeout: Self.connectTimeout)
+      let session = try await app.sessionWindow(showing: host, timeout: Self.connectTimeout)
+
+      let window = session.window
       try await app.makeFullScreen(window, screen: screen, timeout: Self.fullScreenTimeout)
       try signals.markReady("full screen")
       await signals.waitForStop(until: deadline)
-      let result = AppleHPResult(host: host, window: WindowDescription(window), checkedMenuItems: app.checkedMenuItems)
+      let result = AppleHPResult(
+        host: host, choseHighPerformance: session.choseHighPerformance == true, window: WindowDescription(window),
+        checkedMenuItems: app.checkedMenuItems)
       await app.quit(timeout: Self.quitTimeout)
       try BenchOutput.print(result)
     } catch {

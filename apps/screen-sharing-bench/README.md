@@ -106,7 +106,7 @@ Each command prints one JSON result to stdout; a check that fails its pass crite
 - `sample [--duration 10] [--interface en0] [--processes <name>,<name>…]` reports each process's CPU (% of
   one core) and power per second, summed over every process of that name alive in both samples (it looks
   them up each second), and the interface's Mbit/s each way. Processes of other users (such as
-  `screensharingd`) can only be read as root.
+  `screensharingd`) report CPU only (see Tier 2 below).
 
 The checks that capture the screen need **Screen Recording**, C6 needs **Accessibility**, and C2 needs
 **Local Network** (without it, UDP to the other Mac fails with `EHOSTUNREACH`).
@@ -178,7 +178,7 @@ host observer off. The host job serves `rendezvous` and the clock probes; the vi
 30 minutes, and the two first agree that they run the same CodevisorBench build. Before each run, the two jobs meet at named barriers: `start` (both preflights pass), `system`
 (the host's `share` is listening), `ready` (the viewer shows Apple HP full screen, the Codevisor stream or the
 floor window), `measure` (the host's preflight during the run) and `done`. Measurement starts at `measure`:
-the viewer's observer, clock probes and sampler, the host's observer and root sampler, and 3 s later the
+the viewer's observer, clock probes and sampler, the host's observer and sampler, and 3 s later the
 player. A failed status at a barrier skips the run on both Macs. The `report` job merges both artifacts and
 runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary).
 
@@ -202,11 +202,14 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   entry, never an IP), makes the session window full screen through Accessibility and reports the checked
   menu items, which show the connection mode. It quits Screen Sharing.app at the end.
 - `sample --output <file.jsonl>` also writes one `BenchUsageSecond` line a second. A process name of the
-  form `CodevisorBench:share` matches only the bench processes running that subcommand. The host sampler runs
-  as root (`sudo -n`) so it can read `screensharingd`.
+  form `CodevisorBench:share` matches only the bench processes running that subcommand. It finds processes in one
+  `/bin/ps -axo pid,time,comm` listing a second (`ps` is setuid, so it sees root's `screensharingd`). Processes
+  that `proc_pid_rusage` can't read without root get their CPU time from that listing (10 ms resolution) and
+  no power; a system with any such process in any second reports no power.
 
 Image age is `BenchSharingAnalysis`: the viewer observer's first PTS of each version minus the host
-observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). The window starts
+observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). Apple HP runs count only when `apple-hp` selected High Performance in Screen Sharing's
+"Select Screen Sharing Type:" sheet, read the selection back and clicked Continue (`chose_high_performance`). The window starts
 5 s after both observers first read a barcode and ends 2 s before either stops. Versions the host showed and
 the viewer never did are skipped versions. Updates/s, gaps and freezes (typing, scroll, window drag and video
 only) come from the viewer's versions in the window; judder is the viewer's gap p95 minus the host's. CPU is

@@ -36,11 +36,8 @@ measure() {
       >"$dir/host-observe.json" 2>"$dir/host-observe.err" &
     pids+=($!)
   fi
-  {
-    sudo -n "$HOME/Applications/CodevisorBench.app/Contents/MacOS/CodevisorBench" sample \
-      --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$host_processes" \
-      --output "$dir/host-usage.jsonl"
-  } >"$dir/host-sample.json" 2>"$dir/host-sample.err" &
+  bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$host_processes" \
+    --output "$dir/host-usage.jsonl" >"$dir/host-sample.json" 2>"$dir/host-sample.err" &
   pids+=($!)
   sleep 3
   bench player --scene "$scene" --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \

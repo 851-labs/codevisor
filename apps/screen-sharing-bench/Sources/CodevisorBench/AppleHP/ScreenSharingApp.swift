@@ -23,10 +23,19 @@ struct ScreenSharingApp {
       application: try await NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration))
   }
 
-  func sessionWindow(showing host: String, timeout: Duration) async throws -> AccessibilityElement {
+  func sessionWindow(showing host: String, timeout: Duration) async throws -> AppleHPSession {
     let limit = ContinuousClock.now + timeout
+    var choseHighPerformance: Bool?
     while ContinuousClock.now < limit {
-      if let window = windows.first(where: { Self.isSession($0, host: host) }) { return window }
+      if let window = windows.first(where: { Self.isSession($0, host: host) }) {
+        return AppleHPSession(window: window, choseHighPerformance: choseHighPerformance)
+      }
+      if choseHighPerformance == nil, let chooser = ConnectionTypeChooser.find(in: windows) {
+        choseHighPerformance = await chooser.chooseHighPerformance()
+        guard choseHighPerformance == true else {
+          throw AppleHPError.notHighPerformance(windows.map(WindowDescription.init))
+        }
+      }
 
       try await Task.sleep(for: Self.pollInterval)
     }

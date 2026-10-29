@@ -3,7 +3,7 @@ import ScreenSharingBench
 @MainActor
 enum ClockProbeCheck {
   static let defaultPort = 47_592
-  static let durations = 1...7200
+  static let durations = 1...14_400
 
   private static let ports = 1...65_535
 

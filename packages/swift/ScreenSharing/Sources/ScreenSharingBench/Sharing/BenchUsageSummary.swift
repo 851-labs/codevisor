@@ -11,7 +11,8 @@ public struct BenchUsageSummary: Sendable, Equatable {
     let sampled = inWindow.filter { !$0.processes.keys.filter(processes.contains).isEmpty }
     let cpu = BenchDistribution(sampled.map { $0.cpuPct(of: processes) })
     cpuPct = cpu.map { BenchResult.ProcessUsage(p50: $0.p50, p95: $0.p95) }
-    powerMw = BenchDistribution(sampled.map { $0.powerMw(of: processes) })?.p50
+    let powers = sampled.map { $0.powerMw(of: processes) }
+    powerMw = powers.contains(nil) ? nil : BenchDistribution(powers.compactMap { $0 })?.p50
     receivedMbps = Self.bitrate(inWindow.filter { $0.receivedMbps != nil })
   }
 

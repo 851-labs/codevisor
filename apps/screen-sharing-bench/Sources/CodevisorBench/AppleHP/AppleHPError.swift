@@ -4,6 +4,7 @@ enum AppleHPError: Error, CustomStringConvertible {
   case noSessionWindow([WindowDescription])
   case notFullScreen(WindowDescription)
   case notTrusted
+  case notHighPerformance([WindowDescription])
 
   var description: String {
     switch self {
@@ -12,6 +13,8 @@ enum AppleHPError: Error, CustomStringConvertible {
     case .noSessionWindow(let windows): "no session window appeared; windows: \(Self.describe(windows))"
     case .notFullScreen(let window): "the session window did not go full screen: \(Self.describe([window]))"
     case .notTrusted: "CodevisorBench needs Accessibility to drive Screen Sharing.app"
+    case .notHighPerformance(let windows):
+      "could not select High Performance in the connection type sheet: \(Self.describe(windows))"
     }
   }
 
