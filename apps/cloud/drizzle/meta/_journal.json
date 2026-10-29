@@ -71,6 +71,13 @@
       "when": 1793155186178,
       "tag": "0009_inboxes",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793255406847,
+      "tag": "0010_drop_oauth_flow",
+      "breakpoints": true
     }
   ]
 }

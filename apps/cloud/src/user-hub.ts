@@ -16,12 +16,7 @@ import { DurableObject } from "cloudflare:workers"
 import { deleteHubAccount, storeCredentialCommand } from "./credential-storage.js"
 import type { CloudEnv } from "./env.js"
 import { deliverToMachine, deliverToPeer, type HubDeliveryPort } from "./hub-delivery.js"
-import {
-  HubInbox,
-  type IngestOutcome,
-  type OAuthDelivery,
-  type SubscribeOutcome
-} from "./hub-inbox.js"
+import { HubInbox, type IngestOutcome, type SubscribeOutcome } from "./hub-inbox.js"
 import { HubMetrics } from "./hub-metrics.js"
 import { abandonSession, announceExpired, type HubNoticesPort } from "./hub-notices.js"
 import {
@@ -43,7 +38,7 @@ import {
   welcomeHead,
   type WelcomeMachines
 } from "./hub-welcome.js"
-import { inboxAckItemIds, type InboxRequest, type OAuthCallbackItem } from "./inbox-frames.js"
+import { inboxAckItemIds, type InboxRequest } from "./inbox-frames.js"
 import { admitRelayMessage } from "./relay-admission.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
@@ -146,15 +141,6 @@ export class UserHub extends DurableObject<CloudEnv> {
     const outcome = this.#inbox.ingest(inboxId, request, Date.now())
     await this.#scheduleInboxSweep()
     return outcome
-  }
-
-  async deliverOAuthCallback(
-    deviceId: string,
-    callback: OAuthCallbackItem
-  ): Promise<OAuthDelivery> {
-    const delivery = this.#inbox.deliverOAuth(deviceId, callback, Date.now())
-    await this.#scheduleInboxSweep()
-    return delivery
   }
 
   override async fetch(request: Request): Promise<Response> {

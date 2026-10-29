@@ -288,16 +288,3 @@ export const inbox = sqliteTable(
     uniqueIndex("inbox_user_target").on(table.userId, table.plugin, table.accountId, table.ingress)
   ]
 )
-
-export const oauthFlow = sqliteTable(
-  "oauth_flow",
-  {
-    flowId: text("flow_id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    deviceId: text("device_id").notNull(),
-    expiresAt: integer("expires_at").notNull()
-  },
-  (table) => [index("oauth_flow_user_expires").on(table.userId, table.expiresAt)]
-)

@@ -13,7 +13,6 @@ import { inboxRoutes } from "./inbox-routes.js"
 import { userHub } from "./location-hint.js"
 import { machineInviteRoutes } from "./machine-invites.js"
 import { oauthClientRoutes } from "./oauth-clients.js"
-import { oauthRelayRoutes } from "./oauth-relay.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
 import { loginPage } from "./pages/login.js"
@@ -54,7 +53,6 @@ app.route("/", relayRoutes)
 app.route("/", machineInviteRoutes)
 app.route("/", inboxRoutes)
 app.route("/", inboxIngress)
-app.route("/", oauthRelayRoutes)
 app.route("/", oauthClientRoutes)
 
 app.get("/.well-known/codevisor", (c) =>

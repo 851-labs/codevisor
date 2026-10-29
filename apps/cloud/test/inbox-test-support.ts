@@ -88,7 +88,9 @@ export const nextInboxItem = async (reader: SocketReader<InboxHubFrame>) => {
   }
 }
 
-export const openInboxItem = (identity: MachineIdentity, frame: InboxItemFrame): unknown =>
+type SealedFrame = Pick<InboxItemFrame, "itemId" | "sender" | "ephemeralKey" | "sealed">
+
+export const openInboxItem = (identity: MachineIdentity, frame: SealedFrame): unknown =>
   openJson(
     acceptChannel(identity.keys.secretKey, frame.sender, frame.ephemeralKey),
     frame.itemId,
@@ -106,7 +108,7 @@ export const WebhookItemBody = z.object({
   receivedAt: z.string()
 })
 
-export const openWebhookItem = (identity: MachineIdentity, frame: InboxItemFrame) =>
+export const openWebhookItem = (identity: MachineIdentity, frame: SealedFrame) =>
   WebhookItemBody.parse(openInboxItem(identity, frame))
 
 export const createInbox = (apiKey: string, body: unknown): Promise<Response> =>
@@ -158,7 +160,7 @@ export const withHubSql = async <Result>(
 const InboxItemFrameBody = z.object({
   t: z.literal("inbox-item"),
   itemId: z.string(),
-  kind: z.enum(["webhook", "oauth"]),
+  kind: z.literal("webhook"),
   sender: z.string(),
   ephemeralKey: z.string(),
   sealed: z.string()

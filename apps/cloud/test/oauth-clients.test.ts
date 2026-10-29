@@ -40,7 +40,7 @@ const codeForm = (clientId = "github-client", grant = "authorization_code") =>
     grant_type: grant,
     code: "code-1",
     code_verifier: "verifier-1",
-    redirect_uri: `${BASE}/oauth/callback`,
+    redirect_uri: "http://127.0.0.1:49361/v1/mcps/oauth/callback",
     client_id: clientId
   }).toString()
 

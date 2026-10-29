@@ -1,20 +1,12 @@
 import { DeviceQueue, type QueuedItem } from "./device-queue.js"
 import { machineRow } from "./hub-schema.js"
 import type { HubSockets } from "./hub-sockets.js"
-import {
-  sealInboxItem,
-  type InboxItemKind,
-  type InboxRequest,
-  type OAuthCallbackItem,
-  type WebhookItem
-} from "./inbox-frames.js"
+import { sealInboxItem, type InboxRequest, type WebhookItem } from "./inbox-frames.js"
 
 export type IngestOutcome = "accepted" | "rate-limited" | "full"
-export type OAuthDelivery = "online" | "offline" | "unknown-device" | "full"
 export type SubscribeOutcome = "subscribed" | "unknown-device"
 
 export const INBOX_ITEM_TTL_MS = 7 * 24 * 60 * 60 * 1000
-export const OAUTH_ITEM_TTL_MS = 10 * 60 * 1000
 export const INBOX_RATE_WINDOW_MS = 60 * 1000
 export const INBOX_RATE_LIMIT = 120
 
@@ -57,26 +49,9 @@ export class HubInbox {
     const item: WebhookItem = { itemId: crypto.randomUUID(), inboxId, ...request }
     const expiresAt = now + INBOX_ITEM_TTL_MS
     const queued = subscribers(this.sql, inboxId).map((device) =>
-      sealedItem(device, "webhook", item.itemId, item, expiresAt)
+      sealedItem(device, item, expiresAt)
     )
     return this.#queue.enqueue(queued) ? "accepted" : "full"
-  }
-
-  deliverOAuth(deviceId: string, callback: OAuthCallbackItem, now: number): OAuthDelivery {
-    const machine = machineRow(this.sql, deviceId)
-    if (machine === undefined) return "unknown-device"
-
-    const device = { device_id: deviceId, public_key: machine.public_key }
-    const queued = sealedItem(
-      device,
-      "oauth",
-      crypto.randomUUID(),
-      callback,
-      now + OAUTH_ITEM_TTL_MS
-    )
-    if (!this.#queue.enqueue([queued])) return "full"
-
-    return this.#queue.isOnline(deviceId) ? "online" : "offline"
   }
 
   acknowledge(deviceId: string, itemIds: readonly string[]): void {
@@ -104,17 +79,11 @@ export class HubInbox {
 
 const rateWindow = (now: number): number => now - (now % INBOX_RATE_WINDOW_MS)
 
-const sealedItem = (
-  device: SubscriberRow,
-  kind: InboxItemKind,
-  itemId: string,
-  payload: WebhookItem | OAuthCallbackItem,
-  expiresAt: number
-): QueuedItem => ({
+const sealedItem = (device: SubscriberRow, item: WebhookItem, expiresAt: number): QueuedItem => ({
   deviceId: device.device_id,
-  itemId,
-  inboxId: "inboxId" in payload ? payload.inboxId : null,
-  frame: JSON.stringify(sealInboxItem(device.public_key, itemId, kind, payload)),
+  itemId: item.itemId,
+  inboxId: item.inboxId,
+  frame: JSON.stringify(sealInboxItem(device.public_key, item)),
   expiresAt
 })
 

@@ -29,9 +29,7 @@ One Cloudflare Worker contains the whole plane:
   `<PUBLIC_BASE_URL>/hooks`). Without `HOOKS_BASE_URL` inboxes are off:
   provisioning and deliveries answer 503.
   Each request is sealed to every subscribed device's public key and kept in
-  that device's queue in `UserHub` until it acks (7-day TTL). The same queue
-  relays OAuth redirects (`GET /oauth/callback`) to the machine that started
-  the sign-in.
+  that device's queue in `UserHub` until it acks (7-day TTL).
 - **Plugin catalog** — `GET /v0/servers` (MCP Registry list format, optional
   `?search=`) and `GET /v0/servers/:name/versions/latest` serve the
   first-party `plugins/*/server.json` files (dev-only ones excluded) and
@@ -42,7 +40,8 @@ One Cloudflare Worker contains the whole plane:
   a machine the client id, and `POST /api/machine/oauth-clients/:name/token`
   adds the client secret to its code exchange, so the secret never leaves
   Cloud. Unset (`MCP_GITHUB_CLIENT_ID`/`MCP_GITHUB_CLIENT_SECRET`) answers 503.
-  The OAuth app's callback is `<PUBLIC_BASE_URL>/oauth/callback`.
+  Sign-in runs on the user's own machine, so the OAuth app's callback is the
+  loopback `http://127.0.0.1/v1/mcps/oauth/callback` (GitHub accepts any port).
 - **Plugin moderation** — `GET /plugins/policy` publishes blocks and age
   ratings straight from D1; signed-in users record consent, block
   publishers, and file reports under `/api/plugins/*`. Reports are stored
@@ -93,7 +92,7 @@ wrangler secret put BETTER_AUTH_SECRET    # openssl rand -base64 32
 wrangler secret put GITHUB_CLIENT_ID      # your own GitHub OAuth app
 wrangler secret put GITHUB_CLIENT_SECRET  # callback: <your-url>/api/auth/callback/github
 wrangler secret put MCP_GITHUB_CLIENT_ID      # GitHub OAuth app for the GitHub plugin
-wrangler secret put MCP_GITHUB_CLIENT_SECRET  # callback: <your-url>/oauth/callback
+wrangler secret put MCP_GITHUB_CLIENT_SECRET  # callback: http://127.0.0.1/v1/mcps/oauth/callback
 wrangler secret put PLUGIN_REPORT_SLACK_WEBHOOK # optional: plugin report notifications
 wrangler deploy
 ```
