@@ -135,6 +135,8 @@ public struct TranscriptRowContentView: View {
       PluginAppInlineList(apps: apps)
     case .compactionMarker:
       TranscriptCompactionMarker()
+    case let .forkMarker(text):
+      TranscriptForkMarker(text: text)
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
     case let .botMessage(message, content, _):

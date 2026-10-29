@@ -69,6 +69,19 @@ extension ComposerBar {
         }
       )
     }
+    if controller.supportsFork {
+      commands.append(
+        IOSComposerSlashItem(
+          name: "fork",
+          description: "Continue this chat in a new chat"
+        ) {
+          Task {
+            guard let forked = await controller.fork() else { return }
+            await openChat?(forked)
+          }
+        }
+      )
+    }
     return commands
   }
 

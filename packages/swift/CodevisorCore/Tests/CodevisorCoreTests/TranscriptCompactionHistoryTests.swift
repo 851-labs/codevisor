@@ -33,4 +33,30 @@ struct TranscriptCompactionHistoryTests {
     #expect(turns.map(\.compactedContext) == [true])
     #expect(turns.map(\.hasDeferredWorkedDetails) == [false])
   }
+
+  @Test("A transcript item from a fork's marker maps to a fork marker, not a prompt")
+  func forkMarkerFromHistory() throws {
+    let sessionID = UUID()
+    let transport = ServerSessionTransport(client: FakeSessionServerClient(sessionId: sessionID), sessionId: sessionID)
+    let page = try JSONDecoder().decode(
+      ServerTranscriptPage.self,
+      from: Data(
+        """
+        {
+          "items": [{
+            "id": "\(UUID().uuidString)", "sessionId": "\(sessionID.uuidString)", "sequence": 0,
+            "role": "user", "text": "Forked from Weather", "createdAt": "2026-10-29T18:50:13.137Z",
+            "updatedAt": "2026-10-29T18:50:13.137Z", "isGenerating": false, "hasDetails": false,
+            "origin": "fork", "revision": 1
+          }],
+          "setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore": false, "eventCursor": 1
+        }
+        """.utf8))
+
+    let users = transport.historyPage(from: page).conversation.compactMap { item -> UserMessage? in
+      if case let .user(message) = item { message } else { nil }
+    }
+
+    #expect(users.map(\.isForkMarker) == [true])
+  }
 }

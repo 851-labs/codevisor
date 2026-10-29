@@ -308,6 +308,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
     tokenBudget: TokenBudgetUpdate
   ) async throws -> SessionGoal
   func clearSessionGoal(id: UUID) async throws
+  func forkSession(id: UUID) async throws -> ServerSession
   func cancelSessionAutoResume(id: UUID) async throws
   func answerSessionQuestion(
     id: UUID,

@@ -464,6 +464,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
     configOptions: Schema.optional(Schema.Array(SessionConfigOption))
   }),
   "POST /v1/sessions/:id/goal": SessionGoal,
+  "POST /v1/sessions/:id/fork": SessionSummary,
   "POST /v1/sessions/:id/questions/:questionId/answer": Schema.Struct({
     outcome: Schema.Literals(["answered", "cancelled"]),
     questionId: Schema.String

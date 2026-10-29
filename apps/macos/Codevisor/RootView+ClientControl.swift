@@ -64,6 +64,14 @@ extension RootView {
     selection = anchor.map { .session(serverId: serverId, id: $0) } ?? .workspace(serverId: serverId, id: workspace.id)
   }
 
+  func openChat(_ session: ChatSession) async {
+    await environment.workspaceSync.refreshFromServer(
+      serverId: session.serverId, client: environment.machines.client(for: session.serverId)
+    )
+    store?.selectChat(session)
+    selection = .session(serverId: session.serverId, id: session.id)
+  }
+
   var clientSidebarVisible: Bool {
     panelLayout.docksSidebar ? !sidebarCollapsed : panelLayout.activeDrawer == .leading
   }

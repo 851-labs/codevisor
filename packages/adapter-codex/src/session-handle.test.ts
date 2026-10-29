@@ -23,6 +23,21 @@ describe("CodexProvider", () => {
     expect(await turn("t5", { status: "completed" })).not.toHaveProperty("summary")
   })
 
+  it("forks the source thread into the new session", async () => {
+    const { client, created } = await setup({ forkFrom: "thread-source" })
+
+    expect(created?.metadata.sessionId).toBe("thread-fork")
+    expect(
+      client.requests.find((request) => request.method === "thread/fork")?.params
+    ).toMatchObject({
+      cwd: "/tmp/project",
+      threadId: "thread-source",
+      excludeTurns: true,
+      deferGoalContinuation: true
+    })
+    expect(client.requests.map((request) => request.method)).not.toContain("thread/start")
+  })
+
   it("compacts the thread natively when the prompt is /compact", async () => {
     const { client, created, events } = await setup()
     const compactRequested = client.nextRequest("thread/compact/start")

@@ -96,6 +96,8 @@ export class FakeCodexClient implements CodexClient {
           return {}
         case "thread/start":
           return { model: this.startModel, thread: { id: "thread-new" } }
+        case "thread/fork":
+          return { model: this.startModel, thread: { id: "thread-fork" } }
         case "thread/resume":
           if (this.failResume) {
             throw new Error("thread not found")
@@ -260,6 +262,7 @@ export const setup = async (
     toolGateway?: ToolGatewayConfig
     codexConfigToml?: string | null
     bot?: boolean
+    forkFrom?: string
   } = {}
 ) => {
   const client = new FakeCodexClient()
@@ -293,7 +296,10 @@ export const setup = async (
   const nextEvent = (matches: (event: RuntimeEvent) => boolean): Promise<RuntimeEvent> =>
     new Promise((resolve) => waiters.push({ matches, resolve }))
   const fixture = { client, events, nextEvent, provider, spawns }
-  const sessionOptions = options.bot === undefined ? undefined : { bot: options.bot }
+  const sessionOptions = {
+    ...(options.bot === undefined ? {} : { bot: options.bot }),
+    ...(options.forkFrom === undefined ? {} : { forkFrom: options.forkFrom })
+  }
   if (options.resume === undefined) {
     const created = await run(
       provider.createSession(

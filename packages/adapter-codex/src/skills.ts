@@ -1,4 +1,9 @@
-import { COMPACT_COMMAND, sessionSkills, skillsUpdateEvent } from "@codevisor/agent-runtime"
+import {
+  COMPACT_COMMAND,
+  FORK_COMMAND,
+  sessionSkills,
+  skillsUpdateEvent
+} from "@codevisor/agent-runtime"
 import type { SessionSkill, SessionSkillSource } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
@@ -96,7 +101,7 @@ export const codexSessionSkills = (skills: ReadonlyArray<CodexSkill>) =>
   sessionSkills(
     skills.map(({ path: _path, ...skill }) => skill),
     "$",
-    [COMPACT_COMMAND]
+    [COMPACT_COMMAND, FORK_COMMAND]
   )
 
 const SKILL_MENTION = /(?:^|\s)\$([\w.:-]+)/g

@@ -12,6 +12,7 @@ export interface QueryLaunch {
   readonly currentSession: CurrentSession
   readonly cwd: string
   readonly env: Record<string, string>
+  readonly forkFrom: string | undefined
   readonly resume: string | undefined
   readonly sessionKey: string
   readonly startOptions: Pick<ClaudeOptions, "model" | "settings">
@@ -61,11 +62,15 @@ const gatewayMcpOptions = (
   }
 }
 
-const sessionArgs = (launch: QueryLaunch): Pick<ClaudeOptions, "extraArgs" | "resume"> => {
+const sessionArgs = (
+  launch: QueryLaunch
+): Pick<ClaudeOptions, "extraArgs" | "forkSession" | "resume"> => {
   const nativeToolArgs = nativeToolArgsFor(launch.toolGateway)
-  if (launch.resume === undefined) {
-    return { extraArgs: { ...nativeToolArgs, "session-id": launch.sessionKey } }
+  const newSession = { ...nativeToolArgs, "session-id": launch.sessionKey }
+  if (launch.forkFrom !== undefined) {
+    return { extraArgs: newSession, forkSession: true, resume: launch.forkFrom }
   }
+  if (launch.resume === undefined) return { extraArgs: newSession }
   if (launch.toolGateway === undefined) return { resume: launch.resume }
 
   return { extraArgs: nativeToolArgs, resume: launch.resume }

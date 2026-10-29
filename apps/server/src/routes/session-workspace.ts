@@ -279,21 +279,27 @@ export const findSession = async (
   }
 }
 
+export interface AgentSessionStart {
+  readonly forkFrom?: string
+}
+
 export const ensureAgentSessionFor = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
-  sessionId: string
+  sessionId: string,
+  start: AgentSessionStart = {}
 ): Promise<AgentSessionMetadata> =>
   withSessionMutation(services, sessionId, () =>
-    loadAgentSessionFor(services, fanout, serverId, sessionId)
+    loadAgentSessionFor(services, fanout, serverId, sessionId, start)
   )
 
 export const loadAgentSessionFor = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
-  sessionId: string
+  sessionId: string,
+  start: AgentSessionStart = {}
 ): Promise<AgentSessionMetadata> => {
   let session = await run(services.db.getSessionSummary(sessionId))
   if (await sessionIsArchived(services, session))
@@ -346,11 +352,13 @@ export const loadAgentSessionFor = async (
         sink,
         accountContext,
         toolGateway,
-        startOptions
+        { ...startOptions, ...start }
       )
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
-    await run(services.db.markAgentSessionFresh(sessionId, agentSessionId))
+    if (start.forkFrom === undefined) {
+      await run(services.db.markAgentSessionFresh(sessionId, agentSessionId))
+    }
     await appendAndPublish(
       services.db,
       fanout,

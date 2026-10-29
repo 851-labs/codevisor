@@ -58,6 +58,13 @@ extension HomeView {
     )
   }
 
+  func openSyncedChat(_ session: ChatSession) async {
+    await environment.workspaceSync.refreshFromServer(
+      serverId: session.serverId, client: environment.machines.client(for: session.serverId)
+    )
+    openChat(session)
+  }
+
   func controlClient(serverId: String, action: ClientUIAction) async throws {
     try requireClientReady()
     switch action {

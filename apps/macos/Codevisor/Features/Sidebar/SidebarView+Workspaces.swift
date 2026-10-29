@@ -16,9 +16,16 @@ extension SidebarView {
         workspaceRenameTitle = workspace.name
         renamingWorkspace = workspace
       },
+      fork: { chat in Task { await forkChat(chat) } },
+      canFork: { store?.canFork($0) ?? false },
       archive: { archiveWorkspace($0) },
       toggleChildren: { toggleChildren(of: $0) }
     )
+  }
+
+  func forkChat(_ chat: ChatSession) async {
+    guard let forked = await store?.fork(chat) else { return }
+    await openChat?(forked)
   }
 
   func row(
@@ -128,7 +135,19 @@ extension SidebarView {
       name: SidebarWorkspaceRowLabel.title(for: workspace.name), isPinned: isPinned(workspace),
       rename: { if let current = currentActiveWorkspace(id) { rowActions.rename(current) } },
       togglePin: { if let current = currentActiveWorkspace(id) { togglePin(current) } },
+      fork: forkableChat(in: workspace).map { chat in { Task { await forkChat(chat) } } },
       archive: { if let current = currentActiveWorkspace(id) { archiveWorkspace(current) } })
+  }
+
+  private func forkableChat(in workspace: Workspace) -> ChatSession? {
+    guard let chat = mainChat(of: workspace), store?.canFork(chat) == true else { return nil }
+    return chat
+  }
+
+  private func mainChat(of workspace: Workspace) -> ChatSession? {
+    environment.navigationStore.workspaceEntries.sidebar
+      .first { $0.id == workspace.id }
+      .flatMap { rowContent.routingSession(for: $0) }
   }
 
   private func currentActiveWorkspace(_ id: UUID) -> Workspace? {

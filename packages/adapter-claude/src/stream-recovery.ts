@@ -37,6 +37,7 @@ export const resumeSessionAfterStreamDeath = async (
   }
   const {
     extraArgs: startArgs,
+    forkSession: _forkSession,
     model: _startModel,
     settings: startSettings,
     ...resumeOptions

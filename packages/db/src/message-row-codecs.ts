@@ -63,10 +63,15 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.retryable === 1 ? { retryable: true } : {}),
     ...(row.plan_document === null ? {} : { planDocument: row.plan_document }),
     ...(attachments === undefined ? {} : { attachments }),
-    ...(row.origin === "event" ? { origin: "event" as const } : {}),
+    ...transcriptOrigin(row.origin),
     ...attributionField(parseAttribution(row.attribution)),
     revision: row.revision
   }
+}
+
+const transcriptOrigin = (origin: string | null): Pick<TranscriptItem, "origin"> => {
+  if (origin === "event" || origin === "fork") return { origin }
+  return {}
 }
 
 export const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {

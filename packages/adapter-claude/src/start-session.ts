@@ -80,6 +80,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       currentSession: () => session,
       cwd,
       env,
+      forkFrom: sessionOptions?.forkFrom,
       resume,
       sessionKey,
       startOptions,
@@ -106,7 +107,9 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     session = created
     void emitBackgroundTasks(created)
     const pumped = makeStreamPump(created, { options, queryFn, readFile })(q).catch(() => undefined)
-    if (resume !== undefined) await confirmResumed(created, pumped)
+    if (resume !== undefined || sessionOptions?.forkFrom !== undefined) {
+      await confirmResumed(created, pumped)
+    }
     trackClaudeSkills(created)
 
     try {

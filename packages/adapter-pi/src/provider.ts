@@ -7,6 +7,7 @@ import {
   type AgentProvider,
   type AgentSessionHandle,
   type AgentSessionSummary,
+  type CreateSessionOptions,
   type HarnessAccountContext,
   type HarnessDefinition,
   type ProviderEnvironment,
@@ -59,6 +60,9 @@ const createdSession = (session: PiSession) => ({
   }
 })
 
+const forkArgs = (sessionOptions: CreateSessionOptions | undefined): ReadonlyArray<string> =>
+  sessionOptions?.forkFrom === undefined ? [] : ["--fork", sessionOptions.forkFrom]
+
 export const makePiProvider = (
   environment: ProviderEnvironment,
   config: PiProviderConfig = {}
@@ -75,7 +79,7 @@ export const makePiProvider = (
     emit: Parameters<AgentProvider["createSession"]>[2],
     account: HarnessAccountContext | undefined,
     toolGateway: ToolGatewayConfig | undefined,
-    resume?: string
+    sessionArgs: ReadonlyArray<string> = []
   ): Promise<PiSession> => {
     const command = locateHarnessBinary(definition, environment)
     if (command === undefined) throw new Error("pi not found on PATH")
@@ -92,10 +96,7 @@ export const makePiProvider = (
     }
     const client = await connector({
       command,
-      args: [
-        ...(gateway === undefined ? [] : ["-e", gateway.path]),
-        ...(resume === undefined ? [] : ["--session", resume])
-      ],
+      args: [...(gateway === undefined ? [] : ["-e", gateway.path]), ...sessionArgs],
       cwd,
       env: {
         ...withoutEnv(await environment.envFor(cwd), account?.unsetEnv),
@@ -112,13 +113,18 @@ export const makePiProvider = (
       locateHarnessBinary(definition, environment) === undefined
         ? { detail: "CLI not found on PATH", state: "unavailable" }
         : { state: "ready" },
-    createSession: (definition, cwd, emit, account, toolGateway) =>
+    createSession: (definition, cwd, emit, account, toolGateway, sessionOptions) =>
       adapterPromise("createSession", async () =>
-        createdSession(await start(definition, cwd, emit, account, toolGateway))
+        createdSession(
+          await start(definition, cwd, emit, account, toolGateway, forkArgs(sessionOptions))
+        )
       ),
     loadSession: (definition, agentSessionId, cwd, emit, account, toolGateway) =>
       adapterPromise("loadSession", async () => {
-        const session = await start(definition, cwd, emit, account, toolGateway, agentSessionId)
+        const session = await start(definition, cwd, emit, account, toolGateway, [
+          "--session",
+          agentSessionId
+        ])
         return { ...createdSession(session), sessionId: session.key }
       }),
     listAgentSessions: (_definition, account) =>
