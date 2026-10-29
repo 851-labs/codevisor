@@ -1,9 +1,7 @@
 import {
   BOT_GOAL_REFUSAL,
   BOT_PLAN_MODE_REFUSAL,
-  BOT_PLAN_OR_GOAL_REFUSAL,
   isPlanModeId,
-  isPlanOrGoalCommand,
   type CreateSessionOptions
 } from "@codevisor/agent-runtime"
 import type { Project, SessionConfigOption, SetConfigRequest } from "@codevisor/api"
@@ -51,15 +49,6 @@ export const refusePlanConfigForBot = async (
 
   const options = persistedConfigOptions(await run(services.db.getSessionRuntimeState(sessionId)))
   if (picksMode(pick.configId, options)) throw new HttpFailure(409, BOT_PLAN_MODE_REFUSAL)
-}
-
-export const refusePlanOrGoalCommandForBot = async (
-  services: CodevisorServerServices,
-  sessionId: string,
-  text: string
-): Promise<void> => {
-  if (!isPlanOrGoalCommand(text)) return
-  if (await isBotSession(services, sessionId)) throw new HttpFailure(409, BOT_PLAN_OR_GOAL_REFUSAL)
 }
 
 const isBotSession = async (

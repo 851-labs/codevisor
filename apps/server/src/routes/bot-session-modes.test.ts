@@ -68,14 +68,6 @@ describe("bot plan and goal modes", () => {
       409,
       "Bots can't use plan mode"
     ])
-    expect(await action("prompt", { text: "/goal ship the release" })).toEqual([
-      409,
-      "Bots can't use plan mode or goals"
-    ])
-    expect(await action("prompt", { text: "/plan" })).toEqual([
-      409,
-      "Bots can't use plan mode or goals"
-    ])
     expect((await action("config", { configId: "model", value: "planck" }))[0]).toBe(202)
     expect((await action("config", { configId: "agent", value: "build" }))[0]).toBe(202)
     expect((await action("mode", { modeId: "bypassPermissions" }))[0]).toBe(202)
