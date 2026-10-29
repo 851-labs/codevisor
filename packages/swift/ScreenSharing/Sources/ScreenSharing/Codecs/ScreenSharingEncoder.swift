@@ -174,6 +174,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       return false
     }
     if metadata.keyframeAttempt != nil { metrics.increment("encoderForcedKeyframesSubmitted") }
+    usleep(10_000)
     let submitted = ScreenSharingMetrics.nowNs
     let status = VTCompressionSessionEncodeFrame(
       session, imageBuffer: frame.pixelBuffer,
