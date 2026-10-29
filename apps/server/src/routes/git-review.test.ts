@@ -31,7 +31,10 @@ describe("git review routes", () => {
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
-    const server = await startWithApp(services)
+    const server = await startWithApp({
+      ...services,
+      turnStartSnapshotDeadline: () => new AbortController().signal
+    })
     const review = (query: string) => jsonRequest(server, `/v1/fs/git/${query}`)
     const path = encodeURIComponent(folder)
 

@@ -35,7 +35,7 @@ const Receipt = Schema.Struct({ operationId: Schema.String, sealed: Schema.Strin
 export const sharedAccountVault = (
   dataDir: string,
   provided?: CredentialCoordinator,
-  options: Partial<Pick<SharedCredentialVaultConfig, "rotate" | "now">> = {}
+  options: Partial<Pick<SharedCredentialVaultConfig, "rotate" | "now" | "elapsed" | "wait">> = {}
 ) => {
   const coordinator = makeCredentialCoordinator({ dataDir })
   const path = (id: string) => join(dataDir, "shared-credentials", `${id}.receipt.json`)
@@ -96,11 +96,13 @@ const isOAuthGrantKind = (bundle: SharedTokenBundle): boolean =>
 export const mcpCredentialVault = (
   dataDir: string,
   provided?: CredentialCoordinator,
-  now: () => number = Date.now
+  now: () => number = Date.now,
+  leaseWait: Partial<Pick<SharedCredentialVaultConfig, "elapsed" | "wait">> = {}
 ) =>
   sharedAccountVault(dataDir, provided, {
     rotate: (bundle) => rotateOAuthGrant(bundle, now),
-    now
+    now,
+    ...leaseWait
   })
 
 const nativeExec: ClaudeMachineLoginOptions["exec"] = (command, args, { input, ...options }) =>

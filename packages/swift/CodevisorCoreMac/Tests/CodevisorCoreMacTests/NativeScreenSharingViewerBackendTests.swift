@@ -24,6 +24,7 @@ struct NativeScreenSharingViewerBackendTests {
     harness.configureSession = { $0.deliversVideo = false }
     harness.connect()
     await harness.clock.waitForSleep(.seconds(8))
+    await awaitObserved { !harness.log.events.isEmpty }
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(harness.log.events, [.opened(endpoint)])
     #expect(harness.sessions[0].offers == 1 && harness.sessions[0].answers == ["fixture answer"])
@@ -208,6 +209,7 @@ struct NativeScreenSharingViewerBackendTests {
       harness.clock.advance(by: .seconds(8))
     }
     await harness.clock.waitForSleep(.seconds(8), count: 6)
+    await awaitObserved { harness.log.events.count >= 3 }
     #expect(harness.log.finished == 0)
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(

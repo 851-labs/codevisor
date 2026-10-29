@@ -139,6 +139,7 @@ export interface CodevisorServerServices {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly resolveGitEnvironment?: (directory?: string) => Promise<NodeJS.ProcessEnv>
+  readonly turnStartSnapshotDeadline?: () => AbortSignal
   readonly gitHosts?: GitHosts
   readonly auth?: HarnessAuthManager
   readonly sharedAccounts?: SharedAccounts

@@ -379,21 +379,24 @@ export const sharedCoordinator = (clock: McpOAuthClock) => {
     readonly status: string
   }> = []
   const observers = new Set<() => void>()
+  const until = async (predicate: () => boolean): Promise<void> => {
+    while (!predicate()) {
+      const changed = Promise.withResolvers<void>()
+      observers.add(changed.resolve)
+      try {
+        if (predicate()) return
+        await changed.promise
+      } finally {
+        observers.delete(changed.resolve)
+      }
+    }
+  }
   return {
     records,
     commands,
-    until: async (predicate: () => boolean): Promise<void> => {
-      while (!predicate()) {
-        const changed = Promise.withResolvers<void>()
-        observers.add(changed.resolve)
-        try {
-          if (predicate()) return
-          await changed.promise
-        } finally {
-          observers.delete(changed.resolve)
-        }
-      }
-    },
+    until,
+    leaseReleased: () =>
+      until(() => [...records.values()].every((record) => record.operation === undefined)),
     machine:
       (owner: string): CredentialCoordinator =>
       async (id, command) => {
@@ -415,7 +418,11 @@ export const machineVault = (
   owner: string,
   clock: McpOAuthClock,
   dataDir: string
-) => mcpCredentialVault(dataDir, coordinator.machine(owner), clock.now)
+) =>
+  mcpCredentialVault(dataDir, coordinator.machine(owner), clock.now, {
+    elapsed: clock.now,
+    wait: coordinator.leaseReleased
+  })
 
 type Services = Awaited<ReturnType<typeof makeServices>>["services"]
 

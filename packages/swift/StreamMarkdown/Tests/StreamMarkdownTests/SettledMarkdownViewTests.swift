@@ -66,7 +66,7 @@ struct SettledMarkdownViewTests {
   }
 
   @Test("Source-wrapped documents use the available native text width")
-  func sourceWrappedDocumentReflows() {
+  func sourceWrappedDocumentReflows() async {
     let paragraph = """
       Put on the user's hat: run the change, exercise the affected workflow, and
       report what you observed. Inspired by Shopify's practice of manually trying
@@ -84,13 +84,20 @@ struct SettledMarkdownViewTests {
       )
       return view
     }
-    let wrapped = document(paragraph)
-    let unwrapped = document(paragraph.replacingOccurrences(of: "\n", with: " "))
+    func preparedHeight(_ paragraph: String, width: CGFloat) async -> CGFloat {
+      _ = document(paragraph).contentHeight(forWidth: width)
+      await StaticTextCache.shared.waitUntilIdle()
+      let view = document(paragraph)
+      let height = view.contentHeight(forWidth: width)
+      #expect(view.isContentReady)
+      return height
+    }
+    let unwrapped = paragraph.replacingOccurrences(of: "\n", with: " ")
 
     for width: CGFloat in [220, 860] {
-      #expect(wrapped.contentHeight(forWidth: width) == unwrapped.contentHeight(forWidth: width))
+      #expect(await preparedHeight(paragraph, width: width) == preparedHeight(unwrapped, width: width))
     }
-    #expect(wrapped.contentHeight(forWidth: 220) > wrapped.contentHeight(forWidth: 860))
+    #expect(await preparedHeight(paragraph, width: 220) > preparedHeight(paragraph, width: 860))
   }
 
   @Test("Settled selection clears when focus leaves the surface")

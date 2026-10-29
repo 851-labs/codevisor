@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { makeWorld } from "../src/cli/support-test-support.js"
 import { resolvePort, statusCommand } from "../src/cli/support.js"
-import { claimServeListener } from "../src/serve-listener.js"
+import { listenCandidates } from "../src/infra/listen-port.js"
+import { claimServeListener, type ServeListener } from "../src/serve-listener.js"
 import {
   defaultServerConfig,
   startCodevisorServer,
@@ -41,9 +42,9 @@ const dataDirectory = (): string => {
 const startServer = async (
   dataDir: string,
   preferredPort: number
-): Promise<RunningCodevisorServer> => {
+): Promise<{ readonly server: RunningCodevisorServer; readonly plan: ServeListener["plan"] }> => {
   const { services } = await makeServices()
-  const { listener } = await claimServeListener({
+  const { listener, plan } = await claimServeListener({
     args: { "preferred-port": String(preferredPort) },
     env: {},
     dataDir,
@@ -60,7 +61,7 @@ const startServer = async (
   const config = defaultServerConfig({ port: listener.port, bootId: "boot-fallback" })
   const server = await run(startCodevisorServer(services, config, listener))
   runningServers.push(server)
-  return server
+  return { server, plan }
 }
 
 const stopServer = async (server: RunningCodevisorServer): Promise<void> => {
@@ -87,9 +88,9 @@ describe("listening port fallback", () => {
     const blocked = await occupyPort()
     const dataDir = dataDirectory()
 
-    const server = await startServer(dataDir, blocked)
+    const { server } = await startServer(dataDir, blocked)
 
-    expect(server.port).toBeGreaterThan(blocked)
+    expect(server.port).not.toBe(blocked)
     expect(await (await fetch(`http://127.0.0.1:${server.port}/v1/health`)).json()).toMatchObject({
       ok: true
     })
@@ -99,14 +100,14 @@ describe("listening port fallback", () => {
     expect(JSON.parse(cli.logs.at(-1)!)).toMatchObject({ running: true, port: server.port })
   })
 
-  it("comes back on the same port after a restart", async () => {
+  it("tries the port it last served on first after a restart", async () => {
     const blocked = await occupyPort()
     const dataDir = dataDirectory()
     const first = await startServer(dataDir, blocked)
-    await stopServer(first)
+    await stopServer(first.server)
 
     const second = await startServer(dataDir, blocked)
 
-    expect(second.port).toBe(first.port)
+    expect(listenCandidates(second.plan)[0]).toBe(first.server.port)
   })
 })

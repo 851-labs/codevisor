@@ -48,7 +48,8 @@ export const recordTurnStart = async (
   /* v8 ignore next */
   if (cwd === undefined) return
   const env = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-  const signal = AbortSignal.timeout(turnStartSnapshotBudgetMs)
+  const signal =
+    services.turnStartSnapshotDeadline?.() ?? AbortSignal.timeout(turnStartSnapshotBudgetMs)
   const expired = new Promise((resolve) => {
     signal.addEventListener("abort", resolve, { once: true })
   })

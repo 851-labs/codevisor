@@ -108,7 +108,7 @@ const inProgress: ReadonlySet<Sandbox["state"]> = new Set([
 ])
 
 export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
-  const pipelines = new Set<Promise<void>>()
+  const pipelines = new Set<Promise<unknown>>()
   const busy = new Set<string>()
   const abandonments = makeAbandonments()
   const logs = makeSandboxLogBook()
@@ -175,6 +175,18 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     })
   }
 
+  const restoreArchived = async (workspaceId: string): Promise<void> => {
+    const archived = await archivedFor(deps, workspaceId)
+    if (archived?.profileId === undefined) return
+
+    await deps.records.remove(archived.id)
+    await create(
+      restoreRequest(archived, archived.profileId, workspaceId.toLowerCase()),
+      undefined,
+      restoredFields(archived)
+    )
+  }
+
   return {
     list: deps.records.list,
     get: (id) => existing(deps, id),
@@ -187,16 +199,10 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     wait: (id, timeoutMs) => waitForSandbox(deps, id, timeoutMs),
     destroy,
     claimWorkspace: (id, workspaceId) => claimWorkspace(deps, id, workspaceId),
-    restore: async (workspaceId) => {
-      const archived = await archivedFor(deps, workspaceId)
-      if (archived?.profileId === undefined) return
-
-      await deps.records.remove(archived.id)
-      await create(
-        restoreRequest(archived, archived.profileId, workspaceId.toLowerCase()),
-        undefined,
-        restoredFields(archived)
-      )
+    restore: (workspaceId) => {
+      const restoring = restoreArchived(workspaceId)
+      track(pipelines, Promise.allSettled([restoring]))
+      return restoring
     },
     watch: async () => {
       for (const machine of (await deps.records.list()).filter(isPlaced)) {
@@ -436,7 +442,7 @@ const specFor = (deps: SandboxDeps, machine: Sandbox) => ({
   tags: { owner: requireOwner(deps), machine: machine.id }
 })
 
-const track = (pipelines: Set<Promise<void>>, pipeline: Promise<void>): void => {
+const track = (pipelines: Set<Promise<unknown>>, pipeline: Promise<unknown>): void => {
   pipelines.add(pipeline)
   void pipeline.finally(() => pipelines.delete(pipeline))
 }
