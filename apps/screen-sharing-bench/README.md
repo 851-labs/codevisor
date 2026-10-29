@@ -253,13 +253,18 @@ grants apply, and `~/Applications/CodevisorBench.app` is never touched.
   this app or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
   queued nightly or Tier 2 run; the runner takes one job at a time). It runs S2, S3 and S5 at N0 and N3 twice with
   the nightly method (about 20 min) and `gate` compares both runs with the nightly baseline using the design §4.2
-  rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. The summary also says how long
-  the gate waited for tamale and which bench runs were active meanwhile.
+  rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more
+  than max(15%, 3 ms), p95 up more than max(20%, 5 ms)) is judged on e2e outside the jitter buffer once the runs and
+  every baseline nightly split it out, and the jitter buffer gets its own rule (p50 up more than max(100%, 40 ms));
+  N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. At N0, WebRTC's
+  jitter estimate for scroll, video and test cards sits at the product's 80 ms playout cap, and each process lands
+  either at the cap or well below it, so whole e2e there can move by 30% between unchanged runs. The summary also
+  says how long the gate waited for tamale and which bench runs were active meanwhile.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
   night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. They still use the installed app.
 
 `preflight --quiet` is C5. It waits at least `--settle` seconds (60) and up to `--settle-limit` (300) for the
-1-minute load to drop to 2.0, then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
+1-minute load to drop to 2.0 and Spotlight to stop indexing (a fresh build sets it off), then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
 `mdworker*` above 5% CPU), Time Machine or `softwareupdate` running, en0 not up at 1000baseT, other regular apps
 open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
 offscreen Tier 1). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`.
