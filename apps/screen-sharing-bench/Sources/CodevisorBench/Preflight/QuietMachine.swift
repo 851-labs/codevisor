@@ -4,7 +4,6 @@ import ScreenSharingBench
 
 @MainActor
 struct QuietMachine: Encodable {
-  static let maximumLoad = 2.0
   private static let busyIndexerPercent = 5.0
   private static let loadPoll = Duration.seconds(5)
   private static let quietSamplesInARow = 3
@@ -13,6 +12,7 @@ struct QuietMachine: Encodable {
 
   let load1: Double
   let settledSeconds: Int
+  let reachedSettleLimit: Bool
   let busyIndexers: [String]
   let timeMachinePhase: String
   let softwareUpdateRunning: Bool
@@ -24,32 +24,55 @@ struct QuietMachine: Encodable {
     let clock = ContinuousClock()
     let started = clock.now
     let settled = try await settledActivity(after: settle, until: started + limit, clock: clock)
-    let settledSeconds = Int((clock.now - started).components.seconds)
     return QuietMachine(
-      load1: settled.load1, settledSeconds: settledSeconds, busyIndexers: settled.busyIndexers,
+      settled, settledSeconds: Int((clock.now - started).components.seconds), limit: limit,
       timeMachinePhase: try await timeMachinePhase(), ethernet: try await ethernet())
   }
 
-  private init(load1: Double, settledSeconds: Int, busyIndexers: [String], timeMachinePhase: String, ethernet: String) {
-    self.load1 = load1
+  private init(
+    _ settled: SettledActivity, settledSeconds: Int, limit: Duration, timeMachinePhase: String, ethernet: String
+  ) {
+    load1 = settled.last.load1
     self.settledSeconds = settledSeconds
-    self.busyIndexers = busyIndexers
+    reachedSettleLimit = !settled.isSettled
+    busyIndexers = settled.last.busyIndexers
     self.timeMachinePhase = timeMachinePhase
     softwareUpdateRunning = !BenchProcesses.pids(named: "softwareupdate").isEmpty
     self.ethernet = ethernet
     foregroundApps = Self.foregroundApps()
-    problems = Self.problems(
-      load1: load1, busyIndexers: busyIndexers, timeMachinePhase: timeMachinePhase,
-      softwareUpdateRunning: softwareUpdateRunning, ethernet: ethernet, foregroundApps: foregroundApps)
+    problems =
+      Self.settleProblems(settled, limit: limit)
+      + Self.problems(
+        timeMachinePhase: timeMachinePhase, softwareUpdateRunning: softwareUpdateRunning, ethernet: ethernet,
+        foregroundApps: foregroundApps)
+  }
+
+  private struct SettledActivity {
+    let last: QuietActivity
+    let isSettled: Bool
+  }
+
+  private static func settleProblems(_ settled: SettledActivity, limit: Duration) -> [String] {
+    var problems: [String] = []
+    let activity = settled.last
+    if activity.load1 > QuietActivity.maximumLoad {
+      problems.append("the 1-minute load is \(activity.load1), above \(QuietActivity.maximumLoad)")
+    }
+    if !activity.busyIndexers.isEmpty {
+      problems.append("Spotlight is indexing: \(activity.busyIndexers.joined(separator: ", "))")
+    }
+    if !settled.isSettled, activity.isQuiet {
+      problems.append(
+        "load and Spotlight weren't quiet for \(quietSamplesInARow) samples in a row within \(limit.components.seconds) s"
+      )
+    }
+    return problems
   }
 
   private static func problems(
-    load1: Double, busyIndexers: [String], timeMachinePhase: String, softwareUpdateRunning: Bool, ethernet: String,
-    foregroundApps: [String]
+    timeMachinePhase: String, softwareUpdateRunning: Bool, ethernet: String, foregroundApps: [String]
   ) -> [String] {
     var problems: [String] = []
-    if load1 > maximumLoad { problems.append("the 1-minute load is \(load1), above \(maximumLoad)") }
-    if !busyIndexers.isEmpty { problems.append("Spotlight is indexing: \(busyIndexers.joined(separator: ", "))") }
     if timeMachinePhase != "BackupNotRunning" { problems.append("Time Machine is in \(timeMachinePhase)") }
     if softwareUpdateRunning { problems.append("softwareupdate is running") }
     if !ethernet.contains(wiredGigabit) { problems.append("en0 is not up at \(wiredGigabit): \(ethernet)") }
@@ -59,20 +82,16 @@ struct QuietMachine: Encodable {
 
   private static func settledActivity(
     after settle: Duration, until deadline: ContinuousClock.Instant, clock: ContinuousClock
-  ) async throws -> (load1: Double, busyIndexers: [String]) {
+  ) async throws -> SettledActivity {
     try await clock.sleep(for: settle)
-    var activity = (load1: loadAverage(), busyIndexers: try await busyIndexers())
-    var quietInARow = isQuiet(activity) ? 1 : 0
+    var activity = QuietActivity(load1: loadAverage(), busyIndexers: try await busyIndexers())
+    var quietInARow = activity.isQuiet ? 1 : 0
     while quietInARow < quietSamplesInARow, clock.now + loadPoll <= deadline {
       try await clock.sleep(for: loadPoll)
-      activity = (loadAverage(), try await busyIndexers())
-      quietInARow = isQuiet(activity) ? quietInARow + 1 : 0
+      activity = QuietActivity(load1: loadAverage(), busyIndexers: try await busyIndexers())
+      quietInARow = activity.isQuiet ? quietInARow + 1 : 0
     }
-    return activity
-  }
-
-  private static func isQuiet(_ activity: (load1: Double, busyIndexers: [String])) -> Bool {
-    activity.load1 <= maximumLoad && activity.busyIndexers.isEmpty
+    return SettledActivity(last: activity, isSettled: quietInARow >= quietSamplesInARow)
   }
 
   private static func loadAverage() -> Double {

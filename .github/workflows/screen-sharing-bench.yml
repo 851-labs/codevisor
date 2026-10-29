@@ -23,9 +23,9 @@ on:
         default: ""
         type: string
       plans:
-        description: Tier 1 plans for the nightly plan, comma-separated (core, gate, matrix)
+        description: Tier 1 plans to run, comma-separated (core, gate, matrix); empty runs all three
         required: false
-        default: core,gate,matrix
+        default: ""
         type: string
       source:
         description: Frame source for a custom run (own-window needs tamale's GUI session unlocked)
@@ -122,7 +122,7 @@ jobs:
       SCENES: ${{ inputs.scenes }}
       NETWORKS: ${{ inputs.networks }}
       TIER1_SOURCE: ${{ inputs.source || 'synthetic' }}
-      TIER1_PLANS: ${{ inputs.plans || 'core,gate,matrix' }}
+      TIER1_PLANS: ${{ inputs.plans }}
       MODE: ${{ needs.plan.outputs.mode }}
       PREFLIGHT: ${{ needs.plan.outputs.preflight }}
     steps:
@@ -131,7 +131,10 @@ jobs:
           [[ "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]] || { echo "scenes must be a comma-separated list"; exit 1; }
           [[ "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]] || { echo "networks must be like N0,N3"; exit 1; }
           plan="(core|gate|matrix)"
-          [[ "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core, gate and/or matrix"; exit 1; }
+          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core, gate or matrix"; exit 1; }
+          if [[ "$MODE" == custom && -n "$TIER1_PLANS" ]]; then
+            echo "::warning::plans applies to the nightly plan only; a run with scenes or networks set is one custom report"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
