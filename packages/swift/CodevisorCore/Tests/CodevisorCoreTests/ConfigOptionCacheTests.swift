@@ -247,6 +247,21 @@ struct ConfigOptionCacheTests {
     #expect(cache.skills(forHarness: "codex", onServer: "local", cwd: "/project-a") == skillsA)
   }
 
+  @Test("A harness can fork on a server once any directory's probe lists the fork command")
+  func harnessCanFork() async throws {
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    var forking = capability(model: "fresh")
+    forking.skills = SessionSkills(skills: [], invocationPrefix: "$", commands: ["compact", "fork"])
+    let response = [forking]
+
+    #expect(!cache.harnessCanFork("codex", onServer: "local"))
+    _ = try await cache.revalidateCapabilities(forServer: "local", cwd: "/project-a", fetch: { response })
+
+    #expect(cache.harnessCanFork("codex", onServer: "local"))
+    #expect(!cache.harnessCanFork("codex", onServer: "remote"))
+    #expect(!cache.harnessCanFork("claude-code", onServer: "local"))
+  }
+
   @Test("Codevisor skill refreshes share one request per scope; a failure keeps that scope's list")
   func codevisorSkillRefresh() async {
     let cache = ConfigOptionCache(store: InMemoryStore())

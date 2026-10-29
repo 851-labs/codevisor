@@ -159,6 +159,7 @@ struct HomeView: View {
       }
     )
     .environment(\.homeLayoutMode, layoutMode)
+    .environment(\.openChat, OpenChatAction { await openSyncedChat($0) })
     .environment(\.homeSidebarIsTiled, layoutMode == .split && detailLeadingInset > 1)
     .focusedSceneValue(\.homeCommandActions, homeCommandActions)
     .background(HostWindowReader { hostWindow.window = $0 })

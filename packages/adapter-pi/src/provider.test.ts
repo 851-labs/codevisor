@@ -80,7 +80,7 @@ describe("Pi provider", () => {
         expect.objectContaining({ id: "model", currentValue: "openai-codex/gpt-6" }),
         expect.objectContaining({ id: "thought_level", currentValue: "medium" })
       ],
-      skills: { commands: ["compact"], invocationPrefix: "/", skills: [] }
+      skills: { commands: ["compact", "fork"], invocationPrefix: "/", skills: [] }
     })
     expect(client.commands.map((command) => command.type)).toEqual([
       "get_state",
@@ -111,7 +111,7 @@ describe("Pi provider", () => {
     }
     const created = await run(provider.createSession(definition, "/p", async () => undefined))
     expect(created.metadata.skills).toEqual({
-      commands: ["compact"],
+      commands: ["compact", "fork"],
       invocationPrefix: "/",
       skills: [
         {
@@ -377,7 +377,7 @@ describe("Pi provider", () => {
     expect(metadata).toEqual({
       sessionId: "7",
       configOptions: [],
-      skills: { commands: ["compact"], invocationPrefix: "/", skills: [] }
+      skills: { commands: ["compact", "fork"], invocationPrefix: "/", skills: [] }
     })
   })
 

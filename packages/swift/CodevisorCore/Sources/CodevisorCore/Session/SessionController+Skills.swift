@@ -13,8 +13,15 @@ extension SessionController {
 
   public var supportsCompaction: Bool {
     guard !project.isBot, hasSentFirst || hasExistingAgentSession else { return false }
-    return (availableSkills ?? inspectedSkills)?.acceptsCompact == true
+    return nativeSkills?.acceptsCompact == true
   }
+
+  public var supportsFork: Bool {
+    guard !project.isBot, hasExistingAgentSession, !canStop else { return false }
+    return nativeSkills?.acceptsFork == true
+  }
+
+  private var nativeSkills: SessionSkills? { availableSkills ?? inspectedSkills }
 
   @discardableResult
   public func refreshCodevisorSkills() -> Task<Void, Never>? {

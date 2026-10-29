@@ -38,6 +38,7 @@ import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
 import { writeIdempotentAction } from "./session-action-results.js"
 import { applySessionConfigPick } from "./session-config.js"
+import { forkSession } from "./session-fork.js"
 import { openSessionAction } from "./session-open-action.js"
 import { sendPrompt } from "./session-prompt-route.js"
 import { routeQueuedPrompt, routeSessionQueue } from "./session-queue-routes.js"
@@ -103,6 +104,10 @@ const routeSessionCommand = (route: RouteContext): Promise<boolean> | undefined 
   const configSessionId = matchRoute(url.pathname, "/v1/sessions/:id/config")
   if (configSessionId !== undefined && request.method === "POST")
     return setConfig(route, configSessionId)
+
+  const forkSessionId = matchRoute(url.pathname, "/v1/sessions/:id/fork")
+  if (forkSessionId !== undefined && request.method === "POST")
+    return forkSession(route, forkSessionId)
 
   const goalSessionId = matchRoute(url.pathname, "/v1/sessions/:id/goal")
   if (goalSessionId !== undefined && request.method === "POST") return setGoal(route, goalSessionId)

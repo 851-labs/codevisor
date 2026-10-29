@@ -60,6 +60,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { SessionForkService } from "./session-fork-service.js"
 import type { SessionStateService } from "./session-state-types.js"
 import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
@@ -86,6 +87,7 @@ export interface CodevisorDatabaseConfig {
 export interface CodevisorDatabaseService
   extends
     SessionStateService,
+    SessionForkService,
     BotsService,
     SessionSubscriptionsService,
     PluginDatabaseService,

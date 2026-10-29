@@ -468,6 +468,10 @@ public extension CodevisorServerClienting {
 
   func clearSessionGoal(id: UUID) async throws {}
 
+  func forkSession(id: UUID) async throws -> ServerSession {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func cancelSessionAutoResume(id: UUID) async throws {}
 
   func answerSessionQuestion(

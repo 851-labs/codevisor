@@ -4,6 +4,7 @@ import {
   answersIfDefined,
   COMPACT_COMMAND,
   compactRequest,
+  FORK_COMMAND,
   normalizePromptInput,
   questionReplyText,
   sessionSkills,
@@ -102,7 +103,8 @@ const piSkill = (entry: unknown): Array<SessionSkill> => {
 export const piSkills = (response: unknown): SessionSkills => {
   const commands = record(response).commands
   return sessionSkills((Array.isArray(commands) ? commands : []).flatMap(piSkill), "/", [
-    COMPACT_COMMAND
+    COMPACT_COMMAND,
+    FORK_COMMAND
   ])
 }
 

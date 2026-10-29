@@ -26,6 +26,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public var attachments: [Attachment]
   public var textResource: ToolDetailResource?
   public var isEvent: Bool
+  public var isForkMarker: Bool
   public var attribution: UserMessageAttribution?
 
   public init(
@@ -34,6 +35,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     attachments: [Attachment] = [],
     textResource: ToolDetailResource? = nil,
     isEvent: Bool = false,
+    isForkMarker: Bool = false,
     attribution: UserMessageAttribution? = nil
   ) {
     self.id = id
@@ -41,6 +43,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     self.textResource = textResource
     self.attachments = attachments
     self.isEvent = isEvent
+    self.isForkMarker = isForkMarker
     self.attribution = attribution
   }
 }
@@ -72,7 +75,7 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
   }
 
   public var userPrompt: UserMessage? {
-    guard case let .user(message) = self, !message.isEvent else { return nil }
+    guard case let .user(message) = self, !message.isEvent, !message.isForkMarker else { return nil }
     return message
   }
 

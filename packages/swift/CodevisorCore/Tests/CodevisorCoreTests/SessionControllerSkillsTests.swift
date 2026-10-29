@@ -142,6 +142,27 @@ struct SessionControllerSkillsTests {
     #expect(controller.supportsCompaction)
   }
 
+  @Test("/fork is offered once a chat has an agent session with a harness that can fork")
+  func forking() async throws {
+    let client = SyncFakeServerClient(projects: [], sessions: [])
+    client.capabilitiesHandler = { _ in
+      var capability = Self.codexCapability()
+      capability.skills = SessionSkills(skills: [], invocationPrefix: "$", commands: ["compact", "fork"])
+      return ServerCapabilities(harnesses: [capability])
+    }
+    let controller = SessionController(
+      project: Project.fromFolder(URL(fileURLWithPath: "/tmp/fork"), serverId: "m"),
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      serverClient: client
+    )
+
+    await controller.prepare()
+    #expect(!controller.supportsFork)
+
+    controller.resumeAgentSessionId = "agent-1"
+    #expect(controller.supportsFork)
+  }
+
   private nonisolated static func codexCapability() -> ServerHarnessCapability {
     ServerHarnessCapability(
       harness: ServerHarness(

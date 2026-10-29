@@ -23,6 +23,7 @@ struct ComposerBar: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.clientControlId) var clientControlId
+  @Environment(\.openChat) var openChat
 
   var cardStyle = ComposerCardStyle()
 

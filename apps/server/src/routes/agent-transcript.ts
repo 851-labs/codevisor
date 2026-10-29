@@ -123,7 +123,7 @@ const messageRecord = (item: TranscriptItem): TranscriptRecord => ({
 })
 
 const messageKind = (item: TranscriptItem): AgentItemKind => {
-  if (item.origin === "event") return "event"
+  if (item.origin !== undefined) return "event"
   return item.role
 }
 

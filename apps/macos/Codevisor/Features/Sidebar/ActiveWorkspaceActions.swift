@@ -3,5 +3,6 @@ struct ActiveWorkspaceActions {
   let isPinned: Bool
   let rename: @MainActor () -> Void
   let togglePin: @MainActor () -> Void
+  let fork: (@MainActor () -> Void)?
   let archive: @MainActor () -> Void
 }

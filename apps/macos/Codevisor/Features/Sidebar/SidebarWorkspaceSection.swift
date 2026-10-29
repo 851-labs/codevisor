@@ -9,6 +9,8 @@ struct SidebarWorkspaceSection: View, Equatable {
     let togglePin: @MainActor (Workspace) -> Void
     let newTab: @MainActor (SidebarWorkspaceListItem) -> Void
     let rename: @MainActor (Workspace) -> Void
+    let fork: @MainActor (ChatSession) -> Void
+    let canFork: @MainActor (ChatSession) -> Bool
     let archive: @MainActor (Workspace) -> Void
     let toggleChildren: @MainActor (UUID) -> Void
   }
@@ -51,10 +53,16 @@ struct SidebarWorkspaceSection: View, Equatable {
           onTogglePin: { actions.togglePin(workspace) },
           onNewTab: { actions.newTab(listItem) },
           onRename: { actions.rename(workspace) },
+          onFork: forkAction(for: listItem.routingSession),
           onArchive: { actions.archive(workspace) }
         )
       )
     }
+  }
+
+  private func forkAction(for chat: ChatSession?) -> (() -> Void)? {
+    guard let chat, actions.canFork(chat) else { return nil }
+    return { actions.fork(chat) }
   }
 }
 

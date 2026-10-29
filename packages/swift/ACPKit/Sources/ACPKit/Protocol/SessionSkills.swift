@@ -44,6 +44,7 @@ public struct SessionSkill: Sendable, Codable, Equatable, Identifiable {
 
 public struct SessionSkills: Sendable, Codable, Equatable {
   public static let compactCommand = "compact"
+  public static let forkCommand = "fork"
 
   public var skills: [SessionSkill]
   public var invocationPrefix: String
@@ -56,4 +57,6 @@ public struct SessionSkills: Sendable, Codable, Equatable {
   }
 
   public var acceptsCompact: Bool { commands?.contains(Self.compactCommand) == true }
+
+  public var acceptsFork: Bool { commands?.contains(Self.forkCommand) == true }
 }

@@ -57,7 +57,8 @@ export const makeStartSession = ({
       disabledFeaturesFor(sessionOptions)
     )
     const config = codexThreadConfig({ environment, readConfigFile, account, toolGateway })
-    const response: unknown = await openThread(client, cwd, resumeThreadId, config)
+    const opened = { resumeThreadId, forkFrom: sessionOptions?.forkFrom }
+    const response: unknown = await openThread(client, cwd, opened, config)
 
     const threadId = threadIdFrom(response)
     if (threadId === undefined) {
@@ -75,7 +76,7 @@ export const makeStartSession = ({
     }
     await refreshCodexSkills(session, false)
 
-    attachToClient(session, resumeThreadId !== undefined)
+    attachToClient(session, resumeThreadId !== undefined || opened.forkFrom !== undefined)
     return session
   }
   return startSession
@@ -90,15 +91,29 @@ interface OpenedThread {
   readonly threadId: string
 }
 
+interface ThreadSource {
+  readonly resumeThreadId: string | undefined
+  readonly forkFrom: string | undefined
+}
+
 const openThread = (
   client: CodexClient,
   cwd: string,
-  resumeThreadId: string | undefined,
+  source: ThreadSource,
   config: Record<string, unknown>
 ): Promise<unknown> => {
-  if (resumeThreadId === undefined) return client.request("thread/start", { cwd, config })
+  if (source.forkFrom !== undefined) {
+    return client.request("thread/fork", {
+      cwd,
+      threadId: source.forkFrom,
+      config,
+      excludeTurns: true,
+      deferGoalContinuation: true
+    })
+  }
+  if (source.resumeThreadId === undefined) return client.request("thread/start", { cwd, config })
 
-  return client.request("thread/resume", { cwd, threadId: resumeThreadId, config })
+  return client.request("thread/resume", { cwd, threadId: source.resumeThreadId, config })
 }
 
 const threadIdFrom = (response: unknown): string | undefined =>

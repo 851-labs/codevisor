@@ -216,6 +216,7 @@ export const endpoints = [
   "POST /v1/sessions/:id/config",
   "POST /v1/sessions/:id/goal",
   "DELETE /v1/sessions/:id/goal",
+  "POST /v1/sessions/:id/fork",
   "POST /v1/sessions/:id/questions/:questionId/answer",
   "POST /v1/files",
   "GET /v1/files/:id",
@@ -344,6 +345,7 @@ export const created = new Set<Endpoint>([
   "POST /v1/skills/import-remote",
   "POST /v1/bots",
   "POST /v1/sessions",
+  "POST /v1/sessions/:id/fork",
   "POST /v1/sessions/:id/subscriptions",
   "POST /v1/files",
   "POST /v1/terminals"

@@ -1,5 +1,3 @@
-export const COMPACT_COMMAND = "compact"
-
 export interface CompactRequest {
   readonly instructions?: string
 }

@@ -27,7 +27,7 @@ describe("Codex skills", () => {
     })
 
     expect(created?.metadata.skills).toEqual({
-      commands: ["compact"],
+      commands: ["compact", "fork"],
       invocationPrefix: "$",
       skills: [
         {

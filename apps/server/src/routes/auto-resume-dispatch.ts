@@ -52,5 +52,5 @@ const interruptedRequest = async (
   sessionId: string
 ): Promise<string | undefined> => {
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, recentItemsLimit))
-  return page.items.findLast((item) => item.role === "user" && item.origin !== "event")?.text
+  return page.items.findLast((item) => item.role === "user" && item.origin === undefined)?.text
 }

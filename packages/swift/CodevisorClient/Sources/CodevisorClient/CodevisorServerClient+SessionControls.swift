@@ -108,6 +108,10 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/sessions/\(id.uuidString)/goal", method: "DELETE")
   }
 
+  public func forkSession(id: UUID) async throws -> ServerSession {
+    try await send("/v1/sessions/\(id.uuidString)/fork", method: "POST", body: Optional<EmptyBody>.none)
+  }
+
   public func cancelSessionAutoResume(id: UUID) async throws {
     try await sendNoResponse("/v1/sessions/\(id.uuidString)/auto-resume", method: "DELETE")
   }
