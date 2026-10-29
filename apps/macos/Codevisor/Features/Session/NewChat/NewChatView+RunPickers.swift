@@ -415,7 +415,7 @@ private struct RunLocationOption: Identifiable {
     id: .projectDirectory, title: "Project directory", symbol: "folder.fill", newWorktree: false
   )
   static let newWorktree = RunLocationOption(
-    id: .newWorktree, title: "New worktree", symbol: "arrow.triangle.branch", newWorktree: true
+    id: .newWorktree, title: "New worktree", symbol: CodevisorSymbol.worktreeSystemName, newWorktree: true
   )
   static let all = [projectDirectory, newWorktree]
 }

@@ -235,7 +235,7 @@ struct WorkspaceInspectorView: View {
             detail("Branch", icon: CodevisorSymbol.gitBranch.image, value: branch)
           }
           if let worktree = workspace.worktreeName {
-            detail("Worktree", icon: Image(systemName: "tree"), value: worktree)
+            detail("Worktree", icon: Image(systemName: CodevisorSymbol.worktreeSystemName), value: worktree)
           }
           if let machineName {
             detail(

@@ -38,7 +38,7 @@ public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Senda
     case .machine: Image(systemName: "desktopcomputer")
     case .project: Image(systemName: "folder")
     case .branch: CodevisorSymbol.gitBranch.image
-    case .worktree: Image(systemName: "tree")
+    case .worktree: Image(systemName: CodevisorSymbol.worktreeSystemName)
     }
   }
 }
