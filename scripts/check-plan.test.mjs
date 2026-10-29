@@ -1,33 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { planChecks, relativeImports, xcodeSwiftProducts } from "./check-plan.mjs"
-
-const swiftPackage = {
-  products: [
-    { name: "Core", targets: ["Core"] },
-    { name: "UI", targets: ["UI"] },
-    { name: "Sharing", targets: ["Sharing"] }
-  ],
-  targets: [
-    { name: "Core", type: "regular", path: "Core/Sources/Core", dependencies: [] },
-    { name: "UI", type: "regular", path: "UI", dependencies: [{ byName: ["Core", null] }] },
-    { name: "Grammars", type: "regular", path: "UI/Vendor", dependencies: [] },
-    {
-      name: "Sharing",
-      type: "regular",
-      path: "Sharing/Sources/Sharing",
-      dependencies: [{ target: ["Core", null] }, { product: ["WebRTC", "webrtc", null, null] }]
-    },
-    { name: "CoreTests", type: "test", path: "Core/Tests/CoreTests", dependencies: [] },
-    {
-      name: "Transcript",
-      type: "regular",
-      path: "Transcript/Sources",
-      dependencies: [{ byName: ["UI", null] }]
-    }
-  ]
-}
+import { planChecks, relativeImports } from "./check-plan.mjs"
 
 const context = {
   workspaces: [
@@ -36,11 +10,8 @@ const context = {
   ],
   scriptInputs: {
     "scripts/test-swift.mjs": ["scripts/test-swift.mjs", "scripts/swift-artifacts.mjs"],
-    "scripts/build-native.mjs": ["scripts/build-native.mjs", "scripts/xcodebuild.mjs"],
     "scripts/release": ["scripts/chromium-artifact.mjs"]
   },
-  swiftPackage,
-  iosProducts: ["UI", "Core"],
   swiftLinks: [{ link: "packages/swift/Transcript/Sources", target: "apps/macos/Transcript" }]
 }
 
@@ -93,44 +64,22 @@ test("release tests follow the release scripts, the installer, and the modules t
   assert.deepEqual(planned(["scripts/dev.mjs"]), {})
 })
 
-test("a Swift module change runs only the builds that link it", () => {
+test("Swift changes run the Swift style checks and tests, and never build iOS", () => {
   const swiftChecks = ["swift:format:check", "swift:lint", "swift:test"]
   const changes = {
-    "packages/swift/UI/Button.swift": [...swiftChecks, "swift:build:ios"],
+    "packages/swift/UI/Button.swift": swiftChecks,
     "packages/swift/UI/Vendor/grammar.c": ["swift:test"],
-    "packages/swift/Sharing/Sources/Sharing/Peer.swift": swiftChecks,
-    "packages/swift/Core/Sources/Core/Model.swift": [...swiftChecks, "swift:build:ios"],
-    "packages/swift/Core/Tests/CoreTests/ModelTests.swift": swiftChecks,
     "packages/swift/README.md": ["swift:test"],
-    "packages/swift/Package.resolved": ["swift:test", "swift:build:ios"]
-  }
-  for (const [file, checks] of Object.entries(changes)) {
-    assert.deepEqual(Object.keys(planned([file])), checks, file)
-  }
-})
-
-test("app sources and native inputs run the Swift builds that consume them", () => {
-  const changes = {
-    "apps/ios/Codevisor/App.swift": ["swift:format:check", "swift:lint", "swift:build:ios"],
-    "scripts/xcodebuild.mjs": ["swift:build:ios"],
-    "apps/macos/Transcript/Row.swift": ["swift:format:check", "swift:lint", "swift:test"],
+    "packages/swift/Package.resolved": ["swift:test"],
+    "apps/ios/Codevisor/App.swift": ["swift:format:check", "swift:lint"],
+    "scripts/xcodebuild.mjs": [],
+    "apps/macos/Transcript/Row.swift": swiftChecks,
     "apps/macos/Settings/Pane.swift": ["swift:format:check", "swift:lint"],
     "scripts/swift-artifacts.mjs": ["swift:test"],
-    "packages/net/src/lib.rs": ["swift:test", "swift:build:ios"]
+    "packages/net/src/lib.rs": ["swift:test"]
   }
   for (const [file, checks] of Object.entries(changes)) {
     assert.deepEqual(Object.keys(planned([file])), checks, file)
-  }
-})
-
-test("without the Swift manifest or a build's products, every packages/swift change counts", () => {
-  const file = "packages/swift/Core/Tests/CoreTests/ModelTests.swift"
-  for (const missing of [{ swiftPackage: undefined }, { iosProducts: undefined }]) {
-    const checks = planChecks({ files: [file], context: { ...context, ...missing } })
-    assert.ok(
-      checks.some(({ step, run }) => step.name === "swift:build:ios" && run),
-      JSON.stringify(Object.keys(missing))
-    )
   }
 })
 
@@ -148,24 +97,6 @@ test("tooling changes and --all run every check", () => {
     )
     assert.deepEqual(plan.find(({ step }) => step.name === "typecheck").args, [])
   }
-})
-
-test("Xcode projects list only the packages/swift products they link", () => {
-  const project = `
-/* Begin XCSwiftPackageProductDependency section */
-		01 /* UI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 00 /* XCLocalSwiftPackageReference "../../packages/swift" */;
-			productName = UI;
-		};
-		02 /* GhosttyTerminal */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03 /* XCLocalSwiftPackageReference "../../packages/ghostty-terminal" */;
-			productName = GhosttyTerminal;
-		};
-/* End XCSwiftPackageProductDependency section */`
-  assert.deepEqual(xcodeSwiftProducts(project), ["UI"])
-  assert.equal(xcodeSwiftProducts("// no package section"), undefined)
 })
 
 test("script inputs follow static and dynamic relative imports", () => {

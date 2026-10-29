@@ -60,27 +60,6 @@ const pathStep = (name, lane, patterns, command = ["bun", "run", name]) => ({
   }
 })
 
-const swiftStep = (name, command, { lane = "swift", products, patterns }) => ({
-  name,
-  lane,
-  command: () => command,
-  select: ({ files, context }) => {
-    const extra = patterns(context)
-    const roots = products(context)
-    const modules =
-      context.swiftPackage === undefined || roots === undefined
-        ? undefined
-        : swiftModules(context.swiftPackage, roots)
-    const inputs = files.filter(
-      (file) =>
-        matchesAny(file, extra) ||
-        (file.startsWith("packages/swift/") &&
-          swiftFileAffects(file.slice("packages/swift/".length), context.swiftPackage, modules))
-    )
-    return inputs.length === 0 ? undefined : { inputs, args: [], reason: inputs[0] }
-  }
-})
-
 const swiftTestScript = (context) => context.scriptInputs["scripts/test-swift.mjs"] ?? []
 
 const checkSteps = [
@@ -119,19 +98,7 @@ const checkSteps = [
     "swift",
     (context) => ["packages/swift/**", ...nativeInputs, ...swiftTestScript(context)],
     ["node", "scripts/test-swift.mjs"]
-  ),
-  swiftStep("swift:build:ios", ["bun", "run", "swift:build:ios"], {
-    lane: "swift-ios",
-    products: (context) => context.iosProducts,
-    patterns: (context) => [
-      "apps/ios/**",
-      "apps/shared/**",
-      "packages/ghostty-terminal/**",
-      "apps/macos/scripts/build-ghostty.sh",
-      ...nativeInputs,
-      ...(context.scriptInputs["scripts/build-native.mjs"] ?? [])
-    ]
-  })
+  )
 ]
 
 export function planChecks({ files: changed, all = false, context }) {
@@ -153,54 +120,6 @@ export function planChecks({ files: changed, all = false, context }) {
     }
     return { step, run: true, ...selection }
   })
-}
-
-function swiftModules(manifest, products) {
-  const targets = new Map(manifest.targets.map((target) => [target.name, target]))
-  const modules = new Set()
-  const visit = (name) => {
-    const target = targets.get(name)
-    if (target === undefined || modules.has(name)) return
-    modules.add(name)
-    for (const dependency of target.dependencies) {
-      const dependencyName = dependency.byName?.[0] ?? dependency.target?.[0]
-      if (dependencyName !== undefined) visit(dependencyName)
-    }
-  }
-  for (const product of manifest.products.filter(({ name }) => products.includes(name))) {
-    product.targets.forEach(visit)
-  }
-  return modules
-}
-
-function swiftFileAffects(path, manifest, modules) {
-  if (manifest === undefined || modules === undefined) return true
-  if (path === "Package.swift" || path === "Package.resolved") return true
-  const owner = manifest.targets
-    .map((target) => ({ target, directory: targetDirectory(target) }))
-    .filter(({ directory }) => directory !== undefined && path.startsWith(`${directory}/`))
-    .toSorted((left, right) => right.directory.length - left.directory.length)[0]
-  if (owner === undefined) return !path.endsWith(".md")
-  return modules.has(owner.target.name)
-}
-
-function targetDirectory(target) {
-  if (target.path !== undefined && target.path !== null) return target.path
-  if (target.type === "binary") return undefined
-  return `${target.type === "test" ? "Tests" : "Sources"}/${target.name}`
-}
-
-export function xcodeSwiftProducts(projectFile) {
-  const section = projectFile.match(
-    /\/\* Begin XCSwiftPackageProductDependency section \*\/([\s\S]*?)\/\* End XCSwiftPackageProductDependency section \*\//
-  )?.[1]
-  if (section === undefined) return undefined
-  const products = [
-    ...section.matchAll(
-      /package = [^;]*"\.\.\/\.\.\/packages\/swift"[^;]*;\s*productName = (\w+);/g
-    )
-  ].map((match) => match[1])
-  return products.length === 0 ? undefined : products
 }
 
 export const byCodeUnit = (a, b) => {

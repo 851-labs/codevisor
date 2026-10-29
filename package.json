@@ -48,7 +48,6 @@
     "release:tap": "node scripts/release/update-homebrew-tap.mjs",
     "setup:github-oauth": "node scripts/setup-github-oauth.mjs",
     "swift:test": "node scripts/test-swift.mjs",
-    "swift:build:ios": "bun scripts/build-native.mjs ios -quiet",
     "xcode:list": "bun scripts/build-native.mjs list:macos",
     "swift:lint": "node scripts/swift-lint.mjs lint",
     "swift:lint:baseline": "node scripts/swift-lint.mjs write",

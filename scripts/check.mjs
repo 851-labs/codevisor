@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile, execFileSync, spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   createWriteStream,
@@ -12,9 +12,8 @@ import {
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { promisify } from "node:util"
 
-import { byCodeUnit, planChecks, relativeImports, xcodeSwiftProducts } from "./check-plan.mjs"
+import { byCodeUnit, planChecks, relativeImports } from "./check-plan.mjs"
 import { developmentLayout } from "./dev-layout.mjs"
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -64,25 +63,7 @@ function importClosure(entries) {
   return [...seen]
 }
 
-async function swiftManifest(packagePath) {
-  try {
-    const { stdout } = await promisify(execFile)(
-      "swift",
-      ["package", "dump-package", "--package-path", packagePath],
-      { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }
-    )
-    return JSON.parse(stdout)
-  } catch {
-    return undefined
-  }
-}
-
-async function changedSwiftManifest(files) {
-  if (!files.some((file) => file.startsWith("packages/swift/"))) return undefined
-  return swiftManifest("packages/swift")
-}
-
-async function gatherContext(files) {
+function gatherContext() {
   const workspaces = ["apps", "packages", "plugins"].flatMap((parent) =>
     readdirSync(join(repoRoot, parent))
       .map((name) => `${parent}/${name}`)
@@ -95,19 +76,13 @@ async function gatherContext(files) {
   const releaseScripts = readdirSync(join(repoRoot, "scripts/release"))
     .filter((name) => name.endsWith(".mjs"))
     .map((name) => `scripts/release/${name}`)
-  const swiftPackage = await changedSwiftManifest(files)
   return {
     workspaces,
     scriptInputs: {
       "scripts/test-swift.mjs": importClosure(["scripts/test-swift.mjs"]),
-      "scripts/build-native.mjs": importClosure(["scripts/build-native.mjs"]),
       "scripts/release": importClosure(releaseScripts)
     },
-    swiftPackage,
-    swiftLinks: swiftPackageLinks(),
-    iosProducts: xcodeSwiftProducts(
-      readFileSync(join(repoRoot, "apps/ios/Codevisor.xcodeproj/project.pbxproj"), "utf8")
-    )
+    swiftLinks: swiftPackageLinks()
   }
 }
 
@@ -249,7 +224,7 @@ async function main() {
   const options = parseCheckArguments(process.argv.slice(2))
   const baseCommit = git("merge-base", options.base, "HEAD").trim()
   const files = changedFiles(baseCommit)
-  const plan = planChecks({ files, all: options.all, context: await gatherContext(files) })
+  const plan = planChecks({ files, all: options.all, context: gatherContext() })
   await mkdir(logDirectory, { recursive: true })
   const passed = await readPassedState()
   const results = []
