@@ -64,11 +64,17 @@ struct ComposerMachineMenu: UIViewRepresentable {
     sandboxChoices.map { choice in
       UIAction(
         title: choice.target.profileName,
+        subtitle: Self.subtitle(for: choice.availability),
         image: CodevisorSymbol.sandboxVendorImage(choice.target.vendorId),
         state: choice.id == selectedProfileId ? .on : .off
       ) { _ in
         onSandbox(choice)
       }
     }
+  }
+
+  private static func subtitle(for availability: SandboxProfileAvailability) -> String? {
+    guard case .full = availability else { return nil }
+    return "Full"
   }
 }

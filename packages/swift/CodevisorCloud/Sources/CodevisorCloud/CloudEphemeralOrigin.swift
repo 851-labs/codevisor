@@ -16,6 +16,7 @@ public struct CloudEphemeralOrigin: Codable, Equatable, Sendable {
     case "e2b": "E2B"
     case "modal": "Modal"
     case "tart": "Tart"
+    case "apple-container": "Apple Containers"
     default: provider
     }
   }

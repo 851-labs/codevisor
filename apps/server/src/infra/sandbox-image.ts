@@ -6,7 +6,12 @@ import { pipeline } from "node:stream/promises"
 
 import { harnessCatalog } from "@codevisor/agent-runtime"
 import { installCommand } from "@codevisor/harness-manager"
-import type { TartImageRecipe, TartImages } from "@codevisor/sandboxes"
+import type {
+  ContainerImageRecipe,
+  ContainerImages,
+  TartImageRecipe,
+  TartImages
+} from "@codevisor/sandboxes"
 
 export interface TartImageSettings {
   readonly appPath: string | undefined
@@ -16,10 +21,15 @@ export interface TartImageSettings {
   readonly developmentInstance?: string
 }
 
+export interface ContainerImageSettings {
+  readonly artifactsUrl?: string
+}
+
 export const PREINSTALLED_AGENT_IDS = ["claude-code", "codex", "gemini", "amp", "opencode"]
 export const STABLE_SERVER_MANIFEST_URL = "https://updates.codevisor.dev/server/stable.json"
 
 const standaloneServerPort = 49361
+const linuxServerArchive = "codevisor-server-linux-arm64.tar.gz"
 
 export const tartImages = (
   settings: TartImageSettings,
@@ -30,6 +40,15 @@ export const tartImages = (
 
     return recipeFor(settings.appPath, settings, await fetchText(settings.serverIdentityUrl))
   }
+})
+
+export const containerImages = (
+  settings: ContainerImageSettings,
+  fetchText: (url: string) => Promise<string> = fetchBody
+): ContainerImages => ({
+  recipe: async () =>
+    (await developmentContainerRecipe(settings.artifactsUrl, fetchText)) ??
+    (await stableContainerRecipe(fetchText))
 })
 
 export const appBundleOf = (executablePath: string): string | undefined => {
@@ -66,6 +85,30 @@ const recipeFor = async (
         }
       })
 })
+
+const developmentContainerRecipe = async (
+  artifactsUrl: string | undefined,
+  fetchText: (url: string) => Promise<string>
+): Promise<ContainerImageRecipe | undefined> => {
+  if (artifactsUrl === undefined) return undefined
+  const identity = await fetchText(`${artifactsUrl}/${linuxServerArchive}.sha256`).catch(
+    () => undefined
+  )
+  if (identity === undefined) return undefined
+
+  return {
+    fingerprint: sha256([identity]),
+    installUrl: `${artifactsUrl}/install.sh`,
+    installEnvironment: { CODEVISOR_SERVER_ARCHIVE_BASE: artifactsUrl, CODEVISOR_VERSION: "dev" }
+  }
+}
+
+const stableContainerRecipe = async (
+  fetchText: (url: string) => Promise<string>
+): Promise<ContainerImageRecipe | undefined> => {
+  const identity = await fetchText(STABLE_SERVER_MANIFEST_URL).catch(() => undefined)
+  return identity === undefined ? undefined : { fingerprint: sha256([identity]) }
+}
 
 const appIdentity = async (appPath: string): Promise<string> => {
   const contents = join(appPath, "Contents")

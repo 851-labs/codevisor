@@ -16,6 +16,7 @@ import {
   type SandboxAdapter,
   type SandboxFieldMaximums,
   type SandboxFieldValues,
+  type SandboxProvider,
   type SandboxProviderDefinition
 } from "@codevisor/sandboxes"
 
@@ -180,12 +181,10 @@ export const profileAvailability = async (
   deps: SandboxCatalogDeps
 ): Promise<ReadonlyArray<SandboxProfileAvailability>> =>
   Promise.all(
-    (await deps.settings.profiles()).map(async (profile) => {
-      const disabledReason = await disabledReasonFor(deps, profile)
-      return disabledReason === undefined
-        ? { profileId: profile.id }
-        : { profileId: profile.id, disabledReason }
-    })
+    (await deps.settings.profiles()).map(async (profile) => ({
+      profileId: profile.id,
+      ...(await unavailability(deps, profile))
+    }))
   )
 
 export const existingProfile = async (
@@ -227,6 +226,22 @@ const removeProfilesUsing = async (
   return changes
 }
 
+interface Unavailability {
+  readonly disabledReason?: string
+  readonly full?: true
+}
+
+const unavailability = async (
+  deps: SandboxCatalogDeps,
+  profile: SandboxProfile
+): Promise<Unavailability> => {
+  const reason = await disabledReasonFor(deps, profile)
+  if (reason !== undefined) return { disabledReason: reason }
+
+  const full = await checked(deps, profile, (provider) => provider.capacity?.(profile.values))
+  return full === undefined ? {} : { disabledReason: full, full: true }
+}
+
 const disabledReasonFor = async (
   deps: SandboxCatalogDeps,
   profile: SandboxProfile
@@ -241,16 +256,16 @@ const disabledReasonFor = async (
     return `${definition.displayName} can't run on this machine`
   if (await accountMissing(deps, definition, profile)) return missingAccountReason(definition)
 
-  return checkedAvailability(deps, profile)
+  return checked(deps, profile, (provider) => provider.availability?.(profile.values))
 }
 
-const checkedAvailability = async (
+const checked = async (
   deps: SandboxCatalogDeps,
-  profile: SandboxProfile
+  profile: SandboxProfile,
+  check: (provider: SandboxProvider) => Promise<string | undefined> | undefined
 ): Promise<string | undefined> => {
   try {
-    const provider = await deps.connections.connect(connectionOf(profile))
-    return await provider.availability?.(profile.values)
+    return await check(await deps.connections.connect(connectionOf(profile)))
   } catch {
     return undefined
   }

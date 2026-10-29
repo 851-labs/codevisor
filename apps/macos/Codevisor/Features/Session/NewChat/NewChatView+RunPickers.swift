@@ -138,7 +138,7 @@ extension NewChatView {
       ComposerNoticeRail(
         message,
         kind: .warning,
-        systemImage: "shippingbox",
+        systemImage: controller.isSandboxTargetFull ? "gauge.with.dots.needle.100percent" : "shippingbox",
         actionTitle: "Manage Sandboxes…",
         action: {
           SettingsRouter.shared.showSandboxes()
@@ -177,6 +177,7 @@ extension NewChatView {
     case .checking: "Checking whether \(choice.target.profileName) can start"
     case .available: "Start a new sandbox from this profile"
     case let .unavailable(reason): reason
+    case let .full(reason): "\(choice.target.profileName) is full. \(reason)."
     }
   }
 

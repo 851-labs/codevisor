@@ -26,7 +26,7 @@ struct ComposerSendAvailability {
   private var sandboxHelp: String? {
     switch controller.sandboxTargetAvailability {
     case .checking: "Checking the sandbox… you can send once it's ready."
-    case .unavailable: controller.sandboxUnavailableMessage
+    case .unavailable, .full: controller.sandboxUnavailableMessage
     case .available, nil: nil
     }
   }

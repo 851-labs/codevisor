@@ -17,7 +17,7 @@ struct SandboxProfileCatalogTests {
         .init(profileId: "studio", disabledReason: "Runs on another Mac"),
       ])
     let studio = CatalogFakeServerClient(
-      availability: [.init(profileId: "studio", disabledReason: "This Mac already runs 2 macOS VMs")])
+      availability: [.init(profileId: "studio", disabledReason: "This Mac already runs 2 macOS VMs", full: true)])
     let catalog = SandboxProfileCatalog()
 
     await catalog.load(composerId: "composer", from: composer) { $0 == "server-studio" ? .ready(studio) : .unreachable }
@@ -26,7 +26,7 @@ struct SandboxProfileCatalogTests {
     #expect(choices.map(\.target.profileName) == ["Ubuntu Sandbox", "Studio VM", "Laptop VM"])
     #expect(
       choices.map(\.availability) == [
-        .available, .unavailable("This Mac already runs 2 macOS VMs"), .unavailable("Its Mac isn't connected"),
+        .available, .full("This Mac already runs 2 macOS VMs"), .unavailable("Its Mac isn't connected"),
       ])
     #expect(choices.map(\.target.machineNoun) == ["E2B sandbox", "Tart VM", "Tart VM"])
   }

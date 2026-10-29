@@ -3,6 +3,7 @@ import Foundation
 
 public enum SandboxSetupStage: String, CaseIterable, Sendable {
   case tart
+  case container
   case image
   case create
   case boot
@@ -86,6 +87,8 @@ public struct SandboxSetupSteps: Sendable {
   private func titles(for stage: SandboxSetupStage) -> Titles {
     switch stage {
     case .tart: titled("Installing", "Installed", "install", "Tart")
+    case .container: titled("Installing", "Installed", "install", "Apple's container tool")
+    case .image where target.vendorId == "apple-container": titled("Building", "Built", "build", "the Linux image")
     case .image: titled("Setting up", "Set up", "set up", "macOS")
     case .create: titled("Creating", "Created", "create", target.machineNoun)
     case .boot: titled("Booting", "Booted", "boot", target.machineNoun)

@@ -12,6 +12,9 @@ struct SandboxChoiceLabel: View {
         ProgressView()
           .controlSize(.mini)
           .accessibilityLabel("Checking")
+      } else if case .full = choice.availability {
+        Text("Full")
+          .foregroundStyle(.secondary)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)

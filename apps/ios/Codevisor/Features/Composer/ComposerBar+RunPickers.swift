@@ -10,7 +10,7 @@ extension ComposerBar {
         ComposerNoticeRail(
           message,
           kind: .warning,
-          systemImage: "shippingbox",
+          systemImage: controller.isSandboxTargetFull ? "gauge.with.dots.needle.100percent" : "shippingbox",
           actionTitle: "Manage Sandboxes…",
           action: { settingsDestination = .section("sandboxes") }
         )

@@ -6,6 +6,15 @@ public enum SandboxProfileAvailability: Equatable, Sendable {
   case checking
   case available
   case unavailable(String)
+  case full(String)
+
+  nonisolated init(_ answer: ServerSandboxAvailability) {
+    guard let reason = answer.disabledReason else {
+      self = .available
+      return
+    }
+    self = answer.full == true ? .full(reason) : .unavailable(reason)
+  }
 }
 
 public struct SandboxProfileChoice: Equatable, Identifiable, Sendable {
@@ -39,7 +48,7 @@ public final class SandboxProfileCatalog {
   static let disconnectedHostReason = "Its Mac isn't connected"
 
   private var targets: [SandboxTarget] = []
-  private var reasonsByComposer: [String: [String: String?]] = [:]
+  private var answersByComposer: [String: [String: SandboxProfileAvailability]] = [:]
   private var checkingByComposer: [String: Set<String>] = [:]
 
   public init() {}
@@ -50,9 +59,7 @@ public final class SandboxProfileCatalog {
 
   public func availability(of profileId: String, for composerId: String) -> SandboxProfileAvailability {
     if checkingByComposer[composerId]?.contains(profileId) == true { return .checking }
-    guard let known = reasonsByComposer[composerId]?[profileId] else { return .checking }
-    guard let reason = known else { return .available }
-    return .unavailable(reason)
+    return answersByComposer[composerId]?[profileId] ?? .checking
   }
 
   public func load(
@@ -66,9 +73,9 @@ public final class SandboxProfileCatalog {
     let checks = Self.availabilityChecks(for: loaded, composer: composer, host: host)
     checkingByComposer[composerId] = Set(checks.sources.flatMap(\.profileIds) + checks.startingProfileIds)
     for profileId in checks.disconnectedProfileIds {
-      setReason(Self.disconnectedHostReason, for: profileId, composerId: composerId)
+      setAnswer(.unavailable(Self.disconnectedHostReason), for: profileId, composerId: composerId)
     }
-    await withTaskGroup(of: ([String], [String: String?]?).self) { group in
+    await withTaskGroup(of: ([String], [String: SandboxProfileAvailability]?).self) { group in
       for check in checks.sources {
         group.addTask { (check.profileIds, await Self.availability(from: check.client)) }
       }
@@ -78,19 +85,23 @@ public final class SandboxProfileCatalog {
     }
   }
 
-  private func record(_ answer: [String: String?]?, for profileIds: [String], composerId: String) {
+  private func record(
+    _ answer: [String: SandboxProfileAvailability]?,
+    for profileIds: [String],
+    composerId: String
+  ) {
     for profileId in profileIds {
       checkingByComposer[composerId]?.remove(profileId)
       if let answer {
-        setReason(answer[profileId] ?? nil, for: profileId, composerId: composerId)
-      } else if reasonsByComposer[composerId]?[profileId] == nil {
-        setReason(nil, for: profileId, composerId: composerId)
+        setAnswer(answer[profileId] ?? .available, for: profileId, composerId: composerId)
+      } else if answersByComposer[composerId]?[profileId] == nil {
+        setAnswer(.available, for: profileId, composerId: composerId)
       }
     }
   }
 
-  private func setReason(_ reason: String?, for profileId: String, composerId: String) {
-    reasonsByComposer[composerId, default: [:]][profileId] = .some(reason)
+  private func setAnswer(_ answer: SandboxProfileAvailability, for profileId: String, composerId: String) {
+    answersByComposer[composerId, default: [:]][profileId] = answer
   }
 
   private static func targets(from composer: any CodevisorServerClienting) async -> [SandboxTarget]? {
@@ -147,8 +158,13 @@ public final class SandboxProfileCatalog {
     return host(hostId)
   }
 
-  private nonisolated static func availability(from client: any CodevisorServerClienting) async -> [String: String?]? {
+  private nonisolated static func availability(
+    from client: any CodevisorServerClienting
+  ) async -> [String: SandboxProfileAvailability]? {
     guard let entries = try? await client.sandboxAvailability() else { return nil }
-    return Dictionary(entries.map { ($0.profileId, $0.disabledReason) }, uniquingKeysWith: { first, _ in first })
+    return Dictionary(
+      entries.map { ($0.profileId, SandboxProfileAvailability($0)) },
+      uniquingKeysWith: { first, _ in first }
+    )
   }
 }

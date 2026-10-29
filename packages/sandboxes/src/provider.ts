@@ -3,6 +3,7 @@ import type { SandboxField, SandboxFieldMaximums, SandboxFieldValues } from "./f
 export const SANDBOX_PROVIDER_IDS = [
   "tart",
   "tart-orchard",
+  "apple-container",
   "e2b",
   "modal",
   "vercel",
@@ -50,7 +51,7 @@ export interface ExecRequest {
   readonly onOutput?: (stream: OutputStream, text: string) => void
 }
 
-export type ProvisionStage = "tart" | "image" | "create" | "boot"
+export type ProvisionStage = "tart" | "container" | "image" | "create" | "boot"
 
 export interface ProvisionProgress {
   readonly stage: (stage: ProvisionStage) => void
@@ -97,6 +98,7 @@ export interface SandboxProvider {
   readonly provisionStages: ReadonlyArray<ProvisionStage>
   readonly streamsOutput: boolean
   availability?(options: SandboxFieldValues): Promise<string | undefined>
+  capacity?(options: SandboxFieldValues): Promise<string | undefined>
   plan?(options: SandboxFieldValues): Promise<ProvisionPlan>
   prepare?(
     options: SandboxFieldValues,

@@ -6,11 +6,18 @@ export * from "./tags.js"
 export * from "./e2b.js"
 export * from "./modal.js"
 export * from "./tart.js"
+export * from "./apple-container.js"
+export * from "./apple-container-install.js"
 export * from "./fake-provider.js"
 export * from "./catalog.js"
 export { e2bSdkClient } from "./e2b-sdk.js"
 export { modalSdkClient, type ModalCredentials } from "./modal-sdk.js"
 export { downloadTart, tartCliHost } from "./tart-cli.js"
+export {
+  containerCliHost,
+  managedContainerToolchain,
+  systemContainerCandidates
+} from "./apple-container-cli.js"
 export * from "./tart-install.js"
 export * from "./tart-orchard.js"
 export * from "./vercel.js"

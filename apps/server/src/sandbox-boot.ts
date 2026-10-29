@@ -6,14 +6,18 @@ import { setTimeout as delay } from "node:timers/promises"
 import { CloudApiError, rewriteMachineInviteServer } from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
+  appleContainerAdapter,
+  containerCliHost,
   daytonaAdapter,
   daytonaSdkClient,
   downloadTart,
   e2bAdapter,
   e2bSdkClient,
+  managedContainerToolchain,
   managedTart,
   modalAdapter,
   modalSdkClient,
+  systemContainerCandidates,
   systemTart,
   tartAdapter,
   tartCliHost,
@@ -22,6 +26,8 @@ import {
   vercelAccountApi,
   vercelAdapter,
   vercelSdkClient,
+  type ContainerHost,
+  type ContainerImages,
   type SandboxAdapter,
   type SandboxProviderId,
   type TartImages,
@@ -36,6 +42,7 @@ import type { SandboxCatalogDeps } from "./infra/sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./infra/sandbox-connections.js"
 import {
   appBundleOf,
+  containerImages,
   STABLE_SERVER_MANIFEST_URL,
   tartImages,
   type TartImageSettings
@@ -70,11 +77,11 @@ export const startSandboxes = (
   const records = makeSandboxRecordStore(options.db)
   const settings = makeSandboxSettings(options.db, options.serverId)
   const adapters = makeSandboxAdapters(
-    sandboxAdapters({
-      install: tartInstall(options),
-      images: tartImages(imageSettings(options.env))
-    }),
-    (id) => id !== "tart" || isAppleSilicon()
+    sandboxAdapters(
+      { install: tartInstall(options), images: tartImages(imageSettings(options.env)) },
+      { host: containerHost(options), images: containerImageRecipes(options.env) }
+    ),
+    (id) => !needsAppleSilicon(id) || isAppleSilicon()
   )
   const providerAccounts = makeRetainedAccounts(options.db, settings)
   const connections = makeSandboxConnections(adapters, {
@@ -159,8 +166,17 @@ interface TartSettings {
   readonly images: TartImages
 }
 
-const sandboxAdapters = (tart: TartSettings): ReadonlyArray<SandboxAdapter> => [
+interface ContainerSettings {
+  readonly host: ContainerHost
+  readonly images: ContainerImages
+}
+
+const sandboxAdapters = (
+  tart: TartSettings,
+  containers: ContainerSettings
+): ReadonlyArray<SandboxAdapter> => [
   tartAdapter(tartCliHost(tart.install), tart.images),
+  appleContainerAdapter(containers.host, containers.images),
   tartOrchardAdapter(tartOrchardApiClient),
   e2bAdapter(e2bSdkClient),
   modalAdapter(modalSdkClient),
@@ -174,6 +190,22 @@ const tartInstall = (options: SandboxBootOptions): TartInstall => {
     ? managedTart(join(options.dataDir, "tools"), downloadTart)
     : systemTart(override)
 }
+
+const containerHost = (options: SandboxBootOptions): ContainerHost =>
+  containerCliHost(
+    managedContainerToolchain(
+      join(options.dataDir, "tools"),
+      systemContainerCandidates(options.env["CODEVISOR_CONTAINER_PATH"], options.env["PATH"])
+    )
+  )
+
+const containerImageRecipes = (env: NodeJS.ProcessEnv): ContainerImages => {
+  const artifactsUrl = developmentSettings(env)?.artifactsUrl
+  return containerImages(artifactsUrl === undefined ? {} : { artifactsUrl })
+}
+
+const needsAppleSilicon = (id: SandboxProviderId): boolean =>
+  id === "tart" || id === "apple-container"
 
 const isAppleSilicon = (): boolean => process.platform === "darwin" && process.arch === "arm64"
 

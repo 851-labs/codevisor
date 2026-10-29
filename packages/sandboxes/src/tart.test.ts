@@ -72,7 +72,7 @@ describe("Tart provider", () => {
     expect(tart.commands.slice(-2)).toEqual([`stop ${name}`, `delete ${name}`])
   })
 
-  it("tells the picker why a profile can't start a VM right now", async () => {
+  it("tells the picker when a profile can't start a VM, and when the Mac is full", async () => {
     const twoRunning = [
       { Name: "a", State: "running", OS: "darwin" },
       { Name: "b", State: "running", OS: "darwin" }
@@ -80,9 +80,15 @@ describe("Tart provider", () => {
     const linux = { image: "ghcr.io/cirruslabs/ubuntu:latest", cpu: 2, memoryGiB: 4 }
     const busy = makeTartProvider(fakeTart({ vms: twoRunning }).host)
 
-    expect(await busy.availability?.(options)).toBe("This Mac already runs 2 macOS VMs")
-    expect(await busy.availability?.(linux)).toBeUndefined()
-    expect(await makeTartProvider(fakeTart().host).availability?.(options)).toBeUndefined()
+    expect(await busy.capacity?.(options)).toBe("This Mac already runs 2 macOS VMs")
+    expect(await busy.availability?.(options)).toBeUndefined()
+    expect(await busy.capacity?.(linux)).toBeUndefined()
+    expect(await makeTartProvider(fakeTart().host).capacity?.(options)).toBeUndefined()
+    expect(
+      await makeTartProvider(fakeTart({ vms: twoRunning, installed: false }).host).capacity?.(
+        options
+      )
+    ).toBeUndefined()
     expect(await makeTartProvider(fakeTart({ freeGiB: 39.5 }).host).availability?.(linux)).toBe(
       "Only 39.5 GB of disk is free on this Mac; a Tart VM needs 40 GB"
     )

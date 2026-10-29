@@ -256,6 +256,10 @@ describe("provider catalog", () => {
         defaults: { image: "ghcr.io/cirruslabs/macos-tahoe-base:latest", cpu: 2, memoryGiB: 4 },
         secrets: 0
       },
+      "Apple Containers": {
+        defaults: { image: "docker.io/library/debian:bookworm-slim", cpu: 2, memoryGiB: 4 },
+        secrets: 0
+      },
       "Tart Orchard": {
         defaults: {
           image: "ghcr.io/cirruslabs/macos-tahoe-base:latest",

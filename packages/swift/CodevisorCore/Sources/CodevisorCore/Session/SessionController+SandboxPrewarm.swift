@@ -16,8 +16,17 @@ extension SessionController {
   }
 
   public var sandboxUnavailableMessage: String? {
-    guard let sandboxTarget, case let .unavailable(reason) = sandboxTargetAvailability else { return nil }
-    return "\(sandboxTarget.profileName) can't start. \(reason)."
+    guard let sandboxTarget else { return nil }
+    switch sandboxTargetAvailability {
+    case let .unavailable(reason): return "\(sandboxTarget.profileName) can't start. \(reason)."
+    case let .full(reason): return "\(sandboxTarget.profileName) is full. \(reason)."
+    case .checking, .available, nil: return nil
+    }
+  }
+
+  public var isSandboxTargetFull: Bool {
+    if case .full = sandboxTargetAvailability { return true }
+    return false
   }
 
   public func refreshSandboxPrewarm() {

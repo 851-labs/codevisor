@@ -267,6 +267,33 @@ describe("sandbox profiles", () => {
   })
 })
 
+describe("a Mac with no room", () => {
+  it("marks a profile full only when nothing else stops it", async () => {
+    const fullMac = adapterFor(hostDefinition, {
+      connect: () => ({
+        ...makeFakeSandboxProvider(),
+        definition: hostDefinition,
+        capacity: () => Promise.resolve("This Mac doesn't have enough free memory right now")
+      })
+    })
+    const deps = await catalogWith(
+      [fullMac, adapterFor(fakeDefinition("modal"))],
+      (id) => id !== "modal"
+    )
+    await deps.settings.putProfile(profile({ id: "full", provider: "tart" }))
+    await deps.settings.putProfile(profile({ id: "elsewhere", provider: "modal" }))
+
+    expect(await profileAvailability(deps)).toEqual([
+      { profileId: "elsewhere", disabledReason: "Fake can't run on this machine" },
+      {
+        profileId: "full",
+        disabledReason: "This Mac doesn't have enough free memory right now",
+        full: true
+      }
+    ])
+  })
+})
+
 describe("providers that live on a Mac", () => {
   it("place profiles on their provider's Mac, sweep that vendor once, and need a provider", async () => {
     const macs: SandboxProviderDefinition = {

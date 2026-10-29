@@ -45,7 +45,8 @@ struct SandboxSetupStepsTests {
     #expect(phases.map(\.id).first == "sandbox-tart")
     #expect(
       phases.map(\.activeTitle) == [
-        "Installing Tart", "Setting up macOS", "Creating Tart VM", "Booting Tart VM",
+        "Installing Tart", "Installing Apple's container tool", "Setting up macOS", "Creating Tart VM",
+        "Booting Tart VM",
         "Installing Codevisor", "Signing in to Codevisor", "Syncing your setup",
         "Cloning hello-world", "Connecting to Tart VM", "Preparing OpenCode",
       ])
@@ -53,6 +54,17 @@ struct SandboxSetupStepsTests {
     #expect(steps.phase(.signIn).completedTitle == "Signed in to Codevisor")
     #expect(steps.phase(.signIn, isPending: true).upcomingTitle == "Sign in to Codevisor")
     #expect(steps.status(.clone) == "Cloning hello-world…")
+  }
+
+  @Test("An Apple container sandbox builds a Linux image instead of setting up macOS")
+  func containerTitles() {
+    let container = SandboxTarget(
+      profileId: "linux", profileName: "Linux", vendorId: "apple-container", machineNoun: "Linux container")
+    let steps = SandboxSetupSteps(target: container, projectName: "hello-world")
+
+    #expect(steps.phase(.image).activeTitle == "Building the Linux image")
+    #expect(steps.phase(.image).failedTitle == "Could not build the Linux image")
+    #expect(steps.phase(.boot).activeTitle == "Booting Linux container")
   }
 
   @Test("Upcoming steps follow the machine's plan, then the app's own steps")

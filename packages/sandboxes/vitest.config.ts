@@ -10,6 +10,8 @@ export default defineConfig({
       exclude: [
         "**/dist/**",
         "**/*.test.ts",
+        "src/apple-container-cli.ts",
+        "src/apple-container-test-support.ts",
         "src/daytona-sdk.ts",
         "src/e2b-sdk.ts",
         "src/modal-sdk.ts",

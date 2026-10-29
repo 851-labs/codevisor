@@ -5,6 +5,7 @@ import { Labels } from "./labels.js"
 export const SandboxProviderKind = Schema.Literals([
   "tart",
   "tart-orchard",
+  "apple-container",
   "e2b",
   "modal",
   "vercel",
@@ -32,6 +33,7 @@ export type SandboxState = typeof SandboxState.Type
 
 export const SandboxSetupStage = Schema.Literals([
   "tart",
+  "container",
   "image",
   "create",
   "boot",
@@ -225,7 +227,8 @@ export type SaveSandboxProfileRequest = typeof SaveSandboxProfileRequest.Type
 
 export const SandboxProfileAvailability = Schema.Struct({
   profileId: Schema.String,
-  disabledReason: Schema.optional(Schema.String)
+  disabledReason: Schema.optional(Schema.String),
+  full: Schema.optional(Schema.Boolean)
 })
 export type SandboxProfileAvailability = typeof SandboxProfileAvailability.Type
 

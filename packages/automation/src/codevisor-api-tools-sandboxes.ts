@@ -19,7 +19,7 @@ const CreateSandboxBody = Schema.Struct({
 export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "sandboxes.vendors",
-    "List the sandbox vendors Codevisor supports (tart, tart-orchard, e2b, modal, vercel, daytona) " +
+    "List the sandbox vendors Codevisor supports (tart, tart-orchard, apple-container, e2b, modal, vercel, daytona) " +
       "with the fields each needs: accountFields for sandboxes.providers_create (a field of type " +
       "secret is a credential; type machine is the id of the Mac that runs it, from " +
       "machines.list()) and profileFields for sandboxes.profiles_create (with defaults, min/max " +

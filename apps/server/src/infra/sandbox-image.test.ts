@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import {
   appBundleOf,
+  containerImages,
   preinstalledAgentCommands,
   STABLE_SERVER_MANIFEST_URL,
   tartImages
@@ -129,3 +130,33 @@ const listening = (body: (url: string | undefined) => string | undefined): Promi
 
 const portOf = (address: string | AddressInfo | null): number =>
   typeof address === "object" && address !== null ? address.port : 0
+
+const files = (served: Readonly<Record<string, string>>) => (url: string) => {
+  const body = served[url]
+  return body === undefined ? Promise.reject(new Error(`404 ${url}`)) : Promise.resolve(body)
+}
+
+describe("Apple container image recipe", () => {
+  const artifactsUrl = "http://192.168.1.5:4000"
+
+  it("installs this build's Linux server in dev, and Stable when the build has none", async () => {
+    const linux = { [`${artifactsUrl}/codevisor-server-linux-arm64.tar.gz.sha256`]: "abc  linux" }
+    const stable = { [STABLE_SERVER_MANIFEST_URL]: '{"version":"0.1.109"}' }
+
+    const dev = await containerImages({ artifactsUrl }, files({ ...linux, ...stable })).recipe()
+    const darwinOnly = await containerImages({ artifactsUrl }, files(stable)).recipe()
+    const released = await containerImages({}, files(stable)).recipe()
+
+    expect(dev).toMatchObject({
+      installUrl: `${artifactsUrl}/install.sh`,
+      installEnvironment: { CODEVISOR_SERVER_ARCHIVE_BASE: artifactsUrl, CODEVISOR_VERSION: "dev" }
+    })
+    expect(darwinOnly).toEqual(released)
+    expect(Object.keys(released ?? {})).toEqual(["fingerprint"])
+    expect(dev?.fingerprint).not.toBe(released?.fingerprint)
+  })
+
+  it("has no recipe when Stable can't be read, so the container installs at boot", async () => {
+    expect(await containerImages({}, files({})).recipe()).toBeUndefined()
+  })
+})

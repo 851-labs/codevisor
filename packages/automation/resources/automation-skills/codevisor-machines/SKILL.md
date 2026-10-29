@@ -1,6 +1,6 @@
 ---
 name: codevisor-machines
-description: Use when the user mentions another computer or machine by name, when a needed tool exists only on another machine (e.g. the MacBook's simulator or Xcode from a chat on the Mac Studio), when work should run on a different machine or a throwaway sandbox (E2B, Modal, Vercel, Daytona, Tart), or when a server or computer should become, or stop being, a Codevisor machine.
+description: Use when the user mentions another computer or machine by name, when a needed tool exists only on another machine (e.g. the MacBook's simulator or Xcode from a chat on the Mac Studio), when work should run on a different machine or a throwaway sandbox (E2B, Modal, Vercel, Daytona, Tart, Apple Containers), or when a server or computer should become, or stop being, a Codevisor machine.
 ---
 
 # Codevisor machines
@@ -66,7 +66,7 @@ The CLI does the same things through the same routes: `codevisor machines add|in
 
 ## Sandboxes
 
-`machines.current.tools.codevisor.sandboxes.*` manages throwaway machines from a vendor (Tart VMs on a Mac, E2B, Modal, Vercel, Daytona, Tart Orchard). Each sandbox installs Codevisor, joins the account, gets this machine's harnesses, skills, MCPs and sign-ins copied over one way, and clones one project into its own workspace. Sandboxes cost the user money while they run, and carry `ephemeral: { provider, ownerDeviceId }` on their `machines.list()` items.
+`machines.current.tools.codevisor.sandboxes.*` manages throwaway machines from a vendor (Tart VMs or Apple Linux containers on a Mac, E2B, Modal, Vercel, Daytona, Tart Orchard). Each sandbox installs Codevisor, joins the account, gets this machine's harnesses, skills, MCPs and sign-ins copied over one way, and clones one project into its own workspace. Sandboxes cost the user money while they run, and carry `ephemeral: { provider, ownerDeviceId }` on their `machines.list()` items.
 
 - **Vendors:** `sandboxes.vendors()` lists each vendor's `accountFields` (credentials, or the Mac that runs Tart) and `profileFields` (image, `cpu`, `memoryGiB`, lifetime…) with defaults and limits, plus this machine's `capabilities` and CPU/memory `maximums`.
 - **Providers** (a vendor plus its credentials or Mac): `sandboxes.providers_list()`, `providers_create({ provider, label?, values })`, `providers_update({ accountId, provider, values })`, `providers_delete({ accountId, confirm })`.

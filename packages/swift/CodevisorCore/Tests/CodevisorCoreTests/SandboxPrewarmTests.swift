@@ -74,10 +74,11 @@ struct SandboxPrewarmTests {
     #expect(controller.takeSandboxPrewarm(for: .tartVM, client: client) == nil)
   }
 
-  @Test("A VM that can't start blocks Send, then starts once its Mac can run it")
-  func unavailableVMWaits() async {
+  @Test("A full Mac blocks Send and says the profile is full, not broken")
+  func fullMacWaits() async {
     let client = PrewarmFakeServerClient()
     client.availabilityReason = "This Mac already runs 2 macOS VMs"
+    client.availabilityIsFull = true
     let machines = MachineController(
       store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in client })
     let controller = makeController(client: client, machines: machines)
@@ -86,7 +87,27 @@ struct SandboxPrewarmTests {
     controller.sandboxTarget = .tartVM
 
     #expect(!controller.acceptsSends)
-    #expect(controller.sandboxUnavailableMessage == "macOS VM can't start. This Mac already runs 2 macOS VMs.")
+    #expect(controller.isSandboxTargetFull)
+    #expect(controller.sandboxUnavailableMessage == "macOS VM is full. This Mac already runs 2 macOS VMs.")
+    #expect(controller.sandboxPrewarm == nil)
+  }
+
+  @Test("A VM that can't start blocks Send, then starts once its Mac can run it")
+  func unavailableVMWaits() async {
+    let client = PrewarmFakeServerClient()
+    client.availabilityReason = "Only 30.0 GB of disk is free on this Mac; a Tart VM needs 40 GB"
+    let machines = MachineController(
+      store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in client })
+    let controller = makeController(client: client, machines: machines)
+    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+
+    controller.sandboxTarget = .tartVM
+
+    #expect(!controller.acceptsSends)
+    #expect(!controller.isSandboxTargetFull)
+    #expect(
+      controller.sandboxUnavailableMessage
+        == "macOS VM can't start. Only 30.0 GB of disk is free on this Mac; a Tart VM needs 40 GB.")
     #expect(controller.sandboxPrewarm == nil)
 
     client.availabilityReason = nil
@@ -140,6 +161,7 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
   private let lock = NSLock()
   private var creates = 0
   private var reason: String?
+  private var reasonIsFull = false
   private let createdStream: AsyncStream<ServerSandboxRequest>
   private let createdContinuation: AsyncStream<ServerSandboxRequest>.Continuation
   private let destroyedStream: AsyncStream<String>
@@ -157,6 +179,11 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
     set { lock.withLock { reason = newValue } }
   }
 
+  var availabilityIsFull: Bool {
+    get { lock.withLock { reasonIsFull } }
+    set { lock.withLock { reasonIsFull = newValue } }
+  }
+
   func sandboxVendors() async throws -> ServerSandboxVendors { ServerSandboxVendors() }
 
   func sandboxProviders() async throws -> [ServerSandboxProvider] { [] }
@@ -166,7 +193,7 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
   }
 
   func sandboxAvailability() async throws -> [ServerSandboxAvailability] {
-    [.init(profileId: "profile-tart", disabledReason: availabilityReason)]
+    [.init(profileId: "profile-tart", disabledReason: availabilityReason, full: availabilityIsFull ? true : nil)]
   }
 
   func nextCreate() async -> ServerSandboxRequest {

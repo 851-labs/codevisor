@@ -157,13 +157,10 @@ export const makeTartProvider = (
     definition: TART_DEFINITION,
     provisionStages: bootStages,
     streamsOutput: true,
-    availability: async (values) => {
-      const options = tartOptions(values)
-      if (looksLikeMacOS(options) && (await host.installed())) {
-        const full = await macOSSlotsFull(tart)
-        if (full !== undefined) return full
-      }
-      return diskShortfall(host, options)
+    availability: (values) => diskShortfall(host, tartOptions(values)),
+    capacity: async (values) => {
+      if (!looksLikeMacOS(tartOptions(values)) || !(await host.installed())) return undefined
+      return macOSSlotsFull(tart)
     },
     plan: async (values) => {
       const options = tartOptions(values)
