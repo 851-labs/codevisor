@@ -55,9 +55,19 @@ public struct PullRequestBadge: View {
 extension ServerGitPullRequest {
   public var statusSymbol: CodevisorSymbol {
     switch state {
-    case .open: isDraft ? .gitPullRequestDraft : .gitPullRequest
+    case .open where isDraft: .gitPullRequestDraft
+    case .open: checksSymbol
     case .merged: .gitMerge
     case .closed: .gitPullRequestClosed
+    }
+  }
+
+  private var checksSymbol: CodevisorSymbol {
+    switch checks {
+    case .passing: .gitBranchCheck
+    case .failing: .gitBranchX
+    case .pending: .gitBranchDot
+    case .none: .gitPullRequest
     }
   }
 

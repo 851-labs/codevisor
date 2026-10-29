@@ -1,6 +1,6 @@
 # Custom symbols
 
-Source artwork for the custom SF Symbols in `Sources/CodevisorUI/Resources/Symbols.xcassets`. `codevisor-mark.svg` is the Codevisor mark, `harness-<id>.svg` is the logo for that harness, and the `git-*` glyphs are [Octicons](https://github.com/primer/octicons) (MIT). Brand logos remain their owners' trademarks.
+Source artwork for the custom SF Symbols in `Sources/CodevisorUI/Resources/Symbols.xcassets`. `codevisor-mark.svg` is the Codevisor mark, `harness-<id>.svg` is the logo for that harness, and the `git-*` glyphs are [Octicons](https://github.com/primer/octicons) (MIT). `git-branch-x` and `git-branch-dot` are our own: Octicons' `git-branch-check` with its check swapped for a 1.5-unit round-capped ✕ or a dot, in the same place. Brand logos remain their owners' trademarks.
 
 `sandbox-vendor-<id>.svg` is the mark for that sandbox vendor, flattened to one color. Tart Orchard has no mark of its own and uses Tart's:
 
