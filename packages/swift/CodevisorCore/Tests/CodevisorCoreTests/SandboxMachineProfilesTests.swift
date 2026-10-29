@@ -49,6 +49,14 @@ struct SandboxMachineProfilesTests {
     #expect(controller.sandboxProfile(forMachineId: owner.id) == nil)
   }
 
+  @Test("A sandbox names the Mac that owns it, so New Chat can start another from its profile there")
+  func sandboxesNameTheirOwner() {
+    let controller = makeController()
+
+    #expect(controller.sandboxOwnerMachineId(forMachineId: studioA.id) == owner.id)
+    #expect(controller.sandboxOwnerMachineId(forMachineId: owner.id) == nil)
+  }
+
   @Test("A refresh that can't reach the owning Mac keeps the profiles already known")
   func failedRefreshKeepsProfiles() async {
     let controller = makeController()

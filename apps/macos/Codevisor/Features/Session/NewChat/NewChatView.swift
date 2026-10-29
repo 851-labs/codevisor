@@ -187,6 +187,7 @@ struct NewChatView: View {
     }
     .attachmentDropTarget(controller)
     .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
+    .modifier(initialSandbox)
     .task(id: environment.machines.sandboxProfilesLoadKey(composerId: composerServerId)) {
       let machines = environment.machines
       await environment.machines.sandboxProfiles.load(

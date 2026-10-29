@@ -45,10 +45,12 @@ public let sidebarArchivedPageSize = 10
 public struct NewChatTarget: Hashable, Sendable {
   public let serverId: String
   public let projectId: UUID?
+  public let sandboxProfileId: String?
 
-  public init(serverId: String, projectId: UUID?) {
+  public init(serverId: String, projectId: UUID?, sandboxProfileId: String? = nil) {
     self.serverId = serverId
     self.projectId = projectId
+    self.sandboxProfileId = sandboxProfileId
   }
 
   public init(machine serverId: String) {
@@ -58,6 +60,12 @@ public struct NewChatTarget: Hashable, Sendable {
   public init(_ project: Project) {
     self.init(serverId: project.serverId, projectId: project.id)
   }
+
+  public init(sandboxProfile profileId: String, on serverId: String) {
+    self.init(serverId: serverId, projectId: nil, sandboxProfileId: profileId)
+  }
+
+  public var isBareMachine: Bool { projectId == nil && sandboxProfileId == nil }
 }
 
 public struct SidebarWorkspaceGroup: Identifiable, Equatable {
