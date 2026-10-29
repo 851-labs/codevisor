@@ -7,6 +7,7 @@ struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openSettings) private var openSettings
+  @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
   var publishesSceneActions = true
@@ -149,6 +150,7 @@ struct SidebarView: View {
     return SidebarVibrancyHost {
       sidebarContent
         .environment(environment)
+        .environment(\.isActiveSidebarMode, isActiveSidebarMode)
         .environment(\.sidebarOpenSettings, SidebarOpenSettingsAction { open() })
     }
     .ignoresSafeArea(.container, edges: .top)

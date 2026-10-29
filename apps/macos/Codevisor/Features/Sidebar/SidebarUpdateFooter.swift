@@ -38,7 +38,7 @@ struct SidebarUpdateFooter: View {
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .sidebarHover($isHovered)
         .accessibilityLabel("Updates available. Opens Settings › Updates.")
       }
       .transition(.move(edge: .bottom).combined(with: .opacity))
