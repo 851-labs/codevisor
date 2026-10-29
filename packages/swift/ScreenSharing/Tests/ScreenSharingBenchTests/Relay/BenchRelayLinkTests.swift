@@ -34,6 +34,14 @@ struct BenchRelayLinkTests {
     #expect(delivered > 0)
   }
 
+  @Test func queueOverflowsAreCountedApartFromTheSeededLosses() {
+    var link = BenchRelayLink<Int>(conditions: .n5, seed: 7, originNs: 0)
+    for index in 0..<40 { link.offer(index, byteCount: 1_250, atNs: 0) }
+
+    #expect(link.statistics.queueOverflow == 10)
+    #expect(link.statistics.lost == 0 && link.statistics.firstLosses.isEmpty)
+  }
+
   @Test func bitrateCountsOfferedBytesPerSecondAfterTheOrigin() throws {
     var link = BenchRelayLink<Int>(conditions: .n0, seed: 1, originNs: 10_000_000_000)
     link.offer(0, byteCount: 1_000_000, atNs: 9_000_000_000)

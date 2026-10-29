@@ -137,7 +137,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
 - **Network.** The relay rewrites each side's SDP to a single host candidate on a relay socket and forwards both
   directions through `BenchRelayLink` (the T1 `BenchNetworkModel`: capacity, queue, delay, jitter, seeded
   Bernoulli or Gilbert–Elliott loss). Media and feedback get their own seeded models, so the drop pattern by packet
-  index is the same on every run (`relay.media.first_losses` in the report). Each peer socket gets its own
+  index is the same on every run (`relay.media.first_losses` lists the first 16 seeded losses; drops from a full
+  queue depend on the traffic and are counted in `queue_overflow`; a packet that is both is counted as an
+  overflow, which no N0–N7 condition can produce because only N5 limits the queue and N5 has no random loss). Each peer socket gets its own
   mapping socket, like a NAT, so every ICE pair goes through the relay.
 - **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
   the first `--warm-up` seconds (5) are left out. `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
@@ -151,6 +153,12 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example ICE never connects) is reported as invalid with the error, and the
   matrix goes on.
+- **Results come from the workflow.** `Screen Sharing Bench Loopback`
+  (`.github/workflows/screen-sharing-bench-loopback.yml`) runs `scripts/loopback.sh` on tamale as one job, so no
+  CI job can overlap it: 1–3 back-to-back matrices (inputs `duration`, `scenes`, `networks`) plus the own-window
+  run, uploaded as the `loopback-tamale` artifact with each matrix's wall time and the load before and after.
+  Deploy the build first (`scripts/deploy.sh tamale`); the job warns when the installed app isn't from the
+  dispatched commit. Runs over SSH are for development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
   the report and `frames.jsonl` use mach continuous time like the rest of the bench. Each scene reads
   continuous − absolute once and shifts every timeline timestamp by it. Durations don't change.

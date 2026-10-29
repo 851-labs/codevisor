@@ -16,9 +16,10 @@ public struct BenchRelayStatistics: Codable, Sendable, Equatable {
     bytes += byteCount
     switch fate {
     case .delivered: return
-    case .lost: lost += 1
+    case .lost:
+      lost += 1
+      if firstLosses.count < Self.firstLossesKept { firstLosses.append(index) }
     case .queueOverflow: queueOverflow += 1
     }
-    if firstLosses.count < Self.firstLossesKept { firstLosses.append(index) }
   }
 }

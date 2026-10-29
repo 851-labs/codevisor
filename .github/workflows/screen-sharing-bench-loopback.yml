@@ -4,9 +4,24 @@ on:
   workflow_dispatch:
     inputs:
       matrices:
-        description: Back-to-back full matrices (S1–S6 × N0–N7 at R1), 1 to 3
+        description: Back-to-back matrices (the scenes × networks below, at R1), 1 to 3
         required: false
         default: "2"
+        type: string
+      duration:
+        description: Seconds per scene, own-window run included (the first 5 are warm-up), 6 to 60
+        required: false
+        default: "12"
+        type: string
+      scenes:
+        description: Comma-separated scenes, or empty for S1–S6
+        required: false
+        default: ""
+        type: string
+      networks:
+        description: Comma-separated networks, or empty for N0–N7
+        required: false
+        default: ""
         type: string
       own-window:
         description: Also stream the player's own window (scroll at N0)
@@ -23,21 +38,32 @@ concurrency:
 
 env:
   MATRICES: ${{ inputs.matrices }}
+  DURATION: ${{ inputs.duration }}
+  SCENES: ${{ inputs.scenes }}
+  NETWORKS: ${{ inputs.networks }}
   OWN_WINDOW: ${{ inputs.own-window }}
 
 jobs:
   loopback:
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - name: Check the inputs
-        run: '[[ "$MATRICES" =~ ^[1-3]$ ]]'
+        run: |
+          if [[ ! "$MATRICES" =~ ^[1-3]$ ]]; then echo "matrices must be 1 to 3"; exit 1; fi
+          if [[ ! "$DURATION" =~ ^[0-9]{1,2}$ ]] || (( 10#$DURATION < 6 || 10#$DURATION > 60 )); then
+            echo "duration must be 6 to 60 seconds"; exit 1
+          fi
+          if [[ ! "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]]; then echo "scenes must be a comma-separated list"; exit 1; fi
+          if [[ ! "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]]; then echo "networks must be like N0,N3"; exit 1; fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: apps/screen-sharing-bench/scripts
           set-safe-directory: false
       - name: Run the loopback benchmark on tamale
-        run: apps/screen-sharing-bench/scripts/loopback.sh "$RUNNER_TEMP/results/tamale" "$MATRICES" "$OWN_WINDOW"
+        run: |
+          apps/screen-sharing-bench/scripts/loopback.sh "$RUNNER_TEMP/results/tamale" "$MATRICES" "$OWN_WINDOW" \
+            "$DURATION" "$SCENES" "$NETWORKS"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
