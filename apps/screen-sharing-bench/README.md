@@ -120,7 +120,8 @@ The checks that capture the screen need **Screen Recording**, C6 needs **Accessi
 
 `loopback` is Tier 1: one process streams synthetic scenes through the product `ScreenSharingSender` and
 `ScreenSharingReceiver` over an in-process UDP relay that emulates the network, then writes report v1. It needs
-no permission grant and no GUI session (except `--onscreen`), so it runs on any CI Mac.
+no permission grant and no GUI session (except `--onscreen` and `--source own-window`, which capture the screen and
+so need the session unlocked and a Screen Recording grant), so it runs on any CI Mac.
 
 ```sh
 CodevisorBench loopback                                   # the full matrix: S1–S6 × N0–N7 at R1
@@ -181,7 +182,7 @@ so no CI job overlaps a run. Each job builds and signs CodevisorBench at the run
 (`build-screen-sharing-bench`, as Tier 1 does), and the measuring jobs then install that build at
 `~/Applications/CodevisorBench.app` (`scripts/install-granted.sh`) and run it from there: Screen Recording and
 Accessibility are granted to that path, and a freshly built app elsewhere is refused both. The build stays
-installed after the run, so the installed app is that of the last Tier 2 dispatch. So `gh workflow run
+installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
 screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
 minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
 and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine). C4 runs only when
@@ -255,8 +256,8 @@ band, the wider of the two systems' min–max spreads, is no difference.
 `Screen Sharing Bench` (`.github/workflows/screen-sharing-bench.yml`) is the one workflow for numbers. Every job
 that measures builds CodevisorBench at its own commit and signs it with the team's Developer ID from the repository
 secrets (`.github/actions/build-screen-sharing-bench`, `scripts/signing-keychain.sh`), into `$RUNNER_TEMP`, and runs
-it through `CODEVISOR_BENCH_APP`. Tier 1 needs no permission grant and never touches
-`~/Applications/CodevisorBench.app`; Tier 2 needs Screen Recording and Accessibility, which a build outside that path
+it through `CODEVISOR_BENCH_APP`. Synthetic Tier 1 needs no permission grant and never touches
+`~/Applications/CodevisorBench.app`; own-window Tier 1 and Tier 2 need Screen Recording and Accessibility, which a build outside that path
 is refused, so it installs its build there (see Tier 2).
 
 - **Nightly** at 03:00 Pacific (two UTC crons; the `plan` job keeps the one that is 03:00 in Los Angeles), and
@@ -267,7 +268,9 @@ is refused, so it installs its build there (see Tier 2).
   in `run.method.plan`, and a baseline only uses nightlies of the same plan: the same cell measured among other
   scenes differs, for example typing's N3 p95 is about 35 ms in `core` and about 52 ms in the gate's run. Reports
   from before plans existed match no plan, so a new plan's baseline starts empty (`-f plans=gate` seeds it).
-  A dispatch with `scenes` or `networks` set runs one `custom` report instead (`source` picks `own-window`).
+  A dispatch with `scenes` or `networks` set runs one `custom` report instead (`source` picks `own-window`, which
+  captures the screen: that run installs the build over `~/Applications/CodevisorBench.app` with
+  `scripts/install-granted.sh`, because macOS grants Screen Recording to that path only).
 - **`benchmark-results`.** On `main`, `scripts/publish.sh` commits each report to the orphan branch
   `benchmark-results` as `runs/YYYY/MM/DD/<run id>-tier1.json`, with its chart (`.svg`), and appends a line to
   `index.jsonl` (`BenchIndexEntry`: the run, its path and one `BenchCellSummary` per cell). `main` never holds
