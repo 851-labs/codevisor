@@ -81,7 +81,7 @@ meet_on_build() {
 tier2_check_inputs() {
   local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards)"
   [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || { echo "unknown scene in $TIER2_SCENES" >&2; return 1; }
-  [[ "$TIER2_REPS" =~ ^[1-5]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
+  [[ "$TIER2_REPS" =~ ^[1-4]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
   local runs
   runs=$(($(tier2_plan | wc -l)))

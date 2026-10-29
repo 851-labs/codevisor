@@ -27,7 +27,9 @@ struct Tier2Markdown {
 
   private func encoded(_ group: Tier2Group, _ system: BenchSystem) -> String? {
     measurements.first { measurement in
-      measurement.result.map { group.contains($0) && $0.system == system } == true && measurement.encodedPixels != nil
+      let meta = measurement.files.meta
+      return measurement.invalidReason == nil && meta.scene == group.scene && meta.system.rawValue == system.rawValue
+        && (meta.resolution ?? Tier2Result.defaultResolution) == group.resolution && measurement.encodedPixels != nil
     }?.encodedPixels
   }
 

@@ -7,8 +7,9 @@ struct Tier2RunTable {
 
   var text: String {
     let header = [
-      "| # | Scene | System | Rep | Host observer | Host display during run | ε ms | Residual ms | Max load1 | CI | Valid |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| # | Scene | Resolution | System | Rep | Host observer | Host display during run | ε ms | Residual ms | Max load1 "
+        + "| CI | Valid |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     return "### Runs\n\n" + (header + measurements.map(row)).joined(separator: "\n")
   }
@@ -17,8 +18,9 @@ struct Tier2RunTable {
     let meta = measurement.files.meta
     let quality = measurement.clock?.quality
     let cells: [String] = [
-      "\(meta.index)", meta.scene, meta.system.rawValue, "\(meta.repetition)", meta.hostObserver ? "on" : "off",
-      measurement.files.preflights["host-during-preflight.json"]?.mainDisplay ?? "–",
+      "\(meta.index)", meta.scene, meta.resolution ?? Tier2Result.defaultResolution, meta.system.rawValue,
+      "\(meta.repetition)", meta.hostObserver ? "on" : "off",
+      measurement.files.hostDisplayDuringRun ?? "–",
       Tier2Format.number(quality?.epsilonMs), Tier2Format.number(quality?.residualMs),
       Tier2Format.number(measurement.files.highestLoad), measurement.files.ciBusy ? "busy" : "idle",
       measurement.invalidReason ?? "yes",

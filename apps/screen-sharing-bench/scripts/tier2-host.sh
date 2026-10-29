@@ -27,13 +27,18 @@ start_share() {
   share_job=$!
   wait_for_file "$work/ready" 30 "$share_job" || return 1
   shared_display=$(awk '{ print $3 }' "$work/ready")
+  [[ "$system" != codevisor-r1x2 || "$shared_display" =~ ^[0-9]+$ ]] || {
+    say "share named no display"
+    stop_share
+    return 1
+  }
 }
 
 
 measure() {
   local scene=$1 system=$2 dir=$3 observed=$4
   local pids=() display=() player_display=()
-  if [[ "$system" == codevisor-r1x2 && -n "$shared_display" ]]; then
+  if [[ "$system" == codevisor-r1x2 ]]; then
     display=(--display "$shared_display")
     player_display=(--display-id "$shared_display")
   fi
