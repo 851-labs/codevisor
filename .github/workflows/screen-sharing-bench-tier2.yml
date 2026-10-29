@@ -9,7 +9,7 @@ on:
         default: idle-cursor,typing,scroll,window-drag,video,test-cards
         type: string
       repetitions:
-        description: Alternating Apple HP / Codevisor repetitions per scene, 1 to 5
+        description: Repetitions per scene of Apple HP, Codevisor R1x2 and Codevisor R1, 1 to 4
         required: false
         default: "3"
         type: string
@@ -36,7 +36,7 @@ on:
         default: idle-cursor,typing,scroll,window-drag,video,test-cards
         type: string
       repetitions:
-        description: Alternating Apple HP / Codevisor repetitions per scene, 1 to 5
+        description: Repetitions per scene of Apple HP, Codevisor R1x2 and Codevisor R1, 1 to 4
         required: false
         default: "3"
         type: string

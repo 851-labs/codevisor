@@ -7,6 +7,7 @@ struct PlayerScreenTarget {
   let canvas: BenchSceneCanvas
   let resolution: SceneResolutionChoice
   let display: PlayerDisplayChoice
+  let label: String
   private let virtualDisplay: PlayerVirtualDisplay?
 
   static func make(
@@ -28,7 +29,9 @@ struct PlayerScreenTarget {
     guard let screen = NSScreen.main ?? NSScreen.screens.first else { throw PlayerError.noScreen }
 
     let target = PlayerScreenTarget(
-      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .main, virtualDisplay: nil)
+      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .main,
+      label: PlayerDisplayChoice.main.rawValue,
+      virtualDisplay: nil)
     try target.requireMatch()
     return target
   }
@@ -44,7 +47,8 @@ struct PlayerScreenTarget {
     guard let screen else { throw BenchUsageError(message: "no screen for display \(id)") }
 
     let target = PlayerScreenTarget(
-      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .main, virtualDisplay: nil)
+      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .main, label: "display \(id)",
+      virtualDisplay: nil)
     try target.requireMatch()
     return target
   }
@@ -57,7 +61,8 @@ struct PlayerScreenTarget {
     let display = try PlayerVirtualDisplay(fixed)
     let screen = try await display.screen()
     let target = PlayerScreenTarget(
-      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .virtual, virtualDisplay: display)
+      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .virtual,
+      label: PlayerDisplayChoice.virtual.rawValue, virtualDisplay: display)
     try target.requireMatch()
     return target
   }
@@ -66,7 +71,7 @@ struct PlayerScreenTarget {
     guard let fixed = resolution.fixed, canvas != BenchSceneCanvas(fixed) else { return }
 
     throw PlayerError.displayMismatch(
-      "The \(display.rawValue) display is \(canvas.pointWidth)×\(canvas.pointHeight) pt at \(canvas.scale)x, not "
+      "The \(label) display is \(canvas.pointWidth)×\(canvas.pointHeight) pt at \(canvas.scale)x, not "
         + "\(fixed.rawValue). Use --display virtual or --resolution native.")
   }
 

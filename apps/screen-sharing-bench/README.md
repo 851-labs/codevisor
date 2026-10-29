@@ -184,7 +184,8 @@ ssh are for development only.
 The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
 walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition
 (`repetitions`, default 3, `duration` seconds each) Apple HP, Codevisor on a virtual display and Codevisor on
-the physical display, and with `c4` S5 once per primary system with the host observer off.
+the physical display, and with `c4` S5 once per primary system with the host observer off. The nightly bench
+workflow calls this one through `workflow_call` with the same defaults, so its Tier 2 runs include C4.
 
 Apple HP has no mode that shares the host's physical display: its Display Type offers only "1 Virtual Display"
 and "2 Virtual Displays", and with one virtual display the host's main display becomes "Screen Sharing Virtual

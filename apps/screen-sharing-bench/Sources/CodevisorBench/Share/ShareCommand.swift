@@ -30,6 +30,16 @@ struct ShareCommand: BenchCommand {
     let shared = try await SharedDisplay.make(virtualDisplay)
     let connection = try await Self.awaitViewer(port: port, timeout: duration, display: shared.id, signals: signals)
     let host = try await ShareHost(displayID: shared.id)
+    defer { withExtendedLifetime(shared) {} }
+
+    try await share(host, over: connection, until: deadline)
+  }
+
+  private func share(
+    _ host: ShareHost, over connection: SignalingConnection, until deadline: ContinuousClock.Instant
+  )
+    async throws
+  {
     do {
       try connection.send(SignalingMessage(sdp: try await host.answer(try await Self.receive(connection).sdp)))
       await BenchSession.hold(connection, until: deadline, signals: signals)

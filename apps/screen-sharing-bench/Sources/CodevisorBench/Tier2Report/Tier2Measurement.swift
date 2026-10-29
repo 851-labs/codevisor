@@ -56,7 +56,7 @@ struct Tier2Measurement {
     return BenchUsageSummary(mapped, in: window, processes: Tier2Processes.host(files.meta.system))
   }
 
-  static let hpVirtualDisplay = "1920x1080@60 2x"
+  static var hpVirtualDisplay: Regex<(Substring, Substring, Substring)> { /^1920x1080@(60|0) 2x(\s|$)/ }
 
   var encodedPixels: String? {
     switch files.meta.system {
@@ -67,7 +67,11 @@ struct Tier2Measurement {
   }
 
   private static func hpDisplayMatches(_ files: Tier2RunFiles) -> Bool {
-    files.hostDisplayDuringRun?.hasPrefix(hpVirtualDisplay) == true
+    files.hostDisplayDuringRun.map(isHPVirtualDisplay) ?? false
+  }
+
+  static func isHPVirtualDisplay(_ description: String) -> Bool {
+    description.firstMatch(of: hpVirtualDisplay) != nil
   }
 
   private static func invalidReason(

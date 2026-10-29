@@ -29,7 +29,7 @@ struct PlayerReport: Encodable {
     scene = configuration.scene
     seed = configuration.seed
     resolution = target.resolution.rawValue
-    display = target.display.rawValue
+    display = target.label
     displayID = configuration.displayID
     canvas = target.canvas
     refreshHz = target.refreshHz

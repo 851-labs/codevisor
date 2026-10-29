@@ -4,7 +4,7 @@ import ScreenSharingWebRTC
 
 @MainActor
 final class ShareHost {
-  let displayID: CGDirectDisplayID
+  private let displayID: CGDirectDisplayID
   private let metrics = ScreenSharingMetrics()
   private let capture = ScreenSharingCapture()
   private let sender: ScreenSharingSender
