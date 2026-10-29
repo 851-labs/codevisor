@@ -282,7 +282,7 @@ is refused, so it installs its build there (see Tier 2).
   per cell) is the committed `.svg`, linked at that commit.
 - **PR gate.** A pull request touching `packages/swift/ScreenSharing`, the CodevisorCoreMac screen sharing sources,
   this app or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
-  queued nightly or Tier 2 run; the runner takes one job at a time). The job measures the `gate` plan twice (about
+  queued nightly or Tier 2 run; the runner takes one job at a time). The `gate` job measures the `gate` plan twice (about
   20 min), and the `gate` subcommand compares both runs with the nightly `gate` baseline using the design §4.2
   rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more
   than max(15%, 3 ms), p95 up more than max(20%, 5 ms)) is judged on e2e outside the jitter buffer once the runs and
@@ -291,6 +291,8 @@ is refused, so it installs its build there (see Tier 2).
   jitter estimate for scroll, video and test cards sits at the product's 80 ms playout cap, and each process lands
   either at the cap or well below it, so whole e2e there can move by 30% between unchanged runs. The summary also
   says how long the gate waited for tamale and which bench runs were active meanwhile.
+  Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
+  cancels a gate still queued or running for it.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
   night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. Calibration still uses the installed
   app; Tier 2 builds its own.

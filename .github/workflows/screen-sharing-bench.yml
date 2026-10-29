@@ -44,6 +44,7 @@ on:
         default: false
         type: boolean
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     paths:
       - packages/swift/ScreenSharing/**
       - packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/**
@@ -60,6 +61,7 @@ env:
 
 jobs:
   plan:
+    if: ${{ github.event.action != 'closed' }}
     runs-on: ubuntu-24.04
     outputs:
       run: ${{ steps.plan.outputs.run }}
@@ -168,9 +170,22 @@ jobs:
           path: ${{ runner.temp }}/results
           retention-days: 90
 
+  stop-gate:
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: screen-sharing-bench-gate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Stop the gate of a closed or merged pull request
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: echo "Pull request $PR is closed; this job took over its gate group."
+
   gate:
-    needs: plan
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    if: >-
+      ${{ github.event_name == 'pull_request' && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, macOS, ARM64, tamale]
     timeout-minutes: 60
     concurrency:
