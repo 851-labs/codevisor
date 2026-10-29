@@ -18,6 +18,10 @@ tier2_plan_budget_s=12600
 : "${TIER2_SEED:=1}"
 
 bench() {
+  CODEVISOR_BENCH_BACKGROUND=1 "$tier2_scripts/run-installed.sh" "$@"
+}
+
+bench_window() {
   "$tier2_scripts/run-installed.sh" "$@"
 }
 

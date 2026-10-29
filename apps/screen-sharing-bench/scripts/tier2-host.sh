@@ -54,7 +54,7 @@ measure() {
     --output "$dir/host-usage.jsonl" >"$dir/host-sample.json" 2>"$dir/host-sample.err" &
   pids+=($!)
   sleep 3
-  bench player --scene "$scene" --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \
+  bench_window player --scene "$scene" --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \
     ${player_display[@]+"${player_display[@]}"} \
     >"$dir/player.json" 2>"$dir/player.err" &
   pids+=($!)

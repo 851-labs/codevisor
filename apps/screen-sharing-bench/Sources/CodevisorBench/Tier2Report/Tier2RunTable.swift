@@ -8,8 +8,8 @@ struct Tier2RunTable {
   var text: String {
     let header = [
       "| # | Scene | Resolution | System | Rep | Host observer | Host display during run | ε ms | Residual ms | Max load1 "
-        + "| CI | Valid |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        + "| CI | HP focus losses | Valid |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     return "### Runs\n\n" + (header + measurements.map(row)).joined(separator: "\n")
   }
@@ -23,7 +23,7 @@ struct Tier2RunTable {
       measurement.files.hostDisplayDuringRun ?? "–",
       Tier2Format.number(quality?.epsilonMs), Tier2Format.number(quality?.residualMs),
       Tier2Format.number(measurement.files.highestLoad), measurement.files.ciBusy ? "busy" : "idle",
-      measurement.invalidReason ?? "yes",
+      measurement.files.hpFocusLosses.map { "\($0)" } ?? "–", measurement.invalidReason ?? "yes",
     ]
     return "| " + cells.joined(separator: " | ") + " |"
   }
