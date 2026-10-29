@@ -86,6 +86,9 @@ const fileChange = (
   }
 }
 
+const compactionFailed = (event: Record<string, unknown>): boolean =>
+  event.aborted === true || typeof event.errorMessage === "string"
+
 const output = (payload: Record<string, unknown>): MappedEvent => ({
   kind: "session.output",
   payload
@@ -284,7 +287,7 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
           output({
             sessionUpdate: "context_compaction",
             compactionId: `pi-${compactions}`,
-            status: "completed"
+            status: compactionFailed(event) ? "failed" : "completed"
           })
         ]
       default:

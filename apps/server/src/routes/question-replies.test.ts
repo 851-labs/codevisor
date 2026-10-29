@@ -78,6 +78,19 @@ describe("sending a message while a question waits", () => {
     expect(page.items.map((item) => [item.role, item.text])).toContainEqual(["user", "Use SQLite"])
   })
 
+  it("never answers the question with /compact, and keeps it for after the turn", async () => {
+    const { agents, services, session, send } = await askedChat()
+    const replies = recordReplies(agents, true)
+    const steered = steerAll(agents)
+
+    expect(await send("/compact")).toBe(false)
+
+    expect([replies, steered]).toEqual([[], []])
+    expect((await run(services.db.listPromptQueue(session.id))).map((item) => item.text)).toEqual([
+      "/compact"
+    ])
+  })
+
   it("steers the message once the harness only declined the question", async () => {
     const { agents, send } = await askedChat()
     const replies = recordReplies(agents, false)

@@ -41,6 +41,18 @@ describe("CodexProvider", () => {
     )
   })
 
+  it("forgets a compaction Codex refuses, so the next turn isn't taken for it", async () => {
+    const { client, created, events } = await setup()
+    client.failCompaction = true
+
+    await expect(run(created!.handle.prompt("/compact"))).rejects.toThrow("nothing to compact")
+    client.emit("turn/started", { threadId: "thread-new", turn: { id: "t-agent" } })
+
+    expect(events.map(payloadOf)).toContainEqual(
+      expect.objectContaining({ initiatedBy: "agent", turnId: "t-agent", turnState: "started" })
+    )
+  })
+
   it("plan mode sends the experimental collaboration mode on turn/start", async () => {
     const { client, created } = await setup()
     await run(created!.handle.setMode("plan"))

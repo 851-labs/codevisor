@@ -64,6 +64,7 @@ export class FakeCodexClient implements CodexClient {
     | undefined
   closed = false
   failResume = false
+  failCompaction = false
   startModel = "gpt-5.2-codex"
   listedThreads: Array<Record<string, unknown>> = []
   listedSkills: Array<Record<string, unknown>> | undefined
@@ -113,7 +114,9 @@ export class FakeCodexClient implements CodexClient {
         case "turn/start":
           return { turn: { id: "turn-1", status: "inProgress" } }
         case "turn/interrupt":
+          return {}
         case "thread/compact/start":
+          if (this.failCompaction) throw new Error("nothing to compact")
           return {}
         case "turn/steer":
           return { turnId: recordOf(params).expectedTurnId }

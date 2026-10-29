@@ -140,6 +140,11 @@ const awaitPendingPrompt = (session: CodexSession): Promise<{ stopReason: string
 
 const compactThread = async (session: CodexSession): Promise<{ stopReason: string }> => {
   const pending = awaitPendingPrompt(session)
-  await session.client.request("thread/compact/start", { threadId: session.threadId })
+  try {
+    await session.client.request("thread/compact/start", { threadId: session.threadId })
+  } catch (cause) {
+    session.pendingPrompt = undefined
+    throw cause
+  }
   return pending
 }
