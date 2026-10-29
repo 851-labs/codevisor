@@ -250,7 +250,7 @@ describe("Pi event mapping", () => {
     ).toMatchObject({ locations: [{ path: "a.ts" }] })
   })
 
-  it("passes on session names and compactions, and ignores the rest", () => {
+  it("passes on session names and compactions, failed ones as failed, and ignores the rest", () => {
     const mapper = makePiEventMapper(() => undefined)
     expect(mapper.map({ type: "session_info_changed", name: "Flights" })).toEqual([
       {
@@ -268,6 +268,10 @@ describe("Pi event mapping", () => {
       compactionId: "pi-1",
       status: "completed"
     })
+    const ends = [{ aborted: true }, { aborted: false, errorMessage: "No model selected" }]
+    expect(
+      ends.map((end) => mapper.map({ type: "compaction_end", ...end })[0]?.payload)
+    ).toMatchObject([{ status: "failed" }, { status: "failed" }])
     expect(mapper.map({ type: "queue_update" })).toEqual([])
   })
 })

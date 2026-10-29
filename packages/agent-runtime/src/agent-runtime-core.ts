@@ -134,7 +134,10 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
           ...session.metadata,
           skills: {
             invocationPrefix: payload.invocationPrefix,
-            skills: payload.skills as NonNullable<AgentSessionMetadata["skills"]>["skills"]
+            skills: payload.skills as NonNullable<AgentSessionMetadata["skills"]>["skills"],
+            ...(Array.isArray(payload.commands)
+              ? { commands: payload.commands as ReadonlyArray<string> }
+              : {})
           }
         }
       }

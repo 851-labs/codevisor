@@ -26,7 +26,7 @@ afterEach(async () => {
 })
 
 describe("ACP skills", () => {
-  it("keeps only commands that are skills", () => {
+  it("keeps only commands that are skills, and notes the compact command", () => {
     const folders = new Map<string, SessionSkillSource>([["release", "project"]])
     expect(
       acpSkills(
@@ -43,6 +43,7 @@ describe("ACP skills", () => {
         folders
       )
     ).toEqual({
+      commands: ["compact"],
       invocationPrefix: "/",
       skills: [
         {
@@ -85,7 +86,7 @@ describe("ACP skills", () => {
     void late.then(settled)
     await vi.advanceTimersByTimeAsync(249)
     expect(settled).not.toHaveBeenCalled()
-    await tracker.update("session-1", [{ name: "release" }, { name: "compact" }])
+    await tracker.update("session-1", [{ name: "release" }, { name: "clear" }])
     expect(await late).toEqual({
       invocationPrefix: "/",
       skills: [{ invocation: "/release", name: "release", source: "project" }]
@@ -99,6 +100,6 @@ describe("ACP skills", () => {
   it("reports a list only when it changed", async () => {
     const tracker = makeAcpSkillTracker(async () => new Map([["release", "project" as const]]))
     expect(await tracker.update("s", [{ name: "release" }])).toBeDefined()
-    expect(await tracker.update("s", [{ name: "release" }, { name: "compact" }])).toBeUndefined()
+    expect(await tracker.update("s", [{ name: "release" }, { name: "clear" }])).toBeUndefined()
   })
 })

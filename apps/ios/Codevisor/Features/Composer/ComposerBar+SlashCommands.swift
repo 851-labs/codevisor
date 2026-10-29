@@ -59,6 +59,16 @@ extension ComposerBar {
         }
       )
     }
+    if controller.supportsCompaction {
+      commands.append(
+        IOSComposerSlashItem(
+          name: "compact",
+          description: "Summarize the chat to free up context"
+        ) {
+          controller.compact()
+        }
+      )
+    }
     return commands
   }
 

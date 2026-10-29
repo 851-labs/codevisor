@@ -39,7 +39,7 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(rows.map(\.id) == [.activeChrome(message.id, .activity)])
   }
 
-  @Test func completedCompactionLeavesNoWorkedSectionOrHistoryRow() {
+  @Test func compactionOnlyTurnShowsOnlyAMarkerOnceItEnds() {
     let message = AssistantMessage(
       turn: AssistantTurn(
         entries: [.contextCompaction(id: "compact", status: .completed)],
@@ -52,7 +52,9 @@ struct TranscriptWorkedRowProjectionTests {
     var historical = message
     historical.turn.isGenerating = false
     #expect(historical.turn.workedItems.isEmpty)
-    #expect(!ConversationItem.assistant(historical).hasRenderableTranscriptContent)
+    #expect(ConversationItem.assistant(historical).hasRenderableTranscriptContent)
+    #expect(
+      TranscriptActiveRowProjection.rows(for: .assistant(historical)).map(\.id) == [.compactionMarker(message.id)])
   }
 
   @Test func liveWorkedHeaderReplacesTheActivityRow() {

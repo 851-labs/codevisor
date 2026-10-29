@@ -7,6 +7,8 @@ import { jsonRecord } from "./event-payloads.js"
 
 const isSkillList = Schema.is(SessionSkills.fields.skills)
 
+const isCommandList = Schema.is(Schema.Array(Schema.String))
+
 export const readSessionSkills = (
   sqlite: Database.Database,
   sessionId: string
@@ -22,7 +24,8 @@ export const readSessionSkills = (
   }
   return {
     invocationPrefix: payload.invocationPrefix,
-    skills: payload.skills
+    skills: payload.skills,
+    ...(isCommandList(payload.commands) ? { commands: payload.commands } : {})
   }
 }
 

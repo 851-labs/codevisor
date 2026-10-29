@@ -1,4 +1,4 @@
-import type { PromptInput } from "@codevisor/agent-runtime"
+import { isCompactPrompt, type PromptInput } from "@codevisor/agent-runtime"
 import type { PromptQueueItem, QuestionPayload } from "@codevisor/api"
 import { setupQuestionPresentation } from "@codevisor/db"
 
@@ -23,6 +23,7 @@ export const answeredPendingQuestion = async (
   sessionId: string,
   item: PromptQueueItem
 ): Promise<boolean> => {
+  if (isCompactPrompt(item.text)) return false
   const question = await pendingQuestionToReply(services, sessionId)
   if (question === undefined) return false
 

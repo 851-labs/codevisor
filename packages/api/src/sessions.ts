@@ -6,6 +6,7 @@ import { CreateProjectRequest } from "./projects.js"
 import { GoalStatus, SessionGoal, SessionOrigin, SessionSkills } from "./session-config.js"
 import {
   BackgroundTask,
+  ContextCompactionStatus,
   MessagePhase,
   QuestionAnswerEntry,
   QuestionOutcome,
@@ -276,6 +277,7 @@ export const TranscriptItem = Schema.Struct({
   setupRequests: Schema.optional(Schema.Array(TranscriptSetupRequest)),
   interactions: Schema.optional(Schema.Array(TranscriptInteraction)),
   apps: Schema.optional(Schema.Array(TranscriptPluginApp)),
+  compaction: Schema.optional(ContextCompactionStatus),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type

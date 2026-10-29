@@ -361,6 +361,13 @@ private extension ComposerCard {
         }
       )
     }
+    if controller.supportsCompaction {
+      items.append(
+        ComposerSlashItem(name: "compact", description: "Summarize the chat to free up context") {
+          controller.compact()
+        }
+      )
+    }
     return items
   }
 

@@ -27,4 +27,13 @@ describe("session skills", () => {
       subjectId: "session-1"
     })
   })
+
+  it("lists the native commands a session accepts only when there are some", () => {
+    expect(sessionSkills([], "/", ["compact"])).toEqual({
+      commands: ["compact"],
+      invocationPrefix: "/",
+      skills: []
+    })
+    expect(sessionSkills([], "/")).not.toHaveProperty("commands")
+  })
 })

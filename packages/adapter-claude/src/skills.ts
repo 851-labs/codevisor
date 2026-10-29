@@ -1,4 +1,5 @@
 import {
+  COMPACT_COMMAND,
   sessionSkills,
   skillsUpdateEvent,
   SUPERSEDED_NATIVE_SKILLS
@@ -159,7 +160,8 @@ export const claudeSkills = (
           !command.name.endsWith(" (MCP)")
       )
       .map(skillFor),
-    "/"
+    "/",
+    commands.some((command) => command.name === COMPACT_COMMAND) ? [COMPACT_COMMAND] : []
   )
 
 export interface ClaudeSkills {

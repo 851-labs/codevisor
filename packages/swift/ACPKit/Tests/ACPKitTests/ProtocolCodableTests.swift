@@ -80,7 +80,7 @@ struct ProtocolCodableTests {
   func availableSkillsUpdate() throws {
     let data = Data(
       #"""
-      {"sessionUpdate":"available_skills_update","invocationPrefix":"$","skills":[
+      {"sessionUpdate":"available_skills_update","invocationPrefix":"$","commands":["compact"],"skills":[
         {"name":"code-review","description":"Review the diff","invocation":"$code-review","source":"project"},
         {"name":"deploy","invocation":"$deploy","source":"marketplace"}
       ]}
@@ -100,7 +100,8 @@ struct ProtocolCodableTests {
               ),
               SessionSkill(name: "deploy", invocation: "$deploy", source: nil),
             ],
-            invocationPrefix: "$"
+            invocationPrefix: "$",
+            commands: ["compact"]
           )))
   }
 

@@ -47,7 +47,7 @@ const sessionRunning = async (firstPrompt: string) => {
   const queue = () => run(services.db.listPromptQueue(session.id))
   const steered = () => agents.steers.map(([, input]) => textOf(input))
   const prompted = () => agents.prompts.map(([, input]) => textOf(input))
-  return { agents, server, sessionId: session.id, first, queue, steered, prompted }
+  return { agents, server, services, sessionId: session.id, first, queue, steered, prompted }
 }
 
 const runningTurn = async () => {
@@ -130,6 +130,31 @@ describe("prompt delivery", () => {
     agents.releasePrompt()
     await waitFor(() => agents.prompts.length === 3)
     expect(prompted()).toEqual(["slow prompt", "urgent", "earlier"])
+  })
+
+  it("holds /compact for after the running turn and sends it bare", async () => {
+    const { agents, server, services, sessionId, prompted, steered } =
+      await sessionRunning("slow prompt")
+    await run(
+      services.db.savePluginAppContext({
+        sessionId,
+        viewId: "view-0",
+        plugin: "Maps",
+        tool: "search",
+        context: { content: [{ type: "text", text: "3 cafés nearby" }] }
+      })
+    )
+
+    const compact = await prompt(server, sessionId, { text: "/compact" })
+    const promoted = await sendNow(server, sessionId, compact.queueItemId)
+    agents.releasePrompt()
+    await waitFor(() => agents.prompts.length === 2)
+
+    expect(compact).toMatchObject({ delivered: "queued", steerDeclined: true })
+    expect(promoted.body).toMatchObject({ delivered: "queued", steerDeclined: true })
+    expect(steered()).toEqual([])
+    expect(prompted()).toEqual(["slow prompt", "/compact"])
+    expect(await run(services.db.listPluginAppContexts(sessionId))).toHaveLength(1)
   })
 
   it("steers an agent's message in only after the messages it queued earlier, in order", async () => {

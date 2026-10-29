@@ -111,7 +111,8 @@ export type SessionSkill = typeof SessionSkill.Type
 
 export const SessionSkills = Schema.Struct({
   skills: Schema.Array(SessionSkill),
-  invocationPrefix: Schema.String
+  invocationPrefix: Schema.String,
+  commands: Schema.optional(Schema.Array(Schema.String))
 })
 export type SessionSkills = typeof SessionSkills.Type
 

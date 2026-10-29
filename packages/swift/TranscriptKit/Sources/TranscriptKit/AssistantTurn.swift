@@ -111,6 +111,14 @@ public struct AssistantTurn: Sendable, Equatable {
     return nil
   }
 
+  public var compactedContext: Bool {
+    guard !isGenerating, contextCompactionStatus == .completed else { return false }
+    return entries.allSatisfy { entry in
+      if case .contextCompaction = entry { return true }
+      return false
+    }
+  }
+
   public var finalText: TranscriptEntry? {
     guard let index = finalTextIndex else { return nil }
     return entries[index]

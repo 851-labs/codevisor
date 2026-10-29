@@ -66,7 +66,16 @@ nonisolated enum ServerTranscriptHistoryMapper {
     turn.interactions = TranscriptInteractions((item.interactions ?? []).compactMap(\.transcriptInteraction))
     turn.pluginApps = item.apps ?? []
     addPlanState(of: item, to: &turn)
+    addCompaction(of: item, to: &turn)
     return turn
+  }
+
+  private static func addCompaction(of item: ServerTranscriptItem, to turn: inout AssistantTurn) {
+    guard let status = item.compaction else { return }
+
+    turn.entries.append(.contextCompaction(id: "compaction:\(item.id)", status: status))
+    turn.deferredDetailItemId = nil
+    turn.hasDeferredWorkedDetails = false
   }
 
   private static func summaryTurn(from item: ServerTranscriptItem, textId: String) -> AssistantTurn {

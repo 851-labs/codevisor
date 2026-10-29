@@ -133,6 +133,8 @@ public struct TranscriptRowContentView: View {
       }
     case let .pluginApps(apps):
       PluginAppInlineList(apps: apps)
+    case .compactionMarker:
+      TranscriptCompactionMarker()
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
     case let .botMessage(message, content, _):

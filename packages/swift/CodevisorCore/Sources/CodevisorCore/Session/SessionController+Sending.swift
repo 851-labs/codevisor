@@ -16,6 +16,15 @@ extension SessionController {
     sendToAgent(delivery: resolvedDelivery(for: delivery))
   }
 
+  public func compact() {
+    guard supportsCompaction, acceptsSends else { return }
+
+    let message = UserMessage(text: "/\(SessionSkills.compactCommand)", attachments: [])
+    beginOptimisticSend()
+    userSendSignal &+= 1
+    sends.enqueue(message, attachmentIDs: [], route: .agent(.queue))
+  }
+
   private func sendToAgent(delivery: ServerPromptDelivery) {
     guard canSend else { return }
 

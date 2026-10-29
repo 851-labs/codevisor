@@ -32,7 +32,11 @@ describe("@codevisor/agent-runtime skills", () => {
       providers: { claude: provider }
     })
     await run(runtime.createAgentSession("claude-code", "/tmp/project", () => undefined))
-    const skills = { invocationPrefix: "/", skills: [{ invocation: "/review", name: "review" }] }
+    const skills = {
+      commands: ["compact"],
+      invocationPrefix: "/",
+      skills: [{ invocation: "/review", name: "review" }]
+    }
 
     await emit?.({
       kind: "session.output",

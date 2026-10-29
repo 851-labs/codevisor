@@ -21,7 +21,8 @@ export const skillsUpdateEvent = (subjectId: string, skills: SessionSkills): Run
 
 export const sessionSkills = (
   skills: ReadonlyArray<SessionSkill>,
-  invocationPrefix: string
+  invocationPrefix: string,
+  commands: ReadonlyArray<string> = []
 ): SessionSkills => {
   const seen = new Set<string>()
   return {
@@ -30,6 +31,7 @@ export const sessionSkills = (
       if (superseded(skill.name) || seen.has(skill.invocation)) return false
       seen.add(skill.invocation)
       return true
-    })
+    }),
+    ...(commands.length === 0 ? {} : { commands })
   }
 }
