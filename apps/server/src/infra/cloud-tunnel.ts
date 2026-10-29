@@ -27,6 +27,7 @@ export interface MachineTunnelBridge {
     request: TunnelMediaRequest,
     answer: string
   ) => Promise<TunnelMediaBridge | undefined>
+  readonly setDirectPaths: (allowed: boolean) => PathPolicy
   readonly stop: () => void
 }
 
@@ -39,6 +40,7 @@ interface TunnelOptions {
   readonly compressPayload: (bytes: Uint8Array) => Uint8Array | undefined
   readonly decompressPayload: (bytes: Uint8Array) => Uint8Array
   readonly sendAddr: (tunnel: CloudTunnelInfo) => void
+  readonly defaultPathPolicy: PathPolicy
   readonly env: Readonly<Record<string, string | undefined>>
   readonly log: (line: string) => void
 }
@@ -71,8 +73,8 @@ const loadEndpointPins = async (options: TunnelOptions): Promise<PeerKeyPinStore
   })
 }
 
-const pathPolicy = (value: string | undefined): PathPolicy =>
-  value === "relay-only" || value === "direct-only" ? value : "auto"
+const pathPolicyOverride = (value: string | undefined): PathPolicy | undefined =>
+  value === "auto" || value === "relay-only" || value === "direct-only" ? value : undefined
 
 export const prepareMachineTunnel = async (
   options: TunnelOptions
@@ -124,6 +126,7 @@ export const prepareMachineTunnel = async (
     log: options.log
   })
   let lastAddr: CloudTunnelInfo | undefined
+  const overridePolicy = pathPolicyOverride(options.env.CODEVISOR_NET_PATH_POLICY)
   const tunnel = new MachineTunnel({
     bind: (endpointOptions) => net.TunnelEndpoint.bind(endpointOptions),
     secretKeyHex,
@@ -138,7 +141,7 @@ export const prepareMachineTunnel = async (
       .split(",")
       .map((addr) => addr.trim())
       .filter((addr) => addr !== ""),
-    pathPolicy: pathPolicy(options.env.CODEVISOR_NET_PATH_POLICY),
+    pathPolicy: overridePolicy ?? options.defaultPathPolicy,
     log: options.log
   })
   return {
@@ -155,6 +158,14 @@ export const prepareMachineTunnel = async (
       vouched = new Map(devices.map((device) => [device.deviceId, device]))
     },
     bridgeMedia: (request, answer) => media.bridge(request, answer),
+    setDirectPaths: (allowed) => {
+      if (overridePolicy !== undefined) return overridePolicy
+      const policy = allowed ? "auto" : "relay-only"
+      tunnel
+        .setPathPolicy(policy)
+        .catch((cause: unknown) => options.log(`Tunnel: failed to rebind: ${String(cause)}`))
+      return policy
+    },
     stop: () => {
       void tunnel
         .stop()

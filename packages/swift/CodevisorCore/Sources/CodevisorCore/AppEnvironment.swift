@@ -28,6 +28,7 @@ public final class AppEnvironment {
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   @ObservationIgnored var clientPreferenceSync: ClientPreferenceSync?
   @ObservationIgnored let harnessNotices = HarnessNoticeCenter()
+  @ObservationIgnored var localServerDirectPathsSync: Task<Void, Never>?
   public let paneGroups: any PaneGroupRepository
   public let workspaces: any WorkspaceRepository
   public let navigationStore: NavigationStore
@@ -38,6 +39,7 @@ public final class AppEnvironment {
   var mcpStateRevisions: [String: UInt64] = [:]
   public internal(set) var pluginAccountsRevision: UInt64 = 0
   private let clientDataResetter: (any ClientDataResetting)?
+  let preferences: ClientPreferences
   public let now: @MainActor () -> Date
 
   public init(
@@ -55,8 +57,10 @@ public final class AppEnvironment {
     appUpdate: AppUpdateModel? = nil,
     harnessService: (any HarnessServicing)? = nil,
     machineClientFactory: MachineController.ClientFactory? = nil,
+    preferences: ClientPreferences = .shared,
     now: @escaping @MainActor () -> Date = { Date() }
   ) {
+    self.preferences = preferences
     self.now = now
     self.harnessServiceOverride = harnessService
     self.paneGroups = paneGroups
@@ -119,7 +123,7 @@ public final class AppEnvironment {
     cloud.directPaths.onPipeUp = { [weak self] deviceId in
       self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
     }
-    applyLaunchLocalNetworkAccess()
+    applyLocalNetworkAccess()
     wireCloudRefreshAndAdoption()
     projectList.showsImportedSessions = settings.importExternalSessions
     machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
@@ -241,7 +245,7 @@ public final class AppEnvironment {
     machines.resetSelection()
     directMachineAdoption.reset()
     cloud.signOut()
-    ClientPreferences.shared.removeAll()
+    preferences.removeAll()
     do {
       try clientDataResetter?.resetClientData()
     } catch {

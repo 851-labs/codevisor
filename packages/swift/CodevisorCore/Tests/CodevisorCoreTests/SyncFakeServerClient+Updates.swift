@@ -238,6 +238,13 @@ extension SyncFakeServerClient {
     lock.withLock { _infoMaxUploadBytes = bytes }
   }
 
+  var directPathRequests: [Bool] { lock.withLock { _directPathRequests } }
+
+  func setCloudDirectPaths(_ allowed: Bool) async throws {
+    lock.withLock { _directPathRequests.append(allowed) }
+    directPathRequested.signal()
+  }
+
   func info() async throws -> ServerInfo {
     let (version, id): (String, String) = try lock.withLock {
       if migrationStillRunning() { throw Self.migratingFailure }

@@ -63,3 +63,37 @@ for (const terminationExitCode of [0, 3]) {
     }
   })
 }
+
+for (const netCaPem of [undefined, "-----BEGIN CERTIFICATE-----\ntest\n"]) {
+  test(`iOS launch ${netCaPem === undefined ? "omits" : "passes"} the dev relay CA`, async (t) => {
+    t.mock.method(console, "log", () => {})
+    const launches = []
+    const spawn = t.mock.method(childProcess, "spawn", (_command, args, options) => {
+      if (args[1] === "launch") launches.push(options.env)
+      return { exitCode: 0, signalCode: null }
+    })
+    syncBuiltinESMExports()
+    t.after(() => {
+      spawn.mock.restore()
+      syncBuiltinESMExports()
+    })
+
+    await launchIOSDevelopmentApp({
+      repoRoot: "/test/repo",
+      requireSimulator: async () => ({ lease: "test-lease" }),
+      target: {
+        simulator: { udid: "test-device", name: "Test iPhone", lease: "test-lease" },
+        bundleIdentifier: "test.codevisor",
+        appBundle: "/test/Codevisor.app"
+      },
+      environment: {},
+      worktreeName: "test",
+      instanceName: "test-instance",
+      developmentIconColor: { hex: "#123456" },
+      netCaPem
+    })
+
+    assert.equal(launches.length, 1)
+    assert.equal(launches[0].SIMCTL_CHILD_CODEVISOR_NET_CA_PEM, netCaPem)
+  })
+}

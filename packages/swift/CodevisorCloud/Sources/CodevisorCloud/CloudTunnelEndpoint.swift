@@ -65,7 +65,7 @@ public actor CloudTunnelEndpoint {
   private var generation: UInt64 = 0
   private var configWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
   private let firstConfigWait: Duration
-  private var allowsDirectPaths = true
+  private var allowsDirectPaths = false
 
   public init(
     credentialStore: any CloudCredentialStore,

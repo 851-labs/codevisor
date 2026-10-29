@@ -327,8 +327,10 @@ export async function launchDevNet({ net, repoRoot, cloudPort, containerized }) 
   return processes
 }
 
+export const devNetCaPem = (net) => readFile(net.caFile, "utf8")
+
 export const devNetEnvironment = async (net, { inline = false } = {}) => {
   const environment = { CODEVISOR_NET_CA_FILE: net.caFile }
   if (!inline) return environment
-  return { ...environment, CODEVISOR_NET_CA_PEM: await readFile(net.caFile, "utf8") }
+  return { ...environment, CODEVISOR_NET_CA_PEM: await devNetCaPem(net) }
 }

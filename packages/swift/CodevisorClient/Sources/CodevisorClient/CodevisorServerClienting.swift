@@ -28,6 +28,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
     machineName: String?
   ) async throws -> String
   func disconnectCloud() async throws
+  func setCloudDirectPaths(_ allowed: Bool) async throws
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
   func mergeSyncDocument(
     namespace: String,

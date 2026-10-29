@@ -46,7 +46,13 @@ import {
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
 import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
-import { devNetCloudVariables, devNetEnvironment, launchDevNet, prepareDevNet } from "./dev-net.mjs"
+import {
+  devNetCaPem,
+  devNetCloudVariables,
+  devNetEnvironment,
+  launchDevNet,
+  prepareDevNet
+} from "./dev-net.mjs"
 import {
   claimedServerPort,
   describeExit,
@@ -298,7 +304,11 @@ const server = spawn(
     "--upgrade-status",
     upgradeStatusPath
   ],
-  { cwd: repoRoot, env: withoutCloudToken(sharedEnvironment), stdio: "inherit" }
+  {
+    cwd: repoRoot,
+    env: { ...withoutCloudToken(sharedEnvironment), CODEVISOR_NET_PATH_POLICY: "relay-only" },
+    stdio: "inherit"
+  }
 )
 
 const www = spawn(
@@ -406,7 +416,8 @@ try {
       worktreeName,
       instanceName,
       developmentIconColor,
-      cloudURL: cloudUrl
+      cloudURL: cloudUrl,
+      netCaPem: await devNetCaPem(net)
     })
     console.log("Press Ctrl+C to stop both apps and their shared development services.")
   }

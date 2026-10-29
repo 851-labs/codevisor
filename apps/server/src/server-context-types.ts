@@ -131,6 +131,7 @@ export interface CloudServerControl {
     request: import("@codevisor/cloud-client").TunnelMediaRequest,
     answer: string
   ) => Promise<import("@codevisor/cloud-client").TunnelMediaBridge | undefined>
+  readonly setDirectPaths?: (allowed: boolean) => import("@codevisor/net").PathPolicy | undefined
 }
 
 export interface CodevisorServerServices {

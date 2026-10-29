@@ -99,11 +99,6 @@ struct RootView: View {
       .onChange(of: controlActiveState, initial: true) { _, state in
         store?.setWindowFocused(state == .key)
       }
-      .onChange(of: environment.cloud.state.isSignedIn) { _, signedIn in
-        if signedIn, environment.localNetworkAccess == .unasked {
-          environment.setLocalNetworkAccess(.requested)
-        }
-      }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)) { note in
         guard let sessionIdString = note.userInfo?["sessionId"] as? String,
           let sessionId = UUID(uuidString: sessionIdString),
@@ -124,7 +119,7 @@ struct RootView: View {
               await environment.appUpdate.installUpdateUnattended()
             }
           }
-          await environment.bootstrapCloud()
+          await environment.cloud.bootstrap()
         }
       }
       .modifier(SidebarModeSelectionMemory(selection: $selection) { panelLayout.dismissDrawer() })

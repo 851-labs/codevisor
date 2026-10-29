@@ -74,6 +74,7 @@ export interface CloudBridge {
     signal?: AbortSignal
   ) => Promise<GatewayExchange>
   readonly bridgeTunnelMedia: NonNullable<CloudServerControl["bridgeTunnelMedia"]>
+  readonly setDirectPaths: NonNullable<CloudServerControl["setDirectPaths"]>
 }
 
 interface StoredCloudCredentials {
@@ -207,6 +208,7 @@ const makeBridge = async (
     compressPayload,
     decompressPayload,
     sendAddr: (addr) => connection?.sendTunnelAddr(addr),
+    defaultPathPolicy: managedBy === "app" ? "relay-only" : "auto",
     env: options.env,
     log: options.log
   })
@@ -306,7 +308,8 @@ const makeBridge = async (
         body,
         signal === undefined ? {} : { signal }
       ),
-    bridgeTunnelMedia: async (request, answer) => tunnel?.bridgeMedia(request, answer)
+    bridgeTunnelMedia: async (request, answer) => tunnel?.bridgeMedia(request, answer),
+    setDirectPaths: (allowed) => tunnel?.setDirectPaths(allowed)
   }
 }
 
@@ -378,11 +381,18 @@ export const makeCloudServerControl = (
   Required<
     Pick<
       CloudServerControl,
-      "machineName" | "machines" | "requestGateway" | "connectWithInvite" | "invite" | "removePeer"
+      | "machineName"
+      | "machines"
+      | "requestGateway"
+      | "connectWithInvite"
+      | "invite"
+      | "removePeer"
+      | "setDirectPaths"
     >
   > => {
   let current = initial
   let connecting: Promise<string> | undefined
+  let directPaths: boolean | undefined
   const fetchImpl = (): FetchLike => options.fetchImpl ?? ((input, init) => fetch(input, init))
   const joinCloud = (
     grant: CloudJoinGrant,
@@ -390,7 +400,11 @@ export const makeCloudServerControl = (
   ): Promise<string> => {
     if (current !== undefined) return Promise.resolve(current.deviceId)
     connecting ??= connectCloudBridge(options, { ...grant, ...registration })
-      .then((bridge) => (current = bridge).deviceId)
+      .then((bridge) => {
+        current = bridge
+        if (directPaths !== undefined) bridge.setDirectPaths(directPaths)
+        return bridge.deviceId
+      })
       .finally(() => (connecting = undefined))
     return connecting
   }
@@ -443,6 +457,10 @@ export const makeCloudServerControl = (
       }
       return current.requestGateway(deviceId, body, signal)
     },
-    bridgeTunnelMedia: async (request, answer) => current?.bridgeTunnelMedia(request, answer)
+    bridgeTunnelMedia: async (request, answer) => current?.bridgeTunnelMedia(request, answer),
+    setDirectPaths: (allowed) => {
+      directPaths = allowed
+      return current?.setDirectPaths(allowed)
+    }
   }
 }

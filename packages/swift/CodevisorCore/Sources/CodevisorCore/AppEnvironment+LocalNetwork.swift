@@ -10,8 +10,8 @@ public enum LocalNetworkAccess: String, Codable, Sendable {
 }
 
 extension AppEnvironment {
-  public var localNetworkAccess: LocalNetworkAccess? {
-    ClientPreferences.shared.valueIfPresent(forKey: LocalNetworkAccess.preferenceKey)
+  public var localNetworkAccess: LocalNetworkAccess {
+    preferences.value(forKey: LocalNetworkAccess.preferenceKey, default: .unasked)
   }
 
   public var needsLocalNetworkChoice: Bool {
@@ -19,7 +19,7 @@ extension AppEnvironment {
   }
 
   public var hasRequestedLocalNetworkAccess: Bool {
-    let requested = ClientPreferences.shared.valueIfPresent(
+    let requested = preferences.valueIfPresent(
       forKey: LocalNetworkAccess.requestedPreferenceKey,
       as: Bool.self
     )
@@ -27,23 +27,31 @@ extension AppEnvironment {
   }
 
   public func setLocalNetworkAccess(_ access: LocalNetworkAccess) {
-    ClientPreferences.shared.set(access, forKey: LocalNetworkAccess.preferenceKey)
+    preferences.set(access, forKey: LocalNetworkAccess.preferenceKey)
     if access == .requested {
-      ClientPreferences.shared.set(true, forKey: LocalNetworkAccess.requestedPreferenceKey)
+      preferences.set(true, forKey: LocalNetworkAccess.requestedPreferenceKey)
     }
-    cloud.directPaths.setAllowsDirectPaths(access == .requested)
+    applyLocalNetworkAccess()
+    syncLocalServerDirectPaths()
   }
 
-  public func bootstrapCloud() async {
-    await cloud.bootstrap()
-    guard localNetworkAccess == nil else { return }
-    setLocalNetworkAccess(cloud.state.isSignedIn ? .requested : .unasked)
-  }
-
-  func applyLaunchLocalNetworkAccess() {
-    if localNetworkAccess == nil, settings.hasCompletedOnboarding {
-      ClientPreferences.shared.set(LocalNetworkAccess.requested, forKey: LocalNetworkAccess.preferenceKey)
-    }
+  func applyLocalNetworkAccess() {
     cloud.directPaths.setAllowsDirectPaths(localNetworkAccess == .requested)
+  }
+
+  func syncLocalServerDirectPaths() {
+    guard localServer != nil else { return }
+    let allowed = localNetworkAccess == .requested
+    let client = machines.client(for: CodevisorMachine.local.id)
+    let previous = localServerDirectPathsSync
+    localServerDirectPathsSync = Task {
+      await previous?.value
+      do {
+        try await client.setCloudDirectPaths(allowed)
+      } catch {
+        Log.cloud.debug(
+          "Local server direct paths not updated: \(String(describing: error), privacy: .public)")
+      }
+    }
   }
 }

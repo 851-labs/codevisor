@@ -141,10 +141,10 @@ struct CodevisorApp: App {
     }
     if hasConfiguredRemote {
       await environment.prepareAllMachines()
-      await environment.bootstrapCloud()
+      await environment.cloud.bootstrap()
       await environment.prepareAllMachines()
     } else {
-      await environment.bootstrapCloud()
+      await environment.cloud.bootstrap()
       await environment.prepareAllMachines()
     }
     hasCompletedBootstrap = true

@@ -116,5 +116,15 @@ export const routeCloud = async (
     })
     return true
   }
+  if (request.method === "PUT" && url.pathname === "/v1/cloud/direct-paths") {
+    if (control?.setDirectPaths === undefined) {
+      throw new HttpFailure(501, "This server cannot change its tunnel paths")
+    }
+    const allowed = field(await readJson(request), "allowed")
+    if (typeof allowed !== "boolean") throw new HttpFailure(400, "allowed must be a boolean")
+    const pathPolicy = control.setDirectPaths(allowed)
+    writeJson(response, 200, pathPolicy === undefined ? {} : { pathPolicy })
+    return true
+  }
   throw new HttpFailure(404, "Cloud route not found")
 }

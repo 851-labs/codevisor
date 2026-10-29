@@ -302,6 +302,13 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/cloud/disconnect", method: "POST")
   }
 
+  public func setCloudDirectPaths(_ allowed: Bool) async throws {
+    struct Body: Encodable {
+      let allowed: Bool
+    }
+    try await sendNoResponse("/v1/cloud/direct-paths", method: "PUT", body: Body(allowed: allowed))
+  }
+
   public func updateInfo(
     refresh: Bool = false,
     channel: ServerUpdateChannel = .stable

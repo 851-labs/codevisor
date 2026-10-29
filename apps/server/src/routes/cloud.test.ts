@@ -40,6 +40,57 @@ describe("cloud routes", () => {
     expect((await jsonRequest(server, "/v1/unknown", { method: "GET" })).status).toBe(404)
   })
 
+  it("switches the tunnel's direct paths through live cloud control", async () => {
+    const { services } = await makeServices("server-cloud-direct-paths")
+    const requested: boolean[] = []
+    const cloud = {
+      deviceId: () => undefined,
+      state: () => undefined,
+      managedBy: () => undefined,
+      connect: () => Promise.reject(new Error("unused")),
+      disconnect: () => Promise.resolve({ removedFromAccount: true }),
+      setDirectPaths: (allowed: boolean) => {
+        requested.push(allowed)
+        return requested.length === 1 ? ("auto" as const) : undefined
+      }
+    }
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({
+          bootId: "test-boot",
+          id: "server-cloud-direct-paths",
+          port: 0,
+          cloud
+        })
+      )
+    )
+    runningServers.push(server)
+    const put = (body: unknown) =>
+      jsonRequest(server, "/v1/cloud/direct-paths", { method: "PUT", body: JSON.stringify(body) })
+
+    expect(await put({ allowed: true })).toEqual({ status: 200, body: { pathPolicy: "auto" } })
+    expect(await put({ allowed: false })).toEqual({ status: 200, body: {} })
+    expect((await put({ allowed: "yes" })).status).toBe(400)
+    expect(requested).toEqual([true, false])
+  })
+
+  it("refuses direct path changes without live cloud control", async () => {
+    const { services } = await makeServices("server-cloud-no-direct-paths")
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-cloud-no-direct-paths", port: 0 })
+      )
+    )
+    runningServers.push(server)
+    const response = await jsonRequest(server, "/v1/cloud/direct-paths", {
+      method: "PUT",
+      body: JSON.stringify({ allowed: true })
+    })
+    expect(response.status).toBe(501)
+  })
+
   it("joins an account with a machine invite instead of a session", async () => {
     const { services } = await makeServices("server-cloud-invite")
     const joins: { inviteCode: string; options?: unknown }[] = []

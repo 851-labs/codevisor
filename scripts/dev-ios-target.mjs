@@ -73,6 +73,7 @@ export async function launchIOSDevelopmentApp({
   instanceName,
   developmentIconColor,
   cloudURL,
+  netCaPem,
   requireSimulator = requireIOSSimulator
 }) {
   const { simulator, bundleIdentifier, appBundle } = target
@@ -89,11 +90,14 @@ export async function launchIOSDevelopmentApp({
 
   const cloudEnvironment =
     cloudURL === undefined ? {} : { SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudURL }
+  const netEnvironment =
+    netCaPem === undefined ? {} : { SIMCTL_CHILD_CODEVISOR_NET_CA_PEM: netCaPem }
   await run(
     repoRoot,
     {
       ...environment,
       ...cloudEnvironment,
+      ...netEnvironment,
       SIMCTL_CHILD_TRANSCRIPT_STRESS: environment.TRANSCRIPT_STRESS ?? "0",
       SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE: worktreeName,
       SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID: instanceName,

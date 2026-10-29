@@ -43,6 +43,8 @@ public extension CodevisorServerClienting {
 
   func disconnectCloud() async throws {}
 
+  func setCloudDirectPaths(_: Bool) async throws {}
+
   func updateInfo() async throws -> ServerUpdateInfo {
     try await updateInfo(refresh: false, channel: .stable)
   }

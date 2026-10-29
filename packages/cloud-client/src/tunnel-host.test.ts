@@ -279,6 +279,33 @@ describe("MachineTunnel", () => {
     expect(endpoints[2]!.closed).toBe(false)
   })
 
+  it("rebinds with a changed path policy only while the tunnel is enabled", async () => {
+    const { tunnel, endpoints, bindOptions, logs } = tunnelSetup()
+    await tunnel.setPathPolicy("relay-only")
+    expect(endpoints).toHaveLength(0)
+    expect(tunnel.pathPolicy).toBe("relay-only")
+
+    await tunnel.configure({ relays, enabled: true })
+    expect(bindOptions.map((options) => options.pathPolicy)).toEqual(["relay-only"])
+    expect(logs).toContain(`Tunnel: listening as ${"a".repeat(64)} (relay-only)`)
+
+    await tunnel.setPathPolicy("relay-only")
+    await tunnel.setPathPolicy("auto")
+    expect(endpoints[0]!.closed).toBe(true)
+    expect(bindOptions.map((options) => options.pathPolicy)).toEqual(["relay-only", "auto"])
+    expect(bindOptions[1]!.relays).toEqual(relays)
+
+    await tunnel.stop()
+    await tunnel.setPathPolicy("relay-only")
+    expect(endpoints).toHaveLength(2)
+
+    await tunnel.configure({ relays, enabled: true })
+    await tunnel.configure({ relays, enabled: false })
+    await tunnel.setPathPolicy("auto")
+    expect(endpoints).toHaveLength(3)
+    expect(endpoints[2]!.closed).toBe(true)
+  })
+
   it("publishes every address change to the hub", async () => {
     const { tunnel, endpoints, addrs } = tunnelSetup()
     await tunnel.configure({ relays, enabled: true })

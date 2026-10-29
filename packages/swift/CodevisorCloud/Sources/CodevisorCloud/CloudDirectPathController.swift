@@ -25,7 +25,7 @@ public final class CloudDirectPathController {
   public private(set) var paths: [String: CloudTunnelPath] = [:]
   public private(set) var dialing: Set<String> = []
   public private(set) var lastReachable: [String: Date] = [:]
-  public private(set) var allowsDirectPaths = true
+  public private(set) var allowsDirectPaths = false
   @ObservationIgnored private var pathReaders: [String: @Sendable () -> CloudTunnelPath?] = [:]
   @ObservationIgnored var pathRefresh: Task<Void, Never>?
   static let pathRefreshInterval: Duration = .seconds(5)

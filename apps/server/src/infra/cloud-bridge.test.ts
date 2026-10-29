@@ -118,7 +118,8 @@ describe("cloud connect", () => {
       acceptDirect: () => undefined,
       machines: () => undefined,
       requestGateway: notUsed,
-      bridgeTunnelMedia: notUsed
+      bridgeTunnelMedia: notUsed,
+      setDirectPaths: (allowed) => (allowed ? "auto" : "relay-only")
     }
     const dir = mkdtempSync(join(tmpdir(), "cloud-bridge-"))
     dirs.push(dir)
@@ -129,6 +130,13 @@ describe("cloud connect", () => {
 
     await expect(control.connect("https://cloud.example", "session")).resolves.toBe("device-1")
     expect(fetchImpl).not.toHaveBeenCalled()
+    expect(control.setDirectPaths(true)).toBe("auto")
+    expect(control.setDirectPaths(false)).toBe("relay-only")
+  })
+
+  it("has no tunnel to switch before the machine joins an account", () => {
+    const { control } = storedControl(() => Promise.reject(new Error("unexpected")))
+    expect(control.setDirectPaths(true)).toBeUndefined()
   })
 
   it("shares one registration between concurrent callers", async () => {

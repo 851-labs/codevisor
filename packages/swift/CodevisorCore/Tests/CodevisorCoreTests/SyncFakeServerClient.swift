@@ -36,6 +36,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var harnessReadGate: (@Sendable () async -> Void)?
   var _harnessCheckScopes: [[String]?] = []
   var applyProgressReports: [ServerUpdateApplyState] = []
+  var _directPathRequests: [Bool] = []
+  let directPathRequested = TestSignal()
   var applyingProgressReports = false
   let lock = NSLock()
   private var _projects: [ServerProject]

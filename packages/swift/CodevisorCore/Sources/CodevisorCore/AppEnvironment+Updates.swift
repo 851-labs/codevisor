@@ -28,6 +28,7 @@ extension AppEnvironment {
         await seedHarnessCatalogIfNeeded(from: machineId)
       }
     }
+    if machineId == CodevisorMachine.local.id { syncLocalServerDirectPaths() }
   }
 
   func checkHarnessNotices(onServer serverId: String) {

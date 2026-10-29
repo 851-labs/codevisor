@@ -8,6 +8,7 @@ import type {
 } from "@codevisor/net"
 
 import type { DirectChannelHost, PipePeer } from "./direct-channel-host.js"
+import type { TunnelConfig } from "./hub-frames.js"
 import type { CloudSocket } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
@@ -117,24 +118,40 @@ export interface MachineTunnelOptions {
   log?: (line: string) => void
 }
 
-const relayKey = (relays: readonly CloudRelayInfo[]): string =>
-  JSON.stringify(relays.map((relay) => [relay.url, relay.quicPort ?? null]))
+const bindingKey = (relays: readonly CloudRelayInfo[], pathPolicy: PathPolicy): string =>
+  JSON.stringify([pathPolicy, relays.map((relay) => [relay.url, relay.quicPort ?? null])])
 
 export class MachineTunnel {
   #endpoint: TunnelEndpoint | undefined
-  #relays: string | undefined
+  #bindingKey: string | undefined
   #generation = 0
+  #config: TunnelConfig | undefined
+  #pathPolicy: PathPolicy
 
-  constructor(private readonly options: MachineTunnelOptions) {}
+  constructor(private readonly options: MachineTunnelOptions) {
+    this.#pathPolicy = options.pathPolicy ?? "auto"
+  }
 
-  async configure(config: { relays: readonly CloudRelayInfo[]; enabled: boolean }): Promise<void> {
+  get pathPolicy(): PathPolicy {
+    return this.#pathPolicy
+  }
+
+  async setPathPolicy(pathPolicy: PathPolicy): Promise<void> {
+    if (pathPolicy === this.#pathPolicy) return
+    this.#pathPolicy = pathPolicy
+    if (this.#config !== undefined) await this.configure(this.#config)
+  }
+
+  async configure(config: TunnelConfig): Promise<void> {
     if (!config.enabled) {
       await this.stop()
       return
     }
-    const key = relayKey(config.relays)
-    if (this.#endpoint !== undefined && this.#relays === key) return
-    const stopping = this.stop()
+    this.#config = config
+    const pathPolicy = this.#pathPolicy
+    const key = bindingKey(config.relays, pathPolicy)
+    if (this.#endpoint !== undefined && this.#bindingKey === key) return
+    const stopping = this.#closeEndpoint()
     const generation = this.#generation
     await stopping
     if (generation !== this.#generation) return
@@ -146,7 +163,7 @@ export class MachineTunnel {
       })),
       trustAnchorsPem: this.options.trustAnchorsPem ?? [],
       bindAddrs: this.options.bindAddrs ?? [],
-      pathPolicy: this.options.pathPolicy ?? "auto",
+      pathPolicy,
       alpns: [TUNNEL_ALPN_CHANNELS, TUNNEL_ALPN_MEDIA]
     })
     if (generation !== this.#generation) {
@@ -154,17 +171,22 @@ export class MachineTunnel {
       return
     }
     this.#endpoint = endpoint
-    this.#relays = key
-    this.options.log?.(`Tunnel: listening as ${endpoint.endpointId()}`)
+    this.#bindingKey = key
+    this.options.log?.(`Tunnel: listening as ${endpoint.endpointId()} (${pathPolicy})`)
     void this.#publishAddresses(endpoint)
     void this.#acceptLoop(endpoint)
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    this.#config = undefined
+    return this.#closeEndpoint()
+  }
+
+  async #closeEndpoint(): Promise<void> {
     this.#generation += 1
     const endpoint = this.#endpoint
     this.#endpoint = undefined
-    this.#relays = undefined
+    this.#bindingKey = undefined
     await endpoint?.close()
   }
 
