@@ -49,10 +49,20 @@ struct BotConversationRows: View {
     .accessibilityAction(.default) { actions.select(bot) }
     .onDrag { start(.bot(bot.id)) }
     .contextMenu {
-      Button("Edit Bot…", systemImage: "pencil") { actions.edit(bot) }
+      Button {
+        actions.edit(bot)
+      } label: {
+        Label("Edit", systemImage: "pencil")
+          .labelStyle(.titleAndIcon)
+      }
       BotMoveToSectionMenu(bot: bot, currentSectionID: section, sections: sections, actions: actions)
       Divider()
-      Button("Delete Bot…", systemImage: "trash", role: .destructive) { actions.delete(bot) }
+      Button(role: .destructive) {
+        actions.delete(bot)
+      } label: {
+        Label("Delete", systemImage: "trash")
+          .labelStyle(.titleAndIcon)
+      }
     }
     .id(bot.id)
   }

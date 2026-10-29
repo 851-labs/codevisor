@@ -49,11 +49,11 @@ struct HomeSidebarBotRowView: View, Equatable {
     }
     .contextMenu {
       Button(action: onEdit) {
-        Label("Edit Bot…", systemImage: "pencil")
+        Label("Edit", systemImage: "pencil")
       }
       Divider()
       Button(role: .destructive, action: onDelete) {
-        Label("Delete Bot…", systemImage: "trash")
+        Label("Delete", systemImage: "trash")
       }
     }
     .accessibilityElement(children: .combine)
