@@ -29,3 +29,11 @@ test("the dev container desktop opt-in survives dev sanitization", () => {
   assert.equal(wantsContainerDesktop(supplied), true)
   assert.equal(wantsContainerDesktop({ PATH: "/usr/bin" }), false)
 })
+
+test("the screen-sharing stats log directory reaches the development app", () => {
+  const supplied = { PATH: "/usr/bin", CODEVISOR_SCREEN_SHARING_STATS_LOG: "/tmp/stats" }
+  sanitizeAmbientEnvironment(supplied)
+  const launch = localDevelopmentEnvironment(developmentLayout("/repo/worktree", {}), supplied)
+
+  assert.equal(launch.CODEVISOR_SCREEN_SHARING_STATS_LOG, "/tmp/stats")
+})

@@ -189,26 +189,43 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         }
       }
     }
+    diagnosticsTask = makeDiagnosticsTask()
+    ScreenSharingEndpointRegistry.shared.register(self)
+  }
+
+  private func makeDiagnosticsTask() -> Task<Void, Never> {
     let statsLogId = id
-    diagnosticsTask = Task { [weak self] in
+    return Task { [weak self] in
       let statsLog = Self.openStatsLog(for: statsLogId)
+      var exportedFrames: UInt64 = 0
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         if let self, self.presented {
           let statistics = await self.session.statistics()
           guard !Task.isCancelled else { return }
-          let metrics = self.session.metrics.snapshot()
-          let now = ProcessInfo.processInfo.systemUptime
-          self.diagnostics.update(metrics: metrics, statistics: statistics, now: now)
-          if let statsLog,
-            let line = try? JSONEncoder().encode(StatsRecord(time: now, statistics: statistics, metrics: metrics))
-          {
-            statsLog.write(line + Data("\n".utf8))
-          }
+          exportedFrames = self.recordDiagnostics(statistics, to: statsLog, after: exportedFrames)
         }
       }
     }
-    ScreenSharingEndpointRegistry.shared.register(self)
+  }
+
+  private func recordDiagnostics(
+    _ statistics: [String: String], to statsLog: FileHandle?, after exported: UInt64
+  )
+    -> UInt64
+  {
+    session.metrics.timeline.observeTransport(statistics)
+    let metrics = session.metrics.snapshot()
+    let now = ProcessInfo.processInfo.systemUptime
+    diagnostics.update(metrics: metrics, statistics: statistics, now: now)
+    guard let statsLog else { return exported }
+
+    let frames = session.metrics.timeline.records(after: exported)
+    let record = StatsRecord(
+      time: now, statistics: statistics, metrics: metrics, timeline: session.metrics.timeline.summary(),
+      frames: frames)
+    if let line = try? JSONEncoder().encode(record) { statsLog.write(line + Data("\n".utf8)) }
+    return frames.last?.sequence ?? exported
   }
 
   static func systemShortcutsNotice(
@@ -223,6 +240,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     let time: TimeInterval
     let statistics: [String: String]
     let metrics: ScreenSharingMetrics.Snapshot
+    let timeline: ScreenSharingFrameTimelineSummary?
+    let frames: [ScreenSharingFrameRecord]
   }
 
   private static func openStatsLog(for id: ID) -> FileHandle? {

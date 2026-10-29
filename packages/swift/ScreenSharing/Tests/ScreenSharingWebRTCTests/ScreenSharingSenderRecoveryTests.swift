@@ -27,7 +27,7 @@ struct ScreenSharingSenderRecoveryTests {
       factory = ScreenSharingFieldTrials.process.makeFactory(codecFactory: codecFactory, metrics: metrics)
       frameSender = ScreenSharingFrameSender(
         source: factory.videoSource(forScreenCast: true), metrics: metrics,
-        idleMonitor: codecFactory.sourceIdleMonitor)
+        idleMonitor: codecFactory.sourceIdleMonitor, captureArrivals: codecFactory.captureArrivals)
       recovery = ScreenSharingSenderRecovery(
         metrics: metrics, codecFactory: codecFactory, frameSender: frameSender, videoRefresh: channel,
         nowNs: { nanoseconds(origin.duration(to: clock.now)) },

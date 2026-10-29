@@ -35,7 +35,7 @@
       "location": {
         "character": 16,
         "file": "apps/ios/Codevisor/Features/Home/HomeView+NewChat.swift",
-        "line": 285
+        "line": 286
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -65,7 +65,7 @@
       "location": {
         "character": 11,
         "file": "apps/ios/Codevisor/Features/Home/Views/HomeSidebarList.swift",
-        "line": 133
+        "line": 134
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -335,7 +335,7 @@
       "location": {
         "character": 11,
         "file": "apps/macos/Codevisor/Chromium/ChromiumAutomationBridge.swift",
-        "line": 350
+        "line": 358
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 64 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -365,7 +365,7 @@
       "location": {
         "character": 11,
         "file": "apps/macos/Codevisor/Features/Session/AttachmentThumbnailView.swift",
-        "line": 235
+        "line": 250
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 69 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -380,7 +380,7 @@
       "location": {
         "character": 3,
         "file": "apps/macos/Codevisor/Features/Session/NewChat/NewChatView+RunPickers.swift",
-        "line": 105
+        "line": 182
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 54 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -395,7 +395,7 @@
       "location": {
         "character": 11,
         "file": "apps/macos/Codevisor/Features/Session/NewChat/NewChatView.swift",
-        "line": 287
+        "line": 292
       },
       "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 142 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1432,7 +1432,7 @@
         "file": "packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/ScreenSharingViewerEndpoint.swift",
         "line": 121
       },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 90 lines",
+      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 72 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -1965,29 +1965,14 @@
     }
   },
   {
-    "text": "  public func decode(_ frame: ScreenSharingEncodedFrame) throws {",
-    "violation": {
-      "location": {
-        "character": 10,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingDecoder.swift",
-        "line": 53
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  private func configure(parameters: [Data]) throws {",
     "violation": {
       "location": {
         "character": 11,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingDecoder.swift",
-        "line": 126
+        "line": 182
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 103 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 76 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -2000,7 +1985,7 @@
       "location": {
         "character": 10,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
-        "line": 40
+        "line": 50
       },
       "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -2015,9 +2000,9 @@
       "location": {
         "character": 11,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
-        "line": 238
+        "line": 251
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 75 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -2225,7 +2210,7 @@
       "location": {
         "character": 10,
         "file": "packages/swift/ScreenSharing/Tests/ScreenSharingTests/Codecs/ScreenSharingCodecRoundTripTests.swift",
-        "line": 280
+        "line": 316
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -2405,7 +2390,7 @@
       "location": {
         "character": 10,
         "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/TranscriptAssistantRowProjection.swift",
-        "line": 171
+        "line": 172
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
       "ruleDescription": "Function bodies should not span too many lines",

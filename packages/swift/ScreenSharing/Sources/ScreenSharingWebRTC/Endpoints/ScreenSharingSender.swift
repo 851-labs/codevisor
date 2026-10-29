@@ -16,7 +16,8 @@ public final class ScreenSharingSender: ScreenSharingPeer {
     ) { factory, connection, codecFactory, transport in
       let source = factory.videoSource(forScreenCast: true)
       let frameSender = ScreenSharingFrameSender(
-        source: source, metrics: metrics, idleMonitor: codecFactory.sourceIdleMonitor, releaseQueue: transport.queue)
+        source: source, metrics: metrics, idleMonitor: codecFactory.sourceIdleMonitor,
+        captureArrivals: codecFactory.captureArrivals, releaseQueue: transport.queue)
       frameSender.configure(configuration)
       let track = factory.videoTrack(with: source, trackId: "screen")
       transport.retain(track)

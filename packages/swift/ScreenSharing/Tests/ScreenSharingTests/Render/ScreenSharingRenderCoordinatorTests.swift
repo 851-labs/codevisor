@@ -9,7 +9,7 @@ struct ScreenSharingRenderCoordinatorTests {
   private final class ControlledSubmission: ScreenSharingRenderSubmission, @unchecked Sendable {
     private let lock = NSLock()
     private var completed: (@Sendable (Bool) -> Void)?
-    private var presented: (@Sendable (Double) -> Void)?
+    private var presented: (@Sendable (Double, Double?) -> Void)?
     private var installedCompletion: (@Sendable (Bool) -> Void)?
     private(set) var committed = false
     func onCompleted(_ handler: @escaping @Sendable (Bool) -> Void) {
@@ -18,7 +18,9 @@ struct ScreenSharingRenderCoordinatorTests {
         installedCompletion = handler
       }
     }
-    func onPresented(_ handler: @escaping @Sendable (Double) -> Void) { lock.withLock { presented = handler } }
+    func onPresented(_ handler: @escaping @Sendable (Double, Double?) -> Void) {
+      lock.withLock { presented = handler }
+    }
     func commit() { lock.withLock { committed = true } }
     var holdsHandlers: Bool { lock.withLock { completed != nil || presented != nil } }
     var holdsPresentationHandler: Bool { lock.withLock { presented != nil } }
@@ -38,7 +40,7 @@ struct ScreenSharingRenderCoordinatorTests {
       let handler = lock.withLock {
         let h = presented; presented = nil; return h
       }
-      handler?(time)
+      handler?(time, nil)
     }
   }
 

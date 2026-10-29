@@ -90,4 +90,20 @@ struct ScreenSharingPresentationMetricsTests {
     #expect(timing?.count == 3, "the two backwards intervals are dropped, the frames are not")
     #expect((timing?.maximumMs).map { abs($0 - 300) < 1e-9 } == true)
   }
+
+  @Test func aPresentedFrameWithAnIdentityCompletesItsTimelineRecord() throws {
+    let metrics = ScreenSharingMetrics()
+    metrics.timeline.decoded(
+      ScreenSharingDecodedFrameTiming(
+        sourceTimestampNs: 42, host: nil, decodeInputNs: 1_000_000_000, decodeSubmitNs: 1_000_500_000,
+        decodedNs: 1_002_000_000, isKeyFrame: true))
+    metrics.recordPresentation(isNewFrame: true, presentedAt: 1.02, submittedAt: 1.01, receivedAt: 1.003)
+    metrics.recordPresentation(
+      isNewFrame: true, presentedAt: 1.02, submittedAt: 1.01, receivedAt: 1.003, sourceTimestampNs: 42)
+
+    let record = try #require(metrics.timeline.records(after: 0).first)
+    #expect(record.stagesUs.decode == 2_000 && record.stagesUs.delivery == 1_000)
+    #expect(record.stagesUs.renderQueue == 7_000 && record.stagesUs.present == 10_000)
+    #expect(metrics.timeline.summary()?.incompleteFrames == 1, "a frame without host stages is incomplete")
+  }
 }

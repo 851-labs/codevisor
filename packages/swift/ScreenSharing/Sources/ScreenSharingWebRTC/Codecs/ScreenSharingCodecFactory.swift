@@ -8,6 +8,7 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   let encoderRefreshRequest = ScreenSharingEncoderRefreshRequest()
   let sourceIdleMonitor = ScreenSharingSourceIdleMonitor()
   let deliveryAudit = ScreenSharingDeliveryAudit()
+  let captureArrivals = ScreenSharingCaptureArrivals()
   let metrics: ScreenSharingMetrics
   let codecs: [ScreenSharingVideoCodec]
   var codec: ScreenSharingVideoCodec { codecs[0] }
@@ -56,7 +57,8 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     guard let codec = codec(for: info) else { return nil }
     metrics.label("videoCodec", codec.rawValue)
     return ScreenSharingRTCEncoder(
-      metrics: metrics, codec: codec, refreshRequest: encoderRefreshRequest, idleMonitor: sourceIdleMonitor)
+      metrics: metrics, codec: codec, refreshRequest: encoderRefreshRequest, idleMonitor: sourceIdleMonitor,
+      captureArrivals: captureArrivals)
   }
 
   func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
@@ -75,6 +77,7 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   private let codec: ScreenSharingVideoCodec
   private let refreshRequest: ScreenSharingEncoderRefreshRequest
   private let idleMonitor: ScreenSharingSourceIdleMonitor
+  private let captureArrivals: ScreenSharingCaptureArrivals
   private static let maximumPendingFrames = 3
   private static let keyframeIntervalSeconds = 60
   var resolutionAlignment: Int { 2 }
@@ -83,12 +86,14 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
 
   init(
     metrics: ScreenSharingMetrics, codec: ScreenSharingVideoCodec,
-    refreshRequest: ScreenSharingEncoderRefreshRequest, idleMonitor: ScreenSharingSourceIdleMonitor
+    refreshRequest: ScreenSharingEncoderRefreshRequest, idleMonitor: ScreenSharingSourceIdleMonitor,
+    captureArrivals: ScreenSharingCaptureArrivals
   ) {
     self.metrics = metrics
     self.codec = codec
     self.refreshRequest = refreshRequest
     self.idleMonitor = idleMonitor
+    self.captureArrivals = captureArrivals
   }
   func implementationName() -> String { "CodevisorVideoToolbox\(codec.payloadName)" }
   func scalingSettings() -> RTCVideoEncoderQpThresholds? { nil }
@@ -153,7 +158,8 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
         ScreenSharingVideoFrame(
           pixelBuffer: native.pixelBuffer, timestampNs: frame.timeStampNs,
           rtpTimestamp: UInt32(bitPattern: frame.timeStamp), sourceTimestampNs: identity),
-        forceKeyFrame: refresh || frameTypes.contains(where: { $0.intValue == RTCFrameType.videoFrameKey.rawValue }))
+        forceKeyFrame: refresh || frameTypes.contains(where: { $0.intValue == RTCFrameType.videoFrameKey.rawValue }),
+        capturedAtNs: captureArrivals.take(sourceTimestampNs: identity))
       return 0
     } catch { metrics.label("encoderError", error.localizedDescription); return -1 }
   }
