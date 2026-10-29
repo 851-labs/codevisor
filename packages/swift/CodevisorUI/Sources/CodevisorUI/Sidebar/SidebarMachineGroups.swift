@@ -17,13 +17,18 @@ public struct SidebarMachineGroups {
   }
 
   public func group(forServer serverId: String) -> SidebarMachineGroup {
-    if let profile = machines.sandboxProfile(forMachineId: serverId) { return profileGroup(profile) }
+    if let profile = machines.sandboxProfile(forMachineId: serverId) { return profileGroup(profile, serverId) }
     return machineGroup(serverId)
   }
 
-  private func profileGroup(_ profile: SandboxMachineProfile) -> SidebarMachineGroup {
+  private func profileGroup(_ profile: SandboxMachineProfile, _ serverId: String) -> SidebarMachineGroup {
     let key = "sandbox-profile:\(profile.id)"
-    let heading = SidebarWorkspaceGroup.Heading(title: profile.name, icon: .sandboxVendor(profile.vendor))
+    let heading = SidebarWorkspaceGroup.Heading(
+      title: profile.name, icon: .sandboxVendor(profile.vendor),
+      newChatTarget: machines.sandboxOwnerMachineId(forMachineId: serverId).map {
+        NewChatTarget(sandboxProfile: profile.id, on: $0)
+      }
+    )
     return SidebarMachineGroup(key: key, orderKey: key, heading: heading)
   }
 

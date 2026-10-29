@@ -61,6 +61,10 @@ extension MachineController {
     await sandboxMachineProfiles.load(from: owners)
   }
 
+  public func sandboxOwnerMachineId(forMachineId id: String) -> String? {
+    cloudMachine(forMachineId: id)?.ephemeral.flatMap(ownerMachineId(of:))
+  }
+
   private var sandboxCloudMachines: [CloudMachine] {
     allMachines.compactMap { cloudMachine(forMachineId: $0.id) }.filter { $0.ephemeral != nil }
   }
@@ -68,10 +72,13 @@ extension MachineController {
   private var sandboxOwnerMachineIds: [String: String?] {
     var owners: [String: String?] = [:]
     for origin in sandboxCloudMachines.compactMap(\.ephemeral) {
-      owners[origin.ownerDeviceId] = canonicalComposerMachineId(
-        for: CodevisorMachine.cloudIdPrefix + origin.ownerDeviceId)
+      owners[origin.ownerDeviceId] = ownerMachineId(of: origin)
     }
     return owners
+  }
+
+  private func ownerMachineId(of origin: CloudEphemeralOrigin) -> String? {
+    canonicalComposerMachineId(for: CodevisorMachine.cloudIdPrefix + origin.ownerDeviceId)
   }
 
   public func sandboxHostConnection(forServerId serverId: String) -> SandboxHostConnection {

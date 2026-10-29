@@ -159,7 +159,7 @@ struct HomeSidebarList: View {
             HomeSidebarGroupLabel(
               heading: heading,
               onNewChat: heading.newChatTarget.flatMap { target in
-                target.projectId == nil ? { actions.actions.newChat(target) } : nil
+                target.isBareMachine ? { actions.actions.newChat(target) } : nil
               }
             )
           }

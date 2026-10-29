@@ -181,6 +181,15 @@ extension NewChatView {
     }
   }
 
+  var initialSandbox: NewChatInitialSandbox {
+    let profileId = initialProjectTarget?.sandboxProfileId
+    let isChoosable = controller != nil && sandboxChoices.contains { $0.id == profileId }
+    return NewChatInitialSandbox(request: .init(profileId: profileId, isChoosable: isChoosable)) { profileId in
+      guard let controller else { return }
+      selectMachineTarget(.sandbox(profileId), controller: controller)
+    }
+  }
+
   private func machineSelection(_ controller: SessionController) -> Binding<MachinePickerTarget> {
     Binding(
       get: { controller.sandboxTarget.map { .sandbox($0.profileId) } ?? .machine(controller.project.serverId) },
