@@ -13,6 +13,8 @@
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=90
+tier2_rendezvous_port=47595
+tier2_clock_port=47592
 tier2_plan_budget_s=2700
 : "${TIER2_FLOOR_PORT:=47594}"
 : "${TIER2_SEED:=1}"

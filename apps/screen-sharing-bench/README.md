@@ -178,7 +178,10 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
 Numbers come only from the `Screen Sharing Bench Tier 2` workflow
 (`.github/workflows/screen-sharing-bench-tier2.yml`, `workflow_dispatch`). A runner takes one job at a time,
 so no CI job overlaps a run. Each job builds and signs CodevisorBench at the run's commit
-(`build-screen-sharing-bench`, as Tier 1 does) and runs it through `CODEVISOR_BENCH_APP`, so `gh workflow run
+(`build-screen-sharing-bench`, as Tier 1 does), and the measuring jobs then install that build at
+`~/Applications/CodevisorBench.app` (`scripts/install-granted.sh`) and run it from there: Screen Recording and
+Accessibility are granted to that path, and a freshly built app elsewhere is refused both. The build stays
+installed after the run, so the installed app is that of the last Tier 2 dispatch. So `gh workflow run
 screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
 minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
 and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine). C4 runs only when
@@ -252,8 +255,9 @@ band, the wider of the two systems' min–max spreads, is no difference.
 `Screen Sharing Bench` (`.github/workflows/screen-sharing-bench.yml`) is the one workflow for numbers. Every job
 that measures builds CodevisorBench at its own commit and signs it with the team's Developer ID from the repository
 secrets (`.github/actions/build-screen-sharing-bench`, `scripts/signing-keychain.sh`), into `$RUNNER_TEMP`, and runs
-it through `CODEVISOR_BENCH_APP`. The designated requirement is the same as the installed app's, so its permission
-grants apply, and `~/Applications/CodevisorBench.app` is never touched.
+it through `CODEVISOR_BENCH_APP`. Tier 1 needs no permission grant and never touches
+`~/Applications/CodevisorBench.app`; Tier 2 needs Screen Recording and Accessibility, which a build outside that path
+is refused, so it installs its build there (see Tier 2).
 
 - **Nightly** at 03:00 Pacific (two UTC crons; the `plan` job keeps the one that is 03:00 in Los Angeles), and
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
