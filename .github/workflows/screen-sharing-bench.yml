@@ -66,6 +66,7 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       trigger: ${{ steps.plan.outputs.trigger }}
       preflight: ${{ steps.plan.outputs.preflight }}
+      own_window: ${{ steps.plan.outputs.own_window }}
       publish: ${{ steps.plan.outputs.publish }}
       tier2: ${{ steps.plan.outputs.tier2 }}
       calibration: ${{ steps.plan.outputs.calibration }}
@@ -83,7 +84,7 @@ jobs:
           CALIBRATION_INPUT: ${{ inputs.calibration }}
           NIGHTLY_TIER2: ${{ vars.SCREEN_SHARING_BENCH_NIGHTLY_TIER2 }}
         run: |
-          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false
+          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false own_window=false
           preflight="--quiet --allow-locked"
           pacific_cron="0 10 * * *"
           [[ "$(TZ=America/Los_Angeles date +%z)" == -0800 ]] && pacific_cron="0 11 * * *"
@@ -97,14 +98,14 @@ jobs:
               trigger=$KIND
               tier2=$TIER2_INPUT calibration=$CALIBRATION_INPUT
               [[ -n "$SCENES$NETWORKS" ]] && mode=custom trigger=adhoc
-              [[ "$SOURCE" == own-window ]] && preflight="--quiet"
+              [[ "$mode" == custom && "$SOURCE" == own-window ]] && own_window=true preflight="--quiet"
               ;;
           esac
           [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]] && publish=true
           [[ "$trigger" == nightly && "$publish" != true ]] && trigger=adhoc
           {
             echo "run=$run"; echo "mode=$mode"; echo "trigger=$trigger"; echo "preflight=$preflight"
-            echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"
+            echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"; echo "own_window=$own_window"
           } | tee -a "$GITHUB_OUTPUT"
 
   tier1:
@@ -143,6 +144,9 @@ jobs:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Install it where the permission grants are (own-window only)
+        if: ${{ needs.plan.outputs.own_window == 'true' }}
+        run: apps/screen-sharing-bench/scripts/install-granted.sh
       - name: Wait for a quiet machine (C5)
         run: |
           mkdir -p "$RUNNER_TEMP/results"
