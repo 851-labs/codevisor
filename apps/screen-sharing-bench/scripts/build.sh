@@ -32,13 +32,16 @@ fi
 cd "$repo_root"
 node scripts/net-artifact.mjs ensure-swift >&2
 swift build -c release --package-path "$package_path" --product CodevisorBench >&2
-binary="$(swift build -c release --package-path "$package_path" --show-bin-path)/CodevisorBench"
+products="$(swift build -c release --package-path "$package_path" --show-bin-path)"
 
 rm -rf "$bundle"
-mkdir -p "$bundle/Contents/MacOS"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Frameworks"
 cp "$app_root/Info.plist" "$bundle/Contents/Info.plist"
 plutil -insert CodevisorBenchCommit -string "$(source_commit)" "$bundle/Contents/Info.plist"
-cp "$binary" "$bundle/Contents/MacOS/CodevisorBench"
+cp "$products/CodevisorBench" "$bundle/Contents/MacOS/CodevisorBench"
+install_name_tool -add_rpath @executable_path/../Frameworks "$bundle/Contents/MacOS/CodevisorBench"
+ditto "$products/WebRTC.framework" "$bundle/Contents/Frameworks/WebRTC.framework"
+codesign --force --sign "$identity" "$bundle/Contents/Frameworks/WebRTC.framework" >&2
 codesign --force --sign "$identity" "$bundle" >&2
 codesign --verify --strict "$bundle"
 echo "$bundle"

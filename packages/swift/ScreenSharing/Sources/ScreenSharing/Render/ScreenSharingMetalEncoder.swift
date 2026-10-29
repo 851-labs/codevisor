@@ -1,8 +1,8 @@
 import CoreVideo
 import MetalKit
 
-struct ScreenSharingMetalEncoder: @unchecked Sendable {
-  struct Pipelines: @unchecked Sendable {
+package struct ScreenSharingMetalEncoder: @unchecked Sendable {
+  package struct Pipelines: @unchecked Sendable {
     let biplanar: any MTLRenderPipelineState
     let bgra: any MTLRenderPipelineState
     let biplanarHDR: any MTLRenderPipelineState
@@ -10,7 +10,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     let biplanarSDRToLinear: any MTLRenderPipelineState
     let bgraSDRToLinear: any MTLRenderPipelineState
 
-    init(device: any MTLDevice, shader: String) throws {
+    package init(device: any MTLDevice, shader: String) throws {
       let library = try device.makeLibrary(source: shader, options: nil)
       func pipeline(
         fragment: String, target: MTLPixelFormat = .bgra8Unorm
@@ -31,7 +31,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       bgraSDRToLinear = try pipeline(fragment: "screenFragmentBGRAToLinear", target: hdr)
     }
   }
-  struct Textures {
+  package struct Textures {
     enum Planes {
       case biplanar(y: CVMetalTexture, uv: CVMetalTexture, range: PlaneRange)
       case bgra(CVMetalTexture)
@@ -64,9 +64,9 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     }
   }
   static let highDynamicRangePixelFormat = MTLPixelFormat.rgba16Float
-  struct Encoded {
-    let buffer: any MTLCommandBuffer
-    let retained: TextureFrame
+  package struct Encoded {
+    package let buffer: any MTLCommandBuffer
+    package let retained: TextureFrame
   }
   static let supportedPixelFormats: Set<OSType> = [
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
@@ -83,7 +83,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
   private let pipelines: Pipelines
   private let textureCache: CVMetalTextureCache
 
-  init(device: any MTLDevice, commandQueue: any MTLCommandQueue, pipelines: Pipelines) throws {
+  package init(device: any MTLDevice, commandQueue: any MTLCommandQueue, pipelines: Pipelines) throws {
     var cache: CVMetalTextureCache?
     let status = CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
     guard status == kCVReturnSuccess, let cache else { throw ScreenSharingError.codec("Create texture cache", status) }
@@ -92,7 +92,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     textureCache = cache
   }
 
-  static func videoSize(of frame: ScreenSharingVideoFrame) -> CGSize {
+  package static func videoSize(of frame: ScreenSharingVideoFrame) -> CGSize {
     CGSize(width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer))
   }
 
@@ -103,7 +103,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       width: video.width * scale, height: video.height * scale, znear: 0, zfar: 1)
   }
 
-  func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
+  package func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
     let pixel = frame.pixelBuffer
     let format = CVPixelBufferGetPixelFormatType(pixel)
     guard Self.supportedPixelFormats.contains(format) else { return nil }
@@ -125,7 +125,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     encode(textures, into: target.pass, target: target.drawable.texture)
   }
 
-  func encode(
+  package func encode(
     _ textures: Textures, into pass: MTLRenderPassDescriptor, target targetTexture: any MTLTexture
   ) -> Encoded? {
     guard

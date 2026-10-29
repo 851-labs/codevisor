@@ -1,7 +1,7 @@
 import MetalKit
 
 extension ScreenSharingMetalView {
-  static let shader = """
+  package nonisolated static let shader = """
     #include <metal_stdlib>
     using namespace metal;
     struct ScreenVertex { float4 position [[position]]; float2 uv; };

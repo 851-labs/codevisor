@@ -4,7 +4,8 @@ The screen sharing benchmark app (`CodevisorBench.app`), specified in the
 [benchmark design](https://linear.app/851/document/screen-sharing-v2-benchmark-design-851-3582-0309dbbc943b)
 (851-3582). It's a dev tool: not shipped, and no product target depends on it.
 
-One binary with subcommands (`player`, and later `observe`, `calibrate`, `loopback`, `host`, `viewer`).
+One binary with subcommands (`player`, `generate`, `observe`, `calibrate`, `sample`, `loopback`, and later `host`
+and `viewer`).
 Pure logic (barcode, stats, clock offset, network model, report) lives in the `ScreenSharingBench`
 library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 
@@ -15,7 +16,7 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 - `Sources/ScreenSharingBenchScenes` is the scene library (scenes S1–S7, one Metal renderer, the Tier 1
   `BenchSceneGenerator`), linked in the same way as `packages/swift/ScreenSharing/Sources/ScreenSharingBenchScenes`.
 - `Info.plist` is the bundle's plist. The bundle ID is `com.851labs.CodevisorBench`.
-- `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app` and signs it.
+- `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app`, embeds `WebRTC.framework` and signs it.
 - `scripts/deploy.sh <ssh-host>` builds, then installs `~/Applications/CodevisorBench.app` on that Mac.
 - `scripts/run.sh <ssh-host> <command> [--option value …]` runs a subcommand on that Mac's GUI session.
 - `scripts/run-installed.sh <command> [--option value …]` does the same on this Mac (`run.sh` runs it over ssh).
@@ -105,6 +106,50 @@ Each command prints one JSON result to stdout; a check that fails its pass crite
 
 The checks that capture the screen need **Screen Recording**, C6 needs **Accessibility**, and C2 needs
 **Local Network** (without it, UDP to the other Mac fails with `EHOSTUNREACH`).
+
+## Loopback (851-3593)
+
+`loopback` is Tier 1: one process streams synthetic scenes through the product `ScreenSharingSender` and
+`ScreenSharingReceiver` over an in-process UDP relay that emulates the network, then writes report v1. It needs
+no permission grant and no GUI session (except `--onscreen`), so it runs on any CI Mac.
+
+```sh
+CodevisorBench loopback                                   # the full matrix: S1–S6 × N0–N7 at R1
+CodevisorBench loopback --scenes scroll,video --networks N0,N3 --duration 20 --output report.json
+CodevisorBench loopback --frames frames.jsonl --onscreen
+CodevisorBench loopback --source own-window --scenes scroll --networks N0
+```
+
+- **The product, not a copy.** The sender and receiver use `ScreenSharingProductProfile` (codec order, 45 Mbit/s
+  ceiling, capture box, field trials, keyframe interval, pending frames), the same as `ScreenSharingHostService`.
+  The adaptive quality loop runs as in the product. The viewer renders through the product's render coordinator
+  and Metal encoder into an offscreen texture (`--onscreen`: the product `ScreenSharingMetalView` in a window).
+- **Sources.** `synthetic` (the default): `BenchSceneGenerator` renders each new version on a 60 Hz tick and pushes
+  it to the sender's frame sink, stamped when it is pushed, so the capture stage is about 0. Like ScreenCaptureKit,
+  nothing is pushed while the scene doesn't change. `own-window` (`--source own-window [--display main|virtual]`):
+  the player draws the scene in a full-screen window, and the product `ScreenSharingCapture` captures that window
+  (`SCShareableContent.currentProcess`), so capture is real; versions come from the barcode of each captured frame.
+  It needs an unlocked GUI session.
+- **Network.** The relay rewrites each side's SDP to a single host candidate on a relay socket and forwards both
+  directions through `BenchRelayLink` (the T1 `BenchNetworkModel`: capacity, queue, delay, jitter, seeded
+  Bernoulli or Gilbert–Elliott loss). Media and feedback get their own seeded models, so the drop pattern by packet
+  index is the same on every run (`relay.media.first_losses` in the report). Each peer socket gets its own
+  mapping socket, like a NAT, so every ICE pair goes through the relay.
+- **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
+  the first `--warm-up` seconds (5) are left out. `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
+  with `--onscreen`. `stages_ms` comes from the 851-3583 timeline: capture, capture queue, encode, network (the
+  encoder output to decoder input span: send, the relay, receive and the jitter buffer, exact on one clock),
+  decode, render queue and present. `timing_frame_check` pairs each WebRTC timing frame (`googTimingFrameInfo`,
+  sampled twice a second; WebRTC keeps the slowest recent frame) with the timeline frame captured within 8 ms of it,
+  and compares encode, decode and capture to decoded; it agrees when each median difference is within 5 ms.
+  Drops are whole-scene counters.
+- **Output.** stdout is the report JSON (`--output` also writes it); stderr has one progress line per scene and a
+  Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
+  timestamp). A scene that fails (for example ICE never connects) is reported as invalid with the error, and the
+  matrix goes on.
+- **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
+  the report and `frames.jsonl` use mach continuous time like the rest of the bench. Each scene reads
+  continuous − absolute once and shifts every timeline timestamp by it. Durations don't change.
 
 ## Signing and permissions
 

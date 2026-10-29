@@ -128,11 +128,19 @@
       "valid" : true
     },
     {
+      "codec_errors" : 0,
       "drops" : {
         "capture" : 0,
         "encoder" : 0,
         "jitter" : 1,
         "network" : 3
+      },
+      "e2e_endpoint" : "committed",
+      "e2e_ms" : {
+        "count" : 3,
+        "max" : 52,
+        "p50" : 40,
+        "p95" : 52
       },
       "image_age_ms" : {
         "count" : 3,
@@ -142,6 +150,28 @@
       },
       "invalid_reason" : "unreadable captures above 1%",
       "network" : "N3",
+      "relay" : {
+        "feedback" : {
+          "bytes" : 96320,
+          "first_losses" : [
+            40
+          ],
+          "lost" : 11,
+          "packets" : 1204,
+          "queue_overflow" : 0
+        },
+        "media" : {
+          "bytes" : 11204311,
+          "first_losses" : [
+            172,
+            212,
+            398
+          ],
+          "lost" : 104,
+          "packets" : 9981,
+          "queue_overflow" : 0
+        }
+      },
       "repetition" : 2,
       "resolution" : "R1",
       "scene" : "test-cards",
@@ -166,6 +196,25 @@
           "max" : 2.2,
           "p50" : 0.6,
           "p95" : 2.2
+        },
+        "timing_frame_check" : {
+          "agrees" : true,
+          "capture_to_decoded" : {
+            "delta_p50_ms" : 0,
+            "stages_p50_ms" : 21,
+            "timing_frames_p50_ms" : 21
+          },
+          "count" : 1,
+          "decode" : {
+            "delta_p50_ms" : 0,
+            "stages_p50_ms" : 1,
+            "timing_frames_p50_ms" : 1
+          },
+          "encode" : {
+            "delta_p50_ms" : 0,
+            "stages_p50_ms" : 5,
+            "timing_frames_p50_ms" : 5
+          }
         }
       },
       "system" : "codevisor",

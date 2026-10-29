@@ -2,17 +2,21 @@ import Foundation
 
 public enum ScreenSharingTunnelSDP {
   public static func localIPv4(inOffer offer: String) -> String? {
+    localIPv4Candidate(inOffer: offer)?.address
+  }
+
+  public static func localIPv4Candidate(inOffer offer: String) -> (address: String, port: UInt16)? {
     for line in offer.split(whereSeparator: \.isNewline) {
       let fields = line.split(separator: " ")
       guard line.hasPrefix("a=candidate:"), fields.count >= 8, fields[2].lowercased() == "udp",
-        fields[7] == "host"
+        fields[7] == "host", let port = UInt16(fields[5])
       else { continue }
       let ip = String(fields[4])
       let octets = ip.split(separator: ".")
       guard octets.count == 4, octets.allSatisfy({ UInt8($0) != nil }), !ip.hasPrefix("127."),
         !ip.hasPrefix("169.254.")
       else { continue }
-      return ip
+      return (ip, port)
     }
     return nil
   }

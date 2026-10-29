@@ -33,6 +33,17 @@ struct BenchBarcodeTests {
     #expect(misreads.isEmpty, "\(misreads.count) misreads, first: \(String(describing: misreads.first))")
   }
 
+  @Test func aBarcodeReadsFromTheLumaPlaneOfADecodedFourFourFourFrame() throws {
+    let source = try BenchPixelBuffers.make(width: 512, height: 32)
+    let decoded = try BenchPixelBuffers.make(
+      width: 512, height: 32, format: kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
+    try BenchBarcode.draw(0xA5_5A5A, into: source)
+
+    try BenchPixelTransfer().transfer(source, to: decoded)
+
+    #expect(try BenchBarcode.read(decoded) == .version(0xA5_5A5A))
+  }
+
   @Test func tornReadsBetweenNearbyVersionsNeverDecodeToAThirdVersion() throws {
     let pairs = [
       (0x7F_FFFF, 0x80_0000), (0x00_FFFF, 0x01_0000), (0xFF_FFFE, 0xFF_FFFF), (41, 45), (0x12_3456, 0x12_3458),

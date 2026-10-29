@@ -16,6 +16,10 @@ struct ScreenSharingTunnelSDPTests {
   @Test("The viewer's own LAN address comes from its offer")
   func localAddress() {
     #expect(ScreenSharingTunnelSDP.localIPv4(inOffer: offer) == "10.0.0.9")
+    #expect(
+      ScreenSharingTunnelSDP.localIPv4Candidate(inOffer: offer).map { [$0.address, String($0.port)] } == [
+        "10.0.0.9", "50004",
+      ])
     #expect(ScreenSharingTunnelSDP.localIPv4(inOffer: "v=0\r\nm=video 9 UDP 96") == nil)
     #expect(
       ScreenSharingTunnelSDP.localIPv4(inOffer: "a=candidate:1 1 udp 1 fe80::1 5 typ host") == nil)
