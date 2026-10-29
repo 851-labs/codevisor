@@ -207,7 +207,7 @@ struct CommandPaletteCatalog {
 
     return inspector.tabs.map { tab in
       CommandPaletteItem(
-        id: "inspector:\(tab.rawValue)", title: tab.title,
+        id: "inspector:\(tab.rawValue)", title: "Show \(tab.title)",
         icon: tab == .harness ? .harness(inspector.harnessId) : .symbol(tab.systemImage),
         searchTerms: ["Show \(tab.title) Inspector"]
       ) { inspector.show(tab) }
