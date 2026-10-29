@@ -3,16 +3,8 @@ import Foundation
 enum ScreenSharingPeers {
   private static let screenSharingPort = ".5900"
 
-  @concurrent
   static func established() async throws -> [String] {
-    let process = Process()
-    let pipe = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/netstat")
-    process.arguments = ["-an", "-p", "tcp"]
-    process.standardOutput = pipe
-    try process.run()
-    let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    process.waitUntilExit()
+    let output = try await CommandOutput.of("/usr/sbin/netstat", ["-an", "-p", "tcp"])
     return Array(Set(output.split(separator: "\n").compactMap(peer))).sorted()
   }
 

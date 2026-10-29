@@ -10,7 +10,7 @@ enum LoopbackSummary {
   static func progress(_ outcome: LoopbackOutcome, index: Int, of total: Int) -> String {
     let result = outcome.result
     let status = result.invalidReason.map { "invalid: \($0)" } ?? "e2e \(pair(result.e2eMs)) ms"
-    return "[\(index + 1)/\(total)] \(result.scene) \(result.network): \(status), "
+    return "[\(index + 1)/\(total)] \(result.scene) \(result.network) #\(result.repetition): \(status), "
       + "\(format(result.updatesPerS)) updates/s, quality level \(outcome.qualityLevel)"
   }
 

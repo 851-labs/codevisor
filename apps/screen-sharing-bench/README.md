@@ -17,9 +17,11 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
   `BenchSceneGenerator`), linked in the same way as `packages/swift/ScreenSharing/Sources/ScreenSharingBenchScenes`.
 - `Info.plist` is the bundle's plist. The bundle ID is `com.851labs.CodevisorBench`.
 - `scripts/build.sh` builds a release binary into `.build/CodevisorBench.app`, embeds `WebRTC.framework` and signs it.
+- `scripts/build-pinned.sh <directory>` builds and copies the bundle there; CI runs it at the job's commit.
 - `scripts/deploy.sh <ssh-host>` builds, then installs `~/Applications/CodevisorBench.app` on that Mac.
 - `scripts/run.sh <ssh-host> <command> [--option value …]` runs a subcommand on that Mac's GUI session.
-- `scripts/run-installed.sh <command> [--option value …]` does the same on this Mac (`run.sh` runs it over ssh).
+- `scripts/run-installed.sh <command> [--option value …]` does the same on this Mac (`run.sh` runs it over ssh). It
+  opens `CODEVISOR_BENCH_APP` when that is set, and `~/Applications/CodevisorBench.app` otherwise.
 - `scripts/calibrate-observer.sh` and `scripts/calibrate-clock.sh` are the steps of the
   `Screen Sharing Bench Calibration` workflow (`.github/workflows/screen-sharing-bench-calibration.yml`).
 
@@ -119,7 +121,8 @@ no permission grant and no GUI session (except `--onscreen`), so it runs on any 
 
 ```sh
 CodevisorBench loopback                                   # the full matrix: S1–S6 × N0–N7 at R1
-CodevisorBench loopback --scenes scroll,video --networks N0,N3 --duration 20 --output report.json
+CodevisorBench loopback --scenes scroll,video --networks N0,N3 --duration 30 --warm-up 10 --repetitions 3 \
+  --output report.json
 CodevisorBench loopback --frames frames.jsonl --onscreen
 CodevisorBench loopback --source own-window --scenes scroll --networks N0
 ```
@@ -128,9 +131,11 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   ceiling, capture box, field trials, keyframe interval, pending frames), the same as `ScreenSharingHostService`.
   The adaptive quality loop runs as in the product. The viewer renders through the product's render coordinator
   and Metal encoder into an offscreen texture (`--onscreen`: the product `ScreenSharingMetalView` in a window).
-- **Sources.** `synthetic` (the default): `BenchSceneGenerator` renders each new version on a 60 Hz tick and pushes
-  it to the sender's frame sink, stamped when it is pushed, so the capture stage is about 0. Like ScreenCaptureKit,
-  nothing is pushed while the scene doesn't change. `own-window` (`--source own-window [--display main|virtual]`):
+- **Sources.** `synthetic` (the default): `BenchSceneGenerator` renders the next versions ahead, and a strict 60 Hz
+  `DispatchSourceTimer` on a user-interactive queue pushes each new version to the sender's frame sink, stamped when
+  it is pushed, so the capture stage is about 0 and frames are 16.67 ms apart within ±0.06 ms, like ScreenCaptureKit's
+  vsync-stamped frames. (A Swift `sleep` on the cooperative pool wakes up to 8 ms late, and WebRTC's jitter estimate
+  follows that noise.) Like ScreenCaptureKit, nothing is pushed while the scene doesn't change. `own-window` (`--source own-window [--display main|virtual]`):
   the player draws the scene in a full-screen window, and the product `ScreenSharingCapture` captures that window
   (`SCShareableContent.currentProcess`), so capture is real; versions come from the barcode of each captured frame.
   It needs an unlocked GUI session.
@@ -142,7 +147,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   overflow, which no N0–N7 condition can produce because only N5 limits the queue and N5 has no random loss). Each peer socket gets its own
   mapping socket, like a NAT, so every ICE pair goes through the relay.
 - **Measurement.** Each scene runs `--duration` seconds (12 by default; the matrix takes about 11 minutes) and
-  the first `--warm-up` seconds (5) are left out. `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
+  the first `--warm-up` seconds (5) are left out. `--repetitions <n>` runs the whole list n times, interleaved (every
+  cell once, then every cell again), and each result carries its `repetition`; consumers take the median per cell
+  (`BenchCellSummary`). The report's `run.method` records duration, warm-up and repetitions. `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
   with `--onscreen`. `stages_ms` comes from the 851-3583 timeline: capture, capture queue, encode, network (the
   encoder output to decoder input span: send, the relay, receive and the jitter buffer, exact on one clock),
   decode, render queue and present. `timing_frame_check` pairs each WebRTC timing frame (`googTimingFrameInfo`,
@@ -153,12 +160,8 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example ICE never connects) is reported as invalid with the error, and the
   matrix goes on.
-- **Results come from the workflow.** `Screen Sharing Bench Loopback`
-  (`.github/workflows/screen-sharing-bench-loopback.yml`) runs `scripts/loopback.sh` on tamale as one job, so no
-  CI job can overlap it: 1–3 back-to-back matrices (inputs `duration`, `scenes`, `networks`) plus the own-window
-  run, uploaded as the `loopback-tamale` artifact with each matrix's wall time and the load before and after.
-  Deploy the build first (`scripts/deploy.sh tamale`); the job warns when the installed app isn't from the
-  dispatched commit. Runs over SSH are for development only.
+- **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
+  development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
   the report and `frames.jsonl` use mach continuous time like the rest of the bench. Each scene reads
   continuous − absolute once and shifts every timeline timestamp by it. Durations don't change.
@@ -220,13 +223,58 @@ from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual ove
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions: a difference within the noise
 band, the wider of the two systems' min–max spreads, is no difference.
 
+## Benchmark workflow, results and gate (851-3594)
+
+`Screen Sharing Bench` (`.github/workflows/screen-sharing-bench.yml`) is the one workflow for numbers. Every job
+that measures builds CodevisorBench at its own commit and signs it with the team's Developer ID from the repository
+secrets (`.github/actions/build-screen-sharing-bench`, `scripts/signing-keychain.sh`), into `$RUNNER_TEMP`, and runs
+it through `CODEVISOR_BENCH_APP`. The designated requirement is the same as the installed app's, so its permission
+grants apply, and `~/Applications/CodevisorBench.app` is never touched.
+
+- **Nightly** at 03:00 Pacific (two UTC crons; the `plan` job keeps the one that is 03:00 in Los Angeles), and
+  `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
+  (C5), then runs `scripts/tier1.sh nightly`: the `core` report (S1–S6 at N0 and N3, 3 interleaved repetitions of
+  30 s with 10 s warm-up, about 20 min) and the `matrix` report (N1, N2 and N4–N7, 1 repetition, about 20 min).
+  A dispatch with `scenes` or `networks` set runs one `custom` report instead (`source` picks `own-window`).
+- **`benchmark-results`.** On `main`, `scripts/publish.sh` commits each report to the orphan branch
+  `benchmark-results` as `runs/YYYY/MM/DD/<run id>-tier1.json`, with its chart (`.svg`), and appends a line to
+  `index.jsonl` (`BenchIndexEntry`: the run, its path and one `BenchCellSummary` per cell). `main` never holds
+  results. Scheduled runs and dispatches with `kind: nightly` are recorded as `nightly`, the only runs a baseline
+  reads; other dispatches are `adhoc`.
+- **Summary.** `summarize` writes the job summary: the per-cell table (median over repetitions, the range, the
+  change against the median of the last 7 nightlies with the same method), the stage table, the C5 result and the
+  chart. GitHub strips inline SVG from summaries, so the chart (a stacked per-stage bar and the nightly e2e p50 trend
+  per cell) is the committed `.svg`, linked at that commit.
+- **PR gate.** A pull request touching `packages/swift/ScreenSharing`, the CodevisorCoreMac screen sharing sources,
+  this app or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
+  queued nightly or Tier 2 run; the runner takes one job at a time). It runs S2, S3 and S5 at N0 and N3 twice with
+  the nightly method (about 20 min) and `gate` compares both runs with the nightly baseline using the design §4.2
+  rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. The summary also says how long
+  the gate waited for tamale and which bench runs were active meanwhile.
+- **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
+  night once the repository variable `SCREEN_SHARING_BENCH_NIGHTLY_TIER2` is `true`. They still use the installed app.
+
+`preflight --quiet` is C5. It waits at least `--settle` seconds (60) and up to `--settle-limit` (300) for the
+1-minute load to drop to 2.0, then fails on a thermal state other than nominal, Spotlight indexing (`mds_stores` or
+`mdworker*` above 5% CPU), Time Machine or `softwareupdate` running, en0 not up at 1000baseT, other regular apps
+open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
+offscreen Tier 1). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`.
+
+```sh
+gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
+gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0    # an ad hoc run
+CodevisorBench gate --index index.jsonl --first first.json --second second.json
+CodevisorBench record --report report.json --results <benchmark-results checkout>
+```
+
 ## Signing and permissions
 
 The bundle is signed with the team's Developer ID Application identity (team `WH4QW9ND3J`), so its
 designated requirement is the bundle ID plus the team, not a hash of the binary. Screen Recording and
 Accessibility grants for `~/Applications/CodevisorBench.app` survive every rebuild and redeploy. Set
 `CODEVISOR_BENCH_SIGNING_IDENTITY` to sign with another identity (grants then have to be given again).
-The lab minis have no signing identity, so build on a developer Mac and deploy.
+The lab minis have no signing identity of their own: CI imports it into a temporary keychain for the build, and
+manual runs build on a developer Mac and deploy.
 
 ## Running on a lab Mac
 

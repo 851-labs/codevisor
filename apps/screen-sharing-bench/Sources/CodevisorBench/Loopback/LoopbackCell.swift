@@ -13,6 +13,7 @@ struct LoopbackCell {
   let scene: BenchScene
   let conditions: BenchNetworkConditions
   let settings: LoopbackSettings
+  let repetition: Int
 
   func run() async throws -> LoopbackOutcome {
     let clockOffsetNs = BenchMachClock.continuousMinusAbsoluteNs()
@@ -31,7 +32,7 @@ struct LoopbackCell {
     await peers.close()
 
     let measured = LoopbackMeasurement(
-      scene: scene, conditions: conditions, settings: settings, clockOffsetNs: clockOffsetNs,
+      scene: scene, conditions: conditions, settings: settings, repetition: repetition, clockOffsetNs: clockOffsetNs,
       relayOriginNs: relayOriginNs)
     return measured.outcome(recording, relay: relay)
   }

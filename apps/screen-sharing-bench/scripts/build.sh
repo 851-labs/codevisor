@@ -18,8 +18,14 @@ signing_identity() {
 
 source_commit() {
   local commit
+  local changes
   commit="$(git -C "$repo_root" rev-parse HEAD)"
-  if [[ -n "$(git -C "$repo_root" status --porcelain)" ]]; then commit="$commit-dirty"; fi
+  changes="$(git -C "$repo_root" status --porcelain --ignore-submodules=all)"
+  if [[ -n "$changes" ]]; then
+    echo "Building from a changed checkout:" >&2
+    echo "$changes" | head -20 >&2
+    commit="$commit-dirty"
+  fi
   echo "$commit"
 }
 

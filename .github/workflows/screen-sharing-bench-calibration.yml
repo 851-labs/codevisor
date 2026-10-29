@@ -8,6 +8,13 @@ on:
         required: false
         default: "10"
         type: string
+  workflow_call:
+    inputs:
+      clock-minutes:
+        description: Minutes of clock probes between the minis (C2), 1 to 60
+        required: false
+        default: "10"
+        type: string
 
 permissions:
   contents: read

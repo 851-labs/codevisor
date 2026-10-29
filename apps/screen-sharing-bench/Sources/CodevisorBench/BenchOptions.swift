@@ -17,6 +17,12 @@ final class BenchOptions {
     return values[name]
   }
 
+  func requiredString(_ name: String) throws -> String {
+    guard let value = try string(name) else { throw BenchUsageError(message: "--\(name) is required") }
+
+    return value
+  }
+
   func string(_ name: String, default fallback: String) throws -> String {
     try string(name) ?? fallback
   }

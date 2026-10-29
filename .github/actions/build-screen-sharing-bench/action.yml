@@ -1,0 +1,36 @@
+name: Build CodevisorBench
+description: >-
+  Builds CodevisorBench.app at the checked-out commit, signs it with the Developer ID identity (the same
+  designated requirement as the lab's installed app, so its permission grants apply) into
+  $RUNNER_TEMP/bench, and points CODEVISOR_BENCH_APP at it. The installed app is never touched.
+inputs:
+  certificate:
+    description: The Developer ID Application certificate, base64-encoded PKCS#12
+    required: true
+  certificate-password:
+    description: The certificate's password
+    required: true
+  identity:
+    description: The signing identity
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
+    - uses: ./.github/actions/setup-node
+    - uses: ./.github/actions/setup-rust
+    - shell: bash
+      env:
+        APPLE_CERTIFICATE_BASE64: ${{ inputs.certificate }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ inputs.certificate-password }}
+      run: apps/screen-sharing-bench/scripts/signing-keychain.sh import
+    - shell: bash
+      env:
+        CODEVISOR_BENCH_SIGNING_IDENTITY: ${{ inputs.identity }}
+      run: |
+        app="$(apps/screen-sharing-bench/scripts/build-pinned.sh "$RUNNER_TEMP/bench")"
+        echo "CODEVISOR_BENCH_APP=$app" >> "$GITHUB_ENV"
+    - shell: bash
+      if: always()
+      run: apps/screen-sharing-bench/scripts/signing-keychain.sh remove

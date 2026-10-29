@@ -28,6 +28,7 @@ on:
         required: false
         default: true
         type: boolean
+  workflow_call:
 
 permissions:
   contents: read

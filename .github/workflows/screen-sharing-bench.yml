@@ -1,0 +1,212 @@
+name: Screen Sharing Bench
+
+on:
+  schedule:
+    - cron: "0 10 * * *"
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: nightly records a baseline run (main only); adhoc records nothing the gate reads
+        required: false
+        default: adhoc
+        type: choice
+        options: [adhoc, nightly]
+      scenes:
+        description: Comma-separated Tier 1 scenes for a custom run; leave both lists empty for the nightly plan
+        required: false
+        default: ""
+        type: string
+      networks:
+        description: Comma-separated Tier 1 networks for a custom run (empty with scenes set means N0,N3)
+        required: false
+        default: ""
+        type: string
+      source:
+        description: Frame source for a custom run (own-window needs tamale's GUI session unlocked)
+        required: false
+        default: synthetic
+        type: choice
+        options: [synthetic, own-window]
+      calibration:
+        description: Also run the calibration workflow (C1, C2) on both minis
+        required: false
+        default: false
+        type: boolean
+      tier2:
+        description: Also run Tier 2 (Codevisor vs Apple HP) with its default inputs
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - packages/swift/ScreenSharing/**
+      - packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/**
+      - apps/screen-sharing-bench/**
+      - .github/workflows/screen-sharing-bench.yml
+
+permissions:
+  contents: read
+
+env:
+  TIER1_DURATION: "30"
+  TIER1_WARM_UP: "10"
+  TIER1_REPETITIONS: "3"
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      mode: ${{ steps.plan.outputs.mode }}
+      trigger: ${{ steps.plan.outputs.trigger }}
+      preflight: ${{ steps.plan.outputs.preflight }}
+      publish: ${{ steps.plan.outputs.publish }}
+      tier2: ${{ steps.plan.outputs.tier2 }}
+      calibration: ${{ steps.plan.outputs.calibration }}
+    steps:
+      - name: Plan the run
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          CRON: ${{ github.event.schedule }}
+          KIND: ${{ inputs.kind }}
+          SCENES: ${{ inputs.scenes }}
+          NETWORKS: ${{ inputs.networks }}
+          SOURCE: ${{ inputs.source }}
+          TIER2_INPUT: ${{ inputs.tier2 }}
+          CALIBRATION_INPUT: ${{ inputs.calibration }}
+          NIGHTLY_TIER2: ${{ vars.SCREEN_SHARING_BENCH_NIGHTLY_TIER2 }}
+        run: |
+          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false
+          preflight="--quiet --allow-locked"
+          pacific_cron="0 10 * * *"
+          [[ "$(TZ=America/Los_Angeles date +%z)" == -0800 ]] && pacific_cron="0 11 * * *"
+          case "$EVENT" in
+            schedule)
+              [[ "$CRON" == "$pacific_cron" ]] || run=false
+              trigger=nightly
+              [[ "$run" == true && "$NIGHTLY_TIER2" == true ]] && tier2=true calibration=true
+              ;;
+            workflow_dispatch)
+              trigger=$KIND
+              tier2=$TIER2_INPUT calibration=$CALIBRATION_INPUT
+              [[ -n "$SCENES$NETWORKS" ]] && mode=custom trigger=adhoc
+              [[ "$SOURCE" == own-window ]] && preflight="--quiet"
+              ;;
+          esac
+          [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]] && publish=true
+          [[ "$trigger" == nightly && "$publish" != true ]] && trigger=adhoc
+          {
+            echo "run=$run"; echo "mode=$mode"; echo "trigger=$trigger"; echo "preflight=$preflight"
+            echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  tier1:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' && github.event_name != 'pull_request' }}
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 150
+    concurrency:
+      group: screen-sharing-bench
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      TIER1_TRIGGER: ${{ needs.plan.outputs.trigger }}
+      SCENES: ${{ inputs.scenes }}
+      NETWORKS: ${{ inputs.networks }}
+      TIER1_SOURCE: ${{ inputs.source || 'synthetic' }}
+      MODE: ${{ needs.plan.outputs.mode }}
+      PREFLIGHT: ${{ needs.plan.outputs.preflight }}
+    steps:
+      - name: Check the inputs
+        run: |
+          [[ "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]] || { echo "scenes must be a comma-separated list"; exit 1; }
+          [[ "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]] || { echo "networks must be like N0,N3"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Wait for a quiet machine (C5)
+        run: |
+          mkdir -p "$RUNNER_TEMP/results"
+          apps/screen-sharing-bench/scripts/run-installed.sh preflight $PREFLIGHT > "$RUNNER_TEMP/results/preflight.json"
+      - name: Run Tier 1
+        run: |
+          export TIER1_SCENES="$SCENES" TIER1_NETWORKS="${NETWORKS:-N0,N3}"
+          caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh "$MODE" "$RUNNER_TEMP/results"
+      - name: Record the reports on benchmark-results
+        if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' }}
+        run: apps/screen-sharing-bench/scripts/publish.sh "$RUNNER_TEMP/results"
+      - name: Write the summary
+        if: ${{ !cancelled() }}
+        run: apps/screen-sharing-bench/scripts/summary.sh "$RUNNER_TEMP/results" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: tier1-tamale
+          path: ${{ runner.temp }}/results
+          retention-days: 90
+
+  gate:
+    needs: plan
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 60
+    concurrency:
+      group: screen-sharing-bench-gate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      actions: read
+      contents: read
+    env:
+      TIER1_TRIGGER: pull_request
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - name: Note any bench job the gate waited for
+        run: |
+          mkdir -p "$RUNNER_TEMP/results"
+          apps/screen-sharing-bench/scripts/gate-wait.sh > "$RUNNER_TEMP/results/waited.md"
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Wait for a quiet machine (C5)
+        run: apps/screen-sharing-bench/scripts/run-installed.sh preflight --quiet --allow-locked > "$RUNNER_TEMP/results/preflight.json"
+      - name: Run the gate cells twice
+        run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh gate "$RUNNER_TEMP/results"
+      - name: Compare with the nightly baseline
+        run: |
+          apps/screen-sharing-bench/scripts/results-branch.sh index "$RUNNER_TEMP/results/index.jsonl"
+          status=0
+          apps/screen-sharing-bench/scripts/run-installed.sh gate --index "$RUNNER_TEMP/results/index.jsonl" \
+            --first "$RUNNER_TEMP/results/first.json" --second "$RUNNER_TEMP/results/second.json" > "$RUNNER_TEMP/results/gate.md" || status=$?
+          cat "$RUNNER_TEMP/results/gate.md" "$RUNNER_TEMP/results/waited.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: gate-tamale
+          path: ${{ runner.temp }}/results
+          retention-days: 30
+
+  calibration:
+    needs: [plan, tier1]
+    if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.calibration == 'true' }}
+    uses: ./.github/workflows/screen-sharing-bench-calibration.yml
+    secrets: inherit
+
+  tier2:
+    needs: [plan, tier1, calibration]
+    if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
+    uses: ./.github/workflows/screen-sharing-bench-tier2.yml
+    secrets: inherit

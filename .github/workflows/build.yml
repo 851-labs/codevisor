@@ -378,6 +378,8 @@ jobs:
           security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
       - name: Build the tunnel xcframework
         run: node scripts/net-artifact.mjs ensure-swift
+      - name: Build the screen sharing bench app
+        run: swift build --package-path packages/swift --product CodevisorBench
       - name: Build and sign macOS app artifacts
         env:
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}

@@ -20,7 +20,9 @@ struct BenchRegressionGateTests {
   }
 
   @Test func latencyThresholdsScaleWithTheBaselineMedian() {
-    let slowBaseline = Self.baseline.map { BenchGateSample(e2eP50Ms: $0.e2eP50Ms * 10, e2eP95Ms: 200, updatesPerS: 60) }
+    let slowBaseline = Self.baseline.map {
+      BenchGateSample(e2eP50Ms: $0.e2eP50Ms.map { $0 * 10 }, e2eP95Ms: 200, updatesPerS: 60)
+    }
     let within = BenchGateSample(e2eP50Ms: 115, e2eP95Ms: 240, updatesPerS: 60)
     let beyond = BenchGateSample(e2eP50Ms: 115.01, e2eP95Ms: 240, updatesPerS: 60)
 
