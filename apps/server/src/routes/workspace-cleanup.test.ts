@@ -27,6 +27,8 @@ const setup = async () => {
   return { ...fixture, folder }
 }
 
+const terminalPane = "7e3a0000-0000-4000-8000-000000000001"
+
 describe("workspace process cleanup", () => {
   for (const deferred of [true, false]) {
     it(`retires an agent when archive races its ${deferred ? "first" : "resumed"} load`, async () => {
@@ -158,7 +160,7 @@ describe("workspace process cleanup", () => {
       method: "PUT",
       body: JSON.stringify(payload)
     })
-    await jsonRequest(server, "/v1/workspaces/work/panes/term", {
+    await jsonRequest(server, `/v1/workspaces/work/panes/${terminalPane}`, {
       method: "PUT",
       body: JSON.stringify({
         providerId: "codevisor",
@@ -190,7 +192,7 @@ describe("workspace process cleanup", () => {
       method: "PUT",
       body: JSON.stringify({ projectId: "project", name: "Work", hasCustomName: false })
     })
-    await jsonRequest(server, "/v1/workspaces/work/panes/term", {
+    await jsonRequest(server, `/v1/workspaces/work/panes/${terminalPane}`, {
       method: "PUT",
       body: JSON.stringify({
         providerId: "codevisor",

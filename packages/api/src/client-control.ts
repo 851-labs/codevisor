@@ -10,12 +10,14 @@ import {
   type ClientWindowRequest
 } from "./client-ui.js"
 
+const NativeId = Schema.String.check(Schema.isGUID())
+
 export const ClientNavigationRequest = Schema.Struct({
-  workspaceId: Schema.String,
+  workspaceId: NativeId,
   destination: Schema.optional(
     Schema.Struct({
       kind: Schema.Literals(["tab", "pane", "chat", "leaf"]),
-      id: Schema.String
+      id: NativeId
     })
   )
 })

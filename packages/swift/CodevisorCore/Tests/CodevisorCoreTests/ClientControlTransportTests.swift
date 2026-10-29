@@ -102,4 +102,36 @@ struct ClientControlTransportTests {
     #expect(response["requestId"] as? String == "context")
     #expect((response["context"] as? [String: Any])?["isActive"] as? Bool == true)
   }
+
+  @Test("An unreadable command gets an error reply and the channel stays open")
+  func unreadableCommand() async throws {
+    let transport = ControlTransport()
+    let config = CodevisorServerConfig(
+      baseURL: URL(string: "https://fixture.invalid")!, webSocketTransport: transport
+    )
+    let task = Task {
+      await ClientControlConnection.run(
+        clientId: UUID(), name: "Fixture", platform: "macos", config: config,
+        context: { NativeClientContext(isActive: true, workspaceId: nil, workspaces: []) },
+        navigate: { _ in Issue.record("An unreadable request must not navigate") }
+      )
+    }
+    await transport.socket.didSend.wait()
+    transport.socket.deliver(
+      .string(#"{"requestId":"bad","method":"navigate","navigation":{"workspaceId":"notes-pane"}}"#)
+    )
+    await transport.socket.didSend.wait(for: 2)
+    let closeCode = transport.socket.closeCode
+    task.cancel()
+    await task.value
+    #expect(closeCode == .invalid)
+    let data = try #require(
+      transport.socket.output.last.flatMap { message -> Data? in
+        if case let .data(data) = message { return data }
+        return nil
+      })
+    let response = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(response["requestId"] as? String == "bad")
+    #expect(response["error"] as? String == "Invalid navigate request")
+  }
 }

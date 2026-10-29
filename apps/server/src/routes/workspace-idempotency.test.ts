@@ -26,6 +26,8 @@ const setUp = async () => {
   return { ...started, folder, project }
 }
 
+const paneId = "0a9e0000-0000-4000-8000-000000000001"
+
 describe("workspace route idempotency", () => {
   it("answers a repeated workspace delete as already done", async () => {
     const { server, services } = await setUp()
@@ -49,16 +51,16 @@ describe("workspace route idempotency", () => {
 
   it("treats pane changes in a missing workspace as 404, and closing one as done", async () => {
     const { server } = await setUp()
-    const upsert = await jsonRequest(server, "/v1/workspaces/missing/panes/pane-1", {
+    const upsert = await jsonRequest(server, `/v1/workspaces/missing/panes/${paneId}`, {
       body: JSON.stringify({ providerId: "codevisor", paneType: "terminal", title: "Terminal" }),
       method: "PUT"
     })
     expect(upsert.status).toBe(404)
-    const close = await jsonRequest(server, "/v1/workspaces/missing/panes/pane-1/close", {
+    const close = await jsonRequest(server, `/v1/workspaces/missing/panes/${paneId}/close`, {
       method: "POST"
     })
     expect(close.status).toBe(200)
-    const remove = await jsonRequest(server, "/v1/workspaces/missing/panes/pane-1", {
+    const remove = await jsonRequest(server, `/v1/workspaces/missing/panes/${paneId}`, {
       method: "DELETE"
     })
     expect(remove.status).toBe(200)

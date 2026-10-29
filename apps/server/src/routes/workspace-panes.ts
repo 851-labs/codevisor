@@ -14,6 +14,7 @@ import {
   UpdateWorkspacePaneRequest as UpdateWorkspacePaneRequestSchema,
   UpsertWorkspacePaneRequest as UpsertWorkspacePaneRequestSchema
 } from "@codevisor/api"
+import { isUuid } from "@codevisor/db"
 
 import {
   appendAndPublish,
@@ -132,6 +133,7 @@ const upsertPane = async (route: RouteContext, params: RouteParams): Promise<boo
   const { services, request, response } = route
   const payload = await readSchema(request, UpsertWorkspacePaneRequestSchema)
   const { workspaceId, paneId } = paneIds(params)
+  refuseNonUuidPaneId(paneId)
   refuseMismatchedBodyId("Pane", payload, paneId)
   requireWorkspace(await findWorkspace(services, workspaceId), workspaceId)
 
@@ -168,6 +170,10 @@ const paneIds = (params: RouteParams): PaneIds => ({
   workspaceId: routeParam(params, "workspaceId"),
   paneId: routeParam(params, "paneId")
 })
+
+const refuseNonUuidPaneId = (paneId: string): void => {
+  if (!isUuid(paneId)) throw new HttpFailure(400, `Pane id must be a UUID: ${paneId}`)
+}
 
 const promotedWorkspace = (workspaces: ReadonlyArray<Workspace>, ids: PaneIds): Workspace => {
   const workspace = workspaceWithId(workspaces, ids.workspaceId)

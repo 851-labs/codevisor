@@ -9,6 +9,11 @@ import { describe, expect, it } from "vitest"
 import { jsonRequest, readSseEvents, run, start, tempDirs, listEvents } from "../test-support.js"
 import { field, idOf } from "./response-test-support.js"
 
+const stablePane = "5ab1e000-0000-4000-8000-000000000001"
+const emptyTitlePane = "e3970000-0000-4000-8000-000000000002"
+const firstPane = "0a9e0000-0000-4000-8000-000000000001"
+const secondPane = "0a9e0000-0000-4000-8000-000000000002"
+
 describe("workspace routes", () => {
   it("atomically promotes a new-tab pane into its deferred chat", async () => {
     const { server, services } = await start()
@@ -30,7 +35,7 @@ describe("workspace routes", () => {
     })
     expect(
       (
-        await jsonRequest(server, "/v1/workspaces/missing/panes/stable-pane/promote-chat", {
+        await jsonRequest(server, `/v1/workspaces/missing/panes/${stablePane}/promote-chat`, {
           body: JSON.stringify({
             session: { projectId, harnessId: "codex" }
           }),
@@ -48,7 +53,7 @@ describe("workspace routes", () => {
         })
       ).status
     ).toBe(404)
-    const placeholder = await jsonRequest(server, "/v1/workspaces/main/panes/stable-pane", {
+    const placeholder = await jsonRequest(server, `/v1/workspaces/main/panes/${stablePane}`, {
       body: JSON.stringify({
         providerId: "codevisor",
         paneType: "new-tab",
@@ -56,7 +61,7 @@ describe("workspace routes", () => {
       }),
       method: "PUT"
     })
-    expect(placeholder.body).toMatchObject({ id: "stable-pane", revision: 1 })
+    expect(placeholder.body).toMatchObject({ id: stablePane, revision: 1 })
     const otherFolder = join(root, "other")
     mkdirSync(otherFolder)
     const otherProjectId = idOf(
@@ -69,7 +74,7 @@ describe("workspace routes", () => {
     )
     expect(
       (
-        await jsonRequest(server, "/v1/workspaces/main/panes/stable-pane/promote-chat", {
+        await jsonRequest(server, `/v1/workspaces/main/panes/${stablePane}/promote-chat`, {
           body: JSON.stringify({
             session: { projectId: otherProjectId, harnessId: "codex" }
           }),
@@ -82,7 +87,7 @@ describe("workspace routes", () => {
     const live = readSseEvents(server, 2, replay.at(-1)?.id ?? 0)
     const promoted = await jsonRequest(
       server,
-      "/v1/workspaces/main/panes/stable-pane/promote-chat",
+      `/v1/workspaces/main/panes/${stablePane}/promote-chat`,
       {
         body: JSON.stringify({
           session: {
@@ -102,7 +107,7 @@ describe("workspace routes", () => {
       status: 201,
       body: {
         pane: expect.objectContaining({
-          id: "stable-pane",
+          id: stablePane,
           paneType: "chat",
           resourceId: "new-chat",
           revision: 2
@@ -111,7 +116,7 @@ describe("workspace routes", () => {
       }
     })
     expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([
-      expect.objectContaining({ id: "stable-pane", paneType: "chat", resourceId: "new-chat" })
+      expect.objectContaining({ id: stablePane, paneType: "chat", resourceId: "new-chat" })
     ])
     expect(await live).toEqual([
       expect.objectContaining({
@@ -121,14 +126,14 @@ describe("workspace routes", () => {
       }),
       expect.objectContaining({
         kind: "workspace.pane.updated",
-        subjectId: "stable-pane",
+        subjectId: stablePane,
         payload: expect.objectContaining({ paneType: "chat", revision: 2 })
       })
     ])
 
     const retried = await jsonRequest(
       server,
-      "/v1/workspaces/main/panes/stable-pane/promote-chat",
+      `/v1/workspaces/main/panes/${stablePane}/promote-chat`,
       {
         body: JSON.stringify({
           session: { id: "new-chat", projectId, harnessId: "codex" }
@@ -144,13 +149,13 @@ describe("workspace routes", () => {
       }
     })
 
-    await jsonRequest(server, "/v1/workspaces/main/panes/empty-title-pane", {
+    await jsonRequest(server, `/v1/workspaces/main/panes/${emptyTitlePane}`, {
       body: JSON.stringify({ providerId: "codevisor", paneType: "new-tab", title: "New tab" }),
       method: "PUT"
     })
     const emptyTitle = await jsonRequest(
       server,
-      "/v1/workspaces/main/panes/empty-title-pane/promote-chat",
+      `/v1/workspaces/main/panes/${emptyTitlePane}/promote-chat`,
       {
         body: JSON.stringify({
           session: {
@@ -165,7 +170,7 @@ describe("workspace routes", () => {
       }
     )
     expect(emptyTitle.body).toMatchObject({
-      pane: { id: "empty-title-pane", title: "New Chat", resourceId: "empty-title-chat" }
+      pane: { id: emptyTitlePane, title: "New Chat", resourceId: "empty-title-chat" }
     })
   })
 
@@ -188,12 +193,18 @@ describe("workspace routes", () => {
       method: "PUT"
     })
 
+    expect(
+      await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/notes-pane", {
+        body: JSON.stringify({ providerId: "codevisor", paneType: "markdown", title: "Notes" }),
+        method: "PUT"
+      })
+    ).toMatchObject({ status: 400, body: { error: "Pane id must be a UUID: notes-pane" } })
     expect(await jsonRequest(server, "/v1/workspace-panes")).toEqual({ status: 200, body: [] })
     const replay = listEvents(services)
     const live = readSseEvents(server, 1, replay.at(-1)?.id ?? 0)
-    const created = await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1", {
+    const created = await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${firstPane}`, {
       body: JSON.stringify({
-        id: "pane-1",
+        id: firstPane,
         providerId: "codevisor",
         paneType: "new-tab",
         title: "New tab"
@@ -203,7 +214,7 @@ describe("workspace routes", () => {
     expect(created).toEqual({
       status: 200,
       body: expect.objectContaining({
-        id: "pane-1",
+        id: firstPane,
         workspaceId: "workspace-panes",
         providerId: "codevisor",
         paneType: "new-tab"
@@ -211,7 +222,7 @@ describe("workspace routes", () => {
     })
     expect(
       (
-        await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1", {
+        await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${firstPane}`, {
           body: JSON.stringify({
             id: "other-pane",
             providerId: "codevisor",
@@ -225,64 +236,72 @@ describe("workspace routes", () => {
     expect(await live).toEqual([
       expect.objectContaining({
         kind: "workspace.pane.updated",
-        subjectId: "pane-1",
+        subjectId: firstPane,
         payload: expect.objectContaining({ workspaceId: "workspace-panes" })
       })
     ])
 
-    const converted = await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1", {
-      body: JSON.stringify({ paneType: "terminal", resourceKind: "terminal", resourceId: "pty-1" }),
-      method: "PATCH"
-    })
+    const converted = await jsonRequest(
+      server,
+      `/v1/workspaces/workspace-panes/panes/${firstPane}`,
+      {
+        body: JSON.stringify({
+          paneType: "terminal",
+          resourceKind: "terminal",
+          resourceId: "pty-1"
+        }),
+        method: "PATCH"
+      }
+    )
     expect(converted.body).toMatchObject({
-      id: "pane-1",
+      id: firstPane,
       paneType: "terminal",
       resourceKind: "terminal",
       resourceId: "pty-1"
     })
     expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([
-      expect.objectContaining({ id: "pane-1", paneType: "terminal" })
+      expect.objectContaining({ id: firstPane, paneType: "terminal" })
     ])
     expect(await jsonRequest(server, "/v1/workspace-snapshot")).toEqual({
       status: 200,
       body: {
         workspaces: [expect.objectContaining({ id: "workspace-panes" })],
-        panes: [expect.objectContaining({ id: "pane-1", paneType: "terminal" })]
+        panes: [expect.objectContaining({ id: firstPane, paneType: "terminal" })]
       }
     })
 
     const finalClose = await jsonRequest(
       server,
-      "/v1/workspaces/workspace-panes/panes/pane-1/close",
+      `/v1/workspaces/workspace-panes/panes/${firstPane}/close`,
       { method: "POST" }
     )
     expect(finalClose).toEqual({ status: 200, body: {} })
     expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([])
     expect(
       (
-        await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1/close", {
+        await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${firstPane}/close`, {
           method: "POST"
         })
       ).body
     ).toEqual({})
 
-    await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-2", {
+    await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${secondPane}`, {
       body: JSON.stringify({ providerId: "codevisor", paneType: "browser", title: "Browser" }),
       method: "PUT"
     })
     expect(
-      await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-2/close", {
+      await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${secondPane}/close`, {
         method: "POST"
       })
     ).toEqual({ status: 200, body: {} })
     expect(
-      await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-2", {
+      await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${secondPane}`, {
         method: "DELETE"
       })
     ).toEqual({ status: 200, body: {} })
     expect(
       (
-        await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1", {
+        await jsonRequest(server, `/v1/workspaces/workspace-panes/panes/${firstPane}`, {
           method: "DELETE"
         })
       ).body

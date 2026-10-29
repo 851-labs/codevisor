@@ -6,6 +6,10 @@ public enum ClientControlConnection {
   public typealias Navigator = @MainActor (ClientNavigationRequest) async throws -> Void
   public typealias Controller = @MainActor (ClientUIAction) async throws -> Void
 
+  struct CommandHeader: Decodable {
+    let requestId: String
+    let method: String
+  }
   struct Command: Decodable {
     let requestId: String
     let method: String
@@ -55,8 +59,7 @@ public enum ClientControlConnection {
             case .data(let bytes): data = bytes
             case .string(let text): data = Data(text.utf8)
             }
-            let command = try JSONDecoder().decode(Command.self, from: data)
-            let response = await handle(command, context: context, navigate: navigate, control: control)
+            let response = try await respond(to: data, context: context, navigate: navigate, control: control)
             try Task.checkCancellation()
             try await socket.send(.data(JSONEncoder().encode(response)))
           }
@@ -67,6 +70,19 @@ public enum ClientControlConnection {
       }
       do { try await Task.sleep(for: .seconds(2)) } catch { return }
     }
+  }
+
+  static func respond(
+    to data: Data,
+    context: ContextReader,
+    navigate: Navigator,
+    control: Controller
+  ) async throws -> Response {
+    let header = try JSONDecoder().decode(CommandHeader.self, from: data)
+    guard let command = try? JSONDecoder().decode(Command.self, from: data) else {
+      return Response(requestId: header.requestId, error: "Invalid \(header.method) request")
+    }
+    return await handle(command, context: context, navigate: navigate, control: control)
   }
 
   static func handle(

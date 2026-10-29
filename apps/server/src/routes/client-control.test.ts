@@ -8,6 +8,8 @@ import { WebSocket } from "ws"
 import { jsonRequest, start } from "../test-support.js"
 import { routeClientControl } from "./client-control.js"
 
+const workspaceId = "3e6c0a52-5b1f-4d4e-9a0c-2f7d8e1b4c11"
+
 describe("client control routes", () => {
   it("reports unavailable control infrastructure", async () => {
     const request = new IncomingMessage(new Socket())
@@ -60,7 +62,7 @@ describe("client control routes", () => {
       })
       const commands = [
         { method: "context", body: undefined },
-        { method: "navigate", body: { workspaceId: "workspace" } },
+        { method: "navigate", body: { workspaceId } },
         { method: "page", body: { page: "settings", section: "plugins" } },
         {
           method: "layout",
@@ -119,6 +121,15 @@ describe("client control routes", () => {
       })
       expect(
         await jsonRequest(server, "/v1/clients/window/navigate", { method: "POST", body: "{}" })
+      ).toMatchObject({ status: 400 })
+      expect(
+        await jsonRequest(server, "/v1/clients/window/navigate", {
+          method: "POST",
+          body: JSON.stringify({
+            workspaceId,
+            destination: { kind: "pane", id: "notes-pane" }
+          })
+        })
       ).toMatchObject({ status: 400 })
       expect(
         await jsonRequest(server, "/v1/clients/window/layout", {

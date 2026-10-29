@@ -52,6 +52,8 @@ const setUp = async () => {
   return { server, services, repoFolder, worktree }
 }
 
+const terminalPane = "7e3a0000-0000-4000-8000-000000000001"
+
 describe("archive jobs", () => {
   it("does nothing when the workspace is unarchived before its job runs", async () => {
     const { server, services, repoFolder, worktree } = await setUp()
@@ -99,7 +101,7 @@ describe("archive jobs", () => {
 
   it("keeps the files when a process cannot be stopped, and keeps serving later jobs", async () => {
     const { server, services, worktree } = await setUp()
-    await jsonRequest(server, "/v1/workspaces/work/panes/term", {
+    await jsonRequest(server, `/v1/workspaces/work/panes/${terminalPane}`, {
       method: "PUT",
       body: JSON.stringify({
         providerId: "codevisor",
@@ -130,7 +132,7 @@ describe("archive jobs", () => {
     expect(existsSync(worktree.path)).toBe(true)
 
     await archive(false)
-    await run(services.db.deleteWorkspacePane("work", "term"))
+    await run(services.db.deleteWorkspacePane("work", terminalPane))
     expect((await archive(true)).status).toBe(200)
     await archiveJobs(services).idle()
     expect(existsSync(worktree.path)).toBe(false)
