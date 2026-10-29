@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace",
+        "hooks": [
+          {
+            "name": "format-lint",
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)\"/scripts/agent-hooks/post-edit.sh",
+            "timeout": 60000
+          }
+        ]
+      }
+    ]
+  }
+}

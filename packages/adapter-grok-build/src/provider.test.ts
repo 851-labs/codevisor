@@ -50,6 +50,11 @@ describe("Grok Build provider", () => {
     expect(request.args).toContain("--no-leader")
   })
 
+  it("launches Grok trusting the workspace so the project's hooks and config load", async () => {
+    const request = await launched(grokEnvironment({}))
+    expect(request.args.slice(0, 2)).toEqual(["--trust", "agent"])
+  })
+
   it("launches Grok with its browser and desktop skills off when Codevisor's tools are attached", async () => {
     const grokHome = mkdtempSync(join(tmpdir(), "codevisor-grok-home-"))
     onTestFinished(() => rmSync(grokHome, { force: true, recursive: true }))

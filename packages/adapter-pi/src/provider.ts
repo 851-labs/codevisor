@@ -3,6 +3,7 @@ import {
   clampFailureDetail,
   locateHarnessBinary,
   listPiAgentSessions,
+  TRUSTED_LAUNCH,
   withoutEnv,
   type AgentProvider,
   type AgentSessionHandle,
@@ -96,7 +97,11 @@ export const makePiProvider = (
     }
     const client = await connector({
       command,
-      args: [...(gateway === undefined ? [] : ["-e", gateway.path]), ...sessionArgs],
+      args: [
+        ...TRUSTED_LAUNCH.piArgs,
+        ...(gateway === undefined ? [] : ["-e", gateway.path]),
+        ...sessionArgs
+      ],
       cwd,
       env: {
         ...withoutEnv(await environment.envFor(cwd), account?.unsetEnv),

@@ -1,7 +1,8 @@
-import type {
-  HarnessAccountContext,
-  ProviderEnvironment,
-  ToolGatewayConfig
+import {
+  TRUSTED_LAUNCH,
+  type HarnessAccountContext,
+  type ProviderEnvironment,
+  type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
 
 import { configuredMcpServerNames, NATIVE_AUTOMATION_MCP_SERVERS } from "./config-file.js"
@@ -20,6 +21,7 @@ export const codexThreadConfig = (sources: ThreadConfigSources): Record<string, 
     (name) => configuredServers?.has(name) ?? false
   )
   return {
+    ...TRUSTED_LAUNCH.codexConfig,
     plugins: {
       [DISABLED_CODEX_PLUGIN]: { enabled: false }
     },

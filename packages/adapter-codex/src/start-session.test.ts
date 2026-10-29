@@ -23,13 +23,14 @@ const expectedNativeCodexSkills = {
 }
 
 describe("CodexProvider", () => {
-  it("routes tools through Codevisor and disables native Codex skills and automation", async () => {
+  it("routes tools through Codevisor, trusts the project's hooks, and disables native Codex skills and automation", async () => {
     const toolGateway: ToolGatewayConfig = {
       name: "codevisor",
       url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
       bearerToken: "secret"
     }
     const expectedConfig = {
+      bypass_hook_trust: true,
       plugins: {
         "unified-computer-use@openai-bundled": { enabled: false }
       },

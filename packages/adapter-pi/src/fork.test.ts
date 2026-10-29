@@ -12,6 +12,6 @@ describe("Pi forks", () => {
       })
     )
 
-    expect(spawned[0]?.args).toEqual(["--fork", "pi-source"])
+    expect(spawned[0]?.args).toEqual(["--approve", "--fork", "pi-source"])
   })
 })

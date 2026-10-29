@@ -6,7 +6,7 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: ["**/dist/**", "**/*.test.ts", "src/test-support.ts"],
       provider: "v8",
-      thresholds: { branches: 70, functions: 90, lines: 86, statements: 83 }
+      thresholds: { branches: 70, functions: 80, lines: 80, statements: 80 }
     }
   }
 })

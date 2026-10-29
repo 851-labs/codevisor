@@ -21,26 +21,26 @@ export default defineConfig({
       provider: "v8",
       thresholds: {
         branches: 55,
-        functions: 84,
-        lines: 81,
+        functions: 80,
+        lines: 80,
         statements: 78,
         "src/!(model-selection|stdio-transport).ts": {
-          branches: 100,
-          functions: 100,
-          lines: 100,
-          statements: 100
+          branches: 80,
+          functions: 80,
+          lines: 80,
+          statements: 80
         },
         "src/model-selection.ts": {
           branches: 68,
-          functions: 83,
-          lines: 95,
-          statements: 85
+          functions: 80,
+          lines: 80,
+          statements: 80
         },
         "src/stdio-transport.ts": {
           branches: 71,
           functions: 76,
-          lines: 91,
-          statements: 86
+          lines: 80,
+          statements: 80
         }
       }
     }

@@ -1,0 +1,11 @@
+{
+  "format-lint": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "../scripts/agent-hooks/agy-report.sh",
+        "timeout": 60
+      }
+    ]
+  }
+}

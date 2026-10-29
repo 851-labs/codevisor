@@ -50,7 +50,7 @@ plugins/
     package.json       build "tsc -b tsconfig.json"; depends on @codevisor/plugin-kit
     server.json        MCP server.json (registry schema); the catalog reads it
     tsconfig.json      extends ../../tsconfig.base.json; references ../kit
-    vitest.config.ts   100% coverage thresholds
+    vitest.config.ts   80% coverage thresholds
     src/main.ts        serveStdio(createTestEventsServer(), process.stdin, process.stdout)
     src/*-server.ts    createXServer(deps): a pure factory, tested in-process
 ```

@@ -28,6 +28,7 @@ describe("ACP harness launch", () => {
       const gemini = await launch("gemini")
       const policy = join(launchFilesDirectory, "gemini", "gemini-subagents.toml")
       expect(gemini?.args).toEqual(["--acp", "--admin-policy", policy])
+      expect(gemini?.env.GEMINI_CLI_TRUST_WORKSPACE).toBe("true")
       expect(await readFile(policy, "utf8")).toMatch(/toolName = "invoke_agent"\ndecision = "deny"/)
       expect(JSON.parse((await launch("kilo"))?.env.KILO_PERMISSION ?? "")).toEqual({
         task: "deny"

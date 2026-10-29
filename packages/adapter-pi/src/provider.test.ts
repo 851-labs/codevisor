@@ -64,7 +64,7 @@ describe("Pi provider", () => {
     expect(spawned).toEqual([
       {
         command: "/bin/pi",
-        args: ["-e", "/tmp/codevisor-gateway.ts"],
+        args: ["--approve", "-e", "/tmp/codevisor-gateway.ts"],
         cwd: "/project",
         env: {
           PI_CODING_AGENT_DIR: "/profile",
@@ -139,7 +139,10 @@ describe("Pi provider", () => {
       provider.loadSession(definition, "pi-1", "/project", async () => undefined)
     )
     expect(loaded.sessionId).toBe("pi-1")
-    expect(spawned[0]).toMatchObject({ args: ["--session", "pi-1"], env: { PATH: "/bin" } })
+    expect(spawned[0]).toMatchObject({
+      args: ["--approve", "--session", "pi-1"],
+      env: { PATH: "/bin" }
+    })
   })
 
   it("runs a turn from the prompt until Pi settles", async () => {

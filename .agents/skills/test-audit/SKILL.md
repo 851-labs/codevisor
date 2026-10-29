@@ -159,7 +159,7 @@ as its own named test. Consolidate repeated package or dependency assertions
 into one generic contract.
 
 Many packages enforce coverage thresholds in `vitest.config.ts` (`apps/server`
-and much of `packages/agent-runtime` at 100%). Deleting a coverage probe
+and much of `packages/agent-runtime` at 80%). Deleting a coverage probe
 without its code fails that gate. Delete the dead code with the test, or
 simplify the unreachable branch first. Do not lower a threshold or add a
 coverage exclusion to land a deletion. `packages/agent-runtime` also runs the

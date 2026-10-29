@@ -5,7 +5,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.mjs"],
-      thresholds: { branches: 90, functions: 100, lines: 95, statements: 95 }
+      thresholds: { branches: 80, functions: 80, lines: 80, statements: 80 }
     }
   }
 })

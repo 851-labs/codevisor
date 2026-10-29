@@ -4,6 +4,7 @@ import {
   adapterPromise,
   clampFailureDetail,
   locateHarnessBinary,
+  TRUSTED_LAUNCH,
   withoutEnv,
   type AgentProvider,
   type AgentSessionHandle,
@@ -40,7 +41,7 @@ const NATIVE_AGENTS_OFF = [
   'run.workflow_trigger_mode="off"'
 ]
 
-const CHAT_HOST_ARGS = ["--trust-workspace", "--disable-sandbox", ...NATIVE_AGENTS_OFF]
+const CHAT_HOST_ARGS = [...TRUSTED_LAUNCH.museArgs, "--disable-sandbox", ...NATIVE_AGENTS_OFF]
 
 const SESSION_PAGES = 5
 

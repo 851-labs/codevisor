@@ -7,6 +7,7 @@ import {
   piHarness
 } from "./harness-catalog-direct.js"
 import { executableHarness } from "./harness-catalog-support.js"
+import { TRUSTED_LAUNCH } from "./trusted-launch.js"
 import type { HarnessDefinition } from "./types.js"
 
 export const OPENCODE_INSTALL_PATH = "~/.opencode/bin/opencode"
@@ -54,6 +55,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   museCodeHarness,
   antigravityHarness,
   executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"], {
+    env: TRUSTED_LAUNCH.geminiEnv,
     files: [
       { contents: geminiSubagentPolicy, flag: "--admin-policy", name: "gemini-subagents.toml" }
     ],
@@ -167,7 +169,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     installHint: "curl https://cursor.com/install -fsS | bash",
     installMethods: [{ command: "curl https://cursor.com/install -fsS | bash", kind: "curl" }],
     launch: {
-      args: ["--force", "--sandbox", "disabled", "acp"],
+      args: [...TRUSTED_LAUNCH.cursorArgs, "--force", "--sandbox", "disabled", "acp"],
       command: "cursor-agent",
       kind: "executable"
     },
@@ -343,7 +345,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "x.square",
     ["grok"],
     "grok",
-    ["agent", "--always-approve", "--no-leader", "stdio"],
+    [...TRUSTED_LAUNCH.grokArgs, "agent", "--always-approve", "--no-leader", "stdio"],
     {
       installMethods: [
         { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" },
