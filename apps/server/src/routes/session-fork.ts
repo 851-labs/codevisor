@@ -84,7 +84,12 @@ const createForkSession = async (
     },
     false
   )
-  return created.session
+  return run(
+    services.db.updateSession(created.session.id, {
+      title: created.session.title,
+      titleIntent: "rename"
+    })
+  )
 }
 
 const announceFork = async (
