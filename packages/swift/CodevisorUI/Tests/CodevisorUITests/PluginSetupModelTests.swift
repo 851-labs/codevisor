@@ -80,6 +80,69 @@ struct PluginSetupModelTests {
     #expect(!model.isWorking)
   }
 
+  @Test("A card for another machine signs in through this Mac's copy and closes once that machine connects")
+  func remoteCardSignsInLocally() async throws {
+    let remote = SetupTransport()
+    remote.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
+    remote.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
+    let local = SetupTransport()
+    local.respond(
+      "GET /v1/mcps", with: "[\(Self.server(id: "local-mcp", authType: "oauth", state: "needsAuthorization"))]")
+    local.respond(
+      "POST /v1/mcps/local-mcp/oauth-start", with: #"{"authorizationUrl":"http://127.0.0.1:49361/authorize"}"#)
+    let signIn = FakeWebSignIn()
+    let model = PluginSetupModel(
+      request: try Self.request(auth: "mcpOAuth"), client: Self.client(remote),
+      signInRoute: .localMachine(Self.client(local)), webSignIn: signIn)
+    await model.refresh()
+
+    let action = Task { await model.performPrimaryAction() }
+    await signIn.presented.wait()
+    #expect(signIn.urls.map(\.absoluteString) == ["http://127.0.0.1:49361/authorize"])
+
+    remote.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "connected"))]")
+    await model.refresh()
+    try #require(!signIn.isOpen)
+    await action.value
+    #expect(model.step == .ready)
+  }
+
+  @Test("Without a Mac to sign in on, the card says where to sign in instead of opening anything")
+  func cardWithoutLocalMachine() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
+    let signIn = FakeWebSignIn()
+    let model = PluginSetupModel(
+      request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), signInRoute: .unavailable,
+      webSignIn: signIn)
+    await model.refresh()
+
+    await model.performPrimaryAction()
+
+    #expect(signIn.urls.isEmpty)
+    #expect(model.step == .signIn)
+    #expect(model.errorMessage?.hasPrefix("Sign in to Grafana from Codevisor on your Mac.") == true)
+  }
+
+  @Test("A card that can't read the machine's plugins offers Retry and recovers")
+  func cardRetriesAfterLoadFailure() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
+    transport.respond("GET /v1/mcps", with: #"{"error":"database busy"}"#, status: 503)
+    let model = PluginSetupModel(request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport))
+
+    await model.refresh()
+    #expect(model.step == .failed)
+    #expect(model.actionTitle == "Retry")
+    #expect(model.errorMessage == "database busy")
+
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
+    await model.performPrimaryAction()
+    #expect(model.step == .signIn)
+    #expect(model.errorMessage == nil)
+  }
+
   @Test("A plugin account sign-in sheet closes by itself once the new account shows up")
   func accountSignInClosesOnNewAccount() async throws {
     let transport = SetupTransport()
@@ -133,9 +196,9 @@ struct PluginSetupModelTests {
     return try #require(ServerPluginSetupRequest.decoded(from: questions))
   }
 
-  private static func server(authType: String, state: String) -> String {
+  private static func server(id: String = "mcp-1", authType: String, state: String) -> String {
     """
-    {"id":"mcp-1","name":"Grafana","transport":"stdio","args":[],"enabled":true,"authType":"\(authType)",\
+    {"id":"\(id)","name":"Grafana","transport":"stdio","args":[],"enabled":true,"authType":"\(authType)",\
     "connectionState":"\(state)","toolCount":0,"catalogId":"grafana","createdAt":"","updatedAt":""}
     """
   }
@@ -157,17 +220,18 @@ struct PluginSetupModelTests {
 }
 
 private final class SetupTransport: ServerRequestTransport, Sendable {
-  private let routes = Mutex<[String: String]>([:])
+  private let routes = Mutex<[String: (status: Int, body: String)]>([:])
 
-  func respond(_ route: String, with body: String) {
-    routes.withLock { $0[route] = body }
+  func respond(_ route: String, with body: String, status: Int = 200) {
+    routes.withLock { $0[route] = (status, body) }
   }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let url = try #require(request.url)
     let route = "\(request.httpMethod ?? "GET") \(url.path)"
-    let body = try #require(routes.withLock { $0[route] }, "Unexpected request \(route)")
-    let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil))
-    return (Data(body.utf8), response)
+    let reply = try #require(routes.withLock { $0[route] }, "Unexpected request \(route)")
+    let response = try #require(
+      HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil))
+    return (Data(reply.body.utf8), response)
   }
 }

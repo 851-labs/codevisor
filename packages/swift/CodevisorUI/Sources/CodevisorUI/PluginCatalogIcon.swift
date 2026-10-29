@@ -3,21 +3,42 @@ import SwiftUI
 
 struct PluginCatalogIcon: View {
   @Environment(\.colorScheme) private var colorScheme
-  let entry: ServerPluginCatalogEntry
+  let pluginId: String
+  let name: String
+  let host: String?
+  let namespace: String
   let client: any CodevisorServerClienting
   let side: CGFloat
+
+  init(entry: ServerPluginCatalogEntry, client: any CodevisorServerClienting, side: CGFloat) {
+    self.init(
+      pluginId: entry.id, name: entry.name, host: entry.url.flatMap { URL(string: $0)?.host() },
+      namespace: "plugin-catalog", client: client, side: side)
+  }
+
+  init(
+    pluginId: String, name: String, host: String?, namespace: String, client: any CodevisorServerClienting,
+    side: CGFloat
+  ) {
+    self.pluginId = pluginId
+    self.name = name
+    self.host = host
+    self.namespace = namespace
+    self.client = client
+    self.side = side
+  }
 
   var body: some View {
     ToolArtworkImage(
       request: ToolIconImages.Request(
-        namespace: "plugin-catalog",
-        artwork: .mcpServer(id: entry.id, host: entry.url.flatMap { URL(string: $0)?.host() }),
+        namespace: namespace,
+        artwork: .mcpServer(id: pluginId, host: host),
         dark: colorScheme == .dark
       ),
       side: side,
       fetch: { [client] request in try await client.toolIcon(request) }
     ) {
-      PluginMonogram(name: entry.name, side: side)
+      PluginMonogram(name: name, side: side)
     }
     .frame(width: side, height: side)
     .accessibilityHidden(true)

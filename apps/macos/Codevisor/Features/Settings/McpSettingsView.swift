@@ -81,6 +81,15 @@ struct McpSettingsView: View {
       McpServerDetailSheet(entryName: target.entryName, machineId: target.machineId, model: model)
         .environment(environment)
     }
+    .alert(
+      "Couldn’t Connect",
+      isPresented: Binding(
+        get: { model.connectError != nil }, set: { if !$0 { model.connectError = nil } })
+    ) {
+      Button("OK", role: .cancel) { model.connectError = nil }
+    } message: {
+      Text(model.connectError ?? "")
+    }
     .confirmationDialog(
       "Remove \(pendingRemoval?.name ?? "plugin")?",
       isPresented: Binding(

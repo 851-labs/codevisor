@@ -8,6 +8,7 @@ public final class McpGlobalModel {
   public private(set) var browserByMachine: [String: ServerBrowserUseConfiguration] = [:]
   public private(set) var isLoading = true
   public var actionError: String?
+  public var connectError: String?
 
   @ObservationIgnored private let pendingTimeout: Duration
   @ObservationIgnored private var reloadTask: Task<Void, Never>?
@@ -85,15 +86,33 @@ public final class McpGlobalModel {
 
   public func connect(serverId: String, on machineId: String, in environment: AppEnvironment) async {
     do {
-      let flow = try await environment.machines.client(for: machineId).startMcpOAuth(id: serverId)
-      guard let url = URL(string: flow.authorizationUrl) else { return }
+      let target = try signInTarget(serverId: serverId, on: machineId, in: environment)
+      let flow = try await environment.machines.client(for: target.machineId).startMcpOAuth(id: target.serverId)
+      guard let url = URL(string: flow.authorizationUrl) else { throw CodevisorServerClientError.invalidResponse }
 
-      actionError = nil
-      await signIn.run(url, serverId: serverId, on: machineId)
+      connectError = nil
+      await signIn.run(url, serverId: target.serverId, on: target.machineId)
     } catch {
-      actionError = ErrorReporter.userFacingMessage(for: error)
+      pluginSignInLog.error(
+        "Connect for MCP \(serverId, privacy: .public) on \(machineId, privacy: .public) failed: \(error, privacy: .public)"
+      )
+      connectError = ErrorReporter.userFacingMessage(for: error)
     }
     await load(in: environment)
+  }
+
+  private func signInTarget(
+    serverId: String, on machineId: String, in environment: AppEnvironment
+  ) throws -> (serverId: String, machineId: String) {
+    let local = CodevisorMachine.local.id
+    guard machineId != local else { return (serverId, machineId) }
+    let entry = entries.first { $0.idByMachine[machineId] == serverId }
+    let name = entry?.name ?? "This plugin"
+    guard environment.machines.allMachines.contains(where: \.isLocal) else {
+      throw PluginSignInError.needsMac(plugin: name)
+    }
+    guard let localId = entry?.idByMachine[local] else { throw PluginSignInError.notOnThisMac(plugin: name) }
+    return (localId, local)
   }
 
   private func fetch(_ machineId: String, from client: any CodevisorServerClienting) async {

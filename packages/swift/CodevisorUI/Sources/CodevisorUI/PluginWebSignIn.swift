@@ -1,5 +1,8 @@
 import AuthenticationServices
 import Foundation
+import OSLog
+
+let pluginSignInLog = Logger(subsystem: "dev.codevisor.plugins", category: "sign-in")
 
 @MainActor
 public final class PluginWebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding, WebSignInPresenting {
@@ -18,7 +21,12 @@ public final class PluginWebSignIn: NSObject, ASWebAuthenticationPresentationCon
       session.presentationContextProvider = self
       session.prefersEphemeralWebBrowserSession = false
       self.session = session
-      if !session.start() { finish() }
+      guard session.start() else {
+        pluginSignInLog.error("The sign-in sheet didn't start; opening the sign-in page in the browser")
+        PluginAppWebController.openExternally(url)
+        finish()
+        return
+      }
     }
   }
 

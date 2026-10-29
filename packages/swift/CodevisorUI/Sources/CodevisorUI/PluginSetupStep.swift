@@ -6,4 +6,5 @@ public enum PluginSetupStep: Equatable, Sendable {
   case signIn
   case ready
   case unavailable
+  case failed
 }

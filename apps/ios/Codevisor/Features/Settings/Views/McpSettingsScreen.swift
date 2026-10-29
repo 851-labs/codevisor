@@ -92,21 +92,19 @@ struct McpSettingsScreen: View {
     .alert(
       "Couldn’t update plugins",
       isPresented: Binding(
-        get: { (actionError ?? model.actionError) != nil },
-        set: {
-          if !$0 {
-            actionError = nil
-            model.actionError = nil
-          }
-        })
+        get: { (actionError ?? model.actionError ?? model.connectError) != nil },
+        set: { if !$0 { dismissErrors() } })
     ) {
-      Button("OK", role: .cancel) {
-        actionError = nil
-        model.actionError = nil
-      }
+      Button("OK", role: .cancel) { dismissErrors() }
     } message: {
-      Text(actionError ?? model.actionError ?? "")
+      Text(actionError ?? model.actionError ?? model.connectError ?? "")
     }
+  }
+
+  private func dismissErrors() {
+    actionError = nil
+    model.actionError = nil
+    model.connectError = nil
   }
 
   private func fleetSection(builtIn: Bool) -> some View {

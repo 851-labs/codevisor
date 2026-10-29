@@ -17,11 +17,16 @@ struct PluginSetupRow: View {
       resolution: PluginSetupResolution(question.answer),
       machineId: controller.project.serverId,
       client: environment.machines.client(for: controller.project.serverId),
+      signInRoute: signInRoute,
       inBotConversation: inBotConversation,
       onDecline: decline
     ) { editing, accounts in
       PluginAccountEditorScreen(editing: editing, model: accounts)
     }
+  }
+
+  private var signInRoute: PluginSignInRoute {
+    controller.project.serverId == CodevisorMachine.local.id ? .thisMachine : .unavailable
   }
 
   private func decline() {

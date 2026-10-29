@@ -20,23 +20,32 @@ public struct TranscriptInlineCard: View {
   private let state: State
   private let inBotConversation: Bool
   private let tone: Tone
-  private let leadingIcon: Image?
-  private let accessory: AnyView?
+  private let leadingIcon: AnyView?
 
   public init(
     title: String,
     state: State,
     inBotConversation: Bool,
     tone: Tone = .neutral,
-    leadingIcon: Image? = nil,
-    accessory: AnyView? = nil
+    leadingIcon: Image? = nil
+  ) {
+    self.init(
+      title: title, state: state, inBotConversation: inBotConversation, tone: tone,
+      leadingIconView: leadingIcon.map { AnyView(TranscriptInlineCardIcon(image: $0)) })
+  }
+
+  public init(
+    title: String,
+    state: State,
+    inBotConversation: Bool,
+    tone: Tone = .neutral,
+    leadingIconView: AnyView?
   ) {
     self.title = title
     self.state = state
     self.inBotConversation = inBotConversation
     self.tone = tone
-    self.leadingIcon = leadingIcon
-    self.accessory = accessory
+    self.leadingIcon = leadingIconView
   }
 
   public var body: some View {
@@ -58,12 +67,9 @@ public struct TranscriptInlineCard: View {
     case let .pending(message, actions):
       VStack(alignment: .leading, spacing: TranscriptInlineCardMetrics.actionSpacing) {
         HStack(alignment: .center, spacing: TranscriptInlineCardMetrics.iconSpacing) {
-          if let leadingIcon {
-            TranscriptInlineCardIcon(image: leadingIcon)
-          }
+          if let leadingIcon { leadingIcon }
           TranscriptInlineCardText(title: title, message: message, tone: tone)
         }
-        if let accessory { accessory }
         if !actions.isEmpty {
           TranscriptInlineCardActions(actions: actions)
             .minimumScaleFactor(TranscriptInlineCardMetrics.actionLabelMinimumScale)

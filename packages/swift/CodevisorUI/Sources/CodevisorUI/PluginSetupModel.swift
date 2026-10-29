@@ -10,26 +10,31 @@ public final class PluginSetupModel {
   public private(set) var server: ServerMcpServer?
   public private(set) var accounts: PluginAccountsModel?
   public private(set) var hasChecked = false
+  public private(set) var loadFailed = false
   public private(set) var isWorking = false
   public var errorMessage: String?
   public var installing: ServerPluginCatalogEntry?
   public var addingAccount: PluginAccountEditing?
 
   @ObservationIgnored private let client: any CodevisorServerClienting
+  @ObservationIgnored private let signInRoute: PluginSignInRoute
   @ObservationIgnored private let webSignIn: any WebSignInPresenting
 
   public init(
     request: ServerPluginSetupRequest,
     client: any CodevisorServerClienting,
+    signInRoute: PluginSignInRoute = .thisMachine,
     webSignIn: any WebSignInPresenting = PluginWebSignIn()
   ) {
     self.request = request
     self.client = client
+    self.signInRoute = signInRoute
     self.webSignIn = webSignIn
   }
 
   public var step: PluginSetupStep {
     guard hasChecked else { return .checking }
+    guard !loadFailed else { return .failed }
     guard let server else { return request.catalogId == nil ? .unavailable : .install }
 
     switch auth {
@@ -43,14 +48,20 @@ public final class PluginSetupModel {
     switch step {
     case .install: "Install"
     case .signIn: signInTitle
+    case .failed: "Retry"
     case .checking, .ready, .unavailable: nil
     }
   }
 
   public func refresh() async {
     await loadEntry()
-    guard let servers = await report({ try await client.listMcpServers() }) else { return }
+    guard let servers = await report({ try await client.listMcpServers() }) else {
+      loadFailed = true
+      hasChecked = true
+      return
+    }
 
+    loadFailed = false
     server = servers.first(where: matchesRequest)
     await refreshAccounts()
     hasChecked = true
@@ -61,6 +72,7 @@ public final class PluginSetupModel {
     switch step {
     case .install: installing = entry
     case .signIn: await beginSignIn()
+    case .failed: await refresh()
     case .checking, .ready, .unavailable: return
     }
   }
@@ -123,11 +135,25 @@ public final class PluginSetupModel {
 
   private func signInToServer() async {
     guard let server else { return }
-    guard let start = await report({ try await client.startMcpOAuth(id: server.id) }),
+    guard let start = await report({ try await self.startSignIn(to: server) }),
       let url = URL(string: start.authorizationUrl)
     else { return }
 
     await working { await webSignIn.run(url, callbackScheme: nil) }
+  }
+
+  private func startSignIn(to server: ServerMcpServer) async throws -> ServerMcpOAuthStart {
+    switch signInRoute {
+    case .thisMachine:
+      return try await client.startMcpOAuth(id: server.id)
+    case let .localMachine(local):
+      guard let copy = try await local.listMcpServers().first(where: { $0.isSamePlugin(as: server) }) else {
+        throw PluginSignInError.notOnThisMac(plugin: server.name)
+      }
+      return try await local.startMcpOAuth(id: copy.id)
+    case .unavailable:
+      throw PluginSignInError.needsMac(plugin: server.name)
+    }
   }
 
   private func working(_ operation: () async -> Void) async {
@@ -143,6 +169,7 @@ public final class PluginSetupModel {
       errorMessage = nil
       return result
     } catch {
+      pluginSignInLog.error("Plugin setup step failed: \(error, privacy: .public)")
       errorMessage = ErrorReporter.userFacingMessage(for: error)
       return nil
     }
