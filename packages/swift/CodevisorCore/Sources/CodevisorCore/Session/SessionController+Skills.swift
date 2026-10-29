@@ -9,6 +9,11 @@ extension SessionController {
     )
   }
 
+  public var supportsCompaction: Bool {
+    guard !project.isBot, hasSentFirst || hasExistingAgentSession else { return false }
+    return (availableSkills ?? inspectedSkills)?.acceptsCompact == true
+  }
+
   @discardableResult
   public func refreshCodevisorSkills() -> Task<Void, Never>? {
     guard let serverClient else { return nil }

@@ -121,6 +121,27 @@ struct SessionControllerSkillsTests {
     #expect(controller.composerSkills.map(\.invocation) == ["/browser-use"])
   }
 
+  @Test("/compact is offered once a chat has a conversation with a harness that accepts it")
+  func compaction() async throws {
+    let client = SyncFakeServerClient(projects: [], sessions: [])
+    client.capabilitiesHandler = { _ in
+      var capability = Self.codexCapability()
+      capability.skills = SessionSkills(skills: [], invocationPrefix: "$", commands: ["compact"])
+      return ServerCapabilities(harnesses: [capability])
+    }
+    let controller = SessionController(
+      project: Project.fromFolder(URL(fileURLWithPath: "/tmp/compact"), serverId: "m"),
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      serverClient: client
+    )
+
+    await controller.prepare()
+    #expect(!controller.supportsCompaction)
+
+    controller.resumeAgentSessionId = "agent-1"
+    #expect(controller.supportsCompaction)
+  }
+
   private nonisolated static func codexCapability() -> ServerHarnessCapability {
     ServerHarnessCapability(
       harness: ServerHarness(

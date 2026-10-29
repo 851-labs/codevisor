@@ -1,6 +1,6 @@
 import { relative } from "node:path"
 
-import { sessionSkills } from "@codevisor/agent-runtime"
+import { COMPACT_COMMAND, sessionSkills } from "@codevisor/agent-runtime"
 import type {
   CanonicalModeId,
   SessionConfigOption,
@@ -115,7 +115,8 @@ const decodeSkills = (entries: ReadonlyArray<JsonRecord>, cwd: string): SessionS
         }
       ]
     }),
-    "/"
+    "/",
+    [COMPACT_COMMAND]
   )
 
 const readCatalog = async (server: OpenCodeServer, cwd: string): Promise<Catalog | undefined> => {

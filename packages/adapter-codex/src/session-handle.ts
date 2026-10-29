@@ -1,4 +1,4 @@
-import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
+import { adapterPromise, isCompactPrompt, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
@@ -43,11 +43,12 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
   }),
   prompt: (input) =>
     adapterPromise("prompt", async () => {
-      session.titleGenerator?.rememberPrompt(normalizePromptInput(input).text)
-      const pending = new Promise<{ stopReason: string }>((resolve) => {
-        session.pendingPrompt = { resolve }
-      })
-      await startCodexTurn(session, codexInput(normalizePromptInput(input), session.skills))
+      const prompt = normalizePromptInput(input)
+      if (isCompactPrompt(prompt.text)) return compactThread(session)
+
+      session.titleGenerator?.rememberPrompt(prompt.text)
+      const pending = awaitPendingPrompt(session)
+      await startCodexTurn(session, codexInput(prompt, session.skills))
       return pending
     }),
   steer: (input) =>
@@ -131,3 +132,14 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     adapterPromise("replyToQuestion", () => replyToQuestion(session, questionId, reply)),
   readContext: Effect.sync(() => session.latestContext)
 })
+
+const awaitPendingPrompt = (session: CodexSession): Promise<{ stopReason: string }> =>
+  new Promise((resolve) => {
+    session.pendingPrompt = { resolve }
+  })
+
+const compactThread = async (session: CodexSession): Promise<{ stopReason: string }> => {
+  const pending = awaitPendingPrompt(session)
+  await session.client.request("thread/compact/start", { threadId: session.threadId })
+  return pending
+}

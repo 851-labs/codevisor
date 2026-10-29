@@ -113,6 +113,7 @@ export class FakeCodexClient implements CodexClient {
         case "turn/start":
           return { turn: { id: "turn-1", status: "inProgress" } }
         case "turn/interrupt":
+        case "thread/compact/start":
           return {}
         case "turn/steer":
           return { turnId: recordOf(params).expectedTurnId }

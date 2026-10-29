@@ -43,11 +43,17 @@ public struct SessionSkill: Sendable, Codable, Equatable, Identifiable {
 }
 
 public struct SessionSkills: Sendable, Codable, Equatable {
+  public static let compactCommand = "compact"
+
   public var skills: [SessionSkill]
   public var invocationPrefix: String
+  public var commands: [String]?
 
-  public init(skills: [SessionSkill], invocationPrefix: String = "/") {
+  public init(skills: [SessionSkill], invocationPrefix: String = "/", commands: [String]? = nil) {
     self.skills = skills
     self.invocationPrefix = invocationPrefix
+    self.commands = commands
   }
+
+  public var acceptsCompact: Bool { commands?.contains(Self.compactCommand) == true }
 }

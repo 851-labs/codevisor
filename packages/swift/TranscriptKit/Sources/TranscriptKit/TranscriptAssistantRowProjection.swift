@@ -131,7 +131,9 @@ enum TranscriptAssistantRowProjection {
           to: &rows
         ) || projectedContent
     }
-    projectedContent = appendPluginApps(message, lifecycle: lifecycle, to: &rows) || projectedContent
+    projectedContent =
+      TranscriptPluginAppRowProjection.append(message, lifecycle: lifecycle, to: &rows) || projectedContent
+    projectedContent = TranscriptCompactionRowProjection.append(message, to: &rows) || projectedContent
     projectedContent =
       appendAssistantResponse(
         message,
@@ -148,31 +150,6 @@ enum TranscriptAssistantRowProjection {
     }
     return projectedContent || !message.turn.setupRequests.isEmpty || !interactions.isEmpty
   }
-
-  private static func appendPluginApps(
-    _ message: AssistantMessage,
-    lifecycle: TranscriptBlockLifecycle,
-    to rows: inout [TranscriptPresentationRow]
-  ) -> Bool {
-    let apps = TranscriptPluginApps.apps(of: message.turn)
-    guard !apps.isEmpty else { return false }
-    let id: TranscriptPresentationRow.ID =
-      switch lifecycle {
-      case .receiving: .activePluginApps(message.id)
-      case .settled: .assistantPluginApps(message.id)
-      }
-    rows.append(
-      .init(
-        id: id,
-        content: .pluginApps(apps),
-        estimatedHeight: CGFloat(apps.count) * pluginAppEstimatedHeight,
-        measurementRevision: apps.count,
-        spacingAfter: 14
-      ))
-    return true
-  }
-
-  static let pluginAppEstimatedHeight: CGFloat = 252
 
   static func appendStopDetailEpilogueIfNeeded(
     _ message: AssistantMessage,

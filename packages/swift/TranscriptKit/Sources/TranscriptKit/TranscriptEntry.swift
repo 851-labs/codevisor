@@ -83,6 +83,7 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
     case let .assistant(message):
       let turn = message.turn
       return turn.isGenerating
+        || turn.compactedContext
         || turn.entries.contains { entry in
           if case .contextCompaction = entry { return false }
           return true

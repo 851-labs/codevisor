@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
-import { sessionSkills } from "@codevisor/agent-runtime"
+import { COMPACT_COMMAND, sessionSkills } from "@codevisor/agent-runtime"
 import type { SessionSkill, SessionSkillSource, SessionSkills } from "@codevisor/api"
 
 export interface AcpAvailableCommand {
@@ -126,7 +126,8 @@ export const acpSkills = (
         }
       ]
     }),
-    "/"
+    "/",
+    commands.some((command) => command.name === COMPACT_COMMAND) ? [COMPACT_COMMAND] : []
   )
 
 export interface AcpSkillTracker {

@@ -23,6 +23,24 @@ describe("CodexProvider", () => {
     expect(await turn("t5", { status: "completed" })).not.toHaveProperty("summary")
   })
 
+  it("compacts the thread natively when the prompt is /compact", async () => {
+    const { client, created, events } = await setup()
+    const compactRequested = client.nextRequest("thread/compact/start")
+    const prompt = run(created!.handle.prompt("/compact"))
+    await compactRequested
+    client.emit("turn/started", { threadId: "thread-new", turn: { id: "t-compact" } })
+    client.emit("turn/completed", {
+      threadId: "thread-new",
+      turn: { id: "t-compact", status: "completed" }
+    })
+
+    expect(await prompt).toEqual({ stopReason: "end_turn" })
+    expect(client.requests.map((request) => request.method)).not.toContain("turn/start")
+    expect(events.map(payloadOf)).toContainEqual(
+      expect.objectContaining({ initiatedBy: "user", turnId: "t-compact", turnState: "started" })
+    )
+  })
+
   it("plan mode sends the experimental collaboration mode on turn/start", async () => {
     const { client, created } = await setup()
     await run(created!.handle.setMode("plan"))

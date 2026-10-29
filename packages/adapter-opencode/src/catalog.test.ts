@@ -77,6 +77,7 @@ describe("OpenCode catalog", () => {
       defaultModeID: "build",
       commands: ["review"],
       skills: {
+        commands: ["compact"],
         invocationPrefix: "/",
         skills: [
           {

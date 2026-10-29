@@ -1,4 +1,9 @@
-import { AgentRuntimeError, harnessFailureKind, plainFailureText } from "@codevisor/agent-runtime"
+import {
+  AgentRuntimeError,
+  harnessFailureKind,
+  isCompactPrompt,
+  plainFailureText
+} from "@codevisor/agent-runtime"
 import type {
   AttachmentRef,
   ConnectedClient,
@@ -362,6 +367,7 @@ const steerIntoRunningTurn = async (
   const steer = services.agents.steer
   /* v8 ignore next */
   if (steer === undefined) return false
+  if (isCompactPrompt(item.text)) return false
 
   const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
   const prompt = await promptInput(services, sessionId, item, agentSession.skills)
@@ -389,6 +395,8 @@ const promptText = async (
   item: Pick<PromptQueueItem, "text" | "origin">,
   skills: Parameters<typeof withCodevisorSkills>[3]
 ): Promise<AppContextPrompt> => {
+  if (isCompactPrompt(item.text)) return { text: item.text, delivered: [] }
+
   const text = withConversationRecap(services, sessionId, item.text)
   if (item.origin === "system") return { text, delivered: [] }
   const typed = await withCodevisorSkills(services, sessionId, text, skills)

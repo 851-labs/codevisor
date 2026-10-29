@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto"
 
 import {
   answersIfDefined,
+  COMPACT_COMMAND,
+  compactRequest,
   normalizePromptInput,
   questionReplyText,
   sessionSkills,
   sessionUpdateFirstPayloads,
   withAttachmentNotes,
+  type CompactRequest,
   type PromptInput,
   type QuestionAnswer,
   type QuestionResolution,
@@ -98,7 +101,9 @@ const piSkill = (entry: unknown): Array<SessionSkill> => {
 
 export const piSkills = (response: unknown): SessionSkills => {
   const commands = record(response).commands
-  return sessionSkills((Array.isArray(commands) ? commands : []).flatMap(piSkill), "/")
+  return sessionSkills((Array.isArray(commands) ? commands : []).flatMap(piSkill), "/", [
+    COMPACT_COMMAND
+  ])
 }
 
 export const piPrompt = (input: PromptInput): Record<string, unknown> => {
@@ -122,6 +127,9 @@ export const piPrompt = (input: PromptInput): Record<string, unknown> => {
     ...(images.length === 0 ? {} : { images })
   }
 }
+
+const compactFields = (request: CompactRequest): Record<string, unknown> =>
+  request.instructions === undefined ? {} : { customInstructions: request.instructions }
 
 export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promise<PiSession> => {
   let models: ReadonlyArray<PiModel> = []
@@ -181,6 +189,15 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
       turnState: "ended"
     })
     ended.resolve?.({ stopReason })
+  }
+
+  const runCompaction = async (started: Turn, request: CompactRequest): Promise<void> => {
+    try {
+      await client.command("compact", compactFields(request))
+      await endTurn()
+    } catch (cause) {
+      await endTurn(started.cancelled ? undefined : errorMessage(cause))
+    }
   }
 
   const ask = (request: Record<string, unknown>) => {
@@ -254,14 +271,18 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
     configOptions: options,
     skills,
     prompt: async (input) => {
+      const prompt = normalizePromptInput(input)
       const started = startTurn("user")
       const finished = new Promise<{ stopReason: string }>((resolve) => {
         started.resolve = resolve
       })
+      const compact = compactRequest(prompt.text)
+      if (compact !== undefined) {
+        await runCompaction(started, compact)
+        return finished
+      }
       try {
-        const accepted = record(
-          await client.command("prompt", piPrompt(normalizePromptInput(input)))
-        )
+        const accepted = record(await client.command("prompt", piPrompt(prompt)))
         if (accepted.disposition === "handled") await endTurn()
       } catch (cause) {
         await endTurn(errorMessage(cause))

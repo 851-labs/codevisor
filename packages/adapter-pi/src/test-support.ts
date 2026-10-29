@@ -46,6 +46,7 @@ export class FakePiClient implements PiClient {
     get_commands: { commands: [] },
     prompt: { disposition: "started" },
     abort: null,
+    compact: { summary: "Earlier work, summarized" },
     set_thinking_level: null,
     set_model: claude
   }

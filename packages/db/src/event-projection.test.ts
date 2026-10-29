@@ -471,19 +471,24 @@ describe("@codevisor/db", () => {
       const project = await run(db.createProject({ folderPath: "/tmp/skills-state" }))
       const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
       await run(db.appendEvent("session.output", session.id, skillsSnapshot(["review", "ship"])))
-      await run(db.appendEvent("session.output", session.id, skillsSnapshot(["review"])))
+      expect(await run(db.getSessionSkills(session.id))).not.toHaveProperty("commands")
+      await run(
+        db.appendEvent("session.output", session.id, {
+          ...skillsSnapshot(["review"]),
+          commands: ["compact"]
+        })
+      )
 
+      const latest = {
+        commands: ["compact"],
+        invocationPrefix: "/",
+        skills: [{ invocation: "/review", name: "review" }]
+      }
       const page = await run(db.getTranscriptPage(session.id, undefined, 32))
       expect(page.items).toEqual([])
       expect(page.stateUpdates).toEqual([])
-      expect(page.skills).toEqual({
-        invocationPrefix: "/",
-        skills: [{ invocation: "/review", name: "review" }]
-      })
-      expect(await run(db.getSessionSkills(session.id))).toEqual({
-        invocationPrefix: "/",
-        skills: [{ invocation: "/review", name: "review" }]
-      })
+      expect(page.skills).toEqual(latest)
+      expect(await run(db.getSessionSkills(session.id))).toEqual(latest)
     } finally {
       await run(db.close)
     }
