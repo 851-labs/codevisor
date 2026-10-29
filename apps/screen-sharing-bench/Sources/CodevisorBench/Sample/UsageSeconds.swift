@@ -4,7 +4,7 @@ import ScreenSharingBench
 
 enum UsageSeconds {
   static func write(
-    counters: [BenchInterfaceCounters], groups: [ProcessGroup], snapshots: [[[pid_t: BenchProcessUsage]]],
+    counters: [BenchInterfaceCounters], groups: [ProcessGroup], snapshots: [[[pid_t: ProcessReading]]],
     to path: String
   ) throws {
     let encoder = JSONEncoder()
@@ -14,7 +14,7 @@ enum UsageSeconds {
   }
 
   private static func lines(
-    counters: [BenchInterfaceCounters], groups: [ProcessGroup], snapshots: [[[pid_t: BenchProcessUsage]]]
+    counters: [BenchInterfaceCounters], groups: [ProcessGroup], snapshots: [[[pid_t: ProcessReading]]]
   ) -> [BenchUsageSecond] {
     counters.indices.dropFirst().map { index in
       let rate = BenchInterfaceRate(from: counters[index - 1], to: counters[index])
@@ -26,7 +26,7 @@ enum UsageSeconds {
   }
 
   private static func processes(
-    _ groups: [ProcessGroup], _ snapshots: [[[pid_t: BenchProcessUsage]]], second index: Int
+    _ groups: [ProcessGroup], _ snapshots: [[[pid_t: ProcessReading]]], second index: Int
   ) -> [String: BenchUsageSecond.Process] {
     var processes: [String: BenchUsageSecond.Process] = [:]
     for (group, samples) in zip(groups, snapshots) {

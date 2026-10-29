@@ -1,9 +1,9 @@
 public struct BenchUsageSecond: Codable, Sendable, Equatable {
   public struct Process: Codable, Sendable, Equatable {
     public var cpuPct: Double
-    public var powerMw: Double
+    public var powerMw: Double?
 
-    public init(cpuPct: Double, powerMw: Double) {
+    public init(cpuPct: Double, powerMw: Double?) {
       self.cpuPct = cpuPct
       self.powerMw = powerMw
     }
@@ -29,7 +29,10 @@ public struct BenchUsageSecond: Codable, Sendable, Equatable {
     processes.filter { names.contains($0.key) }.values.map(\.cpuPct).reduce(0, +)
   }
 
-  public func powerMw(of names: Set<String>) -> Double {
-    processes.filter { names.contains($0.key) }.values.map(\.powerMw).reduce(0, +)
+  public func powerMw(of names: Set<String>) -> Double? {
+    let powers = processes.filter { names.contains($0.key) }.values.map(\.powerMw)
+    guard !powers.contains(nil) else { return nil }
+
+    return powers.compactMap { $0 }.reduce(0, +)
   }
 }

@@ -66,6 +66,9 @@ struct Tier2Measurement {
     guard let analysis else { return "the observers never overlapped for longer than the warm-up" }
     guard !files.ciBusy else { return "a CI job ran on a mini during the run" }
     if let problem = files.preflightProblems.first { return "preflight: \(problem)" }
+    guard files.meta.system != .appleHP || files.ranHighPerformance else {
+      return "the bench did not choose High Performance"
+    }
     guard analysis.viewerUnreadableFraction <= unreadableLimit || files.meta.scene == unreadableExempt else {
       return "viewer unreadable fraction above 1%"
     }

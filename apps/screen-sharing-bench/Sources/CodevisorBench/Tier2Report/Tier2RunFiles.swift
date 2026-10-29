@@ -36,6 +36,10 @@ struct Tier2RunFiles {
     preflights.keys.sorted().flatMap { preflights[$0]?.problems ?? [] }
   }
 
+  var ranHighPerformance: Bool {
+    system?["chose_high_performance"]?.bool == true
+  }
+
   var highestLoad: Double? {
     preflights.values.map(\.load1).max()
   }

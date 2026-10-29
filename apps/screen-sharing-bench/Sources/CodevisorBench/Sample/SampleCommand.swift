@@ -26,12 +26,13 @@ struct SampleCommand: BenchCommand {
   func run() async throws {
     let groups = processNames.map(ProcessGroup.init(name:))
     var counters: [BenchInterfaceCounters] = []
-    var snapshots = [[[pid_t: BenchProcessUsage]]](repeating: [], count: groups.count)
+    var snapshots = [[[pid_t: ProcessReading]]](repeating: [], count: groups.count)
     let clock = ContinuousClock()
     var next = clock.now
     for _ in 0...duration {
       counters.append(try BenchInterfaceCounters.sample(interface: interface))
-      for (index, group) in groups.enumerated() { snapshots[index].append(group.sample()) }
+      let listing = try ProcessListing.capture()
+      for (index, group) in groups.enumerated() { snapshots[index].append(group.sample(listing)) }
       next += Self.interval
       try await clock.sleep(until: next)
     }

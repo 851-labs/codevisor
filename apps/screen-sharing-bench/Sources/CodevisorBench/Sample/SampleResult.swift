@@ -8,12 +8,12 @@ struct SampleResult: Encodable {
     let cpuPct: BenchDistribution?
     let powerMw: BenchDistribution?
 
-    init(name: String, snapshots: [[pid_t: BenchProcessUsage]]) {
+    init(name: String, snapshots: [[pid_t: ProcessReading]]) {
       let loads = zip(snapshots, snapshots.dropFirst()).compactMap(ProcessGroup.load(from:to:))
       self.name = name
       pidsSeen = Set(snapshots.flatMap(\.keys)).sorted()
       cpuPct = BenchDistribution(loads.map(\.cpuPercent))
-      powerMw = BenchDistribution(loads.map(\.powerMw))
+      powerMw = loads.contains { $0.powerMw == nil } ? nil : BenchDistribution(loads.compactMap(\.powerMw))
     }
   }
 
@@ -25,7 +25,7 @@ struct SampleResult: Encodable {
 
   init(
     interface: String, counters: [BenchInterfaceCounters], groups: [ProcessGroup],
-    snapshots: [[[pid_t: BenchProcessUsage]]]
+    snapshots: [[[pid_t: ProcessReading]]]
   ) {
     let rates = zip(counters, counters.dropFirst()).compactMap(BenchInterfaceRate.init(from:to:))
     self.interface = interface
