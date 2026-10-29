@@ -33,8 +33,8 @@ struct LoopbackCommand: BenchCommand {
       endpoint: try options.flag("onscreen") ? .onGlass : .committed,
       source: try options.choice("source", default: .synthetic),
       display: try options.choice("display", default: .main))
-    output = try options.string("output")
-    framesPath = try options.string("frames")
+    output = try LoopbackMatrix.writablePath(try options.string("output"))
+    framesPath = try LoopbackMatrix.writablePath(try options.string("frames"))
     runID = try options.string("run-id")
     trigger = try options.string("trigger", default: "manual")
   }

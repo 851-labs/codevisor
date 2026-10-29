@@ -12,7 +12,7 @@ final class LoopbackRelay: @unchecked Sendable {
   private var feedback: BenchRelayLink<RelayDelivery>
   private var hostAddress: BenchUDPAddress?
   private var viewerAddress: BenchUDPAddress?
-  private var mappings: [BenchUDPAddress: RelayMapping] = [:]
+  private var mappings: [BenchUDPAddress: RelaySocket] = [:]
   private var sources: [any DispatchSourceRead] = []
 
   init(conditions: BenchNetworkConditions, seed: UInt64, originNs: Int64) throws {
@@ -50,6 +50,10 @@ final class LoopbackRelay: @unchecked Sendable {
     queue.sync { media.traffic }
   }
 
+  var isIdle: Bool {
+    queue.sync { media.nextDueNs == nil && feedback.nextDueNs == nil }
+  }
+
   func close() {
     queue.sync {
       timer.cancel()
@@ -70,25 +74,24 @@ final class LoopbackRelay: @unchecked Sendable {
     sources.append(source)
   }
 
-  private func mapping(for source: BenchUDPAddress, facing: RelaySocket) -> RelayMapping? {
+  private func mapping(for source: BenchUDPAddress, facing: RelaySocket) -> RelaySocket? {
     if let existing = mappings[source] { return existing }
     guard let socket = try? RelaySocket() else {
       BenchConsole.error("relay: no socket for \(source), its packets are dropped")
       return nil
     }
 
-    let mapping = RelayMapping(socket: socket, source: source, facing: facing)
-    mappings[source] = mapping
+    mappings[source] = socket
     let returning: RelayDirection = facing === hostFacing ? .media : .feedback
     listen(on: socket) { [unowned self] in offer(returning, $0.bytes, from: facing, to: source) }
-    return mapping
+    return socket
   }
 
-  private func forward(_ direction: RelayDirection, _ datagram: RelaySocket.Datagram, via mapping: RelayMapping?) {
+  private func forward(_ direction: RelayDirection, _ datagram: RelaySocket.Datagram, via mapping: RelaySocket?) {
     let destination = direction == .media ? viewerAddress : hostAddress
     guard let mapping, let destination else { return }
 
-    offer(direction, datagram.bytes, from: mapping.socket, to: destination)
+    offer(direction, datagram.bytes, from: mapping, to: destination)
   }
 
   private func offer(
@@ -104,7 +107,8 @@ final class LoopbackRelay: @unchecked Sendable {
 
   private func flushDue() {
     let nowNs = BenchMachClock.nowNs()
-    for delivery in media.takeDue(atNs: nowNs) + feedback.takeDue(atNs: nowNs) { delivery.send() }
+    for delivery in media.takeDue(atNs: nowNs) where !delivery.send() { media.recordSendFailure() }
+    for delivery in feedback.takeDue(atNs: nowNs) where !delivery.send() { feedback.recordSendFailure() }
     scheduleNextDue(after: nowNs)
   }
 

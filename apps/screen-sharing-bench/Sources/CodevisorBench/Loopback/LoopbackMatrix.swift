@@ -1,3 +1,4 @@
+import Foundation
 import ScreenSharingBench
 import ScreenSharingBenchScenes
 
@@ -33,6 +34,16 @@ enum LoopbackMatrix {
     }
 
     return resolution
+  }
+
+  static func writablePath(_ path: String?) throws -> String? {
+    guard let path else { return nil }
+
+    let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+    guard FileManager.default.isWritableFile(atPath: directory) else {
+      throw BenchUsageError(message: "can't write \(path): \(directory) isn't a writable directory")
+    }
+    return path
   }
 
   private static func names(_ list: String) -> [String] {

@@ -6,7 +6,9 @@ import ScreenSharingWebRTC
 
 @MainActor
 struct LoopbackCell {
-  private static let drain = Duration.milliseconds(500)
+  private static let settle = Duration.milliseconds(250)
+  private static let longestDrain = Duration.seconds(5)
+  private static let drainPoll = Duration.milliseconds(50)
 
   let scene: BenchScene
   let conditions: BenchNetworkConditions
@@ -52,7 +54,7 @@ struct LoopbackCell {
     let startNs = ScreenSharingMetrics.nowNs
     do {
       try await source.run(for: .seconds(settings.durationSeconds))
-      try await Task.sleep(for: Self.drain)
+      try await drain(relay)
     } catch {
       _ = instruments.stop()
       throw error
@@ -62,6 +64,13 @@ struct LoopbackCell {
       hostCounters: peers.hostMetrics.counters(), viewerCounters: peers.viewerMetrics.counters(),
       codecFailure: peers.hostMetrics.label("encoderError") ?? peers.viewerMetrics.label("decoderError"),
       jitterDrops: peers.receiver.mailbox.droppedFrames)
+  }
+
+  private func drain(_ relay: LoopbackRelay) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now + Self.longestDrain
+    while !relay.isIdle, clock.now < deadline { try await Task.sleep(for: Self.drainPoll) }
+    try await Task.sleep(for: Self.settle)
   }
 
   private func makeSource(_ peers: LoopbackPeers) async throws -> any LoopbackSource {

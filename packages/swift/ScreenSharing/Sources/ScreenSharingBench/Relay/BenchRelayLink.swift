@@ -28,6 +28,10 @@ public struct BenchRelayLink<Packet: Sendable>: Sendable {
     inFlight.append(InFlight(dueNs: dueNs, packet: packet))
   }
 
+  public mutating func recordSendFailure() {
+    statistics.sendFailures += 1
+  }
+
   public mutating func takeDue(atNs nowNs: Int64) -> [Packet] {
     var due: [Packet] = []
     while nextInFlight < inFlight.count, inFlight[nextInFlight].dueNs <= nowNs {

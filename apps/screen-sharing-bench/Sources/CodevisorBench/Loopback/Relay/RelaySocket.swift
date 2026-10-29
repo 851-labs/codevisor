@@ -41,7 +41,6 @@ final class RelaySocket: Sendable {
     return bytes.map { Datagram(bytes: $0, sender: BenchUDPAddress(sender)) }
   }
 
-  @discardableResult
   func send(_ bytes: [UInt8], to address: BenchUDPAddress) -> Bool {
     var target = address.socketAddress
     let sent = bytes.withUnsafeBytes { buffer in

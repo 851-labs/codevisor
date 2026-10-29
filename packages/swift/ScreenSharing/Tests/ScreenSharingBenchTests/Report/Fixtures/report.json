@@ -158,7 +158,8 @@
           ],
           "lost" : 11,
           "packets" : 1204,
-          "queue_overflow" : 0
+          "queue_overflow" : 0,
+          "send_failures" : 0
         },
         "media" : {
           "bytes" : 11204311,
@@ -169,7 +170,8 @@
           ],
           "lost" : 104,
           "packets" : 9981,
-          "queue_overflow" : 0
+          "queue_overflow" : 0,
+          "send_failures" : 0
         }
       },
       "repetition" : 2,

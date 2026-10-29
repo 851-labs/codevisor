@@ -5,7 +5,7 @@ struct RelayDelivery: Sendable {
   let destination: BenchUDPAddress
   let bytes: [UInt8]
 
-  func send() {
+  func send() -> Bool {
     socket.send(bytes, to: destination)
   }
 }

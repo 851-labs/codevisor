@@ -61,7 +61,8 @@ actor SyntheticSource: LoopbackSource {
   }
 
   private func prepare(ticksAfter tick: Int) {
-    let upcoming = Set((1...Self.ticksRenderedAhead).map { timeline.version(atTick: tick + $0) })
+    let shownTicks = (1...Self.ticksRenderedAhead).map { tick + $0 * ticksPerFrame }
+    let upcoming = Set(shownTicks.map { timeline.version(atTick: $0 - $0 % ticksPerFrame) })
     for (version, stale) in prepared where !upcoming.contains(version) {
       stale.cancel()
       prepared[version] = nil

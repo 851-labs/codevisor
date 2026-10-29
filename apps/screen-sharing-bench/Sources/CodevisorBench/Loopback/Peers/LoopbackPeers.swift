@@ -12,8 +12,14 @@ final class LoopbackPeers {
   let viewerMetrics = ScreenSharingMetrics()
 
   init(configuration: ScreenSharingVideoConfiguration) async throws {
-    sender = try await ScreenSharingSender(configuration: configuration, metrics: hostMetrics)
-    receiver = try await ScreenSharingReceiver(configuration: .init(), metrics: viewerMetrics)
+    let sender = try await ScreenSharingSender(configuration: configuration, metrics: hostMetrics)
+    do {
+      receiver = try await ScreenSharingReceiver(configuration: .init(), metrics: viewerMetrics)
+    } catch {
+      sender.close()
+      throw error
+    }
+    self.sender = sender
   }
 
   func connect(through relay: LoopbackRelay) async throws {

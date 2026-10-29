@@ -5,6 +5,7 @@ public struct BenchRelayStatistics: Codable, Sendable, Equatable {
   public var bytes = 0
   public var lost = 0
   public var queueOverflow = 0
+  public var sendFailures = 0
   public var firstLosses: [Int] = []
 
   public init() {}

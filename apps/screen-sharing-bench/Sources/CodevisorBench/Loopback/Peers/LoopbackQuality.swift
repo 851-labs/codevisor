@@ -13,8 +13,9 @@ final class LoopbackQuality {
       await ScreenSharingQualityLoop.run(
         base: { configuration }, isViewing: { true }, statistics: { await sender.statistics() },
         apply: { adapted, level in
-          sender.updateVideoConfiguration(adapted)
           guard (try? await source.adapt(to: adapted)) != nil else { return false }
+
+          sender.updateVideoConfiguration(adapted)
 
           self?.highestLevel = max(self?.highestLevel ?? 0, level)
           return true
