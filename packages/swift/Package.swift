@@ -121,6 +121,12 @@ let package = Package(
       ]
     ),
     .target(name: "CodevisorTestSupport", path: "TestSupport", swiftSettings: strictSwiftSettings),
+    .testTarget(
+      name: "CodevisorTestSupportTests",
+      dependencies: ["CodevisorTestSupport"],
+      path: "TestSupportTests",
+      swiftSettings: strictSwiftSettings
+    ),
     .target(
       name: "CGVirtualDisplayPrivate", path: "CGVirtualDisplayPrivate", publicHeadersPath: "include",
       cSettings: strictCSettings, linkerSettings: [.linkedFramework("CoreGraphics")]),

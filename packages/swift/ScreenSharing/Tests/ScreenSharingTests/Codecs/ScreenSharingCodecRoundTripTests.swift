@@ -5,194 +5,199 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-@Suite(.timeLimit(.minutes(1)))
-struct ScreenSharingCodecRoundTripTests {
+extension HardwareCodecTests {
+  @Suite(.timeLimit(.minutes(1)))
+  struct ScreenSharingCodecRoundTripTests {
 
-  @Test func eachCodecNamesItsMediaTypeCaptureFormatAndDecodedFormat() {
-    #expect(ScreenSharingVideoCodec.allCases == [.h264, .hevc, .hevc444])
-    #expect(ScreenSharingVideoCodec.h264.mediaType == kCMVideoCodecType_H264)
-    #expect(ScreenSharingVideoCodec.hevc.mediaType == kCMVideoCodecType_HEVC)
-    #expect(ScreenSharingVideoCodec.hevc444.mediaType == kCMVideoCodecType_HEVC)
-    #expect(ScreenSharingVideoCodec.h264.payloadName == "H264")
-    #expect(ScreenSharingVideoCodec.hevc.payloadName == "H265" && ScreenSharingVideoCodec.hevc444.payloadName == "H265")
-    for codec: ScreenSharingVideoCodec in [.h264, .hevc] {
-      #expect(codec.capturePixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
-      #expect(codec.decodedPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+    @Test func eachCodecNamesItsMediaTypeCaptureFormatAndDecodedFormat() {
+      #expect(ScreenSharingVideoCodec.allCases == [.h264, .hevc, .hevc444])
+      #expect(ScreenSharingVideoCodec.h264.mediaType == kCMVideoCodecType_H264)
+      #expect(ScreenSharingVideoCodec.hevc.mediaType == kCMVideoCodecType_HEVC)
+      #expect(ScreenSharingVideoCodec.hevc444.mediaType == kCMVideoCodecType_HEVC)
+      #expect(ScreenSharingVideoCodec.h264.payloadName == "H264")
+      #expect(
+        ScreenSharingVideoCodec.hevc.payloadName == "H265" && ScreenSharingVideoCodec.hevc444.payloadName == "H265")
+      for codec: ScreenSharingVideoCodec in [.h264, .hevc] {
+        #expect(codec.capturePixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        #expect(codec.decodedPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+      }
+      #expect(ScreenSharingVideoCodec.hevc444.capturePixelFormat == kCVPixelFormatType_32BGRA)
+      #expect(ScreenSharingVideoCodec.hevc444.decodedPixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
+      #expect(ScreenSharingVideoCodec(rawValue: "hevc444") == .hevc444)
+      #expect(ScreenSharingVideoCodec(rawValue: "vp9") == nil)
     }
-    #expect(ScreenSharingVideoCodec.hevc444.capturePixelFormat == kCVPixelFormatType_32BGRA)
-    #expect(ScreenSharingVideoCodec.hevc444.decodedPixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
-    #expect(ScreenSharingVideoCodec(rawValue: "hevc444") == .hevc444)
-    #expect(ScreenSharingVideoCodec(rawValue: "vp9") == nil)
-  }
 
-  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
-  func h264FramesSurviveTheRoundTripWithTheirIdentityAndOrder() async throws {
-    try await assertRoundTrip(.h264)
-  }
+    @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+    func h264FramesSurviveTheRoundTripWithTheirIdentityAndOrder() async throws {
+      try await assertRoundTrip(.h264)
+    }
 
-  @Test(.enabled(if: CodecHardware.has(.hevc), "No hardware HEVC encoder on this machine."))
-  func hevcFramesSurviveTheRoundTripWithTheirIdentityAndOrder() async throws {
-    try await assertRoundTrip(.hevc)
-  }
+    @Test(.enabled(if: CodecHardware.has(.hevc), "No hardware HEVC encoder on this machine."))
+    func hevcFramesSurviveTheRoundTripWithTheirIdentityAndOrder() async throws {
+      try await assertRoundTrip(.hevc)
+    }
 
-  @Test(.enabled(if: CodecHardware.has(.hevc444), "No hardware HEVC Main444 encoder on this machine."))
-  func hevc444FramesSurviveTheRoundTripAtFullChroma() async throws {
-    let harness = try await assertRoundTrip(.hevc444)
-    let labels = harness.metrics.snapshot().labels
-    #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
-    #expect(labels["encodedBitDepth"] == "8" && labels["decodedBitDepth"] == "8")
-    #expect(labels["encodedHEVCProfileIDC"] == "4")
-  }
+    @Test(.enabled(if: CodecHardware.has(.hevc444), "No hardware HEVC Main444 encoder on this machine."))
+    func hevc444FramesSurviveTheRoundTripAtFullChroma() async throws {
+      let harness = try await assertRoundTrip(.hevc444)
+      let labels = harness.metrics.snapshot().labels
+      #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
+      #expect(labels["encodedBitDepth"] == "8" && labels["decodedBitDepth"] == "8")
+      #expect(labels["encodedHEVCProfileIDC"] == "4")
+    }
 
-  @Test(.enabled(if: CodecHardware.hasHighDynamicRange, "No hardware HEVC Main 4:4:4 10 encoder on this machine."))
-  func hdrFramesKeepTheirTenBitsAndFullChroma() async throws {
-    let harness = try CodecHarness(codec: .hevc444, width: 320, height: 192, dynamicRange: .high)
-    defer { harness.stop() }
-    let decoded = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 7))
-    #expect(decoded.pixelFormat == kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange)
-    #expect(decoded.sourceTimestampNs == 7)
-    #expect(decoded.distinctLumaCodes > 200, "\(decoded.distinctLumaCodes) distinct luma codes")
-    let labels = harness.metrics.snapshot().labels
-    #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
-    #expect(labels["encodedBitDepth"] == "10" && labels["decodedBitDepth"] == "10")
-    #expect(labels["encodedColor"] == "Display P3 primaries, PQ transfer")
-    try harness.restartEncoder(width: 320, height: 192, dynamicRange: .standard)
-    let standard = try await harness.decode(harness.encode(index: 1, timestampNs: 33_333_333, identity: 8))
-    #expect(standard.pixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
-    #expect(harness.metrics.snapshot().counters["decodeErrors"] == nil)
-  }
+    @Test(.enabled(if: CodecHardware.hasHighDynamicRange, "No hardware HEVC Main 4:4:4 10 encoder on this machine."))
+    func hdrFramesKeepTheirTenBitsAndFullChroma() async throws {
+      let harness = try CodecHarness(codec: .hevc444, width: 320, height: 192, dynamicRange: .high)
+      defer { harness.stop() }
+      let decoded = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 7))
+      #expect(decoded.pixelFormat == kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange)
+      #expect(decoded.sourceTimestampNs == 7)
+      #expect(decoded.distinctLumaCodes > 200, "\(decoded.distinctLumaCodes) distinct luma codes")
+      let labels = harness.metrics.snapshot().labels
+      #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
+      #expect(labels["encodedBitDepth"] == "10" && labels["decodedBitDepth"] == "10")
+      #expect(labels["encodedColor"] == "Display P3 primaries, PQ transfer")
+      try harness.restartEncoder(width: 320, height: 192, dynamicRange: .standard)
+      let standard = try await harness.decode(harness.encode(index: 1, timestampNs: 33_333_333, identity: 8))
+      #expect(standard.pixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
+      #expect(harness.metrics.snapshot().counters["decodeErrors"] == nil)
+    }
 
-  @Test func dynamicRangeFollowsThePixelFormat() {
-    #expect(ScreenSharingDynamicRange(pixelFormat: ScreenSharingDynamicRange.highCapturePixelFormat) == .high)
-    #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange) == .high)
-    #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_32BGRA) == .standard)
-    #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange) == .standard)
-    #expect(ScreenSharingVideoCodec.hevc444.supportsHighDynamicRange)
-    #expect(
-      !ScreenSharingVideoCodec.hevc.supportsHighDynamicRange && !ScreenSharingVideoCodec.h264.supportsHighDynamicRange)
-  }
+    @Test func dynamicRangeFollowsThePixelFormat() {
+      #expect(ScreenSharingDynamicRange(pixelFormat: ScreenSharingDynamicRange.highCapturePixelFormat) == .high)
+      #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange) == .high)
+      #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_32BGRA) == .standard)
+      #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange) == .standard)
+      #expect(ScreenSharingVideoCodec.hevc444.supportsHighDynamicRange)
+      #expect(
+        !ScreenSharingVideoCodec.hevc.supportsHighDynamicRange && !ScreenSharingVideoCodec.h264.supportsHighDynamicRange
+      )
+    }
 
-  @discardableResult
-  private func assertRoundTrip(_ codec: ScreenSharingVideoCodec) async throws -> CodecHarness {
-    let harness = try CodecHarness(codec: codec, width: 320, height: 192)
-    defer { harness.stop() }
-    let identities: [Int64] = [1_726_100_000_000_000_001, 1_726_100_000_000_000_002, 1_726_100_000_000_000_003]
-    var decoded: [CodecHarness.Decoded] = []
-    for (index, identity) in identities.enumerated() {
+    @discardableResult
+    private func assertRoundTrip(_ codec: ScreenSharingVideoCodec) async throws -> CodecHarness {
+      let harness = try CodecHarness(codec: codec, width: 320, height: 192)
+      defer { harness.stop() }
+      let identities: [Int64] = [1_726_100_000_000_000_001, 1_726_100_000_000_000_002, 1_726_100_000_000_000_003]
+      var decoded: [CodecHarness.Decoded] = []
+      for (index, identity) in identities.enumerated() {
+        let encoded = try await harness.encode(
+          index: index, timestampNs: Int64(index) * 33_333_333, identity: identity)
+        #expect(encoded.width == 320 && encoded.height == 192)
+        #expect(encoded.isKeyFrame == (index == 0))
+        #expect(encoded.sourceTimestampNs == identity)
+        decoded.append(try await harness.decode(encoded))
+      }
+      #expect(decoded.map(\.sourceTimestampNs) == identities)
+      #expect(decoded.map(\.timestampNs) == [0, 33_333_333, 66_666_666])
+      for frame in decoded {
+        #expect(frame.width == 320 && frame.height == 192)
+        #expect(frame.pixelFormat == codec.decodedPixelFormat)
+      }
+      for (index, frame) in decoded.enumerated() {
+        let dark = index.isMultiple(of: 2) ? frame.leftLuma : frame.rightLuma
+        let bright = index.isMultiple(of: 2) ? frame.rightLuma : frame.leftLuma
+        #expect(bright - dark > 100, "frame \(index): left \(frame.leftLuma), right \(frame.rightLuma)")
+      }
+      let counters = harness.metrics.snapshot().counters
+      #expect(counters["encodedFrames"] == 3 && counters["decodedFrames"] == 3)
+      #expect(counters["encodeErrors"] == nil && counters["decodeErrors"] == nil)
+      #expect(counters["encoderBackpressureDrops"] == nil && counters["encoderDroppedFrames"] == nil)
+      return harness
+    }
+
+    @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+    func anExplicitRequestProducesAKeyframeOnTheNextEncodeAndIsNotRepeated() async throws {
+      let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+      defer { harness.stop() }
+      var keyFrames: [Bool] = []
+      for index in 0..<4 {
+        let encoded = try await harness.encode(
+          index: index, timestampNs: Int64(index) * 33_333_333, identity: Int64(index + 1), forceKeyFrame: index == 2)
+        keyFrames.append(encoded.isKeyFrame)
+        #expect(try await harness.decode(encoded).sourceTimestampNs == Int64(index + 1))
+      }
+      #expect(keyFrames == [true, false, true, false])
+      let counters = harness.metrics.snapshot().counters
+      #expect(counters["encoderKeyframeRequests"] == 1 && counters["encoderForcedKeyframesSubmitted"] == 1)
+      #expect(counters["encodedKeyFrames"] == 2 && counters["encodedDeltaFrames"] == 2)
+      #expect(counters["encoderRetriedKeyframes"] == nil && counters["encoderDeferredKeyframeRequests"] == nil)
+      #expect(counters["decodedKeyFrames"] == 2)
+    }
+
+    @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+    func consecutiveRequestsEachProduceOneKeyframeAndNoneOutlivesItsFrame() async throws {
+      let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+      defer { harness.stop() }
+      var keyFrames: [Bool] = []
+      for index in 0..<4 {
+        let encoded = try await harness.encode(
+          index: index, timestampNs: Int64(index) * 33_333_333, identity: Int64(index + 1),
+          forceKeyFrame: index == 1 || index == 2)
+        keyFrames.append(encoded.isKeyFrame)
+      }
+      #expect(keyFrames == [true, true, true, false])
+      let counters = harness.metrics.snapshot().counters
+      #expect(counters["encoderKeyframeRequests"] == 2 && counters["encoderForcedKeyframesSubmitted"] == 2)
+      #expect(counters["encodedKeyFrames"] == 3 && counters["encodedDeltaFrames"] == 1)
+      #expect(counters["encoderRetriedKeyframes"] == nil)
+    }
+
+    @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+    func theHostStagesRideInBandToTheViewersFrameRecord() async throws {
+      let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+      defer { harness.stop() }
+      let identity = ScreenSharingMetrics.nowNs - 10_000_000
       let encoded = try await harness.encode(
-        index: index, timestampNs: Int64(index) * 33_333_333, identity: identity)
-      #expect(encoded.width == 320 && encoded.height == 192)
-      #expect(encoded.isKeyFrame == (index == 0))
-      #expect(encoded.sourceTimestampNs == identity)
-      decoded.append(try await harness.decode(encoded))
+        index: 0, timestampNs: 0, identity: identity, capturedAtNs: identity + 2_000_000)
+      _ = try await harness.decode(encoded)
+      harness.metrics.timeline.presented(
+        sourceTimestampNs: identity,
+        ScreenSharingFramePresentation(receivedAtNs: nil, submittedAtNs: identity, presentedAtNs: identity + 50_000_000)
+      )
+
+      let records = harness.metrics.timeline.records(after: 0)
+      #expect(records.count == 1)
+      let record = try #require(records.first)
+      #expect(record.stagesUs.capture == 2000)
+      #expect((record.stagesUs.hostQueue ?? -1) >= 8000 && (record.stagesUs.encode ?? -1) > 0)
+      #expect((record.stagesUs.decode ?? -1) > 0 && record.keyFrame)
+      #expect(record.sameClock && record.captureToPresentUs == 50_000)
     }
-    #expect(decoded.map(\.sourceTimestampNs) == identities)
-    #expect(decoded.map(\.timestampNs) == [0, 33_333_333, 66_666_666])
-    for frame in decoded {
-      #expect(frame.width == 320 && frame.height == 192)
-      #expect(frame.pixelFormat == codec.decodedPixelFormat)
+
+    @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+    func aFrameWithoutACaptureArrivalCarriesNoHostStages() async throws {
+      let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+      defer { harness.stop() }
+      let decoded = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 5))
+      harness.metrics.timeline.presented(
+        sourceTimestampNs: 5, ScreenSharingFramePresentation(receivedAtNs: nil, submittedAtNs: 6, presentedAtNs: 7))
+
+      let records = harness.metrics.timeline.records(after: 0)
+      #expect(records.count == 1)
+      let record = try #require(records.first)
+      #expect(decoded.sourceTimestampNs == 5)
+      #expect(record.stagesUs.capture == nil && !record.sameClock && record.captureToPresentUs == nil)
     }
-    for (index, frame) in decoded.enumerated() {
-      let dark = index.isMultiple(of: 2) ? frame.leftLuma : frame.rightLuma
-      let bright = index.isMultiple(of: 2) ? frame.rightLuma : frame.leftLuma
-      #expect(bright - dark > 100, "frame \(index): left \(frame.leftLuma), right \(frame.rightLuma)")
+
+    @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
+    func theDecoderFollowsAMidStreamResolutionChange() async throws {
+      let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+      defer { harness.stop() }
+      let before = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 1))
+      #expect(before.width == 320 && before.height == 192)
+      try harness.restartEncoder(width: 256, height: 160)
+      let firstAfter = try await harness.encode(index: 0, timestampNs: 33_333_333, identity: 2)
+      #expect(firstAfter.isKeyFrame && firstAfter.width == 256 && firstAfter.height == 160)
+      let after = try await harness.decode(firstAfter)
+      #expect(after.width == 256 && after.height == 160 && after.sourceTimestampNs == 2)
+      let continued = try await harness.encode(index: 1, timestampNs: 66_666_666, identity: 3)
+      #expect(!continued.isKeyFrame)
+      let decoded = try await harness.decode(continued)
+      #expect(decoded.width == 256 && decoded.height == 160 && decoded.sourceTimestampNs == 3)
+      #expect(harness.metrics.snapshot().counters["decodeErrors"] == nil)
     }
-    let counters = harness.metrics.snapshot().counters
-    #expect(counters["encodedFrames"] == 3 && counters["decodedFrames"] == 3)
-    #expect(counters["encodeErrors"] == nil && counters["decodeErrors"] == nil)
-    #expect(counters["encoderBackpressureDrops"] == nil && counters["encoderDroppedFrames"] == nil)
-    return harness
-  }
-
-  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
-  func anExplicitRequestProducesAKeyframeOnTheNextEncodeAndIsNotRepeated() async throws {
-    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
-    defer { harness.stop() }
-    var keyFrames: [Bool] = []
-    for index in 0..<4 {
-      let encoded = try await harness.encode(
-        index: index, timestampNs: Int64(index) * 33_333_333, identity: Int64(index + 1), forceKeyFrame: index == 2)
-      keyFrames.append(encoded.isKeyFrame)
-      #expect(try await harness.decode(encoded).sourceTimestampNs == Int64(index + 1))
-    }
-    #expect(keyFrames == [true, false, true, false])
-    let counters = harness.metrics.snapshot().counters
-    #expect(counters["encoderKeyframeRequests"] == 1 && counters["encoderForcedKeyframesSubmitted"] == 1)
-    #expect(counters["encodedKeyFrames"] == 2 && counters["encodedDeltaFrames"] == 2)
-    #expect(counters["encoderRetriedKeyframes"] == nil && counters["encoderDeferredKeyframeRequests"] == nil)
-    #expect(counters["decodedKeyFrames"] == 2)
-  }
-
-  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
-  func consecutiveRequestsEachProduceOneKeyframeAndNoneOutlivesItsFrame() async throws {
-    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
-    defer { harness.stop() }
-    var keyFrames: [Bool] = []
-    for index in 0..<4 {
-      let encoded = try await harness.encode(
-        index: index, timestampNs: Int64(index) * 33_333_333, identity: Int64(index + 1),
-        forceKeyFrame: index == 1 || index == 2)
-      keyFrames.append(encoded.isKeyFrame)
-    }
-    #expect(keyFrames == [true, true, true, false])
-    let counters = harness.metrics.snapshot().counters
-    #expect(counters["encoderKeyframeRequests"] == 2 && counters["encoderForcedKeyframesSubmitted"] == 2)
-    #expect(counters["encodedKeyFrames"] == 3 && counters["encodedDeltaFrames"] == 1)
-    #expect(counters["encoderRetriedKeyframes"] == nil)
-  }
-
-  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
-  func theHostStagesRideInBandToTheViewersFrameRecord() async throws {
-    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
-    defer { harness.stop() }
-    let identity = ScreenSharingMetrics.nowNs - 10_000_000
-    let encoded = try await harness.encode(
-      index: 0, timestampNs: 0, identity: identity, capturedAtNs: identity + 2_000_000)
-    _ = try await harness.decode(encoded)
-    harness.metrics.timeline.presented(
-      sourceTimestampNs: identity,
-      ScreenSharingFramePresentation(receivedAtNs: nil, submittedAtNs: identity, presentedAtNs: identity + 50_000_000))
-
-    let records = harness.metrics.timeline.records(after: 0)
-    #expect(records.count == 1)
-    let record = try #require(records.first)
-    #expect(record.stagesUs.capture == 2000)
-    #expect((record.stagesUs.hostQueue ?? -1) >= 8000 && (record.stagesUs.encode ?? -1) > 0)
-    #expect((record.stagesUs.decode ?? -1) > 0 && record.keyFrame)
-    #expect(record.sameClock && record.captureToPresentUs == 50_000)
-  }
-
-  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
-  func aFrameWithoutACaptureArrivalCarriesNoHostStages() async throws {
-    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
-    defer { harness.stop() }
-    let decoded = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 5))
-    harness.metrics.timeline.presented(
-      sourceTimestampNs: 5, ScreenSharingFramePresentation(receivedAtNs: nil, submittedAtNs: 6, presentedAtNs: 7))
-
-    let records = harness.metrics.timeline.records(after: 0)
-    #expect(records.count == 1)
-    let record = try #require(records.first)
-    #expect(decoded.sourceTimestampNs == 5)
-    #expect(record.stagesUs.capture == nil && !record.sameClock && record.captureToPresentUs == nil)
-  }
-
-  @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
-  func theDecoderFollowsAMidStreamResolutionChange() async throws {
-    let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
-    defer { harness.stop() }
-    let before = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 1))
-    #expect(before.width == 320 && before.height == 192)
-    try harness.restartEncoder(width: 256, height: 160)
-    let firstAfter = try await harness.encode(index: 0, timestampNs: 33_333_333, identity: 2)
-    #expect(firstAfter.isKeyFrame && firstAfter.width == 256 && firstAfter.height == 160)
-    let after = try await harness.decode(firstAfter)
-    #expect(after.width == 256 && after.height == 160 && after.sourceTimestampNs == 2)
-    let continued = try await harness.encode(index: 1, timestampNs: 66_666_666, identity: 3)
-    #expect(!continued.isKeyFrame)
-    let decoded = try await harness.decode(continued)
-    #expect(decoded.width == 256 && decoded.height == 160 && decoded.sourceTimestampNs == 3)
-    #expect(harness.metrics.snapshot().counters["decodeErrors"] == nil)
   }
 }
 
@@ -286,16 +291,31 @@ private final class CodecHarness {
     let admitted = try encoder.encode(
       ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: timestampNs, sourceTimestampNs: identity),
       forceKeyFrame: forceKeyFrame, capturedAtNs: capturedAtNs)
-    #expect(admitted)
-    await encoded.deliveries.wait(for: target)
-    return encoded.frames[target - 1]
+    try #require(admitted)
+    await encoded.deliveries.cancellableWait(for: target)
+    return try output(number: target, of: encoded.frames, from: .encoder)
   }
 
   func decode(_ frame: ScreenSharingEncodedFrame) async throws -> Decoded {
     let target = decoded.count + 1
     try decoder.decode(frame)
-    await decoded.deliveries.wait(for: target)
-    return decoded.frames[target - 1]
+    await decoded.deliveries.cancellableWait(for: target)
+    return try output(number: target, of: decoded.frames, from: .decoder)
+  }
+
+  private func output<Frame>(number: Int, of frames: [Frame], from stage: Stage) throws -> Frame {
+    guard frames.count >= number else {
+      Issue.record(missingFrame(from: stage))
+      throw CancellationError()
+    }
+    return frames[number - 1]
+  }
+
+  private func missingFrame(from stage: Stage) -> Comment {
+    let snapshot = metrics.snapshot()
+    let error = snapshot.labels[stage.errorLabel] ?? "none"
+    let counters = snapshot.counters.sorted { $0.key < $1.key }
+    return Comment(rawValue: "The \(stage) delivered no frame. Last \(stage) error: \(error). Counters: \(counters).")
   }
 
   func restartEncoder(width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange? = nil) throws {
@@ -404,6 +424,12 @@ private final class CodecHarness {
     return (
       Double(left) / Double(height * edge) / scale, Double(right) / Double(height * edge) / scale, distinct
     )
+  }
+
+  enum Stage: String {
+    case encoder, decoder
+
+    var errorLabel: String { self == .encoder ? "lastEncodeError" : "decoderError" }
   }
 
   private final class EncodedLog: @unchecked Sendable {
