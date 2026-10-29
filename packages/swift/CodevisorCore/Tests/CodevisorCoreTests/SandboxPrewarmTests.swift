@@ -74,14 +74,64 @@ struct SandboxPrewarmTests {
     #expect(controller.takeSandboxPrewarm(for: .tartVM, client: client) == nil)
   }
 
-  private func makeController(client: PrewarmFakeServerClient, scratch: Bool = false) -> SessionController {
+  @Test("A VM that can't start blocks Send, then starts once its Mac can run it")
+  func unavailableVMWaits() async {
+    let client = PrewarmFakeServerClient()
+    client.availabilityReason = "This Mac already runs 2 macOS VMs"
+    let machines = MachineController(
+      store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in client })
+    let controller = makeController(client: client, machines: machines)
+    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+
+    controller.sandboxTarget = .tartVM
+
+    #expect(!controller.acceptsSends)
+    #expect(controller.sandboxUnavailableMessage == "macOS VM can't start. This Mac already runs 2 macOS VMs.")
+    #expect(controller.sandboxPrewarm == nil)
+
+    client.availabilityReason = nil
+    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+    controller.refreshSandboxPrewarm()
+
+    #expect(controller.acceptsSends)
+    #expect(controller.sandboxUnavailableMessage == nil)
+    #expect(await client.nextCreate().profileId == "profile-tart")
+  }
+
+  @Test("The picked VM's row spins exactly when Send waits on its check")
+  func pickedRowMatchesSend() async {
+    let client = PrewarmFakeServerClient()
+    let machines = MachineController(
+      store: InMemoryStore(), projectList: ProjectListModel.fixture(), clientFactory: { _ in client })
+    let controller = makeController(client: client, machines: machines)
+    controller.sandboxTarget = .tartVM
+
+    let unchecked = controller.presentedSandboxChoices(machines.sandboxProfiles.choices(for: "local"))
+    #expect(unchecked.isEmpty)
+    let pending = controller.presentedSandboxChoices([SandboxProfileChoice(target: .tartVM, availability: .checking)])
+    #expect(pending.map(\.availability) == [.checking])
+    #expect(!controller.acceptsSends)
+
+    await machines.sandboxProfiles.load(composerId: "local", from: client) { _ in .unreachable }
+    controller.refreshSandboxPrewarm()
+    _ = await client.nextCreate()
+    let recheck = [SandboxProfileChoice(target: .tartVM, availability: .checking)]
+
+    #expect(controller.presentedSandboxChoices(recheck).map(\.availability) == [.available])
+    #expect(controller.acceptsSends)
+  }
+
+  private func makeController(
+    client: PrewarmFakeServerClient, scratch: Bool = false, machines: MachineController? = nil
+  ) -> SessionController {
     var project = Project.fromFolder(URL(fileURLWithPath: "/tmp/hello-world"), serverId: "local")
     project.isScratch = scratch
     return SessionController(
       project: project,
       configCache: ConfigOptionCache(store: InMemoryStore()),
       composerDefaults: ComposerDefaultsStore(store: InMemoryStore()),
-      serverClient: client
+      serverClient: client,
+      machines: machines
     )
   }
 }
@@ -89,6 +139,7 @@ struct SandboxPrewarmTests {
 private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()
   private var creates = 0
+  private var reason: String?
   private let createdStream: AsyncStream<ServerSandboxRequest>
   private let createdContinuation: AsyncStream<ServerSandboxRequest>.Continuation
   private let destroyedStream: AsyncStream<String>
@@ -100,6 +151,23 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
   }
 
   var createCount: Int { lock.withLock { creates } }
+
+  var availabilityReason: String? {
+    get { lock.withLock { reason } }
+    set { lock.withLock { reason = newValue } }
+  }
+
+  func sandboxVendors() async throws -> ServerSandboxVendors { ServerSandboxVendors() }
+
+  func sandboxProviders() async throws -> [ServerSandboxProvider] { [] }
+
+  func sandboxProfiles() async throws -> [ServerSandboxProfile] {
+    [.init(id: "profile-tart", name: "macOS VM", vendor: "tart", providerId: "tart-local")]
+  }
+
+  func sandboxAvailability() async throws -> [ServerSandboxAvailability] {
+    [.init(profileId: "profile-tart", disabledReason: availabilityReason)]
+  }
 
   func nextCreate() async -> ServerSandboxRequest {
     var iterator = createdStream.makeAsyncIterator()

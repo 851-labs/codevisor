@@ -64,7 +64,6 @@ struct NewChatView: View {
   @State var isRunLocationMenuPresented = false
   @State var pendingSetupGroupID: ProjectGroup.ID?
   @State var projectSetup: ProjectMachineSetup?
-  @State var sandboxProfiles = SandboxProfileCatalog()
   @ClientPreference("composer.favoriteMachines", default: [])
   var favoriteMachineIDs: [String]
   @ClientPreference(Self.favoriteProjectsKey, default: [])
@@ -105,6 +104,7 @@ struct NewChatView: View {
                       onDismiss: { controller.dismissModelUnavailableNotice() }
                     )
                   }
+                  sandboxUnavailableNotice(controller)
                   ComposerCard(
                     controller: controller,
                     onTextViewReady: { textView in
@@ -187,9 +187,14 @@ struct NewChatView: View {
     }
     .attachmentDropTarget(controller)
     .sheet(isPresented: isShowingProjectSetup) { projectSetupSheet }
-    .task(id: composerServerId) {
+    .task(id: environment.machines.sandboxProfilesLoadKey(composerId: composerServerId)) {
       let machines = environment.machines
-      await sandboxProfiles.load(from: machines.client(for: composerServerId)) { machines.client(forServerId: $0) }
+      await environment.machines.sandboxProfiles.load(
+        composerId: composerServerId, from: machines.client(for: composerServerId)
+      ) { machines.sandboxHostConnection(forServerId: $0) }
+    }
+    .onChange(of: controller?.sandboxTargetAvailability) { _, _ in
+      controller?.refreshSandboxPrewarm()
     }
     .onChange(of: projects.map(\.id)) { _, _ in
       if controller == nil, !requiresInitialProjectResolution {

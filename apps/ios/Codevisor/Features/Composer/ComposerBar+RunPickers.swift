@@ -4,7 +4,23 @@ import SwiftUI
 
 extension ComposerBar {
   var runTargetControls: some View {
-    withProjectSetup(runTargetBar)
+    VStack(alignment: .leading, spacing: 8) {
+      withProjectSetup(runTargetBar)
+      if let message = controller.sandboxUnavailableMessage {
+        ComposerNoticeRail(
+          message,
+          kind: .warning,
+          systemImage: "shippingbox",
+          actionTitle: "Manage Sandboxes…",
+          action: { settingsDestination = .section("sandboxes") }
+        )
+        .transition(.opacity)
+      }
+    }
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.sandboxUnavailableMessage)
+    .onChange(of: controller.sandboxTargetAvailability) { _, _ in
+      controller.refreshSandboxPrewarm()
+    }
   }
 
   private var runTargetBar: some View {
@@ -17,11 +33,7 @@ extension ComposerBar {
         ?? Image(systemName: (machine?.icon ?? .fallback).systemImage),
       machines: environment.machines.chatMachines,
       selectedServerId: controller.project.serverId,
-      readyMachineIds: Set(
-        environment.machines.allMachines
-          .filter { environment.machines.availability(for: $0.id) == .ready }
-          .map(\.id)
-      ),
+      readyMachineIds: environment.machines.readyMachineIds,
       project: liveProject,
       pendingSetupGroup: controller.project.isRunTargetPlaceholder ? pendingSetupGroup : nil,
       wantsNewWorktree: controller.wantsNewWorktree,
@@ -47,10 +59,16 @@ extension ComposerBar {
   private var sandboxPicks: ComposerSandboxPicks {
     let machines = environment.machines
     let serverId = controller.project.serverId
+    let catalog = environment.machines.sandboxProfiles
     return ComposerSandboxPicks(
+      choices: controller.presentedSandboxChoices(catalog.choices(for: serverId)),
       selectedProfileId: controller.sandboxTarget?.profileId,
-      load: { catalog in
-        await catalog.load(from: machines.client(for: serverId)) { machines.client(forServerId: $0) }
+      isCheckingSelection: controller.sandboxTargetAvailability == .checking,
+      loadKey: machines.sandboxProfilesLoadKey(composerId: serverId),
+      load: {
+        await catalog.load(composerId: serverId, from: machines.client(for: serverId)) {
+          machines.sandboxHostConnection(forServerId: $0)
+        }
       },
       onPick: selectSandbox,
       onManage: { settingsDestination = .section("sandboxes") }
@@ -58,7 +76,6 @@ extension ComposerBar {
   }
 
   private func selectSandbox(_ choice: SandboxProfileChoice) {
-    guard choice.isEnabled else { return }
     controller.onSandboxReady = { [weak controller] previous, relocated, project in
       SandboxSessionRelocation.relocate(
         previous, to: relocated, project: project,

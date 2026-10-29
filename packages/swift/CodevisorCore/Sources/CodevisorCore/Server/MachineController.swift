@@ -6,6 +6,8 @@ import Observation
 public final class MachineController {
   public internal(set) var registry: MachineRegistry
   public var serverUpdateChannel: ServerUpdateChannel = .stable
+  public let sandboxProfiles = SandboxProfileCatalog()
+  var sandboxAvailabilityRevision = 0
 
   public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 

@@ -20,7 +20,6 @@ struct ComposerRunTargetBar: View {
   let onManageProject: () -> Void
   let onProjectDeleted: (ProjectGroup) -> Void
   let sandboxes: ComposerSandboxPicks
-  @State private var sandboxProfiles = SandboxProfileCatalog()
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .footnote) private var minimumMachineWidth = 88.0
@@ -32,8 +31,8 @@ struct ComposerRunTargetBar: View {
       minimumMachineWidth: minimumMachineWidth,
       minimumProjectWidth: minimumProjectWidth
     ) {
-      if hasOtherMachines || !sandboxProfiles.choices.isEmpty {
-        chipLabel(machineName, icon: machineIcon)
+      if hasOtherMachines || !sandboxes.choices.isEmpty {
+        chipLabel(machineName, icon: machineIcon, isBusy: sandboxes.isCheckingSelection)
           .accessibilityHidden(true)
           .overlay {
             ComposerMachineMenu(
@@ -41,7 +40,7 @@ struct ComposerRunTargetBar: View {
               machines: machines,
               selectedServerId: selectedServerId,
               readyMachineIds: readyMachineIds,
-              sandboxChoices: sandboxProfiles.choices,
+              sandboxChoices: sandboxes.choices,
               selectedProfileId: sandboxes.selectedProfileId,
               onMachine: onMachine,
               onSandbox: sandboxes.onPick,
@@ -103,7 +102,7 @@ struct ComposerRunTargetBar: View {
     .buttonStyle(.plain)
     .padding(.horizontal, 4)
     .accessibilityElement(children: .contain)
-    .task(id: selectedServerId) { await sandboxes.load(sandboxProfiles) }
+    .task(id: sandboxes.loadKey) { await sandboxes.load() }
   }
 
   private var locationSymbol: String {
@@ -137,7 +136,7 @@ struct ComposerRunTargetBar: View {
     chipLabel(title, icon: Image(systemName: symbol))
   }
 
-  private func chipLabel(_ title: String?, icon: Image) -> some View {
+  private func chipLabel(_ title: String?, icon: Image, isBusy: Bool = false) -> some View {
     HStack(spacing: 4) {
       icon
         .font(.caption)
@@ -147,6 +146,11 @@ struct ComposerRunTargetBar: View {
           .lineLimit(1)
           .truncationMode(.middle)
           .fixedSize(horizontal: false, vertical: true)
+      }
+      if isBusy {
+        ProgressView()
+          .controlSize(.mini)
+          .fixedSize()
       }
     }
     .font(.footnote)

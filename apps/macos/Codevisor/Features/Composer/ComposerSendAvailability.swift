@@ -13,6 +13,7 @@ struct ComposerSendAvailability {
 
   var help: String {
     if isAppUpdateInProgress { return "Updating… you can send once the update finishes." }
+    if let sandboxHelp { return sandboxHelp }
     guard controller.isGoalComposerArmed else {
       return controller.canSend || !hasDraft ? "Send (↩)" : "Connecting… you can send once the machine is ready."
     }
@@ -20,6 +21,14 @@ struct ComposerSendAvailability {
     if hasSubmittableContent && controller.isConnectingToHarness { return "Connecting to harness…" }
     if controller.isConnecting { return "Connecting… you can send once the agent is ready." }
     return controller.requiresModelSelection ? "Select a model" : "Send (↩)"
+  }
+
+  private var sandboxHelp: String? {
+    switch controller.sandboxTargetAvailability {
+    case .checking: "Checking the sandbox… you can send once it's ready."
+    case .unavailable: controller.sandboxUnavailableMessage
+    case .available, nil: nil
+    }
   }
 
   private var hasSubmittableContent: Bool {

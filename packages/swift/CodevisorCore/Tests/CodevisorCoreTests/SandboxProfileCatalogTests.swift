@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorTestSupport
 import Foundation
 import Testing
 
@@ -10,7 +11,7 @@ struct SandboxProfileCatalogTests {
   @Test("Each profile asks the server that would start it whether it can, right now")
   func reasonsComeFromTheHost() async {
     let composer = CatalogFakeServerClient(
-      profiles: [.init(id: "ubuntu", name: "Ubuntu Sandbox", vendor: "e2b", providerId: "a")] + tartProfiles,
+      profiles: [ubuntuProfile] + tartProfiles,
       availability: [
         .init(profileId: "ubuntu"),
         .init(profileId: "studio", disabledReason: "Runs on another Mac"),
@@ -19,23 +20,90 @@ struct SandboxProfileCatalogTests {
       availability: [.init(profileId: "studio", disabledReason: "This Mac already runs 2 macOS VMs")])
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(from: composer) { $0 == "server-studio" ? studio : nil }
+    await catalog.load(composerId: "composer", from: composer) { $0 == "server-studio" ? .ready(studio) : .unreachable }
 
-    #expect(catalog.choices.map(\.target.profileName) == ["Ubuntu Sandbox", "Studio VM", "Laptop VM"])
+    let choices = catalog.choices(for: "composer")
+    #expect(choices.map(\.target.profileName) == ["Ubuntu Sandbox", "Studio VM", "Laptop VM"])
     #expect(
-      catalog.choices.map(\.disabledReason) == [
-        nil, "This Mac already runs 2 macOS VMs", "Its Mac isn't connected",
+      choices.map(\.availability) == [
+        .available, .unavailable("This Mac already runs 2 macOS VMs"), .unavailable("Its Mac isn't connected"),
       ])
-    #expect(catalog.choices.map(\.target.machineNoun) == ["E2B sandbox", "Tart VM", "Tart VM"])
+    #expect(choices.map(\.target.machineNoun) == ["E2B sandbox", "Tart VM", "Tart VM"])
   }
 
   @Test("A server that can't answer leaves no profiles to pick")
   func unreachableComposer() async {
     let catalog = SandboxProfileCatalog()
 
-    await catalog.load(from: CatalogFakeServerClient(failing: true)) { _ in nil }
+    await catalog.load(composerId: "composer", from: CatalogFakeServerClient(failing: true)) { _ in .unreachable }
 
-    #expect(catalog.choices.isEmpty)
+    #expect(catalog.choices(for: "composer").isEmpty)
+  }
+
+  @Test("A refresh that can't reach the server keeps the profiles already shown")
+  func failedRefreshKeepsProfiles() async {
+    let catalog = SandboxProfileCatalog()
+    let composer = CatalogFakeServerClient(
+      profiles: [ubuntuProfile], availability: [.init(profileId: "ubuntu", disabledReason: "Add an E2B account")])
+    await catalog.load(composerId: "composer", from: composer) { _ in .unreachable }
+
+    await catalog.load(composerId: "composer", from: CatalogFakeServerClient(failing: true)) { _ in .unreachable }
+
+    #expect(catalog.choices(for: "composer") == [ubuntuChoice(.unavailable("Add an E2B account"))])
+  }
+
+  @Test("Profiles show as being checked until their server answers")
+  func profilesShowWhileChecking() async {
+    let gate = TestSignal()
+    let composer = CatalogFakeServerClient(
+      profiles: [ubuntuProfile], availability: [.init(profileId: "ubuntu")], availabilityGate: gate)
+    let catalog = SandboxProfileCatalog()
+
+    let load = Task { await catalog.load(composerId: "composer", from: composer) { _ in .unreachable } }
+    await composer.availabilityRequested.wait()
+
+    #expect(catalog.choices(for: "composer") == [ubuntuChoice(.checking)])
+    gate.signal()
+    await load.value
+    #expect(catalog.choices(for: "composer") == [ubuntuChoice(.available)])
+    #expect(catalog.choices(for: "other-composer") == [ubuntuChoice(.checking)])
+  }
+
+  @Test("An availability check that fails keeps the last answer")
+  func failedCheckKeepsReason() async {
+    let catalog = SandboxProfileCatalog()
+    let composer = CatalogFakeServerClient(
+      profiles: [ubuntuProfile], availability: [.init(profileId: "ubuntu", disabledReason: "Add an E2B account")])
+    await catalog.load(composerId: "composer", from: composer) { _ in .unreachable }
+
+    let unanswered = CatalogFakeServerClient(profiles: [ubuntuProfile], failingAvailability: true)
+    await catalog.load(composerId: "composer", from: unanswered) { _ in .unreachable }
+    await catalog.load(composerId: "other-composer", from: unanswered) { _ in .unreachable }
+
+    #expect(catalog.choices(for: "composer") == [ubuntuChoice(.unavailable("Add an E2B account"))])
+    #expect(catalog.choices(for: "other-composer") == [ubuntuChoice(.available)])
+  }
+
+  @Test("A profile on this Mac stays in Checking while its server is still starting")
+  func startingHostIsChecking() async {
+    let composer = CatalogFakeServerClient(profiles: tartProfiles)
+    let catalog = SandboxProfileCatalog()
+
+    await catalog.load(composerId: "composer", from: composer) { $0 == "server-studio" ? .starting : .unreachable }
+
+    #expect(
+      catalog.choices(for: "composer").map(\.availability) == [.checking, .unavailable("Its Mac isn't connected")])
+  }
+
+  private var ubuntuProfile: ServerSandboxProfile {
+    .init(id: "ubuntu", name: "Ubuntu Sandbox", vendor: "e2b", providerId: "a")
+  }
+
+  private func ubuntuChoice(_ availability: SandboxProfileAvailability) -> SandboxProfileChoice {
+    SandboxProfileChoice(
+      target: SandboxTarget(
+        profileId: "ubuntu", profileName: "Ubuntu Sandbox", vendorId: "e2b", machineNoun: "E2B sandbox"),
+      availability: availability)
   }
 
   private var tartProfiles: [ServerSandboxProfile] {
@@ -50,11 +118,22 @@ private final class CatalogFakeServerClient: CodevisorServerClienting, @unchecke
   let profiles: [ServerSandboxProfile]
   let availability: [ServerSandboxAvailability]
   let failing: Bool
+  let failingAvailability: Bool
+  let availabilityGate: TestSignal?
+  let availabilityRequested = TestSignal()
 
-  init(profiles: [ServerSandboxProfile] = [], availability: [ServerSandboxAvailability] = [], failing: Bool = false) {
+  init(
+    profiles: [ServerSandboxProfile] = [],
+    availability: [ServerSandboxAvailability] = [],
+    failing: Bool = false,
+    failingAvailability: Bool = false,
+    availabilityGate: TestSignal? = nil
+  ) {
     self.profiles = profiles
     self.availability = availability
     self.failing = failing
+    self.failingAvailability = failingAvailability
+    self.availabilityGate = availabilityGate
   }
 
   func sandboxProviders() async throws -> [ServerSandboxProvider] {
@@ -81,7 +160,12 @@ private final class CatalogFakeServerClient: CodevisorServerClienting, @unchecke
     return profiles
   }
 
-  func sandboxAvailability() async throws -> [ServerSandboxAvailability] { availability }
+  func sandboxAvailability() async throws -> [ServerSandboxAvailability] {
+    availabilityRequested.signal()
+    await availabilityGate?.wait()
+    if failing || failingAvailability { throw CodevisorServerClientError.invalidResponse }
+    return availability
+  }
 
   func info() async throws -> ServerInfo {
     ServerInfo(id: "local", name: "Local", kind: "local", version: "0.1.0", platform: "darwin", bindHost: "0.0.0.0")

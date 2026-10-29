@@ -46,6 +46,7 @@ extension SessionController {
   }
 
   public var acceptsSends: Bool {
+    if let sandboxTargetAvailability, sandboxTargetAvailability != .available { return false }
     guard !hasSentFirst, project.isRunTargetPlaceholder else { return true }
     return isServerReady && !isPausedForUpdate && selectedHarness != nil
   }

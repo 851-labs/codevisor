@@ -72,7 +72,11 @@ extension NewChatView {
   }
 
   var showsMachinePicker: Bool {
-    environment.machines.chatMachines.count > 1 || !sandboxProfiles.choices.isEmpty
+    environment.machines.chatMachines.count > 1 || !sandboxChoices.isEmpty
+  }
+
+  var sandboxChoices: [SandboxProfileChoice] {
+    environment.machines.sandboxProfiles.choices(for: composerServerId)
   }
 
   func liveProject(for controller: SessionController) -> Project {
@@ -90,7 +94,8 @@ extension NewChatView {
     return RunPickerMenu(
       chipText: chipText,
       chipIcon: sandbox.map { CodevisorSymbol.sandboxVendor($0.vendorId) }
-        ?? Image(systemName: (selectedMachine?.icon ?? .fallback).systemImage)
+        ?? Image(systemName: (selectedMachine?.icon ?? .fallback).systemImage),
+      isBusy: controller.sandboxTargetAvailability == .checking
     ) {
       Autocomplete.Picker("Machines", selection: selection) {
         for machine in machines {
@@ -108,9 +113,9 @@ extension NewChatView {
       }
       .favorites(machineFavorites)
       .labelsHidden()
-      if !sandboxProfiles.choices.isEmpty {
+      if !sandboxChoices.isEmpty {
         Autocomplete.Picker("Sandboxes", selection: selection) {
-          for choice in sandboxProfiles.choices {
+          for choice in controller.presentedSandboxChoices(sandboxChoices) {
             sandboxChoice(choice)
           }
         }
@@ -125,6 +130,22 @@ extension NewChatView {
     .help("Choose which machine this chat runs on")
     .accessibilityLabel("Machine")
     .accessibilityValue(chipText)
+  }
+
+  @ViewBuilder
+  func sandboxUnavailableNotice(_ controller: SessionController) -> some View {
+    if showsRunPickers, let message = controller.sandboxUnavailableMessage {
+      ComposerNoticeRail(
+        message,
+        kind: .warning,
+        systemImage: "shippingbox",
+        actionTitle: "Manage Sandboxes…",
+        action: {
+          SettingsRouter.shared.showSandboxes()
+          openSettings()
+        }
+      )
+    }
   }
 
   private var machinePickerFooter: Autocomplete.Footer {
@@ -148,8 +169,15 @@ extension NewChatView {
     } label: {
       SandboxChoiceLabel(choice: choice)
     }
-    .disabled(!choice.isEnabled)
-    .help(choice.disabledReason ?? "Start a new sandbox from this profile")
+    .help(sandboxChoiceHelp(choice))
+  }
+
+  private func sandboxChoiceHelp(_ choice: SandboxProfileChoice) -> String {
+    switch choice.availability {
+    case .checking: "Checking whether \(choice.target.profileName) can start"
+    case .available: "Start a new sandbox from this profile"
+    case let .unavailable(reason): reason
+    }
   }
 
   private func machineSelection(_ controller: SessionController) -> Binding<MachinePickerTarget> {
@@ -173,7 +201,7 @@ extension NewChatView {
       guard let machine = environment.machines.machine(for: id) else { return }
       selectTargetMachine(machine, controller: controller)
     case let .sandbox(profileId):
-      guard let choice = sandboxProfiles.choices.first(where: { $0.id == profileId }), choice.isEnabled else { return }
+      guard let choice = sandboxChoices.first(where: { $0.id == profileId }) else { return }
       controller.sandboxTarget = choice.target
       relocateWhenSandboxIsReady(controller)
     }

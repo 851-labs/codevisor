@@ -5,15 +5,17 @@ import SwiftUI
 struct RunPickerMenu: View {
   let chipText: String
   let chipIcon: Image
+  let isBusy: Bool
   let entries: [Autocomplete.Entry]
   var isPresented: Binding<Bool>?
 
   init(
-    chipText: String, chipIcon: Image, isPresented: Binding<Bool>? = nil,
+    chipText: String, chipIcon: Image, isBusy: Bool = false, isPresented: Binding<Bool>? = nil,
     @Autocomplete.ContentBuilder content: () -> [Autocomplete.Entry]
   ) {
     self.chipText = chipText
     self.chipIcon = chipIcon
+    self.isBusy = isBusy
     self.isPresented = isPresented
     entries = content()
   }
@@ -22,8 +24,13 @@ struct RunPickerMenu: View {
     Autocomplete.Menu(isPresented: isPresented) {
       entries
     } label: {
-      PickerChip(text: chipText) {
-        chipIcon.font(.system(size: 12))
+      HStack(spacing: 5) {
+        PickerChip(text: chipText) {
+          chipIcon.font(.system(size: 12))
+        }
+        if isBusy {
+          ProgressView().controlSize(.mini)
+        }
       }
     }
     .buttonStyle(HoverIconButtonStyle(shape: .chip))

@@ -65,6 +65,37 @@ struct ShellSyncEventTests {
     #expect(controller.connectionsById["local"]?.updateRun == .idle)
   }
 
+  @Test("Archives and sandbox setting changes ask the picker to check sandboxes again; other syncs don't")
+  func sandboxRechecks() async {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = makeController(fake)
+    defer { controller.stopEventSync() }
+    let reachedEnd = TestSignal()
+    controller.onMcpStateChanged = { _ in reachedEnd.signal() }
+    let before = controller.sandboxProfilesLoadKey(composerId: "local")
+
+    controller.startEventSync(for: "local")
+    fake.emit(
+      kind: "sync.changed", subjectId: "skills",
+      payload: .object(["namespace": .string("skills"), "entries": .array([])]))
+    fake.emit(kind: "mcp.updated", subjectId: "server")
+    await reachedEnd.wait()
+    #expect(controller.sandboxProfilesLoadKey(composerId: "local") == before)
+
+    let archived = ServerWorkspace(
+      id: "workspace-a", serverId: "local", projectId: "project-a", name: "Old VM chat", hasCustomName: false,
+      isArchived: true, createdAt: "2026-10-29T00:00:00.000Z")
+    fake.emit(kind: "workspace.updated", subjectId: archived.id, payload: navigationFixtureJSON(archived))
+    fake.emit(kind: "workspace.deleted", subjectId: "workspace-b")
+    fake.emit(
+      kind: "sync.changed", subjectId: "sandbox-profiles",
+      payload: .object(["namespace": .string("sandbox-profiles"), "entries": .array([])]))
+    fake.emit(kind: "mcp.updated", subjectId: "server")
+    await reachedEnd.wait(for: 2)
+
+    #expect(controller.sandboxAvailabilityRevision == 3)
+  }
+
   private func makeController(_ fake: SyncFakeServerClient) -> MachineController {
     let navigation = NavigationFixture()
     return MachineController(

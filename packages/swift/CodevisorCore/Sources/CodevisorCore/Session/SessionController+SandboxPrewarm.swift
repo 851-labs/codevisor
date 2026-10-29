@@ -2,13 +2,32 @@ import CodevisorClient
 import Foundation
 
 extension SessionController {
-  func refreshSandboxPrewarm() {
+  public var sandboxTargetAvailability: SandboxProfileAvailability? {
+    guard !hasSentFirst, let sandboxTarget else { return nil }
+    if sandboxPrewarm?.key.target == sandboxTarget { return .available }
+    return machines?.sandboxProfiles.availability(of: sandboxTarget.profileId, for: project.serverId) ?? .available
+  }
+
+  public func presentedSandboxChoices(_ choices: [SandboxProfileChoice]) -> [SandboxProfileChoice] {
+    choices.map { choice in
+      guard choice.id == sandboxTarget?.profileId, let selected = sandboxTargetAvailability else { return choice }
+      return SandboxProfileChoice(target: choice.target, availability: selected)
+    }
+  }
+
+  public var sandboxUnavailableMessage: String? {
+    guard let sandboxTarget, case let .unavailable(reason) = sandboxTargetAvailability else { return nil }
+    return "\(sandboxTarget.profileName) can't start. \(reason)."
+  }
+
+  public func refreshSandboxPrewarm() {
     guard !hasSentFirst else { return }
     let wanted = prewarmKey(for: sandboxTarget)
     guard sandboxPrewarm?.key != wanted else { return }
 
     abandonSandboxPrewarm()
-    guard let wanted, let client = sandboxClient(for: wanted.target) else { return }
+    guard let wanted, sandboxTargetAvailability == .available, let client = sandboxClient(for: wanted.target)
+    else { return }
     sandboxPrewarm = SandboxPrewarm(key: wanted, project: project, harnessId: selectedHarnessId, client: client)
   }
 

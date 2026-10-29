@@ -108,6 +108,7 @@ extension MachineController {
       }
     case "sync.changed":
       if let document = ShellSyncPayload.decoded(ServerSyncDocument.self, from: event.payload) {
+        if SandboxSettingsModel.syncNamespaces.contains(document.namespace) { sandboxAvailabilityRevision += 1 }
         onSyncChanged?(serverId, document)
       }
     default:
@@ -125,6 +126,7 @@ extension MachineController {
       navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
       return
     }
+    if Self.endsWork(delta) { sandboxAvailabilityRevision += 1 }
     guard let navigationStore else { return }
     guard await navigationStore.apply(delta, machineId: serverId) else {
       scheduleNavigationRefresh(serverId: serverId, client: client)
@@ -133,6 +135,11 @@ extension MachineController {
 
     let changed = Set(delta.sessions.compactMap { UUID(uuidString: $0.id) })
     notifySessionStatesChanged(serverId: serverId) { changed.contains($0.id) }
+  }
+
+  private static func endsWork(_ delta: ServerNavigationDelta) -> Bool {
+    delta.workspaces.contains(where: \.isArchived)
+      || delta.deleted.contains { $0.table == "workspaces" || $0.table == "sessions" }
   }
 
   func scheduleNavigationRefresh(serverId: String, client: any CodevisorServerClienting) {

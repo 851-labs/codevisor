@@ -32,6 +32,41 @@ extension MachineController {
     machineId(forServerId: serverId).map { client(for: $0) }
   }
 
+  public var readyMachineIds: Set<String> {
+    Set(allMachines.filter { availability(for: $0.id) == .ready }.map(\.id))
+  }
+
+  public func sandboxProfilesLoadKey(composerId: String) -> SandboxProfilesLoadKey {
+    SandboxProfilesLoadKey(
+      composerId: composerId,
+      machineAvailabilities: Dictionary(uniqueKeysWithValues: allMachines.map { ($0.id, availability(for: $0.id)) }),
+      machineServerIds: Dictionary(uniqueKeysWithValues: allMachines.map { ($0.id, reportedServerId(of: $0.id)) }),
+      revision: sandboxAvailabilityRevision
+    )
+  }
+
+  public func sandboxHostConnection(forServerId serverId: String) -> SandboxHostConnection {
+    guard let machineId = machineId(forServerId: serverId) else {
+      return isLocalServerStarting ? .starting : .unreachable
+    }
+    if availability(for: machineId) == .ready { return .ready(client(for: machineId)) }
+    return machineId == CodevisorMachine.local.id && isLocalServerStarting ? .starting : .unreachable
+  }
+
+  private var isLocalServerStarting: Bool {
+    let local = CodevisorMachine.local.id
+    guard allMachines.contains(where: \.isLocal) else { return false }
+    switch availability(for: local) {
+    case .waiting: return true
+    case .ready: return reportedServerId(of: local) == nil
+    case .failed: return false
+    }
+  }
+
+  private func reportedServerId(of machineId: String) -> String? {
+    connectionsById[machineId]?.status?.serverId
+  }
+
   func clientIfKnown(for machineId: String) -> (any CodevisorServerClienting)? {
     guard machine(for: machineId) != nil else { return nil }
     return client(for: machineId)

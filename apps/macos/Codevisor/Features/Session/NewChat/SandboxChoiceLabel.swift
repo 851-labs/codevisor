@@ -5,13 +5,15 @@ struct SandboxChoiceLabel: View {
   let choice: SandboxProfileChoice
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 1) {
+    HStack(spacing: 6) {
       Text(choice.target.profileName)
-      if let reason = choice.disabledReason {
-        Text(reason)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+      Spacer(minLength: 8)
+      if choice.availability == .checking {
+        ProgressView()
+          .controlSize(.mini)
+          .accessibilityLabel("Checking")
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
