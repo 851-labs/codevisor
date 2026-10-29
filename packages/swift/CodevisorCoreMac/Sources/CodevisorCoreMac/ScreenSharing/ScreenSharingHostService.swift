@@ -7,13 +7,6 @@ import OSLog
 
 @MainActor
 final class ScreenSharingHostService {
-  static let bitrateCeiling = 45_000_000
-  nonisolated static let physicalCaptureBox = (width: 2560.0, height: 1440.0)
-
-  nonisolated static func physicalCaptureSize(width: Int, height: Int) -> (width: Int, height: Int) {
-    let scale = min(1, physicalCaptureBox.width / Double(width), physicalCaptureBox.height / Double(height))
-    return (max(64, Int(Double(width) * scale) / 2 * 2), max(64, Int(Double(height) * scale) / 2 * 2))
-  }
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   private(set) var current: ScreenSharingHostSession?

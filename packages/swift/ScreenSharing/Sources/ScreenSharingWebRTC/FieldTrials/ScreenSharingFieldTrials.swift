@@ -4,11 +4,8 @@ import ScreenSharing
 import WebRTCProcessFieldTrials
 
 final class ScreenSharingFieldTrials: @unchecked Sendable {
-  static let product = [
-    "WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80", "WebRTC-Video-Pacing": "factor:10",
-    "WebRTC-FrameDropper": "Disabled",
-  ]
-  static let productString = product.sorted { $0.key < $1.key }.map { "\($0.key)/\($0.value)/" }.joined()
+  static let productString = ScreenSharingProductProfile.fieldTrials.sorted { $0.key < $1.key }
+    .map { "\($0.key)/\($0.value)/" }.joined()
   static let process = ScreenSharingFieldTrials(apply: { CodevisorInstallWebRTCProcessFieldTrials($0) })
 
   private let apply: @Sendable ([String: String]) -> Void
@@ -29,7 +26,7 @@ final class ScreenSharingFieldTrials: @unchecked Sendable {
     lock.withLock {
       guard !installed else { return }
 
-      apply(Self.product)
+      apply(ScreenSharingProductProfile.fieldTrials)
       installed = true
     }
   }
