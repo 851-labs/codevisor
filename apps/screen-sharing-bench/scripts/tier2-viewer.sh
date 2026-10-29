@@ -84,7 +84,7 @@ run_one() {
 tier2_check_inputs
 "$tier2_scripts/record-installed-commit.sh" "$results"
 commit=$(cat "$results/installed-commit.txt")
-meet_on_build viewer "$commit"
+meet_on_build viewer "$(tier2_ready_status "$results" viewer "$commit")"
 while read -r index scene system rep observed; do
   run_one "$index" "$scene" "$system" "$rep" "$observed"
 done < <(tier2_plan)

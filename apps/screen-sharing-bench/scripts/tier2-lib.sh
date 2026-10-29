@@ -13,8 +13,8 @@
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=90
-tier2_rendezvous_port=47595
-tier2_clock_port=47592
+tier2_settle_limit_s=600
+tier2_abort_wait_s=120
 tier2_plan_budget_s=2700
 : "${TIER2_FLOOR_PORT:=47594}"
 : "${TIER2_SEED:=1}"
@@ -78,10 +78,24 @@ meet() {
     --duration "$timeout" >/dev/null
 }
 
+tier2_ready_status() {
+  local results=$1 role=$2 commit=$3
+  if preflight "$results/$role-quiet-preflight.json" --quiet --settle-limit "$tier2_settle_limit_s"; then
+    echo "$commit"
+  else
+    echo "abort: $role preflight failed (see $role-quiet-preflight.json)"
+  fi
+}
+
 meet_on_build() {
-  local party=$1 commit=$2
-  bench rendezvous --host "$TIER2_HOST_IP" --party "$party" --barrier hello --status "$commit" --agree \
-    --duration "$TIER2_RENDEZVOUS_S" >&2 || { say "tamale and croissant run different CodevisorBench builds"; return 1; }
+  local party=$1 status=$2
+  local wait_s=$TIER2_RENDEZVOUS_S
+  [[ "$status" == abort:* ]] && wait_s=$tier2_abort_wait_s
+  bench rendezvous --host "$TIER2_HOST_IP" --party "$party" --barrier hello --status "$status" --agree \
+    --duration "$wait_s" >&2 || {
+    say "not starting: the Macs aren't both quiet and on the same build (their hello statuses are above)"
+    return 1
+  }
 }
 
 tier2_check_inputs() {

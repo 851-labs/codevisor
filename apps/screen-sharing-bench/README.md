@@ -187,7 +187,7 @@ Recording and Accessibility to the same build run from elsewhere, and the grants
 installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
 screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
 minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
-and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine). C4 runs only when
+and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
 video is among the scenes. A plan longer than 45 minutes of runs fails at once. Runs over ssh are for
 development only.
 

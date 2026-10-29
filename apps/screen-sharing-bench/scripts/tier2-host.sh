@@ -6,6 +6,8 @@ results=${1:-}
 source "$(dirname "${BASH_SOURCE[0]}")/tier2-lib.sh"
 mkdir -p "$results"
 work="$(mktemp -d /tmp/codevisor-tier2.XXXXXX)"
+rendezvous_port=47595
+clock_port=47592
 host_processes=screensharingd,ScreensharingAgent,CodevisorBench:share,VTEncoderXPCService,replayd,WindowServer
 background=()
 stop_background() {
@@ -69,7 +71,7 @@ stop_stale_servers() {
 
 await_servers() {
   local deadline=$((SECONDS + 30))
-  until lsof -nP -iTCP:"$tier2_rendezvous_port" -sTCP:LISTEN >/dev/null && lsof -nP -iUDP:"$tier2_clock_port" >/dev/null; do
+  until lsof -nP -iTCP:"$rendezvous_port" -sTCP:LISTEN >/dev/null && lsof -nP -iUDP:"$clock_port" >/dev/null; do
     for pid in "${background[@]}"; do kill -0 "$pid" 2>/dev/null || return 1; done
     ((SECONDS < deadline)) || return 1
     sleep 0.5
@@ -107,6 +109,7 @@ run_one() {
 tier2_check_inputs
 "$tier2_scripts/record-installed-commit.sh" "$results"
 commit=$(cat "$results/installed-commit.txt")
+ready=$(tier2_ready_status "$results" host "$commit")
 stop_stale_servers
 bench calibrate --check c2 --serve --duration 3600 --idle-exit "$TIER2_RENDEZVOUS_S" \
   >"$results/responder.json" 2>"$results/responder.err" &
@@ -114,7 +117,7 @@ background+=($!)
 bench rendezvous --serve --duration 3600 >"$results/rendezvous.json" 2>"$results/rendezvous.err" &
 background+=($!)
 await_servers || { say "the clock responder or rendezvous server didn't start"; exit 1; }
-meet_on_build host "$commit"
+meet_on_build host "$ready"
 while read -r index scene system rep observed; do
   run_one "$index" "$scene" "$system" "$rep" "$observed"
 done < <(tier2_plan)
