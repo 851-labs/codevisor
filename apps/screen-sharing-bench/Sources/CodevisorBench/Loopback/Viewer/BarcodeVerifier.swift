@@ -16,13 +16,17 @@ final class BarcodeVerifier: @unchecked Sendable {
     self.mailbox = mailbox
     self.canvasWidth = canvasWidth
     tap = mailbox.tap(id)
-    tap.onFrameAvailable { [weak self] in self?.queue.async { self?.drain() } }
+    tap.onFrameAvailable { [weak self] in self?.scheduleDrain() }
   }
 
   func stop() -> [Int64: Int?] {
     mailbox.untap(id)
     tap.onFrameAvailable(nil)
     return queue.sync { lock.withLock { versions } }
+  }
+
+  private func scheduleDrain() {
+    queue.async { [weak self] in self?.drain() }
   }
 
   private func drain() {

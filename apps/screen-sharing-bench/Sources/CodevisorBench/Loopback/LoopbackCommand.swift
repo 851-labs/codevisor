@@ -39,6 +39,10 @@ struct LoopbackCommand: BenchCommand {
     trigger = try options.string("trigger", default: "manual")
   }
 
+  var presentsWindows: Bool {
+    settings.endpoint == .onGlass || settings.source == .ownWindow
+  }
+
   func run() async throws {
     let started = Date()
     let clock = ContinuousClock()
