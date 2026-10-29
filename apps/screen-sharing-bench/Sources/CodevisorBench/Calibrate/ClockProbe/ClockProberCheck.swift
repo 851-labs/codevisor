@@ -3,6 +3,7 @@ import ScreenSharingBench
 struct ClockProberCheck: CalibrationCheck {
   private static let intervals = 1...60
 
+  let presentsWindows = false
   private let responder: BenchUDPAddress
   private let duration: Duration
   private let interval: Duration

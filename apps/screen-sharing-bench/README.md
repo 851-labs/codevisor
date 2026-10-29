@@ -26,13 +26,16 @@ library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 
 1. Add a directory under `Sources/CodevisorBench` (for example `Observe/`) with a type that conforms to
    `BenchCommand`: a `name`, a one-line `summary`, a `usage` synopsis, `init(options:)` that reads its
-   options from `BenchOptions`, and `run()`.
+   options from `BenchOptions`, `presentsWindows`, and `run()`.
 2. Add the type to `BenchCommands.all`.
 
 `init(options:)` reads every option it accepts (`string`, `integer`, `flag`, `choice`); the launcher then
 rejects any option nobody read. Throw `BenchUsageError` for a bad value. The process exits 0 on success,
-1 on a thrown error and 64 on a usage error. It starts with the `.prohibited` activation policy; a
-command that shows windows switches to `.regular`.
+1 on a thrown error and 64 on a usage error. A command says whether it
+`presentsWindows`; the launcher parses it before the app starts and picks the `.regular` activation policy for
+those (so the activation `open` gives at launch isn't lost) and `.prohibited` for the rest (so an observer
+started next to the player never takes focus from it). Hide the menu bar only once active
+(`BenchPresentation.hideMenuBarOnceActive`): setting `presentationOptions` from an inactive app hides the app.
 
 ## Scenes
 
@@ -87,7 +90,8 @@ Each command prints one JSON result to stdout; a check that fails its pass crite
   burst of 16 every interval and reports ε (largest kept round trip / 2), the drift, and two residuals: the
   windowed one (`BenchClockTrack`, each burst against a line fitted to the bursts within 30 s of it, itself
   left out) and the single line over the whole run (`linear_residual_ms`). It passes when ε ≤ 0.5 ms and the
-  windowed residual ≤ 0.2 ms. Receive times are the kernel's (`SO_TIMESTAMP_MONOTONIC`), so wake-up latency
+  windowed residual ≤ 0.2 ms. Bursts slower than twice the median minimum round trip (and over 0.5 ms) are dropped and counted
+  (`rejected_slow_bursts`); more than 5% dropped fails the check. Receive times are the kernel's (`SO_TIMESTAMP_MONOTONIC`), so wake-up latency
   never counts. The minis' clocks don't keep one rate for ten minutes: under CI load the single line missed
   by up to 0.87 ms while the windowed fit stayed within 0.10 ms, so convert times with `BenchClockTrack`.
 - `calibrate --check c6 [--events 200] [--seed 7] [--target window|frontmost]` posts space key presses

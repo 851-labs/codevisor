@@ -9,6 +9,7 @@ struct SampleCommand: BenchCommand {
   private static let durations = 1...7200
   private static let interval = Duration.seconds(1)
 
+  let presentsWindows = false
   private let duration: Int
   private let interface: String
   private let processNames: [String]

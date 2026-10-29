@@ -13,6 +13,7 @@ struct PlayerCommand: BenchCommand {
   private static let durations = 1...3600
   private static let selfInputRates = 0...60
 
+  let presentsWindows = true
   private let configuration: PlayerConfiguration
 
   init(options: BenchOptions) throws {

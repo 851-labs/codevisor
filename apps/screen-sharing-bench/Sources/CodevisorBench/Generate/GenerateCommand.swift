@@ -12,6 +12,7 @@ struct GenerateCommand: BenchCommand {
 
   private static let counts = 1...100_000
 
+  let presentsWindows = false
   private let plan: GeneratePlan
 
   init(options: BenchOptions) throws {

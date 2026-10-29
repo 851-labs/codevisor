@@ -10,6 +10,7 @@ struct ObserveCommand: BenchCommand {
 
   private static let durations = 1...3600
 
+  let presentsWindows = false
   private let duration: Int
   private let region: ObserverRegion
   private let displayID: CGDirectDisplayID?

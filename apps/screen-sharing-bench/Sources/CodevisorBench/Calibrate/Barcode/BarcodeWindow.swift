@@ -9,11 +9,9 @@ final class BarcodeWindow: NSWindow {
 
   static func presented(on displayID: CGDirectDisplayID) throws -> BarcodeWindow {
     let window = try BarcodeWindow(screen: try screen(displayID: displayID))
-    let application = NSApplication.shared
-    application.setActivationPolicy(.regular)
-    application.activate()
-    application.presentationOptions = [.hideDock, .hideMenuBar]
+    NSApplication.shared.activate()
     window.makeKeyAndOrderFront(nil)
+    BenchPresentation.hideMenuBarOnceActive()
     return window
   }
 
@@ -22,13 +20,18 @@ final class BarcodeWindow: NSWindow {
       mailbox: ScreenSharingFrameMailbox(), metrics: ScreenSharingMetrics(), renderOnArrival: true)
     super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     isReleasedWhenClosed = false
-    level = .mainMenu
+    level = .screenSaver
     backgroundColor = .black
     contentView = view
     setFrame(screen.frame, display: true)
   }
 
   override var canBecomeKey: Bool { true }
+
+  override func close() {
+    super.close()
+    BenchPresentation.restoreMenuBar()
+  }
 
   override func keyDown(with event: NSEvent) {
     onKeyDown?()

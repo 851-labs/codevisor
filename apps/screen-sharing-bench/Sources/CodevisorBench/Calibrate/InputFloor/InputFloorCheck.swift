@@ -22,6 +22,10 @@ struct InputFloorCheck: CalibrationCheck {
     layout = try BarcodeOptions.layout(from: options)
   }
 
+  var presentsWindows: Bool {
+    target == .window
+  }
+
   func run() async throws {
     try KeyPoster.requireAccess()
     let display = try await ScreenObserver.display(id: displayID)

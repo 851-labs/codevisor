@@ -1,19 +1,24 @@
 public struct BenchClockTrack: Sendable {
   public static let defaultHalfWindowNs: Int64 = 30_000_000_000
+  public static let slowBurstFactor = 2.0
+  public static let slowestKeptErrorBoundNs = 250_000.0
 
   public let quality: BenchClockQuality
   public let linearResidualMs: Double
+  public let rejectedBursts: Int
   private let samples: [BenchClockSample]
   private let halfWindowNs: Int64
 
   public init?(bursts: [[BenchClockExchange]], halfWindowNs: Int64 = defaultHalfWindowNs) {
-    let samples = bursts.compactMap(BenchClockSample.minimumRoundTrip(in:)).sorted { $0.localNs < $1.localNs }
+    let all = bursts.compactMap(BenchClockSample.minimumRoundTrip(in:)).sorted { $0.localNs < $1.localNs }
+    let samples = Self.withoutSlowBursts(all)
     guard samples.count >= 2 else { return nil }
 
     let linear = BenchClockFit(samples, referenceNs: samples[0].localNs)
     self.samples = samples
     self.halfWindowNs = halfWindowNs
     linearResidualMs = linear.maximumResidual / 1_000_000
+    rejectedBursts = all.count - samples.count
     quality = BenchClockQuality(
       epsilonMs: (samples.map(\.errorBoundNs).max() ?? 0) / 1_000_000, driftPpm: linear.slope * 1_000_000,
       residualMs: Self.leaveOneOutResidualNs(samples, halfWindowNs: halfWindowNs) / 1_000_000)
@@ -32,6 +37,14 @@ public struct BenchClockTrack: Sendable {
   }
 
   private static let inversionSteps = 2
+
+  private static func withoutSlowBursts(_ samples: [BenchClockSample]) -> [BenchClockSample] {
+    let bounds = samples.map(\.errorBoundNs).sorted()
+    guard !bounds.isEmpty else { return samples }
+
+    let limit = max(bounds[bounds.count / 2] * slowBurstFactor, slowestKeptErrorBoundNs)
+    return samples.filter { $0.errorBoundNs <= limit }
+  }
 
   private static func fit(
     around localNs: Int64, in samples: [BenchClockSample], halfWindowNs: Int64, excluding excluded: Int? = nil

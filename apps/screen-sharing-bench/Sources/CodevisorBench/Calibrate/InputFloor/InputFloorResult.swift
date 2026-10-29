@@ -11,6 +11,11 @@ struct InputFloorResult: Encodable {
   let frames: Int
   let unreadableFraction: Double
 
+  private enum CodingKeys: String, CodingKey {
+    case check, target, source, events, stoppedOnLostFocus, unansweredEvents, frames, unreadableFraction
+    case localI2pMs = "local_i2p_ms"
+  }
+
   init(target: InputFloorTarget, source: String, posted: PostedEvents, observations: [BenchObservation]) {
     let responses = BenchInputResponses(eventsNs: posted.timesNs, observations: observations)
     let versions = BenchObservedVersions(observations)

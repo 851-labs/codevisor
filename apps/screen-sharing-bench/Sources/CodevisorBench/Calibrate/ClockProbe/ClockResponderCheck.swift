@@ -4,6 +4,7 @@ struct ClockResponderCheck: CalibrationCheck {
   private static let idleExits = 0...3600
   private static let checkInterval = Duration.seconds(1)
 
+  let presentsWindows = false
   private let port: UInt16
   private let duration: Duration
   private let idleExitNs: Int64?

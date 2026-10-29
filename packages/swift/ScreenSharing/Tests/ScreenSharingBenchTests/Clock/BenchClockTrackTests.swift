@@ -26,6 +26,7 @@ struct BenchClockTrackTests {
 
     let track = try #require(BenchClockTrack(bursts: bursts))
 
+    #expect(track.rejectedBursts == 0)
     #expect(track.linearResidualMs > 0.5)
     #expect(track.quality.residualMs < 0.2)
     for elapsedNs: Int64 in [1_000_000_000, 125_000_000_000, 300_000_000_000, 599_000_000_000] {
@@ -35,6 +36,25 @@ struct BenchClockTrackTests {
     }
   }
 
+  @Test func burstsSlowerThanTwiceTheMedianRoundTripAreLeftOutOfTheFitAndEpsilon() throws {
+    let clock = WanderingClock()
+    var random = SplitMix64(seed: 5)
+    let slowBursts: Set = [40, 150, 151]
+    let bursts = (0..<300).map { burst in
+      (0..<16).map { probe -> BenchClockExchange in
+        let sentNs = clock.originNs + Int64(burst) * 2_000_000_000 + Int64(probe) * 1_000_000
+        let queuedNs: Int64 = slowBursts.contains(burst) ? 3_000_000 : 0
+        return exchange(sentAt: sentNs, clock, &random, queuedNs: queuedNs)
+      }
+    }
+
+    let track = try #require(BenchClockTrack(bursts: bursts))
+
+    #expect(track.rejectedBursts == 3)
+    #expect(track.quality.epsilonMs < 0.5)
+    #expect(track.quality.residualMs < 0.2)
+  }
+
   @Test func oneBurstIsNotATrack() {
     let exchange = BenchClockExchange(localSendNs: 0, remoteReceiveNs: 10, remoteSendNs: 20, localReceiveNs: 30)
 
@@ -42,11 +62,9 @@ struct BenchClockTrackTests {
   }
 
   private func exchange(
-    sentAt localSendNs: Int64, _ clock: WanderingClock, _ random: inout SplitMix64
-  )
-    -> BenchClockExchange
-  {
-    let forwardNs = 250_000 + Int64(random.next() % 300_000)
+    sentAt localSendNs: Int64, _ clock: WanderingClock, _ random: inout SplitMix64, queuedNs: Int64 = 0
+  ) -> BenchClockExchange {
+    let forwardNs = 250_000 + Int64(random.next() % 300_000) + queuedNs
     let turnaroundNs: Int64 = 40_000
     let backwardNs = 350_000 + Int64(random.next() % 300_000)
     return BenchClockExchange(
