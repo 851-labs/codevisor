@@ -14,10 +14,7 @@
       return accepted
     }
     func waitForEditor() async {
-      while !(firstResponder is NSTextView) {
-        let next = changed.value + 1
-        await changed.wait(for: next)
-      }
+      await changed.cancellableWait { firstResponder is NSTextView }
     }
   }
 
@@ -76,7 +73,7 @@
   }
 
   @MainActor
-  @Suite("Native browser address editing")
+  @Suite("Native browser address editing", .timeLimit(.minutes(1)))
   struct BrowserAddressEditorTests {
     @Test(arguments: [false, true])
     func clickAndLocationCommandSelectTheFullURLBeforeTyping(command: Bool) async throws {

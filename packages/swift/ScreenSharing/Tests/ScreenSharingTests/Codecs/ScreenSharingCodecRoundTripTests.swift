@@ -1,4 +1,3 @@
-import CodevisorTestSupport
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -211,6 +210,7 @@ extension HardwareCodecTests {
       defer { harness.stop() }
       _ = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 1))
       harness.encoderReported(status)
+      #expect(harness.sessionFailures == (replaces ? [status] : []))
       let next = try await harness.encode(index: 1, timestampNs: 33_333_333, identity: 2)
       #expect(next.isKeyFrame == replaces)
       #expect(try await harness.decode(next).sourceTimestampNs == 2)
@@ -254,12 +254,24 @@ private final class CodecHarness {
     let leftLuma: Double
     let rightLuma: Double
     let distinctLumaCodes: Int
+
+    init(_ frame: ScreenSharingVideoFrame) {
+      let edges = CodecHarness.lumaEdges(frame.pixelBuffer)
+      width = CVPixelBufferGetWidth(frame.pixelBuffer)
+      height = CVPixelBufferGetHeight(frame.pixelBuffer)
+      pixelFormat = CVPixelBufferGetPixelFormatType(frame.pixelBuffer)
+      timestampNs = frame.timestampNs
+      sourceTimestampNs = frame.sourceTimestampNs
+      leftLuma = edges.left
+      rightLuma = edges.right
+      distinctLumaCodes = edges.distinct
+    }
   }
 
   let codec: ScreenSharingVideoCodec
   let metrics: ScreenSharingMetrics
-  private let encoded: EncodedLog
-  private let decoded: DecodedLog
+  private let encoded = CodecOutputLog<ScreenSharingEncodedFrame>()
+  private let decoded = CodecOutputLog<Decoded>()
   private let decoder: ScreenSharingDecoder
   private var encoder: ScreenSharingEncoder
   private(set) var configuration: ScreenSharingVideoConfiguration
@@ -269,20 +281,16 @@ private final class CodecHarness {
     codec: ScreenSharingVideoCodec, width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange = .standard
   ) throws {
     let metrics = ScreenSharingMetrics()
-    let encoded = EncodedLog()
-    let decoded = DecodedLog()
     let configuration = try Self.configuration(width: width, height: height)
-    let encoder = try Self.makeEncoder(
-      codec: codec, configuration: configuration, metrics: metrics, dynamicRange: dynamicRange)
-    encoder.onFrame { encoded.record($0) }
     self.codec = codec
     self.dynamicRange = dynamicRange
     self.metrics = metrics
-    self.encoded = encoded
-    self.decoded = decoded
     self.configuration = configuration
-    self.encoder = encoder
-    decoder = ScreenSharingDecoder(metrics: metrics, codec: codec) { decoded.record($0) }
+    encoder = try Self.makeEncoder(
+      codec: codec, configuration: configuration, metrics: metrics, dynamicRange: dynamicRange)
+    let decoded = decoded
+    decoder = ScreenSharingDecoder(metrics: metrics, codec: codec) { decoded.record(Decoded($0)) }
+    encoded.follow(encoder)
   }
 
   static func configuration(width: Int, height: Int) throws -> ScreenSharingVideoConfiguration {
@@ -307,28 +315,16 @@ private final class CodecHarness {
       configuration: configuration,
       format: dynamicRange == .high ? ScreenSharingDynamicRange.highCapturePixelFormat : codec.capturePixelFormat,
       ascending: index.isMultiple(of: 2))
-    let target = encoded.count + 1
-    let admitted = try encoder.encode(
-      ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: timestampNs, sourceTimestampNs: identity),
-      forceKeyFrame: forceKeyFrame, capturedAtNs: capturedAtNs)
-    try #require(admitted)
-    await encoded.deliveries.cancellableWait(for: target)
-    return try output(number: target, of: encoded.frames, from: .encoder)
+    let frame = ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: timestampNs, sourceTimestampNs: identity)
+    let output = try await encoded.nextItem {
+      try #require(try encoder.encode(frame, forceKeyFrame: forceKeyFrame, capturedAtNs: capturedAtNs))
+    }
+    return try #require(output, missingFrame(from: .encoder))
   }
 
   func decode(_ frame: ScreenSharingEncodedFrame) async throws -> Decoded {
-    let target = decoded.count + 1
-    try decoder.decode(frame)
-    await decoded.deliveries.cancellableWait(for: target)
-    return try output(number: target, of: decoded.frames, from: .decoder)
-  }
-
-  private func output<Frame>(number: Int, of frames: [Frame], from stage: Stage) throws -> Frame {
-    guard frames.count >= number else {
-      Issue.record(missingFrame(from: stage))
-      throw CancellationError()
-    }
-    return frames[number - 1]
+    let output = try await decoded.nextItem { try decoder.decode(frame) }
+    return try #require(output, missingFrame(from: .decoder))
   }
 
   private func missingFrame(from stage: Stage) -> Comment {
@@ -342,14 +338,15 @@ private final class CodecHarness {
     encoder.sessionReported(status)
   }
 
+  var sessionFailures: [OSStatus] { encoded.sessionFailures }
+
   func restartEncoder(width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange? = nil) throws {
     encoder.stop()
     configuration = try Self.configuration(width: width, height: height)
     if let dynamicRange { self.dynamicRange = dynamicRange }
-    let encoded = encoded
     encoder = try Self.makeEncoder(
       codec: codec, configuration: configuration, metrics: metrics, dynamicRange: self.dynamicRange)
-    encoder.onFrame { encoded.record($0) }
+    encoded.follow(encoder)
   }
 
   func stop() {
@@ -454,39 +451,5 @@ private final class CodecHarness {
     case encoder, decoder
 
     var errorLabel: String { self == .encoder ? "lastEncodeError" : "decoderError" }
-  }
-
-  private final class EncodedLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [ScreenSharingEncodedFrame] = []
-    let deliveries = TestSignal()
-
-    func record(_ frame: ScreenSharingEncodedFrame) {
-      lock.withLock { items.append(frame) }
-      deliveries.signal()
-    }
-
-    var frames: [ScreenSharingEncodedFrame] { lock.withLock { items } }
-    var count: Int { lock.withLock { items.count } }
-  }
-
-  private final class DecodedLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [Decoded] = []
-    let deliveries = TestSignal()
-
-    func record(_ frame: ScreenSharingVideoFrame) {
-      let edges = CodecHarness.lumaEdges(frame.pixelBuffer)
-      let decoded = Decoded(
-        width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer),
-        pixelFormat: CVPixelBufferGetPixelFormatType(frame.pixelBuffer), timestampNs: frame.timestampNs,
-        sourceTimestampNs: frame.sourceTimestampNs, leftLuma: edges.left, rightLuma: edges.right,
-        distinctLumaCodes: edges.distinct)
-      lock.withLock { items.append(decoded) }
-      deliveries.signal()
-    }
-
-    var frames: [Decoded] { lock.withLock { items } }
-    var count: Int { lock.withLock { items.count } }
   }
 }

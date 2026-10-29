@@ -8,6 +8,7 @@ import Testing
 private let poisonByte: UInt8 = 0xFF
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingDataChannelTests {
   @MainActor
   final class Pair {
@@ -55,7 +56,7 @@ struct ScreenSharingDataChannelTests {
 
     func open() async throws {
       try await harness.negotiate()
-      await opened.wait(for: 2)
+      await opened.cancellableWait(for: 2)
       #expect(host.isAvailable && viewer.isAvailable)
       #expect(hostAvailability == [true] && viewerAvailability == [true])
     }
@@ -73,7 +74,7 @@ struct ScreenSharingDataChannelTests {
     try await pair.open()
     let payloads = [Data([1]), Data([2, 3]), Data(repeating: 7, count: 1_000), Data([4])]
     for payload in payloads { #expect(pair.host.send(payload)) }
-    await pair.delivered.wait(for: payloads.count)
+    await pair.delivered.cancellableWait(for: payloads.count)
     #expect(pair.received == payloads)
     #expect(pair.viewerAvailability == [true])
 
@@ -94,7 +95,7 @@ struct ScreenSharingDataChannelTests {
       }
     }
     #expect(accepted == Array(repeating: true, count: payloads.count))
-    await pair.delivered.wait(for: payloads.count)
+    await pair.delivered.cancellableWait(for: payloads.count)
     #expect(pair.received == payloads)
   }
 
@@ -110,8 +111,8 @@ struct ScreenSharingDataChannelTests {
     try await pair.open()
     let payloads = [Data([1]), Data([0xA0, 1]), Data([2]), Data([0xA0, 2]), Data([3])]
     for payload in payloads { #expect(pair.host.send(payload)) }
-    await taken.recorded.wait(for: 2)
-    await pair.delivered.wait(for: 3)
+    await taken.recorded.cancellableWait(for: 2)
+    await pair.delivered.cancellableWait(for: 3)
     #expect(taken.messages == [Data([0xA0, 1]), Data([0xA0, 2])])
     #expect(!taken.sawMainThread)
     #expect(pair.received == [Data([1]), Data([2]), Data([3])])
@@ -126,7 +127,7 @@ struct ScreenSharingDataChannelTests {
     }
     try await pair.open()
     #expect(pair.host.send(Data([1])))
-    await pair.delivered.wait()
+    await pair.delivered.cancellableWait()
 
     #expect(pair.host.send(Data([poisonByte, 1])))
     #expect(pair.host.send(Data([2])))
@@ -136,7 +137,7 @@ struct ScreenSharingDataChannelTests {
       sent.notify(queue: .main) { continuation.resume() }
     }
     releaseDecode.signal()
-    await pair.viewerClosed.wait()
+    await pair.viewerClosed.cancellableWait()
     #expect(pair.received == [Data([1])])
     #expect(!pair.viewer.isAvailable && pair.viewerAvailability == [true, false])
     #expect(!pair.viewer.send(Data([3])))
@@ -148,11 +149,11 @@ struct ScreenSharingDataChannelTests {
     try await pair.open()
     let admissible = Data(repeating: 1, count: ScreenSharingControlMessage.maximumBytes)
     #expect(pair.host.send(admissible))
-    await pair.delivered.wait()
+    await pair.delivered.cancellableWait()
     #expect(pair.received == [admissible])
 
     #expect(pair.host.send(Data(repeating: 2, count: ScreenSharingControlMessage.maximumBytes + 1)))
-    await pair.viewerClosed.wait()
+    await pair.viewerClosed.cancellableWait()
     #expect(pair.received == [admissible])
     #expect(!pair.viewer.isAvailable)
   }
@@ -162,7 +163,7 @@ struct ScreenSharingDataChannelTests {
     defer { pair.close() }
     try await pair.open()
     #expect(!pair.host.send(Data(repeating: 1, count: 16 * 1_024 + 1)))
-    await pair.hostClosed.wait()
+    await pair.hostClosed.cancellableWait()
     #expect(!pair.host.isAvailable && pair.hostAvailability == [true, false])
     #expect(pair.received.isEmpty)
     #expect(!pair.host.send(Data([1])))

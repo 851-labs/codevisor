@@ -5,7 +5,7 @@
   import Testing
   @testable import Autocomplete
 
-  @Suite("Autocomplete hosted controls")
+  @Suite("Autocomplete hosted controls", .timeLimit(.minutes(1)))
   @MainActor
   struct HostedControlTests {
     private func field(in view: NSView) -> NSSearchField? {

@@ -67,15 +67,12 @@ public final class TestClock: Clock, @unchecked Sendable {
   }
 
   public func waitForSleep(_ duration: Duration, count: Int = 1) async {
-    while !Task.isCancelled {
-      let revision = changed.value
-      if lock.withLock({
-        requests.filter { $0 == duration }.count >= count
-          && pending.values.contains { $0.duration == duration }
-      }) {
-        return
-      }
-      await changed.cancellableWait(for: revision + 1)
+    await changed.cancellableWait { hasRequested(duration, count: count) }
+  }
+
+  private func hasRequested(_ duration: Duration, count: Int) -> Bool {
+    lock.withLock {
+      requests.filter { $0 == duration }.count >= count && pending.values.contains { $0.duration == duration }
     }
   }
 

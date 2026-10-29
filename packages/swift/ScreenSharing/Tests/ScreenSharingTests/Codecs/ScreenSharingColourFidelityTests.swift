@@ -1,4 +1,3 @@
-import CodevisorTestSupport
 import CoreVideo
 import Foundation
 import Testing
@@ -29,9 +28,9 @@ extension HardwareCodecTests {
         width: 320, height: 192, framesPerSecond: 30, bitrate: 8_000_000)
       let encoder = try ScreenSharingEncoder(
         configuration: configuration, metrics: metrics, useLowLatencyRateControl: false, codec: .hevc444)
-      let encoded = Log<ScreenSharingEncodedFrame>()
-      encoder.onFrame { encoded.record($0) }
-      let decoded = Log<ScreenSharingVideoFrame>()
+      let encoded = CodecOutputLog<ScreenSharingEncodedFrame>()
+      encoded.follow(encoder)
+      let decoded = CodecOutputLog<ScreenSharingVideoFrame>()
       let decoder = ScreenSharingDecoder(metrics: metrics, codec: .hevc444) { decoded.record($0) }
       defer {
         encoder.stop()
@@ -39,10 +38,9 @@ extension HardwareCodecTests {
       }
       let picture = try Self.bands(width: 320, height: 192)
       for index in 0..<4 {
-        try #require(
-          try encoder.encode(ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: Int64(index) * 33_333_333)))
-        try decoder.decode(try await encoded.item(at: index))
-        _ = try await decoded.item(at: index)
+        let frame = ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: Int64(index) * 33_333_333)
+        let output = try #require(try await encoded.nextItem { try #require(try encoder.encode(frame)) })
+        _ = try #require(try await decoded.nextItem { try decoder.decode(output) })
       }
       let output = try #require(decoded.items.last).pixelBuffer
       for (index, colour) in Self.colours.enumerated() {
@@ -58,19 +56,17 @@ extension HardwareCodecTests {
       let configuration = try ScreenSharingVideoConfiguration(
         width: 320, height: 192, framesPerSecond: 30, bitrate: 4_000_000)
       let encoder = try ScreenSharingEncoder(configuration: configuration, metrics: metrics, codec: .hevc)
-      let encoded = Log<ScreenSharingEncodedFrame>()
-      encoder.onFrame { encoded.record($0) }
-      let decoded = Log<ScreenSharingVideoFrame>()
+      let encoded = CodecOutputLog<ScreenSharingEncodedFrame>()
+      encoded.follow(encoder)
+      let decoded = CodecOutputLog<ScreenSharingVideoFrame>()
       let decoder = ScreenSharingDecoder(metrics: metrics, codec: .hevc) { decoded.record($0) }
       defer {
         encoder.stop()
         decoder.stop()
       }
-      try #require(
-        try encoder.encode(
-          ScreenSharingVideoFrame(pixelBuffer: try Self.bands(width: 320, height: 192), timestampNs: 0)))
-      try decoder.decode(try await encoded.item(at: 0))
-      _ = try await decoded.item(at: 0)
+      let frame = ScreenSharingVideoFrame(pixelBuffer: try Self.bands(width: 320, height: 192), timestampNs: 0)
+      let output = try #require(try await encoded.nextItem { try #require(try encoder.encode(frame)) })
+      _ = try #require(try await decoded.nextItem { try decoder.decode(output) })
       let labels = metrics.snapshot().labels
       print("bgra->hevc labels:", labels.filter { $0.key.contains("encoded") || $0.key.contains("decoded") })
       #expect(labels["encodedChroma"] == "4:2:0" && labels["encodedHEVCProfileIDC"] == "1")
@@ -82,20 +78,17 @@ extension HardwareCodecTests {
       let configuration = try ScreenSharingVideoConfiguration(
         width: 320, height: 192, framesPerSecond: 30, bitrate: 4_000_000)
       let encoder = try ScreenSharingEncoder(configuration: configuration, metrics: metrics, codec: .hevc)
-      let encoded = Log<ScreenSharingEncodedFrame>()
-      encoder.onFrame { encoded.record($0) }
-      let decoded = Log<ScreenSharingVideoFrame>()
+      let encoded = CodecOutputLog<ScreenSharingEncodedFrame>()
+      encoded.follow(encoder)
+      let decoded = CodecOutputLog<ScreenSharingVideoFrame>()
       let decoder = ScreenSharingDecoder(metrics: metrics, codec: .hevc444) { decoded.record($0) }
       defer {
         encoder.stop()
         decoder.stop()
       }
-      try #require(
-        try encoder.encode(
-          ScreenSharingVideoFrame(pixelBuffer: try Self.bands(width: 320, height: 192), timestampNs: 0)))
-      try decoder.decode(try await encoded.item(at: 0))
-      _ = try await decoded.item(at: 0)
-      let frame = try #require(decoded.items.first)
+      let source = ScreenSharingVideoFrame(pixelBuffer: try Self.bands(width: 320, height: 192), timestampNs: 0)
+      let output = try #require(try await encoded.nextItem { try #require(try encoder.encode(source)) })
+      let frame = try #require(try await decoded.nextItem { try decoder.decode(output) })
       #expect(CVPixelBufferGetPixelFormatType(frame.pixelBuffer) == ScreenSharingVideoCodec.hevc.decodedPixelFormat)
       #expect(metrics.snapshot().labels["decodedChroma"] == "4:2:0")
       #expect(metrics.snapshot().labels["decoderError"] == nil)
@@ -140,23 +133,6 @@ extension HardwareCodecTests {
       }
       func level(_ value: Double) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
       return (level(luma + 1.5748 * v), level(luma - 0.187324 * u - 0.468124 * v), level(luma + 1.8556 * u))
-    }
-
-    final class Log<Item>: @unchecked Sendable {
-      private let lock = NSLock()
-      private var stored: [Item] = []
-      let deliveries = TestSignal()
-      func record(_ item: Item) {
-        lock.withLock { stored.append(item) }
-        deliveries.signal()
-      }
-      var items: [Item] { lock.withLock { stored } }
-
-      func item(at index: Int) async throws -> Item {
-        await deliveries.cancellableWait(for: index + 1)
-        try Task.checkCancellation()
-        return items[index]
-      }
     }
   }
 }

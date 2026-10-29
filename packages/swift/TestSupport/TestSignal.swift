@@ -43,6 +43,16 @@ public final class TestSignal: @unchecked Sendable {
     }
   }
 
+  public func cancellableWait(
+    until condition: () -> Bool, isolation: isolated (any Actor)? = #isolation
+  ) async {
+    while !Task.isCancelled {
+      let revision = value
+      if condition() { return }
+      await cancellableWait(for: revision + 1)
+    }
+  }
+
   private func reserveWaiter() -> Int {
     lock.withLock {
       nextWaiter += 1

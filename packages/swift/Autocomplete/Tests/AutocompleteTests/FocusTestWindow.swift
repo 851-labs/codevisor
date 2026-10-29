@@ -13,10 +13,7 @@
     }
 
     func waitForResponder(_ matches: (NSResponder?) -> Bool) async {
-      while !matches(firstResponder) {
-        let next = responderChanged.value + 1
-        await responderChanged.wait(for: next)
-      }
+      await responderChanged.cancellableWait { matches(firstResponder) }
     }
   }
 #endif
