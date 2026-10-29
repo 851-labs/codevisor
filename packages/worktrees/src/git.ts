@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { join, resolve as resolvePath } from "node:path"
 
-import type { BranchDiffTotals } from "@codevisor/api"
+import type { BranchDiffTotals, GitHead } from "@codevisor/api"
 
 import { cloneCancelled, nonInteractiveGitEnvironment, parseCloneProgress } from "./git-clone.js"
 import { CloneError, classifyCloneFailure, GitError, gitFailureMessage } from "./git-errors.js"
@@ -95,6 +95,16 @@ export const gitCurrentBranch = async (
     env
   ).catch(() => null)
   return branch === null || branch.length === 0 ? null : branch
+}
+
+export const gitHead = async (dir: string, env: NodeJS.ProcessEnv): Promise<GitHead> => {
+  const branch = await gitCurrentBranch(dir, env)
+  if (branch !== null) return { branch }
+
+  const commit = await gitShortHead(dir, env)
+  if (commit === null) return { branch: null }
+
+  return { branch: null, detachedHead: commit }
 }
 
 export const gitRemoteUrl = async (
@@ -342,3 +352,6 @@ export const rollbackFailedWorktree = async (
   await git("worktree-branch", ["branch", "-D", branch], repoDir, env)
   return true
 }
+
+const gitShortHead = (dir: string, env: NodeJS.ProcessEnv): Promise<string | null> =>
+  runGit("short-head", ["rev-parse", "--short", "HEAD"], dir, env).catch(() => null)

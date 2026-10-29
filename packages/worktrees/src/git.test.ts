@@ -16,6 +16,7 @@ import {
   cloneRepository,
   gitBranchDiffTotals,
   gitCurrentBranch,
+  gitHead,
   gitRemoteUrl,
   isGitWorkTree,
   isWorktreeBranchCollision,
@@ -52,13 +53,23 @@ describe("git helper", () => {
     expect(await isGitWorkTree("/nonexistent-codevisor-repo")).toBe(false)
   })
 
-  it("names the checked-out branch and nothing on a detached HEAD", async () => {
+  it("names the checked-out branch, or the commit of a detached HEAD", async () => {
     const { repo } = makeRepo()
     execFileSync("git", ["checkout", "-q", "-b", "feature/badge"], { cwd: repo })
     expect(await gitCurrentBranch(repo, process.env)).toBe("feature/badge")
+    expect(await gitHead(repo, process.env)).toEqual({ branch: "feature/badge" })
 
     execFileSync("git", ["checkout", "-q", "--detach"], { cwd: repo })
+    const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo })
     expect(await gitCurrentBranch(repo, process.env)).toBeNull()
+    expect(await gitHead(repo, process.env)).toEqual({
+      branch: null,
+      detachedHead: commit.toString().trim()
+    })
+  })
+
+  it("reports no head outside a repository", async () => {
+    expect(await gitHead("/nonexistent-codevisor-repo", process.env)).toEqual({ branch: null })
   })
 
   it("discovers the origin remote, falling back to the first remote", async () => {

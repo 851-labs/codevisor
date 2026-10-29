@@ -18,6 +18,7 @@ export interface WorkspaceRow {
   readonly updated_at: string | null
   readonly labels?: string | null
   readonly git_branch?: string | null
+  readonly git_detached_head?: string | null
   readonly git_pull_request?: string | null
   readonly git_known?: number
   readonly bot_id?: string | null
@@ -58,6 +59,7 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   updated_at: nullable(text),
   labels: optional(nullable(text)),
   git_branch: optional(nullable(text)),
+  git_detached_head: optional(nullable(text)),
   git_pull_request: optional(nullable(text)),
   git_known: optional(integer),
   bot_id: optional(nullable(text)),
