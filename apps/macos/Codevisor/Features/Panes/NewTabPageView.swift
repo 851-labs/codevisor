@@ -51,7 +51,7 @@ struct NewTabPageView: View {
 
   private var supportsScreenSharing: Bool {
     guard let machineId else { return false }
-    return environment.machines.statusByMachineId[machineId]?.supportsScreenSharing == true
+    return environment.machines.desktopMachine(for: machineId) != nil
   }
 
   private var supportsSimulator: Bool {

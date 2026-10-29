@@ -69,4 +69,17 @@ struct MachineStatusFeaturesTests {
     #expect(status?.cloudDeviceId == "dev-1")
     #expect(status?.supportsScreenSharing == true)
   }
+
+  @Test("Only other machines that support screen sharing offer a desktop")
+  func desktopSkipsThisMac() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoFeatures(["screen-sharing-v1"])
+    let (controller, remote) = try makeController(fake: fake)
+    await controller.refreshStatus(for: remote.id)
+    controller.connection(for: CodevisorMachine.local.id).status = MachineStatus(
+      isReachable: true, label: "Local 1.0.0", serverId: "local", features: ["screen-sharing-v1"])
+
+    #expect(controller.desktopMachine(for: remote.id)?.id == remote.id)
+    #expect(controller.desktopMachine(for: CodevisorMachine.local.id) == nil)
+  }
 }
