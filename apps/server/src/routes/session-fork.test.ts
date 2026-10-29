@@ -158,6 +158,20 @@ describe("POST /v1/sessions/:id/fork", () => {
     })
   })
 
+  it("keeps the fork's title when the agent reports the source's name for it", async () => {
+    const running = await forkingAgents()
+    const chat = await chatIn(running)
+    await chat.reply("hello")
+    await chat.settled()
+    const forked = decode(SessionSummary)((await chat.fork()).body)
+
+    await run(running.services.db.updateSessionTitleFromHarness(forked.id, "First chat"))
+
+    expect((await run(running.services.db.getSessionSummary(forked.id))).title).toBe(
+      "First chat (fork)"
+    )
+  })
+
   it("keeps a fork in the same worktree as its source", async () => {
     const running = await forkingAgents()
     const tree = await repoWorktree(running)
