@@ -264,7 +264,6 @@ describe("plugin account OAuth", () => {
 
     for (const state of ["garbage", "a.b", ".local.nonce", `${started.flowId}.local.wrong-nonce`]) {
       await expect(accounts.completeOAuth(state, grant.code)).rejects.toEqual(failure(400, expired))
-      expect(accounts.ownsOAuthState(state)).toBe(state.startsWith(started.flowId))
     }
     await accounts.completeOAuth(grant.state, grant.code)
     clock.advance(oauthFlowLifetimeMs + 1)
@@ -272,7 +271,6 @@ describe("plugin account OAuth", () => {
     await expect(accounts.completeOAuth(stale.grant.state, stale.grant.code)).rejects.toEqual(
       failure(400, expired)
     )
-    expect(accounts.ownsOAuthState(grant.state)).toBe(false)
   })
 
   it("reports a cancelled sign-in and forgets the flow", async () => {

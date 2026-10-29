@@ -110,10 +110,6 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
       })
       return { flowId, authorizationUrl: started.authorizationUrl }
     },
-    owns: (state: string): boolean => {
-      const parsed = parseFlowState(state)
-      return parsed !== undefined && pending.has(parsed.flowId)
-    },
     complete: async (state: string, code: string | undefined, error?: string): Promise<void> => {
       const entry = takeFlow(state)
       if (entry === undefined) throw new HttpFailure(400, "This sign-in link expired. Start again.")

@@ -58,7 +58,6 @@ export interface PluginAccounts {
     request: SavePluginAccountRequest & { readonly accountId?: string }
   ) => Promise<PluginAccountOAuthStart>
   readonly completeOAuth: (state: string, code: string | undefined, error?: string) => Promise<void>
-  readonly ownsOAuthState: (state: string) => boolean
   readonly remove: (serverId: string, accountId: string) => Promise<void>
   readonly context: (serverId: string, accountId?: string) => Promise<AccountContext | undefined>
   readonly choices: (serverId: string) => Promise<ReadonlyArray<{ id: string; label: string }>>
@@ -133,7 +132,6 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
       })
     },
     completeOAuth: flows.complete,
-    ownsOAuthState: flows.owns,
     remove: async (serverId, accountId) => {
       const account = await ownedAccount(serverId, accountId)
       if (account.credential !== undefined)

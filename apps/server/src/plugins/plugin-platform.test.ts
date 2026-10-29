@@ -1,24 +1,15 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
 
-import { inboxDevice, sealedInboxItem } from "../infra/cloud-inbox-test-support.js"
-import { makeCloudInbox } from "../infra/cloud-inbox.js"
 import { fakeOAuthProvider, routeGoogleTo } from "./accounts/plugin-oauth-test-support.js"
 import { savePluginRow } from "./events/plugin-events-test-support.js"
 import { makePluginCatalog } from "./plugin-catalog.js"
 import { makePluginPlatform } from "./plugin-platform.js"
-import {
-  cloudRedirect,
-  fakeCloud,
-  localBaseUrl,
-  pluginServices,
-  type CloudReply
-} from "./plugin-test-support.js"
+import { fakeCloud, localBaseUrl, pluginServices, type CloudReply } from "./plugin-test-support.js"
 
-const relayedPlatform = async (reply?: CloudReply) => {
+const linkedPlatform = async (reply?: CloudReply) => {
   const { cloud, requests } = fakeCloud(reply)
-  const inbox = makeCloudInbox()
-  const started = await pluginServices({ cloud, inbox })
+  const started = await pluginServices({ cloud })
   const gmail = await savePluginRow(started.services.db, "Gmail", {
     catalogId: "dev.codevisor/gmail",
     enabled: false
@@ -27,52 +18,26 @@ const relayedPlatform = async (reply?: CloudReply) => {
     started.platform.accounts.startOAuth(gmail.id, {
       values: { clientId: "client-1", clientSecret: "client-secret" }
     })
-  const relay = (itemId: string, callback: Record<string, string>) =>
-    inbox.receive(
-      inboxDevice.secretKey,
-      sealedInboxItem(itemId, "oauth", { flowId: "flow", ...callback })
-    )
-  return { ...started, gmail, requests, startGmail, relay }
+  return { ...started, gmail, requests, startGmail }
 }
 
 describe("plugin platform", () => {
-  it("signs in through a cloud-registered redirect and finishes from the relayed callback", async () => {
-    const platform = await relayedPlatform()
+  it("signs accounts in through the machine's own callback even when linked to the cloud", async () => {
+    const platform = await linkedPlatform()
     const provider = await fakeOAuthProvider()
     routeGoogleTo(provider.url)
 
     const started = await platform.startGmail()
     const grant = provider.authorize(started.authorizationUrl)
-    await platform.relay("callback-1", { state: grant.state, code: grant.code })
+    await platform.platform.accounts.completeOAuth(grant.state, grant.code)
 
-    expect(new URL(started.authorizationUrl).searchParams.get("redirect_uri")).toBe(cloudRedirect)
-    expect(grant.state).toMatch(new RegExp(`^${started.flowId}\\.device-1\\.`))
-    expect(platform.requests).toEqual([
-      { method: "POST", path: "/api/machine/oauth-flows", body: { flowId: started.flowId } }
-    ])
+    expect(new URL(started.authorizationUrl).searchParams.get("redirect_uri")).toBe(
+      new URL("/v1/plugins/oauth/callback", localBaseUrl).toString()
+    )
+    expect(platform.requests).toEqual([])
     expect(await platform.platform.accounts.list(platform.gmail.id)).toEqual([
       expect.objectContaining({ identity: "dana@example.com", method: "oauth2" })
     ])
-  })
-
-  it("ignores relayed callbacks it didn't start", async () => {
-    const platform = await relayedPlatform()
-    const started = await platform.startGmail()
-    const state = new URL(started.authorizationUrl).searchParams.get("state")!
-
-    await platform.relay("cancelled", { state, error: "access_denied" })
-    await platform.relay("stray", { state: "other-flow.device-1.nonce", code: "stray-code" })
-
-    expect(platform.platform.accounts.ownsOAuthState(state)).toBe(false)
-    expect(await platform.platform.accounts.list(platform.gmail.id)).toEqual([])
-  })
-
-  it("refuses to sign in when the cloud returns no redirect", async () => {
-    const replies: ReadonlyArray<unknown> = [{ ok: true }, null]
-    let asked = 0
-    const platform = await relayedPlatform(() => replies[asked++])
-
-    await expect(platform.startGmail()).rejects.toThrow("The cloud didn't return an OAuth redirect")
   })
 
   it("asks the cloud for a managed OAuth client and its token exchanges", async () => {
@@ -108,7 +73,7 @@ describe("plugin platform", () => {
 
   it("needs a linked cloud and a client id back for managed OAuth clients", async () => {
     const local = await pluginServices()
-    const empty = await relayedPlatform(() => ({}))
+    const empty = await linkedPlatform(() => ({}))
 
     await expect(local.platform.managedOAuth.clientId("github")).rejects.toThrow(
       "Sign in to Codevisor to connect this plugin"

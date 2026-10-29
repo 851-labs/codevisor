@@ -10,32 +10,19 @@ export interface InboxWebhookRequest {
   readonly receivedAt: string
 }
 
-export interface InboxOAuthCallback {
-  readonly flowId: string
-  readonly state: string
-  readonly code?: string
-  readonly error?: string
-}
-
 export interface CloudInbox {
   readonly receive: (secretKey: string, frame: HubInboxItem) => Promise<void>
   readonly onWebhook: (handler: (request: InboxWebhookRequest) => Promise<void>) => () => void
-  readonly onOAuth: (handler: (callback: InboxOAuthCallback) => Promise<void>) => () => void
 }
 
 export const makeCloudInbox = (): CloudInbox => {
   const webhookHandlers = new Set<(request: InboxWebhookRequest) => Promise<void>>()
-  const oauthHandlers = new Set<(callback: InboxOAuthCallback) => Promise<void>>()
   const seen = new Set<string>()
 
   const dispatch = async (frame: HubInboxItem, payload: unknown): Promise<void> => {
-    if (frame.kind === "webhook") {
-      const request = webhookRequestOf(payload)
-      if (request !== undefined) await all(webhookHandlers, request)
-      return
-    }
-    const callback = oauthCallbackOf(payload)
-    if (callback !== undefined) await all(oauthHandlers, callback)
+    if (frame.kind !== "webhook") return
+    const request = webhookRequestOf(payload)
+    if (request !== undefined) await all(webhookHandlers, request)
   }
 
   return {
@@ -44,8 +31,7 @@ export const makeCloudInbox = (): CloudInbox => {
       await dispatch(frame, openInboxItem(secretKey, frame))
       remember(seen, frame.itemId)
     },
-    onWebhook: (handler) => register(webhookHandlers, handler),
-    onOAuth: (handler) => register(oauthHandlers, handler)
+    onWebhook: (handler) => register(webhookHandlers, handler)
   }
 }
 
@@ -93,16 +79,6 @@ const webhookRequestOf = (payload: unknown): InboxWebhookRequest | undefined => 
     headers: stringRecord(headers),
     body: String(body),
     receivedAt: String(receivedAt)
-  }
-}
-
-const oauthCallbackOf = (payload: unknown): InboxOAuthCallback | undefined => {
-  if (!isRecord(payload) || !isString(payload.flowId) || !isString(payload.state)) return undefined
-  return {
-    flowId: payload.flowId,
-    state: payload.state,
-    ...(isString(payload.code) ? { code: payload.code } : {}),
-    ...(isString(payload.error) ? { error: payload.error } : {})
   }
 }
 

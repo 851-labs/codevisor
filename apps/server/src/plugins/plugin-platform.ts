@@ -67,13 +67,6 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
     }
   })
 
-  deps.inbox?.onOAuth(async (callback) => {
-    if (!accounts.ownsOAuthState(callback.state)) return
-    await accounts
-      .completeOAuth(callback.state, callback.code, callback.error)
-      .catch(() => undefined)
-  })
-
   return {
     accounts,
     inbox: deps.inbox,
@@ -121,25 +114,13 @@ const requireCloudRequest = (deps: PluginPlatformDeps) => {
 }
 
 const oauthRedirects = (deps: PluginPlatformDeps): OAuthRedirects => ({
-  prepare: async (flowId) => {
-    const deviceId = deps.cloud?.deviceId()
-    const request = deps.cloud?.machineRequest
-    if (deviceId === undefined || request === undefined) return loopbackRedirect(deps)
-    const registered = await request("POST", "/api/machine/oauth-flows", { flowId })
-    return { redirectUri: redirectUriOf(registered), deviceId }
-  }
+  prepare: async () => loopbackRedirect(deps)
 })
 
 const loopbackRedirect = (deps: PluginPlatformDeps) => ({
   redirectUri: new URL("/v1/plugins/oauth/callback", deps.localBaseUrl).toString(),
   deviceId: "local"
 })
-
-const redirectUriOf = (registered: unknown): string => {
-  const value = field(registered, "redirectUri")
-  if (typeof value !== "string") throw new Error("The cloud didn't return an OAuth redirect")
-  return value
-}
 
 const requireMcp = (mcp: McpManager | undefined): McpManager => {
   if (mcp === undefined) throw new HttpFailure(501, "Plugins unavailable")

@@ -19,11 +19,9 @@ export const localBaseUrl = "http://127.0.0.1:43210"
 
 export const testEventsId = "dev.codevisor/test-events"
 
-export const cloudRedirect = "https://cloud.example/oauth/callback"
-
 export type CloudReply = (method: string, path: string, body: unknown) => unknown
 
-export const fakeCloud = (reply: CloudReply = () => ({ redirectUri: cloudRedirect })) => {
+export const fakeCloud = (reply: CloudReply = () => ({})) => {
   const requests: Array<{
     readonly method: string
     readonly path: string

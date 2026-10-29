@@ -6,7 +6,6 @@ import {
   machineApiRequest,
   makeCloudInbox,
   MachineApiError,
-  type InboxOAuthCallback,
   type InboxWebhookRequest
 } from "./cloud-inbox.js"
 
@@ -23,14 +22,10 @@ const webhook = (itemId: string) =>
 const recordingInbox = () => {
   const inbox = makeCloudInbox()
   const webhooks: Array<InboxWebhookRequest> = []
-  const callbacks: Array<InboxOAuthCallback> = []
   const stopWebhooks = inbox.onWebhook(async (request) => {
     webhooks.push(request)
   })
-  inbox.onOAuth(async (callback) => {
-    callbacks.push(callback)
-  })
-  return { inbox, webhooks, callbacks, stopWebhooks }
+  return { inbox, webhooks, stopWebhooks }
 }
 
 describe("cloud inbox", () => {
@@ -52,37 +47,17 @@ describe("cloud inbox", () => {
     ])
   })
 
-  it("relays OAuth callbacks with their code or error", async () => {
-    const { inbox, callbacks } = recordingInbox()
-
-    await inbox.receive(
-      device.secretKey,
-      sealed("o1", "oauth", { flowId: "f1", state: "s1", code: "c1" })
-    )
-    await inbox.receive(
-      device.secretKey,
-      sealed("o2", "oauth", { flowId: "f2", state: "s2", error: "denied" })
-    )
-
-    expect(callbacks).toEqual([
-      { flowId: "f1", state: "s1", code: "c1" },
-      { flowId: "f2", state: "s2", error: "denied" }
-    ])
-  })
-
   it("drops items whose sealed payload isn't the expected shape", async () => {
-    const { inbox, webhooks, callbacks } = recordingInbox()
+    const { inbox, webhooks } = recordingInbox()
 
     await inbox.receive(device.secretKey, sealed("w1", "webhook", { itemId: "w1", method: "POST" }))
     await inbox.receive(device.secretKey, sealed("w2", "webhook", ["not", "a", "request"]))
-    await inbox.receive(device.secretKey, sealed("o1", "oauth", { flowId: "f1" }))
-    await inbox.receive(device.secretKey, sealed("o2", "oauth", "state"))
+    await inbox.receive(device.secretKey, sealed("o1", "oauth", { flowId: "f1", state: "s1" }))
     await inbox.receive(
       device.secretKey,
       sealed("w3", "webhook", { ...webhookPayload(), headers: "none" })
     )
 
-    expect(callbacks).toEqual([])
     expect(webhooks.map((request) => request.headers)).toEqual([{}])
   })
 
