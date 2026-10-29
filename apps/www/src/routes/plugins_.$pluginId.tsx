@@ -1,147 +1,78 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 
-import { DetailSection, PluginCapabilityList } from "../components/plugin-capabilities"
-import { PluginAvatar } from "../components/plugin-directory"
-import { SiteNav } from "../components/site-nav"
-import { fetchCatalog, reportHref, type CatalogPlugin } from "../lib/plugin-catalog"
+import { DOWNLOAD_SECTION_URL } from "../components/header-kit"
+import { PlainPage, plainLinkClass } from "../components/plain-page"
+import { reportAddress, reportHref, type CatalogPlugin } from "../lib/plugin-catalog"
+import { loadPlugin, pluginPath, type PluginLookup } from "../lib/plugin-index"
 
-type PluginLookup = CatalogPlugin | "missing" | null
-
-interface PluginDetailData {
+interface PluginLinkData {
   readonly plugin: PluginLookup
 }
 
 const fetchPlugin = createServerFn({ method: "GET" })
   .validator((name: string) => name)
-  .handler(async ({ data: name }): Promise<PluginDetailData> => {
-    const plugins = await fetchCatalog()
-    if (plugins === null) return { plugin: null }
-    return { plugin: plugins.find((plugin) => plugin.name === name) ?? "missing" }
-  })
+  .handler(async ({ data: name }): Promise<PluginLinkData> => ({ plugin: await loadPlugin(name) }))
 
 export const Route = createFileRoute("/plugins_/$pluginId")({
   loader: ({ params }) => fetchPlugin({ data: params.pluginId }),
-  head: (ctx) => ({ meta: pluginMeta(ctx.loaderData?.plugin ?? null) }),
-  component: PluginDetailPage
+  head: (ctx) => ({ meta: [{ title: pluginTitle(ctx.loaderData?.plugin ?? null) }] }),
+  component: PluginLinkPage
 })
 
-const pluginMeta = (plugin: PluginLookup) => {
-  if (plugin === null || plugin === "missing") return [{ title: "Plugin — Codevisor Plugins" }]
-  return [
-    { title: `${plugin.title} — Codevisor Plugins` },
-    { name: "description", content: plugin.description }
-  ]
+const appLinkOrigin = "https://codevisor.dev"
+
+const pluginTitle = (plugin: PluginLookup): string => {
+  if (plugin === null || plugin === "missing") return "Plugin — Codevisor"
+  return `${plugin.title} — Codevisor`
 }
 
-function PluginDetailPage() {
+function PluginLinkPage() {
   const { plugin } = Route.useLoaderData()
   return (
-    <div className="marketing-shell min-h-screen">
-      <SiteNav />
-      <main className="mx-auto max-w-3xl px-6 pt-28 pb-16 sm:pt-32 sm:pb-20">
-        <Link to="/plugins" className="text-sm text-muted transition-colors hover:text-text">
-          ← All plugins
-        </Link>
-        {pluginDetailContent(plugin)}
-      </main>
-    </div>
+    <PlainPage>
+      <PluginLinkContent plugin={plugin} />
+    </PlainPage>
   )
 }
 
-function pluginDetailContent(plugin: PluginLookup) {
+function PluginLinkContent({ plugin }: { plugin: PluginLookup }) {
   if (plugin === null)
-    return (
-      <p className="mt-10 text-lg text-muted">
-        The plugin catalog is unreachable right now. Try again in a few minutes.
-      </p>
-    )
+    return <p>The plugin catalog is unreachable right now. Try again in a few minutes.</p>
   if (plugin === "missing")
     return (
-      <p className="mt-10 text-lg text-muted">
-        This plugin isn’t in the catalog. It may have been removed, or the link is stale.
-      </p>
+      <>
+        <p>This plugin isn’t in the catalog. It may have been removed, or the link is stale.</p>
+        <ReportLine href={`mailto:${reportAddress}`} />
+      </>
     )
-  return <PluginDetailBody plugin={plugin} />
+  return <PluginLinks plugin={plugin} />
 }
 
-function PluginDetailBody({ plugin }: { plugin: CatalogPlugin }) {
+function PluginLinks({ plugin }: { plugin: CatalogPlugin }) {
   return (
-    <article className="mt-10">
-      <PluginHeader plugin={plugin} />
-
-      {plugin.description.length > 0 && (
-        <p className="mt-8 max-w-2xl text-lg leading-relaxed text-muted">{plugin.description}</p>
-      )}
-
-      <DetailSection title="Capabilities">
-        <PluginCapabilityList capabilities={plugin.capabilities} remoteUrl={plugin.remoteUrl} />
-      </DetailSection>
-
-      <DetailSection title="Information">
-        <PluginInformation plugin={plugin} />
-      </DetailSection>
-
-      <DetailSection title="Install">
-        <p className="text-[15px] text-muted">
-          In Codevisor, open Settings › Plugins › Browse Plugins and choose {plugin.title}.
-        </p>
-      </DetailSection>
-    </article>
+    <>
+      <h1 className="text-2xl font-semibold tracking-tight text-text">{plugin.title}</h1>
+      <p className="flex flex-wrap gap-x-6 gap-y-2">
+        <a href={`${appLinkOrigin}${pluginPath(plugin.name)}`} className={plainLinkClass}>
+          Open in Codevisor
+        </a>
+        <a href={DOWNLOAD_SECTION_URL} className={plainLinkClass}>
+          Get Codevisor
+        </a>
+      </p>
+      <ReportLine href={reportHref(plugin)} />
+    </>
   )
 }
 
-function PluginHeader({ plugin }: { plugin: CatalogPlugin }) {
+function ReportLine({ href }: { href: string }) {
   return (
-    <div className="flex items-start justify-between gap-6">
-      <div className="flex min-w-0 items-center gap-5">
-        <PluginAvatar avatarUrl={plugin.iconUrl} sizeClass="size-16" />
-        <div className="min-w-0">
-          <h1 className="truncate text-3xl font-semibold tracking-tight text-text">
-            {plugin.title}
-          </h1>
-          <p className="mt-1 text-[15px] text-muted">by {plugin.publisher}</p>
-        </div>
-      </div>
-      <a
-        href={reportHref(plugin)}
-        className="shrink-0 pt-2 text-sm text-muted underline decoration-hairline underline-offset-4 transition-colors hover:text-text"
-      >
-        Report
+    <p>
+      Report a plugin:{" "}
+      <a href={href} className={plainLinkClass}>
+        {reportAddress}
       </a>
-    </div>
-  )
-}
-
-function PluginInformation({ plugin }: { plugin: CatalogPlugin }) {
-  return (
-    <dl className="grid grid-cols-[8rem_1fr] gap-y-3 text-[15px]">
-      <dt className="text-muted">Publisher</dt>
-      <dd className="text-text">{plugin.publisher}</dd>
-      <dt className="text-muted">Version</dt>
-      <dd className="font-mono text-[13px] text-text">{plugin.version}</dd>
-      {plugin.ageRating !== undefined && (
-        <>
-          <dt className="text-muted">Age rating</dt>
-          <dd className="text-text">{plugin.ageRating}+</dd>
-        </>
-      )}
-      <dt className="text-muted">Registry name</dt>
-      <dd className="font-mono text-[13px] text-text">{plugin.name}</dd>
-      {plugin.websiteUrl !== undefined && (
-        <>
-          <dt className="text-muted">Website</dt>
-          <dd>
-            <a
-              href={plugin.websiteUrl}
-              rel="noopener"
-              className="text-text underline decoration-hairline underline-offset-4 transition-colors hover:decoration-current"
-            >
-              {new URL(plugin.websiteUrl).host}
-            </a>
-          </dd>
-        </>
-      )}
-    </dl>
+    </p>
   )
 }

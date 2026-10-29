@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as PluginsDotjsonRouteImport } from './routes/plugins[.]json'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as DocsDotmdRouteImport } from './routes/docs[.]md'
@@ -36,6 +37,11 @@ const SupportRoute = SupportRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PluginsDotjsonRoute = PluginsDotjsonRouteImport.update({
+  id: '/plugins.json',
+  path: '/plugins.json',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PluginsRoute = PluginsRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/docs.md': typeof DocsDotmdRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/plugins': typeof PluginsRoute
+  '/plugins.json': typeof PluginsDotjsonRoute
   '/privacy': typeof PrivacyRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/docs.md': typeof DocsDotmdRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/plugins': typeof PluginsRoute
+  '/plugins.json': typeof PluginsDotjsonRoute
   '/privacy': typeof PrivacyRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/docs.md': typeof DocsDotmdRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/plugins': typeof PluginsRoute
+  '/plugins.json': typeof PluginsDotjsonRoute
   '/privacy': typeof PrivacyRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
@@ -142,6 +151,7 @@ export interface FileRouteTypes {
     | '/docs.md'
     | '/llms.txt'
     | '/plugins'
+    | '/plugins.json'
     | '/privacy'
     | '/support'
     | '/terms'
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | '/docs.md'
     | '/llms.txt'
     | '/plugins'
+    | '/plugins.json'
     | '/privacy'
     | '/support'
     | '/terms'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/docs.md'
     | '/llms.txt'
     | '/plugins'
+    | '/plugins.json'
     | '/privacy'
     | '/support'
     | '/terms'
@@ -188,6 +200,7 @@ export interface RootRouteChildren {
   DocsDotmdRoute: typeof DocsDotmdRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   PluginsRoute: typeof PluginsRoute
+  PluginsDotjsonRoute: typeof PluginsDotjsonRoute
   PrivacyRoute: typeof PrivacyRoute
   SupportRoute: typeof SupportRoute
   TermsRoute: typeof TermsRoute
@@ -220,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plugins.json': {
+      id: '/plugins.json'
+      path: '/plugins.json'
+      fullPath: '/plugins.json'
+      preLoaderRoute: typeof PluginsDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plugins': {
@@ -300,6 +320,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsDotmdRoute: DocsDotmdRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   PluginsRoute: PluginsRoute,
+  PluginsDotjsonRoute: PluginsDotjsonRoute,
   PrivacyRoute: PrivacyRoute,
   SupportRoute: SupportRoute,
   TermsRoute: TermsRoute,

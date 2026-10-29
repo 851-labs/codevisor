@@ -38,7 +38,6 @@ export function Home() {
 }
 
 const FOOTER_LINKS = [
-  { href: "/plugins", label: "Plugins" },
   { href: "/docs", label: "Docs" },
   { href: "/support", label: "Support" },
   { href: "/terms", label: "Terms" },

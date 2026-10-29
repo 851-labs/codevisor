@@ -4,12 +4,12 @@ export const privacyPluginsSection = {
   body: (
     <>
       <p>
-        <strong>Catalog and search.</strong> Browsing plugins requests the catalog of Codevisor and
-        Popular plugins from Cloud. When you search, your computer also sends the search text to the
-        public MCP Registry (registry.modelcontextprotocol.io), which processes it under its own
-        policies. Installing a plugin from the registry can download its code from package services
-        such as npm, PyPI, or container registries, and connecting a hosted plugin contacts its
-        publisher’s server.
+        <strong>Where plugins come from.</strong> Plugins come from Codevisor’s curated catalog or
+        are added by you with Add MCP. Browsing plugins requests the catalog of Codevisor and
+        Popular plugins from Cloud, and connecting a hosted plugin contacts its publisher’s server.
+        A plugin you add with Add MCP connects to the address you enter or runs the command you
+        enter, which can download code from package services such as npm, PyPI, or container
+        registries.
       </p>
       <p>
         <strong>Consent, reports, and blocks.</strong> When you install a plugin through the app, we

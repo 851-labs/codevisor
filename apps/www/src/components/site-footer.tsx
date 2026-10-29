@@ -4,9 +4,6 @@ export function SiteFooter() {
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-xs text-muted sm:flex-row">
         <span>© {new Date().getFullYear()} Codevisor LLC</span>
         <nav className="flex flex-wrap justify-center gap-x-5 gap-y-3" aria-label="Footer">
-          <a href="/plugins" className="transition-colors hover:text-text">
-            Plugins
-          </a>
           <a href="/docs" className="transition-colors hover:text-text">
             Docs
           </a>

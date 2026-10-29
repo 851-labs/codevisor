@@ -151,14 +151,12 @@ const sections = [
     body: (
       <>
         <p>
-          <strong>Where plugins come from.</strong> Codevisor’s plugin catalog combines three
-          sources: plugins we build and ship with Codevisor (“Codevisor plugins”), a short list of
-          popular plugins we choose (“Popular”), and search results from the public MCP Registry
-          operated by the Model Context Protocol project. You can also add any MCP server yourself
-          by its address or command (“custom plugins”). We don’t host or review third-party plugin
-          code. A catalog listing, including a Popular listing or a registry result, does not
-          guarantee a third party’s quality, safety, or data practices. Registry listings are
-          published under the MCP Registry’s own terms by their publishers, not by us.
+          <strong>Where plugins come from.</strong> Plugins come from Codevisor’s curated catalog or
+          are added by you. The catalog contains plugins we build and ship with Codevisor
+          (“Codevisor plugins”) and a short list of popular plugins we choose (“Popular”). You can
+          also add any MCP server yourself by its address or command with Add MCP (“custom
+          plugins”). We don’t host or review third-party plugin code. A catalog listing, including a
+          Popular listing, does not guarantee a third party’s quality, safety, or data practices.
         </p>
         <p>
           <strong>Publishers.</strong> If you publish a plugin that appears in Codevisor, you must
@@ -170,11 +168,10 @@ const sections = [
         </p>
         <p>
           <strong>Age ratings.</strong> Plugins in the catalog carry an age rating of 4, 9, 13, 16,
-          or 18 under Apple’s age-rating criteria, set by us for Codevisor and Popular plugins and
-          adjustable by us for any plugin. Codevisor on iOS supports plugins rated 16+ or lower. On
-          iOS, a catalog plugin rated above that, or without a rating, cannot be installed from iOS,
-          and its in-chat interface and panes do not open on iOS; the reason is shown instead. Its
-          tools may still run on your computer when an agent uses them.
+          or 18 under Apple’s age-rating criteria, set by us. Codevisor on iOS supports plugins
+          rated 16+ or lower. On iOS, a catalog plugin rated above that, or without a rating, cannot
+          be installed from iOS, and its in-chat interface and panes do not open on iOS; the reason
+          is shown instead. Its tools may still run on your computer when an agent uses them.
         </p>
         <p>
           <strong>Plugins you add yourself.</strong> A custom plugin you add by its address or
