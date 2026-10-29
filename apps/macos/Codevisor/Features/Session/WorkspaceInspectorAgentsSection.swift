@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkspaceInspectorAgent: Identifiable {
   let id: UUID
   let name: String
+  let subtitle: String?
   let icon: SidebarWorkspaceIcon
   let open: () -> Void
 }
@@ -29,16 +30,9 @@ private struct WorkspaceInspectorAgentRow: View {
 
   var body: some View {
     Button(action: agent.open) {
-      Label {
-        Text(title)
-          .lineLimit(1)
-          .truncationMode(.middle)
-      } icon: {
-        SidebarWorkspaceLeadingIcon(icon: agent.icon, store: store)
-          .frame(width: 20)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .contentShape(Rectangle())
+      SidebarWorkspaceRowLabel(name: agent.name, subtitle: agent.subtitle, icon: agent.icon, store: store)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .help("Open \(title)")
