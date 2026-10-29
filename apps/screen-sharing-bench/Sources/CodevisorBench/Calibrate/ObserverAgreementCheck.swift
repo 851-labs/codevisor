@@ -4,6 +4,7 @@ import ScreenSharingBench
 struct ObserverAgreementCheck: CalibrationCheck {
   private static let durations = 1...3600
 
+  let presentsWindows = false
   private let duration: Int
   private let displayID: CGDirectDisplayID?
   private let layout: BenchBarcodeLayout

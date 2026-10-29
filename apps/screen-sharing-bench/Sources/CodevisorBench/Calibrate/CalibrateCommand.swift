@@ -30,6 +30,10 @@ struct CalibrateCommand: BenchCommand {
     }
   }
 
+  var presentsWindows: Bool {
+    check.presentsWindows
+  }
+
   func run() async throws {
     try await check.run()
   }

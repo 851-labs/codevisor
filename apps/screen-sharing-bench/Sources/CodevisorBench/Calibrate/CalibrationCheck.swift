@@ -1,5 +1,6 @@
 @MainActor
 protocol CalibrationCheck {
+  var presentsWindows: Bool { get }
   func run() async throws
 }
 

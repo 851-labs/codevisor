@@ -6,6 +6,7 @@ struct OnGlassCheck: CalibrationCheck {
   private static let durations = 1...600
   private static let settle = Duration.milliseconds(250)
 
+  let presentsWindows = true
   private let duration: Int
   private let displayID: CGDirectDisplayID?
 

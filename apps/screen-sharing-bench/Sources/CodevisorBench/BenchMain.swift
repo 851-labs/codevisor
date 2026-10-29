@@ -5,10 +5,11 @@ import AppKit
 enum BenchMain {
   static func main() {
     let application = NSApplication.shared
-    application.setActivationPolicy(.prohibited)
+    let launch = BenchLauncher.prepare(Array(CommandLine.arguments.dropFirst()))
+    application.setActivationPolicy(launch.presentsWindows ? .regular : .prohibited)
     BenchProcessFiles.recordStart()
     Task {
-      let status = await BenchLauncher.run(Array(CommandLine.arguments.dropFirst()))
+      let status = await BenchLauncher.run(launch)
       BenchProcessFiles.finish(with: status)
     }
     application.run()
