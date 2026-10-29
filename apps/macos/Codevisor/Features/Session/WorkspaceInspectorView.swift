@@ -250,7 +250,8 @@ struct WorkspaceInspectorView: View {
         }
 
         if !agents.isEmpty {
-          WorkspaceInspectorAgentsSection(title: "Agents", agents: agents, store: store, isExpanded: expansion("Agents"))
+          WorkspaceInspectorAgentsSection(
+            title: "Agents", agents: agents, store: store, isExpanded: expansion("Agents"))
         }
       }
       .padding(.vertical, 10)
