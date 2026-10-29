@@ -49,11 +49,6 @@ struct ProjectsSettingsView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 }
-                Spacer(minLength: 12)
-                Text(machineNames(for: group))
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-                  .lineLimit(1)
               }
             }
           }
@@ -104,13 +99,6 @@ struct ProjectsSettingsView: View {
         }
       }
     }
-  }
-
-  private func machineNames(for group: ProjectGroup) -> String {
-    var seen = Set<String>()
-    return group.serverIds.filter { seen.insert($0).inserted }
-      .map { environment.machines.machine(for: $0)?.name ?? "Unavailable machine" }
-      .joined(separator: ", ")
   }
 }
 

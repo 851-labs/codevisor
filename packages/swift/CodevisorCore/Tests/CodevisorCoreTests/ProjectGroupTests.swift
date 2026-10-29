@@ -63,7 +63,7 @@ struct ProjectGroupTests {
     #expect(widget.members.count == 2)
     #expect(widget.name == "Widget Checkout")
     #expect(widget.primary.serverId == "desktop")
-    #expect(widget.serverIds == ["desktop", "laptop"])
+    #expect(widget.members.map(\.serverId) == ["desktop", "laptop"])
     #expect(widget.member(on: "laptop")?.id == laptop.id)
     #expect(widget.member(on: "cloud") == nil)
     #expect(widget.contains(laptop))
