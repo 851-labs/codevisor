@@ -123,6 +123,12 @@ public final class MachineController {
   public func isSandbox(_ id: String) -> Bool { cloudMachine(forMachineId: id)?.ephemeral != nil }
   public func chatMachine(for id: String) -> CodevisorMachine? { isSandbox(id) ? nil : machine(for: id) }
 
+  public func desktopMachine(for id: String) -> CodevisorMachine? {
+    guard statusByMachineId[id]?.supportsScreenSharing == true, let machine = machine(for: id), !machine.isLocal
+    else { return nil }
+    return machine
+  }
+
   public func sandboxProfile(forMachineId id: String) -> SandboxMachineProfile? {
     guard let cloud = cloudMachine(forMachineId: id), let origin = cloud.ephemeral else { return nil }
     return sandboxMachineProfiles.profile(forDevice: cloud.deviceId, ownedBy: origin.ownerDeviceId)

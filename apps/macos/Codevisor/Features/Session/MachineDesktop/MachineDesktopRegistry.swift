@@ -11,9 +11,7 @@ final class MachineDesktopRegistry {
 
   func session(for workspace: Workspace, project: Project, environment: AppEnvironment) -> MachineDesktopSession? {
     if let existing = sessions[workspace.id] { return existing }
-    guard environment.machines.statusByMachineId[workspace.serverId]?.supportsScreenSharing == true,
-      let machine = environment.machines.machine(for: workspace.serverId)
-    else { return nil }
+    guard let machine = environment.machines.desktopMachine(for: workspace.serverId) else { return nil }
 
     let session = makeSession(workspace: workspace, project: project, machine: machine, environment: environment)
     sessions[workspace.id] = session

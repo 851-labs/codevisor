@@ -83,7 +83,7 @@ final class ScreenSharingPane: Pane {
   private static func makeStore(
     context: PaneContext, descriptor: PaneDescriptorState, role: ScreenSharingViewerRole
   ) -> StoreOf<ScreenSharingViewer>? {
-    guard let workspaceId = context.workspaceId else { return nil }
+    guard let workspaceId = context.workspaceId, !context.machine.isLocal else { return nil }
     let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
     let state = ScreenSharingViewer.State(
       preferences: descriptor.screenSharing ?? .init(),
@@ -185,12 +185,17 @@ private struct ScreenSharingPaneView: View {
         }
       } else {
         ContentUnavailableView(
-          "Screen Sharing unavailable", systemImage: "display",
-          description: Text("Open this pane in a workspace connected to a Mac."))
+          "Screen Sharing unavailable", systemImage: "display", description: Text(unavailableReason))
       }
     }
     .onAppear { pane.mounted(mount) }
     .onDisappear { pane.unmounted(mount) }
+  }
+
+  private var unavailableReason: String {
+    pane.isLocal
+      ? "Codevisor doesn't show the desktop of the Mac it's running on."
+      : "Open this pane in a workspace connected to a Mac."
   }
 
   private func failure(_ store: StoreOf<ScreenSharingViewer>) -> some View {
@@ -200,13 +205,6 @@ private struct ScreenSharingPaneView: View {
         Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
       }
       Button("Retry") { store.send(.retryButtonTapped) }
-      if pane.isLocal {
-        Button("Screen Recording Settings") {
-          if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-          }
-        }
-      }
     }
     .padding(24)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
