@@ -167,6 +167,7 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     ...(labels === undefined ? {} : { labels }),
     ...(git === undefined ? {} : { git }),
+    ...(row.main_session_id == null ? {} : { mainSessionId: row.main_session_id }),
     ...workspaceBotFromRow(row)
   }
 }

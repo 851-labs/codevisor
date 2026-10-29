@@ -25,6 +25,7 @@ export interface WorkspaceRow {
   readonly remote_bot_id?: string | null
   readonly remote_bot_machine_id?: string | null
   readonly remote_bot_parent_session_id?: string | null
+  readonly main_session_id?: string | null
 }
 
 export interface WorkspacePaneRow {
@@ -65,7 +66,8 @@ export const workspaceRows = rowReader<WorkspaceRow>({
   bot_id: optional(nullable(text)),
   remote_bot_id: optional(nullable(text)),
   remote_bot_machine_id: optional(nullable(text)),
-  remote_bot_parent_session_id: optional(nullable(text))
+  remote_bot_parent_session_id: optional(nullable(text)),
+  main_session_id: optional(nullable(text))
 })
 
 export const workspacePaneRows = rowReader<WorkspacePaneRow>({

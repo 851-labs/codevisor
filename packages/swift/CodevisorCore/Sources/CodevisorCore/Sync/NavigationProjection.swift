@@ -31,6 +31,7 @@ enum NavigationProjectionBuilder {
     workspace.git = record.git
     workspace.botId = record.botId.flatMap(UUID.init(uuidString:))
     workspace.botMachineId = record.botMachineId
+    workspace.mainSessionId = record.mainSessionId.flatMap(UUID.init(uuidString:))
     return workspace
   }
 

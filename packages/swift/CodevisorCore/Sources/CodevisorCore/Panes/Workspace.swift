@@ -19,13 +19,14 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var git: ServerWorkspaceGit?
   public var botId: UUID?
   public var botMachineId: String?
+  public var mainSessionId: UUID?
 
   public var isDraft: Bool { !isServerSynced }
 
   private enum CodingKeys: String, CodingKey {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
     case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived, archivedAt
-    case isServerSynced, sidebarPosition, sidebarOrderRevision, botId, botMachineId
+    case isServerSynced, sidebarPosition, sidebarOrderRevision, botId, botMachineId, mainSessionId
   }
 
   public init(from decoder: Decoder) throws {
@@ -57,6 +58,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
     botId = try container.decodeIfPresent(UUID.self, forKey: .botId)
     botMachineId = try container.decodeIfPresent(String.self, forKey: .botMachineId)
+    mainSessionId = try container.decodeIfPresent(UUID.self, forKey: .mainSessionId)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -78,6 +80,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
     try container.encodeIfPresent(botId, forKey: .botId)
     try container.encodeIfPresent(botMachineId, forKey: .botMachineId)
+    try container.encodeIfPresent(mainSessionId, forKey: .mainSessionId)
   }
 
   public init(
@@ -245,6 +248,12 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         group.state.panes.compactMap { $0.kind == .chat ? $0.chatSessionId : nil }
       }
     }
+  }
+
+  public var mainFirstChatSessionIds: [UUID] {
+    let panes = chatSessionIds
+    guard let mainSessionId else { return panes }
+    return [mainSessionId] + panes.filter { $0 != mainSessionId }
   }
 
   public var allPanes: [PaneDescriptorState] {

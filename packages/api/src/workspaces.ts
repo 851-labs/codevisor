@@ -21,7 +21,8 @@ export const Workspace = Schema.Struct({
   labels: Schema.optional(Labels),
   git: Schema.optional(WorkspaceGit),
   botId: Schema.optional(Schema.String),
-  botMachineId: Schema.optional(Schema.String)
+  botMachineId: Schema.optional(Schema.String),
+  mainSessionId: Schema.optional(Schema.String)
 })
 export type Workspace = typeof Workspace.Type
 

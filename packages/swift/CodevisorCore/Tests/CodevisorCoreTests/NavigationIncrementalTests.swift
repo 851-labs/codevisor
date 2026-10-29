@@ -158,6 +158,30 @@ struct NavigationIncrementalTests {
     #expect(fixture.store.workspaceEntries.archived.map(\.id) == [archived.id])
   }
 
+  @Test("A workspace routes to its main chat first, even when another chat's pane comes first")
+  func mainChatRoutesFirst() async throws {
+    let main = ChatSession(projectId: project.id, serverId: "m", title: "Main")
+    let side = ChatSession(projectId: project.id, serverId: "m", title: "Side")
+    let tabs = workspace("Tabs", chat: side)
+    let fixture = NavigationFixture()
+    await fixture.install(machineId: "m", projects: [project], sessions: [side], workspaces: [tabs])
+    var mainRecord = serverSession(from: main)
+    mainRecord.workspaceId = tabs.id.uuidString
+    var tabsRecord = WorkspaceSyncModel.serverWorkspace(from: tabs)
+    tabsRecord.mainSessionId = main.id.uuidString
+    #expect(
+      await fixture.store.apply(.fixture(cursor: 5, sessions: [mainRecord], workspaces: [tabsRecord]), machineId: "m"))
+
+    let item = try #require(fixture.store.workspaceEntries.sidebar.first { $0.id == tabs.id })
+    #expect(item.routingChatIds == [main.id, side.id])
+    let workspace = try #require(fixture.workspaces.workspace(id: tabs.id))
+    #expect(fixture.workspaces.mainFirstChatSessionIds(in: workspace) == [main.id, side.id])
+
+    mainRecord.workspaceId = UUID().uuidString
+    #expect(await fixture.store.apply(.fixture(cursor: 6, sessions: [mainRecord]), machineId: "m"))
+    #expect(fixture.workspaces.mainFirstChatSessionIds(in: workspace) == [side.id])
+  }
+
   @Test("Archived chats follow archive time across updates, restoration, and rearchiving")
   func archivedSidebarOrder() async {
     let fixture = NavigationFixture()
