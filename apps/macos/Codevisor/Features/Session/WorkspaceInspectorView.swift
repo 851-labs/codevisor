@@ -18,6 +18,7 @@ struct WorkspaceInspectorView: View {
   let showsDebugSection: Bool
   let showsBotTranscript: Bool
   let harnessChat: ChatSession?
+  let parent: WorkspaceInspectorAgent?
   let agents: [WorkspaceInspectorAgent]
   let store: SessionStore
   let usage: WorkspaceInspectorUsageModel
@@ -243,8 +244,13 @@ struct WorkspaceInspectorView: View {
           }
         }
 
+        if let parent {
+          WorkspaceInspectorAgentsSection(
+            title: "Parent", agents: [parent], store: store, isExpanded: expansion("Parent"))
+        }
+
         if !agents.isEmpty {
-          WorkspaceInspectorAgentsSection(agents: agents, store: store, isExpanded: expansion("Agents"))
+          WorkspaceInspectorAgentsSection(title: "Agents", agents: agents, store: store, isExpanded: expansion("Agents"))
         }
       }
       .padding(.vertical, 10)

@@ -137,6 +137,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       showsDebugSection: developerMode,
       showsBotTranscript: bot?.isConversational == true,
       harnessChat: chat,
+      parent: shownTab(for: inspected) == .info ? parent(of: workspace, store: store) : nil,
       agents: shownTab(for: inspected) == .info ? agents(of: workspace, bot: bot, store: store) : [],
       store: store,
       usage: usage,
@@ -168,13 +169,20 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     .environment(\.isWorkspaceInspectorVisible, isVisible)
   }
 
+  private func parent(of workspace: Workspace, store: SessionStore) -> WorkspaceInspectorAgent? {
+    inspectorAgents(parentItems(of: workspace), store: store).first
+  }
+
   private func agents(of workspace: Workspace, bot: Bot?, store: SessionStore) -> [WorkspaceInspectorAgent] {
+    inspectorAgents(agentItems(of: workspace, bot: bot), store: store)
+  }
+
+  private func inspectorAgents(_ items: [WorkspaceSidebarItem], store: SessionStore) -> [WorkspaceInspectorAgent] {
     let content = SidebarRowContent(
       environment: environment, store: store, grouping: sidebarGrouping,
       rowDetails: ClientPreferences.shared.sidebarRowDetails)
     let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
-    return agentItems(of: workspace, bot: bot)
-      .compactMap { content.listItem(for: $0) }
+    return items.compactMap { content.listItem(for: $0) }
       .map { item in
         WorkspaceInspectorAgent(
           id: item.workspace.id, name: item.workspace.name,
@@ -184,6 +192,12 @@ struct WorkspaceInspectorPresentation: ViewModifier {
           navigator.activate(item)
         }
       }
+  }
+
+  private func parentItems(of workspace: Workspace) -> [WorkspaceSidebarItem] {
+    let sidebar = environment.navigationStore.workspaceEntries.sidebar
+    guard let parentId = sidebar.first(where: { $0.id == workspace.id })?.parentWorkspaceId else { return [] }
+    return sidebar.filter { $0.id == parentId }
   }
 
   private func agentItems(of workspace: Workspace, bot: Bot?) -> [WorkspaceSidebarItem] {
