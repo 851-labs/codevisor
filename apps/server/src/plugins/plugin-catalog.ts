@@ -2,8 +2,6 @@ import type { PluginCatalogEntry } from "@codevisor/api"
 import type { McpCatalogResolver } from "@codevisor/mcp"
 import {
   makeCatalog,
-  makeRegistryClient,
-  officialRegistryUrl,
   registryServersOf,
   type PluginCatalog as CatalogSource
 } from "@codevisor/plugins"
@@ -11,8 +9,7 @@ import {
 export interface PluginCatalog {
   readonly entries: () => ReadonlyArray<PluginCatalogEntry>
   readonly entry: (id: string) => PluginCatalogEntry | undefined
-  readonly search: (query: string | undefined) => Promise<ReadonlyArray<PluginCatalogEntry>>
-  readonly resolve: (id: string) => Promise<PluginCatalogEntry | undefined>
+  readonly search: (query: string | undefined) => ReadonlyArray<PluginCatalogEntry>
   readonly refreshPublished: (cloudUrl: string | undefined) => Promise<void>
   readonly resolver: McpCatalogResolver
 }
@@ -20,7 +17,6 @@ export interface PluginCatalog {
 export interface PluginCatalogOptions {
   readonly dev: boolean
   readonly execPath: string
-  readonly registryUrl?: string
   readonly fetch?: typeof fetch
   readonly moduleDirectory?: string
 }
@@ -29,17 +25,12 @@ export const makePluginCatalog = (options: PluginCatalogOptions): PluginCatalog 
   const source: CatalogSource = makeCatalog({
     dev: options.dev,
     execPath: options.execPath,
-    ...(options.moduleDirectory === undefined ? {} : { moduleDirectory: options.moduleDirectory }),
-    registry: makeRegistryClient({
-      baseUrl: options.registryUrl ?? officialRegistryUrl,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch })
-    })
+    ...(options.moduleDirectory === undefined ? {} : { moduleDirectory: options.moduleDirectory })
   })
   return {
     entries: source.entries,
     entry: source.entry,
     search: source.search,
-    resolve: source.resolve,
     refreshPublished: async (cloudUrl) => {
       if (cloudUrl === undefined) return
       const servers = registryServersOf(await publishedCatalog(cloudUrl, options.fetch ?? fetch))

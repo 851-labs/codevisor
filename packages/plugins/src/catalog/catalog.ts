@@ -3,7 +3,6 @@ import { join } from "node:path"
 import type { PluginCatalogEntry } from "@codevisor/api"
 
 import { readLocalCatalog, type LocalCatalog, type LocalCatalogOptions } from "./local-catalog.js"
-import { latestDistinct, type RegistryClient } from "./registry-client.js"
 import { catalogEntryOf, pluginMetaOf } from "./registry-entry.js"
 import type { RegistryServer } from "./registry-server.js"
 
@@ -16,43 +15,29 @@ export interface ResolvedStdioLaunch {
 export interface PluginCatalogOptions extends LocalCatalogOptions {
   readonly dev: boolean
   readonly execPath: string
-  readonly registry?: RegistryClient
 }
 
 export interface PluginCatalog {
   readonly entries: () => ReadonlyArray<PluginCatalogEntry>
   readonly entry: (id: string) => PluginCatalogEntry | undefined
-  readonly search: (query: string | undefined) => Promise<ReadonlyArray<PluginCatalogEntry>>
-  readonly resolve: (id: string) => Promise<PluginCatalogEntry | undefined>
+  readonly search: (query: string | undefined) => ReadonlyArray<PluginCatalogEntry>
   readonly bundledLaunch: (id: string) => ResolvedStdioLaunch | undefined
   readonly publish: (servers: ReadonlyArray<RegistryServer>) => void
 }
 
 export const makeCatalog = (options: PluginCatalogOptions): PluginCatalog => {
   const local = readLocalCatalog(options)
-  let featured = featuredEntries(local.firstParty, local.popular, options.dev)
-
-  const entry = (id: string) => featured.find((candidate) => candidate.id === id)
+  let popular = local.popular
+  let featured = featuredEntries(local.firstParty, popular, options.dev)
 
   return {
     entries: () => featured,
-    entry,
-    search: async (query) => {
-      const matching = featured.filter((candidate) => matchesQuery(candidate, query))
-      if (query === undefined || query.trim() === "" || options.registry === undefined)
-        return matching
-      const found = registryEntries(await options.registry.search(query.trim()))
-      return [...matching, ...found.filter((candidate) => entry(candidate.id) === undefined)]
-    },
-    resolve: async (id) => entry(id) ?? (await registryEntry(options.registry, id)),
+    entry: (id) => featured.find((candidate) => candidate.id === id),
+    search: (query) => featured.filter((candidate) => matchesQuery(candidate, query)),
     bundledLaunch: (id) => bundledLaunch(local, options.execPath, id),
     publish: (servers) => {
-      const firstParty = local.firstParty
-      featured = featuredEntries(
-        firstParty,
-        servers.filter((server) => pluginMetaOf(server)?.bundled === undefined),
-        options.dev
-      )
+      popular = servers.filter((server) => pluginMetaOf(server)?.bundled === undefined)
+      featured = featuredEntries(local.firstParty, popular, options.dev)
     }
   }
 }
@@ -67,22 +52,6 @@ const featuredEntries = (
     .flatMap((server) => present(catalogEntryOf(server, "first-party"))),
   ...popular.flatMap((server) => present(catalogEntryOf(server, "popular")))
 ]
-
-const registryEntries = (
-  servers: ReadonlyArray<RegistryServer>
-): ReadonlyArray<PluginCatalogEntry> =>
-  latestDistinct(servers)
-    .filter((server) => pluginMetaOf(server)?.bundled === undefined)
-    .flatMap((server) => present(catalogEntryOf(server, "registry")))
-
-const registryEntry = async (
-  registry: RegistryClient | undefined,
-  id: string
-): Promise<PluginCatalogEntry | undefined> => {
-  const server = await registry?.server(id)
-  if (server === undefined || pluginMetaOf(server)?.bundled !== undefined) return undefined
-  return catalogEntryOf(server, "registry")
-}
 
 const bundledLaunch = (
   local: LocalCatalog,

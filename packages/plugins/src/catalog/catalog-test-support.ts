@@ -69,18 +69,3 @@ export const pluginsFixture = (
   mkdirSync(join(plugins, "kit"))
   return root
 }
-
-export const registryFetch = (
-  responses: Readonly<Record<string, unknown>>
-): { readonly fetch: typeof fetch; readonly requests: Array<string> } => {
-  const requests: Array<string> = []
-  const fake = async (input: string | URL | Request): Promise<Response> => {
-    const url = new URL(input instanceof Request ? input.url : input)
-    const key = `${url.pathname}${url.search}`
-    requests.push(key)
-    const body = responses[key]
-    if (body === undefined) return new Response("missing", { status: 404 })
-    return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
-  }
-  return { fetch: fake, requests }
-}

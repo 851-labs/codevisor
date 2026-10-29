@@ -24,24 +24,19 @@ public struct PluginCatalogBrowser: View {
   }
 
   public var body: some View {
-    let sections = catalog.sections(hiding: environment.pluginAccess.blockedPublishers)
+    let entries = catalog.visibleEntries(hiding: environment.pluginAccess.blockedPublishers)
     ScrollView {
-      LazyVStack(alignment: .leading, spacing: 24) {
-        if sections.isEmpty {
+      VStack(alignment: .leading, spacing: 0) {
+        if entries.isEmpty {
           PluginCatalogPlaceholder(
             isLoading: catalog.isLoading, isSearching: catalog.isSearching, errorMessage: catalog.errorMessage)
         }
-        ForEach(sections) { section in
-          VStack(alignment: .leading, spacing: 6) {
-            Text(section.title).font(.headline)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 24)], alignment: .leading, spacing: 0) {
-              ForEach(section.entries) { entry in
-                PluginCatalogTile(
-                  entry: entry, client: client, isInstalled: installedCatalogIds.contains(entry.id),
-                  isInstalling: catalog.installing.contains(entry.id), onAdd: { onAdd(entry) },
-                  onOpen: { onOpen(entry) })
-              }
-            }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 24)], alignment: .leading, spacing: 0) {
+          ForEach(entries) { entry in
+            PluginCatalogTile(
+              entry: entry, client: client, isInstalled: installedCatalogIds.contains(entry.id),
+              isInstalling: catalog.installing.contains(entry.id), onAdd: { onAdd(entry) },
+              onOpen: { onOpen(entry) })
           }
         }
       }

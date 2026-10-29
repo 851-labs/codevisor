@@ -5,7 +5,7 @@ import {
   cloudUrl,
   listed,
   publishedServer,
-  searchUrl
+  smuggledBundleServer
 } from "./plugin-catalog-test-support.js"
 import {
   catalogRefreshMs,
@@ -46,34 +46,19 @@ describe("plugin catalog", () => {
     expect(production.entry("io.example/weather")).toBeUndefined()
   })
 
-  it("adds registry matches to a search, never bundled or already featured ones", async () => {
+  it("searches only the curated plugins, without asking anyone else", async () => {
     const { fixture, catalog } = await fixtureCatalog()
 
-    const featured = await catalog.search(undefined)
-    const searched = await catalog.search(" weather ")
-    const nothingNew = await catalog.search("alert")
+    const featured = catalog.search(undefined)
+    const searched = catalog.search(" tickets ")
+    const elsewhere = catalog.search("weather")
 
     expect(ids(featured)).toEqual(["dev.codevisor/alerts", "io.example/tickets"])
     expect(searched.map((entry) => [entry.id, entry.source])).toEqual([
-      ["io.example/weather", "registry"],
-      ["io.example/open", "registry"]
+      ["io.example/tickets", "popular"]
     ])
-    expect(ids(nothingNew)).toEqual(["dev.codevisor/alerts"])
-    expect(fixture.requests).toEqual([searchUrl("weather"), searchUrl("alert")])
-  })
-
-  it("resolves featured plugins locally and others from the registry, refusing registry bundles", async () => {
-    const { fixture, catalog } = await fixtureCatalog()
-
-    const featured = await catalog.resolve("dev.codevisor/alerts")
-    const fromRegistry = await catalog.resolve("io.example/weather")
-    const smuggled = await catalog.resolve("io.example/smuggled")
-    const unknown = await catalog.resolve("io.example/nope")
-
-    expect(featured?.source).toBe("first-party")
-    expect(fromRegistry).toMatchObject({ source: "registry", install: { kind: "package" } })
-    expect([smuggled, unknown]).toEqual([undefined, undefined])
-    expect(fixture.requests).toHaveLength(3)
+    expect(elsewhere).toEqual([])
+    expect(fixture.requests).toEqual([])
   })
 
   it("launches bundled plugins from the plugins folder with the configured runtime", async () => {
@@ -87,9 +72,9 @@ describe("plugin catalog", () => {
     expect(catalog.resolver.launch("io.example/tickets")).toBeUndefined()
   })
 
-  it("replaces the popular plugins with the catalog the cloud publishes", async () => {
+  it("replaces the popular plugins with the catalog the cloud publishes, minus bundles", async () => {
     const { fixture, catalog } = await fixtureCatalog()
-    fixture.respond(publishedUrl, listed(publishedServer))
+    fixture.respond(publishedUrl, listed(publishedServer, smuggledBundleServer))
 
     await catalog.refreshPublished(cloudUrl)
 

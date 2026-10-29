@@ -205,16 +205,16 @@ describe("describing a plugin", () => {
     expect(undiscovered.body).toMatchObject({ tools: [], toolDetails: [], events: [] })
   })
 
-  it("looks plugins up in the registry and explains unknown ones", async () => {
-    const registry = await catalogFixture()
-    const running = await startPluginApp({ catalog: registry.options })
+  it("describes catalog plugins that aren't installed and explains unknown ones", async () => {
+    const catalog = await catalogFixture()
+    const running = await startPluginApp({ catalog: catalog.options })
 
-    const weather = await describePlugin(running, "io.example/weather")
+    const tickets = await describePlugin(running, "io.example/tickets")
     const unknown = await describePlugin(running, "io.example/nope")
 
-    expect(weather.body).toMatchObject({
-      plugin: "io.example/weather",
-      name: "Weather",
+    expect(tickets.body).toMatchObject({
+      plugin: "io.example/tickets",
+      name: "Tickets",
       installed: false
     })
     expect([unknown.status, unknown.body]).toEqual([

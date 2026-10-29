@@ -30,14 +30,14 @@ export const routePluginCatalog = async (
 
   if (url.pathname === "/v1/plugins/catalog" && request.method === "GET") {
     writeJson(response, 200, {
-      entries: await catalog.search(url.searchParams.get("query") ?? undefined)
+      entries: catalog.search(url.searchParams.get("query") ?? undefined)
     })
     return true
   }
 
   const entryId = matchRoute(url.pathname, "/v1/plugins/catalog/:id")
   if (entryId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await requireEntry(catalog, entryId))
+    writeJson(response, 200, requireEntry(catalog, entryId))
     return true
   }
 
@@ -53,8 +53,8 @@ export const routePluginCatalog = async (
   return true
 }
 
-const requireEntry = async (catalog: PluginCatalog, id: string): Promise<PluginCatalogEntry> => {
-  const entry = await catalog.resolve(id)
+const requireEntry = (catalog: PluginCatalog, id: string): PluginCatalogEntry => {
+  const entry = catalog.entry(id)
   if (entry === undefined) throw new HttpFailure(404, `Unknown plugin: ${id}`)
   return entry
 }
@@ -65,7 +65,7 @@ export const installCatalogPlugin = async (
   catalogId: string,
   values: Readonly<Record<string, unknown>>
 ): Promise<McpServer> => {
-  const entry = await requireEntry(catalog, catalogId)
+  const entry = requireEntry(catalog, catalogId)
   const installed = (await mcp.list()).find((server) => server.catalogId === entry.id)
   if (installed !== undefined) return installed
 

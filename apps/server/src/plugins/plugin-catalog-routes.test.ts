@@ -2,12 +2,17 @@ import { decode, McpServer, PluginCatalogResponse } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest } from "../test-support.js"
-import { catalogFixture } from "./plugin-catalog-test-support.js"
+import {
+  catalogFixture,
+  openServer,
+  ticketsServer,
+  weatherServer
+} from "./plugin-catalog-test-support.js"
 import { makePluginCatalog } from "./plugin-catalog.js"
 import { post, startPluginApp, startWithoutPlugins } from "./plugin-test-support.js"
 
 const catalogApp = async () => {
-  const fixture = await catalogFixture()
+  const fixture = await catalogFixture(undefined, [ticketsServer, weatherServer, openServer])
   const running = await startPluginApp({ catalog: fixture.options })
   return { ...running, fixture }
 }
@@ -26,7 +31,7 @@ const entryIds = async (running: CatalogApp, path: string) =>
   )
 
 describe("plugin catalog routes", () => {
-  it("lists the featured catalog and adds registry matches for a query", async () => {
+  it("lists the curated catalog and narrows it to a query", async () => {
     const running = await catalogApp()
 
     const featured = await entryIds(running, "/v1/plugins/catalog")
@@ -35,12 +40,14 @@ describe("plugin catalog routes", () => {
     expect(featured).toEqual([
       "dev.codevisor/alerts",
       "dev.codevisor/devtool",
-      "io.example/tickets"
+      "io.example/tickets",
+      "io.example/weather",
+      "io.example/open"
     ])
-    expect(searched).toEqual(["io.example/weather", "io.example/open"])
+    expect(searched).toEqual(["io.example/weather"])
   })
 
-  it("describes one catalog plugin, from the registry if needed", async () => {
+  it("describes one catalog plugin", async () => {
     const running = await catalogApp()
 
     const alerts = await jsonRequest(
@@ -57,7 +64,7 @@ describe("plugin catalog routes", () => {
     )
 
     expect(alerts.body).toMatchObject({ id: "dev.codevisor/alerts", install: { kind: "bundled" } })
-    expect(weather.body).toMatchObject({ id: "io.example/weather", source: "registry" })
+    expect(weather.body).toMatchObject({ id: "io.example/weather", source: "popular" })
     expect([unknown.status, unknown.body]).toEqual([
       404,
       { error: "Unknown plugin: io.example/nope" }
@@ -81,7 +88,7 @@ describe("plugin catalog routes", () => {
     })
   })
 
-  it("installs a registry package with its arguments and environment filled in", async () => {
+  it("installs a package plugin with its arguments and environment filled in", async () => {
     const running = await catalogApp()
 
     const weather = await installed(running, "io.example/weather", {

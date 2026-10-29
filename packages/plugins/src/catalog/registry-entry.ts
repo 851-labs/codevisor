@@ -34,19 +34,9 @@ export const emptyCapabilities: PluginCapabilities = {
   ingress: []
 }
 
-export const publisherProvidedMeta = "io.modelcontextprotocol.registry/publisher-provided"
-
 export const pluginMetaOf = (server: RegistryServer): CodevisorPluginMeta | undefined => {
-  const direct = server._meta?.[codevisorPluginMeta]
-  if (isRecord(direct)) return direct
-  const provided = server._meta?.[publisherProvidedMeta]
-  const nested = isRecord(provided) ? provided[codevisorPluginMeta] : undefined
-  return isRecord(nested) ? thirdPartyMeta(nested) : undefined
-}
-
-const thirdPartyMeta = (meta: CodevisorPluginMeta): CodevisorPluginMeta => {
-  const { bundled: _bundled, entry: _entry, devOnly: _devOnly, ...rest } = meta
-  return rest
+  const meta = server._meta?.[codevisorPluginMeta]
+  return isRecord(meta) ? meta : undefined
 }
 
 export const catalogEntryOf = (

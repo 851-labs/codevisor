@@ -5,7 +5,7 @@ import type { PluginCatalog } from "./plugin-catalog.js"
 
 type InstalledIconSources = (id: string) => Promise<McpIconSources | undefined>
 
-type CatalogLookup = Pick<PluginCatalog, "entry" | "resolve">
+type CatalogLookup = Pick<PluginCatalog, "entry">
 
 export const pluginIconSources =
   (installed: InstalledIconSources | undefined, catalog: CatalogLookup) =>
@@ -13,10 +13,7 @@ export const pluginIconSources =
     const sources = await installed?.(id)
     if (sources !== undefined) return sources
     const listed = catalog.entry(id)
-    if (listed !== undefined) return catalogIconSources(listed)
-    if (!id.includes("/")) return undefined
-    const resolved = await catalog.resolve(id)
-    return resolved === undefined ? undefined : catalogIconSources(resolved)
+    return listed === undefined ? undefined : catalogIconSources(listed)
   }
 
 const catalogIconSources = (entry: PluginCatalogEntry): McpIconSources => {

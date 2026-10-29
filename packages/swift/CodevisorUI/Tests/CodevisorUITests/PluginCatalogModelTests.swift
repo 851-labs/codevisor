@@ -7,17 +7,17 @@ import Testing
 
 @MainActor
 struct PluginCatalogModelTests {
-  @Test("Without a query the catalog shows Recommended then Popular, and never registry results")
-  func featuredSections() async {
+  @Test("Without a query the catalog lists first-party then curated plugins in one list")
+  func listsCatalog() async {
     let model = PluginCatalogModel(client: Self.client(CatalogTransport()))
 
     await model.load()
 
-    #expect(model.sections(hiding: []).map(\.title) == ["Recommended", "Popular"])
+    #expect(model.visibleEntries(hiding: []).map(\.id) == ["codevisor/tools", "popular-co/linear"])
     #expect(!model.isLoading)
   }
 
-  @Test("A search waits for the debounce, then adds the MCP Registry section")
+  @Test("A search waits for the debounce and drops registry results an older server still sends")
   func debouncedSearch() async throws {
     let transport = CatalogTransport()
     let gate = SleepGate()
@@ -32,7 +32,7 @@ struct PluginCatalogModelTests {
     await model.settleSearch()
 
     #expect(transport.queries == [nil, "linear"])
-    #expect(model.sections(hiding: []).map(\.title) == ["Recommended", "Popular", "MCP Registry"])
+    #expect(model.visibleEntries(hiding: []).map(\.id) == ["codevisor/tools", "popular-co/linear"])
   }
 
   @Test("Blocked publishers disappear from Browse")
@@ -40,15 +40,7 @@ struct PluginCatalogModelTests {
     let model = PluginCatalogModel(client: Self.client(CatalogTransport()))
     await model.load()
 
-    #expect(model.sections(hiding: ["popular-co"]).map(\.title) == ["Recommended"])
-  }
-
-  @Test("Recommended is hidden when the catalog has no first-party plugins")
-  func hidesEmptyRecommended() async {
-    let model = PluginCatalogModel(client: Self.client(CatalogTransport(firstParty: false)))
-    await model.load()
-
-    #expect(model.sections(hiding: []).map(\.title) == ["Popular"])
+    #expect(model.visibleEntries(hiding: ["popular-co"]).map(\.id) == ["codevisor/tools"])
   }
 
   @Test("Capability chips count each kind and skip the empty ones")
@@ -115,12 +107,6 @@ private final class SleepGate: Sendable {
 
 private final class CatalogTransport: ServerRequestTransport, Sendable {
   private let recorded = Mutex<[String?]>([])
-  private let firstParty: Bool
-
-  init(firstParty: Bool = true) {
-    self.firstParty = firstParty
-  }
-
   var queries: [String?] { recorded.withLock { $0 } }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -132,9 +118,9 @@ private final class CatalogTransport: ServerRequestTransport, Sendable {
   }
 
   private func body(searching: Bool) -> String {
-    let featured = firstParty ? [Self.entry(id: "codevisor/tools", source: "first-party")] : []
+    let firstParty = [Self.entry(id: "codevisor/tools", source: "first-party")]
     let registry = searching ? [Self.entry(id: "io.github.x/linear", source: "registry")] : []
-    let entries = featured + [Self.entry(id: "popular-co/linear", source: "popular")] + registry
+    let entries = firstParty + [Self.entry(id: "popular-co/linear", source: "popular")] + registry
     return #"{"entries":["# + entries.joined(separator: ",") + "]}"
   }
 

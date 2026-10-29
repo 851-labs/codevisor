@@ -36,7 +36,7 @@ describe("registry server.json to catalog entry", () => {
           }
         ]
       },
-      "registry"
+      "popular"
     )
     expect(entry).toMatchObject({
       id: "com.example/remote",
@@ -62,7 +62,7 @@ describe("registry server.json to catalog entry", () => {
       { name: "VERBOSE", format: "boolean" },
       { name: "LIMIT", format: "number" }
     ]
-    const npm = catalogEntryOf(packaged("npm", { environmentVariables: env }), "registry")!
+    const npm = catalogEntryOf(packaged("npm", { environmentVariables: env }), "popular")!
     expect(npm.install).toEqual({
       kind: "package",
       registryType: "npm",
@@ -86,12 +86,12 @@ describe("registry server.json to catalog entry", () => {
       ]
     })
     expect(
-      catalogEntryOf(packaged("pypi", { runtimeHint: "uvx" }), "registry")?.install
+      catalogEntryOf(packaged("pypi", { runtimeHint: "uvx" }), "popular")?.install
     ).toMatchObject({ command: "uvx", args: ["acme-tool==1.2.0"] })
     expect(
       catalogEntryOf(
         packaged("oci", { version: "latest", environmentVariables: [{ name: "TOKEN" }, {}] }),
-        "registry"
+        "popular"
       )?.install
     ).toMatchObject({
       command: "docker",
@@ -110,7 +110,7 @@ describe("registry server.json to catalog entry", () => {
           { type: "named", name: "optional" }
         ]
       }),
-      "registry"
+      "popular"
     )!
     expect(entry.install).toMatchObject({
       args: [
@@ -131,11 +131,11 @@ describe("registry server.json to catalog entry", () => {
   })
 
   it("skips servers it can't run", () => {
-    expect(catalogEntryOf(packaged("nuget"), "registry")).toBeUndefined()
+    expect(catalogEntryOf(packaged("nuget"), "popular")).toBeUndefined()
     expect(
-      catalogEntryOf(packaged("npm", { transport: { type: "streamable-http" } }), "registry")
+      catalogEntryOf(packaged("npm", { transport: { type: "streamable-http" } }), "popular")
     ).toBeUndefined()
-    expect(catalogEntryOf({ name: "bare" }, "registry")).toBeUndefined()
+    expect(catalogEntryOf({ name: "bare" }, "popular")).toBeUndefined()
   })
 
   it("reads registry list bodies leniently", () => {
@@ -151,64 +151,22 @@ describe("registry server.json to catalog entry", () => {
 
 describe("registry entry defaults", () => {
   it("falls back to default runners, labels and publishers", () => {
-    expect(catalogEntryOf(packaged("pypi"), "registry")?.install).toMatchObject({ command: "uvx" })
+    expect(catalogEntryOf(packaged("pypi"), "popular")?.install).toMatchObject({ command: "uvx" })
     expect(
-      catalogEntryOf({ ...packaged("npm", { runtimeHint: "bunx" }), name: "plain" }, "registry")
+      catalogEntryOf({ ...packaged("npm", { runtimeHint: "bunx" }), name: "plain" }, "popular")
     ).toMatchObject({
       publisher: "plain",
       install: { command: "bunx" }
     })
-    expect(catalogEntryOf(packaged("oci"), "registry")?.install).toMatchObject({
+    expect(catalogEntryOf(packaged("oci"), "popular")?.install).toMatchObject({
       args: ["run", "-i", "--rm", "acme-tool:1.2.0"]
     })
     expect(
       catalogEntryOf(
         packaged("npm", { packageArguments: [{ type: "positional", isRequired: true }] }),
-        "registry"
+        "popular"
       )?.install
     ).toMatchObject({ fields: [{ key: "arg:0", label: "0" }] })
-  })
-})
-
-describe("publisher-provided registry metadata", () => {
-  it("reads Codevisor metadata a third party published, but never as a bundled plugin", () => {
-    const entry = catalogEntryOf(
-      {
-        ...packaged("npm"),
-        _meta: {
-          "io.modelcontextprotocol.registry/publisher-provided": {
-            "dev.codevisor/plugin": {
-              bundled: "grafana",
-              capabilities: {
-                tools: [{ name: "lookup" }],
-                events: [],
-                skills: [],
-                panes: [],
-                ingress: []
-              }
-            }
-          }
-        }
-      },
-      "registry"
-    )
-    expect(entry?.install.kind).toBe("package")
-    expect(entry?.capabilities.tools).toEqual([{ name: "lookup" }])
-    expect(
-      catalogEntryOf(
-        {
-          ...packaged("npm"),
-          _meta: { "io.modelcontextprotocol.registry/publisher-provided": { other: 1 } }
-        },
-        "registry"
-      )?.capabilities.tools
-    ).toEqual([])
-    expect(
-      catalogEntryOf(
-        { ...packaged("npm"), _meta: { "io.modelcontextprotocol.registry/publisher-provided": 3 } },
-        "registry"
-      )?.install.kind
-    ).toBe("package")
   })
 })
 

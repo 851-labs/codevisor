@@ -8,7 +8,6 @@ import type { PluginCatalogOptions } from "./plugin-catalog.js"
 
 export type FixtureServer = Readonly<Record<string, unknown>> & { readonly name: string }
 
-export const registryUrl = "https://registry.test"
 export const cloudUrl = "https://cloud.test"
 
 export const alertsServer: FixtureServer = {
@@ -113,9 +112,7 @@ export const catalogFixture = async (
   })
   const local = (value: unknown): unknown => withRemote(value, remoteUrl)
   const root = pluginsFolder(firstParty, popular, remoteUrl)
-  const responses = new Map<string, unknown>(
-    registryResponses().map(([url, body]) => [url, local(body)] as const)
-  )
+  const responses = new Map<string, unknown>()
   const requests: Array<string> = []
   const fake = async (input: string | URL | Request): Promise<Response> => {
     const url = String(input instanceof Request ? input.url : input)
@@ -131,7 +128,6 @@ export const catalogFixture = async (
     options: {
       execPath: "/usr/bin/false",
       moduleDirectory: join(root, "packages", "plugins", "dist", "catalog"),
-      registryUrl,
       fetch: fake
     },
     requests,
@@ -145,12 +141,6 @@ export const listed = (...servers: ReadonlyArray<FixtureServer>) => ({
   servers: servers.map((server) => ({ server }))
 })
 
-export const searchUrl = (query: string): string =>
-  `${registryUrl}/v0/servers?search=${encodeURIComponent(query)}&version=latest&limit=30`
-
-const lookupUrl = (name: string): string =>
-  `${registryUrl}/v0/servers/${encodeURIComponent(name)}/versions/latest`
-
 const remotePlaceholder = "http://remote.invalid"
 
 const withRemote = (value: unknown, remoteUrl: string): unknown => {
@@ -160,13 +150,6 @@ const withRemote = (value: unknown, remoteUrl: string): unknown => {
 
 const remoteJson = (value: unknown, remoteUrl: string): string =>
   JSON.stringify(value).replaceAll(remotePlaceholder, remoteUrl)
-
-const registryResponses = (): ReadonlyArray<readonly [string, unknown]> => [
-  [searchUrl("weather"), listed(weatherServer, openServer, smuggledBundleServer, alertsServer)],
-  [lookupUrl(weatherServer.name), { server: weatherServer }],
-  [lookupUrl(openServer.name), { server: openServer }],
-  [lookupUrl(smuggledBundleServer.name), { server: smuggledBundleServer }]
-]
 
 const pluginsFolder = (
   firstParty: ReadonlyArray<FixtureServer>,

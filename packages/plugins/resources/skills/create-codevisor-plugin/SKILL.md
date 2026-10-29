@@ -32,14 +32,11 @@ through the `execute` gateway, and reads the extensions it declares in
    - **URL** (Streamable HTTP): `https://host/mcp` for a server already running.
 4. **Iterate**: edit, then turn the plugin off and on in Settings › Plugins to
    restart a stdio server. Tools, skills and events are re-read on connect.
-5. **Share it** (optional) by publishing a `server.json` to the
-   [MCP Registry](https://registry.modelcontextprotocol.io) with `mcp-publisher`.
-   It needs `packages` (for example npm with `"transport": { "type": "stdio" }`)
-   or `remotes` (Streamable HTTP). Registry plugins show up in Codevisor's
-   plugin catalog. The registry keeps only publisher metadata, so put the
-   Codevisor digest under
-   `_meta["io.modelcontextprotocol.registry/publisher-provided"]["dev.codevisor/plugin"]`.
-   It has the same `accounts` and `capabilities` shape as below.
+5. **Share it** (optional): Codevisor's plugin catalog is a curated list
+   (`plugins/popular.json` in the Codevisor repo), so other people add your
+   plugin the same way, from **Add MCP…** with its URL or command. A hosted
+   Streamable HTTP URL with OAuth (dynamic client registration) or no auth is
+   the easiest to share.
 
 ## First-party plugins (the Codevisor repo)
 
@@ -51,7 +48,7 @@ plugins/
   kit/                 @codevisor/plugin-kit: event streams, skills, resources, stdio, test support
   test-events/         @codevisor/plugin-test-events
     package.json       build "tsc -b tsconfig.json"; depends on @codevisor/plugin-kit
-    server.json        MCP Registry server.json; the catalog reads it
+    server.json        MCP server.json (registry schema); the catalog reads it
     tsconfig.json      extends ../../tsconfig.base.json; references ../kit
     vitest.config.ts   100% coverage thresholds
     src/main.ts        serveStdio(createTestEventsServer(), process.stdin, process.stdout)

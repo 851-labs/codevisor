@@ -74,18 +74,15 @@ export const makePluginDirectory = (deps: PluginDirectoryDeps) => {
     const servers = (await deps.servers()).filter((server) => server.kind === "managed")
     const installed = servers.map((server) => targetOfServer(deps.catalog, server))
     const installedCatalog = new Set(servers.map((server) => server.catalogId))
-    const available = (await deps.catalog.search(query))
+    const available = deps.catalog
+      .search(query)
       .filter((entry) => !installedCatalog.has(entry.id))
       .map((entry) => ({ plugin: entry.id, entry }))
     return [...installed, ...available]
   }
 
-  const find = async (plugin: string): Promise<PluginTarget | undefined> => {
-    const local = (await targets()).find((target) => namesTarget(target, plugin))
-    if (local !== undefined) return local
-    const entry = await deps.catalog.resolve(plugin)
-    return entry === undefined ? undefined : { plugin: entry.id, entry }
-  }
+  const find = async (plugin: string): Promise<PluginTarget | undefined> =>
+    (await targets()).find((target) => namesTarget(target, plugin))
 
   return {
     find,

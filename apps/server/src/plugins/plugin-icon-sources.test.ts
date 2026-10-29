@@ -17,36 +17,22 @@ const entry = (id: string, extra: Partial<PluginCatalogEntry> = {}): PluginCatal
 })
 
 const catalogOf = (
-  listed: ReadonlyArray<PluginCatalogEntry>,
-  registry: ReadonlyArray<PluginCatalogEntry> = []
-): {
-  readonly catalog: Parameters<typeof pluginIconSources>[1]
-  readonly resolved: Array<string>
-} => {
-  const resolved: Array<string> = []
-  const catalog = {
-    entry: (id: string) => listed.find((candidate) => candidate.id === id),
-    resolve: async (id: string) => {
-      resolved.push(id)
-      return registry.find((candidate) => candidate.id === id)
-    }
-  }
-  return { catalog, resolved }
-}
+  listed: ReadonlyArray<PluginCatalogEntry>
+): Parameters<typeof pluginIconSources>[1] => ({
+  entry: (id: string) => listed.find((candidate) => candidate.id === id)
+})
 
 describe("plugin icon sources", () => {
   it("prefers an installed server's own icons, then the catalog's icon and website", async () => {
-    const { catalog, resolved } = catalogOf(
-      [
-        entry("app.linear/linear", {
-          url: "https://mcp.linear.app/mcp",
-          iconUrl: "https://static.linear.app/icon.png",
-          docsUrl: "https://linear.app"
-        }),
-        entry("dev.codevisor/gmail", { iconUrl: "https://www.gstatic.com/gmail.png" })
-      ],
-      [entry("io.github.acme/tool")]
-    )
+    const catalog = catalogOf([
+      entry("app.linear/linear", {
+        url: "https://mcp.linear.app/mcp",
+        iconUrl: "https://static.linear.app/icon.png",
+        docsUrl: "https://linear.app"
+      }),
+      entry("dev.codevisor/gmail", { iconUrl: "https://www.gstatic.com/gmail.png" }),
+      entry("dev.codevisor/plain")
+    ])
     const sources = pluginIconSources(
       async (id) => (id === "server-1" ? { url: "https://mcp.example.com" } : undefined),
       catalog
@@ -62,16 +48,13 @@ describe("plugin icon sources", () => {
       url: "https://www.gstatic.com/gmail.png",
       icons: [{ src: "https://www.gstatic.com/gmail.png" }]
     })
-    expect(await sources("io.github.acme/tool")).toEqual({})
+    expect(await sources("dev.codevisor/plain")).toEqual({})
     expect(await sources("missing/plugin")).toBeUndefined()
     expect(await sources("4f1c-uuid")).toBeUndefined()
-    expect(resolved).toEqual(["io.github.acme/tool", "missing/plugin"])
   })
 
   it("still finds catalog icons when MCP is unavailable", async () => {
-    const { catalog } = catalogOf([
-      entry("com.zillow/mcp", { url: "https://mcp.zillow.com/api/v2" })
-    ])
+    const catalog = catalogOf([entry("com.zillow/mcp", { url: "https://mcp.zillow.com/api/v2" })])
 
     expect(await pluginIconSources(undefined, catalog)("com.zillow/mcp")).toEqual({
       url: "https://mcp.zillow.com/api/v2"

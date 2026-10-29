@@ -31,9 +31,15 @@ public final class PluginCatalogModel {
 
   public var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-  public func sections(hiding blockedPublishers: [String]) -> [PluginCatalogSection] {
-    PluginCatalogSection.sections(from: entries, searching: isSearching, hiding: Set(blockedPublishers))
+  public func visibleEntries(hiding blockedPublishers: [String]) -> [ServerPluginCatalogEntry] {
+    let blocked = Set(blockedPublishers)
+    return entries.filter { entry in
+      Self.listedSources.contains(entry.source ?? "first-party")
+        && !blocked.contains(PluginModerationSubject.publisher(ofCatalogId: entry.id))
+    }
   }
+
+  private static let listedSources: Set<String> = ["first-party", "popular"]
 
   public func load() async {
     await fetch(query, generation: nextGeneration())

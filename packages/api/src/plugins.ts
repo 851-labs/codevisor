@@ -70,7 +70,7 @@ export type PluginCapabilities = typeof PluginCapabilities.Type
 export const PluginAgeRating = Schema.Literals([4, 9, 13, 16, 18])
 export type PluginAgeRating = typeof PluginAgeRating.Type
 
-export const PluginCatalogSource = Schema.Literals(["first-party", "popular", "registry"])
+export const PluginCatalogSource = Schema.Literals(["first-party", "popular"])
 export type PluginCatalogSource = typeof PluginCatalogSource.Type
 
 export const PluginInstallSpec = Schema.Union([
