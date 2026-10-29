@@ -37,7 +37,7 @@ enum TranscriptBotRowAssembly {
         rows.append(row(for: message, isGroupTail: isGroupTail, spacingAfter: TranscriptPresentationRow.deliveryGap))
         rows.append(
           .delivery(
-            id, delivery, inBotConversation: true, spacingAfter: isGroupTail ? groupTailSpacing : groupedSpacing + 4))
+            id, delivery, spacingAfter: isGroupTail ? groupTailSpacing : groupedSpacing + 4))
       } else {
         rows.append(
           row(for: message, isGroupTail: isGroupTail, spacingAfter: isGroupTail ? groupTailSpacing : groupedSpacing))

@@ -10,12 +10,16 @@ struct TranscriptSendProgressBar: View {
   @Environment(\.userBubbleStyle) private var style
   @State private var fraction = Self.startFraction
 
+  private var progressFill: Color {
+    style == .accent ? style.fill : .secondary
+  }
+
   var body: some View {
     Capsule()
       .fill(Color.secondary.opacity(0.25))
       .overlay(alignment: .leading) {
         Capsule()
-          .fill(style.fill)
+          .fill(progressFill)
           .frame(width: Self.size.width * fraction)
       }
       .frame(width: Self.size.width, height: Self.size.height)

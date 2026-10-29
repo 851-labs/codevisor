@@ -143,10 +143,9 @@ public struct TranscriptRowContentView: View {
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)
-    case let .delivery(id, delivery, inBotConversation):
+    case let .delivery(id, delivery):
       TranscriptDeliveryRow(
         delivery: delivery,
-        inBotConversation: inBotConversation,
         retry: { Task { await controller.retryUnsentMessage(id: id) } },
         delete: { controller.deleteUnsentMessage(id: id) }
       )

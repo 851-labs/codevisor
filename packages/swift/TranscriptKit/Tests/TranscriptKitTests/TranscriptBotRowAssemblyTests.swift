@@ -193,8 +193,8 @@ struct TranscriptBotRowAssemblyTests {
         .message(failedID),
         .delivery(failedID),
       ])
-    #expect(rows[3].content == .delivery(userID, .sending, inBotConversation: true))
-    #expect(rows[5].content == .delivery(failedID, .failed(reason: nil), inBotConversation: true))
+    #expect(rows[3].content == .delivery(userID, .sending))
+    #expect(rows[5].content == .delivery(failedID, .failed(reason: nil)))
     #expect(rows.filter(\.isUserMessage).map(\.spacingAfter) == [2, 2])
   }
 
@@ -218,8 +218,8 @@ struct TranscriptBotRowAssemblyTests {
     let rows = try TranscriptRowProjectionCache.project(input, options: .init(includesConnectingRow: false))
 
     #expect(rows.map(\.id) == [.message(userID), .delivery(userID), .message(steerID), .delivery(steerID)])
-    #expect(rows[1].content == .delivery(userID, .sending, inBotConversation: false))
-    #expect(rows[3].content == .delivery(steerID, .failed(reason: nil), inBotConversation: false))
+    #expect(rows[1].content == .delivery(userID, .sending))
+    #expect(rows[3].content == .delivery(steerID, .failed(reason: nil)))
     #expect(rows.map(\.spacingAfter) == [2, nil, 2, nil])
   }
 
