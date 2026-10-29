@@ -20,6 +20,25 @@ struct SandboxSettingsModelTests {
       ])
   }
 
+  @Test("Providers that would share a name are told apart by their labels, and others keep their plain name")
+  func duplicateProviderTitles() async {
+    let model = SandboxSettingsModel()
+    let studio = SandboxMachine(name: "Mac Studio", client: SettingsFakeServerClient(serverId: "studio"))
+    let onStudio: [String: SandboxFieldValue] = ["machineId": .string("studio")]
+    let client = SettingsFakeServerClient(providers: [
+      ServerSandboxProvider(id: "work", vendor: "tart", label: "Work", values: onStudio),
+      ServerSandboxProvider(id: "plain", vendor: "tart", values: onStudio),
+      ServerSandboxProvider(id: "labs", vendor: "e2b", label: "851 Labs", secretsSet: ["apiKey"]),
+    ])
+
+    await model.load(from: client, machines: [studio])
+
+    #expect(
+      model.providers.map(model.title(of:)) == [
+        "Tart · Mac Studio (Work)", "Tart · Mac Studio", "E2B · 851 Labs",
+      ])
+  }
+
   @Test("Profiles show before a slow Mac answers, and its name fills in once it does")
   func slowMachine() async throws {
     let gate = FetchGate()
@@ -146,23 +165,54 @@ struct SandboxSettingsModelTests {
     #expect(client.calls == ["create provider vercel", "create provider vercel"])
   }
 
-  @Test("Settings pages push, go back, and after adding something jump to the next page or back to Sandboxes")
+  @Test("A profile page pushes onto Settings, and going back or deleting it returns to Sandboxes")
   func pageNavigation() {
-    let start = ["sandboxes", "addProfile", "vendors"]
+    let start = ["sandboxes"]
     let route: (SandboxSettingsPage) -> String = { "\($0)" }
     let isPage: (String) -> Bool = { $0 != "sandboxes" }
 
-    let pushed = SandboxSettingsNavigation.push(.newProvider(vendorId: "tart")).applied(
+    let pushed = SandboxSettingsNavigation.push(.editProfile(profileId: "p")).applied(
       to: start, route: route, isSandboxPage: isPage)
-    let next = SandboxSettingsNavigation.reset(to: .newProfile(providerId: "p")).applied(
-      to: pushed, route: route, isSandboxPage: isPage)
-    let done = SandboxSettingsNavigation.reset(to: nil).applied(to: next, route: route, isSandboxPage: isPage)
-    let back = SandboxSettingsNavigation.pop.applied(to: start, route: route, isSandboxPage: isPage)
+    let back = SandboxSettingsNavigation.pop.applied(to: pushed, route: route, isSandboxPage: isPage)
+    let reset = SandboxSettingsNavigation.reset(to: nil).applied(to: pushed, route: route, isSandboxPage: isPage)
 
-    #expect(pushed == start + ["newProvider(vendorId: \"tart\")"])
-    #expect(next == ["sandboxes", "newProfile(providerId: \"p\")"])
-    #expect(done == ["sandboxes"])
-    #expect(back == ["sandboxes", "addProfile"])
+    #expect(pushed == ["sandboxes", "editProfile(profileId: \"p\")"])
+    #expect(back == start)
+    #expect(reset == start)
+  }
+
+  @Test("Switching a new profile to another vendor's provider keeps what was typed and takes the new defaults")
+  func switchingVendorKeepsTypedFields() {
+    let first = ServerSandboxVendor(
+      id: "first", displayName: "First", sandboxNoun: "first box", platform: "linux", tested: true,
+      providerFields: [],
+      profileFields: [
+        .init(key: "template", label: "Template", type: .string),
+        .init(key: "cpu", label: "CPUs", type: .number, defaultValue: .number(2)),
+        .init(key: "region", label: "Region", type: .choice, choices: [.init(value: "mars", label: "Mars")]),
+      ])
+    let second = ServerSandboxVendor(
+      id: "second", displayName: "Second", sandboxNoun: "second box", platform: "linux", tested: true,
+      providerFields: [],
+      profileFields: [
+        .init(key: "template", label: "Template", type: .string),
+        .init(key: "cpu", label: "CPUs", type: .number, defaultValue: .number(4)),
+        .init(
+          key: "region", label: "Region", type: .choice, defaultValue: .string("us"),
+          choices: [.init(value: "us", label: "US")]),
+      ])
+    var draft = SandboxProfileDraft(provider: ServerSandboxProvider(id: "a", vendor: "first"), vendor: first)
+    draft.name = "Work"
+    draft.fields.text["template"] = "custom"
+    draft.fields.text["region"] = "mars"
+
+    draft.choose(ServerSandboxProvider(id: "b", vendor: "second"), vendor: second)
+
+    #expect(draft.name == "Work")
+    #expect(draft.request?.providerId == "b")
+    #expect(draft.fields.text["template"] == "custom")
+    #expect(draft.fields.text["cpu"] == "4")
+    #expect(draft.fields.text["region"] == "us")
   }
 
   @Test("Memory offers the steps up to the provider Mac's limit, falls back without it, and fits a saved size")
@@ -217,6 +267,103 @@ struct SandboxSettingsModelTests {
     #expect(client.calls == ["delete profile a", "delete profile c", "delete provider personal"])
     #expect(model.providers.map(\.id) == ["labs", "studio", "gone"])
   }
+
+  @Test("Deleting a provider counts its profiles and live workspaces on every reachable Mac, then deletes it on each")
+  func deletingAProvider() async throws {
+    let local = SettingsFakeServerClient(
+      profiles: [
+        ServerSandboxProfile(id: "a", name: "A", vendor: "e2b", providerId: "labs"),
+        ServerSandboxProfile(id: "b", name: "B", vendor: "e2b", providerId: "labs"),
+        ServerSandboxProfile(id: "c", name: "C", vendor: "e2b", providerId: "personal"),
+      ],
+      sandboxes: [
+        Self.sandbox("live", on: "labs", workspaceId: "w1"),
+        Self.sandbox("archived", on: "labs", workspaceId: "w2", state: "archived"),
+        Self.sandbox("failed", on: "labs", workspaceId: "w3", state: "failed"),
+        Self.sandbox("prewarmed", on: "labs"),
+        Self.sandbox("other", on: "personal", workspaceId: "w4"),
+      ])
+    let studio = SettingsFakeServerClient(
+      serverId: "studio", sandboxes: [Self.sandbox("studio-live", on: "labs", workspaceId: "w5")])
+    let model = SandboxSettingsModel()
+    await model.load(from: local, machines: [])
+    let machines = [SandboxMachine(name: "Local", client: local), SandboxMachine(name: "Studio", client: studio)]
+    let labs = try #require(model.provider("labs"))
+
+    let removal = await model.removal(of: labs, on: machines, offline: ["MacBook Air"])
+    let deleted = await model.delete(labs, on: machines)
+
+    #expect(
+      removal
+        == SandboxProviderRemoval(
+          providerTitle: "E2B · 851 Labs", profileCount: 2, workspaceCount: 2, offlineMachineNames: ["MacBook Air"]))
+    #expect(deleted)
+    #expect(local.calls == ["delete provider labs with its profiles"])
+    #expect(studio.calls == ["delete provider labs with its profiles"])
+    #expect(model.profiles.map(\.id) == ["c"])
+    #expect(model.providers.map(\.id) == ["personal", "studio", "gone"])
+  }
+
+  @Test("A provider stays when any reachable Mac fails to delete it, and the error shows")
+  func failedProviderDeletion() async throws {
+    let broken = SettingsFakeServerClient(serverId: "studio", deleteFailure: 500)
+    let model = SandboxSettingsModel()
+    await model.load(from: SettingsFakeServerClient(), machines: [])
+    let labs = try #require(model.provider("labs"))
+
+    let deleted = await model.delete(labs, on: [SandboxMachine(name: "Studio", client: broken)])
+
+    #expect(!deleted)
+    #expect(model.provider("labs") != nil)
+    #expect(model.errorMessage != nil)
+  }
+
+  @Test("Deleting a provider skips machines that can't run sandboxes at all")
+  func providerDeletionSkipsMachinesWithoutSandboxes() async throws {
+    let linux = SettingsFakeServerClient(serverId: "linux", deleteFailure: 501)
+    let local = SettingsFakeServerClient()
+    let model = SandboxSettingsModel()
+    await model.load(from: local, machines: [])
+    let labs = try #require(model.provider("labs"))
+
+    let deleted = await model.delete(
+      labs, on: [SandboxMachine(name: "Linux", client: linux), SandboxMachine(name: "Local", client: local)])
+
+    #expect(deleted)
+    #expect(local.calls == ["delete provider labs with its profiles"])
+    #expect(model.provider("labs") == nil)
+  }
+
+  @Test("The delete confirmation names the counts, says unpushed work is lost, and names offline Macs")
+  func removalMessage() {
+    let full = SandboxProviderRemoval(
+      providerTitle: "E2B", profileCount: 2, workspaceCount: 3, offlineMachineNames: ["Studio", "Air"])
+    let single = SandboxProviderRemoval(
+      providerTitle: "E2B", profileCount: 1, workspaceCount: 1, offlineMachineNames: [])
+    let quiet = SandboxProviderRemoval(
+      providerTitle: "E2B", profileCount: 1, workspaceCount: 0, offlineMachineNames: ["Studio"])
+
+    #expect(full.title == "Delete “E2B”?")
+    #expect(
+      full.message
+        == "This also deletes its 2 profiles and archives the 3 workspaces using them. "
+        + "Archiving destroys their sandboxes, so any work that isn’t pushed is lost. "
+        + "Studio and Air are offline. Sandboxes they started keep running, and cost money, until they’re back online.")
+    #expect(
+      single.message
+        == "This also deletes its 1 profile and archives the 1 workspace using it. "
+        + "Archiving destroys its sandbox, so any work that isn’t pushed is lost.")
+    #expect(
+      quiet.message
+        == "This also deletes its 1 profile. "
+        + "Studio is offline. Sandboxes it started keep running, and cost money, until it’s back online.")
+  }
+
+  private static func sandbox(
+    _ id: String, on providerId: String, workspaceId: String? = nil, state: String = "ready"
+  ) -> ServerSandbox {
+    ServerSandbox(id: id, vendor: "e2b", name: id, state: state, accountId: providerId, workspaceId: workspaceId)
+  }
 }
 
 private final class SettingsFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
@@ -260,16 +407,28 @@ private final class SettingsFakeServerClient: CodevisorServerClienting, @uncheck
   let providers: [ServerSandboxProvider]
   let profiles: [ServerSandboxProfile]
   let infoGate: FetchGate?
+  let listedSandboxes: [ServerSandbox]
+  let deleteFailure: Int?
   var calls: [String] = []
 
   init(
     serverId: String = "local", providers: [ServerSandboxProvider] = existingProviders,
-    profiles: [ServerSandboxProfile] = [], infoGate: FetchGate? = nil
+    profiles: [ServerSandboxProfile] = [], sandboxes: [ServerSandbox] = [], infoGate: FetchGate? = nil,
+    deleteFailure: Int? = nil
   ) {
     self.serverId = serverId
     self.providers = providers
     self.profiles = profiles
+    self.listedSandboxes = sandboxes
     self.infoGate = infoGate
+    self.deleteFailure = deleteFailure
+  }
+
+  func sandboxes() async throws -> [ServerSandbox] { listedSandboxes }
+
+  func deleteSandboxProviderAndProfiles(id: String) async throws {
+    if let deleteFailure { throw CodevisorServerClientError.httpStatus(deleteFailure, #"{"error":"No"}"#) }
+    calls.append("delete provider \(id) with its profiles")
   }
 
   func sandboxVendors() async throws -> ServerSandboxVendors {

@@ -45,8 +45,8 @@ public struct SandboxProfileDraft: Equatable, Identifiable, Sendable {
     guard vendor.id != self.vendor?.id else { return }
 
     if name.isEmpty || name == self.vendor.map(Self.defaultName) { name = Self.defaultName(vendor) }
+    fields = fields.carried(from: self.vendor?.profileFields ?? [], to: vendor.profileFields)
     self.vendor = vendor
-    fields = SandboxFieldDraft(fields: vendor.profileFields, values: [:])
   }
 
   private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }

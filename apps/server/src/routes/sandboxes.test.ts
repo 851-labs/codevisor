@@ -146,6 +146,24 @@ describe("sandbox provider accounts", () => {
     expect(removed.status).toBe(204)
     expect(await harness.settings.accounts()).toEqual([])
   })
+
+  it("deletes a provider with its profiles and sandboxes when asked to, and again once it's gone", async () => {
+    const { harness, server } = await startSandboxServer()
+    await harness.settings.putProfile({ ...FAKE_PROFILE, id: "profile-2" })
+    await harness.machines.create({ profileId: "profile-1", projectId: "project-1", name: "Box" })
+    await harness.machines.settled()
+    const remove = () =>
+      jsonRequest(server, "/v1/sandbox-accounts/account-1?cascade=true", { method: "DELETE" })
+
+    const first = await remove()
+    const again = await remove()
+
+    expect([first.status, again.status]).toEqual([204, 204])
+    expect(await harness.settings.profiles()).toEqual([])
+    expect(await harness.settings.accounts()).toEqual([])
+    expect(await harness.machines.list()).toEqual([])
+    expect(harness.provider.machines.size).toBe(0)
+  })
 })
 
 describe("sandbox profiles", () => {

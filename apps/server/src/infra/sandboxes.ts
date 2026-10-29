@@ -32,6 +32,14 @@ import {
   restoreRequest,
   retryRequest
 } from "./sandbox-requests.js"
+import type { RetainedAccounts } from "./sandbox-retained-accounts.js"
+import {
+  retainProviderAccounts,
+  retireMachine,
+  retireOrphan,
+  usingProvider,
+  withDeletedProvider
+} from "./sandbox-retire.js"
 import {
   makeSandboxSetupProgress,
   type SandboxSetupProgress,
@@ -46,6 +54,7 @@ import { isoNow, placeWorkspace } from "./sandbox-workspace.js"
 export interface SandboxDeps {
   readonly records: SandboxRecordStore
   readonly connections: SandboxConnections
+  readonly providerAccounts: RetainedAccounts
   readonly profiles: { readonly get: (id: string) => Promise<SandboxProfile | undefined> }
   readonly serverId: string
   readonly account: {
@@ -95,6 +104,7 @@ export interface Sandboxes {
   readonly destroy: (id: string) => Promise<void>
   readonly claimWorkspace: (id: string, workspaceId: string) => Promise<Sandbox>
   readonly restore: (workspaceId: string) => Promise<void>
+  readonly retireProvider: (accountId: string) => Promise<void>
   readonly watch: () => Promise<void>
   readonly sweep: () => Promise<void>
   readonly settled: () => Promise<void>
@@ -175,6 +185,16 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     })
   }
 
+  const retire = async (
+    machines: ReadonlyArray<Sandbox>,
+    retireOne: (deps: SandboxDeps, machine: Sandbox) => Promise<void>
+  ): Promise<void> => {
+    for (const machine of machines) {
+      if (isSettingUp(busy, machine)) abandonments.abandon(machine.id)
+      else await exclusively(machine.id, () => retireOne(deps, machine))
+    }
+  }
+
   const restoreArchived = async (workspaceId: string): Promise<void> => {
     const archived = await archivedFor(deps, workspaceId)
     if (archived?.profileId === undefined) return
@@ -204,7 +224,13 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
       track(pipelines, Promise.allSettled([restoring]))
       return restoring
     },
+    retireProvider: async (accountId) => {
+      await retainProviderAccounts(deps)
+      await retire(await usingProvider(deps, accountId), retireMachine)
+    },
     watch: async () => {
+      await retainProviderAccounts(deps)
+      await retire(await withDeletedProvider(deps), retireOrphan)
       for (const machine of (await deps.records.list()).filter(isPlaced)) {
         await exclusively(machine.id, () => watchOne(deps, machine))
       }
@@ -353,6 +379,9 @@ const abandonWhileSettingUp = (abandonments: Abandonments, machine: Sandbox): vo
 
   abandonments.abandon(machine.id)
 }
+
+const isSettingUp = (busy: ReadonlySet<string>, machine: Sandbox): boolean =>
+  busy.has(machine.id) && inProgress.has(machine.state)
 
 const existing = async (deps: SandboxDeps, id: string): Promise<Sandbox> => {
   const machine = await deps.records.get(id)

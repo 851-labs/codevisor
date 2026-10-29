@@ -19,6 +19,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var state: String
   public var profileId: String?
   public var profileName: String?
+  public var accountId: String?
   public var deviceId: String?
   public var remoteProjectId: String?
   public var workspaceId: String?
@@ -27,7 +28,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var error: String?
 
   private enum CodingKeys: String, CodingKey {
-    case id, name, state, profileId, profileName, deviceId, remoteProjectId, workspaceId, plan, steps, error
+    case id, name, state, profileId, profileName, accountId, deviceId, remoteProjectId, workspaceId, plan, steps, error
     case vendor = "provider"
   }
 
@@ -38,6 +39,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     state: String,
     profileId: String? = nil,
     profileName: String? = nil,
+    accountId: String? = nil,
     deviceId: String? = nil,
     remoteProjectId: String? = nil,
     workspaceId: String? = nil,
@@ -51,6 +53,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     self.state = state
     self.profileId = profileId
     self.profileName = profileName
+    self.accountId = accountId
     self.deviceId = deviceId
     self.remoteProjectId = remoteProjectId
     self.workspaceId = workspaceId
@@ -95,6 +98,10 @@ extension CodevisorServerClient {
 
   public func deleteSandboxProvider(id: String) async throws {
     try await sendNoResponse("/v1/sandbox-accounts/\(pathComponent(id))", method: "DELETE")
+  }
+
+  public func deleteSandboxProviderAndProfiles(id: String) async throws {
+    try await sendNoResponse("/v1/sandbox-accounts/\(pathComponent(id))?cascade=true", method: "DELETE")
   }
 
   public func sandboxProfiles() async throws -> [ServerSandboxProfile] {

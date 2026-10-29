@@ -41,6 +41,7 @@ export interface SandboxCatalogDeps {
   readonly connections: SandboxConnections
   readonly serverId: string
   readonly sandboxesUsing: (accountId: string) => Promise<number>
+  readonly retireSandboxes: (accountId: string) => Promise<void>
   readonly newId: () => string
   readonly now: () => number
 }
@@ -134,6 +135,17 @@ export const deleteAccount = async (
   return deps.settings.removeAccount(id)
 }
 
+export const deleteAccountAndUsers = async (
+  deps: SandboxCatalogDeps,
+  id: string
+): Promise<ReadonlyArray<SandboxSettingsChange>> => {
+  await deps.retireSandboxes(id)
+  const profileChanges = await removeProfilesUsing(deps, id)
+  if ((await deps.settings.account(id)) === undefined) return profileChanges
+
+  return [...profileChanges, await deps.settings.removeAccount(id)]
+}
+
 export const createProfile = async (
   deps: SandboxCatalogDeps,
   request: SaveSandboxProfileRequest
@@ -202,6 +214,18 @@ export const runsElsewhere = (
     (field) =>
       field.type === "machine" && values[field.key] !== undefined && values[field.key] !== serverId
   )
+
+const removeProfilesUsing = async (
+  deps: SandboxCatalogDeps,
+  accountId: string
+): Promise<ReadonlyArray<SandboxSettingsChange>> => {
+  const users = (await deps.settings.profiles()).filter(
+    (profile) => profile.accountId === accountId
+  )
+  const changes: SandboxSettingsChange[] = []
+  for (const profile of users) changes.push(await deps.settings.removeProfile(profile.id))
+  return changes
+}
 
 const disabledReasonFor = async (
   deps: SandboxCatalogDeps,

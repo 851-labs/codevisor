@@ -255,7 +255,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/sandbox-accounts": "List sandbox provider accounts, without their secrets",
   "POST /v1/sandbox-accounts": "Sign in to a sandbox provider; the credentials are checked first",
   "PUT /v1/sandbox-accounts/:id": "Change a sandbox provider account; blank secrets are kept",
-  "DELETE /v1/sandbox-accounts/:id": "Remove a sandbox provider account no profile uses",
+  "DELETE /v1/sandbox-accounts/:id":
+    "Remove a sandbox provider account no profile uses; with cascade=true, also delete its profiles and archive this machine's sandboxes on it",
   "GET /v1/sandbox-profiles": "List sandbox profiles",
   "POST /v1/sandbox-profiles": "Create a sandbox profile for a provider account and image",
   "PUT /v1/sandbox-profiles/:id": "Change a sandbox profile",

@@ -2,26 +2,28 @@ import CodevisorCore
 import SwiftUI
 
 struct SandboxNewProfilePage: View {
-  let provider: ServerSandboxProvider
-  let vendor: ServerSandboxVendor
   let model: SandboxSettingsModel
   let client: any CodevisorServerClienting
-  let navigate: (SandboxSettingsNavigation) -> Void
+  @Binding var providerId: String
+  let onNewProvider: () -> Void
+  let onAdded: () -> Void
   @State private var draft: SandboxProfileDraft
   @State private var status: String?
 
   init(
-    provider: ServerSandboxProvider,
-    vendor: ServerSandboxVendor,
     model: SandboxSettingsModel,
     client: any CodevisorServerClienting,
-    navigate: @escaping (SandboxSettingsNavigation) -> Void
+    provider: ServerSandboxProvider,
+    vendor: ServerSandboxVendor,
+    providerId: Binding<String>,
+    onNewProvider: @escaping () -> Void,
+    onAdded: @escaping () -> Void
   ) {
-    self.provider = provider
-    self.vendor = vendor
     self.model = model
     self.client = client
-    self.navigate = navigate
+    _providerId = providerId
+    self.onNewProvider = onNewProvider
+    self.onAdded = onAdded
     _draft = State(initialValue: SandboxProfileDraft(provider: provider, vendor: vendor))
   }
 
@@ -31,11 +33,20 @@ struct SandboxNewProfilePage: View {
       errorMessage: model.errorMessage, onAction: add
     ) {
       Section {
-        LabeledContent("Provider", value: model.title(of: provider))
+        SandboxProviderPicker(model: model, providerId: $providerId, onNewProvider: onNewProvider)
       }
-      SandboxProfileFields(draft: $draft, vendor: vendor, model: model)
+      if let vendor = draft.vendor {
+        SandboxProfileFields(draft: $draft, vendor: vendor, model: model)
+      }
     }
     .onAppear { model.errorMessage = nil }
+    .onChange(of: providerId) { chooseProvider() }
+  }
+
+  private func chooseProvider() {
+    guard let provider = model.provider(providerId), let vendor = model.vendor(provider.vendor) else { return }
+
+    draft.choose(provider, vendor: vendor)
   }
 
   private func add() {
@@ -43,7 +54,7 @@ struct SandboxNewProfilePage: View {
     Task {
       let saved = await model.save(draft, using: client)
       status = nil
-      if saved { navigate(.reset(to: nil)) }
+      if saved { onAdded() }
     }
   }
 }

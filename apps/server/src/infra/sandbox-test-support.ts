@@ -15,6 +15,7 @@ import { pushRemainingAgents } from "./sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
 import { makeSandboxLocalWorkspaces } from "./sandbox-local-workspaces.js"
+import { makeRetainedAccounts } from "./sandbox-retained-accounts.js"
 import { makeSandboxSettings } from "./sandbox-settings.js"
 import { makeSandboxRecordStore } from "./sandbox-store.js"
 import { pushOneWaySync } from "./sandbox-sync.js"
@@ -128,7 +129,11 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     ...(options.verify === undefined ? {} : { verify: options.verify })
   }
   const adapters = makeSandboxAdapters([adapter], () => options.runsHere ?? true)
-  const connections = makeSandboxConnections(adapters, settings)
+  const providerAccounts = makeRetainedAccounts(services.db, settings)
+  const connections = makeSandboxConnections(adapters, {
+    accounts: settings.accounts,
+    account: providerAccounts.account
+  })
   const project: Project = {
     id: "project-1",
     name: "codevisor",
@@ -151,6 +156,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
   const deps: SandboxDeps = {
     records,
     connections,
+    providerAccounts,
     profiles: { get: settings.profile },
     serverId: "server-owner",
     account: {
@@ -205,6 +211,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     newId: sequentialIds(),
     log: (line) => logs.push(line)
   }
+  const machines = makeSandboxes(deps)
   const catalog: SandboxCatalogDeps = {
     settings,
     adapters,
@@ -212,6 +219,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     serverId: "server-owner",
     sandboxesUsing: async (accountId) =>
       (await records.list()).filter((record) => record.accountId === accountId).length,
+    retireSandboxes: machines.retireProvider,
     newId: sequentialIds(),
     now: () => clock
   }
@@ -231,7 +239,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     workspaces,
     logs,
     controls,
-    machines: makeSandboxes(deps)
+    machines
   }
 }
 

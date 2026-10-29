@@ -26,6 +26,9 @@ const queryParameterBuilders: Partial<Record<Endpoint, QueryParameterBuilder>> =
     stringQuery("next")
   ],
   "GET /v1/sandboxes/:id/log": () => [stringQuery("last")],
+  "DELETE /v1/sandbox-accounts/:id": () => [
+    { name: "cascade", in: "query", schema: { type: "string", enum: ["true"] } }
+  ],
   "GET /v1/sessions/:id/transcript": () => transcriptPageQuery(),
   "GET /v1/sessions/:id/transcript/:itemId/details": () => transcriptDetailsQuery(),
   "GET /v1/sessions/:id/transcript/:itemId/body": () => transcriptBodyQuery(),

@@ -1,12 +1,7 @@
 import Foundation
 
 public enum SandboxSettingsPage: Hashable, Sendable {
-  case addProfile
-  case vendors
-  case newProvider(vendorId: String)
-  case newProfile(providerId: String)
   case editProfile(profileId: String)
-  case editProvider(providerId: String)
 }
 
 public enum SandboxSettingsNavigation: Equatable, Sendable {

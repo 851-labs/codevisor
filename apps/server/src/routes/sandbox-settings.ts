@@ -4,6 +4,7 @@ import {
   createAccount,
   createProfile,
   deleteAccount,
+  deleteAccountAndUsers,
   deleteProfile,
   hostCapabilities,
   hostMaximums,
@@ -62,7 +63,9 @@ const routeAccounts = async (
   const deleteId = methodRouteId(route, "DELETE", "/v1/sandbox-accounts/:id")
   if (deleteId === undefined) return false
 
-  return respond(route, 204, undefined, await deleteAccount(catalog, deleteId))
+  if (url.searchParams.get("cascade") !== "true")
+    return respond(route, 204, undefined, await deleteAccount(catalog, deleteId))
+  return respondAll(route, await deleteAccountAndUsers(catalog, deleteId))
 }
 
 const routeProfiles = async (
@@ -99,6 +102,15 @@ const respond = (
   publishChange(route, change)
   if (body === undefined) route.response.writeHead(status).end()
   else writeJson(route.response, status, body)
+  return true
+}
+
+const respondAll = (
+  route: RouteContext,
+  changes: ReadonlyArray<SandboxSettingsChange>
+): boolean => {
+  for (const change of changes) publishChange(route, change)
+  route.response.writeHead(204).end()
   return true
 }
 

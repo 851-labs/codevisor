@@ -5,7 +5,7 @@ import SwiftUI
 struct SandboxesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   let model: SandboxSettingsModel
-  @State private var removingProfile: ServerSandboxProfile?
+  @State private var adding = false
 
   private var router: SettingsRouter { SettingsRouter.shared }
 
@@ -13,29 +13,21 @@ struct SandboxesSettingsView: View {
     environment.machines.client(for: CodevisorMachine.local.id)
   }
 
-  private var isFirstRun: Bool {
-    model.hasLoaded && model.profiles.isEmpty && model.providers.isEmpty
+  private var isEmpty: Bool {
+    model.hasLoaded && model.profiles.isEmpty
   }
 
   var body: some View {
-    Form {
-      if isFirstRun {
-        Section("Choose a sandbox vendor") {
-          SandboxVendorList(vendors: model.vendors.vendors) { vendor in
-            router.navigate(.push(.newProvider(vendorId: vendor.id)))
-          }
-        }
+    Group {
+      if isEmpty {
+        SandboxEmptyState { adding = true }
       } else {
-        profilesSection
+        Form { profilesSection }
+          .formStyle(.grouped)
       }
     }
-    .formStyle(.grouped)
-    .confirmationDialog(
-      "Delete “\(removingProfile?.name ?? "")”?",
-      isPresented: presence($removingProfile), titleVisibility: .visible, presenting: removingProfile
-    ) { profile in
-      Button("Delete", role: .destructive) { Task { await model.delete(profile, using: client) } }
-      Button("Cancel", role: .cancel) {}
+    .sheet(isPresented: $adding) {
+      SandboxNewProfileSheet(model: model, client: client)
     }
     .alert("Couldn’t change sandboxes", isPresented: errorShown) {
       Button("OK", role: .cancel) {}
@@ -49,23 +41,17 @@ struct SandboxesSettingsView: View {
 
   private var profilesSection: some View {
     Section {
-      if model.profiles.isEmpty, model.hasLoaded {
-        Text("No Profiles")
-          .foregroundStyle(.secondary)
-      }
       ForEach(model.profiles) { profile in
-        SandboxProfileRow(
-          profile: profile,
-          onEdit: { router.navigate(.push(.editProfile(profileId: profile.id))) },
-          onDelete: { removingProfile = profile }
-        )
+        NavigationLink(value: SettingsPaneRoute.sandbox(.editProfile(profileId: profile.id))) {
+          SandboxProfileRow(profile: profile)
+        }
       }
     } header: {
       Text("Profiles")
     } footer: {
       SettingsListActions {
         Button {
-          router.navigate(.push(model.providers.isEmpty ? .vendors : .addProfile))
+          adding = true
         } label: {
           Label("Add Profile…", systemImage: "plus")
         }
@@ -87,12 +73,8 @@ struct SandboxesSettingsView: View {
 
   private var errorShown: Binding<Bool> {
     Binding(
-      get: { model.errorMessage != nil && router.panePath.isEmpty },
+      get: { model.errorMessage != nil && router.panePath.isEmpty && !adding },
       set: { if !$0 { model.errorMessage = nil } }
     )
-  }
-
-  private func presence<Value>(_ state: Binding<Value?>) -> Binding<Bool> {
-    Binding(get: { state.wrappedValue != nil }, set: { if !$0 { state.wrappedValue = nil } })
   }
 }

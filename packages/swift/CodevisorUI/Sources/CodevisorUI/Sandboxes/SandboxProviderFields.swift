@@ -1,10 +1,28 @@
 import CodevisorCore
 import SwiftUI
 
-struct SandboxProviderFields: View {
+struct SandboxProviderFields<Footer: View>: View {
   @Binding var draft: SandboxProviderDraft
   let vendor: ServerSandboxVendor
   let model: SandboxSettingsModel
+  @ViewBuilder let footer: () -> Footer
+
+  init(
+    draft: Binding<SandboxProviderDraft>,
+    vendor: ServerSandboxVendor,
+    model: SandboxSettingsModel,
+    @ViewBuilder footer: @escaping () -> Footer
+  ) {
+    _draft = draft
+    self.vendor = vendor
+    self.model = model
+    self.footer = footer
+  }
+
+  init(draft: Binding<SandboxProviderDraft>, vendor: ServerSandboxVendor, model: SandboxSettingsModel)
+  where Footer == EmptyView {
+    self.init(draft: draft, vendor: vendor, model: model) { EmptyView() }
+  }
 
   var body: some View {
     Section {
@@ -13,6 +31,8 @@ struct SandboxProviderFields: View {
           field: field, draft: $draft.fields, secretSaved: draft.secretsSet.contains(field.key),
           hosts: model.hosts(for: field.capability))
       }
+    } footer: {
+      footer()
     }
     .onAppear(perform: chooseOnlyMac)
     .onChange(of: vendor.id) { _, _ in chooseOnlyMac() }

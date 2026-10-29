@@ -7,29 +7,39 @@ struct SandboxFieldRow: View {
   var secretSaved = false
   var hosts: [SandboxHost] = []
   var steps: SandboxFieldSteps?
+  var onCommit: (() -> Void)?
 
   var body: some View {
     switch field.type {
     case .boolean:
       Toggle(field.label, isOn: flag)
+        .onChange(of: flag.wrappedValue) { onCommit?() }
     case .choice:
       Picker(field.label, selection: text) {
         ForEach(field.choices ?? [], id: \.value) { Text($0.label).tag($0.value) }
       }
+      .onChange(of: text.wrappedValue) { onCommit?() }
     case .machine:
       machinePicker
+        .onChange(of: text.wrappedValue) { onCommit?() }
     case .secret:
-      SandboxTextInput(label: field.label, prompt: secretPrompt, text: text, isSecret: true)
+      SandboxTextInput(label: field.label, prompt: secretPrompt, text: text, isSecret: true, onCommit: onCommit)
     case .number:
-      if let steps {
-        SandboxStepPicker(field: field, steps: steps, text: text)
-      } else {
-        SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .number)
-      }
+      numberInput
     case .url:
-      SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .url)
+      SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .url, onCommit: onCommit)
     case .string:
-      SandboxTextInput(label: field.label, prompt: prompt, text: text)
+      SandboxTextInput(label: field.label, prompt: prompt, text: text, onCommit: onCommit)
+    }
+  }
+
+  @ViewBuilder
+  private var numberInput: some View {
+    if let steps {
+      SandboxStepPicker(field: field, steps: steps, text: text)
+        .onChange(of: text.wrappedValue) { onCommit?() }
+    } else {
+      SandboxTextInput(label: field.label, prompt: prompt, text: text, keyboard: .number, onCommit: onCommit)
     }
   }
 

@@ -65,6 +65,7 @@ const catalogWith = async (
     connections: makeSandboxConnections(registry, settings),
     serverId: "server-a",
     sandboxesUsing: () => Promise.resolve(sandboxesUsing),
+    retireSandboxes: () => Promise.resolve(),
     newId: () => `id-${(ids += 1)}`,
     now: () => 10
   }

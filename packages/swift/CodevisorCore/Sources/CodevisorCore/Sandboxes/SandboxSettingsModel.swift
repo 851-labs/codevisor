@@ -58,6 +58,17 @@ public final class SandboxSettingsModel {
   }
 
   public func title(of provider: ServerSandboxProvider) -> String {
+    let title = plainTitle(of: provider)
+    guard let label = provider.label, sharesTitle(title, with: provider), !title.hasSuffix(label) else { return title }
+
+    return "\(title) (\(label))"
+  }
+
+  private func sharesTitle(_ title: String, with provider: ServerSandboxProvider) -> Bool {
+    providers.contains { $0.id != provider.id && plainTitle(of: $0) == title }
+  }
+
+  private func plainTitle(of provider: ServerSandboxProvider) -> String {
     let vendor = vendor(provider.vendor)
     let vendorName = vendor?.displayName ?? provider.vendor
     guard let machineId = provider.machineId(for: vendor) else { return provider.title(vendorName: vendorName) }
@@ -111,6 +122,50 @@ public final class SandboxSettingsModel {
     else { return }
     guard (try? await client.deleteSandboxProvider(id: provider.id)) != nil else { return }
     providers.removeAll { $0.id == provider.id }
+  }
+
+  public func removal(
+    of provider: ServerSandboxProvider, on machines: [SandboxMachine], offline: [String]
+  ) async -> SandboxProviderRemoval {
+    let sandboxes = await Self.sandboxes(on: machines)
+    return SandboxProviderRemoval(
+      providerTitle: title(of: provider),
+      profileCount: profiles.filter { $0.providerId == provider.id }.count,
+      workspaceCount: sandboxes.filter { Self.holdsWorkspace($0, on: provider) }.count,
+      offlineMachineNames: offline)
+  }
+
+  public func delete(_ provider: ServerSandboxProvider, on machines: [SandboxMachine]) async -> Bool {
+    await attempt {
+      for machine in machines {
+        try await Self.deleteWithProfiles(provider, on: machine)
+      }
+      profiles.removeAll { $0.providerId == provider.id }
+      providers.removeAll { $0.id == provider.id }
+    }
+  }
+
+  private static func deleteWithProfiles(_ provider: ServerSandboxProvider, on machine: SandboxMachine) async throws {
+    do {
+      try await machine.client.deleteSandboxProviderAndProfiles(id: provider.id)
+    } catch CodevisorServerClientError.httpStatus(501, _) {
+      return
+    }
+  }
+
+  private static func sandboxes(on machines: [SandboxMachine]) async -> [ServerSandbox] {
+    await withTaskGroup(of: [ServerSandbox].self) { group in
+      for machine in machines {
+        group.addTask { (try? await machine.client.sandboxes()) ?? [] }
+      }
+      var all: [ServerSandbox] = []
+      for await listed in group { all += listed }
+      return all
+    }
+  }
+
+  private static func holdsWorkspace(_ sandbox: ServerSandbox, on provider: ServerSandboxProvider) -> Bool {
+    sandbox.accountId == provider.id && sandbox.workspaceId != nil && !["archived", "failed"].contains(sandbox.state)
   }
 
   private func hostName(_ serverId: String) -> String {

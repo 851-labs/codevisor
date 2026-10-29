@@ -9,4 +9,18 @@ public struct SandboxMachine: Sendable {
     self.name = name
     self.client = client
   }
+
+  @MainActor
+  public static func reachable(in machines: MachineController) -> [SandboxMachine] {
+    machines.chatMachines
+      .filter { machines.availability(for: $0.id) == .ready }
+      .map { SandboxMachine(name: $0.name, client: machines.client(for: $0.id)) }
+  }
+
+  @MainActor
+  public static func offlineNames(in machines: MachineController) -> [String] {
+    machines.chatMachines
+      .filter { machines.availability(for: $0.id) != .ready }
+      .map(\.name)
+  }
 }

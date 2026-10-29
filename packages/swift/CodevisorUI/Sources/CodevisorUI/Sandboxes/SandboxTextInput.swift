@@ -10,19 +10,30 @@ struct SandboxTextInput: View {
   @Binding var text: String
   var isSecret = false
   var keyboard = Keyboard.text
+  var onCommit: (() -> Void)?
+  @FocusState private var isFocused: Bool
 
   var body: some View {
     #if os(macOS)
-      field(label)
+      committing(field(label))
     #else
       LabeledContent(label) {
-        field("")
+        committing(field(""))
           .multilineTextAlignment(.trailing)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
           .keyboardType(keyboardType)
       }
     #endif
+  }
+
+  private func committing(_ input: some View) -> some View {
+    input
+      .focused($isFocused)
+      .onSubmit { onCommit?() }
+      .onChange(of: isFocused) { wasFocused, focused in
+        if wasFocused && !focused { onCommit?() }
+      }
   }
 
   @ViewBuilder

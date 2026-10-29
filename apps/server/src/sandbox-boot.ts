@@ -41,6 +41,7 @@ import {
   type TartImageSettings
 } from "./infra/sandbox-image.js"
 import { makeSandboxLocalWorkspaces, type SandboxEvents } from "./infra/sandbox-local-workspaces.js"
+import { makeRetainedAccounts } from "./infra/sandbox-retained-accounts.js"
 import { makeSandboxSettings } from "./infra/sandbox-settings.js"
 import { makeSandboxRecordStore } from "./infra/sandbox-store.js"
 import { pushOneWaySync } from "./infra/sandbox-sync.js"
@@ -75,7 +76,11 @@ export const startSandboxes = (
     }),
     (id) => id !== "tart" || isAppleSilicon()
   )
-  const connections = makeSandboxConnections(adapters, settings)
+  const providerAccounts = makeRetainedAccounts(options.db, settings)
+  const connections = makeSandboxConnections(adapters, {
+    accounts: settings.accounts,
+    account: providerAccounts.account
+  })
   const events: SandboxEvents = { publish: () => Promise.resolve() }
   const projects = {
     get: async (projectId: string) =>
@@ -86,6 +91,7 @@ export const startSandboxes = (
   const machines = makeSandboxes({
     records,
     connections,
+    providerAccounts,
     profiles: { get: settings.profile },
     serverId: options.serverId,
     account: {
@@ -131,6 +137,7 @@ export const startSandboxes = (
     serverId: options.serverId,
     sandboxesUsing: async (accountId) =>
       (await records.list()).filter((record) => record.accountId === accountId).length,
+    retireSandboxes: machines.retireProvider,
     newId: randomUUID,
     now: Date.now
   }

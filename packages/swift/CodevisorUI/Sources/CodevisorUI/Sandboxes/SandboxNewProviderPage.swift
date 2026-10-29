@@ -5,7 +5,7 @@ struct SandboxNewProviderPage: View {
   let vendor: ServerSandboxVendor
   let model: SandboxSettingsModel
   let client: any CodevisorServerClienting
-  let navigate: (SandboxSettingsNavigation) -> Void
+  let onAdded: (ServerSandboxProvider) -> Void
   @State private var draft: SandboxProviderDraft
   @State private var status: String?
 
@@ -13,12 +13,12 @@ struct SandboxNewProviderPage: View {
     vendor: ServerSandboxVendor,
     model: SandboxSettingsModel,
     client: any CodevisorServerClienting,
-    navigate: @escaping (SandboxSettingsNavigation) -> Void
+    onAdded: @escaping (ServerSandboxProvider) -> Void
   ) {
     self.vendor = vendor
     self.model = model
     self.client = client
-    self.navigate = navigate
+    self.onAdded = onAdded
     _draft = State(initialValue: SandboxProviderDraft(vendor: vendor))
   }
 
@@ -38,7 +38,7 @@ struct SandboxNewProviderPage: View {
       let outcome = await model.save(draft, using: client)
       status = nil
       switch outcome {
-      case let .saved(provider): navigate(.reset(to: .newProfile(providerId: provider.id)))
+      case let .saved(provider): onAdded(provider)
       case let .choose(field): draft.offer(field)
       case .failed: break
       }
