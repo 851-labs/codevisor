@@ -18,6 +18,7 @@ extension MachineController {
       )
       connection.reportedIcon = info.icon
       connection.dataUpgradeProgress = nil
+      connection.preparation.resetStatusRechecks()
       if id == CodevisorMachine.local.id, info.cloudDeviceId == nil {
         cloudProvider?.registerLocalMachineIfNeeded()
       }
@@ -49,6 +50,23 @@ extension MachineController {
         Log.machines.debug(
           "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
       }
+      scheduleStatusRecheck(for: id)
+    }
+  }
+
+  func scheduleStatusRecheck(for machineId: String) {
+    let connection = connection(for: machineId)
+    guard connection.availability == .ready, connection.preparation.statusRecheckTask == nil else { return }
+    let delay = connection.preparation.nextStatusRecheckDelay(base: preparationRetryBaseDelay)
+    let sleep = preparationSleep
+    connection.preparation.statusRecheckTask = Task { [weak self] in
+      try? await sleep(delay)
+      guard let self, !Task.isCancelled else { return }
+      connection.preparation.statusRecheckTask = nil
+      guard self.connectionsById[machineId] === connection, self.machine(for: machineId) != nil,
+        connection.availability == .ready
+      else { return }
+      await self.refreshStatus(for: machineId)
     }
   }
 

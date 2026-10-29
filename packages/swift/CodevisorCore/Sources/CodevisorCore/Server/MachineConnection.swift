@@ -99,5 +99,6 @@ public final class MachineConnection {
     navigationSync.pendingRefreshTask?.cancel()
     navigationSync.retryTask?.cancel()
     preparation.retryTask?.cancel()
+    preparation.statusRecheckTask?.cancel()
   }
 }

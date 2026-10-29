@@ -139,6 +139,30 @@ struct MachinePreparationRetryTests {
     try await waitUntil { controller.availabilityByMachineId["local"] == .ready }
   }
 
+  @Test("A failed status check on a connected machine checks again until the machine answers")
+  func failedStatusCheckRechecks() async throws {
+    let fake = PreparationFakeServerClient()
+    let clock = TestClock()
+    let controller = makeController(fake: fake, clock: clock)
+    defer { controller.stopEventSync() }
+    let local = CodevisorMachine.local.id
+
+    fake.setInfoFails(true)
+    await controller.refreshStatus(for: local)
+    #expect(controller.statusByMachineId[local]?.isReachable == false)
+    #expect(controller.availabilityByMachineId[local] == .ready)
+
+    await clock.waitForSleep(.seconds(2))
+    clock.advance(by: .seconds(2))
+    await clock.waitForSleep(.seconds(4))
+    #expect(controller.statusByMachineId[local]?.isReachable == false)
+
+    fake.setInfoFails(false)
+    clock.advance(by: .seconds(4))
+    try await waitUntil { controller.statusByMachineId[local]?.isReachable == true }
+    #expect(clock.pendingCount == 0)
+  }
+
   private func makeController(fake: PreparationFakeServerClient, clock: TestClock) -> MachineController {
     let projectList = ProjectListModel.fixture()
     return MachineController(
