@@ -230,15 +230,16 @@ struct WorkspaceInspectorView: View {
         }
 
         WorkspaceInspectorCard(title: "Details", isExpanded: expansion("Details")) {
-          detail("Project", systemImage: "folder", value: project.name)
+          detail("Project", icon: Image(systemName: "folder"), value: project.name)
           if let branch {
-            detail("Branch", systemImage: "arrow.triangle.branch", value: branch)
+            detail("Branch", icon: CodevisorSymbol.gitBranch.image, value: branch)
           }
           if let worktree = workspace.worktreeName {
-            detail("Worktree", systemImage: "tree", value: worktree)
+            detail("Worktree", icon: Image(systemName: "tree"), value: worktree)
           }
           if let machineName {
-            detail("Machine", systemImage: machineSymbol ?? MachineIcon.fallback.systemImage, value: machineName)
+            detail(
+              "Machine", icon: Image(systemName: machineSymbol ?? MachineIcon.fallback.systemImage), value: machineName)
           }
         }
 
@@ -278,12 +279,12 @@ struct WorkspaceInspectorView: View {
     }
   }
 
-  private func detail(_ title: String, systemImage: String, value: String) -> some View {
+  private func detail(_ title: String, icon: Image, value: String) -> some View {
     Label {
       Text(value)
         .textSelection(.enabled)
     } icon: {
-      Image(systemName: systemImage)
+      icon
         .foregroundStyle(.secondary)
         .frame(width: 20)
     }

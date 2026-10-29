@@ -36,7 +36,11 @@ struct HomeSidebarOptionsMenu: View {
 
   private func toggle(_ detail: SidebarRowDetail) -> some View {
     Toggle(isOn: binding(detail)) {
-      Label(detail.title, systemImage: detail.systemImage)
+      Label {
+        Text(detail.title)
+      } icon: {
+        detail.icon
+      }
     }
   }
 

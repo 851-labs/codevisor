@@ -119,7 +119,11 @@ struct SidebarView: View {
 
   private func rowDetailToggle(_ detail: SidebarRowDetail) -> some View {
     Toggle(isOn: rowDetailBinding(detail)) {
-      Label(detail.title, systemImage: detail.systemImage)
+      Label {
+        Text(detail.title)
+      } icon: {
+        detail.icon
+      }
     }
   }
 

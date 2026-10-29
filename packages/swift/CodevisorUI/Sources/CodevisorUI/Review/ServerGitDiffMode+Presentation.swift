@@ -1,4 +1,5 @@
 import CodevisorCore
+import SwiftUI
 
 extension ServerGitDiffMode {
   public static let reviewOrder: [ServerGitDiffMode] = [.branch, .uncommitted, .staged, .unstaged, .lastTurn]
@@ -13,13 +14,13 @@ extension ServerGitDiffMode {
     }
   }
 
-  public var systemImage: String {
+  public var icon: Image {
     switch self {
-    case .branch: "arrow.triangle.branch"
-    case .uncommitted: "pencil.line"
-    case .staged: "tray.and.arrow.down"
-    case .unstaged: "circle.dashed"
-    case .lastTurn: "clock.arrow.circlepath"
+    case .branch: CodevisorSymbol.gitBranch.image
+    case .uncommitted: Image(systemName: "pencil.line")
+    case .staged: Image(systemName: "tray.and.arrow.down")
+    case .unstaged: Image(systemName: "circle.dashed")
+    case .lastTurn: Image(systemName: "clock.arrow.circlepath")
     }
   }
 

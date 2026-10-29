@@ -97,7 +97,11 @@ public struct ReviewPaneView: View {
         description: Text("Review shows changes in Git repositories, and this workspace's folder isn't one."))
     case .noTurnYet:
       ContentUnavailableView {
-        Label("No Agent Turns Yet", systemImage: ServerGitDiffMode.lastTurn.systemImage)
+        Label {
+          Text("No Agent Turns Yet")
+        } icon: {
+          ServerGitDiffMode.lastTurn.icon
+        }
       } description: {
         Text("Codevisor records the folder each time a chat turn starts. Send a prompt, then check back.")
       } actions: {
@@ -105,7 +109,11 @@ public struct ReviewPaneView: View {
       }
     case .unknownBase:
       ContentUnavailableView {
-        Label("Branch Not Found", systemImage: ServerGitDiffMode.branch.systemImage)
+        Label {
+          Text("Branch Not Found")
+        } icon: {
+          ServerGitDiffMode.branch.icon
+        }
       } description: {
         Text(failure.message)
       } actions: {
