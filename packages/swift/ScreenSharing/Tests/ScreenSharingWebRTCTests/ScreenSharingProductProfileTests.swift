@@ -38,11 +38,11 @@ struct ScreenSharingProductProfileTests {
     let answer = try await sender.makeDescription(offer: false)
     #expect(ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) == .hevc444)
     try await receiver.accept(answer)
-    await connected.wait()
+    await connected.cancellableWait()
     sender.frameSender.push(
       ScreenSharingVideoFrame(
         pixelBuffer: try Self.picture(width: 320, height: 192), timestampNs: ScreenSharingHDRLoopbackTests.now()))
-    await arrived.wait()
+    await arrived.cancellableWait()
 
     let labels = hostMetrics.snapshot().labels
     #expect(labels["videoCodec"] == "hevc444")

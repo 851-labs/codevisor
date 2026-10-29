@@ -98,7 +98,7 @@ extension ProjectListModelTests {
     }
 
     let refresh = Task { _ = await fixture.refresh(from: remoteServer, machineId: "remote-mac-mini") }
-    await listStarted.wait()
+    await listStarted.cancellableWait()
     await fixture.refresh(from: FakeServerClient(), machineId: "local")
     await latch.open()
     await refresh.value

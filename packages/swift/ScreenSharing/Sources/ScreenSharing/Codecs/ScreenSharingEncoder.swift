@@ -33,6 +33,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private var keyframeRequest = ScreenSharingKeyframeRequest()
   private var session: VTCompressionSession?
   private var output: (@Sendable (ScreenSharingEncodedFrame) -> Void)?
+  private var sessionFailed: (@Sendable (OSStatus) -> Void)?
   private let configuration: ScreenSharingVideoConfiguration
   private let codec: ScreenSharingVideoCodec
   public let dynamicRange: ScreenSharingDynamicRange
@@ -112,7 +113,12 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   func sessionReported(_ status: OSStatus) {
     guard Self.sessionFailures.contains(status) else { return }
 
-    lock.withLock { if !stopped { sessionFailure = status } }
+    let callback: (@Sendable (OSStatus) -> Void)? = lock.withLock {
+      guard !stopped else { return nil }
+      sessionFailure = status
+      return sessionFailed
+    }
+    callback?(status)
   }
 
   private static let sessionFailures: Set<OSStatus> = [
@@ -128,6 +134,10 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
 
   public func onFrame(_ callback: @escaping @Sendable (ScreenSharingEncodedFrame) -> Void) {
     lock.withLock { output = callback }
+  }
+
+  func onSessionFailure(_ callback: @escaping @Sendable (OSStatus) -> Void) {
+    lock.withLock { sessionFailed = callback }
   }
 
   @discardableResult
@@ -213,7 +223,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     closeSession()
     lock.withLock {
       metrics.label("encoderPendingAtStop", String(pending.count))
-      pending.removeAll(); output = nil
+      pending.removeAll(); output = nil; sessionFailed = nil
       keyframeRequest = ScreenSharingKeyframeRequest()
       sessionFailure = nil
       stopped = true

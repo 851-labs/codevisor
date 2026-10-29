@@ -55,11 +55,7 @@ actor FakeServerClient: CodevisorServerClienting {
   private let changed = TestSignal()
 
   func waitForSnapshot(_ predicate: @Sendable (FakeServerSnapshot) -> Bool) async {
-    while true {
-      let revision = changed.value
-      if predicate(snapshot()) { return }
-      await changed.wait(for: revision + 1)
-    }
+    await changed.cancellableWait { predicate(snapshot()) }
   }
 
   private var projects: [ServerProject]

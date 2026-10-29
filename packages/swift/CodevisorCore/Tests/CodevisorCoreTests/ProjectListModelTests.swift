@@ -4,7 +4,7 @@ import ACPKit
 @testable import CodevisorCore
 
 @MainActor
-@Suite("ProjectListModel")
+@Suite("ProjectListModel", .timeLimit(.minutes(1)))
 struct ProjectListModelTests {
   @Test("Server project locations adopt the client's machine id, not the server's")
   func projectMappingStampsClientMachineId() throws {

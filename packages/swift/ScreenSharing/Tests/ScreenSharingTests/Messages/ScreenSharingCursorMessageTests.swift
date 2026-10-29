@@ -5,6 +5,7 @@ import Testing
 @testable import ScreenSharing
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingCursorMessageTests {
   static func redImage() throws -> ScreenSharingCursorImage {
     let png = try #require(
@@ -215,11 +216,7 @@ struct ScreenSharingCursorMessageTests {
     #expect(host.positions.last == ScreenSharingPointer(x: 0.5, y: 0.5))
 
     host.publisher.stop()
-    while true {
-      let revision = host.clock.changed.value
-      if host.clock.pendingCount == 0 { break }
-      await host.clock.changed.wait(for: revision + 1)
-    }
+    await host.clock.changed.cancellableWait { host.clock.pendingCount == 0 }
     host.location = CGPoint(x: 1100, y: 600)
     host.clock.advance(by: interval)
     #expect(host.clock.requestCount(interval) == 2)

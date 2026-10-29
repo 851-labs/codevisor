@@ -46,13 +46,13 @@ struct ScreenSharingHDRLoopbackTests {
     let answer = try await sender.makeDescription(offer: false)
     #expect(ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) == .hevc444)
     try await receiver.accept(answer)
-    await connected.wait()
-    await heard.wait()
+    await connected.cancellableWait()
+    await heard.cancellableWait()
     #expect(viewerSaid == [.viewer(highDynamicRange: true)])
 
     sender.frameSender.push(
       ScreenSharingVideoFrame(pixelBuffer: try Self.hdrPicture(width: 320, height: 192), timestampNs: Self.now()))
-    await arrived.wait()
+    await arrived.cancellableWait()
     let frame = try #require(receiver.mailbox.take())
     #expect(CVPixelBufferGetPixelFormatType(frame.pixelBuffer) == kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange)
     let labels = hostMetrics.snapshot().labels

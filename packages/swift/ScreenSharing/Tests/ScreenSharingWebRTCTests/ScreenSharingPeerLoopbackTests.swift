@@ -6,6 +6,7 @@ import Testing
 @preconcurrency import WebRTC
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingPeerLoopbackTests {
   @MainActor
   final class Harness {
@@ -79,8 +80,8 @@ struct ScreenSharingPeerLoopbackTests {
     let tracks = await harness.receiver.transport.inspect { $0?.receivers.compactMap { $0.track?.kind } ?? [] }
     #expect(tracks == ["video"])
     #expect(await harness.sender.transport.inspect { $0?.transceivers.contains { $0.direction == .sendOnly } == true })
-    await harness.hostConnected.wait()
-    await harness.viewerConnected.wait()
+    await harness.hostConnected.cancellableWait()
+    await harness.viewerConnected.cancellableWait()
     #expect(harness.hostMetrics.snapshot().labels["connection"] == "connected")
     #expect(harness.viewerMetrics.snapshot().labels["connection"] == "connected")
     #expect(harness.hostConnectionStates.first == "connecting")
@@ -98,16 +99,16 @@ struct ScreenSharingPeerLoopbackTests {
     let harness = try await Harness()
     defer { harness.close() }
     try await harness.negotiate()
-    await harness.hostControlOpened.wait()
-    await harness.viewerControlOpened.wait()
+    await harness.hostControlOpened.cancellableWait()
+    await harness.viewerControlOpened.cancellableWait()
     #expect(harness.sender.controlChannel.isAvailable && harness.receiver.controlChannel.isAvailable)
     let leases = (0..<4).map { _ in UUID() }
     for lease in leases { #expect(harness.sender.controlChannel.send(.release(lease: lease))) }
-    await harness.viewerControlDelivered.wait(for: leases.count)
+    await harness.viewerControlDelivered.cancellableWait(for: leases.count)
     #expect(harness.viewerReceived == leases.map { .release(lease: $0) })
     let request = UUID()
     #expect(harness.receiver.controlChannel.send(.request(id: request)))
-    await harness.hostControlDelivered.wait()
+    await harness.hostControlDelivered.cancellableWait()
     #expect(harness.hostReceived == [.request(id: request)])
     #expect(harness.sender.clipboardChannel.isAvailable)
     #expect(harness.sender.clipboardChannel.send(.read(id: UUID())))
@@ -133,7 +134,7 @@ struct ScreenSharingPeerLoopbackTests {
       updated.signal()
     }
     try await harness.negotiate()
-    await subscribed.wait()
+    await subscribed.cancellableWait()
     #expect(harness.receiver.videoShowsPointer, "the video keeps the pointer until the host sends one")
     let png = try #require(
       ScreenSharingCursorImage.png(pixelWidth: 2, pixelHeight: 2) { context in
@@ -143,7 +144,7 @@ struct ScreenSharingPeerLoopbackTests {
     let image = ScreenSharingCursorImage(png: png, hotspotX: 1, hotspotY: 1, width: 0.01, height: 0.02)
     #expect(harness.sender.cursorChannel.send(.shape(image)))
     #expect(harness.sender.cursorChannel.send(.position(ScreenSharingPointer(x: 0.5, y: 0.25))))
-    await updated.wait(for: 2)
+    await updated.cancellableWait(for: 2)
     let shape = try #require(image.shape())
     #expect(
       updates == [
@@ -166,12 +167,12 @@ struct ScreenSharingPeerLoopbackTests {
     }
     harness.receiver.setAudioEnabled(true)
     try await harness.negotiate()
-    await hostHeard.wait()
+    await hostHeard.cancellableWait()
     #expect(hostReceived == [.subscribe])
     let packet = ScreenSharingAudioPacket(sequence: 0, timestampNs: 1, frames: 960, payload: Data([1, 2, 3]))
     #expect(harness.sender.audioChannel.send(.packet(packet)))
     harness.receiver.setAudioEnabled(false)
-    await hostHeard.wait(for: 2)
+    await hostHeard.cancellableWait(for: 2)
     #expect(hostReceived == [.subscribe, .unsubscribe])
   }
 
@@ -191,14 +192,14 @@ struct ScreenSharingPeerLoopbackTests {
     harness.receiver.requestDesktopSize(width: 1000, height: 700)
     harness.receiver.requestDesktopSize(width: 1280, height: 800)
     try await harness.negotiate()
-    await opened.wait()
+    await opened.cancellableWait()
     #expect(harness.sender.displayChannel.send(.ready))
-    await hostHeard.wait()
+    await hostHeard.cancellableWait()
     #expect(hostReceived == [.resize(width: 1280, height: 800)])
     #expect(support == [true])
     harness.receiver.requestDesktopSize(width: 1280, height: 800)
     harness.receiver.resetDesktopSize()
-    await hostHeard.wait(for: 2)
+    await hostHeard.cancellableWait(for: 2)
     #expect(hostReceived == [.resize(width: 1280, height: 800), .restore], "the same size isn't sent twice")
   }
 
@@ -301,7 +302,7 @@ struct ScreenSharingPeerLoopbackTests {
       held.signal()
       hold.wait()
     }
-    await held.wait()
+    await held.cancellableWait()
     peer.close()
     #expect(peer.closed && !peer.controlChannel.isAvailable)
     #expect(await peer.statistics().isEmpty, "a closed peer asks WebRTC for nothing")
