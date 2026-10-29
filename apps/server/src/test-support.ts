@@ -154,7 +154,12 @@ export const makeServices = async (
   mcpConfig: Partial<
     Pick<
       McpManagerConfig,
-      "executionTimers" | "oauthClock" | "oauthVault" | "packagedSkills" | "skillSource"
+      | "executionTimers"
+      | "oauthClock"
+      | "oauthRedirect"
+      | "oauthVault"
+      | "packagedSkills"
+      | "skillSource"
     >
   > = {}
 ) => {

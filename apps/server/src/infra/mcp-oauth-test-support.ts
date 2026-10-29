@@ -126,7 +126,8 @@ const registration = (body: string): Record<string, unknown> & { redirect_uris: 
 
 export const fakeOAuthMcpServer = async (
   clock: McpOAuthClock,
-  accessTokenLifetimeSeconds = 3600
+  accessTokenLifetimeSeconds = 3600,
+  allowsRedirect: (redirectUri: string) => boolean = () => true
 ) => {
   let sequence = 0
   const next = (prefix: string): string => `${prefix}-${++sequence}`
@@ -298,6 +299,13 @@ export const fakeOAuthMcpServer = async (
         })
       } else if (path === "/register") {
         const registered = registration(await readBody(request))
+        if (!registered.redirect_uris.every(allowsRedirect)) {
+          json(response, 400, {
+            error: "invalid_client_metadata",
+            error_description: "redirect_uri is not allowed by the account configuration"
+          })
+          return
+        }
         const clientId = next("client")
         clients.set(clientId, registered.redirect_uris)
         json(response, 201, { ...registered, client_id: clientId })
