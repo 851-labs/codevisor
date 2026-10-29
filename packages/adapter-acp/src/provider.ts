@@ -11,6 +11,7 @@ import {
   type CreateSessionOptions,
   type HarnessDefinition,
   type HarnessAccountContext,
+  trustArgs,
   withoutEnv,
   type LoadedAgentSession,
   type ProviderEnvironment,
@@ -261,19 +262,20 @@ export const makeAcpProvider = (
       const fileArgs = yield* adapterPromise("writeLaunchFiles", () =>
         writeLaunchFiles(launchFilesDirectory, definition)
       )
+      const executable = definition.launch?.kind === "executable" ? definition.launch : undefined
+      const launchedEnv = launchEnv(
+        { ...withoutEnv(env, account?.unsetEnv), ...executable?.env, ...account?.env },
+        toolGateway === undefined ? {} : { toolGateway }
+      )
+      const trusted = yield* adapterPromise("probeTrustFlag", () =>
+        trustArgs(environment, launch.command, executable?.trustFlag, launchedEnv)
+      )
       return yield* connector.connect(
         {
-          args: [...launch.args, ...fileArgs],
+          args: [...trusted, ...launch.args, ...fileArgs],
           command: launch.command,
           cwd,
-          env: launchEnv(
-            {
-              ...withoutEnv(env, account?.unsetEnv),
-              ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
-              ...account?.env
-            },
-            toolGateway === undefined ? {} : { toolGateway }
-          ),
+          env: launchedEnv,
           harnessId: definition.id,
           ...(sessionOptions?.bot === true ? { bot: true } : {})
         },

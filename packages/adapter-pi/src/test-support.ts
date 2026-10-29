@@ -19,7 +19,8 @@ export const environment: ProviderEnvironment = {
   env: { PATH: "/bin" },
   envFor: () => Promise.resolve(environment.env),
   executableExists: (name) => name === "pi",
-  locateExecutable: (name) => (name === "pi" ? "/bin/pi" : undefined)
+  locateExecutable: (name) => (name === "pi" ? "/bin/pi" : undefined),
+  supportsFlag: async () => true
 }
 
 export const codex = {

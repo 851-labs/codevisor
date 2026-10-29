@@ -15,6 +15,12 @@ export interface HarnessLaunchFile {
   readonly contents: string
 }
 
+export interface TrustFlag {
+  readonly args: ReadonlyArray<string>
+  readonly probe: ReadonlyArray<string>
+  readonly probeMentions?: string
+}
+
 export type HarnessLaunch =
   | {
       readonly kind: "npx"
@@ -27,6 +33,7 @@ export type HarnessLaunch =
       readonly args: ReadonlyArray<string>
       readonly env?: Readonly<Record<string, string>>
       readonly files?: ReadonlyArray<HarnessLaunchFile>
+      readonly trustFlag?: TrustFlag
     }
 
 export type InstallOrigin = "npm" | "brew" | "curl" | "uv" | "appBundle" | "standalone" | "unknown"

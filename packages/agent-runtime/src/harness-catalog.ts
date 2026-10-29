@@ -169,9 +169,10 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     installHint: "curl https://cursor.com/install -fsS | bash",
     installMethods: [{ command: "curl https://cursor.com/install -fsS | bash", kind: "curl" }],
     launch: {
-      args: [...TRUSTED_LAUNCH.cursorArgs, "--force", "--sandbox", "disabled", "acp"],
+      args: ["--force", "--sandbox", "disabled", "acp"],
       command: "cursor-agent",
-      kind: "executable"
+      kind: "executable",
+      trustFlag: TRUSTED_LAUNCH.cursor
     },
     name: "Cursor",
     provider: "cursor",
@@ -345,8 +346,9 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "x.square",
     ["grok"],
     "grok",
-    [...TRUSTED_LAUNCH.grokArgs, "agent", "--always-approve", "--no-leader", "stdio"],
+    ["agent", "--always-approve", "--no-leader", "stdio"],
     {
+      trustFlag: TRUSTED_LAUNCH.grok,
       installMethods: [
         { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" },
         { kind: "npm", packageName: "@xai-official/grok" }

@@ -86,6 +86,7 @@ export type {
   ProviderId,
   HarnessLaunch,
   HarnessLaunchFile,
+  TrustFlag,
   InstallOrigin,
   HarnessInstallMethodSpec,
   UpdateCheckSpec,
@@ -96,11 +97,18 @@ export type {
   HarnessDefinition
 } from "./harness-definition-types.js"
 
+export type FlagSupport = (
+  command: string,
+  flag: import("./harness-definition-types.js").TrustFlag,
+  env: NodeJS.ProcessEnv
+) => Promise<boolean>
+
 export interface ProviderEnvironment {
   readonly env: NodeJS.ProcessEnv
   readonly envFor: (cwd: string) => Promise<NodeJS.ProcessEnv>
   readonly executableExists: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable: (name: string, env: NodeJS.ProcessEnv) => string | undefined
+  readonly supportsFlag?: FlagSupport
 }
 
 export const withoutEnv = (

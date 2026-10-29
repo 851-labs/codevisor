@@ -15,7 +15,7 @@ type HarnessExtras = Partial<
     | "requiredBinaries"
   >
 > &
-  Pick<ExecutableLaunch, "env" | "files">
+  Pick<ExecutableLaunch, "env" | "files" | "trustFlag">
 
 export function executableHarness(
   id: string,
@@ -26,7 +26,7 @@ export function executableHarness(
   args: ReadonlyArray<string> = [],
   extra: HarnessExtras = {}
 ): HarnessDefinition {
-  const { env, files, ...definition } = extra
+  const { env, files, trustFlag, ...definition } = extra
   return {
     detectBinaries,
     id,
@@ -35,7 +35,8 @@ export function executableHarness(
       command,
       kind: "executable",
       ...(env === undefined ? {} : { env }),
-      ...(files === undefined ? {} : { files })
+      ...(files === undefined ? {} : { files }),
+      ...(trustFlag === undefined ? {} : { trustFlag })
     },
     name,
     provider: "acp",

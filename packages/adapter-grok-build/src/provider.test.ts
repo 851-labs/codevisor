@@ -50,9 +50,23 @@ describe("Grok Build provider", () => {
     expect(request.args).toContain("--no-leader")
   })
 
-  it("launches Grok trusting the workspace so the project's hooks and config load", async () => {
-    const request = await launched(grokEnvironment({}))
-    expect(request.args.slice(0, 2)).toEqual(["--trust", "agent"])
+  it("launches Grok trusting the workspace when its CLI supports --trust, and without it otherwise", async () => {
+    const probed: Array<string> = []
+    const withTrust = await launched({
+      ...grokEnvironment({}),
+      supportsFlag: async (command, flag) => {
+        probed.push(`${command} ${flag.probe.join(" ")}`)
+        return true
+      }
+    })
+    expect(withTrust.args.slice(0, 2)).toEqual(["--trust", "agent"])
+    expect(probed).toEqual(["/bin/grok --trust --version"])
+
+    const withoutTrust = await launched({
+      ...grokEnvironment({}),
+      supportsFlag: async () => false
+    })
+    expect(withoutTrust.args[0]).toBe("agent")
   })
 
   it("launches Grok with its browser and desktop skills off when Codevisor's tools are attached", async () => {

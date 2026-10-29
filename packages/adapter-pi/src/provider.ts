@@ -4,6 +4,7 @@ import {
   locateHarnessBinary,
   listPiAgentSessions,
   TRUSTED_LAUNCH,
+  trustArgs,
   withoutEnv,
   type AgentProvider,
   type AgentSessionHandle,
@@ -95,19 +96,20 @@ export const makePiProvider = (
         }
       }
     }
+    const env = {
+      ...withoutEnv(await environment.envFor(cwd), account?.unsetEnv),
+      ...account?.env,
+      ...gateway?.env
+    }
     const client = await connector({
       command,
       args: [
-        ...TRUSTED_LAUNCH.piArgs,
+        ...(await trustArgs(environment, command, TRUSTED_LAUNCH.pi, env)),
         ...(gateway === undefined ? [] : ["-e", gateway.path]),
         ...sessionArgs
       ],
       cwd,
-      env: {
-        ...withoutEnv(await environment.envFor(cwd), account?.unsetEnv),
-        ...account?.env,
-        ...gateway?.env
-      }
+      env
     })
     return startPiSession(client, emit)
   }
