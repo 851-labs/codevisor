@@ -216,9 +216,6 @@ export interface McpManagerConfig {
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   readonly catalog?: McpCatalogResolver
   readonly managedOAuth?: ManagedOAuthClients
-  readonly oauthRedirect?: (
-    serverId: string
-  ) => Promise<{ readonly redirectUrl: string; readonly state: string } | undefined>
   readonly accounts?: PluginAccountSource
   readonly executionTimers?: ExecutionTimers
   readonly oauthClock?: McpOAuthClock

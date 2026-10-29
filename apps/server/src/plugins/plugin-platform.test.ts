@@ -23,14 +23,6 @@ const relayedPlatform = async (reply?: CloudReply) => {
     catalogId: "dev.codevisor/gmail",
     enabled: false
   })
-  const finishedMcp: Array<ReadonlyArray<string>> = []
-  started.platform.attachMcp({
-    ...started.mcp,
-    finishOAuth: async (state, code) => {
-      finishedMcp.push([state, code])
-      return gmail
-    }
-  })
   const startGmail = () =>
     started.platform.accounts.startOAuth(gmail.id, {
       values: { clientId: "client-1", clientSecret: "client-secret" }
@@ -40,7 +32,7 @@ const relayedPlatform = async (reply?: CloudReply) => {
       inboxDevice.secretKey,
       sealedInboxItem(itemId, "oauth", { flowId: "flow", ...callback })
     )
-  return { ...started, gmail, requests, finishedMcp, startGmail, relay }
+  return { ...started, gmail, requests, startGmail, relay }
 }
 
 describe("plugin platform", () => {
@@ -61,20 +53,18 @@ describe("plugin platform", () => {
     expect(await platform.platform.accounts.list(platform.gmail.id)).toEqual([
       expect.objectContaining({ identity: "dana@example.com", method: "oauth2" })
     ])
-    expect(platform.finishedMcp).toEqual([])
   })
 
-  it("hands relayed callbacks it didn't start to MCP sign-in", async () => {
+  it("ignores relayed callbacks it didn't start", async () => {
     const platform = await relayedPlatform()
     const started = await platform.startGmail()
     const state = new URL(started.authorizationUrl).searchParams.get("state")!
 
     await platform.relay("cancelled", { state, error: "access_denied" })
-    await platform.relay("mcp-denied", { state: "mcp-flow.device-1.nonce", error: "access_denied" })
-    await platform.relay("mcp", { state: "mcp-flow.device-1.nonce", code: "mcp-code" })
+    await platform.relay("stray", { state: "other-flow.device-1.nonce", code: "stray-code" })
 
     expect(platform.platform.accounts.ownsOAuthState(state)).toBe(false)
-    expect(platform.finishedMcp).toEqual([["mcp-flow.device-1.nonce", "mcp-code"]])
+    expect(await platform.platform.accounts.list(platform.gmail.id)).toEqual([])
   })
 
   it("refuses to sign in when the cloud returns no redirect", async () => {
@@ -83,23 +73,6 @@ describe("plugin platform", () => {
     const platform = await relayedPlatform(() => replies[asked++])
 
     await expect(platform.startGmail()).rejects.toThrow("The cloud didn't return an OAuth redirect")
-    await expect(platform.platform.mcpOAuthRedirect("server-1")).rejects.toThrow(
-      "The cloud didn't return an OAuth redirect"
-    )
-  })
-
-  it("registers MCP sign-in redirects with the cloud only while linked", async () => {
-    const linked = await relayedPlatform()
-    const local = await pluginServices()
-
-    const relayed = await linked.platform.mcpOAuthRedirect("server-1")
-    const unlinked = await local.platform.mcpOAuthRedirect("server-1")
-
-    expect(relayed).toEqual({
-      redirectUrl: cloudRedirect,
-      state: expect.stringMatching(/^[\w-]+\.device-1\.[\w-]+$/)
-    })
-    expect(unlinked).toBeUndefined()
   })
 
   it("asks the cloud for a managed OAuth client and its token exchanges", async () => {

@@ -3,12 +3,11 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { ManagedOAuthClients, McpManager } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
-import type { CloudInbox, InboxOAuthCallback } from "../infra/cloud-inbox.js"
+import type { CloudInbox } from "../infra/cloud-inbox.js"
 import type { CloudServerControl } from "../server-context-types.js"
 import { HttpFailure } from "../server-context.js"
 import { field } from "../unknown-values.js"
 import type { OAuthRedirects } from "./accounts/plugin-account-flows.js"
-import { flowState, newFlowId, newNonce } from "./accounts/plugin-account-oauth.js"
 import { makePluginAccountStore } from "./accounts/plugin-account-store.js"
 import {
   makePluginAccounts,
@@ -26,9 +25,6 @@ export interface PluginPlatform {
   readonly onAccountsChanged: (
     listener: (entries: ReadonlyArray<SyncEntryRecord>) => void
   ) => () => void
-  readonly mcpOAuthRedirect: (
-    serverId: string
-  ) => Promise<{ readonly redirectUrl: string; readonly state: string } | undefined>
   readonly managedOAuth: ManagedOAuthClients
   readonly accountSource: {
     readonly list: (serverId: string) => Promise<ReadonlyArray<{ id: string; label: string }>>
@@ -72,7 +68,10 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
   })
 
   deps.inbox?.onOAuth(async (callback) => {
-    await completeRelayedOAuth(accounts, mcp, callback).catch(() => undefined)
+    if (!accounts.ownsOAuthState(callback.state)) return
+    await accounts
+      .completeOAuth(callback.state, callback.code, callback.error)
+      .catch(() => undefined)
   })
 
   return {
@@ -83,7 +82,6 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
     attachMcp: (manager) => {
       mcp = manager
     },
-    mcpOAuthRedirect: () => relayedMcpRedirect(deps),
     managedOAuth: managedOAuthClients(deps),
     onAccountsChanged: (listener) => {
       listeners.add(listener)
@@ -99,28 +97,6 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
       }
     }
   }
-}
-
-const completeRelayedOAuth = async (
-  accounts: PluginAccounts,
-  mcp: McpManager | undefined,
-  callback: InboxOAuthCallback
-): Promise<void> => {
-  if (accounts.ownsOAuthState(callback.state)) {
-    await accounts.completeOAuth(callback.state, callback.code, callback.error)
-    return
-  }
-  if (callback.code === undefined) return
-  await mcp?.finishOAuth(callback.state, callback.code)
-}
-
-const relayedMcpRedirect = async (deps: PluginPlatformDeps) => {
-  const deviceId = deps.cloud?.deviceId()
-  const request = deps.cloud?.machineRequest
-  if (deviceId === undefined || request === undefined) return undefined
-  const flowId = newFlowId()
-  const registered = await request("POST", "/api/machine/oauth-flows", { flowId })
-  return { redirectUrl: redirectUriOf(registered), state: flowState(flowId, deviceId, newNonce()) }
 }
 
 const managedOAuthClients = (deps: PluginPlatformDeps): ManagedOAuthClients => ({

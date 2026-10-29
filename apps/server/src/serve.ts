@@ -348,7 +348,6 @@ export const runServe = (
         serverKind: resolvedKind,
         oauthVault: credentialVault,
         accounts: pluginPlatform.accountSource,
-        oauthRedirect: pluginPlatform.mcpOAuthRedirect,
         managedOAuth: pluginPlatform.managedOAuth,
         packagedSkills,
         catalog: pluginCatalog.resolver,

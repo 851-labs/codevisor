@@ -2,13 +2,12 @@ import { randomUUID } from "node:crypto"
 
 import type { McpServerRecord } from "@codevisor/db"
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
-import { InvalidClientMetadataError } from "@modelcontextprotocol/sdk/server/auth/errors.js"
 
 import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-managed-oauth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import type { makeMcpOAuthRuntime } from "./mcp-oauth.js"
-import { reportBackgroundFailure, requireHttpUrl, run } from "./mcp-support.js"
+import { reportBackgroundFailure, requireHttpUrl } from "./mcp-support.js"
 
 type OAuthRuntime = ReturnType<typeof makeMcpOAuthRuntime>
 
@@ -70,32 +69,13 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     }
     const managed = managedOAuth(server)
     if (managed !== undefined) await adoptManagedClient(id, managed)
-    const relayed = await core.config.oauthRedirect?.(id)
-    const authorizationUrl = await authorizationUrlFor(
-      server,
-      relayed?.redirectUrl ?? callbackUrl(),
-      relayed?.state ?? `${id}.${randomUUID()}`
-    ).catch((cause: unknown) => {
-      if (relayed === undefined || !(cause instanceof InvalidClientMetadataError)) throw cause
-      return authorizationUrlFor(server, callbackUrl(), `${id}.${randomUUID()}`)
-    })
-    await saveRecord(await record(id), {
-      connectionState: "needsAuthorization",
-      detail: undefined
-    })
-    return authorizationUrl
-  }
-
-  const authorizationUrlFor = async (
-    server: McpServerRecord,
-    redirectUrl: string,
-    oauthState: string
-  ): Promise<string> => {
-    await replaceSecrets(server.id, (value) => ({
+    const redirectUrl = callbackUrl()
+    const oauthState = `${id}.${randomUUID()}`
+    await replaceSecrets(id, (value) => ({
       ...value,
       oauth: { ...value.oauth, redirectUrl, state: oauthState }
     }))
-    const provider = oauthProvider(server.id, redirectUrl)
+    const provider = oauthProvider(id, redirectUrl)
     const result = await auth(provider, {
       serverUrl: requireHttpUrl(server.url),
       ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
@@ -103,19 +83,19 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     if (result !== "REDIRECT" || provider.authorizationUrl === undefined) {
       throw new Error("OAuth did not return a URL")
     }
+    await saveRecord(await record(id), {
+      connectionState: "needsAuthorization",
+      detail: undefined
+    })
     return provider.authorizationUrl.toString()
   }
 
-  const serverForState = async (oauthState: string) => {
-    const servers = await run(core.config.db.listMcpServers)
-    const server = servers.find((candidate) => secrets(candidate).oauth?.state === oauthState)
-    if (server === undefined) throw new Error("Invalid OAuth state")
-    return server
-  }
-
   const finishOAuth: McpManager["finishOAuth"] = async (oauthState, code) => {
-    const server = await serverForState(oauthState)
-    const id = server.id
+    const id = oauthState.split(".", 1)[0]
+    if (id === undefined || id.length === 0) throw new Error("Invalid OAuth state")
+    const server = await record(id)
+    const expected = secrets(server).oauth?.state
+    if (expected === undefined || expected !== oauthState) throw new Error("Invalid OAuth state")
     const managed = managedOAuth(server)
     const result = await auth(oauthProvider(id, secrets(server).oauth?.redirectUrl), {
       serverUrl: requireHttpUrl(server.url),
