@@ -100,6 +100,45 @@ struct SettledMarkdownViewTests {
     #expect(await preparedHeight(paragraph, width: 220) > preparedHeight(paragraph, width: 860))
   }
 
+  @Test("Prose detached mid-preparation reports its prepared height when it returns")
+  func detachedPreparationReportsPreparedHeight() async {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+      styleMask: [.borderless], backing: .buffered, defer: false
+    )
+    window.appearance = NSAppearance(named: .aqua)
+    let blocks: [MarkdownBlock] = [
+      .paragraph(
+        MarkdownParser().parseInline(
+          String(repeating: "Tophat: the agent recorded typing `/` before and after the change. ", count: 6)
+        )
+      )
+    ]
+    func mountedView(_ streamID: String) -> SettledMarkdownView {
+      let view = SettledMarkdownView()
+      view.setContent(blocks: blocks, theme: .default, streamID: streamID, linkAction: nil)
+      window.contentView?.addSubview(view)
+      return view
+    }
+    let streamID = "detached-preparation-\(UUID().uuidString)"
+    let view = mountedView(streamID)
+    var heightChanges = 0
+    view.onContentHeightChange = { heightChanges += 1 }
+
+    let estimate = view.contentHeight(forWidth: 420)
+    view.removeFromSuperview()
+    await StaticTextCache.shared.waitUntilIdle()
+    let prepared = mountedView(streamID).contentHeight(forWidth: 420)
+    #expect(prepared != estimate)
+
+    window.contentView?.addSubview(view)
+    view.frame = NSRect(x: 0, y: 0, width: 420, height: estimate)
+    view.layoutSubtreeIfNeeded()
+
+    #expect(heightChanges == 1)
+    #expect(view.contentHeight(forWidth: 420) == prepared)
+  }
+
   @Test("Settled selection clears when focus leaves the surface")
   func selectionClearsOnResign() {
     let view = MarkdownTextKit2View()

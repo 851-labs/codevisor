@@ -10,6 +10,7 @@
     private var requestedKey: StaticTextKey?
     private var preparation: Task<Void, Never>?
     private var lastHeight: CGFloat?
+    private var reportedHeight: CGFloat?
     private var preparedKey: StaticTextKey?
 
     override var isContentReady: Bool { preparedKey != nil && preparedKey == requestedKey }
@@ -45,10 +46,13 @@
         requestedKey = request.key
         preparedKey = request.key
         lastHeight = prepared.size.height
+        reportedHeight = prepared.size.height
         return prepared.size.height
       }
       beginPreparing(request)
-      return lastHeight ?? StaticTextEstimate.height(of: blocks, theme: theme, width: width)
+      let height = lastHeight ?? StaticTextEstimate.height(of: blocks, theme: theme, width: width)
+      reportedHeight = height
+      return height
     }
 
     override func layout() {
@@ -103,6 +107,10 @@
       requestedKey = request.key
       preparedKey = request.key
       surface.show(prepared)
+      if let reportedHeight, reportedHeight != prepared.size.height {
+        lastHeight = prepared.size.height
+        onContentChange?()
+      }
     }
 
     private func beginPreparing(_ request: StaticTextRequest) {
