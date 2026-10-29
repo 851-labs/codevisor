@@ -20,7 +20,7 @@ import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { fileURLToPath } from "node:url"
 
-import { delay, waitForExit } from "./dev-shared.mjs"
+import { delay, waitForClose, waitForExit } from "./dev-shared.mjs"
 
 const defaultOrigin = "https://updates.codevisor.dev/dev-artifacts/ghostty"
 const frameworkRelativePath = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")
@@ -260,7 +260,7 @@ function capture(command, arguments_, options = {}) {
   child.stdout.on("data", (chunk) => {
     output += chunk
   })
-  return waitForExit(child).then(({ code, signal }) => {
+  return waitForClose(child).then(({ code, signal }) => {
     if (code === 0) return output
     throw new Error(
       `${basename(command)} failed (${signal === null ? `code ${code ?? 1}` : `signal ${signal}`})`

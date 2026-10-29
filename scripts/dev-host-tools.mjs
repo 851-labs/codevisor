@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import process from "node:process"
 
-import { describeExit, waitForExit } from "./dev-shared.mjs"
+import { describeExit, waitForClose, waitForExit } from "./dev-shared.mjs"
 
 export function makeCommandRunner(repoRoot) {
   function run(command, arguments_, cwd = repoRoot) {
@@ -27,7 +27,7 @@ export function makeCommandRunner(repoRoot) {
     child.stdout.on("data", (chunk) => {
       output += chunk
     })
-    return waitForExit(child).then((result) => {
+    return waitForClose(child).then((result) => {
       if (result.code === 0) return output
       throw new Error(`${command} failed (${describeExit(result)})`)
     })

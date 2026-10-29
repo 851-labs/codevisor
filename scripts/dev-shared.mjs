@@ -106,6 +106,12 @@ export function waitForExit(child) {
   })
 }
 
+export function waitForClose(child) {
+  return new Promise((resolve) => {
+    child.once("close", (code, signal) => resolve({ code, signal }))
+  })
+}
+
 export function describeExit({ code, signal }) {
   return signal === null ? `code ${code ?? 1}` : `signal ${signal}`
 }

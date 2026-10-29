@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os"
 import path from "node:path"
 
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin"
@@ -30,6 +31,7 @@ export default defineConfig(async () => {
     },
     test: {
       include: ["test/**/*.test.ts"],
+      maxWorkers: Math.max(2, Math.floor(availableParallelism() / 4)),
       setupFiles: ["./test/apply-migrations.ts"]
     }
   }

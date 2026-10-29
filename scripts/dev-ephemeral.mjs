@@ -7,7 +7,7 @@ import { homedir, networkInterfaces } from "node:os"
 import { join, relative } from "node:path"
 
 import { withArtifactLock } from "./artifact-lock.mjs"
-import { describeExit, pathExists, waitForExit } from "./dev-shared.mjs"
+import { describeExit, pathExists, waitForClose, waitForExit } from "./dev-shared.mjs"
 
 const archivePattern = /^codevisor-server-[a-z0-9-]+\.tar\.gz(\.sha256)?$/
 const inputsKeyFile = "inputs.sha256"
@@ -213,7 +213,7 @@ const capture = async (command, arguments_) => {
   child.stdout.on("data", (chunk) => {
     output += chunk
   })
-  const result = await waitForExit(child)
+  const result = await waitForClose(child)
   if (result.code !== 0) throw new Error(`${command} failed (${describeExit(result)})`)
   return output
 }

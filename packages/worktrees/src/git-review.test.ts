@@ -130,10 +130,11 @@ describe("git review", () => {
         )
       }
     ]
+    const repositoryRoot = git(repo, "rev-parse", "--show-toplevel")
     for (const { mode, base, files } of cases) {
       expect(await gitDiff(repo, mode), mode).toEqual({
         mode,
-        repositoryRoot: git(repo, "rev-parse", "--show-toplevel"),
+        repositoryRoot,
         ...(base === undefined ? {} : { base }),
         files,
         truncated: false,

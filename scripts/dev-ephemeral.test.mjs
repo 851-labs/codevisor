@@ -32,7 +32,10 @@ const fakeRepo = async (t) => {
   await writeFile(join(root, "packages/api/dist/index.js"), "export {}\n")
   await writeFile(join(root, "apps/www/public/install.sh"), "#!/bin/sh\necho install\n")
   await writeFile(join(root, "bun.lock"), "{}\n")
-  await writeFile(join(root, "scripts/release/detect-target.sh"), "#!/bin/sh\necho darwin-arm64\n")
+  await writeFile(
+    join(root, "scripts/release/detect-target.sh"),
+    '#!/bin/sh\nshell=$$\n(while kill -0 "$shell" 2>/dev/null; do :; done; echo darwin-arm64) &\n'
+  )
   await chmod(join(root, "scripts/release/detect-target.sh"), 0o755)
   return root
 }
