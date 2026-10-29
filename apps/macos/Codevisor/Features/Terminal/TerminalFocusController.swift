@@ -31,7 +31,10 @@ final class TerminalFocusController {
 
   weak var composerTextView: SubmittingTextView?
   weak var hostWindow: NSWindow? {
-    didSet { observeFirstResponder() }
+    didSet {
+      observeFirstResponder()
+      if typeToFocusMonitor != nil { composerPaste.attach(to: hostWindow) }
+    }
   }
 
   var onChatComposerFocused: ((UUID) -> Void)?
@@ -85,6 +88,7 @@ final class TerminalFocusController {
   weak var transcriptView: NSView?
   weak var centerGroup: PaneGroupModel?
   private var typeToFocusMonitor: Any?
+  private let composerPaste = ComposerPasteResponder()
 
   private final class WeakTextView {
     weak var view: SubmittingTextView?
@@ -260,6 +264,8 @@ final class TerminalFocusController {
       default: return event
       }
     }
+    composerPaste.composer = { [weak self] in self?.composerPasteTarget() }
+    composerPaste.attach(to: hostWindow)
   }
 
   private func handleTabCommand(_ event: NSEvent) -> Bool {
@@ -293,6 +299,7 @@ final class TerminalFocusController {
     deferredComposerFocus.cancel()
     pendingComposerFocus = nil
     workspaceCommandHandler = nil
+    composerPaste.detach()
     guard let typeToFocusMonitor else { return }
     NSEvent.removeMonitor(typeToFocusMonitor)
     self.typeToFocusMonitor = nil
@@ -355,6 +362,17 @@ final class TerminalFocusController {
       return textView
     }
     return fallbackQuestionPicker
+  }
+
+  private func composerPasteTarget() -> SubmittingTextView? {
+    guard let composer = typeToFocusTarget() as? SubmittingTextView,
+      let window = composer.window,
+      window === hostWindow,
+      window.isKeyWindow,
+      window.attachedSheet == nil,
+      NSApp.modalWindow == nil
+    else { return nil }
+    return composer
   }
 
   private func handleTranscriptClick(_ event: NSEvent) -> NSEvent? {
