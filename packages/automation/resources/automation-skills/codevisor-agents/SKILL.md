@@ -1,6 +1,6 @@
 ---
 name: codevisor-agents
-description: Start and coordinate other Codevisor coding agents as visible chats — beside you in your workspace, or in workspaces of their own. Use them instead of your harness's built-in subagents. Covers starting an agent in one call, following up, getting its final reply, answering its questions, finding your agents again, and closing or archiving them, plus debug tools for reading a transcript. Use whenever you want help with your task (research, reading code, a review, a small piece of the same change), another harness or model alongside you, separate pieces of work each with their own branch or PR, an agent per issue/PR/task, to orchestrate or supervise agents, review another agent's work, or clean up agent workspaces.
+description: Use when you want help with your task (research, reading code, a review, a small piece of the same change), another harness or model alongside you, separate pieces of work that each need their own branch or PR, an agent per issue, PR, or task, or when orchestrating, supervising, reviewing, answering, or cleaning up other agents. Also use it whenever you're tempted by a harness's built-in subagent (a Task or Agent tool, spawn_agent).
 ---
 
 # Codevisor agents
@@ -10,6 +10,19 @@ Every Codevisor chat is an **agent**: a coding agent (Claude Code, Codex, …) r
 Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. The user can't see or steer them, they edit your checkout unnoticed, and they die on updates. Start a Codevisor agent instead, even for a quick question.
 
 Everything goes through a machine handle. `machine.agents.<tool>(args)` is the same as `machine.tools.codevisor.agents.<tool>(args)`. Ids are passed and returned under the same name: `agentId`, `projectId`, `workspaceId`. Every list is `{ items, next? }`. Check exact inputs with `machine.tools.describe.tool({ path: "codevisor.agents.start" })`.
+
+## Quick reference
+
+| To                                           | Call                                                                                               |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Start an agent                               | `agents.start({ title, prompt, isolation, harness?, model?, project?, labels?, sandboxProfile? })` |
+| Get its final reply                          | End your turn; `session.turn_ended` brings it. Later: `agents.status({ agentId })`                 |
+| Follow up                                    | `agents.message({ agentId, text, delivery? })`                                                     |
+| Answer its question                          | `agents.answer({ agentId, questionId, outcome, answers })`                                         |
+| Stop its turn                                | `agents.cancel({ agentId })`                                                                       |
+| Find your agents                             | `agents.list({ state?, project?, label?, parentAgentId?, next? })`                                 |
+| Finish with a `"shared"` helper              | `agents.close({ agentId })`                                                                        |
+| Finish with a `"worktree"`/`"project"` agent | `machine.tools.codevisor.workspaces.archive({ workspaceId })`                                      |
 
 ## Start an agent
 
@@ -125,9 +138,7 @@ To give guidance instead of picking an answer, send it with `agents.message`.
 
 - `agents.subscribe({ agentId, events?, once? })` subscribes you to an agent you didn't start. `events` picks from `turn_ended`, `waiting_for_user`, `errored`, and `job_finished`.
 - `agents.subscriptions()` and `agents.unsubscribe({ subscriptionId })` manage what you hold.
-- `agents.wait({ agentIds, until?, timeoutMs? })` waits inside one execute call. It returns as soon as one of them reaches an `until` state (default `idle`, `waitingForUser`, `errored`).
-  - `timeoutMs` shrinks to fit the execute call's budget, and `timedOut: true` is normal.
-  - For anything longer than a minute or two, end your turn and let the event arrive.
+- `agents.wait({ agentIds, until?, timeoutMs? })` waits inside one execute call. It returns as soon as one of them reaches an `until` state (default `idle`, `waitingForUser`, `errored`). `timeoutMs` shrinks to fit the execute call's budget, and `timedOut: true` is normal. Use it only for waits of a minute or two; for anything longer, end your turn and let the event arrive.
 
 ## Review and clean up
 
@@ -135,7 +146,7 @@ To give guidance instead of picking an answer, send it with `agents.message`.
 - `agents.debug.branch_diff({ agentId })` gives a quick size of an agent's changes.
 - When you're done with a shared helper (`"shared"`, in your own workspace), call `agents.close({ agentId })`. It stops if still running and you stop getting its events. Its tab leaves your workspace, its chat stays in history and `agents.list`, and your checkout is untouched.
 - When you're done with a separate workspace (`"worktree"` or `"project"`), call `machine.tools.codevisor.workspaces.archive({ workspaceId })` with the `workspaceId` from `agents.start` or `agents.list`, once its work is merged or no longer needed.
-  - It waits until the archive is done. It keeps a restorable snapshot of tracked and untracked files and deletes everything else in the checkout folder, ignored files included. Files already sent in a chat stay with that chat.
+  - It waits until the archive is done, and its chats stop. It keeps a restorable snapshot of tracked and untracked files and deletes everything else in the checkout folder, ignored files included. Files already sent in a chat stay with that chat.
   - It releases the branch name, so push or open the PR first if the branch should stay.
 - You can't close yourself or archive your own workspace.
 
@@ -161,13 +172,8 @@ Talk to the agent first: ask it what happened, and read its reply. Only when tha
 - `search` filters by `query`, `kinds` (comma-separated `user`, `assistant`, `tool`, `event`), `tool` (part of a tool's title), and `last` (the number of hits). It returns the newest hits first.
 - `agents.debug.transcript({ agentId, next? })` pages through the raw transcript.
 - `agents.debug.queue({ agentId })` lists its queued messages. `queue_update`, `queue_reorder`, `queue_delete`, and `queue_send_now` manage them.
-- `agents.debug.state({ agentId })` returns its full state.
-- `agents.debug.update({ agentId, title?, labels? })` renames or relabels it.
+- `agents.debug.state({ agentId })` returns its full state, and `agents.debug.update({ agentId, title?, labels? })` renames or relabels it.
 - `config_set`, `mode_set`, `goal_set`, `goal_clear`, and `usage_limits` cover the rest.
-
-## If an execute call returns a job handle
-
-An execute call that outlives its `timeout_ms` returns `{ status: "running", jobId, … }` and keeps going. End your turn and wait for its `execution.job_finished` event, or check it with `machines.current.tools.codevisor.jobs.wait({ jobId })`.
 
 ## If you are the child
 
@@ -187,3 +193,9 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 ## Agents on other machines
 
 `(await machines.get("macbook")).agents.start({ …, project: "codevisor" })` starts an agent on that machine. Pass `project`, since that machine has its own projects; harness and model still default to yours. You aren't subscribed across machines, so check with that machine's `agents.status`. See `codevisor-machines`.
+
+## Common mistakes
+
+- Blocking on `agents.wait` or polling `agents.status` for a long task. End your turn; the event carries the final reply.
+- Leaving shared helpers open or worktree workspaces unarchived after their work is done.
+- Archiving before the branch is pushed. Archiving releases the branch name.

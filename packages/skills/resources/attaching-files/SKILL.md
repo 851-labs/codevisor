@@ -1,16 +1,27 @@
 ---
 name: attaching-files
-description: Send or show files to the user in Codevisor. Use when asked for a screenshot, screen recording, generated image, report, or other file, including requests such as "change this and send me a video" or "take a screenshot of my desktop".
+description: Use when the user should see or receive a file in Codevisor, such as a screenshot, screen recording, generated image, PDF, report, or export, including requests like "change this and send me a video" or "take a screenshot of my desktop".
 ---
 
 # Attach files
 
-Default to Markdown embeds when showing images, videos, or PDFs: `![Screenshot](./output/screenshot.png)` or `![View recording](./output/demo.mp4)`. Use embeds to show your work, demonstrate a result, or show how something looks so the user can see it directly in chat without opening a link. Place each embed on its own line.
+A file reaches the user only when your reply links to it. Creating, saving, or inspecting a file sends nothing.
 
-Use a plain Markdown link for an incidental reference within a sentence, such as `The [original screenshot](./output/before.png) shows the previous layout.`, or for files intended only to be opened or downloaded. Also use a plain link when the user explicitly asks for one.
+## Quick reference
 
-Codevisor previews embedded images, videos, and PDFs; other files appear as file attachments.
+| To                                     | Write                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| Show an image, video, or PDF           | `![Screenshot](./output/screenshot.png)` on its own line               |
+| Mention a file in passing              | `The [original screenshot](./output/before.png) shows the old layout.` |
+| Offer a file to open or download       | `[Download the report](./output/report.csv)`                           |
+| Link a path with spaces or parentheses | `![Screenshot](</tmp/screen shot (1).png>)`                            |
 
-Use an existing file on the machine running the session. Relative paths resolve from the session's working directory; absolute paths also work. Wrap paths containing spaces or parentheses in angle brackets: `![Screenshot](</tmp/screen shot.png>)`.
+- Embed by default when you show your work, a result, or how something looks, so the user sees it in the chat without opening a link. Codevisor previews embedded images, videos, and PDFs; other files appear as file attachments.
+- Use a plain link for an incidental mention, for a file meant only to be opened or downloaded, or when the user asks for a link.
+- Link a file that exists on the machine running the session. Relative paths resolve from the session's working directory; absolute paths also work.
 
-Place the actual link or embed in your response, outside code formatting. Creating or inspecting a file does not send it to the user. Codex's built-in image generation is displayed automatically by Codevisor; you do not need to repeat that image in Markdown.
+## Common mistakes
+
+- Putting the embed or link inside code formatting. Write it as plain Markdown in your reply.
+- Saying "I recorded a demo" with no embed. The user receives nothing until the reply links the file.
+- Repeating an image from Codex's built-in image generation. Codevisor already shows it.

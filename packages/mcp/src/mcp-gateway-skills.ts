@@ -98,13 +98,20 @@ const CAPABILITY_SKILLS: ReadonlyArray<{ readonly gate: string; readonly line: s
 
 export const executeSkill: BuiltinSkill = {
   name: "execute",
-  summary: "how to write code for `execute`: tool discovery, labels, other agents, sandbox globals",
+  summary:
+    "Use before your first `execute` call, or when unsure how to find tools, set timeouts, or read jobs",
   load: async ({ enabledIds }) => {
     const sections = [
       "# execute",
+      "Each call runs one async arrow function of sandboxed JavaScript or TypeScript. The isolate has no filesystem, network, process environment, or credentials: every capability is a tool on a machine.",
       [
-        "## How it works",
-        'Pass an async arrow function of sandboxed JavaScript or TypeScript. The isolate itself has no filesystem, network, process environment, or credentials; everything goes through a machine. `const machine = machines.current` is the machine this chat runs on, and `await machines.get("macbook")` is another of the user\'s machines. Find a tool with `await machine.tools.search({ query: "<intent>" })`, inspect a match with `await machine.tools.describe.tool({ path })`, then call the exact returned path with `await machine.tools[path](args)` or `machine.tools.<server>.<tool>(args)`. Other agents go through `machine.agents` (read `codevisor-agents`). Call `status("…")` before slow steps so the user sees progress.',
+        "## Calling a tool",
+        [
+          '1. Pick the machine: `machines.current` is the one this chat runs on, and `await machines.get("macbook")` is another of the user\'s machines.',
+          '2. Find the tool with `await machine.tools.search({ query: "<intent>" })`.',
+          "3. Check its inputs with `await machine.tools.describe.tool({ path })`.",
+          "4. Call the exact returned path: `await machine.tools[path](args)` or `machine.tools.<server>.<tool>(args)`."
+        ].join("\n"),
         [
           "```js",
           ";async () => {",
@@ -113,13 +120,20 @@ export const executeSkill: BuiltinSkill = {
           "  return hits.items",
           "}",
           "```"
-        ].join("\n")
+        ].join("\n"),
+        'Call `status("…")` before slow steps so the user sees progress. Other agents go through `machine.agents` (read `codevisor-agents`).'
       ].join("\n\n"),
       ["## The `description` argument", DESCRIPTION_GUIDANCE].join("\n\n"),
       [
         "## The `timeout_ms` argument and background jobs",
         '`timeout_ms` (default 120000, maximum 600000) is how long the call waits for your code. Nothing is cancelled when it passes: the code keeps running as a background job, and the call returns `{ status: "running", jobId, running, progress, logs, outputPath, next }` instead of a result. Waits such as `machine.agents.wait`, `machine.tools.codevisor.jobs.wait`, and Computer Use `waitFor` shorten themselves to fit the budget that is left and return `timedOut`, so your code can still return what it has.',
-        "When you get a job handle, prefer ending your turn: Codevisor sends you a hidden `<codevisor-event type=\"execution.job_finished\">` message with the job's result when it finishes, even if your harness would not otherwise wake up. To check sooner, call execute with `machines.current.tools.codevisor.jobs.wait({ jobId })` (waits within that call's budget) or `machines.current.tools.codevisor.jobs.get({ jobId })`; reading a finished result that way means no event is sent. `machines.current.tools.codevisor.jobs.cancel({ jobId })` stops a job, and `machines.current.tools.codevisor.jobs.list()` shows your jobs. `outputPath` is a log file with live `status()` text, console output, tool calls, and the final result. Jobs stop after 30 minutes and don't survive a server restart."
+        'When you get a job handle, prefer ending your turn: Codevisor sends you a hidden `<codevisor-event type="execution.job_finished">` message with the job\'s result when it finishes, even if your harness would not otherwise wake up.',
+        [
+          "- `machines.current.tools.codevisor.jobs.wait({ jobId })` waits within that call's budget, and `jobs.get({ jobId })` reads the job now. Reading a finished result either way means no event is sent.",
+          "- `jobs.cancel({ jobId })` stops a job, and `jobs.list()` shows your jobs.",
+          "- `outputPath` is a log file on this machine with live `status()` text, console output, tool calls, and the final result.",
+          "- Jobs stop after 30 minutes and don't survive a server restart."
+        ].join("\n")
       ].join("\n\n"),
       [
         "## Skills for each capability",
@@ -136,10 +150,15 @@ export const executeSkill: BuiltinSkill = {
       sections.push(
         [
           "## Other agents",
-          'Never use your harness\'s built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. A Codevisor agent in the current workspace (`isolation: "shared"`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `agents.close` once you have its reply. A new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR; archive it with `workspaces.archive` when its work is done. Read `codevisor-agents` before starting one.'
+          "Never use your harness's built-in subagents (a Task or Agent tool, spawn_agent, and the like), even if your harness still offers them. Read `codevisor-agents` before starting a Codevisor agent.",
+          [
+            '- A Codevisor agent in the current workspace (`isolation: "shared"`) fits quick, scoped help with your current task: research, reading code, a review, a small piece of the same change. Close it with `machine.agents.close` once you have its reply.',
+            "- A new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR. Archive it with `machine.tools.codevisor.workspaces.archive` when its work is done."
+          ].join("\n")
         ].join("\n\n"),
         [
           "## Plugins",
+          "Plugin and event tools are under `machine.tools.codevisor`.",
           [
             "- When the user asks for something a service or app could do, call `machine.tools.codevisor.plugins.search`, then `plugins.describe` to confirm its exact tools and events, then `plugins.request_setup` if it isn't ready.",
             "- Never claim a capability that `plugins.describe` doesn't list.",
@@ -148,7 +167,17 @@ export const executeSkill: BuiltinSkill = {
         ].join("\n\n")
       )
     }
-    sections.push(`## Sandbox globals\n\n\`\`\`ts\n${codevisorSandboxSignatures}\n\`\`\``)
+    sections.push(
+      [
+        "## Common mistakes",
+        [
+          "- Guessing a tool path or argument names. Search, then `describe.tool`, then call the returned path.",
+          "- Polling a job handle in a loop. End your turn and let `execution.job_finished` arrive.",
+          "- Reaching for `fetch`, `setTimeout`, or `crypto`. The isolate has none of them; use a machine's tools."
+        ].join("\n")
+      ].join("\n\n"),
+      `## Sandbox globals\n\n\`\`\`ts\n${codevisorSandboxSignatures}\n\`\`\``
+    )
     return sections.join("\n\n")
   }
 }

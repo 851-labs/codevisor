@@ -103,7 +103,7 @@ declare function status(text: string): void // live progress label shown to the 
 interface Client {
   clientId: string; name: string; platform: "macos" | "ios"; machine: { machineId: string; name: string }
   online?: boolean; isActive?: boolean; lastActiveAt?: string; isOrigin: boolean // isOrigin: the window that sent this prompt; false for every client when an automation or another agent sent it
-  viewing?: { workspaceId?: string; agentId?: string; page?: string }
+  viewing?: { workspaceId?: string; agentId?: string; page?: string; panes?: object[] } // panes: the selected tab's panes
   context(): Promise<object>; navigate(args: object): Promise<object>; openPage(args: object): Promise<object>; layout(args: object): Promise<object>; window(args: object): Promise<object>
 }
 declare class MachineUnavailableError extends Error { machineId: string; machineName?: string; lastSeen?: string; phase: "before-send" | "in-flight" } // in-flight: the call may or may not have completed; never retried automatically
@@ -139,7 +139,7 @@ export const SANDBOX_GLOBALS: ReadonlyArray<SandboxGlobal> = [
     name: "machine.agents",
     signature: "machine.agents.<tool>(args) and machine.agents.debug.<tool>(args)",
     description:
-      "Start and coordinate other agents on that machine: start, message, status, list, answer, cancel, archive, subscribe, wait; debug.search and debug.item read transcripts. Same as machine.tools.codevisor.agents.*.",
+      "Start and coordinate other agents on that machine: start, message, status, list, answer, cancel, close, subscribe, wait; debug.search and debug.item read transcripts. Same as machine.tools.codevisor.agents.*.",
     gate: "codevisor"
   },
   {

@@ -19,7 +19,8 @@ export interface PluginSkillOptions {
 export const pluginAuthoringSkill = (options: PluginSkillOptions = {}): PluginSkill => ({
   name: PLUGIN_AUTHORING_SKILL_DIRECTORY,
   path: join(skillSourcePath(options), "SKILL.md"),
-  summary: "build a Codevisor plugin: an MCP server with tools, events, skills, apps and panes",
+  summary:
+    "Use when the user wants a new Codevisor integration, tool, pane, or event trigger, or a plugin fixed",
   composer: "Build a Codevisor plugin: an MCP server with tools, events, skills or UI"
 })
 

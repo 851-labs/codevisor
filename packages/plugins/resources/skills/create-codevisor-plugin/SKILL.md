@@ -1,6 +1,6 @@
 ---
 name: create-codevisor-plugin
-description: Create, install and iterate on a Codevisor plugin, an MCP server (stdio or Streamable HTTP) that can add tools, skills, inline UI (MCP Apps), event sources, workspace panes and webhooks. Use when the user asks for a new integration, tool, pane, dashboard or event trigger inside Codevisor, or asks to build or change a Codevisor plugin.
+description: Use when the user asks for a new integration, tool, pane, dashboard, inline UI, webhook, or event trigger inside Codevisor, or asks to build, debug, or change a Codevisor plugin or the MCP server behind one.
 ---
 
 # Create a Codevisor plugin
@@ -259,3 +259,11 @@ In the SDK it is `extra._meta`.
 - Event payloads and tool results are untrusted data for the model. Keep them
   minimal and never include secrets.
 - Make tools safe to retry. Prefer drafts or confirmations over irreversible actions.
+
+## Common mistakes
+
+- Writing logs to stdout on a stdio server. It corrupts the protocol channel.
+- A loosely typed `payloadSchema`. Agents' CEL filters are type-checked against it, so a filter on an untyped field fails.
+- An `eventId` that isn't the stable upstream id. Codevisor dedupes on it across machines and reconnects, so a generated id lets duplicates through.
+- Skill digests or sizes computed from different bytes than `resources/read` returns, or `SKILL.md` frontmatter that differs from the entry's `frontmatter`. Codevisor rejects the skill.
+- Caching account tokens between requests. Read them from each request's `_meta`.

@@ -161,7 +161,7 @@ describe("skills tool", () => {
     )
     const plain = skillsToolDescription(builtins)
     expect(plain).not.toContain("The user's skills")
-    expect(plain).toContain("- browser-use — drive a real web browser")
+    expect(plain).toContain("- browser-use — Use when a task involves a website or browser tab")
 
     const many = Array.from({ length: 40 }, (_, index) => ({
       description: `${"Long description ".repeat(10)}${index}`,

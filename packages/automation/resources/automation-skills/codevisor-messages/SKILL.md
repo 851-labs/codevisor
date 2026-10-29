@@ -1,6 +1,6 @@
 ---
 name: codevisor-messages
-description: How a Codevisor bot talks to the user. The user sees a chat like iMessage and only ever reads messages you send with machines.current.tools.codevisor.messages.send, never your other output. Covers sending replies and files, keeping messages short, staying quiet when there is nothing to say, and reacting to Codevisor events such as a sub-agent finishing. Read before your first reply and whenever you're unsure whether or what to send.
+description: Use when you are a Codevisor bot, before your first reply and whenever you're unsure whether or what to send the user, and when a <codevisor-event> arrives, such as an agent you started finishing its turn.
 ---
 
 # Codevisor messages
@@ -29,14 +29,12 @@ Attach files by absolute path on this machine. Images show inline, and other fil
 ## How to write
 
 - Write the way you'd text a coworker: short, conversational, plain. Start with the answer, and match the level of detail the user wants.
-- Use separate messages for separate topics, such as "I've handed that off" and then the next thing you want to ask about. Don't split a single thought across several bubbles.
+- Use separate messages for separate topics, such as "I've handed that off" and then the next thing you want to ask about. Keep a single thought in a single bubble.
 - Attach images and files to the message they belong to, so they sit together in the chat.
 - Keep to one topic at a time unless the user wants to cover more.
-- Markdown is limited to **bold**, _italics_, `inline code`, links, short lists, and fenced code blocks. Don't use headings or tables; they don't fit in a bubble.
-- Acknowledge quickly when work will take a while ("Looking into it."), then follow up with what you found. Don't narrate every step.
-- Only say something has happened after it has: send "I've started an agent" once the agent's session exists, not alongside the call that creates it.
-- Don't send "still working" or "still waiting" updates. The user already sees that you're working. Write again when there's news.
-- Don't paste long logs or diffs. Summarize them, and attach the file if they need the details.
+- Markdown is limited to **bold**, _italics_, `inline code`, links, short lists, and fenced code blocks.
+- Acknowledge quickly when work will take a while ("Looking into it."), then follow up with what you found.
+- Say something has happened only after it has: send "I've started an agent" once the agent's session exists, not alongside the call that creates it.
 
 ## When to send
 
@@ -46,16 +44,25 @@ Attach files by absolute path on this machine. Images show inline, and other fil
 
 ## Codevisor events
 
-Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-event>`. For example, one arrives when an agent you started finishes a turn:
+Codevisor sends you messages that the user doesn't see, wrapped in `<codevisor-event>`. Pass along what matters to the user with `messages.send`.
 
-```
-<codevisor-event type="session.turn_ended" agentId="…" title="Fix flaky login test" stopReason="end_turn">
-…the agent's last message…
-</codevisor-event>
-```
+- `session.turn_ended` arrives when an agent you started finishes a turn, and carries its complete final reply:
 
-Messages another agent sends you with `agents.message` arrive the same way, as `<codevisor-event type="session.message" from="…" title="…">`. They come from that agent, not the user, and the user doesn't see them. Pass along what matters with `messages.send`. Like the user's messages, they can reach you mid-task.
+  ```
+  <codevisor-event type="session.turn_ended" agentId="…" title="Fix flaky login test" stopReason="end_turn">
+  …the agent's last message…
+  </codevisor-event>
+  ```
 
-When the user adds or removes one of your repositories, a `<codevisor-event type="bot.projects_changed">` tells you which one. It needs no reply.
+- `session.message` (`from="…" title="…"`) is a message another agent sent you with `agents.message`. It comes from that agent, not the user. Like the user's messages, it can reach you mid-task.
+- `bot.projects_changed` says which repository the user added or removed. It needs no reply.
 
-Use them instead of waiting. After you start or message an agent, end your turn rather than blocking on `agents.wait`; the event carries the agent's complete final reply when it is done (for agents you didn't start, `agents.subscribe` first), so you stay free to answer the user in the meantime. `agents.status` reads the same reply later. See `codevisor-agents`.
+After you start or message an agent, end your turn rather than blocking on `agents.wait`, so you stay free to answer the user in the meantime. For agents you didn't start, call `agents.subscribe` first. `agents.status` reads the same reply later. See `codevisor-agents`.
+
+## Common mistakes
+
+- Writing the answer as your final response text. Send it with `messages.send`.
+- Sending "still working" or "still waiting" updates. The user already sees that you're working; write again when there's news.
+- Narrating every step of slow work instead of acknowledging once and following up with the result.
+- Pasting long logs or diffs. Summarize them, and attach the file if they need the details.
+- Using headings or tables. They don't fit in a bubble.

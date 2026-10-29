@@ -23,40 +23,45 @@ const AUTOMATION_SKILLS = [
   {
     gate: "browser",
     name: "browser-use",
-    summary: "drive a real web browser: open sites, sign in, click, type, read live pages",
+    summary:
+      "Use when a task involves a website or browser tab: opening, reading, clicking, typing, or testing",
     composer: "Browse the web with Codevisor's browser"
   },
   {
     gate: "computer",
     name: "computer-use",
-    summary: "see and operate desktop apps, and record the screen",
+    summary:
+      "Use when a desktop app must be operated or the screen recorded, such as a video of a fix",
     composer: "Operate desktop apps and record the screen"
   },
   {
     gate: "codevisor",
     name: "codevisor",
-    summary: "map of Codevisor: other agents, workspaces, machines, and the app"
+    summary: "Use when work needs other agents, workspaces, another machine, or the Codevisor app"
   },
   {
     gate: "codevisor",
     name: "codevisor-agents",
-    summary: "start and coordinate other agents as visible Codevisor chats",
+    summary:
+      "Use when you want a helper agent, an agent per issue or PR, or to manage other agents",
     composer: "Start and coordinate other agents in Codevisor"
   },
   {
     gate: "codevisor",
     name: "codevisor-machines",
-    summary: "run tools or agents on the user's other machines"
+    summary: "Use when work involves another of the user's machines, a new server, or a sandbox"
   },
   {
     gate: "codevisor",
     name: "codevisor-clients",
-    summary: "see and drive the user's open Codevisor windows"
+    summary:
+      "Use when the user wants something shown, opened, or laid out in their Codevisor window"
   },
   {
     gate: "bot",
     name: "codevisor-messages",
-    summary: "how a bot talks to the user: messages.send is the only output they see"
+    summary:
+      "Use when you are a Codevisor bot, before replying to the user or when a codevisor-event arrives"
   }
 ] as const satisfies ReadonlyArray<{
   gate: BuiltinMcpId | "bot"

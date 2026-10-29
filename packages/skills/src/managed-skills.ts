@@ -23,6 +23,7 @@ export const attachingFilesSkill = (
     composer: "Send you screenshots, recordings, and files",
     name,
     path,
-    summary: "send screenshots, recordings, and files to the user"
+    summary:
+      "Use when the user should see or receive a file: a screenshot, recording, image, or report"
   }
 }
