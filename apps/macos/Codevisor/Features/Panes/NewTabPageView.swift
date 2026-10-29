@@ -13,11 +13,25 @@ private struct NewTabOption: Identifiable, Equatable {
     case screenSharing
     case simulator
     case plugin(pluginId: String, paneType: String)
+
+    var systemImage: String {
+      switch self {
+      case .chat: "text.bubble"
+      case .browser: "globe"
+      case .screenSharing: "display"
+      case .simulator: "iphone"
+      case .terminal: "terminal"
+      case .files: "doc.text.magnifyingglass"
+      case .review: "plusminus"
+      case .plugin: "puzzlepiece.extension"
+      }
+    }
   }
 
   let id: String
   let title: String
   let kind: Kind
+  var searchTerms: [String] = []
 }
 
 struct NewTabPageView: View {
@@ -47,17 +61,22 @@ struct NewTabPageView: View {
 
   private var options: [NewTabOption] {
     [
-      NewTabOption(id: "chat", title: "New Chat", kind: .chat),
-      NewTabOption(id: "browser", title: "New Browser", kind: .browser),
-      NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
-      NewTabOption(id: "files", title: "Open File", kind: .files),
-      NewTabOption(id: "review", title: "Review Changes", kind: .review),
+      NewTabOption(id: "chat", title: "Side Chat", kind: .chat, searchTerms: ["New Chat"]),
+      NewTabOption(id: "browser", title: "Browser", kind: .browser, searchTerms: ["New Browser"]),
+      NewTabOption(id: "terminal", title: "Terminal", kind: .terminal, searchTerms: ["New Terminal"]),
+      NewTabOption(id: "files", title: "File", kind: .files, searchTerms: ["Open File"]),
+      NewTabOption(id: "review", title: "Changes", kind: .review, searchTerms: ["Review Changes"]),
     ]
-      + (supportsScreenSharing
-        ? [NewTabOption(id: "screen-sharing", title: "Open Desktop", kind: .screenSharing)] : [])
-      + (supportsSimulator ? [NewTabOption(id: "simulator", title: "Open Simulator", kind: .simulator)] : [])
+      + (supportsScreenSharing ? [screenSharingOption] : [])
+      + (supportsSimulator ? [simulatorOption] : [])
       + pluginOptions
   }
+
+  private let screenSharingOption = NewTabOption(
+    id: "screen-sharing", title: "Desktop", kind: .screenSharing, searchTerms: ["Open Desktop"])
+
+  private let simulatorOption = NewTabOption(
+    id: "simulator", title: "Simulator", kind: .simulator, searchTerms: ["Open Simulator"])
 
   var body: some View {
     GeometryReader { geometry in
@@ -93,33 +112,7 @@ struct NewTabPageView: View {
   private var popup: some View {
     Autocomplete.Suggestions(query: $query, focus: inputFocus) {
       for option in options {
-        switch option.kind {
-        case .chat:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "text.bubble") { open(option) }
-        case .browser:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "globe") { open(option) }
-        case .screenSharing:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "display") { open(option) }
-        case .simulator:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "iphone") { open(option) }
-        case .terminal:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
-        case .files:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "doc.text.magnifyingglass") { open(option) }
-        case .review:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "plusminus") { open(option) }
-        case let .plugin(pluginId, _):
-          Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
-            if let client {
-              PluginIconView(
-                pluginId: pluginId, client: client, cacheNamespace: iconCacheNamespace, side: 16)
-            } else {
-              Image(systemName: "puzzlepiece.extension")
-            }
-          } label: {
-            Text(option.title)
-          }
-        }
+        action(for: option).searchTerms(option.searchTerms)
       }
     }
     .autocompleteSearchLabel("Search new tab options")
@@ -127,6 +120,17 @@ struct NewTabPageView: View {
     .composerGlassSurface(cornerRadius: Self.popupCornerRadius)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("New tab")
+  }
+
+  private func action(for option: NewTabOption) -> Autocomplete.Action {
+    guard case let .plugin(pluginId, _) = option.kind, let client else {
+      return Autocomplete.Action(option.title, id: option.id, systemImage: option.kind.systemImage) { open(option) }
+    }
+    return Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
+      PluginIconView(pluginId: pluginId, client: client, cacheNamespace: iconCacheNamespace, side: 16)
+    } label: {
+      Text(option.title)
+    }
   }
 
   private func open(_ option: NewTabOption) {
