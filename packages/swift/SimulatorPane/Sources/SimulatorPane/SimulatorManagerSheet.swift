@@ -40,6 +40,7 @@ struct SimulatorManagerSheet: View {
       Button("Cancel", role: .cancel) {}
       Button("Rename") { model.rename(device.udid, to: name) }
     }
+    .focusesAlertTextField(when: renaming != nil)
     .confirmationDialog(
       "Delete \(pendingDelete?.name ?? "Simulator")?",
       isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),

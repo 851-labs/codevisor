@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 enum BotSectionPrompt: Identifiable {
@@ -50,6 +51,7 @@ struct BotSectionPromptModifier: ViewModifier {
         Button(prompt.confirmTitle) { confirm(prompt) }
         Button("Cancel", role: .cancel) {}
       }
+      .focusesAlertTextField(when: prompt != nil)
       .onChange(of: prompt?.id) { name = prompt?.initialName ?? "" }
   }
 

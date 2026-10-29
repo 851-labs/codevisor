@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 struct WorkspaceTabBar: View {
   let items: [PaneTabStripItem]
@@ -46,6 +47,7 @@ struct WorkspaceTabBar: View {
       }
       Button("Cancel", role: .cancel) {}
     }
+    .focusesAlertTextField(when: renamingTabId != nil)
   }
 
   private func beginRename(_ tabId: UUID) {

@@ -75,12 +75,14 @@ struct OpenCodeProviderAuthenticationView: View {
       Button("Add") { Task { await addProfile() } }
         .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
+    .focusesAlertTextField(when: showingNewProfile)
     .alert("Rename Profile", isPresented: $showingRenameProfile, presenting: profilePendingRename) { account in
       TextField("Name", text: $profileNameDraft)
       Button("Cancel", role: .cancel) {}
       Button("Rename") { Task { await renameProfile(account) } }
         .disabled(profileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
+    .focusesAlertTextField(when: showingRenameProfile)
     .alert("Remove Profile?", isPresented: $showingRemoveProfileAlert, presenting: profilePendingRemoval) {
       account in
       Button("Cancel", role: .cancel) {}

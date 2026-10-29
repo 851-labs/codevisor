@@ -344,6 +344,7 @@ private struct SplitLeafHeader: View {
       Button("Rename") { onRename(renameText) }
         .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
+    .focusesAlertTextField(when: showingRename)
   }
 
   private var iconName: String {
