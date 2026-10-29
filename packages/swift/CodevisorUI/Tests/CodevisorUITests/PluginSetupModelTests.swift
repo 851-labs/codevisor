@@ -54,6 +54,58 @@ struct PluginSetupModelTests {
     #expect(model.step == .ready)
   }
 
+  @Test("The MCP sign-in sheet closes by itself once the machine reports the plugin connected")
+  func mcpSignInClosesOnConnect() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
+    transport.respond(
+      "POST /v1/mcps/mcp-1/oauth-start", with: #"{"authorizationUrl":"https://auth.example/authorize"}"#)
+    let signIn = FakeWebSignIn()
+    let model = PluginSetupModel(
+      request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), webSignIn: signIn)
+    await model.refresh()
+
+    let action = Task { await model.performPrimaryAction() }
+    await signIn.presented.wait()
+    #expect(signIn.urls.map(\.absoluteString) == ["https://auth.example/authorize"])
+    await model.refresh()
+    #expect(signIn.isOpen)
+
+    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "connected"))]")
+    await model.refresh()
+    try #require(!signIn.isOpen)
+    await action.value
+    #expect(model.step == .ready)
+    #expect(!model.isWorking)
+  }
+
+  @Test("A plugin account sign-in sheet closes by itself once the new account shows up")
+  func accountSignInClosesOnNewAccount() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
+    transport.respond(
+      "POST /v1/plugins/mcp-1/accounts/oauth/start",
+      with: #"{"flowId":"flow-1","authorizationUrl":"https://accounts.example/authorize"}"#)
+    let signIn = FakeWebSignIn()
+    let spec = ServerPluginAccountSpec(label: "Google account", oauth: ServerPluginOAuthSpec(provider: "google"))
+    let server = try JSONDecoder().decode(
+      ServerMcpServer.self, from: Data(Self.server(authType: "none", state: "connected").utf8))
+    let accounts = PluginAccountsModel(server: server, client: Self.client(transport), spec: spec, webSignIn: signIn)
+    await accounts.load()
+
+    let signingIn = Task { await accounts.signIn() }
+    await signIn.presented.wait()
+    await accounts.reload()
+    #expect(signIn.isOpen)
+
+    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[\#(Self.account)]}"#)
+    await accounts.reload()
+    try #require(!signIn.isOpen)
+    await signingIn.value
+    #expect(accounts.accounts.map(\.id) == ["acc-1"])
+  }
+
   @Test("Answering Not Now or cancelling declines; any other outcome counts as set up")
   func resolution() {
     let declined = TranscriptQuestion.Answer(

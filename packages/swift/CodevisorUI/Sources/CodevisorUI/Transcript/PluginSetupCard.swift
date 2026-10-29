@@ -31,7 +31,7 @@ public struct PluginSetupCard: View {
 
   private var state: TranscriptInlineCard.State {
     if resolution == .declined { return .resolved(.declined("Declined")) }
-    if resolution == .connected || model.step == .ready { return .resolved(.completed("Set up")) }
+    if resolution == .connected || model.step == .ready { return .resolved(.completed("Connected")) }
     return .pending(message: model.errorMessage ?? model.request.reason, actions: actions)
   }
 

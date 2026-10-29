@@ -16,18 +16,21 @@ public final class PluginAccountsModel {
   @ObservationIgnored private let catalogId: String?
   @ObservationIgnored private let receivesWebhooks: Bool
   @ObservationIgnored private let client: any CodevisorServerClienting
-  @ObservationIgnored private let webSignIn = PluginWebSignIn()
+  @ObservationIgnored private let webSignIn: any WebSignInPresenting
+  @ObservationIgnored private var accountsBeforeSignIn: [ServerPluginAccount]?
 
   public init(
     server: ServerMcpServer,
     client: any CodevisorServerClienting,
-    spec: ServerPluginAccountSpec? = nil
+    spec: ServerPluginAccountSpec? = nil,
+    webSignIn: any WebSignInPresenting = PluginWebSignIn()
   ) {
     self.spec = spec
     serverId = server.id
     catalogId = server.catalogId
     receivesWebhooks = !(server.capabilities?.ingress ?? []).isEmpty
     self.client = client
+    self.webSignIn = webSignIn
   }
 
   public func load() async {
@@ -42,6 +45,7 @@ public final class PluginAccountsModel {
     guard let loaded = await report({ try await client.listPluginAccounts(serverId: serverId) }) else { return }
 
     accounts = loaded
+    closeSignInIfAccountsChanged()
     ingress = await ingressURLs(for: loaded)
     hasLoaded = true
   }
@@ -68,12 +72,19 @@ public final class PluginAccountsModel {
     else { return }
     guard let url = URL(string: start.authorizationUrl) else { return }
 
+    accountsBeforeSignIn = hasLoaded ? accounts : nil
     await webSignIn.run(url, callbackScheme: start.callbackScheme)
+    accountsBeforeSignIn = nil
     await reload()
   }
 
   public func remove(_ account: ServerPluginAccount) async {
     _ = await perform { try await client.removePluginAccount(serverId: serverId, accountId: account.id) }
+  }
+
+  private func closeSignInIfAccountsChanged() {
+    guard let accountsBeforeSignIn, accounts != accountsBeforeSignIn else { return }
+    webSignIn.cancel()
   }
 
   private func perform<Result>(_ operation: () async throws -> Result) async -> Result? {

@@ -16,11 +16,16 @@ public final class PluginSetupModel {
   public var addingAccount: PluginAccountEditing?
 
   @ObservationIgnored private let client: any CodevisorServerClienting
-  @ObservationIgnored private let webSignIn = PluginWebSignIn()
+  @ObservationIgnored private let webSignIn: any WebSignInPresenting
 
-  public init(request: ServerPluginSetupRequest, client: any CodevisorServerClienting) {
+  public init(
+    request: ServerPluginSetupRequest,
+    client: any CodevisorServerClienting,
+    webSignIn: any WebSignInPresenting = PluginWebSignIn()
+  ) {
     self.request = request
     self.client = client
+    self.webSignIn = webSignIn
   }
 
   public var step: PluginSetupStep {
@@ -49,6 +54,7 @@ public final class PluginSetupModel {
     server = servers.first(where: matchesRequest)
     await refreshAccounts()
     hasChecked = true
+    if step == .ready { webSignIn.cancel() }
   }
 
   public func performPrimaryAction() async {
@@ -97,7 +103,7 @@ public final class PluginSetupModel {
       return
     }
     if accounts?.serverId != server.id {
-      accounts = PluginAccountsModel(server: server, client: client, spec: entry?.accounts)
+      accounts = PluginAccountsModel(server: server, client: client, spec: entry?.accounts, webSignIn: webSignIn)
     }
     await accounts?.reload()
   }
@@ -121,7 +127,7 @@ public final class PluginSetupModel {
       let url = URL(string: start.authorizationUrl)
     else { return }
 
-    await working { await webSignIn.run(url) }
+    await working { await webSignIn.run(url, callbackScheme: nil) }
   }
 
   private func working(_ operation: () async -> Void) async {

@@ -1,4 +1,3 @@
-import AppKit
 import CodevisorCore
 import CodevisorUI
 import Observation
@@ -24,14 +23,6 @@ final class PluginSettingsModel {
   }
 
   func beginOAuth(serverId: String, machineId: String, in environment: AppEnvironment) async {
-    do {
-      let flow = try await environment.machines.client(for: machineId).startMcpOAuth(id: serverId)
-      guard let url = URL(string: flow.authorizationUrl) else { return }
-
-      NSWorkspace.shared.open(url)
-      fleet.actionError = nil
-    } catch {
-      fleet.actionError = ErrorReporter.userFacingMessage(for: error)
-    }
+    await fleet.connect(serverId: serverId, on: machineId, in: environment)
   }
 }

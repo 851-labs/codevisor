@@ -12,9 +12,11 @@ public final class McpGlobalModel {
   @ObservationIgnored private let pendingTimeout: Duration
   @ObservationIgnored private var reloadTask: Task<Void, Never>?
   @ObservationIgnored private var latestRequest: [String: Int] = [:]
+  @ObservationIgnored private let signIn: McpOAuthSignIn
 
-  public init(pendingTimeout: Duration = .seconds(30)) {
+  public init(pendingTimeout: Duration = .seconds(30), webSignIn: any WebSignInPresenting = PluginWebSignIn()) {
     self.pendingTimeout = pendingTimeout
+    signIn = McpOAuthSignIn(presenter: webSignIn)
   }
 
   public var entries: [McpFleetEntry] { state.entries }
@@ -81,6 +83,19 @@ public final class McpGlobalModel {
     }
   }
 
+  public func connect(serverId: String, on machineId: String, in environment: AppEnvironment) async {
+    do {
+      let flow = try await environment.machines.client(for: machineId).startMcpOAuth(id: serverId)
+      guard let url = URL(string: flow.authorizationUrl) else { return }
+
+      actionError = nil
+      await signIn.run(url, serverId: serverId, on: machineId)
+    } catch {
+      actionError = ErrorReporter.userFacingMessage(for: error)
+    }
+    await load(in: environment)
+  }
+
   private func fetch(_ machineId: String, from client: any CodevisorServerClienting) async {
     let request = (latestRequest[machineId] ?? 0) &+ 1
     latestRequest[machineId] = request
@@ -88,6 +103,7 @@ public final class McpGlobalModel {
       latestRequest[machineId] == request
     else { return }
     state.absorb(servers, from: machineId)
+    signIn.closeIfConnected(servers, on: machineId)
   }
 
   private func expire(_ name: String, on machineId: String, token: Int) {

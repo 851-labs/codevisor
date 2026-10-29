@@ -28,7 +28,6 @@ struct McpSettingsScreen: View {
     guard !supportsPlugins(selected) else { return selected }
     return environment.machines.allMachines.map(\.id).first(where: supportsPlugins) ?? selected
   }
-  @Environment(\.openURL) private var openURL
 
   var body: some View {
     List {
@@ -156,13 +155,7 @@ struct McpSettingsScreen: View {
   }
 
   private func beginOAuth(serverId: String, machineId: String) async {
-    do {
-      let flow = try await environment.machines.client(for: machineId).startMcpOAuth(id: serverId)
-      if let url = URL(string: flow.authorizationUrl) { openURL(url) }
-      actionError = nil
-    } catch {
-      actionError = ErrorReporter.userFacingMessage(for: error)
-    }
+    await model.connect(serverId: serverId, on: machineId, in: environment)
   }
 
   private func editorMachineId(for entry: McpFleetEntry?) -> String {

@@ -2,7 +2,7 @@ import AuthenticationServices
 import Foundation
 
 @MainActor
-public final class PluginWebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding {
+public final class PluginWebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding, WebSignInPresenting {
   private var session: ASWebAuthenticationSession?
   private var completion: CheckedContinuation<Void, Never>?
 
