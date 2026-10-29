@@ -35,6 +35,11 @@ const fixture = async () => {
   const pullRequests = new Map<string, GitPullRequest | null | undefined>()
   const lookups: Array<string> = []
   const missing = new Set<string>()
+  const archivedBranches = new Map<string, string>()
+  const archivedCheckout = (directory: string) => {
+    const branch = archivedBranches.get(directory)
+    return branch === undefined ? {} : { branch }
+  }
   const start = () => {
     const monitor = startWorkspaceGitMonitor({
       db,
@@ -43,7 +48,7 @@ const fixture = async () => {
         if (record.rootDirectory === "/repo/broken") throw new Error("checkout exploded")
         return record.rootDirectory === undefined || missing.has(record.rootDirectory)
           ? undefined
-          : { directory: record.rootDirectory }
+          : { directory: record.rootDirectory, ...archivedCheckout(record.rootDirectory) }
       },
       environment: async () => ({}),
       headOf: async (directory) => {
@@ -72,6 +77,7 @@ const fixture = async () => {
     pullRequests,
     lookups,
     missing,
+    archivedBranches,
     workspace,
     start,
     git
@@ -303,4 +309,17 @@ it("does no more work once closed", async () => {
   await monitor.sweep(false)
 
   expect(await git(feature.id)).toMatchObject({ branch: "one" })
+})
+
+it("records an archived worktree's stored branch without reading its checkout", async () => {
+  const { db, branches, archivedBranches, workspace, start, git } = await fixture()
+  const archived = await workspace("archived", "/repo/archived-record")
+  await run(db.updateWorkspace(archived.id, { isArchived: true }))
+  archivedBranches.set("/repo/archived-record", "codevisor/archived-record")
+  branches.set("/repo/archived-record", "checked-out-elsewhere")
+
+  const monitor = start()
+  await monitor.settled()
+
+  expect(await git(archived.id)).toEqual({ branch: "codevisor/archived-record", pullRequest: null })
 })
