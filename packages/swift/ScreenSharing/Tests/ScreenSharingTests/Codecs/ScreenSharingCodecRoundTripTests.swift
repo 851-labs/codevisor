@@ -3,6 +3,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import Testing
+import VideoToolbox
 @testable import ScreenSharing
 
 extension HardwareCodecTests {
@@ -198,6 +199,25 @@ extension HardwareCodecTests {
       #expect(decoded.width == 256 && decoded.height == 160 && decoded.sourceTimestampNs == 3)
       #expect(harness.metrics.snapshot().counters["decodeErrors"] == nil)
     }
+
+    @Test(
+      .enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."),
+      arguments: [
+        (kVTVideoEncoderMalfunctionErr, true), (kVTVideoEncoderNotAvailableNowErr, true), (kVTInvalidSessionErr, true),
+        (kVTParameterErr, false),
+      ])
+    func onlyASessionFailureReplacesTheSessionOnTheNextFrame(status: OSStatus, replaces: Bool) async throws {
+      let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
+      defer { harness.stop() }
+      _ = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 1))
+      harness.encoderReported(status)
+      let next = try await harness.encode(index: 1, timestampNs: 33_333_333, identity: 2)
+      #expect(next.isKeyFrame == replaces)
+      #expect(try await harness.decode(next).sourceTimestampNs == 2)
+      let continued = try await harness.encode(index: 2, timestampNs: 66_666_666, identity: 3)
+      #expect(!continued.isKeyFrame)
+      #expect(harness.metrics.snapshot().counters["encoderSessionReopens"] == (replaces ? 1 : nil))
+    }
   }
 }
 
@@ -316,6 +336,10 @@ private final class CodecHarness {
     let error = snapshot.labels[stage.errorLabel] ?? "none"
     let counters = snapshot.counters.sorted { $0.key < $1.key }
     return Comment(rawValue: "The \(stage) delivered no frame. Last \(stage) error: \(error). Counters: \(counters).")
+  }
+
+  func encoderReported(_ status: OSStatus) {
+    encoder.sessionReported(status)
   }
 
   func restartEncoder(width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange? = nil) throws {

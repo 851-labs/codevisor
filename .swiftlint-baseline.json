@@ -1980,36 +1980,6 @@
     }
   },
   {
-    "text": "  public init(",
-    "violation": {
-      "location": {
-        "character": 10,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
-        "line": 50
-      },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  private func didEncode(metadata: Pending, status: OSStatus, flags: VTEncodeInfoFlags, buffer: CMSampleBuffer?) {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingEncoder.swift",
-        "line": 251
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  public func receive(_ message: ScreenSharingClipboardMessage) {",
     "violation": {
       "location": {
