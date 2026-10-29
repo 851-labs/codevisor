@@ -10,7 +10,8 @@ import {
   makeProvider,
   payloadOf,
   run,
-  sdkMessage
+  sdkMessage,
+  systemMessage
 } from "./test-support.js"
 
 const inheritedEnv = {
@@ -112,6 +113,25 @@ describe("Claude session start", () => {
       payload: { message: "socket closed" },
       subjectId: session.metadata.sessionId
     })
+  })
+
+  it("reports Claude idle when its process stops while running", async () => {
+    const fake = new FakeQuery()
+    const events: Array<RuntimeEvent> = []
+    const created = run(
+      makeProvider(fake).createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    fake.push(initMessage())
+    await created
+
+    fake.push(systemMessage("session_state_changed", { state: "running" }))
+    fake.fail("killed")
+    await fake.drain()
+
+    const states = events.map(payloadOf).filter((payload) => payload.runtimeState !== undefined)
+    expect(states).toEqual([{ runtimeState: "running" }, { runtimeState: "idle" }])
   })
 
   it("fails to load a conversation Claude can't find, without opening a turn", async () => {

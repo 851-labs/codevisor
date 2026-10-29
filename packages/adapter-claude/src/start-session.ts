@@ -218,6 +218,7 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   q: seed.q,
   retired: false,
   streamEnded: false,
+  runtimeState: "idle",
   startupFailure: undefined,
   sdkSessionId: seed.key,
   subagentMessageIds: new Map(),

@@ -9,7 +9,7 @@ import {
   handleTaskUpdated,
   replaceBackgroundTasks
 } from "./background-tasks.js"
-import type { ClaudeSession } from "./session.js"
+import type { ClaudeRuntimeState, ClaudeSession } from "./session.js"
 import { updateClaudeCommands } from "./skills.js"
 import { finishDeferredTaskResult } from "./turn-recovery.js"
 
@@ -146,11 +146,16 @@ const emitCompaction = (
   })
 }
 
-const emitRuntimeState = (session: ClaudeSession, message: SessionStateMessage): void => {
+export const reportRuntimeState = (session: ClaudeSession, state: ClaudeRuntimeState): void => {
+  session.runtimeState = state
   void session.emit({
     kind: "session.updated",
-    payload: { runtimeState: message.state },
+    payload: { runtimeState: state },
     subjectId: session.key
   })
+}
+
+const emitRuntimeState = (session: ClaudeSession, message: SessionStateMessage): void => {
+  reportRuntimeState(session, message.state)
   if (message.state === "idle") finishDeferredTaskResult(session)
 }

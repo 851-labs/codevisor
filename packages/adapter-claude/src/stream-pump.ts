@@ -4,6 +4,7 @@ import { runtimeError } from "@codevisor/agent-runtime"
 import type { ClaudeQuery, ClaudeQueryFn, ClaudeSession } from "./session.js"
 import { applyStreamMessage } from "./stream-messages.js"
 import { resumeSessionAfterStreamDeath } from "./stream-recovery.js"
+import { reportRuntimeState } from "./system-messages.js"
 import { failDeferredPrompts, finishActiveTurn, type TurnEnding } from "./turn-lifecycle.js"
 
 export interface StreamPumpDeps {
@@ -34,7 +35,7 @@ export const makeStreamPump = (session: ClaudeSession, deps: StreamPumpDeps): St
       streamFailure = streamFailureText(cause)
       if (isIdle(session)) failIdleSession(session, cause, streamFailure)
     } finally {
-      if (session.q === query) session.streamEnded = true
+      if (session.q === query) endStream(session)
       if (endedMidTurn(session, query)) {
         if (session.interruptRequested) {
           await finishActiveTurn(session, "cancelled")
@@ -45,6 +46,11 @@ export const makeStreamPump = (session: ClaudeSession, deps: StreamPumpDeps): St
     }
   }
   return pump
+}
+
+const endStream = (session: ClaudeSession): void => {
+  session.streamEnded = true
+  if (session.runtimeState !== "idle") reportRuntimeState(session, "idle")
 }
 
 const streamFailureText = (cause: unknown): string =>

@@ -32,6 +32,11 @@ export interface ClaudeTaskEntry {
 
 export type ClaudeTaskState = Map<string, ClaudeTaskEntry>
 
+export type ClaudeRuntimeState = Extract<
+  SDKMessage,
+  { type: "system"; subtype: "session_state_changed" }
+>["state"]
+
 export interface ClaudeTaskToolUse {
   readonly name: string
   readonly input: unknown
@@ -176,6 +181,7 @@ export interface ClaudeSession {
   cancelInFlight: Promise<CancelResult> | undefined
   retired: boolean
   streamEnded: boolean
+  runtimeState: ClaudeRuntimeState
   startupFailure: string | undefined
   pendingUserCommands: number
   interruptRequested: boolean
