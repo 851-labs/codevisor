@@ -46,9 +46,7 @@ final class ScreenSharingHostSession {
     self.display = display; self.displayID = displayID
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
     capture = ScreenSharingCapture()
-    let size = ScreenSharingHostService.physicalCaptureSize(width: display.width, height: display.height)
-    configuration = try ScreenSharingVideoConfiguration(
-      width: size.width, height: size.height, bitrate: ScreenSharingHostService.bitrateCeiling)
+    configuration = try ScreenSharingProductProfile.captureConfiguration(width: display.width, height: display.height)
     physicalConfiguration = configuration
     metrics = ScreenSharingMetrics()
     peer = try await ScreenSharingSender(

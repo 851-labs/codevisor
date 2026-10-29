@@ -2,11 +2,8 @@ import Foundation
 import ScreenSharing
 
 @MainActor
-enum ScreenSharingQualityLoop {
-  static let fullQualityBitrate = 6_000_000
-  static let estimateWarmUp: TimeInterval = 5
-
-  static func run(
+public enum ScreenSharingQualityLoop {
+  public static func run(
     base: () -> ScreenSharingVideoConfiguration?,
     isViewing: () -> Bool,
     statistics: () async -> [String: String],
@@ -34,6 +31,7 @@ enum ScreenSharingQualityLoop {
 
   private static func adaptive(_ configuration: ScreenSharingVideoConfiguration) -> ScreenSharingAdaptiveQuality {
     ScreenSharingAdaptiveQuality(
-      configuration: configuration, fullQualityBitrate: fullQualityBitrate, warmUp: estimateWarmUp)
+      configuration: configuration, fullQualityBitrate: ScreenSharingProductProfile.fullQualityBitrate,
+      warmUp: ScreenSharingProductProfile.adaptiveQualityWarmUp)
   }
 }

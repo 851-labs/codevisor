@@ -78,8 +78,6 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   private let refreshRequest: ScreenSharingEncoderRefreshRequest
   private let idleMonitor: ScreenSharingSourceIdleMonitor
   private let captureArrivals: ScreenSharingCaptureArrivals
-  private static let maximumPendingFrames = 3
-  private static let keyframeIntervalSeconds = 60
   var resolutionAlignment: Int { 2 }
   var applyAlignmentToAllSimulcastLayers: Bool { true }
   var supportsNativeHandle: Bool { true }
@@ -119,8 +117,9 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
     let rateControl = ScreenSharingCodecFactory.rateControl(for: codec)
     let encoder = try ScreenSharingEncoder(
       configuration: configuration, metrics: metrics, useLowLatencyRateControl: rateControl.lowLatency, codec: codec,
-      maximumPendingFrames: Self.maximumPendingFrames, prioritizeSpeed: rateControl.prioritizeSpeed,
-      keyframeIntervalSeconds: Self.keyframeIntervalSeconds, dynamicRange: dynamicRange
+      maximumPendingFrames: ScreenSharingProductProfile.maximumPendingFrames,
+      prioritizeSpeed: rateControl.prioritizeSpeed,
+      keyframeIntervalSeconds: ScreenSharingProductProfile.keyframeIntervalSeconds, dynamicRange: dynamicRange
     )
     encoder.onFrame { [weak self] frame in self?.deliver(frame) }
     return encoder
