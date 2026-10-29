@@ -37,6 +37,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private let codec: ScreenSharingVideoCodec
   public let dynamicRange: ScreenSharingDynamicRange
   private let maximumPendingFrames: Int
+  private let sessionSettings: ScreenSharingCompressionSessionSettings
+  private var sessionFailure: OSStatus?
+  private var stopped = false
   private var currentBitrate: Int
   private var currentFPS: Int
   public let metrics: ScreenSharingMetrics
@@ -68,6 +71,10 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       throw ScreenSharingError.invalid("Keyframe interval must be bounded to 1...60 seconds.")
     }
     self.maximumPendingFrames = maximumPendingFrames
+    sessionSettings = ScreenSharingCompressionSessionSettings(
+      configuration: configuration, codec: codec, dynamicRange: dynamicRange,
+      useLowLatencyRateControl: useLowLatencyRateControl, prioritizeSpeed: prioritizeSpeed,
+      keyframeIntervalSeconds: keyframeIntervalSeconds, metrics: metrics)
     metrics.label("encoderMaximumPendingFrames", String(maximumPendingFrames))
     metrics.label("encoderInitialBitrate", String(configuration.bitrate))
     metrics.label("encoderInitialFPS", String(configuration.framesPerSecond))
@@ -79,81 +86,45 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       throw ScreenSharingError.invalid(
         "Main444 requires standard rate control; the low-latency encoder can reduce chroma.")
     }
-    var created: VTCompressionSession?
-    var specification: [CFString: Any] = [
-      kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true
-    ]
-    if useLowLatencyRateControl { specification[kVTVideoEncoderSpecification_EnableLowLatencyRateControl] = true }
-    try check(
-      VTCompressionSessionCreate(
-        allocator: kCFAllocatorDefault, width: Int32(configuration.width), height: Int32(configuration.height),
-        codecType: codec.mediaType, encoderSpecification: specification as CFDictionary,
-        imageBufferAttributes: nil, compressedDataAllocator: nil,
-        outputCallback: nil, refcon: nil, compressionSessionOut: &created), "Create encoder")
-    guard let created else { throw ScreenSharingError.unavailable("No hardware \(codec.payloadName) encoder.") }
-    session = created
-    do {
-      try property(kVTCompressionPropertyKey_RealTime, kCFBooleanTrue)
-      try property(kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
-      if prioritizeSpeed {
-        try property(kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality, kCFBooleanTrue)
-      }
-      metrics.label("encoderSpeedPolicy", prioritizeSpeed ? "prioritize speed" : "encoder default")
-      metrics.label("encoderRateControl", useLowLatencyRateControl ? "low latency" : "standard")
-      if codec == .hevc444 {
-        var supported: CFDictionary?
-        try check(
-          VTSessionCopySupportedPropertyDictionary(created, supportedPropertyDictionaryOut: &supported),
-          "Read encoder properties")
-        let profileInfo =
-          (supported as? [String: Any])?[kVTCompressionPropertyKey_ProfileLevel as String] as? [String: Any]
-        let profiles = profileInfo?[kVTPropertySupportedValueListKey as String] as? [String] ?? []
-        let wanted = dynamicRange == .high ? "_Main44410_" : "_Main444_"
-        guard let profile = profiles.first(where: { $0.contains(wanted) }) else {
-          throw ScreenSharingError.unavailable(
-            "Hardware encoder does not advertise a \(dynamicRange == .high ? "10" : "8")-bit Main444 profile.")
-        }
-        try property(kVTCompressionPropertyKey_ProfileLevel, profile as CFString)
-        metrics.label("encoderProfile", profile)
-      } else {
-        try property(
-          kVTCompressionPropertyKey_ProfileLevel,
-          codec == .h264 ? kVTProfileLevel_H264_Baseline_AutoLevel : kVTProfileLevel_HEVC_Main_AutoLevel)
-      }
-      try property(kVTCompressionPropertyKey_ExpectedFrameRate, configuration.framesPerSecond as CFNumber)
-      try property(kVTCompressionPropertyKey_AverageBitRate, configuration.bitrate as CFNumber)
-      try property(
-        kVTCompressionPropertyKey_MaxKeyFrameInterval,
-        (configuration.framesPerSecond * keyframeIntervalSeconds) as CFNumber)
-      if dynamicRange == .high {
-        try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_P3_D65)
-        try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ)
-      } else {
-        try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
-        try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_sRGB)
-      }
-      try property(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2)
-      try check(VTCompressionSessionPrepareToEncodeFrames(created), "Prepare encoder")
-      var hardware: Unmanaged<CFTypeRef>?
-      let hardwareStatus = VTSessionCopyProperty(
-        created, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
-        allocator: nil, valueOut: &hardware)
-      let hardwareValue = hardware?.takeRetainedValue()
-      if hardwareStatus == noErr {
-        guard hardwareValue as? Bool == true else {
-          throw ScreenSharingError.unavailable("\(codec.payloadName) encoder is not hardware backed.")
-        }
-      } else if hardwareStatus != kVTPropertyNotSupportedErr {
-        try check(hardwareStatus, "Query encoder hardware")
-      }
-      metrics.label("encoderHardware", hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
-      metrics.label("encoder", "VideoToolbox \(codec.rawValue) hardware, no frame reordering")
-      metrics.label(
-        "encodedColor", dynamicRange == .high ? "Display P3 primaries, PQ transfer" : "BT.709 primaries, sRGB transfer")
-    } catch { stop(); throw error }
+    try openSession()
   }
 
   deinit { stop() }
+
+  private func openSession() throws {
+    session = try sessionSettings.open(bitrate: currentBitrate, framesPerSecond: currentFPS)
+  }
+
+  private func reopenFailedSession() throws {
+    guard let failure = lock.withLock({ sessionFailure }) else { return }
+
+    closeSession()
+    lock.withLock {
+      pending.removeAll()
+      keyframeRequest = ScreenSharingKeyframeRequest()
+    }
+    metrics.label("lastEncoderSessionFailure", String(failure))
+    try openSession()
+    lock.withLock { sessionFailure = nil }
+    metrics.increment("encoderSessionReopens")
+  }
+
+  func sessionReported(_ status: OSStatus) {
+    guard Self.sessionFailures.contains(status) else { return }
+
+    lock.withLock { if !stopped { sessionFailure = status } }
+  }
+
+  private static let sessionFailures: Set<OSStatus> = [
+    kVTVideoEncoderMalfunctionErr, kVTVideoEncoderNotAvailableNowErr, kVTInvalidSessionErr,
+  ]
+
+  private func closeSession() {
+    guard let active = session else { return }
+    session = nil
+    VTCompressionSessionCompleteFrames(active, untilPresentationTimeStamp: .invalid)
+    VTCompressionSessionInvalidate(active)
+  }
 
   public func onFrame(_ callback: @escaping @Sendable (ScreenSharingEncodedFrame) -> Void) {
     lock.withLock { output = callback }
@@ -166,6 +137,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     metrics.increment("encoderInputFrames")
     metrics.event("encoderInputInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
     metrics.event("encoderInputTimestampInterval", atNanoseconds: frame.timestampNs)
+    try reopenFailedSession()
     guard let session else { throw ScreenSharingError.unavailable("Encoder stopped.") }
     guard frame.timestampNs >= 0,
       CVPixelBufferGetWidth(frame.pixelBuffer) == configuration.width,
@@ -207,25 +179,27 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     if status != noErr {
       _ = lock.withLock { pending.removeValue(forKey: frame.timestampNs) }
       finishKeyframeAttempt(metadata, producedKeyFrame: false)
+      sessionReported(status)
       try check(status, "Encode frame")
     }
     return true
   }
 
   public func setBitrate(_ bitsPerSecond: Int, framesPerSecond: Int) throws {
-    guard session != nil else { throw ScreenSharingError.unavailable("Encoder stopped.") }
+    let awaitingReopen = lock.withLock { sessionFailure != nil }
+    guard session != nil || awaitingReopen else { throw ScreenSharingError.unavailable("Encoder stopped.") }
     guard bitsPerSecond > 0, (1...60).contains(framesPerSecond) else {
       throw ScreenSharingError.invalid("Invalid encoder rate.")
     }
     let started = ScreenSharingMetrics.nowNs
     metrics.increment("encoderRateUpdateRequests")
     if currentBitrate != bitsPerSecond {
-      try property(kVTCompressionPropertyKey_AverageBitRate, bitsPerSecond as CFNumber)
+      if !awaitingReopen { try property(kVTCompressionPropertyKey_AverageBitRate, bitsPerSecond as CFNumber) }
       currentBitrate = bitsPerSecond
       metrics.increment("encoderBitratePropertyUpdates")
     }
     if currentFPS != framesPerSecond {
-      try property(kVTCompressionPropertyKey_ExpectedFrameRate, framesPerSecond as CFNumber)
+      if !awaitingReopen { try property(kVTCompressionPropertyKey_ExpectedFrameRate, framesPerSecond as CFNumber) }
       currentFPS = framesPerSecond
       metrics.increment("encoderFPSPropertyUpdates")
     }
@@ -235,14 +209,14 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   }
 
   public func stop() {
-    guard let active = session else { return }
-    session = nil
-    VTCompressionSessionCompleteFrames(active, untilPresentationTimeStamp: .invalid)
-    VTCompressionSessionInvalidate(active)
+    guard session != nil || lock.withLock({ sessionFailure != nil }) else { return }
+    closeSession()
     lock.withLock {
       metrics.label("encoderPendingAtStop", String(pending.count))
       pending.removeAll(); output = nil
       keyframeRequest = ScreenSharingKeyframeRequest()
+      sessionFailure = nil
+      stopped = true
     }
   }
 
@@ -259,11 +233,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       metrics.increment("encoderDroppedFrames")
       return
     }
-    guard status == noErr, let buffer, CMSampleBufferDataIsReady(buffer) else {
-      metrics.increment("encodeErrors")
-      metrics.label("lastEncodeError", "VideoToolbox callback status: \(status)")
-      return
-    }
+    guard status == noErr, let buffer, CMSampleBufferDataIsReady(buffer) else { return callbackFailed(status) }
     let timestamp = metadata.timestampNs
     do {
       let attachments = CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false) as? [[CFString: Any]]
@@ -271,15 +241,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       guard let block = buffer.dataBuffer, let format = buffer.formatDescription else {
         throw ScreenSharingError.invalid("Encoded frame has no data.")
       }
-      let byteCount = CMBlockBufferGetDataLength(block)
-      guard (1...NALUnitBitstream.maximumFrameBytes).contains(byteCount) else {
-        throw ScreenSharingError.invalid("Invalid encoded frame size.")
-      }
-      var bytes = Data(count: byteCount)
-      let copyStatus = bytes.withUnsafeMutableBytes { raw in
-        CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: raw.count, destination: raw.baseAddress!)
-      }
-      try check(copyStatus, "Read encoded frame")
+      let bytes = try encodedBytes(of: block)
       var data = Data()
       var lengthSize: Int32 = 0
       var parameterCount = 0
@@ -305,6 +267,25 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
           sourceTimestampNs: metadata.sourceTimestampNs))
       producedKeyFrame = keyFrame && callback != nil
     } catch { metrics.increment("encodeErrors"); metrics.label("lastEncodeError", error.localizedDescription) }
+  }
+
+  private func callbackFailed(_ status: OSStatus) {
+    metrics.increment("encodeErrors")
+    metrics.label("lastEncodeError", "VideoToolbox callback status: \(status)")
+    sessionReported(status)
+  }
+
+  private func encodedBytes(of block: CMBlockBuffer) throws -> Data {
+    let byteCount = CMBlockBufferGetDataLength(block)
+    guard (1...NALUnitBitstream.maximumFrameBytes).contains(byteCount) else {
+      throw ScreenSharingError.invalid("Invalid encoded frame size.")
+    }
+    var bytes = Data(count: byteCount)
+    let copyStatus = bytes.withUnsafeMutableBytes { raw in
+      CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: raw.count, destination: raw.baseAddress!)
+    }
+    try check(copyStatus, "Read encoded frame")
+    return bytes
   }
 
   private func validateHEVC(_ format: CMFormatDescription) throws {
@@ -363,7 +344,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
 
   private func property(_ key: CFString, _ value: CFTypeRef) throws {
     guard let session else { throw ScreenSharingError.unavailable("Encoder stopped.") }
-    try check(VTSessionSetProperty(session, key: key, value: value), "Set encoder \(key)")
+    let status = VTSessionSetProperty(session, key: key, value: value)
+    sessionReported(status)
+    try check(status, "Set encoder \(key)")
   }
 
   private func check(_ status: OSStatus, _ operation: String) throws {
