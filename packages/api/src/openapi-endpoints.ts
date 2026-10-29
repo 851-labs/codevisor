@@ -14,6 +14,7 @@ export const endpoints = [
   "GET /v1/info",
   "GET /v1/machines",
   "GET /v1/machine/stats",
+  "GET /v1/roles",
   "POST /v1/machines/invite",
   "POST /v1/machines/add",
   "DELETE /v1/machines/:machineId",
@@ -247,6 +248,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/info": "Get server information",
   "GET /v1/machines": "List every machine on the account",
   "GET /v1/machine/stats": "Get this machine's CPU, memory and disk usage, with recent CPU history",
+  "GET /v1/roles":
+    "List the account-wide roles this machine runs for or watches, with Codevisor Cloud's holders and ranked candidates",
   "POST /v1/machines/invite": "Create a one-time code that adds a new machine to the account",
   "POST /v1/machines/add": "Install Codevisor on a host over SSH and add it to the account",
   "DELETE /v1/machines/:machineId": "Remove another machine from the account",

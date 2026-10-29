@@ -239,18 +239,25 @@ export const runServe = (
     startup.checkpoint("initializingServices")
     const machineName = args.name ?? hostname()
     const iconGuess = guessMachineIcon()
-    const { cloudControl, cloudInbox, machine, machineLink, machineEnrollment, fleetTickets } =
-      yield* Effect.promise(() =>
-        startMachineNetwork({
-          databasePath,
-          port,
-          serverId,
-          machineName,
-          icon: iconGuess,
-          version,
-          db
-        })
-      )
+    const {
+      cloudControl,
+      cloudInbox,
+      machine,
+      machineLink,
+      machineEnrollment,
+      machineRoles,
+      fleetTickets
+    } = yield* Effect.promise(() =>
+      startMachineNetwork({
+        databasePath,
+        port,
+        serverId,
+        machineName,
+        icon: iconGuess,
+        version,
+        db
+      })
+    )
     const icon = yield* Effect.promise(() => iconGuess)
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const directoryEnv = makeDirectoryShellEnvCache((cwd) => resolveShellEnv({ cwd }), {
@@ -418,6 +425,7 @@ export const runServe = (
         linkPreviews: makeLinkPreviewStore({ dir: join(dirname(databasePath), "link-previews") }),
         machineStats: makeMachineStatsSampler(),
         machines: machineLink,
+        machineRoles,
         machineEnrollment,
         fleetTickets,
         ...(sandboxes === undefined ? {} : { sandboxes }),

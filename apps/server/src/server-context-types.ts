@@ -156,6 +156,7 @@ export interface CodevisorServerServices {
   readonly linkPreviews?: import("./infra/link-previews.js").LinkPreviewStore
   readonly machineStats?: import("./infra/machine-stats.js").MachineStatsSampler
   readonly machines?: import("./infra/machine-link.js").MachineLink
+  readonly machineRoles?: import("@codevisor/cloud-client").MachineRoles
   readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
   readonly fleetTickets?: import("./infra/fleet-tickets.js").FleetTickets
   readonly sandboxes?: import("./routes/sandboxes.js").SandboxesService

@@ -44,6 +44,16 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/machines"
   ),
   apiTool(
+    "machines.roles",
+    "Debug account-wide roles (one holder machine per account, elected by Codevisor Cloud). " +
+      "`roles` is this machine's view: each role it runs for or watches, the holder's machine " +
+      "id, the lease version, and `held` when this machine holds it. `cloud` is the " +
+      "coordinator's view: holder, lease expiry, whether a handoff is under way, and every " +
+      "candidate with its availability, online state, recent drops and rank.",
+    "GET",
+    "/v1/roles"
+  ),
+  apiTool(
     "machines.add",
     "Add a host to the user's Codevisor account over SSH, with no human approval: from this " +
       "machine (using its SSH keys and ~/.ssh/config), install Codevisor on the host, join it " +

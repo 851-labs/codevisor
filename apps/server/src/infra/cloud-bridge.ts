@@ -25,6 +25,7 @@ import {
   type GatewayExchange,
   type MachineConnectionState,
   type MachineCredentials,
+  type MachineRoles,
   type PeerKeyPinStore
 } from "@codevisor/cloud-client"
 
@@ -55,6 +56,7 @@ export interface CloudBridgeOptions {
   readonly fetchImpl?: FetchLike
   readonly fleetCallers?: TicketBook<ChannelPeer>
   readonly inbox?: CloudInbox
+  readonly roles?: MachineRoles
 }
 
 export type CloudBridgeManagedBy = "app" | "external"
@@ -244,6 +246,7 @@ const makeBridge = async (
     },
     socketFactory,
     channelHandlers,
+    ...(options.roles === undefined ? {} : { roles: options.roles }),
     onInboxItem: inboxFrameHandler(options.inbox, credentials.secretKey, (itemIds) =>
       connection?.ackInboxItems(itemIds)
     ),

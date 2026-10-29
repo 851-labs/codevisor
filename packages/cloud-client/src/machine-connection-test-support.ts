@@ -20,6 +20,7 @@ import type {
   IncomingChannel,
   MachineDisconnectReason,
   MachineConnectionState,
+  MachineRoles,
   PeerKeyPinStore
 } from "./index.js"
 
@@ -142,6 +143,7 @@ export const harness = (
     relayCoalesceMs?: number
     compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
     decompressPayload?: (bytes: Uint8Array) => Uint8Array
+    roles?: MachineRoles
   } = {}
 ): Harness => {
   const sockets: FakeSocket[] = []
@@ -177,6 +179,7 @@ export const harness = (
     ...(overrides.decompressPayload === undefined
       ? {}
       : { decompressPayload: overrides.decompressPayload }),
+    ...(overrides.roles === undefined ? {} : { roles: overrides.roles }),
     onStateChange: (state) => states.push(state),
     onDisconnect: (reason) => disconnects.push(reason),
     onWelcome: (info) => welcomes.push(info),

@@ -40,4 +40,5 @@ export const deleteHubAccount = async (
 
 const deleteHubDataSql = `DELETE FROM session_buffers; DELETE FROM sessions; DELETE FROM machines;
   DELETE FROM machine_origins; DELETE FROM inbox_subscribers; DELETE FROM inbox_rates;
-  DELETE FROM device_queue`
+  DELETE FROM device_queue; DELETE FROM role_members; DELETE FROM role_machines;
+  DELETE FROM role_leases`

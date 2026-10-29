@@ -69,7 +69,28 @@ export const HUB_MIGRATIONS: readonly string[] = [
    );
    CREATE UNIQUE INDEX device_queue_item ON device_queue (device_id, item_id);
    CREATE INDEX device_queue_inbox ON device_queue (inbox_id, device_id);
-   CREATE INDEX device_queue_expiry ON device_queue (expires_at)`
+   CREATE INDEX device_queue_expiry ON device_queue (expires_at)`,
+  `CREATE TABLE role_machines (
+     device_id TEXT PRIMARY KEY,
+     availability TEXT NOT NULL,
+     online_since INTEGER,
+     drops INTEGER NOT NULL DEFAULT 0,
+     drops_since INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE TABLE role_members (
+     role TEXT NOT NULL,
+     device_id TEXT NOT NULL,
+     candidate INTEGER NOT NULL,
+     PRIMARY KEY (role, device_id)
+   );
+   CREATE INDEX role_members_device ON role_members (device_id);
+   CREATE TABLE role_leases (
+     role TEXT PRIMARY KEY,
+     version INTEGER NOT NULL,
+     holder TEXT,
+     deadline INTEGER,
+     handing_off INTEGER NOT NULL DEFAULT 0
+   )`
 ]
 
 export interface MachineRow extends Record<string, SqlStorageValue> {

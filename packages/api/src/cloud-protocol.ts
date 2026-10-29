@@ -1,6 +1,13 @@
 import { Schema } from "effect"
 
 import {
+  HubRoleHolders,
+  HubRoleLease,
+  MachineRoleMembership,
+  MachineRoleRelease,
+  MachineRoleRenew
+} from "./cloud-role-protocol.js"
+import {
   CloudRelayInfo,
   CloudTunnelInfo,
   HubPeerDevices,
@@ -11,6 +18,7 @@ import { SandboxOrigin } from "./sandboxes.js"
 
 export * from "./cloud-channel-types.js"
 export * from "./cloud-tunnel-protocol.js"
+export * from "./cloud-role-protocol.js"
 
 export const CLOUD_PROTOCOL_VERSION = 2
 
@@ -302,7 +310,10 @@ export const MachineToHub = Schema.Union([
   MachineHello,
   MachinePing,
   MachineTunnelAddr,
-  MachineInboxAck
+  MachineInboxAck,
+  MachineRoleMembership,
+  MachineRoleRenew,
+  MachineRoleRelease
 ])
 export type MachineToHub = typeof MachineToHub.Type
 
@@ -314,7 +325,8 @@ export const HubMachineWelcome = Schema.Struct({
   resumed: Schema.optional(Schema.Boolean),
   machines: Schema.optional(Schema.Array(CloudMachinePresence)),
   relays: Schema.optional(Schema.Array(CloudRelayInfo)),
-  tunnel: Schema.optional(Schema.String)
+  tunnel: Schema.optional(Schema.String),
+  features: Schema.optional(Schema.Array(Schema.String))
 })
 
 export const HubPeerGone = Schema.Struct({
@@ -339,6 +351,8 @@ export const HubToMachine = Schema.Union([
   HubPresence,
   HubMachineReset,
   HubPeerDevices,
+  HubRoleHolders,
+  HubRoleLease,
   HubError,
   HubPong
 ])

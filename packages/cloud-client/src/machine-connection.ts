@@ -4,6 +4,7 @@ import {
   MACHINE_PEERS_FEATURE,
   parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
+  ROLES_FEATURE,
   type CloudMachinePresence,
   type CloudTunnelInfo,
   type MachineToHub,
@@ -21,6 +22,7 @@ import {
 } from "./hub-frames.js"
 import { releaseChannelField, type MachineConnectionOptions } from "./machine-connection-options.js"
 import { MachinePeers } from "./machine-peers.js"
+import { roleAvailabilityForIcon } from "./machine-roles.js"
 import {
   decodeHubFrame,
   RelayOutbox,
@@ -128,6 +130,7 @@ export class CloudMachineConnection {
   #setState(state: MachineConnectionState): void {
     if (this.#state === state) return
     this.#state = state
+    if (state !== "connected") this.options.roles?.detach()
     this.options.onStateChange?.(state)
   }
 
@@ -228,6 +231,10 @@ export class CloudMachineConnection {
       case "inbox-item":
         this.options.onInboxItem?.(frame)
         return
+      case "role-holders":
+      case "role-lease":
+        this.options.roles?.receive(frame)
+        return
     }
   }
 
@@ -266,9 +273,18 @@ export class CloudMachineConnection {
     this.#settleRetained(resume.resumed)
     this.#peers.welcome(frame.machines)
     this.#setState("connected")
+    if (frame.features?.includes(ROLES_FEATURE) === true) this.#attachRoles()
     this.options.onTunnelConfig?.(tunnelConfigOf(frame))
     this.options.onWelcome?.(resume)
     this.#scheduleHeartbeat(socket)
+  }
+
+  #attachRoles(): void {
+    this.options.roles?.attach({
+      deviceId: this.options.credentials.deviceId,
+      availability: roleAvailabilityForIcon(this.options.device.icon),
+      send: (frame) => this.#sendControl(frame)
+    })
   }
 
   #adoptConnection(frame: HubFrame<"welcome">): WelcomeResume {

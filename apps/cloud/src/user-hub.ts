@@ -1,5 +1,6 @@
 import {
   CLOUD_PROTOCOL_VERSION,
+  type CloudRoleStatus,
   type CredentialCommand,
   decodeAppToHub,
   decodeMachineToHub,
@@ -9,7 +10,8 @@ import {
   isoTimestamp,
   MACHINE_PEERS_FEATURE,
   type MachineHello,
-  type CloudMachinePresence
+  type CloudMachinePresence,
+  ROLES_FEATURE
 } from "@codevisor/api"
 import { DurableObject } from "cloudflare:workers"
 
@@ -27,6 +29,7 @@ import {
   updateHubMachine,
   type MachineUpdate
 } from "./hub-registry.js"
+import { HubRoles, isRoleFrame } from "./hub-roles.js"
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { hubTunnel } from "./hub-tunnel-events.js"
@@ -65,12 +68,14 @@ export class UserHub extends DurableObject<CloudEnv> {
   readonly #resume: ResumeSessions
   readonly #net: HubSockets
   readonly #inbox: HubInbox
+  readonly #roles: HubRoles
   readonly #metrics = new HubMetrics()
 
   constructor(ctx: DurableObjectState, env: CloudEnv) {
     super(ctx, env)
     this.#net = new HubSockets(ctx)
     this.#inbox = new HubInbox(ctx.storage.sql, this.#net)
+    this.#roles = new HubRoles(ctx.storage.sql, this.#net, (next) => this.#ensureAlarm(next))
     this.#resume = new ResumeSessions(
       ctx.storage.sql,
       Number(env.RESUME_GRACE_MS ?? "") || DEFAULT_RESUME_GRACE_MS
@@ -106,6 +111,7 @@ export class UserHub extends DurableObject<CloudEnv> {
 
   removeMachine(deviceId: string): boolean {
     this.#inbox.forgetDevice(deviceId)
+    this.#roles.forget(deviceId, Date.now())
     return removeHubMachine(this.#notices(), deviceId, CLOSE_REVOKED)
   }
 
@@ -123,6 +129,10 @@ export class UserHub extends DurableObject<CloudEnv> {
 
   credentialCommand(id: string, owner: string, command: CredentialCommand) {
     return storeCredentialCommand(this.ctx.storage, this.#accountDeleted, id, owner, command)
+  }
+
+  roleStatus(): CloudRoleStatus[] {
+    return this.#roles.status(Date.now())
   }
 
   subscribeInbox(inboxId: string, deviceId: string): SubscribeOutcome {
@@ -236,6 +246,7 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (acked !== undefined) return this.#inbox.acknowledge(attachment.deviceId!, acked)
     const frame = decodeMachineToHub(message)
     if (frame.t === "ping") return answerPing(socket)
+    if (isRoleFrame(frame)) return this.#roles.handle(socket, attachment, frame, Date.now())
     if (frame.t === "tunnel-addr") {
       return hubTunnel.addr(this.ctx.storage.sql, this.#net, attachment, frame.tunnel)
     }
@@ -308,7 +319,8 @@ export class UserHub extends DurableObject<CloudEnv> {
       ...welcomeHead(attachment.connectionId),
       ...resumeFields(token, resumed),
       ...this.#machinesForPeers(attachment.peerAware),
-      ...scope.welcome
+      ...scope.welcome,
+      features: [ROLES_FEATURE]
     }
   }
 
@@ -431,6 +443,7 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (survivors.length > 0) return
     if (attachment.kind === "machine") {
       this.ctx.storage.sql.exec(markMachineSeenSql, isoTimestamp(), attachment.deviceId!)
+      this.#roles.gone(attachment.deviceId!, Date.now())
     }
     this.#metrics.sessionEnd(attachment)
     const deadline = this.#resume.markDisconnected(attachment.connectionId, Date.now())
@@ -455,7 +468,12 @@ export class UserHub extends DurableObject<CloudEnv> {
       abandonSession(this.#notices(), session)
     }
     this.#inbox.sweep(now)
-    const next = earliest(this.#resume.nextExpiry(), this.#inbox.nextExpiry())
+    this.#roles.sweep(now)
+    const next = [
+      this.#resume.nextExpiry(),
+      this.#inbox.nextExpiry(),
+      this.#roles.nextCheck(now)
+    ].reduce(earliest)
     if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(next, now + 250))
   }
 

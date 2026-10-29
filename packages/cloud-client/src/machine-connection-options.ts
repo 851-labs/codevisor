@@ -2,6 +2,7 @@ import type { CloudRelayInfo, CloudVouchedDevice, HubInboxItem } from "@codeviso
 
 import type { ChannelHandler } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
+import type { MachineRoles } from "./machine-roles.js"
 import type {
   CancelTimeout,
   MachineConnectionState,
@@ -39,6 +40,7 @@ export interface MachineConnectionOptions {
   onTunnelConfig?: (config: { relays: readonly CloudRelayInfo[]; enabled: boolean }) => void
   onPeerDevices?: (devices: readonly CloudVouchedDevice[]) => void
   onInboxItem?: (item: HubInboxItem) => void
+  roles?: MachineRoles
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   random?: () => number

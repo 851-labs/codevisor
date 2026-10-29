@@ -26,6 +26,7 @@ import { routePluginDiscovery } from "./routes/plugin-discovery-routes.js"
 import { routePluginEvents } from "./routes/plugin-event-routes.js"
 import { routeProjects } from "./routes/projects.js"
 import { accountGatewayRouteFor, mcpOAuthRouteFor, publicRouteFor } from "./routes/public-routes.js"
+import { routeRoles } from "./routes/roles.js"
 import type { RouteContext, RouteFamily } from "./routes/route-context.js"
 import { bindSandboxEvents, routeSandboxes } from "./routes/sandboxes.js"
 import { routeScreenSharing } from "./routes/screen-sharing.js"
@@ -127,6 +128,8 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, request, response, url }) => routeToolIcons(services, request, response, url),
   ({ services, request, response, url }) => routeLinkPreviews(services, request, response, url),
   ({ services, request, response, url }) => routeMachineStats(services, request, response, url),
+  ({ services, config, request, response, url }) =>
+    routeRoles(services, config, request, response, url),
   ({ services, request, response, url }) => routeFirstRun(services, request, response, url),
   ({ services, request, response, url }) => routeMcps(services, request, response, url),
   ({ services, request, response, url }) => routePluginCatalog(services, request, response, url),

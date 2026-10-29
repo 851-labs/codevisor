@@ -1,10 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
 import { macNativeHostAvailable, requestMacScreenSharing } from "@codevisor/automation"
+import { MachineRoles } from "@codevisor/cloud-client"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   defaultNativeConfigFileSystem,
@@ -310,9 +312,11 @@ export const startMachineNetwork = async (options: {
 }) => {
   const fleetTickets = makeFleetTickets()
   const cloudInbox = makeCloudInbox()
+  const machineRoles = systemMachineRoles()
   const cloudBridgeOptions = {
     fleetCallers: fleetTickets.callers,
     inbox: cloudInbox,
+    roles: machineRoles,
     credentialsPath: join(dirname(options.databasePath), "cloud.json"),
     machineName: options.machineName,
     icon: options.icon,
@@ -350,5 +354,24 @@ export const startMachineNetwork = async (options: {
       ? {}
       : { installUrl: process.env["CODEVISOR_INSTALL_URL"] })
   })
-  return { cloudControl, cloudInbox, machine, machineLink, machineEnrollment, fleetTickets }
+  return {
+    cloudControl,
+    cloudInbox,
+    machine,
+    machineLink,
+    machineEnrollment,
+    machineRoles,
+    fleetTickets
+  }
 }
+
+const systemMachineRoles = (): MachineRoles =>
+  new MachineRoles({
+    now: () => performance.now(),
+    scheduleTimeout: (callback, delayMs) => {
+      const timeout = setTimeout(callback, delayMs)
+      timeout.unref()
+      return () => clearTimeout(timeout)
+    },
+    log: (line) => console.error(line)
+  })

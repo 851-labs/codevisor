@@ -16,6 +16,7 @@ import {
 import { AddBotProjectRequest, Bot, CreateBotRequest, UpdateBotRequest } from "./bots.js"
 import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
+import { MachineRolesResponse } from "./cloud-role-protocol.js"
 import {
   AgentSessionSummary,
   AnswerOpenCodeAuthRequest,
@@ -420,6 +421,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/jobs/:jobId/cancel": ExecutionJob,
   "GET /v1/machines": MachinesResponse,
   "GET /v1/machine/stats": MachineStats,
+  "GET /v1/roles": MachineRolesResponse,
   "POST /v1/machines/invite": MachineInviteResponse,
   "POST /v1/machines/add": AddMachineResponse,
   "DELETE /v1/machines/:machineId": MachinesResponse,

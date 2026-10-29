@@ -26,6 +26,7 @@ import {
   relayRoutes,
   TUNNEL_ENDPOINT_HEADER
 } from "./relay-routes.js"
+import { roleRoutes } from "./role-routes.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
 
@@ -54,6 +55,7 @@ app.route("/", machineInviteRoutes)
 app.route("/", inboxRoutes)
 app.route("/", inboxIngress)
 app.route("/", oauthClientRoutes)
+app.route("/", roleRoutes)
 
 app.get("/.well-known/codevisor", (c) =>
   c.json({
