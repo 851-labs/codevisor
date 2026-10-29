@@ -99,11 +99,12 @@ struct HomeSidebarContentBuilder {
     let projectName = projectGroups.first {
       $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
     }?.name
+    let mainChatId = environment.projectList.mainChat(of: item)?.id
     return HomeSidebarWorkspace(
       id: workspace.id,
       serverId: workspace.serverId,
       name: workspace.name,
-      anchorSessionId: item.routingChatIds.first { session($0, serverId: item.serverId) != nil },
+      anchorSessionId: mainChatId,
       subtitle: SidebarRowSubtitle.make(
         details: details,
         title: workspace.name,
@@ -115,7 +116,7 @@ struct HomeSidebarContentBuilder {
       machine: details.contains(.machine) && !(preferences.grouping == .machine && underHeading)
         ? rowMachine(serverId: workspace.serverId) : nil,
       pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequest(for: workspace) : nil,
-      leadingRow: leadingRow(rows, workspace: workspace),
+      leadingRow: leadingRow(rows, workspace: workspace, mainChatId: mainChatId),
       primaryRowId: selectedPaneId(in: workspace),
       isPinned: preferences.pinnedIDs.contains(workspace.id.uuidString),
       isArchived: workspace.isArchived,
@@ -133,7 +134,10 @@ struct HomeSidebarContentBuilder {
     return tab.root.group(id: tab.activeLeafId)?.selectedPaneId
   }
 
-  private func leadingRow(_ rows: [HomeSidebarTabRow], workspace: Workspace) -> HomeSidebarTabRow? {
+  private func leadingRow(
+    _ rows: [HomeSidebarTabRow], workspace: Workspace, mainChatId: UUID?
+  ) -> HomeSidebarTabRow? {
+    if let main = mainChatId.flatMap({ id in rows.first { $0.chatSessionId == id } }) { return main }
     if let urgent = rows.filter({ $0.status != .idle }).min(by: { $0.status < $1.status }) { return urgent }
     let chats = rows.filter { $0.chatSessionId != nil }
     let selected = selectedPaneId(in: workspace)

@@ -190,6 +190,16 @@ public final class ProjectListModel {
     navigationStore?.projection.sessionIndex[sessionId]
   }
 
+  public func mainChat(of item: WorkspaceSidebarItem) -> ChatSession? {
+    var hidden: ChatSession?
+    for id in item.routingChatIds {
+      guard let chat = session(id, serverId: item.serverId) else { continue }
+      if chat.origin == .codevisor || showsImportedSessions { return chat }
+      if hidden == nil { hidden = chat }
+    }
+    return hidden
+  }
+
   public func workspaceAssignments(for serverId: String) -> [UUID: UUID] {
     guard let projection = navigationStore?.projection else { return [:] }
     var assignments: [UUID: UUID] = [:]

@@ -182,6 +182,24 @@ struct NavigationIncrementalTests {
     #expect(fixture.workspaces.mainFirstChatSessionIds(in: workspace) == [side.id])
   }
 
+  @Test("A workspace's main chat is its first routed chat, passing over imported chats while they're hidden")
+  func mainChatSkipsHiddenImports() async throws {
+    let imported = ChatSession(projectId: project.id, serverId: "m", title: "Imported", origin: .imported)
+    let side = ChatSession(projectId: project.id, serverId: "m", title: "Side")
+    var tabs = workspace("Tabs", chat: side)
+    tabs.mainSessionId = imported.id
+    let fixture = NavigationFixture()
+    await fixture.install(machineId: "m", projects: [project], sessions: [imported, side], workspaces: [tabs])
+    var importedRecord = serverSession(from: imported)
+    importedRecord.workspaceId = tabs.id.uuidString
+    #expect(await fixture.store.apply(.fixture(cursor: 5, sessions: [importedRecord]), machineId: "m"))
+    let item = try #require(fixture.store.workspaceEntries.sidebar.first { $0.id == tabs.id })
+
+    #expect(fixture.projectList.mainChat(of: item)?.id == imported.id)
+    fixture.projectList.showsImportedSessions = false
+    #expect(fixture.projectList.mainChat(of: item)?.id == side.id)
+  }
+
   @Test("Archived chats follow archive time across updates, restoration, and rearchiving")
   func archivedSidebarOrder() async {
     let fixture = NavigationFixture()
