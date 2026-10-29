@@ -30,18 +30,6 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-.marketing-shell {
-  background-color: var(--color-page);
-  color: var(--color-text);
-  color-scheme: dark;
-}
-
-html:has(.marketing-shell),
-body:has(.marketing-shell) {
-  background-color: var(--color-page);
-  color-scheme: dark;
-}
-
 html:has(.landing) {
   color-scheme: light dark !important;
   --landing-card-radius: 18px;

@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 
 import { DOWNLOAD_SECTION_URL } from "../components/header-kit"
-import { PlainPage, plainLinkClass } from "../components/plain-page"
+import { ReportLine } from "../components/report-line"
+import { HeroButton, PageHero, SitePage } from "../components/site-page"
 import { reportAddress, reportHref, type CatalogPlugin } from "../lib/plugin-catalog"
 import { loadPlugin, pluginPath, type PluginLookup } from "../lib/plugin-index"
 
@@ -30,49 +31,41 @@ const pluginTitle = (plugin: PluginLookup): string => {
 function PluginLinkPage() {
   const { plugin } = Route.useLoaderData()
   return (
-    <PlainPage>
+    <SitePage>
       <PluginLinkContent plugin={plugin} />
-    </PlainPage>
+    </SitePage>
   )
 }
 
 function PluginLinkContent({ plugin }: { plugin: PluginLookup }) {
   if (plugin === null)
-    return <p>The plugin catalog is unreachable right now. Try again in a few minutes.</p>
+    return (
+      <PageHero description="The plugin catalog is unreachable right now. Try again in a few minutes." />
+    )
   if (plugin === "missing")
     return (
-      <>
-        <p>This plugin isn’t in the catalog. It may have been removed, or the link is stale.</p>
+      <PageHero description="This plugin isn’t in the catalog. It may have been removed, or the link is stale.">
         <ReportLine href={`mailto:${reportAddress}`} />
-      </>
+      </PageHero>
     )
   return <PluginLinks plugin={plugin} />
 }
 
 function PluginLinks({ plugin }: { plugin: CatalogPlugin }) {
   return (
-    <>
-      <h1 className="text-2xl font-semibold tracking-tight text-text">{plugin.title}</h1>
-      <p className="flex flex-wrap gap-x-6 gap-y-2">
-        <a href={`${appLinkOrigin}${pluginPath(plugin.name)}`} className={plainLinkClass}>
+    <PageHero title={plugin.title}>
+      <div className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-4">
+        <HeroButton href={`${appLinkOrigin}${pluginPath(plugin.name)}`}>
           Open in Codevisor
-        </a>
-        <a href={DOWNLOAD_SECTION_URL} className={plainLinkClass}>
+        </HeroButton>
+        <a
+          href={DOWNLOAD_SECTION_URL}
+          className="text-[16px] font-semibold text-muted transition-colors hover:text-text"
+        >
           Get Codevisor
         </a>
-      </p>
+      </div>
       <ReportLine href={reportHref(plugin)} />
-    </>
-  )
-}
-
-function ReportLine({ href }: { href: string }) {
-  return (
-    <p>
-      Report a plugin:{" "}
-      <a href={href} className={plainLinkClass}>
-        {reportAddress}
-      </a>
-    </p>
+    </PageHero>
   )
 }

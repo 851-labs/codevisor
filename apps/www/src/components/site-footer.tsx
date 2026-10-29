@@ -1,26 +1,22 @@
+const FOOTER_LINKS = [
+  { href: "/docs", label: "Docs" },
+  { href: "/support", label: "Support" },
+  { href: "/terms", label: "Terms" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/install.sh", label: "install.sh" }
+]
+
 export function SiteFooter() {
   return (
-    <footer className="border-t border-hairline px-6 py-10">
-      <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-xs text-muted sm:flex-row">
-        <span>© {new Date().getFullYear()} Codevisor LLC</span>
-        <nav className="flex flex-wrap justify-center gap-x-5 gap-y-3" aria-label="Footer">
-          <a href="/docs" className="transition-colors hover:text-text">
-            Docs
+    <footer className="flex flex-col items-center justify-between gap-4 border-t border-hairline px-5 py-10 text-xs text-muted sm:flex-row sm:px-8">
+      <span>© {new Date().getFullYear()} Codevisor LLC</span>
+      <nav className="flex flex-wrap justify-center gap-x-5 gap-y-3" aria-label="Footer">
+        {FOOTER_LINKS.map((link) => (
+          <a key={link.href} href={link.href} className="transition-colors hover:text-text">
+            {link.label}
           </a>
-          <a href="/support" className="transition-colors hover:text-text">
-            Support
-          </a>
-          <a href="/terms" className="transition-colors hover:text-text">
-            Terms
-          </a>
-          <a href="/privacy" className="transition-colors hover:text-text">
-            Privacy
-          </a>
-          <a href="/install.sh" className="transition-colors hover:text-text">
-            install.sh
-          </a>
-        </nav>
-      </div>
+        ))}
+      </nav>
     </footer>
   )
 }
