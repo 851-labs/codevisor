@@ -5,6 +5,7 @@ import type {
   ModelInfo,
   Options as ClaudeOptions,
   SDKControlGetContextUsageResponse,
+  SDKControlInitializeResponse,
   SDKMessage,
   SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
@@ -147,6 +148,20 @@ export class FakeQuery {
 
   async supportedCommands(): Promise<Array<ClaudeSlashCommand>> {
     return this.commands
+  }
+
+  initializationFailure: unknown = undefined
+
+  async initializationResult(): Promise<SDKControlInitializeResponse> {
+    if (this.initializationFailure !== undefined) throw this.initializationFailure
+    return {
+      account: {},
+      agents: [],
+      available_output_styles: [],
+      commands: [],
+      models: [],
+      output_style: "default"
+    }
   }
 
   async supportedModels(): Promise<Array<ModelInfo>> {

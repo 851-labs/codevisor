@@ -22,6 +22,7 @@ export * from "./question-events.js"
 export * from "./usage-limits-events.js"
 export * from "./usage-limit-stops.js"
 export * from "./harness-failure-stops.js"
+export * from "./failure-text.js"
 export {
   BOT_GOAL_REFUSAL,
   BOT_PLAN_MODE_REFUSAL,

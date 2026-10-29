@@ -9,6 +9,7 @@ import {
 import { projectChatOutput } from "./chat-output-projection.js"
 import { idRows, revisionRows } from "./common-rows.js"
 import { jsonRecord, type JsonRecord } from "./event-payloads.js"
+import { clearFreshAgentSessionSql } from "./fresh-agent-sessions-service.js"
 import type { SessionEventRow } from "./rows.js"
 import { projectSessionEventState } from "./session-event-state.js"
 import { projectTranscriptState } from "./transcript-state.js"
@@ -90,6 +91,7 @@ export const projectChatEvent = (
 
   if (event.kind === "session.updated" && payload.turnState === "started") {
     itemId = startAssistantTurn(sqlite, event, payload, sessionId)
+    sqlite.prepare(clearFreshAgentSessionSql).run(sessionId)
   } else if (event.kind === "session.output") {
     itemId = projectChatOutput(sqlite, event, payload, sessionId)
   } else if (

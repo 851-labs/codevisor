@@ -49,6 +49,7 @@ export type ClaudeQuery = AsyncIterable<SDKMessage> &
     Query,
     | "applyFlagSettings"
     | "getContextUsage"
+    | "initializationResult"
     | "interrupt"
     | "setModel"
     | "setPermissionMode"
@@ -175,6 +176,7 @@ export interface ClaudeSession {
   cancelInFlight: Promise<CancelResult> | undefined
   retired: boolean
   streamEnded: boolean
+  startupFailure: string | undefined
   pendingUserCommands: number
   interruptRequested: boolean
   truncationCount: number

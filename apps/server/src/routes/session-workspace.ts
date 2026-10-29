@@ -30,6 +30,7 @@ import {
   botForParentSession
 } from "./bot-guards.js"
 import { withBotSessionOption } from "./bot-session-modes.js"
+import { isConversationMissing, rememberConversationRecap } from "./conversation-recap.js"
 import { assertRemoteParentVerified } from "./fleet-calls.js"
 import { restoreSessionConfigSelections } from "./session-config-restore.js"
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
@@ -70,8 +71,13 @@ const createServerSession = async (
     ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
     agentSessionId
   }
+  const startedHere = payload.agentSessionId === undefined && agentSessionId !== ""
+  const markFresh = async (session: SessionSummary): Promise<SessionSummary> => {
+    if (startedHere) await run(services.db.markAgentSessionFresh(session.id, agentSessionId))
+    return session
+  }
   if (payload.workspaceId === undefined) {
-    return run(services.db.createSession(sessionPayload))
+    return markFresh(await run(services.db.createSession(sessionPayload)))
   }
   const created = await run(
     services.db.createWorkspaceWithSession({
@@ -96,7 +102,7 @@ const createServerSession = async (
       created.workspace
     )
   }
-  return created.session
+  return markFresh(created.session)
 }
 
 export const createSessionIfMissing = async (
@@ -344,6 +350,7 @@ export const loadAgentSessionFor = async (
       )
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
+    await run(services.db.markAgentSessionFresh(sessionId, agentSessionId))
     await appendAndPublish(
       services.db,
       fanout,
@@ -358,6 +365,10 @@ export const loadAgentSessionFor = async (
     try {
       return { agentSessionId: resumedId, metadata: await load(resumedId) }
     } catch (cause) {
+      if (isConversationMissing(cause)) {
+        await rememberConversationRecap(services, sessionId)
+        return startFresh()
+      }
       if (session.origin !== "codevisor" || !(await hasNoAgentReplyToLose(services, sessionId))) {
         throw cause
       }
@@ -365,7 +376,7 @@ export const loadAgentSessionFor = async (
     }
   }
   let started: Awaited<ReturnType<typeof startFresh>>
-  if (session.agentSessionId === "") started = await startFresh()
+  if (await hasNothingToResume(services, session)) started = await startFresh()
   else started = await resumeOrStartFresh()
   const { agentSessionId, metadata } = started
   if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
@@ -374,6 +385,16 @@ export const loadAgentSessionFor = async (
   }
   await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
   return restoreSessionConfigSelections(services, fanout, serverId, sessionId, metadata)
+}
+
+const hasNothingToResume = async (
+  services: CodevisorServerServices,
+  session: SessionSummary
+): Promise<boolean> => {
+  if (session.agentSessionId === "") return true
+  if (session.agentSessionId === undefined) return false
+  if (services.agents.loadedAgentSessionIds().includes(session.agentSessionId)) return false
+  return run(services.db.isAgentSessionFresh(session.id))
 }
 
 const hasNoAgentReplyToLose = async (

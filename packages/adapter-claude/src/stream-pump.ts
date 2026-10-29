@@ -50,7 +50,8 @@ export const makeStreamPump = (session: ClaudeSession, deps: StreamPumpDeps): St
 const streamFailureText = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
-const isIdle = (session: ClaudeSession): boolean => !session.turnActive && !session.retired
+const isIdle = (session: ClaudeSession): boolean =>
+  !session.turnActive && !session.retired && session.startupFailure === undefined
 
 const failIdleSession = (session: ClaudeSession, cause: unknown, failure: string): void => {
   session.pendingPrompt?.reject(runtimeError("prompt", cause))

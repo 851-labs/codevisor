@@ -420,6 +420,11 @@ export interface CodevisorDatabaseService
     accountId: string
   ) => Effect.Effect<void, DatabaseError>
   readonly removeHarnessAccount: (accountId: string) => Effect.Effect<void, DatabaseError>
+  readonly markAgentSessionFresh: (
+    sessionId: string,
+    agentSessionId: string
+  ) => Effect.Effect<void, DatabaseError>
+  readonly isAgentSessionFresh: (sessionId: string) => Effect.Effect<boolean, DatabaseError>
   readonly bindSessionHarnessAccount: (
     sessionId: string,
     accountId: string

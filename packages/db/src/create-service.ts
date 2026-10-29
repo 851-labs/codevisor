@@ -13,6 +13,7 @@ import { attempt } from "./errors.js"
 import { makeEventsService } from "./events-service.js"
 import { makeFilesService } from "./files-service.js"
 import { makeFleetOutboxService } from "./fleet-outbox-service.js"
+import { makeFreshAgentSessionsService } from "./fresh-agent-sessions-service.js"
 import { makeHarnessService } from "./harness-service.js"
 import { makeMachineSettingsService } from "./machine-settings-service.js"
 import { makeMcpService } from "./mcp-service.js"
@@ -72,6 +73,7 @@ export const createService = (
     ...makeFilesService(context),
     ...makeWorkspaceMediaService(context),
     ...makeHarnessService(context),
+    ...makeFreshAgentSessionsService(context),
     ...makeMcpService(context),
     ...makeAuthService(context),
     ...makeBrowserStateService(context),

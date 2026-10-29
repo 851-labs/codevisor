@@ -25,6 +25,7 @@ import {
 } from "./questions.js"
 import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
+import { retiredError, startupError } from "./startup-failure.js"
 import {
   ensureObservedTurnStarted,
   ensureTurnStarted,
@@ -86,7 +87,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       }
 
       session.retired = true
-      failDeferredPrompts(session, new Error("Claude runtime was retired"))
+      failDeferredPrompts(session, retiredError())
       if (session.backgroundTasks.size > 0) {
         session.backgroundTasks.clear()
         await emitBackgroundTasks(session)
@@ -112,7 +113,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
   }),
   close: adapterPromise("close", async () => {
     session.retired = true
-    failDeferredPrompts(session, new Error("Claude runtime was retired"))
+    failDeferredPrompts(session, retiredError())
     await cancelClaudePendingQuestions(session)
     session.input.end()
     session.abort.abort()
@@ -123,17 +124,18 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       if (cancellation !== undefined) {
         const result = await cancellation
         if (result.runtimeState === "retire") {
-          throw new Error("Claude runtime was retired")
+          throw retiredError()
         }
       }
       if (session.retired) {
-        throw new Error("Claude runtime was retired")
+        throw retiredError()
       }
       const pending = deferred<{ stopReason: string }>()
       if (session.turnActive) {
         session.deferredPrompts.push({ input, pending })
         return pending.promise
       }
+      if (session.streamEnded) throw startupError(session)
       session.pendingPrompt = pending
       await ensureTurnStarted(session, "user")
       session.input.push({

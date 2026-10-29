@@ -7,6 +7,7 @@ import {
   locateExecutableOnPath,
   locateHarnessBinary as locateDefinitionBinary
 } from "./executable-locator.js"
+import { withPlainFailureText } from "./failure-text.js"
 import { harnessCatalog } from "./harness-catalog.js"
 import { makeMessagePhases, type MessagePhases } from "./message-phases.js"
 import { SKILLS_UPDATE } from "./session-skills.js"
@@ -139,7 +140,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
       }
     }
     let next = session.chain
-    for (const labeled of session.phases.label(event)) {
+    for (const labeled of session.phases.label(withPlainFailureText(event))) {
       next = next
         .then(() => session.sink(labeled))
         .then(

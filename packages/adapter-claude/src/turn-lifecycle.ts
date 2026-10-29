@@ -6,6 +6,7 @@ import type { TurnStopKind } from "@codevisor/api"
 import { claudeContent } from "./attachments.js"
 import { deferred } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
+import { retiredError, startupError } from "./startup-failure.js"
 
 export interface TurnEnding {
   readonly stopDetail?: string | undefined
@@ -100,7 +101,7 @@ export const finishActiveTurn = (
 const dispatchNextDeferredPrompt = async (session: ClaudeSession): Promise<void> => {
   if (session.deferredPrompts.length === 0) return
   if (session.retired || session.streamEnded) {
-    failDeferredPrompts(session, new Error("Claude runtime was retired"))
+    failDeferredPrompts(session, session.retired ? retiredError() : startupError(session))
     return
   }
   const next = session.deferredPrompts.shift()

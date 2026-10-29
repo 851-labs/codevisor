@@ -25,6 +25,7 @@ import {
   type ConfigSelections,
   type KnownClaudeModels
 } from "./start-models.js"
+import { startupError } from "./startup-failure.js"
 import { makeStreamPump } from "./stream-pump.js"
 import { claudeConfigDir, type SubagentTranscripts } from "./subagent-transcripts.js"
 
@@ -104,7 +105,8 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     })
     session = created
     void emitBackgroundTasks(created)
-    makeStreamPump(created, { options, queryFn, readFile })(q).catch(() => undefined)
+    const pumped = makeStreamPump(created, { options, queryFn, readFile })(q).catch(() => undefined)
+    if (resume !== undefined) await confirmResumed(created, pumped)
     trackClaudeSkills(created)
 
     try {
@@ -122,6 +124,26 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     return created
   }
   return startSession
+}
+
+const RESUME_CONFIRM_TIMEOUT_MS = 30_000
+
+const confirmResumed = async (session: ClaudeSession, pumped: Promise<void>): Promise<void> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const waited = new Promise<void>((resolvePromise) => {
+    timeout = setTimeout(resolvePromise, RESUME_CONFIRM_TIMEOUT_MS)
+  })
+  try {
+    await Promise.race([session.q.initializationResult(), waited])
+  } catch (cause) {
+    await pumped
+    session.retired = true
+    session.input.end()
+    session.abort.abort()
+    throw startupError(session, cause)
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 interface ClaudeSessionSeed {
@@ -196,6 +218,7 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   q: seed.q,
   retired: false,
   streamEnded: false,
+  startupFailure: undefined,
   sdkSessionId: seed.key,
   subagentMessageIds: new Map(),
   subagentLastTexts: new Map(),

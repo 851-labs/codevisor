@@ -27,4 +27,15 @@ describe("runtimeError", () => {
       expect(runtimeError("prompt", cause).authRequired).toBeUndefined()
     }
   })
+  it("remembers when a harness couldn't find the conversation it was asked to resume", () => {
+    const missing = Object.assign(
+      new Error("Claude Code couldn't find this chat's saved conversation."),
+      {
+        conversationMissing: true
+      }
+    )
+
+    expect(runtimeError("loadSession", missing).conversationMissing).toBe(true)
+    expect(runtimeError("loadSession", new Error("offline")).conversationMissing).toBeUndefined()
+  })
 })

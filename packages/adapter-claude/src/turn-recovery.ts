@@ -6,6 +6,7 @@ import { cancelClaudePendingQuestions } from "./questions.js"
 import { classifyResult, MAX_TRANSIENT_RETRIES, type TurnResolution } from "./result-resolution.js"
 import { emitResultUsage } from "./result-usage.js"
 import type { ClaudeSession } from "./session.js"
+import { isStartupFailure, recordStartupFailure } from "./startup-failure.js"
 import {
   ensureObservedTurnStarted,
   finishActiveTurn,
@@ -41,6 +42,10 @@ export const handleResult = (session: ClaudeSession, message: ResultMessage): vo
       session.deferredTaskResult = message
       logDeferredTaskResult(session, message, "deferred")
     }
+    return
+  }
+  if (isStartupFailure(session, message)) {
+    recordStartupFailure(session, message)
     return
   }
   session.awaitingRecoveryResult = false

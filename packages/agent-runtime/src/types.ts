@@ -20,7 +20,8 @@ export class AgentRuntimeError extends Schema.TaggedErrorClass<AgentRuntimeError
   {
     operation: Schema.String,
     message: Schema.String,
-    authRequired: Schema.optional(Schema.Boolean)
+    authRequired: Schema.optional(Schema.Boolean),
+    conversationMissing: Schema.optional(Schema.Boolean)
   }
 ) {}
 
@@ -264,5 +265,6 @@ export const runtimeError = (operation: string, cause: unknown): AgentRuntimeErr
     operation,
     /* v8 ignore next */
     message: cause instanceof Error ? cause.message : String(cause),
-    ...(requiresSignIn(cause) ? { authRequired: true } : {})
+    ...(requiresSignIn(cause) ? { authRequired: true } : {}),
+    ...(isRecord(cause) && cause.conversationMissing === true ? { conversationMissing: true } : {})
   })

@@ -1,4 +1,4 @@
-import { AgentRuntimeError, harnessFailureKind } from "@codevisor/agent-runtime"
+import { AgentRuntimeError, harnessFailureKind, plainFailureText } from "@codevisor/agent-runtime"
 import type {
   AttachmentRef,
   ConnectedClient,
@@ -25,6 +25,7 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
+import { withConversationRecap } from "./conversation-recap.js"
 import {
   markAppContextsDelivered,
   withAppContexts,
@@ -388,8 +389,9 @@ const promptText = async (
   item: Pick<PromptQueueItem, "text" | "origin">,
   skills: Parameters<typeof withCodevisorSkills>[3]
 ): Promise<AppContextPrompt> => {
-  if (item.origin === "system") return { text: item.text, delivered: [] }
-  const typed = await withCodevisorSkills(services, sessionId, item.text, skills)
+  const text = withConversationRecap(services, sessionId, item.text)
+  if (item.origin === "system") return { text, delivered: [] }
+  const typed = await withCodevisorSkills(services, sessionId, text, skills)
   return withAppContexts(services, sessionId, typed)
 }
 
@@ -460,9 +462,10 @@ const runPromptInBackground = async (
         serverId
       })
     }
+    const message = plainFailureText(failureMessage(cause))
     await appendAndPublish(services.db, fanout, "session.error", sessionId, {
-      message: failureMessage(cause),
-      stopKind: signedOut ? "authRequired" : harnessFailureKind({ message: failureMessage(cause) }),
+      message,
+      stopKind: signedOut ? "authRequired" : harnessFailureKind({ message }),
       serverId
     })
   }

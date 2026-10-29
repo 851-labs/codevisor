@@ -252,7 +252,13 @@ const v4FixtureSql = `
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `
 
+export const rewindFreshAgentSessionsSql = `
+  alter table sessions drop column fresh_agent_session_id;
+  delete from schema_migrations where id = 83;
+`
+
 export const rewindPluginsSql = `
+  ${rewindFreshAgentSessionsSql}
   drop table plugin_event_deliveries;
   drop table plugin_events;
   drop table plugin_event_cursors;

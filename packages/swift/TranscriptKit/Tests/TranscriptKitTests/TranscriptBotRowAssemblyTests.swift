@@ -104,6 +104,28 @@ struct TranscriptBotRowAssemblyTests {
       ])
   }
 
+  @Test func showsOneCardForAFailureThatPostedSeveralNotices() throws {
+    let stopped = AssistantMessage(
+      turn: AssistantTurn(stopDetail: "Claude Code couldn't find this chat's saved conversation."))
+    let conversation = TranscriptBotConversation(
+      messages: [
+        message(userID.uuidString.lowercased(), .user, "bruh what", at: 0),
+        message("n1", .notice, "Claude Code couldn't find this chat's saved conversation.", at: 1),
+        message("n2", .notice, "Couldn't reply: Claude runtime was retired", at: 2),
+      ],
+      isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.assistant(stopped)], conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(
+      rows.map(\.id) == [
+        .botTimestamp(userID.uuidString.lowercased()), .message(userID), .assistantChrome(stopped.id, .epilogue),
+      ])
+  }
+
   @Test func leavesAStopOutWhileTheLatestTurnIsStillWorking() throws {
     let working = AssistantMessage(
       turn: AssistantTurn(isGenerating: true, stopDetail: "You've hit your usage limit.", stopKind: "usageLimit"))
