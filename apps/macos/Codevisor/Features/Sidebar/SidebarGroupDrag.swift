@@ -5,7 +5,7 @@ import SwiftUI
 struct SidebarGroupDrag: Equatable {
   let groupID: String
   let title: String
-  let systemImage: String
+  let icon: SidebarGroupIcon
   let liftedFrame: CGRect
   var translation: CGFloat = 0
   var targetIndex: Int?
@@ -16,10 +16,6 @@ struct SidebarGroupDrag: Equatable {
 extension SidebarView {
   var reordersGroups: Bool { grouping != .flat }
 
-  func machineKey(_ serverId: String) -> String {
-    workspaceListing.machineKey(serverId)
-  }
-
   func groupReorderGesture(for id: String, heading: SidebarWorkspaceGroup.Heading) -> some Gesture {
     DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.reorderSpace))
       .onChanged { value in
@@ -27,7 +23,7 @@ extension SidebarView {
           guard let frame = dragGeometry.headings[id], frame != .zero else { return }
           withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
             groupDrag = SidebarGroupDrag(
-              groupID: id, title: heading.title, systemImage: heading.systemImage, liftedFrame: frame)
+              groupID: id, title: heading.title, icon: heading.icon, liftedFrame: frame)
           }
         }
         groupDrag?.translation = value.translation.height
@@ -100,7 +96,9 @@ extension SidebarView {
   }
 
   private func orderKey(_ group: SidebarWorkspaceGroup) -> String {
-    grouping == .project ? SidebarWorkspaceGroup.projectKey(group) : machineKey(group.items[0].serverId)
+    grouping == .project
+      ? SidebarWorkspaceGroup.projectKey(group)
+      : workspaceListing.machineGroups.group(forServer: group.items[0].serverId).orderKey
   }
 
   @ViewBuilder
@@ -109,7 +107,7 @@ extension SidebarView {
       ZStack(alignment: .topLeading) {
         let frame = groupDrag.ghostFrame
         HStack(spacing: 7) {
-          Image(systemName: groupDrag.systemImage)
+          groupDrag.icon.image
             .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
             .foregroundStyle(.secondary)
             .frame(width: 18)

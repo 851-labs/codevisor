@@ -29,24 +29,17 @@ struct SidebarWorkspaceListing {
   func groups(of items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
     SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinnedIDs, projects: environment.projectList.projects,
-      defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder, machineKey: machineKey,
-      projectOrder: projectOrder, machineHeading: heading)
+      defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder,
+      projectOrder: projectOrder, machineGroup: machineGroups.group(forServer:))
   }
 
-  func machineKey(_ serverId: String) -> String {
-    environment.navigationStore.machineOrderKey(forMachineId: serverId, machines: environment.machines)
+  var machineGroups: SidebarMachineGroups {
+    SidebarMachineGroups(
+      machines: environment.machines, navigationStore: environment.navigationStore,
+      machineName: SidebarRowContent.machineName)
   }
 
   private var botHomeWorkspaceIDs: Set<UUID> {
     botsEnabled ? Set(environment.bots.bots.map(\.workspaceId)) : []
-  }
-
-  private func heading(forServer serverId: String) -> SidebarWorkspaceGroup.Heading {
-    let machine = environment.machines.machine(for: serverId)
-    return SidebarWorkspaceGroup.Heading(
-      title: machine.map(SidebarRowContent.machineName) ?? "Unknown Machine",
-      systemImage: machine?.icon.systemImage ?? "questionmark.circle",
-      newChatTarget: environment.machines.chatMachine(for: serverId).map { NewChatTarget(machine: $0.id) }
-    )
   }
 }

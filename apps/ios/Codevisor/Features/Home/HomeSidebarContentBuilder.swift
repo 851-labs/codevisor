@@ -37,15 +37,16 @@ struct HomeSidebarContentBuilder {
       preferences: preferences,
       projects: environment.projectList.projects,
       defaultServerId: environment.defaultComposerServerId,
-      machineKey: { environment.navigationStore.machineOrderKey(forMachineId: $0, machines: environment.machines) },
-      machineHeading: machineHeading
+      machineGroup: SidebarMachineGroups(
+        machines: environment.machines, navigationStore: environment.navigationStore
+      ).group(forServer:)
     ) { item, placement in
       guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace,
         workspace.isArchived == (placement == .archived)
       else { return nil }
       return sidebarWorkspace(
         workspace, item: item, preferences: preferences, projectGroups: projectGroups,
-        underHeading: placement == .list)
+        heading: placement.heading)
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
     content.bots = botEntries.map { entry in
@@ -71,20 +72,11 @@ struct HomeSidebarContentBuilder {
   ) -> HomeSidebarWorkspace? {
     guard let workspace = environment.navigationStore.workspaceEntries.entry(item.id).workspace else { return nil }
     return sidebarWorkspace(
-      workspace, item: item, preferences: preferences, projectGroups: projectGroups, underHeading: false)
+      workspace, item: item, preferences: preferences, projectGroups: projectGroups, heading: nil)
   }
 
   private func known(_ items: [WorkspaceSidebarItem]) -> [WorkspaceSidebarItem] {
     items.filter { environment.machines.machine(for: $0.serverId) != nil }
-  }
-
-  private func machineHeading(_ serverId: String) -> SidebarWorkspaceGroup.Heading {
-    let machine = environment.machines.machine(for: serverId)
-    return SidebarWorkspaceGroup.Heading(
-      title: machine?.name ?? "Unknown Machine",
-      systemImage: machine?.icon.systemImage ?? "questionmark.circle",
-      newChatTarget: environment.machines.chatMachine(for: serverId).map { NewChatTarget(machine: $0.id) }
-    )
   }
 
   private func sidebarWorkspace(
@@ -92,7 +84,7 @@ struct HomeSidebarContentBuilder {
     item: WorkspaceSidebarItem,
     preferences: HomeSidebarPreferences,
     projectGroups: [ProjectGroup],
-    underHeading: Bool
+    heading: SidebarWorkspaceGroup.Heading?
   ) -> HomeSidebarWorkspace {
     let details = preferences.rowDetails
     let rows = workspace.isArchived ? [] : rows(for: workspace)
@@ -110,9 +102,9 @@ struct HomeSidebarContentBuilder {
         projectName: projectName,
         branch: gitLookups.branch(for: workspace),
         worktreeName: workspace.worktreeName,
-        groupNamesProject: preferences.grouping == .project && underHeading
+        groupNamesProject: preferences.grouping == .project && heading != nil
       ),
-      machine: details.contains(.machine) && !(preferences.grouping == .machine && underHeading)
+      machine: details.contains(.machine) && heading?.namesMachine != true
         ? rowMachine(serverId: workspace.serverId) : nil,
       pullRequest: details.contains(.pullRequest) ? gitLookups.pullRequest(for: workspace) : nil,
       leadingRow: leadingRow(rows, workspace: workspace),

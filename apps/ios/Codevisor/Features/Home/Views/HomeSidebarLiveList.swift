@@ -18,6 +18,9 @@ struct HomeSidebarLiveList: View {
       selected: splitNavigation.flatMap(selected),
       refreshDetails: refreshDetails
     )
+    .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
+      await environment.machines.loadSandboxMachineProfiles()
+    }
   }
 
   private func refreshDetails(_ ids: [UUID], details: [SidebarRowDetail]) {

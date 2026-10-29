@@ -63,12 +63,13 @@ public struct NewChatTarget: Hashable, Sendable {
 public struct SidebarWorkspaceGroup: Identifiable, Equatable {
   public struct Heading: Equatable {
     public let title: String
-    public let systemImage: String
+    public let icon: SidebarGroupIcon
     public var newChatTarget: NewChatTarget?
+    public var namesMachine = false
 
-    public init(title: String, systemImage: String, newChatTarget: NewChatTarget? = nil) {
+    public init(title: String, icon: SidebarGroupIcon, newChatTarget: NewChatTarget? = nil) {
       self.title = title
-      self.systemImage = systemImage
+      self.icon = icon
       self.newChatTarget = newChatTarget
     }
   }
@@ -92,9 +93,8 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
     projects: [Project],
     defaultServerId: String,
     machineOrder: [String] = [],
-    machineKey: (String) -> String = { $0 },
     projectOrder: [String] = [],
-    machineHeading: (String) -> Heading
+    machineGroup: (String) -> SidebarMachineGroup
   ) -> [SidebarWorkspaceGroup] {
     let pinned = Set(pinnedIDs)
     let pinnedItems = items.filter { pinned.contains($0.id.uuidString) }
@@ -104,9 +104,7 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
       case .flat:
         [SidebarWorkspaceGroup(id: "all", heading: nil, items: rest)]
       case .machine:
-        Self.ordered(
-          Self.grouping(rest, by: { "machine:\($0.serverId)" }) { machineHeading($0.serverId) },
-          by: machineOrder, key: { machineKey($0.items[0].serverId) })
+        machineGroups(rest, order: machineOrder, machineGroup: machineGroup)
       case .project:
         Self.ordered(
           projectGroups(rest, projects: projects, defaultServerId: defaultServerId), by: projectOrder,
@@ -114,6 +112,21 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
       }
     guard !pinnedItems.isEmpty else { return grouped }
     return [SidebarWorkspaceGroup(id: pinnedID, heading: nil, items: pinnedItems)] + grouped
+  }
+
+  private static func machineGroups(
+    _ items: [WorkspaceSidebarItem], order: [String], machineGroup: (String) -> SidebarMachineGroup
+  ) -> [SidebarWorkspaceGroup] {
+    let groups = grouping(items, by: { "machine:\(machineGroup($0.serverId).key)" }) {
+      machineGroup($0.serverId).heading
+    }
+    return ordered(groups.map(\.namingSharedMachine), by: order, key: { machineGroup($0.items[0].serverId).orderKey })
+  }
+
+  private var namingSharedMachine: SidebarWorkspaceGroup {
+    guard var heading else { return self }
+    heading.namesMachine = Set(items.map(\.serverId)).count == 1
+    return SidebarWorkspaceGroup(id: id, heading: heading, items: items)
   }
 
   private static func projectGroups(
@@ -134,7 +147,7 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
         ?? NewChatTarget(serverId: item.serverId, projectId: item.projectId)
       return Heading(
         title: group?.name ?? "Unknown Project",
-        systemImage: EntitySystemSymbol.projectList,
+        icon: .system(EntitySystemSymbol.projectList),
         newChatTarget: target
       )
     }

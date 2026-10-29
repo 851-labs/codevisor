@@ -108,7 +108,10 @@ extension MachineController {
       }
     case "sync.changed":
       if let document = ShellSyncPayload.decoded(ServerSyncDocument.self, from: event.payload) {
-        if SandboxSettingsModel.syncNamespaces.contains(document.namespace) { sandboxAvailabilityRevision += 1 }
+        if SandboxSettingsModel.syncNamespaces.contains(document.namespace) {
+          sandboxAvailabilityRevision += 1
+          sandboxSettingsRevision += 1
+        }
         onSyncChanged?(serverId, document)
       }
     default:

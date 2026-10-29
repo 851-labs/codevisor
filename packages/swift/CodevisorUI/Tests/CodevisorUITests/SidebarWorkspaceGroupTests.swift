@@ -19,9 +19,14 @@ struct SidebarWorkspaceGroupTests {
   {
     SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinned.map(\.uuidString), projects: [studio, linux],
-      defaultServerId: "studio", machineOrder: machineOrder, machineKey: { "server-\($0)" },
-      projectOrder: projectOrder
-    ) { serverId in SidebarWorkspaceGroup.Heading(title: serverId, systemImage: "desktopcomputer") }
+      defaultServerId: "studio", machineOrder: machineOrder, projectOrder: projectOrder, machineGroup: machineGroup)
+  }
+
+  private func machineGroup(_ serverId: String) -> SidebarMachineGroup {
+    let key = serverId.hasPrefix("tart-") ? "sandbox-profile:tart" : serverId
+    return SidebarMachineGroup(
+      key: key, orderKey: "server-\(key)",
+      heading: SidebarWorkspaceGroup.Heading(title: key, icon: .system("desktopcomputer")))
   }
 
   @Test func pinnedWorkspacesLeaveTheirGroupAndLeadTheList() {
@@ -40,6 +45,22 @@ struct SidebarWorkspaceGroupTests {
     let result = groups(items, .machine)
     #expect(result.map(\.heading?.title) == ["linux", "studio"])
     #expect(result[0].items.map(\.id) == [items[0].id, items[2].id])
+  }
+
+  @Test("Machines sharing a group share one heading, which names the machine only while it holds just one")
+  func sharedMachineGroups() {
+    let first = Project(id: UUID(), serverId: "tart-1", name: "codevisor")
+    let second = Project(id: UUID(), serverId: "tart-2", name: "codevisor")
+    let items = [item(first), item(studio), item(second)]
+
+    let result = groups(items, .machine)
+    let alone = groups([item(first), item(studio)], .machine)
+
+    #expect(result.map(\.id) == ["machine:sandbox-profile:tart", "machine:studio"])
+    #expect(result[0].items.map(\.id) == [items[0].id, items[2].id])
+    #expect(result.map(\.heading?.namesMachine) == [false, true])
+    #expect(alone.map(\.heading?.namesMachine) == [true, true])
+    #expect(groups(items, .project).allSatisfy { $0.heading?.namesMachine == false })
   }
 
   @Test("Machines follow the saved order by their server identity, and unknown ones keep their place after it")

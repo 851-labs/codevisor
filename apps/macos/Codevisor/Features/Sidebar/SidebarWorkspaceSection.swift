@@ -19,6 +19,7 @@ struct SidebarWorkspaceSection: View, Equatable {
   let rowDetails: [SidebarRowDetail]
   let isSelected: Bool
   let isPinned: Bool
+  let headingNamesMachine: Bool
   let isReordering: Bool
   let isExpanded: Bool?
   let actions: Actions
@@ -27,7 +28,8 @@ struct SidebarWorkspaceSection: View, Equatable {
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
       && lhs.rowDetails == rhs.rowDetails && lhs.isSelected == rhs.isSelected && lhs.isPinned == rhs.isPinned
-      && lhs.isReordering == rhs.isReordering && lhs.isExpanded == rhs.isExpanded
+      && lhs.headingNamesMachine == rhs.headingNamesMachine && lhs.isReordering == rhs.isReordering
+      && lhs.isExpanded == rhs.isExpanded
   }
 
   var body: some View {
@@ -40,7 +42,7 @@ struct SidebarWorkspaceSection: View, Equatable {
         icon: content.icon(for: listItem),
         store: store,
         pullRequest: content.pullRequest(for: workspace),
-        machine: content.machine(for: workspace, isPinned: isPinned),
+        machine: content.machine(for: workspace, headingNamesMachine: headingNamesMachine),
         isSelected: isSelected,
         isReordering: isReordering,
         isExpanded: isExpanded,
@@ -140,9 +142,8 @@ struct SidebarRowContent {
     rowDetails.contains(.pullRequest) ? store?.gitLookups.pullRequest(for: workspace) : nil
   }
 
-  func machine(for workspace: Workspace, isPinned: Bool) -> SidebarRowMachine? {
-    guard rowDetails.contains(.machine),
-      grouping != .machine || !isUnderGroupHeading(workspace, isPinned: isPinned),
+  func machine(for workspace: Workspace, headingNamesMachine: Bool) -> SidebarRowMachine? {
+    guard rowDetails.contains(.machine), !headingNamesMachine,
       let machine = environment.machines.machine(for: workspace.serverId),
       let name = machineName(forServer: workspace.serverId)
     else { return nil }

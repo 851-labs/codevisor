@@ -45,6 +45,35 @@ extension MachineController {
     )
   }
 
+  public var sandboxMachineProfilesLoadKey: SandboxMachineProfilesLoadKey {
+    SandboxMachineProfilesLoadKey(
+      sandboxDeviceIds: Set(sandboxCloudMachines.map(\.deviceId)),
+      ownerAvailabilities: sandboxOwnerMachineIds.mapValues { $0.map(availability(for:)) },
+      revision: sandboxSettingsRevision
+    )
+  }
+
+  public func loadSandboxMachineProfiles() async {
+    let owners = sandboxOwnerMachineIds.compactMap { deviceId, machineId -> SandboxOwner? in
+      guard let machineId, availability(for: machineId) == .ready else { return nil }
+      return SandboxOwner(deviceId: deviceId, client: client(for: machineId))
+    }
+    await sandboxMachineProfiles.load(from: owners)
+  }
+
+  private var sandboxCloudMachines: [CloudMachine] {
+    allMachines.compactMap { cloudMachine(forMachineId: $0.id) }.filter { $0.ephemeral != nil }
+  }
+
+  private var sandboxOwnerMachineIds: [String: String?] {
+    var owners: [String: String?] = [:]
+    for origin in sandboxCloudMachines.compactMap(\.ephemeral) {
+      owners[origin.ownerDeviceId] = canonicalComposerMachineId(
+        for: CodevisorMachine.cloudIdPrefix + origin.ownerDeviceId)
+    }
+    return owners
+  }
+
   public func sandboxHostConnection(forServerId serverId: String) -> SandboxHostConnection {
     guard let machineId = machineId(forServerId: serverId) else {
       return isLocalServerStarting ? .starting : .unreachable
