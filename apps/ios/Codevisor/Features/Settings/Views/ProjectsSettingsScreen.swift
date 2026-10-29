@@ -83,10 +83,11 @@ struct ProjectsSettingsScreen: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(group.name)
           .foregroundStyle(.primary)
-        Text(machineNames(for: group))
+        Text(group.repoKey ?? group.primary.folderURL.path)
           .font(.footnote)
           .foregroundStyle(.secondary)
           .lineLimit(1)
+          .truncationMode(.middle)
       }
     } icon: {
       Image(systemName: EntitySystemSymbol.project)
@@ -117,17 +118,6 @@ struct ProjectsSettingsScreen: View {
         .disabled(readyMachines.isEmpty)
       }
     }
-  }
-
-  private func machineNames(for group: ProjectGroup) -> String {
-    var seen = Set<String>()
-    return group.serverIds.filter { seen.insert($0).inserted }
-      .map(machineName)
-      .joined(separator: ", ")
-  }
-
-  private func machineName(_ serverId: String) -> String {
-    environment.machines.machine(for: serverId)?.name ?? "Unavailable Machine"
   }
 
   private func refresh() async {

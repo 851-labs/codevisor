@@ -19,7 +19,6 @@ public struct ProjectGroup: Identifiable, Equatable, Sendable {
   public var primary: Project { members[0] }
   public var name: String { primary.name }
   public var createdAt: Date { primary.createdAt }
-  public var serverIds: [String] { members.map(\.serverId) }
   public var isGitRepository: Bool { members.contains(where: \.isGitRepository) }
   public var repoUrl: String? { members.lazy.compactMap(\.repoUrl).first }
 
