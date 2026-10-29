@@ -34,6 +34,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @ClientPreference("workspace.inspectorTab", default: WorkspaceInspectorTab.info) private var tab
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(FeatureFlag.developerMode.preferenceKey, default: false) private var developerMode
+  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var sidebarGrouping
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
@@ -168,13 +169,16 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private func agents(of workspace: Workspace, bot: Bot?, store: SessionStore) -> [WorkspaceInspectorAgent] {
-    let content = SidebarRowContent(environment: environment, store: store, grouping: .flat, rowDetails: [])
+    let content = SidebarRowContent(
+      environment: environment, store: store, grouping: sidebarGrouping,
+      rowDetails: ClientPreferences.shared.sidebarRowDetails)
     let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
     return agentItems(of: workspace, bot: bot)
       .compactMap { content.listItem(for: $0) }
       .map { item in
         WorkspaceInspectorAgent(
-          id: item.workspace.id, name: item.workspace.name, icon: content.icon(for: item)
+          id: item.workspace.id, name: item.workspace.name,
+          subtitle: content.subtitle(for: item.workspace, isPinned: false), icon: content.icon(for: item)
         ) {
           revealRequest?.rowID = item.workspace.id
           navigator.activate(item)
