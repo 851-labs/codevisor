@@ -67,9 +67,15 @@ let package = Package(
       path: "ScreenSharing/Sources/ScreenSharingBench",
       swiftSettings: strictSwiftSettings
     ),
+    .target(
+      name: "ScreenSharingBenchScenes",
+      dependencies: ["ScreenSharingBench"],
+      path: "ScreenSharing/Sources/ScreenSharingBenchScenes",
+      swiftSettings: strictSwiftSettings
+    ),
     .executableTarget(
       name: "CodevisorBench",
-      dependencies: ["ScreenSharingBench"],
+      dependencies: ["ScreenSharingBench", "ScreenSharingBenchScenes", "CGVirtualDisplayPrivate"],
       path: "ScreenSharing/Sources/CodevisorBench",
       swiftSettings: strictSwiftSettings
     ),
@@ -91,6 +97,12 @@ let package = Package(
       dependencies: ["ScreenSharingBench"],
       path: "ScreenSharing/Tests/ScreenSharingBenchTests",
       resources: [.copy("Report/Fixtures")],
+      swiftSettings: strictSwiftSettings
+    ),
+    .testTarget(
+      name: "ScreenSharingBenchScenesTests",
+      dependencies: ["ScreenSharingBench", "ScreenSharingBenchScenes"],
+      path: "ScreenSharing/Tests/ScreenSharingBenchScenesTests",
       swiftSettings: strictSwiftSettings
     ),
     .testTarget(
