@@ -89,7 +89,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     view.onInitialPresentationReady = reportInitialPresentationReady
     view.markdownRowStyle = markdownRowStyle
     view.topChromeHeight = topChromeHeight
-    view.configure(input, callbacks: callbacks)
+    view.configureWhenOnScreen(input, callbacks: callbacks)
     if view.isInitialPresentationReady {
       reportInitialPresentationReady()
     }

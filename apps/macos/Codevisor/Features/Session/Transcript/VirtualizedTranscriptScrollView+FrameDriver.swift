@@ -69,7 +69,8 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
       self?.requestDisplayFrame()
     }
     presentationFrameDriverToken = sessionController.presentationClock.registerDriver(
-      maximumFramesPerSecond: maximumFramesPerSecond
+      maximumFramesPerSecond: maximumFramesPerSecond,
+      isVisible: isOnScreen
     ) { [weak self] in
       self?.requestModelPresentationFrame()
     }
@@ -82,10 +83,51 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
       name: NSWindow.didChangeScreenNotification,
       object: window
     )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(windowOcclusionDidChange(_:)),
+      name: NSWindow.didChangeOcclusionStateNotification,
+      object: window
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(windowWillClose(_:)),
+      name: NSWindow.willCloseNotification,
+      object: window
+    )
   }
 
   @objc func windowScreenDidChange(_: Notification) {
     reinstallPresentationFrameDriver()
+  }
+
+  @objc func windowOcclusionDidChange(_: Notification) {
+    presentationVisibilityDidChange()
+  }
+
+  @objc func windowWillClose(_: Notification) {
+    guard let presentationFrameDriverToken else { return }
+    sessionController?.presentationClock.setDriver(presentationFrameDriverToken, isVisible: false)
+  }
+
+  func presentationVisibilityDidChange() {
+    let isVisible = isOnScreen
+    if let presentationFrameDriverToken {
+      sessionController?.presentationClock.setDriver(presentationFrameDriverToken, isVisible: isVisible)
+    }
+    if let offscreenConfiguration {
+      configureWhenOnScreen(offscreenConfiguration.input, callbacks: offscreenConfiguration.callbacks)
+    }
+  }
+
+  var isOnScreen: Bool {
+    guard let window, window.isVisible, window.occlusionState.contains(.visible) else { return false }
+    return !isHiddenOrHasHiddenAncestor
+  }
+
+  var defersOffscreenRendering: Bool {
+    guard let window, window.isVisible || window.isMiniaturized else { return false }
+    return !isOnScreen
   }
 
   func reinstallPresentationFrameDriver() {
@@ -101,11 +143,12 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   func uninstallPresentationFrameDriver() {
     streamingTextFrameClock.setFrameRequester(nil)
-    NotificationCenter.default.removeObserver(
-      self,
-      name: NSWindow.didChangeScreenNotification,
-      object: nil
-    )
+    for name in [
+      NSWindow.didChangeScreenNotification, NSWindow.didChangeOcclusionStateNotification,
+      NSWindow.willCloseNotification,
+    ] {
+      NotificationCenter.default.removeObserver(self, name: name, object: nil)
+    }
     presentationDisplayLink?.invalidate()
     presentationDisplayLink = nil
     displayFrameRequested = false

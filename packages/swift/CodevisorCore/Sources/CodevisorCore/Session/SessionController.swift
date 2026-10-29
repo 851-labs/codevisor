@@ -29,7 +29,6 @@ final public class SessionController {
   @ObservationIgnored public private(set) lazy var presentationClock = TranscriptPresentationClock(
     present: { [weak self] in self?.model?.flushPendingEvents() },
     preferPending: { [weak self] in self?.model?.preferPresentationFrameIfPending() },
-    reschedulePending: { [weak self] in self?.model?.reschedulePendingEventsForCurrentVisibility() },
     onAppear: { [weak self] in self?.model?.viewDidAppear() },
     onDisappear: { [weak self] in self?.model?.viewDidDisappear() }
   )

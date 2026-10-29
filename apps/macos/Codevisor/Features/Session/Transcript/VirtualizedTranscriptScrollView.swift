@@ -88,6 +88,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   weak var sessionController: SessionController?
   var presentationFrameDriverToken: TranscriptFrameDriverToken?
   var presentationDisplayLink: CADisplayLink?
+  var offscreenConfiguration: (input: TranscriptSurfaceInput, callbacks: TranscriptSurfaceCallbacks)?
   var isUpdatingMountedRows = false
   var deferredMountedRowsUpdateScheduled = false
   var deferredMountedRowsUpdateRequested = false
@@ -306,7 +307,18 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     if window != nil {
       installPresentationFrameDriver()
       installSelectionMouseMonitor()
+      presentationVisibilityDidChange()
     }
+  }
+
+  override func viewDidHide() {
+    super.viewDidHide()
+    presentationVisibilityDidChange()
+  }
+
+  override func viewDidUnhide() {
+    super.viewDidUnhide()
+    presentationVisibilityDidChange()
   }
 
   override func resignFirstResponder() -> Bool {

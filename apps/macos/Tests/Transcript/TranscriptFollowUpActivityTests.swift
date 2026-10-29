@@ -259,7 +259,7 @@ private final class ProjectionFixture {
     (frames, frameContinuation) = AsyncStream.makeStream()
     (publications, publicationContinuation) = AsyncStream.makeStream()
     let frameContinuation = self.frameContinuation
-    token = controller.presentationClock.registerDriver(maximumFramesPerSecond: 120) {
+    token = controller.presentationClock.registerDriver(maximumFramesPerSecond: 120, isVisible: true) {
       frameContinuation.yield(())
     }
     let inputs = self.inputs

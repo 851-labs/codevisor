@@ -112,7 +112,8 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
       return
     }
     presentationFrameDriverToken = sessionController.presentationClock.registerDriver(
-      maximumFramesPerSecond: max(1, window.screen.maximumFramesPerSecond)
+      maximumFramesPerSecond: max(1, window.screen.maximumFramesPerSecond),
+      isVisible: true
     ) { [weak self] in
       self?.requestModelPresentationFrame()
     }

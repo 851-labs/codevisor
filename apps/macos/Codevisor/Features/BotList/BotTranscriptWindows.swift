@@ -2,12 +2,14 @@ import AppKit
 import CodevisorCore
 import SwiftUI
 
+@MainActor
 final class BotTranscriptWindows {
   static let shared = BotTranscriptWindows()
 
   private static let initialSize = NSSize(width: 760, height: 820)
 
   private var windows: [UUID: NSWindow] = [:]
+  private var closeObservers: [UUID: NSObjectProtocol] = [:]
 
   func present(_ bot: Bot, workspace: Workspace, store: SessionStore, environment: AppEnvironment) {
     let window = windows[bot.id] ?? makeWindow(bot, workspace: workspace, store: store, environment: environment)
@@ -24,7 +26,17 @@ final class BotTranscriptWindows {
     window.setContentSize(Self.initialSize)
     window.isReleasedWhenClosed = false
     window.center()
+    closeObservers[bot.id] = NotificationCenter.default.addObserver(
+      forName: NSWindow.willCloseNotification, object: window, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.closed(bot.id) }
+    }
     return window
+  }
+
+  private func closed(_ botID: UUID) {
+    windows.removeValue(forKey: botID)?.contentViewController = nil
+    closeObservers.removeValue(forKey: botID).map(NotificationCenter.default.removeObserver)
   }
 
   private func content(

@@ -9,24 +9,20 @@ public final class TranscriptPresentationClock {
   @ObservationIgnored private var drivers: [TranscriptFrameDriverToken: TranscriptFrameDriver] = [:]
   @ObservationIgnored private var electedDriver: TranscriptFrameDriverToken?
   @ObservationIgnored private var framePending = false
-  @ObservationIgnored private var fallbackTask: Task<Void, Never>?
   @ObservationIgnored private var presentObservers: [UUID: @MainActor () -> Void] = [:]
   @ObservationIgnored private let present: () -> Void
   @ObservationIgnored private let preferPending: () -> Void
-  @ObservationIgnored private let reschedulePending: () -> Void
   @ObservationIgnored private let onAppear: () -> Void
   @ObservationIgnored private let onDisappear: () -> Void
 
   init(
     present: @escaping () -> Void,
     preferPending: @escaping () -> Void,
-    reschedulePending: @escaping () -> Void,
     onAppear: @escaping () -> Void,
     onDisappear: @escaping () -> Void
   ) {
     self.present = present
     self.preferPending = preferPending
-    self.reschedulePending = reschedulePending
     self.onAppear = onAppear
     self.onDisappear = onDisappear
   }
@@ -44,48 +40,35 @@ public final class TranscriptPresentationClock {
 
   public func registerDriver(
     maximumFramesPerSecond: Int,
+    isVisible: Bool,
     requestFrame: @escaping @MainActor () -> Void
   ) -> TranscriptFrameDriverToken {
     let token = TranscriptFrameDriverToken()
     drivers[token] = TranscriptFrameDriver(
       maximumFramesPerSecond: max(1, maximumFramesPerSecond),
+      isVisible: isVisible,
       requestFrame: requestFrame
     )
-    electDriver()
-    if framePending {
-      self.requestFrame()
-    } else {
-      preferPending()
-    }
+    driversDidChange()
+    if isVisible, !framePending { preferPending() }
     return token
   }
 
+  public func setDriver(_ token: TranscriptFrameDriverToken, isVisible: Bool) {
+    guard drivers[token]?.isVisible == !isVisible else { return }
+    drivers[token]?.isVisible = isVisible
+    driversDidChange()
+    if isVisible, !framePending { preferPending() }
+  }
+
   public func unregisterDriver(_ token: TranscriptFrameDriverToken) {
-    let wasElected = electedDriver == token
-    drivers.removeValue(forKey: token)
-    if wasElected {
-      electedDriver = nil
-      electDriver()
-    }
-    if wasElected, framePending {
-      requestFrame()
-    }
-    if wasElected {
-      reschedulePending()
-    }
+    guard drivers.removeValue(forKey: token) != nil else { return }
+    driversDidChange()
   }
 
   public func didFire(_ token: TranscriptFrameDriverToken) {
-    guard token == electedDriver,
-      drivers[token] != nil,
-      framePending
-    else { return }
-    fallbackTask?.cancel()
-    fallbackTask = nil
-    framePending = false
-    present()
-    revision &+= 1
-    notifyPresentObservers()
+    guard token == electedDriver, framePending else { return }
+    presentFrame()
   }
 
   public func addPresentObserver(_ observer: @escaping @MainActor () -> Void) -> UUID {
@@ -105,44 +88,37 @@ public final class TranscriptPresentationClock {
   @discardableResult
   public func requestFrame() -> Bool {
     framePending = true
-    electDriver()
-    if let electedDriver,
-      let driver = drivers[electedDriver]
-    {
-      fallbackTask?.cancel()
-      fallbackTask = nil
-      driver.requestFrame()
+    guard let electedDriver, let driver = drivers[electedDriver] else {
+      presentFrame()
       return true
     }
-
-    guard fallbackTask == nil else { return true }
-    fallbackTask = Task { @MainActor [weak self] in
-      try? await Task.sleep(for: .milliseconds(16))
-      guard !Task.isCancelled, let self,
-        self.framePending
-      else { return }
-      self.fallbackTask = nil
-      self.framePending = false
-      self.present()
-      self.revision &+= 1
-      self.notifyPresentObservers()
-    }
+    driver.requestFrame()
     return true
   }
 
+  private func driversDidChange() {
+    let previous = electedDriver
+    electDriver()
+    guard framePending, electedDriver != previous else { return }
+    requestFrame()
+  }
+
   private func electDriver() {
+    let visible = drivers.filter { $0.value.isVisible }
     if let electedDriver,
-      let elected = drivers[electedDriver],
-      drivers.values.allSatisfy({
-        $0.maximumFramesPerSecond <= elected.maximumFramesPerSecond
-      })
+      let elected = visible[electedDriver],
+      visible.values.allSatisfy({ $0.maximumFramesPerSecond <= elected.maximumFramesPerSecond })
     {
       return
     }
-    electedDriver =
-      drivers.max {
-        $0.value.maximumFramesPerSecond < $1.value.maximumFramesPerSecond
-      }?.key
+    electedDriver = visible.max { $0.value.maximumFramesPerSecond < $1.value.maximumFramesPerSecond }?.key
+  }
+
+  private func presentFrame() {
+    framePending = false
+    present()
+    revision &+= 1
+    notifyPresentObservers()
   }
 }
 
@@ -152,5 +128,6 @@ public struct TranscriptFrameDriverToken: Hashable, Sendable {
 
 private struct TranscriptFrameDriver {
   let maximumFramesPerSecond: Int
+  var isVisible: Bool
   let requestFrame: @MainActor () -> Void
 }

@@ -7,6 +7,15 @@ import SwiftUI
 import TranscriptKit
 
 extension VirtualizedTranscriptScrollView {
+  func configureWhenOnScreen(_ input: TranscriptSurfaceInput, callbacks: TranscriptSurfaceCallbacks) {
+    guard !defersOffscreenRendering || sessionController !== input.sessionController else {
+      offscreenConfiguration = (input, callbacks)
+      return
+    }
+    offscreenConfiguration = nil
+    configure(input, callbacks: callbacks)
+  }
+
   func configure(_ input: TranscriptSurfaceInput, callbacks: TranscriptSurfaceCallbacks) {
     let traceStart = TranscriptPerformanceTrace.begin()
     defer {
