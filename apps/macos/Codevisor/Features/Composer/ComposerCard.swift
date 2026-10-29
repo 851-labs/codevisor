@@ -519,6 +519,8 @@ private extension ComposerCard {
     case .acceptSelection:
       acceptSlashCommand(matches[min(slashSelection, matches.count - 1)])
       return true
+    case .holdSelection:
+      return true
     case .dismissSelection:
       isSlashMenuDismissed = true
       slashSelection = 0

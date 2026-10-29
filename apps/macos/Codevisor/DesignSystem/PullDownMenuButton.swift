@@ -79,5 +79,10 @@ struct PullDownMenuButton: NSViewRepresentable {
 
   private final class FullFramePopUpButton: NSPopUpButton {
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+      NSBezierPath(ovalIn: bounds).fill()
+    }
   }
 }
