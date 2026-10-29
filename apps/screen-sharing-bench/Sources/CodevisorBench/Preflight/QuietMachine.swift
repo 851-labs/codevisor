@@ -7,6 +7,7 @@ struct QuietMachine: Encodable {
   static let maximumLoad = 2.0
   private static let busyIndexerPercent = 5.0
   private static let loadPoll = Duration.seconds(5)
+  private static let quietSamplesInARow = 3
   private static let finder = "com.apple.finder"
   private static let wiredGigabit = "1000baseT"
 
@@ -22,10 +23,10 @@ struct QuietMachine: Encodable {
   static func measure(settle: Duration, limit: Duration) async throws -> QuietMachine {
     let clock = ContinuousClock()
     let started = clock.now
-    let load1 = try await settledLoad(after: settle, until: started + limit, clock: clock)
+    let settled = try await settledActivity(after: settle, until: started + limit, clock: clock)
     let settledSeconds = Int((clock.now - started).components.seconds)
     return QuietMachine(
-      load1: load1, settledSeconds: settledSeconds, busyIndexers: try await busyIndexers(),
+      load1: settled.load1, settledSeconds: settledSeconds, busyIndexers: settled.busyIndexers,
       timeMachinePhase: try await timeMachinePhase(), ethernet: try await ethernet())
   }
 
@@ -56,16 +57,22 @@ struct QuietMachine: Encodable {
     return problems
   }
 
-  private static func settledLoad(
+  private static func settledActivity(
     after settle: Duration, until deadline: ContinuousClock.Instant, clock: ContinuousClock
-  ) async throws -> Double {
+  ) async throws -> (load1: Double, busyIndexers: [String]) {
     try await clock.sleep(for: settle)
-    var load = loadAverage()
-    while load > maximumLoad, clock.now + loadPoll <= deadline {
+    var activity = (load1: loadAverage(), busyIndexers: try await busyIndexers())
+    var quietInARow = isQuiet(activity) ? 1 : 0
+    while quietInARow < quietSamplesInARow, clock.now + loadPoll <= deadline {
       try await clock.sleep(for: loadPoll)
-      load = loadAverage()
+      activity = (loadAverage(), try await busyIndexers())
+      quietInARow = isQuiet(activity) ? quietInARow + 1 : 0
     }
-    return load
+    return activity
+  }
+
+  private static func isQuiet(_ activity: (load1: Double, busyIndexers: [String])) -> Bool {
+    activity.load1 <= maximumLoad && activity.busyIndexers.isEmpty
   }
 
   private static func loadAverage() -> Double {

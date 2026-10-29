@@ -54,11 +54,11 @@ struct ResultsMarkdown {
   }
 
   private func versusBaseline(_ summary: BenchCellSummary) -> String {
-    guard let baseline = history.baselineP50Ms(summary.cell), let p50 = summary.e2eP50Ms, baseline > 0 else {
-      return "–"
-    }
+    let latency = history.judgedLatency(summary)
+    guard let baseline = latency.baselineMs, let p50 = latency.observedMs, baseline > 0 else { return "–" }
 
-    return String(format: "%+.1f%% (of %.1f)", (p50 - baseline) / baseline * 100, baseline)
+    let change = String(format: "%+.1f%% (of %.1f)", (p50 - baseline) / baseline * 100, baseline)
+    return latency.isOutsideTheJitterBuffer ? change + " outside the jitter buffer" : change
   }
 
   private var stages: String {
