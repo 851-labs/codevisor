@@ -10,6 +10,7 @@ final class LoopbackRelay: @unchecked Sendable {
   private let timer: any DispatchSourceTimer
   private var media: BenchRelayLink<RelayDelivery>
   private var feedback: BenchRelayLink<RelayDelivery>
+  private var arrivals = BenchFrameArrivals()
   private var hostAddress: BenchUDPAddress?
   private var viewerAddress: BenchUDPAddress?
   private var mappings: [BenchUDPAddress: RelaySocket] = [:]
@@ -48,6 +49,10 @@ final class LoopbackRelay: @unchecked Sendable {
 
   var mediaTraffic: BenchRelayTraffic {
     queue.sync { media.traffic }
+  }
+
+  var frameArrivals: BenchFrameArrivals {
+    queue.sync { arrivals }
   }
 
   var isIdle: Bool {
@@ -107,7 +112,13 @@ final class LoopbackRelay: @unchecked Sendable {
 
   private func flushDue() {
     let nowNs = BenchMachClock.nowNs()
-    for delivery in media.takeDue(atNs: nowNs) where !delivery.send() { media.recordSendFailure() }
+    for delivery in media.takeDue(atNs: nowNs) {
+      guard delivery.send() else {
+        media.recordSendFailure()
+        continue
+      }
+      arrivals.record(delivery.bytes, deliveredAtNs: nowNs)
+    }
     for delivery in feedback.takeDue(atNs: nowNs) where !delivery.send() { feedback.recordSendFailure() }
     scheduleNextDue(after: nowNs)
   }

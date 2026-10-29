@@ -62,6 +62,7 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var imageAgeMs: BenchDistribution?
   public var e2eMs: BenchDistribution?
   public var e2eEndpoint: BenchEndpoint?
+  public var e2eOutsideJitterBufferMs: BenchDistribution?
   public var imageAgeAboveFloorMs: AboveFloor?
   public var i2pMs: BenchDistribution?
   public var updatesPerS: Double = 0

@@ -6,6 +6,7 @@ final class LoopbackInstruments {
   struct Readings {
     let records: [ScreenSharingFrameRecord]
     let barcodes: [Int64: Int?]
+    let rtpTimestamps: [Int64: UInt32]
     let timingFrames: Set<BenchTimingFrame>
     let qualityLevel: Int
   }
@@ -34,8 +35,10 @@ final class LoopbackInstruments {
     quality.stop()
     sampler.stop()
     viewer.stop()
+    let records = timeline.stop()
+    let decoded = verifier.stop()
     return Readings(
-      records: timeline.stop(), barcodes: verifier.stop(), timingFrames: sampler.frames,
-      qualityLevel: quality.highestLevel)
+      records: records, barcodes: decoded.versions, rtpTimestamps: decoded.rtpTimestamps,
+      timingFrames: sampler.frames, qualityLevel: quality.highestLevel)
   }
 }

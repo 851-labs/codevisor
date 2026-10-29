@@ -35,6 +35,7 @@ public struct BenchLoopbackAnalysis: Sendable {
     result.freezes = cadence.changesContinuously ? BenchFreezes(gapsMs: gapsMs, activeDurationMs: windowMs) : nil
     result.e2eMs = BenchDistribution(frames.compactMap(e2eMs))
     result.e2eEndpoint = endpoint
+    result.e2eOutsideJitterBufferMs = BenchDistribution(frames.compactMap(e2eOutsideJitterBufferMs))
     result.stagesMs = BenchStageTimings(frames: frames)
   }
 
@@ -59,6 +60,12 @@ public struct BenchLoopbackAnalysis: Sendable {
 
   private func e2eMs(_ frame: BenchFrameTimestamps) -> Double? {
     frame.endNs(at: endpoint).map { Double($0 - frame.sourceNs) / Self.nanosecondsPerMillisecond }
+  }
+
+  private func e2eOutsideJitterBufferMs(_ frame: BenchFrameTimestamps) -> Double? {
+    guard let e2eMs = e2eMs(frame), let completeNs = frame.frameCompleteNs else { return nil }
+
+    return e2eMs - Double(frame.decodeInputNs - completeNs) / Self.nanosecondsPerMillisecond
   }
 
   private static func firstShown(

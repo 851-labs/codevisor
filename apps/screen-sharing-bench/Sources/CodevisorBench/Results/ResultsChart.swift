@@ -19,6 +19,10 @@ struct ResultsChart {
   private static let longestBarMs = 250.0
   private static let segmentGap = 2.0
   private static let smallestTrendSpan = 0.2
+  private static let colorSlots = [
+    "capture": 0, "capture queue": 1, "encode": 2, "network": 3, "send": 3, "jitter buffer": 4, "decode": 5,
+    "render queue": 6, "present": 7,
+  ]
 
   let title: String
   let rows: [Row]
@@ -41,10 +45,15 @@ struct ResultsChart {
     min(Self.longestBarMs, rows.compactMap(\.e2eP50Ms).max() ?? 1)
   }
 
+  private var isSplit: Bool {
+    rows.contains { $0.stages.isSplitAtTheJitterBuffer }
+  }
+
   private var header: String {
-    let legend = BenchStageMedians().ordered.enumerated().map { index, stage in
-      let x = 8 + Double(index) * 112
-      return "<rect class=\"s\(index)\" x=\"\(x)\" y=\"12\" width=\"10\" height=\"10\" rx=\"2\"/>"
+    let legend = BenchStageMedians().ordered(splitAtTheJitterBuffer: isSplit).enumerated().map { index, stage in
+      let x = 8 + Double(index) * 118
+      return
+        "<rect class=\"s\(Self.colorSlots[stage.name] ?? 0)\" x=\"\(x)\" y=\"12\" width=\"10\" height=\"10\" rx=\"2\"/>"
         + "<text class=\"ink\" x=\"\(x + 14)\" y=\"21\">\(stage.name)</text>"
     }
     return legend.joined() + """
@@ -62,12 +71,12 @@ struct ResultsChart {
   private func bar(_ row: Row, y: Double) -> String {
     var x = Self.labelWidth
     var segments: [String] = []
-    for (index, stage) in row.stages.ordered.enumerated() {
+    for stage in row.stages.ordered(splitAtTheJitterBuffer: isSplit) {
       guard let ms = stage.p50Ms, ms > 0, x < Self.labelWidth + Self.barWidth else { continue }
 
       let length = min(ms / scaleMs * Self.barWidth, Self.labelWidth + Self.barWidth - x)
       segments.append(
-        "<rect class=\"s\(index)\" x=\"\(Self.rounded(x))\" y=\"\(y + 5)\" "
+        "<rect class=\"s\(Self.colorSlots[stage.name] ?? 0)\" x=\"\(Self.rounded(x))\" y=\"\(y + 5)\" "
           + "width=\"\(Self.rounded(max(length - Self.segmentGap, 1)))\" height=\"14\" rx=\"2\"/>")
       x += length
     }
