@@ -64,6 +64,22 @@ describe("plugin catalog", () => {
     expect(catalog.entry("io.github.acme/github")).toBeUndefined()
   })
 
+  it("names the managed OAuth client a listed plugin signs in with", () => {
+    const github = {
+      ...linearServer,
+      name: "com.github/mcp",
+      _meta: { "dev.codevisor/plugin": { oauthClient: "github" } }
+    }
+    const catalog = catalogFor(pluginsFixture([grafanaServer], [linearServer, github]))
+
+    const listed = [catalog.oauthClient("com.github/mcp"), catalog.oauthClient(linearServer.name)]
+    catalog.publish([linearServer])
+    const unpublished = catalog.oauthClient("com.github/mcp")
+
+    expect(listed).toEqual(["github", undefined])
+    expect(unpublished).toBeUndefined()
+  })
+
   it("replaces the popular list with the one the cloud publishes", () => {
     const root = pluginsFixture()
     const catalog = catalogFor(root)

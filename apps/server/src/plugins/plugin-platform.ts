@@ -1,6 +1,6 @@
 import type { McpServer } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { McpManager } from "@codevisor/mcp"
+import type { ManagedOAuthClients, McpManager } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 
 import type { CloudInbox, InboxOAuthCallback } from "../infra/cloud-inbox.js"
@@ -29,6 +29,7 @@ export interface PluginPlatform {
   readonly mcpOAuthRedirect: (
     serverId: string
   ) => Promise<{ readonly redirectUrl: string; readonly state: string } | undefined>
+  readonly managedOAuth: ManagedOAuthClients
   readonly accountSource: {
     readonly list: (serverId: string) => Promise<ReadonlyArray<{ id: string; label: string }>>
     readonly meta: (
@@ -83,6 +84,7 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
       mcp = manager
     },
     mcpOAuthRedirect: () => relayedMcpRedirect(deps),
+    managedOAuth: managedOAuthClients(deps),
     onAccountsChanged: (listener) => {
       listeners.add(listener)
       return () => {
@@ -119,6 +121,27 @@ const relayedMcpRedirect = async (deps: PluginPlatformDeps) => {
   const flowId = newFlowId()
   const registered = await request("POST", "/api/machine/oauth-flows", { flowId })
   return { redirectUrl: redirectUriOf(registered), state: flowState(flowId, deviceId, newNonce()) }
+}
+
+const managedOAuthClients = (deps: PluginPlatformDeps): ManagedOAuthClients => ({
+  clientId: async (client) => {
+    const reply = await requireCloudRequest(deps)("GET", `/api/machine/oauth-clients/${client}`)
+    const clientId = field(reply, "clientId")
+    if (typeof clientId !== "string") throw new Error("The cloud didn't return an OAuth client")
+    return clientId
+  },
+  exchange: (client, tokenUrl, form) =>
+    requireCloudRequest(deps)("POST", `/api/machine/oauth-clients/${client}/token`, {
+      tokenUrl,
+      form
+    })
+})
+
+const requireCloudRequest = (deps: PluginPlatformDeps) => {
+  const request = deps.cloud?.machineRequest
+  if (request === undefined)
+    throw new HttpFailure(409, "Sign in to Codevisor to connect this plugin")
+  return request
 }
 
 const oauthRedirects = (deps: PluginPlatformDeps): OAuthRedirects => ({

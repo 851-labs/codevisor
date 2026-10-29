@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
 
+import type { McpServerRecord } from "@codevisor/db"
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
 
+import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-managed-oauth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import type { makeMcpOAuthRuntime } from "./mcp-oauth.js"
@@ -39,6 +41,17 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     )
   }
 
+  const managedOAuth = (server: McpServerRecord): ManagedOAuth | undefined =>
+    managedOAuthOf(core.config.catalog, core.config.managedOAuth, server)
+
+  const adoptManagedClient = async (id: string, managed: ManagedOAuth): Promise<void> => {
+    const clientId = await managed.clients.clientId(managed.client)
+    await replaceSecrets(id, (value) => ({
+      ...value,
+      oauth: { ...value.oauth, configuredClientId: clientId, configuredClientSecret: undefined }
+    }))
+  }
+
   const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl) => {
     if (redirectBaseUrl !== undefined) state.oauthBaseUrl = redirectBaseUrl
     const server = await record(id)
@@ -54,6 +67,8 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       validateInBackground(id)
       return new URL("/v1/mcps/oauth/complete", state.oauthBaseUrl).toString()
     }
+    const managed = managedOAuth(server)
+    if (managed !== undefined) await adoptManagedClient(id, managed)
     const relayed = await core.config.oauthRedirect?.(id)
     const redirectUrl = relayed?.redirectUrl ?? callbackUrl()
     const oauthState = relayed?.state ?? `${id}.${randomUUID()}`
@@ -86,9 +101,11 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
   const finishOAuth: McpManager["finishOAuth"] = async (oauthState, code) => {
     const server = await serverForState(oauthState)
     const id = server.id
+    const managed = managedOAuth(server)
     const result = await auth(oauthProvider(id, secrets(server).oauth?.redirectUrl), {
       serverUrl: requireHttpUrl(server.url),
       authorizationCode: code,
+      ...(managed === undefined ? {} : { fetchFn: managedTokenFetch(managed, fetch) }),
       ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
     })
     if (result !== "AUTHORIZED") throw new Error("OAuth authorization did not complete")

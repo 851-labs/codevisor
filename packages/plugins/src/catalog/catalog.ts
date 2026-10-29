@@ -22,6 +22,7 @@ export interface PluginCatalog {
   readonly entry: (id: string) => PluginCatalogEntry | undefined
   readonly search: (query: string | undefined) => ReadonlyArray<PluginCatalogEntry>
   readonly bundledLaunch: (id: string) => ResolvedStdioLaunch | undefined
+  readonly oauthClient: (id: string) => string | undefined
   readonly publish: (servers: ReadonlyArray<RegistryServer>) => void
 }
 
@@ -35,6 +36,7 @@ export const makeCatalog = (options: PluginCatalogOptions): PluginCatalog => {
     entry: (id) => featured.find((candidate) => candidate.id === id),
     search: (query) => featured.filter((candidate) => matchesQuery(candidate, query)),
     bundledLaunch: (id) => bundledLaunch(local, options.execPath, id),
+    oauthClient: (id) => oauthClientOf([...local.firstParty, ...popular], id),
     publish: (servers) => {
       popular = servers.filter((server) => pluginMetaOf(server)?.bundled === undefined)
       featured = featuredEntries(local.firstParty, popular, options.dev)
@@ -66,6 +68,11 @@ const bundledLaunch = (
     command: execPath,
     args: [join(local.root, meta.bundled, meta.entry ?? join("dist", "main.js"))]
   }
+}
+
+const oauthClientOf = (servers: ReadonlyArray<RegistryServer>, id: string): string | undefined => {
+  const server = servers.find((candidate) => candidate.name === id)
+  return server === undefined ? undefined : pluginMetaOf(server)?.oauthClient
 }
 
 const matchesQuery = (entry: PluginCatalogEntry, query: string | undefined): boolean => {

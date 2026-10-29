@@ -26,6 +26,7 @@ import type { ExecutionTimers } from "./mcp-gateway-execution.js"
 import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
+import type { ManagedOAuthClients } from "./mcp-managed-oauth.js"
 import type { McpOAuthClock } from "./mcp-oauth-clock.js"
 import type { McpCredentialReference, McpOAuthVault } from "./mcp-oauth-grant.js"
 import type { PluginAccountSource } from "./mcp-plugin-accounts.js"
@@ -200,6 +201,7 @@ export type CatalogLaunch =
 
 export interface McpCatalogResolver {
   readonly launch: (catalogId: string) => CatalogLaunch | undefined
+  readonly oauthClient?: (catalogId: string) => string | undefined
 }
 
 export interface McpManagerConfig {
@@ -213,6 +215,7 @@ export interface McpManagerConfig {
   readonly skillSource?: SkillSource
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   readonly catalog?: McpCatalogResolver
+  readonly managedOAuth?: ManagedOAuthClients
   readonly oauthRedirect?: (
     serverId: string
   ) => Promise<{ readonly redirectUrl: string; readonly state: string } | undefined>

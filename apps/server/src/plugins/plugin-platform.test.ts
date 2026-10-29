@@ -102,6 +102,49 @@ describe("plugin platform", () => {
     expect(unlinked).toBeUndefined()
   })
 
+  it("asks the cloud for a managed OAuth client and its token exchanges", async () => {
+    const { cloud, requests } = fakeCloud((method) =>
+      method === "GET" ? { clientId: "github-client" } : { access_token: "gho_1" }
+    )
+    const linked = await pluginServices({ cloud })
+
+    const clientId = await linked.platform.managedOAuth.clientId("github")
+    const tokens = await linked.platform.managedOAuth.exchange(
+      "github",
+      "https://github.com/login/oauth/access_token",
+      "grant_type=authorization_code"
+    )
+
+    expect([clientId, tokens]).toEqual(["github-client", { access_token: "gho_1" }])
+    expect(requests).toEqual([
+      {
+        method: "GET",
+        path: "/api/machine/oauth-clients/github",
+        body: undefined
+      },
+      {
+        method: "POST",
+        path: "/api/machine/oauth-clients/github/token",
+        body: {
+          tokenUrl: "https://github.com/login/oauth/access_token",
+          form: "grant_type=authorization_code"
+        }
+      }
+    ])
+  })
+
+  it("needs a linked cloud and a client id back for managed OAuth clients", async () => {
+    const local = await pluginServices()
+    const empty = await relayedPlatform(() => ({}))
+
+    await expect(local.platform.managedOAuth.clientId("github")).rejects.toThrow(
+      "Sign in to Codevisor to connect this plugin"
+    )
+    await expect(empty.platform.managedOAuth.clientId("github")).rejects.toThrow(
+      "The cloud didn't return an OAuth client"
+    )
+  })
+
   it("tells listeners about saved accounts until they unsubscribe", async () => {
     const started = await pluginServices()
     const grafana = await savePluginRow(started.services.db, "Grafana", {

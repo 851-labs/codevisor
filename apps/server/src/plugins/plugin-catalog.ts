@@ -36,7 +36,7 @@ export const makePluginCatalog = (options: PluginCatalogOptions): PluginCatalog 
       const servers = registryServersOf(await publishedCatalog(cloudUrl, options.fetch ?? fetch))
       if (servers.length > 0) source.publish(servers)
     },
-    resolver: { launch: source.bundledLaunch }
+    resolver: { launch: source.bundledLaunch, oauthClient: source.oauthClient }
   }
 }
 

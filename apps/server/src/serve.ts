@@ -349,6 +349,7 @@ export const runServe = (
         oauthVault: credentialVault,
         accounts: pluginPlatform.accountSource,
         oauthRedirect: pluginPlatform.mcpOAuthRedirect,
+        managedOAuth: pluginPlatform.managedOAuth,
         packagedSkills,
         catalog: pluginCatalog.resolver,
         ...(skills === undefined ? {} : { skillSource: skills })

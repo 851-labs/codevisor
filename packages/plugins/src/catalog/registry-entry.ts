@@ -22,6 +22,7 @@ export interface CodevisorPluginMeta {
   readonly ageRating?: number
   readonly entry?: string
   readonly devOnly?: boolean
+  readonly oauthClient?: string
   readonly accounts?: PluginAccountSpec
   readonly capabilities?: PluginCapabilities
 }

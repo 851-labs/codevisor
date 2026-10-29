@@ -1,2 +1,4 @@
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_CLIENT_SECRET=your-client-secret
+MCP_GITHUB_CLIENT_ID=your-mcp-client-id
+MCP_GITHUB_CLIENT_SECRET=your-mcp-client-secret

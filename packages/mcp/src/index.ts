@@ -1,3 +1,4 @@
+export * from "./mcp-managed-oauth.js"
 export * from "./mcp-manager.js"
 export * from "./mcp-manager-types.js"
 export * from "./native-config-edits.js"

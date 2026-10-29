@@ -2,6 +2,9 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID" | "RELAY_MA
   BETTER_AUTH_SECRET?: string
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
+  MCP_GITHUB_CLIENT_ID?: string
+  MCP_GITHUB_CLIENT_SECRET?: string
+  OAUTH_CLIENT_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   APPLE_CLIENT_ID?: string
   APPLE_NATIVE_CLIENT_ID?: string
   APPLE_TEAM_ID?: string

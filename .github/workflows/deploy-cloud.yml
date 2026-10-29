@@ -54,6 +54,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PLUGIN_REPORT_SLACK_WEBHOOK: ${{ secrets.PLUGIN_REPORT_SLACK_WEBHOOK }}
+      - name: Sync the GitHub plugin OAuth client
+        working-directory: apps/cloud
+        run: |
+          if [ -z "$MCP_GITHUB_CLIENT_ID" ] || [ -z "$MCP_GITHUB_CLIENT_SECRET" ]; then
+            echo "MCP_GITHUB_CLIENT_ID or MCP_GITHUB_CLIENT_SECRET isn't set; GitHub plugin sign-in stays off."
+            exit 0
+          fi
+          printf '%s' "$MCP_GITHUB_CLIENT_ID" | bunx wrangler secret put MCP_GITHUB_CLIENT_ID
+          printf '%s' "$MCP_GITHUB_CLIENT_SECRET" | bunx wrangler secret put MCP_GITHUB_CLIENT_SECRET
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MCP_GITHUB_CLIENT_ID: ${{ secrets.MCP_GITHUB_CLIENT_ID }}
+          MCP_GITHUB_CLIENT_SECRET: ${{ secrets.MCP_GITHUB_CLIENT_SECRET }}
       - name: Deploy to Cloudflare
         working-directory: apps/cloud
         run: |

@@ -37,6 +37,12 @@ One Cloudflare Worker contains the whole plane:
   first-party `plugins/*/server.json` files (dev-only ones excluded) and
   `plugins/popular.json`, bundled at build time (`bun run build:catalog`), with age ratings from D1
   merged into `_meta["dev.codevisor/plugin"].ageRating`.
+- **Managed OAuth clients** — for plugins whose MCP server has no dynamic
+  client registration (GitHub), `GET /api/machine/oauth-clients/:name` hands
+  a machine the client id, and `POST /api/machine/oauth-clients/:name/token`
+  adds the client secret to its code exchange, so the secret never leaves
+  Cloud. Unset (`MCP_GITHUB_CLIENT_ID`/`MCP_GITHUB_CLIENT_SECRET`) answers 503.
+  The OAuth app's callback is `<PUBLIC_BASE_URL>/oauth/callback`.
 - **Plugin moderation** — `GET /plugins/policy` publishes blocks and age
   ratings straight from D1; signed-in users record consent, block
   publishers, and file reports under `/api/plugins/*`. Reports are stored
@@ -86,6 +92,8 @@ wrangler d1 migrations apply codevisor-cloud --remote
 wrangler secret put BETTER_AUTH_SECRET    # openssl rand -base64 32
 wrangler secret put GITHUB_CLIENT_ID      # your own GitHub OAuth app
 wrangler secret put GITHUB_CLIENT_SECRET  # callback: <your-url>/api/auth/callback/github
+wrangler secret put MCP_GITHUB_CLIENT_ID      # GitHub OAuth app for the GitHub plugin
+wrangler secret put MCP_GITHUB_CLIENT_SECRET  # callback: <your-url>/oauth/callback
 wrangler secret put PLUGIN_REPORT_SLACK_WEBHOOK # optional: plugin report notifications
 wrangler deploy
 ```
@@ -176,7 +184,10 @@ not configure Apple's optional server-to-server account-change notifications.
 ### Continuous deployment
 
 `.github/workflows/deploy-cloud.yml` deploys continuously from `main`
-(path-filtered): typecheck + tests → D1 migrations → `wrangler deploy` to
+(path-filtered): typecheck + tests → D1 migrations → Worker secrets synced
+from the repo's Actions secrets (`PLUGIN_REPORT_SLACK_WEBHOOK`, and
+`MCP_GITHUB_CLIENT_ID` + `MCP_GITHUB_CLIENT_SECRET` for the GitHub plugin;
+each step skips when its secrets are empty) → `wrangler deploy` to
 `cloud.codevisor.dev` → health check. A deploy restarts each hub and drops
 its WebSockets — Durable Object sockets cannot be drained — but clients ride
 that out on their own: they reconnect with jittered backoff and resume their
