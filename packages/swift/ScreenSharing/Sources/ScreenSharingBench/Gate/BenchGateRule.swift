@@ -6,9 +6,22 @@ struct BenchGateRule {
     case fallBy(Double)
   }
 
-  static let all = [
+  static let e2e = [
     BenchGateRule(metric: "e2e_p50_ms", threshold: .rise(fraction: 0.15, atLeast: 3)) { $0.e2eP50Ms },
     BenchGateRule(metric: "e2e_p95_ms", threshold: .rise(fraction: 0.20, atLeast: 5)) { $0.e2eP95Ms },
+  ]
+
+  static let splitAtTheJitterBuffer = [
+    BenchGateRule(metric: "e2e_outside_jitter_buffer_p50_ms", threshold: .rise(fraction: 0.15, atLeast: 3)) {
+      $0.e2eOutsideJitterBufferP50Ms
+    },
+    BenchGateRule(metric: "e2e_outside_jitter_buffer_p95_ms", threshold: .rise(fraction: 0.20, atLeast: 5)) {
+      $0.e2eOutsideJitterBufferP95Ms
+    },
+    BenchGateRule(metric: "jitter_buffer_p50_ms", threshold: .rise(fraction: 1, atLeast: 40)) { $0.jitterBufferP50Ms },
+  ]
+
+  static let delivery = [
     BenchGateRule(metric: "updates_per_s", threshold: .fall(fraction: 0.05)) { $0.updatesPerS },
     BenchGateRule(metric: "freeze_ratio", threshold: .riseBy(0.02)) { $0.freezeRatio },
     BenchGateRule(metric: "psnr_y", threshold: .fallBy(0.5)) { $0.psnrY },

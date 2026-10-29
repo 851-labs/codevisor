@@ -1,8 +1,12 @@
 public struct BenchGateSample: Sendable, Equatable {
   public static let freezeGatedNetworks: Set<String> = ["N3"]
+  public static let jitterBufferSplitNetworks: Set<String> = ["N0"]
 
   public var e2eP50Ms: Double?
   public var e2eP95Ms: Double?
+  public var e2eOutsideJitterBufferP50Ms: Double?
+  public var e2eOutsideJitterBufferP95Ms: Double?
+  public var jitterBufferP50Ms: Double?
   public var updatesPerS: Double?
   public var freezeRatio: Double?
   public var psnrY: Double?
@@ -25,5 +29,14 @@ public struct BenchGateSample: Sendable, Equatable {
     self.init(
       e2eP50Ms: summary.e2eP50Ms, e2eP95Ms: summary.e2eP95Ms, updatesPerS: summary.updatesPerS,
       freezeRatio: gatesFreezes ? summary.freezeRatio : nil, psnrY: summary.psnrY, errors: summary.errors)
+    guard Self.jitterBufferSplitNetworks.contains(summary.cell.network) else { return }
+
+    e2eOutsideJitterBufferP50Ms = summary.e2eOutsideJitterBufferP50Ms
+    e2eOutsideJitterBufferP95Ms = summary.e2eOutsideJitterBufferP95Ms
+    jitterBufferP50Ms = summary.stagesP50Ms.decodeQueue
+  }
+
+  var isSplitAtTheJitterBuffer: Bool {
+    e2eOutsideJitterBufferP50Ms != nil && e2eOutsideJitterBufferP95Ms != nil && jitterBufferP50Ms != nil
   }
 }
