@@ -19,7 +19,9 @@ public struct BenchStageTimings: Codable, Sendable, Equatable {
     capture = Self.span(frames) { ($0.sourceNs, $0.captureCallbackNs) }
     captureQueue = Self.span(frames) { ($0.captureCallbackNs, $0.encodeSubmitNs) }
     encode = Self.span(frames) { ($0.encodeSubmitNs, $0.encodeOutputNs) }
+    send = Self.span(frames) { frame in frame.frameCompleteNs.map { (frame.encodeOutputNs, $0) } }
     networkResidual = Self.span(frames) { ($0.encodeOutputNs, $0.decodeInputNs) }
+    decodeQueue = Self.span(frames) { frame in frame.frameCompleteNs.map { ($0, frame.decodeInputNs) } }
     decode = Self.span(frames) { ($0.decodeInputNs, $0.decodeOutputNs) }
     renderQueue = Self.span(frames) { ($0.decodeOutputNs, $0.renderCommitNs) }
     present = Self.span(frames) { frame in frame.onGlassNs.map { (frame.renderCommitNs, $0) } }

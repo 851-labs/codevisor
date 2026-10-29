@@ -13,8 +13,10 @@ struct LoopbackMeasurement {
   let relayOriginNs: Int64
 
   func outcome(_ recording: LoopbackRecording, relay: LoopbackRelay) -> LoopbackOutcome {
+    let frames = recording.frames(arrivals: relay.frameArrivals, clockOffsetNs: clockOffsetNs)
+      .map { $0.shifted(byNs: clockOffsetNs) }
     let analysis = BenchLoopbackAnalysis(
-      produced: recording.produced.map(continuous), frames: recording.frames.map { $0.shifted(byNs: clockOffsetNs) },
+      produced: recording.produced.map(continuous), frames: frames,
       windowNs: continuousWindow(recording), cadence: LoopbackCadence.of(scene), endpoint: settings.endpoint)
     var result = BenchResult(
       system: .codevisor, scene: scene.rawValue, resolution: settings.resolution.rawValue, network: conditions.id,

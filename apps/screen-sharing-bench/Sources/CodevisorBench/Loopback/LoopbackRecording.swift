@@ -10,7 +10,7 @@ struct LoopbackRecording {
   let codecFailure: String?
   let jitterDrops: Int
 
-  var frames: [BenchFrameTimestamps] {
+  func frames(arrivals: BenchFrameArrivals, clockOffsetNs: Int64) -> [BenchFrameTimestamps] {
     readings.records.compactMap { record in
       guard let host = record.host else { return nil }
 
@@ -18,8 +18,19 @@ struct LoopbackRecording {
       return BenchFrameTimestamps(
         sourceNs: host.sckDisplayTimeNs, captureCallbackNs: host.captureCallbackNs,
         encodeSubmitNs: host.encodeSubmitNs, encodeOutputNs: host.encodeOutputNs, decodeInputNs: viewer.decodeInputNs,
-        decodeOutputNs: viewer.decodeOutputNs, renderCommitNs: viewer.renderCommitNs, onGlassNs: viewer.onGlassNs)
+        decodeOutputNs: viewer.decodeOutputNs, renderCommitNs: viewer.renderCommitNs, onGlassNs: viewer.onGlassNs,
+        frameCompleteNs: completeNs(
+          host.sckDisplayTimeNs, byNs: viewer.decodeInputNs, in: arrivals, clockOffsetNs: clockOffsetNs))
     }
+  }
+
+  private func completeNs(
+    _ sourceNs: Int64, byNs decodeInputNs: Int64, in arrivals: BenchFrameArrivals, clockOffsetNs: Int64
+  ) -> Int64? {
+    guard let rtpTimestamp = readings.rtpTimestamps[sourceNs] else { return nil }
+
+    let continuousNs = arrivals.completedNs(rtpTimestamp: rtpTimestamp, byNs: decodeInputNs + clockOffsetNs)
+    return continuousNs.map { $0 - clockOffsetNs }
   }
 
   var codecErrors: Int {

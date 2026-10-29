@@ -152,7 +152,11 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   (`BenchCellSummary`). The report's `run.method` records duration, warm-up and repetitions. `e2e_ms` is capture to committed (`e2e_endpoint`), or to on-glass
   with `--onscreen`. `stages_ms` comes from the 851-3583 timeline: capture, capture queue, encode, network (the
   encoder output to decoder input span: send, the relay, receive and the jitter buffer, exact on one clock),
-  decode, render queue and present. `timing_frame_check` pairs each WebRTC timing frame (`googTimingFrameInfo`,
+  decode, render queue and present. The relay also notes when it delivers the last RTP packet of each video frame
+  (`BenchFrameArrivals`; SRTP leaves the RTP header readable), and the barcode tap gives each decoded frame's RTP
+  timestamp, so the network stage splits into `send` (encoder output → frame complete: pacing, the relay and the
+  emulated network) and `decode_queue` (frame complete → decoder input: the jitter buffer and playout delay).
+  `e2e_outside_jitter_buffer_ms` is e2e without that wait. `timing_frame_check` pairs each WebRTC timing frame (`googTimingFrameInfo`,
   sampled twice a second; WebRTC keeps the slowest recent frame) with the timeline frame captured within 8 ms of it,
   and compares encode, decode and capture to decoded; it agrees when each median difference is within 5 ms.
   Drops are whole-scene counters.

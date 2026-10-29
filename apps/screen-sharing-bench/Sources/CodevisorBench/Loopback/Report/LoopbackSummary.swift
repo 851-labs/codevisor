@@ -4,7 +4,8 @@ import ScreenSharingBench
 enum LoopbackSummary {
   private static let stages: [(name: String, value: @Sendable (BenchStageTimings) -> BenchDistribution?)] = [
     ("capture", \.capture), ("capture queue", \.captureQueue), ("encode", \.encode),
-    ("network", \.networkResidual), ("decode", \.decode), ("render queue", \.renderQueue), ("present", \.present),
+    ("network", \.networkResidual), ("send", \.send), ("decode queue", \.decodeQueue), ("decode", \.decode),
+    ("render queue", \.renderQueue), ("present", \.present),
   ]
 
   static func progress(_ outcome: LoopbackOutcome, index: Int, of total: Int) -> String {

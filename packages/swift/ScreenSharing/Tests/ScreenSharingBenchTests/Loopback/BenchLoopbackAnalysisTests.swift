@@ -50,6 +50,22 @@ struct BenchLoopbackAnalysisTests {
     #expect(stages.present == nil)
   }
 
+  @Test func theFrameCompleteTimeSplitsTheNetworkStageAtTheJitterBuffer() throws {
+    var split = Self.frame(sourceNs: 300 * Self.ms)
+    split.frameCompleteNs = split.encodeOutputNs + Self.ms
+    let frames = [split, Self.frame(sourceNs: 400 * Self.ms)]
+    let analysis = BenchLoopbackAnalysis(
+      produced: Self.produced, frames: frames, windowNs: Self.window, cadence: Self.cadence, endpoint: .committed)
+    var result = Self.result
+
+    analysis.apply(to: &result)
+
+    let stages = try #require(result.stagesMs)
+    #expect(stages.send == BenchDistribution([1]) && stages.decodeQueue == BenchDistribution([2]))
+    #expect(stages.networkResidual == BenchDistribution([3, 3]))
+    #expect(result.e2eOutsideJitterBufferMs == BenchDistribution([19]), "only frames with a complete time count")
+  }
+
   @Test func onGlassLatencyUsesOnlyFramesThatReachedTheGlass() {
     var shown = Self.frame(sourceNs: 300 * Self.ms)
     shown.onGlassNs = shown.renderCommitNs + 9 * Self.ms
