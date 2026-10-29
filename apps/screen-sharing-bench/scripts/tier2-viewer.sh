@@ -15,7 +15,7 @@ start_system() {
   local signals=(--duration "$seconds" --ready-file "$work/ready" --stop-file "$work/stop")
   case "$system" in
     apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
-    codevisor) bench view --source codevisor --host "$TIER2_HOST_IP" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
+    codevisor | codevisor-r1x2) bench view --source codevisor --host "$TIER2_HOST_IP" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
     floor) bench view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
   system_job=$!
@@ -30,12 +30,13 @@ stop_system() {
 }
 
 measure() {
-  local dir=$1
+  local dir=$1 system=$2
   local pids=()
   bench calibrate --check c2 --responder "$TIER2_HOST_IP" --duration "$((TIER2_DURATION + 18))" \
     --output "$dir/clock.jsonl" >"$dir/clock.json" 2>"$dir/clock.err" &
   pids+=($!)
   bench observe --duration "$((TIER2_DURATION + 14))" --output "$dir/viewer.jsonl" \
+    --block-size "$(tier2_viewer_block_size "$system")" \
     >"$dir/viewer-observe.json" 2>"$dir/viewer-observe.err" &
   pids+=($!)
   bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$viewer_processes" \
@@ -51,7 +52,8 @@ write_meta() {
   local observed_json=false
   ((observed)) && observed_json=true
   cat >"$dir/meta.json" <<JSON
-{"index": $index, "scene": "$scene", "system": "$system", "repetition": $rep, "seed": $TIER2_SEED,
+{"index": $index, "scene": "$scene", "system": "${system%-r1x2}", "resolution": "$(tier2_resolution "$system")",
+ "repetition": $rep, "seed": $TIER2_SEED,
  "duration_s": $TIER2_DURATION, "host_observer": $observed_json, "git_sha": "$commit", "started_at": "$started_at",
  "github_run_id": "${GITHUB_RUN_ID:-}"}
 JSON
@@ -72,7 +74,7 @@ run_one() {
   meet viewer "$name-ready" "$status" || { say "skipping $name: $status"; stop_system; return 0; }
   meet viewer "$name-measure" || { say "skipping $name: host preflight failed"; stop_system; return 0; }
   say "measuring $name"
-  measure "$dir" || say "a viewer measurement process failed in $name"
+  measure "$dir" "$system" || say "a viewer measurement process failed in $name"
   meet viewer "$name-done" || true
   stop_system
   preflight "$dir/viewer-after-preflight.json" || true

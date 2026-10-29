@@ -38,7 +38,8 @@ struct AppleHPCommand: BenchCommand {
       await signals.waitForStop(until: deadline)
       let result = AppleHPResult(
         host: host, choseHighPerformance: session.choseHighPerformance == true, window: WindowDescription(window),
-        checkedMenuItems: app.checkedMenuItems)
+        checkedMenuItems: app.checkedMenuItems,
+        windowSharingStates: WindowSharingStates.of(app.application.processIdentifier))
       await app.quit(timeout: Self.quitTimeout)
       try BenchOutput.print(result)
     } catch {

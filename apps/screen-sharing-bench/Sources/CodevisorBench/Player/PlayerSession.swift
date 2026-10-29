@@ -12,7 +12,8 @@ struct PlayerSession {
 
   func run() async throws -> PlayerReport {
     try PlayerConsoleSession.requireUnlocked()
-    let target = try await PlayerScreenTarget.make(display: configuration.display, resolution: configuration.resolution)
+    let target = try await PlayerScreenTarget.make(
+      display: configuration.display, displayID: configuration.displayID, resolution: configuration.resolution)
 
     let setup = BenchSceneSetup(
       scene: configuration.scene, seed: configuration.seed, canvas: target.canvas,

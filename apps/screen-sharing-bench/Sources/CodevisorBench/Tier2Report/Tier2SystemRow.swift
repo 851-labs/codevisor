@@ -1,12 +1,21 @@
 import ScreenSharingBench
 
 struct Tier2SystemRow {
-  let scene: String
+  let group: Tier2Group
   let system: BenchSystem
-  let results: [BenchResult]
+  private let all: [BenchResult]
+  private let encoded: String?
+
+  init?(group: Tier2Group, system: BenchSystem, results: [BenchResult], encoded: String?) {
+    all = results.filter { group.contains($0) && $0.system == system }
+    guard !all.isEmpty else { return nil }
+
+    self.group = group
+    self.system = system
+    self.encoded = encoded
+  }
 
   var text: String {
-    let all = results.filter { $0.scene == scene && $0.system == system }
     let valid = all.filter(\.valid)
     let cells = [
       median(valid) { $0.imageAgeMs?.p50 }, median(valid) { $0.imageAgeMs?.p95 },
@@ -16,7 +25,8 @@ struct Tier2SystemRow {
       median(valid) { $0.cpuPct?.host?.p50 }, median(valid) { $0.cpuPct?.viewer?.p50 },
       median(valid) { $0.bitrateMbps?.p50 },
     ].map(Tier2Format.number)
-    return "| \(scene) | \(system.rawValue) | " + cells.joined(separator: " | ") + " | \(valid.count)/\(all.count) |"
+    let label = "| \(group.scene) | \(group.resolution) | \(system.rawValue) | \(encoded ?? "–") | "
+    return label + cells.joined(separator: " | ") + " | \(valid.count)/\(all.count) |"
   }
 
   private func median(_ results: [BenchResult], _ value: (BenchResult) -> Double?) -> Double? {

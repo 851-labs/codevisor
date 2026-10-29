@@ -29,6 +29,32 @@ on:
         default: true
         type: boolean
   workflow_call:
+    inputs:
+      scenes:
+        description: Comma-separated scenes
+        required: false
+        default: idle-cursor,typing,scroll,window-drag,video,test-cards
+        type: string
+      repetitions:
+        description: Alternating Apple HP / Codevisor repetitions per scene, 1 to 5
+        required: false
+        default: "3"
+        type: string
+      duration:
+        description: Seconds per run, 15 to 120
+        required: false
+        default: "60"
+        type: string
+      floor-repetitions:
+        description: Null-sharing floor runs per scene, 0 to 3
+        required: false
+        default: "1"
+        type: string
+      c4:
+        description: Also run S5 with the host observer off (C4)
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read

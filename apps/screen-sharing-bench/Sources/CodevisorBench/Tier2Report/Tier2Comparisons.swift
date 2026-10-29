@@ -17,16 +17,12 @@ enum Tier2Comparisons {
 
   static func make(_ results: [BenchResult]) -> [BenchComparison] {
     let valid = results.filter(\.valid)
-    return scenes(valid).flatMap { scene in
-      metrics.compactMap { compare($0, in: valid.filter { $0.scene == scene }, scene: scene) }
+    return Tier2Group.all(valid).flatMap { group in
+      metrics.compactMap { compare($0, in: valid.filter(group.contains), group: group) }
     }
   }
 
-  static func scenes(_ results: [BenchResult]) -> [String] {
-    results.map(\.scene).reduce(into: []) { scenes, scene in if !scenes.contains(scene) { scenes.append(scene) } }
-  }
-
-  private static func compare(_ metric: Metric, in results: [BenchResult], scene: String) -> BenchComparison? {
+  private static func compare(_ metric: Metric, in results: [BenchResult], group: Tier2Group) -> BenchComparison? {
     let apple = results.filter { $0.system == .appleHP }.compactMap(metric.value)
     let ours = results.filter { $0.system == .codevisor }.compactMap(metric.value)
     guard let outcome = BenchSystemComparison.verdict(appleHp: apple, codevisor: ours, better: metric.better) else {
@@ -34,7 +30,7 @@ enum Tier2Comparisons {
     }
 
     return BenchComparison(
-      scene: scene, resolution: Tier2Result.resolution, network: Tier2Result.network, metric: metric.name,
+      scene: group.scene, resolution: group.resolution, network: Tier2Result.network, metric: metric.name,
       appleHp: apple, codevisor: ours, noiseBandMs: outcome.noiseBand, verdict: outcome.verdict)
   }
 }

@@ -13,23 +13,31 @@ struct Tier2Markdown {
 
   private var targetTable: String {
     let header = [
-      "| Scene | System | Image age p50 ms | p95 | p50 above floor | Updates/s | Shown | Gap p95 ms | Freezes | "
-        + "Host CPU % | Viewer CPU % | Mbit/s p50 | Valid reps |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| Scene | Resolution | System | Encoded px | Image age p50 ms | p95 | p50 above floor | Updates/s | Shown | "
+        + "Gap p95 ms | Freezes | Host CPU % | Viewer CPU % | Mbit/s p50 | Valid reps |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    let rows = Tier2Comparisons.scenes(report.results).flatMap { scene in
-      [BenchSystem.appleHP, .codevisor].map { Tier2SystemRow(scene: scene, system: $0, results: report.results).text }
+    let rows = Tier2Group.all(report.results).flatMap { group in
+      [BenchSystem.appleHP, .codevisor].compactMap { system in
+        Tier2SystemRow(group: group, system: system, results: report.results, encoded: encoded(group, system))?.text
+      }
     }
     return "### Target table (median of valid repetitions)\n\n" + (header + rows).joined(separator: "\n")
   }
 
+  private func encoded(_ group: Tier2Group, _ system: BenchSystem) -> String? {
+    measurements.first { measurement in
+      measurement.result.map { group.contains($0) && $0.system == system } == true && measurement.encodedPixels != nil
+    }?.encodedPixels
+  }
+
   private var verdictTable: String {
     let header = [
-      "| Scene | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict |",
-      "| --- | --- | --- | --- | --- | --- |",
+      "| Scene | Resolution | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = report.comparisons.map { comparison in
-      "| \(comparison.scene) | \(comparison.metric) | \(Tier2Format.list(comparison.appleHp)) | "
+      "| \(comparison.scene) | \(comparison.resolution) | \(comparison.metric) | \(Tier2Format.list(comparison.appleHp)) | "
         + "\(Tier2Format.list(comparison.codevisor)) | \(Tier2Format.number(comparison.noiseBandMs)) | "
         + "\(comparison.verdict.rawValue) |"
     }

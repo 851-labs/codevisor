@@ -4,4 +4,5 @@ struct AppleHPResult: Encodable {
   let choseHighPerformance: Bool
   let window: WindowDescription
   let checkedMenuItems: [String]
+  let windowSharingStates: [Int]
 }

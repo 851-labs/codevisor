@@ -15,19 +15,9 @@ struct ResultsHistory {
     BenchCellSummary.summaries(report.results)
   }
 
-  struct JudgedLatency {
-    let observedMs: Double?
-    let baselineMs: Double?
-    let isOutsideTheJitterBuffer: Bool
-  }
-
-  func judgedLatency(_ summary: BenchCellSummary) -> JudgedLatency {
-    let baseline = Array(BenchIndex.baseline(for: summary.cell, in: nightlies).suffix(BenchRegressionGate.baselineRuns))
-    let run = BenchGateSample(summary)
-    let outside = BenchRegressionGate.judgesOutsideTheJitterBuffer(baseline: baseline, runs: [run])
-    let p50: (BenchGateSample) -> Double? = outside ? \.e2eOutsideJitterBufferP50Ms : \.e2eP50Ms
-    return JudgedLatency(
-      observedMs: p50(run), baselineMs: BenchMedian.of(baseline.compactMap(p50)), isOutsideTheJitterBuffer: outside)
+  func baselineP50Ms(_ cell: BenchCell) -> Double? {
+    let samples = BenchIndex.baseline(for: cell, in: nightlies).suffix(BenchRegressionGate.baselineRuns)
+    return BenchMedian.of(samples.compactMap(\.e2eP50Ms))
   }
 
   func chart(title: String) -> ResultsChart {

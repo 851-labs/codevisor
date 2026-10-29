@@ -1,10 +1,13 @@
 import Darwin
+import CoreGraphics
 import ScreenSharingBench
+import ScreenSharingBenchScenes
 
 struct ShareCommand: BenchCommand {
   static let name = "share"
   static let summary = "Share this Mac's main display through the Codevisor engine (the Tier 2 host)"
-  static let usage = "[--port <port>] [--duration <seconds>] \(BenchSignalFiles.usage)"
+  static let usage =
+    "[--port <port>] [--duration <seconds>] [--virtual-display R1|R1x2|R2|R3] \(BenchSignalFiles.usage)"
 
   private static let durations = 1...7200
   private static let ports = 1...65_535
@@ -13,17 +16,20 @@ struct ShareCommand: BenchCommand {
   private let port: UInt16
   private let duration: Duration
   private let signals: BenchSignalFiles
+  private let virtualDisplay: BenchSceneResolution?
 
   init(options: BenchOptions) throws {
     port = UInt16(try options.integer("port", default: Int(SignalingSocket.defaultPort), in: Self.ports))
     duration = .seconds(try options.integer("duration", default: 120, in: Self.durations))
     signals = try BenchSignalFiles(options: options)
+    virtualDisplay = try options.string("virtual-display").map(Self.resolution)
   }
 
   func run() async throws {
     let deadline = ContinuousClock.now + duration
-    let connection = try await Self.awaitViewer(port: port, timeout: duration, signals: signals)
-    let host = try await ShareHost()
+    let shared = try await SharedDisplay.make(virtualDisplay)
+    let connection = try await Self.awaitViewer(port: port, timeout: duration, display: shared.id, signals: signals)
+    let host = try await ShareHost(displayID: shared.id)
     do {
       try connection.send(SignalingMessage(sdp: try await host.answer(try await Self.receive(connection).sdp)))
       await BenchSession.hold(connection, until: deadline, signals: signals)
@@ -36,15 +42,23 @@ struct ShareCommand: BenchCommand {
 
   @concurrent
   private static func awaitViewer(
-    port: UInt16, timeout: Duration, signals: BenchSignalFiles
+    port: UInt16, timeout: Duration, display: CGDirectDisplayID, signals: BenchSignalFiles
   ) async throws
     -> SignalingConnection
   {
     let listener = try SignalingSocket.listen(port: port)
     defer { close(listener) }
 
-    try signals.markReady("listening")
+    try signals.markReady("listening display \(display)")
     return try SignalingSocket.accept(on: listener, timeout: timeout)
+  }
+
+  private static func resolution(_ text: String) throws -> BenchSceneResolution {
+    guard let resolution = BenchSceneResolution(rawValue: text) else {
+      throw BenchUsageError(message: "--virtual-display takes R1, R1x2, R2 or R3, not \(text)")
+    }
+
+    return resolution
   }
 
   @concurrent

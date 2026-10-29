@@ -9,10 +9,14 @@ struct PlayerScreenTarget {
   let display: PlayerDisplayChoice
   private let virtualDisplay: PlayerVirtualDisplay?
 
-  static func make(display: PlayerDisplayChoice, resolution: SceneResolutionChoice) async throws -> PlayerScreenTarget {
+  static func make(
+    display: PlayerDisplayChoice, displayID: CGDirectDisplayID?, resolution: SceneResolutionChoice
+  ) async throws -> PlayerScreenTarget {
+    if let displayID { return try existing(displayID, resolution) }
+
     switch display {
-    case .main: try main(resolution)
-    case .virtual: try await virtual(resolution)
+    case .main: return try main(resolution)
+    case .virtual: return try await virtual(resolution)
     }
   }
 
@@ -22,6 +26,22 @@ struct PlayerScreenTarget {
 
   private static func main(_ resolution: SceneResolutionChoice) throws -> PlayerScreenTarget {
     guard let screen = NSScreen.main ?? NSScreen.screens.first else { throw PlayerError.noScreen }
+
+    let target = PlayerScreenTarget(
+      screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .main, virtualDisplay: nil)
+    try target.requireMatch()
+    return target
+  }
+
+  private static func existing(
+    _ id: CGDirectDisplayID, _ resolution: SceneResolutionChoice
+  ) throws
+    -> PlayerScreenTarget
+  {
+    let screen = NSScreen.screens.first {
+      $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == id
+    }
+    guard let screen else { throw BenchUsageError(message: "no screen for display \(id)") }
 
     let target = PlayerScreenTarget(
       screen: screen, canvas: canvas(of: screen), resolution: resolution, display: .main, virtualDisplay: nil)

@@ -6,6 +6,7 @@ struct PlayerReport: Encodable {
   let seed: UInt64
   let resolution: String
   let display: String
+  let displayID: UInt32?
   let canvas: BenchSceneCanvas
   let refreshHz: Int
   let seconds: Double
@@ -29,6 +30,7 @@ struct PlayerReport: Encodable {
     seed = configuration.seed
     resolution = target.resolution.rawValue
     display = target.display.rawValue
+    displayID = configuration.displayID
     canvas = target.canvas
     refreshHz = target.refreshHz
     seconds = stats.seconds

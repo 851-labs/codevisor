@@ -3,17 +3,15 @@ import ScreenSharingBench
 import Testing
 
 struct BenchIndexTests {
-  private static let method = BenchMethod(durationS: 30, warmUpS: 10, repetitions: 3, plan: "gate")
+  private static let method = BenchMethod(durationS: 30, warmUpS: 10, repetitions: 3)
   private static let scroll = BenchCell(system: .codevisor, scene: "scroll", resolution: "R1", network: "N0")
 
-  @Test func theBaselineComesOnlyFromNightliesOfTheSameTierMethodAndPlan() throws {
-    let core = BenchMethod(durationS: 30, warmUpS: 10, repetitions: 3, plan: "core")
-    let shorter = BenchMethod(durationS: 12, warmUpS: 5, repetitions: 1, plan: "gate")
+  @Test func theBaselineComesOnlyFromNightliesOfTheSameTierAndMethod() throws {
+    let shorter = BenchMethod(durationS: 12, warmUpS: 5, repetitions: 1)
     let entries = [
       Self.entry("gha-1-1", trigger: "nightly", e2eP50Ms: 60),
       Self.entry("gha-2-1", trigger: "adhoc", e2eP50Ms: 90),
-      Self.entry("gha-3-1", trigger: "nightly", e2eP50Ms: 62, method: core),
-      Self.entry("gha-3-2", trigger: "nightly", e2eP50Ms: 63, method: shorter),
+      Self.entry("gha-3-1", trigger: "nightly", e2eP50Ms: 62, method: shorter),
       Self.entry("gha-4-1", trigger: "nightly", e2eP50Ms: 61, tier: 2),
       Self.entry("gha-5-1", trigger: "nightly", e2eP50Ms: 64),
     ]

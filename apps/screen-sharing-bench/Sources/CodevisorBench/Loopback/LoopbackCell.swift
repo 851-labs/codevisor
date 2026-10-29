@@ -81,7 +81,7 @@ struct LoopbackCell {
       return try SyntheticSource(setup: setup, sink: peers.sender.frameSender)
     case .ownWindow:
       let resolution = SceneResolutionChoice(rawValue: settings.resolution.rawValue) ?? .native
-      let target = try await PlayerScreenTarget.make(display: settings.display, resolution: resolution)
+      let target = try await PlayerScreenTarget.make(display: settings.display, displayID: nil, resolution: resolution)
       return try OwnWindowSource(
         setup: setup, target: target, sink: peers.sender.frameSender, metrics: peers.hostMetrics)
     }

@@ -8,7 +8,7 @@ struct LoopbackCommand: BenchCommand {
     "Tier 1: stream synthetic scenes through the product sender and receiver over an emulated network"
   static let usage = [
     "[--scenes <scene,…>] [--networks <N0,…>] [--duration <seconds>] [--warm-up <seconds>] [--repetitions <n>]",
-    "[--plan <name>] [--seed <n>]",
+    "[--seed <n>]",
     "[--resolution R1] [--source synthetic|own-window] [--display main|virtual] [--onscreen]",
     "[--output <report.json>] [--frames <frames.jsonl>] [--run-id <id>] [--trigger <name>]",
   ].joined(separator: " ")
@@ -20,7 +20,6 @@ struct LoopbackCommand: BenchCommand {
   private let networks: [BenchNetworkConditions]
   private let settings: LoopbackSettings
   private let repetitions: Int
-  private let plan: String?
   private let output: String?
   private let framesPath: String?
   private let runID: String?
@@ -38,7 +37,6 @@ struct LoopbackCommand: BenchCommand {
       source: try options.choice("source", default: .synthetic),
       display: try options.choice("display", default: .main))
     repetitions = try options.integer("repetitions", default: 1, in: Self.repetitionCounts)
-    plan = try options.string("plan")
     output = try LoopbackMatrix.writablePath(try options.string("output"))
     framesPath = try LoopbackMatrix.writablePath(try options.string("frames"))
     runID = try options.string("run-id")
@@ -85,8 +83,7 @@ struct LoopbackCommand: BenchCommand {
   }
 
   private var method: BenchMethod {
-    BenchMethod(
-      durationS: settings.durationSeconds, warmUpS: settings.warmUpSeconds, repetitions: repetitions, plan: plan)
+    BenchMethod(durationS: settings.durationSeconds, warmUpS: settings.warmUpSeconds, repetitions: repetitions)
   }
 
   private func write(_ report: BenchReport, frames: [LoopbackFrameLine]) throws {

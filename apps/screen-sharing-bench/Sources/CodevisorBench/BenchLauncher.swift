@@ -1,3 +1,5 @@
+import Foundation
+
 @MainActor
 enum BenchLauncher {
   static func prepare(_ arguments: [String]) -> BenchLaunch {
@@ -21,6 +23,9 @@ enum BenchLauncher {
     case .finished(let status):
       return status
     case .command(let command):
+      let activity = ProcessInfo.processInfo.beginActivity(options: measuring, reason: "CodevisorBench is measuring")
+      defer { ProcessInfo.processInfo.endActivity(activity) }
+
       do {
         try await command.run()
         return .success
@@ -30,6 +35,8 @@ enum BenchLauncher {
       }
     }
   }
+
+  private static let measuring: ProcessInfo.ActivityOptions = [.userInitiated, .latencyCritical]
 
   private static func failed(_ name: String, usage: String, _ error: any Error) -> BenchExitStatus {
     if let error = error as? BenchUsageError {
