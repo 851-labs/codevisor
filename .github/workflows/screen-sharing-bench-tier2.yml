@@ -1,0 +1,108 @@
+name: Screen Sharing Bench Tier 2
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenes:
+        description: Comma-separated scenes
+        required: false
+        default: idle-cursor,typing,scroll,window-drag,video,test-cards
+        type: string
+      repetitions:
+        description: Alternating Apple HP / Codevisor repetitions per scene, 1 to 5
+        required: false
+        default: "3"
+        type: string
+      duration:
+        description: Seconds per run, 15 to 120
+        required: false
+        default: "60"
+        type: string
+      floor-repetitions:
+        description: Null-sharing floor runs per scene, 0 to 3
+        required: false
+        default: "1"
+        type: string
+      c4:
+        description: Also run S5 with the host observer off (C4)
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-sharing-bench
+  cancel-in-progress: false
+
+env:
+  TIER2_HOST_IP: 192.168.10.78
+  TIER2_VIEWER_IP: 192.168.10.103
+  TIER2_SCENES: ${{ inputs.scenes }}
+  TIER2_REPS: ${{ inputs.repetitions }}
+  TIER2_DURATION: ${{ inputs.duration }}
+  TIER2_FLOOR_REPS: ${{ inputs.floor-repetitions }}
+  TIER2_C4: ${{ inputs.c4 && '1' || '0' }}
+  TIER2_RENDEZVOUS_S: 1800
+
+jobs:
+  host:
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: apps/screen-sharing-bench/scripts
+          set-safe-directory: false
+      - name: Host the Tier 2 runs on tamale
+        run: apps/screen-sharing-bench/scripts/tier2-host.sh "$RUNNER_TEMP/results"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: tier2-tamale
+          path: ${{ runner.temp }}/results
+
+  viewer:
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: apps/screen-sharing-bench/scripts
+          set-safe-directory: false
+      - name: View the Tier 2 runs on croissant
+        run: apps/screen-sharing-bench/scripts/tier2-viewer.sh "$RUNNER_TEMP/results"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: tier2-croissant
+          path: ${{ runner.temp }}/results
+
+  report:
+    needs: [host, viewer]
+    if: ${{ !cancelled() }}
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: apps/screen-sharing-bench/scripts
+          set-safe-directory: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: tier2-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/runs
+      - name: Build the report and the target table
+        run: |
+          mkdir -p "$RUNNER_TEMP/report"
+          apps/screen-sharing-bench/scripts/run-installed.sh tier2-report --runs "$RUNNER_TEMP/runs" \
+            --run-id "gha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --output "$RUNNER_TEMP/report/report.json" \
+            --markdown "$RUNNER_TEMP/report/summary.md" > /dev/null
+          cat "$RUNNER_TEMP/report/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: tier2-report
+          path: ${{ runner.temp }}/report

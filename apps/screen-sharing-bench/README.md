@@ -155,6 +155,60 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   the report and `frames.jsonl` use mach continuous time like the rest of the bench. Each scene reads
   continuous − absolute once and shifts every timeline timestamp by it. Durations don't change.
 
+## Tier 2: Codevisor vs Apple High Performance (851-3595)
+
+Numbers come only from the `Screen Sharing Bench Tier 2` workflow
+(`.github/workflows/screen-sharing-bench-tier2.yml`, `workflow_dispatch`). A runner takes one job at a time,
+so no CI job overlaps a run. Deploy the app to both minis first (`scripts/deploy.sh tamale` and
+`scripts/deploy.sh croissant`), then `gh workflow run screen-sharing-bench-tier2.yml --ref <branch>`. Runs over
+ssh are for development only.
+
+The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
+walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then Apple HP and Codevisor
+alternately (`repetitions`, default 3, `duration` seconds each), and with `c4` S5 once per system with the
+host observer off. The host job serves `rendezvous` and the clock probes; the viewer job connects for up to
+30 minutes, and the two first agree that they run the same CodevisorBench build. Before each run, the two jobs meet at named barriers: `start` (both preflights pass), `system`
+(the host's `share` is listening), `ready` (the viewer shows Apple HP full screen, the Codevisor stream or the
+floor window), `measure` (the host's preflight during the run) and `done`. Measurement starts at `measure`:
+the viewer's observer, clock probes and sampler, the host's observer and root sampler, and 3 s later the
+player. A failed status at a barrier skips the run on both Macs. The `report` job merges both artifacts and
+runs `tier2-report`, which writes `report.json` and `summary.md` (also the job summary).
+
+- `rendezvous --serve` holds each named barrier until both parties arrive, then tells both every party's
+  status; `rendezvous --host <ipv4> --barrier <name> --party host|viewer [--status <text>]` exits 1 unless
+  every status is `ok`.
+- `preflight [--allow-screen-sharing-from <address or Bonjour name>,…]` prints load, thermal state, CI jobs,
+  the displays and every established `:5900` peer, and fails when the session is locked, a peer isn't
+  allowed, or the main display is `Screen Sharing Virtual Display` with no allowed peer. Apple HP is itself a
+  `:5900` session from the viewer, so the host allows the viewer's IPv4 address and Bonjour name (resolved to
+  all its addresses, link-local scopes ignored).
+- `share [--port 47593] [--duration <s>] [--ready-file <path>] [--stop-file <path>]` is the Codevisor host: it waits for one viewer
+  on TCP, answers its offer with a `ScreenSharingSender` built from `ScreenSharingProductProfile`, captures the
+  main display once connected and runs `ScreenSharingQualityLoop`, as the host service does.
+- `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
+  product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
+  the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
+  each version that `observe --relay <viewer ipv4>:47594` on the host sends the moment the host observer
+  first sees it (`BenchVersionMessage`, 20 bytes), through the same surface.
+- `apple-hp [--host tamales-Mac-Mini.local]` opens `vnc://<host>` in Screen Sharing.app (the saved Bonjour
+  entry, never an IP), makes the session window full screen through Accessibility and reports the checked
+  menu items, which show the connection mode. It quits Screen Sharing.app at the end.
+- `sample --output <file.jsonl>` also writes one `BenchUsageSecond` line a second. A process name of the
+  form `CodevisorBench:share` matches only the bench processes running that subcommand. The host sampler runs
+  as root (`sudo -n`) so it can read `screensharingd`.
+
+Image age is `BenchSharingAnalysis`: the viewer observer's first PTS of each version minus the host
+observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). The window starts
+5 s after both observers first read a barcode and ends 2 s before either stops. Versions the host showed and
+the viewer never did are skipped versions. Updates/s, gaps and freezes (typing, scroll, window drag and video
+only) come from the viewer's versions in the window; judder is the viewer's gap p95 minus the host's. CPU is
+the per-second sum of the system's processes (Apple HP: `screensharingd`, `ScreensharingAgent` and
+`Screen Sharing`; Codevisor: the `share` and `view` processes; both: `VTEncoderXPCService` and
+`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. A run is invalid when it didn't come
+from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual over 0.2 ms), another CI job ran,
+a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions: a difference within the noise
+band, the wider of the two systems' min–max spreads, is no difference.
+
 ## Signing and permissions
 
 The bundle is signed with the team's Developer ID Application identity (team `WH4QW9ND3J`), so its

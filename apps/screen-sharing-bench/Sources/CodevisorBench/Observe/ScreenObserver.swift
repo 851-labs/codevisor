@@ -19,11 +19,11 @@ final class ScreenObserver {
   }
 
   static func start(
-    display: SCDisplay, region: ObserverRegion, layout: BenchBarcodeLayout
+    display: SCDisplay, region: ObserverRegion, layout: BenchBarcodeLayout, relay: VersionRelay? = nil
   ) async throws -> ScreenObserver {
     let filter = SCContentFilter(display: display, excludingWindows: [])
     let scale = CGFloat(filter.pointPixelScale)
-    let collector = FrameCollector(layout: capturedLayout(layout, region: region))
+    let collector = FrameCollector(layout: capturedLayout(layout, region: region), relay: relay)
     let stream = SCStream(
       filter: filter, configuration: configuration(display, region, layout, scale), delegate: collector)
     try stream.addStreamOutput(collector, type: .screen, sampleHandlerQueue: collector.queue)
