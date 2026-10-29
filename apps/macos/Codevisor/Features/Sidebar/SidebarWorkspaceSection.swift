@@ -67,30 +67,6 @@ struct SidebarWorkspaceSection: View, Equatable {
 }
 
 @MainActor
-struct SidebarChatStatus {
-  let list: ProjectListModel
-  let store: SessionStore?
-
-  func chats(in workspace: Workspace) -> [ChatSession] {
-    workspace.centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }.compactMap { pane in
-      guard pane.kind == .chat, let id = pane.chatSessionId else { return nil }
-      return list.session(id, serverId: workspace.serverId)
-    }
-  }
-
-  func urgentChat(among chats: [ChatSession]) -> ChatSession? {
-    guard let store else { return nil }
-    let urgent: [(ChatSession) -> Bool] = [
-      store.hasUnreadError, store.isWaitingOnUser, store.isInProgress, { store.unreadCount($0) > 0 },
-    ]
-    for isUrgent in urgent {
-      if let chat = chats.first(where: isUrgent) { return chat }
-    }
-    return nil
-  }
-}
-
-@MainActor
 struct SidebarRowContent {
   let environment: AppEnvironment
   let store: SessionStore?
@@ -107,24 +83,12 @@ struct SidebarRowContent {
   }
 
   func routingSession(for item: WorkspaceSidebarItem) -> ChatSession? {
-    var fallback: ChatSession?
-    for id in item.routingChatIds {
-      guard let session = list.session(id, serverId: item.serverId) else { continue }
-      if session.origin == .codevisor || list.showsImportedSessions { return session }
-      if fallback == nil { fallback = session }
-    }
-    return fallback
+    list.mainChat(of: item)
   }
 
   func icon(for item: SidebarWorkspaceListItem) -> SidebarWorkspaceIcon {
-    let workspace = item.workspace
-    let status = SidebarChatStatus(list: list, store: store)
-    let chats = status.chats(in: workspace)
-    if let chat = status.urgentChat(among: chats) { return .chat(chat) }
-    let panes = workspace.centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
-    let selectedChat = workspace.selectedCenterTab.flatMap { list.routableChat(in: $0, serverId: workspace.serverId) }
-    if let chat = selectedChat ?? item.routingSession ?? chats.first { return .chat(chat) }
-    return panes.contains { $0.terminalAgentStatus == .working } ? .workingTerminal : .workspace
+    if let chat = item.routingSession { return .chat(chat) }
+    return item.workspace.allPanes.contains { $0.terminalAgentStatus == .working } ? .workingTerminal : .workspace
   }
 
   func subtitle(for workspace: Workspace, isPinned: Bool) -> String? {
