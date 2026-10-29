@@ -47,7 +47,8 @@ extension HomeView {
     let selected = try request.applying(to: workspace)
     let tab = selected.selectedCenterTab
     let pane = tab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPane }
-    let candidates = [pane?.chatSessionId].compactMap { $0 } + workspace.chatSessionIds
+    let candidates =
+      [pane?.chatSessionId].compactMap { $0 } + environment.workspaces.mainFirstChatSessionIds(in: workspace)
     let anchor = candidates.first { projectList.session($0, serverId: serverId) != nil }
     environment.workspaces.save(selected)
     navigation.select(

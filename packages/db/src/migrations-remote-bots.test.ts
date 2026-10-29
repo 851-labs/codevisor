@@ -6,7 +6,7 @@ import Database from "better-sqlite3"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
-import { rewindPluginsSql, run, tempDatabase } from "./test-support.js"
+import { rewindMainSessionSql, rewindPluginsSql, run, tempDatabase } from "./test-support.js"
 
 const v73Schema = `
   ${rewindPluginsSql}
@@ -25,6 +25,7 @@ const v73Schema = `
   alter table workspaces drop column remote_bot_parent_session_id;
   alter table workspaces drop column remote_bot_machine_id;
   alter table workspaces drop column remote_bot_id;
+  ${rewindMainSessionSql}
   alter table workspaces drop column git_detached_head;
   delete from schema_migrations where id >= 74;
 `

@@ -51,7 +51,7 @@ extension RootView {
     let selected = try request.applying(to: workspace)
     let tab = selected.selectedCenterTab
     let selectedChat = tab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPane?.chatSessionId }
-    let candidates = [selectedChat].compactMap { $0 } + workspace.chatSessionIds
+    let candidates = [selectedChat].compactMap { $0 } + environment.workspaces.mainFirstChatSessionIds(in: workspace)
     let anchor = candidates.first(where: { id in
       environment.projectList.sessions.contains { $0.serverId == serverId && $0.id == id }
     })

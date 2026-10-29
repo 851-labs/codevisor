@@ -143,7 +143,7 @@ interface WorkspaceWrite {
   readonly now: string
 }
 
-const readWorkspace = (sqlite: ServiceContext["sqlite"], id: string): Workspace =>
+export const readWorkspace = (sqlite: ServiceContext["sqlite"], id: string): Workspace =>
   workspaceFromRow(workspaceRows.one(sqlite.prepare(workspaceSql.byId).get(id)))
 
 const headSidebarPosition = (sqlite: ServiceContext["sqlite"]): string | undefined =>

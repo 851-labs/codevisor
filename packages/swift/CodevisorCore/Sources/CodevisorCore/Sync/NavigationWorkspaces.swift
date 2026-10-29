@@ -92,13 +92,14 @@ public final class NavigationWorkspaces {
       .map { workspace in
         WorkspaceSidebarItem(
           id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
-          routingChatIds: workspace.chatSessionIds, botId: workspace.botId, botMachineId: workspace.botMachineId)
+          routingChatIds: workspace.mainFirstChatSessionIds, botId: workspace.botId,
+          botMachineId: workspace.botMachineId)
       }
   }
 
   func update(_ workspace: Workspace, sessionWorkspace: (UUID) -> UUID?) {
     entries[workspace.id]?.update(workspace)
-    let routed = workspace.chatSessionIds.filter { sessionWorkspace($0) == workspace.id }
+    let routed = workspace.mainFirstChatSessionIds.filter { sessionWorkspace($0) == workspace.id }
     func refreshed(_ current: WorkspaceSidebarItem) -> WorkspaceSidebarItem {
       WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
@@ -133,9 +134,8 @@ public final class NavigationWorkspaces {
       }
     return live.compactMap { entry in
       let workspace = entry.workspace
-      let chats = workspace.chatSessionIds
-      let routed = chats.filter { projection.sessionIndex[$0] == workspace.id }
-      guard chats.isEmpty || !routed.isEmpty else { return nil }
+      let routed = workspace.mainFirstChatSessionIds.filter { projection.sessionIndex[$0] == workspace.id }
+      guard workspace.chatSessionIds.isEmpty || !routed.isEmpty else { return nil }
       let fallback = indexedChats[workspace.id].map { [$0] } ?? []
       return WorkspaceSidebarItem(
         id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,

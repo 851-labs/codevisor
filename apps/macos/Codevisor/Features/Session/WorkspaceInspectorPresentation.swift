@@ -39,7 +39,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
   @State private var usage = WorkspaceInspectorUsageModel()
-  @State private var lastOpenedChats: [UUID: UUID] = [:]
   let store: SessionStore?
   @Binding var selection: SidebarSelection?
   var revealRequest: SidebarRevealRequest?
@@ -90,10 +89,6 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       .task(id: isVisible && visibleTab == .harness ? usageAccounts : nil) {
         guard isVisible, visibleTab == .harness else { return }
         await usage.prefetch(usageCandidates) { environment.machines.client(for: $0) }
-      }
-      .onChange(of: selection, initial: true) { _, selection in
-        guard case let .session(_, sessionId) = selection, let inspected = inspectedWorkspace else { return }
-        lastOpenedChats[inspected.workspace.id] = sessionId
       }
       .focusedSceneValue(\.workspaceInspector, inspected.map { actions(for: $0, isVisible: isVisible) })
   }
@@ -267,19 +262,10 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     Set(usageCandidates.map(WorkspaceInspectorUsageModel.Account.init))
   }
 
-  private func lastOpenedChat(in workspace: Workspace) -> ChatSession? {
-    let list = environment.projectList
-    let chatIds = workspace.chatSessionIds
-    if let remembered = lastOpenedChats[workspace.id], chatIds.contains(remembered),
-      let session = list.session(remembered, serverId: workspace.serverId)
-    {
-      return session
-    }
-    if let tab = workspace.selectedCenterTab, let session = list.routableChat(in: tab, serverId: workspace.serverId) {
-      return session
-    }
-    return chatIds.compactMap { list.session($0, serverId: workspace.serverId) }
-      .max { $0.sidebarStateChangedAt < $1.sidebarStateChangedAt }
+  private func mainChat(of workspace: Workspace) -> ChatSession? {
+    environment.workspaces.mainFirstChatSessionIds(in: workspace).lazy.compactMap {
+      environment.projectList.session($0, serverId: workspace.serverId)
+    }.first
   }
 
   private func activeDocumentPath(in workspace: Workspace) -> String? {
@@ -322,7 +308,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         workspace.serverId == serverId,
         let project = project(serverId: serverId, id: workspace.projectId)
       else { return nil }
-      return Inspected(workspace: workspace, project: project, chat: lastOpenedChat(in: workspace))
+      return Inspected(workspace: workspace, project: project, chat: mainChat(of: workspace))
     case .archivedWorkspace, .newChat, .none:
       return nil
     }

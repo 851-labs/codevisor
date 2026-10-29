@@ -15,6 +15,10 @@ public protocol WorkspaceRepository: Sendable {
 }
 
 public extension WorkspaceRepository {
+  func mainFirstChatSessionIds(in workspace: Workspace) -> [UUID] {
+    workspace.mainFirstChatSessionIds.filter { workspaceId(forSession: $0) == workspace.id }
+  }
+
   func removeAll() {
     for workspace in loadAll() {
       delete(id: workspace.id)

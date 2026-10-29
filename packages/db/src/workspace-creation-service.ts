@@ -11,7 +11,7 @@ import type { CodevisorDatabaseService } from "./service.js"
 import { insertSessionRow } from "./sessions-service.js"
 import { readPane } from "./workspace-pane-operations.js"
 import type { CreateWorkspaceWithSessionRecord } from "./workspace-service-types.js"
-import { readWorkspaceRow, upsertWorkspaceRow } from "./workspaces-service.js"
+import { readWorkspace, readWorkspaceRow, upsertWorkspaceRow } from "./workspaces-service.js"
 
 export const makeWorkspaceCreationService = (
   context: ServiceContext
@@ -47,7 +47,11 @@ export const makeWorkspaceCreationService = (
               now
             )
           const pane = readPane(sqlite, paneId)
-          return { workspace, session: getSession(sessionId), pane }
+          return {
+            workspace: readWorkspace(sqlite, workspace.id),
+            session: getSession(sessionId),
+            pane
+          }
         })()
       )
   }
