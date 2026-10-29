@@ -10,6 +10,7 @@ import { rewindMainSessionSql, rewindPluginsSql, run, tempDatabase } from "./tes
 
 const v73Schema = `
   ${rewindPluginsSql}
+  ${rewindMainSessionSql}
   drop index session_attention_finished_turns;
   alter table session_attention drop column turn_end_state;
   alter table session_attention drop column turn_end_revision;
@@ -25,7 +26,6 @@ const v73Schema = `
   alter table workspaces drop column remote_bot_parent_session_id;
   alter table workspaces drop column remote_bot_machine_id;
   alter table workspaces drop column remote_bot_id;
-  ${rewindMainSessionSql}
   alter table workspaces drop column git_detached_head;
   delete from schema_migrations where id >= 74;
 `

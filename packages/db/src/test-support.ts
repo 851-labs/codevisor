@@ -252,7 +252,15 @@ const v4FixtureSql = `
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `
 
+export const rewindWorkspaceNamesSql = `
+  drop index workspaces_main_session_id;
+  drop trigger workspace_name_main_session;
+  drop trigger workspace_name_main_session_title;
+  delete from schema_migrations where id = 86;
+`
+
 export const rewindMainSessionSql = `
+  ${rewindWorkspaceNamesSql}
   drop trigger workspace_main_session_insert;
   drop trigger workspace_main_session_move;
   drop trigger workspace_main_session_delete;
