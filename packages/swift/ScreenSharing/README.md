@@ -1,12 +1,13 @@
 # Screen sharing
 
-The engine behind the Screen Sharing pane, in three targets under `packages/swift/ScreenSharing`:
+The engine behind the Screen Sharing pane, in four targets under `packages/swift/ScreenSharing`:
 
 | Target | Links | Holds |
 | --- | --- | --- |
 | `ScreenSharing` | CZlib, system frameworks | `Session/` (viewing-session and message-channel contracts), `Messages/` (input, control, clipboard, refresh), `Frames/` (frame, mailbox, sink, identity), `Metrics/`, `Capture/` (ScreenCaptureKit, the source idle monitor), `Codecs/` (VideoToolbox encoder and decoder), `Render/` (the Metal view and coordinator), `Viewer/` (the AppKit surface: video, input capture, forwarder), `HostInput/` (control lease, CGEvent injection), `RFB/` (the VNC wire protocol), `VNC/` (VNC as a viewing session), `Audio/` (Opus encoding, jitter buffer, playback), `Tunnel/` (SDP for tunnelled media) |
 | `ScreenSharingWebRTC` | `ScreenSharing`, WebRTC | `Peer/`, `Channels/` (data channel, frame sender), `Endpoints/` (sender, receiver, recovery), `Codecs/` (the factory bridging VideoToolbox into WebRTC), `FieldTrials/`. The only target that links the binary framework. |
-| `ScreenSharingTesting` | `ScreenSharing` | The in-process RFB server the suites drive and the replay of recorded RFB fixtures. Never a dependency of a product target. |
+| `ScreenSharingTesting` | `ScreenSharing`, `ScreenSharingBench` | The in-process RFB server the suites drive and the replay of recorded RFB fixtures. Never a dependency of a product target. |
+| `ScreenSharingBench` | system frameworks | The benchmark core (see [Benchmark core](#benchmark-core)): `Barcode/`, `Stats/`, `Clock/`, `Network/`, `Report/`, `Gate/`. Pure logic, no UI. Never a dependency of a product target. |
 
 Folders are layers; targets are dependency edges. `ScreenSharing` cannot reach WebRTC because it does not link it, so the VNC session, the viewer surface and every test of those parts never load the framework. `Viewer/`, `HostInput/` and `VNC/` are macOS-only (`#if os(macOS)`); the rest compiles for iOS. Product feature code (the Composable Architecture reducer, the backends and runners, the host service) stays in `CodevisorCoreMac/ScreenSharing`.
 
@@ -151,6 +152,16 @@ Every presented frame gets a record of where its time went, following Moonlight:
 
 Timestamps are mach absolute time in nanoseconds: `host` on the host's clock (rebuilt from `sourceTimestampNs` and the in-band durations, to the microsecond), `viewer` on the viewer's. Stage durations are integer microseconds. A field that couldn't be measured is omitted, and `stageSumUs` with it.
 
+## Benchmark core
+
+`ScreenSharingBench` holds the pure parts of the [screen sharing v2 benchmark](https://linear.app/851/document/screen-sharing-v2-benchmark-design-851-3582-0309dbbc943b) that the scene player, the observer, the loopback and the workflow share. Benchmarks run only from the benchmark workflow, never from `bun run check` or `bun run swift:test`; this target's unit tests do run there. All times are mach continuous time in nanoseconds, and every derived duration is in milliseconds.
+
+- **Barcode.** `BenchBarcode.draw(_:into:layout:)` writes a version (0…2²⁴−1) into a BGRA `CVPixelBuffer` or a CPU-writable `.bgra8Unorm` `MTLTexture`; `BenchBarcode.read(_:layout:)` decodes a BGRA, `420v` or `420f` pixel buffer. The strip is 32 blocks (24-bit version, most significant bit first, then CRC-8 with polynomial 0x1D and initial value 0xFF), one row of data and one row of its complement, `BenchBarcodeLayout.standard` being 16×16-pixel blocks at the top left (512×32 px). Each block compares the mean luma at four central points of its data and complement halves, so no fixed threshold is needed. A read is `.version`, `.ambiguousBlock` (a block's two halves differ by less than 64 code values, as a tear between the rows gives) or `.checksumMismatch`. A read spliced at any block from two versions up to four apart never decodes to a third version (checked exhaustively over all 2²⁴ versions); count unreadable reads, never drop them.
+- **Stats.** `BenchDistribution(_:)` is `{count, p50, p95, max}` by nearest rank (`sorted[ceil(p·n) − 1]`), `nil` for no samples. `BenchFrameGaps.intervalsMs(between:)` turns on-glass times into gaps. `BenchFreezes(gapsMs:activeDurationMs:)` applies the W3C rule: a gap of at most 5 s freezes when it is ≥ max(3·avg, avg + 150 ms), where avg is the mean of the previous 30 such gaps, so the first 30 gaps never freeze; a gap over 5 s is a pause, counted apart and left out of the average.
+- **Clock.** Give `BenchClockEstimate(bursts:)` the four timestamps of each probe (`BenchClockExchange`), grouped by burst. It keeps each burst's minimum-round-trip probe, fits offset and drift by least squares, and maps `localNs(fromRemote:)`. `quality` is the report's `{epsilon_ms, drift_ppm, residual_ms}`: ε is the largest kept round trip / 2, the residual the largest distance from the fit.
+- **Network.** `BenchNetworkModel(conditions:seed:)` follows WebRTC's `SimulatedNetwork`: a packet queue of `queueLengthPackets` drained at `linkCapacityKbps`, then a delay of `delayMs` with normal jitter of `delayStandardDeviationMs` that never reorders. Loss is Bernoulli or, with `averageBurstLossLength`, Gilbert–Elliott (`BenchLossModel`). Loss is drawn for every packet offered, from its own `SplitMix64` stream, so the loss pattern depends only on the seed and packet index. `BenchNetworkConditions.matrix` is N0–N7.
+- **Report.** `BenchReport` is `codevisor.screen-sharing.bench/v1`. `BenchReportCodec` encodes it with snake_case keys (a capital starts a word; digits stay with the word before), sorted, ISO 8601 dates (read with or without fractional seconds), absent values left out and seeds below 2⁵³ so JavaScript reads them exactly, and refuses a report whose `validationIssues` aren't empty. `Tests/ScreenSharingBenchTests/Report/Fixtures/report.json` is the golden file.
+- **Gate.** `BenchRegressionGate.regressions(baseline:first:second:)` takes `BenchGateSample`s for one scene and network: the baseline nights (the last 7 count, compared by median) and two consecutive runs. A metric regresses only when both runs pass its threshold: e2e p50 up by more than max(15%, 3 ms), p95 up by more than max(20%, 5 ms), updates/s down by more than 5%, freeze ratio up by more than 2 points (pass it for N3 only), `psnr_y` down by more than 0.5 dB, or an encode or decode error in both runs.
 
 ## WebRTC dependency record
 

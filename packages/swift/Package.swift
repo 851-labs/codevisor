@@ -63,8 +63,13 @@ let package = Package(
       swiftSettings: strictSwiftSettings
     ),
     .target(
+      name: "ScreenSharingBench",
+      path: "ScreenSharing/Sources/ScreenSharingBench",
+      swiftSettings: strictSwiftSettings
+    ),
+    .target(
       name: "ScreenSharingTesting",
-      dependencies: ["ScreenSharing"],
+      dependencies: ["ScreenSharing", "ScreenSharingBench"],
       path: "ScreenSharing/Sources/ScreenSharingTesting",
       swiftSettings: strictSwiftSettings
     ),
@@ -73,6 +78,13 @@ let package = Package(
       dependencies: ["ScreenSharing", "ScreenSharingTesting", "CodevisorTestSupport"],
       path: "ScreenSharing/Tests/ScreenSharingTests",
       resources: [.copy("RFB/Fixtures")],
+      swiftSettings: strictSwiftSettings
+    ),
+    .testTarget(
+      name: "ScreenSharingBenchTests",
+      dependencies: ["ScreenSharingBench"],
+      path: "ScreenSharing/Tests/ScreenSharingBenchTests",
+      resources: [.copy("Report/Fixtures")],
       swiftSettings: strictSwiftSettings
     ),
     .testTarget(
