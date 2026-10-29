@@ -134,7 +134,7 @@ extension NewChatView {
         openSettings()
       }
       .help("Open Machine Settings")
-      Autocomplete.Action("Manage Sandboxes…", systemImage: "shippingbox") {
+      Autocomplete.Action("Manage Sandboxes…", systemImage: "shippingbox.fill") {
         SettingsRouter.shared.showSandboxes()
         openSettings()
       }
