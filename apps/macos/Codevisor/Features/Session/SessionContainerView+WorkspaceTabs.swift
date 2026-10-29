@@ -84,7 +84,7 @@ extension SessionContainerView {
         name: title,
         icon: .workspaceTab(
           descriptor, title: title, serverId: workspace.serverId, environment: environment, store: store),
-        canClose: true,
+        canClose: !workspace.holdsMainChat(tab),
         shortcutHint: index < 9 ? "⌘\(index + 1)" : nil,
         isPreview: tab.isPreview
       )
@@ -115,6 +115,10 @@ extension SessionContainerView {
     guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return }
     guard workspace.centerTabs.count > 1 else {
       confirmClosingWindow()
+      return
+    }
+    guard !workspace.holdsMainChat(tab) else {
+      NSSound.beep()
       return
     }
     let panes = tab.root.allGroups.flatMap { configuredCenterModel(leafId: $0.id).state.panes }

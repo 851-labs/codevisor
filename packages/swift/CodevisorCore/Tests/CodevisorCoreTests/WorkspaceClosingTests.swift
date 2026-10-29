@@ -3,6 +3,24 @@ import Testing
 @testable import CodevisorCore
 
 struct WorkspaceClosingTests {
+  @Test("Only the main chat's pane, and the tab holding it, count as the main chat")
+  func mainChatPane() throws {
+    let main = UUID()
+    let mainTab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: main)))
+    let sideTab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
+    var workspace = makeWorkspace(tabs: [mainTab, sideTab], selected: mainTab.id)
+    let mainPane = try #require(mainTab.root.allGroups.first?.state.panes.first)
+    let sidePane = try #require(sideTab.root.allGroups.first?.state.panes.first)
+    #expect(!workspace.isMainChatPane(mainPane))
+
+    workspace.mainSessionId = main
+
+    #expect(workspace.isMainChatPane(mainPane))
+    #expect(!workspace.isMainChatPane(sidePane))
+    #expect(workspace.holdsMainChat(mainTab))
+    #expect(!workspace.holdsMainChat(sideTab))
+  }
+
   @Test("Closing an inactive tab preserves the selected tab and split")
   func closingInactiveTabKeepsSelection() {
     let closing = WorkspaceTab(root: .leaf(PaneGroupState()))

@@ -221,6 +221,10 @@ extension SessionContainerView {
       confirmClosingWindow()
       return
     }
+    guard model.canClose(id: pane.id) else {
+      NSSound.beep()
+      return
+    }
     store.confirmClosingWorkingChats([pane], serverId: selectedWorkspace.serverId) {
       guard model.state.panes.contains(where: { $0.id == pane.id }) else { return }
       let workspace = selectedWorkspace

@@ -108,6 +108,7 @@ extension HomeView {
   }
 
   private func closeSidebarRow(_ row: HomeSidebarTabRow, in ref: HomeSidebarWorkspaceRef) {
+    guard !row.isMainChat else { return }
     withSidebarReflow {
       if let chatId = row.chatSessionId, let session = projectList.session(chatId, serverId: ref.serverId) {
         environment.closeSession(session)

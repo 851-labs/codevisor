@@ -68,7 +68,7 @@ extension PaneGroupModel {
   func canClose(id: UUID) -> Bool {
     guard state.canClosePane(id: id),
       let descriptor = state.panes.first(where: { $0.id == id }),
-      isWorkspaceFinalPane?(descriptor) != true
+      isWorkspaceFinalPane?(descriptor) != true, isWorkspaceMainChat?(descriptor) != true
     else { return false }
     switch descriptor.kind {
     case .newTab where state.panes.count == 1:

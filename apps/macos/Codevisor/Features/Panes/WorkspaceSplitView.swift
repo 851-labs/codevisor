@@ -238,6 +238,11 @@ private struct SplitLeafView: View {
     .animation(Motion.quick(reduceMotion: reduceMotion), value: openingEdge == nil)
   }
 
+  private func holdsMainChat(_ model: PaneGroupModel) -> Bool {
+    guard let pane = model.state.selectedPane else { return false }
+    return model.isWorkspaceMainChat?(pane) == true
+  }
+
   private var leafContent: some View {
     let model = groupModel(leafId)
     return VStack(spacing: 0) {
@@ -253,7 +258,7 @@ private struct SplitLeafView: View {
           onActivate: { model.onActivated?() },
           onSplit: onSplit,
           onRename: onRename,
-          onClose: onClose
+          onClose: holdsMainChat(model) ? nil : onClose
         )
       }
       ZStack {
@@ -308,7 +313,7 @@ private struct SplitLeafHeader: View {
   let onActivate: () -> Void
   let onSplit: (SplitEdge) -> Void
   let onRename: (String) -> Void
-  let onClose: () -> Void
+  let onClose: (() -> Void)?
 
   @Environment(AppEnvironment.self) private var environment
   @State private var renameText = ""
@@ -453,11 +458,13 @@ private struct SplitLeafHeader: View {
         ChatSessionUnreadMenuItem(session: session, store: sessionStore)
       }
 
-      Button(role: .destructive, action: onClose) {
-        Label("Close", systemImage: "xmark")
-          .labelStyle(.titleAndIcon)
+      if let onClose {
+        Button(role: .destructive, action: onClose) {
+          Label("Close", systemImage: "xmark")
+            .labelStyle(.titleAndIcon)
+        }
+        .shortcut(.closeSplit)
       }
-      .shortcut(.closeSplit)
     } label: {
       Image(systemName: "ellipsis")
         .font(.system(size: 13, weight: .semibold))

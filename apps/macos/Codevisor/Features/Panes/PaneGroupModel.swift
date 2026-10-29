@@ -45,6 +45,7 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored var onPaneEdited: ((UUID) -> Void)?
   @ObservationIgnored var onPaneRemoved: ((PaneDescriptorState) -> Void)?
   @ObservationIgnored var isWorkspaceFinalPane: ((PaneDescriptorState) -> Bool)?
+  @ObservationIgnored var isWorkspaceMainChat: ((PaneDescriptorState) -> Bool)?
   @ObservationIgnored var canDissolve: (() -> Bool)?
   @ObservationIgnored var onActivated: (() -> Void)?
   @ObservationIgnored var isFocusCurrent: (() -> Bool)?
