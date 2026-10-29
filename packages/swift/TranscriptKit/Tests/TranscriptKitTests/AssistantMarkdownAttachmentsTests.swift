@@ -51,6 +51,19 @@ struct AssistantMarkdownAttachmentsTests {
       ])
   }
 
+  @Test("A file listed twice on a message shows one preview")
+  func duplicateAttachments() {
+    let result = assistantMarkdownSegments(
+      "See [Recording](https://attachments.codevisor.invalid/file-1)",
+      attachments: [recording, recording]
+    )
+    #expect(
+      result == [
+        .markdown("See "),
+        .file(PreviewFile(attachment: recording), label: "Recording"),
+      ])
+  }
+
   @Test("Local links and images stay Markdown; only the chat's own files become previews")
   func localFiles() {
     let markdown =

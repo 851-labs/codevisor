@@ -220,6 +220,7 @@ private func segmentAssistantMarkdown(
   includeUnreferencedAttachments: Bool,
   localImagesPendingCapture: Bool
 ) -> [AssistantMarkdownSegment] {
+  let attachments = uniqueAttachments(attachments)
   let byID = Dictionary(uniqueKeysWithValues: attachments.map { ($0.fileId, $0) })
   var segments: [AssistantMarkdownSegment] = []
   var offset = markdown.startIndex
@@ -267,6 +268,11 @@ private func segmentAssistantMarkdown(
     segments += unreferencedAttachmentSegments(attachments, referenced: referenced)
   }
   return segments
+}
+
+private func uniqueAttachments(_ attachments: [Attachment]) -> [Attachment] {
+  var seen = Set<String>()
+  return attachments.filter { seen.insert($0.fileId).inserted }
 }
 
 private func linkLabel(_ match: NSTextCheckingResult, in markdown: String) -> String? {
