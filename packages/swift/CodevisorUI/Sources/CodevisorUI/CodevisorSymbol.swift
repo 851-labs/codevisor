@@ -9,6 +9,7 @@ import SwiftUI
 public enum CodevisorSymbol: String {
   case codevisorMark = "codevisor-mark"
   case gitHubMark = "github-mark"
+  case gitBranch = "git-branch"
   case gitMerge = "git-merge"
   case gitPullRequest = "git-pull-request"
   case gitPullRequestClosed = "git-pull-request-closed"

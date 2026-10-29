@@ -1,5 +1,6 @@
 import CodevisorCore
 import Foundation
+import SwiftUI
 
 public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Sendable {
   case pullRequest
@@ -31,13 +32,13 @@ public enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable, Senda
     }
   }
 
-  public var systemImage: String {
+  public var icon: Image {
     switch self {
-    case .pullRequest: "arrow.triangle.pull"
-    case .machine: "desktopcomputer"
-    case .project: "folder"
-    case .branch: "arrow.triangle.branch"
-    case .worktree: "tree"
+    case .pullRequest: Image(systemName: "arrow.triangle.pull")
+    case .machine: Image(systemName: "desktopcomputer")
+    case .project: Image(systemName: "folder")
+    case .branch: CodevisorSymbol.gitBranch.image
+    case .worktree: Image(systemName: "tree")
     }
   }
 }

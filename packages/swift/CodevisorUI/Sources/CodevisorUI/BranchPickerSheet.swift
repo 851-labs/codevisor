@@ -67,7 +67,13 @@
           } else if !searchText.isEmpty, matching(allBranches).isEmpty {
             ContentUnavailableView.search(text: searchText)
           } else if searchText.isEmpty, allBranches.isEmpty {
-            ContentUnavailableView(emptyMessage, systemImage: "arrow.triangle.branch")
+            ContentUnavailableView {
+              Label {
+                Text(emptyMessage)
+              } icon: {
+                CodevisorSymbol.gitBranch.image
+              }
+            }
           }
         }
         .navigationTitle("Base Branch")

@@ -1,4 +1,5 @@
 {
+  "git-branch": { "height": 1.34, "outset": 0.01 },
   "git-merge": { "height": 1.34, "outset": 0.01 },
   "git-pull-request": { "height": 1.34, "outset": 0.01 },
   "git-pull-request-closed": { "height": 1.34, "outset": 0.01 },
