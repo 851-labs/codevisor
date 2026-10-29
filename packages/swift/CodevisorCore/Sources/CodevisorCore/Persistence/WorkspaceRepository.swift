@@ -19,6 +19,13 @@ public extension WorkspaceRepository {
     workspace.mainFirstChatSessionIds.filter { workspaceId(forSession: $0) == workspace.id }
   }
 
+  func isSideChat(_ sessionId: UUID) -> Bool {
+    guard let workspaceId = workspaceId(forSession: sessionId),
+      let mainSessionId = workspace(id: workspaceId)?.mainSessionId
+    else { return false }
+    return mainSessionId != sessionId
+  }
+
   func removeAll() {
     for workspace in loadAll() {
       delete(id: workspace.id)

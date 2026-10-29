@@ -18,6 +18,7 @@ struct ComposerCard: View {
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
   @Environment(\.clientControlId) private var clientControlId
   @Environment(\.openChat) private var openChat
+  @Environment(AppEnvironment.self) private var environment
   @Environment(\.usesSlimComposer) private var usesSlimComposer
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
   @State private var selection = NSRange(location: 0, length: 0)
@@ -369,7 +370,7 @@ private extension ComposerCard {
         }
       )
     }
-    if controller.supportsFork {
+    if controller.supportsFork, !isSideChat {
       items.append(
         ComposerSlashItem(name: "fork", description: "Continue this chat in a new chat") {
           Task { await forkChat() }
@@ -377,6 +378,10 @@ private extension ComposerCard {
       )
     }
     return items
+  }
+
+  private var isSideChat: Bool {
+    controller.serverSession.map { environment.workspaces.isSideChat($0.id) } ?? false
   }
 
   private func forkChat() async {
