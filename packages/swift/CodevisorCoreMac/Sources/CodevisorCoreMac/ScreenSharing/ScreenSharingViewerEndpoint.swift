@@ -118,7 +118,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     Task { @MainActor in await setDesktopScale(scale) }
   }
 
-  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface) {
+  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, sound: Bool = true) {
     self.session = session
     self.surface = surface
     capabilities = session.capabilities
@@ -158,7 +158,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       surface?.showRemoteCursor(update)
     }
     session.onResizeSupportChanged = { [weak self] in self?.desktopResizes = $0 }
-    if session.supportsAudio { audio = ScreenSharingAudioControl(session: session) }
+    if session.supportsAudio { audio = ScreenSharingAudioControl(session: session, enabled: sound) }
     surface.onSizeChanged = { [weak self] size, scale in
       self?.paneSize = (size, scale)
       self?.applyResolution()
@@ -381,12 +381,16 @@ public final class ScreenSharingResolutionAvailability {
 @Observable
 public final class ScreenSharingAudioControl {
   public var enabled: Bool {
-    didSet { if enabled != oldValue { session?.setAudioEnabled(enabled) } }
+    didSet { if enabled != oldValue { session?.setAudioEnabled(plays) } }
+  }
+  var audible = true {
+    didSet { if audible != oldValue { session?.setAudioEnabled(plays) } }
   }
   public var volume: Double {
     didSet { if volume != oldValue { session?.setAudioVolume(Float(volume)) } }
   }
   @ObservationIgnored private weak var session: (any ScreenSharingViewingSession)?
+  private var plays: Bool { enabled && audible }
 
   init(session: any ScreenSharingViewingSession, enabled: Bool = true, volume: Double = 1) {
     self.session = session

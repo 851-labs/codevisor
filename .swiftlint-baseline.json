@@ -1410,7 +1410,7 @@
     }
   },
   {
-    "text": "  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface) {",
+    "text": "  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, sound: Bool = true) {",
     "violation": {
       "location": {
         "character": 3,

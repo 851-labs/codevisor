@@ -55,6 +55,9 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   var linkBitsPerSecond: Double?
   var deliversVideo = true
   var supportsHighDynamicRange = false
+  var supportsAudio = false
+  private(set) var audioRequests: [Bool] = []
+  func setAudioEnabled(_ enabled: Bool) { audioRequests.append(enabled) }
   private(set) var highDynamicRangeReports: [Bool] = []
   func setDisplayHighDynamicRange(_ supported: Bool) { highDynamicRangeReports.append(supported) }
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?

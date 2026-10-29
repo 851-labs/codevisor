@@ -80,10 +80,11 @@ extension ScreenSharingViewerBackend {
     target: String? = nil,
     heartbeatInterval: Duration = .seconds(8)
   ) -> Self {
+    let sharesStream = machineId != nil
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
       makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia,
-      heartbeatInterval: heartbeatInterval)
+      heartbeatInterval: heartbeatInterval, sound: !sharesStream)
     guard let machineId else {
       return Self(
         connect: { display in await runner.connect(display) }, discover: { try await runner.discover() }, claim: {},
@@ -115,6 +116,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private let target: String?
   private let heartbeatInterval: Duration
   private let tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider?
+  private let sound: Bool
 
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
@@ -125,8 +127,10 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
     tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil,
-    heartbeatInterval: Duration = .seconds(8)
+    heartbeatInterval: Duration = .seconds(8),
+    sound: Bool = true
   ) {
+    self.sound = sound
     self.target = target
     self.heartbeatInterval = heartbeatInterval
     self.tunnelMedia = tunnelMedia
@@ -249,7 +253,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
           session.close()
           throw CancellationError()
         }
-        let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session))
+        let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session), sound: sound)
         endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
         attempt.endpoint = endpoint
         endpoint.onReady = {
