@@ -278,21 +278,7 @@ private extension ComposerCard {
   }
 
   private var attachButton: some View {
-    Menu {
-      ComposerAttachMenuItems(onPhotos: pickPhotos, onFiles: pickFiles)
-    } label: {
-      Image(systemName: "plus")
-        .font(.system(size: 14, weight: .medium))
-        .foregroundStyle(.secondary)
-        .frame(width: 26, height: 26)
-        .contentShape(Rectangle())
-    }
-    .menuStyle(.button)
-    .buttonStyle(HoverIconButtonStyle())
-    .menuIndicator(.hidden)
-    .fixedSize()
-    .help("Attach")
-    .accessibilityLabel("Attach")
+    ComposerAttachButton(onPhotos: pickPhotos, onFiles: pickFiles)
   }
 
   private func pickPhotos() {

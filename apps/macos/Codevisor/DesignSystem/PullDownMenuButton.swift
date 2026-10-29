@@ -4,8 +4,13 @@ import SwiftUI
 struct PullDownMenuButton: NSViewRepresentable {
   struct Item {
     let title: String
-    let systemImage: String
+    let image: NSImage
     let action: () -> Void
+  }
+
+  struct ItemSignature: Equatable {
+    let title: String
+    let image: ObjectIdentifier
   }
 
   let help: String
@@ -37,8 +42,8 @@ struct PullDownMenuButton: NSViewRepresentable {
     proposal.replacingUnspecifiedDimensions()
   }
 
-  private var menuSignature: [String] {
-    items.map { "\($0.title)\n\($0.systemImage)" }
+  private var menuSignature: [ItemSignature] {
+    items.map { ItemSignature(title: $0.title, image: ObjectIdentifier($0.image)) }
   }
 
   private func menu(target: Coordinator) -> NSMenu {
@@ -54,7 +59,7 @@ struct PullDownMenuButton: NSViewRepresentable {
     let menuItem = NSMenuItem(title: item.title, action: #selector(Coordinator.choose(_:)), keyEquivalent: "")
     menuItem.target = target
     menuItem.tag = tag
-    menuItem.image = NSImage(systemSymbolName: item.systemImage, accessibilityDescription: nil)
+    menuItem.image = item.image
     if #available(macOS 27.0, *) {
       menuItem.preferredImageVisibility = .visible
     }
@@ -63,7 +68,7 @@ struct PullDownMenuButton: NSViewRepresentable {
 
   final class Coordinator: NSObject {
     var items: [Item] = []
-    var menuSignature: [String]?
+    var menuSignature: [ItemSignature]?
 
     @objc func choose(_ sender: NSMenuItem) {
       guard items.indices.contains(sender.tag) else { return }
