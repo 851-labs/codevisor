@@ -33,17 +33,23 @@ struct Tier2Markdown {
     }?.encodedPixels
   }
 
+  private static let verdictRule =
+    "Each metric compares the medians of the valid repetitions. It is a difference when the medians differ by more "
+    + "than the noise band, the wider of the two systems' min–max spreads (rule: noise band), or when each system has "
+    + "at least 3 valid repetitions and the gap between their ranges is wider than the tighter system's spread "
+    + "(rule: no overlap). Otherwise it is no difference."
+
   private var verdictTable: String {
     let header = [
-      "| Scene | Resolution | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict |",
-      "| --- | --- | --- | --- | --- | --- | --- |",
+      "| Scene | Resolution | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict | Rule |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = report.comparisons.map { comparison in
       "| \(comparison.scene) | \(comparison.resolution) | \(comparison.metric) | \(Tier2Format.list(comparison.appleHp)) | "
         + "\(Tier2Format.list(comparison.codevisor)) | \(Tier2Format.number(comparison.noiseBandMs)) | "
-        + "\(comparison.verdict.rawValue) |"
+        + "\(comparison.verdict.rawValue) | \(Tier2Comparisons.basis(of: comparison)) |"
     }
-    return "### Verdicts\n\n" + (header + rows).joined(separator: "\n")
+    return "### Verdicts\n\n\(Self.verdictRule)\n\n" + (header + rows).joined(separator: "\n")
   }
 
   private var floorTable: String {

@@ -250,8 +250,10 @@ the per-second sum of the system's processes (Apple HP: `screensharingd`, `Scree
 `Screen Sharing`; Codevisor: the `share` and `view` processes; both: `VTEncoderXPCService` and
 `VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. A run is invalid when it didn't come
 from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual over 0.2 ms), another CI job ran,
-a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions: a difference within the noise
-band, the wider of the two systems' min–max spreads, is no difference.
+a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
+more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
+repetitions and the gap between their ranges is wider than the tighter system's spread; the verdict table names the
+rule that fired.
 
 ## Benchmark workflow, results and gate (851-3594)
 

@@ -22,6 +22,15 @@ enum Tier2Comparisons {
     }
   }
 
+  static func basis(of comparison: BenchComparison) -> String {
+    guard let metric = metrics.first(where: { $0.name == comparison.metric }),
+      let outcome = BenchSystemComparison.verdict(
+        appleHp: comparison.appleHp, codevisor: comparison.codevisor, better: metric.better)
+    else { return "–" }
+
+    return outcome.basis?.rawValue ?? "–"
+  }
+
   private static func compare(_ metric: Metric, in results: [BenchResult], group: Tier2Group) -> BenchComparison? {
     let apple = results.filter { $0.system == .appleHP }.compactMap(metric.value)
     let ours = results.filter { $0.system == .codevisor }.compactMap(metric.value)
