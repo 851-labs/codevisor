@@ -176,6 +176,9 @@ struct NavigationIncrementalTests {
     #expect(item.routingChatIds == [main.id, side.id])
     let workspace = try #require(fixture.workspaces.workspace(id: tabs.id))
     #expect(fixture.workspaces.mainFirstChatSessionIds(in: workspace) == [main.id, side.id])
+    #expect(!fixture.workspaces.isSideChat(main.id))
+    #expect(fixture.workspaces.isSideChat(side.id))
+    #expect(!fixture.workspaces.isSideChat(UUID()))
 
     mainRecord.workspaceId = UUID().uuidString
     #expect(await fixture.store.apply(.fixture(cursor: 6, sessions: [mainRecord]), machineId: "m"))

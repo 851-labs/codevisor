@@ -69,7 +69,7 @@ extension ComposerBar {
         }
       )
     }
-    if controller.supportsFork {
+    if controller.supportsFork, !isSideChat {
       commands.append(
         IOSComposerSlashItem(
           name: "fork",
@@ -218,5 +218,9 @@ extension ComposerBar {
     controller.composerText = updatedText
     selection = NSRange(location: range.location + (replacement as NSString).length, length: 0)
     command.action?()
+  }
+
+  private var isSideChat: Bool {
+    controller.serverSession.map { environment.workspaces.isSideChat($0.id) } ?? false
   }
 }
