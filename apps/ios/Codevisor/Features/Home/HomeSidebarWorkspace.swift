@@ -68,6 +68,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
   let chatSessionId: UUID?
   let renamableTabId: UUID?
   var tabId: UUID? = nil
+  var isMainChat = false
 }
 
 struct HomeSidebarPreferences: Equatable {

@@ -16,16 +16,18 @@ public enum PullRequestPalette {
 
   private static func color(light: UInt32, dark: UInt32) -> Color {
     #if canImport(AppKit)
-      Color(nsColor: NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return NSColor(rgba: rgba(isDark ? dark : light))
-      })
+      Color(
+        nsColor: NSColor(name: nil) { appearance in
+          let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+          return NSColor(rgba: rgba(isDark ? dark : light))
+        })
     #else
-      Color(uiColor: UIColor { traits in
-        let components = rgba(traits.userInterfaceStyle == .dark ? dark : light)
-        return UIColor(
-          red: components.r / 255, green: components.g / 255, blue: components.b / 255, alpha: components.a)
-      })
+      Color(
+        uiColor: UIColor { traits in
+          let components = rgba(traits.userInterfaceStyle == .dark ? dark : light)
+          return UIColor(
+            red: components.r / 255, green: components.g / 255, blue: components.b / 255, alpha: components.a)
+        })
     #endif
   }
 

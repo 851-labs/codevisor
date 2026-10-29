@@ -95,6 +95,9 @@ struct PaneGroupFactory {
       }
       return Self.isOnlyPane(pane, in: liveWorkspace)
     }
+    model.isWorkspaceMainChat = { [weak environment] pane in
+      environment?.workspaces.workspace(id: workspaceId)?.isMainChatPane(pane) == true
+    }
     model.onPaneRemoved = { [weak environment] pane in
       guard let environment, pane.kind != .subagent else { return }
       environment.workspaceSync.deletePane(

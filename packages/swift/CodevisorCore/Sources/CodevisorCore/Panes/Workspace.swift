@@ -250,12 +250,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     }
   }
 
-  public var mainFirstChatSessionIds: [UUID] {
-    let panes = chatSessionIds
-    guard let mainSessionId else { return panes }
-    return [mainSessionId] + panes.filter { $0 != mainSessionId }
-  }
-
   public var allPanes: [PaneDescriptorState] {
     centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
   }

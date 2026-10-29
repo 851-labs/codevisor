@@ -37,11 +37,13 @@ struct HomeSidebarTabRowView: View, Equatable {
           .buttonStyle(.plain)
       }
     }
-    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-      Button(role: .destructive, action: onClose) {
-        Image(systemName: "xmark")
+    .swipeActions(edge: .trailing, allowsFullSwipe: !row.isMainChat) {
+      if !row.isMainChat {
+        Button(role: .destructive, action: onClose) {
+          Image(systemName: "xmark")
+        }
+        .accessibilityLabel("Close")
       }
-      .accessibilityLabel("Close")
       if let onRename {
         Button(action: onRename) {
           Image(systemName: "pencil")
@@ -62,8 +64,10 @@ struct HomeSidebarTabRowView: View, Equatable {
           Label("Rename Tab", systemImage: "pencil")
         }
       }
-      Button(role: .destructive, action: onClose) {
-        Label("Close Tab", systemImage: "xmark")
+      if !row.isMainChat {
+        Button(role: .destructive, action: onClose) {
+          Label("Close Tab", systemImage: "xmark")
+        }
       }
     }
     .accessibilityLabel(accessibilityLabel)

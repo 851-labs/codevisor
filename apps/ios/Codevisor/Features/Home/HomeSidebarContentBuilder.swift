@@ -157,7 +157,8 @@ struct HomeSidebarContentBuilder {
           status: chat.map(status(for:)) ?? status(forTerminal: pane),
           chatSessionId: chat?.id,
           renamableTabId: tab?.id,
-          tabId: owner.id
+          tabId: owner.id,
+          isMainChat: workspace.isMainChatPane(pane)
         )
       )
     }

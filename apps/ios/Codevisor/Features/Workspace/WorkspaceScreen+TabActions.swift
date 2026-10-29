@@ -57,6 +57,7 @@ extension WorkspaceScreen {
   }
 
   func close(_ pane: PaneDescriptorState) {
+    guard resolvedWorkspace?.isMainChatPane(pane) != true else { return }
     let owningWorkspaceId = resolvedWorkspace?.id
     var state = panes
     let replacement: PaneDescriptorState?
