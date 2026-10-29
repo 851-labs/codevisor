@@ -7,7 +7,7 @@ extension SessionTranscriptView {
         $0.size.height
       } action: { height in
         keyboardFreeChatHeight = height
-        adoptKeyboardOverlap(measuredKeyboardOverlap)
+        adoptKeyboardOverlap(measuredKeyboardOverlap, animated: false)
       }
       .allowsHitTesting(false)
       .accessibilityHidden(true)
@@ -41,15 +41,15 @@ extension SessionTranscriptView {
     max(0, keyboardFreeChatHeight - keyboardAvoidingChatHeight)
   }
 
-  func adoptKeyboardOverlap(_ overlap: CGFloat) {
+  func adoptKeyboardOverlap(_ overlap: CGFloat, animated: Bool = true) {
     guard keyboardFreeChatHeight > 0, keyboardAvoidingChatHeight > 0 else { return }
     let adoption = keyboardInset.adoption(of: overlap, from: keyboardOverlap) {
       withAnimation(ChatKeyboardInset.animation) {
         adoptKeyboardOverlap(measuredKeyboardOverlap)
       }
     }
-    guard case let .apply(animated) = adoption, abs(overlap - keyboardOverlap) > 0.5 else { return }
-    if !animated {
+    guard case let .apply(adoptionAnimates) = adoption, abs(overlap - keyboardOverlap) > 0.5 else { return }
+    if !animated || !adoptionAnimates {
       withAnimation(nil) { keyboardOverlap = overlap }
     } else if overlap > keyboardOverlap {
       keyboardOverlap = overlap
