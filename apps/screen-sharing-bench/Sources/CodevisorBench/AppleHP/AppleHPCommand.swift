@@ -34,10 +34,13 @@ struct AppleHPCommand: BenchCommand {
 
       let window = session.window
       try await app.makeFullScreen(window, screen: screen, timeout: Self.fullScreenTimeout)
+      PointerParking.parkAwayFromTheMenuBar()
       try signals.markReady("full screen")
-      await signals.waitForStop(until: deadline)
+      let focusLosses = await FrontmostKeeper.hold(app.application, until: deadline, signals: signals)
       let result = AppleHPResult(
-        host: host, choseHighPerformance: session.choseHighPerformance == true, window: WindowDescription(window),
+        host: host, choseHighPerformance: session.choseHighPerformance == true, focusLosses: focusLosses,
+        sessionOnScreen: WindowSharingStates.coversScreen(app.application.processIdentifier, screen: screen),
+        window: WindowDescription(window),
         checkedMenuItems: app.checkedMenuItems,
         windowSharingStates: WindowSharingStates.of(app.application.processIdentifier))
       await app.quit(timeout: Self.quitTimeout)

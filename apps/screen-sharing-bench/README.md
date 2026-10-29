@@ -219,8 +219,11 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   each version that `observe --relay <viewer ipv4>:47594` on the host sends the moment the host observer
   first sees it (`BenchVersionMessage`, 20 bytes), through the same surface.
 - `apple-hp [--host tamales-Mac-Mini.local]` opens `vnc://<host>` in Screen Sharing.app (the saved Bonjour
-  entry, never an IP), makes the session window full screen through Accessibility and reports the checked
-  menu items, which show the connection mode. It quits Screen Sharing.app at the end.
+  entry `tamales-Mac-Mini.local`, never an IP), makes the session window full screen through Accessibility and
+  parks the pointer at the bottom of the screen: a pointer at the top edge reveals the full-screen menu bar over
+  the barcode, which then never changes. It keeps Screen Sharing frontmost (counting `focus_losses`; any makes the
+  run invalid), reports whether its full-screen window was on screen and the checked menu items, and quits Screen Sharing.app at the end. Tier 2
+  launches every windowless command with `open -g` (`CODEVISOR_BENCH_BACKGROUND=1`) so none takes focus.
 - `sample --output <file.jsonl>` also writes one `BenchUsageSecond` line a second. A process name of the
   form `CodevisorBench:share` matches only the bench processes running that subcommand. It finds processes in one
   `/bin/ps -axo pid,time,comm` listing a second (`ps` is setuid, so it sees root's `screensharingd`). Processes

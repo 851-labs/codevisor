@@ -40,6 +40,14 @@ struct Tier2RunFiles {
     preflights.keys.sorted().flatMap { preflights[$0]?.problems ?? [] }
   }
 
+  var hpSessionOnScreen: Bool {
+    system?["session_on_screen"]?.bool == true
+  }
+
+  var hpFocusLosses: Int? {
+    system?["focus_losses"]?.number.map { Int($0) }
+  }
+
   var ranHighPerformance: Bool {
     system?["chose_high_performance"]?.bool == true
   }

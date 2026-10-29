@@ -88,6 +88,12 @@ struct Tier2Measurement {
       return "the bench did not choose High Performance"
     }
     guard files.meta.system != .appleHP || hpDisplayMatches(files) else { return "HP's display wasn't 1920x1080 @2x" }
+    guard files.meta.system != .appleHP || files.hpSessionOnScreen else {
+      return "Screen Sharing's window was off screen"
+    }
+    guard files.meta.system != .appleHP || files.hpFocusLosses == 0 else {
+      return "Screen Sharing lost focus during the run"
+    }
     guard analysis.viewerUnreadableFraction <= unreadableLimit || files.meta.scene == unreadableExempt else {
       return "viewer unreadable fraction above 1%"
     }

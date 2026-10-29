@@ -15,8 +15,8 @@ start_system() {
   local signals=(--duration "$seconds" --ready-file "$work/ready" --stop-file "$work/stop")
   case "$system" in
     apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
-    codevisor | codevisor-r1x2) bench view --source codevisor --host "$TIER2_HOST_IP" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
-    floor) bench view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
+    codevisor | codevisor-r1x2) bench_window view --source codevisor --host "$TIER2_HOST_IP" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
+    floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
   system_job=$!
   wait_for_file "$work/ready" 60 "$system_job"
