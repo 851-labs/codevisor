@@ -9,12 +9,13 @@ struct WorkspaceInspectorAgent: Identifiable {
 }
 
 struct WorkspaceInspectorAgentsSection: View {
+  let title: String
   let agents: [WorkspaceInspectorAgent]
   let store: SessionStore
   @Binding var isExpanded: Bool
 
   var body: some View {
-    WorkspaceInspectorCard(title: "Agents", isExpanded: $isExpanded) {
+    WorkspaceInspectorCard(title: title, isExpanded: $isExpanded) {
       ForEach(agents) { agent in
         WorkspaceInspectorAgentRow(agent: agent, store: store)
       }
