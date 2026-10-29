@@ -32,7 +32,7 @@ struct QuestionOptionRow: View {
         HStack(alignment: .center, spacing: 12) {
           indicatorView
             .frame(width: 24)
-          Text(title)
+          QuestionOptionTitle(title)
             .font(.body.weight(.medium))
             .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)

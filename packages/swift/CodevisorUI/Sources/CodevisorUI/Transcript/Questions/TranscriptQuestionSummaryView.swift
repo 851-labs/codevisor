@@ -2,55 +2,46 @@ import SwiftUI
 import TranscriptKit
 
 public struct TranscriptQuestionSummaryView: View {
+  let questionId: String
   let summary: TranscriptQuestionSummary
   let inBotConversation: Bool
 
   public init(question: TranscriptQuestion, inBotConversation: Bool) {
+    questionId = question.request.questionId
     summary = TranscriptQuestionSummary(question)
     self.inBotConversation = inBotConversation
   }
 
+  private var canExpand: Bool { summary.status == .answered && !summary.lines.isEmpty }
+
   public var body: some View {
     HStack(spacing: 0) {
-      QuestionSummaryContent(summary: summary)
-        .padding(.horizontal, ComposerCardStyle.contentPadding)
-        .padding(.vertical, TranscriptInlineCardMetrics.resolvedVerticalPadding + 2)
-        .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
-        .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
-      Spacer(minLength: 0)
-    }
-    .accessibilityElement(children: .combine)
-  }
-}
-
-private struct QuestionSummaryContent: View {
-  let summary: TranscriptQuestionSummary
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Image(systemName: summary.symbolName)
-        .foregroundStyle(summary.status == .answered ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 4) {
-        if summary.status != .answered || summary.lines.isEmpty {
-          Text(summary.title)
-            .foregroundStyle(.secondary)
-        }
-        ForEach(summary.lines) { line in
-          QuestionSummaryLine(line: line)
+      Group {
+        if canExpand {
+          QuestionSummaryDisclosure(summary: summary, questionId: questionId)
+        } else {
+          QuestionSummaryTitle(text: summary.title)
         }
       }
-      .fixedSize(horizontal: false, vertical: true)
+      .padding(.horizontal, ComposerCardStyle.contentPadding)
+      .padding(.vertical, TranscriptInlineCardMetrics.resolvedVerticalPadding + 2)
+      .modifier(TranscriptInlineCardSurface(inBotConversation: inBotConversation))
+      .frame(maxWidth: TranscriptInlineCardMetrics.maxWidth, alignment: .leading)
+      Spacer(minLength: 0)
     }
-    .font(.callout)
+    .accessibilityElement(children: .contain)
   }
 }
 
-private struct QuestionSummaryLine: View {
-  let line: TranscriptQuestionSummary.Line
+struct QuestionSummaryTitle: View {
+  let text: String
 
   var body: some View {
-    Text("\(Text(line.question).foregroundStyle(.secondary))  \(Text(line.answer).foregroundStyle(.primary))")
-      .lineLimit(3)
+    Text(text)
+      .font(.callout.weight(.semibold))
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.leading)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

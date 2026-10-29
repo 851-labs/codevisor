@@ -11,7 +11,7 @@ public struct TranscriptQuestionSummary: Equatable, Sendable {
   public struct Line: Equatable, Sendable, Identifiable {
     public let id: String
     public let question: String
-    public let answer: String
+    public let answer: TranscriptQuestionAnswer
   }
 
   public let status: Status
@@ -28,16 +28,17 @@ public struct TranscriptQuestionSummary: Equatable, Sendable {
 
   public var title: String {
     switch status {
-    case .answered: lines.isEmpty ? "Answered" : "You answered"
+    case .answered: answeredTitle
     case .dismissed: questionCount == 1 ? "Question dismissed" : "Questions dismissed"
     case .timedOut: "No answer · the agent moved on"
     }
   }
 
-  public var symbolName: String {
-    switch status {
-    case .answered: "checkmark.circle.fill"
-    case .dismissed, .timedOut: "minus.circle"
+  private var answeredTitle: String {
+    switch lines.count {
+    case 0: "Answered"
+    case 1: "Answered 1 question"
+    default: "Answered \(lines.count) questions"
     }
   }
 
@@ -50,16 +51,8 @@ public struct TranscriptQuestionSummary: Equatable, Sendable {
   }
 
   private static func line(_ spec: QuestionSpec, _ entry: QuestionAnswerEntry) -> Line? {
-    let answer = answerText(entry)
+    let answer = TranscriptQuestionAnswer(spec, entry)
     guard !answer.isEmpty else { return nil }
-    return Line(id: spec.id, question: spec.header ?? spec.question, answer: answer)
-  }
-
-  private static func answerText(_ entry: QuestionAnswerEntry) -> String {
-    let labels = entry.answers.joined(separator: ", ")
-    let note = entry.note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    if labels.isEmpty { return note }
-    if note.isEmpty { return labels }
-    return "\(labels) — \(note)"
+    return Line(id: spec.id, question: spec.question, answer: answer)
   }
 }

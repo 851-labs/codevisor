@@ -19,7 +19,7 @@ struct QuestionPickerHeader: View {
       }
     case .transcript:
       VStack(alignment: .leading, spacing: 4) {
-        QuestionPageCaption(draft: draft, question: question)
+        QuestionPageCaption(draft: draft)
         QuestionTitle(text: question.question, weight: .semibold)
       }
     }
@@ -40,7 +40,6 @@ private struct QuestionTitle: View {
 
 private struct QuestionPageCaption: View {
   let draft: QuestionDraft
-  let question: QuestionSpec
 
   var body: some View {
     Text(caption)
@@ -49,9 +48,8 @@ private struct QuestionPageCaption: View {
   }
 
   private var caption: String {
-    let header = question.header.map { " · \($0)" } ?? ""
-    guard draft.pageCount > 1 else { return "Question\(header)" }
-    return "Question \(draft.page + 1) of \(draft.pageCount)\(header)"
+    guard draft.pageCount > 1 else { return "Question" }
+    return "Question \(draft.page + 1) of \(draft.pageCount)"
   }
 }
 

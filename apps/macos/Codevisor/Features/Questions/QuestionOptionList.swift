@@ -84,7 +84,7 @@ private struct QuestionOptionRow: View {
           Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
             .font(.caption)
             .foregroundStyle(indicatorStyle)
-          Text(label)
+          QuestionOptionTitle(label)
             .fontWeight(.medium)
             .multilineTextAlignment(.leading)
           Spacer(minLength: 0)

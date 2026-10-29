@@ -21,6 +21,7 @@ public final class TranscriptDisclosureStore {
     case turnImplementationEarlierHistory(UUID)
     case toolCall(String)
     case sandboxStart
+    case questionSummary(String)
   }
 
   private var values: [Key: Bool] = [:]
@@ -58,7 +59,7 @@ public final class TranscriptDisclosureStore {
     switch key {
     case .turn, .turnImplementation, .turnEarlierHistory, .turnImplementationEarlierHistory:
       workedSectionRevision &+= 1
-    case .toolCall, .sandboxStart:
+    case .toolCall, .sandboxStart, .questionSummary:
       break
     }
   }
