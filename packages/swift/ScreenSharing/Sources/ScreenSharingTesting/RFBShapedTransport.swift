@@ -1,5 +1,6 @@
 import Foundation
 import ScreenSharing
+import ScreenSharingBench
 
 public struct RFBNetworkProfile: Sendable, Equatable, Hashable {
   public var name: String
