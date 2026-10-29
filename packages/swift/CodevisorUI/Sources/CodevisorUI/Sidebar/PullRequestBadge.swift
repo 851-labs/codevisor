@@ -63,15 +63,18 @@ extension ServerGitPullRequest {
 
   public var statusColor: Color {
     switch state {
-    case .open where isDraft: .secondary
-    case .open:
-      switch checks {
-      case .failing: .red
-      case .pending: .orange
-      case .passing, .none: .green
-      }
-    case .merged: .purple
-    case .closed: .red
+    case .open where isDraft: PullRequestPalette.draft
+    case .open: checksColor
+    case .merged: PullRequestPalette.merged
+    case .closed: PullRequestPalette.closed
+    }
+  }
+
+  private var checksColor: Color {
+    switch checks {
+    case .failing: PullRequestPalette.failing
+    case .pending: PullRequestPalette.pending
+    case .passing, .none: PullRequestPalette.open
     }
   }
 }
