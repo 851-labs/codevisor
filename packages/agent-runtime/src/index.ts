@@ -23,13 +23,7 @@ export * from "./usage-limits-events.js"
 export * from "./usage-limit-stops.js"
 export * from "./harness-failure-stops.js"
 export * from "./failure-text.js"
-export {
-  BOT_GOAL_REFUSAL,
-  BOT_PLAN_MODE_REFUSAL,
-  BOT_PLAN_OR_GOAL_REFUSAL,
-  isPlanModeId,
-  isPlanOrGoalCommand
-} from "./bot-session-guard.js"
+export { BOT_GOAL_REFUSAL, BOT_PLAN_MODE_REFUSAL, isPlanModeId } from "./bot-session-guard.js"
 export * from "./agent-runtime-types.js"
 export { harnessCatalog, OPENCODE_INSTALL_PATH } from "./harness-catalog.js"
 export { locateExecutableOnPath, locateHarnessBinary } from "./executable-locator.js"

@@ -217,7 +217,7 @@ describe("bot sessions", () => {
     expect(chat.metadata.modes?.availableModes).toHaveLength(5)
   })
 
-  it("refuses plan mode, goals, and plan or goal commands, and lets everything else through", async () => {
+  it("refuses plan mode and goals, and lets everything else through", async () => {
     const { runtime, calls } = await startSession({}, true)
 
     expect(await settled(runtime.setMode("agent-1", "plan"))).toBe("Bots can't use plan mode")
@@ -233,25 +233,32 @@ describe("bot sessions", () => {
     expect(await settled(runtime.setGoal("agent-1", { objective: "Ship it" }))).toBe(
       "Bots can't use goals"
     )
-    expect(await settled(runtime.prompt("agent-1", "/goal ship the release"))).toBe(
-      "Bots can't use plan mode or goals"
-    )
-    expect(await settled(runtime.prompt("agent-1", { text: "  /PLAN" }))).toBe(
-      "Bots can't use plan mode or goals"
-    )
-    expect(await settled(runtime.steer!("agent-1", "/plan"))).toBe(
-      "Bots can't use plan mode or goals"
-    )
-    expect(await settled(runtime.prompt("agent-1", "/planner check the goal"))).toBe("ok")
     expect(await settled(runtime.steer!("agent-1", { text: "plan the next step" }))).toBe("ok")
 
     expect(calls).toMatchObject({
       modes: ["bypassPermissions"],
       configPicks: ["model=planck"],
-      prompts: ["/planner check the goal"],
       steers: ["plan the next step"],
       goals: []
     })
+  })
+
+  it("hands a bot a leading slash as text, while other chats keep slash commands", async () => {
+    const { runtime, calls } = await startSession({}, true)
+    const chat = await startSession({}, false)
+
+    expect(await settled(runtime.prompt("agent-1", "/goal ship the release"))).toBe("ok")
+    expect(await settled(runtime.prompt("agent-1", { text: "  /PLAN" }))).toBe("ok")
+    expect(await settled(runtime.prompt("agent-1", "path/to/file"))).toBe("ok")
+    expect(await settled(runtime.steer!("agent-1", "/hello"))).toBe("ok")
+
+    expect(calls).toMatchObject({
+      modes: [],
+      prompts: ["\u200B/goal ship the release", "\u200B  /PLAN", "path/to/file"],
+      steers: ["\u200B/hello"]
+    })
+    expect(await settled(chat.runtime.prompt("agent-1", "/plan"))).toBe("ok")
+    expect(chat.calls.prompts).toEqual(["/plan"])
   })
 
   it("keeps steering unavailable when the harness can't steer", async () => {

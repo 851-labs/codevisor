@@ -26,7 +26,7 @@ struct SessionControllerPlanModeTests {
     #expect(controller.modeState?.currentModeId == "build")
   }
 
-  @Test("A bot's chat offers neither plan mode nor goals, even when its harness supports both")
+  @Test("A bot's chat offers no plan mode, goals, or slash commands, even when its harness supports them")
   func botChatHasNoPlanOrGoal() async {
     let controller = makeController(isBot: true)
     controller.supportsGoalsByHarness["codex"] = true
@@ -36,6 +36,7 @@ struct SessionControllerPlanModeTests {
     #expect(!controller.hasPlanMode)
     #expect(!controller.supportsGoals)
     #expect(!controller.canEditGoal)
+    #expect(!controller.offersSlashCommands)
     #expect(controller.modeState?.currentModeId == "build")
   }
 

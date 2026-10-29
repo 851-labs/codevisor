@@ -341,7 +341,8 @@ private extension ComposerCard {
   }
 
   private var slashToken: ComposerSlashToken? {
-    ComposerSlashToken(in: controller.composerText, selection: selection)
+    guard controller.offersSlashCommands else { return nil }
+    return ComposerSlashToken(in: controller.composerText, selection: selection)
   }
 
   private var localSlashCommands: [ComposerSlashItem] {

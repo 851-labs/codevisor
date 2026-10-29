@@ -2,6 +2,8 @@ import Foundation
 import ACPKit
 
 extension SessionController {
+  public var offersSlashCommands: Bool { !project.isBot }
+
   public var composerSkills: [SessionSkill] {
     ComposerSkillCatalog.merge(
       native: availableSkills ?? inspectedSkills,

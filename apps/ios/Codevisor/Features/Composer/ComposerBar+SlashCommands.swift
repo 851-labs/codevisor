@@ -31,7 +31,8 @@ extension ComposerBar {
   static let slashMenuMaxHeight: CGFloat = 286
 
   var slashToken: ComposerSlashToken? {
-    ComposerSlashToken(in: text, selection: selection)
+    guard controller.offersSlashCommands else { return nil }
+    return ComposerSlashToken(in: text, selection: selection)
   }
 
   var localSlashCommands: [IOSComposerSlashItem] {

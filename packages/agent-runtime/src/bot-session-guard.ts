@@ -21,7 +21,6 @@ import {
 
 export const BOT_PLAN_MODE_REFUSAL = "Bots can't use plan mode"
 export const BOT_GOAL_REFUSAL = "Bots can't use goals"
-export const BOT_PLAN_OR_GOAL_REFUSAL = "Bots can't use plan mode or goals"
 
 export interface GuardedSession {
   readonly metadata: AgentSessionMetadata
@@ -34,8 +33,6 @@ export interface SessionGuard {
 }
 
 export const isPlanModeId = (modeId: string): boolean => planPattern.test(modeId)
-
-export const isPlanOrGoalCommand = (text: string): boolean => planOrGoalCommand.test(text)
 
 export const sessionGuardFor = (options: CreateSessionOptions | undefined): SessionGuard => {
   if (options?.bot !== true) return unguarded
@@ -51,7 +48,8 @@ export const announcedModeId = (event: RuntimeEvent): string | undefined => {
 }
 
 const planPattern = /^plan/i
-const planOrGoalCommand = /^\s*\/(plan|goal)(\s|$)/i
+const leadingSlash = /^\s*\//
+const zeroWidthSpace = "\u200B"
 const planOrGoalCommandName = /^(plan|goal)$/i
 
 const unguarded: SessionGuard = {
@@ -147,7 +145,7 @@ const withoutPlanModes = (
 
 const botHandle = (handle: AgentSessionHandle, state: BotGuardState): AgentSessionHandle => ({
   ...handle,
-  prompt: (input) => refuseCommand("prompt", input) ?? handle.prompt(input),
+  prompt: (input) => handle.prompt(asPlainText(input)),
   ...(handle.steer === undefined ? {} : { steer: botSteer(handle.steer) }),
   setMode: (modeId) => {
     if (isPlanModeOf(state, modeId)) return refusal("setMode", BOT_PLAN_MODE_REFUSAL)
@@ -165,14 +163,12 @@ const botHandle = (handle: AgentSessionHandle, state: BotGuardState): AgentSessi
 const botSteer =
   (steer: NonNullable<AgentSessionHandle["steer"]>) =>
   (input: string | PromptInput): Effect.Effect<boolean, AgentRuntimeError> =>
-    refuseCommand("steer", input) ?? steer(input)
+    steer(asPlainText(input))
 
-const refuseCommand = (
-  operation: string,
-  input: string | PromptInput
-): Effect.Effect<never, AgentRuntimeError> | undefined => {
-  if (!isPlanOrGoalCommand(normalizePromptInput(input).text)) return undefined
-  return refusal(operation, BOT_PLAN_OR_GOAL_REFUSAL)
+const asPlainText = (input: string | PromptInput): PromptInput => {
+  const prompt = normalizePromptInput(input)
+  if (!leadingSlash.test(prompt.text)) return prompt
+  return { ...prompt, text: `${zeroWidthSpace}${prompt.text}` }
 }
 
 const refusal = (operation: string, message: string): Effect.Effect<never, AgentRuntimeError> =>
