@@ -14,7 +14,7 @@ struct SidebarRowHoverModifier: ViewModifier {
         RoundedRectangle.sidebarRow
           .fill(RowSelectionStyle.fill(isSelected: isSelected, isHovered: showsHover))
       )
-      .onHover { isHovered = $0 }
+      .sidebarHover($isHovered)
   }
 }
 

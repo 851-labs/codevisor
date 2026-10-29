@@ -17,6 +17,6 @@ struct HoverableRow<Content: View>: View {
         RoundedRectangle.sidebarRow
           .fill(RowSelectionStyle.fill(isSelected: isSelected, isHovered: showsHoverBackground))
       )
-      .onHover { isHovered = $0 }
+      .sidebarHover($isHovered)
   }
 }

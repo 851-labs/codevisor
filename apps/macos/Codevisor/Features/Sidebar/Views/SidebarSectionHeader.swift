@@ -56,7 +56,7 @@ struct SidebarSectionHeader: View {
     .padding(.bottom, 4)
     .contentShape(Rectangle())
     .onTapGesture(perform: onToggle)
-    .onHover { isHovered = $0 }
+    .sidebarHover($isHovered)
     .accessibilityElement(children: .contain)
   }
 }
