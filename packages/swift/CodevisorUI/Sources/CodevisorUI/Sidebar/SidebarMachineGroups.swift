@@ -24,7 +24,7 @@ public struct SidebarMachineGroups {
   private func profileGroup(_ profile: SandboxMachineProfile, _ serverId: String) -> SidebarMachineGroup {
     let key = "sandbox-profile:\(profile.id)"
     let heading = SidebarWorkspaceGroup.Heading(
-      title: profile.name, icon: .sandboxVendor(profile.vendor),
+      title: profile.name, icon: .machine(serverId, in: machines),
       newChatTarget: machines.sandboxOwnerMachineId(forMachineId: serverId).map {
         NewChatTarget(sandboxProfile: profile.id, on: $0)
       }
@@ -36,7 +36,7 @@ public struct SidebarMachineGroups {
     let machine = machines.machine(for: serverId)
     let heading = SidebarWorkspaceGroup.Heading(
       title: machine.map(machineName) ?? "Unknown Machine",
-      icon: .system(machine?.icon.systemImage ?? "questionmark.circle"),
+      icon: .machine(serverId, in: machines),
       newChatTarget: machines.chatMachine(for: serverId).map { NewChatTarget(machine: $0.id) }
     )
     let orderKey = navigationStore.machineOrderKey(forMachineId: serverId, machines: machines)

@@ -140,11 +140,7 @@ struct MachinesSettingsView: View {
 
   fileprivate func machineRow(_ machine: CodevisorMachine) -> some View {
     HStack(spacing: 10) {
-      Image(systemName: machine.icon.systemImage)
-        .symbolRenderingMode(.monochrome)
-        .foregroundStyle(.primary)
-        .frame(width: 20)
-        .accessibilityHidden(true)
+      MachineIconView(machineId: machine.id)
       VStack(alignment: .leading, spacing: 2) {
         Text(machine.name)
         Text(machine.baseURL.absoluteString)

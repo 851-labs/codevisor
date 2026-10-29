@@ -2,6 +2,7 @@ import CodevisorCore
 import SwiftUI
 
 public struct FleetMachineRow<Trailing: View>: View {
+  private let machineId: String
   private let name: String
   private let status: FleetRowStatus
   private let details: FleetBlockedMachine?
@@ -9,12 +10,14 @@ public struct FleetMachineRow<Trailing: View>: View {
   private let trailing: Trailing
 
   public init(
+    machineId: String,
     name: String,
     status: FleetRowStatus,
     details: FleetBlockedMachine? = nil,
     leadingInset: CGFloat = FleetRowMetrics.iconColumnWidth,
     @ViewBuilder trailing: () -> Trailing
   ) {
+    self.machineId = machineId
     self.name = name
     self.status = status
     self.details = details
@@ -24,6 +27,7 @@ public struct FleetMachineRow<Trailing: View>: View {
 
   public var body: some View {
     HStack(spacing: 10) {
+      MachineIconView(machineId: machineId)
       Text(name)
         .lineLimit(1)
         .layoutPriority(1)
@@ -41,8 +45,8 @@ public struct FleetMachineRow<Trailing: View>: View {
 }
 
 public extension FleetMachineRow where Trailing == EmptyView {
-  init(name: String, status: FleetRowStatus, details: FleetBlockedMachine? = nil) {
-    self.init(name: name, status: status, details: details) { EmptyView() }
+  init(machineId: String, name: String, status: FleetRowStatus, details: FleetBlockedMachine? = nil) {
+    self.init(machineId: machineId, name: name, status: status, details: details) { EmptyView() }
   }
 }
 
