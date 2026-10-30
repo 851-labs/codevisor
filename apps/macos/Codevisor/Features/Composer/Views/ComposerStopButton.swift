@@ -21,7 +21,7 @@ struct ComposerStopButton: View {
             Circle()
               .strokeBorder(Color.secondary.opacity(isHovered ? 0.55 : 0.35), lineWidth: 1)
           )
-          .contentShape(Circle())
+          .contentShape([.interaction, .focusEffect], Circle())
       }
       .buttonStyle(.plain)
       .foregroundStyle(isHovered ? .primary : .secondary)

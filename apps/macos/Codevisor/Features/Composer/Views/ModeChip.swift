@@ -49,7 +49,7 @@ struct ModeChip: View {
             Color.windowBackgroundColor.opacity(isRemoveHovered && showsRemoveGlyph ? 0.22 : 0)
           )
         )
-        .contentShape(Circle())
+        .contentShape([.interaction, .focusEffect], Circle())
     }
     .buttonStyle(.plain)
     .disabled(isRemoveDisabled)

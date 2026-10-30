@@ -21,7 +21,7 @@ struct ComposerNavigationButton: View {
         )
         .foregroundStyle(Color.primary)
         .background(Circle().fill(Color.secondary.opacity(isHovered ? 0.22 : 0.16)))
-        .contentShape(Circle())
+        .contentShape([.interaction, .focusEffect], Circle())
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
