@@ -198,9 +198,6 @@ struct SidebarView: View {
           try? await Task.sleep(for: .seconds(60))
         }
       }
-      .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
-        await environment.machines.loadSandboxMachineProfiles()
-      }
       .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
         if publishesSceneActions, gitLookupRefreshKey != nil { refreshGitLookups() }
       }

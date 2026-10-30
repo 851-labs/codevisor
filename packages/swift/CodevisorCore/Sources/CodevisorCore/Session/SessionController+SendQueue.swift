@@ -51,6 +51,10 @@ extension SessionController {
     return isServerReady && !isPausedForUpdate && selectedHarness != nil
   }
 
+  var hasPendingSends: Bool {
+    !sends.unsent.isEmpty
+  }
+
   public var hasUnsentMessages: Bool {
     !sends.unsent.isEmpty || model?.outgoingMessages.isEmpty == false
   }

@@ -132,7 +132,10 @@ final class SessionStore {
       )
     }
 
-    let controller = makeController(for: session, project: project)
+    let controller =
+      environment.pendingSends.adopt(serverId: session.serverId, sessionId: session.id, by: self)
+      ?? makeController(for: session, project: project)
+    environment.pendingSends.track(controller, ownedBy: self)
     controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
       projectList?.setAgentSessionId(
         agentSessionId,

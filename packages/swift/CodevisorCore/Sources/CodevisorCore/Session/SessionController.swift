@@ -56,7 +56,10 @@ final public class SessionController {
     connect: { [weak self] message in await self?.connectForSend(message) ?? .failed(Self.closedChatReason) },
     deliver: { [weak self] message, route, model in await self?.deliverSend(message, route: route, to: model) },
     onUploaded: { [weak self] uploaded, sentFileID in self?.rememberUploaded(uploaded, sentAs: sentFileID) },
-    onChange: { [weak self] in self?.transcriptProjectionRevision &+= 1 }
+    onChange: { [weak self] in
+      self?.transcriptProjectionRevision &+= 1
+      self?.onPendingSendsChange?()
+    }
   )
   public let attachmentFiles: ComposerAttachmentFileStore
   public internal(set) var harnesses: [ServerHarness] = []
@@ -120,6 +123,7 @@ final public class SessionController {
     didSet { onTodosExpandedChange?(isTodosExpanded) }
   }
   @ObservationIgnored public var onTodosExpandedChange: ((Bool) -> Void)?
+  @ObservationIgnored var onPendingSendsChange: (() -> Void)?
   @ObservationIgnored public let disclosure = TranscriptDisclosureStore()
   public internal(set) var userSendSignal = 0
   public internal(set) var userSendAnimationRequest: UserSendAnimationRequest?

@@ -22,6 +22,7 @@ public final class AppEnvironment {
   public let bots: BotListModel
   public let botSections: BotSectionStore
   public let sandboxSettings = SandboxSettingsModel()
+  @ObservationIgnored public let pendingSends = PendingSendHolder()
 
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored var failedDialRefresh = CloudRosterRefreshThrottle()

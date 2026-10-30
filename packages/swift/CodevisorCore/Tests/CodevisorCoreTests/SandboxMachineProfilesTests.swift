@@ -69,6 +69,16 @@ struct SandboxMachineProfilesTests {
     #expect(controller.sandboxPower(forMachineId: studioA.id) == nil)
   }
 
+  @Test("A sandbox its owner just paused reads as paused even while it still looks connected")
+  func justPausedSandboxReadsAsPaused() async {
+    let controller = makeController()
+
+    await controller.loadSandboxMachineProfiles()
+
+    #expect(controller.availability(for: studioB.id) == .ready)
+    #expect(controller.sandboxPower(forMachineId: studioB.id) == SandboxMachinePower(sandboxId: "b", power: .paused))
+  }
+
   @Test("Waking a paused sandbox asks its owner and shows it waking right away")
   func wakingAsksTheOwner() async throws {
     let controller = makeController()

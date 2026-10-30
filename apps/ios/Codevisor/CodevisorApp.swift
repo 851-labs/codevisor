@@ -49,6 +49,9 @@ struct CodevisorApp: App {
         .modifier(ThemedRoot())
         .environment(environment)
         .task { await bootstrap(environment: environment) }
+        .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
+          await environment.machines.loadSandboxMachineProfiles()
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
           environment.attentionCoordinator.setApplicationActive(
             phase == .active

@@ -209,7 +209,7 @@ final class ChatControllerCache {
   private func evictIfNeeded() {
     var idle = accessOrder.filter { key in
       guard let controller = controllers[key] else { return false }
-      if controller.isConnecting { return false }
+      if controller.isConnecting || controller.hasUnsentMessages { return false }
       return !controller.isSending || controller.isTakingLongerThanExpected
     }
     while idle.count > Self.maxIdleControllers {

@@ -32,6 +32,7 @@ public final class SandboxMachineProfiles {
 
   private var profilesByOwner: [String: [String: SandboxMachineProfile]] = [:]
   private var powersByOwner: [String: [String: SandboxMachinePower]] = [:]
+  private var sandboxIdsByOwner: [String: [String: String]] = [:]
 
   public init() {}
 
@@ -41,6 +42,10 @@ public final class SandboxMachineProfiles {
 
   public func power(forDevice deviceId: String, ownedBy ownerDeviceId: String) -> SandboxMachinePower? {
     powersByOwner[ownerDeviceId]?[deviceId]
+  }
+
+  func sandboxId(forDevice deviceId: String, ownedBy ownerDeviceId: String) -> String? {
+    sandboxIdsByOwner[ownerDeviceId]?[deviceId]
   }
 
   func markWaking(device deviceId: String, ownedBy ownerDeviceId: String) {
@@ -63,13 +68,25 @@ public final class SandboxMachineProfiles {
   private func store(_ loaded: OwnerSandboxes, for ownerDeviceId: String) {
     if profilesByOwner[ownerDeviceId] != loaded.profiles { profilesByOwner[ownerDeviceId] = loaded.profiles }
     if powersByOwner[ownerDeviceId] != loaded.powers { powersByOwner[ownerDeviceId] = loaded.powers }
+    if sandboxIdsByOwner[ownerDeviceId] != loaded.sandboxIds { sandboxIdsByOwner[ownerDeviceId] = loaded.sandboxIds }
   }
 
   private nonisolated static func sandboxes(on client: any CodevisorServerClienting) async -> OwnerSandboxes? {
     async let sandboxes = try? client.sandboxes()
     async let profiles = try? client.sandboxProfiles()
     guard let sandboxes = await sandboxes, let profiles = await profiles else { return nil }
-    return OwnerSandboxes(profiles: matching(sandboxes, to: profiles), powers: SandboxMachinePower.byDevice(sandboxes))
+    return OwnerSandboxes(
+      profiles: matching(sandboxes, to: profiles), powers: SandboxMachinePower.byDevice(sandboxes),
+      sandboxIds: sandboxIdsByDevice(sandboxes))
+  }
+
+  private nonisolated static func sandboxIdsByDevice(_ sandboxes: [ServerSandbox]) -> [String: String] {
+    var ids: [String: String] = [:]
+    for sandbox in sandboxes {
+      guard let deviceId = sandbox.deviceId else { continue }
+      ids[deviceId] = sandbox.id
+    }
+    return ids
   }
 
   private nonisolated static func matching(
@@ -90,4 +107,5 @@ public final class SandboxMachineProfiles {
 private struct OwnerSandboxes: Sendable {
   let profiles: [String: SandboxMachineProfile]
   let powers: [String: SandboxMachinePower]
+  let sandboxIds: [String: String]
 }

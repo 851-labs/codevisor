@@ -94,6 +94,9 @@ struct RootView: View {
           store.clearOpenSession()
         }
       }
+      .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
+        await environment.machines.loadSandboxMachineProfiles()
+      }
       .onChange(of: botsEnabled) { _, enabled in
         if !enabled, case .bot = selection { selection = .newChat(nil) }
       }

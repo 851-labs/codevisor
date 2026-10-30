@@ -63,7 +63,6 @@ extension MachineController {
 
   public func sandboxPower(forMachineId id: String) -> SandboxMachinePower? {
     guard let cloud = cloudMachine(forMachineId: id), let origin = cloud.ephemeral else { return nil }
-    guard !(cloud.online && availability(for: id) == .ready) else { return nil }
     return sandboxMachineProfiles.power(forDevice: cloud.deviceId, ownedBy: origin.ownerDeviceId)
   }
 
@@ -80,6 +79,14 @@ extension MachineController {
       sandboxSettingsRevision += 1
       throw error
     }
+  }
+
+  public func keepSandboxAwake(forMachineId id: String) async {
+    guard let cloud = cloudMachine(forMachineId: id), let origin = cloud.ephemeral,
+      let sandboxId = sandboxMachineProfiles.sandboxId(forDevice: cloud.deviceId, ownedBy: origin.ownerDeviceId),
+      let ownerMachineId = ownerMachineId(of: origin)
+    else { return }
+    _ = try? await client(for: ownerMachineId).wakeSandbox(id: sandboxId)
   }
 
   public func sandboxOwnerMachineId(forMachineId id: String) -> String? {

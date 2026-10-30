@@ -39,11 +39,12 @@ extension SessionController {
 
   public func retrySessionFailure() async {
     if case .failed = status, hasExistingAgentSession {
-      let failedModel = model
-      model = nil
-      failedModel?.shutdown()
+      if let failedModel = model, failedModel !== cachedTranscriptModel {
+        model = nil
+        failedModel.shutdown()
+      }
       await retry()
-    } else if let model {
+    } else if let model, model !== cachedTranscriptModel {
       await model.retrySessionFailure()
     } else {
       await retry()
@@ -228,7 +229,7 @@ extension SessionController {
   public func retry() async {
     status = .idle
     if hasExistingAgentSession {
-      if model == nil {
+      if model == nil || model === cachedTranscriptModel {
         didFinishExistingRuntimeConfiguration = false
         didLoadExistingRuntimeConfiguration = false
       }

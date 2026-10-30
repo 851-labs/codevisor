@@ -53,7 +53,10 @@ extension SessionController {
   }
 
   func wakeSandboxForSend() {
-    guard sandboxPower != nil else { return }
+    guard sandboxPower != nil else {
+      Task { await machines?.keepSandboxAwake(forMachineId: project.serverId) }
+      return
+    }
     Task { await wakeSandbox() }
   }
 }

@@ -20,6 +20,7 @@ extension SessionStore {
       guard let controller = controllers[id] else { return false }
       return id != openSessionKey
         && !isRunning(id)
+        && !controller.hasUnsentMessages
         && !controller.isWaitingOnBackgroundTasks
         && controller.goal?.status != .active
     }

@@ -33,6 +33,7 @@ export const makeSandboxWaking = (
 
   return {
     wakeHere: (machine) => {
+      if (machine.power === undefined) power.activity.set(machine.id, deps.clock.now())
       if (machine.power !== "paused") return Promise.resolve(machine)
 
       power.wakeRequests.add(machine.id)

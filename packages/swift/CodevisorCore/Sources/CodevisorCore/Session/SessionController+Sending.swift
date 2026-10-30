@@ -55,7 +55,7 @@ extension SessionController {
   private func startChat(for prompt: String) {
     guard !hasSentFirst else { return }
 
-    isFirstSendConnecting = true
+    isFirstSendConnecting = !hasExistingAgentSession
     if project.isRunTargetPlaceholder, let provisional = provisionalCloneProject() { project = provisional }
     guard !project.isRunTargetPlaceholder else {
       isSubmitting = true
@@ -80,7 +80,7 @@ extension SessionController {
       Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
     }
     isSubmitting = true
-    if !hasSentFirst {
+    if !hasSentFirst, !hasExistingAgentSession {
       isFirstSendConnecting = true
     }
   }
@@ -159,7 +159,7 @@ extension SessionController {
   }
 
   private func sessionModel() async -> Result<SessionModel, SessionSetupFailure> {
-    if let model { return .success(model) }
+    if let model, model !== cachedTranscriptModel { return .success(model) }
     guard let harness = selectedHarness else {
       return .failure(
         SessionSetupFailure(message: "No agent is installed. Install Claude Code or Codex and try again."))

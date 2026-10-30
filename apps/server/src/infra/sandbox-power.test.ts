@@ -184,6 +184,31 @@ describe("waking a sandbox", () => {
     expect((await harness.record())?.power).toBeUndefined()
   })
 
+  it("restarts a running sandbox's idle window when asked to wake it, so a message on its way keeps it up", async () => {
+    const harness = await readySandbox("in-place", "15")
+    await harness.tick(10)
+
+    await harness.machines.wake("id-1")
+    await harness.tick(14)
+    const stillAwake = await harness.record()
+    await harness.tick(1)
+
+    expect(stillAwake?.power).toBeUndefined()
+    expect(await harness.record()).toMatchObject({ power: "paused" })
+  })
+
+  it("never idle-pauses a sandbox whose record says it is waking", async () => {
+    const harness = await readySandbox("in-place", "15")
+    const running = await harness.record()
+    if (running === undefined) throw new Error("no sandbox")
+    await harness.records.put({ ...running, power: "waking" })
+
+    await harness.tick(30)
+
+    expect((await harness.record())?.power).toBeUndefined()
+    expect(harness.provider.machines.get("fake-1")?.state).toBe("running")
+  })
+
   it("restarts a snapshot provider's sandbox before the provider's hard cap ends it", async () => {
     const harness = await readySandbox("snapshot", "240")
     const running = await harness.record()
