@@ -272,7 +272,7 @@ describe("plugin event streams", () => {
     })
   })
 
-  it("cancels the request and drops its HTTP response when aborted", async () => {
+  it("cancels the request, drops its HTTP response and rejects with an AbortError", async () => {
     const { manager, plugin, server } = await installedPlugin()
     const connection = await manager.pluginConnection(server.id)
     const controller = new AbortController()
@@ -286,33 +286,14 @@ describe("plugin event streams", () => {
     )
     const opened = await plugin.nextStream()
 
-    controller.abort()
-
-    await expect(stream).rejects.toMatchObject({ name: "AbortError" })
-    await opened.cancelled
-    await opened.responseClosed
-  })
-
-  it("rejects with an AbortError whatever the abort reason", async () => {
-    const { manager, plugin, server } = await installedPlugin()
-    const connection = await manager.pluginConnection(server.id)
-    const controller = new AbortController()
-    const stream = connection.openStream(
-      "events/stream",
-      {},
-      {
-        signal: controller.signal,
-        onNotification: () => undefined
-      }
-    )
-    await plugin.nextStream()
-
     controller.abort(new Error("subscription removed"))
 
     await expect(stream).rejects.toMatchObject({
       name: "AbortError",
       message: "The stream was cancelled"
     })
+    await opened.cancelled
+    await opened.responseClosed
     await expect(
       connection.openStream(
         "events/stream",

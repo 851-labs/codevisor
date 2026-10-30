@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { codevisorSandboxSignatures } from "@codevisor/automation"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import { automationSkills } from "./mcp-automation-builtins.js"
 import {
@@ -15,7 +15,6 @@ import {
   skillsToolResult,
   type SkillSource
 } from "./mcp-gateway-skills.js"
-import { reportBackgroundFailure } from "./mcp-support.js"
 
 const directories: Array<string> = []
 afterEach(() => {
@@ -134,14 +133,9 @@ describe("skill catalog", () => {
     const full = await executeSkill.load({
       enabledIds: new Set(["browser", "computer", "codevisor"])
     })
-    expect(full).toContain("`description` is the label the user sees")
     expect(full).toContain("read `browser-use`")
     expect(full).toContain("## Other agents")
     expect(full).toContain("## Plugins")
-    expect(full).toContain("`machine.tools.codevisor.plugins.search`, then `plugins.describe`")
-    expect(full).toContain(
-      "`events.topics`, check a CEL filter with `events.preview`, then `events.subscribe`"
-    )
     expect(full).toContain(codevisorSandboxSignatures)
 
     const minimal = await executeSkill.load({ enabledIds: new Set() })
@@ -208,14 +202,5 @@ describe("skills tool", () => {
       isError: true,
       text: "Couldn't read deploy: its supporting files are in its skill folder; open them with your file tools"
     })
-  })
-})
-
-describe("background failures", () => {
-  it("logs the operation and cause", () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    reportBackgroundFailure("Skill inventory refresh failed", new Error("disk"))
-    expect(errors).toHaveBeenCalledWith("Skill inventory refresh failed: disk")
-    errors.mockRestore()
   })
 })

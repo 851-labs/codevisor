@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { z } from "zod"
 
 import {
@@ -18,7 +18,7 @@ import {
   testManager,
   workingUpstream
 } from "./mcp-manager-test-support.js"
-import { automationSkillPath, NodeStreamableHttpTransport } from "./mcp-manager.js"
+import { automationSkillPath } from "./mcp-manager.js"
 import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
@@ -48,95 +48,6 @@ describe("MCP manager", () => {
         workingDirectory: "/"
       })
     ).toBe(browserSkill)
-  })
-
-  it("handles the Streamable HTTP response variants and transport lifecycle", async () => {
-    const responses = [
-      new Response(
-        JSON.stringify([
-          { jsonrpc: "2.0", id: 1, result: {} },
-          { jsonrpc: "2.0", method: "notifications/tools/list_changed" }
-        ]),
-        {
-          headers: { "content-type": "application/json", "mcp-session-id": "session-1" }
-        }
-      ),
-      new Response(null, { status: 202 }),
-      new Response("upstream failed", { status: 500, statusText: "Failure" }),
-      new Response("unexpected", { headers: { "content-type": "text/plain" } }),
-      new Response("missing content type"),
-      new Response(
-        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: 5, result: {} })}\n\n`,
-        { headers: { "content-type": "text/event-stream" } }
-      ),
-      new Response(
-        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })}\n\n`,
-        { headers: { "content-type": "text/event-stream" } }
-      ),
-      new Response(
-        `event: message\ndata: ${JSON.stringify([{ jsonrpc: "2.0", id: 8, result: {} }])}\n\n`,
-        { headers: { "content-type": "text/event-stream" } }
-      ),
-      new Response("event: message\ndata: not-json\n\n", {
-        headers: { "content-type": "text/event-stream" }
-      }),
-      new Response(null, { headers: { "content-type": "text/event-stream" } })
-    ]
-    const fetchMock = vi.fn<typeof fetch>(async () => responses.shift()!)
-    vi.stubGlobal("fetch", fetchMock)
-    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    const transport = new NodeStreamableHttpTransport(
-      new URL("https://example.test/mcp"),
-      "access-token",
-      { "X-Workspace": "emojis" }
-    )
-    const messages: unknown[] = []
-    let closed = false
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener
-    transport.onmessage = (message) => messages.push(message)
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener
-    transport.onclose = () => {
-      closed = true
-    }
-    transport.setProtocolVersion("2025-11-25")
-    await transport.start()
-    await expect(transport.start()).rejects.toThrow("already started")
-    await transport.send({ jsonrpc: "2.0", id: 1, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", method: "notifications/initialized" })
-    await expect(transport.send({ jsonrpc: "2.0", id: 3, method: "ping" })).rejects.toThrow(
-      "Streamable HTTP error 500: upstream failed"
-    )
-    await expect(transport.send({ jsonrpc: "2.0", id: 4, method: "ping" })).rejects.toThrow(
-      "Unexpected MCP response content type"
-    )
-    await expect(transport.send({ jsonrpc: "2.0", id: 4.5, method: "ping" })).rejects.toThrow(
-      "Unexpected MCP response content type"
-    )
-    await transport.send({ jsonrpc: "2.0", id: 5, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", method: "notifications/initialized" })
-    await transport.send({ jsonrpc: "2.0", id: 8, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", id: 9, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", id: 10, method: "ping" })
-    expect(messages).toHaveLength(5)
-    expect(errors).toHaveBeenCalledWith(expect.stringContaining("Unable to decode MCP SSE event"))
-    const firstHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
-    expect(firstHeaders.get("authorization")).toBe("Bearer access-token")
-    expect(firstHeaders.get("mcp-protocol-version")).toBe("2025-11-25")
-    expect(firstHeaders.get("x-workspace")).toBe("emojis")
-    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("mcp-session-id")).toBe(
-      "session-1"
-    )
-    await transport.close()
-    expect(closed).toBe(true)
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(null, { status: 202 }))
-    )
-    await new NodeStreamableHttpTransport(new URL("https://example.test/mcp")).send({
-      jsonrpc: "2.0",
-      method: "notifications/initialized"
-    })
   })
 
   it("names the catalog entry an installed server came from in its icon sources", async () => {

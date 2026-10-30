@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -23,6 +23,7 @@ import {
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
 import { bundleWithAccess, memoryOAuthVault } from "./mcp-oauth-vault-test-support.js"
+import { decryptSecrets } from "./mcp-secret-store.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -127,7 +128,19 @@ describe("MCP manager secrets and replication", () => {
       baseUrl: TEST_BASE_URL
     })
     managers.push(configuredManager)
-    expect(await configuredManager.list()).toBeDefined()
+    const sealed = await configuredManager.create({
+      authType: "bearer",
+      bearerToken: "configured-token",
+      enabled: false,
+      name: "Configured key",
+      transport: "http",
+      url: "https://configured.example.com/mcp"
+    })
+    const stored = await run(configuredDb.getMcpServer(sealed.id))
+    expect(decryptSecrets(Buffer.alloc(32, 7), stored?.secretCipher)).toMatchObject({
+      bearerToken: "configured-token"
+    })
+    expect(existsSync(join(configuredKeyDirectory, "mcp-secret-key"))).toBe(false)
 
     await run(
       db.saveMcpServer({

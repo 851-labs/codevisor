@@ -188,6 +188,7 @@ describe("MCP OAuth grants", () => {
     ["an unreadable success", respond(200, { unexpected: true })]
   ])("treats %s as ambiguous because the token may have rotated", async (_case, request) => {
     const failure = await refreshOAuthGrant(signedIn, { fetch: request }).catch((cause) => cause)
+    expect(failure).toBeInstanceOf(Error)
     expect(failure).not.toBeInstanceOf(McpRefreshUnavailable)
     expect(failure).not.toBeInstanceOf(McpRefreshRejected)
   })

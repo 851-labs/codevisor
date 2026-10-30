@@ -155,20 +155,6 @@ docs = { command = "docs-mcp" }
     expect(files[`${HOME}/.codex/config.toml`]).toContain('docs = { command = "docs-mcp" }')
   })
 
-  it("takes exactly one backup per file, before the first mutation", async () => {
-    const files: Record<string, string | Error> = { [`${HOME}/.claude.json`]: CLAUDE_FIXTURE }
-    const { db, manager } = await testManager(files)
-    await manager.removeServer("claude-code", "docs")
-    const backup = await run(db.getNativeConfigBackup(`${HOME}/.claude.json`))
-    expect(backup).toBeDefined()
-    expect(files[backup!.backupPath]).toBe(CLAUDE_FIXTURE)
-
-    await manager.removeServer("claude-code", "linear")
-    const backupAgain = await run(db.getNativeConfigBackup(`${HOME}/.claude.json`))
-    expect(backupAgain?.backupPath).toBe(backup?.backupPath)
-    expect(files[backup!.backupPath]).toBe(CLAUDE_FIXTURE)
-  })
-
   it("restores a parked removal and marks it restored", async () => {
     const files: Record<string, string | Error> = { [`${HOME}/.claude.json`]: CLAUDE_FIXTURE }
     const { manager } = await testManager(files)

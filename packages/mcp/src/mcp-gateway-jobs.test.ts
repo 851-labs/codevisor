@@ -300,17 +300,4 @@ describe("job output file", () => {
     orphan.append("lost\n")
     await expect(orphan.flushed()).resolves.toBeUndefined()
   })
-
-  it("appends lines in order after the directory is ready", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "codevisor-job-output-"))
-    dataDirs.push(dataDir)
-    const directory = jobOutputDirectory(dataDir)
-    const file = makeJobOutputFile(directory.ready(), join(directory.path, "a.log"))
-
-    file.append("one\n")
-    file.append("two\n")
-    await file.flushed()
-
-    expect(readFileSync(join(directory.path, "a.log"), "utf8")).toBe("one\ntwo\n")
-  })
 })

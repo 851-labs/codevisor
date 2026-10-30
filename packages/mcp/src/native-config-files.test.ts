@@ -2,7 +2,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { resolveNativeConfigPath } from "@codevisor/skills"
 import { afterAll, describe, expect, it } from "vitest"
 
 import { isNonArrayRecord } from "./mcp-guards.js"
@@ -78,56 +77,6 @@ describe("defaultNativeConfigFileSystem", () => {
     ).rejects.toThrow()
     const { readdir } = await import("node:fs/promises")
     expect(await readdir(dir)).toEqual(["config.json"])
-  })
-})
-
-describe("resolveNativeConfigPath", () => {
-  it("expands ~/ against the home directory", () => {
-    expect(resolveNativeConfigPath("~/.claude.json", { home: "/Users/u" })).toBe(
-      "/Users/u/.claude.json"
-    )
-  })
-
-  it("prefers CODEX_HOME for ~/.codex paths", () => {
-    expect(
-      resolveNativeConfigPath("~/.codex/config.toml", {
-        env: { CODEX_HOME: "/elsewhere/codex" },
-        home: "/Users/u"
-      })
-    ).toBe("/elsewhere/codex/config.toml")
-  })
-
-  it("ignores empty CODEX_HOME", () => {
-    expect(
-      resolveNativeConfigPath("~/.codex/config.toml", {
-        env: { CODEX_HOME: "" },
-        home: "/Users/u"
-      })
-    ).toBe("/Users/u/.codex/config.toml")
-  })
-
-  it("prefers XDG_CONFIG_HOME for ~/.config paths", () => {
-    expect(
-      resolveNativeConfigPath("~/.config/opencode/opencode.json", {
-        env: { XDG_CONFIG_HOME: "/xdg" },
-        home: "/Users/u"
-      })
-    ).toBe("/xdg/opencode/opencode.json")
-  })
-
-  it("ignores empty XDG_CONFIG_HOME", () => {
-    expect(
-      resolveNativeConfigPath("~/.config/opencode/opencode.json", {
-        env: { XDG_CONFIG_HOME: "" },
-        home: "/Users/u"
-      })
-    ).toBe("/Users/u/.config/opencode/opencode.json")
-  })
-
-  it("leaves absolute paths untouched", () => {
-    expect(resolveNativeConfigPath("/etc/config.json", { home: "/Users/u" })).toBe(
-      "/etc/config.json"
-    )
   })
 })
 

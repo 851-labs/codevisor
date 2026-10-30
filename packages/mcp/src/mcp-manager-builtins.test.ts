@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { makeDatabase } from "@codevisor/db"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { studioGateway } from "./mcp-gateway-machines-test-support.js"
 import {
   cleanupMcpManagerTests,
   run,
@@ -83,18 +84,21 @@ describe("MCP manager built-in providers and suppression", () => {
     expect(statuses).toEqual([{ state: "inactive", title: "", url: "" }])
   })
 
-  it("previews the tab a session's agent drives through the browser provider", async () => {
-    const { manager } = await testManager()
-    const statuses: Array<unknown> = []
-    const preview = manager.subscribeBrowserPreview("chat", {
-      status: (status) => statuses.push(status),
-      frame: () => undefined
-    })
-    preview.close()
-    expect(statuses).toEqual([{ state: "inactive", title: "", url: "" }])
-    const tools: Array<unknown> = []
-    manager.subscribeAutomationUse("chat", (tool) => tools.push(tool))()
-    expect(tools).toEqual([])
+  it("tells subscribers which automation tool a session's agent used", async () => {
+    const { manager } = await studioGateway()
+    const tools: Array<string> = []
+    const unsubscribe = manager.subscribeAutomationUse("remote2:mbp:chat-7", (tool) =>
+      tools.push(tool)
+    )
+
+    await manager.invokeRemoteGatewayCall(
+      { machineId: "mbp", machineName: "MacBook Pro", sessionId: "chat-7" },
+      "computer.list_apps",
+      {}
+    )
+    unsubscribe()
+
+    expect(tools).toEqual(["computer"])
   })
 
   it("drops suppressed servers from resolution, refuses connection, and disconnects", async () => {
