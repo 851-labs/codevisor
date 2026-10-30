@@ -146,6 +146,25 @@ describe("bot conversation edges", () => {
     ])
   })
 
+  it("attaches a file once when the bot sends the same contents twice", async () => {
+    const { running, bot } = await startBot()
+    writeFileSync(join(bot.rootPath, "notes.txt"), "release notes")
+    writeFileSync(join(bot.rootPath, "copy.txt"), "release notes")
+
+    const sent = await send(running, bot.sessionId, {
+      text: "here",
+      attachments: [
+        { path: join(bot.rootPath, "notes.txt") },
+        { path: join(bot.rootPath, "notes.txt") },
+        { path: join(bot.rootPath, "copy.txt") }
+      ]
+    })
+
+    expect(sent.status).toBe(200)
+    const [message] = (await conversation(running, bot.sessionId)).messages
+    expect(message?.attachments).toMatchObject([{ name: "notes.txt" }])
+  })
+
   it("keeps a file the bot embeds in its message text as the chat's own copy", async () => {
     const { running, bot } = await startBot()
     writeFileSync(join(bot.rootPath, "shot.png"), "pixels")

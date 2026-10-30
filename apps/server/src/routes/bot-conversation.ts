@@ -87,6 +87,7 @@ export const routeBotConversation = async (
       }
       try {
         const file = await captureAssistantFile(services, { path: input.path }, attachments)
+        if (attachments.some((candidate) => candidate.fileId === file.fileId)) continue
         attachments.push(input.name === undefined ? file : { ...file, name: input.name })
       } catch (cause) {
         throw new HttpFailure(422, `Could not attach ${input.path}: ${failureMessage(cause)}`)
