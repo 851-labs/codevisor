@@ -52,7 +52,7 @@ impl Core {
     }
 
     /// Packetizes and queues one frame; returns its number within its stream.
-    pub fn send_frame(&mut self, now: Instant, frame: OutgoingFrame) -> Result<u32> {
+    pub fn send_frame(&mut self, now: Instant, frame: OutgoingFrame<'_>) -> Result<u32> {
         let Some(max_datagram) = self.max_datagram else { bail!("the connection doesn't carry datagrams") };
         self.sender.send_frame(now, frame, max_datagram, &mut self.events, &mut self.stats)
     }

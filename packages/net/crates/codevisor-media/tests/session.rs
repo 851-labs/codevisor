@@ -98,7 +98,7 @@ async fn the_session_timers_repair_a_lost_tail_with_no_more_traffic() {
     let host = MediaSession::new(host_end, config());
     let viewer = MediaSession::new(viewer_end, config());
     let data = payload(1, 5000);
-    host.send_frame(OutgoingFrame { data: data.clone(), ..OutgoingFrame::default() }).unwrap();
+    host.send_frame(OutgoingFrame { data: &data, ..OutgoingFrame::default() }).unwrap();
 
     let frame = next_frame(&viewer).await;
     assert_eq!(frame.data, data);
@@ -117,7 +117,7 @@ async fn a_full_transport_holds_datagrams_until_it_has_room() {
     let host = MediaSession::new(host_end, config());
     let viewer = MediaSession::new(viewer_end, config());
     let data = payload(2, 5000);
-    host.send_frame(OutgoingFrame { data: data.clone(), ..OutgoingFrame::default() }).unwrap();
+    host.send_frame(OutgoingFrame { data: &data, ..OutgoingFrame::default() }).unwrap();
     assert!(host.admission().backlog_bytes > 0, "three packets wait in the pacer behind the held one");
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert!(viewer.try_next_event().is_none());
@@ -168,33 +168,32 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
 
     // One frame at a time, each after the previous ack: this checks the real connection's wiring, not its loss
     // handling under a debug build's slow receive path (the simulated-network tests own that).
-    let sent: Vec<OutgoingFrame> = [1, 1200, 64_000, 200_000, 300]
+    // (stream, keyframe, LTR token, metadata, access unit)
+    type Sent = (u8, bool, Option<u64>, Vec<u8>, Bytes);
+    let sent: Vec<Sent> = [1, 1200, 64_000, 200_000, 300]
         .into_iter()
         .enumerate()
-        .map(|(index, len)| OutgoingFrame {
-            stream: (index % 2) as u8,
-            keyframe: index == 0,
-            ltr_token: (index == 3).then_some(7),
-            meta: vec![index as u8; 12],
-            data: payload(index as u64, len),
+        .map(|(index, len)| {
+            (
+                (index % 2) as u8,
+                index == 0,
+                (index == 3).then_some(7),
+                vec![index as u8; 12],
+                payload(index as u64, len),
+            )
         })
         .collect();
     let exchange = async {
-        let mut received = Vec::new();
+        let mut received: Vec<Sent> = Vec::new();
         let mut ltr = None;
-        for frame in &sent {
-            host.send_frame(frame.clone()).unwrap();
+        for (stream, keyframe, ltr_token, meta, data) in &sent {
+            let frame = OutgoingFrame { stream: *stream, keyframe: *keyframe, ltr_token: *ltr_token, meta, data };
+            host.send_frame(frame).unwrap();
             let frame = next_frame(&viewer).await;
             if let Some(token) = frame.ltr_token {
                 viewer.ack_ltr(frame.stream, token);
             }
-            received.push(OutgoingFrame {
-                stream: frame.stream,
-                keyframe: frame.keyframe,
-                ltr_token: frame.ltr_token,
-                meta: frame.meta,
-                data: frame.data,
-            });
+            received.push((frame.stream, frame.keyframe, frame.ltr_token, frame.meta, frame.data));
             loop {
                 match host.next_event().await.expect("session open") {
                     Event::FrameAcked(_) => break,

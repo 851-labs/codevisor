@@ -71,7 +71,7 @@ impl<T: DatagramTransport> MediaSession<T> {
 
     /// Host: packetizes one encoded tile and queues it for the session's task to send. Returns the frame's number
     /// within its stream.
-    pub fn send_frame(&self, frame: OutgoingFrame) -> Result<u32> {
+    pub fn send_frame(&self, frame: OutgoingFrame<'_>) -> Result<u32> {
         let now = now();
         let mut state = self.shared.state.lock().unwrap();
         state.core.set_max_datagram_size(self.shared.transport.max_datagram_size());

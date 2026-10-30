@@ -1,10 +1,10 @@
 import CodevisorNet
 import Foundation
 
-/// What one frame costs to cross the uniffi boundary, the design's question before E3 builds on it (switch to a
-/// hand-written C ABI only above 0.2 ms per frame): `sendFrame` timed from Swift, and `nextEvent` for a frame that's
-/// already waiting, so the call is the Rust-to-Swift copy and the async hop. Over a loopback iroh connection in this
-/// process; compare with `--role send-cost`, the same send without the boundary.
+/// What one frame costs to cross the Swift–Rust boundary, the design's bar for E3 (0.2 ms per frame): `sendFrame`
+/// (the borrowed-buffer C ABI) timed from Swift, and, for a frame that's already waiting, `nextEvent` plus copying
+/// its bytes into `Data`: the async hop and the one copy a decoder would make. Over a loopback iroh connection in
+/// this process; compare with `--role send-cost`, the same send without the boundary.
 enum MediaHandOff {
   private static let sizes = [64 << 10, 256 << 10, 1 << 20]
   private static let settle = Duration.milliseconds(30)
@@ -20,17 +20,19 @@ enum MediaHandOff {
     let host = await hostConnection.openMediaSession(config: config)
     let viewer = await viewerConnection.openMediaSession(config: config)
     let acks = Task { while case .some = await host.nextEvent() {} }
-    var report = "| Frame | sendFrame p50 / p95 ms (Swift) | nextEvent p50 / p95 ms (Swift) |\n| -- | -- | -- |\n"
+    var report =
+      "| Frame | sendFrame p50 / p95 ms (Swift) | nextEvent + copy p50 / p95 ms (Swift) |\n| -- | -- | -- |\n"
     for size in sizes {
       let data = Data((0..<size).map { UInt8(truncatingIfNeeded: $0 &* 7) })
       var sends: [Double] = []
       var receives: [Double] = []
       for _ in 0..<frames {
-        let frame = MediaFrame(stream: 0, keyframe: false, ltrToken: nil, meta: Data(), data: data)
-        sends.append(try milliseconds { _ = try host.sendFrame(frame: frame) })
+        sends.append(try milliseconds { try host.sendFrame(stream: 0, keyframe: false, ltrToken: nil, data: data) })
         try await Task.sleep(for: settle)
         let started = ContinuousClock.now
-        guard case .frame = await viewer.nextEvent() else { throw MediaHandOffError.frameMissing }
+        guard case .frame(_, _, _, _, _, let bytes, _, _) = await viewer.nextEvent(), bytes.data.count == size else {
+          throw MediaHandOffError.frameMissing
+        }
         receives.append(milliseconds(ContinuousClock.now - started))
       }
       report += "| \(size >> 10) KiB | \(summary(sends)) | \(summary(receives)) |\n"

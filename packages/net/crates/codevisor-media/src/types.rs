@@ -38,17 +38,18 @@ pub enum FecMode {
     Fixed(f64),
 }
 
-/// One access unit for [`crate::Core::send_frame`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct OutgoingFrame {
+/// One access unit for [`crate::Core::send_frame`], borrowed: the transport copies it once, into its packets, so
+/// the encoder's buffer is free again when the call returns.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OutgoingFrame<'a> {
     pub stream: u8,
     pub keyframe: bool,
     /// The VideoToolbox LTR token this frame's encode asked to be acknowledged; the viewer acks it with
     /// [`crate::Core::ack_ltr`] once decoded, and the host gets [`Event::LtrAcked`].
     pub ltr_token: Option<u64>,
     /// Up to 64 KiB the transport carries alongside the frame unchanged (the host's stage timings, for example).
-    pub meta: Vec<u8>,
-    pub data: Bytes,
+    pub meta: &'a [u8],
+    pub data: &'a [u8],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

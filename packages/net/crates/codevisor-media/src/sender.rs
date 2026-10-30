@@ -91,7 +91,7 @@ impl Sender {
     pub fn send_frame(
         &mut self,
         now: Instant,
-        frame: OutgoingFrame,
+        frame: OutgoingFrame<'_>,
         max_datagram: usize,
         events: &mut VecDeque<Event>,
         stats: &mut Stats,
@@ -102,8 +102,8 @@ impl Sender {
         let Some(max_shard) = max_datagram.checked_sub(wire::HEADER_BYTES) else {
             bail!("datagrams of {max_datagram} bytes can't hold a media header");
         };
-        let fields = FrameFields { keyframe: frame.keyframe, ltr_token: frame.ltr_token, meta: frame.meta };
-        let payload = fields.payload(&frame.data);
+        let fields = FrameFields { keyframe: frame.keyframe, ltr_token: frame.ltr_token, meta: frame.meta.to_vec() };
+        let payload = fields.payload(frame.data);
         let frame_len = u32::try_from(payload.len()).ok().filter(|len| *len < u32::MAX);
         let Some(frame_len) = frame_len else { bail!("a {}-byte frame is too large", payload.len()) };
         let layout = Layout::for_payload(payload.len(), max_shard)?;

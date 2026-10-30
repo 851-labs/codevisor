@@ -292,16 +292,22 @@ impl From<MediaSessionConfig> for media::MediaConfig {
     }
 }
 
-#[derive(uniffi::Record)]
-pub struct MediaFrame {
-    /// The tile, or any other independent picture sequence.
-    pub stream: u8,
-    pub keyframe: bool,
-    /// The VideoToolbox LTR token this frame must be acknowledged with, if any.
-    pub ltr_token: Option<u64>,
-    /// Up to 64 KiB carried alongside unchanged (the host's stage timings).
-    pub meta: Vec<u8>,
-    pub data: Vec<u8>,
+/// A received frame's access unit, kept in Rust and read in place from Swift (`MediaBytes.withUnsafeBytes` in
+/// CodevisorNet), so a frame crosses the boundary without uniffi copying it byte by byte.
+#[derive(uniffi::Object)]
+pub struct MediaBytes {
+    bytes: bytes::Bytes,
+}
+
+#[uniffi::export]
+impl MediaBytes {
+    pub fn len(&self) -> u64 {
+        self.bytes.len() as u64
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
 }
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -330,7 +336,7 @@ pub enum MediaEvent {
         keyframe: bool,
         ltr_token: Option<u64>,
         meta: Vec<u8>,
-        data: Vec<u8>,
+        data: Arc<MediaBytes>,
         /// First packet in to complete.
         assembling_us: u64,
         recovery: MediaRecovery,
@@ -369,7 +375,7 @@ impl From<media::Event> for MediaEvent {
                 keyframe: frame.keyframe,
                 ltr_token: frame.ltr_token,
                 meta: frame.meta,
-                data: frame.data.to_vec(),
+                data: Arc::new(MediaBytes { bytes: frame.data }),
                 assembling_us: micros(frame.completed_at - frame.first_packet_at),
                 recovery: frame.recovery.into(),
             },
@@ -429,19 +435,6 @@ pub struct MediaSessionHandle {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl MediaSessionHandle {
-    /// Host: sends one encoded tile; returns its frame number within its stream.
-    pub fn send_frame(&self, frame: MediaFrame) -> Result<u32, NetError> {
-        self.inner
-            .send_frame(media::OutgoingFrame {
-                stream: frame.stream,
-                keyframe: frame.keyframe,
-                ltr_token: frame.ltr_token,
-                meta: frame.meta,
-                data: bytes::Bytes::from(frame.data),
-            })
-            .map_err(failure)
-    }
-
     /// Viewer: the decoder finished the frame that carried `token`.
     pub fn ack_ltr(&self, stream: u8, token: u64) {
         self.inner.ack_ltr(stream, token);
@@ -494,4 +487,62 @@ impl MediaSessionHandle {
     pub fn close(&self) {
         self.inner.close();
     }
+}
+
+// The frame path's C ABI (declared in `include/codevisor_media.h`, wrapped in CodevisorNet's `MediaFastPath.swift`):
+// uniffi copies a `Data` argument byte by byte, which measured 1–4 ms per 64 KiB–1 MiB frame on the minis, past the
+// design's 0.2 ms bar. Handles are uniffi object handles (`uniffiCloneHandle()`), each consumed by the call.
+
+fn borrowed<'a>(pointer: *const u8, len: usize) -> &'a [u8] {
+    if len == 0 || pointer.is_null() {
+        &[]
+    } else {
+        // SAFETY: the caller passes `len` readable bytes that outlive the call.
+        unsafe { std::slice::from_raw_parts(pointer, len) }
+    }
+}
+
+/// Host: sends one encoded tile from the caller's memory, copied once into packets before this returns. Returns
+/// the frame's number within its stream, or -1 when the frame can't be sent (the connection doesn't carry
+/// datagrams, or the frame or its metadata is too large).
+///
+/// # Safety
+///
+/// `session` is a handle from `MediaSessionHandle.uniffiCloneHandle()`, consumed here; `meta` and `data` point to
+/// `meta_len` and `data_len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn codevisor_media_send_frame(
+    session: u64,
+    stream: u8,
+    keyframe: bool,
+    has_ltr_token: bool,
+    ltr_token: u64,
+    meta: *const u8,
+    meta_len: usize,
+    data: *const u8,
+    data_len: usize,
+) -> i64 {
+    // SAFETY: a cloned uniffi handle is an `Arc::into_raw` pointer we now own.
+    let session = unsafe { Arc::from_raw(session as *const MediaSessionHandle) };
+    let frame = media::OutgoingFrame {
+        stream,
+        keyframe,
+        ltr_token: has_ltr_token.then_some(ltr_token),
+        meta: borrowed(meta, meta_len),
+        data: borrowed(data, data_len),
+    };
+    session.inner.send_frame(frame).map_or(-1, i64::from)
+}
+
+/// The bytes of a received frame, valid while the `MediaBytes` object they came from is alive.
+///
+/// # Safety
+///
+/// `bytes` is a handle from `MediaBytes.uniffiCloneHandle()`, consumed here; `len` is writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn codevisor_media_bytes(bytes: u64, len: *mut usize) -> *const u8 {
+    // SAFETY: as above; the caller's own `MediaBytes` keeps the allocation alive after this clone is dropped.
+    let bytes = unsafe { Arc::from_raw(bytes as *const MediaBytes) };
+    unsafe { *len = bytes.bytes.len() };
+    bytes.bytes.as_ptr()
 }

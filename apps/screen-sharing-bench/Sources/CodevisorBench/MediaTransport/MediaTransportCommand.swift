@@ -41,7 +41,8 @@ struct MediaTransportCommand: BenchCommand {
   }
 
   func run() async throws {
-    let report = role == .ffiCost ? try await MediaHandOff.measure(frames: frames) : try await mediaBenchRun(args: arguments)
+    let report =
+      role == .ffiCost ? try await MediaHandOff.measure(frames: frames) : try await mediaBenchRun(args: arguments)
     FileHandle.standardOutput.write(Data(report.utf8))
   }
 }

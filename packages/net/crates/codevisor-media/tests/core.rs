@@ -71,7 +71,7 @@ impl Sim {
         self.drop_rule = Some(Box::new(rule));
     }
 
-    fn send(&mut self, frame: OutgoingFrame) -> u32 {
+    fn send(&mut self, frame: OutgoingFrame<'_>) -> u32 {
         let number = self.host.send_frame(self.now, frame).expect("frame is valid");
         self.pump();
         number
@@ -173,7 +173,7 @@ fn payload(seed: u64, len: usize) -> Bytes {
     Bytes::from((0..len).map(|_| random.next_u64() as u8).collect::<Vec<u8>>())
 }
 
-fn frame(stream: u8, data: Bytes) -> OutgoingFrame {
+fn frame(stream: u8, data: &[u8]) -> OutgoingFrame<'_> {
     OutgoingFrame { stream, data, ..OutgoingFrame::default() }
 }
 
@@ -199,31 +199,30 @@ fn is_kind(datagram: &Bytes, kind: Kind) -> bool {
 #[test]
 fn frames_arrive_byte_identical_in_order_with_their_fields() {
     let mut sim = Sim::new(NetworkConditions::N0, config(FecMode::Off), 1);
-    let sent: Vec<OutgoingFrame> = (0..20u64)
-        .map(|index| OutgoingFrame {
-            stream: (index % 2) as u8,
-            keyframe: index < 2,
-            ltr_token: (index % 5 == 0).then_some(index * 10),
-            meta: format!("meta {index}").into_bytes(),
-            data: payload(index, 1 + index as usize * 9_000),
+    // (stream, keyframe, LTR token, metadata, access unit)
+    type Sent = (u8, bool, Option<u64>, Vec<u8>, Bytes);
+    let sent: Vec<Sent> = (0..20u64)
+        .map(|index| {
+            let meta = format!("meta {index}").into_bytes();
+            (
+                (index % 2) as u8,
+                index < 2,
+                (index % 5 == 0).then_some(index * 10),
+                meta,
+                payload(index, 1 + index as usize * 9_000),
+            )
         })
         .collect();
-    for frame in &sent {
-        sim.send(frame.clone());
+    for (stream, keyframe, ltr_token, meta, data) in &sent {
+        sim.send(OutgoingFrame { stream: *stream, keyframe: *keyframe, ltr_token: *ltr_token, meta, data });
         sim.run_for(INTERVAL);
     }
     sim.run_for(50 * MS);
 
-    let received: Vec<OutgoingFrame> = sim
+    let received: Vec<Sent> = sim
         .frames()
         .iter()
-        .map(|frame| OutgoingFrame {
-            stream: frame.stream,
-            keyframe: frame.keyframe,
-            ltr_token: frame.ltr_token,
-            meta: frame.meta.clone(),
-            data: frame.data.clone(),
-        })
+        .map(|frame| (frame.stream, frame.keyframe, frame.ltr_token, frame.meta.clone(), frame.data.clone()))
         .collect();
     assert_eq!(received, sent);
     assert!(sim.frames().iter().all(|frame| frame.recovery == Recovery::None));
@@ -235,7 +234,7 @@ fn a_frame_is_spread_over_at_most_half_an_interval_and_feedback_times_it() {
     // At twice a 300 Mbit/s estimate, 1 MiB would take 14 ms; the transport speeds up (to 1 Gbit/s, under its 4x
     // limit of 1.2 Gbit/s) so the frame is out within half an interval.
     let mut sim = Sim::new(NetworkConditions::N0, MediaConfig { initial_rate_bps: 300e6, ..config(FecMode::Off) }, 2);
-    sim.send(frame(0, payload(1, 1 << 20)));
+    sim.send(frame(0, &payload(1, 1 << 20)));
     sim.run_for(30 * MS);
     let packets = sim.sent_packets();
     let spread = packets.last().unwrap().0 - packets.first().unwrap().0;
@@ -253,7 +252,7 @@ fn a_frame_is_spread_over_at_most_half_an_interval_and_feedback_times_it() {
 fn a_lost_packet_is_nacked_at_the_next_arrival_and_back_one_round_trip_later() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 3);
     sim.drop_when(first_time(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 3)));
-    sim.send(frame(0, payload(1, 20 * 1000)));
+    sim.send(frame(0, &payload(1, 20 * 1000)));
     sim.run_for(30 * MS);
 
     let frame = sim.frames()[0];
@@ -274,7 +273,7 @@ fn a_lost_last_packet_is_nacked_after_the_tail_wait() {
     sim.drop_when(first_time(move |direction, datagram| {
         direction == Direction::ToViewer && is_packet(datagram, 0, last)
     }));
-    sim.send(frame(0, data.clone()));
+    sim.send(frame(0, &data));
     sim.run_for(30 * MS);
 
     assert_eq!(sim.frames()[0].data, data);
@@ -288,7 +287,7 @@ fn parity_repairs_a_loss_without_a_round_trip() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Fixed(0.2)), 5);
     sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 2));
     let data = payload(1, 10 * 1000);
-    sim.send(frame(0, data.clone()));
+    sim.send(frame(0, &data));
     sim.run_for(30 * MS);
 
     assert_eq!(sim.frames()[0].data, data);
@@ -306,10 +305,10 @@ fn a_frame_lost_whole_before_idle_is_probed_and_delivered() {
         direction == Direction::ToViewer
             && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == 1)
     }));
-    sim.send(frame(0, payload(1, 3000)));
+    sim.send(frame(0, &payload(1, 3000)));
     sim.run_for(INTERVAL);
     let last = payload(2, 3000);
-    sim.send(frame(0, last.clone()));
+    sim.send(frame(0, &last));
     sim.run_for(200 * MS);
 
     let rtt = sim.host.stats(sim.now).rtt;
@@ -330,10 +329,10 @@ fn giving_up_skips_the_frame_tells_the_host_and_releases_the_next_one() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 7);
     // Packet 1 of frame 0 never arrives, however often it's sent.
     sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 1));
-    sim.send(frame(0, payload(1, 5000)));
+    sim.send(frame(0, &payload(1, 5000)));
     sim.run_for(INTERVAL);
     let next = payload(2, 5000);
-    sim.send(frame(0, next.clone()));
+    sim.send(frame(0, &next));
     sim.run_for(5 * MS);
     assert!(sim.frames().is_empty(), "frame 1 is complete but waits for frame 0's repair");
 
@@ -353,8 +352,8 @@ fn streams_never_wait_for_each_other() {
         direction == Direction::ToViewer
             && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.stream == 0 && header.index == 1)
     });
-    sim.send(frame(0, payload(1, 5000)));
-    sim.send(frame(1, payload(2, 5000)));
+    sim.send(frame(0, &payload(1, 5000)));
+    sim.send(frame(1, &payload(2, 5000)));
     sim.run_for(5 * MS);
     assert_eq!(sim.frames().iter().map(|frame| frame.stream).collect::<Vec<_>>(), vec![1]);
 }
@@ -362,7 +361,7 @@ fn streams_never_wait_for_each_other() {
 #[test]
 fn ltr_acks_reach_the_host_even_when_the_first_report_is_lost() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 9);
-    sim.send(OutgoingFrame { ltr_token: Some(42), ..frame(0, payload(1, 2000)) });
+    sim.send(OutgoingFrame { ltr_token: Some(42), ..frame(0, &payload(1, 2000)) });
     sim.run_for(INTERVAL);
     let mut first = true;
     sim.drop_when(move |direction, datagram| {
@@ -374,7 +373,7 @@ fn ltr_acks_reach_the_host_even_when_the_first_report_is_lost() {
     sim.run_for(INTERVAL);
     assert!(!sim.host_events.iter().any(|event| matches!(event, Event::LtrAcked { .. })));
 
-    sim.send(frame(0, payload(2, 2000)));
+    sim.send(frame(0, &payload(2, 2000)));
     sim.run_for(INTERVAL);
     assert_eq!(
         sim.host_events.iter().filter(|event| matches!(event, Event::LtrAcked { .. })).collect::<Vec<_>>(),
@@ -391,9 +390,9 @@ fn a_lost_ack_is_settled_by_the_next_report() {
         first &= !drop;
         drop
     });
-    sim.send(frame(0, payload(1, 2000)));
+    sim.send(frame(0, &payload(1, 2000)));
     sim.run_for(INTERVAL);
-    sim.send(frame(0, payload(2, 2000)));
+    sim.send(frame(0, &payload(2, 2000)));
     sim.run_for(INTERVAL);
 
     let acks = sim.acks();
@@ -414,7 +413,7 @@ fn admission_and_the_estimate_keep_a_slow_link_from_queueing() {
         let admission = sim.host.admission();
         if admission.admit {
             let ceiling = (admission.encoder_ceiling_bps / 8.0 * INTERVAL.as_secs_f64()) as usize;
-            sim.send(frame(0, payload(index, ceiling.min(250_000))));
+            sim.send(frame(0, &payload(index, ceiling.min(250_000))));
             sent += 1;
         }
         sim.run_for(INTERVAL);
@@ -443,7 +442,7 @@ fn n3_loss_costs_at_most_a_round_trip_plus_two_ms_for_999_in_1000_frames() {
         // Mostly HP-like tile pictures (a few kB), with a large one now and then.
         let len = if index % 60 == 0 { 300_000 } else { 500 + (sizes.next_u64() % 60_000) as usize };
         let data = payload(index, len);
-        sim.send(frame((index % 4) as u8, data.clone()));
+        sim.send(frame((index % 4) as u8, &data));
         sent.push(data);
         sim.run_for(INTERVAL / 4);
     }

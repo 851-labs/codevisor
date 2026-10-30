@@ -319,7 +319,7 @@ async fn send_cost(options: &Options) -> Result<String> {
             ticker.tick().await;
             let data = frame_data(&mut cache, size);
             let started = Instant::now();
-            host.send_frame(OutgoingFrame { data, ..Default::default() })?;
+            host.send_frame(OutgoingFrame { data: &data, ..Default::default() })?;
             durations.push(started.elapsed().as_secs_f64() * 1000.0);
             while host.try_next_event().is_some() {}
         }
@@ -515,9 +515,12 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
             let data = frame_data(&mut cache, len);
             let meta = checksum(&data).to_be_bytes().to_vec();
             let sent = Instant::now();
-            if let Ok(number) =
-                session.send_frame(OutgoingFrame { stream: stream_base + stream, meta, data, ..Default::default() })
-            {
+            if let Ok(number) = session.send_frame(OutgoingFrame {
+                stream: stream_base + stream,
+                meta: &meta,
+                data: &data,
+                ..Default::default()
+            }) {
                 submitted.insert((stream_base + stream, number), sent);
                 measured.sent += 1;
             }
