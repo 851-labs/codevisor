@@ -33,6 +33,13 @@ struct SidebarWorkspaceListing {
       projectOrder: projectOrder, machineGroup: machineGroups.group(forServer:))
   }
 
+  func headingNamesMachine(_ id: UUID) -> Bool {
+    let tree = tree
+    let root = tree.root(of: id)
+    let group = groups(of: tree.roots).first { $0.items.contains { $0.id == root } }
+    return group?.heading?.namesMachine == true
+  }
+
   var machineGroups: SidebarMachineGroups {
     SidebarMachineGroups(
       machines: environment.machines, navigationStore: environment.navigationStore,

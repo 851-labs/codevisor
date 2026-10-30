@@ -1,3 +1,4 @@
+import CodevisorClient
 import SwiftUI
 
 struct WorkspaceInspectorAgent: Identifiable {
@@ -5,6 +6,8 @@ struct WorkspaceInspectorAgent: Identifiable {
   let name: String
   let subtitle: String?
   let icon: SidebarWorkspaceIcon
+  let pullRequest: ServerGitPullRequest?
+  let machine: SidebarRowMachine?
   let open: () -> Void
 }
 
@@ -31,9 +34,12 @@ private struct WorkspaceInspectorAgentRow: View {
 
   var body: some View {
     Button(action: agent.open) {
-      SidebarWorkspaceRowLabel(name: agent.name, subtitle: agent.subtitle, icon: agent.icon, store: store)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+      HStack(spacing: SidebarWorkspaceRow.trailingSpacing) {
+        SidebarWorkspaceRowLabel(name: agent.name, subtitle: agent.subtitle, icon: agent.icon, store: store)
+        SidebarWorkspaceRowProperties(pullRequest: agent.pullRequest, machine: agent.machine)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .help("Open \(title)")

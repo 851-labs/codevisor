@@ -37,4 +37,9 @@ public struct SidebarWorkspaceTree: Equatable {
     self.roots = roots
     self.children = children
   }
+
+  public func root(of id: UUID) -> UUID {
+    guard let parent = children.first(where: { $0.value.contains { $0.id == id } })?.key else { return id }
+    return root(of: parent)
+  }
 }
