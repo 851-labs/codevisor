@@ -295,8 +295,10 @@ impl Sender {
                 break;
             }
             let frame = entry.remove();
+            // Past the bitmap's 32 frames the viewer's outcome is unknown here; a needless refresh is cheaper than
+            // encoding on top of a frame the viewer skipped.
             let age = feedback.resolved_below - 1 - number;
-            if age < 32 && feedback.lost_bitmap & (1 << age) != 0 {
+            if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {

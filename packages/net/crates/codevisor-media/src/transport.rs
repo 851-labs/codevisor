@@ -91,10 +91,15 @@ impl DatagramTransport for UdpTransport {
     }
 
     async fn recv(&self) -> Option<Bytes> {
-        // Datagrams on a path never exceed its MTU; anything longer is truncated and fails its header checks.
-        let mut buffer = vec![0u8; self.max_datagram.max(1500) + 64];
         loop {
-            let (len, from) = self.socket.recv_from(&mut buffer).await.ok()?;
+            self.socket.readable().await.ok()?;
+            // Datagrams on a path never exceed its MTU; anything longer is truncated and fails its header checks.
+            let mut buffer = vec![0u8; self.max_datagram.max(1500) + 64];
+            let (len, from) = match self.socket.try_recv_from(&mut buffer) {
+                Ok(received) => received,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(_) => return None,
+            };
             let mut peer = self.peer.lock().unwrap();
             match *peer {
                 Some(expected) if expected != from => continue,

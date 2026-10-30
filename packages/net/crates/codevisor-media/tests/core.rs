@@ -467,3 +467,58 @@ fn n3_loss_costs_at_most_a_round_trip_plus_two_ms_for_999_in_1000_frames() {
     let stats = sim.viewer.stats(sim.now);
     assert!(stats.fec_recoveries > 0 && stats.nacks_sent > 0, "{stats:?}");
 }
+
+/// A one-packet frame `frame` on stream 0 whose payload is `payload` (fields included), as the host would send it.
+fn single_packet(frame: u32, payload: &[u8]) -> Bytes {
+    PacketHeader {
+        kind: Kind::Data,
+        stream: 0,
+        frame,
+        index: 0,
+        data_count: 1,
+        parity_count: 0,
+        frame_len: payload.len() as u32,
+    }
+    .encode(payload)
+}
+
+fn viewer_core() -> (Core, Instant) {
+    let now = Instant::now();
+    let mut viewer = Core::new(config(FecMode::Off), now);
+    viewer.set_rtt(2 * MS);
+    viewer.set_max_datagram_size(Some(MTU));
+    (viewer, now)
+}
+
+#[test]
+fn a_jump_billions_of_frames_ahead_skips_them_in_one_step() {
+    let (mut viewer, now) = viewer_core();
+    let fields = wire::FrameFields::default();
+    viewer.handle_datagram(now, single_packet(4_000_000_000, &fields.payload(b"far")));
+    // Nobody answers the NACKs for the 64 frames kept for repair; run their timers out.
+    let mut at = now;
+    while let Some(next) = viewer.poll_timeout(at).filter(|next| *next < now + Duration::from_secs(1)) {
+        at = next;
+        viewer.handle_timeout(at);
+    }
+
+    let events: Vec<Event> = std::iter::from_fn(|| viewer.poll_event()).collect();
+    assert_eq!(events[0], Event::FrameSkipped { stream: 0, frame: 4_000_000_000 - 65 });
+    // The 64 frames kept for repair are given up in turn; then the frame that arrived is delivered.
+    assert!(
+        matches!(events.last(), Some(Event::Frame(frame)) if frame.frame == 4_000_000_000 && &frame.data[..] == b"far")
+    );
+}
+
+#[test]
+fn a_frame_whose_fields_dont_parse_is_reported_lost_not_delivered() {
+    let (mut viewer, now) = viewer_core();
+    // Flags, then a metadata length (0xFFFF) longer than the payload.
+    viewer.handle_datagram(now, single_packet(0, &[0, 0xFF, 0xFF, 1, 2, 3]));
+
+    assert_eq!(viewer.poll_event(), Some(Event::FrameSkipped { stream: 0, frame: 0 }));
+    let report = std::iter::from_fn(|| viewer.poll_transmit(now))
+        .find_map(|datagram| wire::Feedback::decode(&datagram))
+        .expect("the viewer reports the frame");
+    assert_eq!((report.frame, report.lost), (0, true));
+}

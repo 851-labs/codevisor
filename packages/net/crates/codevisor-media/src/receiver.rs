@@ -205,13 +205,7 @@ impl Receiver {
             return;
         }
         if header.frame - stream.next_due > MAX_AHEAD {
-            for number in stream.next_due..header.frame - MAX_AHEAD {
-                let assembly = stream.frames.entry(number).or_insert_with(Assembly::unknown);
-                if matches!(assembly.state, State::Assembling) {
-                    assembly.state = State::GivenUp;
-                    stream.outcomes.insert(number, Outcome { lost: true, receipt: None });
-                }
-            }
+            skip_to(header.stream, stream, header.frame - MAX_AHEAD, events, stats);
         }
         // Every earlier frame is past its first transmission now; the ones never seen are wholly missing.
         for number in stream.next_due..header.frame {
@@ -223,9 +217,13 @@ impl Receiver {
                 assembly.end_seen = true;
             }
         }
+        // Only placeholders exist before their first packet, and a placeholder means a later frame already arrived.
+        let placeholder = stream.frames.contains_key(&header.frame);
         let assembly = stream.frames.entry(header.frame).or_insert_with(Assembly::unknown);
         if !matches!(assembly.state, State::Assembling) {
+            // Complete but held behind a frame still being repaired: answer probes for it too.
             stats.duplicate_packets += 1;
+            self.answer_resolved(now, header.stream, header.frame);
             return;
         }
         let shape = match Layout::new(header.frame_len as usize, usize::from(header.data_count)) {
@@ -237,14 +235,15 @@ impl Receiver {
         };
         match assembly.shape {
             None => {
-                let placeholder = assembly.give_up_at;
+                // A placeholder that was NACKed whole has every packet requested already.
+                let requested = assembly.give_up_at.map(|_| now);
                 *assembly = Assembly {
                     shape: Some(shape),
                     data: vec![None; shape.layout.data_count],
                     parity: vec![None; shape.parity_count],
-                    requested: vec![placeholder.map(|_| now); shape.layout.data_count],
-                    end_seen: false,
-                    give_up_at: placeholder,
+                    requested: vec![requested; shape.layout.data_count],
+                    end_seen: placeholder,
+                    give_up_at: assembly.give_up_at,
                     next_nack: assembly.next_nack,
                     ..Assembly::unknown()
                 };
@@ -294,7 +293,7 @@ impl Receiver {
         assembly.tail_at = Some(now + tail_wait);
 
         if try_complete(assembly, now, stats) {
-            self.on_resolved(header.stream, header.frame, events, stats);
+            self.on_resolved(&[(header.stream, header.frame)], events, stats);
         } else if (gap_seen || assembly.end_seen) && !assembly.due(now, self.rtt + RETRY_MARGIN).is_empty() {
             assembly.next_nack = Some(now);
         }
@@ -355,13 +354,7 @@ impl Receiver {
                 }
             }
         }
-        let streams: Vec<u8> = resolved.iter().map(|(stream, _)| *stream).collect();
-        for (stream_id, number) in resolved {
-            self.on_resolved(stream_id, number, events, stats);
-        }
-        for stream_id in streams {
-            self.drain(stream_id, events, stats);
-        }
+        self.on_resolved(&resolved, events, stats);
     }
 
     pub fn poll_timeout(&self) -> Option<Instant> {
@@ -377,9 +370,22 @@ impl Receiver {
             .min()
     }
 
-    /// A frame of `stream_id` completed or was given up: remember the outcome and report it. Reports go out after
-    /// [`drain`](Self::drain), so they carry the history it settles.
-    fn on_resolved(&mut self, stream_id: u8, number: u32, events: &mut VecDeque<Event>, stats: &mut Stats) {
+    /// Frames that completed or were given up: remember their outcomes, deliver what's now in order, then report
+    /// each one. Every outcome is recorded before anything drains (draining removes frames), and the reports go out
+    /// after, so they carry the history the drain settled.
+    fn on_resolved(&mut self, resolved: &[(u8, u32)], events: &mut VecDeque<Event>, stats: &mut Stats) {
+        let outcomes: Vec<Outcome> =
+            resolved.iter().map(|&(stream_id, number)| self.record_outcome(stream_id, number)).collect();
+        for &(stream_id, _) in resolved {
+            self.drain(stream_id, events, stats);
+        }
+        for (&(stream_id, number), outcome) in resolved.iter().zip(outcomes) {
+            let stream = &self.streams[&stream_id];
+            self.outbox.push_back(feedback(stream_id, stream, number, outcome).encode());
+        }
+    }
+
+    fn record_outcome(&mut self, stream_id: u8, number: u32) -> Outcome {
         let epoch = self.epoch;
         let stream = self.streams.get_mut(&stream_id).expect("resolved frames belong to a stream");
         let assembly = &stream.frames[&number];
@@ -400,9 +406,7 @@ impl Receiver {
         };
         stream.outcomes.insert(number, outcome);
         self.gap_peak = self.gap_peak.mul_f64(GAP_DECAY);
-        self.drain(stream_id, events, stats);
-        let stream = &self.streams[&stream_id];
-        self.outbox.push_back(feedback(stream_id, stream, number, outcome).encode());
+        outcome
     }
 
     /// Delivers the stream's resolved frames that are next in order.
@@ -462,11 +466,11 @@ fn feedback(stream_id: u8, stream: &StreamRx, frame: u32, outcome: Outcome) -> F
     }
 }
 
-/// Completes the frame if enough packets arrived, rebuilding missing data packets from parity.
+/// Resolves the frame if enough packets arrived: complete, with missing data packets rebuilt from parity, or given
+/// up when the packets can't make a valid frame (parity that doesn't decode, fields that don't parse), which
+/// retransmissions wouldn't fix either.
 fn try_complete(assembly: &mut Assembly, now: Instant, stats: &mut Stats) -> bool {
-    let Some(shape) = assembly.shape else {
-        return false;
-    };
+    let Some(shape) = assembly.shape else { return false };
     let data_received = assembly.data.iter().filter(|shard| shard.is_some()).count();
     if data_received < shape.layout.data_count {
         if assembly.received < shape.layout.data_count {
@@ -482,7 +486,8 @@ fn try_complete(assembly: &mut Assembly, now: Instant, stats: &mut Stats) -> boo
             .collect();
         let Ok(restored) = fec::recover(shape.layout, shape.parity_count, &data, &parity) else {
             stats.invalid_datagrams += 1;
-            return false;
+            assembly.state = State::GivenUp;
+            return true;
         };
         for (index, shard) in restored {
             assembly.data[index] = Some(Bytes::from(shard));
@@ -496,8 +501,55 @@ fn try_complete(assembly: &mut Assembly, now: Instant, stats: &mut Stats) -> boo
     }
     assembly.data.clear();
     assembly.parity.clear();
-    assembly.state = State::Complete { payload: payload.freeze(), at: now };
+    let payload = payload.freeze();
+    assembly.state = if FrameFields::parse(payload.clone()).is_some() {
+        State::Complete { payload, at: now }
+    } else {
+        stats.invalid_datagrams += 1;
+        State::GivenUp
+    };
     true
+}
+
+/// Gives up on every frame of the stream before `keep_from` at once, however far behind it is: frames already
+/// complete are delivered, the rest skipped (one [`Event::FrameSkipped`] per frame that had arrived in part, and one
+/// for the last frame of the jump).
+fn skip_to(stream_id: u8, stream: &mut StreamRx, keep_from: u32, events: &mut VecDeque<Event>, stats: &mut Stats) {
+    let mut last_reported = None;
+    while let Some(entry) = stream.frames.first_entry() {
+        if *entry.key() >= keep_from {
+            break;
+        }
+        let (frame, mut assembly) = entry.remove_entry();
+        if matches!(assembly.state, State::Assembling) {
+            assembly.state = State::GivenUp;
+        }
+        if deliver(stream_id, frame, assembly, events) {
+            stats.frames_skipped += 1;
+        } else {
+            stats.frames_received += 1;
+        }
+        last_reported = Some(frame);
+    }
+    if last_reported != Some(keep_from - 1) {
+        events.push_back(Event::FrameSkipped { stream: stream_id, frame: keep_from - 1 });
+        stats.frames_skipped += 1;
+    }
+    // Rebuild the last 32 frames' loss bits: delivered frames keep their outcome, everything else in the jump is lost.
+    let (old_due, old_bitmap) = (stream.next_due, stream.lost_bitmap);
+    let mut bitmap = 0;
+    for age in 0..32 {
+        let Some(frame) = keep_from.checked_sub(1 + age) else { break };
+        let lost = if frame < old_due {
+            let old_age = old_due - 1 - frame;
+            old_age < 32 && old_bitmap & (1 << old_age) != 0
+        } else {
+            stream.outcomes.entry(frame).or_insert(Outcome { lost: true, receipt: None }).lost
+        };
+        bitmap |= u32::from(lost) << age;
+    }
+    stream.next_due = keep_from;
+    stream.lost_bitmap = bitmap;
 }
 
 /// Hands one in-order frame to the application; returns whether it was lost.

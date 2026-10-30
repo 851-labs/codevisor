@@ -4,7 +4,7 @@
 //! calls [`run`] inside the signed bench app so macOS lets it reach the LAN.
 //!
 //! ```text
-//! viewer   --bind ADDR --udp-bind ADDR --secret HEX [--network N3] [--idle-exit-s 30]
+//! viewer   --bind ADDR --udp-bind ADDR --secret HEX [--network N3] [--seconds 10] [--idle-exit-s S]
 //! host     --peer-id ID | --peer-secret HEX, --peer ADDR --udp-peer ADDR [--network N3] [--rows all] [--seconds 10]
 //!          [--json PATH] [--network-label "N3 (dummynet)"]
 //! loopback [--network N3] [--rows all] [--seconds 10] [--json PATH]
@@ -193,7 +193,9 @@ fn viewer_line(label: &str, tally: &ViewerTally, stats: &crate::Stats) -> String
 async fn viewer(options: &Options) -> Result<String> {
     let secret = secret_key_from_hex(options.get("secret")?)?;
     let network = options.network()?;
-    let idle = Duration::from_secs_f64(options.or("idle-exit-s", "30").parse()?);
+    // Each transport's session sits idle while the host runs the other transport's row.
+    let row_idle = Duration::from_secs_f64(options.seconds()? * 2.0) + DRAIN * 2 + Duration::from_secs(5);
+    let idle = Duration::from_secs_f64(options.or("idle-exit-s", "0").parse()?).max(row_idle);
     let endpoint = NetEndpoint::bind(endpoint_config(secret, options.get("bind")?)).await?;
     let udp = UdpSocket::bind(options.get("udp-bind")?).await?;
     eprintln!("viewer {} on {:?}, udp {}", endpoint.endpoint_id(), endpoint.bound_sockets(), udp.local_addr()?);
@@ -237,11 +239,7 @@ async fn host(options: &Options) -> Result<String> {
         Some(secret) => endpoint_id_for(&secret_key_from_hex(secret)?),
         None => options.get("peer-id")?.to_string(),
     };
-    let peer = NetAddr {
-        endpoint_id,
-        relay_url: None,
-        direct_addrs: vec![options.get("peer")?.to_string()],
-    };
+    let peer = NetAddr { endpoint_id, relay_url: None, direct_addrs: vec![options.get("peer")?.to_string()] };
     let udp_peer: SocketAddr = options.get("udp-peer")?.parse()?;
     let patience = Duration::from_secs_f64(options.or("connect-patience-s", "600").parse()?);
     let endpoint = NetEndpoint::bind(endpoint_config(generate_secret_key(), options.or("bind", "0.0.0.0:0"))).await?;

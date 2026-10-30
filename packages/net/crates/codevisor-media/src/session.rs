@@ -23,6 +23,8 @@ const RTT_REFRESH: Duration = Duration::from_millis(50);
 const FULL_RETRY: Duration = Duration::from_micros(500);
 /// Datagrams taken from the core per lock, so frame hand-offs interleave with a burst going out.
 const SEND_BATCH: usize = 16;
+/// Datagrams handled per wake-up before the session settles (sends, timers, events).
+const RECV_BATCH: usize = 64;
 
 /// One end of a media session, driving a [`Core`] over a transport on the tokio runtime. Every method is cheap and
 /// non-blocking except [`next_event`](Self::next_event): [`send_frame`](Self::send_frame) only packetizes and queues
@@ -82,7 +84,7 @@ impl<T: DatagramTransport> MediaSession<T> {
     /// Viewer: the decoder finished the frame that carried `token`.
     pub fn ack_ltr(&self, stream: u8, token: u64) {
         self.shared.state.lock().unwrap().core.ack_ltr(stream, token);
-        self.shared.pump(now());
+        self.shared.wake.notify_one();
     }
 
     /// Host: whether to encode the next capture.
@@ -203,8 +205,24 @@ async fn drive<T: DatagramTransport>(shared: Arc<Shared<T>>) {
         tokio::select! {
             datagram = shared.transport.recv() => {
                 let Some(datagram) = datagram else { break };
+                let now = now();
                 let mut state = shared.state.lock().unwrap();
-                state.core.handle_datagram(now(), datagram);
+                state.core.handle_datagram(now, datagram);
+                // Take whatever else already arrived under the same lock, before the next settle's timer scan.
+                let mut closed = false;
+                for _ in 0..RECV_BATCH {
+                    match ready_now(shared.transport.recv()) {
+                        Some(Some(datagram)) => state.core.handle_datagram(now, datagram),
+                        Some(None) => {
+                            closed = true;
+                            break;
+                        }
+                        None => break,
+                    }
+                }
+                if closed {
+                    break;
+                }
             }
             () = sleep => {
                 shared.state.lock().unwrap().core.handle_timeout(now());
@@ -214,4 +232,14 @@ async fn drive<T: DatagramTransport>(shared: Arc<Shared<T>>) {
     }
     shared.settle();
     shared.state.lock().unwrap().events = None;
+}
+
+/// Polls `future` once: its output if it's ready now, without waiting.
+fn ready_now<F: std::future::Future>(future: F) -> Option<F::Output> {
+    let mut future = std::pin::pin!(future);
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    match future.as_mut().poll(&mut context) {
+        std::task::Poll::Ready(output) => Some(output),
+        std::task::Poll::Pending => None,
+    }
 }
