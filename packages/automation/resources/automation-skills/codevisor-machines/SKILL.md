@@ -19,6 +19,7 @@ Every call goes through a machine handle. `machines.current` is the machine this
 
 - `m.tools.<server>.<tool>(args)`, `m.tools.search(…)`, and `m.tools.describe.tool(…)` run on machine `m`, with that machine's MCPs and credentials.
 - `m.agents.*` starts and coordinates agents on that machine (see `codevisor-agents`). `m.tools.codevisor.*` controls the rest of Codevisor there.
+- `m.agents.start({ noProject: true, isolation: "project", title, prompt })` starts a throwaway chat on `m` in a fresh empty folder, without adding a project there. Use it when you just need that machine's tools, or it has no projects.
 - `m.clients.list()` lists apps connected to that machine (see `codevisor-clients`).
 - `machines.current.tools.search({ query, machines: "all" })` searches every online machine. Each result has `machine: { machineId, name }`.
 

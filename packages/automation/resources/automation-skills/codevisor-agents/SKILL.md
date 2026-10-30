@@ -13,16 +13,16 @@ Everything goes through a machine handle. `machine.agents.<tool>(args)` is the s
 
 ## Quick reference
 
-| To                                           | Call                                                                                               |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Start an agent                               | `agents.start({ title, prompt, isolation, harness?, model?, project?, labels?, sandboxProfile? })` |
-| Get its final reply                          | End your turn; `session.turn_ended` brings it. Later: `agents.status({ agentId })`                 |
-| Follow up                                    | `agents.message({ agentId, text, delivery? })`                                                     |
-| Answer its question                          | `agents.answer({ agentId, questionId, outcome, answers })`                                         |
-| Stop its turn                                | `agents.cancel({ agentId })`                                                                       |
-| Find your agents                             | `agents.list({ state?, project?, label?, parentAgentId?, next? })`                                 |
-| Finish with a `"shared"` helper              | `agents.close({ agentId })`                                                                        |
-| Finish with a `"worktree"`/`"project"` agent | `machine.tools.codevisor.workspaces.archive({ workspaceId })`                                      |
+| To                                           | Call                                                                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Start an agent                               | `agents.start({ title, prompt, isolation, harness?, model?, project?, noProject?, labels?, sandboxProfile? })` |
+| Get its final reply                          | End your turn; `session.turn_ended` brings it. Later: `agents.status({ agentId })`                             |
+| Follow up                                    | `agents.message({ agentId, text, delivery? })`                                                                 |
+| Answer its question                          | `agents.answer({ agentId, questionId, outcome, answers })`                                                     |
+| Stop its turn                                | `agents.cancel({ agentId })`                                                                                   |
+| Find your agents                             | `agents.list({ state?, project?, label?, parentAgentId?, next? })`                                             |
+| Finish with a `"shared"` helper              | `agents.close({ agentId })`                                                                                    |
+| Finish with a `"worktree"`/`"project"` agent | `machine.tools.codevisor.workspaces.archive({ workspaceId })`                                                  |
 
 ## Start an agent
 
@@ -58,6 +58,18 @@ One call creates the checkout, the chat, and its first message, and subscribes y
 ```
 
 Harness, model, reasoning, and project default to yours. Pass `harness` (an id from `machine.tools.codevisor.harnesses.list()`), `model`, or `project` (an id or name) to pick others. `labels` are free-form key/value pairs that help you find your agents again later.
+
+For a throwaway chat that needs no project, pass `noProject: true` instead of `project`. The agent works in a fresh empty folder on that machine, like a chat started with "No project" in the app: nothing is added to the sidebar's projects, and `isolation` is ignored. It works on any machine, even one with no projects. Archive its workspace when you're done, as for `"project"`.
+
+```js
+;async () =>
+  (await machines.get("macbook")).agents.start({
+    title: "Check the Xcode version",
+    prompt: "Run xcodebuild -version and reply with its output.",
+    isolation: "project",
+    noProject: true
+  })
+```
 
 To run it on a new sandbox, pass `sandboxProfile` (a profile id or name from `machine.tools.codevisor.sandboxes.profiles_list()`). The call returns at once with `{ sandboxId, state: "creating" }`; `isolation` is ignored because the agent works in a fresh clone of the project on the sandbox. A few minutes later the agent starts and you're subscribed to it as usual. `machine.tools.codevisor.sandboxes.wait({ sandboxId })` returns once the sandbox is ready, with `agentId` and `machineId`, so `(await machines.get(machineId)).agents.status({ agentId })` reaches it. If setup fails the sandbox shows `state: "failed"` with `error`: read `sandboxes.log({ sandboxId })` and call `sandboxes.retry({ sandboxId })`. See `codevisor-machines` for sandboxes.
 
@@ -219,7 +231,7 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 
 ## Agents on other machines
 
-`(await machines.get("macbook")).agents.start({ …, project: "codevisor" })` starts an agent on that machine. Pass `project`, since that machine has its own projects; harness and model still default to yours. You aren't subscribed across machines, so check with that machine's `agents.status`. See `codevisor-machines`.
+`(await machines.get("macbook")).agents.start({ …, project: "codevisor" })` starts an agent on that machine. Pass `project`, since that machine has its own projects, or `noProject: true` for a throwaway chat in a fresh empty folder there; harness and model still default to yours. You aren't subscribed across machines, so check with that machine's `agents.status`. See `codevisor-machines`.
 
 ## Common mistakes
 
