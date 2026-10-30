@@ -56,6 +56,7 @@ export const resumeSessionsAfterRestart = async (
       try {
         const queued = await run(services.db.listPromptQueue(sessionId))
         if (queued.length === 0 && !required.has(sessionId)) continue
+        if (routeState.updateResume.isPending(sessionId)) continue
         await ensureAgentSessionFor(services, fanout, serverId, sessionId)
         resumed.push(sessionId)
       } catch (cause) {

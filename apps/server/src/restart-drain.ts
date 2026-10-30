@@ -1,3 +1,4 @@
+import type { CancelResult } from "@codevisor/agent-runtime"
 import type { RestartDrainState, SessionUpdateGate, TranscriptPage } from "@codevisor/api"
 
 import { makePauseFinalizer } from "./pause-finalizer.js"
@@ -5,6 +6,7 @@ import { allChats, sameScope, scopeIncludes, widenScope, type PauseScope } from 
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
 import { taskDescriptions } from "./restart-notice.js"
 import type { RestartSnapshotStore } from "./restart-snapshot.js"
+import { pendingAgentQuestion } from "./routes/parked-questions.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -150,19 +152,37 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   }
 
   const interruptTurn = async (target: PauseTarget): Promise<void> => {
-    const { agentSessionId, turn } = target
+    const { turn } = target
     markPausingForUpdate(services, turn.sessionId)
-    const outcome = await run(services.agents.cancel(agentSessionId)).catch((cause: unknown) => {
+    const outcome = await stopTurn(target).catch((cause: unknown) => {
       log(`Restart drain could not interrupt ${turn.sessionId}: ${failureMessage(cause)}`)
       return undefined
     })
-    if (outcome?.runtimeState === "retire") recordRetiredTasks(target)
+    if (outcome?.runtimeState === "retire") recordRetiredTurn(target, outcome)
   }
 
-  const recordRetiredTasks = ({ turn, runningTasks }: PauseTarget): void => {
-    if (runningTasks.length === 0) return
+  const stopTurn = async ({ agentSessionId, turn }: PauseTarget): Promise<CancelResult> => {
+    const pause = services.agents.pauseForRestart
+    if (
+      pause === undefined ||
+      (await pendingAgentQuestion(services, turn.sessionId)) !== undefined
+    ) {
+      return run(services.agents.cancel(agentSessionId))
+    }
+    return run(pause(agentSessionId))
+  }
 
-    pausedTurns.add([{ ...turn, stoppedTasks: runningTasks }])
+  const recordRetiredTurn = ({ turn, runningTasks }: PauseTarget, outcome: CancelResult): void => {
+    const resumesInterruptedTurn = outcome.resumesInterruptedTurn === true
+    if (runningTasks.length === 0 && !resumesInterruptedTurn) return
+
+    pausedTurns.add([
+      {
+        ...turn,
+        ...(runningTasks.length === 0 ? {} : { stoppedTasks: runningTasks }),
+        ...(resumesInterruptedTurn ? { resumesInterruptedTurn } : {})
+      }
+    ])
   }
 
   const pauseLiveTurns = async (myGeneration: number, pauseScope: PauseScope): Promise<void> => {

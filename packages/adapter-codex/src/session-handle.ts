@@ -14,10 +14,11 @@ import { isRecord } from "./internal.js"
 import { CODEX_MODES, configOptionsFor, currentCodexModelFor } from "./models.js"
 import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
+import { completeNotificationTurn } from "./turn-notifications.js"
 import { startCodexTurn } from "./turn-start.js"
 
-export const handleFor = (session: CodexSession): AgentSessionHandle => ({
-  cancel: adapterPromise("cancel", async () => {
+const cancelTurn = (session: CodexSession) =>
+  adapterPromise("cancel", async () => {
     const turnId = session.activeTurnId
     if (turnId === undefined) {
       cancelHeldTurn(session)
@@ -32,6 +33,22 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
       })
     } catch {}
     return { runtimeState: "reusable" as const }
+  })
+
+export const handleFor = (session: CodexSession): AgentSessionHandle => ({
+  cancel: cancelTurn(session),
+  pauseForRestart: adapterPromise("pauseForRestart", async () => {
+    const turnId = session.activeTurnId
+    const killAndWait = session.client.killAndWait
+    if (turnId === undefined || killAndWait === undefined) {
+      return Effect.runPromise(cancelTurn(session))
+    }
+
+    session.pausedForRestart = true
+    session.interruptRequested = true
+    await killAndWait()
+    completeNotificationTurn(session, { turn: { id: turnId, status: "interrupted" } })
+    return { runtimeState: "retire" as const, resumesInterruptedTurn: true }
   }),
   close: adapterPromise("close", async () => {
     session.titleGenerator?.close()

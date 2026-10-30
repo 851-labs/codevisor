@@ -41,6 +41,12 @@ export interface PromptResult {
 
 export interface CancelResult {
   readonly runtimeState: "reusable" | "retire"
+  readonly resumesInterruptedTurn?: boolean
+}
+
+export interface InterruptedTurnResume {
+  readonly notice: string
+  readonly stoppedTasks: ReadonlyArray<string>
 }
 
 export interface PromptAttachmentInput {
@@ -159,6 +165,7 @@ export interface AgentSessionHandle {
   readonly prompt: (input: string | PromptInput) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly steer?: (input: string | PromptInput) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: Effect.Effect<CancelResult, AgentRuntimeError>
+  readonly pauseForRestart?: Effect.Effect<CancelResult, AgentRuntimeError>
   readonly setMode: (modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (
     configId: string,
@@ -195,6 +202,7 @@ export interface CreateSessionOptions {
   readonly configSelections?: Readonly<Record<string, string>>
   readonly bot?: boolean
   readonly forkFrom?: string
+  readonly resumeInterruptedTurn?: InterruptedTurnResume
 }
 
 export interface AgentProvider {

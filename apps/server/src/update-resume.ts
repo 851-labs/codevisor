@@ -1,7 +1,10 @@
+import type { EventEnvelope } from "@codevisor/api"
+
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
-import { queueRestartResumeOnce, restartNotice } from "./restart-notice.js"
+import { queueRestartResumeOnce, updateResumeNotice } from "./restart-notice.js"
 import { pendingAgentQuestion } from "./routes/parked-questions.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
+import { ensureAgentSessionFor } from "./routes/session-workspace.js"
 import {
   failureMessage,
   run,
@@ -11,10 +14,11 @@ import {
   type EventFanout,
   type RouteState
 } from "./server-context.js"
+import { isRecord } from "./unknown-values.js"
 import { forgetUpdatePause } from "./update-pauses.js"
 
 export const UPDATE_RESUME_STAGGER_MS = 3_000
-export const UPDATE_CONTINUE_PROMPT = "continue"
+export const NATIVE_RESUME_START_MS = 20_000
 
 export interface UpdateResumer {
   readonly resume: (turns: ReadonlyArray<PausedTurn>) => void
@@ -82,6 +86,10 @@ export const continueAfterUpdate = async (
   forgetUpdatePause(services, sessionId)
   if (!(await canContinue(services, routeState, sessionId))) return
   if (await waitsForAnswer(services, turn)) return
+  if (await resumedNatively(services, fanout, serverId, turn)) {
+    void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
+    return
+  }
 
   await queueResumeFirst(services, turn)
   void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
@@ -103,12 +111,66 @@ const waitsForAnswer = async (
 ): Promise<boolean> =>
   stoppedTasks.length === 0 && (await pendingAgentQuestion(services, sessionId)) !== undefined
 
-const queueResumeFirst = async (
+const resumedNatively = async (
   services: CodevisorServerServices,
-  turn: PausedTurn
-): Promise<void> => {
-  await queueRestartResumeOnce(services, turn.sessionId, resumePrompt(turn))
+  fanout: EventFanout,
+  serverId: string,
+  { sessionId, stoppedTasks = [], resumesInterruptedTurn }: PausedTurn
+): Promise<boolean> => {
+  if (resumesInterruptedTurn !== true || (await agentSessionLoaded(services, sessionId))) {
+    return false
+  }
+
+  const started = watchTurnStart(fanout, sessionId)
+  try {
+    await ensureAgentSessionFor(services, fanout, serverId, sessionId, {
+      resumeInterruptedTurn: { notice: updateResumeNotice(stoppedTasks), stoppedTasks }
+    })
+    return await started.within(NATIVE_RESUME_START_MS)
+  } catch {
+    return false
+  } finally {
+    started.stop()
+  }
 }
 
-const resumePrompt = ({ stoppedTasks = [] }: PausedTurn): string =>
-  stoppedTasks.length === 0 ? UPDATE_CONTINUE_PROMPT : restartNotice(stoppedTasks)
+const agentSessionLoaded = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<boolean> => {
+  const { agentSessionId } = await run(services.db.getSessionSummary(sessionId))
+  return services.agents.loadedAgentSessionIds().includes(agentSessionId ?? sessionId)
+}
+
+const watchTurnStart = (fanout: EventFanout, sessionId: string) => {
+  let started = false
+  let wake: (() => void) | undefined
+  const stop = fanout.subscribe((event) => {
+    if (!isTurnStart(event, sessionId)) return
+    started = true
+    wake?.()
+  })
+  const within = (ms: number): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (started) return resolve(true)
+      const timer = setTimeout(() => resolve(false), ms)
+      wake = () => {
+        clearTimeout(timer)
+        resolve(true)
+      }
+    })
+  return { stop, within }
+}
+
+const isTurnStart = (event: EventEnvelope, sessionId: string): boolean =>
+  event.kind === "session.updated" &&
+  event.subjectId === sessionId &&
+  isRecord(event.payload) &&
+  event.payload.turnState === "started"
+
+const queueResumeFirst = async (
+  services: CodevisorServerServices,
+  { sessionId, stoppedTasks = [] }: PausedTurn
+): Promise<void> => {
+  await queueRestartResumeOnce(services, sessionId, updateResumeNotice(stoppedTasks))
+}

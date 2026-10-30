@@ -12,7 +12,7 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "./changes-test-support.js"
-import { restartNotice } from "./restart-notice.js"
+import { updateResumeNotice } from "./restart-notice.js"
 import { pauseForUpdate, restartStatePaths } from "./restart-test-support.js"
 import { UPDATING_MESSAGE } from "./routes/prompt-delivery.js"
 import {
@@ -203,7 +203,7 @@ describe("restart drain", () => {
     const restarted = await startWithApp(services, undefined, paths)
     await waitFor(() => agents.prompts.length === 3)
     expect(agents.prompts.slice(1).map(([, input]) => input)).toEqual([
-      "continue",
+      updateResumeNotice([]),
       "queued earlier"
     ])
     expect(await gateEvents(services, sessionId)).toEqual([
@@ -255,7 +255,7 @@ describe("restart drain", () => {
     )
     await waitFor(() => !existsSync(paths.pausedTurnsPath))
     await waitFor(() => agents.prompts.length === 2)
-    expect(agents.prompts[1]).toEqual(["agent-codex-repo", restartNotice(["Monitor CI"])])
+    expect(agents.prompts[1]).toEqual(["agent-codex-repo", updateResumeNotice(["Monitor CI"])])
   })
 
   it("reloads snapshot sessions with held work but not idle, archived or missing ones", async () => {
@@ -330,7 +330,7 @@ describe("restart drain", () => {
     await startWithApp(services, undefined, paths)
     await waitFor(() => !existsSync(paths.pausedTurnsPath))
     await waitFor(() => agents.prompts.length === 3)
-    expect(agents.prompts[2]).toEqual(["agent-codex-running", "continue"])
+    expect(agents.prompts[2]).toEqual(["agent-codex-running", updateResumeNotice([])])
   })
 
   it("refuses messages to a chat until its continue has fired", async () => {
@@ -349,7 +349,7 @@ describe("restart drain", () => {
 
     const restarted = await startWithApp(services, undefined, paths)
     await waitFor(() => agents.prompts.length === 3)
-    expect(agents.prompts[2]).toEqual(["agent-codex-first", "continue"])
+    expect(agents.prompts[2]).toEqual(["agent-codex-first", updateResumeNotice([])])
     expect((await jsonRequest(restarted, "/v1/restart/drain")).body).toMatchObject({
       state: "idle",
       pausedSessionIds: [second]
@@ -378,7 +378,7 @@ describe("restart drain", () => {
     const cancelled = await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
     expect(cancelled.body).toMatchObject({ state: "idle" })
     await waitFor(() => agents.prompts.length === 2)
-    expect(agents.prompts[1]?.[1]).toBe("continue")
+    expect(agents.prompts[1]?.[1]).toBe(updateResumeNotice([]))
   })
 
   it("refuses prompts, steers, queued sends, and goals while paused, and keeps the continue", async () => {
@@ -417,7 +417,7 @@ describe("restart drain", () => {
     await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
     await waitFor(() => agents.prompts.length === 3)
     expect(agents.prompts.slice(1).map(([, input]) => input)).toEqual([
-      "continue",
+      updateResumeNotice([]),
       "queued earlier"
     ])
   })
@@ -433,7 +433,7 @@ describe("restart drain", () => {
     expect((await jsonRequest(server, "/v1/update/apply", { method: "POST" })).status).toBe(202)
     await waitFor(() => state.applyCalls === 1)
     await waitFor(() => agents.prompts.length === 2)
-    expect(agents.prompts[1]?.[1]).toBe("continue")
+    expect(agents.prompts[1]?.[1]).toBe(updateResumeNotice([]))
     expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({ state: "idle" })
   })
 

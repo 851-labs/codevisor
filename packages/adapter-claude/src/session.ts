@@ -179,6 +179,7 @@ export interface ClaudeSession {
   readonly deferredPrompts: Array<DeferredClaudePrompt>
   turnCompletion: Deferred<void> | undefined
   cancelInFlight: Promise<CancelResult> | undefined
+  readonly resumesInterruptedTurns: boolean
   retired: boolean
   streamEnded: boolean
   runtimeState: ClaudeRuntimeState

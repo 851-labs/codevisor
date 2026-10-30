@@ -98,6 +98,7 @@ export interface AgentRuntimeService {
     input: string | PromptInput
   ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
+  readonly pauseForRestart?: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
   readonly loadedAgentSessionIds: () => ReadonlyArray<string>
   readonly loadedAgentSessions: () => ReadonlyArray<LoadedAgentSessionInfo>
   readonly closeAgentSession: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>

@@ -51,6 +51,7 @@ export interface CodexSession {
   pendingTurnError: { message: string; retryable: boolean; stopKind?: TurnStopKind } | undefined
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
+  pausedForRestart: boolean
   lastHarnessTitle: string | undefined
   titleGenerator?: CodexTitleGenerator
   currentModel: string

@@ -3,11 +3,13 @@ import {
   type CreateSessionOptions,
   type HarnessAccountContext,
   type HarnessDefinition,
+  type InterruptedTurnResume,
   type ProviderEnvironment,
   type RuntimeEmit,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
 
+import { codexInput } from "./attachments.js"
 import type { CodexClient } from "./client.js"
 import { isRecord } from "./internal.js"
 import { codexModelsFrom } from "./model-list.js"
@@ -18,6 +20,7 @@ import type { CodexSession } from "./session.js"
 import { refreshCodexSkills } from "./skills.js"
 import { codexThreadConfig } from "./thread-config.js"
 import { CodexTitleGenerator } from "./title-generation.js"
+import { startCodexTurn } from "./turn-start.js"
 
 export interface CodexStartSessionDeps {
   readonly connect: (
@@ -77,9 +80,17 @@ export const makeStartSession = ({
     await refreshCodexSkills(session, false)
 
     attachToClient(session, resumeThreadId !== undefined || opened.forkFrom !== undefined)
+    if (resumeThreadId !== undefined && sessionOptions?.resumeInterruptedTurn !== undefined) {
+      resumeInterruptedTurn(session, sessionOptions.resumeInterruptedTurn)
+    }
     return session
   }
   return startSession
+}
+
+const resumeInterruptedTurn = (session: CodexSession, resume: InterruptedTurnResume): void => {
+  const input = resume.stoppedTasks.length === 0 ? [] : codexInput({ text: resume.notice })
+  void startCodexTurn(session, input).catch(() => undefined)
 }
 
 interface OpenedThread {
@@ -138,6 +149,7 @@ const newCodexSession = (thread: OpenedThread): CodexSession => ({
   cwd: thread.cwd,
   emit: thread.emit,
   interruptRequested: false,
+  pausedForRestart: false,
   itemKinds: new Map(),
   itemTitles: new Map(),
   key: thread.resumeThreadId ?? thread.threadId,
@@ -181,6 +193,7 @@ const attachToClient = (session: CodexSession, resumed: boolean): void => {
 
 const handleClientClosed = (session: CodexSession, error: Error): void => {
   session.titleGenerator?.close()
+  if (session.pausedForRestart) return
   session.pendingPrompt?.resolve({ stopReason: "cancelled" })
   session.pendingPrompt = undefined
   cancelPendingQuestions(session)

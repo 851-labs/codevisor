@@ -26,6 +26,7 @@ import type { ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
 import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
 import { claudeUsageLimitsFrom, claudeUsageUnavailable, readClaudeOAuthUsage } from "./usage.js"
+import { compareVersions } from "./versions.js"
 
 const MINIMUM_CLAUDE_VERSION = "2.0.0"
 
@@ -69,7 +70,7 @@ export const makeClaudeProvider = (
     return located
   }
 
-  const guardVersion = async (claudePath: string): Promise<void> => {
+  const guardVersion = async (claudePath: string): Promise<string> => {
     let version = versionCache.get(claudePath)
     if (version === undefined) {
       version = await checkVersion(claudePath)
@@ -80,6 +81,7 @@ export const makeClaudeProvider = (
         `Claude Code ${version} is older than the required ${MINIMUM_CLAUDE_VERSION}. Update with: claude update`
       )
     }
+    return version
   }
 
   const startSession = makeStartSession({
@@ -219,16 +221,6 @@ export const makeClaudeProvider = (
         : { detail: "CLI not found on PATH", state: "unavailable" }
     }
   }
-}
-
-const compareVersions = (left: string, right: string): number => {
-  const leftParts = left.split(".").map((part) => Number.parseInt(part, 10) || 0)
-  const rightParts = right.split(".").map((part) => Number.parseInt(part, 10) || 0)
-  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0)
-    if (difference !== 0) return difference < 0 ? -1 : 1
-  }
-  return 0
 }
 
 /* v8 ignore start */

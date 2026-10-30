@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "./changes-test-support.js"
+import { updateResumeNotice } from "./restart-notice.js"
 import { fakeHarnessLifecycle } from "./routes/harness-auth-test-support.js"
 import type { RunningCodevisorServer } from "./server.js"
 import {
@@ -175,7 +176,7 @@ describe("update runs", () => {
     const continued = agents.prompts.filter(([sessionId]) => sessionId === "agent-codex-updating")
     expect(continued.map(([, input]) => textOf(input))).toEqual([
       "prompt until cancelled",
-      "continue"
+      updateResumeNotice([])
     ])
     expect(agents.cancellations).toHaveLength(1)
   })

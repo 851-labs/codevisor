@@ -77,6 +77,7 @@ export class FakeQuery {
     | undefined
   private ended = false
   readonly interrupts: Array<number> = []
+  readonly controlRequests: Array<Record<string, unknown>> = []
   readonly permissionModes: Array<string> = []
   readonly models: Array<string | undefined> = []
   readonly flagSettings: Array<Record<string, unknown>> = []
@@ -118,6 +119,12 @@ export class FakeQuery {
     this.interrupts.push(Date.now())
     this.changed()
     await this.interruptImplementation?.()
+    return undefined
+  }
+
+  async request(request: Record<string, unknown>): Promise<undefined> {
+    this.controlRequests.push(request)
+    this.changed()
     return undefined
   }
 

@@ -2,7 +2,12 @@ import { Effect } from "effect"
 
 import type { AgentRuntimeCore } from "./agent-runtime-core.js"
 import type { AgentRuntimeService } from "./agent-runtime-types.js"
-import { AgentRuntimeError, adapterPromise } from "./types.js"
+import {
+  AgentRuntimeError,
+  adapterPromise,
+  type AgentSessionHandle,
+  type CancelResult
+} from "./types.js"
 
 export type AgentSessionOperations = Pick<
   AgentRuntimeService,
@@ -12,6 +17,7 @@ export type AgentSessionOperations = Pick<
   | "clearGoal"
   | "closeAgentSession"
   | "logoutHarness"
+  | "pauseForRestart"
   | "probeHarnessAuth"
   | "prompt"
   | "readSessionContext"
@@ -25,6 +31,38 @@ export type AgentSessionOperations = Pick<
 export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSessionOperations => {
   const { definitionFor, sessionFor, sessions, withSessionLifecycle } = core
 
+  const stopTurn = (
+    sessionId: string,
+    operation: string,
+    stop: (handle: AgentSessionHandle) => Effect.Effect<CancelResult, AgentRuntimeError>
+  ): Effect.Effect<CancelResult, AgentRuntimeError> =>
+    adapterPromise(operation, () =>
+      withSessionLifecycle(sessionId, async () => {
+        const session = sessions.get(sessionId)
+        if (session === undefined) {
+          throw new Error(`Agent session is not loaded: ${sessionId}`)
+        }
+        const result = await Effect.runPromise(stop(session.handle))
+        await session.chain
+        if (result.runtimeState !== "retire" || sessions.get(sessionId) !== session) {
+          return result
+        }
+        let closeFailure: unknown
+        try {
+          await Effect.runPromise(session.handle.close)
+        } catch (cause) {
+          closeFailure = cause
+        } finally {
+          await session.chain
+          if (sessions.get(sessionId) === session) {
+            sessions.delete(sessionId)
+          }
+        }
+        if (closeFailure !== undefined) throw closeFailure
+        return result
+      })
+    )
+
   return {
     prompt: (sessionId, input) =>
       Effect.gen(function* () {
@@ -36,33 +74,9 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
         const steer = sessions.get(sessionId)?.handle.steer
         return steer === undefined ? Effect.succeed(false) : steer(input)
       }),
-    cancel: (sessionId) =>
-      adapterPromise("cancel", () =>
-        withSessionLifecycle(sessionId, async () => {
-          const session = sessions.get(sessionId)
-          if (session === undefined) {
-            throw new Error(`Agent session is not loaded: ${sessionId}`)
-          }
-          const result = await Effect.runPromise(session.handle.cancel)
-          await session.chain
-          if (result.runtimeState !== "retire" || sessions.get(sessionId) !== session) {
-            return result
-          }
-          let closeFailure: unknown
-          try {
-            await Effect.runPromise(session.handle.close)
-          } catch (cause) {
-            closeFailure = cause
-          } finally {
-            await session.chain
-            if (sessions.get(sessionId) === session) {
-              sessions.delete(sessionId)
-            }
-          }
-          if (closeFailure !== undefined) throw closeFailure
-          return result
-        })
-      ),
+    cancel: (sessionId) => stopTurn(sessionId, "cancel", (handle) => handle.cancel),
+    pauseForRestart: (sessionId) =>
+      stopTurn(sessionId, "pauseForRestart", (handle) => handle.pauseForRestart ?? handle.cancel),
     closeAgentSession: (sessionId) =>
       adapterPromise("closeAgentSession", () =>
         withSessionLifecycle(sessionId, async () => {

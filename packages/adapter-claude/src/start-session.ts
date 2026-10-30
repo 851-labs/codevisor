@@ -14,6 +14,7 @@ import { claudeAccountEnv } from "./account-env.js"
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { alignStartModel, isSettableEffort } from "./models.js"
 import { claudeQueryOptions } from "./query-options.js"
+import { restartResumeEnv, supportsRestartResume } from "./restart-resume.js"
 import { InputQueue, type ClaudeQuery, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { makeClaudeCommandCatalog, trackClaudeSkills, type ClaudeCommandCatalog } from "./skills.js"
 import {
@@ -32,7 +33,7 @@ import { claudeConfigDir, type SubagentTranscripts } from "./subagent-transcript
 export interface StartSessionDeps {
   readonly environment: ProviderEnvironment
   readonly getSessionInfo: typeof sdkGetSessionInfo
-  readonly guardVersion: (claudePath: string) => Promise<void>
+  readonly guardVersion: (claudePath: string) => Promise<string>
   readonly locateClaude: (definition: HarnessDefinition) => string
   readonly queryFn: ClaudeQueryFn
   readonly readFile: (path: string) => string | undefined
@@ -63,12 +64,16 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     sessionOptions?: CreateSessionOptions
   ): Promise<ClaudeSession> => {
     const claudePath = locateClaude(definition)
-    await guardVersion(claudePath)
+    const resumesInterruptedTurns = supportsRestartResume(await guardVersion(claudePath))
 
     const sessionKey = resume ?? randomUUID()
     const input = new InputQueue()
     const abort = new AbortController()
     const env = claudeAccountEnv(await environment.envFor(cwd), account)
+    const resumeTurn =
+      resume !== undefined && resumesInterruptedTurns
+        ? sessionOptions?.resumeInterruptedTurn
+        : undefined
     const saved = sessionOptions?.configSelections ?? {}
     const startOptions = savedStartOptions(saved, knownModels.list, effortDefaults, toolGateway)
 
@@ -79,7 +84,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       claudePath,
       currentSession: () => session,
       cwd,
-      env,
+      env: { ...env, ...restartResumeEnv(resumeTurn) },
       forkFrom: sessionOptions?.forkFrom,
       resume,
       sessionKey,
@@ -100,6 +105,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       input,
       key: sessionKey,
       q,
+      resumesInterruptedTurns,
       saved,
       startModel: startOptions.model,
       subagentTranscripts
@@ -161,6 +167,7 @@ interface ClaudeSessionSeed {
   readonly input: InputQueue
   readonly key: string
   readonly q: ClaudeQuery
+  readonly resumesInterruptedTurns: boolean
   readonly saved: ConfigSelections
   readonly startModel: string | undefined
   readonly subagentTranscripts: (configDir: string) => SubagentTranscripts
@@ -219,6 +226,7 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   currentGoal: undefined,
   pendingQuestions: new Map(),
   q: seed.q,
+  resumesInterruptedTurns: seed.resumesInterruptedTurns,
   retired: false,
   streamEnded: false,
   runtimeState: "idle",

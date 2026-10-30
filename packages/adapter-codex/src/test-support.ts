@@ -1,5 +1,6 @@
 import type {
   HarnessDefinition,
+  InterruptedTurnResume,
   ProviderEnvironment,
   RuntimeEvent,
   ToolGatewayConfig
@@ -63,6 +64,7 @@ export class FakeCodexClient implements CodexClient {
     | ((method: string, params: unknown, signal: AbortSignal) => Promise<unknown>)
     | undefined
   closed = false
+  killed = false
   failResume = false
   failCompaction = false
   startModel = "gpt-5.2-codex"
@@ -228,6 +230,11 @@ export class FakeCodexClient implements CodexClient {
     this.closed = true
   }
 
+  killAndWait = async (): Promise<void> => {
+    this.killed = true
+    this.exit(new Error("codex app-server exited"))
+  }
+
   emit(method: string, params: unknown): void {
     this.notificationHandler?.(method, params)
   }
@@ -263,6 +270,7 @@ export const setup = async (
     codexConfigToml?: string | null
     bot?: boolean
     forkFrom?: string
+    resumeInterruptedTurn?: InterruptedTurnResume
   } = {}
 ) => {
   const client = new FakeCodexClient()
@@ -298,7 +306,10 @@ export const setup = async (
   const fixture = { client, events, nextEvent, provider, spawns }
   const sessionOptions = {
     ...(options.bot === undefined ? {} : { bot: options.bot }),
-    ...(options.forkFrom === undefined ? {} : { forkFrom: options.forkFrom })
+    ...(options.forkFrom === undefined ? {} : { forkFrom: options.forkFrom }),
+    ...(options.resumeInterruptedTurn === undefined
+      ? {}
+      : { resumeInterruptedTurn: options.resumeInterruptedTurn })
   }
   if (options.resume === undefined) {
     const created = await run(

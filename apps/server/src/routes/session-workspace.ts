@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto"
 
-import type { AgentSessionMetadata, HarnessAccountContext } from "@codevisor/agent-runtime"
+import type {
+  AgentSessionMetadata,
+  HarnessAccountContext,
+  InterruptedTurnResume
+} from "@codevisor/agent-runtime"
 import type {
   CreateSessionRequest,
   UpdateSessionRequest,
@@ -281,6 +285,7 @@ export const findSession = async (
 
 export interface AgentSessionStart {
   readonly forkFrom?: string
+  readonly resumeInterruptedTurn?: InterruptedTurnResume
 }
 
 export const ensureAgentSessionFor = async (
@@ -341,7 +346,9 @@ export const loadAgentSessionFor = async (
         sink,
         accountContext,
         toolGateway,
-        startOptions
+        start.resumeInterruptedTurn === undefined
+          ? startOptions
+          : { ...startOptions, resumeInterruptedTurn: start.resumeInterruptedTurn }
       )
     )
   const startFresh = async () => {
@@ -352,7 +359,7 @@ export const loadAgentSessionFor = async (
         sink,
         accountContext,
         toolGateway,
-        { ...startOptions, ...start }
+        start.forkFrom === undefined ? startOptions : { ...startOptions, forkFrom: start.forkFrom }
       )
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))

@@ -5,7 +5,8 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeFilePausedTurnStore, type PausedTurn } from "./paused-turns.js"
-import { queueRestartResumeOnce, restartNotice } from "./restart-notice.js"
+import { queueRestartResumeOnce, restartNotice, updateResumeNotice } from "./restart-notice.js"
+import { withNativeTurnResume } from "./restart-test-support.js"
 import { drainPromptQueue } from "./routes/prompt-queue.js"
 import { makeEventFanout } from "./server-context.js"
 import {
@@ -19,6 +20,7 @@ import { markPausingForUpdate, withUpdatePauseStop } from "./update-pauses.js"
 import {
   continueAfterUpdate,
   makeUpdateResumer,
+  NATIVE_RESUME_START_MS,
   UPDATE_RESUME_STAGGER_MS
 } from "./update-resume.js"
 
@@ -128,8 +130,14 @@ describe("update resumer", () => {
   })
 })
 
+const makeProjectFolder = (): string => {
+  const root = mkdtempSync(join(tmpdir(), "codevisor-continue-"))
+  tempDirs.push(root)
+  return root
+}
+
 const makeChat = async () => {
-  const { services } = await makeServices("server-a")
+  const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
   const idle = idleRouteState()
   const routeState = {
@@ -137,7 +145,7 @@ const makeChat = async () => {
     restart: { ...idle.restart, isActive: () => true, gates: () => true }
   }
   const project = await run(
-    services.db.createProject({ folderPath: "/tmp/codevisor-continue", name: "Repo" })
+    services.db.createProject({ folderPath: makeProjectFolder(), name: "Repo" })
   )
   const session = await run(
     services.db.createSession({
@@ -150,35 +158,36 @@ const makeChat = async () => {
   await run(services.db.createPromptQueueItem(session.id, "queued earlier"))
   const queuedTexts = async () =>
     (await run(services.db.listPromptQueue(session.id))).map((item) => item.text)
-  const continueChat = (stoppedTasks?: ReadonlyArray<string>) =>
+  const continueChat = (stoppedTasks?: ReadonlyArray<string>, resumesInterruptedTurn?: true) =>
     continueAfterUpdate(services, fanout, routeState, "server-a", {
       sessionId: session.id,
       pausedAt,
-      ...(stoppedTasks === undefined ? {} : { stoppedTasks })
+      ...(stoppedTasks === undefined ? {} : { stoppedTasks }),
+      ...(resumesInterruptedTurn === undefined ? {} : { resumesInterruptedTurn })
     })
-  return { fanout, services, routeState, project, session, queuedTexts, continueChat }
+  return { agents, fanout, services, routeState, project, session, queuedTexts, continueChat }
 }
 
 describe("continuing a paused chat", () => {
-  it("puts a hidden continue ahead of prompts queued before the update", async () => {
+  it("puts the update notice ahead of prompts queued before the update", async () => {
     const chat = await makeChat()
 
     await chat.continueChat()
 
     const queue = await run(chat.services.db.listPromptQueue(chat.session.id))
     expect(queue.map((item) => [item.text, item.origin])).toEqual([
-      ["continue", "system"],
+      [updateResumeNotice([]), "system"],
       ["queued earlier", undefined]
     ])
   })
 
-  it("tells a chat its background tasks stopped instead of just continuing", async () => {
+  it("lists the background tasks the update stopped in the notice", async () => {
     const chat = await makeChat()
 
     await chat.continueChat(["npm run dev", "Monitor CI"])
 
     expect(await chat.queuedTexts()).toEqual([
-      restartNotice(["npm run dev", "Monitor CI"]),
+      updateResumeNotice(["npm run dev", "Monitor CI"]),
       "queued earlier"
     ])
   })
@@ -191,6 +200,34 @@ describe("continuing a paused chat", () => {
     await chat.continueChat(["Monitor CI"])
 
     expect(await chat.queuedTexts()).toEqual([notice, "queued earlier"])
+  })
+
+  it("falls back to the notice when the harness doesn't start the interrupted turn in time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const chat = await makeChat()
+    const native = withNativeTurnResume(chat.agents, { startsTurn: false })
+
+    const continuing = chat.continueChat(["Monitor CI"], true)
+    await vi.waitFor(() => expect(native.resumes).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(NATIVE_RESUME_START_MS)
+    await continuing
+    vi.useRealTimers()
+
+    expect(native.resumes).toEqual([
+      { notice: updateResumeNotice(["Monitor CI"]), stoppedTasks: ["Monitor CI"] }
+    ])
+    expect(await chat.queuedTexts()).toEqual([updateResumeNotice(["Monitor CI"]), "queued earlier"])
+  })
+
+  it("sends the notice instead of a native resume when the chat's agent is already running", async () => {
+    const chat = await makeChat()
+    const native = withNativeTurnResume(chat.agents)
+    chat.agents.sinks.set("agent-paused", async () => undefined)
+
+    await chat.continueChat([], true)
+
+    expect(native.resumes).toEqual([])
+    expect(await chat.queuedTexts()).toEqual([updateResumeNotice([]), "queued earlier"])
   })
 
   it("holds queued work for a chat until its continue fires", async () => {

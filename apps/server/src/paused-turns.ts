@@ -6,7 +6,8 @@ export const PausedTurn = Schema.Struct({
   sessionId: Schema.String,
   turnId: Schema.optional(Schema.String),
   pausedAt: Schema.String,
-  stoppedTasks: Schema.optional(Schema.Array(Schema.String))
+  stoppedTasks: Schema.optional(Schema.Array(Schema.String)),
+  resumesInterruptedTurn: Schema.optional(Schema.Boolean)
 })
 export type PausedTurn = typeof PausedTurn.Type
 

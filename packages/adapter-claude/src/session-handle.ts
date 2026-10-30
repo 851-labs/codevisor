@@ -23,6 +23,7 @@ import {
   cancelClaudePendingQuestions,
   replyToClaudeQuestion
 } from "./questions.js"
+import { endSessionRequest } from "./restart-resume.js"
 import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
@@ -41,76 +42,107 @@ const goalSubcommand = (update: SetGoalUpdate) => {
   return undefined
 }
 
-export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle => ({
-  cancel: adapterPromise("cancel", async () => {
-    if (session.cancelInFlight !== undefined) return session.cancelInFlight
-    const cancellation = (async (): Promise<CancelResult> => {
-      if (!session.turnActive && session.pendingUserCommands > 0) {
-        await ensureObservedTurnStarted(session)
-      }
-      const capturedTurnId = session.turnId
-      const capturedCompletion = session.turnCompletion
-      const questionsCancelled = cancelClaudePendingQuestions(session)
-      if (!session.turnActive) {
-        await questionsCancelled
-        await capturedCompletion?.promise
-        return { runtimeState: "reusable" }
-      }
+interface TurnStop {
+  readonly request: () => Promise<unknown>
+  readonly keepsProcess: boolean
+  readonly retired: CancelResult
+}
 
-      session.interruptRequested = true
-      let timeout: ReturnType<typeof setTimeout> | undefined
-      const timedOut = new Promise<"timeout">((resolvePromise) => {
-        timeout = setTimeout(() => resolvePromise("timeout"), CANCEL_GRACE_MS)
-      })
-      const interruptFailed = Promise.resolve()
-        .then(() => session.q.interrupt())
-        .then(
-          () => new Promise<never>(() => undefined),
-          () => Promise.resolve("interruptFailed" as const)
-        )
-      const settled = capturedCompletion?.promise.then(() => "settled" as const)
-      const outcome = await Promise.race([
-        ...(settled === undefined ? [] : [settled]),
-        interruptFailed,
-        timedOut
-      ])
-      if (timeout !== undefined) clearTimeout(timeout)
-      await questionsCancelled
+const interruptTurn = (session: ClaudeSession): TurnStop => ({
+  request: () => session.q.interrupt(),
+  keepsProcess: true,
+  retired: { runtimeState: "retire" }
+})
 
-      if (
-        outcome !== "interruptFailed" &&
-        (outcome === "settled" || !session.turnActive || session.turnId !== capturedTurnId) &&
-        !session.streamEnded
-      ) {
-        await capturedCompletion?.promise
-        return { runtimeState: "reusable" }
-      }
+const pauseForRestart = (session: ClaudeSession): Promise<CancelResult> => {
+  const endSession = session.resumesInterruptedTurns ? endSessionRequest(session.q) : undefined
+  if (endSession === undefined) return stopTurn(session, interruptTurn)
 
-      session.retired = true
-      failDeferredPrompts(session, retiredError())
-      if (session.backgroundTasks.size > 0) {
-        session.backgroundTasks.clear()
-        await emitBackgroundTasks(session)
-      }
-      await pauseGoalForForcedCancellation(session)
-      if (session.turnActive && session.turnId === capturedTurnId) {
-        await finishActiveTurn(session, "cancelled")
-      } else {
-        await capturedCompletion?.promise
-      }
-      session.input.end()
-      session.abort.abort()
-      return { runtimeState: "retire" }
-    })()
-    session.cancelInFlight = cancellation
-    try {
-      return await cancellation
-    } finally {
-      if (session.cancelInFlight === cancellation) {
-        session.cancelInFlight = undefined
-      }
+  return stopTurn(session, () => ({
+    request: endSession,
+    keepsProcess: false,
+    retired: { runtimeState: "retire", resumesInterruptedTurn: true }
+  }))
+}
+
+const stopTurn = async (
+  session: ClaudeSession,
+  stopFor: (session: ClaudeSession) => TurnStop
+): Promise<CancelResult> => {
+  if (session.cancelInFlight !== undefined) return session.cancelInFlight
+  const cancellation = (async (): Promise<CancelResult> => {
+    if (!session.turnActive && session.pendingUserCommands > 0) {
+      await ensureObservedTurnStarted(session)
     }
-  }),
+    const capturedTurnId = session.turnId
+    const capturedCompletion = session.turnCompletion
+    const questionsCancelled = cancelClaudePendingQuestions(session)
+    if (!session.turnActive) {
+      await questionsCancelled
+      await capturedCompletion?.promise
+      return { runtimeState: "reusable" }
+    }
+
+    const stop = stopFor(session)
+    session.interruptRequested = true
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const timedOut = new Promise<"timeout">((resolvePromise) => {
+      timeout = setTimeout(() => resolvePromise("timeout"), CANCEL_GRACE_MS)
+    })
+    const stopFailed = Promise.resolve()
+      .then(stop.request)
+      .then(
+        () => new Promise<never>(() => undefined),
+        () => Promise.resolve("stopFailed" as const)
+      )
+    const settled = capturedCompletion?.promise.then(() => "settled" as const)
+    const outcome = await Promise.race([
+      ...(settled === undefined ? [] : [settled]),
+      stopFailed,
+      timedOut
+    ])
+    if (timeout !== undefined) clearTimeout(timeout)
+    await questionsCancelled
+
+    if (
+      stop.keepsProcess &&
+      outcome !== "stopFailed" &&
+      (outcome === "settled" || !session.turnActive || session.turnId !== capturedTurnId) &&
+      !session.streamEnded
+    ) {
+      await capturedCompletion?.promise
+      return { runtimeState: "reusable" }
+    }
+
+    session.retired = true
+    failDeferredPrompts(session, retiredError())
+    if (session.backgroundTasks.size > 0) {
+      session.backgroundTasks.clear()
+      await emitBackgroundTasks(session)
+    }
+    await pauseGoalForForcedCancellation(session)
+    if (session.turnActive && session.turnId === capturedTurnId) {
+      await finishActiveTurn(session, "cancelled")
+    } else {
+      await capturedCompletion?.promise
+    }
+    session.input.end()
+    session.abort.abort()
+    return outcome === "stopFailed" ? { runtimeState: "retire" } : stop.retired
+  })()
+  session.cancelInFlight = cancellation
+  try {
+    return await cancellation
+  } finally {
+    if (session.cancelInFlight === cancellation) {
+      session.cancelInFlight = undefined
+    }
+  }
+}
+
+export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle => ({
+  cancel: adapterPromise("cancel", () => stopTurn(session, interruptTurn)),
+  pauseForRestart: adapterPromise("pauseForRestart", () => pauseForRestart(session)),
   close: adapterPromise("close", async () => {
     session.retired = true
     failDeferredPrompts(session, retiredError())

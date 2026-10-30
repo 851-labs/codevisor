@@ -3,6 +3,7 @@ import type { Options as ClaudeOptions } from "@anthropic-ai/claude-agent-sdk"
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { claudeStartOptions } from "./models.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
+import { withoutRestartResumeEnv } from "./restart-resume.js"
 import { InputQueue, type ClaudeQuery, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { pushResumeAfterInterruptionPrompt } from "./turn-recovery.js"
 
@@ -40,6 +41,7 @@ export const resumeSessionAfterStreamDeath = async (
     forkSession: _forkSession,
     model: _startModel,
     settings: startSettings,
+    env: startEnv,
     ...resumeOptions
   } = deps.options
   const { "session-id": _fresh, ...keptArgs } = startArgs ?? {}
@@ -51,6 +53,7 @@ export const resumeSessionAfterStreamDeath = async (
     prompt: nextInput,
     options: {
       ...resumeOptions,
+      ...(startEnv === undefined ? {} : { env: withoutRestartResumeEnv(startEnv) }),
       ...(Object.keys(keptArgs).length === 0 ? {} : { extraArgs: keptArgs }),
       ...claudeStartOptions({
         effort: session.currentEffort,

@@ -21,6 +21,7 @@ export interface CodexClient {
   onClose: (handler: (error: Error) => void) => void
   close: () => void
   closeAndWait?: () => Promise<void>
+  killAndWait?: () => Promise<void>
   authRejected?: () => boolean
 }
 
@@ -82,9 +83,18 @@ export const spawnCodexClient: CodexConnector = async (request) => {
     })()
     return closing
   }
+  const killAndWait = async (): Promise<void> => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()))
+      child.kill("SIGKILL")
+      await exited
+    }
+    await closeAndWait()
+  }
   return {
     ...client,
     closeAndWait,
+    killAndWait,
     close: () => {
       void closeAndWait().catch(() => child.kill())
     }

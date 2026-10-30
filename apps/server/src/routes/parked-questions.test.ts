@@ -6,7 +6,7 @@ import { TranscriptPage } from "@codevisor/api"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { restartNotice } from "../restart-notice.js"
+import { updateResumeNotice } from "../restart-notice.js"
 import { pauseForUpdate, restartStatePaths } from "../restart-test-support.js"
 import type { RunningCodevisorServer } from "../server.js"
 import { askedQuestion, planApproval } from "../test-support-questions.js"
@@ -154,7 +154,7 @@ describe("questions parked by an update restart", () => {
     expect(agents.prompts[1]?.[1]).toBe(
       [
         parkedAnswerPrompt({ sessionUpdate: "question", ...askedQuestion }, answered),
-        restartNotice(["Dev server"])
+        updateResumeNotice(["Dev server"])
       ].join("\n\n")
     )
   })

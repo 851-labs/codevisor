@@ -11,6 +11,19 @@ export const restartNotice = (stoppedTasks: ReadonlyArray<string>): string =>
     "</codevisor-event>"
   ].join("\n")
 
+export const updateResumeNotice = (stoppedTasks: ReadonlyArray<string>): string =>
+  [
+    noticeOpening,
+    "You were paused while Codevisor updated. Nothing you were doing was rejected — continue your work from where you left off. Any background processes you had running have probably stopped; restart any you still need.",
+    ...stoppedTaskLines(stoppedTasks),
+    "</codevisor-event>"
+  ].join("\n")
+
+const stoppedTaskLines = (stoppedTasks: ReadonlyArray<string>): ReadonlyArray<string> =>
+  stoppedTasks.length === 0
+    ? []
+    : ["These background tasks stopped:", ...stoppedTasks.map((task) => `- ${task}`)]
+
 export const isRestartNotice = (item: PromptQueueItem): boolean =>
   item.origin === "system" && item.text.startsWith(noticeOpening)
 

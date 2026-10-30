@@ -7,6 +7,7 @@ import {
 } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
+import { updateResumeNotice } from "../restart-notice.js"
 import { pauseForUpdate, restartStatePaths, stopServer } from "../restart-test-support.js"
 import {
   archiveSessionViaWorkspace,
@@ -46,9 +47,14 @@ const subscribe = async (running: Running, subscriberId: string, body: Record<st
 const prompt = (running: Running, sessionId: string, text: string) =>
   post(running, `/v1/sessions/${sessionId}/prompt`, { text })
 
+const isRestartNoticeText = (input: string): boolean =>
+  input.startsWith('<codevisor-event type="session.restarted">')
+
 const eventPrompts = (running: Running) =>
   running.agents.prompts.flatMap(([, input]) =>
-    typeof input === "string" && input.startsWith("<codevisor-event") ? [{ input }] : []
+    typeof input === "string" && input.startsWith("<codevisor-event") && !isRestartNoticeText(input)
+      ? [{ input }]
+      : []
   )
 
 const holdTurn = async (running: Running, sessionId: string) => {
@@ -344,7 +350,7 @@ describe("session event subscriptions", () => {
 
     expect(running.agents.prompts.map(([, input]) => input)).toEqual([
       "prompt until cancelled",
-      "continue",
+      updateResumeNotice([]),
       expect.stringContaining(`type="session.turn_ended" agentId="${worker}"`)
     ])
     expect(eventPrompts(restarted)[0]!.input).toContain('stopReason="end_turn"')
