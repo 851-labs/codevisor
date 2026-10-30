@@ -86,6 +86,9 @@ impl NetEndpoint {
         let mut builder = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::from_bytes(&config.secret_key))
             .alpns(config.alpns.clone());
+        if let Ok(tuning) = std::env::var("CODEVISOR_NET_MEDIA_TUNING") {
+            builder = builder.transport_config(media_lab_tuning(&tuning)?);
+        }
 
         let relays = config
             .relays
@@ -363,4 +366,22 @@ fn transport_addr_string(addr: &iroh::TransportAddr) -> String {
         iroh::TransportAddr::Relay(url) => url.to_string(),
         other => format!("{other:?}"),
     }
+}
+
+// Throwaway (851-3768 transport lab): media datagram tuning, picked by the
+// CODEVISOR_NET_MEDIA_TUNING environment variable: `<cc>-<send buffer KiB>`.
+fn media_lab_tuning(tuning: &str) -> Result<iroh::endpoint::QuicTransportConfig> {
+    use noq_proto::congestion::{Bbr3Config, CubicConfig, NewRenoConfig};
+    let (cc, buffer) = tuning.split_once('-').ok_or_else(|| anyhow!("bad tuning {tuning}"))?;
+    let buffer: usize = buffer.parse::<usize>()? * 1024;
+    let factory: Arc<dyn iroh::endpoint::ControllerFactory + Send + Sync> = match cc {
+        "cubic" => Arc::new(CubicConfig::default()),
+        "bbr3" => Arc::new(Bbr3Config::default()),
+        "newreno" => Arc::new(NewRenoConfig::default()),
+        other => return Err(anyhow!("unknown congestion controller {other}")),
+    };
+    Ok(iroh::endpoint::QuicTransportConfig::builder()
+        .datagram_send_buffer_size(buffer)
+        .congestion_controller_factory(factory)
+        .build())
 }

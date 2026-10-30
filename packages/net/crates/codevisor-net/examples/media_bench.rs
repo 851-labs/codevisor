@@ -186,7 +186,7 @@ fn constant(size: usize, mbps: f64, seconds: f64) -> Vec<(Duration, usize)> {
 }
 
 fn keyframes(background_mbps: f64, burst_bytes: usize, burst_mbps: f64, period: f64, seconds: f64) -> Vec<(Duration, usize)> {
-    const SIZE: usize = 1100;
+    const SIZE: usize = 1200;
     let mut schedule = constant(SIZE, background_mbps, seconds);
     let interval = SIZE as f64 * 8.0 / (burst_mbps * 1e6);
     let mut burst_start = 0.5;
@@ -249,7 +249,7 @@ async fn run(peer: String, addr: String, udp: String) -> Result<()> {
     ];
     let mut test = 0;
 
-    for (label, wait_until) in [("fresh connection", Duration::ZERO), ("after path MTU discovery", Duration::from_secs(20))] {
+    for (label, wait_until) in [("after 3 s", Duration::from_secs(3))] {
         if let Some(wait) = wait_until.checked_sub(dialed.elapsed()) {
             tokio::time::sleep(wait).await;
         }
@@ -266,11 +266,14 @@ async fn run(peer: String, addr: String, udp: String) -> Result<()> {
         }
     }
 
-    let rows: [(String, Vec<(Duration, usize)>); 4] = [
-        ("1100 B at 5 Mbps".into(), constant(1100, 5.0, 6.0)),
-        ("1100 B at 20 Mbps".into(), constant(1100, 20.0, 6.0)),
-        ("1100 B at 40 Mbps".into(), constant(1100, 40.0, 6.0)),
-        ("4 Mbps + 1 MiB keyframe at 60 Mbps every 2 s".into(), keyframes(4.0, 1 << 20, 60.0, 2.0, 8.0)),
+    let rows: Vec<(String, Vec<(Duration, usize)>)> = vec![
+        ("1200 B at 8 Mbps".into(), constant(1200, 8.0, 5.0)),
+        ("1200 B at 45 Mbps".into(), constant(1200, 45.0, 5.0)),
+        ("1200 B at 150 Mbps".into(), constant(1200, 150.0, 5.0)),
+        ("1200 B at 300 Mbps".into(), constant(1200, 300.0, 5.0)),
+        ("8 Mbps + 256 KiB frame at 300 Mbps every 100 ms".into(), keyframes(8.0, 256 << 10, 300.0, 0.1, 6.0)),
+        ("8 Mbps + 1 MiB keyframe at 300 Mbps every 1 s".into(), keyframes(8.0, 1 << 20, 300.0, 1.0, 6.0)),
+        ("8 Mbps + 1 MiB keyframe at 900 Mbps every 1 s".into(), keyframes(8.0, 1 << 20, 900.0, 1.0, 6.0)),
     ];
     for (label, schedule) in &rows {
         println!("\n{label}");

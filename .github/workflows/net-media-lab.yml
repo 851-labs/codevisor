@@ -1,0 +1,106 @@
+name: Net Media Lab (851-3768, throwaway)
+
+on:
+  push:
+    branches: [lab/851-3768-transport-lab]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-sharing-bench
+  cancel-in-progress: false
+
+env:
+  HOST_IP: 192.168.10.78
+  VARIANTS: "cubic-1024 cubic-128 bbr3-128"
+  CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
+jobs:
+  host:
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/setup-rust
+      - name: Environment
+        run: |
+          uptime; /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate || true
+          ifconfig en0 | grep -E "inet |media" || true
+      - name: Build
+        working-directory: packages/net
+        run: cargo build --release --example media_bench
+      - name: Serve every variant until the viewer is done
+        working-directory: packages/net
+        run: |
+          set -euo pipefail
+          bin=target/release/examples/media_bench
+          mkdir -p "$RUNNER_TEMP/lab"; : > "$RUNNER_TEMP/lab/ids.txt"
+          port=47200; pids=()
+          for variant in $VARIANTS; do
+            CODEVISOR_NET_MEDIA_TUNING="$variant" "$bin" serve --bind "0.0.0.0:$port" --udp-echo "0.0.0.0:$((port + 1))" \
+              > "$RUNNER_TEMP/lab/serve-$variant.log" 2>&1 &
+            pids+=($!)
+            for _ in $(seq 50); do grep -q '^endpoint ' "$RUNNER_TEMP/lab/serve-$variant.log" && break; sleep 0.2; done
+            id="$(sed -n 's/^endpoint \([0-9a-f]*\) .*/\1/p' "$RUNNER_TEMP/lab/serve-$variant.log")"
+            echo "$variant $id $port $((port + 1))" >> "$RUNNER_TEMP/lab/ids.txt"
+            port=$((port + 10))
+          done
+          cat "$RUNNER_TEMP/lab/ids.txt"
+          (cd "$RUNNER_TEMP/lab" && python3 -m http.server 47290 --bind 0.0.0.0 > http.log 2>&1) &
+          http=$!
+          # The viewer connects here once it has finished; give up after 20 minutes.
+          (sleep 1200; kill "${pids[@]}" "$http" 2>/dev/null) & guard=$!
+          nc -l 47291 > /dev/null || true
+          kill "${pids[@]}" "$http" "$guard" 2>/dev/null || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: net-media-lab-tamale
+          path: ${{ runner.temp }}/lab
+
+  viewer:
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/setup-rust
+      - name: Environment
+        run: |
+          uptime; ping -c 20 -i 0.2 "$HOST_IP" | tail -2
+      - name: Build
+        working-directory: packages/net
+        run: cargo build --release --example media_bench
+      - name: Run every variant against tamale
+        working-directory: packages/net
+        run: |
+          set -euo pipefail
+          bin=target/release/examples/media_bench
+          mkdir -p "$RUNNER_TEMP/lab"
+          for _ in $(seq 240); do
+            curl -sf "http://$HOST_IP:47290/ids.txt" -o "$RUNNER_TEMP/lab/ids.txt" && [[ $(wc -l < "$RUNNER_TEMP/lab/ids.txt") -ge 3 ]] && break
+            sleep 5
+          done
+          cat "$RUNNER_TEMP/lab/ids.txt"
+          while read -r variant id port udp; do
+            echo "::group::$variant"
+            CODEVISOR_NET_MEDIA_TUNING="$variant" "$bin" run --peer "$id" --addr "$HOST_IP:$port" --udp "$HOST_IP:$udp" \
+              2>&1 | tee "$RUNNER_TEMP/lab/run-$variant.txt" || true
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/lab/ids.txt"
+          for variant in $VARIANTS; do
+            { echo "## $variant"; echo '```'; cat "$RUNNER_TEMP/lab/run-$variant.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Tell tamale we're done
+        if: always()
+        run: echo done | nc -w 2 "$HOST_IP" 47291 || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: net-media-lab-croissant
+          path: ${{ runner.temp }}/lab
