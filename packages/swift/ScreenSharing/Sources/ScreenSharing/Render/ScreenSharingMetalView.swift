@@ -85,7 +85,8 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     metrics.label("maximumDrawableCount", String(Self.maximumDrawableCount))
     metrics.label("frameSelection", "before drawable acquisition")
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
-    metrics.label("drawableAcquisitionPath", Self.drawableAcquisitionPath(preparer: preparer != nil, pacedByDisplayLink))
+    metrics.label(
+      "drawableAcquisitionPath", Self.drawableAcquisitionPath(preparer: preparer != nil, pacedByDisplayLink))
     coordinator.bind { [weak self] in self?.draw() }
   }
 
