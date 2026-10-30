@@ -16,14 +16,14 @@ public struct PluginCapabilitySections: View {
         }
       }
     }
-    if !capabilities.events.isEmpty {
-      PluginListDisclosure("Events", count: capabilities.events.count) {
-        ForEach(capabilities.events) { PluginCapabilityRow(name: $0.name, detail: $0.description) }
-      }
-    }
     if !capabilities.skills.isEmpty {
       PluginListDisclosure("Skills", count: capabilities.skills.count) {
         ForEach(capabilities.skills) { PluginCapabilityRow(name: $0.name, detail: $0.description) }
+      }
+    }
+    if !capabilities.events.isEmpty {
+      PluginListDisclosure("Events", count: capabilities.events.count) {
+        ForEach(capabilities.events) { PluginCapabilityRow(name: $0.name, detail: $0.description) }
       }
     }
     if !capabilities.panes.isEmpty {

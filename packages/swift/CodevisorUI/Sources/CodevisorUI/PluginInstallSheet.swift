@@ -39,6 +39,7 @@ public struct PluginInstallSheet: View {
     let restriction = environment.pluginAccess.restriction(for: subject)
     return Form {
       PluginInstallSummary(entry: entry, client: client, subject: subject, restriction: restriction)
+      PluginCapabilitySections(capabilities: entry.capabilities)
       if !draft.fields.isEmpty {
         Section("Configuration") {
           ConfigFieldForm(draft: $draft)
@@ -91,7 +92,6 @@ private struct PluginInstallSummary: View {
       SheetHeaderCard(title: entry.name, subtitle: entry.description, subtitleLineLimit: nil) {
         PluginCatalogIcon(entry: entry, client: client, side: 40)
       }
-      if !entry.capabilities.isEmpty { PluginCapabilityChips(capabilities: entry.capabilities) }
       #if os(iOS)
         PluginAgeRatingRow(subject: subject)
       #endif

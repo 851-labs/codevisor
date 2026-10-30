@@ -43,16 +43,6 @@ struct PluginCatalogModelTests {
     #expect(model.visibleEntries(hiding: ["popular-co"]).map(\.id) == ["codevisor/tools"])
   }
 
-  @Test("Capability chips count each kind and skip the empty ones")
-  func capabilityCounts() {
-    let capabilities = ServerPluginCapabilities(
-      tools: [.init(name: "a")],
-      events: [.init(name: "e1"), .init(name: "e2")],
-      panes: [.init(type: "p", title: "P", resourceUri: "ui://p")])
-
-    #expect(PluginCapabilityCount.counts(in: capabilities).map(\.title) == ["1 tool", "2 events", "1 pane"])
-  }
-
   private static func client(_ transport: CatalogTransport) -> CodevisorServerClient {
     CodevisorServerClient(config: CodevisorServerConfig(requestTransport: transport))
   }
