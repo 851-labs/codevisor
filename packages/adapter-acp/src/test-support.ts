@@ -60,6 +60,8 @@ export class FakeConnection implements AcpAgentConnection {
   readonly configs: Array<readonly [string, string, string]> = []
   closeCount = 0
   failClose = false
+  processExited = false
+  readonly exited = (): boolean => this.processExited
   canLoadSession?: boolean
   agentInfo?: {
     readonly name?: string

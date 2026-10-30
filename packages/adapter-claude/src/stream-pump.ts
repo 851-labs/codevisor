@@ -1,5 +1,5 @@
 import type { Options as ClaudeOptions } from "@anthropic-ai/claude-agent-sdk"
-import { runtimeError } from "@codevisor/agent-runtime"
+import { redactSecrets, runtimeError } from "@codevisor/agent-runtime"
 
 import type { ClaudeQuery, ClaudeQueryFn, ClaudeSession } from "./session.js"
 import { applyStreamMessage } from "./stream-messages.js"
@@ -33,9 +33,9 @@ export const makeStreamPump = (session: ClaudeSession, deps: StreamPumpDeps): St
       for await (const message of query) applyStreamMessage(session, message, readFile)
     } catch (cause) {
       streamFailure = streamFailureText(cause)
-      if (isIdle(session)) failIdleSession(session, cause, streamFailure)
+      if (isIdle(session)) failIdlePrompts(session, cause)
     } finally {
-      if (session.q === query) endStream(session)
+      if (session.q === query) endStream(session, streamFailure)
       if (endedMidTurn(session, query)) {
         if (session.interruptRequested) {
           await finishActiveTurn(session, "cancelled")
@@ -48,9 +48,21 @@ export const makeStreamPump = (session: ClaudeSession, deps: StreamPumpDeps): St
   return pump
 }
 
-const endStream = (session: ClaudeSession): void => {
+const endStream = (session: ClaudeSession, failure: string | undefined): void => {
   session.streamEnded = true
+  if (!session.retired && !session.abort.signal.aborted) logProcessEnd(session, failure)
   if (session.runtimeState !== "idle") reportRuntimeState(session, "idle")
+}
+
+const logProcessEnd = (session: ClaudeSession, failure: string | undefined): void => {
+  console.error(
+    JSON.stringify({
+      event: "claude_process_ended",
+      sessionId: session.key,
+      turnActive: session.turnActive,
+      failure: failure === undefined ? null : redactSecrets(failure)
+    })
+  )
 }
 
 const streamFailureText = (cause: unknown): string =>
@@ -59,15 +71,10 @@ const streamFailureText = (cause: unknown): string =>
 const isIdle = (session: ClaudeSession): boolean =>
   !session.turnActive && !session.retired && session.startupFailure === undefined
 
-const failIdleSession = (session: ClaudeSession, cause: unknown, failure: string): void => {
+const failIdlePrompts = (session: ClaudeSession, cause: unknown): void => {
   session.pendingPrompt?.reject(runtimeError("prompt", cause))
   session.pendingPrompt = undefined
   failDeferredPrompts(session, runtimeError("prompt", cause))
-  void session.emit({
-    kind: "session.error",
-    payload: { message: failure },
-    subjectId: session.key
-  })
 }
 
 const endedMidTurn = (session: ClaudeSession, query: ClaudeQuery): boolean =>

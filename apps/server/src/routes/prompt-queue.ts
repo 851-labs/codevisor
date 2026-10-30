@@ -37,6 +37,7 @@ import {
   withAppContexts,
   type AppContextPrompt
 } from "./prompt-app-context.js"
+import { logPromptFailure } from "./prompt-failures.js"
 import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { answeredPendingQuestion } from "./question-replies.js"
@@ -462,6 +463,7 @@ const runPromptInBackground = async (
     await run(services.agents.prompt(agentSession.sessionId, prompt.input))
     await markAppContextsDelivered(services, sessionId, prompt.delivered)
   } catch (cause) {
+    logPromptFailure(sessionId, cause)
     const signedOut = isAuthenticationFailure(cause)
     if (signedOut) {
       const session = await run(services.db.getSessionSummary(sessionId))

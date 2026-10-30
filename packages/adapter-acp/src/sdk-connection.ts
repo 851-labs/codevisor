@@ -120,7 +120,11 @@ export const sdkConnection = (
   stderr: () => string,
   options: AcpSdkConnectionOptions = {}
 ): AcpAgentConnection => {
-  connection.closed.catch(() => undefined)
+  let closed = false
+  connection.closed.then(
+    () => (closed = true),
+    () => (closed = true)
+  )
   const terminate = options.terminate ?? (() => undefined)
   const promptCapabilities = options.promptCapabilities ?? {}
   const questions = options.questions
@@ -137,6 +141,7 @@ export const sdkConnection = (
   }
 
   const base: AcpAgentConnection = {
+    exited: () => closed,
     ...(options.canLoadSession === undefined ? {} : { canLoadSession: options.canLoadSession }),
     probeAuth: (cwd) =>
       adapterPromise("probeAuth", async () => {

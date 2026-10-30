@@ -96,25 +96,6 @@ describe("Claude session start", () => {
     }
   )
 
-  it("reports a stream failure between turns as a session error", async () => {
-    const fake = new FakeQuery()
-    const failed = Promise.withResolvers<RuntimeEvent>()
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      if (event.kind === "session.error") failed.resolve(event)
-    }
-    const created = run(makeProvider(fake).createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
-    const session = await created
-
-    fake.fail("socket closed")
-
-    expect(await failed.promise).toEqual({
-      kind: "session.error",
-      payload: { message: "socket closed" },
-      subjectId: session.metadata.sessionId
-    })
-  })
-
   it("reports Claude idle when its process stops while running", async () => {
     const fake = new FakeQuery()
     const events: Array<RuntimeEvent> = []
@@ -154,21 +135,43 @@ describe("Claude session start", () => {
     await expect(loading).rejects.not.toHaveProperty("conversationMissing")
   })
 
-  it("rejects a prompt once Claude has stopped, instead of waiting on it", async () => {
+  it("hands an idle Claude that exited back to the runtime, logging why without its secrets", async () => {
     const fake = new FakeQuery()
-    const failed = Promise.withResolvers<void>()
-    const emit = async (event: RuntimeEvent): Promise<void> => {
-      if (event.kind === "session.error") failed.resolve()
-    }
-    const created = run(makeProvider(fake).createSession(definition, "/tmp", emit))
+    const events: Array<RuntimeEvent> = []
+    const created = run(
+      makeProvider(fake).createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
     fake.push(initMessage())
     const session = await created
-    fake.fail("socket closed")
-    await failed.promise
+    const logged = Promise.withResolvers<string>()
+    const log = vi
+      .spyOn(console, "error")
+      .mockImplementation((line: string) => logged.resolve(line))
+    try {
+      expect(session.handle.exited?.()).toBe(false)
+      fake.fail(
+        new Error(
+          "Claude Code process terminated by signal SIGTERM. stderr: retrying with sk-ant-oat01-secret"
+        )
+      )
 
-    await expect(run(session.handle.prompt("hello"))).rejects.toThrow(
-      "Claude Code stopped unexpectedly."
-    )
+      expect(JSON.parse(await logged.promise)).toEqual({
+        event: "claude_process_ended",
+        sessionId: session.metadata.sessionId,
+        turnActive: false,
+        failure:
+          "Claude Code process terminated by signal SIGTERM. stderr: retrying with sk-ant-<redacted>"
+      })
+      expect(session.handle.exited?.()).toBe(true)
+      expect(events.filter((event) => event.kind === "session.error")).toEqual([])
+      await expect(run(session.handle.prompt("hello"))).rejects.toThrow(
+        "Claude Code stopped unexpectedly."
+      )
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it("starts without a model picker when Claude cannot list its models", async () => {

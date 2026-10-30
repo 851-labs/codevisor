@@ -141,6 +141,7 @@ const stopTurn = async (
 }
 
 export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle => ({
+  exited: () => session.streamEnded && !session.turnActive,
   cancel: adapterPromise("cancel", () => stopTurn(session, interruptTurn)),
   pauseForRestart: adapterPromise("pauseForRestart", () => pauseForRestart(session)),
   close: adapterPromise("close", async () => {

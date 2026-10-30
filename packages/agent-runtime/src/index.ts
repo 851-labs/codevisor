@@ -33,6 +33,7 @@ export { locateExecutableOnPath, locateHarnessBinary } from "./executable-locato
 export { binaryIdentity, makeVersionProber } from "./version-probe.js"
 export type { VersionProbeOptions, VersionProber, VersionProberOptions } from "./version-probe.js"
 export { clampFailureDetail, summarizeProcessFailure } from "./process-failure.js"
+export { redactSecrets } from "./redact-secrets.js"
 
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
   const core = makeAgentRuntimeCore(config)
@@ -249,6 +250,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           const existing = sessions.get(agentSessionId)
           if (
             existing !== undefined &&
+            existing.handle.exited?.() !== true &&
             existing.harnessId === harnessId &&
             existing.cwd === cwd &&
             existing.harnessAccountId === account?.id

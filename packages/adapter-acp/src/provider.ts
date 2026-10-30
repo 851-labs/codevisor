@@ -162,6 +162,7 @@ const acpSessionHandle = (
   account?: HarnessAccountContext
 ): AgentSessionHandle => ({
   ...(connection.canLoadSession === false ? { resumable: false } : {}),
+  ...(connection.exited === undefined ? {} : { exited: connection.exited }),
   prompt: (input) =>
     Effect.gen(function* () {
       if (account?.beforeTurn !== undefined) {

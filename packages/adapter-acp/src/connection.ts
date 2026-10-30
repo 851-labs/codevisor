@@ -99,6 +99,7 @@ export interface AcpAgentConnection {
     params: Record<string, unknown>
   ) => Effect.Effect<unknown, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
+  readonly exited?: () => boolean
   readonly agentInfo?: {
     readonly name?: string
     readonly version?: string
