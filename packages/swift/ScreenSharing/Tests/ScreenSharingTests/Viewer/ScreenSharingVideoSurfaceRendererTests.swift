@@ -8,7 +8,9 @@ import Testing
     let pane = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: product)
     var labels = product.snapshot().labels
     #expect(labels["renderPreparation"] == "off-main serial worker")
-    #expect(labels["drawableAcquisitionPath"] == "CAMetalLayer.nextDrawable on render worker, default timeout")
+    #expect(
+      labels["drawableAcquisitionPath"]
+        == "CAMetalDisplayLink drawable (frame latency 1), used until half the time to its refresh")
     #expect(labels["maximumDrawableCount"] == "3")
     #expect(labels["frameSelection"] == "before drawable acquisition")
     pane.stop()

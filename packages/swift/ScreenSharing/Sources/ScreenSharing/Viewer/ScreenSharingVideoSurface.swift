@@ -55,7 +55,7 @@
 
     public init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {
       metal = try ScreenSharingMetalView(
-        mailbox: mailbox, metrics: metrics, renderOnArrival: true, offMainPreparation: true)
+        mailbox: mailbox, metrics: metrics, renderOnArrival: true, offMainPreparation: true, pacedByDisplayLink: true)
       super.init(frame: .zero)
       addSubview(metal)
       cursorOverlay.isHidden = true

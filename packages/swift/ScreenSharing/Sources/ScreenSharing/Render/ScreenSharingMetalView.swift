@@ -19,13 +19,16 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
   private var preparer: (any ScreenSharingRenderPreparer)?
   #if os(macOS)
     private var offMainWorker: ScreenSharingMetalPreparer?
+    private var displayLink: ScreenSharingDisplayLink?
+    private var offeredDrawable = ScreenSharingOfferedDrawable<any CAMetalDrawable>()
   #endif
   private let renderOnArrival: Bool
+  private let pacedByDisplayLink: Bool
   private static let maximumDrawableCount = 3
 
   public init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool = false,
-    offMainPreparation: Bool = false
+    offMainPreparation: Bool = false, pacedByDisplayLink: Bool = false
   ) throws {
     #if !os(macOS)
       guard !offMainPreparation else { throw ScreenSharingError.invalid("Off-main preparation requires macOS.") }
@@ -33,12 +36,16 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     guard !offMainPreparation || renderOnArrival else {
       throw ScreenSharingError.invalid("Off-main preparation requires arrival-driven rendering.")
     }
+    guard !pacedByDisplayLink || offMainPreparation else {
+      throw ScreenSharingError.invalid("Display-link pacing requires off-main preparation.")
+    }
     guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
       throw ScreenSharingError.unavailable("Metal is unavailable.")
     }
     self.mailbox = mailbox
     self.metrics = metrics
     self.renderOnArrival = renderOnArrival
+    self.pacedByDisplayLink = pacedByDisplayLink
     coordinator = ScreenSharingRenderCoordinator(
       mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, redrawsOnDemand: offMainPreparation)
     let pipelines = try ScreenSharingMetalEncoder.Pipelines(device: device, shader: Self.shader)
@@ -78,10 +85,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     metrics.label("maximumDrawableCount", String(Self.maximumDrawableCount))
     metrics.label("frameSelection", "before drawable acquisition")
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
-    metrics.label(
-      "drawableAcquisitionPath",
-      preparer == nil
-        ? "MTKView.currentDrawable on main actor" : "CAMetalLayer.nextDrawable on render worker, default timeout")
+    metrics.label("drawableAcquisitionPath", Self.drawableAcquisitionPath(preparer: preparer != nil, pacedByDisplayLink))
     coordinator.bind { [weak self] in self?.draw() }
   }
 
@@ -91,7 +95,15 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     #if os(macOS)
       refreshObserver?.invalidate()
       refreshObserver = nil
+      stopDisplayLink()
     #endif
+  }
+
+  private static func drawableAcquisitionPath(preparer: Bool, _ pacedByDisplayLink: Bool) -> String {
+    guard preparer else { return "MTKView.currentDrawable on main actor" }
+    return pacedByDisplayLink
+      ? "CAMetalDisplayLink drawable (frame latency 1), used until half the time to its refresh"
+      : "CAMetalLayer.nextDrawable on render worker, default timeout"
   }
 
   required init(coder: NSCoder) { fatalError("Use init(mailbox:metrics:).") }
@@ -122,11 +134,13 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       screenParametersObserver = nil
       refreshObserver?.invalidate()
       refreshObserver = nil
+      stopDisplayLink()
       guard let window else { return }
       matchDisplayRefresh()
       if !coordinator.stopped {
         refreshObserver = ScreenSharingRefreshObserver(
           view: self, timeline: metrics.timeline, framesPerSecond: preferredFramesPerSecond)
+        startDisplayLink()
       }
       reportScreenHighDynamicRange()
       screenObserver = NotificationCenter.default.addObserver(
@@ -156,6 +170,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       guard rate != preferredFramesPerSecond else { return }
       preferredFramesPerSecond = rate
       refreshObserver?.follow(framesPerSecond: rate)
+      displayLink?.follow(framesPerSecond: rate)
       metrics.label("drawRate", "\(rate) per second on a \(refresh) Hz display")
     }
 
@@ -173,7 +188,37 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       guard offMainWorker != nil else { return }
       let size = backingDrawableSize
       guard size.width >= 1, size.height >= 1 else { return }
+      if pacedByDisplayLink, let metalLayer = layer as? CAMetalLayer, metalLayer.drawableSize != size {
+        metalLayer.drawableSize = size
+      }
       coordinator.setNeedsRedraw()
+    }
+
+    private func startDisplayLink() {
+      guard pacedByDisplayLink, let metalLayer = layer as? CAMetalLayer else { return }
+      displayLink = ScreenSharingDisplayLink(layer: metalLayer, framesPerSecond: preferredFramesPerSecond) {
+        [weak self] update in self?.offer(update)
+      }
+    }
+
+    private func stopDisplayLink() {
+      displayLink?.invalidate()
+      displayLink = nil
+      offeredDrawable.release()
+    }
+
+    private func offer(_ update: CAMetalDisplayLink.Update) {
+      guard !coordinator.stopped else { return }
+      let now = CACurrentMediaTime()
+      metrics.observe("displayLinkLead", milliseconds: (update.targetTimestamp - now) * 1000)
+      offeredDrawable.offer(update.drawable, now: now, target: update.targetTimestamp)
+      draw()
+    }
+
+    private func prepareOnOfferedDrawable(_ geometry: ScreenSharingRenderGeometry) {
+      guard let offMainWorker, let drawable = offeredDrawable.drawable(at: CACurrentMediaTime()) else { return }
+      let preparer = OfferedDrawablePreparer(worker: offMainWorker, drawable: drawable)
+      if coordinator.prepare(with: preparer, geometry: geometry) { offeredDrawable.release() }
     }
   #endif
 
@@ -184,10 +229,15 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       let size = backingDrawableSize
       guard size.width >= 1, size.height >= 1 else { metrics.increment("renderDeferredUntilLayout"); return }
       let clear = clearColor
-      coordinator.prepare(
-        with: preparer,
-        geometry: .init(
-          clearColor: SIMD4(clear.red, clear.green, clear.blue, clear.alpha), drawableSize: size))
+      let geometry = ScreenSharingRenderGeometry(
+        clearColor: SIMD4(clear.red, clear.green, clear.blue, clear.alpha), drawableSize: size)
+      #if os(macOS)
+        if pacedByDisplayLink {
+          prepareOnOfferedDrawable(geometry)
+          return
+        }
+      #endif
+      coordinator.prepare(with: preparer, geometry: geometry)
     } else {
       renderFrame()
     }
@@ -323,6 +373,16 @@ package final class TextureFrame: @unchecked Sendable {
       _ request: ScreenSharingPreparationRequest,
       completion: @escaping @Sendable (ScreenSharingPreparedSubmission?) -> Void
     ) {
+      prepare(request, on: nil, completion: completion)
+    }
+
+    /// Renders into `offered` when a display link supplied the drawable (the view then keeps the layer's size),
+    /// and into the layer's next drawable otherwise.
+    func prepare(
+      _ request: ScreenSharingPreparationRequest, on offered: (any CAMetalDrawable)?,
+      completion: @escaping @Sendable (ScreenSharingPreparedSubmission?) -> Void
+    ) {
+      let offered = UncheckedDrawable(drawable: offered)
       let encoder = encoder
       let metrics = metrics
       queue.async {
@@ -338,15 +398,20 @@ package final class TextureFrame: @unchecked Sendable {
             ScreenSharingMetalView.present(range, on: layer)
             metrics.label("renderDynamicRange", range.rawValue)
           }
-          if layer.drawableSize != request.geometry.drawableSize {
-            layer.drawableSize = request.geometry.drawableSize
-            metrics.increment("drawableSizeUpdatesOnWorker")
+          let drawable: (any CAMetalDrawable)?
+          if let offered = offered.drawable {
+            drawable = offered
+          } else {
+            if layer.drawableSize != request.geometry.drawableSize {
+              layer.drawableSize = request.geometry.drawableSize
+              metrics.increment("drawableSizeUpdatesOnWorker")
+            }
+            let acquisitionStarted = ScreenSharingMetrics.nowNs
+            drawable = layer.nextDrawable()
+            let acquisitionEnded = ScreenSharingMetrics.nowNs
+            metrics.observe(
+              "drawableAcquisition", milliseconds: Double(acquisitionEnded - acquisitionStarted) / 1_000_000)
           }
-          let acquisitionStarted = ScreenSharingMetrics.nowNs
-          let drawable = layer.nextDrawable()
-          let acquisitionEnded = ScreenSharingMetrics.nowNs
-          metrics.observe(
-            "drawableAcquisition", milliseconds: Double(acquisitionEnded - acquisitionStarted) / 1_000_000)
           guard let drawable else {
             metrics.increment("renderPreparationNoDrawable")
             return nil
@@ -371,6 +436,22 @@ package final class TextureFrame: @unchecked Sendable {
         }
         completion(prepared)
       }
+    }
+  }
+
+  private struct UncheckedDrawable: @unchecked Sendable {
+    let drawable: (any CAMetalDrawable)?
+  }
+
+  private struct OfferedDrawablePreparer: ScreenSharingRenderPreparer, @unchecked Sendable {
+    let worker: ScreenSharingMetalPreparer
+    let drawable: any CAMetalDrawable
+
+    func prepare(
+      _ request: ScreenSharingPreparationRequest,
+      completion: @escaping @Sendable (ScreenSharingPreparedSubmission?) -> Void
+    ) {
+      worker.prepare(request, on: drawable, completion: completion)
     }
   }
 #endif
