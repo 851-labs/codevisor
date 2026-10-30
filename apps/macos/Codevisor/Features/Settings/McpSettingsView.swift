@@ -40,7 +40,7 @@ struct McpSettingsView: View {
     .sheet(isPresented: $showingCustom) {
       McpServerEditorSheet { values in
         try await recordConsent(for: values)
-        await plugins.didInstall(try await localClient.createMcpServer(values.createBody), in: environment)
+        plugins.didInstall(try await localClient.createMcpServer(values.createBody), in: environment)
       }
     }
     .sheet(isPresented: $showingBlockedPublishers) {

@@ -17,7 +17,7 @@ struct PluginLinkRouting: ViewModifier {
     content
       .task(id: catalogId) { await open() }
       .sheet(item: $entry) { entry in
-        PluginInstallSheet(entry: entry) { values in try await install(entry, values: values) }
+        PluginInstallSheet(entry: entry, client: client) { values in try await install(entry, values: values) }
           .environment(environment)
       }
       .alert(

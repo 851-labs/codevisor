@@ -146,6 +146,30 @@ describe("MCP manager lifecycle", () => {
     await expect(manager.tools(created.id)).rejects.toThrow("is disabled")
   })
 
+  it("returns a server created to connect in the background before its handshake finishes", async () => {
+    const upstream = await workingUpstream()
+    const { manager } = await testManager()
+    const release = Promise.withResolvers<void>()
+    // oxlint-disable-next-line typescript/unbound-method
+    const connect = Client.prototype.connect
+    vi.spyOn(Client.prototype, "connect").mockImplementation(async function (
+      this: Client,
+      ...args
+    ) {
+      await release.promise
+      return connect.apply(this, args)
+    })
+
+    const created = await manager.create(
+      { authType: "none", name: "Tracker", transport: "http", url: upstream.url },
+      { connectInBackground: true }
+    )
+    release.resolve()
+
+    expect(created).toMatchObject({ connectionState: "disconnected", toolCount: 0 })
+    expect(await connectionStateSettles(manager, created.id, "connected")).toBe("connected")
+  })
+
   it("publishes visible record changes to subscribers", async () => {
     const upstream = await workingUpstream()
     const { manager } = await testManager()

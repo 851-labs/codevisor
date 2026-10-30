@@ -95,7 +95,7 @@ export const makeMcpServerOperations = (
     return (await run(config.db.listMcpServers)).map(publicServer)
   }
 
-  const create: McpManager["create"] = async (request) => {
+  const create: McpManager["create"] = async (request, options = {}) => {
     await builtinsReady
     validateRequest(request)
     let authType: McpAuthType
@@ -133,11 +133,18 @@ export const makeMcpServerOperations = (
       })
     )
     emitServerChanged(saved.id)
-    if (saved.enabled && authType !== "oauth") {
-      await connect(saved.id).catch(() => undefined)
+    const connecting = connectCreated(saved.id, saved.enabled && authType !== "oauth")
+    if (options.connectInBackground === true) {
+      void connecting.catch(() => undefined)
+      return publicServer(saved)
     }
-    await refreshGatewayInventories()
+    await connecting
     return publicServer(await record(saved.id))
+  }
+
+  const connectCreated = async (id: string, connects: boolean): Promise<void> => {
+    if (connects) await connect(id).catch(() => undefined)
+    await refreshGatewayInventories()
   }
 
   const update: McpManager["update"] = async (id, request) => {

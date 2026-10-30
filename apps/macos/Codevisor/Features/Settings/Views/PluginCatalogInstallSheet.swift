@@ -7,11 +7,12 @@ struct PluginCatalogInstallSheet: View {
   let entry: ServerPluginCatalogEntry
   let catalog: PluginCatalogModel
   let plugins: PluginSettingsModel
+  let client: any CodevisorServerClienting
 
   var body: some View {
-    PluginInstallSheet(entry: entry) { values in
+    PluginInstallSheet(entry: entry, client: client) { values in
       let installed = try await catalog.install(entry, values: values, access: environment.pluginAccess)
-      await plugins.didInstall(installed, in: environment)
+      plugins.didInstall(installed, in: environment)
     }
     .environment(environment)
   }

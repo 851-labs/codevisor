@@ -15,11 +15,13 @@ final class PluginSettingsModel {
     return created
   }
 
-  func didInstall(_ server: ServerMcpServer, in environment: AppEnvironment) async {
-    await fleet.load(in: environment)
-    guard server.awaitsAuthorization else { return }
+  func didInstall(_ server: ServerMcpServer, in environment: AppEnvironment) {
+    Task {
+      await fleet.load(in: environment)
+      guard server.awaitsAuthorization else { return }
 
-    await beginOAuth(serverId: server.id, machineId: CodevisorMachine.local.id, in: environment)
+      await beginOAuth(serverId: server.id, machineId: CodevisorMachine.local.id, in: environment)
+    }
   }
 
   func beginOAuth(serverId: String, machineId: String, in environment: AppEnvironment) async {

@@ -32,6 +32,10 @@ public final class McpGlobalModel {
     entries.first { $0.name == name }
   }
 
+  public func entry(installedFrom catalogId: String) -> McpFleetEntry? {
+    entries.first { $0.serverByMachine.values.contains { $0.catalogId == catalogId } }
+  }
+
   public func rows(for entry: McpFleetEntry, in environment: AppEnvironment) -> [McpFleet.MachineRow] {
     state.rows(
       for: entry, sync: environment.configSync, machines: FleetMachineInfo.all(environment.machines))

@@ -37,7 +37,7 @@ public struct PluginSetupHost<AccountSheet: View>: View {
     )
     .task(id: refreshKey) { await refreshWhilePending() }
     .sheet(item: $model.installing) { entry in
-      PluginInstallSheet(entry: entry) { try await model.install(values: $0) }
+      PluginInstallSheet(entry: entry, client: client) { try await model.install(values: $0) }
     }
     .sheet(item: $model.addingAccount, onDismiss: refresh) { editing in
       if let accounts = model.accounts { accountSheet(editing, accounts) }

@@ -8,27 +8,27 @@ struct PluginCatalogScreen: View {
   @State private var catalog: PluginCatalogModel
   @State private var query = ""
   @State private var installTarget: ServerPluginCatalogEntry?
-  @State private var detailId: String?
+  @State private var openedPlugin: String?
   let client: any CodevisorServerClienting
-  let installedCatalogIds: Set<String>
-  let onInstalled: (ServerMcpServer) async -> Void
+  let fleet: McpGlobalModel
+  let onInstalled: (ServerMcpServer) -> Void
 
   init(
     client: any CodevisorServerClienting,
-    installedCatalogIds: Set<String>,
-    onInstalled: @escaping (ServerMcpServer) async -> Void
+    fleet: McpGlobalModel,
+    onInstalled: @escaping (ServerMcpServer) -> Void
   ) {
     _catalog = State(initialValue: PluginCatalogModel(client: client))
     self.client = client
-    self.installedCatalogIds = installedCatalogIds
+    self.fleet = fleet
     self.onInstalled = onInstalled
   }
 
   var body: some View {
     NavigationStack {
       PluginCatalogBrowser(
-        catalog: catalog, client: client, installedCatalogIds: installedCatalogIds,
-        onAdd: { installTarget = $0 }, onOpen: { detailId = $0.id }
+        catalog: catalog, client: client, installedCatalogIds: fleet.installedCatalogIds,
+        onAdd: { installTarget = $0 }, onOpen: { openedPlugin = fleet.entry(installedFrom: $0.id)?.name }
       )
       .navigationTitle("Plugins")
       .navigationBarTitleDisplayMode(.inline)
@@ -38,23 +38,15 @@ struct PluginCatalogScreen: View {
           Button("Done") { dismiss() }
         }
       }
-      .navigationDestination(item: $detailId) { id in
-        if let entry = catalog.entries.first(where: { $0.id == id }) {
-          PluginCatalogDetail(
-            entry: entry, client: client, isInstalled: installedCatalogIds.contains(id),
-            isInstalling: catalog.installing.contains(id)
-          ) {
-            installTarget = entry
-          }
-        }
+      .navigationDestination(item: $openedPlugin) { name in
+        McpPluginDetailScreen(entryName: name, model: fleet)
       }
       .task { await catalog.load() }
       .task { try? await environment.pluginAccess.refresh() }
       .onChange(of: query) { _, text in catalog.search(text) }
       .sheet(item: $installTarget) { entry in
-        PluginInstallSheet(entry: entry) { values in
-          let installed = try await catalog.install(entry, values: values, access: environment.pluginAccess)
-          await onInstalled(installed)
+        PluginInstallSheet(entry: entry, client: client) { values in
+          onInstalled(try await catalog.install(entry, values: values, access: environment.pluginAccess))
         }
         .environment(environment)
       }

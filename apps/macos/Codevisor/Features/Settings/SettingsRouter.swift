@@ -57,7 +57,6 @@ enum SettingsPaneRoute: Hashable {
   case project(ProjectGroup.ID)
   case sandbox(SandboxSettingsPage)
   case pluginCatalog
-  case pluginCatalogEntry(String)
   case plugin(String)
 }
 

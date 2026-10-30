@@ -48,8 +48,8 @@ struct McpSettingsScreen: View {
     .sheet(isPresented: $showingCatalog) {
       PluginCatalogScreen(
         client: environment.machines.client(for: authoringMachineId),
-        installedCatalogIds: model.installedCatalogIds,
-        onInstalled: { await didAdd($0, on: authoringMachineId) })
+        fleet: model,
+        onInstalled: { didAdd($0, on: authoringMachineId) })
     }
     .pluginErrorsAlert(model)
   }
@@ -72,18 +72,20 @@ struct McpSettingsScreen: View {
     environment.machines.statusByMachineId[machineId]?.supportsPlugins == true
   }
 
-  private func didAdd(_ created: ServerMcpServer, on machineId: String) async {
-    await model.load(in: environment)
-    guard created.awaitsAuthorization else { return }
+  private func didAdd(_ created: ServerMcpServer, on machineId: String) {
+    Task {
+      await model.load(in: environment)
+      guard created.awaitsAuthorization else { return }
 
-    await model.connect(serverId: created.id, on: machineId, in: environment)
+      await model.connect(serverId: created.id, on: machineId, in: environment)
+    }
   }
 
   private func add(_ values: McpFormValues) async throws {
     try await recordConsent(for: values)
     let created = try await environment.machines.client(for: authoringMachineId)
       .createMcpServer(values.createBody)
-    await didAdd(created, on: authoringMachineId)
+    didAdd(created, on: authoringMachineId)
   }
 
   private func recordConsent(for values: McpFormValues) async throws {

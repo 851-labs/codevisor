@@ -84,10 +84,17 @@ export interface McpServerIconSources {
   readonly websiteUrl?: string
 }
 
+export interface McpCreateOptions {
+  readonly connectInBackground?: boolean
+}
+
 export interface McpManager {
   readonly setBaseUrl: (url: string) => void
   readonly list: () => Promise<ReadonlyArray<McpServer>>
-  readonly create: (request: CreateMcpServerRequest) => Promise<McpServer>
+  readonly create: (
+    request: CreateMcpServerRequest,
+    options?: McpCreateOptions
+  ) => Promise<McpServer>
   readonly detectAuth: (url: string) => Promise<McpAuthDetection>
   readonly update: (id: string, request: UpdateMcpServerRequest) => Promise<McpServer>
   readonly staticSecrets: (id: string) => Promise<{

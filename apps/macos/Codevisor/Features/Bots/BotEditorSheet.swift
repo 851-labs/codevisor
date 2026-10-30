@@ -77,7 +77,10 @@ struct BotEditorSheet: View {
   }
 
   private var header: some View {
-    HStack(spacing: 12) {
+    SheetHeaderCard(
+      title: editor.trimmedName.isEmpty ? "New Bot" : editor.trimmedName, subtitle: subtitle,
+      isWorking: editor.isSaving
+    ) {
       Image(systemName: editor.symbolName)
         .font(.system(size: 20))
         .symbolRenderingMode(.monochrome)
@@ -85,22 +88,7 @@ struct BotEditorSheet: View {
         .frame(width: 40, height: 40)
         .background(Color.accentColor.gradient, in: .rect(cornerRadius: 9, style: .continuous))
         .contentTransition(.symbolEffect(.replace))
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(editor.trimmedName.isEmpty ? "New Bot" : editor.trimmedName)
-          .font(.headline)
-          .lineLimit(1)
-        Text(subtitle)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-      }
-      Spacer(minLength: 0)
-      if editor.isSaving {
-        ProgressView().controlSize(.small)
-      }
     }
-    .padding(.vertical, 4)
   }
 
   private var subtitle: String {

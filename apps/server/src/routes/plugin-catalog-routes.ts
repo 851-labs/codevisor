@@ -69,7 +69,7 @@ export const installCatalogPlugin = async (
   const installed = (await mcp.list()).find((server) => server.catalogId === entry.id)
   if (installed !== undefined) return installed
 
-  return mcp.create(creationFor(entry, values))
+  return mcp.create(creationFor(entry, values), { connectInBackground: true })
 }
 
 export const creationFor = (

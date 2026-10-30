@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PluginCatalogTile: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.openURL) private var openURL
   let entry: ServerPluginCatalogEntry
   let client: any CodevisorServerClienting
   let isInstalled: Bool
@@ -12,7 +13,7 @@ struct PluginCatalogTile: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      Button(action: onOpen) {
+      Button(action: isInstalled ? onOpen : onAdd) {
         HStack(spacing: 12) {
           PluginCatalogIcon(entry: entry, client: client, side: 36)
           Text(entry.name).lineLimit(1)
@@ -26,20 +27,24 @@ struct PluginCatalogTile: View {
         onOpen: onOpen)
     }
     .padding(.vertical, 6)
+    .contextMenu {
+      if let website { Button("Website") { openURL(website) } }
+    }
   }
+
+  private var website: URL? { entry.docsUrl.flatMap(URL.init(string:)) }
 
   private var isRestricted: Bool {
     environment.pluginAccess.restriction(for: PluginModerationSubject(catalogEntry: entry)) != nil
   }
 }
 
-struct PluginCatalogAddButton: View {
+private struct PluginCatalogAddButton: View {
   let isInstalled: Bool
   let isInstalling: Bool
   let isRestricted: Bool
   let onAdd: () -> Void
   let onOpen: () -> Void
-  var prominent = false
 
   var body: some View {
     if isInstalling {
@@ -51,12 +56,7 @@ struct PluginCatalogAddButton: View {
     }
   }
 
-  @ViewBuilder
   private func styled(_ button: Button<Text>) -> some View {
-    if prominent {
-      button.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
-    } else {
-      button.buttonStyle(.bordered).buttonBorderShape(.capsule)
-    }
+    button.buttonStyle(.bordered).buttonBorderShape(.capsule)
   }
 }
