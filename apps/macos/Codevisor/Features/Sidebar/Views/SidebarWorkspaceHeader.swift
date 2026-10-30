@@ -81,7 +81,6 @@ struct SidebarWorkspaceHeaderLabel: View {
   var body: some View {
     HStack(spacing: 4) {
       Text(title)
-        .truncationMode(.middle)
       if let machineName {
         Text("·")
           .foregroundStyle(.tertiary)

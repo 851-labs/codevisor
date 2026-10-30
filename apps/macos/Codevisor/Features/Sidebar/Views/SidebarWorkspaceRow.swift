@@ -213,7 +213,6 @@ struct SidebarWorkspaceRowLabel: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(Self.title(for: name))
           .lineLimit(1)
-          .truncationMode(.middle)
         if let subtitle {
           Text(subtitle)
             .font(.caption2)
