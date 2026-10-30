@@ -47,7 +47,7 @@ export const pushOneWaySync = async (
   firstHarness?: string
 ): Promise<OneWaySyncReport> => {
   const entries = await pushNamespaces(source, remote, firstHarness)
-  const failedSteps = await applyOnRemote(remote)
+  const failedSteps = await applyOnRemote(remote, applyPaths)
   const skillBlobs = await pushSkills(source, remote)
   return { entries, skillBlobs, failedSteps }
 }
@@ -67,9 +67,12 @@ const pushNamespaces = async (
   return pushed
 }
 
-const applyOnRemote = async (remote: SandboxRemote): Promise<ReadonlyArray<string>> => {
+export const applyOnRemote = async (
+  remote: SandboxRemote,
+  paths: ReadonlyArray<string>
+): Promise<ReadonlyArray<string>> => {
   const failed: string[] = []
-  for (const path of applyPaths) {
+  for (const path of paths) {
     await remote.request("POST", path).catch(() => failed.push(path))
   }
   return failed

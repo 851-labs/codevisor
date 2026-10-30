@@ -48,6 +48,7 @@ import {
   makeSandboxAdapters,
   makeSandboxConnections
 } from "./infra/sandbox-connections.js"
+import { makeSandboxCredentials } from "./infra/sandbox-credentials.js"
 import {
   appBundleOf,
   containerImages,
@@ -153,6 +154,7 @@ export const startSandboxes = (
         ...FIRST_AGENT_WAIT,
         sleep: (ms) => delay(ms)
       }),
+    credentials: makeSandboxCredentials({ db: options.db }, (line) => console.log(line)),
     bootstrap: bootstrapSettings(options.env),
     clock: { now: Date.now, sleep: (ms) => delay(ms) },
     newId: randomUUID,

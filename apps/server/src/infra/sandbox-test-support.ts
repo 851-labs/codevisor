@@ -16,6 +16,7 @@ import { makeServices } from "../test-support.js"
 import { pushRemainingAgents } from "./sandbox-agents.js"
 import type { SandboxCatalogDeps } from "./sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
+import { makeSandboxCredentials } from "./sandbox-credentials.js"
 import { makeSandboxLocalWorkspaces } from "./sandbox-local-workspaces.js"
 import type { SandboxManagement } from "./sandbox-manager.js"
 import { makeRetainedAccounts } from "./sandbox-retained-accounts.js"
@@ -229,6 +230,7 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
         intervalMs: 1,
         sleep: () => Promise.resolve()
       }),
+    credentials: makeSandboxCredentials({ db: services.db }, (line) => logs.push(line)),
     bootstrap: { installUrl: "https://example.test/install.sh" },
     clock: {
       now: () => clock,

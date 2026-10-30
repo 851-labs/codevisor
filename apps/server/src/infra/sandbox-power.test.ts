@@ -120,7 +120,9 @@ describe("waking a sandbox", () => {
     })
     expect(woken?.power).toBeUndefined()
     expect(harness.provider.machines.get("fake-1")?.state).toBe("running")
-    expect(harness.curls.at(-1)?.script).toContain('codevisor" start')
+    expect(harness.curls.findLast((curl) => !curl.script.includes("/v1/sync/"))?.script).toContain(
+      'codevisor" start'
+    )
   })
 
   it("stays waking until the sandbox is back online, and gives up waiting after three minutes", async () => {

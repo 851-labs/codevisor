@@ -23,6 +23,7 @@ import { startRequestedAgent } from "./sandbox-agent-start.js"
 import type { AgentOrder } from "./sandbox-agents.js"
 import { placementOf, runsElsewhere } from "./sandbox-catalog.js"
 import type { SandboxConnections } from "./sandbox-connections.js"
+import { refreshCredentials, type SandboxCredentials } from "./sandbox-credentials.js"
 import { makeHarnessChoices } from "./sandbox-harness-choices.js"
 import { makeSandboxLogBook } from "./sandbox-log-book.js"
 import {
@@ -62,7 +63,7 @@ import { failInterrupted, sweepConnection } from "./sandbox-sweep.js"
 import type { OneWaySyncReport } from "./sandbox-sync.js"
 import { waitForSandbox } from "./sandbox-wait.js"
 import { makeSandboxWaking } from "./sandbox-wake.js"
-import { isPlaced, teardownRecord, watchOne } from "./sandbox-watch.js"
+import { isPlaced, teardownRecord, watchOne, type PlacedMachine } from "./sandbox-watch.js"
 import { isoNow, placeWorkspace } from "./sandbox-workspace.js"
 
 export interface SandboxDeps {
@@ -93,6 +94,7 @@ export interface SandboxDeps {
   }
   readonly sync: (remote: SandboxRemote, firstHarness?: string) => Promise<OneWaySyncReport>
   readonly syncDeferred: (remote: SandboxRemote, order: AgentOrder) => Promise<void>
+  readonly credentials: SandboxCredentials
   readonly bootstrap: Omit<BootstrapRequest, "inviteCode" | "machineName">
   readonly clock: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> }
   readonly newId: () => string
@@ -259,6 +261,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
         await exclusively(machine.id, async () => {
           await watchOne(deps, machine, power)
           await waking.wakeIfRequested(machine.id)
+          await refreshIfRunning(deps, machine.id)
         })
       }
     },
@@ -360,7 +363,9 @@ const provision = async (
   setup.stage("sync")
   const remote = sandboxRemote(provider, created.providerMachineId)
   const firstHarness = planned.harness()
+  const credentials = await deps.credentials.version()
   const report = await deps.sync(remote, firstHarness)
+  deps.credentials.sent(initialId(record), credentials)
   deps.log(`Sandbox ${initialId(record)}: pushed ${report.entries} sync entries one way`)
   await record.advance({ state: "cloning" })
   checkpoint()
@@ -392,6 +397,14 @@ const installRemainingAgents = async (
     deps.log(`Installing the remaining agents failed: ${messageOf(cause)}`)
   })
 }
+
+const refreshIfRunning = async (deps: SandboxDeps, id: string): Promise<void> => {
+  const latest = await deps.records.get(id)
+  if (latest !== undefined && isRunning(latest)) await refreshCredentials(deps, latest)
+}
+
+const isRunning = (machine: Sandbox): machine is PlacedMachine =>
+  isPlaced(machine) && machine.power === undefined
 
 const harnessIdOf = (planned: PlannedProvision): Partial<Sandbox> => {
   const harnessId = planned.harness()

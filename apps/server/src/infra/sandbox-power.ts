@@ -9,6 +9,7 @@ import {
 } from "@codevisor/sandboxes"
 
 import { requireOwner } from "./sandbox-account.js"
+import { resendCredentials } from "./sandbox-credentials.js"
 import { connectionOf } from "./sandbox-profile-record.js"
 import type { PlacedMachine } from "./sandbox-watch.js"
 import { isoNow } from "./sandbox-workspace.js"
@@ -97,6 +98,7 @@ export const wakeMachine = async (
     const awake = await woken(deps, plan, machine)
     await deps.records.put({ ...awake, power: "waking" })
     await waitUntilOnline(deps, machine)
+    await resendCredentials(deps, awake)
     await deps.records.put({ ...awake, lastActiveAt: isoNow(deps) })
   } catch (cause) {
     deps.log(`Waking sandbox ${machine.name} failed: ${messageOf(cause)}`)
