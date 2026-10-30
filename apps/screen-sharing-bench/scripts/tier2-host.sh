@@ -39,6 +39,12 @@ start_share() {
 measure() {
   local scene=$1 system=$2 dir=$3 observed=$4
   local pids=() display=() player_display=()
+  local capture=""
+  if ((TIER2_CAPTURE)); then
+    sudo -n tcpdump -i en0 -n -s 160 -w "$dir/capture.pcap" "host $TIER2_VIEWER_IP and not port $TIER2_CLOCK_PORT and not port $TIER2_NETWORK_CHECK_PORT and not port $TIER2_FLOOR_PORT and not port $rendezvous_port" \
+      2>"$dir/capture.err" &
+    capture=$!
+  fi
   if [[ "$system" == codevisor-r1x2 ]]; then
     display=(--display "$shared_display")
     player_display=(--display-id "$shared_display")
@@ -61,6 +67,11 @@ measure() {
   pids+=($!)
   local failed=0
   for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
+  if [[ -n "$capture" ]]; then
+    sudo -n pkill -INT -P "$capture" tcpdump 2>/dev/null || sudo -n kill -INT "$capture" 2>/dev/null || true
+    wait "$capture" || true
+    gzip -f "$dir/capture.pcap" 2>/dev/null || true
+  fi
   return "$failed"
 }
 
@@ -91,10 +102,11 @@ stop_share() {
 
 run_one() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5
-  local name dir status=ok
+  local name dir status=ok since
   name=$(tier2_name "$@")
   dir="$results/$name"
   mkdir -p "$dir"
+  since=$(date '+%Y-%m-%d %H:%M:%S')
   rm -f "$work/ready" "$work/stop"
   share_job=""
   preflight "$dir/host-before-preflight.json" --allow-screen-sharing-from "$(viewer_addresses)" || status="host preflight failed"
@@ -109,6 +121,8 @@ run_one() {
   meet host "$name-done" || true
   stop_share
   preflight "$dir/host-after-preflight.json" --allow-screen-sharing-from "$(viewer_addresses)" || true
+  ((TIER2_CAPTURE)) && tier2_collect_log "$since" "$dir/host-log.txt.gz"
+  return 0
 }
 
 tier2_check_inputs

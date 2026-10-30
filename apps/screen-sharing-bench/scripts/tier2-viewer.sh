@@ -62,10 +62,11 @@ JSON
 
 run_one() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5
-  local name dir started_at status=ok
+  local name dir started_at status=ok since
   name=$(tier2_name "$@")
   dir="$results/$name"
   mkdir -p "$dir"
+  since=$(date '+%Y-%m-%d %H:%M:%S')
   rm -f "$work/ready" "$work/stop"
   started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   preflight "$dir/viewer-before-preflight.json" || status="viewer preflight failed"
@@ -81,6 +82,8 @@ run_one() {
   stop_system
   preflight "$dir/viewer-after-preflight.json" || true
   write_meta "$dir" "$index" "$scene" "$system" "$rep" "$observed" "$started_at"
+  ((TIER2_CAPTURE)) && tier2_collect_log "$since" "$dir/viewer-log.txt.gz"
+  return 0
 }
 
 tier2_check_inputs

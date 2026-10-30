@@ -11,6 +11,8 @@
 : "${TIER2_C4:=1}"
 : "${TIER2_RENDEZVOUS_S:=1800}"
 : "${TIER2_NETWORK:=N0}"
+: "${TIER2_SYSTEMS:=all}"
+: "${TIER2_CAPTURE:=0}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=100
@@ -34,23 +36,36 @@ say() {
   echo "$(date '+%H:%M:%S') $*" >&2
 }
 
+tier2_selected() {
+  [[ "$TIER2_SYSTEMS" == all || ",$TIER2_SYSTEMS," == *",$1,"* ]]
+}
+
 tier2_plan() {
-  local index=0 scene rep scenes
+  local index=0 scene rep scenes system
   IFS=, read -r -a scenes <<<"$TIER2_SCENES"
   for scene in "${scenes[@]}"; do
     for ((rep = 1; rep <= TIER2_FLOOR_REPS; rep++)); do
       index=$((index + 1)); echo "$index $scene floor $rep 1"
     done
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
-      index=$((index + 1)); echo "$index $scene apple-hp $rep 1"
-      index=$((index + 1)); echo "$index $scene codevisor-r1x2 $rep 1"
-      index=$((index + 1)); echo "$index $scene codevisor $rep 1"
+      for system in apple-hp codevisor-r1x2 codevisor; do
+        tier2_selected "$system" || continue
+        index=$((index + 1)); echo "$index $scene $system $rep 1"
+      done
     done
   done
   if ((TIER2_C4)) && [[ ",$TIER2_SCENES," == *,video,* ]]; then
     index=$((index + 1)); echo "$index video apple-hp 1 0"
     index=$((index + 1)); echo "$index video codevisor-r1x2 1 0"
   fi
+}
+
+# 851-3766 scratch: the unified log of the sharing processes since $1, gzipped into $2.
+tier2_collect_log() {
+  local since=$1 output=$2
+  log show --start "$since" --info --debug --style compact --predicate \
+    'process == "ScreensharingAgent" OR process == "screensharingd" OR process == "Screen Sharing" OR process == "VTEncoderXPCService" OR process == "VTDecoderXPCService" OR subsystem BEGINSWITH "com.apple.AVConference" OR subsystem BEGINSWITH "com.apple.VideoProcessing" OR subsystem BEGINSWITH "com.apple.screensharing" OR subsystem BEGINSWITH "com.apple.ScreenSharing"' \
+    2>/dev/null | gzip >"$output" || true
 }
 
 tier2_name() {

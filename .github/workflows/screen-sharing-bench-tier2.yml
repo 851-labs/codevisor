@@ -33,6 +33,16 @@ on:
         required: false
         default: N0
         type: string
+      systems:
+        description: "851-3766 scratch: comma-separated systems to run (apple-hp, codevisor-r1x2, codevisor) or all"
+        required: false
+        default: all
+        type: string
+      capture:
+        description: "851-3766 scratch: tcpdump headers on tamale and unified logs on both Macs"
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       scenes:
@@ -83,6 +93,8 @@ env:
   TIER2_C4: ${{ inputs.c4 && '1' || '0' }}
   TIER2_NETWORK: ${{ inputs.network }}
   TIER2_RENDEZVOUS_S: 1800
+  TIER2_SYSTEMS: ${{ inputs.systems || 'all' }}
+  TIER2_CAPTURE: ${{ inputs.capture && '1' || '0' }}
 
 jobs:
   host:
