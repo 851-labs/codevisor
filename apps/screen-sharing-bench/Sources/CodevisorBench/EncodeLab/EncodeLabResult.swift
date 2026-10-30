@@ -12,6 +12,7 @@ struct EncodeLabResult: Codable, Sendable {
   var prepareMs: BenchDistribution?
   var submitBlockMs: BenchDistribution?
   var lateSubmits = 0
+  var repeatFrames = 0
   var dropped = 0
   var megabitsPerSecond = 0.0
   var frameKilobytes: BenchDistribution?

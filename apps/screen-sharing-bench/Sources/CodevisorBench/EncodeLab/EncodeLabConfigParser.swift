@@ -57,6 +57,7 @@ enum EncodeLabConfigParser {
     case "preset": config.preset = value
     case "cq": config.constantQuality = try number(value, spec: spec)
     case "aq": config.spatialAdaptiveQP = try bool(value, spec: spec)
+    case "refine": config.refinements = try integer(value, in: 0...30, spec: spec)
     case "vcpin": config.vcpInput = try fourCharacterCode(value, spec: spec)
     case "ackms": config.ackMilliseconds = try integer(value, in: 0...500, spec: spec)
     default: return false

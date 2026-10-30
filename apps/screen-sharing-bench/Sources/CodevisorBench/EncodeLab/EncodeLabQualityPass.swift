@@ -18,7 +18,7 @@ struct EncodeLabQualityPass {
   func run() async throws -> Result {
     let source = try EncodeLabFrameSource(setup: setup, config: trace.config)
     let reference = try EncodeLabPixelTransfer(
-      width: trace.config.width, height: trace.config.height, format: kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
+      width: trace.config.width, height: trace.config.height, format: trace.config.referenceFormat)
     let comparer = try nativeComparer
     var screen = EncodeLabDecodedScreen(config: trace.config)
     var samples: [EncodeLabQualitySample] = []
@@ -41,7 +41,7 @@ struct EncodeLabQualityPass {
     get throws {
       guard setup.canvas.pixelWidth != trace.config.width else { return nil }
 
-      return try EncodeLabNativeComparer(canvas: setup.canvas)
+      return try EncodeLabNativeComparer(canvas: setup.canvas, format: trace.config.referenceFormat)
     }
   }
 

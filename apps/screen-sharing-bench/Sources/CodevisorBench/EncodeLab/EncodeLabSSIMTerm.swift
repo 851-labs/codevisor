@@ -9,8 +9,8 @@ struct EncodeLabSSIMTerm {
   let productXY: Float
 
   var value: Float {
-    let varianceX = squareX - meanX * meanX
-    let varianceY = squareY - meanY * meanY
+    let varianceX = max(0, squareX - meanX * meanX)
+    let varianceY = max(0, squareY - meanY * meanY)
     let covariance = productXY - meanX * meanY
     let numerator = (2 * meanX * meanY + Self.c1) * (2 * covariance + Self.c2)
     let denominator = (meanX * meanX + meanY * meanY + Self.c1) * (varianceX + varianceY + Self.c2)

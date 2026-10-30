@@ -8,6 +8,7 @@ final class EncodeLabFrameSource: @unchecked Sendable {
   private let converter: EncodeLabPixelTransfer?
   private let cutter: EncodeLabTileCutter
   private var previous: CVPixelBuffer?
+  private var lastChanged: Set<Int> = []
 
   init(setup: BenchSceneSetup, config: EncodeLabConfig) throws {
     self.config = config
@@ -28,10 +29,11 @@ final class EncodeLabFrameSource: @unchecked Sendable {
     try await generator.frame(forVersion: version).pixelBuffer
   }
 
-  func prepare(version: Int, forcing forced: Set<Int>) async throws -> EncodeLabPreparedFrame {
+  func prepare(version: Int, forcing forced: Set<Int>, repeating: Bool) async throws -> EncodeLabPreparedFrame {
     let picture = try await picture(forVersion: version)
-    let dirty = EncodeLabDirtyTiles.changed(from: previous, to: picture, tiles: config.tiles)
+    let dirty = repeating ? lastChanged : EncodeLabDirtyTiles.changed(from: previous, to: picture, tiles: config.tiles)
     previous = picture
+    lastChanged = dirty
     let encoded = config.encodedTiles(dirty: dirty, forced: forced)
     let input = try converter?.transfer(picture) ?? picture
     var inputs: [Int: CVPixelBuffer] = [:]

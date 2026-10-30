@@ -9,4 +9,5 @@ struct EncodeLabFrameEvent: Sendable {
   let encodedTiles: [Int]
   let dirtyTiles: Int
   let refresh: EncodeLabRefresh?
+  let repeats: Bool
 }

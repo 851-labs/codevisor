@@ -30,7 +30,8 @@ struct EncodeLabTimedPass {
   private func pace(source: EncodeLabFrameSource, encoder: any EncodeLabFrameEncoder) async throws
     -> [EncodeLabFrameEvent]
   {
-    var schedule = EncodeLabSchedule(timeline: setup.scene.timeline, ticks: ticks, refreshTick: refreshTick)
+    var schedule = EncodeLabSchedule(
+      timeline: setup.scene.timeline, ticks: ticks, refreshTick: refreshTick, refinements: config.refinements)
     let pacer = EncodeLabPacer()
     let startNs = ScreenSharingMetrics.nowNs + Self.startDelayNs
     var events: [EncodeLabFrameEvent] = []
@@ -38,7 +39,7 @@ struct EncodeLabTimedPass {
       let refresh = step.refreshes ? config.refreshKind : nil
       let forced: Set<Int> = refresh == nil ? [] : [config.tiles / 2]
       let preparingNs = ScreenSharingMetrics.nowNs
-      let prepared = try await source.prepare(version: step.version, forcing: forced)
+      let prepared = try await source.prepare(version: step.version, forcing: forced, repeating: step.repeats)
       let preparedNs = ScreenSharingMetrics.nowNs - preparingNs
       let scheduledNs = startNs + Int64(step.tick) * Self.tickNs
       let frame = events.count
@@ -49,7 +50,7 @@ struct EncodeLabTimedPass {
         EncodeLabFrameEvent(
           frame: frame, version: step.version, tick: step.tick, scheduledNs: scheduledNs, preparedNs: preparedNs,
           submittedNs: submission.submittedNs, returnedNs: submission.returnedNs, encodedTiles: prepared.inputs.keys.sorted(),
-          dirtyTiles: prepared.dirtyTiles.count, refresh: refresh))
+          dirtyTiles: prepared.dirtyTiles.count, refresh: refresh, repeats: step.repeats))
     }
     return events
   }

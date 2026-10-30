@@ -6,9 +6,8 @@ struct EncodeLabNativeComparer {
   private let reference: EncodeLabPixelTransfer
   private let upscaler: EncodeLabPixelTransfer
 
-  init(canvas: BenchSceneCanvas) throws {
+  init(canvas: BenchSceneCanvas, format: OSType) throws {
     self.canvas = canvas
-    let format = kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
     reference = try EncodeLabPixelTransfer(width: canvas.pixelWidth, height: canvas.pixelHeight, format: format)
     upscaler = try EncodeLabPixelTransfer(width: canvas.pixelWidth, height: canvas.pixelHeight, format: format)
   }

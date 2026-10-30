@@ -16,6 +16,7 @@ struct EncodeLabSummarizer {
     result.chroma = EncodeLabChromaFormat.of(trace.outputs.first { !$0.dropped }?.sample)
     result.prepareMs = BenchDistribution(measured.map { Double($0.preparedNs) / 1e6 })
     result.submitBlockMs = BenchDistribution(measured.map { Double($0.returnedNs - $0.submittedNs) / 1e6 })
+    result.repeatFrames = measured.filter(\.repeats).count
     result.lateSubmits = measured.filter { $0.submittedNs - $0.scheduledNs > Self.lateSubmitNs }.count
     result.dropped = outputs.joined().filter(\.dropped).count
     result.megabitsPerSecond = megabitsPerSecond(outputs.joined())

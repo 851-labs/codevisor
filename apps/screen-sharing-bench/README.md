@@ -348,7 +348,8 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   `size`, `tiles` (horizontal stripes, one session each, the bitrate split evenly), `skip` (encode only the tiles whose
   pixels changed), `ltr`, `yuv`, `speed`, `mfd` (`MaxFrameDelayCount`), `qpmax`, `qpmin`, `drl` (`<mbps>@<seconds>`),
   `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27), `aq`, `ackms` (the
-  simulated round trip before a reference token is acknowledged, 33 ms by default) and `vcpin`.
+  simulated round trip before a reference token is acknowledged, 33 ms by default), `refine` (after each change,
+  resubmit the unchanged frame up to N times, every other tick, so the encoder can sharpen it) and `vcpin`.
 - **`engine=vcp`** opens Apple's real-time encoder, VideoProcessing's private `VCPCompressionSession` with
   `Usage = 42` (851-3766), loaded with `dlopen`. It takes whole frames in `vcpin` (`444f` by default, Apple's capture
   format; it picks Main 4:4:4 only when the source attributes are 4:4:4 and not lossless-compressed), splits them into

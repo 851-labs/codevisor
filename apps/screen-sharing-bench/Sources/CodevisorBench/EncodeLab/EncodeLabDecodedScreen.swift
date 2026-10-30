@@ -44,13 +44,8 @@ struct EncodeLabDecodedScreen {
 
     guard let format = CMSampleBufferGetFormatDescription(sample) else { throw EncodeLabError.decoder("format", -1) }
 
-    let decoder = try EncodeLabDecoder(format: format, output: outputFormat)
+    let decoder = try EncodeLabDecoder(format: format, output: config.decodedFormat)
     decoders[tile] = decoder
     return decoder
-  }
-
-  private var outputFormat: OSType {
-    config.codec == .hevc444
-      ? kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
   }
 }
