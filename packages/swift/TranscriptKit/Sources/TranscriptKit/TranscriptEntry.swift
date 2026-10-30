@@ -79,6 +79,11 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
     return message
   }
 
+  public var eventPrompt: UserMessage? {
+    guard case let .user(message) = self, message.isEvent else { return nil }
+    return message
+  }
+
   public var hasRenderableTranscriptContent: Bool {
     switch self {
     case let .user(message):

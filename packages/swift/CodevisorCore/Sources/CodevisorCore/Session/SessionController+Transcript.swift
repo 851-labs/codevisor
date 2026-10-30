@@ -220,14 +220,15 @@ extension SessionController {
   public var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
 
   public func canRetryTurn(_ id: UUID) -> Bool {
-    guard !isSending else { return false }
-    return conversation.reversed().first(where: {
-      if case .assistant = $0 { return true }
-      return false
-    }).flatMap { item in
-      guard case let .assistant(message) = item else { return nil }
-      return message.id == id && (message.turn.retryable || message.turn.harnessFailure != nil)
-    } ?? false
+    guard !isSending,
+      case let .assistant(message)? = conversation.last(where: {
+        if case .assistant = $0 { return true }
+        return false
+      }),
+      message.id == id,
+      message.turn.retryable || message.turn.stopDetail != nil
+    else { return false }
+    return retryPrompt(before: id) != nil
   }
 
   public var waitingHarnessUpdateName: String? { model?.updateGateHarnessName }

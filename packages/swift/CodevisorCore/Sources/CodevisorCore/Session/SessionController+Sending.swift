@@ -192,16 +192,19 @@ extension SessionController {
 
   public func retryTurn(_ assistantID: UUID) async {
     guard let model, !model.isSending, !isConnecting, !isSubmitting else { return }
+    guard let prompt = retryPrompt(before: assistantID) else { return }
+    await model.retryResponse(to: prompt)
+  }
+
+  func retryPrompt(before assistantID: UUID) -> UserMessage? {
     guard
-      let assistantIndex = model.conversation.firstIndex(where: { item in
+      let assistantIndex = conversation.firstIndex(where: { item in
         if case let .assistant(message) = item { return message.id == assistantID }
         return false
       })
-    else { return }
-    guard
-      let prompt = model.conversation[..<assistantIndex].reversed().compactMap(\.userPrompt).first
-    else { return }
-    await model.retryResponse(to: prompt)
+    else { return nil }
+    let earlier = conversation[..<assistantIndex].reversed()
+    return earlier.compactMap(\.userPrompt).first ?? earlier.compactMap(\.eventPrompt).first
   }
 
   func createWorktree(showsSetupPhase: Bool) async -> String? {
