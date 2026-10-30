@@ -43,6 +43,16 @@ on:
         required: false
         default: false
         type: boolean
+      encode_lab:
+        description: Run only the encoder lab with these semicolon-separated configs (see encode-lab --help)
+        required: false
+        default: ""
+        type: string
+      encode_lab_options:
+        description: Other encode-lab options, such as --scenes scroll,typing --duration 8
+        required: false
+        default: ""
+        type: string
   pull_request:
     types: [opened, synchronize, reopened, closed]
     paths:
@@ -72,6 +82,7 @@ jobs:
       publish: ${{ steps.plan.outputs.publish }}
       tier2: ${{ steps.plan.outputs.tier2 }}
       calibration: ${{ steps.plan.outputs.calibration }}
+      encode_lab: ${{ steps.plan.outputs.encode_lab }}
     steps:
       - name: Plan the run
         id: plan
@@ -84,9 +95,10 @@ jobs:
           SOURCE: ${{ inputs.source }}
           TIER2_INPUT: ${{ inputs.tier2 }}
           CALIBRATION_INPUT: ${{ inputs.calibration }}
+          ENCODE_LAB: ${{ inputs.encode_lab }}
           NIGHTLY_TIER2: ${{ vars.SCREEN_SHARING_BENCH_NIGHTLY_TIER2 }}
         run: |
-          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false own_window=false
+          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false own_window=false encode_lab=false
           preflight="--quiet --allow-locked"
           pacific_cron="0 10 * * *"
           [[ "$(TZ=America/Los_Angeles date +%z)" == -0800 ]] && pacific_cron="0 11 * * *"
@@ -101,6 +113,7 @@ jobs:
               tier2=$TIER2_INPUT calibration=$CALIBRATION_INPUT
               [[ -n "$SCENES$NETWORKS" ]] && mode=custom trigger=adhoc
               [[ "$mode" == custom && "$SOURCE" == own-window ]] && own_window=true preflight="--quiet"
+              [[ -n "$ENCODE_LAB" ]] && run=false encode_lab=true
               ;;
           esac
           [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]] && publish=true
@@ -108,6 +121,7 @@ jobs:
           {
             echo "run=$run"; echo "mode=$mode"; echo "trigger=$trigger"; echo "preflight=$preflight"
             echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"; echo "own_window=$own_window"
+            echo "encode_lab=$encode_lab"
           } | tee -a "$GITHUB_OUTPUT"
 
   tier1:
@@ -240,3 +254,45 @@ jobs:
     if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
     uses: ./.github/workflows/screen-sharing-bench-tier2.yml
     secrets: inherit
+
+  encode-lab:
+    needs: plan
+    if: ${{ needs.plan.outputs.encode_lab == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    concurrency:
+      group: screen-sharing-bench
+      cancel-in-progress: false
+    env:
+      CONFIGS: ${{ inputs.encode_lab }}
+      OPTIONS: ${{ inputs.encode_lab_options }}
+    steps:
+      - name: Check the inputs
+        run: |
+          [[ "$CONFIGS" =~ ^[a-zA-Z0-9=,.;@_-]+$ ]] || { echo "encode_lab must be key=value configs"; exit 1; }
+          [[ "$OPTIONS" =~ ^[a-zA-Z0-9\ ,.-]*$ ]] || { echo "encode_lab_options must be plain options"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Wait for a quiet machine (C5)
+        run: |
+          mkdir -p "$RUNNER_TEMP/results"
+          apps/screen-sharing-bench/scripts/run-installed.sh preflight --quiet --allow-locked > "$RUNNER_TEMP/results/preflight.json"
+      - name: Run the encoder lab
+        run: |
+          read -ra options <<< "$OPTIONS"
+          caffeinate -d -i -s apps/screen-sharing-bench/scripts/run-installed.sh encode-lab --configs "$CONFIGS" \
+            ${options[@]+"${options[@]}"} --output "$RUNNER_TEMP/results/encode-lab.json" \
+            --markdown "$RUNNER_TEMP/results/encode-lab.md" > /dev/null
+          cat "$RUNNER_TEMP/results/encode-lab.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: encode-lab-tamale
+          path: ${{ runner.temp }}/results
+          retention-days: 90
