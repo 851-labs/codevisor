@@ -42,6 +42,9 @@ export const daytonaSdkClient = (credentials: DaytonaCredentials): DaytonaClient
       const sandbox = await daytona.get(sandboxId)
       await sandbox.start(startTimeoutSeconds)
     },
+    stop: async (sandboxId) => {
+      await daytona.stop(await daytona.get(sandboxId))
+    },
     remove: async (sandboxId) => {
       await (await lookup(sandboxId))?.delete()
     },
@@ -61,8 +64,7 @@ const createSandbox = (
 ): Promise<Sandbox> => {
   const lifecycle = {
     labels: request.labels,
-    autoStopInterval: request.autoStopMinutes,
-    ttlMinutes: request.ttlMinutes
+    autoStopInterval: request.autoStopMinutes
   }
   const { source } = request
   if (source.kind === "snapshot") {

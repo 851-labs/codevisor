@@ -109,7 +109,9 @@ export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "List the account's sandboxes, whichever machine made them: id, name, vendor (provider), " +
       "profile, project, state (creating, bootstrapping, syncing, cloning, ready, destroying, " +
       "failed, archived), the setup steps so far, error, and once ready the sandbox's machineId, " +
-      "its remoteProjectId and workspaceId, and agentId when one was started on it.",
+      "its remoteProjectId and workspaceId, and agentId when one was started on it. power is " +
+      "paused when Codevisor paused it after its profile's Pause after time with no chat " +
+      "running, or waking; wake it with sandboxes.wake() before talking to it.",
     "GET",
     "/v1/sandboxes"
   ),
@@ -162,6 +164,14 @@ export const codevisorSandboxApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       "with state creating, like sandboxes.create().",
     "POST",
     "/v1/sandboxes/:id/retry"
+  ),
+  apiTool(
+    "sandboxes.wake",
+    "Wake a paused sandbox. Returns at once with power waking; once its Codevisor is back, " +
+      "power is gone and its machineId answers again (sandboxes.get() to check, usually under " +
+      "a minute or two). Files are kept; processes that were running may not be.",
+    "POST",
+    "/v1/sandboxes/:id/wake"
   ),
   apiTool(
     "sandboxes.destroy",

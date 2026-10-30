@@ -7,6 +7,14 @@ import {
 
 import { teardownMachine } from "./sandbox-account.js"
 import { leavePlaceholder, type RetiredWorkspace } from "./sandbox-placeholder.js"
+import {
+  powerPlanFor,
+  settleStopped,
+  tendRunning,
+  wakeMachine,
+  type PowerPlan,
+  type SandboxPowerState
+} from "./sandbox-power.js"
 import { connectionOf } from "./sandbox-profile-record.js"
 import { isoNow, remoteWorkspace } from "./sandbox-workspace.js"
 import type { SandboxDeps } from "./sandboxes.js"
@@ -30,14 +38,28 @@ export const isPlaced = (machine: Sandbox): machine is PlacedMachine =>
   machine.providerMachineId !== undefined &&
   machine.machineId !== undefined
 
-export const watchOne = async (deps: SandboxDeps, machine: PlacedMachine): Promise<void> => {
+export const watchOne = async (
+  deps: SandboxDeps,
+  machine: PlacedMachine,
+  power: SandboxPowerState
+): Promise<void> => {
   const provider = await deps.connections.connect(connectionOf(machine))
+  const plan = await powerPlanFor(deps, provider, machine)
+  if (plan !== undefined && machine.power !== undefined) {
+    await watchAsleep(deps, plan, machine, power)
+    return
+  }
   const { state } = await provider.status(machine.providerMachineId)
+  if (state === "stopped" && plan !== undefined) {
+    await settleStopped(deps, plan, machine, power)
+    return
+  }
   if (state === "stopped" && provider.resume !== undefined) {
     await resumeMachine(deps, provider, machine)
     return
   }
   const ending = await endingOf(deps, machine, state)
+  if (ending === undefined && plan !== undefined) await tendLatest(deps, plan, machine, power)
   if (ending === undefined) return
 
   deps.log(`Destroying sandbox ${machine.name} (${machine.id}): ${ending.reason}`)
@@ -59,6 +81,26 @@ const retireArchived = async (
   await deps.records.put({ ...machine, state: "destroying" })
   await teardownMachine(deps, await deps.connections.connect(connectionOf(machine)), machine)
   await leavePlaceholder(deps, machine, workspace)
+}
+
+const tendLatest = async (
+  deps: SandboxDeps,
+  plan: PowerPlan,
+  machine: PlacedMachine,
+  power: SandboxPowerState
+): Promise<void> => {
+  const latest = (await deps.records.get(machine.id)) ?? machine
+  if (isPlaced(latest)) await tendRunning(deps, plan, latest, power)
+}
+
+const watchAsleep = async (
+  deps: SandboxDeps,
+  plan: PowerPlan,
+  machine: PlacedMachine,
+  power: SandboxPowerState
+): Promise<void> => {
+  const wanted = power.wakeRequests.delete(machine.id)
+  if (machine.power === "waking" || wanted) await wakeMachine(deps, plan, machine)
 }
 
 const resumeMachine = async (

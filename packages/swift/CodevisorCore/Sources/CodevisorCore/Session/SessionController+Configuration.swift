@@ -49,7 +49,7 @@ extension SessionController {
   }
 
   public var configurationValidationError: String? {
-    guard case let .failed(message) = configurationValidationState else { return nil }
+    guard transcriptSandboxPower == nil, case let .failed(message) = configurationValidationState else { return nil }
     return message
   }
 

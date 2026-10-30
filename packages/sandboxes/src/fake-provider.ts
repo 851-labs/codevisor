@@ -1,4 +1,5 @@
 import { secretField, textField, type SandboxFieldValues } from "./fields.js"
+import { pauseAfterField, type SandboxPausing } from "./pausing.js"
 import type {
   CreateSpec,
   SandboxProvider,
@@ -15,7 +16,8 @@ import type {
 
 export const fakeDefinition = (
   id: SandboxProviderId = "e2b",
-  platform: MachinePlatform = "linux"
+  platform: MachinePlatform = "linux",
+  pauses = false
 ): SandboxProviderDefinition => ({
   id,
   displayName: "Fake",
@@ -23,7 +25,10 @@ export const fakeDefinition = (
   platform,
   tested: true,
   accountFields: [secretField("apiKey", "API key")],
-  profileFields: [textField("size", "Size", { default: "small" })]
+  profileFields: [
+    textField("size", "Size", { default: "small" }),
+    ...(pauses ? [pauseAfterField({ never: true })] : [])
+  ]
 })
 
 export interface FakeMachine {
@@ -45,11 +50,15 @@ export interface FakeProviderOptions {
   readonly boots?: boolean
   readonly streams?: boolean
   readonly prepares?: boolean
+  readonly pauses?: FakePauses
 }
+
+export type FakePauses = "in-place" | "snapshot"
 
 export interface FakeSandboxProvider extends SandboxProvider {
   readonly machines: Map<string, FakeMachine>
   readonly execs: Array<{ readonly providerMachineId: string; readonly request: ExecRequest }>
+  readonly keptAlive: Array<{ readonly providerMachineId: string; readonly untilMs: number }>
 }
 
 const succeeded: ExecResult = { exitCode: 0, stdout: "", stderr: "" }
@@ -57,6 +66,7 @@ const succeeded: ExecResult = { exitCode: 0, stdout: "", stderr: "" }
 export const makeFakeSandboxProvider = (options: FakeProviderOptions = {}): FakeSandboxProvider => {
   const machines = new Map<string, FakeMachine>()
   const execs: FakeSandboxProvider["execs"] = []
+  const keptAlive: FakeSandboxProvider["keptAlive"] = []
   const onExec = options.onExec ?? (() => succeeded)
   const resume = (providerMachineId: string): Promise<void> => {
     const machine = machines.get(providerMachineId)
@@ -68,11 +78,15 @@ export const makeFakeSandboxProvider = (options: FakeProviderOptions = {}): Fake
   return {
     ...(options.resumable === true ? { resume } : {}),
     ...(options.prepares === true ? preparesImage(provisionStages) : {}),
-    definition: fakeDefinition(options.id, options.platform),
+    ...(options.pauses === undefined
+      ? {}
+      : { pausing: fakePausing(options.pauses, machines, keptAlive) }),
+    definition: fakeDefinition(options.id, options.platform, options.pauses !== undefined),
     provisionStages,
     streamsOutput: options.streams === true,
     machines,
     execs,
+    keptAlive,
     create: (spec, machineOptions, progress) => {
       const providerMachineId = `fake-${machines.size + 1}`
       machines.set(providerMachineId, { spec, options: machineOptions, state: "running" })
@@ -106,6 +120,41 @@ export const makeFakeSandboxProvider = (options: FakeProviderOptions = {}): Fake
       )
   }
 }
+
+const fakePausing = (
+  pauses: FakePauses,
+  machines: Map<string, FakeMachine>,
+  keptAlive: FakeSandboxProvider["keptAlive"]
+): SandboxPausing => ({
+  pause: (providerMachineId) => {
+    const machine = machines.get(providerMachineId)
+    if (machine === undefined) return Promise.reject(new Error(`No ${providerMachineId}`))
+    if (pauses === "in-place") {
+      machine.state = "stopped"
+      return Promise.resolve({ providerMachineId })
+    }
+    machines.delete(providerMachineId)
+    return Promise.resolve({ providerMachineId, snapshot: `snapshot-of-${providerMachineId}` })
+  },
+  wake: (paused, spec, options) => {
+    const machine = machines.get(paused.providerMachineId)
+    if (machine !== undefined) {
+      machine.state = "running"
+      return Promise.resolve({ providerMachineId: paused.providerMachineId })
+    }
+    const providerMachineId = `fake-${machines.size + 1}-from-${paused.snapshot ?? "nothing"}`
+    machines.set(providerMachineId, { spec, options, state: "running" })
+    return Promise.resolve({ providerMachineId })
+  },
+  ...(pauses === "in-place" ? { keepAlive: recordKeepAlive(keptAlive) } : {})
+})
+
+const recordKeepAlive =
+  (keptAlive: FakeSandboxProvider["keptAlive"]) =>
+  (providerMachineId: string, untilMs: number): Promise<string> => {
+    keptAlive.push({ providerMachineId, untilMs })
+    return Promise.resolve(new Date(untilMs).toISOString())
+  }
 
 const preparesImage = (provisionStages: ReadonlyArray<ProvisionStage>) => ({
   plan: (): Promise<ProvisionPlan> =>

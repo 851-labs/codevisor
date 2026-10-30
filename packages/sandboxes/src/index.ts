@@ -1,6 +1,7 @@
 export * from "./provider.js"
 export * from "./options.js"
 export * from "./fields.js"
+export * from "./pausing.js"
 export * from "./bootstrap.js"
 export * from "./tags.js"
 export * from "./e2b.js"

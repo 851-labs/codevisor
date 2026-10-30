@@ -439,6 +439,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "DELETE /v1/sandboxes/:id": DestroySandboxResponse,
   "GET /v1/sandboxes/:id/log": SandboxSetupLogResponse,
   "POST /v1/sandboxes/:id/retry": Sandbox,
+  "POST /v1/sandboxes/:id/wake": Sandbox,
   "POST /v1/sandboxes/:id/wait": WaitForSandboxResponse,
   "POST /v1/sandboxes/:id/workspace": Sandbox,
   "POST /v1/gateway/invoke": GatewayInvokeResponse,

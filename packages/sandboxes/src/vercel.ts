@@ -1,7 +1,5 @@
 import {
   choiceField,
-  numberField,
-  numberValue,
   offeredChoiceField,
   optionalString,
   secretField,
@@ -10,6 +8,7 @@ import {
   type SandboxField,
   type SandboxFieldChoice
 } from "./fields.js"
+import { pauseAfterField, type SandboxPausing } from "./pausing.js"
 import {
   SandboxChoiceNeeded,
   type ExecResult,
@@ -30,7 +29,6 @@ const vcpuChoices: ReadonlyArray<SandboxFieldChoice> = [1, 2, 4, 8, 16, 32].map(
   value: String(vcpus),
   label: `${vcpus} ${vcpus === 1 ? "vCPU" : "vCPUs"} · ${vcpus * memoryGBPerVcpu} GB`
 }))
-const defaultSessionMinutes = 45
 const teamField = offeredChoiceField("teamId", "Team", {
   help: "This token can reach more than one team. Sandboxes go in this one."
 })
@@ -57,12 +55,7 @@ export const VERCEL_DEFINITION: SandboxProviderDefinition = {
       default: defaultVcpus,
       help: "Hobby allows up to 4, Pro 8 and Enterprise 32."
     }),
-    numberField("timeoutMinutes", "Session length (minutes)", {
-      default: defaultSessionMinutes,
-      min: 1,
-      max: 1440,
-      help: "Up to 45 on Hobby and 1440 on Pro. When a session ends, the sandbox keeps its disk and Codevisor resumes it."
-    })
+    pauseAfterField({ never: true })
   ]
 }
 
@@ -89,6 +82,8 @@ export interface VercelClient {
   ) => Promise<ExecResult>
   readonly info: (name: string) => Promise<VercelSandboxInfo | undefined>
   readonly resume: (name: string) => Promise<void>
+  readonly stop: (name: string) => Promise<void>
+  readonly extend: (name: string, durationMs: number) => Promise<void>
   readonly remove: (name: string) => Promise<void>
   readonly list: (tags: Record<string, string>) => Promise<ReadonlyArray<VercelSandboxInfo>>
 }
@@ -116,7 +111,7 @@ export interface VercelAccount {
 }
 
 const defaultExecTimeoutMs = 10 * 60 * 1000
-const millisecondsPerMinute = 60 * 1000
+const sessionWindowMs = 45 * 60 * 1000
 
 export const vercelAdapter = (
   connectClient: (credentials: VercelCredentials) => VercelClient,
@@ -150,8 +145,7 @@ export const makeVercelProvider = (client: VercelClient): SandboxProvider => ({
     const sandbox = await client.create({
       image: stringValue(options, "image"),
       vcpus: Number(optionalString(options, "vcpus") ?? defaultVcpus),
-      timeoutMs:
-        numberValue(options, "timeoutMinutes", defaultSessionMinutes) * millisecondsPerMinute,
+      timeoutMs: sessionWindowMs,
       tags: tagsToRecord(spec.tags)
     })
     return { providerMachineId: sandbox.name, platform: "linux", ...expiry(sandbox) }
@@ -167,7 +161,29 @@ export const makeVercelProvider = (client: VercelClient): SandboxProvider => ({
   list: async (owner) =>
     (await client.list(ownerFilter(owner))).flatMap((sandbox) =>
       listedMachine(sandbox.name, sandbox.tags)
-    )
+    ),
+  pausing: vercelPausing(client)
+})
+
+const vercelPausing = (client: VercelClient): SandboxPausing => ({
+  pause: async (name) => {
+    await client.stop(name)
+    return { providerMachineId: name }
+  },
+  wake: async (paused) => {
+    await client.resume(paused.providerMachineId)
+    return {
+      providerMachineId: paused.providerMachineId,
+      ...expiry(await client.info(paused.providerMachineId))
+    }
+  },
+  keepAlive: async (name, untilMs) => {
+    const expiresAt = (await client.info(name))?.expiresAt?.getTime()
+    if (expiresAt === undefined || expiresAt >= untilMs) return isoOrUndefined(expiresAt)
+
+    await client.extend(name, untilMs - expiresAt)
+    return new Date(untilMs).toISOString()
+  }
 })
 
 const machineStates: Readonly<Record<string, ProviderMachineState>> = {
@@ -186,8 +202,11 @@ const statusFor = (sandbox: VercelSandboxInfo | undefined): ProviderMachineStatu
   return { state: machineStates[sandbox.status] ?? "starting", ...expiry(sandbox) }
 }
 
-const expiry = (sandbox: VercelSandboxInfo): { readonly expiresAt?: string } =>
-  sandbox.expiresAt === undefined ? {} : { expiresAt: sandbox.expiresAt.toISOString() }
+const expiry = (sandbox: VercelSandboxInfo | undefined): { readonly expiresAt?: string } =>
+  sandbox?.expiresAt === undefined ? {} : { expiresAt: sandbox.expiresAt.toISOString() }
+
+const isoOrUndefined = (ms: number | undefined): string | undefined =>
+  ms === undefined ? undefined : new Date(ms).toISOString()
 
 const teamFor = (
   teams: ReadonlyArray<VercelTeam>,

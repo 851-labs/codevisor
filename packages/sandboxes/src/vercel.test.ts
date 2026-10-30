@@ -42,6 +42,14 @@ const fakeVercel = (sandboxes: VercelSandboxInfo[] = []) => {
       calls.push({ resume: name })
       return Promise.resolve()
     },
+    stop: (name) => {
+      calls.push({ stop: name })
+      return Promise.resolve()
+    },
+    extend: (name, durationMs) => {
+      calls.push({ extend: name, durationMs })
+      return Promise.resolve()
+    },
     remove: (name) => {
       calls.push({ remove: name })
       return Promise.resolve()
@@ -55,10 +63,10 @@ const fakeVercel = (sandboxes: VercelSandboxInfo[] = []) => {
 }
 
 describe("Vercel Sandbox provider", () => {
-  it("creates a tagged sandbox from the image with its vCPUs and session length", async () => {
+  it("creates a tagged sandbox from the image with its vCPUs and a Hobby-length session", async () => {
     const { client, calls } = fakeVercel()
     const provider = makeVercelProvider(client)
-    const options = readProfileOptions(VERCEL_DEFINITION, { vcpus: "8", timeoutMinutes: 1440 })
+    const options = readProfileOptions(VERCEL_DEFINITION, { vcpus: "8", pauseAfter: "240" })
 
     const created = await provider.create(spec, options)
 
@@ -72,14 +80,14 @@ describe("Vercel Sandbox provider", () => {
         create: {
           image: "vercel/sandbox/universal",
           vcpus: 8,
-          timeoutMs: 86_400_000,
+          timeoutMs: 2_700_000,
           tags: tagged
         }
       }
     ])
   })
 
-  it("falls back to 2 vCPUs and the Hobby session cap when options are missing", async () => {
+  it("falls back to 2 vCPUs when options are missing", async () => {
     const { client, calls } = fakeVercel()
 
     await makeVercelProvider(client).create(spec, { image: "my-repo:v1" })
@@ -89,12 +97,37 @@ describe("Vercel Sandbox provider", () => {
     ])
   })
 
-  it("defaults to the universal image, 2 vCPUs and a 45 minute session", () => {
+  it("defaults to the universal image, 2 vCPUs and pausing after 30 minutes", () => {
     expect(readProfileOptions(VERCEL_DEFINITION, {})).toEqual({
       image: "vercel/sandbox/universal",
       vcpus: "2",
-      timeoutMinutes: 45
+      pauseAfter: "30"
     })
+  })
+
+  it("pauses by stopping, wakes by resuming, and extends the session up to a deadline", async () => {
+    const { client, calls } = fakeVercel([
+      {
+        name: "sbx-1",
+        status: "running",
+        expiresAt: new Date("2026-10-26T12:45:00Z"),
+        tags: tagged
+      }
+    ])
+    const pausing = makeVercelProvider(client).pausing
+
+    await pausing?.pause("sbx-1")
+    const woken = await pausing?.wake({ providerMachineId: "sbx-1" }, spec, {})
+    const covered = await pausing?.keepAlive?.("sbx-1", Date.parse("2026-10-26T12:30:00Z"))
+    const extended = await pausing?.keepAlive?.("sbx-1", Date.parse("2026-10-26T13:00:00Z"))
+
+    expect(woken).toEqual({ providerMachineId: "sbx-1", expiresAt: "2026-10-26T12:45:00.000Z" })
+    expect([covered, extended]).toEqual(["2026-10-26T12:45:00.000Z", "2026-10-26T13:00:00.000Z"])
+    expect(calls).toEqual([
+      { stop: "sbx-1" },
+      { resume: "sbx-1" },
+      { extend: "sbx-1", durationMs: 900_000 }
+    ])
   })
 
   it("offers the vCPU counts Vercel documents, each with 2 GB of memory per vCPU", () => {
@@ -110,9 +143,6 @@ describe("Vercel Sandbox provider", () => {
     ])
     expect(() => readProfileOptions(VERCEL_DEFINITION, { vcpus: "3" })).toThrow(
       "vCPUs must be one of"
-    )
-    expect(() => readProfileOptions(VERCEL_DEFINITION, { timeoutMinutes: 1441 })).toThrow(
-      "Session length (minutes) must be between 1 and 1440"
     )
   })
 

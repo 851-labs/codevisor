@@ -46,6 +46,10 @@ public extension CodevisorServerClienting {
 
   func destroySandbox(id: String) async throws {}
 
+  func wakeSandbox(id: String) async throws -> ServerSandbox {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
     throw CodevisorServerClientError.invalidResponse
   }

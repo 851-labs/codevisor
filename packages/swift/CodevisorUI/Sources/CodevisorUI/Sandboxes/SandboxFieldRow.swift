@@ -15,10 +15,8 @@ struct SandboxFieldRow: View {
       Toggle(field.label, isOn: flag)
         .onChange(of: flag.wrappedValue) { onCommit?() }
     case .choice:
-      Picker(field.label, selection: text) {
-        ForEach(field.choices ?? [], id: \.value) { Text($0.label).tag($0.value) }
-      }
-      .onChange(of: text.wrappedValue) { onCommit?() }
+      SandboxChoicePicker(field: field, selection: text)
+        .onChange(of: text.wrappedValue) { onCommit?() }
     case .machine:
       machinePicker
         .onChange(of: text.wrappedValue) { onCommit?() }

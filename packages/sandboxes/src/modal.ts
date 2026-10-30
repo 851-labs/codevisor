@@ -6,7 +6,9 @@ import {
   textField,
   type SandboxFieldValues
 } from "./fields.js"
+import { pauseAfterField, type SandboxPausing } from "./pausing.js"
 import type {
+  CreateSpec,
   ExecResult,
   SandboxAdapter,
   SandboxProvider,
@@ -41,7 +43,7 @@ export const MODAL_DEFINITION: SandboxProviderDefinition = {
     }),
     numberField("cpu", "CPUs", { default: 2, min: 1, max: 64 }),
     numberField("memoryGiB", "Memory (GiB)", { default: 4, min: 1, max: 256 }),
-    numberField("timeoutMinutes", "Lifetime (minutes)", { default: 1440, min: 5, max: 1440 })
+    pauseAfterField({ never: false })
   ]
 }
 
@@ -52,6 +54,7 @@ export interface ModalSandboxRef {
 
 export interface ModalCreateRequest {
   readonly image: string
+  readonly snapshot?: string
   readonly setupCommands: ReadonlyArray<string>
   readonly cpu: number
   readonly memoryMiB: number
@@ -73,7 +76,7 @@ export interface ModalClient {
 }
 
 const defaultExecTimeoutMs = 10 * 60 * 1000
-const millisecondsPerMinute = 60 * 1000
+const maxLifetimeMs = 24 * 60 * 60 * 1000
 const mebibytesPerGiB = 1024
 
 export interface ModalTokens {
@@ -107,19 +110,11 @@ export const makeModalProvider = (
   provisionStages: ["create"],
   streamsOutput: false,
   create: async (spec, options) => {
-    const timeoutMs = numberValue(options, "timeoutMinutes", 1440) * millisecondsPerMinute
-    const sandboxId = await client.create({
-      image: stringValue(options, "image"),
-      setupCommands: defaultSetupCommands,
-      cpu: numberValue(options, "cpu", 2),
-      memoryMiB: numberValue(options, "memoryGiB", 4) * mebibytesPerGiB,
-      timeoutMs,
-      tags: tagsToRecord(spec.tags)
-    })
+    const sandboxId = await client.create(createRequest(spec, options))
     return {
       providerMachineId: sandboxId,
       platform: "linux",
-      expiresAt: isoAfter(now(), timeoutMs)
+      expiresAt: isoAfter(now(), maxLifetimeMs)
     }
   },
   exec: (sandboxId, request) =>
@@ -133,7 +128,35 @@ export const makeModalProvider = (
     (await client.list(ownerFilter(owner))).flatMap((sandbox) =>
       listedMachine(sandbox.sandboxId, sandbox.tags)
     ),
-  snapshot: async (sandboxId) => ({ snapshotId: await client.snapshot(sandboxId) })
+  snapshot: async (sandboxId) => ({ snapshotId: await client.snapshot(sandboxId) }),
+  pausing: modalPausing(client, now)
+})
+
+const modalPausing = (client: ModalClient, now: () => number): SandboxPausing => ({
+  pause: async (sandboxId) => {
+    const snapshot = await client.snapshot(sandboxId)
+    await client.terminate(sandboxId)
+    return { providerMachineId: sandboxId, snapshot }
+  },
+  wake: async (paused, spec, options) => {
+    if (paused.snapshot === undefined)
+      throw new Error("This Modal sandbox has no snapshot to wake from")
+
+    const sandboxId = await client.create({
+      ...createRequest(spec, options),
+      snapshot: paused.snapshot
+    })
+    return { providerMachineId: sandboxId, expiresAt: isoAfter(now(), maxLifetimeMs) }
+  }
+})
+
+const createRequest = (spec: CreateSpec, options: SandboxFieldValues): ModalCreateRequest => ({
+  image: stringValue(options, "image"),
+  setupCommands: defaultSetupCommands,
+  cpu: numberValue(options, "cpu", 2),
+  memoryMiB: numberValue(options, "memoryGiB", 4) * mebibytesPerGiB,
+  timeoutMs: maxLifetimeMs,
+  tags: tagsToRecord(spec.tags)
 })
 
 const stateFor = (running: boolean | undefined): "running" | "stopped" | "gone" => {

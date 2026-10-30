@@ -20,6 +20,7 @@ import { readProfileOptions } from "./options.js"
 import type { ExecResult } from "./provider.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
+const start = Date.parse("2026-10-23T00:00:00Z")
 const ok: ExecResult = { exitCode: 0, stdout: "ok", stderr: "" }
 
 const fakeE2b = (sandboxes: E2bSandboxInfo[] = []) => {
@@ -29,6 +30,7 @@ const fakeE2b = (sandboxes: E2bSandboxInfo[] = []) => {
       calls.push({ create: template, ...options })
       const sandbox = {
         sandboxId: "sbx-1",
+        state: "running" as const,
         endAt: new Date("2026-10-23T12:00:00Z"),
         metadata: options.metadata
       }
@@ -41,6 +43,23 @@ const fakeE2b = (sandboxes: E2bSandboxInfo[] = []) => {
     },
     info: (sandboxId) =>
       Promise.resolve(sandboxes.find((sandbox) => sandbox.sandboxId === sandboxId)),
+    pause: (sandboxId) => {
+      calls.push({ pause: sandboxId })
+      return Promise.resolve()
+    },
+    resume: (sandboxId, timeoutMs) => {
+      calls.push({ resume: sandboxId, timeoutMs })
+      return Promise.resolve({
+        sandboxId,
+        state: "running",
+        endAt: new Date(start + timeoutMs),
+        metadata: {}
+      })
+    },
+    setTimeout: (sandboxId, timeoutMs) => {
+      calls.push({ setTimeout: sandboxId, timeoutMs })
+      return Promise.resolve()
+    },
     kill: (sandboxId) => {
       calls.push({ kill: sandboxId })
       return Promise.resolve()
@@ -54,11 +73,11 @@ const fakeE2b = (sandboxes: E2bSandboxInfo[] = []) => {
 }
 
 describe("E2B provider", () => {
-  it("creates a tagged sandbox from the template with the timeout in milliseconds", async () => {
+  it("creates a tagged sandbox from the template with an hour the manager extends", async () => {
     const { client, calls } = fakeE2b()
     const provider = makeE2bProvider(client)
 
-    const created = await provider.create(spec, { template: "base", timeoutMinutes: 60 })
+    const created = await provider.create(spec, { template: "base", pauseAfter: "30" })
 
     expect(created).toEqual({
       providerMachineId: "sbx-1",
@@ -72,11 +91,8 @@ describe("E2B provider", () => {
     })
   })
 
-  it("defaults to the base template and the Hobby plan's one hour cap", () => {
-    expect(readProfileOptions(E2B_DEFINITION, {})).toEqual({
-      template: "base",
-      timeoutMinutes: 60
-    })
+  it("defaults to the base template and pausing after 30 minutes", () => {
+    expect(readProfileOptions(E2B_DEFINITION, {})).toEqual({ template: "base", pauseAfter: "30" })
   })
 
   it("runs scripts as root with a default timeout and forwards stdin", async () => {
@@ -92,11 +108,15 @@ describe("E2B provider", () => {
     ])
   })
 
-  it("reports running sandboxes with their expiry and missing ones as gone", async () => {
-    const { client } = fakeE2b([{ sandboxId: "sbx-1", metadata: {} }])
+  it("reports running, paused and missing sandboxes", async () => {
+    const { client } = fakeE2b([
+      { sandboxId: "sbx-1", state: "running", metadata: {} },
+      { sandboxId: "sbx-2", state: "paused", metadata: {} }
+    ])
     const provider = makeE2bProvider(client)
 
     expect(await provider.status("sbx-1")).toEqual({ state: "running" })
+    expect(await provider.status("sbx-2")).toEqual({ state: "stopped" })
     expect(await provider.status("sbx-404")).toEqual({ state: "gone" })
   })
 
@@ -104,9 +124,10 @@ describe("E2B provider", () => {
     const { client, calls } = fakeE2b([
       {
         sandboxId: "sbx-1",
+        state: "running",
         metadata: { "codevisor-owner": "device-a", "codevisor-machine": "m1" }
       },
-      { sandboxId: "sbx-2", metadata: { "codevisor-owner": "device-a" } }
+      { sandboxId: "sbx-2", state: "paused", metadata: { "codevisor-owner": "device-a" } }
     ])
     const provider = makeE2bProvider(client)
 
@@ -122,6 +143,32 @@ describe("E2B provider", () => {
     await makeE2bProvider(client).destroy("sbx-1")
 
     expect(calls).toEqual([{ kill: "sbx-1" }])
+  })
+
+  it("pauses in place and wakes the same sandbox for another hour", async () => {
+    const { client, calls } = fakeE2b()
+    const pausing = makeE2bProvider(client, () => start).pausing
+
+    const paused = await pausing?.pause("sbx-1")
+    const woken = await pausing?.wake({ providerMachineId: "sbx-1" }, spec, {})
+
+    expect(paused).toEqual({ providerMachineId: "sbx-1" })
+    expect(woken).toEqual({ providerMachineId: "sbx-1", expiresAt: "2026-10-23T01:00:00.000Z" })
+    expect(calls).toEqual([{ pause: "sbx-1" }, { resume: "sbx-1", timeoutMs: 3_600_000 }])
+  })
+
+  it("keeps a sandbox alive until the deadline, an hour at a time", async () => {
+    const { client, calls } = fakeE2b()
+    const pausing = makeE2bProvider(client, () => start).pausing
+
+    const soon = await pausing?.keepAlive?.("sbx-1", start + 20 * 60_000)
+    const later = await pausing?.keepAlive?.("sbx-1", start + 5 * 3_600_000)
+
+    expect([soon, later]).toEqual(["2026-10-23T00:20:00.000Z", "2026-10-23T01:00:00.000Z"])
+    expect(calls).toEqual([
+      { setTimeout: "sbx-1", timeoutMs: 1_200_000 },
+      { setTimeout: "sbx-1", timeoutMs: 3_600_000 }
+    ])
   })
 })
 
@@ -154,9 +201,7 @@ const fakeModal = (running: Record<string, boolean>) => {
 }
 
 describe("Modal provider", () => {
-  const start = Date.parse("2026-10-23T00:00:00Z")
-
-  it("creates a tagged sandbox and computes its expiry from the lifetime", async () => {
+  it("creates a tagged sandbox that lives Modal's full 24 hours", async () => {
     const { client, calls } = fakeModal({})
     const provider = makeModalProvider(client, () => start)
     const options = readProfileOptions(MODAL_DEFINITION, {})
@@ -179,6 +224,37 @@ describe("Modal provider", () => {
       ["setupCommands", 0],
       expect.stringContaining("curl ca-certificates git sudo")
     )
+  })
+
+  it("pauses by snapshotting then terminating, and wakes a new sandbox from the snapshot", async () => {
+    const { client, calls } = fakeModal({})
+    const pausing = makeModalProvider(client, () => start).pausing
+    const options = readProfileOptions(MODAL_DEFINITION, { cpu: 4 })
+
+    const paused = await pausing?.pause("sb-1")
+    const woken = paused && (await pausing?.wake(paused, spec, options))
+
+    expect(paused).toEqual({ providerMachineId: "sb-1", snapshot: "im-sb-1" })
+    expect(woken).toEqual({ providerMachineId: "sb-1", expiresAt: "2026-10-24T00:00:00.000Z" })
+    expect(calls).toEqual([
+      { terminate: "sb-1" },
+      expect.objectContaining({ snapshot: "im-sb-1", cpu: 4, timeoutMs: 86_400_000 })
+    ])
+  })
+
+  it("can't wake a sandbox without a snapshot, and offers no Never", async () => {
+    const pausing = makeModalProvider(fakeModal({}).client).pausing
+
+    await expect(pausing?.wake({ providerMachineId: "sb-1" }, spec, {})).rejects.toThrow(
+      "This Modal sandbox has no snapshot to wake from"
+    )
+    expect(() => readProfileOptions(MODAL_DEFINITION, { pauseAfter: "never" })).toThrow(
+      "Pause after must be one of 15 min, 30 min, 1 hr, 4 hr"
+    )
+    expect(MODAL_DEFINITION.profileFields.at(-1)).toMatchObject({
+      key: "pauseAfter",
+      description: "How long a sandbox stays alive without a chat running."
+    })
   })
 
   it("maps poll results to running, stopped and gone", async () => {
@@ -270,13 +346,13 @@ describe("provider catalog", () => {
         },
         secrets: 1
       },
-      E2B: { defaults: { template: "base", timeoutMinutes: 60 }, secrets: 1 },
+      E2B: { defaults: { template: "base", pauseAfter: "30" }, secrets: 1 },
       Modal: {
-        defaults: { image: "debian:bookworm-slim", cpu: 2, memoryGiB: 4, timeoutMinutes: 1440 },
+        defaults: { image: "debian:bookworm-slim", cpu: 2, memoryGiB: 4, pauseAfter: "30" },
         secrets: 1
       },
       "Vercel Sandbox": {
-        defaults: { image: "vercel/sandbox/universal", vcpus: "2", timeoutMinutes: 45 },
+        defaults: { image: "vercel/sandbox/universal", vcpus: "2", pauseAfter: "30" },
         secrets: 1
       },
       Daytona: {
@@ -285,7 +361,7 @@ describe("provider catalog", () => {
           cpu: 2,
           memoryGiB: 4,
           diskGiB: 10,
-          timeoutMinutes: 0
+          pauseAfter: "30"
         },
         secrets: 1
       }

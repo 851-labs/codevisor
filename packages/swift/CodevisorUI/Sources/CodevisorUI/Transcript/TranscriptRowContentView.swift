@@ -180,6 +180,11 @@ public struct TranscriptRowContentView: View {
     case let .serverWait(message):
       ChatActivityRow(message)
         .suppressedDuringStreamingTextEntrance()
+    case let .sandboxPower(.paused(wakeFailure)):
+      SandboxPausedNotice(wakeFailure: wakeFailure, wake: { Task { await controller.wakeSandbox() } })
+    case .sandboxPower(.waking):
+      ChatActivityRow("Waking sandbox…")
+        .suppressedDuringStreamingTextEntrance()
     case let .error(message):
       leaves.errorRow(message, row.id)
     case let .bottomSpacer(height):

@@ -95,6 +95,7 @@ extension SessionController {
   }
 
   var sendReadiness: SendQueue.Readiness {
+    if transcriptSandboxPower != nil { return .waking(failure: Self.sandboxWakeFailure) }
     if case let .failed(message) = configurationValidationState { return .failed(message) }
     let isSettled = isServerReady && !isConnecting && !isPausedForUpdate && configurationValidationState == .ready
     return isSettled ? .ready : .waiting(unreachableReason)

@@ -8,6 +8,7 @@ final class SendQueue {
   enum Readiness: Equatable {
     case ready
     case waiting(String)
+    case waking(failure: String)
     case failed(String)
   }
 
@@ -31,6 +32,7 @@ final class SendQueue {
   }
 
   static let readinessTimeout: Duration = .seconds(60)
+  static let wakeTimeout: Duration = .seconds(300)
   static let progressDelay: Duration = .seconds(1)
 
   private enum Stage: Equatable {
@@ -171,6 +173,8 @@ final class SendQueue {
     let timer = Task { [clock] in
       guard (try? await clock.sleep(for: Self.readinessTimeout)) != nil else { return }
       deadline.hasPassed = true
+      guard (try? await clock.sleep(for: Self.wakeTimeout - Self.readinessTimeout)) != nil else { return }
+      deadline.wakeHasPassed = true
     }
     defer { timer.cancel() }
 
@@ -245,7 +249,8 @@ final class SendQueue {
   private static func settled(_ readiness: Readiness, deadline: ReadinessDeadline) -> Readiness? {
     switch readiness {
     case .ready, .failed: readiness
-    case let .waiting(reason): deadline.hasPassed ? .failed(reason) : nil
+    case let .waiting(reason): deadline.waitHasPassed ? .failed(reason) : nil
+    case let .waking(failure): deadline.wakingHasPassed ? .failed(failure) : nil
     }
   }
 
@@ -270,4 +275,13 @@ final class SendQueue {
 @Observable
 private final class ReadinessDeadline {
   var hasPassed = false
+  var wakeHasPassed = false
+  @ObservationIgnored private var sawWaking = false
+
+  var waitHasPassed: Bool { sawWaking ? wakeHasPassed : hasPassed }
+
+  var wakingHasPassed: Bool {
+    sawWaking = true
+    return wakeHasPassed
+  }
 }

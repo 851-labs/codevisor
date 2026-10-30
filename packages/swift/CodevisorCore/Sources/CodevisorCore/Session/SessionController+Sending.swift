@@ -40,6 +40,7 @@ extension SessionController {
     }
     sends.enqueue(message, attachmentIDs: sent.map(\.id), route: .agent(delivery))
     composerText = ""
+    wakeSandboxForSend()
     startChat(for: message.text)
   }
 

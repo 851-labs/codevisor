@@ -21,7 +21,6 @@ import type { ExecResult } from "./provider.js"
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const ok: ExecResult = { exitCode: 0, stdout: "ok", stderr: "" }
 const tagged = { "codevisor-owner": "device-a", "codevisor-machine": "m1" }
-const start = Date.parse("2026-10-26T00:00:00Z")
 
 const fakeDaytona = (sandboxes: DaytonaSandboxInfo[] = [], email?: string) => {
   const calls: unknown[] = []
@@ -42,6 +41,10 @@ const fakeDaytona = (sandboxes: DaytonaSandboxInfo[] = [], email?: string) => {
     info: (sandboxId) => Promise.resolve(sandboxes.find((sandbox) => sandbox.id === sandboxId)),
     start: (sandboxId) => {
       calls.push({ start: sandboxId })
+      return Promise.resolve()
+    },
+    stop: (sandboxId) => {
+      calls.push({ stop: sandboxId })
       return Promise.resolve()
     },
     remove: (sandboxId) => {
@@ -72,7 +75,7 @@ const recordingProgress = () => {
 describe("Daytona provider", () => {
   it("builds the image with Codevisor's packages, sized and labelled, and never auto-stops", async () => {
     const { client, calls } = fakeDaytona()
-    const provider = makeDaytonaProvider(client, () => start)
+    const provider = makeDaytonaProvider(client)
     const { progress, lines } = recordingProgress()
 
     const created = await provider.create(
@@ -92,8 +95,7 @@ describe("Daytona provider", () => {
             resources: { cpu: 2, memory: 4, disk: 10 }
           },
           labels: tagged,
-          autoStopMinutes: 0,
-          ttlMinutes: 0
+          autoStopMinutes: 0
         }
       }
     ])
@@ -101,28 +103,20 @@ describe("Daytona provider", () => {
     expect(lines).toEqual(["Building image"])
   })
 
-  it("starts from a snapshot when one is set and expires after its lifetime", async () => {
+  it("starts from a snapshot when one is set", async () => {
     const { client, calls } = fakeDaytona()
-    const provider = makeDaytonaProvider(client, () => start)
-    const options = readProfileOptions(DAYTONA_DEFINITION, {
-      snapshot: "codevisor-base",
-      timeoutMinutes: 90
-    })
+    const provider = makeDaytonaProvider(client)
+    const options = readProfileOptions(DAYTONA_DEFINITION, { snapshot: "codevisor-base" })
 
     const created = await provider.create(spec, options)
 
-    expect(created).toEqual({
-      providerMachineId: "sb-1",
-      platform: "linux",
-      expiresAt: "2026-10-26T01:30:00.000Z"
-    })
+    expect(created).toEqual({ providerMachineId: "sb-1", platform: "linux" })
     expect(calls).toEqual([
       {
         create: {
           source: { kind: "snapshot", snapshot: "codevisor-base" },
           labels: tagged,
-          autoStopMinutes: 0,
-          ttlMinutes: 90
+          autoStopMinutes: 0
         }
       }
     ])
@@ -143,8 +137,7 @@ describe("Daytona provider", () => {
             resources: { cpu: 2, memory: 4, disk: 10 }
           },
           labels: tagged,
-          autoStopMinutes: 0,
-          ttlMinutes: 0
+          autoStopMinutes: 0
         }
       }
     ])
@@ -177,7 +170,7 @@ describe("Daytona provider", () => {
 
   it("uploads stdin to a file the command reads and then removes", async () => {
     const { client, calls } = fakeDaytona()
-    const provider = makeDaytonaProvider(client, Date.now, () => "abc")
+    const provider = makeDaytonaProvider(client, () => "abc")
 
     await provider.exec("sb-1", { script: "cat", stdin: "invite\n", timeoutMs: 1500 })
 
@@ -248,6 +241,17 @@ describe("Daytona provider", () => {
       { remove: "sb-1" }
     ])
   })
+
+  it("pauses by stopping the sandbox and wakes by starting it again", async () => {
+    const { client, calls } = fakeDaytona()
+    const pausing = makeDaytonaProvider(client).pausing
+
+    const paused = await pausing?.pause("sb-1")
+    const woken = await pausing?.wake({ providerMachineId: "sb-1" }, spec, {})
+
+    expect([paused, woken]).toEqual([{ providerMachineId: "sb-1" }, { providerMachineId: "sb-1" }])
+    expect(calls).toEqual([{ stop: "sb-1" }, { start: "sb-1" }])
+  })
 })
 
 describe("Daytona root command", () => {
@@ -280,7 +284,7 @@ describe("Daytona root command", () => {
         return Promise.resolve(ok)
       }
     }
-    const provider = makeDaytonaProvider(local, Date.now, () => id)
+    const provider = makeDaytonaProvider(local, () => id)
     await provider.exec("sb-1", {
       script,
       timeoutMs: 30_000,

@@ -25,6 +25,7 @@ export interface SandboxField {
   readonly choices?: ReadonlyArray<SandboxFieldChoice>
   readonly placeholder?: string
   readonly help?: string
+  readonly description?: string
   readonly min?: number
   readonly max?: number
   readonly steps?: ReadonlyArray<number>

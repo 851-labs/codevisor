@@ -111,6 +111,8 @@ extension MachineController {
         if SandboxSettingsModel.syncNamespaces.contains(document.namespace) {
           sandboxAvailabilityRevision += 1
           sandboxSettingsRevision += 1
+        } else if document.namespace == SandboxMachineProfiles.recordsNamespace {
+          sandboxSettingsRevision += 1
         }
         onSyncChanged?(serverId, document)
       }

@@ -33,6 +33,7 @@ import {
   type SandboxRouting
 } from "./sandbox-manager.js"
 import { adoptPlaceholders } from "./sandbox-placeholder.js"
+import { makeSandboxPowerState } from "./sandbox-power.js"
 import { connectionOf, profileOrMissing } from "./sandbox-profile-record.js"
 import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
 import {
@@ -58,6 +59,7 @@ import {
 import type { SandboxRecordStore } from "./sandbox-store.js"
 import type { OneWaySyncReport } from "./sandbox-sync.js"
 import { waitForSandbox } from "./sandbox-wait.js"
+import { makeSandboxWaking } from "./sandbox-wake.js"
 import { isPlaced, teardownRecord, watchOne } from "./sandbox-watch.js"
 import { isoNow, placeWorkspace } from "./sandbox-workspace.js"
 
@@ -124,6 +126,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   const busy = new Set<string>()
   const abandonments = makeAbandonments()
   const logs = makeSandboxLogBook()
+  const power = makeSandboxPowerState()
 
   const exclusively = async (id: string, work: () => Promise<void>): Promise<void> => {
     if (busy.has(id)) return
@@ -144,7 +147,11 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     await exclusively(machine.id, () => teardownRecord(deps, machine))
   }
 
-  const routing = makeSandboxRouting(deps, destroyHere)
+  const waking = makeSandboxWaking(deps, power, {
+    exclusively,
+    track: (pipeline) => track(pipelines, pipeline)
+  })
+  const routing = makeSandboxRouting(deps, { destroyHere, wakeHere: waking.wakeHere })
 
   const create = async (
     request: CreateSandboxRequest,
@@ -236,7 +243,11 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
       await adoptPlaceholders(deps)
       await retire(await withDeletedProvider(deps), retireOrphan)
       for (const machine of (await deps.records.list()).filter(isPlaced)) {
-        if (managesHere(deps, machine)) await exclusively(machine.id, () => watchOne(deps, machine))
+        if (!managesHere(deps, machine)) continue
+        await exclusively(machine.id, async () => {
+          await watchOne(deps, machine, power)
+          await waking.wakeIfRequested(machine.id)
+        })
       }
     },
     sweep: async () => {

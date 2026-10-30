@@ -11,6 +11,7 @@ import {
   urlField,
   type SandboxFieldValues
 } from "./fields.js"
+import { pauseAfterField, type SandboxPausing } from "./pausing.js"
 import type {
   ExecResult,
   ProviderMachineState,
@@ -58,11 +59,7 @@ export const DAYTONA_DEFINITION: SandboxProviderDefinition = {
     numberField("cpu", "CPUs", { default: 2, min: 1, max: 4 }),
     numberField("memoryGiB", "Memory (GiB)", { default: 4, min: 1, max: 8 }),
     numberField("diskGiB", "Disk (GiB)", { default: 10, min: 1, max: 10 }),
-    numberField("timeoutMinutes", "Lifetime (minutes)", {
-      default: 0,
-      min: 0,
-      help: "Deletes the sandbox this long after it starts. 0 keeps it until Codevisor removes it."
-    })
+    pauseAfterField({ never: true })
   ]
 }
 
@@ -85,7 +82,6 @@ export interface DaytonaCreateRequest {
   readonly source: DaytonaSource
   readonly labels: Record<string, string>
   readonly autoStopMinutes: number
-  readonly ttlMinutes: number
 }
 
 export interface DaytonaSandboxInfo {
@@ -103,6 +99,7 @@ export interface DaytonaClient {
   readonly run: (sandboxId: string, command: string, timeoutMs: number) => Promise<ExecResult>
   readonly info: (sandboxId: string) => Promise<DaytonaSandboxInfo | undefined>
   readonly start: (sandboxId: string) => Promise<void>
+  readonly stop: (sandboxId: string) => Promise<void>
   readonly remove: (sandboxId: string) => Promise<void>
   readonly list: (labels: Record<string, string>) => Promise<ReadonlyArray<DaytonaSandboxInfo>>
   readonly email: () => Promise<string | undefined>
@@ -115,7 +112,6 @@ export interface DaytonaCredentials {
 }
 
 const defaultExecTimeoutMs = 10 * 60 * 1000
-const millisecondsPerMinute = 60 * 1000
 const millisecondsPerSecond = 1000
 const neverAutoStop = 0
 
@@ -136,25 +132,21 @@ export const daytonaAdapter = (
 
 export const makeDaytonaProvider = (
   client: DaytonaClient,
-  now: () => number = Date.now,
   newId: () => string = randomUUID
 ): SandboxProvider => ({
   definition: DAYTONA_DEFINITION,
   provisionStages: ["create"],
   streamsOutput: false,
   create: async (spec, options, progress) => {
-    const ttlMinutes = numberValue(options, "timeoutMinutes", 0)
-    const startedAt = now()
     const sandbox = await client.create(
       {
         source: sourceFor(options),
         labels: tagsToRecord(spec.tags),
-        autoStopMinutes: neverAutoStop,
-        ttlMinutes
+        autoStopMinutes: neverAutoStop
       },
       (line) => progress?.log(line)
     )
-    return { providerMachineId: sandbox.id, platform: "linux", ...expiry(startedAt, ttlMinutes) }
+    return { providerMachineId: sandbox.id, platform: "linux" }
   },
   exec: async (sandboxId, request) => {
     const timeoutMs = request.timeoutMs ?? defaultExecTimeoutMs
@@ -167,7 +159,19 @@ export const makeDaytonaProvider = (
   list: async (owner) =>
     (await client.list(ownerFilter(owner))).flatMap((sandbox) =>
       listedMachine(sandbox.id, sandbox.labels)
-    )
+    ),
+  pausing: daytonaPausing(client)
+})
+
+const daytonaPausing = (client: DaytonaClient): SandboxPausing => ({
+  pause: async (sandboxId) => {
+    await client.stop(sandboxId)
+    return { providerMachineId: sandboxId }
+  },
+  wake: async (paused) => {
+    await client.start(paused.providerMachineId)
+    return { providerMachineId: paused.providerMachineId }
+  }
 })
 
 const credentialsFor = (account: SandboxFieldValues): DaytonaCredentials => {
@@ -194,11 +198,6 @@ const sourceFor = (options: SandboxFieldValues): DaytonaSource => {
     }
   }
 }
-
-const expiry = (startedAt: number, ttlMinutes: number): { readonly expiresAt?: string } =>
-  ttlMinutes > 0
-    ? { expiresAt: new Date(startedAt + ttlMinutes * millisecondsPerMinute).toISOString() }
-    : {}
 
 interface ScriptInput {
   readonly path: string

@@ -25,10 +25,12 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
   public var workspaceId: String?
   public var plan: [String]?
   public var steps: [ServerSandboxSetupStep]?
+  public var power: String?
   public var error: String?
 
   private enum CodingKeys: String, CodingKey {
-    case id, name, state, profileId, profileName, accountId, deviceId, remoteProjectId, workspaceId, plan, steps, error
+    case id, name, state, profileId, profileName, accountId, deviceId, remoteProjectId, workspaceId, plan, steps
+    case power, error
     case vendor = "provider"
   }
 
@@ -45,6 +47,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     workspaceId: String? = nil,
     plan: [String]? = nil,
     steps: [ServerSandboxSetupStep]? = nil,
+    power: String? = nil,
     error: String? = nil
   ) {
     self.id = id
@@ -59,6 +62,7 @@ public struct ServerSandbox: Decodable, Equatable, Sendable, Identifiable {
     self.workspaceId = workspaceId
     self.plan = plan
     self.steps = steps
+    self.power = power
     self.error = error
   }
 }
@@ -135,6 +139,10 @@ extension CodevisorServerClient {
 
   public func destroySandbox(id: String) async throws {
     try await sendNoResponse("/v1/sandboxes/\(pathComponent(id))", method: "DELETE")
+  }
+
+  public func wakeSandbox(id: String) async throws -> ServerSandbox {
+    try await send("/v1/sandboxes/\(pathComponent(id))/wake", method: "POST", body: Optional<EmptyBody>.none)
   }
 
   public func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {

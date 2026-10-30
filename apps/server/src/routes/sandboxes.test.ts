@@ -347,6 +347,20 @@ describe("sandbox routes", () => {
     expect(decode(SandboxSetupLogResponse)(all.body).lines.length).toBeGreaterThan(1)
   })
 
+  it("wakes a paused sandbox and answers that it's waking", async () => {
+    const { harness, server } = await startSandboxServer({ pauses: "in-place" })
+    await harness.machines.create({ profileId: "profile-1", projectId: "project-1" })
+    await harness.machines.settled()
+    const running = await harness.machines.get("id-1")
+    await harness.records.put({ ...running, power: "paused" })
+
+    const woken = await jsonRequest(server, "/v1/sandboxes/id-1/wake", { method: "POST" })
+    await harness.machines.settled()
+
+    expect(woken).toMatchObject({ status: 202, body: { id: "id-1", power: "waking" } })
+    expect((await harness.machines.get("id-1")).power).toBeUndefined()
+  })
+
   it("waits for a sandbox within the longest wait it allows", async () => {
     const { harness, server } = await startSandboxServer()
     await harness.machines.create({ profileId: "profile-1", projectId: "project-1" })

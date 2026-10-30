@@ -28,7 +28,10 @@ public struct SandboxMachineProfilesLoadKey: Equatable, Sendable {
 @MainActor
 @Observable
 public final class SandboxMachineProfiles {
+  public static let recordsNamespace = "sandbox-records"
+
   private var profilesByOwner: [String: [String: SandboxMachineProfile]] = [:]
+  private var powersByOwner: [String: [String: SandboxMachinePower]] = [:]
 
   public init() {}
 
@@ -36,25 +39,37 @@ public final class SandboxMachineProfiles {
     profilesByOwner[ownerDeviceId]?[deviceId]
   }
 
+  public func power(forDevice deviceId: String, ownedBy ownerDeviceId: String) -> SandboxMachinePower? {
+    powersByOwner[ownerDeviceId]?[deviceId]
+  }
+
+  func markWaking(device deviceId: String, ownedBy ownerDeviceId: String) {
+    guard let paused = power(forDevice: deviceId, ownedBy: ownerDeviceId) else { return }
+    powersByOwner[ownerDeviceId]?[deviceId] = SandboxMachinePower(sandboxId: paused.sandboxId, power: .waking)
+  }
+
   func load(from owners: [SandboxOwner]) async {
-    await withTaskGroup(of: (String, [String: SandboxMachineProfile]?).self) { group in
+    await withTaskGroup(of: (String, OwnerSandboxes?).self) { group in
       for owner in owners {
-        group.addTask { (owner.deviceId, await Self.profilesByDevice(on: owner.client)) }
+        group.addTask { (owner.deviceId, await Self.sandboxes(on: owner.client)) }
       }
-      for await (ownerDeviceId, profiles) in group {
-        guard let profiles, profilesByOwner[ownerDeviceId] != profiles else { continue }
-        profilesByOwner[ownerDeviceId] = profiles
+      for await (ownerDeviceId, loaded) in group {
+        guard let loaded else { continue }
+        store(loaded, for: ownerDeviceId)
       }
     }
   }
 
-  private nonisolated static func profilesByDevice(
-    on client: any CodevisorServerClienting
-  ) async -> [String: SandboxMachineProfile]? {
+  private func store(_ loaded: OwnerSandboxes, for ownerDeviceId: String) {
+    if profilesByOwner[ownerDeviceId] != loaded.profiles { profilesByOwner[ownerDeviceId] = loaded.profiles }
+    if powersByOwner[ownerDeviceId] != loaded.powers { powersByOwner[ownerDeviceId] = loaded.powers }
+  }
+
+  private nonisolated static func sandboxes(on client: any CodevisorServerClienting) async -> OwnerSandboxes? {
     async let sandboxes = try? client.sandboxes()
     async let profiles = try? client.sandboxProfiles()
     guard let sandboxes = await sandboxes, let profiles = await profiles else { return nil }
-    return matching(sandboxes, to: profiles)
+    return OwnerSandboxes(profiles: matching(sandboxes, to: profiles), powers: SandboxMachinePower.byDevice(sandboxes))
   }
 
   private nonisolated static func matching(
@@ -70,4 +85,9 @@ public final class SandboxMachineProfiles {
     }
     return matched
   }
+}
+
+private struct OwnerSandboxes: Sendable {
+  let profiles: [String: SandboxMachineProfile]
+  let powers: [String: SandboxMachinePower]
 }

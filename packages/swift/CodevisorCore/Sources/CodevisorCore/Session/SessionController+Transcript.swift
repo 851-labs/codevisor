@@ -19,20 +19,13 @@ extension SessionController {
       sessionID: transcriptProjectionID,
       controllerRevision: transcriptProjectionRevision,
       modelRevision: model?.transcriptProjectionRevision ?? 0,
-      activityMessage: transcriptActivityOverride
+      activityMessage: transcriptSandboxPower == nil ? transcriptActivityOverride : nil,
+      sandboxPower: transcriptSandboxPower
     )
   }
 
   public var transcriptProjectionInput: TranscriptProjectionInput {
-    let projectionStatus: TranscriptProjectionInput.ConnectionStatus
-    switch status {
-    case .idle:
-      projectionStatus = .idle
-    case let .connecting(message):
-      projectionStatus = .connecting(message)
-    case let .failed(message):
-      projectionStatus = .failed(message)
-    }
+    let sandboxPower = transcriptSandboxPower
     let outgoing = transcriptOutgoing
     return TranscriptProjectionInput(
       settledConversation: settledConversation,
@@ -41,15 +34,24 @@ extension SessionController {
       setupPhases: SessionSetupPhases.merging(live: setupPhases, persisted: model?.persistedSetupPhases ?? []),
       waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
       waitingHarnessUpdateName: waitingHarnessUpdateName,
-      isLoadingInitialHistory: isLoadingInitialHistory,
-      serverWaitMessage: serverWaitMessage,
-      sessionErrorMessage: sessionErrorMessage,
-      status: projectionStatus,
-      activityMessage: transcriptActivityOverride,
+      isLoadingInitialHistory: isAwaitingInitialHistory,
+      serverWaitMessage: sandboxPower == nil ? serverWaitMessage : nil,
+      sessionErrorMessage: sandboxPower == nil ? sessionErrorMessage : nil,
+      status: sandboxPower == nil ? projectionStatus : .idle,
+      activityMessage: sandboxPower == nil ? transcriptActivityOverride : nil,
       botConversation: presentedBotConversation,
       outgoingMessages: outgoing.messages,
-      deliveries: outgoing.deliveries
+      deliveries: outgoing.deliveries,
+      sandboxPower: sandboxPower
     )
+  }
+
+  private var projectionStatus: TranscriptProjectionInput.ConnectionStatus {
+    switch status {
+    case .idle: .idle
+    case let .connecting(message): .connecting(message)
+    case let .failed(message): .failed(message)
+    }
   }
 
   public var pendingUserMessage: UserMessage? {

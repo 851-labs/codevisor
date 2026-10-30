@@ -8,7 +8,11 @@ import type { ExecResult } from "./provider.js"
 
 export const e2bSdkClient = (apiKey: string): E2bClient => ({
   create: async (template, options) => {
-    const sandbox = await Sandbox.create(template, { apiKey, ...options })
+    const sandbox = await Sandbox.create(template, {
+      apiKey,
+      ...options,
+      lifecycle: pauseOnTimeout
+    })
     return sandboxInfo(await sandbox.getInfo())
   },
   runAsRoot: async (sandboxId, script, options) => {
@@ -24,6 +28,16 @@ export const e2bSdkClient = (apiKey: string): E2bClient => ({
       throw cause
     }
   },
+  pause: async (sandboxId) => {
+    await Sandbox.pause(sandboxId, { apiKey })
+  },
+  resume: async (sandboxId, timeoutMs) => {
+    const sandbox = await Sandbox.connect(sandboxId, { apiKey, timeoutMs })
+    return sandboxInfo(await sandbox.getInfo())
+  },
+  setTimeout: async (sandboxId, timeoutMs) => {
+    await Sandbox.setTimeout(sandboxId, timeoutMs, { apiKey })
+  },
   kill: async (sandboxId) => {
     await Sandbox.kill(sandboxId, { apiKey })
   },
@@ -35,8 +49,11 @@ export const e2bSdkClient = (apiKey: string): E2bClient => ({
   }
 })
 
+const pauseOnTimeout = { onTimeout: "pause", autoResume: false } as const
+
 const sandboxInfo = (info: SandboxInfo): E2bSandboxInfo => ({
   sandboxId: info.sandboxId,
+  state: info.state,
   endAt: info.endAt,
   metadata: info.metadata
 })

@@ -51,7 +51,7 @@ extension ChatScreen {
               followsLatest: autoFollow,
               hasOlderHistory: hasOlderHistory,
               showsOlderHistoryLoadingIndicator: isLoadingOlderHistory,
-              isLoadingInitialHistory: controller.isLoadingInitialHistory,
+              isLoadingInitialHistory: controller.isAwaitingInitialHistory,
               isPreparingInitialProjection: isPreparingTranscript,
               isActiveProjectionPending: isActiveProjectionPending,
               isAwaitingFirstActiveProjection: isAwaitingFirstActiveProjection,

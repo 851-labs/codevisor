@@ -18,7 +18,8 @@ struct SandboxMachineProfilesTests {
       ServerSandbox(
         id: "a", vendor: "tart", name: "Tart VM a", state: "ready", profileId: "studio", deviceId: "studio-a"),
       ServerSandbox(
-        id: "b", vendor: "tart", name: "Tart VM b", state: "ready", profileId: "studio", deviceId: "studio-b"),
+        id: "b", vendor: "tart", name: "Tart VM b", state: "ready", profileId: "studio", deviceId: "studio-b",
+        power: "paused"),
       ServerSandbox(id: "c", vendor: "e2b", name: "E2B c", state: "ready", profileId: "deleted", deviceId: "orphan"),
     ],
     profiles: [ServerSandboxProfile(id: "studio", name: "Studio VM", vendor: "tart")]
@@ -57,6 +58,29 @@ struct SandboxMachineProfilesTests {
     #expect(controller.sandboxOwnerMachineId(forMachineId: owner.id) == nil)
   }
 
+  @Test("An offline sandbox the owner says is paused reads as paused, and a running one as awake")
+  func pausedSandboxesReadAsPaused() async {
+    let controller = makeController()
+    controller.markFailed(for: studioB.id, message: "offline")
+
+    await controller.loadSandboxMachineProfiles()
+
+    #expect(controller.sandboxPower(forMachineId: studioB.id) == SandboxMachinePower(sandboxId: "b", power: .paused))
+    #expect(controller.sandboxPower(forMachineId: studioA.id) == nil)
+  }
+
+  @Test("Waking a paused sandbox asks its owner and shows it waking right away")
+  func wakingAsksTheOwner() async throws {
+    let controller = makeController()
+    controller.markFailed(for: studioB.id, message: "offline")
+    await controller.loadSandboxMachineProfiles()
+
+    try await controller.wakeSandbox(forMachineId: studioB.id)
+
+    #expect(ownerFake.wokenIds == ["b"])
+    #expect(controller.sandboxPower(forMachineId: studioB.id)?.power == .waking)
+  }
+
   @Test("A refresh that can't reach the owning Mac keeps the profiles already known")
   func failedRefreshKeepsProfiles() async {
     let controller = makeController()
@@ -80,6 +104,7 @@ private final class SandboxOwnerFakeServerClient: CodevisorServerClienting, @unc
   let sandboxes: [ServerSandbox]
   let profiles: [ServerSandboxProfile]
   var failing = false
+  var wokenIds: [String] = []
 
   init(sandboxes: [ServerSandbox], profiles: [ServerSandboxProfile]) {
     self.sandboxes = sandboxes
@@ -94,6 +119,14 @@ private final class SandboxOwnerFakeServerClient: CodevisorServerClienting, @unc
   func sandboxProfiles() async throws -> [ServerSandboxProfile] {
     if failing { throw CodevisorServerClientError.invalidResponse }
     return profiles
+  }
+
+  func wakeSandbox(id: String) async throws -> ServerSandbox {
+    wokenIds.append(id)
+    guard let sandbox = sandboxes.first(where: { $0.id == id }) else {
+      throw CodevisorServerClientError.invalidResponse
+    }
+    return sandbox
   }
 
   func info() async throws -> ServerInfo {

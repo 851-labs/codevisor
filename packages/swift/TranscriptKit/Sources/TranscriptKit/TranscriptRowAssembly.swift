@@ -232,6 +232,9 @@ enum TranscriptRowAssembly {
           id: .connecting, content: .connecting(message), estimatedHeight: 32,
           measurementRevision: message.hashValue))
     }
+    if let power = input.sandboxPower {
+      rows.append(.init(id: .sandboxPower, content: .sandboxPower(power), estimatedHeight: power.estimatedHeight))
+    }
     if let message = input.sessionErrorMessage {
       rows.append(.init(id: .error, content: .error(message), estimatedHeight: 56))
     }

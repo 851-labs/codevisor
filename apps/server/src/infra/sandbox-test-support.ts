@@ -4,6 +4,7 @@ import {
   SIGN_IN_MARKER,
   type ExecRequest,
   type ExecResult,
+  type FakePauses,
   type FakeSandboxProvider,
   type SandboxAdapter,
   type SandboxField
@@ -60,6 +61,7 @@ export interface SandboxHarnessOptions {
   readonly boots?: boolean
   readonly streams?: boolean
   readonly prepares?: boolean
+  readonly pauses?: FakePauses
   readonly extraProfileFields?: ReadonlyArray<SandboxField>
   readonly verify?: SandboxAdapter["verify"]
   readonly availability?: () => Promise<string | undefined>
@@ -114,7 +116,8 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
     ...(options.resumable === true ? { resumable: true } : {}),
     ...(options.boots === true ? { boots: true } : {}),
     ...(options.streams === true ? { streams: true } : {}),
-    ...(options.prepares === true ? { prepares: true } : {})
+    ...(options.prepares === true ? { prepares: true } : {}),
+    ...(options.pauses === undefined ? {} : { pauses: options.pauses })
   })
   const provider: FakeSandboxProvider = options.sharing?.provider ?? {
     ...fake,

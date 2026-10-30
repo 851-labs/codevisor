@@ -32,6 +32,9 @@ export const SandboxState = Schema.Literals([
 ])
 export type SandboxState = typeof SandboxState.Type
 
+export const SandboxPower = Schema.Literals(["paused", "waking"])
+export type SandboxPower = typeof SandboxPower.Type
+
 export const SandboxSetupStage = Schema.Literals([
   "tart",
   "container",
@@ -103,6 +106,9 @@ export const Sandbox = Schema.Struct({
   harnessId: Schema.optional(Schema.String),
   agent: Schema.optional(SandboxAgentStart),
   agentId: Schema.optional(Schema.String),
+  power: Schema.optional(SandboxPower),
+  lastActiveAt: Schema.optional(Schema.String),
+  pausedSnapshot: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String)
 })
 export type Sandbox = typeof Sandbox.Type
@@ -147,6 +153,7 @@ export const FLEET_SANDBOX_ACTION_PATH = "fleet.sandbox_action"
 
 export const FleetSandboxAction = Schema.Union([
   Schema.Struct({ action: Schema.Literal("destroy"), id: Schema.String }),
+  Schema.Struct({ action: Schema.Literal("wake"), id: Schema.String }),
   Schema.Struct({
     action: Schema.Literal("claim-workspace"),
     id: Schema.String,
@@ -184,6 +191,7 @@ export const SandboxField = Schema.Struct({
   ),
   placeholder: Schema.optional(Schema.String),
   help: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
   min: Schema.optional(Schema.Number),
   max: Schema.optional(Schema.Number),
   steps: Schema.optional(Schema.Array(Schema.Number)),

@@ -23,6 +23,7 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
   public var choices: [Choice]?
   public var placeholder: String?
   public var help: String?
+  public var description: String?
   public var min: Double?
   public var max: Double?
   public var steps: [Double]?
@@ -51,6 +52,7 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
     choices: [Choice]? = nil,
     placeholder: String? = nil,
     help: String? = nil,
+    description: String? = nil,
     min: Double? = nil,
     max: Double? = nil,
     steps: [Double]? = nil,
@@ -66,6 +68,7 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
     self.choices = choices
     self.placeholder = placeholder
     self.help = help
+    self.description = description
     self.min = min
     self.max = max
     self.steps = steps
@@ -75,7 +78,8 @@ public struct ServerSandboxField: Decodable, Equatable, Hashable, Sendable, Iden
   }
 
   private enum CodingKeys: String, CodingKey {
-    case key, label, type, required, choices, placeholder, help, min, max, steps, fallbackMax, unit, capability
+    case key, label, type, required, choices, placeholder, help, description, min, max, steps, fallbackMax, unit
+    case capability
     case defaultValue = "default"
   }
 }

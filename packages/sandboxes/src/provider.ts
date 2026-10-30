@@ -1,4 +1,5 @@
 import type { SandboxField, SandboxFieldMaximums, SandboxFieldValues } from "./fields.js"
+import type { SandboxPausing } from "./pausing.js"
 
 export const SANDBOX_PROVIDER_IDS = [
   "tart",
@@ -117,6 +118,7 @@ export interface SandboxProvider {
   readonly resume?: (providerMachineId: string) => Promise<void>
   readonly gui?: (providerMachineId: string) => Promise<GuiEndpoint>
   readonly snapshot?: (providerMachineId: string) => Promise<SnapshotRef>
+  readonly pausing?: SandboxPausing
 }
 
 export interface SandboxAdapter {

@@ -30,7 +30,7 @@ export const recordIdName = (path: string): string | undefined => {
   return resource === undefined ? undefined : recordIdNames[resource]
 }
 
-const actionSegments: ReadonlySet<string> = new Set(["retry", "wait"])
+const actionSegments: ReadonlySet<string> = new Set(["retry", "wait", "wake"])
 
 const resourceSegment = (path: string): string | undefined => {
   const literals = path

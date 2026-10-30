@@ -59,6 +59,11 @@ const dispatchSandboxes = async (route: RouteContext, sandboxes: Sandboxes): Pro
     writeJson(response, 200, await sandboxes.wait(waitId, waitTimeout(timeoutMs)))
     return true
   }
+  const wakeId = methodRouteId(route, "POST", "/v1/sandboxes/:id/wake")
+  if (wakeId !== undefined) {
+    writeJson(response, 202, await sandboxes.wake(wakeId))
+    return true
+  }
   const retryId = methodRouteId(route, "POST", "/v1/sandboxes/:id/retry")
   if (retryId !== undefined) {
     writeJson(response, 202, await sandboxes.retry(retryId, setupPublisher(route)))

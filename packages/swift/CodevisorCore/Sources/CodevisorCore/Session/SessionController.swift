@@ -99,6 +99,8 @@ final public class SessionController {
       if serverWaitMessage != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
+  public internal(set) var sandboxWakeFailure: String?
+  public internal(set) var isReconnectingAfterWake = false
   public internal(set) var pendingSendStartedAt: Date?
   public internal(set) var presentsBotConversation = false {
     didSet {

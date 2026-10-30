@@ -127,6 +127,7 @@ describe("sandbox tools", () => {
       "POST /v1/sandboxes": sandbox,
       "POST /v1/sandboxes/box/retry": sandbox,
       "POST /v1/sandboxes/box/wait": { ...sandbox, timedOut: true },
+      "POST /v1/sandboxes/box/wake": { ...sandbox, power: "waking" },
       "DELETE /v1/sandboxes/box": { destroyed: "box" }
     })
 
@@ -141,6 +142,7 @@ describe("sandbox tools", () => {
     })
     const retried = await resultOf("sandboxes.retry", { sandboxId: "box" })
     const waited = await resultOf("sandboxes.wait", { sandboxId: "box", timeoutMs: 5000 })
+    const woken = await resultOf("sandboxes.wake", { sandboxId: "box" })
     await resultOf("sandboxes.destroy", { sandboxId: "box", confirm: true })
 
     expect([listed, one, created, retried]).toEqual([
@@ -150,6 +152,7 @@ describe("sandbox tools", () => {
       { sandboxId: "box", state: "creating" }
     ])
     expect(waited).toEqual({ sandboxId: "box", state: "creating", timedOut: true })
+    expect(woken).toEqual({ sandboxId: "box", state: "creating", power: "waking" })
     expect(log).toEqual({ lines: [{ machineId: "box", line: "Booting" }] })
     expect(sent).toEqual([
       { method: "GET", path: "/v1/sandbox-providers" },
@@ -163,6 +166,7 @@ describe("sandbox tools", () => {
       },
       { method: "POST", path: "/v1/sandboxes/box/retry" },
       { method: "POST", path: "/v1/sandboxes/box/wait", body: { timeoutMs: 5000 } },
+      { method: "POST", path: "/v1/sandboxes/box/wake" },
       { method: "DELETE", path: "/v1/sandboxes/box" }
     ])
   })
@@ -229,7 +233,8 @@ describe("sandbox tools", () => {
       "sandboxes.providers_update",
       "sandboxes.retry",
       "sandboxes.vendors",
-      "sandboxes.wait"
+      "sandboxes.wait",
+      "sandboxes.wake"
     ])
   })
 })

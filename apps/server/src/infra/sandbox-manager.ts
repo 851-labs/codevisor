@@ -52,18 +52,22 @@ export const managesHere = (deps: SandboxDeps, machine: Sandbox): boolean =>
 
 export interface SandboxRouting {
   readonly destroy: (id: string) => Promise<void>
+  readonly wake: (id: string) => Promise<Sandbox>
   readonly claimWorkspace: (id: string, workspaceId: string) => Promise<Sandbox>
   readonly receive: (request: FleetSandboxRequest) => Promise<FleetSandboxAnswer>
 }
 
-export const makeSandboxRouting = (
-  deps: SandboxDeps,
-  destroyHere: (machine: Sandbox) => Promise<undefined>
-): SandboxRouting => {
-  const act = (request: FleetSandboxAction, machine: Sandbox): Promise<Sandbox | undefined> =>
-    request.action === "destroy"
-      ? destroyHere(machine)
-      : claimHere(deps, machine, request.workspaceId)
+export interface SandboxActions {
+  readonly destroyHere: (machine: Sandbox) => Promise<undefined>
+  readonly wakeHere: (machine: Sandbox) => Promise<Sandbox>
+}
+
+export const makeSandboxRouting = (deps: SandboxDeps, actions: SandboxActions): SandboxRouting => {
+  const act = (request: FleetSandboxAction, machine: Sandbox): Promise<Sandbox | undefined> => {
+    if (request.action === "destroy") return actions.destroyHere(machine)
+    if (request.action === "wake") return actions.wakeHere(machine)
+    return claimHere(deps, machine, request.workspaceId)
+  }
 
   const routed = async (request: FleetSandboxAction): Promise<Sandbox | undefined> => {
     const machine = await existingSandbox(deps, request.id)
@@ -75,6 +79,7 @@ export const makeSandboxRouting = (
     destroy: async (id) => {
       await routed({ action: "destroy", id })
     },
+    wake: async (id) => claimed(await routed({ action: "wake", id })),
     claimWorkspace: async (id, workspaceId) =>
       claimed(await routed({ action: "claim-workspace", id, workspaceId })),
     receive: async ({ request, record }) => {

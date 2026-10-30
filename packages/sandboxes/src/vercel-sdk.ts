@@ -49,6 +49,12 @@ export const vercelSdkClient = (credentials: VercelCredentials): VercelClient =>
     resume: async (name) => {
       await Sandbox.get({ ...credentials, name, resume: true })
     },
+    stop: async (name) => {
+      await (await Sandbox.get({ ...credentials, name })).stop()
+    },
+    extend: async (name, durationMs) => {
+      await (await Sandbox.get({ ...credentials, name })).extendTimeout(durationMs)
+    },
     remove: async (name) => {
       await (await lookup(name))?.delete({ deleteOrphanSnapshots: true })
     },

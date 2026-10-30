@@ -66,6 +66,23 @@ describe("sandboxes managed account-wide", () => {
     expect((await fleet.laptop.harness.machines.get("id-1")).workspaceId).toBe("claimed-ws")
   })
 
+  it("wakes a paused sandbox through the holder, answering waking before it's back", async () => {
+    const fleet = await startTwoMachines({ pauses: "in-place" })
+    await fleet.laptop.harness.machines.create(request)
+    await fleet.laptop.harness.machines.settled()
+    const running = await fleet.laptop.harness.machines.get("id-1")
+    await fleet.laptop.harness.records.put({ ...running, power: "paused" })
+    const machine = fleet.laptop.harness.provider.machines.get("fake-1")
+    if (machine !== undefined) machine.state = "stopped"
+
+    const waking = await fleet.laptop.harness.machines.wake("id-1")
+    await fleet.studio.harness.machines.settled()
+
+    expect(waking).toMatchObject({ id: "id-1", power: "waking" })
+    expect((await fleet.studio.harness.machines.get("id-1")).power).toBeUndefined()
+    expect(machine?.state).toBe("running")
+  })
+
   it("says so when nobody holds the role, and passes the holder's refusal on", async () => {
     const fleet = await readyOnLaptop()
     fleet.holder = undefined

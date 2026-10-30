@@ -7,12 +7,20 @@ public struct TranscriptProjectionKey: Hashable, Sendable {
   public let controllerRevision: UInt64
   public let modelRevision: UInt64
   public let activityMessage: String?
+  public let sandboxPower: TranscriptSandboxPower?
 
-  public init(sessionID: UUID, controllerRevision: UInt64, modelRevision: UInt64, activityMessage: String? = nil) {
+  public init(
+    sessionID: UUID,
+    controllerRevision: UInt64,
+    modelRevision: UInt64,
+    activityMessage: String? = nil,
+    sandboxPower: TranscriptSandboxPower? = nil
+  ) {
     self.sessionID = sessionID
     self.controllerRevision = controllerRevision
     self.modelRevision = modelRevision
     self.activityMessage = activityMessage
+    self.sandboxPower = sandboxPower
   }
 }
 
@@ -115,6 +123,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case updateGate
     case connecting
     case serverWait
+    case sandboxPower
     case error
     case statusError
     case bottomSpacer
@@ -163,6 +172,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .updateGate: "special:update-gate"
       case .connecting: "special:connecting"
       case .serverWait: "special:server-wait"
+      case .sandboxPower: "special:sandbox-power"
       case .error: "special:error"
       case .statusError: "special:status-error"
       case .bottomSpacer: "special:bottom-spacer"
@@ -183,7 +193,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .delivery, .botTyping, .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
         .activeMarkdown, .activeAttachment, .activePluginApps, .setupRequest, .interaction, .setup, .startingAgent,
-        .backgroundTask, .updateGate, .connecting, .serverWait, .error,
+        .backgroundTask, .updateGate, .connecting, .serverWait, .sandboxPower, .error,
         .statusError, .bottomSpacer:
         false
       }
@@ -217,7 +227,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         id
       case .botMessage, .botTimestamp, .delivery, .botTyping, .setupRequest, .interaction, .setup, .startingAgent,
         .backgroundTask,
-        .updateGate, .connecting, .serverWait, .error, .statusError, .bottomSpacer:
+        .updateGate, .connecting, .serverWait, .sandboxPower, .error, .statusError, .bottomSpacer:
         nil
       }
     }
@@ -257,6 +267,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case updateGate(String)
     case connecting(String)
     case serverWait(String)
+    case sandboxPower(TranscriptSandboxPower)
     case error(String)
     case bottomSpacer(CGFloat)
   }

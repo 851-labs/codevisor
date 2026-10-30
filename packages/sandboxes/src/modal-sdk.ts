@@ -1,6 +1,11 @@
-import { ModalClient as Modal, NotFoundError, type Sandbox } from "modal"
+import { ModalClient as Modal, NotFoundError, type Image, type Sandbox } from "modal"
 
-import { MODAL_APP_NAME, type ModalClient, type ModalSandboxRef } from "./modal.js"
+import {
+  MODAL_APP_NAME,
+  type ModalClient,
+  type ModalCreateRequest,
+  type ModalSandboxRef
+} from "./modal.js"
 import type { ExecResult } from "./provider.js"
 
 export interface ModalCredentials {
@@ -21,9 +26,7 @@ export const modalSdkClient = (credentials: ModalCredentials): ModalClient => {
   }
   return {
     create: async (request) => {
-      const image = modal.images
-        .fromRegistry(request.image)
-        .dockerfileCommands([...request.setupCommands])
+      const image = await imageFor(modal, request)
       const sandbox = await modal.sandboxes.create(await app(), image, {
         cpu: request.cpu,
         memoryMiB: request.memoryMiB,
@@ -54,9 +57,17 @@ export const modalSdkClient = (credentials: ModalCredentials): ModalClient => {
     },
     snapshot: async (sandboxId) => {
       const sandbox = await modal.sandboxes.fromId(sandboxId)
-      return (await sandbox.snapshotFilesystem()).imageId
+      return (await sandbox.snapshotFilesystem({ timeoutMs: snapshotTimeoutMs })).imageId
     }
   }
+}
+
+const snapshotTimeoutMs = 10 * 60 * 1000
+
+const imageFor = async (modal: Modal, request: ModalCreateRequest): Promise<Image> => {
+  if (request.snapshot !== undefined) return modal.images.fromId(request.snapshot)
+
+  return modal.images.fromRegistry(request.image).dockerfileCommands([...request.setupCommands])
 }
 
 const runScript = async (

@@ -23,6 +23,7 @@ public struct TranscriptProjectionInput: Sendable {
   public let botConversation: TranscriptBotConversation?
   public let outgoingMessages: [UserMessage]
   public let deliveries: [UUID: TranscriptDelivery]
+  public let sandboxPower: TranscriptSandboxPower?
 
   public init(
     settledConversation: [ConversationItem],
@@ -38,7 +39,8 @@ public struct TranscriptProjectionInput: Sendable {
     activityMessage: String? = nil,
     botConversation: TranscriptBotConversation? = nil,
     outgoingMessages: [UserMessage] = [],
-    deliveries: [UUID: TranscriptDelivery] = [:]
+    deliveries: [UUID: TranscriptDelivery] = [:],
+    sandboxPower: TranscriptSandboxPower? = nil
   ) {
     self.settledConversation = settledConversation
     self.pendingUserMessage = pendingUserMessage
@@ -54,5 +56,6 @@ public struct TranscriptProjectionInput: Sendable {
     self.botConversation = botConversation
     self.outgoingMessages = outgoingMessages
     self.deliveries = deliveries
+    self.sandboxPower = sandboxPower
   }
 }

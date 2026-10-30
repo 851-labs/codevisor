@@ -55,7 +55,7 @@ extension SessionTranscriptView {
           showsOlderHistoryLoadingIndicator: presentationRole == .foreground
             && olderHistoryPresentation.isPresented,
           olderHistoryPresentationTarget: olderHistoryPresentation.presentationTarget,
-          isLoadingInitialHistory: controller.isLoadingInitialHistory,
+          isLoadingInitialHistory: controller.isAwaitingInitialHistory,
           isPreparingInitialProjection: isPreparingTranscript,
           isActiveProjectionPending: isActiveProjectionPending,
           isAwaitingFirstActiveProjection: isAwaitingFirstActiveProjection,

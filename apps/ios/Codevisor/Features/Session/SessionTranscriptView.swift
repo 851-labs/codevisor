@@ -210,7 +210,7 @@ struct SessionTranscriptView: View {
   var isLoadingTranscriptContent: Bool {
     (isPreparingTranscript && projectedRows.isEmpty)
       || (!showsWatermark && !presentationSurface.hasPresentedContent)
-      || (controller.isLoadingInitialHistory
+      || (controller.isAwaitingInitialHistory
         && controller.settledConversation.isEmpty
         && !controller.hasActiveItem
         && !controller.hasUnsentBotMessages)
@@ -271,7 +271,7 @@ struct SessionTranscriptView: View {
   var showsWatermark: Bool {
     guard !controller.presentsBotConversation else { return false }
     guard !controller.hasUnsentMessages, controller.setupPhases.isEmpty else { return false }
-    guard controller.sessionErrorMessage == nil else { return false }
+    guard controller.sessionErrorMessage == nil, controller.sandboxPower == nil else { return false }
     guard !controller.isLoadingInitialHistory, controller.serverWaitMessage == nil else { return false }
     switch controller.status {
     case .connecting, .failed: return false

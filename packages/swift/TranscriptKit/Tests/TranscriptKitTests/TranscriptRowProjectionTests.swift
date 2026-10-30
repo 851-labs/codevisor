@@ -523,4 +523,20 @@ extension TranscriptRowProjectionTests {
       #expect(rows.last?.content == .connecting("Reconnecting…"))
     }
   }
+
+  @Test func aPausedSandboxShowsItsCardAfterHistoryAndWithoutHistory() throws {
+    let cached = ConversationItem.user(UserMessage(text: "Cached transcript"))
+    for settled in [[cached], []] {
+      let input = TranscriptProjectionInput(
+        settledConversation: settled, pendingUserMessage: nil, activeItem: nil,
+        setupPhases: [], waitingBackgroundTaskDescription: nil, waitingHarnessUpdateName: nil,
+        isLoadingInitialHistory: false, serverWaitMessage: nil,
+        sessionErrorMessage: nil, status: .idle, sandboxPower: .paused(wakeFailure: nil))
+
+      let rows = try TranscriptRowProjectionCache.project(input, options: .init(includesConnectingRow: true))
+
+      #expect(rows.map(\.id) == settled.map { .message($0.id) } + [.sandboxPower])
+      #expect(rows.last?.content == .sandboxPower(.paused(wakeFailure: nil)))
+    }
+  }
 }

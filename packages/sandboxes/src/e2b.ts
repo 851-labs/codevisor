@@ -1,4 +1,5 @@
-import { numberField, numberValue, secretField, stringValue, textField } from "./fields.js"
+import { secretField, stringValue, textField } from "./fields.js"
+import { pauseAfterField, type SandboxPausing } from "./pausing.js"
 import type {
   ExecResult,
   SandboxAdapter,
@@ -25,12 +26,13 @@ export const E2B_DEFINITION: SandboxProviderDefinition = {
       default: "base",
       help: "An E2B template name or ID. Each template is its own profile."
     }),
-    numberField("timeoutMinutes", "Lifetime (minutes)", { default: 60, min: 5, max: 1440 })
+    pauseAfterField({ never: true })
   ]
 }
 
 export interface E2bSandboxInfo {
   readonly sandboxId: string
+  readonly state: "running" | "paused"
   readonly endAt?: Date
   readonly metadata: Readonly<Record<string, string>>
 }
@@ -46,12 +48,15 @@ export interface E2bClient {
     options: { readonly stdin?: string; readonly timeoutMs: number }
   ) => Promise<ExecResult>
   readonly info: (sandboxId: string) => Promise<E2bSandboxInfo | undefined>
+  readonly pause: (sandboxId: string) => Promise<void>
+  readonly resume: (sandboxId: string, timeoutMs: number) => Promise<E2bSandboxInfo>
+  readonly setTimeout: (sandboxId: string, timeoutMs: number) => Promise<void>
   readonly kill: (sandboxId: string) => Promise<void>
   readonly list: (metadata: Record<string, string>) => Promise<ReadonlyArray<E2bSandboxInfo>>
 }
 
 const defaultExecTimeoutMs = 10 * 60 * 1000
-const millisecondsPerMinute = 60 * 1000
+const vendorWindowMs = 60 * 60 * 1000
 
 export const e2bAdapter = (connectClient: (apiKey: string) => E2bClient): SandboxAdapter => ({
   definition: E2B_DEFINITION,
@@ -62,13 +67,16 @@ export const e2bAdapter = (connectClient: (apiKey: string) => E2bClient): Sandbo
   }
 })
 
-export const makeE2bProvider = (client: E2bClient): SandboxProvider => ({
+export const makeE2bProvider = (
+  client: E2bClient,
+  now: () => number = Date.now
+): SandboxProvider => ({
   definition: E2B_DEFINITION,
   provisionStages: ["create"],
   streamsOutput: false,
   create: async (spec, options) => {
     const sandbox = await client.create(stringValue(options, "template"), {
-      timeoutMs: numberValue(options, "timeoutMinutes", 60) * millisecondsPerMinute,
+      timeoutMs: vendorWindowMs,
       metadata: tagsToRecord(spec.tags)
     })
     return { providerMachineId: sandbox.sandboxId, platform: "linux", ...expiry(sandbox) }
@@ -82,13 +90,30 @@ export const makeE2bProvider = (client: E2bClient): SandboxProvider => ({
     const sandbox = await client.info(sandboxId)
     if (sandbox === undefined) return { state: "gone" }
 
-    return { state: "running", ...expiry(sandbox) }
+    return { state: sandbox.state === "paused" ? "stopped" : "running", ...expiry(sandbox) }
   },
   destroy: (sandboxId) => client.kill(sandboxId),
   list: async (owner) =>
     (await client.list(ownerFilter(owner))).flatMap((sandbox) =>
       listedMachine(sandbox.sandboxId, sandbox.metadata)
-    )
+    ),
+  pausing: e2bPausing(client, now)
+})
+
+const e2bPausing = (client: E2bClient, now: () => number): SandboxPausing => ({
+  pause: async (sandboxId) => {
+    await client.pause(sandboxId)
+    return { providerMachineId: sandboxId }
+  },
+  wake: async (paused) => {
+    const sandbox = await client.resume(paused.providerMachineId, vendorWindowMs)
+    return { providerMachineId: sandbox.sandboxId, ...expiry(sandbox) }
+  },
+  keepAlive: async (sandboxId, untilMs) => {
+    const timeoutMs = Math.min(untilMs - now(), vendorWindowMs)
+    await client.setTimeout(sandboxId, timeoutMs)
+    return new Date(now() + timeoutMs).toISOString()
+  }
 })
 
 const expiry = (sandbox: E2bSandboxInfo): { readonly expiresAt?: string } =>
