@@ -44,6 +44,9 @@ private struct HoverIconButtonBody: View {
       .frame(minHeight: shape == .chip ? 26 : nil)
       .background(shape.fill(isHovered ? Color.primary.opacity(0.06) : .clear))
       .contentShape(Rectangle())
+      #if os(macOS)
+        .contentShape(.focusEffect, shape)
+      #endif
       .onHover { isHovered = $0 }
       .opacity(configuration.isPressed ? 0.8 : 1)
   }

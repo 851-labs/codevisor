@@ -214,9 +214,9 @@ private struct SettingsSidebarRow: View {
       .padding(.vertical, 6)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
+      .sidebarRowHover(isSelected: isSelected)
     }
     .buttonStyle(.plain)
-    .sidebarRowHover(isSelected: isSelected)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }

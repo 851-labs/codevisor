@@ -37,6 +37,7 @@ struct WorkspaceInspectorTabBar: View {
     .coordinateSpace(.named(Self.space))
     .fixedSize()
     .contentShape(Rectangle())
+    .contentShape(.focusEffect, Capsule())
     .gesture(
       DragGesture(minimumDistance: 0, coordinateSpace: .local)
         .updating($isPressed) { _, pressed, _ in pressed = true }

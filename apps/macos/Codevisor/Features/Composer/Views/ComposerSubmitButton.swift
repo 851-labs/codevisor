@@ -41,7 +41,7 @@ struct ComposerSubmitButton: View {
               : AnyShapeStyle(Color.secondary.opacity(0.16))
           )
         )
-        .contentShape(Circle())
+        .contentShape([.interaction, .focusEffect], Circle())
     }
     .buttonStyle(.plain)
     .disabled(!isEnabled)
