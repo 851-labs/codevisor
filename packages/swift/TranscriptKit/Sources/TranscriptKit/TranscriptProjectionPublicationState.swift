@@ -1,16 +1,16 @@
-public struct TranscriptProjectionPublicationState<Request>: Sendable, Equatable
-where Request: Sendable & Equatable {
-  public private(set) var publishedRequest: Request?
+public struct TranscriptProjectionPublicationState: Sendable, Equatable {
+  public private(set) var publishedRequest: TranscriptProjectionRequest?
 
-  public init(publishedRequest: Request? = nil) {
+  public init(publishedRequest: TranscriptProjectionRequest? = nil) {
     self.publishedRequest = publishedRequest
   }
 
-  public func isPending(currentRequest: Request) -> Bool {
-    publishedRequest != currentRequest
+  public func isPending(currentRequest: TranscriptProjectionRequest) -> Bool {
+    guard let publishedRequest else { return true }
+    return !publishedRequest.standsIn(for: currentRequest)
   }
 
-  public mutating func publish(_ request: Request) {
+  public mutating func publish(_ request: TranscriptProjectionRequest) {
     publishedRequest = request
   }
 

@@ -79,16 +79,6 @@ extension SessionContainerView {
             environment: environment
           ))
       }
-      if descriptor.kind == .transcript {
-        return AnyView(
-          BotTranscriptPaneContentView(
-            descriptor: descriptor,
-            focus: sessionFocus,
-            hostWorkspace: workspace,
-            store: store,
-            environment: environment
-          ))
-      }
       if descriptor.kind == .newTab {
         return AnyView(
           NewTabPageView(
@@ -112,7 +102,7 @@ extension SessionContainerView {
           project: project,
           store: store,
           environment: environment,
-          presentsBotConversation: descriptor.chatSessionId.flatMap(botChat)?.isConversational == true
+          role: chatPaneRole(for: descriptor)
         ))
     }
   }

@@ -171,6 +171,31 @@ extension SessionTranscriptView {
     )
   }
 
+  func submitProjection() {
+    let request = transcriptProjectionRequest
+    if projectedSessionID != request.key.sessionID {
+      resetProjection(for: request.key.sessionID)
+    }
+    projectionWorker.submit(request, input: controller.transcriptProjectionInput) { output in
+      publishProjection(output)
+    }
+  }
+
+  private func resetProjection(for sessionID: UUID) {
+    projectedRows = []
+    projectedRowsVersion &+= 1
+    projectedSessionID = sessionID
+    projectionPublication.reset()
+  }
+
+  private func publishProjection(_ output: TranscriptSettledProjectionWorker.Output) {
+    guard output.request.key.sessionID == projectedSessionID else { return }
+    projectedRows = output.rows
+    projectedRowsVersion &+= 1
+    projectionPublication.publish(output.request)
+    olderHistoryPresentation.projectionDidPublish(key: output.request.key, revision: projectedRowsVersion)
+  }
+
   var isPreparingTranscript: Bool {
     projectionPublication.isPending(currentRequest: transcriptProjectionRequest)
   }

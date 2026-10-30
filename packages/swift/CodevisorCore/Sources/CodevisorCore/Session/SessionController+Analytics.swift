@@ -38,7 +38,7 @@ extension SessionController {
   }
 
   func captureTurnEnded(_ model: SessionModel) {
-    guard case let .assistant(message) = model.activeItem else { return }
+    guard reportsTurnAnalytics, case let .assistant(message) = model.activeItem else { return }
 
     let turn = message.turn
     let currentUsage = model.usage

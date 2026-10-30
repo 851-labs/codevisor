@@ -48,6 +48,14 @@ public struct TranscriptProjectionRequest: Hashable, Sendable {
     self.key = key
     self.options = options
   }
+
+  public func standsIn(for current: TranscriptProjectionRequest) -> Bool {
+    options == current.options
+      && key.sessionID == current.key.sessionID
+      && key.controllerRevision == current.key.controllerRevision
+      && key.activityMessage == current.key.activityMessage
+      && key.modelRevision <= current.key.modelRevision
+  }
 }
 
 public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {

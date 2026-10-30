@@ -1,15 +1,26 @@
+import Foundation
 import Testing
 @testable import TranscriptKit
 
 struct TranscriptProjectionPublicationStateTests {
-  private struct Request: Equatable, Sendable {
-    let revision: Int
+  private static let sessionID = UUID()
+
+  private func request(
+    controllerRevision: UInt64 = 1,
+    modelRevision: UInt64 = 1,
+    bottomSpacerHeight: CGFloat = 80
+  ) -> TranscriptProjectionRequest {
+    TranscriptProjectionRequest(
+      key: TranscriptProjectionKey(
+        sessionID: Self.sessionID, controllerRevision: controllerRevision, modelRevision: modelRevision),
+      options: .init(includesConnectingRow: false, bottomSpacerHeight: bottomSpacerHeight)
+    )
   }
 
   @Test func historyRequestInvalidatesPublishedLoadingProjectionImmediately() {
-    let loading = Request(revision: 1)
-    let history = Request(revision: 2)
-    var publication = TranscriptProjectionPublicationState<Request>()
+    let loading = request(controllerRevision: 1)
+    let history = request(controllerRevision: 2)
+    var publication = TranscriptProjectionPublicationState()
 
     #expect(publication.isPending(currentRequest: loading))
 
@@ -22,20 +33,30 @@ struct TranscriptProjectionPublicationStateTests {
     #expect(!publication.isPending(currentRequest: history))
   }
 
+  @Test func newerLiveEventsDoNotHoldBackAPublishedProjection() {
+    var publication = TranscriptProjectionPublicationState()
+
+    publication.publish(request(modelRevision: 4))
+
+    #expect(!publication.isPending(currentRequest: request(modelRevision: 9)))
+    #expect(publication.isPending(currentRequest: request(modelRevision: 3)))
+    #expect(publication.isPending(currentRequest: request(modelRevision: 9, bottomSpacerHeight: 120)))
+  }
+
   @Test func resetMakesAPreviouslyPublishedRequestPendingAgain() {
-    let request = Request(revision: 1)
+    let current = request()
     var publication = TranscriptProjectionPublicationState(
-      publishedRequest: request
+      publishedRequest: current
     )
 
     publication.reset()
 
-    #expect(publication.isPending(currentRequest: request))
+    #expect(publication.isPending(currentRequest: current))
   }
 
   @Test func obsoleteEmptyProjectionCannotOpenInitialPresentationGate() {
-    let loading = Request(revision: 1)
-    let history = Request(revision: 2)
+    let loading = request(controllerRevision: 1)
+    let history = request(controllerRevision: 2)
     var publication = TranscriptProjectionPublicationState(
       publishedRequest: loading
     )

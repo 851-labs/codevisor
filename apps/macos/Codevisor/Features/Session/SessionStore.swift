@@ -38,6 +38,7 @@ final class SessionStore {
   @ObservationIgnored var transcriptSurfaces =
     TranscriptPresentationSurfaceCache()
   @ObservationIgnored var subagentMirrors: [SubagentPaneKey: SubagentMirror] = [:]
+  @ObservationIgnored let transcriptViewers = TranscriptViewerControllers()
   struct SubagentPaneKey: Hashable {
     let workspaceId: UUID
     let paneId: UUID
@@ -131,19 +132,7 @@ final class SessionStore {
       )
     }
 
-    let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
-    let controller = SessionController(
-      project: project,
-      configCache: environment.configCache,
-      composerDefaults: environment.composerDefaults,
-      hostWorkspaceId: workspaceId,
-      serverClient: environment.machines.client(for: session.serverId),
-      machines: environment.machines,
-      notificationDelivery: notificationDelivery,
-      attachmentFiles: environment.composerDrafts.attachmentFiles
-    )
-    controller.transcriptCache = environment.transcriptCache
-    controller.configureExistingSession(session)
+    let controller = makeController(for: session, project: project)
     controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
       projectList?.setAgentSessionId(
         agentSessionId,
@@ -163,6 +152,22 @@ final class SessionStore {
     }
     controller.onTurnEnded = { [weak self] in self?.noteTurnEnded() }
     controllers[key] = controller
+    return controller
+  }
+
+  func makeController(for session: ChatSession, project: Project) -> SessionController {
+    let controller = SessionController(
+      project: project,
+      configCache: environment.configCache,
+      composerDefaults: environment.composerDefaults,
+      hostWorkspaceId: environment.workspaces.workspaceId(forSession: session.id),
+      serverClient: environment.machines.client(for: session.serverId),
+      machines: environment.machines,
+      notificationDelivery: notificationDelivery,
+      attachmentFiles: environment.composerDrafts.attachmentFiles
+    )
+    controller.transcriptCache = environment.transcriptCache
+    controller.configureExistingSession(session)
     return controller
   }
 
@@ -287,6 +292,7 @@ final class SessionStore {
       centerLeafGroups[key] = nil
     }
     pruneSubagentMirrors(in: workspace)
+    transcriptViewers.prune(in: workspace)
     return changed
   }
 

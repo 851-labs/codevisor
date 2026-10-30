@@ -107,6 +107,10 @@ final class TranscriptPresentationSurfaceCache {
     cache.remove { $0.sessionID == sessionID }
   }
 
+  func remove(_ key: Key) {
+    cache.remove(key)
+  }
+
   private func scheduleTrim(excluding protectedKey: Key) {
     trimTask?.cancel()
     trimTask = Task { @MainActor [weak self] in

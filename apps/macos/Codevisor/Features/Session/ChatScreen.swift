@@ -43,8 +43,8 @@ struct ChatScreen: View {
   @State var projectedRowsVersion: UInt64 = 0
   @State var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
   @State var projectedSessionID: UUID?
-  @State var projectionPublication =
-    TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
+  @State var projectionPublication = TranscriptProjectionPublicationState()
+  @State var projectionWorker = TranscriptSettledProjectionWorker()
   @State var presentationVisibilityOwner = UUID()
   @Namespace var composerGlassNamespace
   var composerCardStyle = ComposerCardStyle()
@@ -58,7 +58,7 @@ struct ChatScreen: View {
     .init(controller: ObjectIdentifier(controller), isMounted: isTranscriptMounted)
   }
 
-  private var mountedProjectionRequest: TranscriptProjectionRequest? {
+  var mountedProjectionRequest: TranscriptProjectionRequest? {
     isTranscriptMounted ? transcriptProjectionRequest : nil
   }
 
@@ -114,6 +114,7 @@ struct ChatScreen: View {
         presentationSurface.disappear(owner: presentationVisibilityOwner)
         historyLoadTask?.cancel()
         historyLoadTask = nil
+        projectionWorker.cancel()
         controller.presentationClock.viewDidDisappear()
       }
       .task(id: ObjectIdentifier(controller)) {
@@ -132,7 +133,11 @@ struct ChatScreen: View {
       }
       .task(id: contentLoadingIdentity) {
         if presentsBotConversation { controller.presentBotConversation() }
-        guard isTranscriptMounted, !isReadOnly else { return }
+        guard isTranscriptMounted else { return }
+        guard !isReadOnly else {
+          await connectForReading()
+          return
+        }
         if controller.resumeAgentSessionId?.isEmpty == false {
           async let capabilities: Void = controller.prepareExistingSessionCapabilities()
           if !AppPreview.isRunning {
@@ -149,31 +154,7 @@ struct ChatScreen: View {
         }
       }
       .task(id: mountedProjectionRequest) {
-        guard let request = mountedProjectionRequest else { return }
-        let key = request.key
-        let input = controller.transcriptProjectionInput
-        if projectedSessionID != key.sessionID {
-          projectedRows = []
-          projectedRowsVersion &+= 1
-          projectedSessionID = key.sessionID
-          projectionPublication.reset()
-        }
-        do {
-          let rows = try await TranscriptRowProjectionCache.shared.rows(
-            for: key,
-            input: input,
-            options: request.options
-          )
-          guard !Task.isCancelled,
-            transcriptProjectionRequest == request
-          else { return }
-          projectedRows = rows
-          projectedRowsVersion &+= 1
-          projectionPublication.publish(request)
-        } catch is CancellationError {
-          return
-        } catch {
-        }
+        submitProjection()
       }
       .task(id: isInitialTranscriptReady) {
         showsInitialLoadingSpinner = false

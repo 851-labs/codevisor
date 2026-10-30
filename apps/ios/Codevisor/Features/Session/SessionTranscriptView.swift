@@ -69,8 +69,8 @@ struct SessionTranscriptView: View {
   @State var projectedRowsVersion: UInt64 = 0
   @State var workedRowsVisibilityCache = TranscriptWorkedRowsVisibilityCache()
   @State var projectedSessionID: UUID?
-  @State var projectionPublication =
-    TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
+  @State var projectionPublication = TranscriptProjectionPublicationState()
+  @State var projectionWorker = TranscriptSettledProjectionWorker()
   @State var ownsVisibleTranscriptLifecycle = false
   var textAnimationVisibility: StreamingTextAnimationVisibility {
     presentationSurface.textAnimationVisibility
@@ -152,6 +152,7 @@ struct SessionTranscriptView: View {
       .onDisappear { [controller] in
         historyLoadTask?.cancel()
         historyLoadTask = nil
+        projectionWorker.cancel()
         olderHistoryPresentation.cancel()
         publishAttentionFocus(isForeground: false)
         presentationSurface.disappear(owner: presentationOwner)
@@ -164,35 +165,7 @@ struct SessionTranscriptView: View {
       .environment(\.attachmentImages, attachmentImages)
       .environment(\.quickLook, quickLook)
       .task(id: transcriptProjectionRequest) {
-        let request = transcriptProjectionRequest
-        let key = request.key
-        let input = controller.transcriptProjectionInput
-        if projectedSessionID != key.sessionID {
-          projectedRows = []
-          projectedRowsVersion &+= 1
-          projectedSessionID = key.sessionID
-          projectionPublication.reset()
-        }
-        do {
-          let rows = try await TranscriptRowProjectionCache.shared.rows(
-            for: key,
-            input: input,
-            options: request.options
-          )
-          guard !Task.isCancelled,
-            transcriptProjectionRequest == request
-          else { return }
-          projectedRows = rows
-          projectedRowsVersion &+= 1
-          projectionPublication.publish(request)
-          olderHistoryPresentation.projectionDidPublish(
-            key: request.key,
-            revision: projectedRowsVersion
-          )
-        } catch is CancellationError {
-          return
-        } catch {
-        }
+        submitProjection()
       }
       .task(id: isLoadingTranscriptContent) {
         showsInitialLoadingSpinner = false

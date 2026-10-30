@@ -11,16 +11,16 @@ struct ChatPaneContentView: View {
   let project: Project
   let store: SessionStore
   let environment: AppEnvironment
-  var presentsBotConversation = false
+  var role = ChatPaneRole.chat
 
   var body: some View {
-    if let chatSessionId = descriptor.chatSessionId {
+    if let chatSessionId = role.sessionId(of: descriptor) {
       if let chatSession = environment.projectList.session(chatSessionId, serverId: hostWorkspace.serverId),
         let chatProject = environment.projectList.projects.first(where: {
           $0.serverId == hostWorkspace.serverId && $0.id == chatSession.projectId
         })
       {
-        if !presentsBotConversation, isUnstarted(chatSession) {
+        if role.offersNewChat, isUnstarted(chatSession) {
           NewChatView(
             store: store,
             selection: .constant(nil),
@@ -39,7 +39,7 @@ struct ChatPaneContentView: View {
             hostWorkspaceId: hostWorkspace.id
           )
         } else {
-          let controller = store.controller(for: chatSession, project: chatProject)
+          let controller = sessionController(for: chatSession, project: chatProject)
           ChatScreen(
             controller: controller,
             focus: focus,
@@ -48,7 +48,8 @@ struct ChatPaneContentView: View {
               paneID: descriptor.id,
               controller: controller
             ),
-            presentsBotConversation: presentsBotConversation
+            isReadOnly: role.isReadOnly,
+            presentsBotConversation: role.presentsBotConversation
           )
           .environment(
             \.computerUsePiPPane,
@@ -64,14 +65,16 @@ struct ChatPaneContentView: View {
           .onChange(of: chatProject) { _, updatedProject in
             store.reconcile(controller, for: chatSession, project: updatedProject)
           }
-          .attachmentDropTarget(controller)
+          .attachmentDropTarget(role.isReadOnly ? nil : controller)
         }
       } else {
         VStack(spacing: 12) {
           Text("This chat no longer exists")
             .foregroundStyle(.secondary)
-          Button("Reset Tab") {
-            group?.resetChatPaneToPlaceholder(id: descriptor.id)
+          if let group {
+            Button("Reset Tab") {
+              group.resetChatPaneToPlaceholder(id: descriptor.id)
+            }
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,6 +96,16 @@ struct ChatPaneContentView: View {
         hostWorkspaceId: hostWorkspace.id
       )
     }
+  }
+
+  private func sessionController(for chatSession: ChatSession, project chatProject: Project) -> SessionController {
+    guard role == .fullTranscript else { return store.controller(for: chatSession, project: chatProject) }
+    return store.transcriptViewer(
+      for: chatSession, project: chatProject, paneID: descriptor.id, workspaceId: viewerWorkspaceId)
+  }
+
+  private var viewerWorkspaceId: UUID? {
+    group == nil ? nil : hostWorkspace.id
   }
 
   private func isUnstarted(_ chatSession: ChatSession) -> Bool {

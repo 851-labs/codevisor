@@ -146,7 +146,6 @@ private struct ArchivedChatPane: View {
     .id(session.id)
     .task(id: SessionStore.SessionKey(session)) {
       store.noteAccess(SessionStore.SessionKey(session))
-      await controller.connectIfNeeded()
     }
     .onChange(of: session, initial: true) { _, updatedSession in
       store.reconcile(controller, for: updatedSession, project: project)
