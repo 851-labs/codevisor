@@ -99,9 +99,18 @@ it("adopts an existing shared profile after interruption and respects an initial
 
 it("keeps a locally selected shared profile when a different global selection changes", async () => {
   const f = await fixture()
-  await f.reconcile(document())
+  const other = "shared-00000000-0000-0000-0000-000000000002"
+  const both = (activeProfileId: string) =>
+    JSON.stringify({
+      profiles: [
+        { id, label: "Work" },
+        { id: other, label: "Team" }
+      ],
+      activeProfileId
+    })
+  await f.reconcile(both("default"))
   await run(f.db.setActiveHarnessAccount("opencode", id))
-  await f.reconcile(document("Team"))
+  await f.reconcile(both(other))
   expect((await run(f.db.getHarnessAccount(id)))?.isActive).toBe(true)
 })
 

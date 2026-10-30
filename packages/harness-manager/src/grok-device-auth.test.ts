@@ -110,7 +110,7 @@ it.each([
   { ...device, verification_uri: "https://:pass@example.test" }
 ])("rejects invalid device responses before notifying the UI (%j)", async (value) => {
   const f = fixture([Response.json(value)])
-  await expect(f.run()).rejects.toThrow()
+  await expect(f.run()).rejects.toThrow("Invalid Grok")
   expect(f.notify).not.toHaveBeenCalled()
 })
 it.each(["access_denied", "expired_token", "unexpected"])("finishes %s failures", async (error) => {

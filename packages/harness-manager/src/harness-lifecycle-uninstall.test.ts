@@ -162,13 +162,13 @@ describe("harness uninstall", () => {
   })
 
   it.each([
-    "/Applications/SomeApp.app/Contents/Resources/fake-cli",
-    "/opt/homebrew/Cellar/unrelated/1/bin/fake-cli",
-    "/home/person/.local/bin/fake-cli",
-    "/project/node_modules/fake-cli/bin/cli.js"
-  ])("refuses an unverified installation: %s", async (path) => {
+    ["/Applications/SomeApp.app/Contents/Resources/fake-cli", "Included with a desktop app"],
+    ["/opt/homebrew/Cellar/unrelated/1/bin/fake-cli", "original installer"],
+    ["/home/person/.local/bin/fake-cli", "original installer"],
+    ["/project/node_modules/fake-cli/bin/cli.js", "original installer"]
+  ])("refuses an unverified installation: %s", async (path, reason) => {
     const world = await fixture(path)
-    await expect(world.lifecycle.beginUninstall("fake-cli")).rejects.toThrow()
+    await expect(world.lifecycle.beginUninstall("fake-cli")).rejects.toThrow(reason)
     expect(world.spawns).toEqual([])
     expect(world.lifecycle.isGated("fake-cli")).toBe(false)
   })
@@ -193,6 +193,7 @@ describe("harness uninstall", () => {
     vi.useFakeTimers()
     const world = await fixture()
     await world.lifecycle.beginUninstall("fake-cli")
+    world.processes[0]!.emitOutput("removing fake-cli\n")
     await vi.advanceTimersByTimeAsync(59_999)
     expect(world.lifecycle.isGated("fake-cli")).toBe(true)
     const settled = waitForLifecycleSettle(world.lifecycle)
@@ -200,6 +201,10 @@ describe("harness uninstall", () => {
     await settled
     expect(world.processes[0]?.killed).toBe(true)
     expect(world.lifecycle.isGated("fake-cli")).toBe(false)
+    const [decorated] = await world.lifecycle.decorateHarnesses([harness("fake-cli", "/tools")])
+    expect(decorated?.lifecycle?.phase).toBe("failed")
+    expect(decorated?.lifecycle?.error).toContain("Timed out after 1 minutes")
+    expect(decorated?.lifecycle?.error).toContain("removing fake-cli")
   })
   it("reports absent installations and missing package managers", async () => {
     const absent = await fixture()
@@ -221,7 +226,8 @@ describe("harness uninstall", () => {
     await expect(gone.lifecycle.beginUninstall("fake-cli")).rejects.toThrow(
       "Installation not found"
     )
-    const manual = await fixture("/tools/manual", { ...installableDefinition, installMethods: [] })
+    const { installMethods: _methods, ...manualDefinition } = installableDefinition
+    const manual = await fixture("/tools/manual", manualDefinition)
     await expect(manual.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("original installer")
   })
 
@@ -235,11 +241,16 @@ describe("harness uninstall", () => {
     await settled
   })
 
-  it("targets the owning uv tool directory", async () => {
-    const world = await fixture("/alternate/uv/tools/fake-cli/bin/fake-cli", {
+  it("targets the owning uv tool directory and leaves unrelated uv environments alone", async () => {
+    const uvDefinition = {
       ...installableDefinition,
-      installMethods: [{ kind: "uv", packageName: "fake-cli" }]
-    })
+      installMethods: [{ kind: "uv" as const, packageName: "fake-cli" }]
+    }
+    const unrelated = await fixture("/somewhere/fake-cli", uvDefinition)
+    await expect(unrelated.lifecycle.beginUninstall("fake-cli")).rejects.toThrow(
+      "original installer"
+    )
+    const world = await fixture("/alternate/uv/tools/fake-cli/bin/fake-cli", uvDefinition)
     await world.lifecycle.beginUninstall("fake-cli")
     expect(world.spawns[0]?.env.UV_TOOL_DIR).toBe("/alternate/uv/tools")
     const settled = waitForLifecycleSettle(world.lifecycle)
@@ -285,17 +296,8 @@ describe("harness uninstall", () => {
     world.processes[0]!.emitExit(0)
     await settled
     expect(releases).toEqual(["fake-cli"])
-  })
-
-  it("keeps custom commands and unrelated uv environments intact", async () => {
-    const { installMethods: _methods, ...manualDefinition } = installableDefinition
-    const manual = await fixture("/tools/manual", manualDefinition)
-    await expect(manual.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("original installer")
-    const uv = await fixture("/somewhere/fake-cli", {
-      ...installableDefinition,
-      installMethods: [{ kind: "uv", packageName: "fake-cli" }]
-    })
-    await expect(uv.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("original installer")
+    const [decorated] = await world.lifecycle.decorateHarnesses([harness("fake-cli", path)])
+    expect(decorated?.lifecycle).toBeUndefined()
   })
 
   it("releases reservations when process startup throws a non-Error", async () => {

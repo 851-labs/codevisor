@@ -43,6 +43,7 @@ describe("harness lifecycle updates", () => {
         text: async () => "<rss>feed</rss>"
       }),
       platform: "darwin",
+      readBundleShortVersion: async () => "26.715.52143",
       realpath: (path) => path,
       resolveEnv: async () => ({}),
       terminal

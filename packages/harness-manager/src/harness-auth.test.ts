@@ -484,6 +484,13 @@ describe("Claude wrapped OAuth login", () => {
 
     const second = await manager.beginLogin(account.id)
     await manager.cancelLogin(second.id)
+    expect(calls).toEqual([
+      ["start"],
+      ["submit", "the-code#the-state"],
+      ["close"],
+      ["start"],
+      ["close"]
+    ])
     await expect(manager.answerLogin(second.id, "x#y")).rejects.toThrow("expired")
   })
 })

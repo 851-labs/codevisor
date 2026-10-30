@@ -239,6 +239,10 @@ describe("hostile files and path variants", () => {
     expect(await byId["pi-auth"]!.read()).toBe('{"openai":{"type":"api_key","key":"sk-custom"}}')
     await byId["pi-auth"]!.apply(JSON.stringify({ a: { type: "api_key", key: "1" } }))
     await byId["pi-auth"]!.apply(JSON.stringify({ a: { type: "api_key", key: "2" } }))
+    expect(parseJsonRecord(await readFile(join(home, "custom-pi", "auth.json"), "utf8"))).toEqual({
+      a: { type: "api_key", key: "2" },
+      junk: "not-an-object"
+    })
 
     await mkdir(join(home, "custom-codex"), { recursive: true })
     await writeFile(join(home, "custom-codex", "auth.json"), JSON.stringify(["an", "array"]))
@@ -273,13 +277,6 @@ describe("hostile files and path variants", () => {
       await chmodDir(lockedDir, 0o700)
     }
 
-    const emptied = credentialFerrySources({
-      resolveEnv: () => Promise.resolve({ HOME: home, PI_CODING_AGENT_DIR: "", CODEX_HOME: "" })
-    })
-    expect(await emptied.find((source) => source.id === "pi-auth")!.read()).toBeUndefined()
-
-    vi.stubEnv("HOME", home)
-    expect(homedir()).toBe(home)
     await mkdir(join(home, ".codex"), { recursive: true })
     await writeFile(join(home, ".codex", "auth.json"), '{"OPENAI_API_KEY":"owned-fallback"}')
     await mkdir(join(home, ".pi", "agent"), { recursive: true })
@@ -287,11 +284,32 @@ describe("hostile files and path variants", () => {
       join(home, ".pi", "agent", "auth.json"),
       '{"openai":{"type":"api_key","key":"owned-pi"}}'
     )
+    const emptied = credentialFerrySources({
+      resolveEnv: () => Promise.resolve({ HOME: home, PI_CODING_AGENT_DIR: "", CODEX_HOME: "" })
+    })
+    expect(await emptied.find((source) => source.id === "pi-auth")!.read()).toBe(
+      '{"openai":{"type":"api_key","key":"owned-pi"}}'
+    )
+    expect(await emptied.find((source) => source.id === "codex-auth-file")!.read()).toBe(
+      '{"OPENAI_API_KEY":"owned-fallback"}'
+    )
+
+    vi.stubEnv("HOME", home)
+    expect(homedir()).toBe(home)
+    await mkdir(join(home, "bare-pi"), { recursive: true })
+    await writeFile(
+      join(home, "bare-pi", "auth.json"),
+      '{"openai":{"type":"api_key","key":"bare-pi"}}'
+    )
     const bare = credentialFerrySources({
-      resolveEnv: () => Promise.resolve({ PI_CODING_AGENT_DIR: "~/nowhere-pi" })
+      resolveEnv: () => Promise.resolve({ PI_CODING_AGENT_DIR: "~/bare-pi" })
     })
     const pi = bare.find((source) => source.id === "pi-auth")!
-    expect(await pi.read()).toBeUndefined()
+    expect(await pi.read()).toBe('{"openai":{"type":"api_key","key":"bare-pi"}}')
+    const nowhere = credentialFerrySources({
+      resolveEnv: () => Promise.resolve({ PI_CODING_AGENT_DIR: "~/nowhere-pi" })
+    })
+    expect(await nowhere.find((source) => source.id === "pi-auth")!.read()).toBeUndefined()
     const codexBare = bare.find((source) => source.id === "codex-auth-file")!
     expect(await codexBare.read()).toBe('{"OPENAI_API_KEY":"owned-fallback"}')
     const emptyEnv = credentialFerrySources({ resolveEnv: () => Promise.resolve({}) })

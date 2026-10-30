@@ -6,11 +6,7 @@ import { join } from "node:path"
 import lockfile from "proper-lockfile"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import {
-  ClaudeRefreshLockBusy,
-  claudeRefreshLockPath,
-  withClaudeRefreshLock
-} from "./claude-refresh-lock.js"
+import { ClaudeRefreshLockBusy, withClaudeRefreshLock } from "./claude-refresh-lock.js"
 
 const configDirectory = async () => {
   const parent = await realpath(await mkdtemp(join(tmpdir(), "claude-refresh-lock-")))
@@ -21,7 +17,7 @@ const configDirectory = async () => {
 }
 
 const claudeCodeLocks = (directory: string) => [
-  claudeRefreshLockPath(directory),
+  join(directory, ".oauth_refresh.lock"),
   `${directory}.lock`
 ]
 
@@ -59,7 +55,7 @@ describe("Claude Code's refresh lock", () => {
     for (const path of claudeCodeLocks(directory)) expect(await exists(path)).toBe(false)
   })
 
-  it.each([0, 1])("waits instead of running while Claude Code holds lock %i", async (held) => {
+  it.each([0, 1])("refuses to run while Claude Code holds lock %i", async (held) => {
     const directory = await configDirectory()
     const release = await lockAsClaudeCode(claudeCodeLocks(directory)[held]!)
     onTestFinished(() => release())
@@ -79,7 +75,7 @@ describe("Claude Code's refresh lock", () => {
     await readOnly(dirname(directory))
 
     const ran = await withClaudeRefreshLock(directory, async () =>
-      exists(claudeRefreshLockPath(directory))
+      exists(join(directory, ".oauth_refresh.lock"))
     )
 
     expect(ran).toBe(true)

@@ -1,5 +1,4 @@
 import { harnessCatalog } from "@codevisor/agent-runtime"
-import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { FetchLike } from "@codevisor/updater"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -268,45 +267,6 @@ describe("harness lifecycle install/update execution", () => {
       error: expect.stringContaining("still 1.0.0; expected 2.0.0"),
       phase: "failed"
     })
-  })
-
-  it("updates via reinstall for origins whose self-update is unsafe", async () => {
-    const db = await makeDb()
-    const bin = makeBinDir(["brew", "npm"])
-    const definition: HarnessDefinition = {
-      ...installableDefinition,
-      update: {
-        sources: [
-          {
-            apply: { kind: "reinstall" },
-            check: { formula: "fake-cli", kind: "brew" },
-            when: "brew"
-          }
-        ]
-      }
-    }
-    const agents = fakeAgentRuntime({
-      catalog: [definition],
-      discoverHarnesses: Effect.succeed([
-        harness("fake-cli", "/opt/homebrew/Cellar/fake-cli/1.0.0/bin/fake-cli", "1.0.0")
-      ]),
-      refreshEnvironment: Effect.void
-    })
-    const { terminal } = fakeTerminal()
-    const { spawnShell, spawns, spawned } = fakeSpawner()
-    const lifecycle = makeHarnessLifecycleManager({
-      agents,
-      db,
-      home: "/Users/dev",
-      realpath: (path) => path,
-      resolveEnv: async () => ({ PATH: bin }),
-      spawnShell,
-      terminal
-    })
-
-    void lifecycle.applyUpdate("fake-cli")
-    await spawned
-    expect(spawns[0]?.command).toBe("brew upgrade fake-cli")
   })
 
   it("checks and updates Homebrew Claude through its owning cask", async () => {

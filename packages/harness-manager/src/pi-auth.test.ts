@@ -41,6 +41,7 @@ describe("Pi provider authentication", () => {
     const saved = Promise.withResolvers<boolean>()
     const called = Promise.withResolvers<void>()
     const completed = Promise.withResolvers<void>()
+    const states: string[] = []
     const saveCredential = vi.fn(async () => {
       called.resolve()
       return saved.promise
@@ -50,12 +51,14 @@ describe("Pi provider authentication", () => {
       providers: [provider],
       saveCredential,
       onFlowChanged: (flow) => {
+        states.push(flow.state)
         if (flow.state === "complete") completed.resolve()
       }
     })
     const pending = manager.beginLogin("test", "oauth", true)
     await called.promise
     expect(saveCredential).toHaveBeenCalledWith("test", credential, true)
+    expect(states).not.toContain("complete")
     expect(existsSync(piAuthPath({ HOME: home }))).toBe(false)
     saved.resolve(true)
     await pending

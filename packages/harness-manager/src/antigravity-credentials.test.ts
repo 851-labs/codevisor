@@ -60,11 +60,19 @@ describe("Antigravity credentials", () => {
   })
 
   it("names an account by its grant when the ID token says nothing usable", () => {
+    const subjects = new Set<string>()
     for (const id_token of [undefined, "no-dots", "header.!!!.sig", idToken({ sub: "1" })]) {
       const bundle = parseAntigravityAuth({ ...document("1//r"), id_token }, "external")!
       expect(bundle).not.toHaveProperty("email")
       expect(bundle.ownership).toBe("external")
+      subjects.add(bundle.subject)
     }
+    const otherGrant = parseAntigravityAuth(
+      { ...document("1//other"), id_token: undefined },
+      "external"
+    )!
+    expect(subjects.size).toBe(1)
+    expect(subjects.has(otherGrant.subject)).toBe(false)
     expect(parseAntigravityAuth({ token: { access_token: "ya29" } }, "managed")).toBeUndefined()
     expect(parseAntigravityAuth("nonsense", "managed")).toBeUndefined()
   })

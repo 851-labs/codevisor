@@ -100,30 +100,36 @@ describe("this machine's Claude Code login", () => {
     expect(exec).not.toHaveBeenCalled()
   })
 
-  it.each<[string, (directory: string) => Promise<HarnessAuthExec>]>([
+  it.each<[string, (directory: string) => Promise<HarnessAuthExec>, object]>([
     [
       "the Keychain still holds the login afterwards",
-      async () => fakeKeychain({ claudeAiOauth: login, ...mcpLogins }, { ignoresWrites: true }).exec
+      async () =>
+        fakeKeychain({ claudeAiOauth: login, ...mcpLogins }, { ignoresWrites: true }).exec,
+      { message: "Claude Code's login is still in the Keychain" }
     ],
     [
       "the Keychain cannot be read",
       async () =>
         vi.fn<HarnessAuthExec>(async () => {
           throw securityExit(51)
-        })
+        }),
+      { code: 51 }
     ],
     [
       "the credentials file cannot be read",
       async (directory) => {
         await mkdir(join(directory, ".credentials.json"))
         return vi.fn<HarnessAuthExec>()
-      }
+      },
+      { code: "EISDIR" }
     ]
-  ])("refuses to report success when %s", async (_case, arrange) => {
+  ])("refuses to report success when %s", async (_case, arrange, failure) => {
     const directory = await configDirectory()
     const exec = await arrange(directory)
 
-    await expect(signOutClaudeMachineLogin(optionsFor(directory, exec))).rejects.toThrow()
+    await expect(signOutClaudeMachineLogin(optionsFor(directory, exec))).rejects.toMatchObject(
+      failure
+    )
   })
 
   it.each([

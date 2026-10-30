@@ -15,8 +15,7 @@ export interface ClaudeRefreshLock {
   readonly isCompromised: () => boolean
 }
 
-export const claudeRefreshLockPath = (directory: string): string =>
-  join(directory, ".oauth_refresh.lock")
+const claudeRefreshLockPath = (directory: string): string => join(directory, ".oauth_refresh.lock")
 
 export const withClaudeRefreshLock = async <T>(
   directory: string,

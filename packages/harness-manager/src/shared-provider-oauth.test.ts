@@ -2,7 +2,6 @@ import type { OAuthCredential } from "@earendil-works/pi-ai"
 import { describe, expect, it, vi } from "vitest"
 
 import { fakeProvider } from "./harness-lifecycle-test-support.js"
-import { recordOrEmpty } from "./json-values.js"
 import type { SharedTokenBundle } from "./shared-credential-types.js"
 import { refreshSharedOAuth } from "./shared-oauth-providers.js"
 import {
@@ -124,6 +123,7 @@ describe("shared provider OAuth contracts", () => {
       { ...credential, access: "opaque", refresh: "other" },
       "managed"
     )!
+    expect(a.subject).toMatch(/^grant:/)
     expect(a.subject).not.toBe(b.subject)
     expect(a.email).toBeUndefined()
     expect(a.organizationId).toBeUndefined()
@@ -140,7 +140,7 @@ describe("shared provider OAuth contracts", () => {
     })
     expect(copilot.refreshToken).toBeUndefined()
     expect(providerCredential(copilot, "unused").refresh).toBe("github-token")
-    const { providerId: _providerId, ...withoutProvider } = a
+    const { providerId: _providerId, ...withoutProvider } = { ...a, harnessId: "opencode" as const }
     expect(providerCredential(withoutProvider, "handle").refresh).toBe("handle")
   })
   it.each([
@@ -151,12 +151,9 @@ describe("shared provider OAuth contracts", () => {
     { ...credential, refresh: "" },
     { ...credential, refresh: "codevisor:handle" },
     { ...credential, expires: NaN },
-    { ...credential, expires: "123" },
-    { ...credential, access: "a." }
+    { ...credential, expires: "123" }
   ])("rejects malformed native credentials where required fields are absent", (value) => {
-    const parsed = parseProviderOAuth("opencode", "openai", value, "managed")
-    if (recordOrEmpty(value).access === "a.") expect(parsed?.subject).toMatch(/^grant:/)
-    else expect(parsed).toBeUndefined()
+    expect(parseProviderOAuth("opencode", "openai", value, "managed")).toBeUndefined()
   })
   it("rejects uninspected plugins and enterprise issuers without sending them a fleet token", () => {
     expect(parseProviderOAuth("opencode", "custom", credential, "managed")).toBeUndefined()
@@ -240,9 +237,12 @@ describe("shared provider OAuth contracts", () => {
       )
     }
   })
-  it.each(["openai", "xai"])(
+  it.each([
+    ["openai", "https://auth.openai.com/oauth/token"],
+    ["xai", "https://auth.x.ai/oauth2/token"]
+  ])(
     "rotates %s through its original OAuth client and keeps a refresh token omitted by the provider",
-    async (providerId) => {
+    async (providerId, endpoint) => {
       const request = vi.fn<typeof fetch>(async () =>
         Response.json({ access_token: "fresh", expires_in: 3600, id_token: "id" })
       )
@@ -255,7 +255,7 @@ describe("shared provider OAuth contracts", () => {
         idToken: "id"
       })
       const [url, init] = request.mock.calls[0]!
-      expect(url).toBe(providerTokenEndpoint(providerId))
+      expect(url).toBe(endpoint)
       const form = new URLSearchParams(typeof init?.body === "string" ? init.body : undefined)
       expect(form.get("refresh_token")).toBe("refresh")
       expect(init?.redirect).toBe("error")
@@ -294,7 +294,7 @@ describe("shared provider OAuth contracts", () => {
       { ...bundle(), providerId: "custom" }
     ]
     for (const token of tokens)
-      await expect(refreshProviderOAuth(token)).rejects.toThrow("Sign in again")
+      await expect(refreshProviderOAuth(token, request)).rejects.toThrow("Sign in again")
     expect(request).toHaveBeenCalledTimes(7)
   })
   it("shares an OpenCode Console sign-in as its user and organization, refreshing at its own Console", async () => {

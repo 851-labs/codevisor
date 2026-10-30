@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -130,12 +131,26 @@ describe("shared OAuth provider adapters", () => {
     expect(await readNativeOAuth({ ...options, harnessId: "codex" })).toEqual(
       parseCodexOAuth(codex, "external")
     )
+    const keychainCodex = { tokens: { ...codex.tokens, account_id: "keychain-work" } }
     const keychain = vi.fn<HarnessAuthExec>(async () => ({
-      stdout: JSON.stringify(codex),
+      stdout: JSON.stringify(keychainCodex),
       stderr: ""
     }))
-    await readNativeOAuth({ ...options, harnessId: "codex", platform: "darwin", exec: keychain })
-    expect(keychain.mock.calls[0]?.[1]).toContain("Codex Auth")
+    expect(
+      await readNativeOAuth({ ...options, harnessId: "codex", platform: "darwin", exec: keychain })
+    ).toEqual(parseCodexOAuth(keychainCodex, "external"))
+    const profileHash = createHash("sha256")
+      .update(await realpath(directory))
+      .digest("hex")
+      .slice(0, 16)
+    expect(keychain.mock.calls[0]?.[1]).toEqual([
+      "find-generic-password",
+      "-s",
+      "Codex Auth",
+      "-a",
+      `cli|${profileHash}`,
+      "-w"
+    ])
     await writeFile(join(directory, ".credentials.json"), JSON.stringify(claude))
     await writeFile(join(directory, ".claude.json"), JSON.stringify(settings))
     expect(
@@ -160,7 +175,9 @@ describe("shared OAuth provider adapters", () => {
       await readNativeOAuth({ ...options, harnessId: "codex", env: { OPENAI_API_KEY: "env-key" } })
     ).toEqual(sharedApiKey("codex", "env-key"))
     const { platform: _platform, ...nativeOptions } = options
-    expect(await readNativeOAuth({ ...nativeOptions, harnessId: "codex" })).toBeDefined()
+    expect(await readNativeOAuth({ ...nativeOptions, harnessId: "codex" })).toEqual(
+      parseCodexOAuth(codex, "external")
+    )
     const missingDirectory = join(directory, "missing")
     const claudeKeychain = vi.fn<HarnessAuthExec>(async () => ({
       stdout: JSON.stringify(claude),
@@ -183,7 +200,7 @@ describe("shared OAuth provider adapters", () => {
         isDefault: false,
         harnessId: "claude-code",
         platform: "darwin",
-        env: {},
+        env: { HOME: directory },
         exec: claudeKeychain
       })
     ).toBeUndefined()
@@ -244,9 +261,11 @@ describe("shared OAuth provider adapters", () => {
 
   it("sanitizes provider errors and rejects incomplete refresh results", async () => {
     const bundle = parseClaudeOAuth(claude, settings, "managed")!
-    await expect(refreshSharedOAuth({ ...bundle, ownership: "external" })).rejects.toThrow(
-      "Sign in again"
-    )
+    const unreachable = vi.fn<typeof fetch>()
+    await expect(
+      refreshSharedOAuth({ ...bundle, ownership: "external" }, unreachable)
+    ).rejects.toThrow("Sign in again")
+    expect(unreachable).not.toHaveBeenCalled()
     for (const response of [
       new Response("SECRET", { status: 400 }),
       Response.json({}),

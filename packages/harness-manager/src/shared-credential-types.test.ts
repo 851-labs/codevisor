@@ -31,6 +31,8 @@ describe("shared token bundles", () => {
         ownership: "external"
       })
     ).toBe(true)
+    expect(isSharedTokenBundle({ ...complete, harnessId: "mcp" })).toBe(true)
+    expect(isSharedTokenBundle({ ...complete, harnessId: "plugin" })).toBe(true)
   })
 
   it.each([

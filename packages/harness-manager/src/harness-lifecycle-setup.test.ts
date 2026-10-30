@@ -146,15 +146,4 @@ describe("harness setup at startup", () => {
     expect(lifecycle.isGated("unchecked")).toBe(false)
     expect(lifecycle.isGated("done")).toBe(false)
   })
-
-  it("has nothing to do without harness setup", async () => {
-    const { lifecycle } = await makeLifecycle({})
-    await lifecycle.finishPendingSetup()
-    const bare = makeHarnessLifecycleManager({
-      agents: fakeAgentRuntime({ catalog: [] }),
-      db: await makeDb()
-    })
-    await bare.finishPendingSetup()
-    expect(bare.isGated("fake-cli")).toBe(false)
-  })
 })

@@ -43,9 +43,12 @@ describe("OpenCode auth responses", () => {
   })
 
   it("keeps only string authorization fields", () => {
-    expect(parseAuthorization({ url: "https://auth.test", method: 1 })).toEqual({
-      url: "https://auth.test",
-      method: undefined,
+    expect(
+      parseAuthorization({ url: "https://auth.test", method: 1, instructions: "Paste" })
+    ).toEqual({ url: "https://auth.test", method: undefined, instructions: "Paste" })
+    expect(parseAuthorization({ url: 7, method: "code", instructions: {} })).toEqual({
+      url: undefined,
+      method: "code",
       instructions: undefined
     })
   })

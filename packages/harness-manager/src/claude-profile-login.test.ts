@@ -38,7 +38,7 @@ describe("forgetting a Claude profile login", () => {
       ["delete-generic-password", "-s", claudeKeychainService(directory, false), "-a", "alice"],
       expect.anything()
     )
-    expect(claudeKeychainService(directory, false)).toMatch(/^Claude Code-credentials-[0-9a-f]{8}$/)
+    expect(claudeKeychainService("/tmp/claude", false)).toBe("Claude Code-credentials-21493821")
     await expect(stat(join(directory, ".credentials.json"))).rejects.toThrow()
   })
 

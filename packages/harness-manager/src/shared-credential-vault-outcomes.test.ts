@@ -42,19 +42,6 @@ describe("shared credential vault refresh outcomes", () => {
     expect(failure).toMatchObject({ reason: "reauthenticate", code: "invalid_grant" })
   })
 
-  it("logs an unavailable provider without exposing tokens", async () => {
-    const lines: string[] = []
-    const f = fixture()
-    const vault = makeSharedCredentialVault({
-      ...f.config,
-      rotate: async () => Promise.reject(new OAuthRefreshUnavailable("HTTP 503")),
-      log: (line) => lines.push(line)
-    })
-    await vault.token(await vault.create(original)).catch(() => undefined)
-    expect(lines).toEqual([expect.stringMatching(/: unavailable \(HTTP 503\)$/)])
-    expect(lines[0]).not.toMatch(/old-refresh|old-access/)
-  })
-
   it("degrades to the old reservation timeout against a cloud that cannot release a started lease", async () => {
     const f = fixture()
     const oldCloud = (owner: string): CredentialCoordinator => {

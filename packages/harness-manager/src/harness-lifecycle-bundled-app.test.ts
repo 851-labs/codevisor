@@ -21,6 +21,13 @@ import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 
+const executable = (path: string) => {
+  mkdirSync(join(path, ".."), { recursive: true })
+  writeFileSync(path, "#!/bin/sh\n")
+  chmodSync(path, 0o755)
+  return path
+}
+
 describe("harness lifecycle bundled desktop apps", () => {
   it("reports and updates the bundled desktop app for dual installs", async () => {
     const db = await makeDb()
@@ -91,35 +98,49 @@ describe("harness lifecycle bundled desktop apps", () => {
     await lifecycle.beginBundledAppUpdate("fake-cli")
     await settled
     expect(swaps).toEqual([bundle])
+    const [decorated] = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+    ])
+    expect(decorated?.lifecycle).toBeUndefined()
+    expect(decorated?.updateInfo?.installedVersion).toBe("1.0.0")
   })
 
-  it("reports no bundled app when the bundle is absent or off darwin", async () => {
+  it("reports no bundled app when the bundle is absent, outside an app, or off darwin", async () => {
     const db = await makeDb()
-    const definition: HarnessDefinition = {
-      ...installableDefinition,
-      fallbackPaths: ["/nonexistent/FakeChat.app/Contents/Resources/codex"],
-      update: {
-        sources: [
-          {
-            apply: { kind: "appBundleSwap" },
-            check: { appcastUrl: "https://example.com/appcast.xml", kind: "sparkle" },
-            when: "appBundle"
-          }
-        ]
-      }
-    }
-    const lifecycle = makeHarnessLifecycleManager({
-      agents: fakeAgentRuntime({
-        catalog: [definition],
-        discoverHarnesses: Effect.succeed([]),
-        refreshEnvironment: Effect.void
-      }),
-      db,
-      platform: "darwin",
-      resolveEnv: async () => ({})
-    })
-    await expect(lifecycle.bundledAppInfo("fake-cli")).resolves.toBeUndefined()
-    await expect(lifecycle.beginBundledAppUpdate("fake-cli")).rejects.toThrow(/no bundled/)
+    const root = mkdtempSync(join(tmpdir(), "codevisor-app-"))
+    directories.push(root)
+    const bundled = executable(join(root, "FakeChat.app", "Contents", "Resources", "codex"))
+    const loose = executable(join(root, "bin", "codex"))
+    const lifecycleFor = (fallback: string, platform: NodeJS.Platform) =>
+      makeHarnessLifecycleManager({
+        agents: fakeAgentRuntime({
+          catalog: [
+            {
+              ...installableDefinition,
+              fallbackPaths: [fallback],
+              update: {
+                sources: [
+                  {
+                    apply: { kind: "appBundleSwap" },
+                    check: { appcastUrl: "https://example.com/appcast.xml", kind: "sparkle" },
+                    when: "appBundle"
+                  }
+                ]
+              }
+            }
+          ],
+          discoverHarnesses: Effect.succeed([]),
+          refreshEnvironment: Effect.void
+        }),
+        db,
+        platform,
+        resolveEnv: async () => ({})
+      })
+    const absent = lifecycleFor("/nonexistent/FakeChat.app/Contents/Resources/codex", "darwin")
+    await expect(absent.bundledAppInfo("fake-cli")).resolves.toBeUndefined()
+    await expect(absent.beginBundledAppUpdate("fake-cli")).rejects.toThrow(/no bundled/)
+    await expect(lifecycleFor(loose, "darwin").bundledAppInfo("fake-cli")).resolves.toBeUndefined()
+    await expect(lifecycleFor(bundled, "linux").bundledAppInfo("fake-cli")).resolves.toBeUndefined()
   })
 
   it("refuses app-bundle swaps off darwin", async () => {

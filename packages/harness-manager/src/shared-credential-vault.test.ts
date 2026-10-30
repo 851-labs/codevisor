@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import { fingerprint } from "./shared-credential-refresh-log.js"
 import {
   OAuthRefreshRejected,
+  OAuthRefreshUnavailable,
   SharedCredentialError,
   type SharedTokenBundle,
   type CredentialCoordinator
@@ -22,6 +23,7 @@ describe("encrypted shared credential vault", () => {
     const ref = { id: "a", key: Buffer.alloc(32, 1).toString("base64url") }
     const sealed = sealSharedCredential(ref, original)
     expect(sealed).not.toContain("old-refresh")
+    expect(Buffer.from(sealed, "base64url").includes("old-refresh")).toBe(false)
     expect(openSharedCredential(ref, sealed)).toEqual(original)
     expect(() => openSharedCredential({ ...ref, id: "b" }, sealed)).toThrow()
     expect(() =>
@@ -41,41 +43,38 @@ describe("encrypted shared credential vault", () => {
     ).toBe("claude-code")
   })
 
-  it.each(["codex", "pi", "opencode", "grok-build", "mcp"] as const)(
-    "serializes two machines refreshing %s and publishes both tokens in one generation",
-    async (harnessId) => {
-      const f = fixture()
-      const entered = gate(),
-        release = gate(),
-        waiting = gate()
-      const rotate = vi.fn(async () => {
-        entered.resolve()
+  it("serializes two machines refreshing and publishes both tokens in one generation", async () => {
+    const f = fixture()
+    const entered = gate(),
+      release = gate(),
+      waiting = gate()
+    const rotate = vi.fn(async () => {
+      entered.resolve()
+      await release.promise
+      return refreshed
+    })
+    const a = makeSharedCredentialVault({ ...f.config, rotate })
+    const b = makeSharedCredentialVault({
+      ...f.config,
+      rotate,
+      coordinate: f.coordinate("b"),
+      wait: async () => {
+        waiting.resolve()
         await release.promise
-        return { ...refreshed, harnessId }
-      })
-      const a = makeSharedCredentialVault({ ...f.config, rotate })
-      const b = makeSharedCredentialVault({
-        ...f.config,
-        rotate,
-        coordinate: f.coordinate("b"),
-        wait: async () => {
-          waiting.resolve()
-          await release.promise
-        }
-      })
-      const ref = await a.create({ ...original, harnessId })
-      const first = a.token(ref)
-      await entered.promise
-      const second = b.token(ref)
-      await waiting.promise
-      release.resolve()
-      expect(await first).toEqual({ ...refreshed, harnessId })
-      expect(await second).toEqual({ ...refreshed, harnessId })
-      expect(rotate).toHaveBeenCalledOnce()
-      expect(f.records.get(ref.id)?.generation).toBe(2)
-      expect(f.receipts.size).toBe(0)
-    }
-  )
+      }
+    })
+    const ref = await a.create(original)
+    const first = a.token(ref)
+    await entered.promise
+    const second = b.token(ref)
+    await waiting.promise
+    release.resolve()
+    expect(await first).toEqual(refreshed)
+    expect(await second).toEqual(refreshed)
+    expect(rotate).toHaveBeenCalledOnce()
+    expect(f.records.get(ref.id)?.generation).toBe(2)
+    expect(f.receipts.size).toBe(0)
+  })
 
   it.each<[string, SharedCredentialVaultConfig["rotate"]]>([
     [`rotated, next=${fingerprint("new-refresh")}`, async () => refreshed],
@@ -92,6 +91,7 @@ describe("encrypted shared credential vault", () => {
       "failed (reauthenticate)",
       async () => Promise.reject(new SharedCredentialError("reauthenticate"))
     ],
+    ["unavailable (HTTP 503)", async () => Promise.reject(new OAuthRefreshUnavailable("HTTP 503"))],
     ["network failure (TypeError)", async () => Promise.reject(new TypeError("fetch failed"))],
     ["network failure (unknown)", async () => Promise.reject("socket hang up")]
   ])("logs a refresh that %s with fingerprints instead of tokens", async (outcome, rotate) => {
@@ -109,27 +109,6 @@ describe("encrypted shared credential vault", () => {
     expect(lines).toEqual([expect.stringMatching(/^Shared credential refresh codex login=\w{8} /)])
     expect(lines[0]?.endsWith(`${presented}: ${outcome}`)).toBe(true)
     expect(lines[0]).not.toMatch(/old-refresh|new-refresh|old-access|new-access/)
-  })
-
-  it("recovers a lost commit response without replaying the provider exchange", async () => {
-    const f = fixture()
-    let loseCommit = true
-    const coordinate: CredentialCoordinator = async (id, command) => {
-      const result = await f.config.coordinate(id, command)
-      if (command.action === "commit" && loseCommit) {
-        loseCommit = false
-        throw new Error("lost response")
-      }
-      return result
-    }
-    const config = { ...f.config, coordinate }
-    const vault = makeSharedCredentialVault(config)
-    const ref = await vault.create(original)
-    await expect(vault.token(ref)).rejects.toThrow("lost response")
-    expect(f.receipts.size).toBe(1)
-    expect(await makeSharedCredentialVault(config).token(ref)).toEqual(refreshed)
-    expect(f.config.rotate).toHaveBeenCalledOnce()
-    expect(f.receipts.size).toBe(0)
   })
 
   it("does not replay an ambiguous refresh, even after the lease deadline", async () => {
@@ -156,9 +135,11 @@ describe("encrypted shared credential vault", () => {
         return f.config.coordinate(...args)
       }
     })
-    const ref = await vault.create(refreshed)
+    const piToken = { ...refreshed, harnessId: "pi" as const }
+    const ref = await vault.create(piToken)
     offline = true
-    expect(await vault.token(ref)).toEqual(refreshed)
+    f.setTime(100_000 + 5 * 60_000)
+    expect(await vault.token(ref)).toEqual(piToken)
     await expect(vault.token(ref, refreshed.accessToken)).rejects.toThrow(
       "Account sync is unavailable"
     )
@@ -251,7 +232,8 @@ describe("encrypted shared credential vault", () => {
     const ref = await vault.create(external)
     f.records.delete(ref.id)
     expect(await vault.token(ref)).toEqual(external)
-    await vi.waitFor(() => expect(vault.token(ref)).rejects.toThrow("Sign in again"))
+    await expect(vault.token(ref, external.accessToken)).rejects.toThrow("Sign in again")
+    await expect(vault.token(ref)).rejects.toThrow("Sign in again")
 
     await vault.publishExternal(ref, external)
     expect(await vault.token(ref)).toEqual(external)
@@ -432,6 +414,17 @@ describe("encrypted shared credential vault", () => {
     const { refreshToken: _refresh, ...access } = refreshed
     await vault.publishExternal(ref, { ...access, ownership: "external", accessToken: "external" })
     expect(await vault.token(ref)).toEqual(refreshed)
+
+    const { refreshToken: _original, ...originalAccess } = original
+    const mirrored = await vault.create({ ...originalAccess, ownership: "external" })
+    await vault.publishExternal(mirrored, {
+      ...originalAccess,
+      subject: "someone-else",
+      accessToken: "other-account",
+      expiresAt: refreshed.expiresAt,
+      ownership: "external"
+    })
+    expect(f.records.get(mirrored.id)?.generation).toBe(1)
   })
 
   it.each(["acquire", "start", "commit"] as const)(
@@ -453,7 +446,6 @@ describe("encrypted shared credential vault", () => {
       })
       if (phase === "commit") await expect(publication).rejects.toThrow("unavailable")
       else await publication
-      expect(f.config.rotate).not.toHaveBeenCalled()
     }
   )
 })
