@@ -20,6 +20,8 @@ type TaskStatus = TaskUpdatedMessage["patch"]["status"]
 
 type FinishedTaskStatus = "completed" | "failed" | "killed"
 
+const monitorToolName = "Monitor"
+
 interface SubagentMeta {
   readonly codevisorSubagent: { readonly taskId: string }
 }
@@ -97,7 +99,8 @@ export const replaceBackgroundTasks = (
       id: task.task_id,
       status: existing?.status ?? "running",
       taskType: existing?.taskType ?? task.task_type,
-      ...(existing?.toolUseId === undefined ? {} : { toolUseId: existing.toolUseId })
+      ...(existing?.toolUseId === undefined ? {} : { toolUseId: existing.toolUseId }),
+      ...(existing?.startedAt === undefined ? {} : { startedAt: existing.startedAt })
     })
   }
   session.backgroundTasks.clear()
@@ -116,13 +119,21 @@ const trackStartedTask = (session: ClaudeSession, message: TaskStartedMessage): 
     description: message.description,
     id: message.task_id,
     status: "running",
-    taskType: startedTaskType(message),
-    ...(toolUseId === undefined ? {} : { toolUseId })
+    taskType: startedTaskType(session, message),
+    ...(toolUseId === undefined ? {} : { toolUseId }),
+    startedAt: new Date().toISOString()
   })
 }
 
-const startedTaskType = (message: TaskStartedMessage): string =>
-  message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task")
+const startedTaskType = (session: ClaudeSession, message: TaskStartedMessage): string => {
+  if (message.subagent_type !== undefined) return "subagent"
+  if (startedByMonitorTool(session, message)) return "monitor"
+  return message.task_type ?? "task"
+}
+
+const startedByMonitorTool = (session: ClaudeSession, message: TaskStartedMessage): boolean =>
+  message.tool_use_id !== undefined &&
+  session.accumulators.get(message.tool_use_id)?.toolName === monitorToolName
 
 const launchesSubagent = (message: TaskStartedMessage): message is SubagentLaunchMessage =>
   message.subagent_type !== undefined && message.tool_use_id !== undefined

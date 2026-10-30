@@ -1,5 +1,5 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeClaudeProvider } from "./provider.js"
 import {
@@ -16,7 +16,14 @@ import {
   systemMessage
 } from "./test-support.js"
 
+const startedAt = "2026-10-30T18:00:00.000Z"
+
 describe("ClaudeProvider", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(startedAt))
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })
@@ -229,6 +236,7 @@ describe("ClaudeProvider", () => {
       {
         description: "Run npm test",
         id: "bg-1",
+        startedAt,
         status: "running",
         taskType: "shell",
         toolUseId: "tool-bash-1"
@@ -284,6 +292,7 @@ describe("ClaudeProvider", () => {
     const started = {
       description: "npm run dev",
       id: "bg-9",
+      startedAt,
       status: "running",
       taskType: "shell",
       toolUseId: "tool-bash-9"
@@ -337,6 +346,7 @@ describe("ClaudeProvider", () => {
       {
         description: "Explore the codebase",
         id: "sub-1",
+        startedAt,
         status: "paused",
         taskType: "subagent"
       }
@@ -388,6 +398,7 @@ describe("ClaudeProvider", () => {
       {
         description: "Tests",
         id: "bg-1",
+        startedAt,
         status: "running",
         taskType: "shell",
         toolUseId: "tool-bash-1"
@@ -413,7 +424,7 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
     expect(snapshots().slice(1)).toEqual([
-      [{ description: "Watch files", id: "bg-1", status: "running", taskType: "task" }],
+      [{ description: "Watch files", id: "bg-1", startedAt, status: "running", taskType: "task" }],
       []
     ])
 

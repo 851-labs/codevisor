@@ -215,7 +215,17 @@ extension SessionController {
     isConnecting || isSending
   }
 
+  public var backgroundTasks: [BackgroundTaskInfo] { model?.backgroundTasks ?? [] }
+
   public var waitingBackgroundTasks: [BackgroundTaskInfo] { model?.waitingBackgroundTasks ?? [] }
+
+  public func revealToolCall(_ toolCallId: String) {
+    transcriptRevealRequest = TranscriptRevealRequest(toolCallId: toolCallId)
+  }
+
+  public func workedItemLocation(ofToolCall toolCallId: String) async -> TranscriptWorkedItemLocation? {
+    await model?.workedItemLocation(ofToolCall: toolCallId)
+  }
 
   public var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
 

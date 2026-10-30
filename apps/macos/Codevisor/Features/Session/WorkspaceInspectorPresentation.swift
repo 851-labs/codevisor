@@ -133,6 +133,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       showsDebugSection: developerMode,
       showsBotTranscript: bot?.isConversational == true,
       harnessChat: chat,
+      tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
       parent: shownTab(for: inspected) == .info ? parent(of: workspace, store: store) : nil,
       agents: shownTab(for: inspected) == .info ? agents(of: workspace, bot: bot, store: store) : [],
       store: store,
@@ -163,6 +164,27 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
     .environment(\.isWorkspaceInspectorVisible, isVisible)
+  }
+
+  private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {
+    guard let chat = mainChat(of: workspace),
+      let controller = store.controllers[SessionStore.SessionKey(serverId: chat.serverId, sessionId: chat.id)]
+    else { return [] }
+
+    return controller.backgroundTasks.map { task in
+      WorkspaceInspectorTask(task, open: revealAction(for: task, inChat: chat.id, of: workspace, store: store))
+    }
+  }
+
+  private func revealAction(
+    for task: BackgroundTaskInfo, inChat sessionId: UUID, of workspace: Workspace, store: SessionStore
+  ) -> (() -> Void)? {
+    guard let toolCallId = task.toolUseId else { return nil }
+
+    return {
+      store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
+        workspaceId: workspace.id, destination: .toolCall(sessionId: sessionId, toolCallId: toolCallId))
+    }
   }
 
   private func parent(of workspace: Workspace, store: SessionStore) -> WorkspaceInspectorAgent? {

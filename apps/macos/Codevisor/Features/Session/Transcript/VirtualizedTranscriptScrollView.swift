@@ -97,6 +97,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
   var disclosureAnchorReleaseTask: Task<Void, Never>?
   var collapsibleEarlierHistorySection: TranscriptWorkedSectionIdentity?
+  var pendingReveal: TranscriptWorkedItemLocation?
 
   var pendingInitialState: SessionScrollState?
   var hasOlderHistory = false

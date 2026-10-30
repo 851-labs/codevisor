@@ -144,7 +144,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
     if findMatchSurfaceRect(match) == nil {
       let region = unobstructedFindRegion()
       let rowTop = rowFrame(at: index).minY
-      scrollForFind(toTop: rowTop - (region.minY - contentView.bounds.minY) - region.height * 0.3)
+      scrollAsUserInput(toTop: rowTop - (region.minY - contentView.bounds.minY) - region.height * 0.3)
       transcriptDocumentView.layoutSubtreeIfNeeded()
       applyFindHighlights()
     }
@@ -168,7 +168,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
     let region = unobstructedFindRegion()
     guard documentRect.minY < region.minY || documentRect.maxY > region.maxY else { return }
     let offsetInRegion = region.height * 0.4 - documentRect.height / 2
-    scrollForFind(
+    scrollAsUserInput(
       toTop: documentRect.minY - offsetInRegion - (region.minY - contentView.bounds.minY)
     )
   }
@@ -215,7 +215,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFindTarget {
     }
   }
 
-  private func scrollForFind(toTop requestedTop: CGFloat) {
+  func scrollAsUserInput(toTop requestedTop: CGFloat) {
     let maximum = max(0, transcriptDocumentView.frame.height - contentView.bounds.height)
     let top = min(max(0, requestedTop), maximum)
     guard abs(top - contentView.bounds.minY) > 0.5 else { return }

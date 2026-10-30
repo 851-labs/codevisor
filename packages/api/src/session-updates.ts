@@ -91,7 +91,8 @@ export const BackgroundTask = Schema.Struct({
   description: Schema.String,
   status: Schema.String,
   taskType: Schema.String,
-  toolUseId: Schema.optional(Schema.String)
+  toolUseId: Schema.optional(Schema.String),
+  startedAt: Schema.optional(Schema.String)
 })
 export type BackgroundTask = typeof BackgroundTask.Type
 

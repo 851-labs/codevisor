@@ -129,6 +129,7 @@ export interface BackgroundTaskEntry {
   status: string
   readonly taskType: string
   readonly toolUseId?: string
+  readonly startedAt?: string
 }
 
 export interface ForkedCommand {

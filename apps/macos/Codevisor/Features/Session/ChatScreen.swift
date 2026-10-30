@@ -90,6 +90,9 @@ struct ChatScreen: View {
         autoFollow = true
         scrollCommand.token &+= 1
       }
+      .onChange(of: controller.transcriptRevealRequest, initial: true) { _, _ in
+        revealRequestedToolCall()
+      }
       .overlay { initialLoadingOverlay }
       .overlay(alignment: .bottom) { bottomChromeOverlay }
       .overlay(alignment: .topTrailing) { findBarOverlay }
