@@ -274,7 +274,9 @@ printf '{"version":"%s","buildNumber":%s,"sourceRevision":"%s","target":"%s"}\n'
 runtime_root="$(cd "$runtime_dir" && pwd -P)"
 (
   cd /
-  CODEVISOR_SMOKE_RUNTIME="$runtime_root" "$runtime_root/bin/node" --input-type=module -e '
+  env -u CODEVISOR_GOOGLE_OAUTH_CLIENT_FILE -u CODEVISOR_DEV_INSTANCE_ID \
+    CODEVISOR_SMOKE_RUNTIME="$runtime_root" "$runtime_root/bin/node" --input-type=module -e '
+    const { existsSync } = await import("node:fs")
     const { pathToFileURL } = await import("node:url")
     const runtime = process.env.CODEVISOR_SMOKE_RUNTIME
     const relay = await import(
@@ -294,6 +296,12 @@ runtime_root="$(cd "$runtime_dir" && pwd -P)"
     )
     if (!computer.linuxComputerUseHelperPath()?.startsWith(runtime)) {
       throw new Error("Packaged Linux Computer Use helper is not discoverable from /")
+    }
+    if (existsSync(`${runtime}/config/google-oauth-client.json`)) {
+      const boot = await import(pathToFileURL(`${runtime}/serve-boot.js`))
+      if ((await boot.bootInstalledOAuthClients()("google")) === undefined) {
+        throw new Error("Packaged server cannot find its bundled Google sign-in client")
+      }
     }
   '
 )

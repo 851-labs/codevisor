@@ -214,13 +214,15 @@ export const monitorAppOwner = (options: {
 
 export { parseServeArgs as parseArgs } from "./startup-progress.js"
 
+const runtimeRoot = (): string => dirname(fileURLToPath(import.meta.url))
+
 export const bundledVersion = (): string | undefined => {
   const override = process.env.CODEVISOR_VERSION ?? process.env.HERDMAN_VERSION
   if (override !== undefined && override.length > 0) {
     return override
   }
 
-  const versionPath = join(dirname(fileURLToPath(import.meta.url)), "VERSION")
+  const versionPath = join(runtimeRoot(), "VERSION")
   if (!existsSync(versionPath)) {
     return undefined
   }
@@ -233,7 +235,7 @@ export const bundledBuildMetadata = (): {
   readonly buildNumber?: number
   readonly sourceRevision?: string
 } => {
-  const metadataPath = join(dirname(fileURLToPath(import.meta.url)), "BUILD.json")
+  const metadataPath = join(runtimeRoot(), "BUILD.json")
   if (!existsSync(metadataPath)) return {}
   try {
     const value: unknown = JSON.parse(readFileSync(metadataPath, "utf8"))
@@ -405,5 +407,5 @@ export const bootInstalledOAuthClients = (): InstalledOAuthClients =>
     env: process.env,
     dev: isDevInstance(process.env),
     home: homedir(),
-    runtimeRoot: fileURLToPath(new URL("../../..", import.meta.url))
+    runtimeRoot: runtimeRoot()
   })
