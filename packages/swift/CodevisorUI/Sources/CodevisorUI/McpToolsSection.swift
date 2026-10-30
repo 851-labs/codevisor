@@ -11,7 +11,7 @@ public struct McpToolsSection: View {
   }
 
   public var body: some View {
-    PluginToolsDisclosure(count: tools.count, isLoading: isLoading) {
+    PluginListDisclosure("Tools", count: tools.count, isLoading: isLoading, emptyText: "No tools available") {
       ForEach(tools) { tool in
         PluginCapabilityRow(name: tool.title ?? tool.name, detail: tool.description)
       }

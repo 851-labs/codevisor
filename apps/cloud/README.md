@@ -36,10 +36,12 @@ One Cloudflare Worker contains the whole plane:
   `plugins/popular.json`, bundled at build time (`bun run build:catalog`), with age ratings from D1
   merged into `_meta["dev.codevisor/plugin"].ageRating`.
 - **Managed OAuth clients** — for plugins whose MCP server has no dynamic
-  client registration (GitHub), `GET /api/machine/oauth-clients/:name` hands
+  client registration (GitHub, Slack), `GET /api/machine/oauth-clients/:name` hands
   a machine the client id, and `POST /api/machine/oauth-clients/:name/token`
   adds the client secret to its code exchange, so the secret never leaves
   Cloud. Unset (`MCP_GITHUB_CLIENT_ID`/`MCP_GITHUB_CLIENT_SECRET`) answers 503.
+  Slack needs only `MCP_SLACK_CLIENT_ID`; `MCP_SLACK_CLIENT_SECRET` is sent
+  when set.
   Sign-in runs on the user's own machine, so the OAuth app's callback is the
   loopback `http://127.0.0.1/v1/mcps/oauth/callback` (GitHub accepts any port).
 - **Plugin moderation** — `GET /plugins/policy` publishes blocks and age
@@ -93,6 +95,8 @@ wrangler secret put GITHUB_CLIENT_ID      # your own GitHub OAuth app
 wrangler secret put GITHUB_CLIENT_SECRET  # callback: <your-url>/api/auth/callback/github
 wrangler secret put MCP_GITHUB_CLIENT_ID      # GitHub OAuth app for the GitHub plugin
 wrangler secret put MCP_GITHUB_CLIENT_SECRET  # callback: http://127.0.0.1/v1/mcps/oauth/callback
+wrangler secret put MCP_SLACK_CLIENT_ID       # optional: Slack app for the Slack plugin
+wrangler secret put MCP_SLACK_CLIENT_SECRET   # optional: only if the Slack app needs it
 wrangler secret put PLUGIN_REPORT_SLACK_WEBHOOK # optional: plugin report notifications
 wrangler deploy
 ```
@@ -185,7 +189,8 @@ not configure Apple's optional server-to-server account-change notifications.
 `.github/workflows/deploy-cloud.yml` deploys continuously from `main`
 (path-filtered): typecheck + tests → D1 migrations → Worker secrets synced
 from the repo's Actions secrets (`PLUGIN_REPORT_SLACK_WEBHOOK`, and
-`MCP_GITHUB_CLIENT_ID` + `MCP_GITHUB_CLIENT_SECRET` for the GitHub plugin;
+`MCP_GITHUB_CLIENT_ID` + `MCP_GITHUB_CLIENT_SECRET` for the GitHub plugin,
+`MCP_SLACK_CLIENT_ID` and optional `MCP_SLACK_CLIENT_SECRET` for Slack;
 each step skips when its secrets are empty) → `wrangler deploy` to
 `cloud.codevisor.dev` → health check. A deploy restarts each hub and drops
 its WebSockets — Durable Object sockets cannot be drained — but clients ride

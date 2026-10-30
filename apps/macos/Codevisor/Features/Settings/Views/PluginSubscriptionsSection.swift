@@ -8,7 +8,7 @@ struct PluginSubscriptionsSection: View {
 
   var body: some View {
     if !model.subscriptions.isEmpty {
-      Section("Subscriptions") {
+      PluginListDisclosure("Subscriptions", count: model.subscriptions.count, message: model.errorMessage) {
         ForEach(model.subscriptions) { subscription in
           HStack {
             PluginSubscriptionLabel(subscription: subscription, chatTitle: chatTitle(subscription.sessionId))
@@ -21,9 +21,6 @@ struct PluginSubscriptionsSection: View {
           .contextMenu {
             Button("Remove Subscription", role: .destructive) { Task { await model.remove(subscription) } }
           }
-        }
-        if let errorMessage = model.errorMessage {
-          Text(errorMessage).foregroundStyle(.red)
         }
       }
     }

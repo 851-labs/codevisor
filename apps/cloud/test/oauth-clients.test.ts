@@ -130,4 +130,48 @@ describe("managed OAuth clients", () => {
 
     expect(await readJson(response, jsonRecord)).toEqual({ error: "invalid_response" })
   })
+
+  it("serves Slack with only a client id, adding its secret to exchanges once one is set", async () => {
+    const apiKey = await machineKey()
+    const fetcher = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ access_token: "xoxp-1", token_type: "bearer" })
+    )
+    const publicClient = {
+      ...env,
+      MCP_SLACK_CLIENT_ID: "slack-client",
+      OAUTH_CLIENT_FETCH: fetcher
+    }
+    const withSecret = { ...publicClient, MCP_SLACK_CLIENT_SECRET: "slack-secret" }
+    const exchange = (bindings: typeof env) =>
+      call(bindings, "/api/machine/oauth-clients/slack/token", apiKey, {
+        tokenUrl: slackTokenUrl,
+        form: codeForm("slack-client")
+      })
+
+    const known = await call(publicClient, "/api/machine/oauth-clients/slack", apiKey)
+    const unset = await call(env, "/api/machine/oauth-clients/slack", apiKey)
+    await exchange(publicClient)
+    await exchange(withSecret)
+
+    expect(await readJson(known, jsonRecord)).toEqual({ clientId: "slack-client" })
+    expect(unset.status).toBe(503)
+    expect(fetcher.mock.calls.map(([url, init]) => [url, sentSecret(init)])).toEqual([
+      [slackTokenUrl, null],
+      [slackTokenUrl, "slack-secret"]
+    ])
+  })
+
+  it("keeps GitHub off until both its client id and secret are set", async () => {
+    const apiKey = await machineKey()
+    const idOnly = { ...env, MCP_GITHUB_CLIENT_ID: "github-client" }
+
+    const response = await call(idOnly, "/api/machine/oauth-clients/github", apiKey)
+
+    expect(response.status).toBe(503)
+  })
 })
+
+const slackTokenUrl = "https://slack.com/api/oauth.v2.user.access"
+
+const sentSecret = (init: RequestInit | undefined): string | null =>
+  new URLSearchParams(typeof init?.body === "string" ? init.body : "").get("client_secret")

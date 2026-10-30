@@ -5,7 +5,6 @@ import SwiftUI
 struct McpSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var showingCustom = false
-  @State private var showingBlockedPublishers = false
 
   let plugins: PluginSettingsModel
 
@@ -26,7 +25,6 @@ struct McpSettingsView: View {
         Text("Plugins")
       } footer: {
         SettingsListActions(message: model.actionError) {
-          Button("Blocked Publishers…") { showingBlockedPublishers = true }
           PluginAddMenu(
             canBrowse: supportsCatalog,
             onBrowse: { SettingsRouter.shared.panePath.append(.pluginCatalog) },
@@ -42,9 +40,6 @@ struct McpSettingsView: View {
         try await recordConsent(for: values)
         plugins.didInstall(try await localClient.createMcpServer(values.createBody), in: environment)
       }
-    }
-    .sheet(isPresented: $showingBlockedPublishers) {
-      BlockedPublishersSheet()
     }
   }
 

@@ -67,6 +67,21 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           MCP_GITHUB_CLIENT_ID: ${{ secrets.MCP_GITHUB_CLIENT_ID }}
           MCP_GITHUB_CLIENT_SECRET: ${{ secrets.MCP_GITHUB_CLIENT_SECRET }}
+      - name: Sync the Slack plugin OAuth client
+        working-directory: apps/cloud
+        run: |
+          if [ -z "$MCP_SLACK_CLIENT_ID" ]; then
+            echo "MCP_SLACK_CLIENT_ID isn't set; Slack plugin sign-in stays off."
+            exit 0
+          fi
+          printf '%s' "$MCP_SLACK_CLIENT_ID" | bunx wrangler secret put MCP_SLACK_CLIENT_ID
+          if [ -n "$MCP_SLACK_CLIENT_SECRET" ]; then
+            printf '%s' "$MCP_SLACK_CLIENT_SECRET" | bunx wrangler secret put MCP_SLACK_CLIENT_SECRET
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MCP_SLACK_CLIENT_ID: ${{ secrets.MCP_SLACK_CLIENT_ID }}
+          MCP_SLACK_CLIENT_SECRET: ${{ secrets.MCP_SLACK_CLIENT_SECRET }}
       - name: Sync the Gmail push settings
         working-directory: apps/cloud
         run: |
