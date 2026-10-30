@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { LegalPage } from "../components/legal-page"
+import { privacyGoogleSection } from "../components/privacy-google-section"
 import { privacyPluginsSection } from "../components/privacy-plugins-section"
 
 export const Route = createFileRoute("/privacy")({
@@ -167,6 +168,7 @@ const sections = [
     )
   },
   privacyPluginsSection,
+  privacyGoogleSection,
   {
     id: "analytics",
     title: "Optional usage analytics",
@@ -429,7 +431,7 @@ function PrivacyPolicy() {
     <LegalPage
       title="Privacy, in plain language."
       description="Understand what stays on your devices, what Codevisor Cloud handles, and what reaches your AI providers and connected services — plus your choices for sharing and deletion."
-      effectiveDate="October 28, 2026"
+      effectiveDate="October 30, 2026"
       sectionsLabel="Privacy sections"
       sections={sections}
     />
