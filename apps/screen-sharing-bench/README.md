@@ -327,6 +327,39 @@ CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>
 ```
 
+## Encoder lab (851-3767)
+
+`encode-lab` encodes scene frames offscreen with VideoToolbox, one config at a time, and reports what each costs.
+It needs no permission grant and no GUI session.
+
+```sh
+CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
+  --configs "name=product;name=native,size=3840x2160;name=tiles,size=3840x2160,tiles=4,skip=1" \
+  --output encode-lab.json --markdown encode-lab.md
+```
+
+- **Source.** `BenchSceneGenerator` renders each new version at `--resolution` (R1x2, 3840×2160, by default), scales
+  it to the config's `size` with `VTPixelTransferSession`, and converts it to the encoder's input format (BGRA for
+  `hevc444`, as the product feeds it; 4:2:0 for the others). A 60 Hz timer submits each version on its tick, so the
+  encoder sees the scene's real cadence; idle ticks submit nothing, like ScreenCaptureKit.
+- **Configs.** `--configs` takes `;`-separated `key=value` lists; every key defaults to the product encoder
+  (`ScreenSharingProductProfile`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440).
+  Keys: `name`, `codec` (`hevc444`, `hevc`, `h264`), `rc` (`standard`, `ll`), `mbps` (or `none` with `cq` or a preset),
+  `size`, `tiles` (horizontal stripes, one session each, the bitrate split evenly), `skip` (encode only the tiles whose
+  pixels changed), `ltr`, `yuv`, `speed`, `mfd` (`MaxFrameDelayCount`), `qpmax`, `qpmin`, `drl` (`<mbps>@<seconds>`),
+  `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27) and `aq`.
+- **Per cell** (scene × config), after `--warm-up`: encode time (submit to the last tile's output), how long frame
+  preparation and the submit call took, Mbit/s, frame sizes, the chroma format the encoder actually wrote (read from
+  `hvcC`), the first frame's size, and a refresh halfway through: a forced keyframe, or with `ltr=1` a
+  `ForceLTRRefresh` with tokens acknowledged after a simulated 33 ms round trip, on the middle tile only.
+- **Quality.** A second pass decodes every frame in order with the hardware decoder and, on `--quality-samples`
+  evenly spaced frames, compares the picture a viewer would show (skipped tiles keep their last image) with the
+  source converted to 4:4:4 (BT.709, video range): PSNR of Y and of Cb/Cr (4:2:0 chroma upsampled by nearest
+  neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A config smaller than the canvas is also upscaled
+  back and compared with the native frame (`native`), so downscaling counts against it.
+- **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
+  rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
+
 ## Signing and permissions
 
 A bundle signed with a Developer ID Application identity has a designated requirement of the bundle ID plus that
