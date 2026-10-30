@@ -13,9 +13,9 @@ struct Tier2Markdown {
 
   private var targetTable: String {
     let header = [
-      "| Scene | Resolution | System | Encoded px | Image age p50 ms | p95 | p50 above floor | Updates/s | Shown | "
-        + "Gap p95 ms | Freezes | Host CPU % | Viewer CPU % | Mbit/s p50 | Valid reps |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| Scene | Resolution | Network | System | Encoded px | Image age p50 ms | p95 | p50 above floor | Updates/s | "
+        + "Shown | Gap p95 ms | Freezes | Host CPU % | Viewer CPU % | Mbit/s p50 | Valid reps |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = Tier2Group.all(report.results).flatMap { group in
       [BenchSystem.appleHP, .codevisor].compactMap { system in
@@ -29,7 +29,8 @@ struct Tier2Markdown {
     measurements.first { measurement in
       let meta = measurement.files.meta
       return measurement.invalidReason == nil && meta.scene == group.scene && meta.system.rawValue == system.rawValue
-        && (meta.resolution ?? Tier2Result.defaultResolution) == group.resolution && measurement.encodedPixels != nil
+        && meta.resolutionLabel == group.resolution && meta.networkLabel == group.network
+        && measurement.encodedPixels != nil
     }?.encodedPixels
   }
 
@@ -43,11 +44,11 @@ struct Tier2Markdown {
 
   private var verdictTable: String {
     let header = [
-      "| Scene | Resolution | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict | Rule |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| Scene | Resolution | Network | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict | Rule |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = report.comparisons.map { comparison in
-      "| \(comparison.scene) | \(comparison.resolution) | \(comparison.metric) | \(Tier2Format.list(comparison.appleHp)) | "
+      "| \(comparison.scene) | \(comparison.resolution) | \(comparison.network) | \(comparison.metric) | \(Tier2Format.list(comparison.appleHp)) | "
         + "\(Tier2Format.list(comparison.codevisor)) | \(Tier2Format.number(comparison.noiseBandMs)) | "
         + "\(comparison.verdict.rawValue) | \(Tier2Comparisons.basis(of: comparison)) |"
     }
@@ -57,7 +58,8 @@ struct Tier2Markdown {
   private var floorTable: String {
     let rows = floors.p50BySceneMs.keys.sorted().map { "| \($0) | \(Tier2Format.number(floors.p50BySceneMs[$0])) |" }
     let pooled = floors.pooledMs.map { "pooled: p50 \($0.p50), p95 \($0.p95), max \($0.max), n \($0.count)" } ?? "none"
-    return "### Null-sharing floor (C3)\n\n\(pooled)\n\n| Scene | p50 ms (median of reps) |\n| --- | --- |\n"
+    return
+      "### Null-sharing floor (C3)\n\n\(pooled)\n\n| Scene and network | p50 ms (median of reps) |\n| --- | --- |\n"
       + rows.joined(separator: "\n")
   }
 

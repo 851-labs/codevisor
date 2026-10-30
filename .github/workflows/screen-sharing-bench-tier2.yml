@@ -28,6 +28,11 @@ on:
         required: false
         default: true
         type: boolean
+      network:
+        description: N0 (no shaping) or N3 (1 ms each way, 1% loss, dummynet on croissant)
+        required: false
+        default: N0
+        type: string
   workflow_call:
     inputs:
       scenes:
@@ -55,6 +60,11 @@ on:
         required: false
         default: true
         type: boolean
+      network:
+        description: N0 (no shaping) or N3 (1 ms each way, 1% loss, dummynet on croissant)
+        required: false
+        default: N0
+        type: string
 
 permissions:
   contents: read
@@ -71,6 +81,7 @@ env:
   TIER2_DURATION: ${{ inputs.duration }}
   TIER2_FLOOR_REPS: ${{ inputs.floor-repetitions }}
   TIER2_C4: ${{ inputs.c4 && '1' || '0' }}
+  TIER2_NETWORK: ${{ inputs.network }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:
@@ -112,6 +123,9 @@ jobs:
         run: apps/screen-sharing-bench/scripts/install-granted.sh
       - name: View the Tier 2 runs on croissant
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-viewer.sh "$RUNNER_TEMP/results"
+      - name: Remove any network shaping
+        if: always()
+        run: apps/screen-sharing-bench/scripts/tier2-network-reset.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

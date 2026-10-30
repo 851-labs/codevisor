@@ -8,6 +8,7 @@ struct Tier2RunMeta: Decodable {
   let index: Int
   let scene: String
   let resolution: String?
+  let network: String?
   let system: System
   let repetition: Int
   let seed: UInt64
@@ -16,4 +17,12 @@ struct Tier2RunMeta: Decodable {
   let gitSha: String
   let startedAt: String
   let githubRunId: String?
+
+  var resolutionLabel: String {
+    resolution ?? Tier2Result.defaultResolution
+  }
+
+  var networkLabel: String {
+    network ?? Tier2Result.defaultNetwork
+  }
 }

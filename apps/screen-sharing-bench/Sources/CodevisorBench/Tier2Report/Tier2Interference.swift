@@ -12,9 +12,10 @@ struct Tier2Interference: Encodable {
     [Tier2RunMeta.System.appleHP, .codevisor].compactMap { system in
       let runs = measurements.filter { $0.files.meta.system == system && $0.files.meta.scene == scene }
       let off = runs.filter { !$0.files.meta.hostObserver && $0.invalidReason == nil }
-      let resolutions = Set(off.map { $0.files.meta.resolution })
+      let conditions = Set(off.map { "\($0.files.meta.resolutionLabel) \($0.files.meta.networkLabel)" })
       let on = runs.filter {
-        $0.files.meta.hostObserver && $0.invalidReason == nil && resolutions.contains($0.files.meta.resolution)
+        $0.files.meta.hostObserver && $0.invalidReason == nil
+          && conditions.contains("\($0.files.meta.resolutionLabel) \($0.files.meta.networkLabel)")
       }
       guard !off.isEmpty, !on.isEmpty else { return nil }
 

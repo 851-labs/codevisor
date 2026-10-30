@@ -3,14 +3,16 @@ import ScreenSharingBench
 struct Tier2Group: Hashable {
   let scene: String
   let resolution: String
+  let network: String
 
-  init(scene: String, resolution: String) {
+  init(scene: String, resolution: String, network: String) {
     self.scene = scene
     self.resolution = resolution
+    self.network = network
   }
 
   init(_ result: BenchResult) {
-    self.init(scene: result.scene, resolution: result.resolution)
+    self.init(scene: result.scene, resolution: result.resolution, network: result.network)
   }
 
   func contains(_ result: BenchResult) -> Bool {
