@@ -252,8 +252,8 @@ the per-second sum of the system's processes (Apple HP: `screensharingd`, `Scree
 from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual over 0.2 ms), another CI job ran,
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
-repetitions and the gap between their ranges is wider than the tighter system's spread; the verdict table names the
-rule that fired.
+repetitions and the gap between their ranges is wider than the tighter system's spread, and in either case only when
+the medians differ by at least 2% of the larger one; the verdict table names the rule that fired.
 
 ## Benchmark workflow, results and gate (851-3594)
 
