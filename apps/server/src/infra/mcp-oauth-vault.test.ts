@@ -202,6 +202,7 @@ describe("MCP OAuth through the shared credential vault", () => {
     const b = await machine(env, "machine-b")
     await signIn(a, env.fake)
     await gossip(a, b)
+    await settles(b.manager, await b.trackerId(), "connected")
     const [fromA, fromB] = [await a.chat(), await b.chat()]
 
     env.fake.revokeAllGrants()

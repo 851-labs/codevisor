@@ -1,9 +1,9 @@
 import { join } from "node:path"
 
 import { decode, StartedAgent } from "@codevisor/api"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
-import { jsonRequest, listSubjectEvents, run, start } from "../test-support.js"
+import { jsonRequest, listSubjectEvents, run, start, waitFor } from "../test-support.js"
 import { makeOrigin, tempDir, useBaseFolder } from "./project-setup-test-support.js"
 
 afterEach(() => {
@@ -53,7 +53,7 @@ describe("POST /v1/agents on a machine without the project", () => {
     expect(listSubjectEvents(services, started.projectId).at(-1)).toMatchObject({
       kind: "project.created"
     })
-    await vi.waitFor(() => expect(agents.prompts.map(([, text]) => text)).toContain("Fix it"))
+    await waitFor(() => agents.prompts.some(([, text]) => text === "Fix it"))
   })
 
   it("reuses the clone on the next start", async () => {

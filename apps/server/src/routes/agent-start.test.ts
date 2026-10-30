@@ -9,7 +9,7 @@ import { DatabaseError } from "@codevisor/db"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
 import { AGENT_START_CLEANUP_MS, rolledBack } from "./agent-start.js"
 import { idOf } from "./response-test-support.js"
 
@@ -78,7 +78,7 @@ describe("POST /v1/agents", () => {
     expect(subscriptions).toEqual([expect.objectContaining({ targetSessionId: started.agentId })])
     const child = await run(services.db.getSessionSummary(started.agentId))
     expect(child).toMatchObject({ parentSessionId: caller, labels: { role: "worker" } })
-    await vi.waitFor(() => expect(agents.prompts.map(([, text]) => text)).toContain("Fix it"))
+    await waitFor(() => agents.prompts.some(([, text]) => text === "Fix it"))
   })
 
   it("removes the worktree it allocated when the chat can't be created", async () => {

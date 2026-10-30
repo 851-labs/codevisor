@@ -14,7 +14,8 @@ import {
   idleRouteState,
   makeServices,
   run,
-  tempDirs
+  tempDirs,
+  waitFor
 } from "./test-support.js"
 import { markPausingForUpdate, withUpdatePauseStop } from "./update-pauses.js"
 import {
@@ -208,7 +209,7 @@ describe("continuing a paused chat", () => {
     const native = withNativeTurnResume(chat.agents, { startsTurn: false })
 
     const continuing = chat.continueChat(["Monitor CI"], true)
-    await vi.waitFor(() => expect(native.resumes).toHaveLength(1))
+    await waitFor(() => native.resumes.length === 1)
     await vi.advanceTimersByTimeAsync(NATIVE_RESUME_START_MS)
     await continuing
     vi.useRealTimers()
