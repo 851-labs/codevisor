@@ -58,7 +58,7 @@ struct ComposerMachineSelectionPersistenceTests {
     #expect(!controller.draftSnapshot().selectionWasAutomaticallyCarried)
     #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "codex")
     #expect(
-      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")) == [
+      defaults.configSelections(forHarness: "codex", model: "gpt-5.6-sol") == [
         "model": "gpt-5.6-sol", "reasoning": "low",
       ])
   }
@@ -68,8 +68,7 @@ struct ComposerMachineSelectionPersistenceTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-b"),
-      harnessId: "claude-code",
+      harnessId: "claude-code", modelOptionId: "model",
       configValues: ["model": "fable", "reasoning": "low"]
     )
     let controller = SessionController(
@@ -91,10 +90,10 @@ struct ComposerMachineSelectionPersistenceTests {
 
     #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
     #expect(
-      defaults.configSelections(forHarness: "claude-code", in: .newWorkspace(serverId: "machine-b")) == [
+      defaults.configSelections(forHarness: "claude-code", model: "fable") == [
         "model": "fable", "reasoning": "low",
       ])
-    #expect(defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")).isEmpty)
+    #expect(defaults.configSelections(forHarness: "codex", model: nil).isEmpty)
   }
 
   @Test("A restored automatic carry whose model disappeared asks for another model")
@@ -102,8 +101,7 @@ struct ComposerMachineSelectionPersistenceTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-b"),
-      harnessId: "claude-code",
+      harnessId: "claude-code", modelOptionId: "model",
       configValues: ["model": "fable", "reasoning": "low"]
     )
     let destinationClaude = capability(

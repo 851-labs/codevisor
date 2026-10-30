@@ -66,15 +66,14 @@ public final class BotModelSelection {
     guard let harness = available.first(where: { $0.id == remembered }) ?? available.first else {
       return
     }
-    let selections = composerDefaults.configSelections(
-      forHarness: harness.id,
-      in: .newWorkspace(serverId: serverId)
-    )
+    let modelId = Self.modelOption(in: capabilityOptions(harness.id))?.id
+    let rememberedModel = modelId.flatMap { composerDefaults.configSelections(forHarness: harness.id, model: nil)[$0] }
+    let selections = composerDefaults.configSelections(forHarness: harness.id, model: rememberedModel)
     await resolve(harnessId: harness.id, selections: selections)
   }
 
   public func chooseModel(harnessId: String, value: String) async {
-    var selections = harnessId == self.harnessId ? configSelections : [:]
+    var selections = composerDefaults.configSelections(forHarness: harnessId, model: value)
     if let model = Self.modelOption(in: capabilityOptions(harnessId)) ?? modelOption {
       selections[model.id] = value
     }

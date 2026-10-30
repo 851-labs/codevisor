@@ -170,12 +170,17 @@ extension SessionController {
     SessionConfigOption.Category.speed,
   ]
 
-  static let rememberedConfigCategories: Set<String> = [
-    SessionConfigOption.Category.model,
+  static let modelSettingCategories: Set<String> = [
     SessionConfigOption.Category.thoughtLevel,
     SessionConfigOption.Category.speed,
     SessionConfigOption.Category.modelConfig,
   ]
+
+  static let rememberedConfigCategories = modelSettingCategories.union([SessionConfigOption.Category.model])
+
+  static func isModelSetting(_ option: SessionConfigOption) -> Bool {
+    modelSettingCategories.contains(option.category ?? "") && !isModelOption(option)
+  }
 
   public var modelOption: SessionConfigOption? {
     configOptions.first { $0.category == SessionConfigOption.Category.model && !$0.options.isEmpty }
@@ -265,17 +270,27 @@ extension SessionController {
         || isModelChange,
       let harnessId = selectedHarnessId
     {
-      composerDefaults?.rememberConfigSelections(
-        in: resolvedComposerDefaultsScope,
-        harnessId: harnessId,
-        configValues: rememberedConfigValues.merging([configId: value]) { _, picked in picked }
-      )
+      rememberConfigPick(configId, value, isModelChange: isModelChange, harnessId: harnessId)
       composerDefaults?.rememberHarnessSelection(
         in: resolvedComposerDefaultsScope,
         harnessId: harnessId
       )
     }
     return accepted
+  }
+
+  private func rememberConfigPick(_ configId: String, _ value: String, isModelChange: Bool, harnessId: String) {
+    var configValues = [configId: value]
+    var modelOptionId: String? = configId
+    if !isModelChange {
+      configValues = rememberedConfigValues.merging(configValues) { _, picked in picked }
+      modelOptionId = configOptions.first(where: Self.isModelOption)?.id
+    }
+    composerDefaults?.rememberConfigSelections(
+      harnessId: harnessId,
+      modelOptionId: modelOptionId,
+      configValues: configValues
+    )
   }
 
   public func dismissConfigurationAdjustment() {

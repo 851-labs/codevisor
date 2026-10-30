@@ -855,21 +855,6 @@
     }
   },
   {
-    "text": "  func resolveDraftModelAvailabilityIfNeeded() async {",
-    "violation": {
-      "location": {
-        "character": 3,
-        "file": "packages/swift/CodevisorCore/Sources/CodevisorCore/Session/SessionController+Drafts.swift",
-        "line": 282
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func perform(with client: any CodevisorServerClienting) async throws {",
     "violation": {
       "location": {
@@ -980,9 +965,9 @@
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/DefaultModelSelectionTests.swift",
-        "line": 80
+        "line": 79
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 69 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 67 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
@@ -995,9 +980,9 @@
       "location": {
         "character": 3,
         "file": "packages/swift/CodevisorCore/Tests/CodevisorCoreTests/DefaultModelSelectionTests.swift",
-        "line": 157
+        "line": 154
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

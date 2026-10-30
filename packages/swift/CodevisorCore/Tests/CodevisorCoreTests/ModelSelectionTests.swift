@@ -56,13 +56,12 @@ struct ModelSelectionTests {
     #expect(picked.showsSettingsSpinner)
   }
 
-  @Test("An existing chat never reads or writes New Chat defaults")
+  @Test("An existing chat keeps its own model and never writes New Chat defaults")
   func existingChatIsIsolatedFromDefaults() async {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-a", harnessId: "codex")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-a"),
-      harnessId: "codex",
+      harnessId: "codex", modelOptionId: "model",
       configValues: ["model": "gpt-5.6"]
     )
     let cache = ConfigOptionCache(store: InMemoryStore())
@@ -78,9 +77,7 @@ struct ModelSelectionTests {
     await controller.setConfigOption("model", "gpt-5.7")
     #expect(controller.modelOption?.currentValue == "gpt-5.7")
     #expect(controller.pendingConfiguration.value(for: "model", in: "codex") == "gpt-5.7")
-    #expect(
-      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))
-        == ["model": "gpt-5.6"])
+    #expect(defaults.configSelections(forHarness: "codex", model: nil) == ["model": "gpt-5.6"])
   }
 
   @Test("A chat another device starts shows that device's picks, not this one's defaults")
@@ -150,9 +147,7 @@ struct ModelSelectionTests {
     #expect(controller.requiresModelSelection)
 
     await controller.setConfigOption("effort", "high")
-    #expect(
-      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))["model"]
-        == nil)
+    #expect(defaults.configSelections(forHarness: "codex", model: nil)["model"] == nil)
 
     await controller.chooseModel("gpt-5.7", name: "GPT-5.7", harnessId: "codex")
 
@@ -165,8 +160,7 @@ struct ModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-a", harnessId: "codex")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-a"),
-      harnessId: "codex",
+      harnessId: "codex", modelOptionId: "model",
       configValues: ["model": "gpt-5.5", "effort": "high"]
     )
     var generic = catalog(currentModel: "")
@@ -217,9 +211,7 @@ struct ModelSelectionTests {
 
     #expect(controller.modelUnavailableMessage == nil)
     #expect(controller.modelPickerPresentation.modelChip == .model(name: "GPT-5.5"))
-    #expect(
-      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))["model"]
-        == "gpt-5.5")
+    #expect(defaults.configSelections(forHarness: "codex", model: nil)["model"] == "gpt-5.5")
   }
 
   @Test("A draft's pending model check never leaves the chat it becomes spinning")
@@ -258,9 +250,7 @@ struct ModelSelectionTests {
 
     #expect(controller.modelPickerPresentation.modelChip == .model(name: "GPT-5.5"))
     #expect(controller.modelUnavailableMessage == nil)
-    #expect(
-      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))["model"]
-        == "gpt-5.5")
+    #expect(defaults.configSelections(forHarness: "codex", model: nil)["model"] == "gpt-5.5")
   }
 
   @Test("A config update older than an in-flight pick does not roll it back")
@@ -353,8 +343,7 @@ struct ModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-a", harnessId: "codex")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-a"),
-      harnessId: "codex",
+      harnessId: "codex", modelOptionId: "model",
       configValues: ["model": model]
     )
     return defaults

@@ -80,13 +80,11 @@ struct DefaultModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-b"),
-      harnessId: "claude-code",
+      harnessId: "claude-code", modelOptionId: "model",
       configValues: ["model": "fable", "reasoning": "low"]
     )
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-b"),
-      harnessId: "codex",
+      harnessId: "codex", modelOptionId: "model",
       configValues: ["model": "gpt-5.5", "reasoning": "high"]
     )
 
@@ -147,7 +145,7 @@ struct DefaultModelSelectionTests {
     #expect(controller.thoughtLevelOptions.first?.currentValue == "xhigh")
     #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
     #expect(
-      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")) == [
+      defaults.configSelections(forHarness: "codex", model: "gpt-5.5") == [
         "model": "gpt-5.5", "reasoning": "high",
       ])
   }
@@ -157,8 +155,7 @@ struct DefaultModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-b"),
-      harnessId: "codex",
+      harnessId: "codex", modelOptionId: "model",
       configValues: ["model": "gpt-5.5", "reasoning": "high"]
     )
 
@@ -223,8 +220,7 @@ struct DefaultModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
     defaults.rememberConfigSelections(
-      in: .newWorkspace(serverId: "machine-b"),
-      harnessId: "codex",
+      harnessId: "codex", modelOptionId: "model",
       configValues: ["model": "gpt-5.6-sol", "reasoning": "high"]
     )
 

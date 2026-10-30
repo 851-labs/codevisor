@@ -9,7 +9,7 @@ import Testing
 struct ComposerSelectionRetargetTests {
   @Test("A carried selection takes the destination's resolved settings")
   func carriedSelectionAdoptsResolvedSettings() async {
-    let fixture = Fixture(destinationDefaults: ["reasoning": "max", "approval": "auto"])
+    let fixture = Fixture(rememberedSelections: ["model": "gpt-5.6-sol", "reasoning": "max", "approval": "auto"])
     let gate = FetchGate()
     fixture.client.resolvedCapabilitiesHandler = { [requests = fixture.requests] _, _, selections in
       requests.record(selections)
@@ -150,11 +150,10 @@ struct ComposerSelectionRetargetTests {
     let requests = Requests()
     let controller: SessionController
 
-    init(destinationDefaults: [String: String] = [:]) {
+    init(rememberedSelections: [String: String] = [:]) {
       defaults.rememberConfigSelections(
-        in: .newWorkspace(serverId: "machine-b"),
-        harnessId: "codex",
-        configValues: destinationDefaults
+        harnessId: "codex", modelOptionId: "model",
+        configValues: rememberedSelections
       )
       controller = SessionController(
         project: ComposerSelectionRetargetTests.project(serverId: "machine-a"),

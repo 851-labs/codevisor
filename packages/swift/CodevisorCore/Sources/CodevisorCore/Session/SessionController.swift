@@ -298,7 +298,7 @@ final public class SessionController {
     let revision = beginModelConfigurationResolution()
     defer { finishModelConfigurationResolution(revision) }
 
-    let destinationValues = rememberedConfigSelections(forHarness: intent.harnessId)
+    let destinationValues = rememberedConfigSelections(forHarness: intent.harnessId, model: modelValue)
     let requested = intent.requestedSelections(
       modelOptionId: currentModel.id,
       modelValue: modelValue,
@@ -361,8 +361,8 @@ final public class SessionController {
     clearAutomaticSelection()
   }
 
-  private func rememberedConfigSelections(forHarness harnessId: String) -> [String: String] {
-    composerDefaults?.configSelections(forHarness: harnessId, in: resolvedComposerDefaultsScope) ?? [:]
+  func rememberedConfigSelections(forHarness harnessId: String, model: String?) -> [String: String] {
+    composerDefaults?.configSelections(forHarness: harnessId, model: model) ?? [:]
   }
 
   private func adoptResolvedComposerSelection(

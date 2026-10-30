@@ -41,7 +41,7 @@
         serverId: machineID, projectId: projectID, createsWorktree: true)
       environment.composerDefaults.rememberHarnessSelection(serverId: machineID, harnessId: session.harnessId)
       environment.composerDefaults.rememberConfigSelections(
-        in: .newWorkspace(serverId: machineID), harnessId: session.harnessId,
+        harnessId: session.harnessId, modelOptionId: "model",
         configValues: ["model": DemoWorld.featuredModel.id]
       )
       return environment

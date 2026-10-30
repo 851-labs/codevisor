@@ -149,32 +149,68 @@ extension SessionController {
     defer {
       if modelPickRevision == revision { pendingModelPick = nil }
     }
-    let carriedSettings = Dictionary(
-      configOptions
-        .filter {
-          $0.category == SessionConfigOption.Category.thoughtLevel
-            || $0.category == SessionConfigOption.Category.speed
-        }
-        .filter { !$0.currentValue.isEmpty }
-        .map { ($0.id, $0.currentValue) }
-    ) { first, _ in first }
     if activeHarnessId != harnessId {
       guard canChooseHarness else { return }
       await selectHarness(harnessId)
       guard modelPickRevision == revision, activeHarnessId == harnessId else { return }
     }
     let modelId = modelOption?.id ?? modelConfigId(forHarness: harnessId)
+    if acceptsNewChatDefaults { clearDraftModelSettings(harnessId: harnessId) }
     let accepted = await setConfigOption(modelId, value)
     guard accepted, modelPickRevision == revision else { return }
-    await resolveDraftModelSettingsIfNeeded()
+
+    if acceptsNewChatDefaults {
+      seedRememberedConfig()
+      await resolveDraftModelSettingsIfNeeded()
+    } else {
+      await restoreModelSettings(forModel: value, harnessId: harnessId, revision: revision)
+    }
+  }
+
+  private func clearDraftModelSettings(harnessId: String) {
+    for option in configOptions where Self.isModelSetting(option) {
+      pendingConfiguration.removeValue(for: option.id, in: harnessId)
+    }
+  }
+
+  private func restoreModelSettings(forModel modelValue: String, harnessId: String, revision: UInt64) async {
+    let remembered = rememberedConfigSelections(forHarness: harnessId, model: modelValue)
+    let defaults = await defaultSettings(forModel: modelValue, harnessId: harnessId, unlessCoveredBy: remembered)
     guard modelPickRevision == revision else { return }
-    for option in configOptions where carriedSettings[option.id] != nil {
-      guard let previous = carriedSettings[option.id],
-        option.currentValue != previous,
-        option.options.contains(where: { $0.value == previous })
+
+    for option in configOptions where Self.isModelSetting(option) {
+      guard let target = Self.firstOffered([remembered[option.id], defaults[option.id]], by: option),
+        target != option.currentValue
       else { continue }
-      await setConfigOption(option.id, previous)
+      await setConfigOption(option.id, target)
       guard modelPickRevision == revision else { return }
+    }
+  }
+
+  private func defaultSettings(
+    forModel modelValue: String,
+    harnessId: String,
+    unlessCoveredBy remembered: [String: String]
+  ) async -> [String: String] {
+    let needsDefaults = configOptions.filter(Self.isModelSetting).contains { option in
+      Self.firstOffered([remembered[option.id]], by: option) == nil
+    }
+    guard needsDefaults, let client = serverClient,
+      let response = try? await client.capabilities(
+        cwd: capabilityCwd,
+        harnessId: harnessId,
+        configSelections: [modelConfigId(forHarness: harnessId): modelValue]
+      ),
+      let capability = response.harnesses.first(where: { $0.harness.id == harnessId }),
+      Self.modelOption(in: capability.configOptions)?.currentValue == modelValue
+    else { return [:] }
+    let defaults = capability.configOptions.filter(Self.isModelSetting).map { ($0.id, $0.currentValue) }
+    return Dictionary(defaults) { first, _ in first }
+  }
+
+  private static func firstOffered(_ candidates: [String?], by option: SessionConfigOption) -> String? {
+    candidates.compactMap { $0 }.first { candidate in
+      option.options.contains { $0.value == candidate }
     }
   }
 }

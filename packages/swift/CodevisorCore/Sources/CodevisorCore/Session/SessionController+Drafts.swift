@@ -57,8 +57,8 @@ extension SessionController {
     if !draft.usesImmediateDefaultsPersistence, let composerDefaults {
       for (harnessId, configValues) in draft.configByHarness {
         composerDefaults.rememberConfigSelections(
-          in: resolvedComposerDefaultsScope,
           harnessId: harnessId,
+          modelOptionId: modelConfigId(forHarness: harnessId),
           configValues: configValues
         )
       }
@@ -203,11 +203,8 @@ extension SessionController {
 
   func seedRememberedConfig() {
     guard let harnessId = selectedHarnessId else { return }
-    let remembered =
-      composerDefaults?.configSelections(
-        forHarness: harnessId,
-        in: resolvedComposerDefaultsScope
-      ) ?? [:]
+    let wantedModel = wantedDraftModel(harnessId: harnessId)
+    let remembered = rememberedConfigSelections(forHarness: harnessId, model: wantedModel)
     let options =
       configOptionsByHarness[harnessId]
       ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
@@ -215,30 +212,44 @@ extension SessionController {
       pendingConfiguration.mergeDefaults(remembered, for: harnessId)
       return
     }
-    let catalogModel = Self.modelOption(in: options)
-    let wantedModel = catalogModel.flatMap { model in
-      (pendingConfiguration.value(for: model.id, in: harnessId)).flatMap { $0.isEmpty ? nil : $0 }
-        ?? remembered[model.id]
-    }
-    let catalogDescribesModel = wantedModel == nil || wantedModel == catalogModel?.currentValue
-    for (configId, value) in remembered {
-      guard let option = options.first(where: { $0.id == configId }) else {
-        if configId == "speed" || !catalogDescribesModel,
-          pendingConfiguration.value(for: configId, in: harnessId) == nil
-        {
-          pendingConfiguration.stage(value, for: configId, in: harnessId)
-        }
-        continue
-      }
-      if Self.isModelOption(option) { continue }
-      guard !catalogDescribesModel || option.options.contains(where: { $0.value == value }) else {
-        continue
-      }
-      if pendingConfiguration.value(for: configId, in: harnessId) == nil {
-        pendingConfiguration.stage(value, for: configId, in: harnessId)
-      }
+
+    let modelOptions = optionsDescribing(model: wantedModel, harnessId: harnessId, catalog: options)
+    for (configId, value) in remembered where pendingConfiguration.value(for: configId, in: harnessId) == nil {
+      guard Self.rememberedValueFits(configId, value, catalog: options, modelOptions: modelOptions) else { continue }
+      pendingConfiguration.stage(value, for: configId, in: harnessId)
     }
     validateDraftModel(harnessId: harnessId, options: options, remembered: remembered)
+  }
+
+  private func wantedDraftModel(harnessId: String) -> String? {
+    let modelId = modelConfigId(forHarness: harnessId)
+    if let staged = pendingConfiguration.value(for: modelId, in: harnessId), !staged.isEmpty {
+      return staged
+    }
+    return rememberedConfigSelections(forHarness: harnessId, model: nil)[modelId]
+  }
+
+  private func optionsDescribing(
+    model: String?,
+    harnessId: String,
+    catalog: [SessionConfigOption]
+  ) -> [SessionConfigOption]? {
+    guard let model, let catalogModel = Self.modelOption(in: catalog), model != catalogModel.currentValue else {
+      return catalog
+    }
+    return draftModelSettings[Self.draftModelSettingsKey(harnessId: harnessId, model: model)]
+  }
+
+  private static func rememberedValueFits(
+    _ configId: String,
+    _ value: String,
+    catalog: [SessionConfigOption],
+    modelOptions: [SessionConfigOption]?
+  ) -> Bool {
+    if let option = catalog.first(where: { $0.id == configId }), isModelOption(option) { return false }
+    guard let modelOptions else { return true }
+    guard let option = modelOptions.first(where: { $0.id == configId }) else { return configId == "speed" }
+    return option.options.contains { $0.value == value }
   }
 
   private func validateDraftModel(
@@ -317,15 +328,13 @@ extension SessionController {
       configOptionsByHarness[harnessId] = capability.configOptions
       pendingConfiguration.stage(resolved.currentValue, for: resolved.id, in: harnessId)
       if acceptsNewChatDefaults,
-        composerDefaults?.configSelections(
-          forHarness: harnessId,
-          in: resolvedComposerDefaultsScope
-        )[resolved.id] == value
+        rememberedConfigSelections(forHarness: harnessId, model: nil)[resolved.id] == value
       {
         composerDefaults?.rememberConfigSelections(
-          in: resolvedComposerDefaultsScope,
           harnessId: harnessId,
-          configValues: [resolved.id: resolved.currentValue]
+          modelOptionId: resolved.id,
+          configValues: rememberedConfigSelections(forHarness: harnessId, model: value)
+            .merging([resolved.id: resolved.currentValue]) { _, reconciled in reconciled }
         )
       }
     } catch {

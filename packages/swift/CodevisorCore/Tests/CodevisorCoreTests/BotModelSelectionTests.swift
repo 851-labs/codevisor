@@ -64,7 +64,7 @@ struct BotModelSelectionTests {
       let scope = ComposerDefaultsStore.Scope.newWorkspace(serverId: "machine-a")
       defaults.rememberHarnessSelection(in: scope, harnessId: remembered.harnessId)
       defaults.rememberConfigSelections(
-        in: scope, harnessId: remembered.harnessId, configValues: remembered.selections)
+        harnessId: remembered.harnessId, modelOptionId: "model", configValues: remembered.selections)
     }
     let selection = BotModelSelection(
       serverId: "machine-a", client: client, configCache: cache, composerDefaults: defaults, cwd: "/tmp"
