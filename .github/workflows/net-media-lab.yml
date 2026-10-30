@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
+      - uses: ./.github/actions/setup-node
       - uses: ./.github/actions/setup-rust
       - name: Environment
         run: |
@@ -69,6 +70,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
+      - uses: ./.github/actions/setup-node
       - uses: ./.github/actions/setup-rust
       - name: Environment
         run: |
