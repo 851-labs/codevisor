@@ -29,11 +29,13 @@ struct McpPluginDetailList: View {
         }
         if !server.isBuiltIn { PluginAgeRatingRow(subject: subject) }
       }
+      if let accounts {
+        PluginAccountsSection(model: accounts)
+        PluginAccountSignOutSection(model: accounts)
+      }
       McpMachinesSection(entry: entry, model: model)
-      if let accounts { PluginAccountsSection(model: accounts) }
       if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }
       McpServerToolSections(server: server, client: client, isConnected: isConnected)
-      if let accounts { PluginAccountSignOutSection(model: accounts) }
       if summary.isSignedIn { signOutSection }
       if showsModeration || entry.canRemove { manageSection }
     }

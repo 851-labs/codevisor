@@ -7,6 +7,7 @@ struct McpSettingsScreen: View {
   @State private var model = McpGlobalModel()
   @State private var addingCustom = false
   @State private var showingCatalog = false
+  @State private var openedPlugin: String?
 
   private var authoringMachineId: String {
     let selected = environment.machines.selectedMachineId
@@ -41,6 +42,9 @@ struct McpSettingsScreen: View {
       }
     }
     .mcpFleetLiveUpdates(model)
+    .navigationDestination(item: $openedPlugin) { name in
+      McpPluginDetailScreen(entryName: name, model: model)
+    }
     .sheet(isPresented: $addingCustom) {
       McpServerEditor(machineId: authoringMachineId) { try await add($0) }
         .environment(environment)
@@ -75,6 +79,7 @@ struct McpSettingsScreen: View {
   private func didAdd(_ created: ServerMcpServer, on machineId: String) {
     Task {
       await model.load(in: environment)
+      openedPlugin = created.name
       guard created.awaitsAuthorization else { return }
 
       await model.connect(serverId: created.id, on: machineId, in: environment)

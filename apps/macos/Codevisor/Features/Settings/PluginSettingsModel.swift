@@ -18,6 +18,7 @@ final class PluginSettingsModel {
   func didInstall(_ server: ServerMcpServer, in environment: AppEnvironment) {
     Task {
       await fleet.load(in: environment)
+      SettingsRouter.shared.panePath = [.plugin(server.name)]
       guard server.awaitsAuthorization else { return }
 
       await beginOAuth(serverId: server.id, machineId: CodevisorMachine.local.id, in: environment)

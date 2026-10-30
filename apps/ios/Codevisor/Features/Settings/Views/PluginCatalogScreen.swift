@@ -47,6 +47,7 @@ struct PluginCatalogScreen: View {
       .sheet(item: $installTarget) { entry in
         PluginInstallSheet(entry: entry, client: client) { values in
           onInstalled(try await catalog.install(entry, values: values, access: environment.pluginAccess))
+          dismiss()
         }
         .environment(environment)
       }

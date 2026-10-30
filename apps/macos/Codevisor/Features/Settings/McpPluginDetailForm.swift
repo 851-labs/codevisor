@@ -25,13 +25,13 @@ struct McpPluginDetailForm: View {
   var body: some View {
     Form {
       infoSection
+      if let accounts { PluginAccountsSection(model: accounts) }
       McpMachinesSection(entry: entry, model: model, disabledReason: toggleDisabledReason)
       if isComputerUse {
         Section("Permissions") {
           ComputerUsePermissionRowsView(model: permissions, embedded: true)
         }
       }
-      if let accounts { PluginAccountsSection(model: accounts) }
       if let subscriptions { PluginSubscriptionsSection(model: subscriptions, chatTitle: chatTitle) }
       McpServerToolSections(server: server, client: client, isConnected: isConnected)
       if entry.canRemove { removeSection }
