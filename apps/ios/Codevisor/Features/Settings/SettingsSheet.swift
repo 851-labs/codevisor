@@ -44,7 +44,7 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "sandboxes", "projects", "updates", "agents", "plugins", "skills",
+    "root", "account", "machines", "projects", "sandboxes", "updates", "agents", "plugins", "skills",
   ]
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
@@ -179,11 +179,11 @@ struct SettingsSheet: View {
       NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
         sectionLabel("Machines", icon: .machines)
       }
-      NavigationLink(value: SettingsDestination.section("sandboxes")) {
-        sectionLabel("Sandboxes", icon: .sandboxes)
-      }
       NavigationLink(value: SettingsDestination.section("projects")) {
         sectionLabel("Projects", icon: .projects)
+      }
+      NavigationLink(value: SettingsDestination.section("sandboxes")) {
+        sectionLabel("Sandboxes", icon: .sandboxes)
       }
     }
     Section {

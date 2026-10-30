@@ -4,13 +4,13 @@ import CodevisorUI
 import Observation
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-  case account, machines, sandboxes, projects
+  case account, machines, projects, sandboxes
   case general, updates, notifications, shortcuts
   case agents, plugins, skills
   case developer
 
   static let sidebarGroups: [[SettingsTab]] = [
-    [.account, .machines, .sandboxes, .projects],
+    [.account, .machines, .projects, .sandboxes],
     [.general, .updates, .notifications, .shortcuts],
     [.agents, .plugins, .skills],
     [.developer],
