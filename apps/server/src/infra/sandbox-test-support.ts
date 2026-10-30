@@ -223,8 +223,8 @@ export const sandboxHarness = async (options: SandboxHarnessOptions = {}) => {
       }
     }),
     sync: (remote, firstHarness) => pushOneWaySync({ db: services.db }, remote, firstHarness),
-    syncDeferred: (remote, firstHarness) =>
-      pushRemainingAgents({ db: services.db }, remote, firstHarness, {
+    syncDeferred: (remote, order) =>
+      pushRemainingAgents({ db: services.db }, remote, order, {
         attempts: 3,
         intervalMs: 1,
         sleep: () => Promise.resolve()

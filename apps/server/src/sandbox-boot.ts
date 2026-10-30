@@ -148,8 +148,8 @@ export const startSandboxes = (
     localWorkspaces: makeSandboxLocalWorkspaces(options.db, projects, events),
     sync: (remote, firstHarness) =>
       pushOneWaySync({ db: options.db, blobs: options.syncBlobs }, remote, firstHarness),
-    syncDeferred: (remote, firstHarness) =>
-      pushRemainingAgents({ db: options.db }, remote, firstHarness, {
+    syncDeferred: (remote, order) =>
+      pushRemainingAgents({ db: options.db }, remote, order, {
         ...FIRST_AGENT_WAIT,
         sleep: (ms) => delay(ms)
       }),

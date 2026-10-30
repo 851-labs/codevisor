@@ -13,6 +13,8 @@ final class SandboxPrewarm {
   let client: any CodevisorServerClienting
   private var creation: Task<Result<Void, any Error>, Never>?
   private var follow: Task<Void, Never>?
+  private var choice: Task<Void, Never>?
+  private var harnessId: String?
   private var buffered: [SandboxSetupLogLine] = []
   private weak var tracker: SandboxSetupTracker?
   private static let bufferLimit = 2000
@@ -20,6 +22,7 @@ final class SandboxPrewarm {
   init(key: Key, project: Project, harnessId: String?, client: any CodevisorServerClienting) {
     self.key = key
     self.client = client
+    self.harnessId = harnessId
     machineId = UUID().uuidString.lowercased()
     let log = SandboxSetupLogLine.liveLog(client, machineId: machineId)
     follow = Task { [weak self] in
@@ -33,6 +36,21 @@ final class SandboxPrewarm {
 
   func created() async throws {
     try await creation?.value.get()
+  }
+
+  func choose(_ harnessId: String?) {
+    guard let harnessId, harnessId != self.harnessId else { return }
+
+    self.harnessId = harnessId
+    let previous = choice
+    let creation = creation
+    let client = client
+    let machineId = machineId
+    choice = Task {
+      await previous?.value
+      guard case .success = await creation?.value else { return }
+      try? await client.chooseSandboxHarness(id: machineId, harnessId: harnessId)
+    }
   }
 
   func attach(_ tracker: SandboxSetupTracker) {

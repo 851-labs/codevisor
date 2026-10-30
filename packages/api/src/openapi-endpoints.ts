@@ -37,6 +37,7 @@ export const endpoints = [
   "POST /v1/sandboxes/:id/wait",
   "POST /v1/sandboxes/:id/wake",
   "POST /v1/sandboxes/:id/workspace",
+  "PUT /v1/sandboxes/:id/harness",
   "POST /v1/gateway/invoke",
   "GET /v1/openapi.json",
   "GET /v1/update",
@@ -269,6 +270,8 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/sandbox-profiles/availability":
     "Say which sandbox profiles this machine can start now, with a reason for the others",
   "POST /v1/sandboxes/:id/workspace": "Give a sandbox started before the first send its workspace",
+  "PUT /v1/sandboxes/:id/harness":
+    "Install this agent next on a sandbox this server is still setting up, ahead of the others",
   "GET /v1/sandboxes": "List the account's sandboxes and their setup state",
   "POST /v1/sandboxes":
     "Start a sandbox from a profile with a workspace for a project; setup continues in the background",

@@ -156,4 +156,12 @@ extension CodevisorServerClient {
       body: ["workspaceId": workspaceId.uuidString]
     )
   }
+
+  public func chooseSandboxHarness(id: String, harnessId: String) async throws {
+    try await sendNoResponse(
+      "/v1/sandboxes/\(pathComponent(id))/harness",
+      method: "PUT",
+      body: ["harnessId": harnessId]
+    )
+  }
 }

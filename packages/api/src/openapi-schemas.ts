@@ -170,6 +170,7 @@ import {
   StartPluginAccountOAuthRequest
 } from "./plugins.js"
 import {
+  ChooseSandboxHarnessRequest,
   ClaimSandboxWorkspaceRequest,
   CreateSandboxRequest,
   DestroySandboxResponse,
@@ -266,6 +267,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/sandboxes": CreateSandboxRequest,
   "POST /v1/sandboxes/:id/wait": WaitForSandboxRequest,
   "POST /v1/sandboxes/:id/workspace": ClaimSandboxWorkspaceRequest,
+  "PUT /v1/sandboxes/:id/harness": ChooseSandboxHarnessRequest,
   "POST /v1/gateway/invoke": GatewayInvokeRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
   "PATCH /v1/sessions/:id": UpdateSessionRequest,
@@ -442,6 +444,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/sandboxes/:id/wake": Sandbox,
   "POST /v1/sandboxes/:id/wait": WaitForSandboxResponse,
   "POST /v1/sandboxes/:id/workspace": Sandbox,
+  "PUT /v1/sandboxes/:id/harness": Sandbox,
   "POST /v1/gateway/invoke": GatewayInvokeResponse,
   "GET /v1/sessions/:id": SessionDetail,
   "GET /v1/sessions/:id/usage-limits": HarnessUsageLimits,

@@ -20,11 +20,12 @@ import { HttpFailure } from "../server-context.js"
 import { forgetAbandoned, makeAbandonments, type Abandonments } from "./sandbox-abandon.js"
 import { joinAccount, requireOwner, teardownMachine } from "./sandbox-account.js"
 import { startRequestedAgent } from "./sandbox-agent-start.js"
+import type { AgentOrder } from "./sandbox-agents.js"
 import { placementOf, runsElsewhere } from "./sandbox-catalog.js"
-import type { SandboxConnection, SandboxConnections } from "./sandbox-connections.js"
+import type { SandboxConnections } from "./sandbox-connections.js"
+import { makeHarnessChoices } from "./sandbox-harness-choices.js"
 import { makeSandboxLogBook } from "./sandbox-log-book.js"
 import {
-  createdHere,
   existingSandbox,
   IN_PROGRESS,
   makeSandboxRouting,
@@ -57,6 +58,7 @@ import {
   type SandboxSetupPublisher
 } from "./sandbox-setup-log.js"
 import type { SandboxRecordStore } from "./sandbox-store.js"
+import { failInterrupted, sweepConnection } from "./sandbox-sweep.js"
 import type { OneWaySyncReport } from "./sandbox-sync.js"
 import { waitForSandbox } from "./sandbox-wait.js"
 import { makeSandboxWaking } from "./sandbox-wake.js"
@@ -90,7 +92,7 @@ export interface SandboxDeps {
     readonly remove: (workspaceId: string) => Promise<void>
   }
   readonly sync: (remote: SandboxRemote, firstHarness?: string) => Promise<OneWaySyncReport>
-  readonly syncDeferred: (remote: SandboxRemote, firstHarness: string) => Promise<void>
+  readonly syncDeferred: (remote: SandboxRemote, order: AgentOrder) => Promise<void>
   readonly bootstrap: Omit<BootstrapRequest, "inviteCode" | "machineName">
   readonly clock: { readonly now: () => number; readonly sleep: (ms: number) => Promise<void> }
   readonly newId: () => string
@@ -113,6 +115,7 @@ export interface Sandboxes extends SandboxRouting {
     publish?: SandboxSetupPublisher
   ) => Promise<Sandbox>
   readonly retry: (id: string, publish?: SandboxSetupPublisher) => Promise<Sandbox>
+  readonly chooseHarness: (id: string, harnessId: string) => Promise<Sandbox>
   readonly wait: (id: string, timeoutMs: number) => Promise<WaitForSandboxResponse>
   readonly restore: (workspaceId: string) => Promise<void>
   readonly retireProvider: (accountId: string) => Promise<void>
@@ -127,6 +130,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
   const abandonments = makeAbandonments()
   const logs = makeSandboxLogBook()
   const power = makeSandboxPowerState()
+  const harnesses = makeHarnessChoices()
 
   const exclusively = async (id: string, work: () => Promise<void>): Promise<void> => {
     if (busy.has(id)) return
@@ -172,14 +176,18 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     }
     await deps.records.put(machine)
     logs.start(machine.id)
-    const planned = { options, plan, abandonments, ...harnessOf(request) }
+    harnesses.start(machine.id, harnessOf(request).harnessId)
+    const planned = { options, plan, abandonments, harness: () => harnesses.chosen(machine.id) }
     const recorded = logs.recording(publish)
     track(
       pipelines,
       exclusively(machine.id, async () => {
-        const remote = await runPipeline(deps, provider, machine, planned, recorded)
-        if (remote !== undefined && planned.harnessId !== undefined)
-          track(pipelines, installRemainingAgents(deps, remote, planned.harnessId))
+        const provisioned = await runPipeline(deps, provider, machine, planned, recorded)
+        const installing = installRemainingAgents(deps, provisioned, planned)
+        track(
+          pipelines,
+          installing.finally(() => harnesses.forget(machine.id))
+        )
       })
     )
     return machine
@@ -227,6 +235,10 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     },
     create,
     retry,
+    chooseHarness: async (id, harnessId) => {
+      harnesses.choose(id, harnessId)
+      return existingSandbox(deps, id)
+    },
     wait: (id, timeoutMs) => waitForSandbox(deps, id, timeoutMs),
     ...routing,
     restore: (workspaceId) => {
@@ -271,7 +283,12 @@ interface PlannedProvision {
   readonly options: SandboxFieldValues
   readonly plan: ProvisionPlan
   readonly abandonments: Abandonments
-  readonly harnessId?: string
+  readonly harness: () => string | undefined
+}
+
+interface Provisioned {
+  readonly remote: SandboxRemote
+  readonly firstHarness: string | undefined
 }
 
 const runPipeline = async (
@@ -280,7 +297,7 @@ const runPipeline = async (
   initial: Sandbox,
   planned: PlannedProvision,
   publish: SandboxSetupPublisher | undefined
-): Promise<SandboxRemote | undefined> => {
+): Promise<Provisioned | undefined> => {
   const record = recordWriter(deps, initial)
   const setup = makeSandboxSetupProgress({
     machineId: initial.id,
@@ -290,8 +307,8 @@ const runPipeline = async (
       record.advance({ steps }).catch(() => undefined)
     }
   })
-  const remote = await provisionOrFail(deps, provider, record, setup, planned)
-  if (!planned.abandonments.settle(initial.id)) return remote
+  const provisioned = await provisionOrFail(deps, provider, record, setup, planned)
+  if (!planned.abandonments.settle(initial.id)) return provisioned
 
   await forgetAbandoned(deps, record.current())
   return undefined
@@ -303,12 +320,12 @@ const provisionOrFail = async (
   record: RecordWriter,
   setup: SandboxSetupProgress,
   planned: PlannedProvision
-): Promise<SandboxRemote | undefined> => {
+): Promise<Provisioned | undefined> => {
   try {
     return await provision(deps, provider, record, setup, planned)
   } catch (cause) {
     await teardownMachine(deps, provider, record.current()).catch(() => undefined)
-    await record.advance({ state: "failed", error: messageOf(cause) })
+    await record.advance({ state: "failed", error: messageOf(cause), ...harnessIdOf(planned) })
     return undefined
   }
 }
@@ -319,7 +336,7 @@ const provision = async (
   record: RecordWriter,
   setup: SandboxSetupProgress,
   planned: PlannedProvision
-): Promise<SandboxRemote> => {
+): Promise<Provisioned> => {
   const checkpoint = () => planned.abandonments.checkpoint(initialId(record))
   const options = await prepared(provider, planned, setup)
   checkpoint()
@@ -342,7 +359,8 @@ const provision = async (
   checkpoint()
   setup.stage("sync")
   const remote = sandboxRemote(provider, created.providerMachineId)
-  const report = await deps.sync(remote, planned.harnessId)
+  const firstHarness = planned.harness()
+  const report = await deps.sync(remote, firstHarness)
   deps.log(`Sandbox ${initialId(record)}: pushed ${report.entries} sync entries one way`)
   await record.advance({ state: "cloning" })
   checkpoint()
@@ -358,17 +376,26 @@ const provision = async (
   )
   setup.finish()
   await record.advance({ ...placed, ...started, state: "ready" })
-  return remote
+  return { remote, firstHarness }
 }
 
 const installRemainingAgents = async (
   deps: SandboxDeps,
-  remote: SandboxRemote,
-  firstHarness: string
+  provisioned: Provisioned | undefined,
+  planned: PlannedProvision
 ): Promise<void> => {
-  await deps.syncDeferred(remote, firstHarness).catch((cause: unknown) => {
+  const first = provisioned?.firstHarness
+  if (provisioned === undefined || first === undefined) return
+
+  const order = { first, chosen: planned.harness }
+  await deps.syncDeferred(provisioned.remote, order).catch((cause: unknown) => {
     deps.log(`Installing the remaining agents failed: ${messageOf(cause)}`)
   })
+}
+
+const harnessIdOf = (planned: PlannedProvision): Partial<Sandbox> => {
+  const harnessId = planned.harness()
+  return harnessId === undefined ? {} : { harnessId }
 }
 
 const abandonWhileSettingUp = (abandonments: Abandonments, machine: Sandbox): void => {
@@ -416,43 +443,6 @@ const recordWriter = (deps: SandboxDeps, initial: Sandbox): RecordWriter => {
 }
 
 const initialId = (record: RecordWriter): string => record.current().id
-
-const failInterrupted = async (deps: SandboxDeps, busy: ReadonlySet<string>): Promise<void> => {
-  for (const machine of await deps.records.list()) {
-    if (!IN_PROGRESS.has(machine.state) || busy.has(machine.id) || !createdHere(deps, machine))
-      continue
-    const provider = await deps.connections.connect(connectionOf(machine))
-    await teardownMachine(deps, provider, machine).catch(() => undefined)
-    await deps.records.put({
-      ...machine,
-      state: "failed",
-      error: "Interrupted by a server restart"
-    })
-  }
-}
-
-const sweepConnection = async (
-  deps: SandboxDeps,
-  owner: string,
-  connection: SandboxConnection
-): Promise<void> => {
-  const provider = await deps.connections.connect(connection)
-  const listed = await provider.list(owner)
-  const live = await liveIds(deps)
-  for (const orphan of listed) {
-    if (live.has(orphan.tags.machine)) continue
-    deps.log(
-      `Destroying orphaned ${provider.definition.displayName} sandbox ${orphan.providerMachineId}`
-    )
-    await provider.destroy(orphan.providerMachineId)
-  }
-}
-
-const liveIds = async (deps: SandboxDeps): Promise<ReadonlySet<string>> =>
-  new Set((await deps.records.list()).filter(isLive).map((machine) => machine.id))
-
-const isLive = (machine: Sandbox): boolean =>
-  machine.state !== "failed" && machine.state !== "archived"
 
 const archivedFor = async (deps: SandboxDeps, workspaceId: string): Promise<Sandbox | undefined> =>
   (await deps.records.list()).find(

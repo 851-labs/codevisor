@@ -37,6 +37,11 @@ const bothReady = JSON.stringify([
   { id: "gemini", readiness: { state: "ready" } }
 ])
 
+const othersReady = JSON.stringify([
+  { id: "opencode", readiness: { state: "ready" } },
+  { id: "gemini", readiness: { state: "ready" } }
+])
+
 const keysIn = (body: string | undefined): ReadonlyArray<string> =>
   [...(body ?? "").matchAll(/"key":"([^"]+)"/g)].map((match) => match[1] ?? "")
 
@@ -68,14 +73,19 @@ describe("installing the remaining agents on a sandbox", () => {
     ])
     const sleeps: number[] = []
 
-    await pushRemainingAgents({ db: services.db }, remote, "codex", {
-      attempts: 10,
-      intervalMs: 50,
-      sleep: (ms) => {
-        sleeps.push(ms)
-        return Promise.resolve()
+    await pushRemainingAgents(
+      { db: services.db },
+      remote,
+      { first: "codex", chosen: () => "codex" },
+      {
+        attempts: 10,
+        intervalMs: 50,
+        sleep: (ms) => {
+          sleeps.push(ms)
+          return Promise.resolve()
+        }
       }
-    })
+    )
 
     const pushes = requests.filter((request) => request.script.includes("/v1/sync/harnesses'"))
     expect(sleeps).toEqual([50, 50, 50])
@@ -84,6 +94,43 @@ describe("installing the remaining agents on a sandbox", () => {
       ["codex", "droid", "gemini"]
     ])
     expect(requests.at(-1)?.script).toContain("/v1/harnesses'")
+  })
+
+  it("installs an agent picked after setup began next, without waiting out the one before it", async () => {
+    const services = await seeded()
+    await run(
+      services.db.mergeSyncEntries("harnesses", [
+        { key: "opencode", value: { installed: true }, timestamp: stamp(3) }
+      ])
+    )
+    const { requests, remote } = remoteAnswering([
+      { exitCode: 0, stdout: installing },
+      { exitCode: 0, stdout: othersReady }
+    ])
+    let chosen = "codex"
+    const sleeps: number[] = []
+
+    await pushRemainingAgents(
+      { db: services.db },
+      remote,
+      { first: "codex", chosen: () => chosen },
+      {
+        attempts: 3,
+        intervalMs: 50,
+        sleep: (ms) => {
+          sleeps.push(ms)
+          chosen = "opencode"
+          return Promise.resolve()
+        }
+      }
+    )
+
+    const pushes = requests.filter((request) => request.script.includes("/v1/sync/harnesses'"))
+    expect(pushes.map((push) => keysIn(push.stdin))).toEqual([
+      ["codex", "opencode"],
+      ["codex", "opencode", "gemini"]
+    ])
+    expect(sleeps).toEqual([50])
   })
 
   it("pushes every agent when the chat's agent has no setting of its own", async () => {

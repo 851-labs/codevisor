@@ -57,4 +57,6 @@ public extension CodevisorServerClienting {
   func claimSandboxWorkspace(id: String, workspaceId: UUID) async throws -> ServerSandbox {
     throw CodevisorServerClientError.invalidResponse
   }
+
+  func chooseSandboxHarness(id: String, harnessId: String) async throws {}
 }

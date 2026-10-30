@@ -6,6 +6,9 @@ struct SandboxSetupError: LocalizedError {
 }
 
 extension SessionController {
+  private static let agentStallLimit = Duration.seconds(180)
+  private static let agentWaitLimit = Duration.seconds(30 * 60)
+
   func createRequestedSandbox(showsSetupPhases: Bool) async -> String? {
     guard let sandboxTarget else { return nil }
     return await sandboxFailure(sandboxTarget, showsSetupPhases: showsSetupPhases)
@@ -128,16 +131,26 @@ extension SessionController {
     tracker: SandboxSetupTracker
   ) async throws {
     guard let agent else { return }
-    let deadline = ContinuousClock.now + .seconds(180)
+    adoptHarnessCapability(try await readyAgent(agent.harnessId, target: target, tracker: tracker))
+    clearAutomaticSelection()
+    selectedHarnessId = agent.harnessId
+    pendingConfiguration.replaceValues(carriedConfigValues(agent), for: agent.harnessId)
+  }
+
+  private func readyAgent(
+    _ harnessId: String,
+    target: SandboxTarget,
+    tracker: SandboxSetupTracker
+  ) async throws -> ServerHarnessCapability {
+    let giveUp = ContinuousClock.now + Self.agentWaitLimit
+    var stalledAt = ContinuousClock.now + Self.agentStallLimit
     var lastDetail: String?
     while true {
-      guard ContinuousClock.now < deadline else {
+      let probe = await agentProbe(harnessId)
+      if case let .ready(capability) = probe { return capability }
+      if case .installing = probe { stalledAt = ContinuousClock.now + Self.agentStallLimit }
+      guard ContinuousClock.now < min(stalledAt, giveUp) else {
         throw SandboxSetupError(message: "The chosen agent isn't ready on the \(target.machineNoun)")
-      }
-      let probe = await agentCapability(agent.harnessId)
-      if let capability = probe.ready {
-        adoptHarnessCapability(capability)
-        break
       }
       if let detail = probe.detail, detail != lastDetail {
         tracker.note(detail, in: .agent)
@@ -145,29 +158,14 @@ extension SessionController {
       }
       try await Task.sleep(for: .seconds(1))
     }
-    clearAutomaticSelection()
-    selectedHarnessId = agent.harnessId
-    pendingConfiguration.replaceValues(carriedConfigValues(agent), for: agent.harnessId)
   }
 
-  private func agentCapability(_ harnessId: String) async -> (ready: ServerHarnessCapability?, detail: String?) {
+  private func agentProbe(_ harnessId: String) async -> SandboxAgentProbe {
     guard let serverClient,
       let response = try? await serverClient.capabilities(cwd: capabilityCwd, harnessId: harnessId),
       let capability = response.harnesses.first(where: { $0.harness.id == harnessId })
-    else { return (nil, "Waiting for the agent list") }
-    if capability.harness.enabled, capability.harness.isReady { return (capability, nil) }
-    return (nil, Self.agentWaitingReason(capability.harness))
-  }
-
-  private static func agentWaitingReason(_ harness: ServerHarness) -> String {
-    guard harness.isReady else {
-      return "Waiting for \(harness.name) to install (\(harness.readiness.detail ?? harness.readiness.state))"
-    }
-    switch harness.auth?.resolvedState {
-    case .unauthenticated, .expired: return "\(harness.name) isn't signed in on this machine"
-    case .checking, nil: return "Checking \(harness.name)'s sign-in"
-    default: return "\(harness.name) isn't enabled on this machine"
-    }
+    else { return .waiting("Waiting for the agent list") }
+    return SandboxAgentProbe(capability)
   }
 
   private func carriedConfigValues(_ agent: ComposerSelectionIntent) -> [String: String] {

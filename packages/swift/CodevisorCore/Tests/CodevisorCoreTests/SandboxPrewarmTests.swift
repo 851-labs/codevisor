@@ -21,6 +21,23 @@ struct SandboxPrewarmTests {
     #expect(controller.sandboxPrewarm?.machineId == request.id)
   }
 
+  @Test("Picking another agent after the VM started has its server install that agent first")
+  func agentChangeReachesServer() async {
+    let client = PrewarmFakeServerClient()
+    let controller = makeController(client: client)
+    controller.selectedHarnessId = "codex"
+    controller.sandboxTarget = .tartVM
+    let created = await client.nextCreate()
+
+    controller.selectedHarnessId = "codex"
+    controller.selectedHarnessId = "opencode"
+    controller.selectedHarnessId = "claude-code"
+
+    #expect(created.harnessId == "codex")
+    #expect(await client.nextChoice() == HarnessChoice(machineId: created.id, harnessId: "opencode"))
+    #expect(await client.nextChoice() == HarnessChoice(machineId: created.id, harnessId: "claude-code"))
+  }
+
   @Test("Picking another machine tears the early VM down like a failed setup")
   func abandoningDestroys() async {
     let client = PrewarmFakeServerClient()
@@ -157,6 +174,11 @@ struct SandboxPrewarmTests {
   }
 }
 
+private struct HarnessChoice: Equatable {
+  let machineId: String
+  let harnessId: String
+}
+
 private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()
   private var creates = 0
@@ -166,10 +188,13 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
   private let createdContinuation: AsyncStream<ServerSandboxRequest>.Continuation
   private let destroyedStream: AsyncStream<String>
   private let destroyedContinuation: AsyncStream<String>.Continuation
+  private let choiceStream: AsyncStream<HarnessChoice>
+  private let choiceContinuation: AsyncStream<HarnessChoice>.Continuation
 
   init() {
     (createdStream, createdContinuation) = AsyncStream.makeStream()
     (destroyedStream, destroyedContinuation) = AsyncStream.makeStream()
+    (choiceStream, choiceContinuation) = AsyncStream.makeStream()
   }
 
   var createCount: Int { lock.withLock { creates } }
@@ -215,6 +240,15 @@ private final class PrewarmFakeServerClient: CodevisorServerClienting, @unchecke
 
   func destroySandbox(id: String) async throws {
     destroyedContinuation.yield(id)
+  }
+
+  func nextChoice() async -> HarnessChoice? {
+    var iterator = choiceStream.makeAsyncIterator()
+    return await iterator.next()
+  }
+
+  func chooseSandboxHarness(id: String, harnessId: String) async throws {
+    choiceContinuation.yield(HarnessChoice(machineId: id, harnessId: harnessId))
   }
 
   func info() async throws -> ServerInfo {

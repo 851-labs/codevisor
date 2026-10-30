@@ -191,6 +191,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func wakeSandbox(id: String) async throws -> ServerSandbox
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox
   func claimSandboxWorkspace(id: String, workspaceId: UUID) async throws -> ServerSandbox
+  func chooseSandboxHarness(id: String, harnessId: String) async throws
   func readProjectEnvFiles(projectId: UUID, paths: [String]) async throws -> [ServerProjectEnvFileContent]
   func publishProjectRemote(projectId: UUID, url: String, initialize: Bool) async throws -> ServerProject
   func setUpProjectFromGit(_ request: ServerProjectSetupRequest) async throws -> ServerProject

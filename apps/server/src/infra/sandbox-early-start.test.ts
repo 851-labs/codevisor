@@ -34,6 +34,23 @@ describe("starting a machine before the first send", () => {
     expect(harness.curls[lastPush + 1]?.script).toContain("/v1/sync/harnesses/reconcile")
   })
 
+  it("installs the agent picked after the machine started ahead of the one it started with", async () => {
+    const harness = await sandboxHarness()
+    await run(
+      harness.services.db.mergeSyncEntries("harnesses", [
+        { key: "codex", value: { installed: true }, timestamp: stamp(1) },
+        { key: "claude-code", value: { installed: true }, timestamp: stamp(2) }
+      ])
+    )
+
+    await harness.machines.create({ ...request, harnessId: "codex" })
+    await harness.machines.chooseHarness("id-1", "claude-code")
+    await harness.machines.settled()
+
+    expect(harnessPushes(harness.curls)).toEqual([["claude-code"], ["claude-code", "codex"]])
+    expect((await harness.machines.list())[0]?.state).toBe("ready")
+  })
+
   it("leaves the workspace for the chat to claim once the machine is ready", async () => {
     const harness = await sandboxHarness()
     await harness.machines.create({ ...request, defersWorkspace: true })

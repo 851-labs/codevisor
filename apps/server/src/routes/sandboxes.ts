@@ -1,4 +1,5 @@
 import {
+  ChooseSandboxHarnessRequest,
   ClaimSandboxWorkspaceRequest,
   CreateSandboxRequest,
   DEFAULT_SANDBOX_WAIT_TIMEOUT_MS,
@@ -69,11 +70,21 @@ const dispatchSandboxes = async (route: RouteContext, sandboxes: Sandboxes): Pro
     writeJson(response, 202, await sandboxes.retry(retryId, setupPublisher(route)))
     return true
   }
+  if (await chooseHarness(route, sandboxes)) return true
   const claimId = methodRouteId(route, "POST", "/v1/sandboxes/:id/workspace")
   if (claimId === undefined) return false
 
   const { workspaceId } = await readSchema(request, ClaimSandboxWorkspaceRequest)
   writeJson(response, 200, await sandboxes.claimWorkspace(claimId, workspaceId))
+  return true
+}
+
+const chooseHarness = async (route: RouteContext, sandboxes: Sandboxes): Promise<boolean> => {
+  const id = methodRouteId(route, "PUT", "/v1/sandboxes/:id/harness")
+  if (id === undefined) return false
+
+  const { harnessId } = await readSchema(route.request, ChooseSandboxHarnessRequest)
+  writeJson(route.response, 200, await sandboxes.chooseHarness(id, harnessId))
   return true
 }
 

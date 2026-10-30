@@ -148,6 +148,9 @@ export type CreateSandboxRequest = typeof CreateSandboxRequest.Type
 export const ClaimSandboxWorkspaceRequest = Schema.Struct({ workspaceId: Schema.String })
 export type ClaimSandboxWorkspaceRequest = typeof ClaimSandboxWorkspaceRequest.Type
 
+export const ChooseSandboxHarnessRequest = Schema.Struct({ harnessId: Schema.String })
+export type ChooseSandboxHarnessRequest = typeof ChooseSandboxHarnessRequest.Type
+
 export const SANDBOX_MANAGER_ROLE = "sandbox-manager"
 export const FLEET_SANDBOX_ACTION_PATH = "fleet.sandbox_action"
 

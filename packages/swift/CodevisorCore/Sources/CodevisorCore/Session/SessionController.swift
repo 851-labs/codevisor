@@ -70,7 +70,12 @@ final public class SessionController {
     }
   }
   var initialHistoryLoadStartedAt: TimeInterval?
-  public var selectedHarnessId: String? { didSet { draftDidChange() } }
+  public var selectedHarnessId: String? {
+    didSet {
+      draftDidChange()
+      sandboxPrewarm?.choose(selectedHarnessId)
+    }
+  }
   @ObservationIgnored public var promptClientId: String? {
     didSet { model?.promptClientId = promptClientId }
   }
