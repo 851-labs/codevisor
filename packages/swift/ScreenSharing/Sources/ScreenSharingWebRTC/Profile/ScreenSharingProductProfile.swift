@@ -11,7 +11,7 @@ public enum ScreenSharingProductProfile {
   public static let fullQualityBitrate = 6_000_000
   public static let adaptiveQualityWarmUp: TimeInterval = 5
   public static let fieldTrials = [
-    "WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80", "WebRTC-Video-Pacing": "factor:10",
+    "WebRTC-ForcePlayoutDelay": "min_ms:0,max_ms:0", "WebRTC-Video-Pacing": "factor:10",
     "WebRTC-FrameDropper": "Disabled",
   ]
 
