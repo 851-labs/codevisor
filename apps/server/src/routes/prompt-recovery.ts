@@ -1,4 +1,5 @@
 import type { EventEnvelope, PromptQueueItem, SessionSummary, TranscriptPage } from "@codevisor/api"
+import { setupQuestionPresentation } from "@codevisor/db"
 
 import { queueRestartResumeOnce, restartNotice, taskDescriptions } from "../restart-notice.js"
 import {
@@ -47,11 +48,14 @@ const reconcileSession = async (
   const snapshot = await inspectSession(services, session.id)
   const processingPrompts = await reconcilePromptClaims(services, session.id)
   const { page, hasOrphanedTurn, hasOrphanedTasks } = snapshot
+  if (
+    page.pendingQuestion !== undefined &&
+    setupQuestionPresentation(page.pendingQuestion) !== undefined
+  ) {
+    await cancelSetupPrompt(services, fanout, serverId, session.id, page.pendingQuestion)
+  }
   if (!hasOrphanedTurn && !hasOrphanedTasks && processingPrompts.length === 0) return
 
-  if (hasOrphanedTurn && page.pendingQuestion !== undefined) {
-    await cancelPersistedQuestion(services, fanout, serverId, session.id, page.pendingQuestion)
-  }
   if (hasOrphanedTasks) await stopOrphanedTasks(context, session.id, page)
   if (processingPrompts.length > 0) {
     await restorePromptMessages(context, session.id, processingPrompts)
@@ -70,7 +74,9 @@ const inspectSession = async (
 ): Promise<RecoverySnapshot> => {
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
   const active = page.items.at(-1)
-  const hasOrphanedTurn = isGeneratingAssistant(active) || page.pendingQuestion !== undefined
+  const hasOrphanedTurn =
+    isGeneratingAssistant(active) ||
+    (page.pendingQuestion !== undefined && active?.stopReason === undefined)
   await run(
     services.db.closeStaleAssistantChatItems(sessionId, hasOrphanedTurn ? active?.id : undefined)
   )
@@ -124,7 +130,7 @@ const recoverTerminalTurn = async (
   await settleRecoveredTurn(services, fanout, serverId, sessionId, terminalTurnId)
 }
 
-const cancelPersistedQuestion = (
+const cancelSetupPrompt = (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,

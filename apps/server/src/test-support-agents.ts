@@ -12,6 +12,7 @@ import { Effect } from "effect"
 
 import { observableFixture } from "./changes-test-support.js"
 import { dependencyConfigOptions } from "./test-support-config-options.js"
+import { modesIn, questionAskedBy, questionEvent } from "./test-support-questions.js"
 import { harnesses } from "./test-support-stubs.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
@@ -233,10 +234,7 @@ export const makeAgents = (): AgentRuntimeService & {
           }
         ]
         configOptionsBySession.set(agentSessionId, configOptions)
-        return {
-          configOptions,
-          sessionId: agentSessionId
-        }
+        return { configOptions, sessionId: agentSessionId, ...modesIn(cwd) }
       }),
     prompt: (sessionId, input) =>
       Effect.promise(async () => {
@@ -245,7 +243,8 @@ export const makeAgents = (): AgentRuntimeService & {
         if (text === "slow prompt") {
           await promptGate.promise
         }
-        if (text === "prompt until cancelled") {
+        const asked = questionAskedBy(text)
+        if (text === "prompt until cancelled" || asked !== undefined) {
           const turnId = `turn-${prompts.length}`
           const cancelled = new Promise<void>((resolve) => cancellable.set(sessionId, resolve))
           await emit(sessionId, {
@@ -253,7 +252,11 @@ export const makeAgents = (): AgentRuntimeService & {
             subjectId: sessionId,
             payload: { initiatedBy: "user", turnId, turnState: "started" }
           })
+          if (asked !== undefined) await emit(sessionId, questionEvent(sessionId, asked))
           await cancelled
+          if (asked !== undefined) {
+            await emit(sessionId, questionEvent(sessionId, asked, { outcome: "cancelled" }))
+          }
           await emit(sessionId, {
             kind: "session.updated",
             subjectId: sessionId,

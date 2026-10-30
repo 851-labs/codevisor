@@ -30,7 +30,7 @@ it("refuses stale candidates after new activity and leaves empty sessions untouc
 })
 
 it.each([false, true])(
-  "terminally repairs a quiet turn, including its question (provider identity: %s)",
+  "terminally repairs a quiet turn and keeps its question waiting (provider identity: %s)",
   async (identified) => {
     const { db, session } = await memoryDatabase()
     await run(
@@ -53,20 +53,56 @@ it.each([false, true])(
       db.reconcileQuietStreamingSession(session.id, "2100-01-01T00:00:00.000Z")
     )
     expect(result.repaired).toBe(1)
-    expect(result.events.map((event) => event.kind)).toEqual(
-      identified
-        ? ["session.output", "session.updated", "session.attention.updated"]
-        : ["session.updated", "session.attention.updated"]
-    )
+    expect(result.events.map((event) => event.kind)).toEqual([
+      "session.updated",
+      "session.attention.updated"
+    ])
     const page = await run(db.getTranscriptPage(session.id, undefined, 1))
-    expect(page.items.at(-1)).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
-    expect(page.pendingQuestion).toBeUndefined()
+    expect(page.items.at(-1)).toMatchObject({
+      isGenerating: false,
+      stopReason: "end_turn",
+      ...(identified ? { stopKind: "interrupted" } : {})
+    })
+    expect(page.pendingQuestion?.questionId).toBe(identified ? "q" : undefined)
     expect(result.events.at(-1)?.subjectRevision).toBe(page.eventCursor)
     expect(
       await run(db.reconcileQuietStreamingSession(session.id, "2100-01-01T00:00:00.000Z"))
     ).toEqual({ repaired: 0, events: [] })
   }
 )
+
+it("cancels a setup prompt its quiet turn left behind", async () => {
+  const { db, session } = await memoryDatabase()
+  await run(db.appendEvent("session.updated", session.id, { turnId: "t", turnState: "started" }))
+  await run(
+    db.appendEvent("session.output", session.id, {
+      sessionUpdate: "question",
+      questionId: "computer-use",
+      questions: [
+        {
+          id: "computer_use_permissions",
+          question: "Allow",
+          options: [{ label: "Continue" }],
+          allowsOther: false,
+          presentation: "computerUsePermissions"
+        }
+      ]
+    })
+  )
+
+  const result = await run(
+    db.reconcileQuietStreamingSession(session.id, "2100-01-01T00:00:00.000Z")
+  )
+
+  expect(result.events.map((event) => event.payload)).toEqual([
+    expect.objectContaining({ questionId: "computer-use", outcome: "cancelled" }),
+    expect.not.objectContaining({ stopKind: expect.anything() }),
+    expect.anything()
+  ])
+  expect(
+    (await run(db.getTranscriptPage(session.id, undefined, 1))).pendingQuestion
+  ).toBeUndefined()
+})
 
 it("repairs stranded older rows without ending the latest user message", async () => {
   const { db, session, sqlite } = await memoryDatabase()

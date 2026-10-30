@@ -20,13 +20,13 @@ extension SessionModel {
   @discardableResult
   func finish(_ stop: SessionTurnStop, chatItemId: UUID? = nil) -> Bool {
     guard closeSettledTurn(chatItemId, stop) else {
-      pendingQuestion = nil
+      if !stop.parksQuestion { pendingQuestion = nil }
       closeActiveTurn(stop)
       return false
     }
     guard !activeTurnIsGenerating else { return true }
 
-    pendingQuestion = nil
+    if !stop.parksQuestion { pendingQuestion = nil }
     return false
   }
 

@@ -17,12 +17,14 @@ import {
   isoTimestamp
 } from "@codevisor/api"
 
+import { queueSystemPromptFirst } from "../restart-notice.js"
 import {
   HttpFailure,
   matchRoute,
   matchRouteParams,
   readSchema,
   run,
+  swallowError,
   writeJson
 } from "../server-context.js"
 import type { CodevisorServerConfig, CodevisorServerServices } from "../server-context.js"
@@ -32,7 +34,15 @@ import {
   refusePlanConfigForBot,
   refusePlanModeForBot
 } from "./bot-session-modes.js"
+import {
+  buildModeId,
+  leavesPlanMode,
+  parkedAnswerPrompt,
+  pendingAgentQuestion,
+  resolveParkedQuestion
+} from "./parked-questions.js"
 import { refuseWhileUpdating } from "./prompt-delivery.js"
+import { drainPromptQueue, hasLiveTurn } from "./prompt-queue.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
@@ -242,11 +252,38 @@ const deliverAnswer = async (
     (await route.routeState.pluginDiscovery?.setup.answer(sessionId, questionId, answer)) ?? false
   const handledByAutomation =
     handledBySetup || ((await services.mcp?.answerQuestion(sessionId, questionId, answer)) ?? false)
-  if (!handledByAutomation) {
+  if (
+    !handledByAutomation &&
+    !(await answeredParkedQuestion(route, sessionId, questionId, answer))
+  ) {
     const agentSession = await agentSessionFor(route, sessionId)
     await run(services.agents.answerQuestion(agentSession.sessionId, questionId, answer))
   }
   return { outcome: payload.outcome, questionId }
+}
+
+const answeredParkedQuestion = async (
+  route: RouteContext,
+  sessionId: string,
+  questionId: string,
+  answer: QuestionAnswer
+): Promise<boolean> => {
+  const { services, fanout, routeState, config } = route
+  if (hasLiveTurn(routeState, sessionId)) return false
+  const question = await pendingAgentQuestion(services, sessionId)
+  if (question?.questionId !== questionId) return false
+
+  if (leavesPlanMode(question, answer)) await leavePlanMode(route, sessionId)
+  await resolveParkedQuestion(services, fanout, config.id, sessionId, question, answer)
+  await queueSystemPromptFirst(services, sessionId, parkedAnswerPrompt(question, answer))
+  void drainPromptQueue(services, fanout, routeState, config.id, sessionId).catch(swallowError)
+  return true
+}
+
+const leavePlanMode = async (route: RouteContext, sessionId: string): Promise<void> => {
+  const agentSession = await agentSessionFor(route, sessionId)
+  const modeId = buildModeId(agentSession.modes)
+  if (modeId !== undefined) await run(route.services.agents.setMode(agentSession.sessionId, modeId))
 }
 
 interface CancelResult {

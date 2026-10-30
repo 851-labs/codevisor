@@ -1,6 +1,5 @@
 import { isCompactPrompt, type PromptInput } from "@codevisor/agent-runtime"
-import type { PromptQueueItem, QuestionPayload } from "@codevisor/api"
-import { setupQuestionPresentation } from "@codevisor/db"
+import type { PromptQueueItem } from "@codevisor/api"
 
 import {
   resolvePromptAttachments,
@@ -8,6 +7,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { pendingAgentQuestion } from "./parked-questions.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 import { recordUserPrompt, steeredPrompt } from "./user-prompts.js"
 
@@ -24,22 +24,13 @@ export const answeredPendingQuestion = async (
   item: PromptQueueItem
 ): Promise<boolean> => {
   if (isCompactPrompt(item.text)) return false
-  const question = await pendingQuestionToReply(services, sessionId)
+  const question = await pendingAgentQuestion(services, sessionId)
   if (question === undefined) return false
 
   await recordUserPrompt(services, fanout, serverId, sessionId, steeredPrompt(item))
   const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
   const target = { agentSessionId: agentSession.sessionId, questionId: question.questionId }
   return replyToQuestion(services, target, item)
-}
-
-const pendingQuestionToReply = async (
-  services: CodevisorServerServices,
-  sessionId: string
-): Promise<QuestionPayload | undefined> => {
-  const question = await run(services.db.getSessionPendingQuestion(sessionId))
-  if (question === undefined || setupQuestionPresentation(question) !== undefined) return undefined
-  return question
 }
 
 const replyToQuestion = async (

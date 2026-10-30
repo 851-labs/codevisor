@@ -112,7 +112,7 @@ describe("durable session turns", () => {
 
     expect(agents.loads).toEqual([])
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
-    expect(page.pendingQuestion).toBeUndefined()
+    expect(page.pendingQuestion?.questionId).toBe("orphaned-question")
     expect(
       (await run(services.db.getTranscriptPage(archived.id, undefined, 8))).items.at(-1)
     ).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
@@ -124,16 +124,14 @@ describe("durable session turns", () => {
       stopReason: "end_turn"
     })
     expect(splitPage.items.at(0)).not.toHaveProperty("stopDetail")
-    expect(page.items.at(-1)).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
+    expect(page.items.at(-1)).toMatchObject({
+      isGenerating: false,
+      stopReason: "end_turn",
+      stopKind: "interrupted"
+    })
     expect(page.items.at(-1)).not.toHaveProperty("stopDetail")
     const events = listSubjectEvents(services, session.id)
-    expect(events.map((event) => event.payload)).toContainEqual(
-      expect.objectContaining({
-        outcome: "cancelled",
-        questionId: "orphaned-question",
-        sessionUpdate: "question_resolved"
-      })
-    )
+    expect(events.map((event) => event.payload).filter(isQuestionResolution)).toEqual([])
     expect(events.map((event) => event.payload)).toContainEqual(
       expect.objectContaining({
         stopReason: "end_turn",

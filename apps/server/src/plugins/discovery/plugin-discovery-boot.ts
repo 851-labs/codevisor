@@ -7,7 +7,7 @@ import {
 } from "../../server-context.js"
 import type { PluginEvents } from "../events/plugin-events.js"
 import { authOf, makePluginDirectory, type PluginDirectory } from "./plugin-directory.js"
-import { makePluginSetupBroker, type PluginSetupBroker } from "./plugin-setup.js"
+import { makePluginSetupBroker, type PluginSetupBroker, type WaitingSetup } from "./plugin-setup.js"
 
 export interface PluginDiscovery {
   readonly directory: PluginDirectory
@@ -46,8 +46,10 @@ export const startPluginDiscovery = (
     },
     isAsking: async (sessionId, questionId) =>
       (await run(services.db.getTranscriptPage(sessionId, undefined, 1))).pendingQuestion
-        ?.questionId === questionId
+        ?.questionId === questionId,
+    waiting: () => waitingSetups(services)
   })
+  void setup.adoptWaiting().catch(swallowError)
   const refresh = () => {
     void setup.refresh().catch(swallowError)
   }
@@ -62,4 +64,20 @@ export const startPluginDiscovery = (
       for (const unsubscribe of unsubscribers) unsubscribe?.()
     }
   }
+}
+
+const waitingSetups = async (
+  services: CodevisorServerServices
+): Promise<ReadonlyArray<WaitingSetup>> => {
+  const asking = (await run(services.db.listSessions)).filter(
+    (session) => session.actionRequiredKind === "question"
+  )
+  const waiting: Array<WaitingSetup> = []
+  for (const session of asking) {
+    const pending = await run(services.db.getSessionPendingQuestion(session.id))
+    if (pending === undefined) continue
+    const { questionId, questions } = pending
+    waiting.push(...questions.map((question) => ({ sessionId: session.id, questionId, question })))
+  }
+  return waiting
 }

@@ -14,7 +14,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { withUpdatePauseStop } from "../update-pauses.js"
+import { parksQuestionForUpdate, withUpdatePauseStop } from "../update-pauses.js"
 import { promoteAssistantArtifacts, withClosedTextCapture } from "./assistant-artifacts.js"
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
@@ -64,6 +64,9 @@ export const sessionEventSink =
       return observeUsageLimits(services, sessionId, observation).catch(() => undefined)
     }
     const payload = objectPayload(event.payload)
+    if (event.kind === "session.output" && parksQuestionForUpdate(services, sessionId, payload)) {
+      return undefined
+    }
     if (event.kind === "session.output") {
       return withClosedTextCapture(services, fanout, serverId, sessionId, () =>
         materializeOutput(services, fanout, serverId, sessionId, event, payload)

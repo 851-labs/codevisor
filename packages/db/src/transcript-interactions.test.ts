@@ -1,5 +1,6 @@
 import { expect, it } from "vitest"
 
+import { isAgentQuestion } from "./setup-questions.js"
 import { memoryDatabase, run } from "./test-support.js"
 import { asksInTranscript, splitsWorkedSection } from "./transcript-questions.js"
 
@@ -117,6 +118,33 @@ it("reads a question abandoned by the end of its turn as dismissed", async () =>
   expect(after.items[0]?.interactions?.[0]?.answer).toEqual({ outcome: "cancelled" })
 })
 
+it.each(["pausedForUpdate", "interrupted"])(
+  "keeps a question waiting when a restart ends its turn (%s)",
+  async (stopKind) => {
+    const context = await askedSession()
+    await run(
+      context.db.appendEvent("session.updated", context.session.id, {
+        turnState: "ended",
+        stopReason: "cancelled",
+        stopKind
+      })
+    )
+
+    const parked = await page(context)
+    await resolve(context, { outcome: "answered", answers: { db: { answers: ["Postgres"] } } })
+    const answered = await page(context)
+
+    expect(parked.pendingQuestion?.questionId).toBe("q")
+    expect(parked.items[0]?.interactions?.[0]?.answer).toBeUndefined()
+    expect(answered.pendingQuestion).toBeUndefined()
+    expect(answered.items).toHaveLength(1)
+    expect(answered.items[0]?.interactions?.[0]?.answer).toEqual({
+      outcome: "answered",
+      answers: { db: { answers: ["Postgres"] } }
+    })
+  }
+)
+
 it("skips question entries it can't read and keeps a resolution without its prompt", async () => {
   const context = await memoryDatabase()
   const { db, session } = context
@@ -156,4 +184,11 @@ it("asks in the transcript unless the prompt is a setup request or a plan approv
   expect(asksInTranscript(undefined)).toBe(false)
   expect(splitsWorkedSection({ questions: setup })).toBe(true)
   expect(splitsWorkedSection({ questions: plan })).toBe(false)
+  expect(isAgentQuestion({ questions })).toBe(true)
+  expect(isAgentQuestion({ questions: plan })).toBe(true)
+  expect(isAgentQuestion({ questions: setup })).toBe(false)
+  expect(
+    isAgentQuestion({ questions: [{ id: "plugin_setup", presentation: "pluginSetup" }] })
+  ).toBe(false)
+  expect(isAgentQuestion(undefined)).toBe(true)
 })

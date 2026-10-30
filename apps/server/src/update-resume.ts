@@ -1,5 +1,6 @@
 import type { PausedTurn, PausedTurnStore } from "./paused-turns.js"
 import { queueRestartResumeOnce, restartNotice } from "./restart-notice.js"
+import { pendingAgentQuestion } from "./routes/parked-questions.js"
 import { drainPromptQueue, hasLiveTurn } from "./routes/prompt-queue.js"
 import {
   failureMessage,
@@ -80,6 +81,7 @@ export const continueAfterUpdate = async (
   const { sessionId } = turn
   forgetUpdatePause(services, sessionId)
   if (!(await canContinue(services, routeState, sessionId))) return
+  if (await waitsForAnswer(services, turn)) return
 
   await queueResumeFirst(services, turn)
   void drainPromptQueue(services, fanout, routeState, serverId, sessionId).catch(swallowError)
@@ -94,6 +96,12 @@ const canContinue = async (
   const session = await run(services.db.getSessionSummary(sessionId))
   return !(await sessionIsArchived(services, session))
 }
+
+const waitsForAnswer = async (
+  services: CodevisorServerServices,
+  { sessionId, stoppedTasks = [] }: PausedTurn
+): Promise<boolean> =>
+  stoppedTasks.length === 0 && (await pendingAgentQuestion(services, sessionId)) !== undefined
 
 const queueResumeFirst = async (
   services: CodevisorServerServices,

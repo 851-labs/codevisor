@@ -31,6 +31,7 @@ import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
 import { withConversationRecap } from "./conversation-recap.js"
+import { heldByParkedQuestion } from "./parked-questions.js"
 import {
   markAppContextsDelivered,
   withAppContexts,
@@ -222,7 +223,10 @@ export const drainPromptQueue = async (
         await publishPromptQueue(services.db, fanout, sessionId)
         return
       }
-      if (await heldForUsageLimit(services, sessionId)) {
+      if (
+        (await heldForUsageLimit(services, sessionId)) ||
+        (await heldByParkedQuestion(services, fanout, serverId, sessionId))
+      ) {
         await publishPromptQueue(services.db, fanout, sessionId)
         return
       }

@@ -6,6 +6,7 @@ import { makeEventsService } from "./events-service.js"
 import { canonicalUuid } from "./ids.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+import { isAgentQuestion, setupQuestionPresentation } from "./setup-questions.js"
 import { makeTranscriptService } from "./transcript-service.js"
 
 export type ReconcileQuietStreamingSession = (
@@ -29,12 +30,14 @@ export const makeStreamingReconciliationService = (
           if (!quietSince(context.sqlite, id, quietSinceIso)) return { repaired: 0, events: [] }
           const page = Effect.runSync(transcript.getTranscriptPage(id, undefined, 1))
           const active = page.items.at(-1)
-          const agentQuestion =
-            page.pendingQuestion === undefined || waitsOnPluginSetup(page.pendingQuestion)
-              ? undefined
-              : page.pendingQuestion
+          const pending = page.pendingQuestion
+          const agentQuestion = pending !== undefined && isAgentQuestion(pending)
+          const setupPrompt =
+            pending !== undefined && setupQuestionPresentation(pending) !== undefined
           const orphaned =
-            active?.role === "assistant" && (active.isGenerating || agentQuestion !== undefined)
+            active?.role === "assistant" &&
+            (active.isGenerating ||
+              ((agentQuestion || setupPrompt) && active.stopReason === undefined))
           const events: EventEnvelope[] = []
           const append = (kind: EventEnvelope["kind"], payload: unknown): void => {
             events.push(Effect.runSync(journal.appendEvent(kind, id, payload)))
@@ -43,10 +46,10 @@ export const makeStreamingReconciliationService = (
             transcript.closeStaleAssistantChatItems(id, orphaned ? active.id : undefined)
           )
           if (orphaned) {
-            if (agentQuestion !== undefined) {
+            if (setupPrompt) {
               append("session.output", {
                 outcome: "cancelled",
-                ...agentQuestion,
+                ...pending,
                 sessionUpdate: "question_resolved",
                 serverId: context.config.serverId
               })
@@ -56,7 +59,8 @@ export const makeStreamingReconciliationService = (
                 ? {}
                 : { initiatedBy: "user", turnId: active.turnId, turnState: "ended" }),
               serverId: context.config.serverId,
-              stopReason: "end_turn"
+              stopReason: "end_turn",
+              ...(agentQuestion ? { stopKind: "interrupted" } : {})
             })
             repaired += 1
           }
@@ -66,10 +70,6 @@ export const makeStreamingReconciliationService = (
       )
   }
 }
-
-const waitsOnPluginSetup = (question: {
-  readonly questions: ReadonlyArray<{ readonly presentation?: string | undefined }>
-}): boolean => question.questions.some((spec) => spec.presentation === "pluginSetup")
 
 const quietSince = (sqlite: ServiceContext["sqlite"], id: string, quietSinceIso: string): boolean =>
   sqlite.prepare(quietSessionSql).get(id, quietSinceIso) !== undefined

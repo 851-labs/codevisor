@@ -140,14 +140,15 @@ describe("streaming turn sweeps and prompt gating", () => {
     )
     expect(repaired).toBe(3)
     const repairedPage = await run(services.db.getTranscriptPage(session.id, undefined, 8))
-    expect(repairedPage.items[0]?.interactions?.[0]?.answer).toEqual({ outcome: "cancelled" })
+    expect(repairedPage.items[0]?.interactions?.[0]?.answer).toBeUndefined()
     expect(repairedPage.items.at(-1)).toMatchObject({
       role: "assistant",
       isGenerating: false,
-      stopReason: "end_turn"
+      stopReason: "end_turn",
+      stopKind: "interrupted"
     })
     expect(repairedPage.items.at(-1)).not.toHaveProperty("stopDetail")
-    expect(repairedPage.pendingQuestion).toBeUndefined()
+    expect(repairedPage.pendingQuestion?.questionId).toBe("stale-sweep-question")
     expect(await run(services.db.getTranscriptPage(turnless.id, undefined, 8))).toMatchObject({
       items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
     })

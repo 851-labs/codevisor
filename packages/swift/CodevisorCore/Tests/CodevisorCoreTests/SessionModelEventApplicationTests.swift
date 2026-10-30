@@ -139,6 +139,21 @@ struct SessionModelEventApplicationTests {
     #expect(try #require(assistantTurn(model, id: earlierItemID)).stopReason == .endTurn)
   }
 
+  @Test(
+    "A turn ended by a restart keeps its question waiting for an answer", arguments: ["pausedForUpdate", "interrupted"])
+  func restartKeepsPendingQuestion(stopKind: String) {
+    let model = makeModel()
+    defer { model.shutdown() }
+    let question = QuestionRequest(questionId: "q1", questions: [])
+
+    model.apply(.update(.agentMessageChunk(.text("One question first"))))
+    model.apply(.update(.question(question)))
+    model.apply(.finished(.cancelled, stopDetail: nil, stopKind: stopKind))
+
+    #expect(model.pendingQuestion == question)
+    #expect(model.isSending == false)
+  }
+
   @Test("A pending stalled-turn check doesn't keep a released session model alive")
   func pendingStallCheckReleasesModel() async {
     let scheduler = ManualSessionQuietTurnScheduler()

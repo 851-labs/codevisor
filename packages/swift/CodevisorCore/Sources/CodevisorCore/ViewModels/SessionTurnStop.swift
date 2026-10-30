@@ -8,6 +8,8 @@ struct SessionTurnStop {
   var kind: String?
   var retryable = false
 
+  var parksQuestion: Bool { kind == "pausedForUpdate" || kind == "interrupted" }
+
   static func finished(_ stopReason: StopReason, detail: String?, kind: String?, retryable: Bool) -> Self {
     let outcome: TranscriptReducer.TurnOutcome = stopReason == .cancelled ? .cancelled : .completed
     return Self(stopReason: stopReason, outcome: outcome, detail: detail, kind: kind, retryable: retryable)

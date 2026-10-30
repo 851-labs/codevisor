@@ -20,3 +20,13 @@ export const setupQuestionPresentation = (
     .map((question) => jsonRecord(question)?.presentation)
     .find(isSetupPresentation)
 }
+
+const waitsOnPluginSetup = (payload: JsonRecord | undefined): boolean => {
+  const questions = payload?.questions
+  return (Array.isArray(questions) ? questions : []).some(
+    (question) => jsonRecord(question)?.presentation === "pluginSetup"
+  )
+}
+
+export const isAgentQuestion = (payload: JsonRecord | undefined): boolean =>
+  setupQuestionPresentation(payload) === undefined && !waitsOnPluginSetup(payload)

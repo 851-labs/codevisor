@@ -16,6 +16,7 @@ export default defineConfig({
         "src/infra/sandbox-manager-test-support.ts",
         "src/changes-test-support.ts",
         "src/test-support-agents.ts",
+        "src/test-support-questions.ts",
         "src/test-support-stubs.ts",
         "src/test-support-net.ts",
         "src/cli/support-test-support.ts",

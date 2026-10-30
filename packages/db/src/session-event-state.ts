@@ -48,11 +48,15 @@ const projectPendingQuestion = (
   } else if (
     event.kind === "session.error" ||
     (event.kind === "session.updated" &&
-      (payload.turnState === "ended" || typeof payload.stopReason === "string"))
+      (payload.turnState === "ended" || typeof payload.stopReason === "string") &&
+      !parksPendingQuestion(payload))
   ) {
     clearPendingQuestion(sqlite, sessionId)
   }
 }
+
+const parksPendingQuestion = (payload: JsonRecord): boolean =>
+  payload.stopKind === "pausedForUpdate" || payload.stopKind === "interrupted"
 
 const projectSessionUsage = (
   sqlite: Database.Database,

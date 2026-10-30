@@ -36,7 +36,7 @@ export const queueRestartResumeOnce = async (
   await queueSystemPromptFirst(services, sessionId, text)
 }
 
-const queueSystemPromptFirst = async (
+export const queueSystemPromptFirst = async (
   services: CodevisorServerServices,
   sessionId: string,
   text: string

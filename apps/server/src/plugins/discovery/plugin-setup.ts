@@ -35,6 +35,13 @@ export interface PluginSetupBroker {
     answer: QuestionAnswer
   ) => Promise<boolean>
   readonly refresh: () => Promise<void>
+  readonly adoptWaiting: () => Promise<void>
+}
+
+export interface WaitingSetup {
+  readonly sessionId: string
+  readonly questionId: string
+  readonly question: QuestionSpec
 }
 
 export interface PluginSetupDeps {
@@ -44,6 +51,7 @@ export interface PluginSetupDeps {
   readonly wait: (ms: number) => Promise<void>
   readonly prepare: (target: PluginTarget) => Promise<void>
   readonly isAsking: (sessionId: string, questionId: string) => Promise<boolean>
+  readonly waiting: () => Promise<ReadonlyArray<WaitingSetup>>
 }
 
 export const setupQuestionId = "plugin_setup"
@@ -115,6 +123,14 @@ export const makePluginSetupBroker = (deps: PluginSetupDeps): PluginSetupBroker 
     }
   }
 
+  const refresh = async (): Promise<void> => {
+    for (const entry of pending.values()) {
+      const target = await deps.directory.find(entry.plugin)
+      if (target === undefined || !(await deps.directory.item(target)).ready) continue
+      await settle(entry.questionId, "connected", "autoResolved")
+    }
+  }
+
   return {
     request: async (input) => {
       const target = await requireTarget(deps, input.plugin)
@@ -132,12 +148,15 @@ export const makePluginSetupBroker = (deps: PluginSetupDeps): PluginSetupBroker 
       if (isDecline(answer)) await settle(questionId, "declined", "cancelled")
       return true
     },
-    refresh: async () => {
-      for (const entry of pending.values()) {
-        const target = await deps.directory.find(entry.plugin)
-        if (target === undefined || !(await deps.directory.item(target)).ready) continue
-        await settle(entry.questionId, "connected", "autoResolved")
+    refresh,
+    adoptWaiting: async () => {
+      for (const waiting of await deps.waiting()) {
+        const entry = adoptedSetup(waiting)
+        if (entry !== undefined && !pending.has(entry.questionId)) {
+          pending.set(entry.questionId, entry)
+        }
       }
+      await refresh()
     }
   }
 }
@@ -165,6 +184,17 @@ const newPendingSetup = (
     done: promise,
     settle: resolve
   }
+}
+
+const adoptedSetup = ({
+  sessionId,
+  questionId,
+  question
+}: WaitingSetup): PendingSetup | undefined => {
+  const plugin = question.pluginSetup?.plugin
+  if (question.id !== setupQuestionId || plugin === undefined) return undefined
+  const { promise, resolve } = Promise.withResolvers<PluginSetupOutcomeKind>()
+  return { questionId, sessionId, plugin, question, done: promise, settle: resolve }
 }
 
 const setupRequest = (
