@@ -12,14 +12,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  HOST_IP: 192.168.10.78
+  HOST_IP: 192.168.10.103
   VARIANTS: "cubic-1024 cubic-128 bbr3-128"
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
 
 jobs:
   host:
-    runs-on: [self-hosted, macOS, ARM64, tamale]
+    runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -60,11 +60,11 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: net-media-lab-tamale
+          name: net-media-lab-server-croissant
           path: ${{ runner.temp }}/lab
 
   viewer:
-    runs-on: [self-hosted, macOS, ARM64, croissant]
+    runs-on: [self-hosted, macOS, ARM64, tamale]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -91,7 +91,7 @@ jobs:
           cat "$RUNNER_TEMP/lab/ids.txt"
           while read -r variant id port udp; do
             echo "::group::$variant"
-            CODEVISOR_NET_MEDIA_TUNING="$variant" "$bin" run --peer "$id" --addr "$HOST_IP:$port" --udp "$HOST_IP:$udp" \
+            sudo -n env CODEVISOR_NET_MEDIA_TUNING="$variant" "$bin" run --peer "$id" --addr "$HOST_IP:$port" --udp "$HOST_IP:$udp" \
               2>&1 | tee "$RUNNER_TEMP/lab/run-$variant.txt" || true
             echo "::endgroup::"
           done < "$RUNNER_TEMP/lab/ids.txt"
@@ -104,5 +104,5 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: net-media-lab-croissant
+          name: net-media-lab-client-tamale
           path: ${{ runner.temp }}/lab
