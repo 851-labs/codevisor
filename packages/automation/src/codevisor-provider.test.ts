@@ -292,24 +292,25 @@ describe("Codevisor MCP provider", () => {
     const tight = { sessionId: "agent", deadline: performance.now() + 60_000, signal }
     const roomy = { sessionId: "agent", deadline: performance.now() + 600_000, signal }
 
-    const clamped = await provider.invoke(tight, "agents.wait", {
+    const clamped = await provider.invoke(tight, "jobs.wait", { jobId: "j1", timeoutMs: 300_000 })
+    const untouched = await provider.invoke(roomy, "agents.wait", {
       agentIds: ["child"],
-      timeoutMs: 300_000
+      timeoutMs: 1_000
     })
-    const untouched = await provider.invoke(roomy, "jobs.wait", { jobId: "j1", timeoutMs: 1_000 })
 
     const sentTimeout = expectRecord(requestJson(requests[0]!.init), "wait body").timeoutMs
     expect(sentTimeout).toBeGreaterThan(50_000)
     expect(sentTimeout).toBeLessThanOrEqual(58_500)
+    expect(requests[0]!.url.pathname).toBe("/v1/jobs/j1/wait")
     expect(requests[0]!.init.signal).toBe(signal)
     expect(JSON.parse(textContent(clamped))).toEqual({
       items: [],
       timedOut: true,
       clampedToMs: sentTimeout
     })
-    expect(requests[1]!.url.pathname).toBe("/v1/jobs/j1/wait")
+    expect(requests[1]!.url.pathname).toBe("/v1/agents/wait")
     expect(requests[1]!.init.signal).toBe(signal)
-    expect(requestJson(requests[1]!.init)).toEqual({ timeoutMs: 1_000 })
+    expect(requestJson(requests[1]!.init)).toEqual({ agentIds: ["child"], timeoutMs: 1_000 })
     expect(JSON.parse(textContent(untouched))).toEqual({ items: [], timedOut: true })
   })
 

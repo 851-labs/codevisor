@@ -66,6 +66,13 @@ describe("browser keyboard", () => {
     expect(browserKeyDescription("Control+Enter")).not.toHaveProperty("text")
   })
 
+  it("accepts Playwright and legacy names for navigation keys", () => {
+    const arrowRight = { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 }
+    expect(browserKeyDescription("ArrowRight")).toMatchObject(arrowRight)
+    expect(browserKeyDescription("Right")).toMatchObject(arrowRight)
+    expect(browserKeyDescription("Esc")).toMatchObject({ key: "Escape" })
+  })
+
   it("applies modifiers held through key_down like Playwright's Keyboard", () => {
     expect(modifierKeyMask("Shift")).toBe(8)
     expect(modifierKeyMask("Control")).toBe(2)

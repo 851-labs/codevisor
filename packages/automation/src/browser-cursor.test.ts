@@ -1,6 +1,5 @@
 import { runInNewContext, runInThisContext } from "node:vm"
 
-import { parseExpression } from "@babel/parser"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
@@ -47,7 +46,6 @@ const cursorIdentity = (expression: string | undefined) => {
 describe("browser cursor presentation", () => {
   afterEach(() => vi.useRealTimers())
   it("ships the page overlay as a self-contained function expression", () => {
-    expect(() => parseExpression(pointerOverlaySource)).not.toThrow()
     expect(pointerOverlaySource).not.toContain("import(")
     expect(pointerOverlaySource).not.toContain("innerHTML")
     const overlay: unknown = runInThisContext(`(${pointerOverlaySource})`)

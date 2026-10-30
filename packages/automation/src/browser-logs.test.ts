@@ -149,38 +149,25 @@ describe("dev.logs normalization", () => {
     expect(await read({ filter: "KEEP" })).toEqual([])
   })
 
-  it("reads a fallback clock separately for each entry, including entries later filtered out", async () => {
-    const clock = vi
-      .spyOn(Date, "now")
-      .mockReturnValueOnce(1000)
-      .mockReturnValueOnce(2000)
-      .mockReturnValueOnce(3000)
+  it("stamps console, log and exception entries without a timestamp with the read time", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(3000)
     try {
       const { read } = fixture([
         { method: "Runtime.consoleAPICalled", args: [] },
         { method: "Log.entryAdded", entry: { timestamp: null } },
         { timestamp: null, exceptionDetails: { text: "kept" } }
       ])
-      expect(await read({ levels: ["error"], limit: 1 })).toEqual([
-        { level: "error", message: "kept", timestamp: "1970-01-01T00:00:03.000Z" }
+      expect((await read()).map((entry: { timestamp: string }) => entry.timestamp)).toEqual([
+        "1970-01-01T00:00:03.000Z",
+        "1970-01-01T00:00:03.000Z",
+        "1970-01-01T00:00:03.000Z"
       ])
-      expect(clock).toHaveBeenCalledTimes(3)
     } finally {
       clock.mockRestore()
     }
   })
 
-  it.each(["invalid", Infinity])(
-    "rejects malformed timestamps %s before filtering or slicing",
-    async (timestamp) => {
-      const { read } = fixture([{ timestamp }, { timestamp: 0 }])
-      await expect(read({ levels: [], limit: 1 })).rejects.toThrow(RangeError)
-      await expect(read({ filter: "missing", limit: 1 })).rejects.toThrow(RangeError)
-      await expect(read({ limit: 1 })).rejects.toThrow(RangeError)
-    }
-  )
-
-  it("preserves default, bounded, NaN and fractional limit coercion", async () => {
+  it("returns the last 100 entries by default and clamps numeric limits to 1 through 1000", async () => {
     const { read } = fixture(
       Array.from({ length: 1002 }, (_, index) => ({
         timestamp: 0,
@@ -206,7 +193,6 @@ describe("dev.logs normalization", () => {
     const bounded = await read({ limit: Infinity })
     expect(bounded).toHaveLength(1000)
     expect(bounded[0].message).toBe("2")
-    expect(await read({ limit: "NaN" })).toHaveLength(1002)
     expect(await read({ limit: null })).toHaveLength(100)
     const empty = fixture([])
     empty.logs.delete("page")

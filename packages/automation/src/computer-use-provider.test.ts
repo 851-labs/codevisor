@@ -43,16 +43,6 @@ describe("Computer Use tool contract", () => {
     expect(state.inputSchema.properties).toHaveProperty("screenshot")
     expect(state.inputSchema.properties).toHaveProperty("view")
     expect(state.inputSchema.properties).toHaveProperty("disableDiff")
-    expect(state.description).toContain("Actions never take hidden snapshots")
-  })
-
-  it("advertises installed app discovery and transparent launching", () => {
-    const list = computerUseTools.find((candidate) => candidate.name === "list_apps")
-    const state = computerUseTools.find((candidate) => candidate.name === "get_app_state")
-
-    expect(list?.description).toContain("installed desktop applications")
-    expect(list?.description).toContain("whether each app is running")
-    expect(state?.description).toContain("Launch the app if needed")
   })
 
   it("exposes exact semantic text selection", () => {

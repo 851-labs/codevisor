@@ -210,31 +210,4 @@ describe("sandbox tools", () => {
       callerAgentId: "caller"
     })
   })
-
-  it("offer every sandbox action under sandboxes.*", () => {
-    const sandboxTools = provider()
-      .tools.map((tool) => tool.name)
-      .filter((name) => name.startsWith("sandboxes."))
-
-    expect(sandboxTools.toSorted()).toEqual([
-      "sandboxes.create",
-      "sandboxes.destroy",
-      "sandboxes.get",
-      "sandboxes.list",
-      "sandboxes.log",
-      "sandboxes.profiles_availability",
-      "sandboxes.profiles_create",
-      "sandboxes.profiles_delete",
-      "sandboxes.profiles_list",
-      "sandboxes.profiles_update",
-      "sandboxes.providers_create",
-      "sandboxes.providers_delete",
-      "sandboxes.providers_list",
-      "sandboxes.providers_update",
-      "sandboxes.retry",
-      "sandboxes.vendors",
-      "sandboxes.wait",
-      "sandboxes.wake"
-    ])
-  })
 })

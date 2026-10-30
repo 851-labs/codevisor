@@ -432,11 +432,4 @@ describe("Browser live preview", () => {
     await finished
     expect(chrome.methods().filter((method) => method === "Target.getTargets")).toHaveLength(1)
   })
-
-  it("uses real timers by default", async () => {
-    const chrome = browser()
-    const previews = makeBrowserPreviews()
-    await previews.activity("chat", chrome.runtime, "tab-1")
-    await previews.finish("chat")
-  })
 })

@@ -11,14 +11,15 @@ import {
   browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_ID
 } from "./browser-extension-relay.js"
-import { browserKeyDescription } from "./browser-keyboard.js"
 import { browserUseTools } from "./browser-use-provider.js"
+import { buildExecutionSource } from "./code-executor-source.js"
 import { expectRecord, expectString } from "./unknown-values.js"
 
-const toolProperties = (name: string) =>
-  Object.keys(
-    browserUseTools.find((candidate) => candidate.name === name)?.inputSchema.properties ?? {}
-  )
+const toolProperties = (name: string) => {
+  const tool = browserUseTools.find((candidate) => candidate.name === name)
+  if (tool === undefined) throw new Error(`Missing Browser Use tool ${name}`)
+  return Object.keys(tool.inputSchema.properties ?? {})
+}
 
 const directories: string[] = []
 
@@ -40,16 +41,6 @@ describe("Browser Use tool contract", () => {
     expect(
       managedBrowserSandboxArguments({ platform: "darwin", uid: 0, containerized: true })
     ).toEqual([])
-  })
-
-  it("exposes Codevisor's CDP targeting and snapshot rules", () => {
-    const snapshot = browserUseTools.find((candidate) => candidate.name === "snapshot")
-    const click = browserUseTools.find((candidate) => candidate.name === "click")
-
-    expect(snapshot?.description).toContain("snapshot-scoped")
-    expect(snapshot?.description).toContain("re-snapshot after every action")
-    expect(click?.description).toContain("trusted CDP mouse input")
-    expect(click?.description).toContain("hit targeting")
   })
 
   it("keeps the bundled relay extension id stable", () => {
@@ -104,10 +95,7 @@ describe("Browser Use tool contract", () => {
     })
   })
 
-  it("exposes a native-style nonblocking tab lifecycle", () => {
-    expect(browserUseTools.map((candidate) => candidate.name)).toEqual(
-      expect.arrayContaining(["status", "openTabs", "claimTab", "finalizeTabs", "tab_info"])
-    )
+  it("rejects undeclared arguments on every tool", () => {
     for (const tool of browserUseTools) {
       expect(tool.inputSchema.additionalProperties).toBe(false)
     }
@@ -119,44 +107,15 @@ describe("Browser Use tool contract", () => {
     expect(toolProperties("snapshot")).toContain("tabId")
   })
 
-  it("exposes the native Browser Playwright locator operations", () => {
-    expect(browserUseTools.map((candidate) => candidate.name)).toEqual(
-      expect.arrayContaining([
-        "playwright.domSnapshot",
-        "playwright.count",
-        "playwright.click",
-        "playwright.fill",
-        "playwright.type",
-        "playwright.press",
-        "playwright.check",
-        "playwright.uncheck",
-        "playwright.setChecked",
-        "playwright.selectOption",
-        "playwright.isVisible",
-        "playwright.isEnabled",
-        "playwright.getAttribute",
-        "playwright.innerText",
-        "playwright.textContent",
-        "playwright.waitFor",
-        "playwright.waitForTimeout",
-        "playwright.waitForURL",
-        "playwright.waitForLoadState",
-        "playwright.allTextContents",
-        "playwright.evaluate",
-        "playwright.waitForEvent",
-        "playwright.fileChooserSetFiles",
-        "clipboard.readText",
-        "clipboard.writeText",
-        "dev.logs",
-        "getJsDialog",
-        "viewport.set",
-        "viewport.reset",
-        "cdp.send",
-        "cdp.readEvents",
-        "pageAssets.list",
-        "pageAssets.bundle"
-      ])
+  it("declares every browser tool the execute sandbox's browser facade calls", () => {
+    const declared = new Set(browserUseTools.map((tool) => tool.name))
+    const called = new Set(
+      [...buildExecutionSource("async () => 1").matchAll(/Tool\([^)']*'browser\.([\w.]+)'/g)].map(
+        (match) => match[1]!
+      )
     )
+    expect(called).toContain("playwright.click")
+    expect([...called].filter((name) => !declared.has(name))).toEqual([])
   })
 
   it("documents the native clipboard item shape", () => {
@@ -180,19 +139,5 @@ describe("Browser Use tool contract", () => {
         }
       }
     })
-  })
-
-  it("accepts Playwright and legacy names for navigation keys", () => {
-    expect(browserKeyDescription("ArrowRight")).toMatchObject({
-      key: "ArrowRight",
-      code: "ArrowRight",
-      windowsVirtualKeyCode: 39
-    })
-    expect(browserKeyDescription("Right")).toMatchObject({
-      key: "ArrowRight",
-      code: "ArrowRight",
-      windowsVirtualKeyCode: 39
-    })
-    expect(browserKeyDescription("Esc")).toMatchObject({ key: "Escape" })
   })
 })

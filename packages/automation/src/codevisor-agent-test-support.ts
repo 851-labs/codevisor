@@ -86,7 +86,7 @@ export const transcriptItem = {
   revision: 1
 }
 
-export const subscription = {
+const subscription = {
   id: "sub-1",
   subscriberSessionId: "caller",
   targetSessionId: "other",
