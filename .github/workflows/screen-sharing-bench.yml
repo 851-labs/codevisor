@@ -269,8 +269,9 @@ jobs:
     steps:
       - name: Check the inputs
         run: |
-          [[ "$CONFIGS" =~ ^[a-zA-Z0-9=,.;@_-]+$ ]] || { echo "encode_lab must be key=value configs"; exit 1; }
-          [[ "$OPTIONS" =~ ^[a-zA-Z0-9\ ,.-]*$ ]] || { echo "encode_lab_options must be plain options"; exit 1; }
+          configs='^[a-zA-Z0-9=,.;@_-]+$' options='^[a-zA-Z0-9 ,.-]*$'
+          [[ "$CONFIGS" =~ $configs ]] || { echo "encode_lab must be key=value configs"; exit 1; }
+          [[ "$OPTIONS" =~ $options ]] || { echo "encode_lab_options must be plain options"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
