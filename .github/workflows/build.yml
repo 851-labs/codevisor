@@ -254,22 +254,32 @@ jobs:
 
   server-macos-x64:
     needs: [metadata, server-linux-x64]
-    runs-on: [self-hosted, macOS, X64, codevisor-macos-x64]
+    runs-on: macos-26-intel
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
       CODEVISOR_BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          clean: true
-          set-safe-directory: false
       - name: Select full Xcode
         run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup-node
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version-file: package.json
+      - name: Resolve net addon cache
+        id: net-addon
+        run: |
+          stamp="$(node scripts/net-artifact.mjs stamp)"
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
+          echo "path=$HOME/.codevisor-development/artifacts/net/$stamp/node/darwin-x64" >> "$GITHUB_OUTPUT"
+      - name: Restore net addon cache
+        id: net-addon-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ steps.net-addon.outputs.path }}
+          key: net-node-addon-darwin-x64-${{ steps.net-addon.outputs.stamp }}
       - uses: ./.github/actions/setup-rust
+        if: steps.net-addon-cache.outputs.cache-hit != 'true'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: codevisor-server-js
@@ -277,8 +287,8 @@ jobs:
       - name: Install node-gyp for native addons
         run: |
           node_gyp_version="$(node -p 'require("./package.json").devDependencies["node-gyp"]')"
-          npm install --prefix "$RUNNER_TEMP/node-gyp" --no-audit --no-fund "node-gyp@$node_gyp_version"
-          echo "CODEVISOR_NODE_GYP=$RUNNER_TEMP/node-gyp/node_modules/.bin/node-gyp" >> "$GITHUB_ENV"
+          npm install --global --no-audit --no-fund "node-gyp@$node_gyp_version"
+          echo "CODEVISOR_NODE_GYP=$(npm prefix --global)/bin/node-gyp" >> "$GITHUB_ENV"
       - name: Build Intel macOS server archive
         env:
           CODEVISOR_PREBUILT_SERVER_JS: dist/release/build-inputs/codevisor-server-js.tar.gz
@@ -287,6 +297,12 @@ jobs:
           runtime_dir="dist/release/work/server-runtime-darwin-x64"
           scripts/release/build-server-runtime.sh "$VERSION" "$runtime_dir" darwin-x64
           scripts/release/build-server-archive.sh "$VERSION" dist/release darwin-x64 "$runtime_dir"
+      - name: Save net addon cache
+        if: steps.net-addon-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ steps.net-addon.outputs.path }}
+          key: net-node-addon-darwin-x64-${{ steps.net-addon.outputs.stamp }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-server-macos-x64
@@ -295,9 +311,6 @@ jobs:
             dist/release/codevisor-server-darwin-x64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
-      - name: Clean persistent runner workspace
-        if: always()
-        run: rm -rf dist/release "$RUNNER_TEMP/node-gyp"
 
   macos:
     needs: metadata
