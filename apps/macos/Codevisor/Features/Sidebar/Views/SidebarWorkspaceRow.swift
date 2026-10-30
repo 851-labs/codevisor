@@ -25,7 +25,7 @@ struct SidebarWorkspaceRow: View {
   let lifecycle: Lifecycle
   @GestureState private var isPressed = false
 
-  private static let trailingSpacing: CGFloat = 7
+  static let trailingSpacing: CGFloat = 7
 
   private var isArchived: Bool {
     if case .archived = lifecycle { return true }
@@ -77,7 +77,7 @@ struct SidebarWorkspaceRow: View {
         if isHovered {
           hoverActions
         } else {
-          properties
+          SidebarWorkspaceRowProperties(pullRequest: pullRequest, machine: machine)
             .opacity(archivedOpacity)
         }
       }
@@ -114,23 +114,6 @@ struct SidebarWorkspaceRow: View {
   private var accessibilityValue: String {
     if isArchived { return "Archived" }
     return isExpanded.map { $0 ? "Expanded" : "Collapsed" } ?? ""
-  }
-
-  @ViewBuilder
-  private var properties: some View {
-    if let pullRequest {
-      PullRequestBadge(
-        pullRequest: pullRequest, size: SidebarRowIcon.trailingSize, slot: SidebarRowIcon.trailingSlot)
-    }
-    if let machine {
-      Image(systemName: machine.systemImage)
-        .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-        .symbolRenderingMode(.monochrome)
-        .foregroundStyle(.secondary)
-        .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
-        .help(machine.name)
-        .accessibilityLabel("On \(machine.name)")
-    }
   }
 
   private var hoverActions: some View {

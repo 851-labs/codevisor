@@ -291,6 +291,22 @@ struct SidebarRowsTests {
     #expect(SidebarWorkspaceTree([selfParent], pinnedIDs: []).roots == [selfParent])
   }
 
+  @Test("A nested workspace's root is its top-level ancestor, whose row places it in the sidebar")
+  func rootIsTopLevelAncestor() {
+    let parent = item(studio)
+    let child = item(site, parent: parent)
+    let grandchild = item(linux, parent: child)
+    let (firstID, secondID) = (UUID(), UUID())
+    let cyclic = item(studio, id: firstID, parent: secondID)
+    let underCycle = item(studio, parent: cyclic)
+
+    let tree = SidebarWorkspaceTree(
+      [parent, child, grandchild, cyclic, item(studio, id: secondID, parent: firstID), underCycle], pinnedIDs: [])
+
+    #expect([parent, child, grandchild].map { tree.root(of: $0.id) } == [parent.id, parent.id, parent.id])
+    #expect(tree.root(of: underCycle.id) == cyclic.id)
+  }
+
   @Test("A collapsed parent, group or section keeps only the selected descendant, one step under the nearest shown row")
   func collapsedParentKeepsTheSelectedDescendant() {
     let parent = item(studio)

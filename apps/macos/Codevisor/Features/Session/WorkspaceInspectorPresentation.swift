@@ -35,6 +35,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) private var botsEnabled
   @ClientPreference(FeatureFlag.developerMode.preferenceKey, default: false) private var developerMode
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var sidebarGrouping
+  @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) private var pinnedWorkspaceIDs: [String]
   @State private var media = WorkspaceInspectorMediaModel()
   @State private var fileTree = WorkspaceInspectorFileTreeModel()
   @State private var imageStores = WorkspaceInspectorImageStores()
@@ -176,14 +177,20 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     let content = SidebarRowContent(
       environment: environment, store: store, grouping: sidebarGrouping,
       rowDetails: ClientPreferences.shared.sidebarRowDetails)
+    let listing = SidebarWorkspaceListing(
+      environment: environment, botsEnabled: botsEnabled, grouping: sidebarGrouping, pinnedIDs: pinnedWorkspaceIDs,
+      machineOrder: [], projectOrder: [])
     let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
     return items.compactMap { content.listItem(for: $0) }
       .map { item in
-        WorkspaceInspectorAgent(
-          id: item.workspace.id, name: item.workspace.name,
-          subtitle: content.subtitle(for: item.workspace, isPinned: false), icon: content.icon(for: item)
+        let workspace = item.workspace
+        return WorkspaceInspectorAgent(
+          id: workspace.id, name: workspace.name,
+          subtitle: content.subtitle(for: workspace, isPinned: false), icon: content.icon(for: item),
+          pullRequest: content.pullRequest(for: workspace),
+          machine: content.machine(for: workspace, headingNamesMachine: listing.headingNamesMachine(workspace.id))
         ) {
-          revealRequest?.rowID = item.workspace.id
+          revealRequest?.rowID = workspace.id
           navigator.activate(item)
         }
       }
