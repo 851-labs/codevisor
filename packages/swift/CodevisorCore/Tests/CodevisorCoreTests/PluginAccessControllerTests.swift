@@ -38,12 +38,53 @@ struct PluginAccessControllerTests {
     #expect(access.blockedPublishers.isEmpty)
     await #expect(throws: PluginAccessError.self) { try await access.requireEligible(unrated) }
   }
+
+  @Test("An iOS install records consent the cloud accepts, past an older consent it never will")
+  func consentReachesTheCloud() async throws {
+    let consents = ConsentLog()
+    let cloud = CloudAccountController(
+      clientFactory: { _ in PolicyCloudClient(consents: consents) },
+      credentialStore: InMemoryCloudCredentialStore(token: "token", serverURL: URL(string: "https://cloud.test")))
+    let store = InMemoryStore()
+    try PluginConsentOutbox(store: store).record(
+      key: "old", scope: cloud.pluginConsentScope, body: Data(#"{"pluginId":"custom:npx -y notes"}"#.utf8))
+    let access = PluginAccessController(cloud: cloud, store: store, enforcesAgeGate: true)
+    let notion = ServerPluginCatalogEntry(
+      id: "com.notion/mcp", name: "Notion", description: "", publisher: "Notion", version: "remote", transport: "http")
+
+    try await access.recordConsent(
+      PluginModerationSubject(catalogEntry: notion), metadata: PluginConsentMetadata(notion, ageRating: 4))
+    try await access.syncConsent()
+
+    #expect(consents.accepted == ["com.notion/mcp by com.notion"])
+  }
+}
+
+private final class ConsentLog: @unchecked Sendable {
+  private let lock = NSLock()
+  private var acceptedConsents: [String] = []
+
+  var accepted: [String] { lock.withLock { acceptedConsents } }
+
+  func accept(_ body: Data) throws -> Data {
+    let consent = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+    let metadata = consent?["metadata"] as? [String: Any]
+    guard let pluginId = consent?["pluginId"] as? String, !pluginId.contains(" "),
+      let publisher = metadata?["publisher"] as? String, !publisher.isEmpty,
+      let version = metadata?["version"] as? String, !version.isEmpty
+    else { throw CloudAccountClientError.httpStatus(400) }
+
+    lock.withLock { acceptedConsents.append("\(pluginId) by \(publisher)") }
+    return Data(#"{"ok":true}"#.utf8)
+  }
 }
 
 private struct PolicyCloudClient: CloudAccountClienting {
   struct Unsupported: Error {}
+  var consents = ConsentLog()
 
   func pluginRequest(path: String, method: String, body: Data?, token: String?) async throws -> Data {
+    if path == "/api/plugins/consent", let body { return try consents.accept(body) }
     guard path == "/plugins/policy" else { throw Unsupported() }
     return Data(#"{"supportedAgeRating":16,"blocks":[],"ageRatings":[]}"#.utf8)
   }

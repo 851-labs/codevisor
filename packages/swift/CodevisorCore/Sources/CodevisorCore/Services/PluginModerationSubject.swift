@@ -8,7 +8,7 @@ public struct PluginModerationSubject: Equatable, Hashable, Sendable {
   public let declaredAgeRating: Int?
   public let consentKey: String
 
-  public var isCustom: Bool { pluginId.hasPrefix(Self.customPrefix) }
+  public var isCustom: Bool { Self.isCustom(pluginId: pluginId) }
 
   public var isFirstParty: Bool { !isCustom && publisher == Self.codevisorPublisher }
 
@@ -58,6 +58,13 @@ public struct PluginModerationSubject: Equatable, Hashable, Sendable {
     let namespace = id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? id
     return namespace.lowercased()
   }
+
+  static func publisher(ofPluginId id: String) -> String {
+    guard isCustom(pluginId: id) else { return publisher(ofCatalogId: id) }
+    return id.dropFirst(customPrefix.count).lowercased()
+  }
+
+  static func isCustom(pluginId: String) -> Bool { pluginId.hasPrefix(customPrefix) }
 
   private static func digest(_ text: String) -> String {
     SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()

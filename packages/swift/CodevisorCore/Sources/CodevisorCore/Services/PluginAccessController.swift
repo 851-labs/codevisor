@@ -66,15 +66,13 @@ public final class PluginAccessController {
   public func recordConsent(_ subject: PluginModerationSubject, metadata: PluginConsentMetadata) async throws {
     let body = try JSONEncoder().encode(
       PluginConsent(pluginId: subject.pluginId, consentKey: subject.consentKey, metadata: metadata))
-    try consentOutbox.record(
+    let id = try consentOutbox.record(
       key: "\(subject.pluginId):\(subject.consentKey)", scope: cloud.pluginConsentScope, body: body)
-    try await deliverConsent(requiresAccount: enforcesAgeGate && !subject.isCustom)
+    try await deliverConsent(id, requiresAccount: enforcesAgeGate && !subject.isCustom)
   }
 
   public func syncConsent() async throws {
-    try await consentOutbox.flush(scope: cloud.pluginConsentScope) { [cloud] body in
-      _ = try await cloud.pluginRequest(path: "/api/plugins/consent", method: "POST", body: body)
-    }
+    try await flushConsent().throwFirstFailure()
   }
 
   public func report(id: UUID, subject: PluginModerationSubject, reason: String, details: String) async throws {
@@ -106,14 +104,28 @@ public final class PluginAccessController {
     return try JSONDecoder().decode(PluginPreferences.self, from: data).blockedPublishers.sorted()
   }
 
-  private func deliverConsent(requiresAccount: Bool) async throws {
+  private func deliverConsent(_ id: String, requiresAccount: Bool) async throws {
     guard requiresAccount else {
       try? await syncConsent()
       return
     }
     guard cloud.pluginConsentScope != nil else { throw PluginAccessError("Sign in to install plugins.") }
 
-    try await syncConsent()
+    let outcome = try await flushConsent()
+    if let failure = outcome.failures[id] { throw failure }
+    guard !outcome.rejected.contains(id) else {
+      throw PluginAccessError("Codevisor couldn't record your consent. Try again later.")
+    }
+  }
+
+  private func flushConsent() async throws -> PluginConsentOutbox.Outcome {
+    try await consentOutbox.flush(scope: cloud.pluginConsentScope) { [cloud] body in
+      do {
+        _ = try await cloud.pluginRequest(path: "/api/plugins/consent", method: "POST", body: body)
+      } catch CloudAccountClientError.httpStatus(400) {
+        throw PluginConsentOutbox.Rejected()
+      }
+    }
   }
 }
 
