@@ -4,10 +4,11 @@ set -euo pipefail
 results=${1:-}
 [[ -n "$results" ]] || { echo "Usage: $0 <results-directory>" >&2; exit 2; }
 source "$(dirname "${BASH_SOURCE[0]}")/tier2-lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/tier2-network.sh"
 mkdir -p "$results"
 work="$(mktemp -d /tmp/codevisor-tier2.XXXXXX)"
 viewer_processes="Screen Sharing,CodevisorBench:view,VTDecoderXPCService"
-trap 'rm -rf "$work"' EXIT
+trap 'network_reset; rm -rf "$work"' EXIT
 
 start_system() {
   local system=$1 dir=$2
@@ -53,7 +54,7 @@ write_meta() {
   ((observed)) && observed_json=true
   cat >"$dir/meta.json" <<JSON
 {"index": $index, "scene": "$scene", "system": "${system%-r1x2}", "resolution": "$(tier2_resolution "$system")",
- "repetition": $rep, "seed": $TIER2_SEED,
+ "network": "$TIER2_NETWORK", "repetition": $rep, "seed": $TIER2_SEED,
  "duration_s": $TIER2_DURATION, "host_observer": $observed_json, "git_sha": "$commit", "started_at": "$started_at",
  "github_run_id": "${GITHUB_RUN_ID:-}"}
 JSON
@@ -72,6 +73,7 @@ run_one() {
   meet viewer "$name-system" || { say "skipping $name: the host could not start"; return 0; }
   start_system "$system" "$dir" || status="$system did not become ready"
   meet viewer "$name-ready" "$status" || { say "skipping $name: $status"; stop_system; return 0; }
+  [[ "$TIER2_NETWORK" == N0 ]] || network_check "$dir"
   meet viewer "$name-measure" || { say "skipping $name: host preflight failed"; stop_system; return 0; }
   say "measuring $name"
   measure "$dir" "$system" || say "a viewer measurement process failed in $name"
@@ -84,6 +86,7 @@ run_one() {
 tier2_check_inputs
 "$tier2_scripts/record-installed-commit.sh" "$results"
 commit=$(cat "$results/installed-commit.txt")
+network_apply "$TIER2_NETWORK" || exit 1
 meet_on_build viewer "$(tier2_ready_status "$results" viewer "$commit")"
 while read -r index scene system rep observed; do
   run_one "$index" "$scene" "$system" "$rep" "$observed"

@@ -10,13 +10,16 @@
 : "${TIER2_FLOOR_REPS:=1}"
 : "${TIER2_C4:=1}"
 : "${TIER2_RENDEZVOUS_S:=1800}"
+: "${TIER2_NETWORK:=N0}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-tier2_run_overhead_s=90
+tier2_run_overhead_s=100
 tier2_settle_limit_s=600
 tier2_abort_wait_s=120
 tier2_plan_budget_s=2700
 : "${TIER2_FLOOR_PORT:=47594}"
+: "${TIER2_CLOCK_PORT:=47592}"
+: "${TIER2_NETWORK_CHECK_PORT:=47596}"
 : "${TIER2_SEED:=1}"
 
 bench() {
@@ -103,6 +106,7 @@ tier2_check_inputs() {
   [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || { echo "unknown scene in $TIER2_SCENES" >&2; return 1; }
   [[ "$TIER2_REPS" =~ ^[1-4]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
+  [[ "$TIER2_NETWORK" =~ ^N[03]$ ]] || { echo "network must be N0 or N3, not $TIER2_NETWORK" >&2; return 1; }
   local runs
   runs=$(($(tier2_plan | wc -l)))
   ((runs * (TIER2_DURATION + tier2_run_overhead_s) <= tier2_plan_budget_s)) || {

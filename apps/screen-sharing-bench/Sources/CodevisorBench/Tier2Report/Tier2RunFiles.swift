@@ -12,6 +12,7 @@ struct Tier2RunFiles {
   let preflights: [String: Tier2Preflight]
   let system: [String: JSONValue]?
   let share: [String: JSONValue]?
+  let networkCheck: [String: JSONValue]?
 
   init(directory: URL) throws {
     self.directory = directory
@@ -22,6 +23,9 @@ struct Tier2RunFiles {
     hostUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "host-usage.jsonl"), Self.plain)
     viewerUsage = try Self.lines(BenchUsageSecond.self, Self.optional(directory, "viewer-usage.jsonl"), Self.plain)
     preflights = try Self.preflights(directory)
+    networkCheck = Self.optional(directory, "network-check.json").flatMap {
+      try? Self.plain.decode([String: JSONValue].self, from: $0)
+    }
     share = Self.optional(directory, "share.json").flatMap {
       try? Self.plain.decode([String: JSONValue].self, from: $0)
     }
@@ -50,6 +54,26 @@ struct Tier2RunFiles {
 
   var ranHighPerformance: Bool {
     system?["chose_high_performance"]?.bool == true
+  }
+
+  var shapedPathProven: Bool {
+    switch meta.system {
+    case .appleHP: Self.allIPv4(preflights["host-during-preflight.json"]?.screenSharingPeers ?? [])
+    case .codevisor: (candidateRoundTripS ?? 0) >= Self.shapedRoundTripS
+    case .floor: true
+    }
+  }
+
+  private static let shapedRoundTripS = 0.002
+
+  private var candidateRoundTripS: Double? {
+    guard case .object(let candidates)? = system?["selected_candidates"] else { return nil }
+
+    return candidates.first { $0.key.hasSuffix(".currentRoundTripTime") }?.value.string.flatMap(Double.init)
+  }
+
+  private static func allIPv4(_ peers: [String]) -> Bool {
+    !peers.isEmpty && peers.allSatisfy { !$0.contains(":") }
   }
 
   var hostDisplayDuringRun: String? {

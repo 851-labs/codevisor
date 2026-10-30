@@ -39,7 +39,7 @@ enum Tier2Comparisons {
     }
 
     return BenchComparison(
-      scene: group.scene, resolution: group.resolution, network: Tier2Result.network, metric: metric.name,
+      scene: group.scene, resolution: group.resolution, network: group.network, metric: metric.name,
       appleHp: apple, codevisor: ours, noiseBandMs: outcome.noiseBand, verdict: outcome.verdict)
   }
 }

@@ -7,7 +7,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/tier2-lib.sh"
 mkdir -p "$results"
 work="$(mktemp -d /tmp/codevisor-tier2.XXXXXX)"
 rendezvous_port=47595
-clock_port=47592
 host_processes=screensharingd,ScreensharingAgent,CodevisorBench:share,VTEncoderXPCService,replayd,WindowServer
 background=()
 stop_background() {
@@ -71,7 +70,8 @@ stop_stale_servers() {
 
 await_servers() {
   local deadline=$((SECONDS + 30))
-  until lsof -nP -iTCP:"$rendezvous_port" -sTCP:LISTEN >/dev/null && lsof -nP -iUDP:"$clock_port" >/dev/null; do
+  until lsof -nP -iTCP:"$rendezvous_port" -sTCP:LISTEN >/dev/null && lsof -nP -iUDP:"$TIER2_CLOCK_PORT" >/dev/null &&
+    lsof -nP -iUDP:"$TIER2_NETWORK_CHECK_PORT" >/dev/null; do
     for pid in "${background[@]}"; do kill -0 "$pid" 2>/dev/null || return 1; done
     ((SECONDS < deadline)) || return 1
     sleep 0.5
@@ -115,6 +115,9 @@ bench calibrate --check c2 --serve --duration 3600 --idle-exit "$TIER2_RENDEZVOU
   >"$results/responder.json" 2>"$results/responder.err" &
 background+=($!)
 bench rendezvous --serve --duration 3600 >"$results/rendezvous.json" 2>"$results/rendezvous.err" &
+background+=($!)
+bench calibrate --check c2 --serve --port "$TIER2_NETWORK_CHECK_PORT" --duration 3600 \
+  --idle-exit "$TIER2_RENDEZVOUS_S" >"$results/network-responder.json" 2>"$results/network-responder.err" &
 background+=($!)
 await_servers || { say "the clock responder or rendezvous server didn't start"; exit 1; }
 meet_on_build host "$ready"

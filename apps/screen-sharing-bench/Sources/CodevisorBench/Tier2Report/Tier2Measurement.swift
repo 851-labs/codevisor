@@ -91,6 +91,9 @@ struct Tier2Measurement {
     guard files.meta.system != .appleHP || files.hpSessionOnScreen else {
       return "Screen Sharing's window was off screen"
     }
+    guard files.meta.networkLabel == Tier2Result.defaultNetwork || files.shapedPathProven else {
+      return "\(files.meta.networkLabel) shaping not shown on this run's path"
+    }
     guard files.meta.system != .appleHP || files.hpFocusLosses == 0 else {
       return "Screen Sharing lost focus during the run"
     }
