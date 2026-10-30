@@ -452,6 +452,14 @@ public extension CodevisorServerClienting {
     nil
   }
 
+  func backgroundTaskOutput(sessionId: UUID, taskId: String) async throws -> ServerBackgroundTaskOutput {
+    throw CodevisorServerClientError.httpStatus(404, "")
+  }
+
+  func stopBackgroundTask(sessionId: UUID, taskId: String) async throws {
+    throw CodevisorServerClientError.httpStatus(404, "")
+  }
+
   func machineStats() async throws -> ServerMachineStats {
     throw CodevisorServerClientError.httpStatus(404, "")
   }

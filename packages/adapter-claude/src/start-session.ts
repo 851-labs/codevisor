@@ -187,6 +187,7 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   accumulators: new Map(),
   backgroundTasks: new Map(),
   hiddenBackgroundTaskIds: new Set(),
+  backgroundTaskOutputFiles: new Map(),
   currentEffort: startEffortFor(seed.saved, seed.startModel, seed.effortDefaults),
   effortPicked: isSettableEffort(seed.saved.effort),
   effortDefaults: seed.effortDefaults,

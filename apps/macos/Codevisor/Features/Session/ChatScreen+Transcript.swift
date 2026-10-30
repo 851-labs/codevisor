@@ -6,6 +6,20 @@ import StreamMarkdown
 import TranscriptKit
 
 extension ChatScreen {
+  func revealRequestedToolCall() {
+    guard let request = controller.transcriptRevealRequest else { return }
+
+    controller.transcriptRevealRequest = nil
+    Task { await revealToolCall(request.toolCallId) }
+  }
+
+  private func revealToolCall(_ toolCallId: String) async {
+    guard let location = await controller.workedItemLocation(ofToolCall: toolCallId) else { return }
+
+    TranscriptWorkedItemReveal.expand(location, in: controller.disclosure)
+    presentationSurface.ensureScrollView().reveal(location)
+  }
+
   var transcriptImageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
       quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)

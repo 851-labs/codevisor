@@ -205,6 +205,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func listSessions() async throws -> [ServerSession]
   func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
   func sessionContext(id: UUID) async throws -> ServerSessionContext?
+  func backgroundTaskOutput(sessionId: UUID, taskId: String) async throws -> ServerBackgroundTaskOutput
+  func stopBackgroundTask(sessionId: UUID, taskId: String) async throws
   func machineStats() async throws -> ServerMachineStats
   func openSession(
     _ session: ChatSession,

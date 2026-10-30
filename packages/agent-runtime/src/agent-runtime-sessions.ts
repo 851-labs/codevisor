@@ -21,11 +21,13 @@ export type AgentSessionOperations = Pick<
   | "probeHarnessAuth"
   | "prompt"
   | "readSessionContext"
+  | "readTaskOutput"
   | "replyToQuestion"
   | "setConfigOption"
   | "setGoal"
   | "setMode"
   | "steer"
+  | "stopTask"
 >
 
 export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSessionOperations => {
@@ -168,6 +170,21 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
         const readContext = session.handle.readContext
         if (readContext === undefined) return undefined
         return yield* readContext
+      }),
+    stopTask: (sessionId, taskId) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const stopTask = session.handle.stopTask
+        if (stopTask === undefined) return false
+        yield* stopTask(taskId)
+        return true
+      }),
+    readTaskOutput: (sessionId, taskId, lineLimit) =>
+      Effect.gen(function* () {
+        const session = yield* sessionFor(sessionId)
+        const readTaskOutput = session.handle.readTaskOutput
+        if (readTaskOutput === undefined) return undefined
+        return yield* readTaskOutput(taskId, lineLimit)
       }),
     probeHarnessAuth: (harnessId, account) =>
       Effect.gen(function* () {

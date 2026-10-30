@@ -346,6 +346,7 @@ extension VirtualizedTranscriptScrollView {
       verticalScroller?.isEnabled = true
     }
     onInitialPresentationReady?()
+    revealPendingRowIfPossible()
   }
 
   func updatePaginationLoadingIndicator(isPresented: Bool) {

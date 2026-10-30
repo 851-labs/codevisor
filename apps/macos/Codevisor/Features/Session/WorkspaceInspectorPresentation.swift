@@ -133,6 +133,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       showsDebugSection: developerMode,
       showsBotTranscript: bot?.isConversational == true,
       harnessChat: chat,
+      tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
       parent: shownTab(for: inspected) == .info ? parent(of: workspace, store: store) : nil,
       agents: shownTab(for: inspected) == .info ? agents(of: workspace, bot: bot, store: store) : [],
       store: store,
@@ -163,6 +164,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
     )
     .environment(\.attachmentImages, imageStores.store(for: workspace.serverId, environment: environment))
     .environment(\.isWorkspaceInspectorVisible, isVisible)
+  }
+
+  private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {
+    guard let chat = mainChat(of: workspace) else { return [] }
+
+    return WorkspaceInspectorMainChatTasks(
+      workspace: workspace, chat: chat, store: store, client: environment.machines.client(for: chat.serverId)
+    ).tasks
   }
 
   private func parent(of workspace: Workspace, store: SessionStore) -> WorkspaceInspectorAgent? {

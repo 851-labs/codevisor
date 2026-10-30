@@ -8,6 +8,7 @@ import {
 import { isoTimestamp, type SessionGoal } from "@codevisor/api"
 
 import { claudeContent } from "./attachments.js"
+import { readBackgroundTaskOutput } from "./background-task-output.js"
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { pauseGoalForForcedCancellation, pushGoalCommand } from "./goals.js"
 import { deferred } from "./internal.js"
@@ -302,6 +303,9 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       subjectId: session.key
     })
   }),
+  stopTask: (taskId) => adapterPromise("stopTask", () => session.q.stopTask(taskId)),
+  readTaskOutput: (taskId, lineLimit) =>
+    adapterPromise("readTaskOutput", () => readBackgroundTaskOutput(session, taskId, lineLimit)),
   readContext: adapterPromise("readContext", async () =>
     claudeSessionContextFrom(await session.q.getContextUsage())
   )

@@ -126,6 +126,7 @@ final public class SessionController {
   @ObservationIgnored var onPendingSendsChange: (() -> Void)?
   @ObservationIgnored public let disclosure = TranscriptDisclosureStore()
   public internal(set) var userSendSignal = 0
+  public var transcriptRevealRequest: TranscriptRevealRequest?
   public internal(set) var userSendAnimationRequest: UserSendAnimationRequest?
   @ObservationIgnored var userSendAnimationCoordinator = UserSendAnimationCoordinator()
 

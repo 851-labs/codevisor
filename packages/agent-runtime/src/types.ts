@@ -183,6 +183,11 @@ export interface AgentSessionHandle {
     reply: PromptInput
   ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly readContext?: Effect.Effect<SessionContext | undefined, AgentRuntimeError>
+  readonly stopTask?: (taskId: string) => Effect.Effect<void, AgentRuntimeError>
+  readonly readTaskOutput?: (
+    taskId: string,
+    lineLimit: number
+  ) => Effect.Effect<ReadonlyArray<string> | undefined, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
 }
 

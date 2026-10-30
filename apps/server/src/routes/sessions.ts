@@ -23,7 +23,9 @@ import { verifiedRemoteParent } from "./fleet-calls.js"
 import { matchesLabelFilters } from "./label-filters.js"
 import { rejectSyncThrows } from "./route-context.js"
 import type { RouteContext } from "./route-context.js"
+import { isRuntimeLoaded } from "./runtime-loaded.js"
 import { routeSessionActions } from "./session-actions.js"
+import { routeSessionTasks } from "./session-tasks.js"
 import { readSessionUsageLimits } from "./session-usage-limits.js"
 import { waitForSessions } from "./session-wait.js"
 import {
@@ -76,6 +78,9 @@ const dispatchSessionRoute = (route: RouteContext): Promise<boolean> => {
   const planApprovalSessionId = matchRoute(url.pathname, "/v1/sessions/:id/plan-approval")
   if (planApprovalSessionId !== undefined && request.method === "DELETE")
     return clearPlanApproval(route, planApprovalSessionId)
+
+  const taskRoute = routeSessionTasks(route)
+  if (taskRoute !== undefined) return taskRoute
 
   const sessionId = matchRoute(url.pathname, "/v1/sessions/:id")
   if (sessionId !== undefined && request.method === "GET") return readSession(route, sessionId)
@@ -316,12 +321,6 @@ const usageLimitsBody = (
   ...(accountId === undefined ? {} : { accountId }),
   ...(account === undefined ? {} : { accountEmail: account.email, accountLabel: account.label })
 })
-
-const isRuntimeLoaded = (
-  services: CodevisorServerServices,
-  agentSessionId: string | undefined
-): agentSessionId is string =>
-  agentSessionId !== undefined && services.agents.loadedAgentSessionIds().includes(agentSessionId)
 
 const publishAttention = (
   services: CodevisorServerServices,

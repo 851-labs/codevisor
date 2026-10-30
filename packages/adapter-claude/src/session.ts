@@ -58,6 +58,7 @@ export type ClaudeQuery = AsyncIterable<SDKMessage> &
     | "interrupt"
     | "setModel"
     | "setPermissionMode"
+    | "stopTask"
     | "supportedModels"
     | "usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET"
   > & {
@@ -129,6 +130,9 @@ export interface BackgroundTaskEntry {
   status: string
   readonly taskType: string
   readonly toolUseId?: string
+  readonly startedAt?: string
+  readonly command?: string
+  readonly canStop: true
 }
 
 export interface ForkedCommand {
@@ -220,6 +224,7 @@ export interface ClaudeSession {
   readonly subagentTranscripts: SubagentTranscripts
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>
   readonly hiddenBackgroundTaskIds: Set<string>
+  readonly backgroundTaskOutputFiles: Map<string, string>
   readonly pendingQuestions: Map<string, PendingClaudeQuestion>
   currentGoal: SessionGoal | undefined
 }

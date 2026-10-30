@@ -17,6 +17,9 @@ struct BotPageInspectorOpener {
       preview(path)
     case .botTranscript:
       presentTranscript()
+    case let .toolCall(sessionId, toolCallId):
+      store.controllers[SessionStore.SessionKey(serverId: workspace.serverId, sessionId: sessionId)]?
+        .revealToolCall(toolCallId)
     }
   }
 

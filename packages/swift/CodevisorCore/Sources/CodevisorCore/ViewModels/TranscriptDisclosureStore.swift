@@ -9,6 +9,10 @@ public final class ToolGroupDisclosure {
   public func userToggled() {
     isExpanded.toggle()
   }
+
+  public func expand() {
+    isExpanded = true
+  }
 }
 
 @MainActor

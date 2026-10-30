@@ -92,19 +92,33 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
   public var status: String
   public var taskType: String
   public var toolUseId: String?
+  public var startedAt: String?
+  public var command: String?
+  public var hasOutput: Bool?
+  public var canStop: Bool?
+
+  public var startDate: Date? { startedAt.flatMap { try? ServerDateCoding.date(from: $0) } }
 
   public init(
     id: String,
     description: String,
     status: String,
     taskType: String,
-    toolUseId: String? = nil
+    toolUseId: String? = nil,
+    startedAt: String? = nil,
+    command: String? = nil,
+    hasOutput: Bool? = nil,
+    canStop: Bool? = nil
   ) {
     self.id = id
     self.description = description
     self.status = status
     self.taskType = taskType
     self.toolUseId = toolUseId
+    self.startedAt = startedAt
+    self.command = command
+    self.hasOutput = hasOutput
+    self.canStop = canStop
   }
 }
 

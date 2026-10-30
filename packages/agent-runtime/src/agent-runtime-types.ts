@@ -126,6 +126,15 @@ export interface AgentRuntimeService {
   readonly readSessionContext: (
     sessionId: string
   ) => Effect.Effect<SessionContext | undefined, AgentRuntimeError>
+  readonly stopTask: (
+    sessionId: string,
+    taskId: string
+  ) => Effect.Effect<boolean, AgentRuntimeError>
+  readonly readTaskOutput: (
+    sessionId: string,
+    taskId: string,
+    lineLimit: number
+  ) => Effect.Effect<ReadonlyArray<string> | undefined, AgentRuntimeError>
   readonly probeHarnessAuth: (
     harnessId: string,
     account?: HarnessAccountContext

@@ -21,7 +21,17 @@ extension SessionContainerView {
         let bot = environment.bots.bot(forWorkspace: workspace.id, serverId: workspace.serverId)
       else { return }
       openBotTranscript(bot)
+    case let .toolCall(sessionId, toolCallId):
+      revealToolCall(toolCallId, inChat: sessionId)
     }
+  }
+
+  private func revealToolCall(_ toolCallId: String, inChat sessionId: UUID) {
+    let serverId = selectedWorkspace.serverId
+    guard let chat = environment.projectList.session(sessionId, serverId: serverId) else { return }
+
+    store.selectChat(chat)
+    store.controllers[SessionStore.SessionKey(serverId: serverId, sessionId: sessionId)]?.revealToolCall(toolCallId)
   }
 
   private var botPageInspectorOpener: BotPageInspectorOpener {

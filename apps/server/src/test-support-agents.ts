@@ -13,7 +13,7 @@ import { Effect } from "effect"
 import { observableFixture } from "./changes-test-support.js"
 import { dependencyConfigOptions } from "./test-support-config-options.js"
 import { modesIn, questionAskedBy, questionEvent } from "./test-support-questions.js"
-import { harnesses } from "./test-support-stubs.js"
+import { harnesses, withoutTaskControls } from "./test-support-stubs.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -474,6 +474,7 @@ export const makeAgents = (): AgentRuntimeService & {
         })
       }),
     readSessionContext: () => Effect.succeed(undefined),
+    ...withoutTaskControls,
     probeHarnessAuth: () => Effect.succeed({ state: "notRequired", methods: [], canLogout: false }),
     authenticateHarness: () => Effect.void,
     logoutHarness: () => Effect.void,

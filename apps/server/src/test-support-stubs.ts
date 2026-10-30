@@ -1,5 +1,7 @@
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { Harness, NativeMcpScan, SkillsList } from "@codevisor/api"
 import { SkillsError } from "@codevisor/skills"
+import { Effect } from "effect"
 
 import type { RestartCoordinator } from "./restart-drain.js"
 import type { UpdateRun } from "./update-run.js"
@@ -152,3 +154,8 @@ export const harnesses: ReadonlyArray<Harness> = [
     installHint: "npm install -g @openai/codex"
   }
 ]
+
+export const withoutTaskControls: Pick<AgentRuntimeService, "stopTask" | "readTaskOutput"> = {
+  stopTask: () => Effect.succeed(false),
+  readTaskOutput: () => Effect.succeed(undefined)
+}

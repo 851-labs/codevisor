@@ -7,6 +7,7 @@ import SwiftUI
 struct WorkspaceInspectorView: View {
   enum Destination: Equatable {
     case pullRequest(URL), link(URL), file(String), previewFile(String), botTranscript
+    case toolCall(sessionId: UUID, toolCallId: String)
   }
 
   let workspace: Workspace
@@ -18,6 +19,7 @@ struct WorkspaceInspectorView: View {
   let showsDebugSection: Bool
   let showsBotTranscript: Bool
   let harnessChat: ChatSession?
+  let tasks: [WorkspaceInspectorTask]
   let parent: WorkspaceInspectorAgent?
   let agents: [WorkspaceInspectorAgent]
   let store: SessionStore
@@ -242,6 +244,10 @@ struct WorkspaceInspectorView: View {
             detail(
               "Machine", icon: Image(systemName: machineSymbol ?? MachineIcon.fallback.systemImage), value: machineName)
           }
+        }
+
+        if !tasks.isEmpty {
+          WorkspaceInspectorTasksSection(tasks: tasks, isExpanded: expansion("Tasks"))
         }
 
         if let parent {
