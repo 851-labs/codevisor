@@ -277,9 +277,12 @@ impl Sender {
                 events.push_back(Event::FrameAcked(ack));
             }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
-                let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
-                let hold_off = self.rtt + self.config.frame_interval;
-                self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
+                // A first packet that was lost and resent would read as queueing; only clean frames time the delay.
+                if !feedback.lost && receipt.recovery == crate::Recovery::None {
+                    let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
+                    let hold_off = self.rtt + self.config.frame_interval;
+                    self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
+                }
                 let span = Duration::from_micros(receipt.last_rx_offset_us.into());
                 self.estimator.on_delivery(now, receipt.original_bytes as usize, span);
             }

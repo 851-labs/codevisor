@@ -17,6 +17,7 @@ enum BenchCommands {
     SummarizeCommand.self,
     GateCommand.self,
     EncodeLabCommand.self,
+    MediaTransportCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {

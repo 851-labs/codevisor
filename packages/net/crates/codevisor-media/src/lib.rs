@@ -5,8 +5,8 @@
 //!
 //! * **Framing and packetizing.** Each frame (one tile's access unit plus a few transport fields) is cut into
 //!   balanced packets that fit the path's current datagram size, each with a 16-byte header ([`wire`]).
-//! * **Frame-spread pacing.** A frame's packets leave at twice the capacity estimate, and never take longer than
-//!   half a frame interval, so a keyframe doesn't hit the wire at line rate.
+//! * **Frame-spread pacing.** A frame's packets leave at twice the capacity estimate, faster (up to four times it)
+//!   when that wouldn't finish within half a frame interval, so a keyframe doesn't hit the wire at line rate.
 //! * **Loss recovery,** cheapest first: NACK as soon as a gap shows; Reed–Solomon parity when loss has been seen in
 //!   the last 10 s or the round trip is too long for NACK ([`FecMode::Adaptive`]); then give up after
 //!   `max(RTT + 2 ms, 1.5 frame intervals)` and tell the host, whose next encode of that stream should be an LTR
@@ -25,10 +25,31 @@
 //! tile and checks [`MediaSession::admission`] before encoding the next capture; the viewer takes
 //! [`Event::Frame`]s from [`MediaSession::next_event`], decodes them, and calls [`MediaSession::ack_ltr`] for frames
 //! that carried an LTR token. The host gets [`Event::FrameAcked`], [`Event::FrameLost`] and [`Event::LtrAcked`] from
-//! the same call. Swift reaches all of this through `codevisor-net-ffi` (`NetConnectionHandle.openMediaSession`).
+//! the same call. `send_frame` only packetizes and queues (well under a millisecond for a 256 KiB tile); the
+//! session's task sends, receives and runs the timers.
+//!
+//! Swift reaches all of this through `codevisor-net-ffi`, one call per frame each way:
+//!
+//! ```swift
+//! let connection = try await endpoint.connect(addr: viewer, alpn: mediaAlpn(), cancel: nil)
+//! let session = await connection.openMediaSession(
+//!   config: MediaSessionConfig(frameIntervalUs: 16_667, fecPercent: nil, initialRateKbps: 100_000))
+//! if session.admission().admit {
+//!   _ = try session.sendFrame(frame: MediaFrame(stream: tile, keyframe: false, ltrToken: token, meta: timings, data: au))
+//! }
+//! while let event = await session.nextEvent() { /* .frame, .frameAcked, .frameLost, .ltrAcked, .frameSkipped */ }
+//! ```
+//!
+//! The host binds and accepts on the viewer's side the same way (`NetEndpointHandle.accept`).
 //!
 //! [`Core`] is the same transport as a state machine without I/O or a clock, which is what the deterministic tests
-//! drive over [`netsim`]'s seeded network model.
+//! drive over [`netsim`]'s seeded network model. [`mod@bench`] is the M1 bench (iroh against plain UDP with the same
+//! framing, on one machine or two).
+//!
+//! # Not yet
+//!
+//! Audio and cursor datagrams (wire kinds 4 and up are reserved), the control-plane streams, the media connection's
+//! own QUIC transport config (E2), and the tuning of the estimator and FEC on constrained links (E7).
 
 pub mod bench;
 mod core;

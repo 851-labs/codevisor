@@ -135,6 +135,12 @@ impl NetEndpointHandle {
         Ok(Arc::new(NetConnectionHandle { inner: connection }))
     }
 
+    /// The next incoming connection on one of the endpoint's ALPNs; `None` once the endpoint is closed.
+    pub async fn accept(&self) -> Result<Option<Arc<NetConnectionHandle>>, NetError> {
+        let connection = self.inner.accept().await.map_err(failure)?;
+        Ok(connection.map(|inner| Arc::new(NetConnectionHandle { inner })))
+    }
+
     pub async fn network_change(&self) {
         self.inner.network_change().await;
     }

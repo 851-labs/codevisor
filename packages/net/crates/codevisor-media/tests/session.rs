@@ -136,6 +136,18 @@ async fn events_end_when_the_transport_closes() {
     assert_eq!(viewer.next_event().await, None);
 }
 
+#[tokio::test(start_paused = true)]
+async fn events_end_when_the_session_is_closed() {
+    let (host_end, _viewer_end) = MemoryTransport::pair();
+    let host = Arc::new(MediaSession::new(host_end, config()));
+    let waiting = tokio::spawn({
+        let host = host.clone();
+        async move { host.next_event().await }
+    });
+    host.close();
+    assert_eq!(waiting.await.unwrap(), None);
+}
+
 #[tokio::test]
 async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() {
     let endpoint = |alpns: Vec<Vec<u8>>| NetConfig {
@@ -154,7 +166,9 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
     let host = MediaSession::new(QuicTransport(host_connection.unwrap()), MediaConfig::default());
     let viewer = MediaSession::new(QuicTransport(viewer_connection.unwrap().unwrap()), MediaConfig::default());
 
-    let sent: Vec<OutgoingFrame> = [1, 1200, 64_000, 1 << 20, 300]
+    // One frame at a time, each after the previous ack: this checks the real connection's wiring, not its loss
+    // handling under a debug build's slow receive path (the simulated-network tests own that).
+    let sent: Vec<OutgoingFrame> = [1, 1200, 64_000, 200_000, 300]
         .into_iter()
         .enumerate()
         .map(|(index, len)| OutgoingFrame {
@@ -165,34 +179,39 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
             data: payload(index as u64, len),
         })
         .collect();
-    for frame in &sent {
-        host.send_frame(frame.clone()).unwrap();
-    }
-    let mut received = Vec::new();
-    while received.len() < sent.len() {
-        let frame = next_frame(&viewer).await;
-        if frame.ltr_token == Some(7) {
-            viewer.ack_ltr(frame.stream, 7);
+    let exchange = async {
+        let mut received = Vec::new();
+        let mut ltr = None;
+        for frame in &sent {
+            host.send_frame(frame.clone()).unwrap();
+            let frame = next_frame(&viewer).await;
+            if let Some(token) = frame.ltr_token {
+                viewer.ack_ltr(frame.stream, token);
+            }
+            received.push(OutgoingFrame {
+                stream: frame.stream,
+                keyframe: frame.keyframe,
+                ltr_token: frame.ltr_token,
+                meta: frame.meta,
+                data: frame.data,
+            });
+            loop {
+                match host.next_event().await.expect("session open") {
+                    Event::FrameAcked(_) => break,
+                    Event::LtrAcked { stream, token } => ltr = Some((stream, token)),
+                    other => panic!("{other:?}"),
+                }
+            }
         }
-        received.push(OutgoingFrame {
-            stream: frame.stream,
-            keyframe: frame.keyframe,
-            ltr_token: frame.ltr_token,
-            meta: frame.meta,
-            data: frame.data,
-        });
-    }
-    received.sort_by_key(|frame| sent.iter().position(|sent| sent == frame));
+        while ltr.is_none() {
+            if let Some(Event::LtrAcked { stream, token }) = host.next_event().await {
+                ltr = Some((stream, token));
+            }
+        }
+        (received, ltr)
+    };
+    // A deadlock guard only; the exchange takes milliseconds.
+    let (received, ltr) = tokio::time::timeout(Duration::from_secs(60), exchange).await.expect("exchange finishes");
     assert_eq!(received, sent);
-
-    let mut acked = 0;
-    let mut ltr = None;
-    while acked < sent.len() || ltr.is_none() {
-        match host.next_event().await.expect("session open") {
-            Event::FrameAcked(_) => acked += 1,
-            Event::LtrAcked { stream, token } => ltr = Some((stream, token)),
-            other => panic!("{other:?}"),
-        }
-    }
     assert_eq!(ltr, Some((1, 7)));
 }

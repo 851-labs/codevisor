@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -20,10 +21,12 @@ use crate::{
 const RTT_REFRESH: Duration = Duration::from_millis(50);
 /// How soon a datagram the transport had no room for is offered again.
 const FULL_RETRY: Duration = Duration::from_micros(500);
+/// Datagrams taken from the core per lock, so frame hand-offs interleave with a burst going out.
+const SEND_BATCH: usize = 16;
 
 /// One end of a media session, driving a [`Core`] over a transport on the tokio runtime. Every method is cheap and
-/// non-blocking except [`next_event`](Self::next_event); the frame calls send what pacing allows right away, on the
-/// caller's thread, and a background task handles arrivals and timers.
+/// non-blocking except [`next_event`](Self::next_event): [`send_frame`](Self::send_frame) only packetizes and queues
+/// (so the encoder's thread never waits on the network), and a background task sends, receives and runs the timers.
 pub struct MediaSession<T: DatagramTransport = QuicTransport> {
     shared: Arc<Shared<T>>,
     events: AsyncMutex<mpsc::UnboundedReceiver<Event>>,
@@ -38,8 +41,8 @@ struct Shared<T> {
 
 struct State {
     core: Core,
-    /// A datagram the transport had no room for; it goes before anything new.
-    held: Option<Bytes>,
+    /// Datagrams the transport had no room for; they go before anything new.
+    held: VecDeque<Bytes>,
     rtt_at: Option<Instant>,
     /// Dropped when the transport closes, which ends [`MediaSession::next_event`].
     events: Option<mpsc::UnboundedSender<Event>>,
@@ -56,7 +59,7 @@ impl<T: DatagramTransport> MediaSession<T> {
         core.set_max_datagram_size(transport.max_datagram_size());
         let (events, receiver) = mpsc::unbounded_channel();
         let shared = Arc::new(Shared {
-            state: Mutex::new(State { core, held: None, rtt_at: None, events: Some(events) }),
+            state: Mutex::new(State { core, held: VecDeque::new(), rtt_at: None, events: Some(events) }),
             transport,
             wake: Notify::new(),
         });
@@ -64,13 +67,13 @@ impl<T: DatagramTransport> MediaSession<T> {
         Self { shared, events: AsyncMutex::new(receiver), task }
     }
 
-    /// Host: packetizes one encoded tile and starts sending it. Returns the frame's number within its stream.
+    /// Host: packetizes one encoded tile and queues it for the session's task to send. Returns the frame's number
+    /// within its stream.
     pub fn send_frame(&self, frame: OutgoingFrame) -> Result<u32> {
         let now = now();
         let mut state = self.shared.state.lock().unwrap();
         state.core.set_max_datagram_size(self.shared.transport.max_datagram_size());
         let number = state.core.send_frame(now, frame)?;
-        self.shared.pump(&mut state, now);
         drop(state);
         self.shared.wake.notify_one();
         Ok(number)
@@ -78,9 +81,8 @@ impl<T: DatagramTransport> MediaSession<T> {
 
     /// Viewer: the decoder finished the frame that carried `token`.
     pub fn ack_ltr(&self, stream: u8, token: u64) {
-        let mut state = self.shared.state.lock().unwrap();
-        state.core.ack_ltr(stream, token);
-        self.shared.pump(&mut state, now());
+        self.shared.state.lock().unwrap().core.ack_ltr(stream, token);
+        self.shared.pump(now());
     }
 
     /// Host: whether to encode the next capture.
@@ -107,9 +109,11 @@ impl<T: DatagramTransport> MediaSession<T> {
         &self.shared.transport
     }
 
-    /// Stops the session's task. The connection stays open; close it separately.
+    /// Stops the session's task and ends [`next_event`](Self::next_event) once the waiting events are taken. The
+    /// connection stays open; close it separately.
     pub fn close(&self) {
         self.task.abort();
+        self.shared.state.lock().unwrap().events = None;
     }
 }
 
@@ -120,21 +124,43 @@ impl<T: DatagramTransport> Drop for MediaSession<T> {
 }
 
 impl<T: DatagramTransport> Shared<T> {
-    /// Sends what the core has ready and hands its events over.
-    fn pump(&self, state: &mut State, now: Instant) {
+    /// Sends what the core has ready, a batch at a time with the lock released while the transport works, so
+    /// [`MediaSession::send_frame`] never waits behind a burst. Then hands the core's events over.
+    fn pump(&self, now: Instant) {
         loop {
-            let Some(datagram) = state.held.take().or_else(|| state.core.poll_transmit(now)) else {
-                break;
-            };
-            match self.transport.send(datagram) {
-                SendOutcome::Sent => {}
-                SendOutcome::Full(datagram) => {
-                    state.held = Some(datagram);
-                    break;
+            let mut batch = {
+                let mut state = self.state.lock().unwrap();
+                let mut batch = std::mem::take(&mut state.held);
+                while batch.len() < SEND_BATCH {
+                    let Some(datagram) = state.core.poll_transmit(now) else { break };
+                    batch.push_back(datagram);
                 }
-                SendOutcome::Rejected => state.core.note_transport_rejected(),
+                batch
+            };
+            if batch.is_empty() {
+                break;
+            }
+            let mut rejected = 0;
+            while let Some(datagram) = batch.pop_front() {
+                match self.transport.send(datagram) {
+                    SendOutcome::Sent => {}
+                    SendOutcome::Full(datagram) => {
+                        batch.push_front(datagram);
+                        break;
+                    }
+                    SendOutcome::Rejected => rejected += 1,
+                }
+            }
+            let mut state = self.state.lock().unwrap();
+            for _ in 0..rejected {
+                state.core.note_transport_rejected();
+            }
+            if !batch.is_empty() {
+                state.held = batch;
+                break;
             }
         }
+        let mut state = self.state.lock().unwrap();
         while let Some(event) = state.core.poll_event() {
             if let Some(events) = &state.events {
                 let _ = events.send(event);
@@ -143,17 +169,21 @@ impl<T: DatagramTransport> Shared<T> {
     }
 
     /// Pumps, then says when the core next needs attention.
-    fn settle(&self, state: &mut State) -> Option<Instant> {
+    fn settle(&self) -> Option<Instant> {
         let now = now();
-        if state.rtt_at.is_none_or(|at| now.saturating_duration_since(at) >= RTT_REFRESH) {
-            if let Some(rtt) = self.transport.rtt() {
-                state.core.set_rtt(rtt);
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.rtt_at.is_none_or(|at| now.saturating_duration_since(at) >= RTT_REFRESH) {
+                if let Some(rtt) = self.transport.rtt() {
+                    state.core.set_rtt(rtt);
+                }
+                state.rtt_at = Some(now);
             }
-            state.rtt_at = Some(now);
         }
-        self.pump(state, now);
+        self.pump(now);
+        let state = self.state.lock().unwrap();
         let next = state.core.poll_timeout(now);
-        if state.held.is_some() {
+        if !state.held.is_empty() {
             // The pacer would say "now" while the transport has no room; wait for room instead of spinning.
             return Some(next.map_or(now + FULL_RETRY, |next| next.max(now + FULL_RETRY)));
         }
@@ -163,7 +193,7 @@ impl<T: DatagramTransport> Shared<T> {
 
 async fn drive<T: DatagramTransport>(shared: Arc<Shared<T>>) {
     loop {
-        let deadline = shared.settle(&mut shared.state.lock().unwrap());
+        let deadline = shared.settle();
         let sleep = async {
             match deadline {
                 Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
@@ -182,7 +212,6 @@ async fn drive<T: DatagramTransport>(shared: Arc<Shared<T>>) {
             () = shared.wake.notified() => {}
         }
     }
-    let mut state = shared.state.lock().unwrap();
-    shared.settle(&mut state);
-    state.events = None;
+    shared.settle();
+    shared.state.lock().unwrap().events = None;
 }

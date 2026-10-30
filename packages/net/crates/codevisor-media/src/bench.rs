@@ -5,9 +5,14 @@
 //!
 //! ```text
 //! viewer   --bind ADDR --udp-bind ADDR --secret HEX [--network N3] [--idle-exit-s 30]
-//! host     --peer-id ID --peer ADDR --udp-peer ADDR [--network N3] [--rows all] [--seconds 10] [--json PATH]
+//! host     --peer-id ID | --peer-secret HEX, --peer ADDR --udp-peer ADDR [--network N3] [--rows all] [--seconds 10]
+//!          [--json PATH] [--network-label "N3 (dummynet)"]
 //! loopback [--network N3] [--rows all] [--seconds 10] [--json PATH]
+//! send-cost [--frames 300]
 //! ```
+//!
+//! `send-cost` times [`MediaSession::send_frame`] itself over a loopback connection: the Rust side of a frame's
+//! hand-off, to set against what `CodevisorBench media-transport --role ffi-cost` measures from Swift.
 //!
 //! For each row and transport the host reports the frame round trip (`send_frame` to the ack: pacing, both network
 //! legs, assembly and the feedback) and its p50/p95 difference from plain UDP, the recovery delay of frames that
@@ -69,9 +74,8 @@ pub async fn run(args: Vec<String>) -> Result<String> {
         Some("viewer") => viewer(&options).await,
         Some("host") => host(&options).await,
         Some("loopback") => loopback(&options).await,
-        _ => {
-            bail!("usage: viewer | host | loopback [--option value …] (see codevisor_media::bench)")
-        }
+        Some("send-cost") => send_cost(&options).await,
+        _ => bail!("usage: viewer | host | loopback | send-cost [--option value …] (see codevisor_media::bench)"),
     }
 }
 
@@ -229,8 +233,12 @@ async fn connect_quic(
 
 async fn host(options: &Options) -> Result<String> {
     let network = options.network()?;
+    let endpoint_id = match options.0.get("peer-secret") {
+        Some(secret) => endpoint_id_for(&secret_key_from_hex(secret)?),
+        None => options.get("peer-id")?.to_string(),
+    };
     let peer = NetAddr {
-        endpoint_id: options.get("peer-id")?.to_string(),
+        endpoint_id,
         relay_url: None,
         direct_addrs: vec![options.get("peer")?.to_string()],
     };
@@ -286,6 +294,49 @@ async fn loopback(options: &Options) -> Result<String> {
     Ok(report)
 }
 
+/// Sizes the frame hand-off is timed at: an HP-like tile, a large tile, a keyframe.
+pub const HAND_OFF_SIZES: [usize; 3] = [64 << 10, 256 << 10, 1 << 20];
+
+async fn send_cost(options: &Options) -> Result<String> {
+    let frames: usize = options.or("frames", "300").parse()?;
+    let secret = generate_secret_key();
+    let viewer_endpoint = NetEndpoint::bind(endpoint_config(secret, "127.0.0.1:0")).await?;
+    let viewer_addr = NetAddr {
+        endpoint_id: endpoint_id_for(&secret),
+        relay_url: None,
+        direct_addrs: viewer_endpoint.bound_sockets(),
+    };
+    let host_endpoint = NetEndpoint::bind(endpoint_config(generate_secret_key(), "127.0.0.1:0")).await?;
+    let (host, viewer) =
+        tokio::join!(connect_quic(&host_endpoint, &viewer_addr, Duration::from_secs(10)), viewer_endpoint.accept());
+    let host = MediaSession::new(QuicTransport(host?), media_config());
+    let viewer = MediaSession::new(QuicTransport(viewer?.ok_or_else(|| anyhow!("endpoint closed"))?), media_config());
+    let drain = tokio::spawn(async move { while viewer.next_event().await.is_some() {} });
+    let mut report = String::from("| Frame | send_frame p50 / p95 ms (Rust) |\n| -- | -- |\n");
+    let mut cache = HashMap::new();
+    let mut ticker = tokio::time::interval(INTERVAL);
+    for size in HAND_OFF_SIZES {
+        let mut durations = Vec::with_capacity(frames);
+        for _ in 0..frames {
+            ticker.tick().await;
+            let data = frame_data(&mut cache, size);
+            let started = Instant::now();
+            host.send_frame(OutgoingFrame { data, ..Default::default() })?;
+            durations.push(started.elapsed().as_secs_f64() * 1000.0);
+            while host.try_next_event().is_some() {}
+        }
+        writeln!(
+            report,
+            "| {} KiB | {:.3} / {:.3} |",
+            size >> 10,
+            percentile(&durations, 0.5),
+            percentile(&durations, 0.95)
+        )?;
+    }
+    drain.abort();
+    Ok(report)
+}
+
 #[derive(Default)]
 struct Measured {
     round_trips_ms: Vec<f64>,
@@ -329,7 +380,7 @@ async fn measure(
     writeln!(
         table,
         "Network {} · {} s per row · iroh path {} (max datagram {:?}, RTT {:.2} ms)\n",
-        network.id,
+        options.or("network-label", network.id),
         seconds,
         connection.paths().iter().find(|path| path.selected).map_or("?".into(), |path| path.remote.clone()),
         connection.max_datagram_size(),

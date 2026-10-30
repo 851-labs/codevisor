@@ -262,7 +262,7 @@ pub struct Nack {
 }
 
 impl Nack {
-    /// Builds the ranges from sorted, distinct indices, keeping the first [`MAX_NACK_RANGES`] ranges.
+    /// Builds the ranges from sorted, distinct indices, keeping the first 64 ranges.
     pub fn from_indices(stream: u8, frame: u32, indices: impl IntoIterator<Item = u16>) -> Self {
         let mut ranges: Vec<(u16, u16)> = Vec::new();
         for index in indices {
