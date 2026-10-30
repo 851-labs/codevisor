@@ -1,5 +1,8 @@
+import CoreVideo
+
 struct EncodeLabConfig: Sendable, Codable, Equatable {
   var name = "product"
+  var engine = EncodeLabEngine.videoToolbox
   var codec = EncodeLabCodec.hevc444
   var rateControl = EncodeLabRateControl.standard
   var prioritizeSpeed: Bool?
@@ -17,10 +20,22 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
   var constantQuality: Double?
   var spatialAdaptiveQP: Bool?
   var feedsYCbCr: Bool?
+  var ackMilliseconds = 33
+  var vcpInput = "444f"
 
   var tileHeight: Int { height / tiles }
   var tileBitsPerSecond: Int? { megabitsPerSecond.map { Int($0 * 1_000_000) / tiles } }
   var tileRateLimitBytes: Int? { rateLimit.map { $0.bytesPerWindow / tiles } }
-  var prioritizesSpeed: Bool { prioritizeSpeed ?? (rateControl == .standard) }
+  var prioritizesSpeed: Bool { prioritizeSpeed ?? (rateControl == .standard && engine == .videoToolbox) }
+  func encodedTiles(dirty: Set<Int>, forced: Set<Int>) -> Set<Int> {
+    guard engine == .videoToolbox, skipCleanTiles else { return Set(0..<sessionTiles) }
+
+    return dirty.union(forced)
+  }
+
+  var vcpInputFormat: OSType { vcpInput.utf8.reduce(0) { $0 << 8 | OSType($1) } }
+  var ackRoundTripNs: Int64 { Int64(ackMilliseconds) * 1_000_000 }
+  var sessionTiles: Int { engine == .videoToolbox ? tiles : 1 }
+  var refreshKind: EncodeLabRefresh { longTermReferences || engine == .videoProcessing ? .longTermReference : .keyframe }
   var inputIsYCbCr: Bool { feedsYCbCr ?? (codec != .hevc444) }
 }

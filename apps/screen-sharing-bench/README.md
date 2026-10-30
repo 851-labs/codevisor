@@ -344,10 +344,17 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   encoder sees the scene's real cadence; idle ticks submit nothing, like ScreenCaptureKit.
 - **Configs.** `--configs` takes `;`-separated `key=value` lists; every key defaults to the product encoder
   (`ScreenSharingProductProfile`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440).
-  Keys: `name`, `codec` (`hevc444`, `hevc`, `h264`), `rc` (`standard`, `ll`), `mbps` (or `none` with `cq` or a preset),
+  Keys: `name`, `engine` (`vt`, or `vcp` below), `codec` (`hevc444`, `hevc`, `h264`), `rc` (`standard`, `ll`), `mbps` (or `none` with `cq` or a preset),
   `size`, `tiles` (horizontal stripes, one session each, the bitrate split evenly), `skip` (encode only the tiles whose
   pixels changed), `ltr`, `yuv`, `speed`, `mfd` (`MaxFrameDelayCount`), `qpmax`, `qpmin`, `drl` (`<mbps>@<seconds>`),
-  `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27) and `aq`.
+  `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27), `aq`, `ackms` (the
+  simulated round trip before a reference token is acknowledged, 33 ms by default) and `vcpin`.
+- **`engine=vcp`** opens Apple's real-time encoder, VideoProcessing's private `VCPCompressionSession` with
+  `Usage = 42` (851-3766), loaded with `dlopen`. It takes whole frames in `vcpin` (`444f` by default, Apple's capture
+  format; it picks Main 4:4:4 only when the source attributes are 4:4:4 and not lossless-compressed), splits them into
+  `tiles` (1–4) itself, skips unchanged tiles, and labels each output with `TileID`. Every reference token it asks for
+  (`RequireAcknowledgementToken`) is acknowledged after `ackms`, and the refresh is a `ForceLTRRefresh`. One decoder
+  decodes all its tiles, as Apple's viewer does.
 - **Per cell** (scene × config), after `--warm-up`: encode time (submit to the last tile's output), how long frame
   preparation and the submit call took, Mbit/s, frame sizes, the chroma format the encoder actually wrote (read from
   `hvcC`), the first frame's size, and a refresh halfway through: a forced keyframe, or with `ltr=1` a

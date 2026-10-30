@@ -4,6 +4,7 @@ enum EncodeLabError: Error, CustomStringConvertible {
   case transfer(String, Int32)
   case decoder(String, Int32)
   case missingPreset(String, [String])
+  case missingSymbol(String)
 
   var description: String {
     switch self {
@@ -12,6 +13,7 @@ enum EncodeLabError: Error, CustomStringConvertible {
     case .transfer(let step, let status): "pixel transfer \(step) failed: \(status)"
     case .decoder(let step, let status): "decoder \(step) failed: \(status)"
     case .missingPreset(let preset, let available): "no preset \(preset); the encoder has \(available)"
+    case .missingSymbol(let name): "no symbol \(name)"
     }
   }
 }

@@ -10,7 +10,7 @@ struct EncodeLabSessionFactory {
   func make() throws -> VTCompressionSession {
     let session = try create()
     do {
-      try EncodeLabSessionProperties(config: config, session: session).apply()
+      try EncodeLabSessionProperties(config: config, target: EncodeLabVTPropertyTarget(session: session)).apply()
       try check(VTCompressionSessionPrepareToEncodeFrames(session), "prepare")
       return session
     } catch {

@@ -16,7 +16,8 @@ final class EncodeLabFrameSource: @unchecked Sendable {
     let format = Self.inputFormat(config)
     converter = try format.map { try EncodeLabPixelTransfer(width: config.width, height: config.height, format: $0) }
     cutter = try EncodeLabTileCutter(
-      width: config.width, height: config.height, tiles: config.tiles, format: format ?? kCVPixelFormatType_32BGRA)
+      width: config.width, height: config.height, tiles: config.sessionTiles,
+      format: format ?? kCVPixelFormatType_32BGRA)
   }
 
   func picture(forVersion version: Int) async throws -> CVPixelBuffer {
@@ -31,7 +32,7 @@ final class EncodeLabFrameSource: @unchecked Sendable {
     let picture = try await picture(forVersion: version)
     let dirty = EncodeLabDirtyTiles.changed(from: previous, to: picture, tiles: config.tiles)
     previous = picture
-    let encoded = config.skipCleanTiles ? dirty.union(forced) : Set(0..<config.tiles)
+    let encoded = config.encodedTiles(dirty: dirty, forced: forced)
     let input = try converter?.transfer(picture) ?? picture
     var inputs: [Int: CVPixelBuffer] = [:]
     for tile in encoded { inputs[tile] = try cutter.cut(input, tile: tile) }
@@ -39,6 +40,7 @@ final class EncodeLabFrameSource: @unchecked Sendable {
   }
 
   private static func inputFormat(_ config: EncodeLabConfig) -> OSType? {
+    guard config.engine == .videoToolbox else { return config.vcpInputFormat }
     guard config.inputIsYCbCr else { return nil }
 
     return config.codec == .hevc444

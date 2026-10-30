@@ -1,10 +1,13 @@
-struct EncodeLabLTRAcks {
-  static let roundTripNs: Int64 = 33_333_333
-
+struct EncodeLabTokenAcks {
+  let roundTripNs: Int64
   private var pending: [(token: Int, dueNs: Int64)] = []
 
+  init(roundTripNs: Int64) {
+    self.roundTripNs = roundTripNs
+  }
+
   mutating func received(token: Int, atNs: Int64) {
-    pending.append((token, atNs + Self.roundTripNs))
+    pending.append((token, atNs + roundTripNs))
   }
 
   mutating func takeDue(atNs: Int64) -> [Int] {

@@ -7,7 +7,7 @@ struct EncodeLabSessionProperties {
   static let keyframeIntervalSeconds = 60
 
   let config: EncodeLabConfig
-  let session: VTCompressionSession
+  let target: any EncodeLabPropertyTarget
 
   func apply() throws {
     if let preset = config.preset { try applyPreset(preset) }
@@ -19,23 +19,19 @@ struct EncodeLabSessionProperties {
   }
 
   private func applyPreset(_ name: String) throws {
-    let preset = EncodeLabPreset.key(named: name)
     let presets = try supportedPresets()
-    guard let settings = presets[preset as String] else {
+    guard let settings = presets[EncodeLabPreset.key(named: name) as String] else {
       throw EncodeLabError.missingPreset(name, presets.keys.sorted())
     }
 
-    let status = VTSessionSetProperties(session, propertyDictionary: settings as CFDictionary)
-    guard status == noErr else { throw EncodeLabError.property("preset \(name)", status) }
+    for (key, value) in settings { try set(key as CFString, value as CFTypeRef) }
   }
 
   private func supportedPresets() throws -> [String: [String: Any]] {
-    var value: Unmanaged<CFTypeRef>?
-    let status = VTSessionCopyProperty(
-      session, key: kVTCompressionPropertyKey_SupportedPresetDictionaries, allocator: nil, valueOut: &value)
+    let (status, value) = target.copy(kVTCompressionPropertyKey_SupportedPresetDictionaries)
     guard status == noErr else { throw EncodeLabError.property("SupportedPresetDictionaries", status) }
 
-    return value?.takeRetainedValue() as? [String: [String: Any]] ?? [:]
+    return value as? [String: [String: Any]] ?? [:]
   }
 
   private func applySpeed() throws {
@@ -48,24 +44,10 @@ struct EncodeLabSessionProperties {
 
   private func applyProfile() throws {
     switch config.codec {
-    case .hevc444: try set(kVTCompressionPropertyKey_ProfileLevel, try main444Profile() as CFString)
+    case .hevc444: try set(kVTCompressionPropertyKey_ProfileLevel, try target.main444Profile())
     case .hevc: try set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel)
     case .h264: try set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel)
     }
-  }
-
-  private func main444Profile() throws -> String {
-    var supported: CFDictionary?
-    let status = VTSessionCopySupportedPropertyDictionary(session, supportedPropertyDictionaryOut: &supported)
-    guard status == noErr else { throw EncodeLabError.property("supported properties", status) }
-
-    let info = (supported as? [String: Any])?[kVTCompressionPropertyKey_ProfileLevel as String] as? [String: Any]
-    let profiles = info?[kVTPropertySupportedValueListKey as String] as? [String] ?? []
-    guard let profile = profiles.first(where: { $0.contains("_Main444_") }) else {
-      throw EncodeLabError.property("Main444 profile", kVTPropertyNotSupportedErr)
-    }
-
-    return profile
   }
 
   private func applyRate() throws {
@@ -106,7 +88,7 @@ struct EncodeLabSessionProperties {
   }
 
   private func set(_ key: CFString, _ value: CFTypeRef) throws {
-    let status = VTSessionSetProperty(session, key: key, value: value)
+    let status = target.set(key, value)
     guard status == noErr else { throw EncodeLabError.property(key as String, status) }
   }
 }

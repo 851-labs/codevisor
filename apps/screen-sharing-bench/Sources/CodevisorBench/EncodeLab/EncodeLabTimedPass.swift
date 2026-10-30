@@ -13,24 +13,29 @@ struct EncodeLabTimedPass {
 
   func run() async throws -> EncodeLabTrace {
     let source = try EncodeLabFrameSource(setup: setup, config: config)
-    let encoders = try (0..<config.tiles).map { tile in
-      EncodeLabTileEncoder(
-        tile: tile,
-        session: try EncodeLabSessionFactory(config: config, width: config.width, height: config.tileHeight).make())
-    }
-    let events = try await pace(source: source, encoders: encoders)
-    encoders.forEach { $0.finish() }
+    let encoder = try makeEncoder()
+    let events = try await pace(source: source, encoder: encoder)
+    encoder.finish()
     return EncodeLabTrace(
-      config: config, events: events, outputs: encoders.map(\.outputs), warmUpTicks: warmUpTicks, ticks: ticks)
+      config: config, events: events, outputs: encoder.outputs, warmUpTicks: warmUpTicks, ticks: ticks)
   }
 
-  private func pace(source: EncodeLabFrameSource, encoders: [EncodeLabTileEncoder]) async throws -> [EncodeLabFrameEvent] {
+  private func makeEncoder() throws -> any EncodeLabFrameEncoder {
+    switch config.engine {
+    case .videoToolbox: try EncodeLabTileSet(config: config)
+    case .videoProcessing: try EncodeLabVCPEncoder(config: config)
+    }
+  }
+
+  private func pace(source: EncodeLabFrameSource, encoder: any EncodeLabFrameEncoder) async throws
+    -> [EncodeLabFrameEvent]
+  {
     var schedule = EncodeLabSchedule(timeline: setup.scene.timeline, ticks: ticks, refreshTick: refreshTick)
     let pacer = EncodeLabPacer()
     let startNs = ScreenSharingMetrics.nowNs + Self.startDelayNs
     var events: [EncodeLabFrameEvent] = []
     while let step = schedule.next() {
-      let refresh = step.refreshes ? refreshKind : nil
+      let refresh = step.refreshes ? config.refreshKind : nil
       let forced: Set<Int> = refresh == nil ? [] : [config.tiles / 2]
       let preparingNs = ScreenSharingMetrics.nowNs
       let prepared = try await source.prepare(version: step.version, forcing: forced)
@@ -38,7 +43,7 @@ struct EncodeLabTimedPass {
       let scheduledNs = startNs + Int64(step.tick) * Self.tickNs
       let frame = events.count
       let submission = try await pacer.run(atNs: scheduledNs) {
-        try Self.submit(prepared, frame: frame, tick: step.tick, refresh: refresh, to: encoders)
+        try Self.submit(prepared, frame: frame, tick: step.tick, refresh: refresh, to: encoder)
       }
       events.append(
         EncodeLabFrameEvent(
@@ -50,17 +55,13 @@ struct EncodeLabTimedPass {
   }
 
   private var refreshTick: Int { warmUpTicks + (ticks - warmUpTicks) / 2 }
-  private var refreshKind: EncodeLabRefresh { config.longTermReferences ? .longTermReference : .keyframe }
 
   private nonisolated static func submit(
     _ prepared: EncodeLabPreparedFrame, frame: Int, tick: Int, refresh: EncodeLabRefresh?,
-    to encoders: [EncodeLabTileEncoder]
+    to encoder: any EncodeLabFrameEncoder
   ) throws -> EncodeLabSubmission {
     let submittedNs = ScreenSharingMetrics.nowNs
-    let refreshTile = encoders.count / 2
-    for (tile, pixels) in prepared.inputs.sorted(by: { $0.key < $1.key }) {
-      try encoders[tile].encode(pixels, frame: frame, tick: tick, refresh: tile == refreshTile ? refresh : nil)
-    }
+    try encoder.encode(prepared.inputs, frame: frame, tick: tick, refresh: refresh)
     return EncodeLabSubmission(submittedNs: submittedNs, returnedNs: ScreenSharingMetrics.nowNs)
   }
 }

@@ -6,16 +6,17 @@ import VideoToolbox
 final class EncodeLabTileEncoder: @unchecked Sendable {
   private struct State {
     var outputs: [EncodeLabTileOutput] = []
-    var acks = EncodeLabLTRAcks()
+    var acks: EncodeLabTokenAcks
   }
 
   let tile: Int
   private let session: VTCompressionSession
-  private let state = Mutex(State())
+  private let state: Mutex<State>
 
-  init(tile: Int, session: VTCompressionSession) {
+  init(tile: Int, session: VTCompressionSession, ackRoundTripNs: Int64) {
     self.tile = tile
     self.session = session
+    state = Mutex(State(acks: EncodeLabTokenAcks(roundTripNs: ackRoundTripNs)))
   }
 
   deinit {

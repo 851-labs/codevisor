@@ -1,3 +1,4 @@
+import CoreVideo
 import Testing
 
 @testable import CodevisorBench
@@ -30,9 +31,20 @@ struct EncodeLabConfigParserTests {
     ("mbps=none", "--configs entry \"mbps=none\": mbps=none needs cq or a preset"),
     ("codec=av1", "--configs entry \"codec=av1\": codec av1"),
     ("fps=30", "--configs entry \"fps=30\": unknown key fps"),
+    ("engine=vcp,codec=hevc", "--configs entry \"engine=vcp,codec=hevc\": engine=vcp encodes hevc444 in 1 to 4 tiles"),
   ])
   func rejectsInvalidConfigs(spec: String, message: String) {
     #expect(throws: BenchUsageError(message: message)) { try EncodeLabConfigParser.parse(spec: spec) }
+  }
+
+  @Test func feedsVideoProcessingWholeFramesInAppleCaptureFormat() throws {
+    let config = try EncodeLabConfigParser.parse(spec: "name=v,engine=vcp,size=3840x2160,tiles=4,skip=1")
+
+    #expect(config.sessionTiles == 1)
+    #expect(config.encodedTiles(dirty: [2], forced: []) == [0])
+    #expect(config.vcpInputFormat == kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
+    #expect(config.refreshKind == .longTermReference)
+    #expect(!config.prioritizesSpeed)
   }
 
   @Test func readsSemicolonSeparatedLists() throws {

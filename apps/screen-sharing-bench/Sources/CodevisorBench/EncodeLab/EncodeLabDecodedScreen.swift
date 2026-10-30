@@ -14,7 +14,7 @@ struct EncodeLabDecodedScreen {
     for output in outputs {
       guard let sample = output.sample else { continue }
 
-      latest[output.tile] = try decoder(output.tile, sample).decode(sample)
+      latest[output.tile] = try decoder(decoderSlot(output.tile), sample).decode(sample)
     }
   }
 
@@ -26,13 +26,17 @@ struct EncodeLabDecodedScreen {
     var reference = EncodeLabPicture(width: config.width, height: config.height)
     reference.paste(original, atRow: 0)
     var shown = EncodeLabPicture(width: config.width, height: config.height)
-    for (tile, image) in latest { shown.paste(image, atRow: tile * config.tileHeight) }
+    for (tile, image) in latest { shown.paste(image, atRow: tile * CVPixelBufferGetHeight(image)) }
     return EncodeLabQualitySample(
       frame: event.frame, version: event.version,
       psnrY: EncodeLabSimilarity.psnr(reference.luma, shown.luma),
       psnrCbCr: EncodeLabSimilarity.psnr([reference.blue, reference.red], [shown.blue, shown.red]),
       ssimY: try EncodeLabSimilarity.ssim(reference.luma, shown.luma, width: config.width, height: config.height),
       native: native, refresh: event.refresh != nil)
+  }
+
+  private func decoderSlot(_ tile: Int) -> Int {
+    config.engine == .videoToolbox ? tile : 0
   }
 
   private mutating func decoder(_ tile: Int, _ sample: CMSampleBuffer) throws -> EncodeLabDecoder {

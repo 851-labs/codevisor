@@ -31,6 +31,7 @@ enum EncodeLabConfigParser {
   ) throws -> Bool {
     switch key {
     case "name": config.name = value
+    case "engine": config.engine = try engine(value, spec: spec)
     case "codec": config.codec = try codec(value, spec: spec)
     case "size": (config.width, config.height) = try size(value, spec: spec)
     case "tiles": config.tiles = try integer(value, in: 1...16, spec: spec)
@@ -56,6 +57,8 @@ enum EncodeLabConfigParser {
     case "preset": config.preset = value
     case "cq": config.constantQuality = try number(value, spec: spec)
     case "aq": config.spatialAdaptiveQP = try bool(value, spec: spec)
+    case "vcpin": config.vcpInput = try fourCharacterCode(value, spec: spec)
+    case "ackms": config.ackMilliseconds = try integer(value, in: 0...500, spec: spec)
     default: return false
     }
     return true
@@ -64,6 +67,9 @@ enum EncodeLabConfigParser {
   private static func validate(_ config: EncodeLabConfig, spec: String) throws {
     guard config.height.isMultiple(of: config.tiles * 2) else {
       throw invalid(spec, "height \(config.height) doesn't split into \(config.tiles) even tiles")
+    }
+    guard config.engine == .videoToolbox || (config.codec == .hevc444 && config.tiles <= 4) else {
+      throw invalid(spec, "engine=vcp encodes hevc444 in 1 to 4 tiles")
     }
     guard config.megabitsPerSecond != nil || config.constantQuality != nil || config.preset != nil else {
       throw invalid(spec, "mbps=none needs cq or a preset")
@@ -74,6 +80,18 @@ enum EncodeLabConfigParser {
     guard let codec = EncodeLabCodec(rawValue: value) else { throw invalid(spec, "codec \(value)") }
 
     return codec
+  }
+
+  private static func fourCharacterCode(_ value: String, spec: String) throws -> String {
+    guard value.utf8.count == 4 else { throw invalid(spec, "vcpin \(value) is not a four-character code") }
+
+    return value
+  }
+
+  private static func engine(_ value: String, spec: String) throws -> EncodeLabEngine {
+    guard let engine = EncodeLabEngine(rawValue: value) else { throw invalid(spec, "engine \(value)") }
+
+    return engine
   }
 
   private static func rateControl(_ value: String, spec: String) throws -> EncodeLabRateControl {

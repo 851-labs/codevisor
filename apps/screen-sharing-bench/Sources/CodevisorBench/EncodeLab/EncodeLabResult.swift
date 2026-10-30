@@ -8,6 +8,7 @@ struct EncodeLabResult: Codable, Sendable {
   var tilesPerFrame = 0.0
   var chroma: String?
   var encodeMs: BenchDistribution?
+  var firstTileMs: BenchDistribution?
   var prepareMs: BenchDistribution?
   var submitBlockMs: BenchDistribution?
   var lateSubmits = 0

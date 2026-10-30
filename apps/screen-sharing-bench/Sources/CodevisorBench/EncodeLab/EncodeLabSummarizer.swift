@@ -10,9 +10,10 @@ struct EncodeLabSummarizer {
     let measured = trace.events.filter { $0.tick >= trace.warmUpTicks }
     let outputs = measured.map { trace.outputs(ofFrame: $0.frame) }
     result.frames = measured.count
-    result.tilesPerFrame = mean(measured.map { Double($0.encodedTiles.count) })
-    result.encodeMs = BenchDistribution(zip(measured, outputs).compactMap { encodeMs($0, $1) })
-    result.chroma = EncodeLabChromaFormat.of(trace.outputs.first?.first?.sample)
+    result.tilesPerFrame = mean(outputs.map { Double($0.filter { !$0.dropped }.count) })
+    result.encodeMs = BenchDistribution(zip(measured, outputs).compactMap { encodeMs($0, $1, latest: true) })
+    result.firstTileMs = BenchDistribution(zip(measured, outputs).compactMap { encodeMs($0, $1, latest: false) })
+    result.chroma = EncodeLabChromaFormat.of(trace.outputs.first { !$0.dropped }?.sample)
     result.prepareMs = BenchDistribution(measured.map { Double($0.preparedNs) / 1e6 })
     result.submitBlockMs = BenchDistribution(measured.map { Double($0.returnedNs - $0.submittedNs) / 1e6 })
     result.lateSubmits = measured.filter { $0.submittedNs - $0.scheduledNs > Self.lateSubmitNs }.count
@@ -31,10 +32,11 @@ struct EncodeLabSummarizer {
     return EncodeLabFrameCost(outputs: trace.outputs(ofFrame: event.frame), event: event, only: trace.refreshTile)
   }
 
-  private func encodeMs(_ event: EncodeLabFrameEvent, _ outputs: [EncodeLabTileOutput]) -> Double? {
-    guard let latest = outputs.filter({ !$0.dropped }).map(\.outputNs).max() else { return nil }
+  private func encodeMs(_ event: EncodeLabFrameEvent, _ outputs: [EncodeLabTileOutput], latest: Bool) -> Double? {
+    let times = outputs.filter { !$0.dropped }.map(\.outputNs)
+    guard let chosen = latest ? times.max() : times.min() else { return nil }
 
-    return Double(latest - event.submittedNs) / 1e6
+    return Double(chosen - event.submittedNs) / 1e6
   }
 
   private func megabitsPerSecond(_ outputs: some Sequence<EncodeLabTileOutput>) -> Double {
