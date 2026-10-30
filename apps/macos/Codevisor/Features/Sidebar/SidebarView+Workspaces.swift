@@ -16,16 +16,9 @@ extension SidebarView {
         workspaceRenameTitle = workspace.name
         renamingWorkspace = workspace
       },
-      fork: { chat in Task { await forkChat(chat) } },
-      canFork: { store?.canFork($0) ?? false },
       archive: { archiveWorkspace($0) },
       toggleChildren: { toggleChildren(of: $0) }
     )
-  }
-
-  func forkChat(_ chat: ChatSession) async {
-    guard let forked = await store?.fork(chat) else { return }
-    await openChat?(forked)
   }
 
   func row(

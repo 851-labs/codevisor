@@ -7,7 +7,6 @@ struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openSettings) private var openSettings
-  @Environment(\.openChat) var openChat
   @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil

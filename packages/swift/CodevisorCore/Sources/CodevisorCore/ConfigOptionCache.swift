@@ -289,12 +289,6 @@ public final class ConfigOptionCache {
     harnessSkillsCache[HarnessSkillsKey(serverId: serverId, cwd: cwd, harnessId: harnessId)]
   }
 
-  public func harnessCanFork(_ harnessId: String, onServer serverId: String) -> Bool {
-    harnessSkillsCache.contains { key, skills in
-      key.serverId == serverId && key.harnessId == harnessId && skills.acceptsFork
-    }
-  }
-
   func storeSkills(from capabilities: [ServerHarnessCapability], forServer serverId: String, cwd: String) {
     for capability in capabilities {
       guard let skills = capability.skills else { continue }
