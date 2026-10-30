@@ -43,6 +43,11 @@ on:
         required: false
         default: false
         type: boolean
+      vt-probe:
+        description: "851-3766 scratch: run only the VideoToolbox private-key probe on tamale (seconds per run)"
+        required: false
+        default: "0"
+        type: string
   workflow_call:
     inputs:
       scenes:
@@ -97,7 +102,29 @@ env:
   TIER2_CAPTURE: ${{ inputs.capture && '1' || '0' }}
 
 jobs:
+  vt-probe:
+    if: ${{ inputs.vt-probe != '' && inputs.vt-probe != '0' }}
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - name: Run the VideoToolbox probe on tamale
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe"
+          { uptime; sysctl -n machdep.cpu.brand_string; sw_vers; pmset -g therm; } >"$RUNNER_TEMP/probe/environment.txt" 2>&1
+          swiftc -O apps/screen-sharing-bench/scratch-851-3766/vtprobe.swift -o "$RUNNER_TEMP/vtprobe"
+          caffeinate -d -i -s "$RUNNER_TEMP/vtprobe" "${{ inputs.vt-probe }}" >"$RUNNER_TEMP/probe/vtprobe.jsonl" 2>"$RUNNER_TEMP/probe/vtprobe.err"
+          uptime >>"$RUNNER_TEMP/probe/environment.txt"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: vt-probe-tamale
+          path: ${{ runner.temp }}/probe
+
   host:
+    if: ${{ inputs.vt-probe == '' || inputs.vt-probe == '0' }}
     runs-on: [self-hosted, macOS, ARM64, tamale]
     timeout-minutes: 75
     steps:
@@ -120,6 +147,7 @@ jobs:
           path: ${{ runner.temp }}/results
 
   viewer:
+    if: ${{ inputs.vt-probe == '' || inputs.vt-probe == '0' }}
     runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 75
     steps:
@@ -146,7 +174,7 @@ jobs:
 
   report:
     needs: [host, viewer]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (inputs.vt-probe == '' || inputs.vt-probe == '0') }}
     runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 30
     steps:
