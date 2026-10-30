@@ -28,8 +28,9 @@ export const AGENT_START_CLEANUP_MS = 30_000
 export const startAgent = async (route: RouteContext): Promise<boolean> => {
   const request = await readSchema(route.request, StartAgentRequest)
   const caller = await callerOf(route, request)
-  const projectId = await agentProjectId(route, request, caller.projectId)
   const harnessId = harnessFor(request, caller)
+  const created: Array<() => Promise<unknown>> = []
+  const projectId = await agentProjectId(route, request, caller.projectId, created)
   const { sandboxProfile } = request
   if (sandboxProfile !== undefined) {
     return startAgentOnSandbox(
@@ -44,7 +45,6 @@ export const startAgent = async (route: RouteContext): Promise<boolean> => {
     )
   }
 
-  const created: Array<() => Promise<unknown>> = []
   try {
     const started = await startPlanned(route, request, { projectId, harnessId, caller }, created)
     writeJson(route.response, 201, started)
@@ -148,8 +148,8 @@ const placementFor = async (
   plan: AgentPlan,
   created: Array<() => Promise<unknown>>
 ): Promise<Placement> => {
+  if (startsInProjectFolder(request)) return { workspaceId: randomUUID() }
   if (request.isolation === "shared") return sharedPlacement(plan)
-  if (request.isolation === "project") return { workspaceId: randomUUID() }
   const { services, config, fanout } = route
   const allocated = await allocateProjectWorktree(
     { services, config, fanout, serverId: config.id },
@@ -159,6 +159,9 @@ const placementFor = async (
   created.push(allocated.rollBack)
   return { workspaceId: randomUUID(), worktreeName: allocated.worktree.name }
 }
+
+const startsInProjectFolder = (request: StartAgentRequest): boolean =>
+  request.noProject === true || request.isolation === "project"
 
 const sharedPlacement = ({ caller, projectId }: AgentPlan): Placement => {
   if (caller.workspaceId === undefined || caller.projectId !== projectId) {

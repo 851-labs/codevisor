@@ -1,7 +1,10 @@
-import { mkdirSync, readdirSync } from "node:fs"
+import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { CreateScratchProjectRequest as CreateScratchProjectRequestSchema } from "@codevisor/api"
+import {
+  CreateScratchProjectRequest as CreateScratchProjectRequestSchema,
+  type Project
+} from "@codevisor/api"
 import {
   legacyScratchWorkspacesRoot,
   scratchWorkspacePath,
@@ -62,6 +65,17 @@ const writeExistingScratchProject = async (
   return true
 }
 
+export interface ScratchProjectDeps {
+  readonly services: CodevisorServerServices
+  readonly config: CodevisorServerConfig
+  readonly fanout: EventFanout
+}
+
+export interface CreatedScratchProject {
+  readonly project: Project
+  readonly rollBack: () => Promise<void>
+}
+
 export const createScratchProject = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -77,15 +91,25 @@ export const createScratchProject = async (
     (await writeExistingScratchProject(services, serverId, requestedId, response))
   )
     return true
-  const name = allocateScratchWorkspaceFolder(config)
-  const project = await run(
-    services.db.createProject({
-      ...(payload.id === undefined ? {} : { id: payload.id }),
-      folderPath: scratchWorkspacePath(name),
-      name
-    })
-  )
-  await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+  const { project } = await newScratchProject({ services, config, fanout }, requestedId)
   writeJson(response, 201, await probeProject(serverId, project))
   return true
+}
+
+export const newScratchProject = async (
+  { services, config, fanout }: ScratchProjectDeps,
+  id?: string
+): Promise<CreatedScratchProject> => {
+  const name = allocateScratchWorkspaceFolder(config)
+  const folderPath = scratchWorkspacePath(name)
+  const project = await run(
+    services.db.createProject({ ...(id === undefined ? {} : { id }), folderPath, name })
+  )
+  await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+  const rollBack = async () => {
+    await run(services.db.deleteProject(project.id))
+    await appendAndPublish(services.db, fanout, "project.deleted", project.id, { id: project.id })
+    rmdirSync(folderPath)
+  }
+  return { project, rollBack }
 }

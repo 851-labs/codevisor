@@ -116,6 +116,7 @@ export const StartAgentRequest = Schema.Struct({
   harness: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   project: Schema.optional(Schema.String),
+  noProject: Schema.optional(Schema.Boolean),
   labels: Schema.optional(Labels),
   callerAgentId: Schema.optional(Schema.String),
   remoteParentAgentId: Schema.optional(Schema.String),
