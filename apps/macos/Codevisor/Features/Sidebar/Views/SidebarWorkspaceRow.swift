@@ -6,8 +6,7 @@ import SwiftUI
 struct SidebarWorkspaceRow: View {
   enum Lifecycle {
     case active(
-      isPinned: Bool, onTogglePin: () -> Void, onNewTab: () -> Void, onRename: () -> Void,
-      onFork: (() -> Void)?, onArchive: () -> Void
+      isPinned: Bool, onTogglePin: () -> Void, onNewTab: () -> Void, onRename: () -> Void, onArchive: () -> Void
     )
     case archived(onRestore: () -> Void)
   }
@@ -66,11 +65,10 @@ struct SidebarWorkspaceRow: View {
             Button(isExpanded ? "Collapse" : "Expand", action: onToggleChildren)
           }
           switch lifecycle {
-          case let .active(isPinned, onTogglePin, onNewTab, onRename, onFork, onArchive):
+          case let .active(isPinned, onTogglePin, onNewTab, onRename, onArchive):
             Button(isPinned ? "Unpin" : "Pin", action: onTogglePin)
             Button("New Tab", action: onNewTab)
             Button("Rename", action: onRename)
-            if let onFork { Button("Fork", action: onFork) }
             Button("Archive", action: onArchive)
           case let .archived(onRestore):
             Button("Restore", action: onRestore)
@@ -89,7 +87,7 @@ struct SidebarWorkspaceRow: View {
     }
     .contextMenu {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, onRename, onFork, onArchive):
+      case let .active(isPinned, onTogglePin, _, onRename, onArchive):
         Button(action: onTogglePin) {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
@@ -97,12 +95,6 @@ struct SidebarWorkspaceRow: View {
         Button(action: onRename) {
           Label("Rename", systemImage: "pencil")
             .labelStyle(.titleAndIcon)
-        }
-        if let onFork {
-          Button(action: onFork) {
-            Label("Fork", systemImage: "arrow.triangle.branch")
-              .labelStyle(.titleAndIcon)
-          }
         }
         Divider()
         Button(action: onArchive) {
@@ -144,7 +136,7 @@ struct SidebarWorkspaceRow: View {
   private var hoverActions: some View {
     HStack(spacing: Self.trailingSpacing) {
       switch lifecycle {
-      case let .active(isPinned, onTogglePin, _, _, _, onArchive):
+      case let .active(isPinned, onTogglePin, _, _, onArchive):
         hoverButton(
           systemImage: isPinned ? "pin.slash" : "pin",
           help: isPinned ? "Unpin workspace" : "Pin workspace",
