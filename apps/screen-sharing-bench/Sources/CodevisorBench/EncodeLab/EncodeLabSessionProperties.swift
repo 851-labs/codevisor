@@ -1,10 +1,11 @@
 import CoreMedia
 import ScreenSharing
+import ScreenSharingWebRTC
 import VideoToolbox
 
 struct EncodeLabSessionProperties {
   static let framesPerSecond = 60
-  static let keyframeIntervalSeconds = 60
+  static let keyframeIntervalSeconds = ScreenSharingProductProfile.keyframeIntervalSeconds
 
   let config: EncodeLabConfig
   let target: any EncodeLabPropertyTarget
@@ -37,7 +38,7 @@ struct EncodeLabSessionProperties {
   private func applySpeed() throws {
     try set(kVTCompressionPropertyKey_RealTime, kCFBooleanTrue)
     try set(kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
-    guard config.prioritizesSpeed else { return }
+    guard config.prioritizeSpeed else { return }
 
     try set(kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality, kCFBooleanTrue)
   }
@@ -54,8 +55,8 @@ struct EncodeLabSessionProperties {
     try set(kVTCompressionPropertyKey_ExpectedFrameRate, Self.framesPerSecond as CFNumber)
     try set(
       kVTCompressionPropertyKey_MaxKeyFrameInterval, (Self.framesPerSecond * Self.keyframeIntervalSeconds) as CFNumber)
-    if let bits = config.tileBitsPerSecond { try set(kVTCompressionPropertyKey_AverageBitRate, bits as CFNumber) }
-    guard let limit = config.rateLimit, let bytes = config.tileRateLimitBytes else { return }
+    if let bits = config.sessionBitsPerSecond { try set(kVTCompressionPropertyKey_AverageBitRate, bits as CFNumber) }
+    guard let limit = config.rateLimit, let bytes = config.sessionRateLimitBytes else { return }
 
     let limits = [bytes as CFNumber, limit.windowSeconds as CFNumber] as CFArray
     try set(kVTCompressionPropertyKey_DataRateLimits, limits)

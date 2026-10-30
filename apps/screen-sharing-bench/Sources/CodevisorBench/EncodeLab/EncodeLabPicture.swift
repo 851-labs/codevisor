@@ -18,7 +18,7 @@ struct EncodeLabPicture {
   mutating func paste(_ buffer: CVPixelBuffer, atRow top: Int) {
     CVPixelBufferLockBaseAddress(buffer, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-    let rows = min(CVPixelBufferGetHeight(buffer), height - top)
+    let rows = max(0, min(CVPixelBufferGetHeight(buffer), height - top))
     let columns = min(width, CVPixelBufferGetWidth(buffer))
     let chroma = EncodeLabChromaPlane(buffer)
     let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)

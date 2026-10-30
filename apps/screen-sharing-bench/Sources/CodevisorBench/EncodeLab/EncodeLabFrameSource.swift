@@ -22,7 +22,11 @@ final class EncodeLabFrameSource: @unchecked Sendable {
   }
 
   func picture(forVersion version: Int) async throws -> CVPixelBuffer {
-    try scaler.transfer(try await nativePicture(forVersion: version))
+    try scaled(try await nativePicture(forVersion: version))
+  }
+
+  func scaled(_ native: CVPixelBuffer) throws -> CVPixelBuffer {
+    try scaler.transfer(native)
   }
 
   func nativePicture(forVersion version: Int) async throws -> CVPixelBuffer {

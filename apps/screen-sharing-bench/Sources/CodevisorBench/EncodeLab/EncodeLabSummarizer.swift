@@ -13,7 +13,7 @@ struct EncodeLabSummarizer {
     result.tilesPerFrame = mean(outputs.map { Double($0.filter { !$0.dropped }.count) })
     result.encodeMs = BenchDistribution(zip(measured, outputs).compactMap { encodeMs($0, $1, latest: true) })
     result.firstTileMs = BenchDistribution(zip(measured, outputs).compactMap { encodeMs($0, $1, latest: false) })
-    result.chroma = EncodeLabChromaFormat.of(trace.outputs.first { !$0.dropped }?.sample)
+    result.chroma = EncodeLabChromaFormat.of(trace.firstOutput?.sample)
     result.prepareMs = BenchDistribution(measured.map { Double($0.preparedNs) / 1e6 })
     result.submitBlockMs = BenchDistribution(measured.map { Double($0.returnedNs - $0.submittedNs) / 1e6 })
     result.repeatFrames = measured.filter(\.repeats).count

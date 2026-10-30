@@ -9,8 +9,8 @@ struct EncodeLabConfigParserTests {
 
     #expect(config.codec == .hevc444)
     #expect(config.rateControl == .standard)
-    #expect(config.prioritizesSpeed)
-    #expect(config.tileBitsPerSecond == 45_000_000)
+    #expect(config.prioritizeSpeed)
+    #expect(config.sessionBitsPerSecond == 45_000_000)
     #expect((config.width, config.height) == (2560, 1440))
     #expect(!config.inputIsYCbCr)
   }
@@ -19,11 +19,11 @@ struct EncodeLabConfigParserTests {
     let config = try EncodeLabConfigParser.parse(
       spec: "name=t,codec=hevc,rc=ll,mbps=8,drl=12@0.5,size=3840x2160,tiles=4,skip=1,ltr=1")
 
-    #expect(config.tileBitsPerSecond == 2_000_000)
-    #expect(config.tileRateLimitBytes == 187_500)
+    #expect(config.sessionBitsPerSecond == 2_000_000)
+    #expect(config.sessionRateLimitBytes == 187_500)
     #expect(config.tileHeight == 540)
     #expect(config.skipCleanTiles && config.longTermReferences && config.inputIsYCbCr)
-    #expect(!config.prioritizesSpeed)
+    #expect(!config.prioritizeSpeed)
   }
 
   @Test(arguments: [
@@ -44,13 +44,34 @@ struct EncodeLabConfigParserTests {
     #expect(config.encodedTiles(dirty: [2], forced: []) == [0])
     #expect(config.vcpInputFormat == kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
     #expect(config.refreshKind == .longTermReference)
-    #expect(!config.prioritizesSpeed)
+    #expect(!config.prioritizeSpeed)
+  }
+
+  @Test func givesVideoProcessingTheWholeBudgetBecauseItSplitsTilesItself() throws {
+    let config = try EncodeLabConfigParser.parse(spec: "name=v,engine=vcp,size=3840x2160,tiles=4,mbps=58,drl=58@0.05")
+
+    #expect(config.sessionBitsPerSecond == 58_000_000)
+    #expect(config.sessionRateLimitBytes == 362_500)
+  }
+
+  @Test func defaultsOtherCodecsToTheProductFallbackRateControl() throws {
+    let config = try EncodeLabConfigParser.parse(spec: "name=f,codec=hevc")
+
+    #expect(config.rateControl == .lowLatency)
+    #expect(!config.prioritizeSpeed)
+  }
+
+  @Test func leavesAPresetsBitrateAndSpeedAlone() throws {
+    let config = try EncodeLabConfigParser.parse(spec: "name=p,preset=quality")
+
+    #expect(config.sessionBitsPerSecond == nil)
+    #expect(!config.prioritizeSpeed)
   }
 
   @Test func readsSemicolonSeparatedLists() throws {
     let configs = try EncodeLabConfigParser.parse(list: "name=a;name=b,mbps=none,cq=0.6;")
 
     #expect(configs.map(\.name) == ["a", "b"])
-    #expect(configs[1].tileBitsPerSecond == nil)
+    #expect(configs[1].sessionBitsPerSecond == nil)
   }
 }

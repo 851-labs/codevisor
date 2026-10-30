@@ -10,14 +10,26 @@ enum EncodeLabConfigParser {
 
   static func parse(spec: String) throws -> EncodeLabConfig {
     var config = EncodeLabConfig()
+    var given: Set<String> = []
     for pair in spec.split(separator: ",") {
       let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
       guard parts.count == 2 else { throw invalid(spec, "\(pair) is not key=value") }
 
       try apply(key: parts[0], value: parts[1], to: &config, spec: spec)
+      given.insert(parts[0])
     }
+    applyProductDefaults(to: &config, except: given)
     try validate(config, spec: spec)
     return config
+  }
+
+  private static func applyProductDefaults(to config: inout EncodeLabConfig, except given: Set<String>) {
+    let tunedElsewhere = config.preset != nil || config.constantQuality != nil
+    if !given.contains("rc") { config.rateControl = config.codec == .hevc444 ? .standard : .lowLatency }
+    if !given.contains("mbps") && tunedElsewhere { config.megabitsPerSecond = nil }
+    guard !given.contains("speed") else { return }
+
+    config.prioritizeSpeed = config.preset == nil && config.engine == .videoToolbox && config.rateControl == .standard
   }
 
   private static func apply(key: String, value: String, to config: inout EncodeLabConfig, spec: String) throws {
@@ -55,7 +67,7 @@ enum EncodeLabConfigParser {
     case "qpmin": config.minQP = try integer(value, in: 1...51, spec: spec)
     case "drl": config.rateLimit = try rateLimit(value, spec: spec)
     case "preset": config.preset = value
-    case "cq": config.constantQuality = try number(value, spec: spec)
+    case "cq": config.constantQuality = try fraction(value, spec: spec)
     case "aq": config.spatialAdaptiveQP = try bool(value, spec: spec)
     case "refine": config.refinements = try integer(value, in: 0...30, spec: spec)
     case "vcpin": config.vcpInput = try fourCharacterCode(value, spec: spec)
@@ -126,6 +138,12 @@ enum EncodeLabConfigParser {
 
   private static func number(_ value: String, spec: String) throws -> Double {
     guard let parsed = Double(value), parsed > 0 else { throw invalid(spec, "\(value) is not a positive number") }
+
+    return parsed
+  }
+
+  private static func fraction(_ value: String, spec: String) throws -> Double {
+    guard let parsed = Double(value), (0...1).contains(parsed) else { throw invalid(spec, "\(value) is not in 0...1") }
 
     return parsed
   }

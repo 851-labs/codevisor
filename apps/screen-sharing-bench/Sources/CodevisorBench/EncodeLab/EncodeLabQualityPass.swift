@@ -30,7 +30,7 @@ struct EncodeLabQualityPass {
       guard sampled(event) else { continue }
 
       let native = try await source.nativePicture(forVersion: event.version)
-      let original = try reference.transfer(try await source.picture(forVersion: event.version))
+      let original = try reference.transfer(try source.scaled(native))
       let nativeQuality = try screen.singleImage.flatMap { try comparer?.compare(native: native, shown: $0) }
       samples.append(try screen.compare(with: original, event: event, native: nativeQuality))
     }
@@ -39,7 +39,8 @@ struct EncodeLabQualityPass {
 
   private var nativeComparer: EncodeLabNativeComparer? {
     get throws {
-      guard setup.canvas.pixelWidth != trace.config.width else { return nil }
+      let canvas = setup.canvas
+      guard canvas.pixelWidth != trace.config.width || canvas.pixelHeight != trace.config.height else { return nil }
 
       return try EncodeLabNativeComparer(canvas: setup.canvas, format: trace.config.referenceFormat)
     }
