@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          {
+            "name": "kill-guard",
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)\"/scripts/agent-hooks/kill-guard.mjs",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
     "AfterTool": [
       {
         "matcher": "write_file|replace",
@@ -13,5 +26,8 @@
         ]
       }
     ]
+  },
+  "context": {
+    "fileName": ["AGENTS.md", "GEMINI.md"]
   }
 }

@@ -11,7 +11,7 @@ From the worktree root, start the simulator owner as a persistent background tas
 bun run ios-simulator
 ```
 
-Wait for `Simulator ready`, then start `bun run dev:ios` (iOS only) or `bun run dev` (iOS and macOS) in another background task. The simulator script creates a dedicated device, boots it, opens this worktree's project in Xcode, and opens Simulator or DeviceHub. The dev runner builds, installs, and launches the app on that exact device. Follow [run-dev](../run-dev/SKILL.md) for runner lifecycle.
+Wait for `Simulator ready`, then start `bun run dev:ios` (iOS only) or `bun run dev` (iOS and macOS) in another background task. The simulator script creates a dedicated device, boots it, opens this worktree's project in Xcode, and opens Simulator or DeviceHub. The dev runner builds, installs, and launches the app on that exact device. Follow [run-dev](../run-dev/SKILL.md) for runner lifecycle. Never quit Simulator, Xcode, or `simctl` processes by name or pattern; other worktrees use them too.
 
 Use `bun run ios-simulator --device="iPhone 17" --runtime=27.0` to select an installed device type and runtime. Omit `--runtime` for the newest compatible installed iOS runtime. Select the printed worktree device in DeviceHub if another device is currently selected. Do not use a shared default iPhone or manually create another device.
 

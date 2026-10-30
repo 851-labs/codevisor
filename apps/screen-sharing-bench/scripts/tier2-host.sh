@@ -65,7 +65,12 @@ measure() {
 }
 
 stop_stale_servers() {
-  pkill -f "CodevisorBench (rendezvous|calibrate --check c2) --serve" || true
+  local pid
+  for pid in $(pgrep -U "$(id -u)" -f "CodevisorBench (rendezvous|calibrate --check c2) --serve"); do
+    if [[ "$(ps -p "$pid" -o comm=)" == */CodevisorBench.app/Contents/MacOS/CodevisorBench ]]; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
 }
 
 await_servers() {

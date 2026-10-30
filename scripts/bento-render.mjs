@@ -64,11 +64,38 @@ if (appCards === undefined || appCards.length > 0) {
       }
     })
   } finally {
-    if (showsTerminal) await execute("pkill", ["-f", terminalHome]).catch(() => {})
+    if (showsTerminal) await stopTerminalProcesses()
     if (simulator !== undefined) await rm(simulator.scratch, { recursive: true, force: true })
     await rm(scratchTemp, { recursive: true, force: true })
   }
 }
+
+async function stopTerminalProcesses() {
+  for (const processID of await processesInsideTerminalHome()) {
+    try {
+      process.kill(processID, "SIGTERM")
+    } catch (error) {
+      if (error?.code !== "ESRCH") throw error
+    }
+  }
+}
+
+async function processesInsideTerminalHome() {
+  const { stdout } = await execute("lsof", cwdListing(process.getuid())).catch((error) => ({
+    stdout: error.stdout ?? ""
+  }))
+  const processIDs = []
+  let processID
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith("p")) processID = Number(line.slice(1))
+    else if (line.startsWith("n") && isInsideTerminalHome(line.slice(1))) processIDs.push(processID)
+  }
+  return processIDs
+}
+
+const cwdListing = (user) => ["-a", "-u", String(user), "-d", "cwd", "-F", "pn"]
+
+const isInsideTerminalHome = (path) => path === terminalHome || path.startsWith(`${terminalHome}/`)
 
 async function prepareTerminalHome() {
   if (!(await isPortAvailable(terminalPort)))

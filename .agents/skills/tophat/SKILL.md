@@ -140,7 +140,9 @@ Keep the report short and reproducible:
 - Whether a development instance was left running for the user to inspect.
 
 Clean up temporary test data and resources you created when appropriate.
-Stop only processes you own when they are no longer needed. A tophat result
+Stop only processes you own when they are no longer needed, by the PID or
+task you started; never by pattern with `pkill`, `killall`, or
+`kill $(pgrep …)` (see the repo's AGENTS.md). A tophat result
 reports verification; it does not itself publish a review, merge, or release.
 
 ## Inspiration
