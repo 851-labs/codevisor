@@ -75,14 +75,8 @@ struct CommandPaletteCatalog {
         id: "togglePin", title: pinTitle, icon: .symbol(workspace.isPinned ? "pin.slash" : "pin"),
         perform: workspace.togglePin),
       CommandPaletteItem("Rename Workspace…", systemImage: "pencil", perform: workspace.rename),
-    ] + forkCommands(workspace) + [
-      CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: workspace.archive)
+      CommandPaletteItem(.archiveWorkspace, systemImage: "archivebox", perform: workspace.archive),
     ]
-  }
-
-  private func forkCommands(_ workspace: ActiveWorkspaceActions) -> [CommandPaletteItem] {
-    guard let fork = workspace.fork else { return [] }
-    return [CommandPaletteItem("Fork Workspace", systemImage: "arrow.triangle.branch", perform: fork)]
   }
 
   private var layoutCommands: [CommandPaletteItem] {
