@@ -190,7 +190,8 @@ minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaul
 and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
 video is among the scenes. A plan longer than 45 minutes of runs fails at once. `network` picks N0 (no shaping) or N3: the viewer job
 loads dummynet rules into the `com.apple/codevisor-bench` pf anchor (croissant's sudoers allows `dnctl` and `pfctl`),
-1 ms of delay and 1% random loss each way at 1 Gbit/s for all of tamale's addresses (its IPv4 address and every
+1 ms of delay and 1% random loss each way for all of tamale's addresses (no rate limit: the wired link is already
+1 Gbit/s, and a dummynet rate limit runs on croissant's 10 ms kernel tick, which added 6–7 ms each way) (its IPv4 address and every
 address its Bonjour name resolves to, so Apple HP and WebRTC are shaped whichever path they pick), except the clock
 probes (UDP 47592), which keep C2 a clean clock reference. Before each run it probes tamale's second responder (UDP
 47596, shaped) for 5 s and records the round trip and loss that took effect (`network-check.json`, the runs table's
