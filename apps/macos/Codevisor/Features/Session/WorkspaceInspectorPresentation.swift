@@ -167,24 +167,11 @@ struct WorkspaceInspectorPresentation: ViewModifier {
   }
 
   private func mainChatTasks(of workspace: Workspace, store: SessionStore) -> [WorkspaceInspectorTask] {
-    guard let chat = mainChat(of: workspace),
-      let controller = store.controllers[SessionStore.SessionKey(serverId: chat.serverId, sessionId: chat.id)]
-    else { return [] }
+    guard let chat = mainChat(of: workspace) else { return [] }
 
-    return controller.backgroundTasks.map { task in
-      WorkspaceInspectorTask(task, open: revealAction(for: task, inChat: chat.id, of: workspace, store: store))
-    }
-  }
-
-  private func revealAction(
-    for task: BackgroundTaskInfo, inChat sessionId: UUID, of workspace: Workspace, store: SessionStore
-  ) -> (() -> Void)? {
-    guard let toolCallId = task.toolUseId else { return nil }
-
-    return {
-      store.inspectorOpenRequest = WorkspaceInspectorOpenRequest(
-        workspaceId: workspace.id, destination: .toolCall(sessionId: sessionId, toolCallId: toolCallId))
-    }
+    return WorkspaceInspectorMainChatTasks(
+      workspace: workspace, chat: chat, store: store, client: environment.machines.client(for: chat.serverId)
+    ).tasks
   }
 
   private func parent(of workspace: Workspace, store: SessionStore) -> WorkspaceInspectorAgent? {

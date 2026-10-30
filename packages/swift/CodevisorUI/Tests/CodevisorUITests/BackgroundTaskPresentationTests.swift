@@ -14,4 +14,10 @@ struct BackgroundTaskPresentationTests {
   func elapsed(seconds: TimeInterval, text: String) {
     #expect(BackgroundTaskPresentation.elapsed(from: start, to: start.addingTimeInterval(seconds)) == text)
   }
+
+  @Test("Status titles capitalize the harness status")
+  func statusTitle() {
+    #expect(BackgroundTaskPresentation.statusTitle("running") == "Running")
+    #expect(BackgroundTaskPresentation.statusTitle("") == "")
+  }
 }

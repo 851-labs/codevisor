@@ -2,6 +2,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { usageLimitsObserved } from "@codevisor/agent-runtime"
 
 import { handleAssistantMessage, messageProse } from "./assistant-messages.js"
+import { recordBackgroundTaskOutput } from "./background-task-output.js"
 import { acceptForkedCommandMessage, startForkedCommand } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
@@ -84,6 +85,7 @@ const handleToolResult = (
 ): void => {
   const toolUseId = block.tool_use_id
   session.openToolCalls.delete(toolUseId)
+  recordBackgroundTaskOutput(session, block.content)
   const accumulator = session.accumulators.get(toolUseId)
   const taskToolUse = session.taskToolUses.get(toolUseId)
   session.taskToolUses.delete(toolUseId)

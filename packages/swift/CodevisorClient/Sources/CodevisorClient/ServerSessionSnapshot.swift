@@ -93,6 +93,9 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
   public var taskType: String
   public var toolUseId: String?
   public var startedAt: String?
+  public var command: String?
+  public var hasOutput: Bool?
+  public var canStop: Bool?
 
   public var startDate: Date? { startedAt.flatMap { try? ServerDateCoding.date(from: $0) } }
 
@@ -102,7 +105,10 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
     status: String,
     taskType: String,
     toolUseId: String? = nil,
-    startedAt: String? = nil
+    startedAt: String? = nil,
+    command: String? = nil,
+    hasOutput: Bool? = nil,
+    canStop: Bool? = nil
   ) {
     self.id = id
     self.description = description
@@ -110,6 +116,9 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
     self.taskType = taskType
     self.toolUseId = toolUseId
     self.startedAt = startedAt
+    self.command = command
+    self.hasOutput = hasOutput
+    self.canStop = canStop
   }
 }
 

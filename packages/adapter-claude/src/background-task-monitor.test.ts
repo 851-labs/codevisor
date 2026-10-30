@@ -54,6 +54,7 @@ describe("a background task started by the Monitor tool", () => {
 
     expect(latest()).toEqual([
       {
+        canStop: true,
         description: "Watch build output",
         id: "bg-1",
         startedAt,

@@ -14,6 +14,10 @@ public enum BackgroundTaskPresentation {
     }
   }
 
+  public static func statusTitle(_ status: String) -> String {
+    status.prefix(1).uppercased() + status.dropFirst()
+  }
+
   public static func elapsed(from start: Date, to now: Date) -> String {
     let seconds = max(0, Int(now.timeIntervalSince(start)))
     if seconds < secondsPerMinute { return "\(seconds)s" }

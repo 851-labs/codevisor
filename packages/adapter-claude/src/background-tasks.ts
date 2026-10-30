@@ -1,6 +1,7 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { finishForkedCommand, forkedCommandRowId } from "./forked-commands.js"
+import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
 import { toolKind } from "./tool-presentation.js"
 
@@ -37,7 +38,7 @@ interface SubagentStartUpdate {
 export const emitBackgroundTasks = (session: ClaudeSession): Promise<void> =>
   session.emit({
     kind: "session.updated",
-    payload: { backgroundTasks: [...session.backgroundTasks.values()] },
+    payload: { backgroundTasks: [...session.backgroundTasks.values()].map(wireTask(session)) },
     subjectId: session.key
   })
 
@@ -100,7 +101,9 @@ export const replaceBackgroundTasks = (
       status: existing?.status ?? "running",
       taskType: existing?.taskType ?? task.task_type,
       ...(existing?.toolUseId === undefined ? {} : { toolUseId: existing.toolUseId }),
-      ...(existing?.startedAt === undefined ? {} : { startedAt: existing.startedAt })
+      ...(existing?.startedAt === undefined ? {} : { startedAt: existing.startedAt }),
+      ...(existing?.command === undefined ? {} : { command: existing.command }),
+      canStop: true
     })
   }
   session.backgroundTasks.clear()
@@ -115,15 +118,42 @@ const hideBackgroundTask = (session: ClaudeSession, message: TaskStartedMessage)
 
 const trackStartedTask = (session: ClaudeSession, message: TaskStartedMessage): void => {
   const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
+  const command = startingCommand(session, message.tool_use_id)
   session.backgroundTasks.set(message.task_id, {
     description: message.description,
     id: message.task_id,
     status: "running",
     taskType: startedTaskType(session, message),
     ...(toolUseId === undefined ? {} : { toolUseId }),
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
+    ...(command === undefined ? {} : { command }),
+    canStop: true
   })
 }
+
+const startingCommand = (
+  session: ClaudeSession,
+  toolUseId: string | undefined
+): string | undefined => {
+  if (toolUseId === undefined) return undefined
+  const input = parsedToolInput(session.accumulators.get(toolUseId)?.json)
+  return typeof input?.command === "string" ? input.command : undefined
+}
+
+const parsedToolInput = (json: string | undefined): Record<string, unknown> | undefined => {
+  if (json === undefined) return undefined
+  try {
+    const parsed: unknown = JSON.parse(json)
+    return isRecord(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const wireTask =
+  (session: ClaudeSession) =>
+  (task: BackgroundTaskEntry): BackgroundTaskEntry & { readonly hasOutput?: true } =>
+    session.backgroundTaskOutputFiles.has(task.id) ? { ...task, hasOutput: true } : task
 
 const startedTaskType = (session: ClaudeSession, message: TaskStartedMessage): string => {
   if (message.subagent_type !== undefined) return "subagent"
@@ -199,5 +229,6 @@ const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean =
   const entry = session.backgroundTasks.get(taskId)
   if (entry === undefined) return false
   session.backgroundTasks.delete(taskId)
+  session.backgroundTaskOutputFiles.delete(taskId)
   return true
 }

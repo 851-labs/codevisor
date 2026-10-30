@@ -90,6 +90,8 @@ export const fakeAgentRuntime = (
   answerQuestion: unstubbedEffect("answerQuestion"),
   replyToQuestion: unstubbedEffect("replyToQuestion"),
   readSessionContext: unstubbedEffect("readSessionContext"),
+  stopTask: unstubbedEffect("stopTask"),
+  readTaskOutput: unstubbedEffect("readTaskOutput"),
   probeHarnessAuth: unstubbedEffect("probeHarnessAuth"),
   authenticateHarness: unstubbedEffect("authenticateHarness"),
   logoutHarness: unstubbedEffect("logoutHarness"),

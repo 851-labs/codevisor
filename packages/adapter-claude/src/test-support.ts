@@ -77,6 +77,7 @@ export class FakeQuery {
     | undefined
   private ended = false
   readonly interrupts: Array<number> = []
+  readonly stoppedTasks: Array<string> = []
   readonly controlRequests: Array<Record<string, unknown>> = []
   readonly permissionModes: Array<string> = []
   readonly models: Array<string | undefined> = []
@@ -113,6 +114,10 @@ export class FakeQuery {
     } else {
       waiting.reject(cause)
     }
+  }
+
+  async stopTask(taskId: string): Promise<void> {
+    this.stoppedTasks.push(taskId)
   }
 
   async interrupt(): Promise<undefined> {

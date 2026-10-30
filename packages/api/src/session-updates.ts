@@ -92,9 +92,17 @@ export const BackgroundTask = Schema.Struct({
   status: Schema.String,
   taskType: Schema.String,
   toolUseId: Schema.optional(Schema.String),
-  startedAt: Schema.optional(Schema.String)
+  startedAt: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+  hasOutput: Schema.optional(Schema.Boolean),
+  canStop: Schema.optional(Schema.Boolean)
 })
 export type BackgroundTask = typeof BackgroundTask.Type
+
+export const BackgroundTaskOutput = Schema.Struct({
+  lines: Schema.Array(Schema.String)
+})
+export type BackgroundTaskOutput = typeof BackgroundTaskOutput.Type
 
 export const BackgroundTasksPayload = Schema.Struct({
   backgroundTasks: Schema.Array(BackgroundTask)

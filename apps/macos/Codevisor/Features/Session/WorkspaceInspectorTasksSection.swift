@@ -3,18 +3,28 @@ import CodevisorUI
 import SwiftUI
 
 struct WorkspaceInspectorTask: Identifiable {
+  struct Actions {
+    var showInChat: (() -> Void)?
+    var readOutput: (() async throws -> [String])?
+    var stop: (() async throws -> Void)?
+  }
+
   let id: String
   let description: String
   let symbol: String
+  let command: String?
+  let status: String
   let startDate: Date?
-  let open: (() -> Void)?
+  let actions: Actions
 
-  init(_ task: BackgroundTaskInfo, open: (() -> Void)?) {
+  init(_ task: BackgroundTaskInfo, actions: Actions) {
     id = task.id
     description = task.description
     symbol = BackgroundTaskPresentation.symbol(forTaskType: task.taskType)
+    command = task.command
+    status = task.status
     startDate = task.startDate
-    self.open = open
+    self.actions = actions
   }
 }
 
@@ -33,18 +43,20 @@ struct WorkspaceInspectorTasksSection: View {
 
 private struct WorkspaceInspectorTaskRow: View {
   let task: WorkspaceInspectorTask
+  @State private var showsDetails = false
 
   var body: some View {
-    if let open = task.open {
-      Button(action: open) {
-        WorkspaceInspectorTaskLabel(task: task)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .help("Show in Chat")
-    } else {
+    Button {
+      showsDetails = true
+    } label: {
       WorkspaceInspectorTaskLabel(task: task)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Show Task Details")
+    .popover(isPresented: $showsDetails, arrowEdge: .leading) {
+      WorkspaceInspectorTaskPopover(task: task) { showsDetails = false }
     }
   }
 }
@@ -61,6 +73,7 @@ private struct WorkspaceInspectorTaskLabel: View {
         Spacer(minLength: 8)
         if let startDate = task.startDate {
           WorkspaceInspectorTaskElapsed(startDate: startDate)
+            .foregroundStyle(.secondary)
         }
       }
     } icon: {
@@ -71,14 +84,13 @@ private struct WorkspaceInspectorTaskLabel: View {
   }
 }
 
-private struct WorkspaceInspectorTaskElapsed: View {
+struct WorkspaceInspectorTaskElapsed: View {
   let startDate: Date
 
   var body: some View {
     TimelineView(.periodic(from: startDate, by: 1)) { context in
       Text(BackgroundTaskPresentation.elapsed(from: startDate, to: context.date))
         .monospacedDigit()
-        .foregroundStyle(.secondary)
     }
   }
 }
