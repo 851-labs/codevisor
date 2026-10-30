@@ -13,6 +13,8 @@ struct RootSidebar: View {
   @State private var visibleColumnWidth: CGFloat = 0
   @State private var modePickerWidth: CGFloat?
   @State private var visitedModes: Set<SidebarMode> = []
+  @State private var parkedMode: SidebarMode?
+  @State private var parkedSelection: SidebarSelection?
 
   private var activeMode: SidebarMode { SidebarMode.active(storedMode, botsEnabled: botsEnabled) }
 
@@ -75,22 +77,30 @@ struct RootSidebar: View {
         }
       }
     }
-    .onChange(of: activeMode, initial: true) { _, mode in visitedModes.insert(mode) }
+    .onChange(of: activeMode, initial: true) { _, mode in
+      visitedModes.insert(mode)
+      parkedSelection = selection
+      parkedMode = SidebarMode.allCases.first { $0 != mode }
+    }
   }
 
   private func isMounted(_ mode: SidebarMode) -> Bool {
     mode == activeMode || (botsEnabled && visitedModes.contains(mode))
   }
 
+  private func listSelection(for mode: SidebarMode) -> Binding<SidebarSelection?> {
+    mode != activeMode && mode == parkedMode ? $parkedSelection : $selection
+  }
+
   @ViewBuilder
   private func modeList(_ mode: SidebarMode) -> some View {
     switch mode {
     case .chat:
-      BotListSidebar(selection: $selection, store: store, publishesSceneActions: publishesSceneActions)
+      BotListSidebar(selection: listSelection(for: mode), store: store, publishesSceneActions: publishesSceneActions)
         .modifier(SidebarModeLayer(isActive: mode == activeMode))
     case .code:
       SidebarView(
-        selection: $selection, store: store, publishesSceneActions: publishesSceneActions,
+        selection: listSelection(for: mode), store: store, publishesSceneActions: publishesSceneActions,
         revealRequest: revealRequest)
     }
   }
