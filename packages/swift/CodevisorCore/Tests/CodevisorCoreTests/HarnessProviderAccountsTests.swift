@@ -250,6 +250,31 @@ struct HarnessProviderAccountsTests {
     #expect(draft.actionTitle == "Sign In")
   }
 
+  @Test("A harness code step keeps its place on a wrong code, finishes on the right one, and cancels back")
+  func harnessCodeStep() async {
+    let backend = FakeProviderBackend()
+    let step = HarnessProviderSignIn(
+      id: "c", state: .waiting, url: "https://claude.example/authorize", harnessName: "Claude Code")
+    backend.started = [step, step]
+    backend.answered = [.init(id: "c", state: .failed("Invalid code")), .init(id: "c", state: .complete)]
+    let draft = HarnessProviderSignInDraft(
+      providers: [xai], providerId: nil, backend: backend, sleep: { _ in Issue.record("polled") })
+    await draft.submit()
+    #expect(draft.signIn?.isHarnessCodeStep == true)
+    await draft.follow()
+    #expect(await draft.submitCode("bad") == "Invalid code")
+    #expect(draft.signIn?.id == "c")
+    #expect(await draft.submitCode("good") == nil)
+    #expect(draft.isComplete)
+
+    let cancelling = HarnessProviderSignInDraft(providers: [xai], providerId: nil, backend: backend)
+    await cancelling.submit()
+    await cancelling.cancelSignIn()
+    #expect(backend.calls.last == "cancel c")
+    #expect(cancelling.signIn == nil)
+    #expect(!cancelling.isComplete)
+  }
+
   @Test("Closing the sheet abandons a sign-in still running, and stops following it")
   func dismissed() async {
     let backend = FakeProviderBackend()

@@ -116,7 +116,10 @@ export interface HarnessAuthManager {
   readonly answerPiLogin?: (flowId: string, value: string) => Promise<PiAuthProviderFlow>
   readonly cancelPiLogin?: (flowId: string) => void
   readonly logoutPiProvider?: (providerId: string) => Promise<void>
-  readonly openCodeProviders?: (accountId: string) => Promise<ReadonlyArray<OpenCodeAuthProvider>>
+  readonly openCodeProviders?: (
+    accountId: string,
+    shared?: boolean
+  ) => Promise<ReadonlyArray<OpenCodeAuthProvider>>
   readonly beginOpenCodeLogin?: (
     accountId: string,
     providerId: string,

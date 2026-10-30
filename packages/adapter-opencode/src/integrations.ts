@@ -60,14 +60,24 @@ export const OpenCodeIntegration = Schema.Struct({
 export type OpenCodeIntegration = typeof OpenCodeIntegration.Type
 
 export const OPENCODE_KEY_METHOD = "key"
+export const CLAUDE_AGENT_PROVIDER = "claude-agent"
+export const CLAUDE_AGENT_METHOD = "claude-login"
 
 type OpenCodeConnection = NonNullable<OpenCodeIntegration["connections"]>[number]
 
 const connectionCredentialType = (active: OpenCodeConnection | undefined) => {
   if (active?.method === "oauth") return "oauth"
+  if (active?.method === "external") return "wellknown"
   if (active === undefined) return undefined
   return "api"
 }
+
+type OpenCodeMethod = NonNullable<OpenCodeIntegration["methods"]>[number]
+
+const isClaudeAgentLogin = (integration: OpenCodeIntegration, method: OpenCodeMethod) =>
+  integration.id === CLAUDE_AGENT_PROVIDER &&
+  method.type === "external" &&
+  method.id === CLAUDE_AGENT_METHOD
 
 const fieldOptions = (field: FormField): Array<OpenCodeAuthPrompt["options"][number]> => {
   if (field.type === "boolean") return BOOLEAN_OPTIONS
@@ -148,6 +158,15 @@ export const openCodeProvidersFromIntegrations = (
               type: "api",
               label: method.label ?? "API Key",
               prompts: prompts(method.form)
+            }
+          ]
+        if (isClaudeAgentLogin(integration, method))
+          return [
+            {
+              id: CLAUDE_AGENT_METHOD,
+              type: "oauth",
+              label: "Claude account in Codevisor",
+              prompts: []
             }
           ]
         if (method.type === "oauth" && method.id !== undefined)

@@ -160,8 +160,28 @@ import Observation
       })
   }
 
+  public func submitCode(_ code: String) async -> String? {
+    guard let current = signIn else { return nil }
+    do {
+      let next = try await backend.answer(current, with: code)
+      guard case .failed(let message) = next.state else {
+        apply(next)
+        return nil
+      }
+      return message
+    } catch {
+      return serverErrorMessage(error)
+    }
+  }
+
+  public func cancelSignIn() async {
+    guard let current = signIn else { return }
+    signIn = nil
+    await backend.cancel(current.id)
+  }
+
   public func follow() async {
-    while let current = signIn, current.state.isPending, !isComplete {
+    while let current = signIn, current.state.isPending, !current.isHarnessCodeStep, !isComplete {
       do { try await sleep(.seconds(1)) } catch { return }
       guard signIn?.id == current.id else { continue }
       if let next = try? await backend.status(of: current.id), signIn?.id == current.id {

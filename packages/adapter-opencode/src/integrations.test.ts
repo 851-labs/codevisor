@@ -216,3 +216,31 @@ it("answers OpenCode's form in its own field types, leaving blank answers to Ope
   })
   expect(openCodeFormAnswer([], "missing", "device", { flag: "true" })).toEqual({ flag: "true" })
 })
+
+it("offers Claude Agent's Claude Code login as an account sign-in, and labels external logins", () => {
+  expect(
+    openCodeProvidersFromIntegrations([
+      {
+        id: "claude-agent",
+        name: "Claude Agent",
+        methods: [{ id: "claude-login", type: "external", label: "Claude Code login" }],
+        connections: []
+      },
+      {
+        id: "amazon-bedrock",
+        name: "Amazon Bedrock",
+        methods: [{ id: "aws-profile", type: "external", label: "AWS profile" }],
+        connections: [{ type: "credential", method: "external" }]
+      }
+    ])
+  ).toEqual([
+    { id: "amazon-bedrock", name: "Amazon Bedrock", methods: [], credentialType: "wellknown" },
+    {
+      id: "claude-agent",
+      name: "Claude Agent",
+      methods: [
+        { id: "claude-login", type: "oauth", label: "Claude account in Codevisor", prompts: [] }
+      ]
+    }
+  ])
+})

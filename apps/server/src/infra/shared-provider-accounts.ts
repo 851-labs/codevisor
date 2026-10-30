@@ -1,6 +1,7 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 
+import { CLAUDE_AGENT_PROVIDER } from "@codevisor/adapter-opencode"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import type { HarnessAccount } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
@@ -17,12 +18,14 @@ import { Effect, Schema } from "effect"
 
 import { isRecord } from "../unknown-values.js"
 import type { SharedAccountStore } from "./shared-account-store.js"
+import type { SharedClaudeAgent } from "./shared-claude-agent.js"
 import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
 import {
   isProviderHarness,
   makeSharedProviderStore,
   providerDigest,
+  providerProfile,
   providerSlot
 } from "./shared-provider-store.js"
 
@@ -43,16 +46,14 @@ export const makeSharedProviderAccounts = (options: {
   baseUrl: string
   environment: () => Promise<NodeJS.ProcessEnv>
   openCode2?: OpenCode2Deps
+  claudeAgent?: SharedClaudeAgent
 }) => {
-  const { db, dataDir, environment } = options
+  const { db, dataDir, environment, claudeAgent } = options
   const store = makeSharedProviderStore(options)
   const runtime = makeSharedProviderRuntime({ ...options, store })
-  const profileId = async (harness: ProviderOAuthHarness, id: string) => {
-    if (harness !== "opencode" || id === "default") return "default"
-    const account = await Effect.runPromise(db.getHarnessAccount(id))
-    if (!account || account.harnessId !== harness) throw new Error("OpenCode profile not found")
-    return account.profileKind === "default" ? "default" : account.id
-  }
+  const profileId = (harness: ProviderOAuthHarness, id: string) => providerProfile(db, harness, id)
+  const claudeAgentFor = (harness: ProviderOAuthHarness, provider = CLAUDE_AGENT_PROVIDER) =>
+    harness === "opencode" && provider === CLAUDE_AGENT_PROVIDER ? claudeAgent : undefined
   const nativePath = (
     harness: ProviderOAuthHarness,
     env: NodeJS.ProcessEnv,
@@ -139,6 +140,7 @@ export const makeSharedProviderAccounts = (options: {
     store,
     runtime,
     reconcile,
+    ...(claudeAgent === undefined ? {} : { claudeAgent }),
     account: async (account: HarnessAccount, shared = false): Promise<HarnessAccount> => {
       await reconcile()
       const slot = providerSlot("grok-build", "default", "xai")
@@ -245,9 +247,10 @@ export const makeSharedProviderAccounts = (options: {
     },
     configured: async (harness: ProviderOAuthHarness, id: string, shared = false) => {
       await reconcile()
-      return (await store.records(harness, await profileId(harness, id), shared)).map(
-        (row) => row.providerId
-      )
+      const profile = await profileId(harness, id)
+      const providers = (await store.records(harness, profile, shared)).map((row) => row.providerId)
+      if (await claudeAgentFor(harness)?.linked(profile)) providers.push(CLAUDE_AGENT_PROVIDER)
+      return providers
     },
     disabled: async (harness: ProviderOAuthHarness, id: string) => {
       const profile = await profileId(harness, id)
@@ -258,8 +261,12 @@ export const makeSharedProviderAccounts = (options: {
         (providerId) => !configured.has(providerId)
       )
     },
-    remove: async (harness: ProviderOAuthHarness, id: string, provider: string, shared = false) =>
-      store.remove(harness, await profileId(harness, id), provider, shared),
+    remove: async (harness: ProviderOAuthHarness, id: string, provider: string, shared = false) => {
+      const profile = await profileId(harness, id)
+      const agent = claudeAgentFor(harness, provider)
+      if (agent !== undefined) return agent.unlink(profile)
+      return store.remove(harness, profile, provider, shared)
+    },
     context: async (
       account: HarnessAccount,
       base: HarnessAccountContext
@@ -269,10 +276,15 @@ export const makeSharedProviderAccounts = (options: {
       await reconcile()
       const profile = await profileId(harness, account.id)
       const env = await environment()
-      return runtime.materialize(harness, profile, nativePath(harness, env, profile), base, {
-        ...env,
-        ...base.env
-      })
+      const claude = await claudeAgentFor(harness)?.launch(profile)
+      return runtime.materialize(
+        harness,
+        profile,
+        nativePath(harness, env, profile),
+        base,
+        { ...env, ...base.env },
+        claude
+      )
     }
   }
 }

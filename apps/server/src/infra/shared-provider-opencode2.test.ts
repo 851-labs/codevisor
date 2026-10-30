@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -232,6 +232,57 @@ describe("OpenCode 2 shared profiles", () => {
     )
     expect(syncCredentials.mock.calls[0]?.[1]).toEqual([
       expect.objectContaining({ id: "codevisor-github-copilot", integrationID: "github-copilot" })
+    ])
+  })
+
+  it("runs a profile's Claude Agent as the Claude account linked on another machine", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "codevisor-claude-bin-"))
+    onTestFinished(() => rm(bin, { recursive: true, force: true }))
+    await writeFile(join(bin, "claude"), "#!/bin/sh\n")
+    await chmod(join(bin, "claude"), 0o755)
+    const syncCredentials = vi.fn<OpenCode2Deps["syncCredentials"]>(async () => undefined)
+    const f = fleet()
+    const linking = await f.machine("claude-agent-a")
+    const running = await f.machine("claude-agent-b", undefined, {
+      openCode2: { majorVersion: async () => 2, syncCredentials },
+      environment: async () => ({ HOME: bin, PATH: bin })
+    })
+    for (const host of [linking, running]) {
+      await run(host.db.saveHarnessAccount(account))
+      Object.assign(host.auth, {
+        accounts: async () => [
+          { ...account, id: "shared-alice", harnessId: "claude-code", label: "alice@test" }
+        ],
+        accountContext: async (id: string) => ({
+          id,
+          profileKind: "managed",
+          env: { CLAUDE_CONFIG_DIR: `/profiles/${id}` }
+        })
+      })
+    }
+
+    await linking.shared.providers.claudeAgent!.begin(account.id, { account: "shared-alice" })
+    await f.sync(linking, running)
+
+    expect(await running.shared.providers.configured("opencode", account.id)).toEqual([
+      "claude-agent"
+    ])
+    const context = await running.shared.providers.context(account, {
+      id: account.id,
+      profileKind: "default"
+    })
+    const launcher = context.env!.OPENCODE_CLAUDE_PATH!
+    expect((await stat(launcher)).mode & 0o777).toBe(0o700)
+    expect(context.env).toMatchObject({
+      CODEVISOR_CLAUDE_AGENT_PATH: join(bin, "claude"),
+      CODEVISOR_CLAUDE_AGENT_CLAUDE_CONFIG_DIR: "/profiles/shared-alice"
+    })
+    expect(syncCredentials.mock.calls[0]?.[1]).toEqual([
+      {
+        id: "codevisor-claude-agent",
+        integrationID: "claude-agent",
+        value: { type: "external", methodID: "claude-login" }
+      }
     ])
   })
 })

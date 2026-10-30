@@ -43,6 +43,7 @@ struct OpenCodeProfileScreen: View {
         ? HarnessMachineSignIn(profileId: account.id, providerId: initialProviderId) : nil
     ) { onChange() }
     .environment(\.sharedHarnessAccounts, isShared)
+    .environment(\.harnessCodeStepView, HarnessCodeStepView { HarnessCodeStepScreen(step: $0) })
     .sheetStatus(workingLabel)
     .toolbar {
       if !account.isActive {

@@ -1,3 +1,4 @@
+import { CLAUDE_AGENT_PROVIDER } from "@codevisor/adapter-opencode"
 import type { OpenCodeAuthMethod, OpenCodeAuthProvider, PiAuthProvider } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
@@ -122,8 +123,12 @@ const supportsSharedOAuth = (
   input: SharedAccountAction
 ): input is ProviderLogin => {
   if (!input.providerId) return false
-  return providerOAuthSupported(provider.harnessId, input.providerId)
+  return sharesSignIn(provider.harnessId, input.providerId)
 }
+
+const sharesSignIn = (harnessId: ProviderAccounts["harnessId"], providerId: string): boolean =>
+  providerOAuthSupported(harnessId, providerId) ||
+  (harnessId === "opencode" && providerId === CLAUDE_AGENT_PROVIDER)
 
 const removesProvider = (input: SharedAccountAction): boolean =>
   input.action === "logout" || input.action === "remove"
@@ -162,7 +167,7 @@ const listOpenCodeProviders = async (
   const configured = await shared.providers.configured("opencode", accountId, true)
   if (!auth.openCodeProviders) throw new HttpFailure(501, "OpenCode authentication unavailable")
 
-  const providers = (await auth.openCodeProviders(accountId)).map((openCodeProvider) =>
+  const providers = (await auth.openCodeProviders(accountId, true)).map((openCodeProvider) =>
     withSharedOAuthMethods(openCodeProvider, configured)
   )
   writeJson(response, 200, { openCodeProviders: providers })
@@ -187,7 +192,7 @@ const withSharedOAuthMethods = (
 })
 
 const isSharedMethod = (provider: OpenCodeAuthProvider, method: OpenCodeAuthMethod): boolean =>
-  method.type !== "oauth" || providerOAuthSupported("opencode", provider.id)
+  method.type !== "oauth" || sharesSignIn("opencode", provider.id)
 
 const credentialTypeOf = (
   provider: { readonly id: string },

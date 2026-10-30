@@ -1,6 +1,9 @@
 import { join } from "node:path"
 
 import {
+  claudeAgentCredential,
+  claudeAgentEnv,
+  claudeAgentLauncher,
   makeOpenCode2Accounts,
   makeOpenCodeLocator,
   makeOpenCodeServerPool,
@@ -8,6 +11,7 @@ import {
   openCodeCredentialPluginFiles,
   OPENCODE_MANAGED_METHODS,
   SEEDED_CREDENTIAL_PREFIX,
+  type ClaudeAgentLaunch,
   type SeededOpenCodeCredential
 } from "@codevisor/adapter-opencode"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
@@ -114,6 +118,19 @@ export const seededKeyCredentials = (
       : []
   })
 
+const claudeAgentRuntimeEnv = async (
+  writeExecutable: (path: string, content: string) => Promise<void>,
+  root: string,
+  claude: ClaudeAgentLaunch
+): Promise<Record<string, string>> => {
+  const launcher = join(root, "claude")
+  await writeExecutable(launcher, claudeAgentLauncher)
+  return claudeAgentEnv(launcher, claude)
+}
+
+const claudeAgentSeeds = (claude: ClaudeAgentLaunch | undefined) =>
+  claude === undefined ? [] : [claudeAgentCredential]
+
 export const makeOpenCode2Materializer =
   (deps: {
     readonly vault: SharedCredentialVault
@@ -123,6 +140,7 @@ export const makeOpenCode2Materializer =
       row: Awaited<ReturnType<SharedProviderStore["records"]>>[number]
     ) => Promise<{ readonly capability: string }>
     readonly writePrivate: (path: string, content: string) => Promise<void>
+    readonly writeExecutable: (path: string, content: string) => Promise<void>
     readonly openCode2: OpenCode2Deps
   }) =>
   async (
@@ -131,7 +149,8 @@ export const makeOpenCode2Materializer =
     base: HarnessAccountContext,
     env: NodeJS.ProcessEnv,
     rows: Awaited<ReturnType<SharedProviderStore["records"]>>,
-    document: Readonly<Record<string, unknown>>
+    document: Readonly<Record<string, unknown>>,
+    claude?: ClaudeAgentLaunch
   ): Promise<HarnessAccountContext> => {
     const plugin = join(root, "plugin")
     for (const [name, content] of Object.entries(openCodeCredentialPluginFiles))
@@ -150,7 +169,9 @@ export const makeOpenCode2Materializer =
         ]
       })
     }
-    const seeded = seededKeyCredentials(document)
+    if (claude !== undefined)
+      Object.assign(runtimeEnv, await claudeAgentRuntimeEnv(deps.writeExecutable, root, claude))
+    const seeded = [...claudeAgentSeeds(claude), ...seededKeyCredentials(document)]
     for (const row of rows) {
       const token = await deps.vault.token(row.credential).catch(() => undefined)
       if (!token) continue

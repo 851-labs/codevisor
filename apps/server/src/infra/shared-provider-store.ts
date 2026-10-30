@@ -18,6 +18,17 @@ export const providerSlot = (harness: string, profile: string, provider: string)
   `provider:${JSON.stringify([harness, profile, provider])}`
 export const providerDigest = (value: string) => createHash("sha256").update(value).digest("hex")
 
+export const providerProfile = async (
+  db: CodevisorDatabaseService,
+  harness: ProviderOAuthHarness,
+  id: string
+): Promise<string> => {
+  if (harness !== "opencode" || id === "default") return "default"
+  const account = await Effect.runPromise(db.getHarnessAccount(id))
+  if (!account || account.harnessId !== harness) throw new Error("OpenCode profile not found")
+  return account.profileKind === "default" ? "default" : account.id
+}
+
 export interface SharedProviderRecord {
   readonly harnessId: ProviderOAuthHarness
   readonly profileId: string

@@ -9,12 +9,16 @@ public struct HarnessProvider: Identifiable, Equatable, Sendable {
   public let name: String
   public var methods: [HarnessProviderMethod]
   public var credential: Credential?
+  public var accountLabel: String?
 
-  public init(id: String, name: String, methods: [HarnessProviderMethod], credential: Credential?) {
+  public init(
+    id: String, name: String, methods: [HarnessProviderMethod], credential: Credential?, accountLabel: String? = nil
+  ) {
     self.id = id
     self.name = name
     self.methods = methods
     self.credential = credential
+    self.accountLabel = accountLabel
   }
 }
 
@@ -118,10 +122,11 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
   public var instructions: String?
   public var userCode: String?
   public var prompt: HarnessProviderPrompt?
+  public var harnessName: String?
 
   public init(
     id: String, state: State, url: String? = nil, instructions: String? = nil, userCode: String? = nil,
-    prompt: HarnessProviderPrompt? = nil
+    prompt: HarnessProviderPrompt? = nil, harnessName: String? = nil
   ) {
     self.id = id
     self.state = state
@@ -129,7 +134,10 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
     self.instructions = instructions
     self.userCode = userCode
     self.prompt = prompt
+    self.harnessName = harnessName
   }
+
+  public var isHarnessCodeStep: Bool { harnessName != nil && state == .waiting }
 }
 
 @MainActor public protocol HarnessProviderBackend {
@@ -245,7 +253,8 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
           case "wellknown": .external
           default: .apiKey
           }
-        })
+        },
+        accountLabel: provider.accountLabel)
     }
   }
 
@@ -278,7 +287,7 @@ public struct HarnessProviderSignIn: Identifiable, Equatable, Sendable {
     HarnessProviderSignIn(
       id: flow.id, state: state(flow.state, error: flow.error), url: flow.authorization?.url,
       instructions: flow.authorization?.instructions.isEmpty == false ? flow.authorization?.instructions : nil,
-      prompt: flow.state == "waiting" ? codePrompt : nil)
+      prompt: flow.state == "waiting" ? codePrompt : nil, harnessName: flow.harnessName)
   }
 }
 

@@ -9,7 +9,10 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeHarnessAuthManager } from "./harness-auth.js"
 import { fakeAgentRuntime, fakeTerminalManager } from "./harness-lifecycle-test-support.js"
-import type { SharedProviderIntegration } from "./shared-provider-integration.js"
+import type {
+  ClaudeAgentIntegration,
+  SharedProviderIntegration
+} from "./shared-provider-integration.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 const directories: string[] = []
@@ -38,8 +41,19 @@ const scriptedServer = (answer: (path: string) => unknown) => {
   return { server, calls, stopped }
 }
 
+const claudeAgentLogin = {
+  id: "claude-login",
+  type: "oauth" as const,
+  label: "Claude account in Codevisor",
+  prompts: []
+}
+
 const setup = async (
-  overrides: { readonly removed?: boolean; readonly saved?: Record<string, unknown> } = {}
+  overrides: {
+    readonly removed?: boolean
+    readonly saved?: Record<string, unknown>
+    readonly claudeAgent?: ClaudeAgentIntegration
+  } = {}
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-opencode2-auth-"))
   directories.push(directory)
@@ -65,7 +79,8 @@ const setup = async (
   const accounts = {
     providers: vi.fn(async () => [
       { id: "openai", name: "OpenAI", methods: [] },
-      { id: "anthropic", name: "Anthropic", methods: [] }
+      { id: "anthropic", name: "Anthropic", methods: [] },
+      { id: "claude-agent", name: "Claude Agent", methods: [claudeAgentLogin] }
     ]),
     hold: vi.fn(async () => ({ server: control.server, release: vi.fn() })),
     removeIntegration: vi.fn(async () => undefined)
@@ -77,7 +92,8 @@ const setup = async (
     remove: vi.fn(async () => overrides.removed ?? false),
     context: vi.fn<SharedProviderIntegration["context"]>(async () => {
       throw new Error("context is not stubbed")
-    })
+    }),
+    ...(overrides.claudeAgent === undefined ? {} : { claudeAgent: overrides.claudeAgent })
   } satisfies SharedProviderIntegration
   const isolated = scriptedServer((path) => {
     if (path.endsWith("/connect/oauth"))
@@ -123,7 +139,8 @@ describe("OpenCode 2 accounts", () => {
     const { manager, accounts, binary } = await setup()
     expect(await manager.openCodeProviders!("opencode-default")).toEqual([
       { id: "openai", name: "OpenAI", methods: [], credentialType: "oauth" },
-      { id: "anthropic", name: "Anthropic", methods: [] }
+      { id: "anthropic", name: "Anthropic", methods: [] },
+      { id: "claude-agent", name: "Claude Agent", methods: [] }
     ])
     expect(accounts.providers).toHaveBeenCalledWith(expect.objectContaining({ command: binary }))
   })
@@ -212,5 +229,46 @@ describe("OpenCode 2 accounts", () => {
     const sharedSignIn = await setup({ removed: true })
     await sharedSignIn.manager.logoutOpenCodeProvider!("opencode-default", "openai")
     expect(sharedSignIn.accounts.removeIntegration).not.toHaveBeenCalled()
+  })
+
+  it("hands Claude Agent's sign-in to Codevisor's Claude accounts", async () => {
+    const waiting = {
+      id: "claude-flow",
+      accountId: "opencode-default",
+      providerId: "claude-agent",
+      state: "waiting" as const
+    }
+    const claudeAgent = {
+      provider: vi.fn(async (_profile: string, listed) => ({ ...listed, accountLabel: "alice" })),
+      begin: vi.fn(async () => waiting),
+      flow: vi.fn((flowId: string) => (flowId === waiting.id ? waiting : undefined)),
+      answer: vi.fn(async () => ({ ...waiting, state: "complete" as const })),
+      cancel: vi.fn(async () => undefined)
+    } satisfies ClaudeAgentIntegration
+    const { manager, start } = await setup({ claudeAgent })
+
+    expect((await manager.openCodeProviders!("opencode-default", true))[2]).toEqual({
+      id: "claude-agent",
+      name: "Claude Agent",
+      methods: [claudeAgentLogin],
+      accountLabel: "alice"
+    })
+    expect(claudeAgent.provider).toHaveBeenCalledWith(
+      "opencode-default",
+      expect.objectContaining({ id: "claude-agent" }),
+      true
+    )
+    const inputs = { account: "new" }
+    expect(
+      await manager.beginOpenCodeLogin!("opencode-default", "claude-agent", "claude-login", inputs)
+    ).toBe(waiting)
+    expect(claudeAgent.begin).toHaveBeenCalledWith("opencode-default", inputs)
+    expect(manager.openCodeLoginFlow!(waiting.id)).toBe(waiting)
+    expect(await manager.answerOpenCodeLogin!(waiting.id, "code")).toMatchObject({
+      state: "complete"
+    })
+    manager.cancelOpenCodeLogin!(waiting.id)
+    expect(claudeAgent.cancel).toHaveBeenCalledWith(waiting.id)
+    expect(start).not.toHaveBeenCalled()
   })
 })

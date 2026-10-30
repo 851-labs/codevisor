@@ -275,7 +275,8 @@ export const OpenCodeAuthProvider = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   methods: Schema.Array(OpenCodeAuthMethod),
-  credentialType: Schema.optional(Schema.Literals(["api", "oauth", "wellknown"]))
+  credentialType: Schema.optional(Schema.Literals(["api", "oauth", "wellknown"])),
+  accountLabel: Schema.optional(Schema.String)
 })
 export type OpenCodeAuthProvider = typeof OpenCodeAuthProvider.Type
 
@@ -292,7 +293,8 @@ export const OpenCodeAuthFlow = Schema.Struct({
   providerId: Schema.String,
   state: Schema.Literals(["running", "waiting", "complete", "error"]),
   authorization: Schema.optional(OpenCodeAuthAuthorization),
-  error: Schema.optional(Schema.String)
+  error: Schema.optional(Schema.String),
+  harnessName: Schema.optional(Schema.String)
 })
 export type OpenCodeAuthFlow = typeof OpenCodeAuthFlow.Type
 

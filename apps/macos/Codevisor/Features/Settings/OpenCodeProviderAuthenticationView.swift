@@ -166,6 +166,7 @@ struct OpenCodeProviderAuthenticationView: View {
         harness: harness, machineId: scopedServerId, profile: account,
         request: didOpenRequestedProvider ? nil : signInRequest
       ) { await refreshHarness() }
+      .environment(\.harnessCodeStepView, HarnessCodeStepView { HarnessCodeStepSheet(step: $0) })
       .id(account.id)
     } else if let profilesError {
       ContentUnavailableView {

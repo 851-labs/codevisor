@@ -1,9 +1,25 @@
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
-import type { HarnessAccount } from "@codevisor/api"
+import type { HarnessAccount, OpenCodeAuthFlow, OpenCodeAuthProvider } from "@codevisor/api"
 
 import type { ProviderOAuthHarness } from "./shared-provider-oauth.js"
 
+export interface ClaudeAgentIntegration {
+  readonly provider: (
+    profile: string,
+    listed: OpenCodeAuthProvider,
+    shared?: boolean
+  ) => Promise<OpenCodeAuthProvider>
+  readonly begin: (
+    profile: string,
+    inputs: Readonly<Record<string, string>> | undefined
+  ) => Promise<OpenCodeAuthFlow>
+  readonly flow: (flowId: string) => OpenCodeAuthFlow | undefined
+  readonly answer: (flowId: string, code: string) => Promise<OpenCodeAuthFlow | undefined>
+  readonly cancel: (flowId: string) => Promise<void>
+}
+
 export interface SharedProviderIntegration {
+  readonly claudeAgent?: ClaudeAgentIntegration
   readonly account?: (account: HarnessAccount, shared?: boolean) => Promise<HarnessAccount>
   readonly capture: (
     harness: ProviderOAuthHarness,

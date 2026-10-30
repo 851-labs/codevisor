@@ -3,6 +3,7 @@ import { mkdir, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 
 import {
+  CLAUDE_AGENT_PROVIDER,
   makeOpenCode2Accounts,
   makeOpenCode2Logins,
   makeOpenCodeLocator,
@@ -49,6 +50,9 @@ const withSharedProviderCredentials = <Provider extends PiAuthProvider | OpenCod
     }
     return provider
   })
+
+const withoutClaudeAgentLogin = (provider: OpenCodeAuthProvider): OpenCodeAuthProvider =>
+  provider.id === CLAUDE_AGENT_PROVIDER ? { ...provider, methods: [] } : provider
 
 export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): HarnessAuthManager => {
   const core = makeHarnessAuthCore(config)
@@ -139,6 +143,21 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       await rm(path, { force: true })
     }
   })
+  const claudeAgent = () => config.sharedProviders?.()?.claudeAgent
+  const withClaudeAgent = (
+    providers: ReadonlyArray<OpenCodeAuthProvider>,
+    accountId: string,
+    shared: boolean
+  ): Promise<ReadonlyArray<OpenCodeAuthProvider>> => {
+    const agent = claudeAgent()
+    if (agent === undefined) return Promise.resolve(providers.map(withoutClaudeAgentLogin))
+    return Promise.all(
+      providers.map(async (provider) => {
+        if (provider.id !== CLAUDE_AGENT_PROVIDER) return provider
+        return agent.provider(accountId, provider, shared)
+      })
+    )
+  }
   const grok = makeGrokAuth(core)
   const probes = makeHarnessAuthProbes(core, grok)
   const { probeAccount } = probes
@@ -245,7 +264,7 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
     logoutPiProvider: async (id) => {
       if (!(await config.sharedProviders?.()?.remove("pi", "default", id))) await piAuth.logout(id)
     },
-    openCodeProviders: async (accountId) => {
+    openCodeProviders: async (accountId, shared = false) => {
       const profile = await openCodeProfile(accountId)
       let providers: ReadonlyArray<OpenCodeAuthProvider>
       if (((await openCodeMajorVersion(profile.command)) ?? 1) >= 2) {
@@ -255,9 +274,19 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       }
       const configured = (await config.sharedProviders?.()?.configured("opencode", accountId)) ?? []
       const disabled = (await config.sharedProviders?.()?.disabled?.("opencode", accountId)) ?? []
-      return withSharedProviderCredentials(providers, configured, disabled)
+      return withClaudeAgent(
+        withSharedProviderCredentials(providers, configured, disabled),
+        accountId,
+        shared
+      )
     },
     beginOpenCodeLogin: async (accountId, providerId, methodId, inputs, apiKey, shared = false) => {
+      if (providerId === CLAUDE_AGENT_PROVIDER) {
+        const agent = claudeAgent()
+        if (agent === undefined)
+          throw new Error("Claude Agent sign-in is unavailable on this machine")
+        return agent.begin(accountId, inputs)
+      }
       const profile = await openCodeProfile(accountId)
       if (!(await isOpenCode2(profile.command)))
         return openCodeAuth.beginLogin(accountId, providerId, methodId, inputs, apiKey, shared)
@@ -292,11 +321,16 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       if (apiKey !== undefined) await providers?.remove("opencode", accountId, providerId, shared)
       return flow
     },
-    openCodeLoginFlow: (flowId) => openCode2Logins.flow(flowId) ?? openCodeAuth.flow(flowId),
+    openCodeLoginFlow: (flowId) =>
+      claudeAgent()?.flow(flowId) ?? openCode2Logins.flow(flowId) ?? openCodeAuth.flow(flowId),
     answerOpenCodeLogin: async (flowId, code) =>
-      (await openCode2Logins.answer(flowId, code)) ?? openCodeAuth.answer(flowId, code),
+      (await claudeAgent()?.answer(flowId, code)) ??
+      (await openCode2Logins.answer(flowId, code)) ??
+      openCodeAuth.answer(flowId, code),
     cancelOpenCodeLogin: (flowId) => {
-      if (openCode2Logins.flow(flowId) === undefined) openCodeAuth.cancel(flowId)
+      const agent = claudeAgent()
+      if (agent?.flow(flowId) !== undefined) void agent.cancel(flowId)
+      else if (openCode2Logins.flow(flowId) === undefined) openCodeAuth.cancel(flowId)
       else void openCode2Logins.cancel(flowId)
     },
     logoutOpenCodeProvider: async (accountId, id) => {

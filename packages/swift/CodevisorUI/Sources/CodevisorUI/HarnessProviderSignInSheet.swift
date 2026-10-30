@@ -10,6 +10,7 @@ import SwiftUI
 struct HarnessProviderSignInSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
+  @Environment(\.harnessCodeStepView) private var codeStepView
 
   @State private var draft: HarnessProviderSignInDraft
   private let configuredIds: Set<String>
@@ -32,6 +33,37 @@ struct HarnessProviderSignInSheet: View {
   }
 
   var body: some View {
+    Group {
+      if let codeStep, let codeStepView {
+        codeStepView.make(codeStep)
+      } else {
+        form
+      }
+    }
+    .interactiveDismissDisabled(draft.isWorking)
+    .task(id: draft.signIn?.id) { await draft.follow() }
+    .onChange(of: draft.pageToOpen) { _, page in
+      if let page { openURL(page) }
+    }
+    .onChange(of: draft.isComplete) { _, complete in
+      guard complete else { return }
+      dismiss()
+      Task { await onComplete() }
+    }
+    .onDisappear { Task { await draft.dismissed() } }
+  }
+
+  private var codeStep: HarnessCodeStep? {
+    guard let signIn = draft.signIn, signIn.isHarnessCodeStep, let harnessName = signIn.harnessName else {
+      return nil
+    }
+    return HarnessCodeStep(
+      id: signIn.id, harnessName: harnessName, url: signIn.url,
+      submit: { await draft.submitCode($0) },
+      cancel: { Task { await draft.cancelSignIn() } })
+  }
+
+  private var form: some View {
     NavigationStack {
       #if os(macOS)
         if draft.signIn != nil {
@@ -71,17 +103,6 @@ struct HarnessProviderSignInSheet: View {
     #else
       .sheetStatus(draft.status)
     #endif
-    .interactiveDismissDisabled(draft.isWorking)
-    .task(id: draft.signIn?.id) { await draft.follow() }
-    .onChange(of: draft.pageToOpen) { _, page in
-      if let page { openURL(page) }
-    }
-    .onChange(of: draft.isComplete) { _, complete in
-      guard complete else { return }
-      dismiss()
-      Task { await onComplete() }
-    }
-    .onDisappear { Task { await draft.dismissed() } }
   }
 
   @ViewBuilder
@@ -106,7 +127,7 @@ struct HarnessProviderSignInSheet: View {
             .tag(provider.id)
           }
           .searchable(text: $search, placement: .toolbar, prompt: "Search providers")
-          if draft.provider != nil {
+          if hasPanel {
             Divider()
             VStack(alignment: .leading, spacing: 12) {
               if let error = draft.errorMessage {
@@ -132,12 +153,21 @@ struct HarnessProviderSignInSheet: View {
               LabeledContent("Provider", value: draft.provider?.name ?? "Choose…")
             }
           }
-          if draft.provider != nil {
+          if hasAuthentication {
             Section("Authentication") { authentication }
           }
         }
       #endif
     }
+  }
+
+  private var hasAuthentication: Bool {
+    guard let provider = draft.provider else { return false }
+    return provider.methods.count > 1 || !draft.visiblePrompts.isEmpty || draft.method?.kind == .apiKey
+  }
+
+  private var hasPanel: Bool {
+    hasAuthentication || draft.errorMessage != nil
   }
 
   @ViewBuilder
@@ -158,8 +188,6 @@ struct HarnessProviderSignInSheet: View {
       #if os(macOS)
         .pickerStyle(.menu)
       #endif
-    } else if let method = draft.method {
-      LabeledContent("Method", value: method.label)
     }
     ForEach(draft.visiblePrompts) { prompt in
       field(prompt, text: inputBinding(prompt.id))

@@ -9,6 +9,7 @@ import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@c
 import { Effect } from "effect"
 
 import { field, isRecord, stringField } from "../unknown-values.js"
+import { CLAUDE_AGENT_LINK_PREFIX } from "./shared-claude-agent-links.js"
 
 export const SHARED_ACCOUNTS_NAMESPACE = "harness-shared-accounts"
 export const SHARED_ACCOUNT_OVERRIDES = "local.harness-account-overrides"
@@ -106,6 +107,8 @@ export const harnessesSignedInBy = (
         const harness: unknown = Array.isArray(parsed) ? parsed[0] : undefined
         if (typeof harness === "string") harnesses.add(harness)
       } catch {}
+    } else if (key.startsWith(CLAUDE_AGENT_LINK_PREFIX)) {
+      harnesses.add("opencode")
     } else if (key.startsWith("selected:")) {
       harnesses.add(key.slice("selected:".length))
     } else if (key.startsWith("shared-")) {

@@ -16,7 +16,7 @@ enum HarnessLoginStep: Identifiable {
 }
 
 struct HarnessLoginStepSheet: View {
-  let harness: ServerHarness
+  let harnessName: String
   let step: HarnessLoginStep
   let submitCode: (String) async -> String?
   let submitApiKey: (ServerHarnessAccount, ServerHarnessAuthMethod, String) async -> String?
@@ -41,7 +41,7 @@ struct HarnessLoginStepSheet: View {
       }
       .padding(20)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .navigationTitle("Sign in to \(harness.name)")
+      .navigationTitle("Sign in to \(harnessName)")
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SheetFooter(status: footerStatus) { actions }

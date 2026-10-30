@@ -88,7 +88,7 @@ struct HarnessAuthenticationScreen: View {
       }
       .sheet(item: $loginStep, onDismiss: { Task { await cancelFlow() } }) { step in
         HarnessLoginStepScreen(
-          harness: harness,
+          harnessName: harness.name,
           step: step,
           submitCode: { code in await submitPastedCode(code) },
           submitApiKey: { account, method, key in

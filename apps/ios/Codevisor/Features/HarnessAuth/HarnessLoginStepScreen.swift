@@ -16,7 +16,7 @@ enum HarnessLoginStep: Identifiable {
 }
 
 struct HarnessLoginStepScreen: View {
-  let harness: ServerHarness
+  let harnessName: String
   let step: HarnessLoginStep
   let submitCode: (String) async -> String?
   let submitApiKey: (ServerHarnessAccount, ServerHarnessAuthMethod, String) async -> String?
@@ -40,7 +40,7 @@ struct HarnessLoginStepScreen: View {
           }
         }
       }
-      .navigationTitle(harness.name)
+      .navigationTitle(harnessName)
       .navigationBarTitleDisplayMode(.inline)
       .disabled(isSubmitting)
       .toolbar {

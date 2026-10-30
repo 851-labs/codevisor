@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { mkdir, symlink, writeFile, chmod } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
+import type { ClaudeAgentLaunch } from "@codevisor/adapter-opencode"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import {
   atomicWriteJson,
@@ -64,6 +65,10 @@ const script = async (path: string, content: string) => {
   await mkdir(dirname(path), privateDirectory)
   await writeFile(path, content, { mode: 0o600 })
   await chmod(path, 0o600)
+}
+const executableScript = async (path: string, content: string) => {
+  await script(path, content)
+  await chmod(path, 0o700)
 }
 const linkResource = async (link: ResourceLink) => {
   try {
@@ -189,6 +194,7 @@ export const makeSharedProviderRuntime = (options: {
     url,
     capabilityFor: (profile, row) => capabilityFor("opencode", profile, row),
     writePrivate: script,
+    writeExecutable: executableScript,
     openCode2
   })
 
@@ -241,17 +247,19 @@ export const makeSharedProviderRuntime = (options: {
     profile: string,
     nativePath: string,
     base: HarnessAccountContext,
-    env: NodeJS.ProcessEnv
+    env: NodeJS.ProcessEnv,
+    claude: ClaudeAgentLaunch | undefined
   ): Promise<HarnessAccountContext> => {
     const rows = await store.records("opencode", profile)
     const known = await store.knownProviders("opencode", profile)
-    if (!known.length) return base
+    if (!known.length && claude === undefined) return base
 
     const root = providerAuthRoot(dataDir, "opencode", profile)
     const auth = await readProviderDocument(nativePath)
     prepareProviderAuthDocument("opencode", auth, known)
     if (((await openCode2.majorVersion(env)) ?? 1) >= 2)
-      return materializeOpenCode2(profile, root, base, env, rows, auth)
+      return materializeOpenCode2(profile, root, base, env, rows, auth, claude)
+    if (!known.length) return base
 
     const source = dirname(nativePath)
     const runtimeEnv = openCodeEnv(base, root, source, env)
@@ -322,10 +330,11 @@ export const makeSharedProviderRuntime = (options: {
     profile: string,
     nativePath: string,
     base: HarnessAccountContext,
-    env: NodeJS.ProcessEnv
+    env: NodeJS.ProcessEnv,
+    claude?: ClaudeAgentLaunch
   ): Promise<HarnessAccountContext> => {
     if (harness === "pi") return materializePi(profile, nativePath, base)
-    if (harness === "opencode") return materializeOpenCode(profile, nativePath, base, env)
+    if (harness === "opencode") return materializeOpenCode(profile, nativePath, base, env, claude)
     return materializeGrok(profile, nativePath, base)
   }
   return {

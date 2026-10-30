@@ -306,6 +306,13 @@ public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
   public var userCode: String?
   public var terminalId: String?
   public var terminalKey: String?
+
+  public init(id: String, accountId: String, kind: String, url: String? = nil) {
+    self.id = id
+    self.accountId = accountId
+    self.kind = kind
+    self.url = url
+  }
 }
 
 public struct ServerPiAuthProvider: Codable, Equatable, Identifiable, Sendable {
@@ -383,6 +390,7 @@ public struct ServerOpenCodeAuthProvider: Codable, Equatable, Identifiable, Send
   public var name: String
   public var methods: [ServerOpenCodeAuthMethod]
   public var credentialType: String?
+  public var accountLabel: String?
 }
 
 public struct ServerOpenCodeAuthAuthorization: Codable, Equatable, Sendable {
@@ -398,6 +406,7 @@ public struct ServerOpenCodeAuthFlow: Codable, Equatable, Identifiable, Sendable
   public var state: String
   public var authorization: ServerOpenCodeAuthAuthorization?
   public var error: String?
+  public var harnessName: String?
 }
 
 public struct ServerHarnessCapability: Codable, Equatable, Sendable {

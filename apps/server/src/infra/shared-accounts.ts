@@ -21,9 +21,13 @@ import {
   sharedAccountVault
 } from "./shared-account-storage.js"
 import { makeSharedAccountStore } from "./shared-account-store.js"
+import { makeClaudeAgentLinks } from "./shared-claude-agent-links.js"
+import { CLAUDE_HARNESS, makeClaudeSignIns } from "./shared-claude-agent-signins.js"
+import { makeSharedClaudeAgent } from "./shared-claude-agent.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
 import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
+import { providerProfile } from "./shared-provider-store.js"
 
 export interface SharedAccountsOptions {
   readonly db: CodevisorDatabaseService
@@ -44,10 +48,31 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
   const store = makeSharedAccountStore(db, serverId)
   const vault = options.vault ?? sharedAccountVault(dataDir)
   const environment = options.environment ?? resolveShellEnv
-  const providers = makeSharedProviderAccounts({ ...options, store, vault, environment })
+  const localState = new SharedAccountLocalState(db, serverId)
+  const credentials = makeSharedAccountCredentials({ db, store, vault, localState })
+  const claudeAgent = makeSharedClaudeAgent({
+    links: makeClaudeAgentLinks(store),
+    signIns: makeClaudeSignIns({
+      auth,
+      placeholders: {
+        create: async () => (await lifecycle.create(CLAUDE_HARNESS)).id,
+        discard: (id) => lifecycle.logout(id, true)
+      },
+      resolve: async (id) => (await credentials.resolve(id))?.id ?? id
+    }),
+    auth,
+    profile: (id) => providerProfile(db, "opencode", id),
+    environment
+  })
+  const providers = makeSharedProviderAccounts({
+    ...options,
+    store,
+    vault,
+    environment,
+    claudeAgent
+  })
   const discover = options.discover ?? discoverNativeAccount
   const claudeMachine = options.claudeMachine ?? nativeClaudeMachine(dataDir)
-  const localState = new SharedAccountLocalState(db, serverId)
   const profileLogins = makeClaudeProfileLogins({
     db,
     dataDir,
@@ -56,7 +81,6 @@ export const makeSharedAccounts = (options: SharedAccountsOptions) => {
     forget: options.forgetProfileLogin ?? forgetNativeProfileLogin
   })
 
-  const credentials = makeSharedAccountCredentials({ db, store, vault, localState })
   const gateway = makeSharedClaudeGateway({ token: credentials.token })
   const localRows = makeLocalAccountRows({ db, store, localState })
   const imports = makeSharedAccountImports({

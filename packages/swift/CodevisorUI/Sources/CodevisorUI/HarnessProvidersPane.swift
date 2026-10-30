@@ -230,7 +230,7 @@ struct HarnessProviderRow: View {
         .frame(width: 20)
       VStack(alignment: .leading, spacing: 2) {
         Text(provider.name).foregroundStyle(Color.primary)
-        Text(provider.credential.map(Self.description) ?? "")
+        Text(provider.accountLabel ?? provider.credential.map(Self.description) ?? "")
           #if os(macOS)
             .font(.callout)
           #else

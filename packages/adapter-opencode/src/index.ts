@@ -1,5 +1,6 @@
 export * from "./accounts.js"
 export * from "./binary.js"
+export * from "./claude-agent.js"
 export * from "./credential-plugin.js"
 export * from "./integrations.js"
 export * from "./logins.js"
