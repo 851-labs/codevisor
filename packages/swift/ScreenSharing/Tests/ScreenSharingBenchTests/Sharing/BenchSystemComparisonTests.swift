@@ -33,8 +33,15 @@ struct BenchSystemComparisonTests {
     Case(
       appleHp: [10, 30, 12], codevisor: [31, 33, 60], better: .lower, noiseBand: 29, verdict: .noDifference, basis: nil),
     Case(appleHp: [61], codevisor: [40, 60, 49], better: .lower, noiseBand: 20, verdict: .noDifference, basis: nil),
+    Case(
+      appleHp: [15.06, 15.06, 15.06], codevisor: [15.08, 15.08, 15.08], better: .higher, noiseBand: 0,
+      verdict: .noDifference, basis: .belowMinimumEffect),
+    Case(
+      appleHp: [100, 100.5, 100], codevisor: [101.5, 101.5, 101.5], better: .lower, noiseBand: 0.5,
+      verdict: .noDifference, basis: .belowMinimumEffect),
   ])
-  func aDifferenceNeedsAGapBeyondTheNoiseBandOrRepetitionsClearlyApart(_ example: Case) throws {
+  func aDifferenceNeedsAGapBeyondTheNoiseBandOrRepetitionsClearlyApartAndAtLeastTheMinimumEffect(_ example: Case) throws
+  {
     let outcome = try #require(
       BenchSystemComparison.verdict(appleHp: example.appleHp, codevisor: example.codevisor, better: example.better))
 

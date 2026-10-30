@@ -1,5 +1,6 @@
 public enum BenchSystemComparison {
   public static let minimumSeparatedRepetitions = 3
+  public static let minimumRelativeEffect = 0.02
 
   public enum Better: Sendable {
     case lower
@@ -9,6 +10,7 @@ public enum BenchSystemComparison {
   public enum Basis: String, Sendable {
     case noiseBand = "noise band"
     case noOverlap = "no overlap"
+    case belowMinimumEffect = "gap under the minimum effect"
   }
 
   public struct Outcome: Sendable, Equatable {
@@ -25,11 +27,15 @@ public enum BenchSystemComparison {
     else { return nil }
 
     let noiseBand = max(width(appleRange), width(ourRange))
-    guard let basis = basis(ours - apple, noiseBand: noiseBand, appleHp, appleRange, codevisor, ourRange) else {
+    let difference = ours - apple
+    guard let basis = basis(difference, noiseBand: noiseBand, appleHp, appleRange, codevisor, ourRange) else {
       return Outcome(noiseBand: noiseBand, verdict: .noDifference, basis: nil)
     }
+    guard abs(difference) >= minimumRelativeEffect * max(abs(apple), abs(ours)) else {
+      return Outcome(noiseBand: noiseBand, verdict: .noDifference, basis: .belowMinimumEffect)
+    }
 
-    let verdict: BenchComparison.Verdict = codevisorWins(ours - apple, better: better) ? .codevisorFaster : .appleFaster
+    let verdict: BenchComparison.Verdict = codevisorWins(difference, better: better) ? .codevisorFaster : .appleFaster
     return Outcome(noiseBand: noiseBand, verdict: verdict, basis: basis)
   }
 

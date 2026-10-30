@@ -36,8 +36,10 @@ struct Tier2Markdown {
   private static let verdictRule =
     "Each metric compares the medians of the valid repetitions. It is a difference when the medians differ by more "
     + "than the noise band, the wider of the two systems' min–max spreads (rule: noise band), or when each system has "
-    + "at least 3 valid repetitions and the gap between their ranges is wider than the tighter system's spread "
-    + "(rule: no overlap). Otherwise it is no difference."
+    + "at least \(BenchSystemComparison.minimumSeparatedRepetitions) valid repetitions and the gap between their "
+    + "ranges is wider than the tighter system's spread (rule: no overlap), and in either case only when the medians "
+    + "differ by at least \(Int(BenchSystemComparison.minimumRelativeEffect * 100))% of the larger one (otherwise: "
+    + "gap under the minimum effect). Otherwise it is no difference."
 
   private var verdictTable: String {
     let header = [
