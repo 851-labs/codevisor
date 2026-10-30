@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/codevisor-net", "crates/codevisor-net-node", "crates/codevisor-net-ffi"]
+members = ["crates/codevisor-net", "crates/codevisor-media", "crates/codevisor-net-node", "crates/codevisor-net-ffi"]
 
 [workspace.package]
 version = "0.1.0"
@@ -30,8 +30,13 @@ rand = "0.9"
 rustls-pki-types = "1"
 tracing = "0.1"
 codevisor-net = { path = "crates/codevisor-net" }
+codevisor-media = { path = "crates/codevisor-media" }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# Reed–Solomon is the hot loop of codevisor-media's simulated-network tests; unoptimized it dominates their runtime.
+[profile.dev.package.reed-solomon-simd]
+opt-level = 3

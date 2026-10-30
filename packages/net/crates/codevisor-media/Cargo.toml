@@ -1,0 +1,17 @@
+[package]
+name = "codevisor-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+codevisor-net.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+reed-solomon-simd = "3.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
