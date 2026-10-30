@@ -26,12 +26,15 @@ struct ProjectCloneLocationRow: View {
         }
       }
     } label: {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(machine.name)
-        if let errorMessage {
-          Text(errorMessage)
-            .font(.callout)
-            .foregroundStyle(.red)
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        MachineIconView(machineId: machine.id)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(machine.name)
+          if let errorMessage {
+            Text(errorMessage)
+              .font(.callout)
+              .foregroundStyle(.red)
+          }
         }
       }
     }

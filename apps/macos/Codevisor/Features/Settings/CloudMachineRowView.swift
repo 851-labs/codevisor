@@ -14,11 +14,7 @@ struct CloudMachineRowView: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: machine.icon.systemImage)
-        .symbolRenderingMode(.monochrome)
-        .foregroundStyle(.primary)
-        .frame(width: 20)
-        .accessibilityHidden(true)
+      MachineIconView(machineId: machine.id)
       VStack(alignment: .leading, spacing: 2) {
         Text(presence.name)
         Text(subtitle)

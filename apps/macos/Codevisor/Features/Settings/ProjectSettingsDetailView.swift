@@ -87,12 +87,15 @@ struct ProjectSettingsDetailView: View {
             .truncationMode(.middle)
             .help(project.folderURL.path)
         } label: {
-          HStack(spacing: 6) {
-            Text(machineName(project.serverId))
-            if !isReady(project.serverId) {
-              Text("Offline")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+          HStack(spacing: 10) {
+            MachineIconView(machineId: project.serverId)
+            HStack(spacing: 6) {
+              Text(machineName(project.serverId))
+              if !isReady(project.serverId) {
+                Text("Offline")
+                  .font(.callout)
+                  .foregroundStyle(.secondary)
+              }
             }
           }
         }

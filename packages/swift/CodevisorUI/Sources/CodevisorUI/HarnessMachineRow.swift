@@ -8,6 +8,7 @@ struct HarnessMachineRow: View {
 
   var body: some View {
     FleetMachineRow(
+      machineId: row.machineId,
       name: row.name,
       status: row.status.rowStatus,
       details: HarnessMachineActionButton.details(row: row, harnessName: harnessName)

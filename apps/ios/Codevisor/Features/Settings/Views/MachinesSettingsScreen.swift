@@ -115,7 +115,7 @@ struct MachinesSettingsScreen: View {
         connectionText(connection)
       }
     } icon: {
-      Image(systemName: machine.icon.systemImage)
+      SidebarGroupIcon.machine(machine.id, in: machines).image
         .foregroundStyle(.secondary)
     }
     .accessibilityElement(children: .combine)

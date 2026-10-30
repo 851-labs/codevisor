@@ -20,7 +20,8 @@ public struct McpMachinesSection: View {
     Section("Machines") {
       ForEach(model.rows(for: entry, in: environment)) { row in
         FleetMachineRow(
-          name: row.name, status: row.status.rowStatus, details: details(for: row), leadingInset: 0
+          machineId: row.machineId, name: row.name, status: row.status.rowStatus, details: details(for: row),
+          leadingInset: 0
         ) {
           McpMachineTrailing(
             entry: entry, row: row, model: model, disabledReason: disabledReason(row.machineId))
