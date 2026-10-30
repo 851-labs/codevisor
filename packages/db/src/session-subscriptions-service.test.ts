@@ -48,10 +48,20 @@ describe("session subscriptions", () => {
         once: false
       })
     )
+    const watched = await run(
+      db.createSessionSubscription({
+        subscriberSessionId: worker.id,
+        targetSessionId: watcher.id,
+        events: ["errored"],
+        once: false
+      })
+    )
+    expect(await run(db.listSubscriptionsTargeting(watcher.id))).toEqual([watched])
 
     await run(db.deleteSession(worker.id))
 
     expect(await run(db.listSessionSubscriptions(watcher.id))).toEqual([])
+    expect(await run(db.listSubscriptionsTargeting(watcher.id))).toEqual([])
   })
 
   it("keeps hidden event prompts marked in the transcript", async () => {

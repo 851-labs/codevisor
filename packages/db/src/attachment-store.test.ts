@@ -352,7 +352,7 @@ describe("attachment object storage", () => {
     expect(failures).toEqual(["non-error failure"])
   })
 
-  it("covers disk-file creation and idempotent storage transitions", async () => {
+  it("creates disk-only files and only moves storage forward, idempotently", async () => {
     const directory = temporaryDirectory()
     const db = await run(
       makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "local" })
@@ -372,8 +372,13 @@ describe("attachment object storage", () => {
 
     await run(db.markFileStorageDual(original.id))
     await run(db.markFileStorageDual(original.id))
+    expect((await run(db.getFileStorage(original.id)))?.storageState).toBe("dual")
     await run(db.markFileStorageDisk(original.id))
     await run(db.markFileStorageDual(original.id))
+    expect(await run(db.getFileStorage(original.id))).toMatchObject({
+      data: Buffer.alloc(0),
+      storageState: "disk"
+    })
     await run(db.markFileStorageDisk(original.id))
     await expect(run(db.markFileStorageDual("missing"))).rejects.toThrow(
       "File not found while marking dual storage"

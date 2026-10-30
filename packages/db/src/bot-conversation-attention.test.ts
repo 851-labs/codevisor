@@ -100,7 +100,7 @@ describe("bot conversation attention", () => {
     expect(await run(db.listPendingAttentionSettles)).toEqual([])
   })
 
-  it("makes each message the bot sends unread, with a preview of the latest", async () => {
+  it("makes each message the bot sends unread, with a preview of the latest, and clears it once read", async () => {
     const db = await openDatabase()
     const chat = await seedChat(db, true)
     const file: AttachmentRef = {
@@ -123,14 +123,8 @@ describe("bot conversation attention", () => {
       latestAttentionSequence: 2,
       latestBotMessage: { text: "Shipped", attachmentNames: ["notes.txt"] }
     })
-  })
 
-  it("clears unread once the latest message is seen", async () => {
-    const db = await openDatabase()
-    const chat = await seedChat(db, true)
-    await deliver(db, chat, "bot", "Shipped")
-
-    await run(db.markSessionRead(chat, 1))
+    await run(db.markSessionRead(chat, 2))
 
     expect(await attention(db, chat)).toMatchObject({ sidebarState: "idle", unreadCount: 0 })
   })

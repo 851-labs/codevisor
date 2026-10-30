@@ -4,33 +4,51 @@ import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
-  it("coalesces streamed chunks of the same message into one conversation row", async () => {
+  it("coalesces streamed chunks of the same message into one conversation row until one carries attachments", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
     try {
       expect(await run(db.migrate)).toEqual([])
       const project = await run(db.createProject({ folderPath: "/tmp/coalesce" }))
       const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+      const meta = await run(db.createFile("a.png", "image/png", "image", Buffer.from([1, 2, 3])))
+      const ref = {
+        fileId: meta.id,
+        name: meta.name,
+        mimeType: meta.mimeType,
+        sizeBytes: meta.sizeBytes,
+        kind: meta.kind
+      }
 
       await run(db.appendConversationItem(session.id, "user", "user-1", "tell me", false))
       await run(db.appendConversationItem(session.id, "assistant", "msg-1", "Hel", true))
-      await run(db.appendConversationItem(session.id, "assistant", "msg-1", "lo ", true))
+      await run(db.appendConversationItem(session.id, "assistant", "msg-1", "lo ", true, []))
       await run(db.appendConversationItem(session.id, "assistant", "msg-1", "world", false))
       await run(db.appendConversationItem(session.id, "assistant", "msg-2", "Next", false))
+      await run(db.appendConversationItem(session.id, "assistant", "msg-3", "pic", false, [ref]))
+      await run(db.appendConversationItem(session.id, "assistant", "msg-3", "more", false, []))
       await run(db.appendConversationItem(session.id, "assistant", undefined, "loose", false))
       await run(db.appendConversationItem(session.id, "assistant", undefined, "loose2", false))
       await run(db.appendConversationItem(session.id, "user", "msg-2", "reply", false))
 
       const detail = await run(db.getSessionDetail(session.id))
       expect(
-        detail.conversation.map((item) => [item.role, item.messageId, item.text, item.isGenerating])
+        detail.conversation.map((item) => [
+          item.role,
+          item.messageId,
+          item.text,
+          item.isGenerating,
+          item.attachments
+        ])
       ).toEqual([
-        ["user", "user-1", "tell me", false],
-        ["assistant", "msg-1", "Hello world", false],
-        ["assistant", "msg-2", "Next", false],
-        ["assistant", "imported-text", "loose", false],
-        ["assistant", "imported-text", "loose2", false],
-        ["user", "msg-2", "reply", false]
+        ["user", "user-1", "tell me", false, undefined],
+        ["assistant", "msg-1", "Hello world", false, undefined],
+        ["assistant", "msg-2", "Next", false, undefined],
+        ["assistant", "msg-3", "pic", false, [ref]],
+        ["assistant", "msg-3", "more", false, undefined],
+        ["assistant", "imported-text", "loose", false, undefined],
+        ["assistant", "imported-text", "loose2", false, undefined],
+        ["user", "msg-2", "reply", false, undefined]
       ])
     } finally {
       await run(db.close)

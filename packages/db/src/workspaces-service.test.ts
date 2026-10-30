@@ -102,15 +102,7 @@ describe("@codevisor/db", () => {
     }
   })
 
-  it("rejects updating a workspace that does not exist", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    await expect(
-      run(db.updateWorkspace("6f1d5f9e-1c2b-4a3d-8e5f-0a1b2c3d4e5f", { isArchived: true }))
-    ).rejects.toThrow(/Workspace not found/)
-    await run(db.close)
-  })
-
-  it("persists, lists, updates, and deletes pane workspaces", async () => {
+  it("persists, lists, updates, and deletes pane workspaces, rejecting missing ones", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
     const project = await run(db.createProject({ folderPath: "/tmp/pane-workspaces" }))
 
@@ -175,6 +167,9 @@ describe("@codevisor/db", () => {
     await run(db.deleteWorkspace(generated.id))
     expect((await run(db.listWorkspaces)).map((workspace) => workspace.id)).toEqual(["workspace-1"])
     await expect(run(db.deleteWorkspace("missing"))).rejects.toBeInstanceOf(DatabaseError)
+    await expect(
+      run(db.updateWorkspace("6f1d5f9e-1c2b-4a3d-8e5f-0a1b2c3d4e5f", { isArchived: true }))
+    ).rejects.toThrow(/Workspace not found/)
 
     const session = await run(
       db.createSession({ projectId: project.id, harnessId: "codex", workspaceId: "workspace-1" })

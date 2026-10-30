@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import {
   botPath,
@@ -48,21 +48,19 @@ describe("@codevisor/db", () => {
   })
 
   it("derives scratch workspace paths beside the worktrees root", () => {
-    const previous = process.env["CODEVISOR_WORKTREES_ROOT"]
-    delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    onTestFinished(() => {
+      vi.unstubAllEnvs()
+    })
+    vi.stubEnv("CODEVISOR_WORKTREES_ROOT", undefined)
+    vi.stubEnv("HERDMAN_WORKTREES_ROOT", undefined)
     expect(scratchWorkspacesRoot()).toBe(join(homedir(), "codevisor", "workspaces.noindex"))
-    process.env["CODEVISOR_WORKTREES_ROOT"] = "/tmp/custom-worktrees"
+    vi.stubEnv("CODEVISOR_WORKTREES_ROOT", "/tmp/custom-worktrees")
     expect(scratchWorkspacePath("meatball")).toBe(
       "/tmp/custom-worktrees/workspaces.noindex/meatball"
     )
     expect(isScratchFolder("/tmp/custom-worktrees/workspaces.noindex/meatball")).toBe(true)
     expect(isScratchFolder("/tmp/custom-worktrees/workspaces/meatball")).toBe(true)
     expect(isScratchFolder("/tmp/custom-worktrees/bots/meatball")).toBe(false)
-    if (previous === undefined) {
-      delete process.env["CODEVISOR_WORKTREES_ROOT"]
-    } else {
-      process.env["CODEVISOR_WORKTREES_ROOT"] = previous
-    }
   })
 
   it("puts new worktrees under a .noindex folder and keeps existing ones where they are", () => {
@@ -83,8 +81,6 @@ describe("@codevisor/db", () => {
       )
 
       expect(worktreeNameAt("project-a", join(root, "project-b", "ramen"))).toBeUndefined()
-      expect(worktreeTrashRoot()).toBe(join(root, ".trash.noindex"))
-      expect(legacyWorktreeTrashRoot()).toBe(join(root, ".trash"))
       expect(worktreeTrashRoot()).toBe(join(root, ".trash.noindex"))
       expect(legacyWorktreeTrashRoot()).toBe(join(root, ".trash"))
     })

@@ -12,19 +12,27 @@ const queueFixture = async () => {
 }
 
 describe("prompt queue", () => {
-  it("remembers which prompts the system queued", async () => {
+  it("remembers which prompts the system or a native window queued", async () => {
     const { db, session } = await queueFixture()
 
     const fromUser = await run(db.createPromptQueueItem(session.id, "from the user"))
     const fromSystem = await run(
       db.createPromptQueueItem(session.id, "child finished", [], undefined, undefined, "system")
     )
+    const fromWindow = await run(
+      db.createPromptQueueItem(session.id, "from window", undefined, undefined, "window-1")
+    )
 
     expect(fromUser.origin).toBeUndefined()
+    expect(fromUser.clientId).toBeUndefined()
     expect(fromSystem.origin).toBe("system")
-    expect((await run(db.listPromptQueue(session.id))).map((item) => item.origin)).toEqual([
-      undefined,
-      "system"
+    expect(fromWindow.clientId).toBe("window-1")
+    expect(
+      (await run(db.listPromptQueue(session.id))).map((item) => [item.origin, item.clientId])
+    ).toEqual([
+      [undefined, undefined],
+      ["system", undefined],
+      [undefined, "window-1"]
     ])
   })
 

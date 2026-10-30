@@ -182,6 +182,10 @@ it("folds final answers, metadata, compaction and parented text into current sta
       expect.objectContaining({
         key: "plan",
         payload: expect.objectContaining({ detailResource: expect.any(Object) })
+      }),
+      expect.objectContaining({
+        key: "large_custom",
+        payload: expect.objectContaining({ detailResource: expect.any(Object) })
       })
     ])
   })

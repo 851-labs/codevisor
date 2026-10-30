@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 
-import { isAgentQuestion } from "./setup-questions.js"
+import { isAgentQuestion, setupQuestionPresentation } from "./setup-questions.js"
 import { memoryDatabase, run } from "./test-support.js"
 import { asksInTranscript, splitsWorkedSection } from "./transcript-questions.js"
 
@@ -191,4 +191,8 @@ it("asks in the transcript unless the prompt is a setup request or a plan approv
     isAgentQuestion({ questions: [{ id: "plugin_setup", presentation: "pluginSetup" }] })
   ).toBe(false)
   expect(isAgentQuestion(undefined)).toBe(true)
+  expect(
+    setupQuestionPresentation({ questions: [{ id: "md", presentation: "markdown" }, ...setup] })
+  ).toBe("computerUsePermissions")
+  expect(setupQuestionPresentation({ questions: "computerUsePermissions" })).toBeUndefined()
 })

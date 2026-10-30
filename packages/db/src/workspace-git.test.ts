@@ -25,12 +25,6 @@ const workspaceFixture = async () => {
   return { ...fixture, workspace, read }
 }
 
-it("leaves a workspace's git unknown until the server has checked it", async () => {
-  const { read } = await workspaceFixture()
-
-  expect((await read())?.git).toBeUndefined()
-})
-
 it("records the branch and pull request and journals only real changes", async () => {
   const { db, workspace, read } = await workspaceFixture()
 
@@ -57,8 +51,9 @@ it("keeps the known pull request when only the branch is checked", async () => {
   expect((await read())?.git).toEqual({ branch: "renamed", pullRequest })
 })
 
-it("records a checkout with no branch or pull request as known", async () => {
+it("leaves git unknown until checked, then records a checkout with no branch or pull request as known", async () => {
   const { db, workspace, read } = await workspaceFixture()
+  expect((await read())?.git).toBeUndefined()
 
   const events = await run(db.setWorkspaceGit(workspace.id, { branch: null }, null))
 

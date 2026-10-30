@@ -1,10 +1,9 @@
-import { homedir } from "node:os"
 import { join } from "node:path"
 
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { DatabaseError, makeDatabase, worktreePath } from "./index.js"
+import { DatabaseError, makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
@@ -46,9 +45,15 @@ describe("@codevisor/db", () => {
   })
 
   it("tracks worktrees and derives worktree session cwds", async () => {
+    const root = "/tmp/codevisor-worktrees-service-root"
+    vi.stubEnv("CODEVISOR_WORKTREES_ROOT", root)
+    onTestFinished(() => {
+      vi.unstubAllEnvs()
+    })
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
       const project = await run(db.createProject({ folderPath: "/tmp/worktree-project" }))
+      const path = join(root, "worktrees.noindex", project.id, "fix-auth")
 
       const worktree = await run(db.createWorktree(project.id, "fix-auth", "codevisor/fix-auth"))
       expect(worktree).toMatchObject({
@@ -56,9 +61,8 @@ describe("@codevisor/db", () => {
         serverId: "local",
         name: "fix-auth",
         branch: "codevisor/fix-auth",
-        path: join(homedir(), "codevisor", "worktrees.noindex", project.id, "fix-auth")
+        path
       })
-      expect(worktree.path).toBe(worktreePath(project.id, "fix-auth"))
 
       expect(await run(db.listWorktrees(project.id))).toEqual([worktree])
       expect(await run(db.listWorktrees("missing"))).toEqual([])
@@ -78,7 +82,7 @@ describe("@codevisor/db", () => {
         })
       )
       expect(session.worktreeName).toBe("fix-auth")
-      expect(session.cwd).toBe(worktreePath(project.id, "fix-auth"))
+      expect(session.cwd).toBe(path)
 
       const doomed = await run(db.createWorktree(project.id, "doomed", "codevisor/doomed"))
       await run(db.deleteWorktree(doomed.id))

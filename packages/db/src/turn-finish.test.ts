@@ -5,7 +5,9 @@ import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
 
 const devServer = {
-  backgroundTasks: [{ id: "shell-1", description: "bun run dev", status: "running" }]
+  backgroundTasks: [
+    { id: "shell-1", description: "bun run dev", status: "running", taskType: "shell" }
+  ]
 }
 const subagent = {
   backgroundTasks: [

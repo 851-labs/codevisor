@@ -309,7 +309,11 @@ describe("@codevisor/db", () => {
         stopReason: "manual"
       })
       expect(await run(db.getSessionSummary(session.id))).toMatchObject({ id: session.id })
-      expect(listSubjectEvents(filename, session.id).length).toBeGreaterThan(20)
+      expect(
+        listSubjectEvents(filename, session.id)
+          .filter((event) => event.globalEventId !== undefined)
+          .map((event) => event.kind)
+      ).toEqual(["session.created", "session.archived", "session.deleted"])
       expect(listSubjectEvents(filename, project.id).length).toBeGreaterThan(0)
       expect(listSubjectEvents(filename, "missing-subject").length).toBe(1)
     } finally {

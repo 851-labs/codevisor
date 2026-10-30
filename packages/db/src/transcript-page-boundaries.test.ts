@@ -121,4 +121,7 @@ it("exposes migrated text without streaming metadata and seeds standalone conten
       text: "Provider omitted markdown"
     })
   )
+  const [omitted] = (await run(db.getTranscriptPage(session.id, undefined, 8))).items
+  expect(omitted).toMatchObject({ role: "assistant", text: "Provider omitted markdown" })
+  expect(omitted?.planResource).toBeUndefined()
 })

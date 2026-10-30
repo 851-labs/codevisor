@@ -89,25 +89,4 @@ describe("orchestration links and labels", () => {
       await run(db.close)
     }
   })
-
-  it("remembers which native window queued a prompt", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    try {
-      const project = await run(db.createProject({ folderPath: "/tmp/orchestration-queue" }))
-      const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-      const fromWindow = await run(
-        db.createPromptQueueItem(session.id, "from window", undefined, undefined, "window-1")
-      )
-      const fromApi = await run(db.createPromptQueueItem(session.id, "from api"))
-      expect(fromWindow.clientId).toBe("window-1")
-      expect(fromApi.clientId).toBeUndefined()
-      expect(await run(db.listPromptQueue(session.id))).toMatchObject([
-        { id: fromWindow.id, clientId: "window-1" },
-        { id: fromApi.id }
-      ])
-      expect((await run(db.listPromptQueue(session.id)))[1]?.clientId).toBeUndefined()
-    } finally {
-      await run(db.close)
-    }
-  })
 })

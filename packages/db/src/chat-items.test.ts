@@ -410,39 +410,4 @@ describe("@codevisor/db", () => {
       await run(db.close)
     }
   })
-
-  it("coalescing handles attachments: empty array coalesces, non-empty stays its own row", async () => {
-    const filename = tempDatabase()
-    const db = await run(makeDatabase({ filename, serverId: "local" }))
-    try {
-      expect(await run(db.migrate)).toEqual([])
-      const project = await run(db.createProject({ folderPath: "/tmp/coalesce-attach" }))
-      const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-      const meta = await run(db.createFile("a.png", "image/png", "image", Buffer.from([1, 2, 3])))
-      const ref = {
-        fileId: meta.id,
-        name: meta.name,
-        mimeType: meta.mimeType,
-        sizeBytes: meta.sizeBytes,
-        kind: meta.kind
-      }
-
-      await run(db.appendConversationItem(session.id, "assistant", "m1", "He", true, []))
-      await run(db.appendConversationItem(session.id, "assistant", "m1", "llo", false, []))
-      await run(db.appendConversationItem(session.id, "assistant", "m2", "pic", false, [ref]))
-      await run(db.appendConversationItem(session.id, "assistant", "m2", "more", false, []))
-
-      const detail = await run(db.getSessionDetail(session.id))
-      expect(detail.conversation.map((item) => [item.role, item.messageId, item.text])).toEqual([
-        ["assistant", "m1", "Hello"],
-        ["assistant", "m2", "pic"],
-        ["assistant", "m2", "more"]
-      ])
-      expect(detail.conversation[0]?.attachments).toBeUndefined()
-      expect(detail.conversation[1]?.attachments).toEqual([ref])
-      expect(detail.conversation[2]?.attachments).toBeUndefined()
-    } finally {
-      await run(db.close)
-    }
-  })
 })

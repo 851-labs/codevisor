@@ -1,7 +1,7 @@
 import type { SessionSummary, TranscriptBodyPage } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
 import { integer, rowReader } from "./row-reader.js"
@@ -229,6 +229,11 @@ describe("persisted transcript state", () => {
   })
 
   it("reads an abandoned setup prompt as declined and keeps when its section ended", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
       const project = await run(db.createProject({ folderPath: "/tmp/abandoned-setup" }))
@@ -250,7 +255,7 @@ describe("persisted transcript state", () => {
         })
       )
       const asked = (await run(db.getTranscriptPage(session.id, undefined, 8))).items[0]!
-      await new Promise((resolve) => setTimeout(resolve, 5))
+      vi.setSystemTime(new Date("2026-01-01T00:00:05.000Z"))
       await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
 
       const abandoned = (await run(db.getTranscriptPage(session.id, undefined, 8))).items[0]!
@@ -260,7 +265,7 @@ describe("persisted transcript state", () => {
       expect(abandoned.setupRequests).toEqual([
         { questionId: "computer", presentation: "computerUsePermissions", outcome: "cancelled" }
       ])
-      expect(asked.endedAt).toBeDefined()
+      expect(asked.endedAt).toBe("2026-01-01T00:00:00.000Z")
       expect(abandoned.endedAt).toBe(asked.endedAt)
     } finally {
       await run(db.close)
