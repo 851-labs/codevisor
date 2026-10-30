@@ -16,6 +16,7 @@ enum BenchCommands {
     RecordCommand.self,
     SummarizeCommand.self,
     GateCommand.self,
+    EncodeLabCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {

@@ -327,6 +327,50 @@ CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>
 ```
 
+## Encoder lab (851-3767)
+
+`encode-lab` encodes scene frames offscreen with VideoToolbox, one config at a time, and reports what each costs.
+It needs no permission grant and no GUI session.
+
+```sh
+CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
+  --configs "name=product;name=native,size=3840x2160;name=tiles,size=3840x2160,tiles=4,skip=1" \
+  --output encode-lab.json --markdown encode-lab.md
+```
+
+- **Source.** `BenchSceneGenerator` renders each new version at `--resolution` (R1x2, 3840×2160, by default), scales
+  it to the config's `size` with `VTPixelTransferSession`, and converts it to the encoder's input format (BGRA for
+  `hevc444`, as the product feeds it; 4:2:0 for the others). A 60 Hz timer submits each version on its tick, so the
+  encoder sees the scene's real cadence; idle ticks submit nothing, like ScreenCaptureKit.
+- **Configs.** `--configs` takes `;`-separated `key=value` lists; every key defaults to the product encoder
+  (`ScreenSharingProductProfile`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440;
+  `hevc` and `h264` default to low-latency rate control without speed priority, the product's fallbacks). A `preset`
+  or `cq` keeps its own bitrate and speed unless `mbps` or `speed` is given too.
+  Keys: `name`, `engine` (`vt`, or `vcp` below), `codec` (`hevc444`, `hevc`, `h264`), `rc` (`standard`, `ll`), `mbps`
+  (or `none`), `size`, `tiles` (horizontal stripes, one session each, the bitrate split evenly), `skip` (encode only the
+  tiles whose pixels changed), `ltr`, `yuv`, `speed`, `mfd` (`MaxFrameDelayCount`), `qpmax`, `qpmin`, `drl` (`<mbps>@<seconds>`),
+  `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27), `aq`, `ackms` (the
+  simulated round trip before a reference token is acknowledged, 33 ms by default), `refine` (after each change,
+  resubmit the unchanged frame up to N times, every other tick, so the encoder can sharpen it) and `vcpin`.
+- **`engine=vcp`** opens Apple's real-time encoder, VideoProcessing's private `VCPCompressionSession` with
+  `Usage = 42` (851-3766), loaded with `dlopen`. It takes whole frames in `vcpin` (`444f` by default, Apple's capture
+  format; it picks Main 4:4:4 only when the source attributes are 4:4:4 and not lossless-compressed), splits them into
+  `tiles` (1–4) itself, skips unchanged tiles, and labels each output with `TileID`. Every reference token it asks for
+  (`RequireAcknowledgementToken`) is acknowledged after `ackms`, and the refresh is a `ForceLTRRefresh`. One decoder
+  decodes all its tiles, as Apple's viewer does.
+- **Per cell** (scene × config), after `--warm-up`: encode time (submit to the last tile's output), how long frame
+  preparation and the submit call took, Mbit/s, frame sizes, the chroma format the encoder actually wrote (read from
+  `hvcC`), the first frame's size, and a refresh halfway through: a forced keyframe, or with `ltr=1` a
+  `ForceLTRRefresh` with tokens acknowledged after a simulated 33 ms round trip, on the middle tile only.
+- **Quality.** A second pass decodes every frame in order with the hardware decoder and, on `--quality-samples`
+  evenly spaced frames, compares the picture a viewer would show (skipped tiles keep their last image) with the
+  source converted to 4:4:4 (BT.709, video range): PSNR of Y and of Cb/Cr (4:2:0 chroma upsampled by nearest
+  neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A single-tile config smaller than the canvas is also
+  upscaled back and compared with the native frame (`native`), so downscaling counts against it; tiled configs get
+  no native score. `engine=vcp` with `444f` input is compared in full range, the range it encodes.
+- **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
+  rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
+
 ## Signing and permissions
 
 A bundle signed with a Developer ID Application identity has a designated requirement of the bundle ID plus that
