@@ -2,10 +2,13 @@ import CoreVideo
 import ScreenSharing
 
 enum TestPixels {
-  static func frame(width: Int = 640, height: Int = 360, shade: UInt8, timestampNs: Int64) throws
+  static func frame(
+    width: Int = 640, height: Int = 360, shade: UInt8, timestampNs: Int64
+  ) throws
     -> ScreenSharingVideoFrame
   {
-    ScreenSharingVideoFrame(pixelBuffer: try buffer(width: width, height: height, shade: shade), timestampNs: timestampNs)
+    ScreenSharingVideoFrame(
+      pixelBuffer: try buffer(width: width, height: height, shade: shade), timestampNs: timestampNs)
   }
 
   private static func buffer(width: Int, height: Int, shade: UInt8) throws -> CVPixelBuffer {

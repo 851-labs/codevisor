@@ -38,7 +38,9 @@ public struct ScreenSharingAccessUnit: ScreenSharingBytes, @unchecked Sendable {
     var pointer: UnsafeMutablePointer<CChar>?
     let status = CMBlockBufferGetDataPointer(
       block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &pointer)
-    guard status == kCMBlockBufferNoErr, let pointer else { return try body(UnsafeRawBufferPointer(start: nil, count: 0)) }
+    guard status == kCMBlockBufferNoErr, let pointer else {
+      return try body(UnsafeRawBufferPointer(start: nil, count: 0))
+    }
 
     return try body(UnsafeRawBufferPointer(start: pointer, count: length))
   }

@@ -64,17 +64,11 @@ let package = Package(
       swiftSettings: strictSwiftSettings
     ),
     .target(
-      name: "ScreenSharingV2",
-      dependencies: ["ScreenSharing", "CodevisorNet"],
-      path: "ScreenSharing/Sources/ScreenSharingV2",
-      swiftSettings: strictSwiftSettings
-    ),
+      name: "ScreenSharingV2", dependencies: ["ScreenSharing", "CodevisorNet"],
+      path: "ScreenSharing/Sources/ScreenSharingV2", swiftSettings: strictSwiftSettings),
     .testTarget(
-      name: "ScreenSharingV2Tests",
-      dependencies: ["ScreenSharingV2", "ScreenSharing", "CodevisorNet", "CodevisorTestSupport"],
-      path: "ScreenSharing/Tests/ScreenSharingV2Tests",
-      swiftSettings: strictSwiftSettings
-    ),
+      name: "ScreenSharingV2Tests", dependencies: ["ScreenSharingV2", "CodevisorNet", "CodevisorTestSupport"],
+      path: "ScreenSharing/Tests/ScreenSharingV2Tests", swiftSettings: strictSwiftSettings),
     .target(
       name: "ScreenSharingBench",
       path: "ScreenSharing/Sources/ScreenSharingBench",

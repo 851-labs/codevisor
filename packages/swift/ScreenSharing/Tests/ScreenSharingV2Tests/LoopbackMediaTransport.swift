@@ -82,7 +82,9 @@ final class LoopbackMediaTransport: ScreenSharingMediaTransport, @unchecked Send
     continuation.finish()
   }
 
-  private static func received(_ tile: ScreenSharingEncodedTile, number: UInt32, meta: Data) -> ScreenSharingReceivedFrame {
+  private static func received(
+    _ tile: ScreenSharingEncodedTile, number: UInt32, meta: Data
+  ) -> ScreenSharingReceivedFrame {
     let copy = tile.accessUnit.withUnsafeBytes { Data($0) }
     return ScreenSharingReceivedFrame(
       stream: UInt8(tile.tile), frame: number, isKeyFrame: tile.isKeyFrame, ltrToken: tile.ltrToken, meta: meta,
