@@ -67,7 +67,12 @@ struct BotListSidebar: View {
       }
       .scrollContentBackground(.hidden)
       .contextMenu {
-        Button("New Section…", systemImage: "folder.badge.plus") { sectionPrompt = .create(moving: nil) }
+        Button {
+          sectionPrompt = .create(moving: nil)
+        } label: {
+          Label("New Section…", systemImage: "folder.badge.plus")
+            .labelStyle(.titleAndIcon)
+        }
       }
       .onChange(of: selectedBotID) { _, id in
         if let id { proxy.scrollTo(id) }

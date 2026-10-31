@@ -21,7 +21,10 @@ struct MoveToSectionMenu: View {
       .pickerStyle(.inline)
       .labelsHidden()
       Divider()
-      Button("New Section…", action: newSection)
+      Button(action: newSection) {
+        Label("New Section…", systemImage: "folder.badge.plus")
+          .labelStyle(.titleAndIcon)
+      }
     } label: {
       Label("Move to Section", systemImage: "folder")
         .labelStyle(.titleAndIcon)
