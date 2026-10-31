@@ -15,8 +15,9 @@
 //! hand-off, to set against what `CodevisorBench media-transport --role ffi-cost` measures from Swift.
 //!
 //! For each row and transport the host reports the frame round trip (`send_frame` to the ack: pacing, both network
-//! legs, assembly and the feedback) and its p50/p95 difference from plain UDP, the recovery delay of frames that
-//! lost packets (completion after the last packet that arrived the first time), and the counters.
+//! legs, assembly and the feedback) and its p50/p95 difference from plain UDP; the share of frames complete within
+//! RTT + 2 ms of their last packet's first arrival (the M1 N3 target), with the RTT taken from the acks themselves;
+//! the recovery delay of frames that lost packets; and the counters.
 
 use std::{
     collections::HashMap,
@@ -210,7 +211,7 @@ async fn viewer(options: &Options) -> Result<String> {
         MediaSession::new(ImpairedTransport::new(udp, network, VIEWER_SEED), media_config()),
         idle,
     ));
-    let connection = endpoint.accept().await?.ok_or_else(|| anyhow!("endpoint closed"))?;
+    let connection = accept_screen(&endpoint).await?;
     let _ = path.set(connection.clone());
     let session =
         MediaSession::new(ImpairedTransport::new(QuicTransport::new(connection), network, VIEWER_SEED), media_config());
@@ -218,6 +219,17 @@ async fn viewer(options: &Options) -> Result<String> {
     let (udp_tally, udp_stats) = udp_task.await?;
     endpoint.close().await;
     Ok(format!("{}\n{}\n", viewer_line("iroh", &quic_tally, &quic_stats), viewer_line("udp", &udp_tally, &udp_stats)))
+}
+
+/// The next connection that completes its handshake; a stray or stale one that fails it is skipped.
+async fn accept_screen(endpoint: &NetEndpoint) -> Result<codevisor_net::NetConnection> {
+    loop {
+        match endpoint.accept().await {
+            Ok(Some(connection)) => return Ok(connection),
+            Ok(None) => bail!("endpoint closed"),
+            Err(error) => eprintln!("skipping a connection that failed its handshake: {error:#}"),
+        }
+    }
 }
 
 async fn connect_quic(
@@ -278,7 +290,7 @@ async fn loopback(options: &Options) -> Result<String> {
     let quic_viewer = {
         let endpoint = viewer_endpoint.clone();
         tokio::spawn(async move {
-            let connection = endpoint.accept().await?.ok_or_else(|| anyhow!("endpoint closed"))?;
+            let connection = accept_screen(&endpoint).await?;
             let session = MediaSession::new(
                 ImpairedTransport::new(QuicTransport::new(connection), network, VIEWER_SEED),
                 media_config(),
@@ -347,10 +359,15 @@ async fn send_cost(options: &Options) -> Result<String> {
 struct Measured {
     round_trips_ms: Vec<f64>,
     sending_ms: Vec<f64>,
-    /// Recovery delay of frames that lost packets, and whether it was within the round trip + 2 ms.
+    /// Recovery delay of frames that lost packets: completion after the last packet that arrived the first time.
     recoveries_ms: Vec<f64>,
+    /// Frames repaired within the round trip + 2 ms, of `timed` (repaired or lost).
     within: u64,
     timed: u64,
+    /// The path's round trip as the acks show it: the fastest clean frame's first packet out to its ack in, minus its
+    /// sending spread. One clock, and free of QUIC's own queueing (its smoothed RTT read 8 ms at N3 for a 2.7 ms path).
+    /// `measure` lowers it to the transport's fastest so far and counts `within` against it.
+    rtt_floor_ms: f64,
     acked: u64,
     lost: u64,
     sent: u64,
@@ -396,13 +413,22 @@ async fn measure(
     )?;
     table.push_str(
         "| Row | Transport | Frames acked / lost | Round trip p50 / p95 / p99 ms | Added vs UDP p50 / p95 ms | Pacing p50 ms \
-         | Frames within RTT+2 ms (lossy ones) | Recovery p50 / p95 ms | Retransmits / FEC parity / probes |\n\
+         | Frames within RTT+2 ms (lossy ones), RTT from acks | Recovery p50 / p95 ms | Retransmits / FEC parity / probes |\n\
          | -- | -- | -- | -- | -- | -- | -- | -- | -- |\n",
     );
+    let (mut udp_floor, mut quic_floor) = (f64::INFINITY, f64::INFINITY);
     for (index, row) in rows {
         let stream_base = (index as u8) * 4;
-        let udp_result = run_row(&udp, row, stream_base, seconds).await;
-        let quic_result = run_row(&quic, row, stream_base, seconds).await;
+        let mut udp_result = run_row(&udp, row, stream_base, seconds).await;
+        let mut quic_result = run_row(&quic, row, stream_base, seconds).await;
+        // Each transport's round trip is the fastest clean ack seen so far: small frames (the first rows) time the
+        // path itself, large ones add their own serialization.
+        for (result, floor) in [(&mut udp_result, &mut udp_floor), (&mut quic_result, &mut quic_floor)] {
+            *floor = floor.min(result.rtt_floor_ms);
+            result.rtt_floor_ms = *floor;
+            let bound = *floor + 2.0;
+            result.within = result.recoveries_ms.iter().filter(|recovery| **recovery <= bound).count() as u64;
+        }
         for path in connection.paths().iter().filter(|path| path.selected) {
             writeln!(
                 diagnostics,
@@ -445,10 +471,11 @@ async fn measure(
                     let late = result.timed - result.within;
                     let on_time = result.sent.saturating_sub(late);
                     format!(
-                        "{:.2}% ({} of {})",
+                        "{:.2}% ({} of {}), {:.2} ms",
                         on_time as f64 * 100.0 / result.sent.max(1) as f64,
                         result.within,
-                        result.timed
+                        result.timed,
+                        result.rtt_floor_ms
                     )
                 },
                 percentile(&result.recoveries_ms, 0.5),
@@ -460,7 +487,7 @@ async fn measure(
             json.push(format!(
                 "{{\"row\":\"{}\",\"transport\":\"{label}\",\"network\":\"{}\",\"sent\":{},\"acked\":{},\"lost\":{},\
                  \"rtt_p50_ms\":{:.3},\"rtt_p95_ms\":{:.3},\"rtt_p99_ms\":{:.3},\"pacing_p50_ms\":{:.3},\
-                 \"lossy_frames\":{},\"lossy_within_rtt_2ms\":{},\"recovery_p95_ms\":{:.3},\"retransmits\":{},\
+                 \"lossy_frames\":{},\"lossy_within_rtt_2ms\":{},\"rtt_floor_ms\":{:.3},\"recovery_p95_ms\":{:.3},\"retransmits\":{},\
                  \"parity\":{},\"probes\":{},\"estimate_mbps\":{:.1}}}",
                 row.name,
                 network.id,
@@ -473,6 +500,7 @@ async fn measure(
                 percentile(&result.sending_ms, 0.5),
                 result.timed,
                 result.within,
+                result.rtt_floor_ms,
                 percentile(&result.recoveries_ms, 0.95),
                 result.stats.packets_retransmitted,
                 result.stats.parity_packets_sent,
@@ -494,34 +522,36 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
     let frames = (seconds / INTERVAL.as_secs_f64()) as u32;
     let mut cache = HashMap::new();
     let mut submitted: HashMap<(u8, u32), Instant> = HashMap::new();
-    let mut measured = Measured::default();
+    let mut measured = Measured { rtt_floor_ms: f64::INFINITY, ..Measured::default() };
     let mut ticker = tokio::time::interval(INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let collect =
-        |measured: &mut Measured, submitted: &mut HashMap<(u8, u32), Instant>, event: Event, rtt: Duration| match event
-        {
-            Event::FrameAcked(ack) => {
-                let Some(sent) = submitted.remove(&(ack.stream, ack.frame)) else {
-                    return;
-                };
-                measured.acked += 1;
-                measured.round_trips_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
-                measured.sending_ms.push(ack.sending.as_secs_f64() * 1000.0);
-                if let Some(receipt) = ack.receipt
-                    && receipt.recovery != crate::Recovery::None
-                {
-                    let recovery = receipt.assembling.saturating_sub(receipt.arriving);
+    let collect = |measured: &mut Measured, submitted: &mut HashMap<(u8, u32), Instant>, event: Event| match event {
+        Event::FrameAcked(ack) => {
+            let Some(sent) = submitted.remove(&(ack.stream, ack.frame)) else {
+                return;
+            };
+            measured.acked += 1;
+            measured.round_trips_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
+            measured.sending_ms.push(ack.sending.as_secs_f64() * 1000.0);
+            match ack.receipt {
+                Some(receipt) if receipt.recovery != crate::Recovery::None => {
                     measured.timed += 1;
-                    measured.within += u64::from(recovery <= rtt + Duration::from_millis(2));
+                    let recovery = receipt.assembling.saturating_sub(receipt.arriving);
                     measured.recoveries_ms.push(recovery.as_secs_f64() * 1000.0);
                 }
+                Some(_) => {
+                    let round_trip = ack.acked_after.saturating_sub(ack.sending).as_secs_f64() * 1000.0;
+                    measured.rtt_floor_ms = measured.rtt_floor_ms.min(round_trip);
+                }
+                None => {}
             }
-            Event::FrameLost { stream, frame } if submitted.remove(&(stream, frame)).is_some() => {
-                measured.lost += 1;
-                measured.timed += 1;
-            }
-            _ => {}
-        };
+        }
+        Event::FrameLost { stream, frame } if submitted.remove(&(stream, frame)).is_some() => {
+            measured.lost += 1;
+            measured.timed += 1;
+        }
+        _ => {}
+    };
     let mut index = 0;
     while index < frames {
         // Take events as they arrive, so an ack is timed when it lands rather than at the next tick.
@@ -529,8 +559,7 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
             biased;
             event = session.next_event() => {
                 let Some(event) = event else { break };
-                let rtt = session.stats().rtt;
-                collect(&mut measured, &mut submitted, event, rtt);
+                collect(&mut measured, &mut submitted, event);
                 continue;
             }
             _ = ticker.tick() => {}
@@ -557,8 +586,7 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
     }
     let deadline = tokio::time::Instant::now() + DRAIN;
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, session.next_event()).await {
-        let rtt = session.stats().rtt;
-        collect(&mut measured, &mut submitted, event, rtt);
+        collect(&mut measured, &mut submitted, event);
     }
     let after = session.stats();
     measured.stats = crate::Stats {
