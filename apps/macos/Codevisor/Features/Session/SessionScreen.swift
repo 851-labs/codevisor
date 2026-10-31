@@ -22,7 +22,6 @@ struct SessionScreen: View {
   var onSplitOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
   var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
   var onCenterTreeLiveChanged: ((SplitNode) -> Void)? = nil
-  @State private var attachmentImages: AttachmentImageStore?
 
   var body: some View {
     centerContent
@@ -36,48 +35,12 @@ struct SessionScreen: View {
         focus.workspaceCommandHandler = onWorkspaceCommand
         focus.centerGroup = centerGroup
         focus.startTypeToFocus()
-        installAttachmentImageStoreIfNeeded()
-      }
-      .onChange(of: controller?.previewCacheNamespace) {
-        installAttachmentImageStoreIfNeeded()
       }
       .onDisappear {
         focus.stopTypeToFocus()
         splitDragCoordinator?.dragCancelled()
       }
-      .environment(\.attachmentImages, attachmentImages)
-  }
-
-  private func installAttachmentImageStoreIfNeeded() {
-    guard let controller else {
-      attachmentImages = nil
-      return
-    }
-    let namespace = controller.previewCacheNamespace
-    guard attachmentImages?.namespace != namespace else { return }
-    attachmentImages = AttachmentImageStore(
-      namespace: namespace,
-      fetch: { [weak controller] source in
-        guard let controller else {
-          throw SessionControllerError.serverUnavailable
-        }
-        return try await controller.fileData(for: source)
-      },
-      fetchPreview: { [weak controller] source in
-        guard let controller else { throw SessionControllerError.serverUnavailable }
-        return try await controller.filePreview(for: source)
-      },
-      fetchPrefix: { [weak controller] source, length in
-        guard let controller else { throw SessionControllerError.serverUnavailable }
-        return try await controller.filePrefix(for: source, length: length)
-      },
-      version: { [weak controller] source in
-        guard let controller else {
-          throw SessionControllerError.serverUnavailable
-        }
-        return try await controller.fileVersion(for: source)
-      }
-    )
+      .attachmentImageStore(controller)
   }
 
   private var centerContent: some View {
