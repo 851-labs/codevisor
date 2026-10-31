@@ -8,8 +8,11 @@ extension SidebarView {
     let actions = rowActions
     let namingMachine = Self.placementsNamingMachine(in: rows)
     let sections = environment.workspaceSections.sections
+    let membership = environment.workspaceSections.membership
     return SidebarRowList(rows: rows, id: \.placedID, animation: Motion.listReflow(reduceMotion: reduceMotion)) { row in
-      workspaceRegionRow(row, routed: routed, actions: actions, namingMachine: namingMachine, sections: sections)
+      workspaceRegionRow(
+        row, routed: routed, actions: actions, namingMachine: namingMachine, sections: sections,
+        membership: membership)
     }
   }
 
@@ -24,7 +27,8 @@ extension SidebarView {
   @ViewBuilder
   private func workspaceRegionRow(
     _ row: SidebarRow, routed: (serverId: String, id: UUID)?,
-    actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>, sections: [CustomSection]
+    actions: SidebarWorkspaceSection.Actions, namingMachine: Set<SidebarRow.Placement>, sections: [CustomSection],
+    membership: [UUID: UUID]
   ) -> some View {
     switch row.kind {
     case let .section(.pinned, isExpanded):
@@ -59,7 +63,8 @@ extension SidebarView {
         item: item, store: store, grouping: grouping, rowDetails: rowDetails,
         isSelected: routed?.serverId == item.serverId && routed?.id == item.id,
         isPinned: placement == .pinned, headingNamesMachine: namingMachine.contains(placement),
-        isReordering: isReordering, isExpanded: row.isExpanded, sectionPlacement: WorkspaceSectionPlacement(row),
+        isReordering: isReordering, isExpanded: row.isExpanded,
+        sectionPlacement: WorkspaceSectionPlacement(row, membership: membership),
         sections: sections, actions: actions
       )
       .equatable()
