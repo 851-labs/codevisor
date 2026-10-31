@@ -5,7 +5,7 @@ use bytes::Bytes;
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
     Watcher,
-    endpoint::{Connection, ConnectOptions, Incoming, QuicTransportConfig, SendDatagramError, ServerConfig, presets},
+    endpoint::{ConnectOptions, Connection, Incoming, QuicTransportConfig, SendDatagramError, ServerConfig, presets},
     tls::CaTlsConfig,
 };
 use tokio::{
