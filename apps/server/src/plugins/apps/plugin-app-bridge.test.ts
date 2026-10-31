@@ -43,7 +43,6 @@ const bridged = (
     readonly pathname?: string
     readonly gesture?: boolean
     readonly respond?: (url: string, init: BridgeRequestInit) => Promise<BridgeResponse>
-    readonly frameOrigin?: string
   } = {}
 ) => {
   const toApp: Array<Record<string, unknown>> = []
@@ -51,7 +50,6 @@ const bridged = (
   const opened: Array<string> = []
   const fetched: Array<{ readonly url: string; readonly init: BridgeRequestInit }> = []
   const attributes: Record<string, string> = {}
-  const timers: Array<() => void> = []
   const replies = new Map<unknown, PromiseWithResolvers<Record<string, unknown>>>()
   let listener: ((event: BridgeEvent) => void) | undefined
   const contentWindow = {
@@ -72,7 +70,7 @@ const bridged = (
   const api = installAppBridge({
     pathname: options.pathname ?? "/v1/plugins/apps/view-1",
     search: "?token=launch&theme=dark",
-    frameOrigin: options.frameOrigin,
+    frameOrigin: undefined,
     boot: options.boot ?? boot,
     frame,
     host: {
@@ -90,9 +88,8 @@ const bridged = (
       },
       open: (url) => opened.push(url),
       hasUserActivation: () => options.gesture ?? true,
-      schedule: (callback, delayMs) => {
+      schedule: (_callback, delayMs) => {
         expect(delayMs).toBe(10_000)
-        timers.push(callback)
       }
     }
   })
@@ -105,9 +102,7 @@ const bridged = (
     return reply.promise
   }
 
-  const fireTimers = () => timers.splice(0).forEach((callback) => callback())
-
-  return { api, attributes, fetched, fireTimers, frame, fromApp, opened, request, toApp, toNative }
+  return { api, attributes, fetched, frame, fromApp, opened, request, toApp, toNative }
 }
 
 describe("plugin app bridge", () => {
@@ -279,15 +274,16 @@ describe("plugin app bridge", () => {
     })
   })
 
-  it("ignores messages from anywhere but the app frame", () => {
-    const { fromApp, toApp, toNative } = bridged()
+  it("ignores messages from anywhere but the app frame", async () => {
+    const { fromApp, request, toApp, toNative } = bridged()
 
-    fromApp({ jsonrpc: "2.0", id: 1, method: "ui/initialize" }, {})
+    fromApp({ jsonrpc: "2.0", id: 1, method: "ping" }, {})
     fromApp("hello")
     fromApp({ jsonrpc: "2.0", id: 2, result: {} })
     fromApp({ jsonrpc: "2.0", method: "notifications/message", params: { level: "info" } })
+    await request(3, "ping")
 
-    expect(toApp).toEqual([])
+    expect(toApp.map((message) => message.id)).toEqual([3])
     expect(toNative).toEqual([])
   })
 })

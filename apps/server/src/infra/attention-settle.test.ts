@@ -221,16 +221,26 @@ describe("@codevisor/server attention settle", () => {
       await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
       expect(await run(db.getAttentionSettleDeadline(session.id))).toBeDefined()
 
-      const scheduler = makeAttentionSettleScheduler(db, fanout)
-      try {
-        await scheduler.recover()
-      } finally {
-        scheduler.close()
-      }
+      const closed = makeAttentionSettleScheduler(db, fanout)
+      await closed.recover()
+      closed.close()
+      await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
       expect(await run(db.getSessionSummary(session.id))).toMatchObject({
         latestAttentionSequence: 0,
         sidebarState: "inProgress"
       })
+
+      const recovered = makeAttentionSettleScheduler(db, fanout)
+      try {
+        await recovered.recover()
+        await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
+        expect(await run(db.getSessionSummary(session.id))).toMatchObject({
+          latestAttentionSequence: 1,
+          sidebarState: "unread"
+        })
+      } finally {
+        recovered.close()
+      }
     } finally {
       await run(db.close)
     }

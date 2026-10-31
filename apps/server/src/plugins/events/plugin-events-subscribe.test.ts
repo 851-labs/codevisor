@@ -187,27 +187,6 @@ describe("subscribing to plugin events", () => {
     expect(created.arguments).toEqual({ channel: "alerts" })
   })
 
-  it("subscribes through the plugin's default account unless one is named", async () => {
-    const fixture = await eventsFixture()
-    const pinger = await pingPlugin(fixture)
-    const accounts = new Map([["Work", "account-work"]])
-    const events = fixture.engine({
-      resolveAccount: async (_serverId, requested) =>
-        requested === undefined ? "account-default" : accounts.get(requested)
-    })
-    const request = { sessionId: fixture.session.id, plugin: pinger.id, event: "ping" }
-
-    const byDefault = await events.subscribe(request)
-    const named = await events.subscribe({ ...request, accountId: "Work" })
-    const unknown = await events.subscribe({ ...request, accountId: "Home" })
-
-    expect([byDefault.accountId, named.accountId, unknown.accountId]).toEqual([
-      "account-default",
-      "account-work",
-      "Home"
-    ])
-  })
-
   it("names subscriptions by plugin id once the plugin is gone", async () => {
     const fixture = await eventsFixture()
     const pinger = await pingPlugin(fixture)

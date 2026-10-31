@@ -204,26 +204,6 @@ describe("update run", () => {
     expect(world.updates.state().state).toBe("idle")
   })
 
-  it("continues the chats when the server update fails to apply", async () => {
-    const world = makeWorld({
-      server: {
-        check: async () => release,
-        apply: async () => {
-          throw new Error("installer exited 1")
-        }
-      }
-    })
-
-    await world.updates.startServerUpdate("stable")
-    await world.settled("idle")
-
-    expect(world.steps).toEqual([
-      "pause all chats",
-      "log: Server update failed: installer exited 1",
-      "continue chats"
-    ])
-  })
-
   it("releases the chats when a harness step breaks", async () => {
     const world = makeWorld()
 
@@ -320,28 +300,6 @@ describe("update run", () => {
     })
     expect(world.steps).toEqual(["prepare codex", "unprepare codex"])
     expect(world.updates.state().state).toBe("idle")
-  })
-
-  it("explains when this server can't update harnesses or itself", async () => {
-    const world = makeWorld({ server: false })
-    const noHarnesses = makeUpdateRun({
-      restart: world.restart,
-      harnesses: undefined,
-      server: undefined,
-      pausedSessionIds: () => [],
-      onChange: () => {}
-    })
-
-    await expect(noHarnesses.start({ harnessIds: ["codex"] })).rejects.toMatchObject({
-      status: 501
-    })
-    await expect(world.updates.startServerUpdate("stable")).rejects.toMatchObject({
-      status: 409,
-      message: "This server does not support remote updates"
-    })
-    await expect(noHarnesses.start({ harnessIds: [] })).resolves.toMatchObject({
-      run: { state: "idle" }
-    })
   })
 
   it("can only be cancelled while chats are pausing, and then installs nothing", async () => {

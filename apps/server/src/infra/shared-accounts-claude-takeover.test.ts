@@ -350,7 +350,10 @@ describe("taking over this machine's Claude Code login", () => {
   it("ignores other harnesses and unfinished sign-ins when deciding", async () => {
     startClock()
     quietLogs()
-    const m = await fleet().machine("a", native("bob"))
+    const m = await fleet().machine("a")
+    const codex = { ...native("bob"), ownership: "managed" as const, refreshToken: "codex-refresh" }
+    const credential = await m.vault.create(codex)
+    await m.shared.store.save(sharedAccountFor(codex, credential, undefined, "a"))
     await m.shared.create("claude-code")
     m.claude.signIn(machineLogin())
 

@@ -476,5 +476,4 @@ const serverCloseAttempt = (runClose: () => Promise<void>): Effect.Effect<void, 
     catch: (cause) => new ServerError({ operation: "closeApp", message: failureMessage(cause) })
   })
 
-export { defaultDatabasePath } from "./infra/data-dir.js"
 import { isBrowserProxyRequest } from "./infra/browser-forward-proxy.js"

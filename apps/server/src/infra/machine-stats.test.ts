@@ -21,6 +21,7 @@ const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading | unde
   let tick: (() => void) | undefined
   let cancelled = 0
   let gpuReads = 0
+  const intervals: Array<number> = []
   const readers: MachineStatsReaders = {
     cores: () => 8,
     cpuModel: () => "Apple M1 Pro",
@@ -36,7 +37,8 @@ const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading | unde
   const stats = makeMachineStatsSampler({
     readers,
     now: () => now,
-    every: (callback) => {
+    every: (callback, ms) => {
+      intervals.push(ms)
       tick = callback
       return () => {
         cancelled += 1
@@ -54,7 +56,8 @@ const sampler = (cpu: Array<CpuTimes>, disk = true, gpu: Array<GpuReading | unde
     },
     running: () => tick !== undefined,
     cancelled: () => cancelled,
-    gpuReads: () => gpuReads
+    gpuReads: () => gpuReads,
+    intervals
   }
 }
 
@@ -96,13 +99,14 @@ describe("machine stats", () => {
   })
 
   it("samples from the moment it's created and keeps recent CPU history without being read", async () => {
-    const { stats, advance, running, cancelled } = sampler([
+    const { stats, advance, running, cancelled, intervals } = sampler([
       { idle: 0, total: 0 },
       { idle: 90, total: 100 },
       { idle: 140, total: 200 },
       { idle: 140, total: 300 }
     ])
     expect(running()).toBe(true)
+    expect(intervals).toEqual([3_000])
     expect(await stats.read()).toEqual({
       sampledAt: "2026-10-20T12:00:00.000Z",
       uptimeSeconds: 3_600,
@@ -124,27 +128,6 @@ describe("machine stats", () => {
     stats.stop()
     expect(running()).toBe(false)
     expect(cancelled()).toBe(1)
-  })
-
-  it("samples every few seconds by default", () => {
-    const intervals: Array<number> = []
-    makeMachineStatsSampler({
-      readers: {
-        cores: () => 1,
-        cpuModel: () => undefined,
-        cpuTimes: () => ({ idle: 0, total: 0 }),
-        gpu: async () => undefined,
-        memory: async () => ({ usedBytes: 1, totalBytes: 2 }),
-        disk: async () => undefined,
-        uptimeSeconds: () => 1
-      },
-      now: () => 0,
-      every: (_tick, ms) => {
-        intervals.push(ms)
-        return () => undefined
-      }
-    })
-    expect(intervals).toEqual([3_000])
   })
 
   it("reads GPU use from ioreg on macOS and nvidia-smi on Linux", () => {

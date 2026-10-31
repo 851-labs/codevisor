@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import {
   makeLinkPreviewStore,
-  normalizePreviewUrl,
   renderPreviewImage,
   type LinkPreviewStoreOptions
 } from "./link-previews.js"
@@ -78,7 +77,14 @@ describe("link preview images", () => {
   it("shrinks opaque images to JPEG and keeps transparency as PNG, with the dominant color", async () => {
     const opaque = await renderPreviewImage(await picture(1600, 840, 1))
     expect(opaque).toMatchObject({ width: 800, height: 420, image: { contentType: "image/jpeg" } })
-    expect(opaque?.color).toMatch(/^#[\da-f]{6}$/)
+    const channels = (opaque?.color.match(/^#(..)(..)(..)$/)?.slice(1) ?? []).map((hex) =>
+      Number.parseInt(hex, 16)
+    )
+    expect(channels.map((value, index) => Math.abs(value - [240, 128, 0][index]!) <= 16)).toEqual([
+      true,
+      true,
+      true
+    ])
     const clear = await renderPreviewImage(await picture(40, 20, 0.5))
     expect(clear).toMatchObject({ width: 40, height: 20, image: { contentType: "image/png" } })
   })
@@ -88,12 +94,6 @@ describe("link preview images", () => {
     expect(await renderPreviewImage(Buffer.from("<svg></svg>"))).toBeUndefined()
     expect(await renderPreviewImage(Buffer.from("plain text"))).toBeUndefined()
     expect(await renderPreviewImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]))).toBeUndefined()
-  })
-
-  it("keeps web URLs without their fragment", () => {
-    expect(normalizePreviewUrl("https://a.test/page#section")).toBe("https://a.test/page")
-    expect(normalizePreviewUrl("ftp://a.test/file")).toBeUndefined()
-    expect(normalizePreviewUrl("not a url")).toBeUndefined()
   })
 })
 
@@ -158,6 +158,7 @@ describe("link preview store", () => {
     expect(await previews.preview("https://site.test/bare")).toBeUndefined()
     expect(requested).toHaveLength(4)
     expect(await previews.preview("mailto:someone@site.test")).toBeUndefined()
+    expect(await previews.preview("not a url")).toBeUndefined()
     expect(requested).toHaveLength(4)
   })
 

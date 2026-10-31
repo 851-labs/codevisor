@@ -52,7 +52,10 @@ describe("cloud inbox", () => {
 
     await inbox.receive(device.secretKey, sealed("w1", "webhook", { itemId: "w1", method: "POST" }))
     await inbox.receive(device.secretKey, sealed("w2", "webhook", ["not", "a", "request"]))
-    await inbox.receive(device.secretKey, sealed("o1", "oauth", { flowId: "f1", state: "s1" }))
+    await inbox.receive(
+      device.secretKey,
+      sealed("o1", "oauth", { ...webhookPayload(), itemId: "o1", headers: {} })
+    )
     await inbox.receive(
       device.secretKey,
       sealed("w3", "webhook", { ...webhookPayload(), headers: "none" })
@@ -97,16 +100,6 @@ describe("cloud inbox", () => {
 
     expect(handled).toEqual(["item-1"])
     expect(acks).toEqual([["item-1"]])
-  })
-
-  it("ignores frames when this server has no inbox", () => {
-    const acks: Array<ReadonlyArray<string>> = []
-
-    inboxFrameHandler(undefined, device.secretKey, (itemIds) => acks.push(itemIds))(
-      webhook("item-1")
-    )
-
-    expect(acks).toEqual([])
   })
 
   it("forgets the oldest delivered items so memory stays bounded", async () => {

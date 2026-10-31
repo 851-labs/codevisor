@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import { makeWorld, unit, systemCat, userCat, health, ok } from "./support-test-support.js"
 import {
   DEFAULT_PORT,
-  detectServiceManager,
   logFilePath,
   pidFilePath,
   resolvePort,
@@ -15,17 +14,6 @@ import {
 const portFile = "/home/user/.codevisor/data/server-port.json"
 
 describe("codevisor CLI support", () => {
-  it("detects system units, user units, and the pidfile fallback", async () => {
-    const system = makeWorld({ exec: { [systemCat]: unit(50000) } })
-    expect(await detectServiceManager(system.deps)).toMatchObject({ kind: "systemd-system" })
-
-    const user = makeWorld({ exec: { [userCat]: unit(50001) } })
-    expect(await detectServiceManager(user.deps)).toMatchObject({ kind: "systemd-user" })
-
-    const none = makeWorld()
-    expect(await detectServiceManager(none.deps)).toEqual({ kind: "pidfile" })
-  })
-
   it("resolves the port from flag, env, unit, the port file, then default", async () => {
     const world = makeWorld({ exec: { [systemCat]: unit(50123) } })
     expect(await resolvePort(world.deps, 40000)).toBe(40000)
@@ -197,6 +185,8 @@ describe("codevisor CLI support", () => {
       }
     })
     expect(await stopCommand(world.deps)).toBe(0)
+    expect(world.execCalls).toContain("systemctl stop codevisor-server.service")
+    expect(world.logs).not.toContain("Codevisor server is not running")
   })
 
   it("stops a pidfile server with SIGTERM and clears the pidfile", async () => {
@@ -226,16 +216,20 @@ describe("codevisor CLI support", () => {
         [`POST http://127.0.0.1:${DEFAULT_PORT}/v1/shutdown`]: [{ status: 202, body: { ok: true } }]
       }
     })
+    const shutdown = `POST http://127.0.0.1:${DEFAULT_PORT}/v1/shutdown`
     expect(await stopCommand(world.deps)).toBe(0)
     expect(world.logs.at(-1)).toBe("Codevisor server stopped")
+    expect(world.httpCalls(shutdown)).toBe(1)
 
     const stubborn = makeWorld({ http: { [health(DEFAULT_PORT)]: [ok] } })
     expect(await stopCommand(stubborn.deps)).toBe(1)
     expect(stubborn.errors[0]).toContain("still answering")
+    expect(stubborn.httpCalls(shutdown)).toBe(1)
 
     const notRunning = makeWorld()
     expect(await stopCommand(notRunning.deps)).toBe(0)
     expect(notRunning.logs.at(-1)).toBe("Codevisor server is not running")
+    expect(notRunning.httpCalls(shutdown)).toBe(0)
   })
 
   it("restarts via systemctl and reports health", async () => {

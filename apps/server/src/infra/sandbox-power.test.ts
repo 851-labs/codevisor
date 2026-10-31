@@ -180,7 +180,9 @@ describe("waking a sandbox", () => {
   it("leaves a running sandbox as it is", async () => {
     const harness = await readySandbox("in-place")
 
-    expect(await harness.machines.wake("id-1")).toMatchObject({ id: "id-1", state: "ready" })
+    const answer = await harness.machines.wake("id-1")
+    expect(answer).toMatchObject({ id: "id-1", state: "ready" })
+    expect(answer).not.toHaveProperty("power")
     expect((await harness.record())?.power).toBeUndefined()
   })
 

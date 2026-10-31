@@ -54,7 +54,7 @@ export interface MachineEnrollment {
   readonly remove: (machine: string) => Promise<ReadonlyArray<MachineSummary>>
 }
 
-export const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
 export const remoteInstallScript = (options: {
   readonly inviteCode: string

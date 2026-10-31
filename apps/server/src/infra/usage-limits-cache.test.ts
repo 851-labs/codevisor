@@ -107,17 +107,18 @@ describe("@codevisor/server usage limits cache", () => {
   })
 
   it("serves an account's last known limits after a restart until their windows reset", async () => {
-    const firstSave = Promise.withResolvers<void>()
+    const savedMuse = Promise.withResolvers<void>()
     let stored: Awaited<ReturnType<UsageLimitsStore["load"]>> = new Map()
     const memory: UsageLimitsStore = {
       load: async () => stored,
       save: async (entries) => {
         stored = new Map(entries)
-        firstSave.resolve()
+        if (entries.has("muse-code:account")) savedMuse.resolve()
       }
     }
     let clock = Date.parse("2026-10-18T00:00:00.000Z")
     const before = makeUsageLimitsCache({ now: () => clock, ttlMs: 1000, store: memory })
+    await before.read("codex:account", async () => unavailable)
     before.observe(
       "muse-code:account",
       {
@@ -140,8 +141,7 @@ describe("@codevisor/server usage limits cache", () => {
       },
       false
     )
-    before.observe("codex:account", unavailable, false)
-    await firstSave.promise
+    await savedMuse.promise
     expect([...stored.keys()]).toEqual(["muse-code:account"])
 
     clock += 60 * 60_000

@@ -45,7 +45,7 @@ export interface ServiceManager {
 const UNIT = "codevisor-server.service"
 export const DEFAULT_PORT = DEFAULT_LISTEN_PORT
 
-export const detectServiceManager = async (deps: CliDeps): Promise<ServiceManager> => {
+const detectServiceManager = async (deps: CliDeps): Promise<ServiceManager> => {
   const system = await deps.exec("systemctl", ["cat", UNIT])
   if (system.code === 0) return { kind: "systemd-system", unitText: system.stdout }
   const user = await deps.exec("systemctl", ["--user", "cat", UNIT])

@@ -6,12 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
 import { claimBootListener } from "./boot-listener.js"
-import {
-  defaultDatabasePath,
-  defaultServerConfig,
-  makeEventFanout,
-  startCodevisorServer
-} from "./server.js"
+import { defaultServerConfig, makeEventFanout, startCodevisorServer } from "./server.js"
 import type { CodevisorServerServices } from "./server.js"
 import {
   jsonRequest,
@@ -318,7 +313,6 @@ describe("@codevisor/server", () => {
     )
     const unwatched = await serverWithPlainWorkspace("server-no-git", false)
     expect(unwatched.features).not.toContain("workspace-git-v1")
-    expect(await unwatched.git()).toBeUndefined()
   })
 
   it("reports the machine's icon in its info", async () => {
@@ -357,7 +351,6 @@ describe("@codevisor/server", () => {
       hostname: expect.any(String),
       maxUploadBytes: 500 * 1024 * 1024
     })
-    expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
     const discovery = await jsonRequest(server, "/v1/discovery")
     expect(discovery.body).toMatchObject({
       serverId: "server-a",
@@ -405,8 +398,6 @@ describe("@codevisor/server", () => {
     })
     expect(rotation.status).toBe(201)
     expect(stringField(rotation.body, "token")).not.toBe(connectionToken)
-
-    expect(defaultDatabasePath()).toContain("codevisor-server.sqlite")
 
     expect((await jsonRequest(server, "/v1/shutdown", { method: "POST" })).status).toBe(202)
 
@@ -472,10 +463,14 @@ describe("@codevisor/server", () => {
     const unauthorizedSocket = new WebSocket(
       `${secured.url.replace("http:", "ws:")}/v1/terminals/missing/socket`
     )
-    await new Promise<void>((resolve) => {
-      unauthorizedSocket.once("close", resolve)
-      unauthorizedSocket.once("error", () => resolve())
+    unauthorizedSocket.on("error", () => undefined)
+    const refusal = await new Promise<number | undefined>((resolve) => {
+      unauthorizedSocket.once("unexpected-response", (_request, response) =>
+        resolve(response.statusCode)
+      )
+      unauthorizedSocket.once("open", () => resolve(undefined))
     })
+    expect(refusal).toBe(401)
 
     const localhostSecured = await run(
       startCodevisorServer(

@@ -242,8 +242,8 @@ describe("webhook delivery for remote plugins", () => {
     const event = { ...ping("e1"), cursor: "c9" }
 
     await receiver().receive(delivery(fixture, event))
-    await receiver().receive(delivery(fixture, event))
     await receiver().receive(delivery(fixture, { ...ping("e2"), cursor: "c10" }, { id: "msg-2" }))
+    await receiver().receive(delivery(fixture, event))
 
     const source = { serverId: hooks.id, accountId: "work", eventName: "ping", arguments: {} }
     expect(fixture.outbox.delivered).toHaveLength(2)

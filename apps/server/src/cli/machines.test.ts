@@ -62,7 +62,8 @@ describe("codevisor machines", () => {
         body: {
           machines: [
             { id: "machine-s", name: "mac-studio", online: true, isCurrent: true },
-            { ...hetzner, os: "linux", addedBy: "mac-studio" }
+            { ...hetzner, os: "linux", addedBy: "mac-studio" },
+            { ...hetzner, id: "machine-o", name: "old-box", online: false }
           ]
         }
       }
@@ -70,7 +71,8 @@ describe("codevisor machines", () => {
     expect(await machinesListCommand(deps)).toBe(0)
     expect(logs).toEqual([
       "mac-studio  (this machine)  machine-s",
-      "hetzner-1  online  linux  added by mac-studio  machine-h"
+      "hetzner-1  online  linux  added by mac-studio  machine-h",
+      "old-box  offline  machine-o"
     ])
   })
 
@@ -84,14 +86,6 @@ describe("codevisor machines", () => {
     expect(logs.at(-1)).toBe("✓ hetzner-1 is on your account (offline).")
     expect(await machinesRemoveCommand(deps, { machine: "hetzner-1" })).toBe(0)
     expect(logs.at(-1)).toBe("✓ Removed hetzner-1 from your account.")
-  })
-
-  it("lists an offline machine", async () => {
-    const { deps, logs } = world({
-      "GET /v1/machines": { status: 200, body: { machines: [{ ...hetzner, online: false }] } }
-    })
-    expect(await machinesListCommand(deps)).toBe(0)
-    expect(logs).toEqual(["hetzner-1  offline  machine-h"])
   })
 
   it("surfaces the server's reason when a command fails", async () => {

@@ -1,9 +1,7 @@
-import { createServer } from "node:net"
-
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
-import { bootHealth, claimBootListener, type BootListener } from "./boot-listener.js"
+import { claimBootListener, type BootListener } from "./boot-listener.js"
 import { hasExistingListener } from "./infra/listener-probe.js"
 import { listeningPort } from "./test-support-net.js"
 
@@ -113,24 +111,6 @@ describe("boot listener", () => {
     expect((await fetch(`http://127.0.0.1:${listener.port}/v1/health`)).status).toBe(200)
   })
 
-  it("moves past a taken candidate and fails clearly when a pinned port is taken", async () => {
-    const taken = createServer()
-    await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve))
-    const takenPort = listeningPort(taken)
-    try {
-      const listener = await claimBootListener({ ...options, candidates: [takenPort, 0] })
-      open.push(listener)
-      expect(listener.port).not.toBe(takenPort)
-      expect((await fetch(`http://127.0.0.1:${listener.port}/v1/health`)).status).toBe(200)
-
-      await expect(claimBootListener({ ...options, candidates: [takenPort] })).rejects.toThrow(
-        `127.0.0.1:${takenPort} already has a listener (another Codevisor server?). Stop the other process or pass a different --port.`
-      )
-    } finally {
-      await new Promise<void>((resolve) => taken.close(() => resolve()))
-    }
-  })
-
   it("reports socket errors through the console when no log sink is supplied", async () => {
     const { log: _omitted, ...quiet } = options
     const listener = await claimBootListener(quiet)
@@ -163,13 +143,19 @@ describe("boot listener", () => {
     }
   })
 
-  it("falls back to the default version so clients can decode dev builds", () => {
-    expect(bootHealth({ ...options, version: undefined }, undefined)).toMatchObject({
-      version: "0.1.0",
-      database: "migrating"
+  it("falls back to the default version so clients can decode dev builds", async () => {
+    const listener = await claimBootListener({
+      ...options,
+      version: undefined,
+      sourceRevision: "abc123"
     })
-    expect(bootHealth({ ...options, sourceRevision: "abc123" }, undefined)).toMatchObject({
-      version: "0.3.0",
+    open.push(listener)
+
+    const health = await fetch(`http://127.0.0.1:${listener.port}/v1/health`)
+
+    expect(await health.json()).toMatchObject({
+      version: "0.1.0",
+      database: "migrating",
       sourceRevision: "abc123"
     })
   })

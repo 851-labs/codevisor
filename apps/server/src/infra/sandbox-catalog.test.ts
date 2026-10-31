@@ -26,7 +26,6 @@ import {
   type SandboxCatalogDeps
 } from "./sandbox-catalog.js"
 import { makeSandboxAdapters, makeSandboxConnections } from "./sandbox-connections.js"
-import { connectionOf, profileRecordFields } from "./sandbox-profile-record.js"
 import { makeSandboxSettings, SANDBOX_PROFILES_NAMESPACE } from "./sandbox-settings.js"
 
 const stamp = { wallMs: 1, counter: 0, deviceId: "server-a" }
@@ -372,17 +371,6 @@ describe("sandbox connections", () => {
       new HttpFailure(409, "Its Fake provider was removed")
     ])
     expect(await deps.connections.all()).toEqual([{ provider: "e2b", accountId: "id-1" }])
-  })
-
-  it("link a record to its profile with or without an account", () => {
-    const accountless = profile({ provider: "tart" })
-
-    expect(profileRecordFields(accountless)).toEqual({
-      provider: "tart",
-      profileId: "p",
-      profileName: "Profile"
-    })
-    expect(connectionOf(accountless)).toEqual({ provider: "tart" })
   })
 })
 

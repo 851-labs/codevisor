@@ -30,14 +30,6 @@ const makeBlobs = () => {
   return makeBlobStore(directory)
 }
 
-const tarHeader = (name: string, size: number): Buffer => {
-  const block = Buffer.alloc(512)
-  block.write(name, 0, "utf8")
-  block.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii")
-  block.write("0", 156, "ascii")
-  return block
-}
-
 const hashOf = (value: unknown): string =>
   Schema.decodeUnknownSync(Schema.Struct({ hash: Schema.String }))(value).hash
 
@@ -195,18 +187,14 @@ describe("skills sync", () => {
     }
   })
 
-  it("rejects and repacks archives carrying macOS metadata junk", async () => {
-    const body = Buffer.from("junk")
-    const tar = Buffer.concat([
-      tarHeader("./SKILL.md", body.length),
-      Buffer.concat([body], 512),
-      tarHeader("./._SKILL.md", body.length),
-      Buffer.concat([body], 512),
-      Buffer.alloc(1024)
-    ])
-    const junkArchive = gzipSync(tar)
-    expect(archiveEntryNames(junkArchive)).toEqual(["./SKILL.md", "./._SKILL.md"])
-    expect(await verifySkillArchive("f".repeat(64), junkArchive)).toBe(false)
+  it("rejects archives carrying macOS metadata junk even when the tree hash matches", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "skill-junk-"))
+    tempDirs.push(folder)
+    writeFileSync(join(folder, "SKILL.md"), "---\nname: Junked\n---\n")
+    writeFileSync(join(folder, ".DS_Store"), "finder")
+    const junkArchive = await packSkillArchive(folder)
+    expect(archiveEntryNames(junkArchive)).toContain("./.DS_Store")
+    expect(await verifySkillArchive(await skillTreeHash(folder), junkArchive)).toBe(false)
 
     const emptySize = Buffer.alloc(512)
     emptySize.write("/", 0, "utf8")
@@ -219,17 +207,6 @@ describe("skills sync", () => {
         gzipSync(Buffer.concat([emptySize, Buffer.alloc(1024)]))
       )
     ).toBe(false)
-
-    const { services } = await makeServices("server-j")
-    const skills = makeSkills()
-    const blobs = makeBlobs()
-    await skills.create({ name: "Junked", description: "tainted cache" })
-    const path = (await skills.list()).skills[0]?.path ?? ""
-    const hash = await skillTreeHash(path)
-    blobs.write(hash, junkArchive)
-    await reconcileSkills({ db: services.db, store: skills, blobs, serverId: "server-j" })
-    expect(archiveEntryNames(await blobs.read(hash)).some((n) => n.includes("._"))).toBe(false)
-    expect(await verifySkillArchive(hash, await blobs.read(hash))).toBe(true)
   })
 
   it("repacks a tainted cached blob and settles afterward", async () => {

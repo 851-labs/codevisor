@@ -251,9 +251,15 @@ describe("browser proxy connection lifecycle", () => {
     req.headers = {}
     proxy.handleConnect(req, downstream, Buffer.alloc(0))
     expect(downstream.endings).toEqual([expect.stringContaining("407")])
+    expect(downstream.destroyed).toBe(false)
     downstream.onTimeout!()
-    downstream.emit("error", new Error("closed"))
     expect(downstream.destroyed).toBe(true)
+
+    const failed = lifecycleFixture()
+    failed.req.headers = {}
+    failed.proxy.handleConnect(failed.req, failed.downstream, Buffer.alloc(0))
+    failed.downstream.emit("error", new Error("closed"))
+    expect(failed.downstream.destroyed).toBe(true)
   })
 
   it.each([

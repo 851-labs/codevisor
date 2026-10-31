@@ -170,26 +170,15 @@ const makeChat = async () => {
 }
 
 describe("continuing a paused chat", () => {
-  it("puts the update notice ahead of prompts queued before the update", async () => {
-    const chat = await makeChat()
-
-    await chat.continueChat()
-
-    const queue = await run(chat.services.db.listPromptQueue(chat.session.id))
-    expect(queue.map((item) => [item.text, item.origin])).toEqual([
-      [updateResumeNotice([]), "system"],
-      ["queued earlier", undefined]
-    ])
-  })
-
   it("lists the background tasks the update stopped in the notice", async () => {
     const chat = await makeChat()
 
     await chat.continueChat(["npm run dev", "Monitor CI"])
 
-    expect(await chat.queuedTexts()).toEqual([
-      updateResumeNotice(["npm run dev", "Monitor CI"]),
-      "queued earlier"
+    const queue = await run(chat.services.db.listPromptQueue(chat.session.id))
+    expect(queue.map((item) => [item.text, item.origin])).toEqual([
+      [updateResumeNotice(["npm run dev", "Monitor CI"]), "system"],
+      ["queued earlier", undefined]
     ])
   })
 

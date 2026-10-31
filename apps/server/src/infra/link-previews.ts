@@ -67,7 +67,7 @@ interface RenderedImage {
   readonly color: string
 }
 
-export const normalizePreviewUrl = (raw: string): string | undefined => {
+const normalizePreviewUrl = (raw: string): string | undefined => {
   try {
     const url = new URL(raw)
     if (url.protocol !== "https:" && url.protocol !== "http:") return undefined

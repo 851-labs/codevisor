@@ -100,19 +100,27 @@ describe("terminal persistence", () => {
     expect(existsSync(snapshotPath)).toBe(false)
     expect(manager.snapshotTerminals().terminals).toEqual([])
 
-    writeFileSync(snapshotPath, JSON.stringify({ version: 99, terminals: [{}] }))
-    persistence.restore()
-    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: "nope" }))
-    persistence.restore()
-    expect(manager.snapshotTerminals().terminals).toEqual([])
-
+    writeFileSync(
+      snapshotPath,
+      JSON.stringify({
+        version: 99,
+        terminals: [
+          { terminalId: "t", sessionId: "s", nextOutputSeq: 1, closed: true, external: false }
+        ]
+      })
+    )
     const lines: Array<string> = []
-    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [] }))
-    makeTerminalPersistence({
+    const logged = makeTerminalPersistence({
       dataDir,
       terminal: manager,
       log: (line) => lines.push(line)
-    }).restore()
+    })
+    logged.restore()
+    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: "nope" }))
+    logged.restore()
+    writeFileSync(snapshotPath, JSON.stringify({ version: 1, terminals: [] }))
+    logged.restore()
+    expect(manager.snapshotTerminals().terminals).toEqual([])
     expect(lines).toEqual([])
   })
 

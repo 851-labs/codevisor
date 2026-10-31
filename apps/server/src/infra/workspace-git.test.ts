@@ -93,7 +93,6 @@ it("records each workspace's branch and pull request at boot and publishes only 
 
   const monitor = start()
   await monitor.settled()
-  const afterBoot = published.length
   await monitor.sweep(true)
 
   expect(await git(feature.id)).toEqual({
@@ -101,10 +100,13 @@ it("records each workspace's branch and pull request at boot and publishes only 
     pullRequest: pullRequest(7)
   })
   expect(await git(main.id)).toEqual({ branch: "main", pullRequest: null })
-  expect(published.slice(0, afterBoot).every((event) => event.kind === "navigation.changed")).toBe(
-    true
+  expect(published.map((event) => [event.kind, event.subjectId])).toEqual(
+    expect.arrayContaining([
+      ["navigation.changed", feature.id],
+      ["navigation.changed", main.id]
+    ])
   )
-  expect(published).toHaveLength(afterBoot)
+  expect(published).toHaveLength(2)
 })
 
 it("checks pull requests on a branch-only sweep when the branch changed", async () => {

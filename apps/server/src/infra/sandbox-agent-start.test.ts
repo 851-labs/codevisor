@@ -100,7 +100,7 @@ describe("starting an agent on a new sandbox", () => {
     }
   )
 
-  it("places the workspace a request names instead of deferring it to the agent", async () => {
+  it("creates a sandbox for the workspace a request names, by its lowercase id, without deferring it", async () => {
     const harness = await sandboxHarness({ onCurl: readyHarness("codex") })
 
     const started = await harness.machines.create({ ...request, workspaceId: "CHAT-WS", agent })

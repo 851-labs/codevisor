@@ -72,10 +72,15 @@ describe("project recommendations", () => {
       [session("alpha-one", alpha), session("beta-one", beta), session("beta-two", beta)],
       options
     )
+    const tied = recommendProjectsFromSessions(
+      [session("beta-one", beta), session("alpha-one", alpha)],
+      options
+    )
 
     expect(datedFirst.map((entry) => entry.name)).toEqual(["recent", "alpha"])
     expect(datedLast.map((entry) => entry.name)).toEqual(["recent", "alpha"])
     expect(frequent.map((entry) => entry.name)).toEqual(["beta", "alpha"])
+    expect(tied.map((entry) => entry.name)).toEqual(["alpha", "beta"])
   })
 
   it("keeps the newest valid activity when later session metadata is stale", () => {
@@ -221,12 +226,15 @@ describe("project recommendations", () => {
     mkdirSync(beta)
 
     expect(
-      recommendProjectsFromSessions([session("one", alpha), session("two", beta)], {
-        limit: 1,
-        managedWorktreesRoot: join(root, "managed"),
-        temporaryDirectory: join(root, "temporary")
-      })
-    ).toHaveLength(1)
+      recommendProjectsFromSessions(
+        [session("one", alpha), session("two", beta), session("three", beta)],
+        {
+          limit: 1,
+          managedWorktreesRoot: join(root, "managed"),
+          temporaryDirectory: join(root, "temporary")
+        }
+      ).map((entry) => entry.name)
+    ).toEqual(["beta"])
     expect(
       recommendProjectsFromSessions([session("one", alpha)], {
         limit: -1,

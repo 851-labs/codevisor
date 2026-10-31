@@ -363,24 +363,6 @@ describe("restart drain", () => {
     expect(pausedSessionIds(paths.pausedTurnsPath)).toEqual([second])
   })
 
-  it("cancelling a drain continues paused chats", async () => {
-    const { agents, services } = await makeServices("server-a")
-    const server = await startWithApp(services)
-    const sessionId = await openSession(server, "Continued")
-    expect((await prompt(server, sessionId, "prompt until cancelled")).status).toBe(202)
-    await waitFor(() => agents.prompts.length === 1)
-
-    expect((await jsonRequest(server, "/v1/restart/drain", { method: "POST" })).status).toBe(202)
-    await waitFor(
-      async () => decodeDrain(await jsonRequest(server, "/v1/restart/drain")).state === "drained"
-    )
-
-    const cancelled = await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
-    expect(cancelled.body).toMatchObject({ state: "idle" })
-    await waitFor(() => agents.prompts.length === 2)
-    expect(agents.prompts[1]?.[1]).toBe(updateResumeNotice([]))
-  })
-
   it("refuses prompts, steers, queued sends, and goals while paused, and keeps the continue", async () => {
     const { agents, services } = await makeServices("server-a")
     const paths = restartStatePaths()
@@ -414,7 +396,8 @@ describe("restart drain", () => {
     ])
     expect(pausedSessionIds(paths.pausedTurnsPath)).toEqual([sessionId])
 
-    await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
+    const cancelled = await jsonRequest(server, "/v1/restart/drain", { method: "DELETE" })
+    expect(cancelled.body).toMatchObject({ state: "idle" })
     await waitFor(() => agents.prompts.length === 3)
     expect(agents.prompts.slice(1).map(([, input]) => input)).toEqual([
       updateResumeNotice([]),
@@ -435,6 +418,9 @@ describe("restart drain", () => {
     await waitFor(() => agents.prompts.length === 2)
     expect(agents.prompts[1]?.[1]).toBe(updateResumeNotice([]))
     expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({ state: "idle" })
+    await waitFor(
+      async () => field((await jsonRequest(server, "/v1/updates/run")).body, "state") === "idle"
+    )
   })
 
   it("an update whose drain is cancelled never applies", async () => {

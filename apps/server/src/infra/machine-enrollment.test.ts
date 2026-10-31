@@ -8,7 +8,6 @@ import { HttpFailure } from "../server-context.js"
 import {
   makeMachineEnrollment,
   remoteInstallScript,
-  shellQuote,
   sshArgs,
   type MachineEnrollmentCloud,
   type SshRun
@@ -104,20 +103,14 @@ describe("remoteInstallScript", () => {
     const script = remoteInstallScript({
       inviteCode: CODE,
       installUrl: "https://example.test/install.sh",
-      name: "it's-a-box"
+      name: `a'b"c$(touch /tmp/x)`
     })
     const probe = script.replace(
       /url=.*\n[\s\S]*$/,
       'printf "%s|%s|%s" "$CODEVISOR_INVITE" "$CODEVISOR_NO_SETUP" "$CODEVISOR_MACHINE_NAME"\n'
     )
     const result = spawnSync("sh", ["-s"], { input: probe, encoding: "utf8" })
-    expect(result.stdout).toBe(`${CODE}|1|it's-a-box`)
-  })
-
-  it("quotes anything safely", () => {
-    const tricky = `a'b"c$(touch /tmp/x)`
-    const result = spawnSync("sh", ["-c", `printf %s ${shellQuote(tricky)}`], { encoding: "utf8" })
-    expect(result.stdout).toBe(tricky)
+    expect(result.stdout).toBe(`${CODE}|1|a'b"c$(touch /tmp/x)`)
   })
 })
 

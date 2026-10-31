@@ -202,6 +202,11 @@ describe("sandbox lifetime", () => {
     expect(harness.removed).toEqual([JOINED_DEVICE])
     expect(harness.provider.machines.size).toBe(0)
     expect(await harness.machines.list()).toEqual([])
+
+    const unreachable = await ready()
+    unreachable.controls.removeFails = true
+    await expect(unreachable.machines.destroy("id-1")).rejects.toThrow("cloud unreachable")
+    expect(unreachable.provider.machines.size).toBe(1)
   })
 
   it("answers 404 for an unknown machine and 409 while it's being torn down", async () => {

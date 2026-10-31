@@ -23,14 +23,16 @@ describe("teardown robustness", () => {
   })
 
   it("only watches machines that finished setting up", async () => {
-    const harness = await sandboxHarness({ bootstrapExit: 1 })
+    const harness = await sandboxHarness({ project: { id: "elsewhere" } })
     await harness.machines.create(request)
     await harness.machines.settled()
 
     await harness.machines.watch()
 
     expect(harness.toolCalls).toEqual([])
-    expect((await harness.machines.list())[0]?.state).toBe("failed")
+    expect(await harness.machines.list()).toEqual([
+      expect.objectContaining({ state: "failed", error: "No project project-1 on this machine" })
+    ])
   })
 
   it("still records the failure when tearing down a failed setup fails too", async () => {

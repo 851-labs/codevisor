@@ -69,6 +69,7 @@ describe("plugin event routes", () => {
     const streams = watchStreams(running)
     const plugin = await installTestEvents(running)
     const watcher = await createChat(running, "Watcher")
+    const bystanderChat = await createChat(running, "Bystander")
 
     const types = await jsonRequest(running.server, "/v1/plugins/events/types?query=counter")
     const created = decode(PluginEventSubscription)(
@@ -93,6 +94,14 @@ describe("plugin event routes", () => {
     })
     const { matched } = decode(PreviewResponse)(preview.body)
     const record = await jsonRequest(running.server, `/v1/plugins/events/${matched[0]!.eventId}`)
+    const bystander = decode(PluginEventSubscription)(
+      (
+        await subscribe(running, {
+          sessionId: bystanderChat,
+          filter: 'level == "never"'
+        })
+      ).body
+    )
     const forSession = await jsonRequest(
       running.server,
       `/v1/plugins/events/subscriptions?sessionId=${watcher}`
@@ -123,7 +132,11 @@ describe("plugin event routes", () => {
     expect(decode(PluginEventSubscriptionsResponse)(forSession.body).subscriptions).toEqual([
       created
     ])
-    expect(everyone.body).toEqual(forSession.body)
+    expect(
+      decode(PluginEventSubscriptionsResponse)(everyone.body).subscriptions.map(
+        (subscription) => subscription.id
+      )
+    ).toEqual(expect.arrayContaining([created.id, bystander.id]))
     expect(removed.body).toEqual({ removed: true })
   })
 
@@ -142,7 +155,12 @@ describe("plugin event routes", () => {
     expect([invalid.status, missing.status, unrouted.status, wrongMethod.status]).toEqual([
       400, 404, 404, 404
     ])
+    expect(invalid.body).toEqual({ error: expect.stringMatching(/^Invalid filter: /) })
     expect(missing.body).toEqual({ error: "Event not found: feedface" })
+    expect([unrouted.body, wrongMethod.body]).toEqual([
+      { error: "Route not found" },
+      { error: "Route not found" }
+    ])
   })
 
   it("lists no event types on a server without plugins installed", async () => {

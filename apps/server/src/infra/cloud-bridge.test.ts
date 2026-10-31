@@ -10,6 +10,7 @@ import {
   type CloudBridge,
   type CloudBridgeOptions
 } from "./cloud-bridge.js"
+import { makeCloudInbox } from "./cloud-inbox.js"
 
 const dirs: string[] = []
 afterEach(() => {
@@ -25,6 +26,7 @@ const bridgeOptions = (
   localBaseUrl: "http://127.0.0.1:1",
   env: {},
   log: () => undefined,
+  inbox: makeCloudInbox(),
   ...options
 })
 

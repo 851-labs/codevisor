@@ -55,7 +55,7 @@ export interface CloudBridgeOptions {
   readonly releaseChannel?: () => "stable" | "alpha" | undefined
   readonly fetchImpl?: FetchLike
   readonly fleetCallers?: TicketBook<ChannelPeer>
-  readonly inbox?: CloudInbox
+  readonly inbox: CloudInbox
   readonly roles?: MachineRoles
 }
 

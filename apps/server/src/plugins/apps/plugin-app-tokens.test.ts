@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto"
 
 import { describe, expect, it } from "vitest"
 
-import { makePluginAppTokens, sameScope } from "./plugin-app-tokens.js"
+import { makePluginAppTokens } from "./plugin-app-tokens.js"
 
 const secret = Buffer.alloc(32, 7)
 const view = { kind: "view", viewId: "view-1" } as const
@@ -37,14 +37,7 @@ describe("plugin app tokens", () => {
     expect(tokens.verify(signed({ scope: { kind: "file" }, expiresAt: 10 }))).toBeUndefined()
     expect(tokens.verify(signed("not claims"))).toBeUndefined()
     expect(
-      tokens.verify(
-        `e30.${createHmac("sha256", secret).update("e30").digest("base64url")}`.replace("e30", "!")
-      )
+      tokens.verify(`!.${createHmac("sha256", secret).update("!").digest("base64url")}`)
     ).toBeUndefined()
-  })
-
-  it("compares scopes by value", () => {
-    expect(sameScope(view, { kind: "view", viewId: "view-1" })).toBe(true)
-    expect(sameScope(view, { kind: "pane", serverId: "s", paneType: "p" })).toBe(false)
   })
 })

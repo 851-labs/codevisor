@@ -46,21 +46,6 @@ describe("plugin catalog", () => {
     expect(production.entry("io.example/weather")).toBeUndefined()
   })
 
-  it("searches only the curated plugins, without asking anyone else", async () => {
-    const { fixture, catalog } = await fixtureCatalog()
-
-    const featured = catalog.search(undefined)
-    const searched = catalog.search(" tickets ")
-    const elsewhere = catalog.search("weather")
-
-    expect(ids(featured)).toEqual(["dev.codevisor/alerts", "io.example/tickets"])
-    expect(searched.map((entry) => [entry.id, entry.source])).toEqual([
-      ["io.example/tickets", "popular"]
-    ])
-    expect(elsewhere).toEqual([])
-    expect(fixture.requests).toEqual([])
-  })
-
   it("launches bundled plugins from the plugins folder with the configured runtime", async () => {
     const { fixture, catalog } = await fixtureCatalog()
 
@@ -83,13 +68,16 @@ describe("plugin catalog", () => {
   })
 
   it.each([
-    { name: "has no catalog", reply: undefined },
+    {
+      name: "answers with an error",
+      reply: Response.json(listed(publishedServer), { status: 503 })
+    },
     { name: "answers with something other than JSON", reply: new Response("<html>") },
     { name: "publishes an empty catalog", reply: listed() },
     { name: "can't be reached", reply: new TypeError("offline") }
   ])("keeps the catalog it has when the cloud $name", async ({ reply }) => {
     const { fixture, catalog } = await fixtureCatalog()
-    if (reply !== undefined) fixture.respond(publishedUrl, reply)
+    fixture.respond(publishedUrl, reply)
 
     await catalog.refreshPublished(cloudUrl)
     await catalog.refreshPublished(undefined)

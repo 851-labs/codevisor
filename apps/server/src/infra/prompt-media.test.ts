@@ -5,12 +5,10 @@ import { join } from "node:path"
 import sharp from "sharp"
 import { afterAll, describe, expect, it } from "vitest"
 
-import {
-  INLINE_IMAGE_MAX_BASE64_BYTES,
-  INLINE_IMAGE_MAX_DIMENSION,
-  INLINE_PDF_MAX_BYTES,
-  inlineSizing
-} from "./prompt-media.js"
+import { INLINE_PDF_MAX_BYTES, inlineSizing } from "./prompt-media.js"
+
+const providerBase64Budget = 5 * 1024 * 1024
+const providerMaxSide = 2000
 
 const root = mkdtempSync(join(tmpdir(), "codevisor-prompt-media-"))
 afterAll(() => rmSync(root, { force: true, recursive: true }))
@@ -48,19 +46,15 @@ describe("inlineSizing", () => {
 
   it("re-encodes oversized images within the provider budget", async () => {
     const image = fixture("huge.png", await noisePng(3000, 1500))
-    expect(image.sizeBytes).toBeGreaterThan(INLINE_IMAGE_MAX_BASE64_BYTES)
+    expect(image.sizeBytes).toBeGreaterThan(providerBase64Budget)
 
     const sized = await inlineSizing({ ...image, kind: "image", mimeType: "image/png" })
     expect(sized.inlineOmitted).toBeUndefined()
     const inline = sized.inline!
-    expect(Math.ceil(inline.data.byteLength / 3) * 4).toBeLessThanOrEqual(
-      INLINE_IMAGE_MAX_BASE64_BYTES
-    )
+    expect(Math.ceil(inline.data.byteLength / 3) * 4).toBeLessThanOrEqual(providerBase64Budget)
     const metadata = await sharp(inline.data).metadata()
     expect(metadata.format).toBe(inline.mimeType === "image/png" ? "png" : "jpeg")
-    expect(Math.max(metadata.width, metadata.height)).toBeLessThanOrEqual(
-      INLINE_IMAGE_MAX_DIMENSION
-    )
+    expect(Math.max(metadata.width, metadata.height)).toBeLessThanOrEqual(providerMaxSide)
     expect(metadata.width / metadata.height).toBeCloseTo(2, 1)
   })
 
@@ -73,7 +67,7 @@ describe("inlineSizing", () => {
     const inline = (await inlineSizing({ ...image, kind: "image", mimeType: "image/jpeg" })).inline!
     const metadata = await sharp(inline.data).metadata()
     expect(metadata.height / metadata.width).toBeCloseTo(2, 1)
-    expect(metadata.height).toBeLessThanOrEqual(INLINE_IMAGE_MAX_DIMENSION)
+    expect(metadata.height).toBeLessThanOrEqual(providerMaxSide)
   })
 
   it("omits images the decoder cannot read", async () => {

@@ -36,13 +36,8 @@ export const makeCloudInbox = (): CloudInbox => {
 }
 
 export const inboxFrameHandler =
-  (
-    inbox: CloudInbox | undefined,
-    secretKey: string,
-    ack: (itemIds: ReadonlyArray<string>) => void
-  ) =>
+  (inbox: CloudInbox, secretKey: string, ack: (itemIds: ReadonlyArray<string>) => void) =>
   (frame: HubInboxItem): void => {
-    if (inbox === undefined) return
     void inbox.receive(secretKey, frame).then(
       () => ack([frame.itemId]),
       () => undefined

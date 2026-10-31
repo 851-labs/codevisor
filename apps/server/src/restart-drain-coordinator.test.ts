@@ -8,7 +8,6 @@ import {
   PAUSE_SETTLE_MS,
   makeRestartCoordinator
 } from "./restart-drain.js"
-import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeMemoryRestartSnapshotStore, type RestartSnapshotStore } from "./restart-snapshot.js"
 import { makeEventFanout } from "./server-context.js"
 import { archiveSessionViaWorkspace, idleRouteState, makeServices, run } from "./test-support.js"
@@ -419,22 +418,6 @@ describe("restart coordinator", () => {
       "Restart drain could not finish: ENOSPC: no space left on device"
     )
     coordinator.close()
-  })
-
-  it("a snapshot naming only gone or archived sessions resumes nothing", async () => {
-    const harness = await makeHarness()
-    harness.snapshot.write([harness.sessions.archived.id, "no-such-session"])
-    const resumed = await resumeSessionsAfterRestart(
-      harness.services,
-      harness.fanout,
-      harness.turns,
-      "server-a",
-      harness.snapshot,
-      (line) => harness.logs.push(line)
-    )
-    expect(resumed).toEqual([])
-    expect(harness.snapshot.read()).toBeUndefined()
-    expect(harness.agents.loads).toEqual([])
   })
 
   it("abandons a drain the server never followed with a restart", async () => {

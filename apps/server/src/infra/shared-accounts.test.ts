@@ -7,7 +7,6 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { fleet, native } from "./shared-accounts-test-support.js"
-import { makeSharedAccounts } from "./shared-accounts.js"
 afterEach(() => vi.useRealTimers())
 describe("automatic shared accounts", () => {
   it("hides pending sign-in profiles and imported aliases from cached catalog accounts", async () => {
@@ -399,13 +398,20 @@ it("handles anonymous account labels, explicit native directories, and missing w
     expiresAt: 10_000_000,
     planType: "plus"
   }
+  const directories: string[] = []
   const m = await f.machine("a", bundle, {
     environment: async () => ({
       CODEX_HOME: "/fixture/codex",
       CLAUDE_CONFIG_DIR: "/fixture/claude"
-    })
+    }),
+    discover: async (harnessId, directory, isDefault) => {
+      if (harnessId !== "codex" || !isDefault) return undefined
+      directories.push(directory)
+      return bundle
+    }
   })
   await m.shared.reconcile()
+  expect(directories).toEqual(["/fixture/codex"])
   const id = sharedOAuthIdentity(bundle)
   expect((await m.shared.accounts("codex", true))?.[0]?.label).toBe("ChatGPT")
   expect(await (await m.shared.context(id))?.oauth?.token()).toEqual({
@@ -421,11 +427,9 @@ it("handles anonymous account labels, explicit native directories, and missing w
   const errors = vi.spyOn(console, "error").mockImplementation(() => {})
   onTestFinished(() => errors.mockRestore())
   expect((await m.shared.accounts("claude-code", true))?.[0]?.label).toBe("Claude")
-  const blank = await f.machine("empty", undefined, { environment: async () => ({}) })
-  await blank.shared.reconcile()
 })
 
-it("handles a removed row during probing and ignores invalid persisted login intents", async () => {
+it("drops an account whose row disappears while probing and refuses a login intent for a harness that can't share", async () => {
   const f = fleet(),
     m = await f.machine("a", undefined, {
       discover: async (harness) =>
@@ -444,15 +448,6 @@ it("handles a removed row during probing and ignores invalid persisted login int
     ])
   )
   await expect(m.shared.captureLogin(other.id)).rejects.toThrow("Sign-in could not be saved")
-  const defaults = makeSharedAccounts({
-    db: m.db,
-    auth: m.auth,
-    dataDir: m.dataDir,
-    serverId: "b",
-    baseUrl: "http://127.0.0.1:1"
-  })
-  expect(await defaults.accounts("pi")).toBeUndefined()
-  defaults.gateway.close()
   const get = m.db.getHarnessAccount
   const lookup = vi
     .spyOn(m.db, "getHarnessAccount")

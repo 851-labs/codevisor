@@ -191,15 +191,24 @@ describe("harness sync", () => {
 
   it("follows the catalog even when a stale machine-local override row is present", async () => {
     const world = await makeWorld("server-local")
-    world.state.harnesses = [{ id: "grok", enabled: false, installed: true, authenticated: true }]
+    world.state.harnesses = [
+      { id: "grok", enabled: false, installed: true, authenticated: true },
+      { id: "codex", enabled: true, installed: true, authenticated: true }
+    ]
     await run(
       world.deps.db.mergeSyncEntries("local.harness-overrides", [
-        { key: "grok", value: { enabled: false, installed: false }, timestamp: at(5) }
+        { key: "grok", value: { enabled: false, installed: true }, timestamp: at(5) },
+        {
+          key: "codex",
+          value: { enabled: true, installed: false, uninstall: true },
+          timestamp: at(5)
+        }
       ])
     )
     await run(
       world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        { key: "grok", value: { enabled: true, installed: true }, timestamp: at(10) }
+        { key: "grok", value: { enabled: true, installed: true }, timestamp: at(10) },
+        { key: "codex", value: { enabled: true, installed: true }, timestamp: at(10) }
       ])
     )
     await reconcileHarnesses(world.deps)

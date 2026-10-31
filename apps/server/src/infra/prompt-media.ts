@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises"
 import { INLINE_IMAGE_MEDIA_TYPES, type PromptAttachmentInput } from "@codevisor/agent-runtime"
 import sharp from "sharp"
 
-export const INLINE_IMAGE_MAX_BASE64_BYTES = 5 * 1024 * 1024
-export const INLINE_IMAGE_MAX_DIMENSION = 2000
+const INLINE_IMAGE_MAX_BASE64_BYTES = 5 * 1024 * 1024
+const INLINE_IMAGE_MAX_DIMENSION = 2000
 export const INLINE_PDF_MAX_BYTES = 20 * 1024 * 1024
 
 const JPEG_QUALITIES = [80, 85, 70, 55, 40]

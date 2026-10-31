@@ -44,6 +44,11 @@ describe("claimPort", () => {
     await expect(
       claimPort(freshServer(), { host: "127.0.0.1", candidates: [first, second] })
     ).rejects.toThrow(`Every port Codevisor tried on 127.0.0.1 is taken (${first}, ${second})`)
+    await expect(
+      claimPort(freshServer(), { host: "127.0.0.1", candidates: [first] })
+    ).rejects.toThrow(
+      `127.0.0.1:${first} already has a listener (another Codevisor server?). Stop the other process or pass a different --port.`
+    )
   })
 
   it("rejects bind failures that another port would not fix", async () => {
@@ -75,12 +80,18 @@ describe("claimPort", () => {
     expect(loopbackIsOurs).not.toHaveBeenCalled()
   })
 
-  it("checks loopback with the current platform's rules by default", async () => {
-    const server = freshServer()
+  it("checks loopback with the current platform's rules by default, and leaves it to us", async () => {
+    const squatted = await listenOn("127.0.0.1")
+    const server = createHttpServer((_request, response) => {
+      response.setHeader("connection", "close")
+      response.end("ours")
+    })
+    open.push(server)
 
-    const port = await claimPort(server, { host: "0.0.0.0", candidates: [0] })
+    const port = await claimPort(server, { host: "0.0.0.0", candidates: [squatted, 0] })
 
-    expect(listeningPort(server)).toBe(port)
+    expect(port).not.toBe(squatted)
+    expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe("ours")
   })
 })
 
@@ -89,10 +100,6 @@ describe("loopbackIsFreeOn", () => {
     const squatted = await listenOn("127.0.0.1")
 
     expect(await loopbackIsFreeOn("darwin")(squatted)).toBe(false)
-  })
-
-  it("releases its guard after finding loopback free", async () => {
-    expect(await loopbackIsFreeOn("darwin")(0)).toBe(true)
   })
 
   it("relies on the wildcard bind where the kernel already rejects overlaps", async () => {

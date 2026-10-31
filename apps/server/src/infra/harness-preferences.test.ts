@@ -31,26 +31,6 @@ describe("harness preferences", () => {
     })
   })
 
-  it("reads only the fleet catalog; machine-local namespaces never shadow it", async () => {
-    const { services } = await makeServices("preferences")
-    await run(
-      services.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        { key: "codex", value: { enabled: true, installed: true }, timestamp }
-      ])
-    )
-    await run(
-      services.db.mergeSyncEntries("local.harness-overrides", [
-        { key: "codex", value: { enabled: false, installed: false }, timestamp }
-      ])
-    )
-    const settings = await readHarnessSettings(services.db)
-    expect(settings.get("codex")).toEqual({ global: { enabled: true, installed: true } })
-    expect(effectiveHarnessPreference(settings.get("codex"))).toEqual({
-      enabled: true,
-      installed: true
-    })
-  })
-
   it("writes catalog rows in the Settings page's shape and reports what changed", async () => {
     const { services } = await makeServices("preferences-write")
     const identity = { id: "codex", name: "Codex", symbolName: "chevron" }

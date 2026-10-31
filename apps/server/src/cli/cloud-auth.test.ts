@@ -13,6 +13,7 @@ interface World {
   errors: string[]
   files: Map<string, string>
   httpCalls: Array<{ url: string; body?: unknown }>
+  sleeps: number[]
 }
 
 const makeWorld = (
@@ -27,6 +28,7 @@ const makeWorld = (
   const files = new Map<string, string>(Object.entries(options.files ?? {}))
   let registration: CloudRegistration = options.registration ?? {}
   const httpCalls: Array<{ url: string; body?: unknown }> = []
+  const sleeps: number[] = []
   const deps: CliDeps = {
     exec: () => Promise.resolve(failure),
     execInteractive: () => Promise.resolve(0),
@@ -54,7 +56,10 @@ const makeWorld = (
     removeFile: (path) => void files.delete(path),
     processAlive: () => false,
     signal: () => true,
-    sleep: () => Promise.resolve(),
+    sleep: (ms) => {
+      sleeps.push(ms)
+      return Promise.resolve()
+    },
     env: options.env ?? {},
     isRoot: false,
     installedVersion: () => undefined,
@@ -63,7 +68,7 @@ const makeWorld = (
     log: (line) => void logs.push(line),
     error: (line) => void errors.push(line)
   }
-  return { deps, logs, errors, files, httpCalls }
+  return { deps, logs, errors, files, httpCalls, sleeps }
 }
 
 const connectedRegistration: CloudRegistration = {
@@ -171,13 +176,12 @@ describe("authLoginCommand", () => {
           url.endsWith("/connect") ? Promise.resolve(response) : world.deps.fetchJson(url, init)
       }
       expect(await authLoginCommand(deps, { fetchImpl: loginScript() })).toBe(1)
-      expect(world.errors.join("\n")).toContain("Cloud login failed")
+      expect(world.errors).toEqual([
+        `Cloud login failed: ${response?.body.error ?? "The server could not save the Cloud registration"}`
+      ])
       expect(world.logs.join("\n")).not.toContain("✓ Connected")
       expect(world.files.size).toBe(0)
     }
-    const existing = makeWorld({ registration: { deviceId: "device-1", state: "connected" } })
-    expect(await authLoginCommand(existing.deps)).toBe(0)
-    expect(existing.logs.join("\n")).toContain("already connected to Codevisor Cloud")
   })
   it("connects through the server after approval without writing CLI credentials", async () => {
     const world = makeWorld({ env: { HOSTNAME: "dev-vps" } })
@@ -230,25 +234,19 @@ describe("authLoginCommand", () => {
     expect(code).toBe(0)
     expect(world.logs.join("\n")).toContain("  https://cloud.example/device?user_code=AB12-CD34")
     expect(world.logs.join("\n")).toContain("Connected as named-by-flag")
-  })
-
-  it("defaults the machine name when no hostname is known", async () => {
-    const world = makeWorld()
-    const fetchImpl = scriptedFetch({
-      "/.well-known/codevisor": [jsonResponse(instanceBody)],
-      "/api/auth/device/code": [jsonResponse(grantBody())],
-      "/api/auth/device/token": [jsonResponse({ access_token: "session" })]
+    expect(world.sleeps).toEqual([1000, 6000])
+    expect(world.httpCalls.find((call) => call.url.endsWith("/connect"))?.body).toMatchObject({
+      sessionToken: "session"
     })
-    expect(await authLoginCommand(world.deps, { server: "https://cloud.example", fetchImpl })).toBe(
-      0
-    )
-    expect(world.logs.join("\n")).toContain("Connected as machine")
   })
 
   it("reports denial and expiry outcomes", async () => {
     for (const [error, message] of [
-      ["access_denied", "denied"],
-      ["expired_token", "expired"]
+      ["access_denied", "The request was denied."],
+      [
+        "expired_token",
+        "The code expired before it was approved. Run `codevisor auth login` again."
+      ]
     ] as const) {
       const world = makeWorld()
       const fetchImpl = scriptedFetch({
@@ -259,7 +257,8 @@ describe("authLoginCommand", () => {
       expect(
         await authLoginCommand(world.deps, { server: "https://cloud.example", fetchImpl })
       ).toBe(1)
-      expect(world.errors.join("\n")).toContain(message)
+      expect(world.errors).toEqual([message])
+      expect(world.sleeps).toEqual([1000])
     }
   })
 
@@ -279,7 +278,10 @@ describe("authLoginCommand", () => {
   it("refuses when already connected, and surfaces failures", async () => {
     const connected = makeWorld({ registration: connectedRegistration })
     expect(await authLoginCommand(connected.deps)).toBe(0)
-    expect(connected.logs.join("\n")).toContain("already connected")
+    expect(connected.logs.join("\n")).toContain("already connected to https://cloud.example")
+    const unnamedServer = makeWorld({ registration: { deviceId: "device-1", state: "connected" } })
+    expect(await authLoginCommand(unnamedServer.deps)).toBe(0)
+    expect(unnamedServer.logs.join("\n")).toContain("already connected to Codevisor Cloud")
 
     const apiError = makeWorld()
     expect(

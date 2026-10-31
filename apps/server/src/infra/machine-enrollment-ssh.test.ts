@@ -145,8 +145,10 @@ describe("the real ssh runner", () => {
       link: machineLinkFor(cloud),
       sshCommand: ssh.command
     })
+    const started = performance.now()
     expect((await enrollment.add({ ssh: "box" })).online).toBe(true)
     expect(polls).toBe(2)
+    expect(performance.now() - started).toBeGreaterThanOrEqual(900)
   })
 
   it("keeps only the tail of a long run's output", async () => {

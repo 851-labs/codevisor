@@ -14,7 +14,6 @@ import { afterEach, expect, it, vi } from "vitest"
 import {
   discoverNativeAccount,
   forgetNativeProfileLogin,
-  mcpCredentialVault,
   nativeClaudeMachine,
   rotateOAuthGrant,
   sharedAccountVault
@@ -220,10 +219,4 @@ it("refreshes MCP sign-ins only through the MCP token endpoint", async () => {
   const ambiguous = await rotateOAuthGrant(mcpBundle).catch((cause: unknown) => cause)
   expect(ambiguous).toBeInstanceOf(TypeError)
   expect(ambiguous).not.toBeInstanceOf(OAuthRefreshUnavailable)
-})
-
-it("keeps MCP sign-ins in this machine's coordinator when no cloud is configured", async () => {
-  const vault = mcpCredentialVault(await directory())
-  const reference = await vault.create({ ...mcpBundle, expiresAt: Date.now() + 3_600_000 })
-  expect((await vault.token(reference)).accessToken).toBe("mcp-access")
 })

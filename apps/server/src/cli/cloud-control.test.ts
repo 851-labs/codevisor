@@ -66,7 +66,10 @@ describe("CLI Cloud lifecycle", () => {
 
   it.each(["revoked", "unsupported-protocol"])("fails immediately for %s", async (state) => {
     const world = makeWorld({ http: { [stateUrl]: [registered(state)] } })
-    await expect(waitForCloudConnection(world.deps, port, "machine-1")).rejects.toThrow(state)
+    await expect(waitForCloudConnection(world.deps, port, "machine-1")).rejects.toThrow(
+      `Cloud connection failed: ${state}`
+    )
+    expect(world.httpCalls(stateUrl)).toBe(1)
   })
 
   it("rejects a lost or replaced registration", async () => {
@@ -97,7 +100,11 @@ describe("CLI Cloud lifecycle", () => {
       await vi.advanceTimersByTimeAsync(1)
       await result
       expect(rejected).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining("credentials are saved") })
+        expect.objectContaining({
+          message: expect.stringContaining(
+            `credentials are saved, but the relay is ${state ?? "not connected"}.`
+          )
+        })
       )
     }
   )

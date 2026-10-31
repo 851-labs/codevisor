@@ -38,7 +38,7 @@ const onSocket = (_request: IncomingMessage, socket: Socket): void => {
   socket.destroy()
 }
 
-export const bootHealth = (
+const bootHealth = (
   options: BootListenerOptions,
   latest: DataUpgradeProgress | undefined
 ): HealthResponse => ({

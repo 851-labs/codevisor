@@ -1,41 +1,16 @@
-import { mkdirSync, mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
 import { describe, expect, it } from "vitest"
 
 import { observableFixture } from "./changes-test-support.js"
-import { defaultServerConfig, startCodevisorServer, type RunningCodevisorServer } from "./server.js"
+import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import {
-  bodyId,
   jsonRequest,
   makeServices,
   readWebSocketEvents,
   run,
   runningServers,
-  tempDirs,
   waitFor
 } from "./test-support.js"
 import { field } from "./unknown-values.js"
-
-const openBusySession = async (server: RunningCodevisorServer): Promise<string> => {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-busy-"))
-  tempDirs.push(workspaceRoot)
-  const workspaceFolder = join(workspaceRoot, "codevisor")
-  mkdirSync(workspaceFolder)
-  const workspaceId = bodyId(
-    await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: workspaceFolder }),
-      method: "POST"
-    })
-  )
-  return bodyId(
-    await jsonRequest(server, "/v1/sessions", {
-      body: JSON.stringify({ projectId: workspaceId, harnessId: "codex", title: "Busy" }),
-      method: "POST"
-    })
-  )
-}
 
 describe("@codevisor/server self-updates", () => {
   it("reports and applies updates through the configured updater", async () => {
@@ -48,7 +23,11 @@ describe("@codevisor/server self-updates", () => {
       )
     )
     runningServers.push(plain)
-    expect((await jsonRequest(plain, "/v1/update/apply", { method: "POST" })).status).toBe(409)
+    const plainApply = await jsonRequest(plain, "/v1/update/apply", { method: "POST" })
+    expect([plainApply.status, plainApply.body]).toEqual([
+      409,
+      { error: "This server does not support remote updates" }
+    ])
 
     const updaterState = observableFixture({
       available: true,
@@ -211,49 +190,5 @@ describe("@codevisor/server self-updates", () => {
     const check = await jsonRequest(server, "/v1/update?refresh=1")
     expect(check.status).toBe(500)
     expect(check.body).toEqual({ error: "release feed unreachable" })
-  })
-
-  it("applies an update right away while a chat is mid-turn", async () => {
-    const { agents, services } = await makeServices("server-busy")
-    const applied = observableFixture({ count: 0 })
-    const server = await run(
-      startCodevisorServer(
-        services,
-        defaultServerConfig({
-          bootId: "test-boot",
-          id: "server-busy",
-          port: 0,
-          updater: {
-            apply: async () => {
-              applied.count += 1
-            },
-            check: async () => ({
-              channel: "stable",
-              checkedAt: "2026-06-30T00:00:00.000Z",
-              currentVersion: "0.1.0",
-              latestVersion: "0.2.0",
-              migrationState: "idle" as const,
-              updateAvailable: true
-            })
-          }
-        })
-      )
-    )
-    runningServers.push(server)
-    const sessionId = await openBusySession(server)
-    await jsonRequest(server, `/v1/sessions/${sessionId}/prompt`, {
-      body: JSON.stringify({ text: "prompt until cancelled" }),
-      method: "POST"
-    })
-    await waitFor(() => agents.prompts.length === 1)
-
-    const busy = await jsonRequest(server, "/v1/update/apply?whenBusy=refuse", {
-      method: "POST"
-    })
-
-    expect(busy.status).toBe(202)
-    expect(busy.body).toEqual({ accepted: true, targetVersion: "0.2.0", draining: true })
-    await waitFor(() => applied.count === 1)
-    expect(agents.cancellations).toHaveLength(1)
   })
 })

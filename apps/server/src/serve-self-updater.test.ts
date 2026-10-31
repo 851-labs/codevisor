@@ -162,16 +162,24 @@ describe("makeSelfUpdater release resolution", () => {
   })
 
   it("caches a check per channel until forced", async () => {
-    vi.stubEnv("CODEVISOR_APP_HOSTED", "1")
-    writeFileSync(join(dataDir, APP_UPDATE_CHANNEL_FILE), "alpha\n")
-    writeFileSync(join(dataDir, APP_UPDATE_FEED_FILE), customFeedURL)
+    vi.stubEnv("CODEVISOR_APP_HOSTED", "")
     const instance = updater()
 
-    await instance.check({ channel: "alpha" })
-    await instance.check({ channel: "alpha" })
-    expect(fetch).toHaveBeenCalledTimes(1)
+    const alpha = await instance.check({ channel: "alpha" })
+    const afterAlpha = fetch.mock.calls.length
+    const stable = await instance.check({ channel: "stable" })
+    const afterStable = fetch.mock.calls.length
+    const alphaAgain = await instance.check({ channel: "alpha" })
+
+    expect([alpha.latestVersion, stable.latestVersion, alphaAgain.latestVersion]).toEqual([
+      "0.1.102-alpha.661",
+      "0.1.101",
+      "0.1.102-alpha.661"
+    ])
+    expect(afterStable).toBeGreaterThan(afterAlpha)
+    expect(fetch).toHaveBeenCalledTimes(afterStable)
 
     await instance.check({ channel: "alpha", force: true })
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(afterStable + afterAlpha)
   })
 })

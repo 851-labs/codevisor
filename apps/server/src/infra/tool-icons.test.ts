@@ -213,6 +213,7 @@ describe("site icons", () => {
   it("reads a long head only as far as it must", async () => {
     const filler = new TextEncoder().encode(`<style>${"x".repeat(1024 * 1024)}</style>`)
     const head = new TextEncoder().encode('<link rel="icon" href="/late.png">')
+    const unread = [new TextEncoder().encode('<link rel="icon" href="/early.png"></head>'), filler]
     const { icons, requested } = await store({
       "https://heavy.example/": () =>
         new Response(
@@ -224,10 +225,26 @@ describe("site icons", () => {
             }
           })
         ),
-      "https://heavy.example/late.png": image(await png(32))
+      "https://heavy.example/late.png": image(await png(32)),
+      "https://early.example/": () =>
+        new Response(
+          new ReadableStream(
+            {
+              pull(controller) {
+                const next = unread.shift()
+                if (next === undefined) controller.close()
+                else controller.enqueue(next)
+              }
+            },
+            { highWaterMark: 0 }
+          )
+        ),
+      "https://early.example/early.png": image(await png(32))
     })
     expect((await icons.site("https://heavy.example", "light"))?.contentType).toBe("image/png")
     expect(requested()).toEqual(["https://heavy.example/", "https://heavy.example/late.png"])
+    expect((await icons.site("https://early.example", "light"))?.contentType).toBe("image/png")
+    expect(unread).toEqual([filler])
   })
 
   it("serves cached icons from disk, refreshing stale ones behind the response", async () => {
@@ -337,7 +354,7 @@ describe("MCP server icons", () => {
           linear: {
             url: "https://mcp.linear.app/mcp",
             icons: [
-              { src: "https://tracker.example/elsewhere.png", sizes: ["64x64"] },
+              { src: "https://tracker.example/elsewhere.png", sizes: ["64x64"], theme: "light" },
               { src: "https://linear.app/light.png", sizes: ["64x64"], theme: "light" },
               { src: "https://linear.app/dark.png", sizes: ["any"], theme: "dark" },
               { src: "https://linear.app/plain.png" }
