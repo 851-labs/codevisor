@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { MAX_UPLOAD_BYTES } from "@codevisor/api"
@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest"
 import { tempDirs } from "../test-support.js"
 import { capturablePath } from "./capture-scope.js"
 
-const folder = (): string => {
-  const created = mkdtempSync(join(tmpdir(), "codevisor-capture-scope-"))
+const folder = (parent = tmpdir()): string => {
+  const created = mkdtempSync(join(parent, ".codevisor-capture-scope-"))
   tempDirs.push(created)
   return created
 }
@@ -32,5 +32,17 @@ describe("capture scope", () => {
     rmSync(cwd, { recursive: true })
 
     expect(await capturablePath(join(scratch, "shot.png"), cwd)).toMatch(/shot\.png$/)
+  })
+
+  it("refuses a sibling folder whose name starts with the chat folder's name", async () => {
+    const parent = folder(homedir())
+    const cwd = join(parent, "project")
+    mkdirSync(cwd)
+    mkdirSync(join(parent, "project-secrets"))
+    writeFileSync(join(cwd, "notes.txt"), "notes")
+    writeFileSync(join(parent, "project-secrets", "key.txt"), "secret")
+
+    expect(await capturablePath(join(cwd, "notes.txt"), cwd)).toMatch(/notes\.txt$/)
+    expect(await capturablePath(join(parent, "project-secrets", "key.txt"), cwd)).toBeUndefined()
   })
 })
