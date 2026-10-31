@@ -21,4 +21,4 @@ pub use crate::{
     },
 };
 
-pub const ALPN_SCREEN: &[u8] = b"codevisor/screen/1";
+pub use codevisor_net::ALPN_SCREEN;
