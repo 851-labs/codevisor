@@ -3,8 +3,9 @@
 //! `codevisor-media` paces each frame itself and turns its own delivery-rate estimate into the encoder's admission,
 //! so QUIC's congestion window and pacer would only queue its datagrams a second time. A screen connection gets
 //! [`transport_config`] instead of iroh's defaults: [`DeferringController`] (no window or pacing while the path
-//! delivers), a datagram send buffer of a few frames' packets rather than 1 MiB, and a 100 ms initial RTT. The
-//! endpoint applies it to every connection on that ALPN, dialed and accepted alike.
+//! delivers), a datagram send buffer of a few frames' packets rather than 1 MiB, ACKs every 16 packets instead of
+//! every second one, and a 100 ms initial RTT. The endpoint applies it to every connection on that ALPN, dialed and
+//! accepted alike.
 
 use std::{
     any::Any,
@@ -12,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use iroh::endpoint::{Controller, ControllerFactory, QuicTransportConfig, RttEstimator};
+use iroh::endpoint::{AckFrequencyConfig, Controller, ControllerFactory, QuicTransportConfig, RttEstimator};
 
 /// What QUIC may hold for `codevisor-media` before handing datagrams back to its pacer as full: about 180 packets,
 /// several bursts of the pacer's, so a frame never waits on it, but not the 1 MiB default that queued for 100 ms
@@ -24,6 +25,12 @@ pub const DATAGRAM_RECEIVE_BUFFER: usize = 2 * 1024 * 1024;
 /// The round trip assumed before the first sample (RFC 9002 says 333 ms). A lost first handshake packet is resent
 /// after 3 × this, 300 ms instead of a second on the LAN; a slower relay path costs at most one spare resend.
 pub const INITIAL_RTT: Duration = Duration::from_millis(100);
+/// How many datagrams the peer may take before it must ACK, and how long it may hold an ACK. QUIC's default (every
+/// second packet) puts an ACK on the wire, and through both QUIC stacks, for every two media packets; at 16 the
+/// frame round trip on the minis fell by 0.25–1.0 ms at 8–45 Mbit/s. The media's own per-frame feedback, not QUIC's
+/// ACKs, drives its pacing and repair, so nothing waits on the later ACK.
+pub const ACK_ELICITING_THRESHOLD: u32 = 16;
+pub const MAX_ACK_DELAY: Duration = Duration::from_millis(2);
 
 pub fn transport_config() -> QuicTransportConfig {
     QuicTransportConfig::builder()
@@ -31,7 +38,14 @@ pub fn transport_config() -> QuicTransportConfig {
         .datagram_send_buffer_size(DATAGRAM_SEND_BUFFER)
         .datagram_receive_buffer_size(Some(DATAGRAM_RECEIVE_BUFFER))
         .initial_rtt(INITIAL_RTT)
+        .ack_frequency_config(Some(ack_frequency()))
         .build()
+}
+
+fn ack_frequency() -> AckFrequencyConfig {
+    let mut config = AckFrequencyConfig::default();
+    config.ack_eliciting_threshold(ACK_ELICITING_THRESHOLD.into()).max_ack_delay(Some(MAX_ACK_DELAY));
+    config
 }
 
 /// A window this large switches noq's pacer off as well (it stops pacing above `u32::MAX`).
