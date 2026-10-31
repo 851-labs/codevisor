@@ -56,6 +56,12 @@ enum CloudTunnelIdentity {
 
 public actor CloudTunnelEndpoint {
   public static let channelsALPN = "codevisor/channels/1"
+  public static let screenALPN = "codevisor/screen/1"
+
+  private enum Binding {
+    case cloud(CloudTunnelConfig)
+    case directOnly
+  }
 
   private let credentialStore: any CloudCredentialStore
   private let trustAnchorsPem: [String]
@@ -66,6 +72,7 @@ public actor CloudTunnelEndpoint {
   private var configWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
   private let firstConfigWait: Duration
   private var allowsDirectPaths = false
+  private var screenSharingBindsWithoutCloud = false
 
   public init(
     credentialStore: any CloudCredentialStore,
@@ -96,7 +103,7 @@ public actor CloudTunnelEndpoint {
   public func configure(_ newConfig: CloudTunnelConfig) async {
     guard newConfig != config else { return }
     config = newConfig
-    replaceBinding(with: newConfig.enabled ? newConfig : nil)
+    replaceBinding(with: desiredBinding)
     let waiters = configWaiters.values
     configWaiters.removeAll()
     for waiter in waiters { waiter.resume() }
@@ -104,18 +111,37 @@ public actor CloudTunnelEndpoint {
 
   public func endpoint() async -> NetEndpointHandle? {
     if config == nil { await waitForFirstConfig() }
+    guard config?.enabled == true else { return nil }
+    return await currentEndpoint()
+  }
+
+  public func screenSharingEndpoint() async -> NetEndpointHandle? {
+    if config == nil { await waitForFirstConfig() }
+    if !screenSharingBindsWithoutCloud {
+      screenSharingBindsWithoutCloud = true
+      if config?.enabled != true { replaceBinding(with: .directOnly) }
+    }
+    return await currentEndpoint()
+  }
+
+  private var desiredBinding: Binding? {
+    if let config, config.enabled { return .cloud(config) }
+    return screenSharingBindsWithoutCloud ? .directOnly : nil
+  }
+
+  private func currentEndpoint() async -> NetEndpointHandle? {
     let attempt = binding
     if let handle = await attempt?.value { return handle }
     guard binding == attempt else { return await binding?.value }
-    guard let config, config.enabled else { return nil }
-    replaceBinding(with: config)
+    guard let desired = desiredBinding else { return nil }
+    replaceBinding(with: desired)
     return await binding?.value
   }
 
   public func rebuild() {
-    guard let config, config.enabled else { return }
+    guard let desired = desiredBinding else { return }
     Log.cloud.notice("Rebuilding the tunnel endpoint")
-    replaceBinding(with: config)
+    replaceBinding(with: desired)
   }
 
   public func setAllowsDirectPaths(_ allowed: Bool) {
@@ -123,7 +149,7 @@ public actor CloudTunnelEndpoint {
     allowsDirectPaths = allowed
     guard let config, config.enabled else { return }
     Log.cloud.notice("Rebinding the tunnel endpoint with direct paths \(allowed ? "allowed" : "off", privacy: .public)")
-    replaceBinding(with: config)
+    replaceBinding(with: .cloud(config))
   }
 
   public func networkChanged() async {
@@ -150,15 +176,16 @@ public actor CloudTunnelEndpoint {
 
   public func shutdown() async {
     config = nil
+    screenSharingBindsWithoutCloud = false
     replaceBinding(with: nil)
     _ = await binding?.value
   }
 
-  private func replaceBinding(with config: CloudTunnelConfig?) {
+  private func replaceBinding(with desired: Binding?) {
     generation &+= 1
     let requestGeneration = generation
     let previous = binding
-    let endpointConfig = config.flatMap(endpointConfig(for:))
+    let endpointConfig = desired.flatMap(endpointConfig(for:))
     let bindEndpoint = bindEndpoint
     binding = Task {
       if let handle = await previous?.value { await handle.close() }
@@ -174,7 +201,7 @@ public actor CloudTunnelEndpoint {
     }
   }
 
-  private func endpointConfig(for config: CloudTunnelConfig) -> NetEndpointConfig? {
+  private func endpointConfig(for desired: Binding) -> NetEndpointConfig? {
     let secretKeyHex: String
     do {
       secretKeyHex = CloudTunnelIdentity.secretKeyHex(for: try credentialStore.ensureAppDeviceIdentity())
@@ -182,12 +209,17 @@ public actor CloudTunnelEndpoint {
       Log.cloud.error("Tunnel unavailable: no device identity (\(String(describing: error), privacy: .public))")
       return nil
     }
+    let alpns = [Self.channelsALPN, Self.screenALPN]
+    guard case .cloud(let config) = desired else {
+      return NetEndpointConfig(
+        secretKeyHex: secretKeyHex, relays: [], trustAnchorsPem: [], pathPolicy: "direct-only", alpns: alpns)
+    }
     return NetEndpointConfig(
       secretKeyHex: secretKeyHex,
       relays: config.relays.map { NetRelay(url: $0.url, quicPort: $0.quicPort.map { UInt16(clamping: $0) }) },
       trustAnchorsPem: trustAnchorsPem,
       pathPolicy: allowsDirectPaths ? "auto" : "relay-only",
-      alpns: [Self.channelsALPN]
+      alpns: alpns
     )
   }
 
