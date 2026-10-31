@@ -214,6 +214,15 @@ async fn viewer(options: &Options) -> Result<String> {
     ));
     let connection = accept_screen(&endpoint).await?;
     let _ = path.set(connection.clone());
+
+    {
+        let closing = connection.clone();
+        let started = Instant::now();
+        tokio::spawn(async move {
+            let reason = closing.closed().await;
+            eprintln!("lab: iroh connection closed after {:.1} s: {reason}", started.elapsed().as_secs_f64());
+        });
+    }
     let session =
         MediaSession::new(ImpairedTransport::new(QuicTransport::new(connection), network, VIEWER_SEED), media_config());
     let (quic_tally, quic_stats) = serve_viewer(session, idle).await;
@@ -264,6 +273,15 @@ async fn host(options: &Options) -> Result<String> {
     let patience = Duration::from_secs_f64(options.or("connect-patience-s", "600").parse()?);
     let endpoint = NetEndpoint::bind(endpoint_config(generate_secret_key(), options.or("bind", "0.0.0.0:0"))).await?;
     let connection = connect_quic(&endpoint, &peer, patience).await?;
+
+    {
+        let closing = connection.clone();
+        let started = Instant::now();
+        tokio::spawn(async move {
+            let reason = closing.closed().await;
+            eprintln!("lab: iroh connection closed after {:.1} s: {reason}", started.elapsed().as_secs_f64());
+        });
+    }
     let report = measure(options, network, connection, udp_peer).await?;
     endpoint.close().await;
     Ok(report)

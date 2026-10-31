@@ -20,9 +20,9 @@ env:
   # Throwaway bench keys, so the host can derive the viewer's endpoint id. Nothing else uses them.
   LAB_SECRET_N0: 1c3509b9f2b64dbca1181de09a2846dc8591c0855f79a3b9a675fb390230274c
   LAB_SECRET_N3: 8f54671cdd55c72e1e311f7132b14ba577745d63462745509280c572bb67cbd5
-  VARIANTS: "default bbr3-256 defer-256 defer-256-ack16 defer-256-nomtud"
-  N3_VARIANTS: "defer-256 defer-256-nomtud"
-  LOOPBACK_VARIANTS: "default defer-256"
+  VARIANTS: "defer-256-ack16 defer-256-ack16-nomtud defer-256-ack32"
+  N3_VARIANTS: "defer-256-ack16 defer-256-ack16-nomtud"
+  LOOPBACK_VARIANTS: "defer-256-ack16 defer-256-ack16-nomtud"
   SECONDS_PER_ROW: "6"
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
