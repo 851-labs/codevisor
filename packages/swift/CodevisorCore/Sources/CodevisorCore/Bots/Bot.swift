@@ -28,6 +28,8 @@ public struct Bot: Identifiable, Hashable, Sendable {
   public var symbolName: String { BotIcon(resolving: record.symbolName).systemImage }
   public var harnessId: String { record.harnessId }
   public var rootPath: String { record.rootPath }
-  public var isConversational: Bool { record.conversational == true }
+  public var mode: BotMode {
+    record.mode.flatMap(BotMode.init(rawValue:)) ?? (record.conversational == true ? .conversation : .transcript)
+  }
   public var sourceProjectIds: [String] { record.projects.map(\.projectId) }
 }

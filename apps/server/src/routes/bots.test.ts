@@ -262,37 +262,49 @@ describe("bot routes", () => {
     expect(missing.status).toBe(404)
   })
 
-  it("switches a bot's conversation mode, rewrites its instructions, and tells the bot", async () => {
+  it("switches a bot's display mode and tells the bot only when conversation mode changes", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
     const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
     const plain = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
+    const instructions = () => readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
     const prompts = () =>
       running.agents.prompts.map(([, input]) => (typeof input === "string" ? input : input.text))
-    const setConversational = (conversational: boolean) =>
-      jsonRequest(running.server, `/v1/bots/${bot.id}`, {
-        body: JSON.stringify({ conversational }),
-        method: "PATCH"
-      })
+    const update = async (body: object) =>
+      decodeBot(
+        (
+          await jsonRequest(running.server, `/v1/bots/${bot.id}`, {
+            body: JSON.stringify(body),
+            method: "PATCH"
+          })
+        ).body
+      )
 
-    const turnedOn = await setConversational(true)
+    expect(bot).toMatchObject({ mode: "transcript", conversational: false })
+    expect(await update({ mode: "bubbles" })).toMatchObject({
+      mode: "bubbles",
+      conversational: false
+    })
+    expect(await update({ conversational: false })).toMatchObject({ mode: "bubbles" })
+    expect(instructions()).toBe(plain)
 
-    expect(decodeBot(turnedOn.body)).toMatchObject({ name: bot.name, conversational: true })
-    expect(await listBots(running)).toEqual([decodeBot(turnedOn.body)])
-    const conversational = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
-    expect(conversational).toContain("## Talking to the user")
-    expect(conversational).toContain("Codevisor sends you a `<codevisor-event>`")
+    const turnedOn = await update({ mode: "conversation" })
+
+    expect(turnedOn).toMatchObject({ mode: "conversation", conversational: true })
+    expect(await listBots(running)).toEqual([turnedOn])
+    expect(instructions()).toContain("## Talking to the user")
+    expect(instructions()).toContain("Codevisor sends you a `<codevisor-event>`")
     await waitFor(() => prompts().length === 1)
     expect(prompts()[0]).toContain('<codevisor-event type="bot.conversation_mode_changed">')
     expect(prompts()[0]).toContain("turned on conversation mode")
 
-    await setConversational(true)
-    const turnedOff = await setConversational(false)
+    const turnedOff = await update({ conversational: false })
 
-    expect(decodeBot(turnedOff.body).conversational).toBe(false)
-    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toBe(plain)
+    expect(turnedOff).toMatchObject({ mode: "transcript", conversational: false })
+    expect(instructions()).toBe(plain)
     await waitFor(() => prompts().length === 2)
     expect(prompts()[1]).toContain("turned off conversation mode")
+    expect(await update({ conversational: true })).toMatchObject({ mode: "conversation" })
   })
 
   it("protects a bot's projects, workspace, and chat until the bot is deleted", async () => {

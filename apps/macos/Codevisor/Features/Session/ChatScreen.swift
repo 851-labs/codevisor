@@ -27,7 +27,7 @@ struct ChatScreen: View {
   let focus: TerminalFocusController
   let presentationSurface: TranscriptPresentationSurface
   let isReadOnly: Bool
-  let presentsBotConversation: Bool
+  let botMode: BotMode?
   @State var isAtBottom: Bool
   @State var earlierHistoryCollapse: TranscriptEarlierHistoryCollapse?
   @State var autoFollow: Bool
@@ -57,6 +57,8 @@ struct ChatScreen: View {
     .init(controller: ObjectIdentifier(controller), isMounted: isTranscriptMounted)
   }
 
+  var presentsBotConversation: Bool { botMode == .conversation }
+
   var mountedProjectionRequest: TranscriptProjectionRequest? {
     isTranscriptMounted ? transcriptProjectionRequest : nil
   }
@@ -66,13 +68,13 @@ struct ChatScreen: View {
     focus: TerminalFocusController,
     presentationSurface: TranscriptPresentationSurface,
     isReadOnly: Bool = false,
-    presentsBotConversation: Bool = false
+    botMode: BotMode? = nil
   ) {
     self.controller = controller
     self.focus = focus
     self.presentationSurface = presentationSurface
     self.isReadOnly = isReadOnly
-    self.presentsBotConversation = presentsBotConversation
+    self.botMode = botMode
     let isWarm = presentationSurface.isWarm
     _isAtBottom = State(initialValue: controller.scrollState?.isAtBottom ?? true)
     _autoFollow = State(
@@ -136,8 +138,8 @@ struct ChatScreen: View {
         guard !Task.isCancelled else { return }
         isTranscriptMounted = true
       }
+      .onChange(of: botMode, initial: true) { controller.presentBot(as: botMode) }
       .task(id: contentLoadingIdentity) {
-        if presentsBotConversation { controller.presentBotConversation() }
         guard isTranscriptMounted else { return }
         guard !isReadOnly else {
           await connectForReading()

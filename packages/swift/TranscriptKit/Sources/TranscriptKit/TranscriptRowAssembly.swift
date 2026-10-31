@@ -13,6 +13,10 @@ enum TranscriptRowAssembly {
         options: options
       )
     }
+    if options.presentsBubbleTranscript {
+      return try TranscriptBotRowAssembly.assemble(
+        TranscriptBubbleConversation.make(input), input: input, options: options)
+    }
     var rows: [TranscriptPresentationRow] = []
     let settled = input.settledConversation.filter(\.isVisibleInTranscript)
     rows.reserveCapacity(settled.count + 6)

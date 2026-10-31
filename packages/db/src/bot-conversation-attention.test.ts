@@ -27,7 +27,7 @@ const seedChat = async (db: CodevisorDatabaseService, conversational: boolean) =
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
-      conversational,
+      mode: conversational ? "conversation" : "transcript",
       projects: []
     })
   )

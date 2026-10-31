@@ -14,7 +14,7 @@ struct BotEditorModelTests {
 
     #expect(editor.name == "Helper")
     #expect(editor.symbolName == bot.symbolName)
-    #expect(!editor.isConversational)
+    #expect(editor.mode == .transcript)
     #expect(editor.canSave)
     editor.name = "   "
     #expect(!editor.canSave)

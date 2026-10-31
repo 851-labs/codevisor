@@ -98,7 +98,7 @@ struct SessionControllerFirstSendTests {
     .timeLimit(.minutes(1)), arguments: [true, false])
   func sendDoesNotHoldTheComposer(bot: Bool) async throws {
     let fixture = try Fixture()
-    if bot { fixture.controller.presentBotConversation() }
+    if bot { fixture.controller.presentBot(as: .conversation) }
     let (gate, release) = AsyncStream.makeStream(of: Void.self)
     fixture.client.holdPrompts(until: gate)
     defer { release.finish() }

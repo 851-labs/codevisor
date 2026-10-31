@@ -4,9 +4,11 @@ import SwiftUI
 extension HomeView {
   func openBot(_ bot: Bot) {
     IOSNavigationDiagnostics.record("home.openBot", "bot=\(shortID(bot.id)) pathBefore=\(navigationPathSummary(path))")
-    if bot.isConversational {
+    if bot.mode != .transcript {
       openRoute(.bot(serverId: bot.serverId, botId: bot.id))
     } else if let session = projectList.session(bot.sessionId, serverId: bot.serverId) {
+      ChatControllerCache.shared.existingController(sessionId: bot.sessionId, serverId: bot.serverId)?
+        .presentBot(as: .transcript)
       openChat(session)
     }
   }

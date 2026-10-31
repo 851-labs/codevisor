@@ -81,7 +81,7 @@ struct SessionTranscriptView: View {
   @State var queueSendAnimation = IOSQueueSendAnimation()
 
   var userBubbleStyle: UserBubbleStyle {
-    controller.presentsBotConversation ? .accent : .standard
+    controller.presentsBotConversation || controller.presentsBubbleTranscript ? .accent : .standard
   }
 
   var composerHeight: CGFloat {

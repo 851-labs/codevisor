@@ -26,6 +26,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var rootPath: String
   public var projects: [ServerBotProject]
   public var conversational: Bool?
+  public var mode: String?
   public var createdAt: String
   public var updatedAt: String?
 
@@ -41,6 +42,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     rootPath: String,
     projects: [ServerBotProject],
     conversational: Bool? = nil,
+    mode: String? = nil,
     createdAt: String,
     updatedAt: String? = nil
   ) {
@@ -55,6 +57,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     self.rootPath = rootPath
     self.projects = projects
     self.conversational = conversational
+    self.mode = mode
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
@@ -68,6 +71,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
   public var configSelections: [String: String]?
   public var projectIds: [String]
   public var conversational: Bool?
+  public var mode: String?
 
   public init(
     id: String? = nil,
@@ -76,7 +80,8 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     harnessId: String,
     configSelections: [String: String]? = nil,
     projectIds: [String],
-    conversational: Bool? = nil
+    conversational: Bool? = nil,
+    mode: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -85,6 +90,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     self.configSelections = configSelections
     self.projectIds = projectIds
     self.conversational = conversational
+    self.mode = mode
   }
 }
 
@@ -100,10 +106,12 @@ public struct ServerUpdateBotRequest: Encodable, Equatable, Sendable {
   public var name: String?
   public var symbolName: String?
   public var conversational: Bool?
+  public var mode: String?
 
-  public init(name: String? = nil, symbolName: String? = nil, conversational: Bool? = nil) {
+  public init(name: String? = nil, symbolName: String? = nil, conversational: Bool? = nil, mode: String? = nil) {
     self.name = name
     self.symbolName = symbolName
     self.conversational = conversational
+    self.mode = mode
   }
 }

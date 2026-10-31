@@ -166,7 +166,8 @@ extension SessionTranscriptView {
       options: .init(
         includesConnectingRow: true,
         bottomSpacerHeight: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom,
-        presentsBotConversation: controller.presentsBotConversation
+        presentsBotConversation: controller.presentsBotConversation,
+        presentsBubbleTranscript: controller.presentsBubbleTranscript
       )
     )
   }

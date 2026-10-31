@@ -6,9 +6,16 @@ import Database from "better-sqlite3"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
-import { rewindMainSessionSql, rewindPluginsSql, run, tempDatabase } from "./test-support.js"
+import {
+  rewindBotModesSql,
+  rewindMainSessionSql,
+  rewindPluginsSql,
+  run,
+  tempDatabase
+} from "./test-support.js"
 
 const v73Schema = `
+  ${rewindBotModesSql}
   ${rewindPluginsSql}
   ${rewindMainSessionSql}
   drop index session_attention_finished_turns;
@@ -60,7 +67,7 @@ const seedV73 = async (filename: string) => {
       projectId: home.id,
       sessionId: "chat-home",
       workspaceId: "ws-home",
-      conversational: true,
+      mode: "conversation",
       projects: []
     })
   )

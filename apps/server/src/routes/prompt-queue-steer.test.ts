@@ -30,7 +30,7 @@ const liveBotTurn = async () => {
       projectId: project.id,
       sessionId: "chat-bot",
       workspaceId: "ws-bot",
-      conversational: true,
+      mode: "conversation",
       projects: []
     })
   )

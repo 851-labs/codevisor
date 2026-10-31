@@ -56,7 +56,7 @@ const botWithChild = async (db: CodevisorDatabaseService) => {
       projectId: home.id,
       sessionId: "chat-helper",
       workspaceId: "ws-helper",
-      conversational: true,
+      mode: "conversation",
       projects: []
     })
   )

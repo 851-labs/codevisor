@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { Bot } from "@codevisor/api"
+import type { Bot, BotMode, UpdateBotRequest } from "@codevisor/api"
 import { UpdateBotRequest as UpdateBotRequestSchema } from "@codevisor/api"
 import { trashDirectory } from "@codevisor/worktrees"
 
@@ -44,6 +44,12 @@ const conversationModeNotice = (conversational: boolean): string =>
       "agents with `agents.status` or `agents.wait` instead of waiting for a " +
       "`<codevisor-event>`. AGENTS.md has the updated instructions."
 
+const requestedMode = (current: Bot, payload: UpdateBotRequest): BotMode | undefined => {
+  if (payload.mode !== undefined || payload.conversational === undefined) return payload.mode
+  if (payload.conversational) return "conversation"
+  return current.mode === "conversation" ? "transcript" : current.mode
+}
+
 const updateBot = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -61,7 +67,7 @@ const updateBot = async (
     services.db.updateBot(current.id, {
       name,
       symbolName: payload.symbolName,
-      conversational: payload.conversational
+      mode: requestedMode(current, payload)
     })
   )
   if (name !== undefined && name !== current.name) {

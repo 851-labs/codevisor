@@ -131,7 +131,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       machineName: environment.machines.fleetMachineName(for: workspace.serverId),
       machineSymbol: environment.machines.machine(for: workspace.serverId)?.icon.systemImage,
       showsDebugSection: developerMode,
-      showsBotTranscript: bot?.isConversational == true,
+      showsBotTranscript: bot.map { $0.mode != .transcript } ?? false,
       harnessChat: chat,
       tasks: shownTab(for: inspected) == .info ? mainChatTasks(of: workspace, store: store) : [],
       parent: shownTab(for: inspected) == .info ? parent(of: workspace, store: store) : nil,

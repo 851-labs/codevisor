@@ -43,11 +43,11 @@ struct BotEditorView: View {
         projectsSection
         if let bot = editor.editedBot {
           editedBotModelSection(bot)
-          conversationSection
+          displaySection
           deleteSection(bot)
         } else {
           modelSection
-          conversationSection
+          displaySection
         }
         if let errorMessage = editor.errorMessage {
           Section {
@@ -277,13 +277,16 @@ struct BotEditorView: View {
       for: session, project: project, workspaceId: bot.workspaceId, environment: environment)
   }
 
-  private var conversationSection: some View {
+  private var displaySection: some View {
     Section {
-      Toggle("Conversation Mode", isOn: $editor.isConversational)
+      Picker("Display", selection: $editor.mode) {
+        ForEach(BotMode.allCases) { mode in
+          Text(mode.title).tag(mode)
+        }
+      }
+      .pickerStyle(.menu)
     } footer: {
-      Text(
-        "Chat with the bot like a messaging app. You see only the messages it sends you, you can message it while it works, and it tells you when its agents finish."
-      )
+      Text(editor.mode.summary)
     }
   }
 

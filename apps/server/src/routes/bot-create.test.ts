@@ -112,7 +112,7 @@ describe("bot instructions", () => {
         await createBot(running, {
           name: "Chatty",
           projectIds: ["api-project"],
-          conversational: true
+          mode: "conversation"
         })
       ).body
     )

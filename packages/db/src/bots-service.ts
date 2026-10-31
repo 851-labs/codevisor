@@ -1,4 +1,4 @@
-import type { Bot, Workspace } from "@codevisor/api"
+import type { Bot, BotMode, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import {
@@ -46,6 +46,7 @@ export const makeBotsService = (
         path: `${rootPath}/${project.folder_name}`
       })),
       conversational: row.conversational === 1,
+      mode: row.mode as BotMode,
       createdAt: row.created_at,
       ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
     }
@@ -79,7 +80,8 @@ export const makeBotsService = (
               canonicalUuid(record.projectId),
               canonicalUuid(record.sessionId),
               canonicalUuid(record.workspaceId),
-              record.conversational === true ? 1 : 0,
+              record.mode === "conversation" ? 1 : 0,
+              record.mode ?? "transcript",
               isoTimestamp()
             )
           const insertProject = sqlite.prepare(botProjectSql.insert)
@@ -105,7 +107,8 @@ export const makeBotsService = (
           .run(
             record.name ?? current.name,
             record.symbolName ?? current.symbolName,
-            (record.conversational ?? current.conversational) ? 1 : 0,
+            (record.mode ?? current.mode) === "conversation" ? 1 : 0,
+            record.mode ?? current.mode,
             isoTimestamp(),
             current.id
           )
@@ -222,10 +225,10 @@ const botSql = {
   list: `${botSelect} order by bots.created_at asc, bots.id asc`,
   insert: `insert into bots (
                 id, server_id, name, symbol_name, slug, project_id, session_id, workspace_id,
-                conversational, created_at
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                conversational, mode, created_at
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   update:
-    "update bots set name = ?, symbol_name = ?, conversational = ?, updated_at = ? where id = ?",
+    "update bots set name = ?, symbol_name = ?, conversational = ?, mode = ?, updated_at = ? where id = ?",
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

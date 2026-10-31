@@ -8,6 +8,13 @@ public struct TranscriptBotMessageContent: Equatable, Sendable {
   public let blocks: [MarkdownBlock]
 
   public init(_ message: TranscriptBotMessage) {
+    if message.isTranscriptMarkdown {
+      text = message.text
+      markdown = message.text
+      files = message.files
+      blocks = MarkdownParser().parse(message.text)
+      return
+    }
     let segments = assistantMarkdownSegments(message.text, attachments: message.attachments)
     text = Self.markdown(in: segments).trimmingCharacters(in: .whitespacesAndNewlines)
     markdown = Self.bubbleMarkdown(text)
@@ -64,6 +71,7 @@ final class TranscriptBotMessageContentCache: @unchecked Sendable {
   private struct Entry {
     let text: String
     let attachments: [Attachment]
+    let files: [PreviewFile]
     let content: TranscriptBotMessageContent
   }
 
@@ -79,14 +87,15 @@ final class TranscriptBotMessageContentCache: @unchecked Sendable {
 
   func content(for message: TranscriptBotMessage) -> TranscriptBotMessageContent {
     if let entry = lock.withLock({ entries[message.id] }),
-      entry.text == message.text, entry.attachments == message.attachments
+      entry.text == message.text, entry.attachments == message.attachments, entry.files == message.files
     {
       return entry.content
     }
     let content = TranscriptBotMessageContent(message)
     lock.withLock {
       if entries.updateValue(
-        Entry(text: message.text, attachments: message.attachments, content: content), forKey: message.id) == nil
+        Entry(text: message.text, attachments: message.attachments, files: message.files, content: content),
+        forKey: message.id) == nil
       {
         order.append(message.id)
       }

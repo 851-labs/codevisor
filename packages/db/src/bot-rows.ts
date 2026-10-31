@@ -1,4 +1,11 @@
-import type { AttachmentRef, Bot, BotMessage, BotMessageSender, Workspace } from "@codevisor/api"
+import type {
+  AttachmentRef,
+  Bot,
+  BotMessage,
+  BotMessageSender,
+  BotMode,
+  Workspace
+} from "@codevisor/api"
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
@@ -16,6 +23,7 @@ export interface BotRow {
   readonly workspace_id: string
   readonly harness_id: string
   readonly conversational: number
+  readonly mode: string
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -39,6 +47,7 @@ export const botRows = rowReader<BotRow>({
   workspace_id: text,
   harness_id: text,
   conversational: integer,
+  mode: text,
   created_at: text,
   updated_at: nullable(text)
 })
@@ -97,14 +106,14 @@ export interface CreateBotRecord {
   readonly projectId: string
   readonly sessionId: string
   readonly workspaceId: string
-  readonly conversational?: boolean
+  readonly mode?: BotMode
   readonly projects: ReadonlyArray<BotProjectRecord>
 }
 
 export interface UpdateBotRecord {
   readonly name?: string | undefined
   readonly symbolName?: string | undefined
-  readonly conversational?: boolean | undefined
+  readonly mode?: BotMode | undefined
 }
 
 export interface BotOwnerQuery {

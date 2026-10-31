@@ -97,7 +97,7 @@ extension ChatScreen {
                     .environment(\.openFileDocument, openFileDocument)
                     .environment(\.openSubagent, openSubagent)
                     .environment(\.hoverTrackingSuspended, controller.isSending)
-                    .environment(\.userBubbleStyle, presentsBotConversation ? .accent : .standard)
+                    .environment(\.userBubbleStyle, botMode == nil || botMode == .transcript ? .standard : .accent)
                     .environment(\.transcriptDisclosure, controller.disclosure)
                     .environment(\.transcriptController, controller)
                     .environment(
@@ -233,7 +233,8 @@ extension ChatScreen {
       options: .init(
         includesConnectingRow: false,
         bottomSpacerHeight: composerHeight + 24,
-        presentsBotConversation: presentsBotConversation
+        presentsBotConversation: presentsBotConversation,
+        presentsBubbleTranscript: botMode == .bubbles
       )
     )
   }

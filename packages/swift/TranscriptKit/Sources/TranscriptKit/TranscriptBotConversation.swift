@@ -24,10 +24,21 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
   public let attachments: [Attachment]
   public let sentAt: Date?
   public let delivery: TranscriptDelivery?
+  public let files: [PreviewFile]
+  public let isTranscriptMarkdown: Bool
 
   public init(
     id: String, sender: Sender, text: String, attachments: [Attachment] = [], sentAt: Date? = nil,
     delivery: TranscriptDelivery? = nil
+  ) {
+    self.init(
+      id: id, sender: sender, text: text, attachments: attachments, sentAt: sentAt, delivery: delivery, files: [],
+      isTranscriptMarkdown: false)
+  }
+
+  init(
+    id: String, sender: Sender, text: String, attachments: [Attachment], sentAt: Date?,
+    delivery: TranscriptDelivery?, files: [PreviewFile], isTranscriptMarkdown: Bool
   ) {
     self.id = id
     self.sender = sender
@@ -35,6 +46,8 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
     self.attachments = attachments
     self.sentAt = sentAt
     self.delivery = delivery
+    self.files = files
+    self.isTranscriptMarkdown = isTranscriptMarkdown
   }
 }
 

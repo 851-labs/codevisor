@@ -214,7 +214,7 @@ extension SessionModelTests {
       configCache: ConfigOptionCache(store: InMemoryStore())
     )
     controller.model = model
-    controller.presentBotConversation()
+    controller.presentBot(as: .conversation)
     await model.loadHistoryForInitialDisplay()
     await settleUntil { model.botMessages.count == 1 }
 

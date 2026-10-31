@@ -52,7 +52,7 @@ describe("Codevisor built-in tools", () => {
           projectId: project.id,
           sessionId: `chat-${id}`,
           workspaceId: `ws-${id}`,
-          conversational,
+          mode: conversational ? "conversation" : "transcript",
           projects: []
         })
       )
