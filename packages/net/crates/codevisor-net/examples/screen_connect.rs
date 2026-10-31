@@ -68,7 +68,15 @@ async fn listen(args: &[String]) -> Result<()> {
     let addr = endpoint.addr();
     println!("listening as {}", endpoint.endpoint_id());
     println!("relay {:?}, direct {:?}", addr.relay_url, addr.direct_addrs);
-    while let Some(connection) = endpoint.accept().await? {
+    loop {
+        let connection = match endpoint.accept().await {
+            Ok(Some(connection)) => connection,
+            Ok(None) => return Ok(()),
+            Err(error) => {
+                eprintln!("accept: {error:#}");
+                continue;
+            }
+        };
         println!("\nconnection from {}", connection.remote_id());
         tokio::spawn(async move {
             let Ok(stream) = connection.accept_message_stream().await else { return };
@@ -84,7 +92,6 @@ async fn listen(args: &[String]) -> Result<()> {
             }
         });
     }
-    Ok(())
 }
 
 async fn dial(args: &[String]) -> Result<()> {

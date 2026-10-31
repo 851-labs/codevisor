@@ -56,9 +56,9 @@ enum CloudTunnelIdentity {
 
 public actor CloudTunnelEndpoint {
   public static let channelsALPN = "codevisor/channels/1"
-  public static let screenALPN = "codevisor/screen/1"
+  public static let screenALPN = mediaAlpn()
 
-  private enum Binding {
+  private enum Binding: Equatable {
     case cloud(CloudTunnelConfig)
     case directOnly
   }
@@ -102,8 +102,9 @@ public actor CloudTunnelEndpoint {
 
   public func configure(_ newConfig: CloudTunnelConfig) async {
     guard newConfig != config else { return }
+    let previous = desiredBinding
     config = newConfig
-    replaceBinding(with: desiredBinding)
+    if desiredBinding != .directOnly || previous != .directOnly { replaceBinding(with: desiredBinding) }
     let waiters = configWaiters.values
     configWaiters.removeAll()
     for waiter in waiters { waiter.resume() }
@@ -129,8 +130,9 @@ public actor CloudTunnelEndpoint {
 
   private func currentEndpoint() async -> NetEndpointHandle? {
     let attempt = binding
-    if let handle = await attempt?.value { return handle }
+    let handle = await attempt?.value
     guard binding == attempt else { return await binding?.value }
+    if let handle { return handle }
     guard let desired = desiredBinding else { return nil }
     replaceBinding(with: desired)
     return await binding?.value

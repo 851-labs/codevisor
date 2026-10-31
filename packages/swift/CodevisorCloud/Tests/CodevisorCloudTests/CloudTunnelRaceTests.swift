@@ -111,6 +111,8 @@ struct CloudTunnelRaceTests {
     _ = await endpoint.screenSharingEndpoint()
     #expect(lastBound() == "direct-only []")
     let boundWithoutCloud = binds.value
+    await endpoint.configure(.init(relays: [.init(url: "https://other.test")], enabled: false))
+    #expect(binds.value == boundWithoutCloud)
     await endpoint.configure(.init(relays: [.init(url: "https://relay.test")], enabled: true))
     await binds.wait(for: boundWithoutCloud + 1)
     #expect(lastBound() == "relay-only [\"https://relay.test\"]")
