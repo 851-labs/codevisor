@@ -1,10 +1,5 @@
-//! The benchmark's emulated network (Tier 1's `BenchNetworkModel` in `ScreenSharingBench`, ported): seeded
-//! Gilbert loss, a rate-limited link with an optional packet queue, and Gaussian delay jitter. The deterministic tests
-//! and the bench's impaired transport both use it, so a seed gives the same losses in both.
-
 use std::time::Duration;
 
-/// The N0–N7 network conditions of the benchmark design (851-3582).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NetworkConditions {
     pub id: &'static str,
@@ -73,13 +68,11 @@ impl SplitMix64 {
         z ^ (z >> 31)
     }
 
-    /// Uniform in `[0, 1)`.
     pub fn next_unit(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
     }
 }
 
-/// Independent loss, or Gilbert bursts with the given mean length.
 #[derive(Debug, Clone)]
 struct LossModel {
     continue_burst: f64,
@@ -112,13 +105,11 @@ impl LossModel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fate {
-    /// Arrives this long after the model's epoch.
     Delivered(Duration),
     Lost,
     QueueOverflow,
 }
 
-/// One direction of an emulated link. Times are offsets from an epoch the caller picks.
 #[derive(Debug, Clone)]
 pub struct NetworkModel {
     pub conditions: NetworkConditions,
@@ -143,7 +134,6 @@ impl NetworkModel {
         }
     }
 
-    /// What happens to a `bytes`-long packet sent at `sent`. Arrivals never reorder.
     pub fn send(&mut self, bytes: usize, sent: Duration) -> Fate {
         let lost = self.loss.drops_next();
         while self.departures.front().is_some_and(|departure| *departure <= sent) {
@@ -184,7 +174,6 @@ mod tests {
 
     #[test]
     fn split_mix_matches_the_swift_bench_sequence() {
-        // The first outputs of SplitMix64 seeded with 0, the reference values every implementation shares.
         let mut random = SplitMix64::new(0);
         assert_eq!(random.next_u64(), 0xE220_A839_7B1D_CDAF);
         assert_eq!(random.next_u64(), 0x6E78_9E6A_A1B9_65F4);
@@ -200,7 +189,6 @@ mod tests {
             ..NetworkConditions::N0
         };
         let mut model = NetworkModel::new(conditions, 1);
-        // 1000 bytes at 8 Mbit/s take 1 ms on the wire, then 1 ms of delay.
         assert_eq!(model.send(1000, Duration::ZERO), Fate::Delivered(Duration::from_millis(2)));
         assert_eq!(model.send(1000, Duration::ZERO), Fate::Delivered(Duration::from_millis(3)));
         assert_eq!(model.send(1000, Duration::ZERO), Fate::QueueOverflow);

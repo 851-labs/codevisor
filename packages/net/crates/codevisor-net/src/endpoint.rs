@@ -42,9 +42,7 @@ pub struct PathInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DatagramSendError {
-    /// Larger than the path's current maximum datagram size.
     TooLarge,
-    /// The peer doesn't accept datagrams, or they're disabled.
     Unsupported,
     ConnectionLost,
 }
@@ -331,8 +329,6 @@ impl NetConnection {
         self.connection.datagram_send_buffer_space()
     }
 
-    /// Sends one datagram as is. Only for a connection whose datagrams have a single owner (a screen connection's
-    /// `codevisor-media` session); [`media`](Self::media)'s router reads and routes every datagram it receives.
     pub fn send_datagram(&self, datagram: Bytes) -> Result<(), DatagramSendError> {
         self.connection.send_datagram(datagram).map_err(|error| match error {
             SendDatagramError::TooLarge => DatagramSendError::TooLarge,
@@ -341,12 +337,10 @@ impl NetConnection {
         })
     }
 
-    /// The next datagram the peer sent; an error once the connection is closed.
     pub async fn read_datagram(&self) -> Result<Bytes> {
         Ok(self.connection.read_datagram().await?)
     }
 
-    /// The selected path's round-trip estimate.
     pub fn rtt(&self) -> Option<Duration> {
         self.connection.paths().iter().find(|path| path.is_selected()).map(|path| path.rtt())
     }

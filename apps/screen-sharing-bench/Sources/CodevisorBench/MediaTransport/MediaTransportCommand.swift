@@ -1,9 +1,6 @@
 import CodevisorNet
 import Foundation
 
-/// The engine v2 transport bench (851-3815) inside the signed app, where macOS lets it reach the other Mac. The
-/// `viewer`, `host`, `loopback` and `send-cost` roles run `codevisor_media::bench` in Rust; `ffi-cost` times the
-/// per-frame hand-off across the Swift–Rust boundary.
 struct MediaTransportCommand: BenchCommand {
   enum Role: String, CaseIterable {
     case viewer, host, loopback

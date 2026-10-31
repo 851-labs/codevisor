@@ -1,10 +1,6 @@
 import CodevisorNet
 import Foundation
 
-/// What one frame costs to cross the Swift–Rust boundary, the design's bar for E3 (0.2 ms per frame): `sendFrame`
-/// (the borrowed-buffer C ABI) timed from Swift, and, for a frame that's already waiting, `nextEvent` plus copying
-/// its bytes into `Data`: the async hop and the one copy a decoder would make. Over a loopback iroh connection in
-/// this process; compare with `--role send-cost`, the same send without the boundary.
 enum MediaHandOff {
   private static let sizes = [64 << 10, 256 << 10, 1 << 20]
   private static let settle = Duration.milliseconds(30)

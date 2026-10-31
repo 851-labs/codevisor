@@ -1,25 +1,16 @@
-//! How a frame payload is cut into equal shards, and the Reed–Solomon parity over them (one FEC block per frame,
-//! as in moonlight-common-c's `RtpVideoQueue.c`, but over GF(2^16) so one block covers any frame size).
-
 use anyhow::{Result, anyhow, bail};
 use reed_solomon_simd::{ReedSolomonDecoder, ReedSolomonEncoder};
 
-/// The most data or parity packets one frame may have (indices are u16).
 pub const MAX_PACKETS: usize = u16::MAX as usize;
 
-/// The shard layout every packet of a frame agrees on, derived from the payload length and the data packet count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Layout {
     pub frame_len: usize,
     pub data_count: usize,
-    /// Every data shard but possibly the last is this long; parity shards are exactly this long. Always even, as
-    /// Reed–Solomon needs.
     pub shard_len: usize,
 }
 
 impl Layout {
-    /// The layout for a payload whose shards must fit in `max_shard` bytes. Packets come out balanced: the payload
-    /// is split evenly instead of leaving a short last packet.
     pub fn for_payload(frame_len: usize, max_shard: usize) -> Result<Self> {
         let max_shard = max_shard & !1;
         if frame_len == 0 || max_shard == 0 {
@@ -45,14 +36,12 @@ impl Layout {
         Ok(Self { frame_len, data_count, shard_len })
     }
 
-    /// The byte range of the payload that data shard `index` carries.
     pub fn data_range(&self, index: usize) -> std::ops::Range<usize> {
         let start = (index * self.shard_len).min(self.frame_len);
         start..((index + 1) * self.shard_len).min(self.frame_len)
     }
 }
 
-/// `parity_count` parity shards over the payload's data shards (the last one zero-padded to the shard length).
 pub fn encode_parity(payload: &[u8], layout: Layout, parity_count: usize) -> Result<Vec<Vec<u8>>> {
     if parity_count == 0 {
         return Ok(Vec::new());
@@ -75,9 +64,6 @@ pub fn encode_parity(payload: &[u8], layout: Layout, parity_count: usize) -> Res
     Ok(result.recovery_iter().map(<[u8]>::to_vec).collect())
 }
 
-/// Rebuilds the missing data shards from at least `data_count` shards in total. `data` holds the received data shards
-/// (the last one as received, unpadded) and `parity` the received parity shards, both by index within their kind.
-/// Returns the restored data shards by index, trimmed to their real lengths.
 pub fn recover(
     layout: Layout,
     parity_count: usize,

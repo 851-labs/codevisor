@@ -135,7 +135,6 @@ impl NetEndpointHandle {
         Ok(Arc::new(NetConnectionHandle { inner: connection }))
     }
 
-    /// The next incoming connection on one of the endpoint's ALPNs; `None` once the endpoint is closed.
     pub async fn accept(&self) -> Result<Option<Arc<NetConnectionHandle>>, NetError> {
         let connection = self.inner.accept().await.map_err(failure)?;
         Ok(connection.map(|inner| Arc::new(NetConnectionHandle { inner })))
@@ -195,8 +194,6 @@ impl NetConnectionHandle {
         self.inner.media().max_payload().map(|size| size as u32)
     }
 
-    /// Starts a screen sharing media session (`codevisor-media`) on this connection, which must use
-    /// [`media_alpn`]. The session owns the connection's datagrams from then on.
     pub async fn open_media_session(&self, config: MediaSessionConfig) -> Arc<MediaSessionHandle> {
         let session = media::MediaSession::new(media::QuicTransport::new(self.inner.clone()), config.into());
         Arc::new(MediaSessionHandle { inner: session })
@@ -250,18 +247,13 @@ impl NetMediaFlowHandle {
     }
 }
 
-// Screen sharing media sessions (codevisor-media): one call per frame each way.
-
 use codevisor_media as media;
 
-/// Runs the M1 transport bench (`codevisor_media::bench`) inside the calling app, so it gets the app's Local
-/// Network permission; `CodevisorBench media-transport` passes its arguments through. Returns the report.
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn media_bench_run(args: Vec<String>) -> Result<String, NetError> {
     media::bench::run(args).await.map_err(failure)
 }
 
-/// The ALPN a screen sharing endpoint binds and dials for media sessions.
 #[uniffi::export]
 pub fn media_alpn() -> String {
     String::from_utf8_lossy(media::ALPN_SCREEN).into_owned()
@@ -269,11 +261,8 @@ pub fn media_alpn() -> String {
 
 #[derive(uniffi::Record)]
 pub struct MediaSessionConfig {
-    /// The capture cadence, e.g. 16 667 for 60 Hz.
     pub frame_interval_us: u32,
-    /// Parity as a percentage of each frame's data packets; `None` adapts to loss and round trip.
     pub fec_percent: Option<u8>,
-    /// The capacity estimate before the first frame is timed.
     pub initial_rate_kbps: u32,
 }
 
@@ -292,8 +281,6 @@ impl From<MediaSessionConfig> for media::MediaConfig {
     }
 }
 
-/// A received frame's access unit, kept in Rust and read in place from Swift (`MediaBytes.withUnsafeBytes` in
-/// CodevisorNet), so a frame crosses the boundary without uniffi copying it byte by byte.
 #[derive(uniffi::Object)]
 pub struct MediaBytes {
     bytes: bytes::Bytes,
@@ -318,7 +305,6 @@ impl From<media::Recovery> for MediaRecovery {
 
 #[derive(uniffi::Enum)]
 pub enum MediaEvent {
-    /// Viewer: a complete frame, in order within its stream.
     Frame {
         stream: u8,
         frame: u32,
@@ -326,28 +312,19 @@ pub enum MediaEvent {
         ltr_token: Option<u64>,
         meta: Vec<u8>,
         data: Arc<MediaBytes>,
-        /// First packet in to complete.
         assembling_us: u64,
         recovery: MediaRecovery,
     },
-    /// Viewer: the transport gave up on this frame; the host was told and should refresh the stream.
     FrameSkipped { stream: u8, frame: u32 },
-    /// Host: the viewer has this frame.
     FrameAcked {
         stream: u8,
         frame: u32,
-        /// `send_frame` to the first packet out.
         queued_us: u64,
-        /// First to last packet out.
         sending_us: u64,
-        /// First packet out to the ack in.
         acked_after_us: u64,
-        /// The viewer's first-to-complete time; `None` when its report was lost.
         assembling_us: Option<u64>,
     },
-    /// Host: the viewer gave up on this frame; encode the stream's next frame as a refresh.
     FrameLost { stream: u8, frame: u32 },
-    /// Host: the viewer decoded the frame carrying this LTR token.
     LtrAcked { stream: u8, token: u64 },
 }
 
@@ -385,12 +362,10 @@ impl From<media::Event> for MediaEvent {
 
 #[derive(uniffi::Record)]
 pub struct MediaAdmission {
-    /// Encode the next capture; otherwise skip it (and union its dirty rects into the next).
     pub admit: bool,
     pub backlog_bytes: u64,
     pub budget_bytes: u64,
     pub estimate_kbps: u64,
-    /// The encoder's bitrate cap.
     pub encoder_ceiling_kbps: u64,
 }
 
@@ -424,12 +399,10 @@ pub struct MediaSessionHandle {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl MediaSessionHandle {
-    /// Viewer: the decoder finished the frame that carried `token`.
     pub fn ack_ltr(&self, stream: u8, token: u64) {
         self.inner.ack_ltr(stream, token);
     }
 
-    /// Host: whether to encode the next capture, and the encoder's bitrate cap.
     pub fn admission(&self) -> MediaAdmission {
         let admission = self.inner.admission();
         MediaAdmission {
@@ -466,44 +439,27 @@ impl MediaSessionHandle {
         }
     }
 
-    /// The next frame (viewer) or ack (host); `None` once the connection closed. Take events promptly: none are
-    /// dropped.
     pub async fn next_event(&self) -> Option<MediaEvent> {
         self.inner.next_event().await.map(Into::into)
     }
 
-    /// Stops the session. The connection stays open.
     pub fn close(&self) {
         self.inner.close();
     }
 }
 
-// The frame path's C ABI (declared in `include/codevisor_media.h`, wrapped in CodevisorNet's `MediaFastPath.swift`):
-// uniffi copies a `Data` argument byte by byte, which measured 1–4 ms per 64 KiB–1 MiB frame on the minis, past the
-// design's 0.2 ms bar. Handles are uniffi object handles (`uniffiCloneHandle()`), each consumed by the call. Panics
-// are caught, because unwinding out of an `extern "C"` function aborts the app.
-
 fn borrowed<'a>(pointer: *const std::ffi::c_void, len: usize) -> &'a [u8] {
     if len == 0 || pointer.is_null() {
         &[]
     } else {
-        // SAFETY: the caller passes `len` readable bytes that outlive the call.
         unsafe { std::slice::from_raw_parts(pointer.cast(), len) }
     }
 }
 
-/// `codevisor_media_send_frame` failed for a reason the Swift side can't fix by retrying.
 const SEND_PANICKED: i64 = -5;
 
-/// Host: sends one encoded tile from the caller's memory, copied before this returns. Returns the frame's number
-/// within its stream, or a negative error: -1 the connection doesn't carry datagrams, -2 its datagrams can't hold a
-/// media header, -3 the metadata is over 64 KiB, -4 the frame needs more than 65 535 packets, -5 an internal failure.
-///
-/// # Safety
-///
-/// `session` is a handle from `MediaSessionHandle.uniffiCloneHandle()`, consumed here; `meta` and `data` point to
-/// `meta_len` and `data_len` readable bytes.
 #[unsafe(no_mangle)]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn codevisor_media_send_frame(
     session: u64,
     stream: u8,
@@ -515,7 +471,6 @@ pub unsafe extern "C" fn codevisor_media_send_frame(
     data: *const std::ffi::c_void,
     data_len: usize,
 ) -> i64 {
-    // SAFETY: a cloned uniffi handle is an `Arc::into_raw` pointer we now own.
     let session = unsafe { Arc::from_raw(session as *const MediaSessionHandle) };
     let frame = media::OutgoingFrame {
         stream,
@@ -535,16 +490,9 @@ pub unsafe extern "C" fn codevisor_media_send_frame(
     }
 }
 
-/// The bytes of a received frame (and their count, in `len`), valid while the `MediaBytes` object they came from is
-/// alive.
-///
-/// # Safety
-///
-/// `bytes` is a handle from `MediaBytes.uniffiCloneHandle()`, consumed here; `len` is writable.
 #[unsafe(no_mangle)]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn codevisor_media_bytes(bytes: u64, len: *mut usize) -> *const std::ffi::c_void {
-    // SAFETY: as above; the caller's own `MediaBytes` keeps the allocation alive after this clone is dropped. Nothing
-    // here can panic.
     let bytes = unsafe { Arc::from_raw(bytes as *const MediaBytes) };
     unsafe { *len = bytes.bytes.len() };
     bytes.bytes.as_ptr().cast()

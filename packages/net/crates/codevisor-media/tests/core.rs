@@ -1,5 +1,3 @@
-//! Two [`Core`]s over an emulated link, on a virtual clock: every run with the same seed is the same run.
-
 use std::{
     cmp::Reverse,
     collections::BinaryHeap,
@@ -34,7 +32,6 @@ struct Sim {
     in_flight: BinaryHeap<Reverse<(Instant, u64, Direction, Bytes)>>,
     sequence: u64,
     drop_rule: Option<DropRule>,
-    /// Smoothed one-way delay each way, queueing included, as QUIC's smoothed RTT would see it.
     delays: [Duration; 2],
     host_events: Vec<Event>,
     viewer_events: Vec<Event>,
@@ -110,7 +107,6 @@ impl Sim {
         }
     }
 
-    /// Runs the network and both ends until `until`.
     fn run_until(&mut self, until: Instant) {
         for _ in 0..10_000_000 {
             self.pump();
@@ -181,13 +177,11 @@ fn is_packet(datagram: &Bytes, frame: u32, index: u16) -> bool {
     PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == frame && header.index == index)
 }
 
-/// Drops the first transmission of each datagram `matches` picks; retransmissions of it get through.
 fn first_time(mut matches: impl FnMut(Direction, &Bytes) -> bool) -> impl FnMut(Direction, &Bytes) -> bool {
     let mut seen = std::collections::HashSet::new();
     move |direction, datagram| matches(direction, datagram) && seen.insert(datagram.clone())
 }
 
-/// The index of a frame's last data packet, for a frame with no LTR token or metadata (3 bytes of fields).
 fn last_data_index(data_len: usize) -> u16 {
     (fec::Layout::for_payload(data_len + 3, MTU - wire::HEADER_BYTES).unwrap().data_count - 1) as u16
 }
@@ -199,7 +193,6 @@ fn is_kind(datagram: &Bytes, kind: Kind) -> bool {
 #[test]
 fn frames_arrive_byte_identical_in_order_with_their_fields() {
     let mut sim = Sim::new(NetworkConditions::N0, config(FecMode::Off), 1);
-    // (stream, keyframe, LTR token, metadata, access unit)
     type Sent = (u8, bool, Option<u64>, Vec<u8>, Bytes);
     let sent: Vec<Sent> = (0..20u64)
         .map(|index| {
@@ -231,8 +224,6 @@ fn frames_arrive_byte_identical_in_order_with_their_fields() {
 
 #[test]
 fn a_frame_is_spread_over_at_most_half_an_interval_and_feedback_times_it() {
-    // At twice a 300 Mbit/s estimate, 1 MiB would take 14 ms; the transport speeds up (to 1 Gbit/s, under its 4x
-    // limit of 1.2 Gbit/s) so the frame is out within half an interval.
     let mut sim = Sim::new(NetworkConditions::N0, MediaConfig { initial_rate_bps: 300e6, ..config(FecMode::Off) }, 2);
     sim.send(frame(0, &payload(1, 1 << 20)));
     sim.run_for(30 * MS);
@@ -243,7 +234,6 @@ fn a_frame_is_spread_over_at_most_half_an_interval_and_feedback_times_it() {
     let ack = sim.acks()[0];
     assert_eq!(ack.sending, spread);
     let receipt = ack.receipt.expect("the ack arrived");
-    // An unshaped link delivers at the sending pace (the wire carries whole microseconds).
     assert_eq!(receipt.arriving.as_micros(), spread.as_micros());
     assert_eq!(receipt.assembling, receipt.arriving);
 }
@@ -259,8 +249,6 @@ fn a_lost_packet_is_nacked_at_the_next_arrival_and_back_one_round_trip_later() {
     assert_eq!(frame.recovery, Recovery::Nack);
     let receipt = sim.acks()[0].receipt.unwrap();
     let recovery = receipt.assembling - receipt.arriving;
-    // The NACK leaves when packet 4 shows the gap, before the frame's last packet; the retransmission takes one
-    // round trip (2.1 ms here) from there.
     assert!(recovery < 2 * MS + Duration::from_micros(100), "{recovery:?}");
     assert_eq!(sim.viewer.stats(sim.now).nacks_sent, 1);
 }
@@ -300,7 +288,6 @@ fn parity_repairs_a_loss_without_a_round_trip() {
 #[test]
 fn a_frame_lost_whole_before_idle_is_probed_and_delivered() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 6);
-    // Every packet of frame 1 is lost the first time it's sent.
     sim.drop_when(first_time(|direction, datagram| {
         direction == Direction::ToViewer
             && PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.frame == 1)
@@ -316,8 +303,6 @@ fn a_frame_lost_whole_before_idle_is_probed_and_delivered() {
     let frames = sim.frames();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[1].data, last);
-    // Nothing else is coming: only the host's probe, an ack timeout (the 25 ms give-up + a round trip + 1 ms) after
-    // the frame, tells the viewer frame 1 exists.
     let probe_at = sim.epoch + INTERVAL + 25 * MS + rtt + MS;
     assert!(frames[1].first_packet_at >= probe_at, "{:?}", frames[1].first_packet_at - probe_at);
     assert!(frames[1].completed_at < probe_at + 5 * MS);
@@ -327,7 +312,6 @@ fn a_frame_lost_whole_before_idle_is_probed_and_delivered() {
 #[test]
 fn giving_up_skips_the_frame_tells_the_host_and_releases_the_next_one() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 7);
-    // Packet 1 of frame 0 never arrives, however often it's sent.
     sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 1));
     sim.send(frame(0, &payload(1, 5000)));
     sim.run_for(INTERVAL);
@@ -405,8 +389,6 @@ fn a_lost_ack_is_settled_by_the_next_report() {
 
 #[test]
 fn admission_and_the_estimate_keep_a_slow_link_from_queueing() {
-    // 30 Mbit/s, 10 ms each way, a 30-packet queue. The encoder wants 250 kB frames (120 Mbit/s) but, as engine v2's
-    // will, encodes only when admitted and caps each frame at the encoder ceiling's share of an interval.
     let mut sim = Sim::new(NetworkConditions::N5, config(FecMode::Off), 11);
     let mut sent = 0;
     for index in 0..300 {
@@ -422,7 +404,6 @@ fn admission_and_the_estimate_keep_a_slow_link_from_queueing() {
 
     let estimate = sim.host.admission().estimate_bps;
     assert!((25e6..33e6).contains(&estimate), "{estimate}");
-    // Past the first second's adjustment, frames get through whole and quickly: no standing queue.
     let settled: Vec<&FrameAck> = sim.acks().into_iter().filter(|ack| ack.frame >= 60).collect();
     let frames_after = sim.frames().iter().filter(|frame| frame.frame >= 60).count();
     assert_eq!(settled.len(), frames_after);
@@ -431,15 +412,12 @@ fn admission_and_the_estimate_keep_a_slow_link_from_queueing() {
     assert!(slowest < 4 * INTERVAL, "{slowest:?}");
 }
 
-/// The M1 target, deterministic: at N3 (1 ms each way, 1% loss), at least 99.9% of frames complete within RTT + 2 ms
-/// of their last packet's arrival, and every frame arrives intact.
 #[test]
 fn n3_loss_costs_at_most_a_round_trip_plus_two_ms_for_999_in_1000_frames() {
     let mut sim = Sim::new(NetworkConditions::N3, config(FecMode::Adaptive), 12);
     let mut sizes = SplitMix64::new(99);
     let mut sent = Vec::new();
     for index in 0..3000u64 {
-        // Mostly HP-like tile pictures (a few kB), with a large one now and then.
         let len = if index % 60 == 0 { 300_000 } else { 500 + (sizes.next_u64() % 60_000) as usize };
         let data = payload(index, len);
         sim.send(frame((index % 4) as u8, &data));
@@ -458,7 +436,6 @@ fn n3_loss_costs_at_most_a_round_trip_plus_two_ms_for_999_in_1000_frames() {
     }
     let rtt = sim.host.stats(sim.now).rtt;
     assert_eq!(sim.acks().len(), 3000);
-    // About 1% of reports are lost too; a later report settles those frames without timing.
     let timed: Vec<_> = sim.acks().iter().filter_map(|ack| ack.receipt).collect();
     assert!(timed.len() > 2900, "{}", timed.len());
     let late = timed.iter().filter(|receipt| receipt.assembling - receipt.arriving > rtt + 2 * MS).count();
@@ -467,7 +444,6 @@ fn n3_loss_costs_at_most_a_round_trip_plus_two_ms_for_999_in_1000_frames() {
     assert!(stats.fec_recoveries > 0 && stats.nacks_sent > 0, "{stats:?}");
 }
 
-/// A one-packet frame `frame` on stream 0 whose payload is `payload` (fields included), as the host would send it.
 fn single_packet(frame: u32, payload: &[u8]) -> Bytes {
     PacketHeader {
         kind: Kind::Data,
@@ -494,7 +470,6 @@ fn a_jump_billions_of_frames_ahead_skips_them_in_one_step() {
     let (mut viewer, now) = viewer_core();
     let fields = wire::FrameFields::default();
     viewer.handle_datagram(now, single_packet(4_000_000_000, &fields.payload(b"far")));
-    // Nobody answers the NACKs for the 64 frames kept for repair; run their timers out.
     let mut at = now;
     while let Some(next) = viewer.poll_timeout(at).filter(|next| *next < now + Duration::from_secs(1)) {
         at = next;
@@ -503,7 +478,6 @@ fn a_jump_billions_of_frames_ahead_skips_them_in_one_step() {
 
     let events: Vec<Event> = std::iter::from_fn(|| viewer.poll_event()).collect();
     assert_eq!(events[0], Event::FrameSkipped { stream: 0, frame: 4_000_000_000 - 65 });
-    // The 64 frames kept for repair are given up in turn; then the frame that arrived is delivered.
     assert!(
         matches!(events.last(), Some(Event::Frame(frame)) if frame.frame == 4_000_000_000 && &frame.data[..] == b"far")
     );
@@ -512,7 +486,6 @@ fn a_jump_billions_of_frames_ahead_skips_them_in_one_step() {
 #[test]
 fn a_frame_whose_fields_dont_parse_is_reported_lost_not_delivered() {
     let (mut viewer, now) = viewer_core();
-    // Flags, then a metadata length (0xFFFF) longer than the payload.
     viewer.handle_datagram(now, single_packet(0, &[0, 0xFF, 0xFF, 1, 2, 3]));
 
     assert_eq!(viewer.poll_event(), Some(Event::FrameSkipped { stream: 0, frame: 0 }));
