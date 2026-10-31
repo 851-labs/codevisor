@@ -116,6 +116,14 @@ describe("session resume", () => {
       resume: machine.welcome.resume!
     })
     expect(reborn.welcome.resumed).toBeUndefined()
+    expect(await app.reader.next()).toMatchObject({
+      t: "machine-reset",
+      machineId: machine.deviceId
+    })
+    expect(await app.reader.next()).toMatchObject({
+      t: "presence",
+      machine: { deviceId: machine.deviceId, online: true }
+    })
   })
 
   it("an expired session tells openers their buffered channels are lost", async () => {

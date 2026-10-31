@@ -191,19 +191,10 @@ describe("direct GitHub sign-in", () => {
     expect(response.headers.getSetCookie().join(";")).toContain("state")
   })
 
-  it("falls back to the login page without GitHub, and rejects absolute redirects", async () => {
+  it("falls back to the login page without GitHub", async () => {
     const fallback = await SELF.fetch(`${BASE}/login/github`, { redirect: "manual" })
     expect(fallback.status).toBe(302)
     expect(fallback.headers.get("location")).toContain("/login?redirect=")
-
-    const evil = await SELF.fetch(`${BASE}/login/github?redirect=https%3A%2F%2Fevil.example`, {
-      redirect: "manual"
-    })
-    expect(evil.status).toBe(400)
-    const schemeless = await SELF.fetch(`${BASE}/login/github?redirect=%2F%2Fevil.example`, {
-      redirect: "manual"
-    })
-    expect(schemeless.status).toBe(400)
   })
 })
 

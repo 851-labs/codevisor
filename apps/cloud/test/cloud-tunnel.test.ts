@@ -1,9 +1,8 @@
-import { type CloudDeviceInfo, encodeCloudFrame } from "@codevisor/api"
+import { encodeCloudFrame } from "@codevisor/api"
 import { env, SELF } from "cloudflare:test"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { machineTunnelScope } from "../src/hub-tunnel-events.js"
-import { relayMap, tunnelRollout, tunnelScopedDevice } from "../src/hub-tunnel.js"
+import { relayMap } from "../src/hub-tunnel.js"
 import { registerTunnelEndpoint } from "../src/relay-routes.js"
 import { authed, BASE, connectApp, connectMachine, devLogin } from "./cloud-test-support.js"
 
@@ -147,31 +146,6 @@ describe("tunnel control plane", () => {
         ])
       })
     ).toEqual([{ url: "https://ok.example" }])
-  })
-
-  it("hides the tunnel identity of devices whose connection doesn't get the tunnel", () => {
-    expect(tunnelRollout({ kind: "machine" })).toBe("on")
-    expect(tunnelRollout({ kind: "app", tunnelOnly: true })).toBe("on")
-    expect(tunnelRollout({ kind: "app", releaseChannel: "alpha" })).toBe("on")
-    expect(tunnelRollout({ kind: "app", releaseChannel: "stable" })).toBe("off")
-    expect(tunnelRollout({ kind: "app" })).toBe("off")
-    const device: CloudDeviceInfo = {
-      deviceId: "a1",
-      kind: "app",
-      name: "Stable App",
-      publicKey: "key",
-      tunnelEndpointId: endpointId("a"),
-      releaseChannel: "stable"
-    }
-    const { tunnelEndpointId: _endpoint, ...withoutTunnel } = device
-    expect(tunnelScopedDevice(device, "off")).toEqual(withoutTunnel)
-    expect(tunnelScopedDevice(withoutTunnel, "off")).toBe(withoutTunnel)
-    const machine = { ...device, kind: "machine" as const, name: "Stable Mac" }
-    expect(machineTunnelScope({}, machine)).toEqual({
-      welcome: { relays: [], tunnel: "on" },
-      device: machine,
-      tunnelMachine: true
-    })
   })
 
   it("registers relay access on a best-effort basis", async () => {

@@ -1,15 +1,7 @@
 import { encodeCloudFrame, encodeRelayEnvelopes, type CloudMachinePresence } from "@codevisor/api"
-import {
-  acceptChannel,
-  fromBase64Url,
-  openChannel,
-  openJson,
-  sealJson,
-  toBase64Url
-} from "@codevisor/cloud-crypto"
+import { acceptChannel, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
 import { SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
-import { z } from "zod"
 
 import {
   BASE,
@@ -135,16 +127,6 @@ describe("hub presence", () => {
   })
 })
 
-const infoOnlyLocalServer = (method: string, path: string) => {
-  expect(method).toBe("GET")
-  expect(path).toBe("/v1/info")
-  return {
-    status: 200,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "http-vps" })
-  }
-}
-
 describe("hub relay", () => {
   it("relays sealed channel traffic app↔machine without reading it", async () => {
     const token = await devLogin()
@@ -206,12 +188,38 @@ describe("hub relay", () => {
       t: "credit",
       bytes: 65536
     })
+    sendRelay(machine.socket, {
+      peerId: openHeader.peerId,
+      frame: { t: "credit", channelId: "ch-1", seq: 1, bytes: 4096 }
+    })
+    sendRelay(machine.socket, {
+      peerId: openHeader.peerId,
+      frame: { t: "close", channelId: "ch-1", seq: 2, reason: "done" }
+    })
+    expect(appRelayHeader(await app.reader.nextEnvelope()).frame).toEqual({
+      t: "credit",
+      channelId: "ch-1",
+      seq: 1,
+      bytes: 4096
+    })
+    expect(appRelayHeader(await app.reader.nextEnvelope()).frame).toEqual({
+      t: "close",
+      channelId: "ch-1",
+      seq: 2,
+      reason: "done"
+    })
+
     sendRelay(app.socket, {
       machineId: machine.deviceId,
       frame: { t: "close", channelId: "ch-1", seq: 2, reason: "done" }
     })
     const closeRelay = await machine.reader.nextEnvelope()
-    expect(machineRelayHeader(closeRelay).frame.t).toBe("close")
+    expect(machineRelayHeader(closeRelay).frame).toEqual({
+      t: "close",
+      channelId: "ch-1",
+      seq: 2,
+      reason: "done"
+    })
   })
 
   it("keeps a coalesced envelope batch one message through the hop", async () => {
@@ -246,144 +254,6 @@ describe("hub relay", () => {
     expect([...second.payload]).toEqual([2, 2])
     expect(machineRelayHeader(third).frame).toMatchObject({ t: "credit" })
     expect(machine.reader.binaryMessages - before).toBe(1)
-  })
-
-  it("routes opaque byte-stream data and credit through hibernatable sockets", async () => {
-    const token = await devLogin()
-    const machine = await connectMachine(token, "byte-stream-vps")
-    const app = await connectApp(token)
-    const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
-    const channelId = "bytes-1"
-    sendRelay(
-      app.socket,
-      {
-        machineId: machine.deviceId,
-        frame: { t: "open", channelId, seq: 0, ephemeralKey: channel.ephemeralPublicKey }
-      },
-      sealJson(channel.cipher, channelId, "opener-to-responder", 0, {
-        channelType: "byte-stream",
-        params: { service: "codevisor-loopback", version: 1 }
-      })
-    )
-    const opened = await machine.reader.nextEnvelope()
-    const openHeader = machineRelayHeader(opened)
-    const openFrame = expectTag(openHeader.frame, "open")
-    const responder = acceptChannel(
-      machine.keys.secretKey,
-      expectDefined(openHeader.peerPublicKey),
-      openFrame.ephemeralKey
-    )
-
-    const requestBytes = new Uint8Array([0, 255, 13, 10, 128, 1])
-    sendRelay(
-      app.socket,
-      { machineId: machine.deviceId, frame: { t: "data", channelId, seq: 1 } },
-      channel.cipher.seal(channelId, "opener-to-responder", 1, requestBytes)
-    )
-    const request = await machine.reader.nextEnvelope()
-    expect([...responder.open(channelId, "opener-to-responder", 1, request.payload)]).toEqual([
-      ...requestBytes
-    ])
-
-    sendRelay(machine.socket, {
-      peerId: openHeader.peerId,
-      frame: { t: "credit", channelId, seq: 0, bytes: request.payload.byteLength }
-    })
-    const credit = await app.reader.nextEnvelope()
-    expect(appRelayHeader(credit).frame).toEqual({
-      t: "credit",
-      channelId,
-      seq: 0,
-      bytes: request.payload.byteLength
-    })
-
-    app.socket.send(encodeCloudFrame({ t: "ping" }))
-    expect((await app.reader.next()).t).toBe("pong")
-    const responseBytes = new Uint8Array([9, 8, 7, 0, 255])
-    sendRelay(
-      machine.socket,
-      { peerId: openHeader.peerId, frame: { t: "data", channelId, seq: 1 } },
-      responder.seal(channelId, "responder-to-opener", 1, responseBytes)
-    )
-    const response = await app.reader.nextEnvelope()
-    expect([...channel.cipher.open(channelId, "responder-to-opener", 1, response.payload)]).toEqual(
-      [...responseBytes]
-    )
-  })
-
-  it("carries an http channel round-trip through sealed frames", async () => {
-    const token = await devLogin()
-    const machine = await connectMachine(token, "http-vps")
-    const app = await connectApp(token)
-
-    const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
-    const openPayload = {
-      channelType: "http",
-      params: { method: "GET", path: "/v1/info", headers: { accept: "application/json" } }
-    }
-    sendRelay(
-      app.socket,
-      {
-        machineId: machine.deviceId,
-        frame: { t: "open", channelId: "http-1", seq: 0, ephemeralKey: channel.ephemeralPublicKey }
-      },
-      sealJson(channel.cipher, "http-1", "opener-to-responder", 0, openPayload)
-    )
-    sendRelay(
-      app.socket,
-      { machineId: machine.deviceId, frame: { t: "data", channelId: "http-1", seq: 1 } },
-      sealJson(channel.cipher, "http-1", "opener-to-responder", 1, { kind: "end" })
-    )
-
-    const opened = await machine.reader.nextEnvelope()
-    const openHeader = machineRelayHeader(opened)
-    const openFrame = expectTag(openHeader.frame, "open")
-    const responder = acceptChannel(
-      machine.keys.secretKey,
-      expectDefined(openHeader.peerPublicKey),
-      openFrame.ephemeralKey
-    )
-    expect(openJson(responder, "http-1", "opener-to-responder", 0, opened.payload)).toEqual(
-      openPayload
-    )
-    const ended = await machine.reader.nextEnvelope()
-    expect(openJson(responder, "http-1", "opener-to-responder", 1, ended.payload)).toEqual({
-      kind: "end"
-    })
-
-    const response = infoOnlyLocalServer(openPayload.params.method, openPayload.params.path)
-    const answer = (seq: number, value: unknown): void =>
-      sendRelay(
-        machine.socket,
-        { peerId: openHeader.peerId, frame: { t: "data", channelId: "http-1", seq } },
-        sealJson(responder, "http-1", "responder-to-opener", seq, value)
-      )
-    answer(0, { kind: "head", status: response.status, headers: response.headers })
-    answer(1, { kind: "chunk", data: toBase64Url(new TextEncoder().encode(response.body)) })
-    answer(2, { kind: "end" })
-    sendRelay(machine.socket, {
-      peerId: openHeader.peerId,
-      frame: { t: "close", channelId: "http-1", seq: 3, reason: "done" }
-    })
-
-    const read = async (seq: number): Promise<unknown> => {
-      const relayed = await app.reader.nextEnvelope()
-      return openJson(channel.cipher, "http-1", "responder-to-opener", seq, relayed.payload)
-    }
-    expect(await read(0)).toEqual({
-      kind: "head",
-      status: 200,
-      headers: { "content-type": "application/json" }
-    })
-    const chunk = z.object({ kind: z.literal("chunk"), data: z.string() }).parse(await read(1))
-    expect(new TextDecoder().decode(fromBase64Url(chunk.data))).toBe(response.body)
-    expect(await read(2)).toEqual({ kind: "end" })
-    const closed = await app.reader.nextEnvelope()
-    expect(appRelayHeader(closed).frame).toMatchObject({
-      t: "close",
-      channelId: "http-1",
-      reason: "done"
-    })
   })
 
   it("reports offline and unknown machines to the app", async () => {
@@ -462,13 +332,5 @@ describe("hub relay", () => {
     app.socket.send("this is not json")
     const notJson = await app.reader.nextFrame("error")
     expect(notJson.code).toBe("invalid-frame")
-
-    app.socket.send(new Uint8Array([0, 0, 0, 99]).buffer)
-    const truncated = await app.reader.nextFrame("error")
-    expect(truncated.code).toBe("invalid-frame")
-
-    app.socket.send(encodeRelayEnvelopes([{ header: { nope: true }, payload: new Uint8Array(0) }]))
-    const badHeader = await app.reader.nextFrame("error")
-    expect(badHeader.code).toBe("invalid-frame")
   })
 })

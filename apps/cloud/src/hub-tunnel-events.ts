@@ -34,7 +34,7 @@ export const onAppTunnelIdentity = (
   return tunnelWelcome(env, rollout)
 }
 
-export const machineTunnelScope = (
+const machineTunnelScope = (
   env: Pick<CloudEnv, "RELAY_MAP">,
   device: CloudDeviceInfo
 ): { welcome: TunnelWelcome; device: CloudDeviceInfo; tunnelMachine: boolean } => {
