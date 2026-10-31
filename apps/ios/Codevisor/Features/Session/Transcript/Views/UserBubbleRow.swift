@@ -31,12 +31,27 @@ struct BotBubbleRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
-      MessageBubbleView(side: .leading, text: content.text, attachments: []) {
-        MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: id)
-          .transcriptBotMessageWidth(fitting: content)
+      if content.isStandaloneBlock {
+        HStack {
+          markdown
+            .contextMenu {
+              Button("Copy", systemImage: "doc.on.doc") { PlatformPasteboard.copy(content.text) }
+            }
+          Spacer(minLength: 40)
+        }
+        .padding(.vertical, 4)
+      } else {
+        MessageBubbleView(side: .leading, text: content.text, attachments: []) {
+          markdown
+        }
       }
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0) }
     }
+  }
+
+  private var markdown: some View {
+    MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: id)
+      .transcriptBotMessageWidth(fitting: content)
   }
 }
 

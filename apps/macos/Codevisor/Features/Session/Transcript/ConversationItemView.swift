@@ -57,17 +57,33 @@ struct BotMessageView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
-      MessageBubbleView(
-        messageID: message.id,
-        side: .leading,
-        text: content.text,
-        attachments: []
-      ) {
-        MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: message.id)
-          .transcriptBotMessageWidth(fitting: content)
+      if content.isStandaloneBlock {
+        HStack {
+          markdown
+          Spacer(minLength: 40)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityActions {
+          Button("Copy Message") { PlatformPasteboard.copy(content.text) }
+        }
+      } else {
+        MessageBubbleView(
+          messageID: message.id,
+          side: .leading,
+          text: content.text,
+          attachments: []
+        ) {
+          markdown
+        }
       }
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0) }
     }
+  }
+
+  private var markdown: some View {
+    MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: message.id)
+      .transcriptBotMessageWidth(fitting: content)
   }
 }
 

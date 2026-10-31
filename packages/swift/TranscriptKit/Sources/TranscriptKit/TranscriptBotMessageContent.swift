@@ -22,6 +22,14 @@ public struct TranscriptBotMessageContent: Equatable, Sendable {
     blocks = MarkdownParser().parse(markdown)
   }
 
+  public var isStandaloneBlock: Bool {
+    guard blocks.count == 1 else { return false }
+    switch blocks[0] {
+    case .codeBlock, .table: return true
+    default: return false
+    }
+  }
+
   static func bubbleMarkdown(_ text: String) -> String {
     var lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
     var fence: String?
