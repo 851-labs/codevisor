@@ -92,7 +92,6 @@ final class AppStoreScreenshotTests: XCTestCase {
       let reply = app.descendants(matching: .any)
         .matching(NSPredicate(format: "label CONTAINS %@", "Skin tones are in the picker.")).firstMatch
       XCTAssertTrue(reply.waitForExistence(timeout: 30), "Missing the featured conversation")
-      Thread.sleep(forTimeInterval: 2)
       let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
       screenshot.name = "landscape-conversation"
       screenshot.lifetime = .keepAlways
