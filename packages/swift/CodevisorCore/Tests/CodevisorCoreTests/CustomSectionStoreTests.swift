@@ -5,18 +5,18 @@ import Testing
 @testable import CodevisorCore
 
 @MainActor
-@Suite("BotSectionStore")
-struct BotSectionStoreTests {
+@Suite("CustomSectionStore")
+struct CustomSectionStoreTests {
   @MainActor
   private struct Mac {
     let environment = AppEnvironment.preview()
 
-    var store: BotSectionStore { environment.botSections }
+    var store: CustomSectionStore { environment.botSections }
 
     func receive(from other: Mac) {
       environment.configSync.applyRemoteChange(
-        namespace: BotSectionStore.namespace,
-        entries: other.environment.configSync.entries(namespace: BotSectionStore.namespace))
+        namespace: CustomSectionStore.botNamespace,
+        entries: other.environment.configSync.entries(namespace: CustomSectionStore.botNamespace))
     }
   }
 
@@ -46,10 +46,10 @@ struct BotSectionStoreTests {
     let (first, second) = (Mac(), Mac())
     let (moved, kept) = (UUID(), UUID())
     let work = first.store.create(name: "Work")
-    first.store.move(bot: kept, to: work.id)
+    first.store.move(kept, to: work.id)
     exchange(first, second)
 
-    second.store.move(bot: moved, to: work.id)
+    second.store.move(moved, to: work.id)
     first.store.delete(work.id)
     exchange(first, second)
 
@@ -68,7 +68,7 @@ struct BotSectionStoreTests {
     exchange(first, second)
 
     first.store.rename(work.id, to: "Office")
-    second.store.move(bot: bot, to: home.id)
+    second.store.move(bot, to: home.id)
     exchange(first, second)
     second.store.rename(work.id, to: "Day job")
     exchange(first, second)
@@ -84,9 +84,9 @@ struct BotSectionStoreTests {
     let mac = Mac()
     let work = mac.store.create(name: "Work")
     mac.environment.configSync.set(
-      namespace: BotSectionStore.namespace, key: "section:not-a-uuid", value: .object(["name": .string("?")]))
+      namespace: CustomSectionStore.botNamespace, key: "section:not-a-uuid", value: .object(["name": .string("?")]))
     mac.environment.configSync.set(
-      namespace: BotSectionStore.namespace, key: "member:\(UUID().uuidString)", value: .string("Work"))
+      namespace: CustomSectionStore.botNamespace, key: "member:\(UUID().uuidString)", value: .string("Work"))
 
     #expect(mac.store.sections.map(\.id) == [work.id])
     #expect(mac.store.membership.isEmpty)

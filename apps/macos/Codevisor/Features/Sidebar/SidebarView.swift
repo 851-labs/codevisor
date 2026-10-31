@@ -17,6 +17,7 @@ struct SidebarView: View {
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
+  @State var sectionPrompt: SectionPrompt?
   @State var drag: SidebarDrag?
   @State var groupDrag: SidebarGroupDrag?
   @State var holdsGroupToggles = false
@@ -95,6 +96,8 @@ struct SidebarView: View {
 
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
+    Button("New Section…", systemImage: "folder.badge.plus") { sectionPrompt = .create(moving: nil) }
+    Divider()
     Picker(selection: $grouping) {
       ForEach(SidebarGrouping.allCases, id: \.self) { option in
         Text(option.title).tag(option)
@@ -182,6 +185,7 @@ struct SidebarView: View {
           },
         )
       )
+      .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
   }
 
   private var sidebarConfiguredView: some View {

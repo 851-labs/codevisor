@@ -17,7 +17,9 @@ extension SidebarView {
         renamingWorkspace = workspace
       },
       archive: { archiveWorkspace($0) },
-      toggleChildren: { toggleChildren(of: $0) }
+      toggleChildren: { toggleChildren(of: $0) },
+      moveToSection: { environment.workspaceSections.move($0.id, to: $1) },
+      newSection: { sectionPrompt = .create(moving: $0.id) }
     )
   }
 
@@ -54,7 +56,8 @@ extension SidebarView {
     for row in sidebarRows {
       switch row.kind {
       case let .workspace(item, .archived): archived.append(item)
-      case let .workspace(item, .pinned), let .workspace(item, .group): active.append(item)
+      case let .workspace(item, .pinned), let .workspace(item, .custom), let .workspace(item, .group):
+        active.append(item)
       default: continue
       }
     }
@@ -139,6 +142,7 @@ extension SidebarView {
     moveSelection(awayFrom: workspace)
     environment.archiveWorkspace(workspace)
     pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
+    environment.workspaceSections.forget(workspace.id)
     collapsedGroupIDs.removeAll { $0 == SidebarRows.childrenGroupID(workspace.id) }
   }
 

@@ -8,7 +8,7 @@ struct BotSidebarRowActions {
   let moveBot: (_ botID: UUID, _ sectionID: UUID?) -> Void
   let newSection: (_ moving: Bot?) -> Void
   let toggleSection: (UUID) -> Void
-  let renameSection: (BotSection) -> Void
-  let deleteSection: (BotSection) -> Void
+  let renameSection: (CustomSection) -> Void
+  let deleteSection: (CustomSection) -> Void
   let moveSection: (_ sectionID: UUID, _ index: Int) -> Void
 }

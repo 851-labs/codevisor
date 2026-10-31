@@ -87,12 +87,16 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
   public let id: String
   public let heading: Heading?
   public let items: [WorkspaceSidebarItem]
+  public let customSection: CustomSection?
 
-  public init(id: String, heading: Heading?, items: [WorkspaceSidebarItem]) {
+  public init(id: String, heading: Heading?, items: [WorkspaceSidebarItem], customSection: CustomSection? = nil) {
     self.id = id
     self.heading = heading
     self.items = items
+    self.customSection = customSection
   }
+
+  public static func customSectionID(_ sectionID: UUID) -> String { "section:\(sectionID.uuidString)" }
 
   public static func groups(
     _ items: [WorkspaceSidebarItem],
@@ -102,11 +106,16 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
     defaultServerId: String,
     machineOrder: [String] = [],
     projectOrder: [String] = [],
+    sections: [CustomSection] = [],
+    membership: [UUID: UUID] = [:],
     machineGroup: (String) -> SidebarMachineGroup
   ) -> [SidebarWorkspaceGroup] {
     let pinned = Set(pinnedIDs)
     let pinnedItems = items.filter { pinned.contains($0.id.uuidString) }
-    let rest = items.filter { !pinned.contains($0.id.uuidString) }
+    let unpinned = items.filter { !pinned.contains($0.id.uuidString) }
+    let custom = customSectionGroups(unpinned, sections: sections, membership: membership)
+    let sectioned = Set(custom.flatMap(\.items).map(\.id))
+    let rest = unpinned.filter { !sectioned.contains($0.id) }
     let grouped: [SidebarWorkspaceGroup] =
       switch grouping {
       case .flat:
@@ -118,8 +127,18 @@ public struct SidebarWorkspaceGroup: Identifiable, Equatable {
           projectGroups(rest, projects: projects, defaultServerId: defaultServerId), by: projectOrder,
           key: projectKey)
       }
-    guard !pinnedItems.isEmpty else { return grouped }
-    return [SidebarWorkspaceGroup(id: pinnedID, heading: nil, items: pinnedItems)] + grouped
+    guard !pinnedItems.isEmpty else { return custom + grouped }
+    return [SidebarWorkspaceGroup(id: pinnedID, heading: nil, items: pinnedItems)] + custom + grouped
+  }
+
+  private static func customSectionGroups(
+    _ items: [WorkspaceSidebarItem], sections: [CustomSection], membership: [UUID: UUID]
+  ) -> [SidebarWorkspaceGroup] {
+    let members = Dictionary(grouping: items) { membership[$0.id] }
+    return sections.map { section in
+      SidebarWorkspaceGroup(
+        id: customSectionID(section.id), heading: nil, items: members[section.id] ?? [], customSection: section)
+    }
   }
 
   private static func machineGroups(

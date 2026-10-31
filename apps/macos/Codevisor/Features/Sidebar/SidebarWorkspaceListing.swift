@@ -27,10 +27,12 @@ struct SidebarWorkspaceListing {
   }
 
   func groups(of items: [WorkspaceSidebarItem]) -> [SidebarWorkspaceGroup] {
-    SidebarWorkspaceGroup.groups(
+    let sections = environment.workspaceSections
+    return SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinnedIDs, projects: environment.projectList.projects,
       defaultServerId: environment.defaultComposerServerId, machineOrder: machineOrder,
-      projectOrder: projectOrder, machineGroup: machineGroups.group(forServer:))
+      projectOrder: projectOrder, sections: sections.sections, membership: sections.membership,
+      machineGroup: machineGroups.group(forServer:))
   }
 
   func headingNamesMachine(_ id: UUID) -> Bool {

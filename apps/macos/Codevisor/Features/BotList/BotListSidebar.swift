@@ -11,14 +11,14 @@ struct BotListSidebar: View {
   @State private var showingAddProject = false
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
-  @State private var sectionPrompt: BotSectionPrompt?
+  @State private var sectionPrompt: SectionPrompt?
   @ClientPreference(SidebarPreferenceKey.collapsedBotSections, default: []) private var collapsedSectionIDs: [String]
 
   private var conversations: [BotConversation] {
     BotConversationList(environment: environment, store: store).conversations()
   }
 
-  private var sections: BotSectionStore { environment.botSections }
+  private var sections: CustomSectionStore { environment.botSections }
 
   private func rows(_ conversations: [BotConversation]) -> [BotSidebarRow] {
     BotSidebarRows.derive(
@@ -46,7 +46,7 @@ struct BotListSidebar: View {
       .modifier(
         SidebarBotsModifier(botEditor: $botEditor, deletingBot: $deletingBot, selection: $selection, store: store)
       )
-      .modifier(BotSectionPromptModifier(prompt: $sectionPrompt))
+      .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: sections))
       .sheet(isPresented: $showingAddProject) {
         NewProjectSheet(serverId: environment.defaultComposerServerId) { _ in }
       }
@@ -103,8 +103,8 @@ struct BotListSidebar: View {
       select: select,
       edit: { botEditor = .edit($0) },
       delete: { deletingBot = $0 },
-      moveBot: { sections.move(bot: $0, to: $1) },
-      newSection: { sectionPrompt = .create(moving: $0) },
+      moveBot: { sections.move($0, to: $1) },
+      newSection: { sectionPrompt = .create(moving: $0?.id) },
       toggleSection: toggleSection,
       renameSection: { sectionPrompt = .rename($0) },
       deleteSection: { sections.delete($0.id) },

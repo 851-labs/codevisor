@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 struct BotConversationRows: View {
   let rows: [BotSidebarRow]
-  let sections: [BotSection]
+  let sections: [CustomSection]
   let selectedBotID: UUID?
   let actions: BotSidebarRowActions
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,8 +32,10 @@ struct BotConversationRows: View {
     case let .bot(conversation, section):
       botRow(conversation, section: section, now: now)
     case let .section(section, isExpanded):
-      BotSectionHeader(
-        section: section, isExpanded: isExpanded, isDropTarget: dropTarget == row.id, actions: actions
+      CustomSectionHeader(
+        section: section, isExpanded: isExpanded, isDropTarget: dropTarget == row.id,
+        onToggle: { actions.toggleSection(section.id) }, onRename: { actions.renameSection(section) },
+        onDelete: { actions.deleteSection(section) }
       )
       .onDrag { start(.section(section.id)) }
     }
@@ -55,7 +57,9 @@ struct BotConversationRows: View {
         Label("Edit", systemImage: "pencil")
           .labelStyle(.titleAndIcon)
       }
-      BotMoveToSectionMenu(bot: bot, currentSectionID: section, sections: sections, actions: actions)
+      MoveToSectionMenu(
+        currentSectionID: section, sections: sections, move: { actions.moveBot(bot.id, $0) },
+        newSection: { actions.newSection(bot) })
       Divider()
       Button(role: .destructive) {
         actions.delete(bot)

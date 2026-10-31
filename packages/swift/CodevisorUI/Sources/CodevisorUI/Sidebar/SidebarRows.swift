@@ -3,6 +3,7 @@ import Foundation
 
 public enum SidebarSection: Hashable, Sendable {
   case pinned
+  case custom(UUID)
   case list
   case archived
 }
@@ -17,6 +18,7 @@ public enum SidebarRowID: Hashable, Sendable {
 public struct SidebarRow: Identifiable, Equatable {
   public enum Placement: Hashable, Sendable {
     case pinned
+    case custom(UUID)
     case group(String)
     case archived
   }
@@ -48,6 +50,7 @@ public struct SidebarRow: Identifiable, Equatable {
     case let .workspace(_, placement):
       switch placement {
       case .pinned: .pinned
+      case let .custom(id): .custom(id)
       case .group: .list
       case .archived: .archived
       }
@@ -132,8 +135,17 @@ public enum SidebarRows {
       }
     }
 
+    for group in state.groups {
+      guard let section = group.customSection else { continue }
+      let isExpanded = !expansion.collapsedGroupIDs.contains(group.id)
+      rows.append(SidebarRow(.section(.custom(section.id), isExpanded: isExpanded)))
+      for item in group.items {
+        appendWorkspace(item, .custom(section.id), depth: 0, showing: isExpanded)
+      }
+    }
+
     rows.append(SidebarRow(.section(.list, isExpanded: expansion.list)))
-    for group in state.groups where group.id != SidebarWorkspaceGroup.pinnedID {
+    for group in state.groups where group.id != SidebarWorkspaceGroup.pinnedID && group.customSection == nil {
       let isExpanded = group.heading == nil || !expansion.collapsedGroupIDs.contains(group.id)
       let showsHeading = group.heading != nil && expansion.list
       if let heading = group.heading, showsHeading {
