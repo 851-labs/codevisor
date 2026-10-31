@@ -1,4 +1,4 @@
-import type { Bot, BotMode, Workspace } from "@codevisor/api"
+import type { Bot, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 
 import {
@@ -46,7 +46,7 @@ export const makeBotsService = (
         path: `${rootPath}/${project.folder_name}`
       })),
       conversational: row.conversational === 1,
-      mode: row.mode as BotMode,
+      mode: row.mode,
       createdAt: row.created_at,
       ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
     }

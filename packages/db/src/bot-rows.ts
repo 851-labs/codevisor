@@ -9,7 +9,7 @@ import type {
 import type { Effect } from "effect"
 
 import type { DatabaseError } from "./errors.js"
-import { integer, nullable, rowReader, text } from "./row-reader.js"
+import { integer, literal, nullable, rowReader, text } from "./row-reader.js"
 import type { BotLink, RemoteBotLink } from "./workspace-service-types.js"
 
 export interface BotRow {
@@ -23,7 +23,7 @@ export interface BotRow {
   readonly workspace_id: string
   readonly harness_id: string
   readonly conversational: number
-  readonly mode: string
+  readonly mode: BotMode
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -47,7 +47,7 @@ export const botRows = rowReader<BotRow>({
   workspace_id: text,
   harness_id: text,
   conversational: integer,
-  mode: text,
+  mode: literal("transcript", "bubbles", "conversation"),
   created_at: text,
   updated_at: nullable(text)
 })
