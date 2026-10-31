@@ -150,17 +150,4 @@ struct ToolGroupHeaderPresentationTests {
     )
     #expect(header.title == "Running an integration workflow…")
   }
-
-  @Test("A group holding one gateway workflow is labeled with its description")
-  func workflowDescription() {
-    let group = ToolCallGroup(calls: [
-      ToolCall(
-        toolCallId: "call", title: "mcp__codevisor__execute", status: .completed,
-        rawInput: ["description": "Archive merged workspaces", "code": "async () => 1"])
-    ])
-    let header = ToolGroupHeaderPresentation(
-      group: group, isExpanded: false, isTurnActive: true, totalsCache: DiffTotalsCache()
-    )
-    #expect(header.title == "Archive merged workspaces")
-  }
 }

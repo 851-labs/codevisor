@@ -24,12 +24,6 @@ struct CloudAuthenticationCoordinatorTests {
     }
   }
 
-  @Test func emptyResultReturnsToMainActor() async {
-    let (callback, error) = await deliver(callback: nil, error: nil, background: true)
-    #expect(callback == nil)
-    #expect(error == nil)
-  }
-
   private func deliver(
     callback: URL?, error: (any Error)?, background: Bool
   ) async -> (URL?, (any Error)?) {

@@ -30,6 +30,7 @@ struct BrowserToolbarScrollStateTests {
 
   @Test func programmaticScrollDoesNotCollapse() {
     var state = BrowserToolbarScrollState()
+    scroll(&state, to: 10)
     state.update(offset: 400, maximumOffset: 1_000, isUserScrolling: false, keepExpanded: false)
     #expect(!state.isCollapsed)
     scroll(&state, to: 401)

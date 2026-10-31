@@ -28,11 +28,11 @@ struct PluginAppInlineModelCacheTests {
   func eviction() {
     let cache = PluginAppInlineModelCache(capacity: 2)
     let first = cache.model(for: app("v1"), chatMachineId: "local")
-    _ = cache.model(for: app("v2"), chatMachineId: "local")
+    let second = cache.model(for: app("v2"), chatMachineId: "local")
     _ = cache.model(for: app("v1"), chatMachineId: "local")
     _ = cache.model(for: app("v3"), chatMachineId: "local")
 
-    #expect(cache.cachedKeys == ["local|v1", "local|v3"])
     #expect(cache.model(for: app("v1"), chatMachineId: "local") === first)
+    #expect(cache.model(for: app("v2"), chatMachineId: "local") !== second)
   }
 }

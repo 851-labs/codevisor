@@ -122,7 +122,6 @@ public struct ServerAvailabilityView: View {
       && ServerAvailabilityFallbackPolicy.offersLocalMachine(
         isLocal: isLocal,
         availability: availability,
-        hasLocalMachine: true,
         appUpdateInProgress: appUpdateInProgress
       )
   }

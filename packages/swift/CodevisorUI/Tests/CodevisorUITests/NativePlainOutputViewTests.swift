@@ -24,16 +24,15 @@
     @Test("Streaming output appends in the existing native surface")
     func appendsInExistingSurface() {
       let scrollView = makeScrollView(text: "first")
-      let textView = scrollView.outputTextView
-      let storage = textView.textStorage
+      let probe = NSAttributedString.Key("probe")
+      scrollView.outputTextView.textStorage?.addAttribute(probe, value: "kept", range: NSRange(location: 0, length: 5))
 
       scrollView.setContent(
         text: "first\nsecond\nthird",
         followsTail: true
       )
 
-      #expect(scrollView.outputTextView === textView)
-      #expect(scrollView.outputTextView.textStorage === storage)
+      #expect(scrollView.outputTextView.textStorage?.attribute(probe, at: 0, effectiveRange: nil) as? String == "kept")
       #expect(scrollView.outputTextView.string == "first\nsecond\nthird")
     }
 

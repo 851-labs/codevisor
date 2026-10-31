@@ -34,8 +34,6 @@ public final class PluginAppInlineModelCache {
     return model
   }
 
-  var cachedKeys: [String] { recency }
-
   static func key(_ app: CodevisorExecutionApp, chatMachineId: String) -> String {
     "\(app.owningMachineId(fallback: chatMachineId))|\(app.viewId)"
   }

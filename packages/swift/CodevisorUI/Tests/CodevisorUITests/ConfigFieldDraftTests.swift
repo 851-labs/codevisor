@@ -15,6 +15,9 @@ struct ConfigFieldDraftTests {
     #expect(draft.isComplete)
     #expect(draft.keepsSavedSecret(fields[1]))
     #expect(draft.submittedValues == ["url": .string("https://g.example")])
+    var replaced = draft
+    replaced.values["token"] = .string("new-token")
+    #expect(replaced.submittedValues == ["url": .string("https://g.example"), "token": .string("new-token")])
 
     draft.values["url"] = .string("  ")
     #expect(!draft.isComplete)

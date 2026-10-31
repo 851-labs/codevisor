@@ -42,7 +42,7 @@ struct BrowserProtocolMessageTests {
     let request = Data(
       #" { "sessionId" : "S", "params" : {"expression":"1 + [2][0]"}, "id" : 12, "method":"Runtime.evaluate" } "#.utf8)
     let message = try #require(BrowserProtocolMessage(request))
-    #expect(message.integer("id") == 12)
+    #expect(message.raw("id") == Data("12".utf8))
     #expect(message.string("sessionId") == "S")
     #expect(message.string("method") == "Runtime.evaluate")
     #expect(message.raw("params") == Data(#"{"expression":"1 + [2][0]"}"#.utf8))
@@ -55,15 +55,6 @@ struct BrowserProtocolMessageTests {
   @Test(arguments: [#"{"id":1,"result":{}"#, #"{"id":1 "result":{}}"#, #"["id",1]"#, #"{"id":"1}"#, ""])
   func truncatedOrNonObjectMessagesAreRejected(_ text: String) {
     #expect(BrowserProtocolMessage(Data(text.utf8)) == nil)
-  }
-
-  @Test func linesSplitAcrossChunksAreReassembledInOrder() {
-    var buffer = BrowserProtocolLineBuffer()
-    #expect(buffer.append(Data(#"{"id":1}"#.utf8)).isEmpty)
-    #expect(buffer.append(Data("\n{\"id\"".utf8)) == [Data(#"{"id":1}"#.utf8)])
-    #expect(buffer.pendingCount == 5)
-    #expect(buffer.append(Data(":2}\n{\"id\":3}\n{".utf8)) == [Data(#"{"id":2}"#.utf8), Data(#"{"id":3}"#.utf8)])
-    #expect(buffer.pendingCount == 1)
   }
 
   @Test func chromiumCookiesKeepOnlyShareableCookies() throws {

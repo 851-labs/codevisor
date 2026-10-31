@@ -28,10 +28,6 @@ public struct BrowserProtocolMessage: Sendable {
     return (try? JSONSerialization.jsonObject(with: value, options: .fragmentsAllowed)) as? String
   }
 
-  public func integer(_ key: String) -> Int? {
-    raw(key).flatMap { Int(String(decoding: $0, as: UTF8.self)) }
-  }
-
   public func object(_ key: String) -> [String: Any]? {
     raw(key).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
   }
@@ -97,33 +93,5 @@ public struct BrowserProtocolMessage: Sendable {
 
   private static func appendSeparator(_ output: inout Data) {
     if output.count > 1 { output.append(UInt8(ascii: ",")) }
-  }
-}
-
-public struct BrowserProtocolLineBuffer: Sendable {
-  private var buffer = Data()
-  private var scanned = 0
-  public init() {}
-
-  public var pendingCount: Int { buffer.count }
-
-  public mutating func append(_ chunk: Data) -> [Data] {
-    guard !chunk.isEmpty else { return [] }
-    buffer.append(chunk)
-    var lines: [Data] = []
-    var lineStart = 0
-    buffer.withUnsafeBytes { bytes in
-      guard let base = bytes.baseAddress else { return }
-      var position = scanned
-      while position < bytes.count, let found = memchr(base + position, 0x0A, bytes.count - position) {
-        let newline = base.distance(to: UnsafeRawPointer(found))
-        lines.append(Data(bytes: base + lineStart, count: newline - lineStart))
-        lineStart = newline + 1
-        position = lineStart
-      }
-    }
-    if lineStart > 0 { buffer = Data(buffer[(buffer.startIndex + lineStart)...]) }
-    scanned = buffer.count
-    return lines
   }
 }

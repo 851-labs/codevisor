@@ -34,7 +34,7 @@ struct BrowserFaviconTests {
     let image = await BrowserFaviconLoader.load(candidates: candidates) { url in
       requests.append(url)
       if url == candidates[0] { return Data("<html>Not an icon</html>".utf8) }
-      if url == candidates[1] { return Data(repeating: 0, count: 1_048_577) }
+      if url == candidates[1] { return png + Data(repeating: 0, count: 1_048_577 - png.count) }
       return png
     }
     #expect(image?.width == 64)

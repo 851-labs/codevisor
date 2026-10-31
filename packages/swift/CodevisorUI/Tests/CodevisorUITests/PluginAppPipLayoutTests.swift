@@ -19,6 +19,9 @@ struct PluginAppPipLayoutTests {
   func sizing() {
     let tall = PluginAppPipLayout.size(contentHeight: 2_000, container: container, preferredWidth: 360)
     #expect(tall == CGSize(width: 360, height: 360 + PluginAppPipLayout.headerHeight))
+    #expect(
+      PluginAppPipLayout.origin(corner: .bottomTrailing, size: tall, container: container)
+        == CGPoint(x: 800 - 360 - 12, y: 600 - tall.height - 12))
 
     let narrow = CGSize(width: 300, height: 900)
     let fitted = PluginAppPipLayout.size(contentHeight: 50, container: narrow, preferredWidth: 360)

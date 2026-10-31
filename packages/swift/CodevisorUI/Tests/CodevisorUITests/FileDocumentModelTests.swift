@@ -245,14 +245,15 @@ struct FileDocumentModelTests {
       read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
     await document.refresh()
     document.edit("originaX")
-    #expect(document.isDirty)
-    document.edit("original")
-    #expect(!document.isDirty)
-    document.edit("original plus more")
+    await clock.waitForSleep(.milliseconds(500))
     #expect(document.isDirty)
     document.edit("original")
     #expect(!document.isDirty)
     #expect(clock.pendingCount == 0)
+    document.edit("original plus more")
+    #expect(document.isDirty)
+    document.edit("original")
+    #expect(!document.isDirty)
   }
 
   @Test func backupsWrittenOffTheMainThreadReachTheNextDocument() async throws {

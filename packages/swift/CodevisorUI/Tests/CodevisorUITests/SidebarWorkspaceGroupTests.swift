@@ -4,7 +4,7 @@ import Testing
 @testable import CodevisorUI
 
 struct SidebarWorkspaceGroupTests {
-  private let studio = Project(id: UUID(), serverId: "studio", name: "codevisor")
+  private let studio = Project(id: UUID(), serverId: "studio", name: "codevisor", repoKey: "github.com/acme/codevisor")
   private let linux = Project(id: UUID(), serverId: "linux", name: "api")
 
   private func item(_ project: Project) -> WorkspaceSidebarItem {
@@ -83,7 +83,7 @@ struct SidebarWorkspaceGroupTests {
     let result = groups(items, .project, projectOrder: ["gone"] + keys.reversed())
 
     #expect(result.map(\.id) == natural.map(\.id).reversed())
-    #expect(keys == natural.map { $0.items[0].projectId.uuidString })
+    #expect(keys == ["repo|github.com/acme/codevisor", linux.id.uuidString])
     #expect(groups(items, .machine, projectOrder: keys.reversed()).map(\.id) == groups(items, .machine).map(\.id))
   }
 

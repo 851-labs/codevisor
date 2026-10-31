@@ -38,22 +38,6 @@ struct PluginSetupModelTests {
     #expect(model.actionTitle == nil)
   }
 
-  @Test("A hosted plugin that needs MCP sign-in asks to Sign In until it connects")
-  func mcpOAuthPlugin() async throws {
-    let transport = SetupTransport()
-    transport.respond("GET /v1/plugins/catalog/grafana", with: Self.remoteEntry)
-    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "needsAuthorization"))]")
-    let model = PluginSetupModel(request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport))
-
-    await model.refresh()
-    #expect(model.step == .signIn)
-    #expect(model.actionTitle == "Sign In")
-
-    transport.respond("GET /v1/mcps", with: "[\(Self.server(authType: "oauth", state: "connected"))]")
-    await model.refresh()
-    #expect(model.step == .ready)
-  }
-
   @Test("The MCP sign-in sheet closes by itself once the machine reports the plugin connected")
   func mcpSignInClosesOnConnect() async throws {
     let transport = SetupTransport()
@@ -65,6 +49,8 @@ struct PluginSetupModelTests {
     let model = PluginSetupModel(
       request: try Self.request(auth: "mcpOAuth"), client: Self.client(transport), webSignIn: signIn)
     await model.refresh()
+    #expect(model.step == .signIn)
+    #expect(model.actionTitle == "Sign In")
 
     let action = Task { await model.performPrimaryAction() }
     await signIn.presented.wait()

@@ -4,10 +4,9 @@ public enum ServerAvailabilityFallbackPolicy {
   public static func offersLocalMachine(
     isLocal: Bool,
     availability: ServerAvailability,
-    hasLocalMachine: Bool,
     appUpdateInProgress: Bool = false
   ) -> Bool {
-    guard !isLocal, hasLocalMachine, !appUpdateInProgress else {
+    guard !isLocal, !appUpdateInProgress else {
       return false
     }
     switch availability {

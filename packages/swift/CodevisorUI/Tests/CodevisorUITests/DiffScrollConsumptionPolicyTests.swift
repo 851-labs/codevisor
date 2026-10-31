@@ -7,8 +7,8 @@ struct DiffScrollConsumptionPolicyTests {
   func fittingContentDoesNotConsume() {
     #expect(
       !DiffScrollConsumptionPolicy.canConsume(
-        contentDelta: 10,
-        offset: 0,
+        contentDelta: -10,
+        offset: 5,
         contentLength: 200,
         viewportLength: 200
       )

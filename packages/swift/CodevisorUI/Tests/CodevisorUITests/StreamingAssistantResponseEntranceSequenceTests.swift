@@ -185,17 +185,29 @@ struct StreamingAssistantResponseEntranceSequenceTests {
       .markdown("After"),
     ]
 
-    let resolution = sequence.resolve(
-      segments: segments,
-      responseStreamID: "turn:main:answer",
-      animationEnabled: true,
-      animatesInitialContent: true,
-      reduceMotion: true
-    )
+    func resolve(reduceMotion: Bool) -> StreamingAssistantResponseEntranceSequence.Resolution {
+      sequence.resolve(
+        segments: segments,
+        responseStreamID: "turn:main:answer",
+        animationEnabled: true,
+        animatesInitialContent: true,
+        reduceMotion: reduceMotion
+      )
+    }
+
+    let animated = resolve(reduceMotion: false)
+    #expect(animated.visibleSegmentCount == 1)
+    #expect(animated.pendingFileID != nil)
+
+    let resolution = resolve(reduceMotion: true)
     #expect(resolution.visibleSegmentCount == segments.count)
     #expect(resolution.pendingFileID == nil)
 
     #expect(presentation.observeProvider(isGenerating: false))
     #expect(presentation.nextWork(pendingFileID: resolution.pendingFileID) == .finishPresentation)
+
+    let resumed = resolve(reduceMotion: false)
+    #expect(resumed.visibleSegmentCount == segments.count)
+    #expect(resumed.pendingFileID == nil)
   }
 }

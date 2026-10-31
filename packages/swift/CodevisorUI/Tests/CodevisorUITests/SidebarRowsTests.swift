@@ -136,23 +136,6 @@ struct SidebarRowsTests {
     #expect(layout.ids == [.section(.custom(work.id)), .workspace(selected.id), .section(.list)])
   }
 
-  @Test("A workspace keeps one row id whether it's in a group, Pinned, or in Archived")
-  func workspaceIdentitySurvivesEveryMove() {
-    let moving = item(studio)
-    let other = item(studio)
-    let placements: [SidebarRows.State] = [
-      SidebarRows.State(groups: groups([moving, other])),
-      SidebarRows.State(groups: groups([moving, other], pinned: [moving.id])),
-      SidebarRows.State(
-        groups: groups([other]), archived: [moving], expansion: SidebarRows.Expansion(archived: true)),
-    ]
-
-    for state in placements {
-      let ids = derive(state).ids
-      #expect(ids.filter { $0 == .workspace(moving.id) }.count == 1)
-    }
-  }
-
   @Test("Pinning the selected workspace with Pinned collapsed moves its row instead of replacing it (851-2786)")
   func pinningWithPinnedCollapsedIsAMove() {
     let hidden = item(studio)

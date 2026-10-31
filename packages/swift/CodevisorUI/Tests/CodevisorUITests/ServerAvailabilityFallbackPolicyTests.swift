@@ -14,8 +14,7 @@ struct ServerAvailabilityFallbackPolicyTests {
       #expect(
         ServerAvailabilityFallbackPolicy.offersLocalMachine(
           isLocal: false,
-          availability: availability,
-          hasLocalMachine: true
+          availability: availability
         ),
         "\(availability) should offer the local machine"
       )
@@ -27,24 +26,12 @@ struct ServerAvailabilityFallbackPolicyTests {
     #expect(
       !ServerAvailabilityFallbackPolicy.offersLocalMachine(
         isLocal: true,
-        availability: .waiting(.connecting),
-        hasLocalMachine: true
+        availability: .waiting(.connecting)
       ))
     #expect(
       !ServerAvailabilityFallbackPolicy.offersLocalMachine(
         isLocal: true,
-        availability: .failed("down"),
-        hasLocalMachine: true
-      ))
-  }
-
-  @Test("No local machine in the fleet means nothing to fall back to")
-  func requiresALocalMachine() {
-    #expect(
-      !ServerAvailabilityFallbackPolicy.offersLocalMachine(
-        isLocal: false,
-        availability: .failed("down"),
-        hasLocalMachine: false
+        availability: .failed("down")
       ))
   }
 
@@ -54,8 +41,7 @@ struct ServerAvailabilityFallbackPolicyTests {
       #expect(
         !ServerAvailabilityFallbackPolicy.offersLocalMachine(
           isLocal: false,
-          availability: availability,
-          hasLocalMachine: true
+          availability: availability
         ),
         "\(availability) should not offer the local machine"
       )
@@ -64,7 +50,6 @@ struct ServerAvailabilityFallbackPolicyTests {
       !ServerAvailabilityFallbackPolicy.offersLocalMachine(
         isLocal: false,
         availability: .waiting(.connecting),
-        hasLocalMachine: true,
         appUpdateInProgress: true
       ))
   }

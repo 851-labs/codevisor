@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorTestSupport
 import Foundation
 import Synchronization
 import Testing
@@ -21,10 +22,17 @@ struct SidebarGitLookupsTests {
   }
 
   @Test("A workspace the server reports git for answers from its record, even with no branch")
-  func serverGitAnswers() {
+  func serverGitAnswers() async {
     let lookups = SidebarGitLookups()
     let reported = workspace("/repo/a", git: ServerWorkspaceGit(branch: "feature", pullRequest: pullRequest))
     let noBranch = workspace("/repo/b", git: ServerWorkspaceGit(branch: nil, pullRequest: nil))
+    var polled = noBranch
+    polled.git = nil
+    let client = CodevisorServerClient(config: CodevisorServerConfig(requestTransport: GitRecordingTransport()))
+    lookups.refresh(
+      active: [polled], archived: [], listedIds: [polled.id], details: [.branch, .pullRequest],
+      client: { _ in client })
+    await awaitObserved { lookups.branch(for: polled) != nil && lookups.pullRequest(for: polled) != nil }
 
     #expect(lookups.branch(for: reported) == "feature")
     #expect(lookups.pullRequest(for: reported) == pullRequest)
@@ -52,9 +60,7 @@ struct SidebarGitLookupsTests {
     lookups.refresh(
       active: [reported, legacy], archived: [], listedIds: [reported.id, legacy.id],
       details: [.branch, .pullRequest], client: { _ in client })
-    while lookups.branch(for: legacy) == nil || lookups.pullRequest(for: legacy) == nil {
-      await Task.yield()
-    }
+    await awaitObserved { lookups.branch(for: legacy) != nil && lookups.pullRequest(for: legacy) != nil }
 
     #expect(transport.directories == ["/repo/legacy", "/repo/legacy"])
     #expect(lookups.branch(for: legacy) == "legacy-branch")

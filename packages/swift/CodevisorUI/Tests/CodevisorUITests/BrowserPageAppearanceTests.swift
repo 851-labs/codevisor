@@ -8,6 +8,7 @@ struct BrowserPageAppearanceTests {
     let appearance = BrowserPageAppearance(background: .black, theme: nil)
     #expect(appearance.chromeScheme == .dark)
     #expect(appearance.chromeColor == Color(.sRGB, red: 0, green: 0, blue: 0, opacity: 1))
+    #expect(BrowserPageAppearance(background: .white, theme: nil).chromeScheme == .light)
   }
 
   @Test func themeTakesPrecedenceForBrowserChrome() {
@@ -23,8 +24,8 @@ struct BrowserPageAppearanceTests {
   }
 
   @Test func transparentThemeFallsBackToBackground() {
-    #expect(
-      BrowserPageAppearance(background: .black, theme: .clear) == BrowserPageAppearance(background: .black, theme: nil))
-    #expect(BrowserPageAppearance(background: .white, theme: nil).chromeScheme == .light)
+    let appearance = BrowserPageAppearance(background: .white, theme: .clear)
+    #expect(appearance.chromeColor == Color(.sRGB, red: 1, green: 1, blue: 1, opacity: 1))
+    #expect(appearance.chromeScheme == .light)
   }
 }
