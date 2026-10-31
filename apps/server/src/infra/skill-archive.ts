@@ -31,16 +31,17 @@ const tarExec = (args: ReadonlyArray<string>, input?: Buffer): Promise<Buffer> =
 /* v8 ignore next */
 const MAC_METADATA_FLAGS = process.platform === "darwin" ? ["--no-mac-metadata"] : []
 
-export const packSkillArchive = (skillPath: string): Promise<Buffer> =>
-  tarExec(["-czf", "-", ...MAC_METADATA_FLAGS, "-C", skillPath, "."])
+const OS_JUNK_PATTERNS = [".DS_Store", "._*"]
+const OS_JUNK_FLAGS = OS_JUNK_PATTERNS.flatMap((pattern) => ["--exclude", pattern])
 
-const EXCLUDED: ReadonlySet<string> = new Set([MANAGED_MARKER])
+export const packSkillArchive = (skillPath: string): Promise<Buffer> =>
+  tarExec(["-czf", "-", ...MAC_METADATA_FLAGS, ...OS_JUNK_FLAGS, "-C", skillPath, "."])
 
 export const unpackSkillArchive = async (bytes: Buffer): Promise<UnpackedSkill> => {
   const path = await mkdtemp(join(tmpdir(), "codevisor-skill-"))
   try {
     await tarExec(["-xzf", "-", "-C", path], bytes)
-    return { path, hash: await treeHash(path, { exclude: EXCLUDED }) }
+    return { path, hash: await treeHash(path, { exclude: excludedFromHash }) }
   } catch (error) {
     await rm(path, { recursive: true, force: true })
     throw error
@@ -48,7 +49,7 @@ export const unpackSkillArchive = async (bytes: Buffer): Promise<UnpackedSkill> 
 }
 
 export const skillTreeHash = (path: string): Promise<string> =>
-  treeHash(path, { exclude: EXCLUDED })
+  treeHash(path, { exclude: excludedFromHash })
 
 export const archiveEntryNames = (bytes: Buffer): ReadonlyArray<string> => {
   const tar = gunzipSync(bytes)
@@ -72,10 +73,12 @@ export const archiveEntryNames = (bytes: Buffer): ReadonlyArray<string> => {
   return names
 }
 
-const isMacMetadataJunk = (name: string): boolean => {
-  const base = name.split("/").findLast(Boolean) ?? ""
-  return base.startsWith("._") || base === ".DS_Store"
-}
+const isOsJunk = (name: string): boolean => name === ".DS_Store" || name.startsWith("._")
+
+const excludedFromHash = (name: string): boolean => name === MANAGED_MARKER || isOsJunk(name)
+
+const isMacMetadataJunk = (entryName: string): boolean =>
+  isOsJunk(entryName.split("/").findLast(Boolean) ?? "")
 
 export const verifySkillArchive = async (id: string, bytes: Buffer): Promise<boolean> => {
   try {

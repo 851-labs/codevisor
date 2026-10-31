@@ -4,13 +4,13 @@ import { join } from "node:path"
 
 export const treeHash = async (
   root: string,
-  options?: { readonly exclude?: ReadonlySet<string> }
+  options?: { readonly exclude?: (name: string) => boolean }
 ): Promise<string> => {
-  const exclude = options?.exclude ?? new Set()
+  const exclude = options?.exclude ?? (() => false)
   const hash = createHash("sha256")
   const walk = async (directory: string, prefix: string): Promise<void> => {
     const entries = (await readdir(directory, { withFileTypes: true })).filter(
-      (entry) => !exclude.has(entry.name)
+      (entry) => !exclude(entry.name)
     )
     const byName = new Map(entries.map((entry) => [entry.name, entry]))
     for (const name of [...byName.keys()].toSorted()) {

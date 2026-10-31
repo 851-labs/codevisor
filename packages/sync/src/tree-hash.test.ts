@@ -70,10 +70,10 @@ describe("treeHash", () => {
     const base = join(root, "skill")
     mkdirSync(base)
     makeSkill(base)
-    const clean = await treeHash(base, { exclude: new Set([".marker"]) })
+    const clean = await treeHash(base, { exclude: (name) => name === ".marker" })
 
     writeFileSync(join(base, ".marker"), "managed\n")
-    expect(await treeHash(base, { exclude: new Set([".marker"]) })).toBe(clean)
+    expect(await treeHash(base, { exclude: (name) => name === ".marker" })).toBe(clean)
     expect(await treeHash(base)).not.toBe(clean)
   })
 })

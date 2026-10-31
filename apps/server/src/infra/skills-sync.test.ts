@@ -1,4 +1,5 @@
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gzipSync } from "node:zlib"
@@ -187,12 +188,51 @@ describe("skills sync", () => {
     }
   })
 
+  it("syncs a skill folder Finder visited, leaving its OS junk behind", async () => {
+    const { services: machineA } = await makeServices("server-a")
+    const { services: machineB } = await makeServices("server-b")
+    const skillsA = makeSkills()
+    const skillsB = makeSkills()
+    const blobsA = makeBlobs()
+    const blobsB = makeBlobs()
+    const a = { db: machineA.db, store: skillsA, blobs: blobsA, serverId: "server-a" }
+    const b = { db: machineB.db, store: skillsB, blobs: blobsB, serverId: "server-b" }
+    await skillsA.create({ name: "Finder", description: "visited" })
+    const pathA = (await skillsA.list()).skills[0]?.path ?? ""
+    mkdirSync(join(pathA, "refs"))
+    writeFileSync(join(pathA, "refs", "notes.md"), "notes\n")
+    for (const junk of [".DS_Store", "._SKILL.md", join("refs", ".DS_Store")]) {
+      writeFileSync(join(pathA, junk), "finder")
+    }
+
+    const published = await reconcileSkills(a)
+    const hash = hashOf(published.changedEntries[0]?.value)
+    const archive = await blobsA.read(hash)
+    expect(await verifySkillArchive(hash, archive)).toBe(true)
+
+    await run(machineB.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, published.changedEntries))
+    await reconcileSkills(b)
+    blobsB.write(hash, archive)
+    expect((await reconcileSkills(b)).status.applied).toEqual(["finder"])
+    const pathB = join(skillsB.dir, "finder")
+    expect(
+      readdirSync(pathB, { recursive: true, encoding: "utf8" }).toSorted((left, right) =>
+        left.localeCompare(right)
+      )
+    ).toEqual(["refs", join("refs", "notes.md"), "SKILL.md"])
+
+    writeFileSync(join(pathB, ".DS_Store"), "finder")
+    expect((await reconcileSkills(b)).status.published).toEqual([])
+  })
+
   it("rejects archives carrying macOS metadata junk even when the tree hash matches", async () => {
     const folder = mkdtempSync(join(tmpdir(), "skill-junk-"))
     tempDirs.push(folder)
     writeFileSync(join(folder, "SKILL.md"), "---\nname: Junked\n---\n")
     writeFileSync(join(folder, ".DS_Store"), "finder")
-    const junkArchive = await packSkillArchive(folder)
+    const junkArchive = execFileSync("tar", ["-czf", "-", "-C", folder, "."], {
+      env: { ...process.env, COPYFILE_DISABLE: "1" }
+    })
     expect(archiveEntryNames(junkArchive)).toContain("./.DS_Store")
     expect(await verifySkillArchive(await skillTreeHash(folder), junkArchive)).toBe(false)
 
