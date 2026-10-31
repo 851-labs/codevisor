@@ -156,6 +156,7 @@ final class PaneGroupModel: Identifiable {
     let document = FilePane(context: makeContext(descriptor), descriptor: descriptor)
     document.model.onEdit = { [weak self] in self?.onPaneEdited?(descriptor.id) }
     document.model.onClose = { [weak self] in self?.closeTab(id: descriptor.id) }
+    document.model.onOpenWebLink = { [links = webLinkActions(sourcePaneId: descriptor.id)] in links.open($0, .newTab) }
     document.onNavigate = { [weak self] path in
       guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
       state.panes[index].documentPath = path

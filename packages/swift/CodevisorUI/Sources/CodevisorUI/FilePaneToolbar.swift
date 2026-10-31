@@ -33,7 +33,7 @@ public struct FilePaneToolbar: ToolbarContent {
     #endif
     ToolbarItemGroup(placement: .primaryAction) {
       if !model.isBrowsing {
-        if model.document.isMarkdown {
+        if model.document.hasPreview {
           Button {
             model.editor.preview.toggle()
           } label: {
@@ -88,7 +88,7 @@ private struct FilePaneActions: View {
         Button("Open File", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
           .keyboardShortcut("o", modifiers: .command)
       #endif
-      if model.document.isMarkdown {
+      if model.document.hasPreview {
         Button(
           model.editor.preview ? "Show Editor" : "Show Preview",
           systemImage: model.editor.preview ? "pencil" : "eye"

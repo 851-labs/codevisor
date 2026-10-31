@@ -5,7 +5,9 @@ import WebKit
 
 extension WorkspaceScreen {
   @discardableResult
-  func openBrowserLink(from sourceId: UUID, url: URL?, configuration: WKWebViewConfiguration?) -> WKWebView? {
+  func openBrowserLink(
+    from sourceId: UUID, url: URL?, configuration: WKWebViewConfiguration?, foreground: Bool = false
+  ) -> WKWebView? {
     var state = panes
     guard let index = state.panes.firstIndex(where: { $0.id == sourceId }) else { return nil }
     let id = UUID()
@@ -20,6 +22,7 @@ extension WorkspaceScreen {
       state.selectedPaneId = id
     } else {
       popup = nil
+      if foreground { state.selectedPaneId = id }
       if let url { model.navigate(to: url.absoluteString) }
     }
     paneBinding.wrappedValue = state

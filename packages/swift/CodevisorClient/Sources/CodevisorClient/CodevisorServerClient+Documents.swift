@@ -14,6 +14,15 @@ public struct ServerFileDocument: Codable, Equatable, Sendable {
   }
 }
 
+public struct ServerFileContents: Sendable {
+  public let data: Data
+  public let version: String?
+
+  public init(data: Data, version: String?) {
+    self.data = data; self.version = version
+  }
+}
+
 public struct ServerFileEntry: Decodable, Identifiable, Equatable, Sendable {
   public var id: String { path }
   public let name: String
@@ -65,6 +74,18 @@ extension CodevisorServerClient {
     try await performRaw(fileRequestPath("/v1/fs/file", path: path), method: "GET", body: nil, contentType: nil)
   }
 
+  public func documentContents(path: String) async throws -> ServerFileContents {
+    let (data, response) = try await performRawResponse(
+      fileRequestPath("/v1/fs/file", path: path), method: "GET", body: nil, contentType: nil)
+    return ServerFileContents(data: data, version: Self.fileVersion(of: response))
+  }
+
+  public func documentVersion(path: String) async throws -> String? {
+    let (_, response) = try await performRawResponse(
+      fileRequestPath("/v1/fs/file", path: path), method: "HEAD", body: nil, contentType: nil)
+    return Self.fileVersion(of: response)
+  }
+
   private func fileRequestPath(_ endpoint: String, path: String) throws -> String {
     var components = URLComponents()
     components.path = endpoint
@@ -91,4 +112,8 @@ extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   public func documentData(path: String) async throws -> Data { throw CodevisorServerClientError.invalidResponse }
+  public func documentContents(path: String) async throws -> ServerFileContents {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func documentVersion(path: String) async throws -> String? { throw CodevisorServerClientError.invalidResponse }
 }

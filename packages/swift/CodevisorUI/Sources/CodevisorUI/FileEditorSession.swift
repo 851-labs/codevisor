@@ -52,6 +52,11 @@ public final class FileEditorSession {
     cursorColumn = (prefix.components(separatedBy: "\n").last?.count ?? 0) + 1
   }
 
+  public func reveal(_ target: String, rendered: Bool) {
+    if let line = FileDocumentLocation.line(target) { goToLine(line) }
+    if rendered { preview = true }
+  }
+
   public func goToLine(_ line: Int) {
     preview = false
     guard document.snapshot != nil else { pendingLine = line; return }

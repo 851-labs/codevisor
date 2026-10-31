@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 extension SessionContainerView {
-  func openFileDocument(_ target: String, preview: Bool = false) -> Bool {
+  func openFileDocument(_ target: String, preview: Bool = false, rendered: Bool = false) -> Bool {
     var workspace = selectedWorkspace
     guard !isSinglePane,
       let path = FileDocumentLocation.resolve(
@@ -15,11 +15,8 @@ extension SessionContainerView {
         if let pane = leaf.state.panes.first(where: {
           $0.kind == .document && $0.documentPath == path
         }) {
-          if let line = FileDocumentLocation.line(target),
-            let file = configuredCenterModel(leafId: leaf.id).pane(for: pane) as? FilePane
-          {
-            file.model.editor.goToLine(line)
-          }
+          let file = configuredCenterModel(leafId: leaf.id).pane(for: pane) as? FilePane
+          file?.model.editor.reveal(target, rendered: rendered)
           if !preview, tab.isPreview { keepCenterTab(tab.id) }
           store.selectDestination(.pane(pane.id), in: workspace.id)
           return true
@@ -30,7 +27,7 @@ extension SessionContainerView {
     if preview, let tab = workspace.centerTabs.first(where: \.isPreview) {
       if let file = previewFilePane(in: tab) {
         file.model.navigate(to: path)
-        if let line = FileDocumentLocation.line(target) { file.model.editor.goToLine(line) }
+        file.model.editor.reveal(target, rendered: rendered)
         store.selectDestination(.tab(tab.id), in: workspace.id)
         focusSelectedCenterPane()
         return true
@@ -50,11 +47,8 @@ extension SessionContainerView {
     environment.workspaces.save(workspace)
     store.selectDestination(.tab(tab.id), in: workspace.id)
     publishPane(pane, workspaceId: workspace.id)
-    if let line = FileDocumentLocation.line(target), let leaf = tab.root.allGroups.first,
-      let file = configuredCenterModel(leafId: leaf.id).pane(for: pane) as? FilePane
-    {
-      file.model.editor.goToLine(line)
-    }
+    let file = tab.root.allGroups.first.flatMap { configuredCenterModel(leafId: $0.id).pane(for: pane) as? FilePane }
+    file?.model.editor.reveal(target, rendered: rendered)
     focusSelectedCenterPane()
     return true
   }

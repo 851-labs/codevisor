@@ -6,11 +6,15 @@ extension EnvironmentValues {
 }
 
 public struct OpenFileDocumentAction: Sendable {
-  private let handler: @MainActor @Sendable (_ target: String) -> Bool
+  private let handler: @MainActor @Sendable (_ target: String, _ rendered: Bool) -> Bool
 
-  public init(_ handler: @escaping @MainActor @Sendable (_ target: String) -> Bool) { self.handler = handler }
+  public init(_ handler: @escaping @MainActor @Sendable (_ target: String, _ rendered: Bool) -> Bool) {
+    self.handler = handler
+  }
 
-  @MainActor @discardableResult public func callAsFunction(_ target: String) -> Bool { handler(target) }
+  @MainActor @discardableResult public func callAsFunction(_ target: String, rendered: Bool = false) -> Bool {
+    handler(target, rendered)
+  }
 }
 
 public struct FilePaneView: View {
@@ -108,17 +112,24 @@ public struct FilePaneView: View {
           .opacity(model.editor.preview ? 0 : 1)
           .allowsHitTesting(!model.editor.preview)
           .accessibilityHidden(model.editor.preview)
-        if model.editor.preview {
-          FileMarkdownPreview(document: document, client: model.client) { target in
-            if openFile?(target) == true { return true }
-            guard let path = FileDocumentLocation.resolve(target, relativeTo: model.rootPath) else { return false }
-            model.navigate(to: path)
-            if let line = FileDocumentLocation.line(target) { model.editor.goToLine(line) }
-            return true
-          }
+        if model.editor.preview && document.isHTML {
+          FileHTMLPreview(
+            document: document, rootPath: model.rootPath, client: model.client, openFile: openLocalFile,
+            openWebLink: { model.onOpenWebLink?($0) == true })
+        } else if model.editor.preview {
+          FileMarkdownPreview(document: document, client: model.client, openFile: openLocalFile)
         }
       }
     }
+  }
+
+  private func openLocalFile(_ target: String) -> Bool {
+    let rendered = FileDocumentLocation.opensRendered(target)
+    if openFile?(target, rendered: rendered) == true { return true }
+    guard let path = FileDocumentLocation.resolve(target, relativeTo: model.rootPath) else { return false }
+    model.navigate(to: path)
+    model.editor.reveal(target, rendered: rendered)
+    return true
   }
 
 }

@@ -31,6 +31,17 @@ public enum FileDocumentLocation {
     }
   }
 
+  public static func isHTML(_ path: String) -> Bool {
+    ["html", "htm"].contains((path as NSString).pathExtension.lowercased())
+  }
+
+  public static func hasPreview(_ path: String) -> Bool { MarkdownDocumentPath.isMarkdown(path) || isHTML(path) }
+
+  static func opensRendered(_ target: String) -> Bool {
+    guard line(target) == nil, let path = resolve(target, relativeTo: "/") else { return false }
+    return hasPreview(name(path))
+  }
+
   public static func line(_ target: String) -> Int? {
     guard let range = target.range(of: #"(?::\d+(?::\d+)?|#L\d+(?:-L?\d+)?)$"#, options: .regularExpression) else {
       return nil

@@ -99,7 +99,7 @@ struct SessionContainerView: View {
       .focusedSceneValue(\.filePane, activeFileModel)
       .focusedSceneValue(\.simulatorPane, activeSimulatorModel)
       .focusedSceneValue(\.workspaceLayoutActions, layoutActions(in: workspace))
-      .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
+      .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0, rendered: $1) })
       .environment(
         \.openSubagent,
         OpenSubagentAction { parentId, toolCallId, title, placement in

@@ -23,6 +23,13 @@ struct FileEditorSessionTests {
     #expect(FileDocumentLocation.line(target) == 8)
   }
 
+  @Test func previewLinksOpenMarkdownAndHTMLRenderedUnlessTheyNameALine() {
+    #expect(FileDocumentLocation.opensRendered("/docs/guide.md"))
+    #expect(FileDocumentLocation.opensRendered("/site/about.html#team"))
+    #expect(!FileDocumentLocation.opensRendered("/docs/guide.md#L3"))
+    #expect(!FileDocumentLocation.opensRendered("/site/style.css"))
+  }
+
   @Test func panesShareContentButKeepIndependentPresentationAndSelection() async {
     let document = document()
     await document.refresh()

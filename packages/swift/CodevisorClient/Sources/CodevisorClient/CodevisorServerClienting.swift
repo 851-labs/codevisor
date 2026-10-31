@@ -276,6 +276,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
   func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing
   func searchFileEntries(path: String, query: String) async throws -> ServerFileSearch
   func documentData(path: String) async throws -> Data
+  func documentContents(path: String) async throws -> ServerFileContents
+  func documentVersion(path: String) async throws -> String?
   func gitDiff(path: String, mode: ServerGitDiffMode, base: String?, revision: String?) async throws -> ServerGitDiff
   func gitRefs(path: String) async throws -> ServerGitRefs
   func gitPullRequest(path: String) async throws -> ServerGitPullRequest?

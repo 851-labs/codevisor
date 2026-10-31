@@ -57,6 +57,10 @@ extension CodevisorServerClient {
       body: nil,
       contentType: nil
     )
+    return Self.fileVersion(of: response)
+  }
+
+  static func fileVersion(of response: HTTPURLResponse) -> String? {
     if let etag = response.value(forHTTPHeaderField: "ETag"), !etag.isEmpty {
       return etag
     }

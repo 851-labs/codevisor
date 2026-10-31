@@ -17,6 +17,10 @@ extension WorkspaceScreen {
     if let path = pane.documentPath, path != model.path { model.navigate(to: path, notify: false) }
     model.onNavigate = { navigateFile(pane, to: $0) }
     model.onClose = { close(pane) }
+    model.onOpenWebLink = { url in
+      openBrowserLink(from: pane.id, url: url, configuration: nil, foreground: true)
+      return true
+    }
     return model
   }
 
@@ -32,10 +36,10 @@ extension WorkspaceScreen {
     publishPane(pane)
   }
 
-  func openFileDocument(_ target: String) -> Bool {
+  func openFileDocument(_ target: String, rendered: Bool = false) -> Bool {
     guard let path = FileDocumentLocation.resolve(target, relativeTo: workspaceCwd) else { return false }
     if let existing = panes.panes.first(where: { $0.kind == .document && $0.documentPath == path }) {
-      if let line = FileDocumentLocation.line(target) { filePaneModel(for: existing).editor.goToLine(line) }
+      filePaneModel(for: existing).editor.reveal(target, rendered: rendered)
       select(existing)
       return true
     }
@@ -47,7 +51,7 @@ extension WorkspaceScreen {
     state.selectedPaneId = id
     paneBinding.wrappedValue = state
     publishPane(pane)
-    if let line = FileDocumentLocation.line(target) { filePaneModel(for: pane).editor.goToLine(line) }
+    filePaneModel(for: pane).editor.reveal(target, rendered: rendered)
     return true
   }
 

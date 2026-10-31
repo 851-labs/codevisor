@@ -20,6 +20,7 @@ public final class FilePaneModel {
   public private(set) var explorerFocusRequests = 0
   @ObservationIgnored public var onNavigate: ((String) -> Void)?
   @ObservationIgnored public var onClose: (() -> Void)?
+  @ObservationIgnored public var onOpenWebLink: ((URL) -> Bool)?
   @ObservationIgnored private var pathSeenOnDisk: String?
   @ObservationIgnored private let sessions: FileEditorSessions
   @ObservationIgnored let recents: FileRecents

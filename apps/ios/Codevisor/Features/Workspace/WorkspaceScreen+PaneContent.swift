@@ -63,7 +63,7 @@ extension WorkspaceScreen {
       screenSharingPaneModel: { screenSharingPaneModel(for: $0) },
       onRenamePane: { renamePane($0, to: $1) }
     )
-    .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
+    .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0, rendered: $1) })
     .environment(\.openSubagent, openSubagentAction)
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])
   }

@@ -30,6 +30,8 @@ public final class FileDocumentModel {
 
   public var isEditable: Bool { snapshot?.writable == true }
   public var isMarkdown: Bool { MarkdownDocumentPath.isMarkdown(name) }
+  public var isHTML: Bool { FileDocumentLocation.isHTML(name) }
+  public var hasPreview: Bool { FileDocumentLocation.hasPreview(name) }
   public var name: String { FileDocumentLocation.name(path) }
 
   struct Draft: Codable, Sendable {
