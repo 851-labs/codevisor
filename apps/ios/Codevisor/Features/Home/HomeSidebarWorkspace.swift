@@ -15,6 +15,7 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
   var primaryRowId: UUID? = nil
   var isPinned = false
   var isArchived = false
+  var sectionSlot: WorkspaceSectionPlacement? = nil
   let rows: [HomeSidebarTabRow]
   var children: [HomeSidebarWorkspace] = []
 
@@ -34,6 +35,12 @@ struct HomeSidebarWorkspace: Identifiable, Equatable {
 
   var workspace: HomeSidebarWorkspaceRef {
     HomeSidebarWorkspaceRef(id: id, serverId: serverId, anchorSessionId: anchorSessionId)
+  }
+
+  func placed(in slot: WorkspaceSectionPlacement) -> Self {
+    var placed = self
+    placed.sectionSlot = slot
+    return placed
   }
 }
 
@@ -98,8 +105,17 @@ struct HomeSidebarContent: Equatable {
     let workspaces: [HomeSidebarWorkspace]
   }
 
+  struct SectionGroup: Identifiable, Equatable {
+    let section: CustomSection
+    let workspaces: [HomeSidebarWorkspace]
+
+    var id: UUID { section.id }
+    var collapseID: String { SidebarWorkspaceGroup.customSectionID(section.id) }
+  }
+
   var listTitle = SidebarGrouping.flat.listTitle
   var pinned: [HomeSidebarWorkspace] = []
+  var sections: [SectionGroup] = []
   var groups: [Group] = []
   var archived: [HomeSidebarWorkspace] = []
   var archivedCount = 0
@@ -108,13 +124,19 @@ struct HomeSidebarContent: Equatable {
 
   var showsBots: Bool { !bots.isEmpty || canCreateBots }
 
+  var customSections: [CustomSection] { sections.map(\.section) }
+
+  var listedWorkspaces: [HomeSidebarWorkspace] {
+    pinned + sections.flatMap(\.workspaces) + groups.flatMap(\.workspaces)
+  }
+
   var layout: [UUID] {
     bots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) }
-      + (pinned + groups.flatMap(\.workspaces)).flatMap(\.subtree).map(\.id) + archived.map(\.id)
+      + listedWorkspaces.flatMap(\.subtree).map(\.id) + archived.map(\.id)
   }
 
   private var openWorkspaces: [HomeSidebarWorkspace] {
-    bots.compactMap(\.home) + (bots.flatMap(\.children) + pinned + groups.flatMap(\.workspaces)).flatMap(\.subtree)
+    bots.compactMap(\.home) + (bots.flatMap(\.children) + listedWorkspaces).flatMap(\.subtree)
   }
 
   func bot(_ id: UUID) -> HomeSidebarBot? {
@@ -149,28 +171,42 @@ struct HomeSidebarContent: Equatable {
     preferences: HomeSidebarPreferences,
     projects: [Project],
     defaultServerId: String,
+    sections: [CustomSection] = [],
+    membership: [UUID: UUID] = [:],
     machineGroup: (String) -> SidebarMachineGroup,
     workspace: (WorkspaceSidebarItem, Placement) -> HomeSidebarWorkspace?
   ) -> HomeSidebarContent {
     let groups = SidebarWorkspaceGroup.groups(
       listed, grouping: preferences.grouping, pinnedIDs: preferences.pinnedIDs, projects: projects,
       defaultServerId: defaultServerId, machineOrder: preferences.machineOrder,
-      projectOrder: preferences.projectOrder, machineGroup: machineGroup
+      projectOrder: preferences.projectOrder, sections: sections, membership: membership, machineGroup: machineGroup
     )
     var content = HomeSidebarContent(listTitle: preferences.grouping.listTitle)
     for group in groups {
+      let workspaces = group.items.compactMap { item in
+        nesting(item, children: children) { workspace($0, placement(of: group)) }
+      }
       if group.id == SidebarWorkspaceGroup.pinnedID {
-        content.pinned = group.items.compactMap { nesting($0, children: children) { workspace($0, .pinned) } }
+        content.pinned = workspaces.map { $0.placed(in: pinnedPlacement(of: $0.id, membership: membership)) }
+      } else if let section = group.customSection {
+        content.sections.append(
+          SectionGroup(section: section, workspaces: workspaces.map { $0.placed(in: .section(section.id)) }))
       } else {
-        let workspaces = group.items.compactMap {
-          nesting($0, children: children) { workspace($0, .list(group.heading)) }
-        }
-        content.groups.append(Group(id: group.id, heading: group.heading, workspaces: workspaces))
+        content.groups.append(
+          Group(id: group.id, heading: group.heading, workspaces: workspaces.map { $0.placed(in: .unsectioned) }))
       }
     }
     let archivedWorkspaces = archived.compactMap { workspace($0, .archived) }
     content.archived = Array(archivedWorkspaces.prefix(preferences.archivedLimit))
     content.archivedCount = archivedWorkspaces.count
     return content
+  }
+
+  private static func pinnedPlacement(of id: UUID, membership: [UUID: UUID]) -> WorkspaceSectionPlacement {
+    membership[id].map(WorkspaceSectionPlacement.section) ?? .unsectioned
+  }
+
+  private static func placement(of group: SidebarWorkspaceGroup) -> Placement {
+    group.id == SidebarWorkspaceGroup.pinnedID ? .pinned : .list(group.heading)
   }
 }

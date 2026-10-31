@@ -27,11 +27,21 @@ extension HomeView {
         withSidebarReflow {
           environment.archiveWorkspace(workspace)
           pinnedWorkspaceIDs.removeAll { $0 == ref.id.uuidString }
+          environment.workspaceSections.forget(ref.id)
         }
       },
       restoreWorkspace: { ref in
         guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
         withSidebarReflow { environment.unarchiveWorkspace(workspace) }
+      },
+      moveToSection: { ref, sectionID in
+        withSidebarReflow { environment.workspaceSections.move(ref.id, to: sectionID) }
+      },
+      newSection: { ref in sectionPrompt = .create(moving: ref?.id) },
+      renameSection: { section in sectionPrompt = .rename(section) },
+      deleteSection: { section in withSidebarReflow { deleteSection(section) } },
+      moveSection: { id, index in
+        withSidebarReflow { environment.workspaceSections.moveSection(id, toIndex: index) }
       },
       reorder: { id, index, group in commitWorkspaceMove(id, toIndex: index, within: group) },
       moveTab: { tabId, successor, workspace in
@@ -96,6 +106,11 @@ extension HomeView {
         preferredPaneId: nil
       )
     )
+  }
+
+  private func deleteSection(_ section: CustomSection) {
+    environment.workspaceSections.delete(section.id)
+    collapsedGroupIDs.removeAll { $0 == SidebarWorkspaceGroup.customSectionID(section.id) }
   }
 
   private func togglePin(_ id: UUID) {

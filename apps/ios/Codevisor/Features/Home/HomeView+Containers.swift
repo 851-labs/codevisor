@@ -30,6 +30,7 @@ extension HomeView {
       }
     } else {
       refreshableNavigationContent
+        .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
     }
   }
 

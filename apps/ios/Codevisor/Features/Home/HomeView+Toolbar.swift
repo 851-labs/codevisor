@@ -16,7 +16,11 @@ extension HomeView {
       }
     }
     if hasRemoteMachines || showsSampleSidebar {
-      ToolbarItem(placement: .topBarTrailing) { HomeSidebarOptionsMenu() }
+      ToolbarItem(placement: .topBarTrailing) {
+        HomeSidebarOptionsMenu(
+          sections: environment.workspaceSections.sections, actions: sidebarActions,
+          managesSections: !showsSampleSidebar)
+      }
     }
     if syncIndicator.isSyncing, failedSyncMachines.isEmpty {
       ToolbarItem(placement: .principal) {

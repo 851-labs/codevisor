@@ -1,31 +1,32 @@
 import CodevisorCore
+import Foundation
 
-enum SectionPrompt: Identifiable {
+public enum SectionPrompt: Identifiable, Equatable, Sendable {
   case create(moving: UUID?)
   case rename(CustomSection)
 
-  var id: String {
+  public var id: String {
     switch self {
     case .create: "create"
     case let .rename(section): "rename:\(section.id)"
     }
   }
 
-  var title: String {
+  public var title: String {
     switch self {
     case .create: "New Section"
     case .rename: "Rename Section"
     }
   }
 
-  var confirmTitle: String {
+  public var confirmTitle: String {
     switch self {
     case .create: "Create"
     case .rename: "Rename"
     }
   }
 
-  var initialName: String {
+  public var initialName: String {
     switch self {
     case .create: ""
     case let .rename(section): section.name

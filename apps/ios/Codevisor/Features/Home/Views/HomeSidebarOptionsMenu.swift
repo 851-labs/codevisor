@@ -3,10 +3,17 @@ import CodevisorUI
 import SwiftUI
 
 struct HomeSidebarOptionsMenu: View {
+  let sections: [CustomSection]
+  let actions: HomeSidebarActions
+  var managesSections = true
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
 
   var body: some View {
     Menu {
+      if managesSections {
+        HomeSidebarSectionsMenu(sections: sections, actions: actions)
+        Divider()
+      }
       Picker(selection: $grouping) {
         ForEach(SidebarGrouping.allCases, id: \.self) { option in
           Text(option.title).tag(option)

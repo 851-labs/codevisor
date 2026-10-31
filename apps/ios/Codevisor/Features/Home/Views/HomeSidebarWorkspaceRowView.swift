@@ -9,11 +9,13 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
   let workspace: HomeSidebarWorkspace
   let actions: HomeSidebarActionHandler
   var isSelectionRow = false
+  var sections: [CustomSection] = []
 
   @State private var confirmsRestore = false
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.workspace == rhs.workspace && lhs.actions === rhs.actions && lhs.isSelectionRow == rhs.isSelectionRow
+      && lhs.sections == rhs.sections
   }
 
   private var ref: HomeSidebarWorkspaceRef { workspace.workspace }
@@ -121,6 +123,12 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
       }
       Button(action: onRename) {
         Label("Rename", systemImage: "pencil")
+      }
+      if let slot = workspace.sectionSlot {
+        Divider()
+        MoveToSectionMenu(
+          currentSectionID: slot.sectionID, sections: sections,
+          move: { actions.actions.moveToSection(ref, $0) }, newSection: { actions.actions.newSection(ref) })
       }
       Divider()
       Button(action: onArchive) {

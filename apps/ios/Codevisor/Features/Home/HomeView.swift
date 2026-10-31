@@ -48,9 +48,11 @@ struct HomeView: View {
   @State var workspaceRenameTitle = ""
   @State var renamingTab: HomeTabRenameRequest?
   @State var tabRenameTitle = ""
+  @State var sectionPrompt: SectionPrompt?
   @State var sidebarActionHandler = HomeSidebarActionHandler(HomeSidebarActions())
   @State var sidebarGitLookups = SidebarGitLookups()
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
+  @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
   @State var navigationPresentation: HomeNavigationPresentation?
   @State var hostWindow = WeakWindow()
   #if DEBUG || NAVIGATION_DIAGNOSTICS
