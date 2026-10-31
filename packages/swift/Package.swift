@@ -71,7 +71,7 @@ let package = Package(
     ),
     .testTarget(
       name: "ScreenSharingV2Tests",
-      dependencies: ["ScreenSharingV2", "ScreenSharing"],
+      dependencies: ["ScreenSharingV2", "ScreenSharing", "CodevisorTestSupport"],
       path: "ScreenSharing/Tests/ScreenSharingV2Tests",
       swiftSettings: strictSwiftSettings
     ),
