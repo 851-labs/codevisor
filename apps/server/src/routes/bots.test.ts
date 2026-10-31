@@ -7,7 +7,7 @@ import { worktreeTrashQueue } from "@codevisor/worktrees"
 import { Effect, Schema } from "effect"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { jsonRequest, listEvents } from "../test-support.js"
+import { jsonRequest, listEvents, waitFor } from "../test-support.js"
 import { createBot, decodeBot, git, listBots, listProjects, setUp } from "./bot-test-support.js"
 
 describe("bot routes", () => {
@@ -260,6 +260,39 @@ describe("bot routes", () => {
       method: "PATCH"
     })
     expect(missing.status).toBe(404)
+  })
+
+  it("switches a bot's conversation mode, rewrites its instructions, and tells the bot", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const plain = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
+    const prompts = () =>
+      running.agents.prompts.map(([, input]) => (typeof input === "string" ? input : input.text))
+    const setConversational = (conversational: boolean) =>
+      jsonRequest(running.server, `/v1/bots/${bot.id}`, {
+        body: JSON.stringify({ conversational }),
+        method: "PATCH"
+      })
+
+    const turnedOn = await setConversational(true)
+
+    expect(decodeBot(turnedOn.body)).toMatchObject({ name: bot.name, conversational: true })
+    expect(await listBots(running)).toEqual([decodeBot(turnedOn.body)])
+    const conversational = readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")
+    expect(conversational).toContain("## Talking to the user")
+    expect(conversational).toContain("Codevisor sends you a `<codevisor-event>`")
+    await waitFor(() => prompts().length === 1)
+    expect(prompts()[0]).toContain('<codevisor-event type="bot.conversation_mode_changed">')
+    expect(prompts()[0]).toContain("turned on conversation mode")
+
+    await setConversational(true)
+    const turnedOff = await setConversational(false)
+
+    expect(decodeBot(turnedOff.body).conversational).toBe(false)
+    expect(readFileSync(join(bot.rootPath, "AGENTS.md"), "utf8")).toBe(plain)
+    await waitFor(() => prompts().length === 2)
+    expect(prompts()[1]).toContain("turned off conversation mode")
   })
 
   it("protects a bot's projects, workspace, and chat until the bot is deleted", async () => {

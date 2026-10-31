@@ -34,6 +34,7 @@ public final class BotEditorModel {
       name = bot.name
       symbolName = bot.symbolName
       serverId = bot.serverId
+      isConversational = bot.isConversational
     }
   }
 
@@ -151,7 +152,10 @@ public final class BotEditorModel {
     defer { isSaving = false }
     do {
       if let bot = editedBot {
-        try await environment.bots.update(bot, ServerUpdateBotRequest(name: trimmedName, symbolName: symbolName))
+        try await environment.bots.update(
+          bot,
+          ServerUpdateBotRequest(name: trimmedName, symbolName: symbolName, conversational: isConversational)
+        )
       } else {
         guard let models, let harnessId = models.harnessId else { return false }
         createdBot = try await environment.bots.create(

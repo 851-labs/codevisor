@@ -49,8 +49,8 @@ struct BotEditorSheet: View {
         editedBotModelSection(bot)
       } else {
         modelSection
-        conversationSection
       }
+      conversationSection
       if let errorMessage = editor.errorMessage {
         Section {
           Text(errorMessage)

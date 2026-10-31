@@ -105,6 +105,7 @@ export const makeBotsService = (
           .run(
             record.name ?? current.name,
             record.symbolName ?? current.symbolName,
+            (record.conversational ?? current.conversational) ? 1 : 0,
             isoTimestamp(),
             current.id
           )
@@ -223,7 +224,8 @@ const botSql = {
                 id, server_id, name, symbol_name, slug, project_id, session_id, workspace_id,
                 conversational, created_at
               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  update: "update bots set name = ?, symbol_name = ?, updated_at = ? where id = ?",
+  update:
+    "update bots set name = ?, symbol_name = ?, conversational = ?, updated_at = ? where id = ?",
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

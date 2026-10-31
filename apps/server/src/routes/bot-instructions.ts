@@ -198,6 +198,13 @@ export const writeInstructions = (
   )
 }
 
+export const switchInstructionsMode = (rootPath: string, conversational: boolean): void => {
+  const path = join(rootPath, "AGENTS.md")
+  try {
+    writeFileSync(path, upgradeBotInstructions(readFileSync(path, "utf8"), conversational))
+  } catch {}
+}
+
 export const renameInstructions = (rootPath: string, name: string): void => {
   const path = join(rootPath, "AGENTS.md")
   try {

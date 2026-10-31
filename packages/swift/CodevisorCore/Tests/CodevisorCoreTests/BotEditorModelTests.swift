@@ -6,7 +6,7 @@ import Testing
 @MainActor
 @Suite("BotEditorModel")
 struct BotEditorModelTests {
-  @Test("Editing a bot starts from its name and icon and only needs a name to save")
+  @Test("Editing a bot starts from its name, icon, and conversation mode and only needs a name to save")
   func editingNeedsOnlyAName() throws {
     let environment = AppEnvironment.preview(seedProjects: [], seedSessions: [])
     let bot = try #require(Bot(serverId: CodevisorMachine.local.id, record: .fixture(name: "Helper")))
@@ -14,6 +14,7 @@ struct BotEditorModelTests {
 
     #expect(editor.name == "Helper")
     #expect(editor.symbolName == bot.symbolName)
+    #expect(!editor.isConversational)
     #expect(editor.canSave)
     editor.name = "   "
     #expect(!editor.canSave)

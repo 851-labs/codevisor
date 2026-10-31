@@ -23,8 +23,8 @@ import {
   type RouteState
 } from "../server-context.js"
 import { createBot } from "./bot-create.js"
-import { renameInstructions } from "./bot-instructions.js"
-import { removeBotCheckout, routeBotProjects } from "./bot-projects.js"
+import { renameInstructions, switchInstructionsMode } from "./bot-instructions.js"
+import { removeBotCheckout, routeBotProjects, tellBot } from "./bot-projects.js"
 import { applySessionUpdate } from "./session-workspace.js"
 
 const getBotOrFail = async (services: CodevisorServerServices, id: string): Promise<Bot> => {
@@ -33,9 +33,22 @@ const getBotOrFail = async (services: CodevisorServerServices, id: string): Prom
   return bot
 }
 
+const conversationModeNotice = (conversational: boolean): string =>
+  conversational
+    ? "The user turned on conversation mode for this bot. They now see only the messages you " +
+      "send with `machines.current.tools.codevisor.messages.send`, not your replies, and " +
+      "Codevisor sends you a `<codevisor-event>` when each of your agents finishes. AGENTS.md " +
+      "has the updated instructions; read it and the `codevisor-messages` skill before you reply."
+    : "The user turned off conversation mode for this bot. They now read your replies directly, " +
+      "so answer in your final reply instead of with `messages.send`, and follow up on your " +
+      "agents with `agents.status` or `agents.wait` instead of waiting for a " +
+      "`<codevisor-event>`. AGENTS.md has the updated instructions."
+
 const updateBot = async (
   services: CodevisorServerServices,
+  config: CodevisorServerConfig,
   fanout: EventFanout,
+  routeState: RouteState,
   id: string,
   request: IncomingMessage,
   response: ServerResponse
@@ -44,7 +57,13 @@ const updateBot = async (
   const current = await getBotOrFail(services, id)
   const name = payload.name?.trim()
   if (name !== undefined && name.length === 0) throw new HttpFailure(422, "A bot needs a name")
-  const bot = await run(services.db.updateBot(current.id, { name, symbolName: payload.symbolName }))
+  const bot = await run(
+    services.db.updateBot(current.id, {
+      name,
+      symbolName: payload.symbolName,
+      conversational: payload.conversational
+    })
+  )
   if (name !== undefined && name !== current.name) {
     await applySessionUpdate(services, fanout, bot.sessionId, {
       title: name,
@@ -55,6 +74,18 @@ const updateBot = async (
     const workspace = await run(services.db.updateWorkspace(bot.workspaceId, { name }))
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
     renameInstructions(bot.rootPath, name)
+  }
+  if (bot.conversational !== current.conversational) {
+    switchInstructionsMode(bot.rootPath, bot.conversational)
+    await tellBot(
+      services,
+      fanout,
+      routeState,
+      config.id,
+      bot,
+      "bot.conversation_mode_changed",
+      conversationModeNotice(bot.conversational)
+    ).catch(swallowError)
   }
   await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
   writeJson(response, 200, bot)
@@ -137,7 +168,9 @@ export const routeBots = async (
   }
   const botId = matchRoute(url.pathname, "/v1/bots/:id")
   if (botId === undefined) return false
-  if (request.method === "PATCH") return updateBot(services, fanout, botId, request, response)
+  if (request.method === "PATCH") {
+    return updateBot(services, config, fanout, routeState, botId, request, response)
+  }
   if (request.method === "DELETE") {
     return deleteBot(services, config, fanout, routeState, botId, response)
   }

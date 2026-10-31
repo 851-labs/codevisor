@@ -43,6 +43,7 @@ struct BotEditorView: View {
         projectsSection
         if let bot = editor.editedBot {
           editedBotModelSection(bot)
+          conversationSection
           deleteSection(bot)
         } else {
           modelSection

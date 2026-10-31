@@ -40,7 +40,8 @@ export type CreateBotRequest = typeof CreateBotRequest.Type
 
 export const UpdateBotRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
-  symbolName: Schema.optional(Schema.String)
+  symbolName: Schema.optional(Schema.String),
+  conversational: Schema.optional(Schema.Boolean)
 })
 export type UpdateBotRequest = typeof UpdateBotRequest.Type
 

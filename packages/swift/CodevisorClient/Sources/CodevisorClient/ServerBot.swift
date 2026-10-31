@@ -99,9 +99,11 @@ public struct ServerAddBotProjectRequest: Encodable, Equatable, Sendable {
 public struct ServerUpdateBotRequest: Encodable, Equatable, Sendable {
   public var name: String?
   public var symbolName: String?
+  public var conversational: Bool?
 
-  public init(name: String? = nil, symbolName: String? = nil) {
+  public init(name: String? = nil, symbolName: String? = nil, conversational: Bool? = nil) {
     self.name = name
     self.symbolName = symbolName
+    self.conversational = conversational
   }
 }

@@ -154,15 +154,16 @@ const removeProject = async (
   }
 }
 
-const tellBot = async (
+export const tellBot = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
   serverId: string,
   bot: Bot,
+  type: string,
   notice: string
 ): Promise<void> => {
-  const event = [`<codevisor-event type="bot.projects_changed">`, notice, "</codevisor-event>"]
+  const event = [`<codevisor-event type="${type}">`, notice, "</codevisor-event>"]
   await run(
     services.db.createPromptQueueItem(
       bot.sessionId,
@@ -199,9 +200,15 @@ const applyChange = async (
       id: result.bot.id
     })
     if (!target.byBot) {
-      await tellBot(services, fanout, routeState, config.id, result.bot, result.notice).catch(
-        swallowError
-      )
+      await tellBot(
+        services,
+        fanout,
+        routeState,
+        config.id,
+        result.bot,
+        "bot.projects_changed",
+        result.notice
+      ).catch(swallowError)
     }
   }
   writeJson(response, 200, result.bot)

@@ -104,6 +104,7 @@ export interface CreateBotRecord {
 export interface UpdateBotRecord {
   readonly name?: string | undefined
   readonly symbolName?: string | undefined
+  readonly conversational?: boolean | undefined
 }
 
 export interface BotOwnerQuery {
