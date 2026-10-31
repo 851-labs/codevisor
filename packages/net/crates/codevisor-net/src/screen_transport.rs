@@ -9,7 +9,7 @@ use iroh::endpoint::{AckFrequencyConfig, Controller, ControllerFactory, QuicTran
 pub const DATAGRAM_SEND_BUFFER: usize = 256 * 1024;
 pub const DATAGRAM_RECEIVE_BUFFER: usize = 2 * 1024 * 1024;
 pub const INITIAL_RTT: Duration = Duration::from_millis(100);
-pub const ACK_ELICITING_THRESHOLD: u32 = 16;
+pub const ACK_ELICITING_THRESHOLD: u32 = 32;
 pub const MAX_ACK_DELAY: Duration = Duration::from_millis(2);
 
 pub fn transport_config() -> QuicTransportConfig {
