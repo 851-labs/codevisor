@@ -565,6 +565,7 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
         packets_retransmitted: after.packets_retransmitted - before.packets_retransmitted,
         parity_packets_sent: after.parity_packets_sent - before.parity_packets_sent,
         probes_sent: after.probes_sent - before.probes_sent,
+        transport_rejected: after.transport_rejected - before.transport_rejected,
         ..after
     };
     measured

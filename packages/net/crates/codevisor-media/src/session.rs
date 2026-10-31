@@ -4,7 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
 use bytes::Bytes;
 use tokio::{
     sync::{Mutex as AsyncMutex, Notify, mpsc},
@@ -14,7 +13,7 @@ use tokio::{
 use crate::{
     core::Core,
     transport::{DatagramTransport, QuicTransport, SendOutcome},
-    types::{Admission, Event, MediaConfig, OutgoingFrame, Stats},
+    types::{Admission, Event, MediaConfig, OutgoingFrame, SendError, Stats},
 };
 
 /// How often the connection's round-trip estimate is copied into the core.
@@ -73,7 +72,7 @@ impl<T: DatagramTransport> MediaSession<T> {
 
     /// Host: packetizes one encoded tile and queues it for the session's task to send. Returns the frame's number
     /// within its stream.
-    pub fn send_frame(&self, frame: OutgoingFrame<'_>) -> Result<u32> {
+    pub fn send_frame(&self, frame: OutgoingFrame<'_>) -> Result<u32, SendError> {
         let now = now();
         let mut state = self.shared.state.lock().unwrap();
         state.core.set_max_datagram_size(self.shared.transport.max_datagram_size());
@@ -187,6 +186,7 @@ impl<T: DatagramTransport> Shared<T> {
         self.pump(now);
         // Timers already due run now rather than on tokio's next 1 ms tick (a NACK waits on this).
         let mut state = self.state.lock().unwrap();
+        let mut now = now;
         for _ in 0..DUE_ROUNDS {
             if !state.core.poll_timeout(now).is_some_and(|next| next <= now) || !state.held.is_empty() {
                 break;
@@ -195,6 +195,7 @@ impl<T: DatagramTransport> Shared<T> {
             drop(state);
             self.pump(now);
             state = self.state.lock().unwrap();
+            now = self::now();
         }
         let next = state.core.poll_timeout(now);
         if !state.held.is_empty() {

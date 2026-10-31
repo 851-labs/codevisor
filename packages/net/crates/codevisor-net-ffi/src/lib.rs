@@ -299,17 +299,6 @@ pub struct MediaBytes {
     bytes: bytes::Bytes,
 }
 
-#[uniffi::export]
-impl MediaBytes {
-    pub fn len(&self) -> u64 {
-        self.bytes.len() as u64
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
-    }
-}
-
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaRecovery {
     None,
@@ -491,20 +480,24 @@ impl MediaSessionHandle {
 
 // The frame path's C ABI (declared in `include/codevisor_media.h`, wrapped in CodevisorNet's `MediaFastPath.swift`):
 // uniffi copies a `Data` argument byte by byte, which measured 1–4 ms per 64 KiB–1 MiB frame on the minis, past the
-// design's 0.2 ms bar. Handles are uniffi object handles (`uniffiCloneHandle()`), each consumed by the call.
+// design's 0.2 ms bar. Handles are uniffi object handles (`uniffiCloneHandle()`), each consumed by the call. Panics
+// are caught, because unwinding out of an `extern "C"` function aborts the app.
 
-fn borrowed<'a>(pointer: *const u8, len: usize) -> &'a [u8] {
+fn borrowed<'a>(pointer: *const std::ffi::c_void, len: usize) -> &'a [u8] {
     if len == 0 || pointer.is_null() {
         &[]
     } else {
         // SAFETY: the caller passes `len` readable bytes that outlive the call.
-        unsafe { std::slice::from_raw_parts(pointer, len) }
+        unsafe { std::slice::from_raw_parts(pointer.cast(), len) }
     }
 }
 
-/// Host: sends one encoded tile from the caller's memory, copied once into packets before this returns. Returns
-/// the frame's number within its stream, or -1 when the frame can't be sent (the connection doesn't carry
-/// datagrams, or the frame or its metadata is too large).
+/// `codevisor_media_send_frame` failed for a reason the Swift side can't fix by retrying.
+const SEND_PANICKED: i64 = -5;
+
+/// Host: sends one encoded tile from the caller's memory, copied before this returns. Returns the frame's number
+/// within its stream, or a negative error: -1 the connection doesn't carry datagrams, -2 its datagrams can't hold a
+/// media header, -3 the metadata is over 64 KiB, -4 the frame needs more than 65 535 packets, -5 an internal failure.
 ///
 /// # Safety
 ///
@@ -517,9 +510,9 @@ pub unsafe extern "C" fn codevisor_media_send_frame(
     keyframe: bool,
     has_ltr_token: bool,
     ltr_token: u64,
-    meta: *const u8,
+    meta: *const std::ffi::c_void,
     meta_len: usize,
-    data: *const u8,
+    data: *const std::ffi::c_void,
     data_len: usize,
 ) -> i64 {
     // SAFETY: a cloned uniffi handle is an `Arc::into_raw` pointer we now own.
@@ -531,18 +524,28 @@ pub unsafe extern "C" fn codevisor_media_send_frame(
         meta: borrowed(meta, meta_len),
         data: borrowed(data, data_len),
     };
-    session.inner.send_frame(frame).map_or(-1, i64::from)
+    let sent = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.inner.send_frame(frame)));
+    match sent {
+        Ok(Ok(number)) => i64::from(number),
+        Ok(Err(media::SendError::NoDatagrams)) => -1,
+        Ok(Err(media::SendError::PathTooSmall)) => -2,
+        Ok(Err(media::SendError::MetaTooLarge)) => -3,
+        Ok(Err(media::SendError::FrameTooLarge)) => -4,
+        Err(_) => SEND_PANICKED,
+    }
 }
 
-/// The bytes of a received frame, valid while the `MediaBytes` object they came from is alive.
+/// The bytes of a received frame (and their count, in `len`), valid while the `MediaBytes` object they came from is
+/// alive.
 ///
 /// # Safety
 ///
 /// `bytes` is a handle from `MediaBytes.uniffiCloneHandle()`, consumed here; `len` is writable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn codevisor_media_bytes(bytes: u64, len: *mut usize) -> *const u8 {
-    // SAFETY: as above; the caller's own `MediaBytes` keeps the allocation alive after this clone is dropped.
+pub unsafe extern "C" fn codevisor_media_bytes(bytes: u64, len: *mut usize) -> *const std::ffi::c_void {
+    // SAFETY: as above; the caller's own `MediaBytes` keeps the allocation alive after this clone is dropped. Nothing
+    // here can panic.
     let bytes = unsafe { Arc::from_raw(bytes as *const MediaBytes) };
     unsafe { *len = bytes.bytes.len() };
-    bytes.bytes.as_ptr()
+    bytes.bytes.as_ptr().cast()
 }

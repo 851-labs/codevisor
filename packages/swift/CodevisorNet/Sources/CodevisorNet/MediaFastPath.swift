@@ -7,14 +7,32 @@ import Foundation
 // The screen sharing media session's frame path (codevisor-media, 851-3815). Frames cross the Swift–Rust boundary
 // through a small C ABI with borrowed buffers instead of uniffi's byte-by-byte `Data` marshalling.
 
-/// `MediaSessionHandle.sendFrame` couldn't send a frame on this stream.
-public struct MediaSendError: Error, Equatable {
-  public let stream: UInt8
+/// Why `MediaSessionHandle.sendFrame` didn't send a frame.
+public enum MediaSendError: Error, Equatable {
+  /// The connection doesn't carry datagrams.
+  case noDatagrams
+  /// The path's datagrams can't hold a media header.
+  case pathTooSmall
+  /// The metadata is over 64 KiB.
+  case metaTooLarge
+  /// The frame needs more than 65 535 packets.
+  case frameTooLarge
+  case internalFailure
+
+  init(code: Int64) {
+    switch code {
+    case -1: self = .noDatagrams
+    case -2: self = .pathTooSmall
+    case -3: self = .metaTooLarge
+    case -4: self = .frameTooLarge
+    default: self = .internalFailure
+    }
+  }
 }
 
 extension MediaSessionHandle {
-  /// Host: sends one encoded tile, copied once into packets before this returns. Returns the frame's number within
-  /// its stream. Throws when the connection doesn't carry datagrams or the frame or its metadata is too large.
+  /// Host: sends one encoded tile, copied before this returns (so `data` is free again at once). Returns the frame's
+  /// number within its stream.
   @discardableResult
   public func sendFrame(
     stream: UInt8, keyframe: Bool, ltrToken: UInt64?, meta: Data = Data(), data: UnsafeRawBufferPointer
@@ -22,10 +40,9 @@ extension MediaSessionHandle {
     let number = meta.withUnsafeBytes { meta in
       codevisor_media_send_frame(
         uniffiCloneHandle(), stream, keyframe, ltrToken != nil, ltrToken ?? 0,
-        meta.bindMemory(to: UInt8.self).baseAddress, meta.count, data.bindMemory(to: UInt8.self).baseAddress, data.count
-      )
+        meta.baseAddress, meta.count, data.baseAddress, data.count)
     }
-    guard number >= 0 else { throw MediaSendError(stream: stream) }
+    guard number >= 0 else { throw MediaSendError(code: number) }
     return UInt32(number)
   }
 

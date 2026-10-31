@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, bail};
 use bytes::Bytes;
 use reed_solomon_simd::ReedSolomonEncoder;
 
@@ -14,7 +13,9 @@ use crate::{
     estimator::Estimator,
     fec::{self, Layout},
     pacer::{Pacer, PacketTag},
-    types::{Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, Stats, give_up_after},
+    types::{
+        Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, SendError, Stats, give_up_after,
+    },
     wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader},
 };
 
@@ -95,20 +96,20 @@ impl Sender {
         max_datagram: usize,
         events: &mut VecDeque<Event>,
         stats: &mut Stats,
-    ) -> Result<u32> {
+    ) -> Result<u32, SendError> {
         if frame.meta.len() > wire::MAX_META_BYTES {
-            bail!("frame metadata is {} bytes; the limit is {}", frame.meta.len(), wire::MAX_META_BYTES);
+            return Err(SendError::MetaTooLarge);
         }
-        let Some(max_shard) = max_datagram.checked_sub(wire::HEADER_BYTES) else {
-            bail!("datagrams of {max_datagram} bytes can't hold a media header");
-        };
+        let max_shard =
+            max_datagram.checked_sub(wire::HEADER_BYTES).filter(|shard| *shard >= 2).ok_or(SendError::PathTooSmall)?;
+        // The fields and the access unit become one payload (FEC protects both), then packets.
         let fields = FrameFields { keyframe: frame.keyframe, ltr_token: frame.ltr_token, meta: frame.meta.to_vec() };
         let payload = fields.payload(frame.data);
-        let frame_len = u32::try_from(payload.len()).ok().filter(|len| *len < u32::MAX);
-        let Some(frame_len) = frame_len else { bail!("a {}-byte frame is too large", payload.len()) };
-        let layout = Layout::for_payload(payload.len(), max_shard)?;
+        let frame_len =
+            u32::try_from(payload.len()).ok().filter(|len| *len < u32::MAX).ok_or(SendError::FrameTooLarge)?;
+        let layout = Layout::for_payload(payload.len(), max_shard).map_err(|_| SendError::FrameTooLarge)?;
         let parity_count = self.parity_count(now, layout.data_count);
-        let parity = fec::encode_parity(&payload, layout, parity_count)?;
+        let parity = fec::encode_parity(&payload, layout, parity_count).map_err(|_| SendError::FrameTooLarge)?;
 
         let stream = self.streams.entry(frame.stream).or_default();
         let number = stream.next_frame;

@@ -38,8 +38,8 @@ pub enum FecMode {
     Fixed(f64),
 }
 
-/// One access unit for [`crate::Core::send_frame`], borrowed: the transport copies it once, into its packets, so
-/// the encoder's buffer is free again when the call returns.
+/// One access unit for [`crate::Core::send_frame`], borrowed: the transport copies what it needs before the call
+/// returns, so the encoder's buffer is free again right away.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OutgoingFrame<'a> {
     pub stream: u8,
@@ -51,6 +51,32 @@ pub struct OutgoingFrame<'a> {
     pub meta: &'a [u8],
     pub data: &'a [u8],
 }
+
+/// Why a frame wasn't sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendError {
+    /// The connection doesn't carry datagrams.
+    NoDatagrams,
+    /// The path's datagrams can't hold a media header.
+    PathTooSmall,
+    /// The metadata is over 64 KiB.
+    MetaTooLarge,
+    /// The frame needs more packets than one frame may have (65 535) at the path's datagram size.
+    FrameTooLarge,
+}
+
+impl std::fmt::Display for SendError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::NoDatagrams => "the connection doesn't carry datagrams",
+            Self::PathTooSmall => "the path's datagrams can't hold a media header",
+            Self::MetaTooLarge => "frame metadata is over 64 KiB",
+            Self::FrameTooLarge => "the frame needs more than 65 535 packets",
+        })
+    }
+}
+
+impl std::error::Error for SendError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {

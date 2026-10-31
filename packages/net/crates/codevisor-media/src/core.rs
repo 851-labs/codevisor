@@ -3,13 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, bail};
 use bytes::Bytes;
 
 use crate::{
     receiver::Receiver,
     sender::Sender,
-    types::{Admission, Event, MediaConfig, OutgoingFrame, Stats},
+    types::{Admission, Event, MediaConfig, OutgoingFrame, SendError, Stats},
     wire::{self, Feedback, Kind, Nack, PacketHeader},
 };
 
@@ -52,8 +51,8 @@ impl Core {
     }
 
     /// Packetizes and queues one frame; returns its number within its stream.
-    pub fn send_frame(&mut self, now: Instant, frame: OutgoingFrame<'_>) -> Result<u32> {
-        let Some(max_datagram) = self.max_datagram else { bail!("the connection doesn't carry datagrams") };
+    pub fn send_frame(&mut self, now: Instant, frame: OutgoingFrame<'_>) -> Result<u32, SendError> {
+        let max_datagram = self.max_datagram.ok_or(SendError::NoDatagrams)?;
         self.sender.send_frame(now, frame, max_datagram, &mut self.events, &mut self.stats)
     }
 
