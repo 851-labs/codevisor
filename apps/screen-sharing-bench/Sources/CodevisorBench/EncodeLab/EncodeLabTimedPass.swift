@@ -27,7 +27,9 @@ struct EncodeLabTimedPass {
     }
   }
 
-  private func pace(source: EncodeLabFrameSource, encoder: any EncodeLabFrameEncoder) async throws
+  private func pace(
+    source: EncodeLabFrameSource, encoder: any EncodeLabFrameEncoder
+  ) async throws
     -> [EncodeLabFrameEvent]
   {
     var schedule = EncodeLabSchedule(
@@ -49,7 +51,8 @@ struct EncodeLabTimedPass {
       events.append(
         EncodeLabFrameEvent(
           frame: frame, version: step.version, tick: step.tick, scheduledNs: scheduledNs, preparedNs: preparedNs,
-          submittedNs: submission.submittedNs, returnedNs: submission.returnedNs, encodedTiles: prepared.inputs.keys.sorted(),
+          submittedNs: submission.submittedNs, returnedNs: submission.returnedNs,
+          encodedTiles: prepared.inputs.keys.sorted(),
           dirtyTiles: prepared.dirtyTiles.count, refresh: refresh, repeats: step.repeats))
     }
     return events

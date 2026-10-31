@@ -40,7 +40,8 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
   }
 
   var referenceFormat: OSType {
-    comparesInFullRange ? kCVPixelFormatType_444YpCbCr8BiPlanarFullRange : kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
+    comparesInFullRange
+      ? kCVPixelFormatType_444YpCbCr8BiPlanarFullRange : kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
   }
 
   var decodedFormat: OSType {
@@ -52,6 +53,8 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
   var vcpInputFormat: OSType { vcpInput.utf8.reduce(0) { $0 << 8 | OSType($1) } }
   var ackRoundTripNs: Int64 { Int64(ackMilliseconds) * 1_000_000 }
   var sessionTiles: Int { engine == .videoToolbox ? tiles : 1 }
-  var refreshKind: EncodeLabRefresh { longTermReferences || engine == .videoProcessing ? .longTermReference : .keyframe }
+  var refreshKind: EncodeLabRefresh {
+    longTermReferences || engine == .videoProcessing ? .longTermReference : .keyframe
+  }
   var inputIsYCbCr: Bool { feedsYCbCr ?? (codec != .hevc444) }
 }

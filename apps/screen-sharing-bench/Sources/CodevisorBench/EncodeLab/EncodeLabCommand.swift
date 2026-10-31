@@ -46,7 +46,9 @@ struct EncodeLabCommand: BenchCommand {
   private func write(_ results: [EncodeLabResult]) throws {
     let report = EncodeLabReport(resolution: plan.resolution.rawValue, results: results)
     if let output = plan.output { try BenchOutput.writeLines([report], to: output) }
-    if let markdown = plan.markdown { try EncodeLabTable.markdown(results).write(toFile: markdown, atomically: true, encoding: .utf8) }
+    if let markdown = plan.markdown {
+      try EncodeLabTable.markdown(results).write(toFile: markdown, atomically: true, encoding: .utf8)
+    }
     try BenchOutput.print(report)
   }
 

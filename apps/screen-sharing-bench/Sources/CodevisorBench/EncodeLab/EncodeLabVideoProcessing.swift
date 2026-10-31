@@ -2,18 +2,21 @@ import CoreMedia
 import VideoToolbox
 
 struct EncodeLabVideoProcessing {
-  typealias Create = @convention(c) (
-    CFAllocator?, Int32, Int32, CMVideoCodecType, CFDictionary?, CFDictionary?, CFAllocator?,
-    VTCompressionOutputCallback?, UnsafeMutableRawPointer?, UnsafeMutablePointer<Unmanaged<AnyObject>?>
-  ) -> OSStatus
+  typealias Create =
+    @convention(c) (
+      CFAllocator?, Int32, Int32, CMVideoCodecType, CFDictionary?, CFDictionary?, CFAllocator?,
+      VTCompressionOutputCallback?, UnsafeMutableRawPointer?, UnsafeMutablePointer<Unmanaged<AnyObject>?>
+    ) -> OSStatus
   typealias SetProperty = @convention(c) (AnyObject, CFString, CFTypeRef?) -> OSStatus
-  typealias CopyProperty = @convention(c) (
-    AnyObject, CFString, CFAllocator?, UnsafeMutablePointer<Unmanaged<CFTypeRef>?>
-  ) -> OSStatus
-  typealias Encode = @convention(c) (
-    AnyObject, CVImageBuffer, CMTime, CMTime, CFDictionary?, UnsafeMutableRawPointer?,
-    UnsafeMutablePointer<VTEncodeInfoFlags>?
-  ) -> OSStatus
+  typealias CopyProperty =
+    @convention(c) (
+      AnyObject, CFString, CFAllocator?, UnsafeMutablePointer<Unmanaged<CFTypeRef>?>
+    ) -> OSStatus
+  typealias Encode =
+    @convention(c) (
+      AnyObject, CVImageBuffer, CMTime, CMTime, CFDictionary?, UnsafeMutableRawPointer?,
+      UnsafeMutablePointer<VTEncodeInfoFlags>?
+    ) -> OSStatus
   typealias Complete = @convention(c) (AnyObject, CMTime) -> OSStatus
   typealias Invalidate = @convention(c) (AnyObject) -> Void
 

@@ -31,7 +31,8 @@ final class EncodeLabVCPEncoder: EncodeLabFrameEncoder, @unchecked Sendable {
     guard let session, let pixels = inputs[0] else { return }
 
     let submitNs = ScreenSharingMetrics.nowNs
-    let options = frameOptions(refresh: refresh, submit: EncodeLabVCPSubmit(submitNs: submitNs, refresh: refresh != nil), frame: frame)
+    let options = frameOptions(
+      refresh: refresh, submit: EncodeLabVCPSubmit(submitNs: submitNs, refresh: refresh != nil), frame: frame)
     let status = api.encode(
       session, pixels, CMTime(value: CMTimeValue(tick), timescale: 60), CMTime(value: 1, timescale: 60),
       options as CFDictionary?, UnsafeMutableRawPointer(bitPattern: frame + 1), nil)

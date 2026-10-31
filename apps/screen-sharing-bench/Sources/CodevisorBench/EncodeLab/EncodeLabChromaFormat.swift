@@ -7,8 +7,9 @@ enum EncodeLabChromaFormat {
     guard let sample, let format = CMSampleBufferGetFormatDescription(sample) else { return nil }
     guard CMFormatDescriptionGetMediaSubType(format) == kCMVideoCodecType_HEVC else { return "4:2:0" }
 
-    let atoms = CMFormatDescriptionGetExtension(
-      format, extensionKey: kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms) as? [String: Any]
+    let atoms =
+      CMFormatDescriptionGetExtension(
+        format, extensionKey: kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms) as? [String: Any]
     guard let record = atoms?["hvcC"] as? Data, record.count > hevcChromaByte else { return nil }
 
     return name(record[record.startIndex + hevcChromaByte] & 0x03)

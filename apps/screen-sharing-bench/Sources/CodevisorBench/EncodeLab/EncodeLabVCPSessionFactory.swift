@@ -17,7 +17,8 @@ struct EncodeLabVCPSessionFactory {
   func make(refcon: Unmanaged<EncodeLabVCPEncoder>) throws -> AnyObject {
     let session = try create(refcon: refcon)
     do {
-      try EncodeLabSessionProperties(config: config, target: EncodeLabVCPPropertyTarget(api: api, session: session)).apply()
+      try EncodeLabSessionProperties(config: config, target: EncodeLabVCPPropertyTarget(api: api, session: session))
+        .apply()
       return session
     } catch {
       api.invalidate(session)
@@ -46,7 +47,8 @@ struct EncodeLabVCPSessionFactory {
 
   private var specification: [CFString: Any] {
     [
-      kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true, api.usageKey: EncodeLabVideoProcessing.usage,
+      kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true,
+      api.usageKey: EncodeLabVideoProcessing.usage,
       Self.realTimeKey as CFString: true, Self.tilesKey as CFString: config.tiles,
       kVTCompressionPropertyKey_ProfileLevel: EncodeLabVCPPropertyTarget.main444,
     ]
