@@ -364,8 +364,8 @@ struct Measured {
     /// Frames repaired within the round trip + 2 ms, of `timed` (repaired or lost).
     within: u64,
     timed: u64,
-    /// The path's round trip as the acks show it: the fastest clean frame's first packet out to its ack in, minus its
-    /// sending spread. One clock, and free of QUIC's own queueing (its smoothed RTT read 8 ms at N3 for a 2.7 ms path).
+    /// The path's round trip as the acks show it: the fastest clean frame's first packet out to its ack in, minus the
+    /// viewer's first packet in to complete. Differences on each machine's own clock, no sync needed.
     /// `measure` lowers it to the transport's fastest so far and counts `within` against it.
     rtt_floor_ms: f64,
     acked: u64,
@@ -539,8 +539,9 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
                     let recovery = receipt.assembling.saturating_sub(receipt.arriving);
                     measured.recoveries_ms.push(recovery.as_secs_f64() * 1000.0);
                 }
-                Some(_) => {
-                    let round_trip = ack.acked_after.saturating_sub(ack.sending).as_secs_f64() * 1000.0;
+                Some(receipt) => {
+                    // First packet out to ack in, minus the viewer's first packet in to complete: both network legs.
+                    let round_trip = ack.acked_after.saturating_sub(receipt.assembling).as_secs_f64() * 1000.0;
                     measured.rtt_floor_ms = measured.rtt_floor_ms.min(round_trip);
                 }
                 None => {}
