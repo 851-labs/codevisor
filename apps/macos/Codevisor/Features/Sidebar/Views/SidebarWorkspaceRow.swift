@@ -97,7 +97,10 @@ struct SidebarWorkspaceRow: View {
           Label("Rename", systemImage: "pencil")
             .labelStyle(.titleAndIcon)
         }
-        sectionMenu
+        if let sectionMenu {
+          Divider()
+          sectionMenu
+        }
         Divider()
         Button(action: onArchive) {
           Label("Archive", systemImage: "archivebox")
