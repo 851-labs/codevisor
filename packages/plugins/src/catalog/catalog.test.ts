@@ -9,7 +9,7 @@ import {
   pluginsFixture,
   testEventsServer
 } from "./catalog-test-support.js"
-import { makeCatalog, readLocalCatalog } from "./index.js"
+import { makeCatalog } from "./index.js"
 
 const catalogFor = (root: string, dev = false) =>
   makeCatalog({
@@ -97,12 +97,6 @@ describe("plugin catalog", () => {
     })
     expect(empty.entries()).toEqual([])
     expect(empty.search("anything")).toEqual([])
-    expect(
-      readLocalCatalog({
-        workingDirectory: join(root, "none"),
-        moduleDirectory: join(root, "none")
-      }).root
-    ).toBe("")
   })
 })
 
@@ -119,7 +113,23 @@ describe("plugin catalog files", () => {
     ).toEqual([grafanaServer.name, linearServer.name])
   })
 
-  it("finds the repository's plugins folder from the working directory by default", () => {
-    expect(readLocalCatalog().popular.length).toBeGreaterThan(0)
+  it("finds the plugins folder relative to the module or two levels above the working directory", () => {
+    const root = pluginsFixture()
+    const fromModule = makeCatalog({
+      dev: false,
+      execPath: "/opt/node",
+      workingDirectory: join(root, "none")
+    })
+    const fromPackage = makeCatalog({
+      dev: false,
+      execPath: "/opt/node",
+      workingDirectory: join(root, "apps", "server"),
+      moduleDirectory: join(root, "none")
+    })
+
+    expect(fromModule.entry("dev.codevisor/gmail")?.source).toBe("first-party")
+    expect(fromPackage.bundledLaunch(grafanaServer.name)?.args).toEqual([
+      join(root, "plugins", "grafana", "dist", "main.js")
+    ])
   })
 })

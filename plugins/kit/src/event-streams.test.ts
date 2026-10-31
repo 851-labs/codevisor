@@ -63,7 +63,6 @@ describe("createEventStreams", () => {
       .open({ ...opening, lifetimeMs: 60_000 }, extraFor(new AbortController().signal, send))
       .then(ended)
     clock.advance(59_999)
-    await Promise.resolve()
     const openBeforeLifetime = streams.count()
     clock.advance(1)
     await closing

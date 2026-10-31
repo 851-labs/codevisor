@@ -58,7 +58,7 @@ start().catch((error) => {
 })
 `
 
-export const eventsPageHtml = `<!doctype html>
+const eventsPageHtml = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">

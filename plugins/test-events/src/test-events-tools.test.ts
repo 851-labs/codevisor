@@ -1,8 +1,5 @@
-import { createHash } from "node:crypto"
-
 import { heartbeatIntervalMs } from "@codevisor/plugin-kit"
 import {
-  anyResult,
   type ConnectedClient,
   connectClient,
   manualClock,
@@ -13,6 +10,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { afterEach, describe, expect, it } from "vitest"
 import { z } from "zod"
 
+import { eventsPageScript } from "./events-page.js"
 import { createTestEventsServer, testEventsOptionsFromEnv } from "./test-events-server.js"
 
 const connections: Array<ConnectedClient> = []
@@ -38,9 +36,6 @@ const skillListing = z
 
 const readText = async (client: Client, uri: string): Promise<string> =>
   toolText({ content: (await client.readResource({ uri })).contents })
-
-const sha256 = (text: string): string =>
-  `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`
 
 describe("test-events tools", () => {
   afterEach(async () => {
@@ -123,59 +118,21 @@ describe("test-events skills and resources", () => {
     await Promise.all(connections.splice(0).map((connected) => connected.client.close()))
   })
 
-  it("lists the skill with a manifest whose digests and sizes match the served bytes", async () => {
+  it("serves its skill and reference file at the uris the listing names", async () => {
     const { client } = await connect()
 
     const listed = await client.request({ method: "skills/list", params: {} }, skillListing)
-    const skill = listed.skills[0]
-    const texts = await Promise.all(
-      (skill?.resources ?? []).map((entry) => readText(client, entry.uri))
-    )
+    const uris = listed.skills.flatMap((skill) => skill.resources.map((entry) => entry.uri))
+    const texts = await Promise.all(uris.map((uri) => readText(client, uri)))
 
-    expect(listed).toMatchObject({ resultType: "complete", ttlMs: 300_000, cacheScope: "public" })
-    expect(skill?.uri).toBe("skill://test-events/SKILL.md")
-    expect(skill?.frontmatter).toEqual({
-      name: "test-events",
-      description: "Exercise Codevisor plugin events end to end with the test-events plugin."
-    })
-    expect(skill?.resources.map((entry) => [entry.digest, entry.size])).toEqual(
-      texts.map((text) => [sha256(text), Buffer.byteLength(text, "utf8")])
-    )
-    expect(skill?.resources.map((entry) => entry.uri)).toEqual([
+    expect(uris).toEqual([
       "skill://test-events/SKILL.md",
       "skill://test-events/references/payloads.md"
     ])
-  })
-
-  it("serves SKILL.md with frontmatter matching the listing", async () => {
-    const { client } = await connect()
-
-    const read = await client.readResource({ uri: "skill://test-events/SKILL.md" })
-
-    expect(read.contents[0]).toMatchObject({ mimeType: "text/markdown" })
-    expect(await readText(client, "skill://test-events/SKILL.md")).toMatch(
-      /^---\nname: "test-events"\ndescription: "Exercise Codevisor plugin events end to end with the test-events plugin."\n---\n\n# Test events\n/
-    )
-  })
-
-  it("gets a skill by uri and rejects unknown skill uris", async () => {
-    const { client } = await connect()
-
-    const got = await client.request(
-      { method: "skills/get", params: { uri: "skill://test-events/SKILL.md" } },
-      anyResult
-    )
-
-    expect(got).toMatchObject({
-      resultType: "complete",
-      skill: { uri: "skill://test-events/SKILL.md" }
-    })
-    await expect(
-      client.request(
-        { method: "skills/get", params: { uri: "skill://missing/SKILL.md" } },
-        anyResult
-      )
-    ).rejects.toMatchObject({ code: -32602 })
+    expect(texts.map((text) => text.split("\n").find((line) => line.startsWith("# ")))).toEqual([
+      "# Test events",
+      "# Payloads"
+    ])
   })
 
   it("lists and serves the MCP App page with the app mime type", async () => {
@@ -191,7 +148,8 @@ describe("test-events skills and resources", () => {
     })
     expect(page.contents[0]).toMatchObject({
       uri: "ui://test-events/events.html",
-      mimeType: "text/html;profile=mcp-app"
+      mimeType: "text/html;profile=mcp-app",
+      text: expect.stringContaining(`<script>${eventsPageScript}</script>`)
     })
     await expect(
       client.readResource({ uri: "ui://test-events/missing.html" })

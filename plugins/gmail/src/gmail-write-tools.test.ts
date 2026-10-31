@@ -97,7 +97,7 @@ describe("gmail drafts", () => {
 
     const result = await callTool(connected, "create_draft", {
       to: 'Zoë <zoe@example.com>, "Doe, Jane" <jane@example.com>',
-      bcc: "audit@example.com",
+      bcc: "audit@example.com\r\nX-Evil: 1",
       subject: "Résumé\r\nBcc: attacker@evil.test",
       body: "é".repeat(60)
     })
@@ -106,9 +106,10 @@ describe("gmail drafts", () => {
     expect(result.structuredContent).toMatchObject({ draftId: "r-1", threadId: "draft-1" })
     expect(headerLines(message).slice(0, 3)).toEqual([
       `To: =?UTF-8?B?${Buffer.from("Zoë").toString("base64")}?= <zoe@example.com>, "Doe, Jane" <jane@example.com>`,
-      "Bcc: audit@example.com",
+      expect.stringMatching(/^Bcc: audit@example\.com\b/),
       `Subject: =?UTF-8?B?${Buffer.from("Résumé Bcc: attacker@evil.test").toString("base64")}?=`
     ])
+    expect(headerLines(message).filter((line) => /^x-evil:/i.test(line))).toEqual([])
     expect(connected.gmail.outbox[0]?.threadId).toBeUndefined()
     const encodedBody = message.split("\r\n\r\n")[1] ?? ""
     expect(encodedBody.split("\r\n").map((line) => line.length)).toEqual([76, 76, 8, 0])
@@ -242,9 +243,15 @@ describe("gmail sending", () => {
   it("rejects a new message without recipients", async () => {
     const connected = await connectGmail()
 
-    const result = await callTool(connected, "send", { subject: "Hi", body: "x", confirm: true })
+    const missing = await callTool(connected, "send", { subject: "Hi", body: "x", confirm: true })
+    const empty = await callTool(connected, "send", {
+      to: "",
+      subject: "Hi",
+      body: "x",
+      confirm: true
+    })
 
-    expect(result.isError).toBe(true)
+    expect([missing.isError, empty.isError]).toEqual([true, true])
     expect(connected.gmail.requests).toEqual([])
   })
 })

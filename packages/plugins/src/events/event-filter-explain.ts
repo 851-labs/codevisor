@@ -1,17 +1,6 @@
-import { parse, serialize, type ASTNode } from "@marcbachmann/cel-js"
+import { serialize, type ASTNode } from "@marcbachmann/cel-js"
 
 export const everyEvent = "every event"
-
-export const explainEventFilter = (expression: string | undefined): string => {
-  const text = expression?.trim() ?? ""
-  if (text === "") return everyEvent
-
-  try {
-    return explainNode(parse(text).ast)
-  } catch {
-    return text
-  }
-}
 
 export const explainNode = (node: ASTNode): string => {
   switch (node.op) {

@@ -79,7 +79,7 @@ const ageRatingOf = (
   return rating === undefined ? {} : { ageRating: rating }
 }
 
-export const argumentPlaceholder = (index: number): string => `\${arg:${index}}`
+const argumentPlaceholder = (index: number): string => `\${arg:${index}}`
 
 const installOf = (
   server: RegistryServer,

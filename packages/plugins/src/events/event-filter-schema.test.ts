@@ -64,6 +64,10 @@ describe("compileEventFilter payload schemas", () => {
   })
 
   it("falls back to dyn below the schema depth cap", () => {
+    expect(errorFor("a.a.a.a.a.a.a.a.nope == 1", nestedSchema(11))).toBe(
+      'No such key: nope in "nope".'
+    )
+    expect(errorFor("a.a.a.a.a.a.a.a.a.nope == 1", nestedSchema(11))).toBeUndefined()
     expect(matches("a.a.a.a.a.a.a.a.a.a.a == 1", nestedSchema(11), nestedValue(11))).toBe(true)
   })
 
@@ -100,9 +104,14 @@ describe("compileEventFilter without a typed payload", () => {
     expect(matches('kind == "push"', schema, { kind: "pull" })).toBe(false)
   })
 
-  it("keeps event metadata authoritative over a payload key named event", () => {
-    expect(matches('event.name == "message.received"', undefined, { event: "spoof" })).toBe(true)
-  })
+  it.each([undefined, { properties: { kind: { type: "string" } } }])(
+    "keeps event metadata authoritative over a payload key named event for schema %j",
+    (schema) => {
+      expect(
+        matches('event.name == "message.received"', schema, { event: { name: "spoof" } })
+      ).toBe(true)
+    }
+  )
 
   it("still evaluates event metadata when the payload is not an object", () => {
     expect(matches('event.eventId == "18c0f"', undefined, "raw text")).toBe(true)
@@ -111,7 +120,7 @@ describe("compileEventFilter without a typed payload", () => {
   it("normalizes integer map values", () => {
     expect(
       matches(
-        "open == 3",
+        "open + 1 == 4",
         { additionalProperties: { type: "integer" }, type: "object" },
         { open: 3 }
       )

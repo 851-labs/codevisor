@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { argumentPlaceholder, catalogEntryOf } from "./index.js"
+import { catalogEntryOf } from "./registry-entry.js"
 import { registryServersOf } from "./registry-server.js"
 
 const packaged = (registryType: string, extra: Record<string, unknown> = {}) => ({
@@ -85,9 +85,10 @@ describe("registry server.json to catalog entry", () => {
         { key: "env:LIMIT", label: "LIMIT", type: "number", required: false }
       ]
     })
-    expect(
-      catalogEntryOf(packaged("pypi", { runtimeHint: "uvx" }), "popular")?.install
-    ).toMatchObject({ command: "uvx", args: ["acme-tool==1.2.0"] })
+    expect(catalogEntryOf(packaged("pypi"), "popular")?.install).toMatchObject({
+      command: "uvx",
+      args: ["acme-tool==1.2.0"]
+    })
     expect(
       catalogEntryOf(
         packaged("oci", { version: "latest", environmentVariables: [{ name: "TOKEN" }, {}] }),
@@ -113,16 +114,7 @@ describe("registry server.json to catalog entry", () => {
       "popular"
     )!
     expect(entry.install).toMatchObject({
-      args: [
-        "-y",
-        "acme-tool@1.2.0",
-        "serve",
-        "--root",
-        argumentPlaceholder(1),
-        "--port",
-        "8080",
-        argumentPlaceholder(3)
-      ],
+      args: ["-y", "acme-tool@1.2.0", "serve", "--root", "${arg:1}", "--port", "8080", "${arg:3}"],
       fields: [
         { key: "arg:1", label: "root", required: true, help: "Root folder" },
         { key: "arg:3", label: "dir", required: true }
@@ -151,7 +143,6 @@ describe("registry server.json to catalog entry", () => {
 
 describe("registry entry defaults", () => {
   it("falls back to default runners, labels and publishers", () => {
-    expect(catalogEntryOf(packaged("pypi"), "popular")?.install).toMatchObject({ command: "uvx" })
     expect(
       catalogEntryOf({ ...packaged("npm", { runtimeHint: "bunx" }), name: "plain" }, "popular")
     ).toMatchObject({

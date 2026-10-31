@@ -54,13 +54,16 @@ describe("pluginAuthoringSkill", () => {
   })
 
   it("resolves the real packaged skill with default seams", () => {
-    const spec = pluginAuthoringSkill({ workingDirectory: join(process.cwd(), "..", "..") })
-    expect(spec.path.endsWith(join(PLUGIN_AUTHORING_SKILL_DIRECTORY, "SKILL.md"))).toBe(true)
-  })
-
-  it("defaults the working directory to the process cwd", () => {
-    const spec = pluginAuthoringSkill({ moduleDirectory: join(process.cwd(), "src") })
-    expect(spec.path.endsWith(join(PLUGIN_AUTHORING_SKILL_DIRECTORY, "SKILL.md"))).toBe(true)
+    expect(pluginAuthoringSkill().path).toBe(
+      join(
+        import.meta.dirname,
+        "..",
+        "resources",
+        "skills",
+        PLUGIN_AUTHORING_SKILL_DIRECTORY,
+        "SKILL.md"
+      )
+    )
   })
 
   it("throws when the packaged skill is missing", () => {

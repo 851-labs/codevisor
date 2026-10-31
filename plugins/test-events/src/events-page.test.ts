@@ -2,7 +2,7 @@ import { runInNewContext } from "node:vm"
 
 import { describe, expect, it } from "vitest"
 
-import { eventsPageHtml, eventsPageScript } from "./events-page.js"
+import { eventsPageScript } from "./events-page.js"
 
 interface FakeElement {
   textContent: string
@@ -39,10 +39,6 @@ const loadPage = () => {
 const events = [{ timestamp: "2026-10-27T12:00:00.000Z", name: "test.ping", data: { count: 1 } }]
 
 describe("events page", () => {
-  it("embeds the bridge script in the served html", () => {
-    expect(eventsPageHtml).toContain(`<script>${eventsPageScript}</script>`)
-  })
-
   it("initializes over the Apps bridge, then loads and renders recent events", async () => {
     const page = loadPage()
 

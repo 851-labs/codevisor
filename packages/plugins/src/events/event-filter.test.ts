@@ -91,17 +91,6 @@ describe("compileEventFilter on Grafana alerts", () => {
     const filter = filterFor('event.account.id == "acct-1"', grafanaAlertSchema)
     expect(filter.matches(firingAlert, messageContext)).toBe(false)
   })
-
-  it("reads the filter back in plain English", () => {
-    const result = compileEventFilter(
-      'labels.host == "db-1" && severity in ["critical", "page"]',
-      grafanaAlertSchema
-    )
-    expect(result).toMatchObject({
-      ok: true,
-      explained: 'labels.host is "db-1" and severity is one of "critical" or "page"'
-    })
-  })
 })
 
 describe("compileEventFilter on Gmail messages", () => {
@@ -207,6 +196,11 @@ describe("compileEventFilter rejections", () => {
       expression: "to.exists(a, to.exists(b, to.exists(c, a == b && b == c)))",
       schema: gmailMessageSchema,
       error: "Filters can nest at most 2 list macros."
+    },
+    {
+      expression: '[subject.matches("(a+)+$")].exists(s, s)',
+      schema: gmailMessageSchema,
+      error: "The matches() pattern repeats a group that itself repeats or alternates."
     }
   ])("$expression", ({ expression, schema, error }) => {
     expect(errorFor(expression, schema)).toBe(error)
