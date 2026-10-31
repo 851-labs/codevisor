@@ -59,13 +59,14 @@ struct Row {
     keyframe: Option<(u32, usize)>,
 }
 
-const ROWS: [Row; 6] = [
+const ROWS: [Row; 7] = [
     Row { name: "8 Mbit/s", frame_bytes: 16_667, streams: 1, keyframe: None },
     Row { name: "45 Mbit/s", frame_bytes: 93_750, streams: 1, keyframe: None },
     Row { name: "150 Mbit/s", frame_bytes: 312_500, streams: 1, keyframe: None },
     Row { name: "300 Mbit/s", frame_bytes: 625_000, streams: 1, keyframe: None },
     Row { name: "150 Mbit/s in 4 tiles", frame_bytes: 78_125, streams: 4, keyframe: None },
     Row { name: "8 Mbit/s + 1 MiB keyframe/s", frame_bytes: 16_667, streams: 1, keyframe: Some((60, 1 << 20)) },
+    Row { name: "8 Mbit/s + 256 KiB frame every 100 ms", frame_bytes: 16_667, streams: 1, keyframe: Some((6, 256 << 10)) },
 ];
 
 /// Runs the bench with command-line style arguments and returns its report (markdown, then a JSON line).

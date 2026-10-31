@@ -26,12 +26,51 @@ pub const DATAGRAM_RECEIVE_BUFFER: usize = 2 * 1024 * 1024;
 pub const INITIAL_RTT: Duration = Duration::from_millis(100);
 
 pub fn transport_config() -> QuicTransportConfig {
+    if let Ok(variant) = std::env::var("CODEVISOR_SCREEN_TRANSPORT")
+        && !variant.is_empty()
+    {
+        return lab_variant(&variant);
+    }
     QuicTransportConfig::builder()
         .congestion_controller_factory(Arc::new(DeferringControllerFactory))
         .datagram_send_buffer_size(DATAGRAM_SEND_BUFFER)
         .datagram_receive_buffer_size(Some(DATAGRAM_RECEIVE_BUFFER))
         .initial_rtt(INITIAL_RTT)
         .build()
+}
+
+// Throwaway (851-3816 lab): `default` (iroh's), or `<cubic|bbr3|defer>-<send buffer KiB>[-ack<N>][-nomtud]`.
+fn lab_variant(variant: &str) -> QuicTransportConfig {
+    use noq_proto::congestion::{Bbr3Config, CubicConfig};
+    if variant == "default" {
+        return QuicTransportConfig::default();
+    }
+    let parts: Vec<&str> = variant.split('-').collect();
+    let factory: Arc<dyn ControllerFactory + Send + Sync> = match parts[0] {
+        "cubic" => Arc::new(CubicConfig::default()),
+        "bbr3" => Arc::new(Bbr3Config::default()),
+        "defer" => Arc::new(DeferringControllerFactory),
+        other => panic!("unknown controller {other}"),
+    };
+    let buffer: usize = parts[1].parse::<usize>().expect("buffer KiB") * 1024;
+    let mut builder = QuicTransportConfig::builder()
+        .congestion_controller_factory(factory)
+        .datagram_send_buffer_size(buffer)
+        .datagram_receive_buffer_size(Some(DATAGRAM_RECEIVE_BUFFER))
+        .initial_rtt(INITIAL_RTT);
+    for option in &parts[2..] {
+        if let Some(threshold) = option.strip_prefix("ack") {
+            let mut ack = iroh::endpoint::AckFrequencyConfig::default();
+            ack.ack_eliciting_threshold(threshold.parse::<u32>().expect("ack threshold").into());
+            ack.max_ack_delay(Some(Duration::from_millis(2)));
+            builder = builder.ack_frequency_config(Some(ack));
+        } else if *option == "nomtud" {
+            builder = builder.mtu_discovery_config(None);
+        } else {
+            panic!("unknown option {option}");
+        }
+    }
+    builder.build()
 }
 
 /// A window this large switches noq's pacer off as well (it stops pacing above `u32::MAX`).

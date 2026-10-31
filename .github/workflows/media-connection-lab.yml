@@ -1,0 +1,154 @@
+name: Media Connection Lab (851-3816, throwaway)
+
+# Engine v2 E2: the screen connection's QUIC config. Each variant runs E1's frame bench (codevisor-media over iroh vs
+# plain UDP, same framing) between the two minis inside the signed CodevisorBench.app, then the design's §10
+# media_bench rows over loopback on tamale on the screen ALPN.
+on:
+  push:
+    branches: [lab/851-3816-media-connection-lab]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-sharing-lab-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  HOST_IP: 192.168.10.78
+  VIEWER_IP: 192.168.10.103
+  # Throwaway bench keys, so the host can derive the viewer's endpoint id. Nothing else uses them.
+  LAB_SECRET_N0: 1c3509b9f2b64dbca1181de09a2846dc8591c0855f79a3b9a675fb390230274c
+  LAB_SECRET_N3: 8f54671cdd55c72e1e311f7132b14ba577745d63462745509280c572bb67cbd5
+  VARIANTS: "default bbr3-256 defer-256 defer-256-ack16 defer-256-nomtud"
+  N3_VARIANTS: "defer-256 defer-256-nomtud"
+  LOOPBACK_VARIANTS: "default defer-256"
+  SECONDS_PER_ROW: "6"
+  CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
+jobs:
+  host:
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - name: Environment
+        run: hostname; uptime; pmset -g therm | tail -3 || true
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Install the build where the permission grants are
+        run: apps/screen-sharing-bench/scripts/install-granted.sh
+      - name: Two minis, N0, every variant
+        run: |
+          mkdir -p "$RUNNER_TEMP/lab"
+          port=47400
+          for variant in $VARIANTS; do
+            echo "::group::$variant"
+            CODEVISOR_SCREEN_TRANSPORT="$variant" apps/screen-sharing-bench/scripts/run-installed.sh media-transport \
+              --role host --peer-secret "$LAB_SECRET_N0" --peer "$VIEWER_IP:$port" --udp-peer "$VIEWER_IP:$((port + 1))" \
+              --seconds "$SECONDS_PER_ROW" --network-label "N0 (tamale to croissant), $variant" \
+              --json "$RUNNER_TEMP/lab/two-minis-n0-$variant.json" | tee "$RUNNER_TEMP/lab/two-minis-n0-$variant.md" || true
+            echo "::endgroup::"
+            port=$((port + 10))
+          done
+      - name: Two minis, N3 (dummynet on croissant)
+        if: always()
+        run: |
+          port=47500
+          for variant in $N3_VARIANTS; do
+            CODEVISOR_SCREEN_TRANSPORT="$variant" apps/screen-sharing-bench/scripts/run-installed.sh media-transport \
+              --role host --peer-secret "$LAB_SECRET_N3" --peer "$VIEWER_IP:$port" --udp-peer "$VIEWER_IP:$((port + 1))" \
+              --seconds "$SECONDS_PER_ROW" --network-label "N3 (dummynet on croissant: 1 ms, 1% each way), $variant" \
+              --json "$RUNNER_TEMP/lab/two-minis-n3-$variant.json" | tee "$RUNNER_TEMP/lab/two-minis-n3-$variant.md" || true
+            port=$((port + 10))
+          done
+      - name: Design §10 rows over loopback on the screen ALPN
+        if: always()
+        working-directory: packages/net
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --example media_bench
+          bin=target/release/examples/media_bench
+          port=47600
+          for variant in $LOOPBACK_VARIANTS; do
+            CODEVISOR_SCREEN_TRANSPORT="$variant" "$bin" serve --bind "127.0.0.1:$port" --udp-echo "127.0.0.1:$((port + 1))" \
+              > "$RUNNER_TEMP/lab/serve-$variant.log" 2>&1 &
+            server=$!
+            for _ in $(seq 50); do grep -q '^endpoint ' "$RUNNER_TEMP/lab/serve-$variant.log" && break; sleep 0.2; done
+            id="$(sed -n 's/^endpoint \([0-9a-f]*\) .*/\1/p' "$RUNNER_TEMP/lab/serve-$variant.log")"
+            echo "::group::$variant"
+            CODEVISOR_SCREEN_TRANSPORT="$variant" "$bin" run --peer "$id" --addr "127.0.0.1:$port" --udp "127.0.0.1:$((port + 1))" \
+              2>&1 | tee "$RUNNER_TEMP/lab/section10-$variant.txt" || true
+            echo "::endgroup::"
+            kill "$server" || true
+            port=$((port + 10))
+          done
+      - name: Summary
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/lab"
+          for file in two-minis-*.md section10-*.txt; do
+            [[ -f "$file" ]] || continue
+            { echo "## $file"; [[ "$file" == *.txt ]] && echo '```'; grep -v '^\[{' "$file"; [[ "$file" == *.txt ]] && echo '```'; echo; } >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: media-connection-lab-tamale
+          path: ${{ runner.temp }}/lab
+
+  viewer:
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - name: Environment
+        run: hostname; uptime; ping -c 10 -i 0.2 "$HOST_IP" | tail -2
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Install the build where the permission grants are
+        run: apps/screen-sharing-bench/scripts/install-granted.sh
+      - name: View N0, every variant
+        run: |
+          mkdir -p "$RUNNER_TEMP/lab"
+          port=47400
+          for variant in $VARIANTS; do
+            CODEVISOR_SCREEN_TRANSPORT="$variant" apps/screen-sharing-bench/scripts/run-installed.sh media-transport \
+              --role viewer --secret "$LAB_SECRET_N0" --bind "0.0.0.0:$port" --udp-bind "0.0.0.0:$((port + 1))" \
+              --seconds "$SECONDS_PER_ROW" | tee "$RUNNER_TEMP/lab/viewer-n0-$variant.txt" || true
+            port=$((port + 10))
+          done
+      - name: View N3 behind dummynet
+        if: always()
+        run: |
+          export TIER2_HOST_IP="$HOST_IP"
+          source apps/screen-sharing-bench/scripts/tier2-lib.sh
+          source apps/screen-sharing-bench/scripts/tier2-network.sh
+          network_apply N3
+          trap network_reset EXIT
+          port=47500
+          for variant in $N3_VARIANTS; do
+            CODEVISOR_SCREEN_TRANSPORT="$variant" apps/screen-sharing-bench/scripts/run-installed.sh media-transport \
+              --role viewer --secret "$LAB_SECRET_N3" --bind "0.0.0.0:$port" --udp-bind "0.0.0.0:$((port + 1))" \
+              --seconds "$SECONDS_PER_ROW" | tee "$RUNNER_TEMP/lab/viewer-n3-$variant.txt" || true
+            port=$((port + 10))
+          done
+      - name: Remove any network shaping
+        if: always()
+        run: apps/screen-sharing-bench/scripts/tier2-network-reset.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: media-connection-lab-croissant
+          path: ${{ runner.temp }}/lab

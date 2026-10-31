@@ -16,7 +16,7 @@ echo 1 >"$logs/status"
 background=()
 [[ -n "${CODEVISOR_BENCH_BACKGROUND:-}" ]] && background=(-g)
 open -W -n ${background[@]+"${background[@]}"} -a "${CODEVISOR_BENCH_APP:-$HOME/Applications/CodevisorBench.app}" \
-  --env "CODEVISOR_BENCH_PID_FILE=$logs/pid" --env "CODEVISOR_BENCH_STATUS_FILE=$logs/status" \
+  --env "CODEVISOR_BENCH_PID_FILE=$logs/pid" --env "CODEVISOR_BENCH_STATUS_FILE=$logs/status" --env "CODEVISOR_SCREEN_TRANSPORT=${CODEVISOR_SCREEN_TRANSPORT:-}" \
   --stdout "$logs/stdout" --stderr "$logs/stderr" --args "$@" &
 opener=$!
 wait "$opener"
