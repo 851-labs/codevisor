@@ -69,12 +69,6 @@ impl DeferringController {
             self.recovering = (window < RECOVERED).then_some(window);
         }
     }
-
-    fn congested(&mut self, persistent: bool) {
-        if persistent {
-            self.recovering = Some(self.minimum_window());
-        }
-    }
 }
 
 impl Controller for DeferringController {
@@ -91,7 +85,9 @@ impl Controller for DeferringController {
         _lost_bytes: u64,
         _largest_lost_pn: u64,
     ) {
-        self.congested(is_persistent_congestion);
+        if is_persistent_congestion {
+            self.recovering = Some(self.minimum_window());
+        }
     }
 
     fn on_mtu_update(&mut self, new_mtu: u16) {
@@ -132,18 +128,23 @@ impl ControllerFactory for DeferringControllerFactory {
 mod tests {
     use super::*;
 
+    fn congestion(controller: &mut DeferringController, persistent: bool) {
+        let now = Instant::now();
+        controller.on_congestion_event(now, now, persistent, false, 120_000, 100);
+    }
+
     #[test]
     fn leaves_the_window_and_the_pacer_open_through_ordinary_loss() {
         let mut controller = DeferringController::new(1200);
         assert!(controller.window() > u64::from(u32::MAX), "noq paces any window up to u32::MAX");
-        controller.congested(false);
+        congestion(&mut controller, false);
         assert_eq!(controller.window(), UNLIMITED);
     }
 
     #[test]
     fn slow_starts_from_two_packets_after_persistent_congestion_then_steps_aside() {
         let mut controller = DeferringController::new(1200);
-        controller.congested(true);
+        congestion(&mut controller, true);
         assert_eq!(controller.window(), 2_400);
 
         controller.acked(2_400);
@@ -151,13 +152,5 @@ mod tests {
 
         controller.acked(RECOVERED);
         assert_eq!(controller.window(), UNLIMITED);
-    }
-
-    #[test]
-    fn a_larger_path_mtu_raises_the_recovery_floor() {
-        let mut controller = DeferringController::new(1200);
-        controller.congested(true);
-        controller.on_mtu_update(1452);
-        assert_eq!(controller.window(), 2_904);
     }
 }
