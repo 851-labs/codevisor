@@ -167,7 +167,6 @@ struct BotEditorSheet: View {
     }
   }
 
-
   @ViewBuilder
   private var modelSection: some View {
     Section("Model") {
