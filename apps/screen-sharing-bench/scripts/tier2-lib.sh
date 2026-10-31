@@ -45,14 +45,14 @@ tier2_plan() {
       index=$((index + 1)); echo "$index $scene floor $rep 1"
     done
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
-      for system in apple-hp codevisor-r1x2 codevisor; do
+      for system in apple-hp codevisor-r1x2 codevisor-v2 codevisor; do
         tier2_runs_system "$system" || continue
         index=$((index + 1)); echo "$index $scene $system $rep 1"
       done
     done
   done
   if ((TIER2_C4)) && [[ ",$TIER2_SCENES," == *,video,* ]]; then
-    for system in apple-hp codevisor-r1x2; do
+    for system in apple-hp codevisor-r1x2 codevisor-v2; do
       tier2_runs_system "$system" || continue
       index=$((index + 1)); echo "$index video $system 1 0"
     done
@@ -63,8 +63,26 @@ tier2_runs_system() {
   [[ ",$TIER2_SYSTEMS," == *",$1,"* ]]
 }
 
+tier2_engine() {
+  case "$1" in
+    codevisor-v2) echo v2 ;;
+    *) echo "$TIER2_ENGINE" ;;
+  esac
+}
+
 tier2_engine_options() {
-  echo --engine "$TIER2_ENGINE"
+  echo --engine "$(tier2_engine "$1")"
+}
+
+tier2_on_virtual_display() {
+  [[ "$1" == codevisor-r1x2 || "$1" == codevisor-v2 ]]
+}
+
+tier2_meta_system() {
+  case "$1" in
+    codevisor-r1x2) echo codevisor ;;
+    *) echo "$1" ;;
+  esac
 }
 
 tier2_name() {
@@ -77,7 +95,7 @@ tier2_name() {
 
 tier2_resolution() {
   case "$1" in
-    apple-hp | codevisor-r1x2) echo R1x2 ;;
+    apple-hp | codevisor-r1x2 | codevisor-v2) echo R1x2 ;;
     *) echo R1 ;;
   esac
 }
@@ -123,7 +141,7 @@ tier2_check_inputs() {
   [[ "$TIER2_NETWORK" =~ ^N[03]$ ]] || { echo "network must be N0 or N3, not $TIER2_NETWORK" >&2; return 1; }
   [[ "$TIER2_ENGINE" =~ ^v[12]$ ]] || { echo "engine must be v1 or v2, not $TIER2_ENGINE" >&2; return 1; }
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
-  local system_pattern="(apple-hp|codevisor-r1x2|codevisor)"
+  local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   local runs
   runs=$(($(tier2_plan | wc -l)))

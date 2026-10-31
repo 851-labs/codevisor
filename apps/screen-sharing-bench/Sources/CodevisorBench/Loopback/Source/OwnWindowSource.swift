@@ -14,15 +14,14 @@ final class OwnWindowSource: LoopbackSource {
   private let loop: PlayerDisplayLoop
   private let versions: CapturedVersions
   private let metrics: ScreenSharingMetrics
-  private let capture = ScreenSharingCapture(pixelFormat: ScreenSharingProductProfile.codec.capturePixelFormat)
+  private let capture: ScreenSharingCapture
   private var configuration: ScreenSharingVideoConfiguration?
   private var capturing = false
 
   init(
-    setup: BenchSceneSetup, target: PlayerScreenTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
-  )
-    throws
-  {
+    setup: BenchSceneSetup, target: PlayerScreenTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics,
+    pixelFormat: OSType
+  ) throws {
     try PlayerConsoleSession.requireUnlocked()
     let device = try PlayerMetal.device()
     self.target = target
@@ -32,6 +31,7 @@ final class OwnWindowSource: LoopbackSource {
       versions: PlayerVersionSource(timeline: setup.scene.timeline), hashes: nil)
     versions = CapturedVersions(forwardingTo: sink, canvasWidth: setup.canvas.pixelWidth)
     self.metrics = metrics
+    capture = ScreenSharingCapture(pixelFormat: pixelFormat)
   }
 
   var produced: [BenchVersionEvent] { versions.produced }

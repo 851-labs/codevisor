@@ -20,6 +20,7 @@ struct BenchReportCodecTests {
     report.results[0].valid = false
     report.results[1].seed = 1 << 60
     report.comparisons[0].noiseBandMs = -1
+    report.comparisons[1].system = .appleHP
 
     #expect(
       throws: BenchReportError.invalid([
@@ -29,6 +30,7 @@ struct BenchReportCodecTests {
         "results[0]: valid must be true exactly when invalid_reason is absent",
         "results[1]: seed 1152921504606846976 is above 2^53 − 1, which JSON readers round",
         "comparisons[0]: noise_band_ms -1.0 is negative",
+        "comparisons[1]: system must be a Codevisor system, not apple-hp",
       ])
     ) { try BenchReportCodec.encode(report) }
   }

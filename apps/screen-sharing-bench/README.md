@@ -169,6 +169,27 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   Markdown summary with per-stage p50/p95. `--frames` writes one line per measured frame (version and every
   timestamp). A scene that fails (for example ICE never connects) is reported as invalid with the error, and the
   matrix goes on.
+- **Engine v2.** `--engine v2` runs the same scenes through engine v2 (`ScreenSharingV2Host` and
+  `ScreenSharingV2Viewer` over `codevisor-media` on an iroh connection) instead of WebRTC; results are the
+  `codevisor-v2` system. Both endpoints bind with the `direct-pinned` path policy and the viewer dials the relay's
+  host-facing socket as the host's only address, so every datagram crosses the emulated network. `direct-pinned`
+  keeps the path a connection was opened on: with `direct-only`, iroh's QUIC NAT traversal learns the host's own
+  addresses and moves to the direct loopback path within the first round trip (`codevisor-net`'s `pinned_path` test).
+  A run is invalid when the relay carried fewer media bytes than the host's session sent ("media went around the
+  relay"). A bench-side transport tap (`V2MediaTap`) wraps each side's `ScreenSharingIrohMediaTransport` and notes
+  when each frame was handed to `send_frame`, its frame ack (`queued` and `sending`) and its receipt (`assembling`,
+  how it was recovered), keyed by stream and frame number, and joined to the viewer's timeline by source timestamp
+  (the first presentation of each source frame; an LTR refresh of an already shown capture is not a new sample).
+  There is no jitter buffer, so the frame-complete time is the decoder input time and `decode_queue` is 0; the gate's
+  outside-the-jitter-buffer rule then judges whole e2e. `stages_ms.media` splits the network stage: `hand_off`
+  (encoder output → `send_frame`), `queue` (→ first packet out), `send` (first → last packet out), `network` (last
+  packet out → frame complete), `assemble` (first packet in → frame complete, overlapping `send`) and `recover` (the
+  `assemble` of frames that NACK or FEC completed). `capture_queue` is the admission stage (capture → encode submit),
+  `render_queue` the compose stage. The result's `media` holds the session's counters for the whole scene: frames sent
+  and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals, NACKs,
+  retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate and
+  round trip at the end. `--source own-window` and `--onscreen` work as for v1. No quality loop runs: engine v2
+  follows the transport's encoder ceiling itself.
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -236,7 +257,10 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   viewer reports the timeline, the media session's counters and the QUIC round trip as `selected_candidates`, so N3
   runs prove their shaped path the same way. The workflow's `engine` (v1), `present` (arrival) and `systems`
   (`apple-hp,codevisor-r1x2,codevisor`) inputs pick them; with `engine: v2` the Codevisor rows are engine v2, and
-  `meta.json` records `engine` and `presentation`.
+  `meta.json` records `engine` and `presentation`. The system `codevisor-v2` is always engine v2 on the same R1x2
+  virtual display as `codevisor-r1x2`, whatever `engine` says, so `systems: apple-hp,codevisor-r1x2,codevisor-v2`
+  compares Apple HP, v1 and v2 in one dispatch, alternating within each repetition. The report counts a run as the
+  system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`.
 - `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
   product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
   the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
@@ -267,7 +291,14 @@ from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual ove
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
 repetitions and the gap between their ranges is wider than the tighter system's spread, and in either case only when
-the medians differ by at least 2% of the larger one; the verdict table names the rule that fired.
+the medians differ by at least 2% of the larger one; the verdict table names the rule that fired. Each Codevisor system
+(`codevisor`, `codevisor-v2`) is compared with Apple HP on its own repetitions; the comparison's `system` names it
+(absent in reports from before engine v2, meaning `codevisor`). With `codevisor-v2` runs the summary adds the M2
+targets (p50 at most the floor + 17 ms, p95 at most the floor's p95 + 50 ms, idle-cursor at most 0.5 Mbit/s, N3 shown
+ratio at least 0.9, no image older than 1 s) and a table of v2 stages and counters. Codevisor results carry
+`stages_ms` from the viewer's frame timeline (`hostQueue` is `capture_queue`, the jitter-buffer estimate
+`decode_queue`) and, for v2, `stages_ms.media` (`queue` and `send` from the host's frame acks, `assemble` from the
+viewer) and `media` from both sides' counters. These cover the whole session, not only the measured window.
 
 ## Benchmark workflow, results and gate (851-3594)
 
@@ -284,11 +315,12 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
   (C5), then runs `scripts/tier1.sh nightly`: the `core` report (S1–S6 at N0 and N3, 3 interleaved repetitions of
   30 s with 10 s warm-up, about 20 min), the `gate` report (exactly the PR gate's run: S2, S3 and S5 at N0 and N3,
-  about 10 min) and the `matrix` report (N1, N2 and N4–N7, 1 repetition, about 20 min). Each report records its plan
+  about 10 min), the `matrix` report (N1, N2 and N4–N7, 1 repetition, about 20 min) and the `gate-v2` report (the
+  gate's run on engine v2, about 10 min). `core-v2` (the core plan on engine v2) runs only when `plans` names it. Each report records its plan
   in `run.method.plan`, and a baseline only uses nightlies of the same plan: the same cell measured among other
   scenes differs, for example typing's N3 p95 is about 35 ms in `core` and about 52 ms in the gate's run. Reports
   from before plans existed match no plan, so a new plan's baseline starts empty (`-f plans=gate` seeds it).
-  A dispatch with `scenes` or `networks` set runs one `custom` report instead (`source` picks `own-window`, which
+  A dispatch with `scenes` or `networks` set runs one `custom` report instead (on the dispatch's `engine`) (`source` picks `own-window`, which
   captures the screen: that run installs the build over `~/Applications/CodevisorBench.app` with
   `scripts/install-granted.sh`, because macOS grants Screen Recording to that path only).
 - **`benchmark-results`.** On `main`, `scripts/publish.sh` commits each report to the orphan branch
@@ -310,6 +342,12 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. The jitter buffer's
   wait can swing between processes independently of the rest of the pipeline, so N0 judges it on its own. The summary also
   says how long the gate waited for tamale and which bench runs were active meanwhile.
+  The gate covers engine v2 with the same rules: `scripts/gate-engines.sh` reads the pull request's changed files and
+  picks v1, v2 or both. `ScreenSharingV2`, its tests, the bench's `EngineV2` and `Loopback/V2` sources and
+  `packages/net` are v2; `ScreenSharingWebRTC`, its tests and the CodevisorCoreMac screen sharing sources are v1;
+  anything else in the watched paths is both. v2 measures the `gate-v2` plan (the gate's cells with `--engine v2`)
+  as `first-v2.json` and `second-v2.json` and is judged against `gate-v2` nightlies; a cell's baseline only reads
+  cells of its own system. Gating both engines takes about 40 minutes.
   Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
   cancels a gate still queued or running for it.
 - **Calibration and Tier 2** run after Tier 1 through `workflow_call` when the dispatch inputs ask for them, or every
@@ -322,12 +360,15 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
 open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
 offscreen Tier 1). It also fails when load and Spotlight never stayed quiet for 3 samples in a row before the
 limit (`reached_settle_limit`). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`. The
-`plans` dispatch input (empty: `core,gate,matrix`) applies to the nightly plan only; a dispatch with `scenes` or
-`networks` set runs one custom report and warns if `plans` was given.
+`plans` dispatch input (empty: `core,gate,matrix,gate-v2`) applies to the nightly plan only; a dispatch with `scenes` or
+`networks` set runs one custom report and warns if `plans` was given. The plans are `core`, `gate`, `matrix`,
+`core-v2` and `gate-v2`; empty runs all but `core-v2`.
 
 ```sh
 gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
 gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate      # only the gate's baseline (about 12 min)
+gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate-v2   # only the v2 gate baseline
+gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0,N3 -f engine=v2   # an ad hoc v2 run
 gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0    # an ad hoc run
 CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>

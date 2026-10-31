@@ -44,7 +44,7 @@ on:
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor)
         required: false
         default: apple-hp,codevisor-r1x2,codevisor
         type: string
@@ -91,7 +91,7 @@ on:
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor)
         required: false
         default: apple-hp,codevisor-r1x2,codevisor
         type: string

@@ -23,10 +23,16 @@ on:
         default: ""
         type: string
       plans:
-        description: Tier 1 plans to run, comma-separated (core, gate, matrix); empty runs all three
+        description: Tier 1 plans to run, comma-separated (core, gate, matrix, core-v2, gate-v2); empty runs core, gate, matrix and gate-v2
         required: false
         default: ""
         type: string
+      engine:
+        description: Codevisor engine for a custom Tier 1 run, v1 (WebRTC) or v2
+        required: false
+        default: v1
+        type: choice
+        options: [v1, v2]
       source:
         description: Frame source for a custom run (own-window needs tamale's GUI session unlocked)
         required: false
@@ -59,6 +65,7 @@ on:
       - packages/swift/ScreenSharing/**
       - packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/**
       - apps/screen-sharing-bench/**
+      - packages/net/crates/codevisor-media/**
       - .github/workflows/screen-sharing-bench.yml
 
 permissions:
@@ -140,6 +147,7 @@ jobs:
       NETWORKS: ${{ inputs.networks }}
       TIER1_SOURCE: ${{ inputs.source || 'synthetic' }}
       TIER1_PLANS: ${{ inputs.plans }}
+      TIER1_ENGINE: ${{ inputs.engine || 'v1' }}
       MODE: ${{ needs.plan.outputs.mode }}
       PREFLIGHT: ${{ needs.plan.outputs.preflight }}
     steps:
@@ -147,8 +155,8 @@ jobs:
         run: |
           [[ "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]] || { echo "scenes must be a comma-separated list"; exit 1; }
           [[ "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]] || { echo "networks must be like N0,N3"; exit 1; }
-          plan="(core|gate|matrix)"
-          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core, gate or matrix"; exit 1; }
+          plan="(core|gate|matrix|core-v2|gate-v2)"
+          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core, gate, matrix, core-v2 or gate-v2"; exit 1; }
           if [[ "$MODE" == custom && -n "$TIER1_PLANS" ]]; then
             echo "::warning::plans applies to the nightly plan only; a run with scenes or networks set is one custom report"
           fi
@@ -170,6 +178,7 @@ jobs:
       - name: Run Tier 1
         run: |
           export TIER1_SCENES="$SCENES" TIER1_NETWORKS="${NETWORKS:-N0,N3}"
+          [[ -n "$TIER1_PLANS" ]] || unset TIER1_PLANS
           caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh "$MODE" "$RUNNER_TEMP/results"
       - name: Record the reports on benchmark-results
         if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' }}
@@ -201,20 +210,27 @@ jobs:
       ${{ github.event_name == 'pull_request' && github.event.action != 'closed'
       && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 60
+    timeout-minutes: 100
     concurrency:
       group: screen-sharing-bench-gate-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     env:
       TIER1_TRIGGER: pull_request
       GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
+      - name: Pick the engines the pull request touches
+        run: |
+          engines=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only | apps/screen-sharing-bench/scripts/gate-engines.sh)
+          echo "TIER1_GATE_ENGINES=$engines" >> "$GITHUB_ENV"
+          echo "Gating engines: $engines"
       - name: Note any bench job the gate waited for
         run: |
           mkdir -p "$RUNNER_TEMP/results"
@@ -230,11 +246,17 @@ jobs:
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh pr_gate "$RUNNER_TEMP/results"
       - name: Compare with the nightly baseline
         run: |
-          apps/screen-sharing-bench/scripts/results-branch.sh index "$RUNNER_TEMP/results/index.jsonl"
+          results="$RUNNER_TEMP/results"
+          apps/screen-sharing-bench/scripts/results-branch.sh index "$results/index.jsonl"
           status=0
-          apps/screen-sharing-bench/scripts/run-installed.sh gate --index "$RUNNER_TEMP/results/index.jsonl" \
-            --first "$RUNNER_TEMP/results/first.json" --second "$RUNNER_TEMP/results/second.json" > "$RUNNER_TEMP/results/gate.md" || status=$?
-          cat "$RUNNER_TEMP/results/gate.md" "$RUNNER_TEMP/results/waited.md" >> "$GITHUB_STEP_SUMMARY"
+          for engine in ${TIER1_GATE_ENGINES//,/ }; do
+            suffix=""
+            [[ "$engine" == v2 ]] && suffix=-v2
+            apps/screen-sharing-bench/scripts/run-installed.sh gate --index "$results/index.jsonl" \
+              --first "$results/first$suffix.json" --second "$results/second$suffix.json" > "$results/gate$suffix.md" || status=1
+            cat "$results/gate$suffix.md" >> "$GITHUB_STEP_SUMMARY"
+          done
+          cat "$results/waited.md" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()

@@ -14,6 +14,14 @@ public struct BenchDistribution: Codable, Sendable, Equatable {
     max = sorted[sorted.count - 1]
   }
 
+  public init?(count: Int, p50: Double, p95: Double, max: Double) {
+    self.count = count
+    self.p50 = p50
+    self.p95 = p95
+    self.max = max
+    guard isOrdered else { return nil }
+  }
+
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     count = try container.decode(Int.self, forKey: .count)

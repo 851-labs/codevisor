@@ -17,7 +17,8 @@ publish = false
 iroh = { version = "=1.2.0", default-features = false, features = [
   "metrics",
   "portmapper",
-  "tls-ring"
+  "tls-ring",
+  "unstable-custom-transports"
 ] }
 iroh-relay = { version = "=1.2.0", default-features = false }
 tokio = { version = "1", features = [

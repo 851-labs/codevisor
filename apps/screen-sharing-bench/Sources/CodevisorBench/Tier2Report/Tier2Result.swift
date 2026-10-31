@@ -24,6 +24,12 @@ enum Tier2Result {
     result.energyMw = BenchResult.PerMachine(
       host: measurement.hostUsage?.powerMw, viewer: measurement.viewerUsage?.powerMw)
     result.unreadableFraction = analysis.viewerUnreadableFraction
+    if measurement.files.meta.isCodevisor {
+      let files = measurement.files
+      result.stagesMs = Tier2V2Readings.stages(
+        viewer: files.system, host: files.share, engineV2: system == .codevisorV2)
+      result.media = system == .codevisorV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
+    }
     result.valid = measurement.invalidReason == nil
     result.invalidReason = measurement.invalidReason
     return result

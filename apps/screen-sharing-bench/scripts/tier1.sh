@@ -14,7 +14,9 @@ results=${2:-}
 : "${TIER1_NETWORKS:=N0,N3}"
 : "${TIER1_TRIGGER:=manual}"
 : "${TIER1_SOURCE:=synthetic}"
-: "${TIER1_PLANS:=core,gate,matrix}"
+: "${TIER1_PLANS:=core,gate,matrix,gate-v2}"
+: "${TIER1_ENGINE:=v1}"
+: "${TIER1_GATE_ENGINES:=v1}"
 core_networks=N0,N3
 other_networks=N1,N2,N4,N5,N6,N7
 gate_options=(--scenes typing,scroll,video --networks N0,N3)
@@ -41,9 +43,9 @@ scenes() {
 
 nightly() {
   local status=0 plan
-  for plan in core gate matrix; do
+  for plan in core gate matrix core-v2 gate-v2; do
     [[ ",$TIER1_PLANS," == *",$plan,"* ]] || continue
-    "$plan" || status=1
+    "${plan/-v2/_v2}" || status=1
   done
   return "$status"
 }
@@ -56,17 +58,32 @@ matrix() {
   loopback matrix matrix 1 --networks "$other_networks"
 }
 
+core_v2() {
+  loopback core-v2 core-v2 "$TIER1_REPETITIONS" --networks "$core_networks" --engine v2
+}
+
 custom() {
-  loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" $(scenes)
+  loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" \
+    --engine "$TIER1_ENGINE" $(scenes)
 }
 
 gate() {
   loopback gate gate "$TIER1_REPETITIONS" "${gate_options[@]}"
 }
 
+gate_v2() {
+  loopback gate-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}" --engine v2
+}
+
 pr_gate() {
-  loopback first gate "$TIER1_REPETITIONS" "${gate_options[@]}" &&
-    loopback second gate "$TIER1_REPETITIONS" "${gate_options[@]}"
+  local status=0 engine suffix plan
+  for engine in ${TIER1_GATE_ENGINES//,/ }; do
+    suffix="" plan=gate
+    [[ "$engine" == v2 ]] && suffix=-v2 plan=gate-v2
+    loopback "first$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" --engine "$engine" &&
+      loopback "second$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" --engine "$engine" || status=1
+  done
+  return "$status"
 }
 
 : >"$results/reports.txt"

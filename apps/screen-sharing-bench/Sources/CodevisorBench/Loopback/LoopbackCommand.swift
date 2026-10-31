@@ -8,7 +8,7 @@ struct LoopbackCommand: BenchCommand {
     "Tier 1: stream synthetic scenes through the product sender and receiver over an emulated network"
   static let usage = [
     "[--scenes <scene,…>] [--networks <N0,…>] [--duration <seconds>] [--warm-up <seconds>] [--repetitions <n>]",
-    "[--plan <name>] [--seed <n>]",
+    "[--engine v1|v2] [--plan <name>] [--seed <n>]",
     "[--resolution R1] [--source synthetic|own-window] [--display main|virtual] [--onscreen]",
     "[--output <report.json>] [--frames <frames.jsonl>] [--run-id <id>] [--trigger <name>]",
   ].joined(separator: " ")
@@ -31,7 +31,8 @@ struct LoopbackCommand: BenchCommand {
     networks = try LoopbackMatrix.networks(try options.string("networks"))
     let duration = try options.integer("duration", default: 12, in: Self.durations)
     settings = LoopbackSettings(
-      durationSeconds: duration, warmUpSeconds: try options.integer("warm-up", default: 5, in: 0...(duration - 1)),
+      engine: try options.choice("engine", default: BenchEngine.v1), durationSeconds: duration,
+      warmUpSeconds: try options.integer("warm-up", default: 5, in: 0...(duration - 1)),
       seed: UInt64(try options.integer("seed", default: 7, in: 0...Int(Int32.max))),
       resolution: try LoopbackMatrix.resolution(try options.choice("resolution", default: .r1)),
       endpoint: try options.flag("onscreen") ? .onGlass : .committed,
