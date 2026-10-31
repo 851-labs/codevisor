@@ -1,12 +1,3 @@
-//! The QUIC transport of screen sharing connections ([`ALPN_SCREEN`](crate::ALPN_SCREEN), engine v2).
-//!
-//! `codevisor-media` paces each frame itself and turns its own delivery-rate estimate into the encoder's admission,
-//! so QUIC's congestion window and pacer would only queue its datagrams a second time. A screen connection gets
-//! [`transport_config`] instead of iroh's defaults: [`DeferringController`] (no window or pacing while the path
-//! delivers), a datagram send buffer of a few frames' packets rather than 1 MiB, ACKs every 16 packets instead of
-//! every second one, and a 100 ms initial RTT. The endpoint applies it to every connection on that ALPN, dialed and
-//! accepted alike.
-
 use std::{
     any::Any,
     sync::Arc,
@@ -15,20 +6,9 @@ use std::{
 
 use iroh::endpoint::{AckFrequencyConfig, Controller, ControllerFactory, QuicTransportConfig, RttEstimator};
 
-/// What QUIC may hold for `codevisor-media` before handing datagrams back to its pacer as full: about 180 packets,
-/// several bursts of the pacer's, so a frame never waits on it, but not the 1 MiB default that queued for 100 ms
-/// and more on a slow link (the design's §3.3).
 pub const DATAGRAM_SEND_BUFFER: usize = 256 * 1024;
-/// Received datagrams QUIC holds until `codevisor-media` reads them: two 1 MiB keyframes, so a reader running late
-/// behind a keyframe burst loses nothing.
 pub const DATAGRAM_RECEIVE_BUFFER: usize = 2 * 1024 * 1024;
-/// The round trip assumed before the first sample (RFC 9002 says 333 ms). A lost first handshake packet is resent
-/// after 3 × this, 300 ms instead of a second on the LAN; a slower relay path costs at most one spare resend.
 pub const INITIAL_RTT: Duration = Duration::from_millis(100);
-/// How many datagrams the peer may take before it must ACK, and how long it may hold an ACK. QUIC's default (every
-/// second packet) puts an ACK on the wire, and through both QUIC stacks, for every two media packets; at 16 the
-/// frame round trip on the minis fell by 0.25–1.0 ms at 8–45 Mbit/s. The media's own per-frame feedback, not QUIC's
-/// ACKs, drives its pacing and repair, so nothing waits on the later ACK.
 pub const ACK_ELICITING_THRESHOLD: u32 = 16;
 pub const MAX_ACK_DELAY: Duration = Duration::from_millis(2);
 
@@ -48,29 +28,18 @@ fn ack_frequency() -> AckFrequencyConfig {
     config
 }
 
-/// A window this large switches noq's pacer off as well (it stops pacing above `u32::MAX`).
-const UNLIMITED: u64 = 1 << 40;
-/// Once recovery's slow start reaches this window (about 20 Mbit/s at a 100 ms round trip) the path is carrying
-/// traffic again and the window is lifted.
-const RECOVERED: u64 = 256 * 1024;
+const UNPACED_WINDOW: u64 = 1 << 40;
+const RECOVERED_WINDOW: u64 = 256 * 1024;
 
-/// A congestion controller that defers to `codevisor-media`'s rate control: no window and no pacing while the path
-/// delivers, so its datagrams leave as soon as its pacer releases them, and ordinary loss changes nothing here (the
-/// media rate control and FEC react to it).
-///
-/// It's still a circuit breaker. After persistent congestion (every packet lost over several probe timeouts: the
-/// path went dead or changed), it drops to two packets and slow-starts, growing by every byte acked, until the window
-/// reaches [`RECOVERED`]; then it steps aside again.
 #[derive(Debug, Clone)]
 pub struct DeferringController {
     mtu: u64,
-    /// `None` while deferring; the slow-start window after persistent congestion.
-    recovering: Option<u64>,
+    slow_start_window: Option<u64>,
 }
 
 impl DeferringController {
     fn new(mtu: u16) -> Self {
-        Self { mtu: mtu.into(), recovering: None }
+        Self { mtu: mtu.into(), slow_start_window: None }
     }
 
     fn minimum_window(&self) -> u64 {
@@ -78,9 +47,9 @@ impl DeferringController {
     }
 
     fn acked(&mut self, bytes: u64) {
-        if let Some(window) = self.recovering {
+        if let Some(window) = self.slow_start_window {
             let window = window + bytes;
-            self.recovering = (window < RECOVERED).then_some(window);
+            self.slow_start_window = (window < RECOVERED_WINDOW).then_some(window);
         }
     }
 }
@@ -100,20 +69,20 @@ impl Controller for DeferringController {
         _largest_lost_pn: u64,
     ) {
         if is_persistent_congestion {
-            self.recovering = Some(self.minimum_window());
+            self.slow_start_window = Some(self.minimum_window());
         }
     }
 
     fn on_mtu_update(&mut self, new_mtu: u16) {
         self.mtu = new_mtu.into();
         let minimum = self.minimum_window();
-        if let Some(window) = &mut self.recovering {
+        if let Some(window) = &mut self.slow_start_window {
             *window = (*window).max(minimum);
         }
     }
 
     fn window(&self) -> u64 {
-        self.recovering.unwrap_or(UNLIMITED)
+        self.slow_start_window.unwrap_or(UNPACED_WINDOW)
     }
 
     fn clone_box(&self) -> Box<dyn Controller> {
@@ -121,7 +90,7 @@ impl Controller for DeferringController {
     }
 
     fn initial_window(&self) -> u64 {
-        UNLIMITED
+        UNPACED_WINDOW
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
@@ -152,7 +121,7 @@ mod tests {
         let mut controller = DeferringController::new(1200);
         assert!(controller.window() > u64::from(u32::MAX), "noq paces any window up to u32::MAX");
         congestion(&mut controller, false);
-        assert_eq!(controller.window(), UNLIMITED);
+        assert_eq!(controller.window(), UNPACED_WINDOW);
     }
 
     #[test]
@@ -164,7 +133,7 @@ mod tests {
         controller.acked(2_400);
         assert_eq!(controller.window(), 4_800);
 
-        controller.acked(RECOVERED);
-        assert_eq!(controller.window(), UNLIMITED);
+        controller.acked(RECOVERED_WINDOW);
+        assert_eq!(controller.window(), UNPACED_WINDOW);
     }
 }

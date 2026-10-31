@@ -1,16 +1,3 @@
-//! Manual connectivity check for screen sharing connections (`codevisor/screen/1`): one machine listens, another
-//! dials it over a chosen path, and both print the path they got and the transport the connection runs on.
-//!
-//! ```text
-//! screen_connect listen [--bind ADDR] [--policy auto|direct-only|relay-only] [--relay URL [--relay-quic PORT]]
-//! screen_connect dial --peer ID [--addr IP:PORT] [--relay URL] [--policy …] [--seconds 5]
-//! ```
-//!
-//! Relays default to none. The production relays only admit registered devices, so a check of the relay path needs a
-//! relay of its own, such as `iroh-relay --dev` (plain HTTP on port 3340). The dialer sends a
-//! ping per 100 ms for `--seconds` over a stream and reports the selected path, its RTT, MTU and congestion window
-//! (above `u32::MAX` means the screen transport's deferring controller is in charge).
-
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow, bail};

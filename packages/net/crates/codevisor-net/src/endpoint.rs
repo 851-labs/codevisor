@@ -86,7 +86,6 @@ impl CancelToken {
 pub struct NetEndpoint {
     endpoint: Endpoint,
     screen_transport: QuicTransportConfig,
-    /// How screen connections are accepted, when the endpoint takes them: with their own transport config.
     screen_server_config: Option<Arc<ServerConfig>>,
     addr_updates: Mutex<(watch::Receiver<NetAddr>, bool)>,
     addr_task: JoinHandle<()>,
@@ -136,7 +135,6 @@ impl NetEndpoint {
 
         let endpoint = builder.bind().await.context("failed to bind tunnel endpoint")?;
         let screen_transport = screen_transport::transport_config();
-        // Offering only the screen ALPN, so a connection accepted with this config always negotiates it.
         let screen_server_config = config.alpns.iter().any(|alpn| alpn == ALPN_SCREEN).then(|| {
             let builder = endpoint.create_server_config_builder(vec![ALPN_SCREEN.to_vec()]);
             Arc::new(builder.set_transport_config(screen_transport.clone()).build())
@@ -185,7 +183,6 @@ impl NetEndpoint {
             .map_err(|_| anyhow!("no home relay after {timeout:?}"))
     }
 
-    /// Connects on `alpn`; a screen connection ([`ALPN_SCREEN`]) gets [`screen_transport`]'s config.
     pub async fn connect(&self, addr: &NetAddr, alpn: &[u8]) -> Result<NetConnection> {
         let mut options = ConnectOptions::new();
         if alpn == ALPN_SCREEN {
@@ -296,8 +293,6 @@ async fn handshake(incoming: Incoming, screen_server_config: Option<Arc<ServerCo
     Ok(NetConnection::new(connection))
 }
 
-/// Whether the client's first packet asks for `alpn`, so the transport config can be chosen before the handshake
-/// (it carries the server's transport parameters). Our clients offer one ALPN each.
 fn offers_alpn(incoming: &Incoming, alpn: &[u8]) -> bool {
     let offered = incoming.decrypt().and_then(|initial| initial.alpns());
     offered.is_some_and(|mut offered| offered.any(|offered| offered.is_ok_and(|offered| offered == alpn)))
