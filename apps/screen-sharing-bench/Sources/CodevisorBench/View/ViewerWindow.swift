@@ -27,7 +27,7 @@ final class ViewerWindow: NSWindow {
     BenchPresentation.restoreMenuBar()
   }
 
-  func show(_ surface: ScreenSharingVideoSurface) {
+  func show(_ surface: NSView) {
     contentView = surface
     surface.frame = contentLayoutRect
   }
