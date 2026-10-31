@@ -44,7 +44,6 @@ struct ScreenSharingVideoToolboxSessionFactory {
   private func configure(_ session: VTCompressionSession) throws {
     try set(session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue)
     try set(session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
-    try set(session, kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality, kCFBooleanTrue)
     try set(session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel)
     try set(session, kVTCompressionPropertyKey_ExpectedFrameRate, framesPerSecond as CFNumber)
     try set(session, kVTCompressionPropertyKey_AverageBitRate, bitrate as CFNumber)
