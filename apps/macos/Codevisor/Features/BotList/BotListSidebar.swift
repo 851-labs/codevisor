@@ -12,6 +12,7 @@ struct BotListSidebar: View {
   @State private var deletingBot: Bot?
   @State private var stepHandlerOwner = UUID()
   @State private var sectionPrompt: SectionPrompt?
+  @FocusState private var isListFocused: Bool
   @ClientPreference(SidebarPreferenceKey.collapsedBotSections, default: []) private var collapsedSectionIDs: [String]
   @ClientPreference(SidebarPreferenceKey.botArchivedExpanded, default: false) private var archivedExpanded
 
@@ -27,6 +28,11 @@ struct BotListSidebar: View {
         conversations: conversations, sections: sections.sections, membership: sections.membership,
         collapsedSectionIDs: Set(collapsedSectionIDs.compactMap(UUID.init(uuidString:))),
         isArchivedExpanded: archivedExpanded, selectedBotID: selectedBotID))
+  }
+
+  private var selectedBot: Bot? {
+    guard case let .bot(serverId, id) = selection else { return nil }
+    return environment.bots.bot(serverId: serverId, id: id)
   }
 
   private var selectedBotID: UUID? {
@@ -67,6 +73,9 @@ struct BotListSidebar: View {
         content
       }
       .scrollContentBackground(.hidden)
+      .focusable()
+      .focusEffectDisabled()
+      .focused($isListFocused)
       .contextMenu {
         Button {
           sectionPrompt = .create(moving: nil)
@@ -77,6 +86,7 @@ struct BotListSidebar: View {
       }
       .onChange(of: selectedBotID) { _, id in
         if let id { proxy.scrollTo(id) }
+        if selectedBot?.isArchived == true { isListFocused = true }
       }
     }
   }
@@ -143,9 +153,7 @@ struct BotListSidebar: View {
   }
 
   private var archivableSelectedBot: Bot? {
-    guard case let .bot(serverId, id) = selection, let bot = environment.bots.bot(serverId: serverId, id: id),
-      !bot.isArchived, environment.bots.supportsArchive(on: serverId)
-    else { return nil }
+    guard let bot = selectedBot, !bot.isArchived, environment.bots.supportsArchive(on: bot.serverId) else { return nil }
     return bot
   }
 
