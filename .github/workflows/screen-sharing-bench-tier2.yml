@@ -39,9 +39,9 @@ on:
         default: v1
         type: string
       present:
-        description: Engine v2 presentation on the viewer, display-link or arrival
+        description: Engine v2 presentation on the viewer, arrival or display-link
         required: false
-        default: display-link
+        default: arrival
         type: string
       systems:
         description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor)
@@ -86,9 +86,9 @@ on:
         default: v1
         type: string
       present:
-        description: Engine v2 presentation on the viewer, display-link or arrival
+        description: Engine v2 presentation on the viewer, arrival or display-link
         required: false
-        default: display-link
+        default: arrival
         type: string
       systems:
         description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor)

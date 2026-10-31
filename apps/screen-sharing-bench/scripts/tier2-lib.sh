@@ -12,7 +12,7 @@
 : "${TIER2_RENDEZVOUS_S:=1800}"
 : "${TIER2_NETWORK:=N0}"
 : "${TIER2_ENGINE:=v1}"
-: "${TIER2_PRESENT:=display-link}"
+: "${TIER2_PRESENT:=arrival}"
 : "${TIER2_SYSTEMS:=apple-hp,codevisor-r1x2,codevisor}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

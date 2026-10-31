@@ -10,7 +10,7 @@ struct ViewCommand: BenchCommand {
   static let summary =
     "Show the Codevisor stream from the host full screen, or (--source null) the floor: barcodes drawn from UDP"
   static let usage = """
-    --source codevisor --host <ipv4> [--port <port>] [--engine v1|v2] [--present display-link|arrival] \
+    --source codevisor --host <ipv4> [--port <port>] [--engine v1|v2] [--present arrival|display-link] \
       [--duration <seconds>] \(BenchSignalFiles.usage)
       view --source null [--port <udp port>] [--duration <seconds>] \(BenchSignalFiles.usage)
     """
@@ -31,7 +31,7 @@ struct ViewCommand: BenchCommand {
   init(options: BenchOptions) throws {
     source = try options.choice("source", default: Source.codevisor)
     engine = try options.choice("engine", default: BenchEngine.v1)
-    presentation = try options.choice("present", default: V2Presentation.displayLink)
+    presentation = try options.choice("present", default: V2Presentation.arrival)
     host = try options.string("host")
     let defaultPort = source == .codevisor ? SignalingSocket.defaultPort : Self.defaultFloorPort
     port = UInt16(try options.integer("port", default: Int(defaultPort), in: Self.ports))
