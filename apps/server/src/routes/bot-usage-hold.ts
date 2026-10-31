@@ -1,7 +1,7 @@
 import type { PromptQueueItem } from "@codevisor/api"
 
 import { run, type CodevisorServerServices } from "../server-context.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 
 export const heldForUsageLimit = async (
   services: CodevisorServerServices,
@@ -30,7 +30,7 @@ const botAwaitsReset = async (
   const resume = await run(services.db.getAutoResume(sessionId))
   if (resume?.state !== "waiting") return false
 
-  return (await conversationalBotForSession(services, sessionId)) !== undefined
+  return (await botForChat(services, sessionId)) !== undefined
 }
 
 const userPromptQueued = async (

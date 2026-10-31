@@ -4,17 +4,18 @@ enum TranscriptBubbleConversation {
   static func make(_ input: TranscriptProjectionInput) -> TranscriptBotConversation {
     var messages: [TranscriptBotMessage] = []
     var seenUserIDs = Set<UUID>()
-    for item in input.settledConversation + [input.activeItem].compactMap(\.self) {
+    let items = input.settledConversation + [input.activeItem].compactMap(\.self)
+    for (index, item) in items.enumerated() {
       switch item {
       case .user:
         guard let prompt = item.userPrompt, seenUserIDs.insert(prompt.id).inserted else { continue }
-        messages.append(userMessage(prompt, delivery: nil))
+        messages.append(userMessage(prompt, delivery: nil, sentAt: answerStart(after: index, in: items)))
       case let .assistant(message):
         messages += assistantMessages(message)
       }
     }
     for outgoing in input.outgoingMessages where seenUserIDs.insert(outgoing.id).inserted {
-      messages.append(userMessage(outgoing, delivery: input.deliveries[outgoing.id]))
+      messages.append(userMessage(outgoing, delivery: input.deliveries[outgoing.id], sentAt: nil))
     }
     return TranscriptBotConversation(messages: messages, isWorking: isWorking(input))
   }
@@ -24,10 +25,19 @@ enum TranscriptBubbleConversation {
     return message.turn.isGenerating && message.turn.finalText == nil
   }
 
-  private static func userMessage(_ message: UserMessage, delivery: TranscriptDelivery?) -> TranscriptBotMessage {
+  private static func answerStart(after index: Int, in items: [ConversationItem]) -> Date? {
+    for item in items[(index + 1)...] {
+      if case let .assistant(message) = item { return message.turn.startedAt }
+    }
+    return nil
+  }
+
+  private static func userMessage(
+    _ message: UserMessage, delivery: TranscriptDelivery?, sentAt: Date?
+  ) -> TranscriptBotMessage {
     TranscriptBotMessage(
       id: message.id.uuidString.lowercased(), sender: .user, text: message.text, attachments: message.attachments,
-      delivery: delivery)
+      sentAt: sentAt, delivery: delivery)
   }
 
   private static func assistantMessages(_ message: AssistantMessage) -> [TranscriptBotMessage] {
@@ -69,7 +79,13 @@ enum TranscriptBubbleSplitter {
     var lines: [Substring]
   }
 
+  private static let cache = Cache()
+
   static func bubbles(in markdown: String) -> [String] {
+    cache.bubbles(for: markdown) { split(markdown) }
+  }
+
+  private static func split(_ markdown: String) -> [String] {
     var bubbles: [String] = []
     var heading: String?
     for block in blocks(in: markdown) {
@@ -200,5 +216,21 @@ enum TranscriptBubbleSplitter {
     let rest = line.dropFirst(digits.count)
     guard let delimiter = rest.first, delimiter == "." || delimiter == ")" else { return false }
     return rest.dropFirst().first == " "
+  }
+
+  private final class Cache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [String: [String]] = [:]
+    private let limit = 512
+
+    func bubbles(for markdown: String, split: () -> [String]) -> [String] {
+      if let cached = lock.withLock({ entries[markdown] }) { return cached }
+      let bubbles = split()
+      lock.withLock {
+        if entries.count >= limit { entries.removeAll(keepingCapacity: true) }
+        entries[markdown] = bubbles
+      }
+      return bubbles
+    }
   }
 }

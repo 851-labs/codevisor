@@ -8,16 +8,20 @@ import {
   type EventFanout
 } from "../server-context.js"
 
-export const conversationalBotForSession = async (
+export const botForChat = async (
   services: CodevisorServerServices,
   sessionId: string
 ): Promise<Bot | undefined> => {
   const bot = await run(services.db.findBotOwning({ sessionId }))
-  return bot !== undefined &&
-    bot.conversational &&
-    bot.sessionId.toLowerCase() === sessionId.toLowerCase()
-    ? bot
-    : undefined
+  return bot?.sessionId.toLowerCase() === sessionId.toLowerCase() ? bot : undefined
+}
+
+export const conversationalBotForSession = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<Bot | undefined> => {
+  const bot = await botForChat(services, sessionId)
+  return bot?.conversational === true ? bot : undefined
 }
 
 export const postBotMessage = async (

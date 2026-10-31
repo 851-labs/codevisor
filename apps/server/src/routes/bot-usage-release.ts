@@ -8,7 +8,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { isRecord } from "../unknown-values.js"
-import { conversationalBotForSession } from "./bot-turns.js"
+import { botForChat } from "./bot-turns.js"
 import { drainPromptQueue } from "./prompt-queue.js"
 
 export const makeUsageHoldReleaseListener =
@@ -41,7 +41,7 @@ const releaseHeldWakeUps = async (
   sessionId: string
 ): Promise<void> => {
   if ((await run(services.db.getAutoResume(sessionId))) !== undefined) return
-  if ((await conversationalBotForSession(services, sessionId)) === undefined) return
+  if ((await botForChat(services, sessionId)) === undefined) return
 
   await drainPromptQueue(services, fanout, routeState, serverId, sessionId)
 }
