@@ -352,7 +352,7 @@ extension MachineControllerCloudTests {
 
   @Test("Sign-out with a cloud machine selected falls back to local")
   func signOutFallsBackToLocal() {
-    let (controller, projectList, provider) = makeController()
+    let (controller, _, provider) = makeController()
     provider.cloudMachines = [makeCloudMachine()]
     controller.registry.selectedMachineId = "cloud:dev-1"
 
@@ -360,13 +360,12 @@ extension MachineControllerCloudTests {
     controller.handleCloudAccountSignedOut()
     #expect(controller.selectedMachineId == "local")
     #expect(controller.selectedMachine == .local)
-    #expect(projectList.selectedServerId == "local")
   }
 
   @Test("A cloud machine arriving on a client-only platform is auto-selected")
   func autoSelectsCloudMachine() async throws {
     let store = InMemoryStore()
-    let (controller, projectList, provider) = makeController(store: store, localServer: nil)
+    let (controller, _, provider) = makeController(store: store, localServer: nil)
     provider.requestTransport.responsesByPath["/v1/info"] = """
       {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
        "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
@@ -378,7 +377,6 @@ extension MachineControllerCloudTests {
 
     #expect(controller.selectedMachine.isCloud)
     #expect(controller.selectedMachineId == "cloud:dev-1")
-    #expect(projectList.selectedServerId == "local")
     await controller.prepareMachine(controller.selectedMachineId)
     #expect(provider.configRequests.contains("dev-1"))
     #expect(provider.requestTransport.paths.contains("/v1/info"))
@@ -392,7 +390,7 @@ extension MachineControllerCloudTests {
 
   @Test("A working local server remains the default when cloud machines arrive")
   func localServerRemainsDefault() {
-    let (controller, projectList, provider) = makeController(
+    let (controller, _, provider) = makeController(
       localServer: StubLocalServer()
     )
 
@@ -400,7 +398,6 @@ extension MachineControllerCloudTests {
     controller.reconcileCloudSelection()
 
     #expect(controller.selectedMachineId == "local")
-    #expect(projectList.selectedServerId == "local")
   }
 
   @Test("Auto-selection prefers an online machine over list order")
@@ -429,11 +426,10 @@ extension MachineControllerCloudTests {
 
   @Test("With no machines at all, a client-only platform stays on the placeholder")
   func autoSelectStaysLocalWithNoOtherMachines() {
-    let (controller, projectList, _) = makeController(localServer: nil)
+    let (controller, _, _) = makeController(localServer: nil)
     controller.reconcileCloudSelection()
 
     #expect(controller.selectedMachineId == "local")
-    #expect(projectList.selectedServerId == "local")
   }
 
   @Test("A persisted cloud selection resolves to local until the account arrives")
@@ -454,7 +450,6 @@ extension MachineControllerCloudTests {
     controller.cloudProvider = provider
     controller.reconcileCloudSelection()
     #expect(controller.selectedMachine.isCloud)
-    #expect(projectList.selectedServerId == "local")
   }
 
   @Test("effectiveHTTPBaseURL waits for a cloud machine's loopback bridge")

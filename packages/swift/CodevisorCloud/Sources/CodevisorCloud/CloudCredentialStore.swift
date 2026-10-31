@@ -22,11 +22,13 @@ public protocol CloudCredentialStore: Sendable {
 public struct CachedRoster: Codable, Equatable, Sendable {
   public var serverURL: String
   public var userEmail: String?
+  public var userId: String?
   public var machines: [CloudMachine]
 
-  public init(serverURL: String, userEmail: String?, machines: [CloudMachine]) {
+  public init(serverURL: String, userEmail: String?, userId: String? = nil, machines: [CloudMachine]) {
     self.serverURL = serverURL
     self.userEmail = userEmail
+    self.userId = userId
     self.machines = machines
   }
 }

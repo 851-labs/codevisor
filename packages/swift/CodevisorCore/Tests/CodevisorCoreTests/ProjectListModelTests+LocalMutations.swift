@@ -10,7 +10,7 @@ extension ProjectListModelTests {
     let fakeServer = FakeServerClient()
     let fixture = await NavigationFixture.connected(to: fakeServer)
     let model = fixture.projectList
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mirrored"))
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mirrored"), serverId: "local")
     let session = model.newSession(in: project, title: "First", harnessId: "codex")
     await fixture.sync(with: fakeServer)
     model.renameSession(session, to: "Renamed")
@@ -33,7 +33,7 @@ extension ProjectListModelTests {
   func addProject() {
     let persistence = InMemoryStore()
     let model = NavigationFixture(persistence: persistence).projectList
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/proj"))
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/proj"), serverId: "local")
     #expect(project.name == "proj")
     #expect(model.projects.count == 1)
     PersistenceEncoding.drain()
@@ -45,7 +45,7 @@ extension ProjectListModelTests {
     let fixture = NavigationFixture()
     await fixture.install(cursor: 1)
     fixture.connect(FakeServerClient())
-    let project = fixture.projectList.addProject(folderURL: URL(fileURLWithPath: "/tmp/repo"))
+    let project = fixture.projectList.addProject(folderURL: URL(fileURLWithPath: "/tmp/repo"), serverId: "local")
     await fixture.flush()
     #expect(fixture.projectList.projects.map(\.isGitRepository) == [false])
 
@@ -60,8 +60,8 @@ extension ProjectListModelTests {
   func addDeduplicates() {
     let model = NavigationFixture().projectList
     let url = URL(fileURLWithPath: "/tmp/proj")
-    let first = model.addProject(folderURL: url)
-    let second = model.addProject(folderURL: url)
+    let first = model.addProject(folderURL: url, serverId: "local")
+    let second = model.addProject(folderURL: url, serverId: "local")
     #expect(model.projects.count == 1)
     #expect(second.id == first.id)
   }
@@ -80,8 +80,8 @@ extension ProjectListModelTests {
   func sessions() {
     let persistence = InMemoryStore()
     let model = NavigationFixture(persistence: persistence).projectList
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    let other = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/b"))
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"), serverId: "local")
+    let other = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/b"), serverId: "local")
     let session = model.newSession(in: project, title: "First", harnessId: "claude")
     model.newSession(in: other)
     #expect(model.fleetSessions(in: project).map(\.id) == [session.id])
@@ -109,7 +109,7 @@ extension ProjectListModelTests {
     let persistence = InMemoryStore()
     let model = NavigationFixture(persistence: persistence).projectList
     model.showsImportedSessions = true
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"), serverId: "local")
     let imported = [
       ImportedSession(
         harnessId: "claude-code",

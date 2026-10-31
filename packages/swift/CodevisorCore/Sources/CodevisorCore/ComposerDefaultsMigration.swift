@@ -5,6 +5,10 @@ enum ComposerDefaultsMigration {
 
   typealias HarnessSelections = [String: [String: String]]
 
+  static func version(of data: Data, using decoder: JSONDecoder) -> Int? {
+    (try? decoder.decode(VersionedPayload.self, from: data))?.version
+  }
+
   static func decodeLegacy(_ data: Data, using decoder: JSONDecoder) -> ComposerDefaults? {
     let legacy =
       decodeV4ToV6(data, using: decoder)
@@ -86,6 +90,10 @@ enum ComposerDefaultsMigration {
       }
       return merged
     }
+  }
+
+  private struct VersionedPayload: Decodable {
+    var version: Int?
   }
 
   private struct DefaultsV4ToV6: Decodable {

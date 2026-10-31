@@ -187,19 +187,6 @@ extension AppEnvironment {
     projectRecommendationCache[serverId]
   }
 
-  public func recommendedProjectsWithFallback(
-    serverId: String,
-    limit: Int = 12
-  ) async -> [ProjectRecommendation] {
-    if let remote = try? await recommendedProjects(serverId: serverId, limit: limit) {
-      return remote
-    }
-    let imported = await sessionImporter(for: serverId).fetchAll()
-    return await Task.detached {
-      ProjectRecommender.recommend(from: imported, limit: limit)
-    }.value
-  }
-
   private static func recommendationDate(from string: String) -> Date? {
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

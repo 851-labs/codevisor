@@ -87,7 +87,7 @@ struct AppEnvironmentTests {
     #expect(found.allSatisfy { $0.info.cwd == "/Users/me/src/website" })
 
     let project = environment.projectList.addProject(
-      folderURL: URL(fileURLWithPath: "/Users/me/src/website")
+      folderURL: URL(fileURLWithPath: "/Users/me/src/website"), serverId: "local"
     )
     environment.importSessions(found, into: project)
     #expect(environment.settings.importExternalSessions)

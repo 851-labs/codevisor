@@ -67,7 +67,7 @@ public final class PluginAccessController {
     let body = try JSONEncoder().encode(
       PluginConsent(pluginId: subject.pluginId, consentKey: subject.consentKey, metadata: metadata))
     let id = try consentOutbox.record(
-      key: "\(subject.pluginId):\(subject.consentKey)", scope: cloud.pluginConsentScope, body: body)
+      key: "\(subject.pluginId):\(subject.consentKey)", account: cloud.pluginConsentAccount, body: body)
     try await deliverConsent(id, requiresAccount: enforcesAgeGate && !subject.isCustom)
   }
 
@@ -98,7 +98,7 @@ public final class PluginAccessController {
   }
 
   private func loadBlockedPublishers() async throws -> [String] {
-    guard cloud.pluginConsentScope != nil else { return [] }
+    guard cloud.hasPluginSession else { return [] }
 
     let data = try await cloud.pluginRequest(path: "/api/plugins/preferences")
     return try JSONDecoder().decode(PluginPreferences.self, from: data).blockedPublishers.sorted()
@@ -109,7 +109,7 @@ public final class PluginAccessController {
       try? await syncConsent()
       return
     }
-    guard cloud.pluginConsentScope != nil else { throw PluginAccessError("Sign in to install plugins.") }
+    guard cloud.hasPluginSession else { throw PluginAccessError("Sign in to install plugins.") }
 
     let outcome = try await flushConsent()
     if let failure = outcome.failures[id] { throw failure }
@@ -119,7 +119,8 @@ public final class PluginAccessController {
   }
 
   private func flushConsent() async throws -> PluginConsentOutbox.Outcome {
-    try await consentOutbox.flush(scope: cloud.pluginConsentScope) { [cloud] body in
+    guard cloud.hasPluginSession else { return PluginConsentOutbox.Outcome() }
+    return try await consentOutbox.flush(signedInAs: cloud.pluginConsentAccount) { [cloud] body in
       do {
         _ = try await cloud.pluginRequest(path: "/api/plugins/consent", method: "POST", body: body)
       } catch CloudAccountClientError.httpStatus(400) {

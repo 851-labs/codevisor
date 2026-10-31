@@ -14,7 +14,7 @@ extension ProjectListModelTests {
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/srv/other"), serverId: "cloud:twin")
     model.newSession(in: project, syncToServer: false)
     model.removeProject(twin)
-    let local = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/kept"))
+    let local = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/kept"), serverId: "local")
 
     model.removeAllRecords(serverId: "cloud:twin")
 

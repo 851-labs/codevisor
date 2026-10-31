@@ -36,13 +36,14 @@ struct ProjectListModelTests {
     let id = UUID()
     let url = URL(fileURLWithPath: "/home/user/.codevisor/repos/widget")
 
-    let project = model.adoptServerProject(id: id, folderURL: url, name: "widget")
+    let project = model.adoptServerProject(id: id, folderURL: url, name: "widget", serverId: "cloud:dev-1")
     #expect(project.id == id)
+    #expect(project.serverId == "cloud:dev-1")
     #expect(project.name == "widget")
     #expect(project.folderURL == url)
     #expect(project.locations.allSatisfy { $0.projectId == id })
 
-    let again = model.adoptServerProject(id: id, folderURL: url, name: "widget")
+    let again = model.adoptServerProject(id: id, folderURL: url, name: "widget", serverId: "cloud:dev-1")
     #expect(again == project)
     #expect(model.projects.filter { $0.id == id }.count == 1)
   }
@@ -51,7 +52,7 @@ struct ProjectListModelTests {
   func newSessionCarriesWorktree() {
     let persistence = InMemoryStore()
     let model = NavigationFixture(persistence: persistence).projectList
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/repo"))
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/repo"), serverId: "local")
     let session = model.newSession(
       in: project,
       title: "Draft",
@@ -196,7 +197,7 @@ struct ProjectListModelTests {
     let model = fixture.projectList
 
     let project = model.addProject(
-      folderURL: URL(fileURLWithPath: "/tmp/pending-project")
+      folderURL: URL(fileURLWithPath: "/tmp/pending-project"), serverId: "local"
     )
     await fixture.refresh(from: fakeServer)
     #expect(model.fleetActiveProjects.contains { $0.id == project.id })

@@ -4,7 +4,7 @@ import SwiftUI
 public struct GitCloneSheet: View {
   let client: any CodevisorServerClienting
   let machineName: String
-  let serverId: String?
+  let serverId: String
   let onCloned: (Project) -> Void
 
   @Environment(AppEnvironment.self) private var environment
@@ -19,7 +19,7 @@ public struct GitCloneSheet: View {
   public init(
     client: any CodevisorServerClienting,
     machineName: String,
-    serverId: String? = nil,
+    serverId: String,
     onCloned: @escaping (Project) -> Void
   ) {
     self.client = client
@@ -263,9 +263,8 @@ public struct GitCloneSheet: View {
   }
 
   private func adoptClonedProject(id: UUID) async -> Project? {
-    let machineId = serverId ?? environment.projectList.selectedServerId
-    _ = await environment.projectList.refreshFromServer(serverId: machineId, client: client)
-    return environment.projectList.projects.first { $0.serverId == machineId && $0.id == id }
+    _ = await environment.projectList.refreshFromServer(serverId: serverId, client: client)
+    return environment.projectList.projects.first { $0.serverId == serverId && $0.id == id }
   }
 
   static func guidance(code: String?, fallback: String) -> String {

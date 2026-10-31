@@ -8,6 +8,7 @@ public final class CloudAccountController {
   public static let defaultServerURL = URL(string: "https://cloud.codevisor.dev")!
 
   public internal(set) var state: CloudAccountState = .signedOut
+  var userId: String?
   public internal(set) var machines: [CloudMachine] = []
   public var lastError: String?
   public internal(set) var linkedProviders: Set<CloudSignInProvider>?
@@ -262,6 +263,7 @@ public final class CloudAccountController {
     authenticationRevision &+= 1
     let attempt = SignInAttempt(revision: authenticationRevision, server: serverURL)
     state = .validating
+    userId = nil
     linkedProviders = nil
     lastError = nil
     validation.unverify()
@@ -278,6 +280,7 @@ public final class CloudAccountController {
     try credentialCache.saveToken(token)
     let user = (try? await client.session(token: token)) ?? nil
     guard isCurrent(attempt), storedToken == token else { return }
+    userId = user?.userId
     state = .signedIn(userEmail: user?.email)
     if await performMachineRefresh().needsValidationRetry {
       validation.scheduleRetry(for: self)
@@ -361,7 +364,8 @@ public final class CloudAccountController {
   }
 
   private var currentRoster: CachedRoster {
-    CachedRoster(serverURL: serverURL.absoluteString, userEmail: state.userEmail, machines: machines)
+    CachedRoster(
+      serverURL: serverURL.absoluteString, userEmail: state.userEmail, userId: userId, machines: machines)
   }
 
   private func refreshIsCurrent(pinGeneration: UInt64) -> Bool {

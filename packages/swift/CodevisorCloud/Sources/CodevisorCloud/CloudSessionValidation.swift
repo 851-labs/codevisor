@@ -109,6 +109,7 @@ final class CloudSessionValidation {
   }
 
   private func resume(_ account: CloudAccountController, from roster: CachedRoster) {
+    account.userId = roster.userId
     account.state = .signedIn(userEmail: roster.userEmail)
     account.machines = roster.machines
     hasCompletedBootstrap = true
@@ -183,6 +184,7 @@ final class CloudSessionValidation {
       account.sessionEnded()
       return
     }
+    account.userId = user.userId
     account.state = .signedIn(userEmail: user.email)
     guard await account.performMachineRefresh().needsValidationRetry,
       account.authenticationRevision == revision

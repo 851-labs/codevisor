@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 extension CloudAccountClienting {
   public func pluginRequest(path: String, method: String, body: Data?, token: String?) async throws -> Data {
@@ -14,10 +13,11 @@ extension CloudAccountClient {
 }
 
 extension CloudAccountController {
-  public var pluginConsentScope: String? {
-    guard let storedToken else { return nil }
-    return SHA256.hash(data: Data("\(serverURL.absoluteString)|\(storedToken)".utf8))
-      .map { String(format: "%02x", $0) }.joined()
+  public var hasPluginSession: Bool { storedToken != nil }
+
+  public var pluginConsentAccount: String? {
+    guard storedToken != nil, let userId else { return nil }
+    return "\(serverURL.absoluteString)|\(userId)"
   }
   public func pluginRequest(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
     if path.hasPrefix("/api/"), storedToken == nil { throw CloudAccountClientError.missingToken }

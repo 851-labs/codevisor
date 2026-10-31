@@ -46,6 +46,32 @@ struct CloudAccountControllerRosterTests {
     #expect(store.loadRoster()?.userEmail == "fresh@example.com")
   }
 
+  @Test("Validation learns the account for plugin consent and an offline relaunch still knows it")
+  func accountSurvivesOfflineRelaunch() async throws {
+    let client = FakeCloudClient()
+    let gate = TestSignal()
+    client.sessionGate = gate
+    client.sessions["t"] = CloudSessionUser(userId: "u1", email: "fresh@example.com")
+    client.machinesResult = .success([testMachine("m1")])
+    let store = InMemoryCloudCredentialStore(token: "t", roster: cachedRoster())
+    let (controller, _, _) = makeController(client: client, store: store)
+
+    await controller.bootstrap()
+    #expect(controller.pluginConsentAccount == nil)
+    gate.signal()
+    await controller.validation.task?.value
+    #expect(controller.pluginConsentAccount == "\(Self.server)|u1")
+
+    let offline = FakeCloudClient()
+    offline.sessionError = URLError(.notConnectedToInternet)
+    let (relaunched, _, _) = makeController(client: offline, store: store)
+    await relaunched.bootstrap()
+
+    #expect(relaunched.pluginConsentAccount == "\(Self.server)|u1")
+    relaunched.signOut()
+    #expect(relaunched.pluginConsentAccount == nil)
+  }
+
   @Test("A launch cancelled during validation stays incomplete until the next bootstrap")
   func cancelledLaunchStaysIncomplete() async throws {
     let client = FakeCloudClient()
@@ -192,7 +218,7 @@ struct CloudAccountControllerRosterTests {
     #expect(controller.isRosterVerified)
     #expect(
       store.loadRoster()
-        == CachedRoster(serverURL: Self.server, userEmail: nil, machines: machines))
+        == CachedRoster(serverURL: Self.server, userEmail: nil, userId: "u1", machines: machines))
   }
 
   @Test("A roster cached against a different server is ignored and cleared")

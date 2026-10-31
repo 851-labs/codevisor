@@ -81,7 +81,7 @@ struct SessionOverlayTests {
   @Test("User-added projects stay visible even when empty")
   func userProjectVisible() {
     let model = makeModel()
-    model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mine"))
+    model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mine"), serverId: "local")
     model.showsImportedSessions = false
     #expect(model.fleetActiveProjects.count == 1)
   }
@@ -89,7 +89,7 @@ struct SessionOverlayTests {
   @Test("setAgentSessionId records the agent session id")
   func setAgentSessionId() {
     let model = makeModel()
-    let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
+    let ws = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"), serverId: "local")
     let session = model.newSession(in: ws, harnessId: "claude-code")
     #expect(session.agentSessionId == nil)
     model.setAgentSessionId("agent-123", for: session.id, serverId: session.serverId)

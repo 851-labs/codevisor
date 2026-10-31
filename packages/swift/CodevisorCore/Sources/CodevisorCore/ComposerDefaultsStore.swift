@@ -18,6 +18,7 @@ public final class ComposerDefaultsStore {
   private let retiredBackupKeys: [String]
   private let persistenceOwner = UUID()
   private var defaults: ComposerDefaults
+  private var preservesNewerPayload = false
   private var persistenceBatchDepth = 0
   private var batchNeedsPersistence = false
   private var batchNeedsImmediatePersistence = false
@@ -39,6 +40,14 @@ public final class ComposerDefaultsStore {
     }
 
     let decoder = JSONDecoder()
+    if let version = ComposerDefaultsMigration.version(of: data, using: decoder),
+      version > ComposerDefaults.schemaVersion
+    {
+      defaults = (try? decoder.decode(ComposerDefaults.self, from: data)) ?? ComposerDefaults()
+      preservesNewerPayload = true
+      return
+    }
+
     if let current = try? decoder.decode(ComposerDefaults.self, from: data),
       current.version == ComposerDefaults.schemaVersion
     {
@@ -173,6 +182,7 @@ public final class ComposerDefaultsStore {
 
   public func clear() {
     defaults = ComposerDefaults()
+    preservesNewerPayload = false
     for backupKey in [migrationBackupKey] + retiredBackupKeys {
       do {
         try store.removeData(forKey: backupKey)
@@ -199,6 +209,7 @@ public final class ComposerDefaultsStore {
   }
 
   private func persist(immediately: Bool = false) {
+    guard !preservesNewerPayload else { return }
     if persistenceBatchDepth > 0 {
       batchNeedsPersistence = true
       batchNeedsImmediatePersistence = batchNeedsImmediatePersistence || immediately

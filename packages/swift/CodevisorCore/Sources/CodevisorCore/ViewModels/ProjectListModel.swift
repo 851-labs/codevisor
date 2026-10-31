@@ -25,14 +25,11 @@ public final class ProjectListModel {
     }
     return positions
   }
-  public private(set) var selectedServerId: String
   @ObservationIgnored public var onAttentionTransition: ((SessionAttentionTransition) -> Void)?
   public var showsImportedSessions: Bool = true
   @ObservationIgnored var navigationStore: NavigationStore?
 
-  public init(selectedServerId: String = "local") {
-    self.selectedServerId = selectedServerId
-  }
+  public init() {}
 
   func enqueue(
     _ intent: NavigationIntent, serverId: String, origin: SessionAttentionTransition.Origin = .snapshot
@@ -111,7 +108,7 @@ public final class ProjectListModel {
   }
 
   public func removeAll() {
-    for project in projects where project.serverId == selectedServerId { removeProject(project) }
+    for project in projects where project.serverId == CodevisorMachine.local.id { removeProject(project) }
   }
 
   @discardableResult
@@ -367,11 +364,6 @@ public final class ProjectListModel {
   }
 
   @discardableResult
-  public func addProject(folderURL: URL) -> Project {
-    addProject(folderURL: folderURL, serverId: selectedServerId)
-  }
-
-  @discardableResult
   public func addProject(folderURL: URL, serverId: String) -> Project {
     if let existing = projects.first(where: { $0.serverId == serverId && $0.folderURL == folderURL }) {
       return existing
@@ -383,11 +375,10 @@ public final class ProjectListModel {
 
   @discardableResult
   public func adoptServerProject(
-    id: UUID, folderURL: URL, name: String, serverId: String? = nil
+    id: UUID, folderURL: URL, name: String, serverId: String
   ) -> Project {
-    let server = serverId ?? selectedServerId
-    if let existing = projects.first(where: { $0.serverId == server && $0.id == id }) { return existing }
-    var project = Project.fromFolder(folderURL, serverId: server)
+    if let existing = projects.first(where: { $0.serverId == serverId && $0.id == id }) { return existing }
+    var project = Project.fromFolder(folderURL, serverId: serverId)
     project.id = id
     project.name = name
     project.locations = project.locations.map { location in
@@ -395,7 +386,7 @@ public final class ProjectListModel {
       updated.projectId = id
       return updated
     }
-    enqueue(.upsertProject(project), serverId: server)
+    enqueue(.upsertProject(project), serverId: serverId)
     return project
   }
 

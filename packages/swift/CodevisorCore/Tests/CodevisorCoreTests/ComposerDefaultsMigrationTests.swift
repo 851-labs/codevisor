@@ -35,6 +35,48 @@ struct ComposerDefaultsMigrationTests {
     #expect(machines.values.allSatisfy { $0["configSelections"] == nil })
   }
 
+  @Test("Settings saved by a newer version are read forward and never written over")
+  func readsNewerVersionWithoutOverwriting() {
+    let newer =
+      #"{"version":8,"lastNewWorkspaceServerId":"remote-a","machines":{"remote-a":{"lastHarnessId":"codex","pinnedHarnesses":["codex"]}},"harnesses":{"codex":{"values":{"model":"gpt-6"},"valuesByModel":{"gpt-6":{"model":"gpt-6","effort":"high"}},"presets":[]}}}"#
+    let data = Data(newer.utf8)
+    let store = InMemoryStore(storage: ["composer-defaults": data])
+
+    let defaults = ComposerDefaultsStore(store: store)
+    defaults.rememberHarnessSelection(serverId: "local", harnessId: "claude-code")
+    defaults.rememberConfigSelections(harnessId: "codex", modelOptionId: "model", configValues: ["model": "gpt-5.6"])
+    PersistenceEncoding.drain()
+
+    #expect(defaults.lastNewWorkspaceServerId == "remote-a")
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "remote-a")) == "codex")
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "local")) == "claude-code")
+    #expect(defaults.configSelections(forHarness: "codex", model: "gpt-6") == ["model": "gpt-6", "effort": "high"])
+    #expect(store.loadData(forKey: "composer-defaults") == data)
+    #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == nil)
+  }
+
+  @Test("A newer format this version can't read is left alone instead of migrated as legacy")
+  func leavesUnreadableNewerVersionAlone() throws {
+    let newer =
+      #"{"version":9,"machines":{"local":{"lastHarnessId":"codex"}},"harnesses":[{"id":"codex","model":"gpt-6"}]}"#
+    let data = Data(newer.utf8)
+    let store = InMemoryStore(storage: ["composer-defaults": data])
+
+    let defaults = ComposerDefaultsStore(store: store)
+    defaults.rememberHarnessSelection(serverId: "local", harnessId: "claude-code")
+    PersistenceEncoding.drain()
+
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "local")) == "claude-code")
+    #expect(store.loadData(forKey: "composer-defaults") == data)
+    #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == nil)
+
+    defaults.clear()
+    PersistenceEncoding.drain()
+    let cleared = try #require(store.loadData(forKey: "composer-defaults"))
+    let object = try #require(JSONSerialization.jsonObject(with: cleared) as? [String: Any])
+    #expect(object["version"] as? Int == 7)
+  }
+
   @Test("Migrates V5: machine defaults survive, workspace profiles are dropped")
   func migratesV5() throws {
     let projectId = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
