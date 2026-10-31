@@ -36,16 +36,16 @@ pub fn transport_config() -> QuicTransportConfig {
 
 /// A window this large switches noq's pacer off as well (it stops pacing above `u32::MAX`).
 const UNLIMITED: u64 = 1 << 40;
-/// Once recovery's slow start reaches this window (about 330 Mbit/s at a 100 ms round trip) the path is treated as
-/// healthy again and the window lifted.
-const RECOVERED: u64 = 4 * 1024 * 1024;
+/// Once recovery's slow start reaches this window (about 20 Mbit/s at a 100 ms round trip) the path is carrying
+/// traffic again and the window is lifted.
+const RECOVERED: u64 = 256 * 1024;
 
 /// A congestion controller that defers to `codevisor-media`'s rate control: no window and no pacing while the path
 /// delivers, so its datagrams leave as soon as its pacer releases them, and ordinary loss changes nothing here (the
 /// media rate control and FEC react to it).
 ///
 /// It's still a circuit breaker. After persistent congestion (every packet lost over several probe timeouts: the
-/// path went dead or changed), it drops to two packets and slow-starts, doubling each round trip, until the window
+/// path went dead or changed), it drops to two packets and slow-starts, growing by every byte acked, until the window
 /// reaches [`RECOVERED`]; then it steps aside again.
 #[derive(Debug, Clone)]
 pub struct DeferringController {
