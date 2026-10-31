@@ -22,11 +22,26 @@ extension HomeView {
           managesSections: !showsSampleSidebar)
       }
     }
-    if syncIndicator.isSyncing, failedSyncMachines.isEmpty {
+    if hasRemoteMachines && showsSidebarModes {
+      ToolbarItem(placement: .principal) { SidebarModePicker(mode: sidebarMode) }
+      if showsSyncIndicator {
+        ToolbarItem(placement: settingsPlacement) { syncSpinner }
+      }
+    } else if showsSyncIndicator {
       ToolbarItem(placement: .principal) {
         HomeSyncIndicatorLabel(text: syncIndicator.label ?? "Syncing…")
       }
     }
+  }
+
+  private var showsSyncIndicator: Bool {
+    syncIndicator.isSyncing && failedSyncMachines.isEmpty
+  }
+
+  private var syncSpinner: some View {
+    ProgressView()
+      .controlSize(.small)
+      .accessibilityLabel(syncIndicator.label ?? "Syncing…")
   }
 
   @ToolbarContentBuilder

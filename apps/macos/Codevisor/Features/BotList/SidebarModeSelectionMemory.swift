@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct SidebarModeSelectionMemory: ViewModifier {
@@ -21,9 +22,9 @@ struct SidebarModeSelectionMemory: ViewModifier {
   }
 
   private func restoreSelection(for mode: SidebarMode) {
-    guard selection.flatMap(SidebarMode.owning) != mode else { return }
+    guard selection?.owningMode != mode else { return }
 
-    let restored = remembered[mode] ?? mode.defaultSelection
+    let restored = remembered[mode] ?? SidebarSelection.initial(for: mode)
     guard restored != selection else { return }
 
     isRestoring = true
@@ -41,7 +42,7 @@ struct SidebarModeSelectionMemory: ViewModifier {
   private func followSelection(_ next: SidebarSelection?) {
     guard let next else { return }
 
-    let owner = SidebarMode.owning(next) ?? activeMode
+    let owner = next.owningMode ?? activeMode
     remembered[owner] = next
     guard botsEnabled, owner != activeMode else { return }
     storedMode = owner

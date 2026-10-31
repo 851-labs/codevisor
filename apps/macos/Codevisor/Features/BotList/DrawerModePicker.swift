@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorUI
 import SwiftUI
 
 struct DrawerModePicker: NSViewRepresentable {

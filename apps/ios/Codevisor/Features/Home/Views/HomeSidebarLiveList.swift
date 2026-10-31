@@ -8,6 +8,7 @@ struct HomeSidebarLiveList: View {
   let actions: HomeSidebarActionHandler
   let splitNavigation: HomeNavigationState?
   let gitLookups: SidebarGitLookups
+  let mode: Binding<SidebarMode>
 
   var body: some View {
     let builder = HomeSidebarContentBuilder(environment: environment, gitLookups: gitLookups)
@@ -16,8 +17,14 @@ struct HomeSidebarLiveList: View {
       actions: actions,
       isSelectable: splitNavigation != nil,
       selected: splitNavigation.flatMap(selected),
+      mode: resolved(mode),
       refreshDetails: refreshDetails
     )
+  }
+
+  private func resolved(_ mode: Binding<SidebarMode>) -> Binding<SidebarMode> {
+    let active = mode.wrappedValue
+    return Binding(get: { active }, set: { mode.wrappedValue = $0 })
   }
 
   private func refreshDetails(_ ids: [UUID], details: [SidebarRowDetail]) {

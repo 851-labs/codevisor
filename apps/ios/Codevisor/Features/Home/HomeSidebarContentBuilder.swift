@@ -11,6 +11,11 @@ struct HomeSidebarContentBuilder {
     environment.botSidebarEntries.filter { environment.machines.machine(for: $0.bot.serverId) != nil }
   }
 
+  var showsChatMode: Bool {
+    !environment.bots.botMachines.isEmpty
+      || environment.bots.bots.contains { environment.machines.machine(for: $0.serverId) != nil }
+  }
+
   var listedItems: [WorkspaceSidebarItem] {
     let nested = Set(botEntries.flatMap(\.workspaceIDs))
     let botProjects = Set(environment.projectList.projects.filter(\.isBot).map(\.id))

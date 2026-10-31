@@ -321,6 +321,21 @@ enum SidebarSelection: Hashable {
   case archivedWorkspace(serverId: String, id: UUID)
   case bot(serverId: String, id: UUID)
   case newChat(NewChatTarget?)
+
+  static func initial(for mode: SidebarMode) -> SidebarSelection? {
+    switch mode {
+    case .chat: nil
+    case .code: .newChat(nil)
+    }
+  }
+
+  var owningMode: SidebarMode? {
+    switch self {
+    case .bot: .chat
+    case .session, .workspace, .archivedWorkspace: .code
+    case .newChat: nil
+    }
+  }
 }
 
 #Preview("Root") {

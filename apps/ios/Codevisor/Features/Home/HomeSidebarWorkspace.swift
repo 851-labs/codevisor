@@ -141,6 +141,21 @@ struct HomeSidebarContent: Equatable {
     bots.compactMap(\.home) + (bots.flatMap(\.children) + listedWorkspaces).flatMap(\.subtree)
   }
 
+  func mode(owning selection: HomeSidebarSelection) -> SidebarMode? {
+    switch selection {
+    case .bot:
+      return .chat
+    case let .workspace(id, _):
+      if botWorkspaceIDs.contains(id) { return .chat }
+      return workspace(id) != nil || archived.contains { $0.id == id } ? .code : nil
+    }
+  }
+
+  private var botWorkspaceIDs: Set<UUID> {
+    let bots = bots + archivedBots
+    return Set(bots.compactMap(\.home?.id) + bots.flatMap(\.children).flatMap(\.subtree).map(\.id))
+  }
+
   func bot(_ id: UUID) -> HomeSidebarBot? {
     bots.first { $0.id == id }
   }
