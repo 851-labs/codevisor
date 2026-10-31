@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class SidebarDragGeometryStore {
   var workspaces: [UUID: CGRect] = [:]
+  var workspacePlacements: [UUID: SidebarRow.Placement] = [:]
   var headings: [String: CGRect] = [:]
 }
 
@@ -13,6 +14,7 @@ struct SidebarDrag: Equatable {
   let liftedFrame: CGRect
   var translation: CGFloat = 0
   var targetIndex: Int?
+  var sectionTarget: WorkspaceSectionPlacement?
 
   var ghostFrame: CGRect { liftedFrame.offsetBy(dx: 0, dy: translation) }
 }
@@ -39,24 +41,30 @@ extension SidebarView {
         drag?.translation = value.translation.height
         retarget()
         guard let finished = drag else { return }
-        if let target = finished.targetIndex {
+        if let section = finished.sectionTarget {
+          environment.workspaceSections.move(finished.workspaceID, to: section.sectionID)
+        } else if let target = finished.targetIndex {
           commitWorkspaceMove(
-            finished.workspaceID, toIndex: target, within: dropTargets(for: finished.workspaceID).order)
+            finished.workspaceID, toIndex: target,
+            within: dropTargets(for: finished.workspaceID, in: sidebarRows).order)
         }
         withAnimation(Motion.quick(reduceMotion: reduceMotion)) { drag = nil }
       }
   }
 
-  func recordWorkspaceFrame(_ frame: CGRect, for id: UUID) {
+  func recordWorkspaceFrame(_ frame: CGRect, for id: UUID, in placement: SidebarRow.Placement) {
     dragGeometry.workspaces[id] = frame
+    dragGeometry.workspacePlacements[id] = placement
   }
 
-  func forgetWorkspaceGeometry(for id: UUID) {
+  func forgetWorkspaceGeometry(for id: UUID, in placement: SidebarRow.Placement) {
+    guard dragGeometry.workspacePlacements[id] == placement else { return }
+
     dragGeometry.workspaces[id] = nil
+    dragGeometry.workspacePlacements[id] = nil
   }
 
-  private func dropTargets(for id: UUID) -> (order: [UUID], frames: [UUID: CGRect]) {
-    let rows = sidebarRows
+  private func dropTargets(for id: UUID, in rows: [SidebarRow]) -> (order: [UUID], frames: [UUID: CGRect]) {
     var order: [UUID] = []
     var frames: [UUID: CGRect] = [:]
     for sibling in SidebarRows.siblings(of: id, in: rows) {
@@ -70,7 +78,16 @@ extension SidebarView {
 
   private func retarget() {
     guard let current = drag else { return }
-    let (order, frames) = dropTargets(for: current.workspaceID)
+
+    let rows = sidebarRows
+    let sectionTarget = sectionDropTarget(for: current, in: rows)
+    if sectionTarget != current.sectionTarget { drag?.sectionTarget = sectionTarget }
+    guard sectionTarget == nil else {
+      if current.targetIndex != nil { drag?.targetIndex = nil }
+      return
+    }
+
+    let (order, frames) = dropTargets(for: current.workspaceID, in: rows)
     guard
       let index = ListReorder.destinationIndex(
         of: current.workspaceID, in: order, frames: frames, midY: current.ghostFrame.midY
@@ -81,9 +98,24 @@ extension SidebarView {
     drag?.targetIndex = target
   }
 
+  private func sectionDropTarget(for drag: SidebarDrag, in rows: [SidebarRow]) -> WorkspaceSectionPlacement? {
+    guard let row = rows.first(where: { $0.id == .workspace(drag.workspaceID) }),
+      let current = WorkspaceSectionPlacement(row)
+    else { return nil }
+
+    let center = CGPoint(x: drag.ghostFrame.midX, y: drag.ghostFrame.midY)
+    return sectionDropCandidates.first { candidate in
+      candidate != current && dragGeometry.headings[candidate.headingID]?.contains(center) == true
+    }
+  }
+
+  private var sectionDropCandidates: [WorkspaceSectionPlacement] {
+    environment.workspaceSections.sections.map { .section($0.id) } + [.unsectioned]
+  }
+
   private func insertionLine(for drag: SidebarDrag) -> CGRect? {
     guard let index = drag.targetIndex else { return nil }
-    let (order, frames) = dropTargets(for: drag.workspaceID)
+    let (order, frames) = dropTargets(for: drag.workspaceID, in: sidebarRows)
     let others = order.filter { $0 != drag.workspaceID }.compactMap { frames[$0] }
     return SidebarInsertionLine.frame(at: index, among: others)
   }

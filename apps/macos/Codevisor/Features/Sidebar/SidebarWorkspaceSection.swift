@@ -11,6 +11,8 @@ struct SidebarWorkspaceSection: View, Equatable {
     let rename: @MainActor (Workspace) -> Void
     let archive: @MainActor (Workspace) -> Void
     let toggleChildren: @MainActor (UUID) -> Void
+    let moveToSection: @MainActor (Workspace, UUID?) -> Void
+    let newSection: @MainActor (Workspace) -> Void
   }
 
   let item: WorkspaceSidebarItem
@@ -22,6 +24,8 @@ struct SidebarWorkspaceSection: View, Equatable {
   let headingNamesMachine: Bool
   let isReordering: Bool
   let isExpanded: Bool?
+  let sectionPlacement: WorkspaceSectionPlacement?
+  let sections: [CustomSection]
   let actions: Actions
   @Environment(AppEnvironment.self) private var environment
 
@@ -29,7 +33,8 @@ struct SidebarWorkspaceSection: View, Equatable {
     lhs.item == rhs.item && lhs.store === rhs.store && lhs.grouping == rhs.grouping
       && lhs.rowDetails == rhs.rowDetails && lhs.isSelected == rhs.isSelected && lhs.isPinned == rhs.isPinned
       && lhs.headingNamesMachine == rhs.headingNamesMachine && lhs.isReordering == rhs.isReordering
-      && lhs.isExpanded == rhs.isExpanded
+      && lhs.isExpanded == rhs.isExpanded && lhs.sectionPlacement == rhs.sectionPlacement
+      && lhs.sections == rhs.sections
   }
 
   var body: some View {
@@ -54,9 +59,18 @@ struct SidebarWorkspaceSection: View, Equatable {
           onNewTab: { actions.newTab(listItem) },
           onRename: { actions.rename(workspace) },
           onArchive: { actions.archive(workspace) }
-        )
+        ),
+        sectionMenu: sectionMenu(for: workspace)
       )
     }
+  }
+
+  private func sectionMenu(for workspace: Workspace) -> MoveToSectionMenu? {
+    guard let sectionPlacement else { return nil }
+
+    return MoveToSectionMenu(
+      currentSectionID: sectionPlacement.sectionID, sections: sections,
+      move: { actions.moveToSection(workspace, $0) }, newSection: { actions.newSection(workspace) })
   }
 }
 

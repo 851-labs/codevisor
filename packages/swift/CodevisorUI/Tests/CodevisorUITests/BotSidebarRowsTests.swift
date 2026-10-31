@@ -29,8 +29,8 @@ struct BotSidebarRowsTests {
     #expect(step(from: atlas, by: -1) == nil)
   }
 
-  private func section(_ name: String, at position: String) -> BotSection {
-    BotSection(id: UUID(), name: name, position: position)
+  private func section(_ name: String, at position: String) -> CustomSection {
+    CustomSection(id: UUID(), name: name, position: position)
   }
 
   @Test(

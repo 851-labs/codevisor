@@ -18,11 +18,12 @@ struct SidebarRowsTests {
   }
 
   private func groups(
-    _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping = .machine, pinned: [UUID] = []
+    _ items: [WorkspaceSidebarItem], _ grouping: SidebarGrouping = .machine, pinned: [UUID] = [],
+    sections: [CustomSection] = [], membership: [UUID: UUID] = [:]
   ) -> [SidebarWorkspaceGroup] {
     SidebarWorkspaceGroup.groups(
       items, grouping: grouping, pinnedIDs: pinned.map(\.uuidString), projects: [studio, linux, site],
-      defaultServerId: "studio"
+      defaultServerId: "studio", sections: sections, membership: membership
     ) { serverId in
       SidebarMachineGroup(
         key: serverId, orderKey: serverId,
@@ -88,6 +89,51 @@ struct SidebarRowsTests {
     #expect(
       layout.rows.map(\.section) == [.pinned, .pinned, .list, .list, .list, .list, .list]
         + [.archived, .archived, .archived])
+  }
+
+  @Test(
+    "Custom sections sit between Pinned and the list in order; Pinned wins over a section, and a workspace whose section is gone stays in its group"
+  )
+  func customSectionLayout() {
+    let (pinned, filed, nested, orphaned, loose) = (item(studio), item(linux), item(studio), item(studio), item(linux))
+    let child = item(studio, parent: filed)
+    let (work, home) = (
+      CustomSection(id: UUID(), name: "Work", position: "4"), CustomSection(id: UUID(), name: "Home", position: "8")
+    )
+    let membership = [pinned.id: work.id, filed.id: work.id, nested.id: work.id, orphaned.id: UUID()]
+    let tree = SidebarWorkspaceTree([pinned, filed, child, nested, orphaned, loose], pinnedIDs: [pinned.id.uuidString])
+
+    let layout = derive(
+      SidebarRows.State(
+        groups: groups(tree.roots, pinned: [pinned.id], sections: [work, home], membership: membership),
+        children: tree.children))
+
+    #expect(
+      layout.ids == [
+        .section(.pinned), .workspace(pinned.id),
+        .section(.custom(work.id)), .workspace(filed.id), .workspace(child.id), .workspace(nested.id),
+        .section(.custom(home.id)),
+        .section(.list), .group("machine:studio"), .workspace(orphaned.id), .group("machine:linux"),
+        .workspace(loose.id),
+      ])
+    #expect(layout.depth(of: filed.id) == 0)
+    #expect(layout.depth(of: child.id) == 1)
+    #expect(SidebarRows.siblings(of: nested.id, in: layout.rows) == [filed.id, nested.id])
+  }
+
+  @Test("A collapsed custom section keeps only the selected workspace")
+  func collapsedCustomSectionKeepsSelection() {
+    let (selected, hidden) = (item(studio), item(studio))
+    let work = CustomSection(id: UUID(), name: "Work", position: "8")
+    let all = groups([selected, hidden], sections: [work], membership: [selected.id: work.id, hidden.id: work.id])
+
+    let layout = derive(
+      SidebarRows.State(
+        groups: all,
+        expansion: SidebarRows.Expansion(collapsedGroupIDs: [SidebarWorkspaceGroup.customSectionID(work.id)]),
+        selectedWorkspaceID: selected.id))
+
+    #expect(layout.ids == [.section(.custom(work.id)), .workspace(selected.id), .section(.list)])
   }
 
   @Test("A workspace keeps one row id whether it's in a group, Pinned, or in Archived")

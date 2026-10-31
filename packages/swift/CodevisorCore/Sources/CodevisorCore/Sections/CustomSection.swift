@@ -1,6 +1,6 @@
 import Foundation
 
-public struct BotSection: Identifiable, Hashable, Sendable {
+public struct CustomSection: Identifiable, Hashable, Sendable {
   public let id: UUID
   public var name: String
   public var position: String
@@ -11,7 +11,7 @@ public struct BotSection: Identifiable, Hashable, Sendable {
     self.position = position
   }
 
-  public static func precedes(_ lhs: BotSection, _ rhs: BotSection) -> Bool {
+  public static func precedes(_ lhs: CustomSection, _ rhs: CustomSection) -> Bool {
     lhs.position != rhs.position ? lhs.position < rhs.position : lhs.id.uuidString < rhs.id.uuidString
   }
 }

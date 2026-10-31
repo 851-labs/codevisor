@@ -20,7 +20,8 @@ public final class AppEnvironment {
   public let updateCenter: UpdateCenter
   public let configSync: ConfigSync
   public let bots: BotListModel
-  public let botSections: BotSectionStore
+  public let botSections: CustomSectionStore
+  public let workspaceSections: CustomSectionStore
   public let sandboxSettings = SandboxSettingsModel()
   @ObservationIgnored public let pendingSends = PendingSendHolder()
 
@@ -101,7 +102,8 @@ public final class AppEnvironment {
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate, now: now)
     configSync = ConfigSync(machines: machines)
     bots = BotListModel(machines: machines)
-    botSections = BotSectionStore(configSync: configSync)
+    botSections = CustomSectionStore(configSync: configSync, namespace: CustomSectionStore.botNamespace)
+    workspaceSections = CustomSectionStore(configSync: configSync, namespace: CustomSectionStore.workspaceNamespace)
     self.cloud = CloudAccountController(
       credentialStore: cloudCredentialStore ?? InMemoryCloudCredentialStore()
     )

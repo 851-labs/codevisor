@@ -4,37 +4,40 @@ import Observation
 
 @MainActor
 @Observable
-public final class BotSectionStore {
-  public static let namespace = "bot-sections"
+public final class CustomSectionStore {
+  public static let botNamespace = "bot-sections"
+  public static let workspaceNamespace = "workspace-sections"
 
   private static let sectionPrefix = "section:"
   private static let memberPrefix = "member:"
 
+  public let namespace: String
   @ObservationIgnored private let configSync: ConfigSync
 
-  public init(configSync: ConfigSync) {
+  public init(configSync: ConfigSync, namespace: String) {
     self.configSync = configSync
+    self.namespace = namespace
   }
 
-  public var sections: [BotSection] {
-    liveEntries.compactMap(Self.section(from:)).sorted(by: BotSection.precedes)
+  public var sections: [CustomSection] {
+    liveEntries.compactMap(Self.section(from:)).sorted(by: CustomSection.precedes)
   }
 
   public var membership: [UUID: UUID] {
     let known = Set(sections.map(\.id))
     var membership: [UUID: UUID] = [:]
     for entry in liveEntries {
-      guard let (botID, sectionID) = Self.member(from: entry), known.contains(sectionID) else { continue }
-      membership[botID] = sectionID
+      guard let (memberID, sectionID) = Self.member(from: entry), known.contains(sectionID) else { continue }
+      membership[memberID] = sectionID
     }
     return membership
   }
 
   @discardableResult
-  public func create(name: String) -> BotSection {
+  public func create(name: String) -> CustomSection {
     let id = UUID()
     let position = WorkspacePosition.between(sections.last?.position, nil, id: id)!
-    let section = BotSection(id: id, name: name, position: position)
+    let section = CustomSection(id: id, name: name, position: position)
     write(section)
     return section
   }
@@ -47,27 +50,27 @@ public final class BotSectionStore {
   }
 
   public func delete(_ sectionID: UUID) {
-    for (botID, member) in membership where member == sectionID {
-      configSync.remove(namespace: Self.namespace, key: Self.memberPrefix + Self.key(botID))
+    for (memberID, member) in membership where member == sectionID {
+      configSync.remove(namespace: namespace, key: Self.memberPrefix + Self.key(memberID))
     }
-    configSync.remove(namespace: Self.namespace, key: Self.sectionPrefix + Self.key(sectionID))
+    configSync.remove(namespace: namespace, key: Self.sectionPrefix + Self.key(sectionID))
   }
 
-  public func move(bot botID: UUID, to sectionID: UUID?) {
-    guard membership[botID] != sectionID else { return }
+  public func move(_ memberID: UUID, to sectionID: UUID?) {
+    guard membership[memberID] != sectionID else { return }
 
-    let key = Self.memberPrefix + Self.key(botID)
+    let key = Self.memberPrefix + Self.key(memberID)
     if let sectionID {
-      configSync.set(namespace: Self.namespace, key: key, value: .object(["section": .string(Self.key(sectionID))]))
+      configSync.set(namespace: namespace, key: key, value: .object(["section": .string(Self.key(sectionID))]))
     } else {
-      configSync.remove(namespace: Self.namespace, key: key)
+      configSync.remove(namespace: namespace, key: key)
     }
   }
 
-  public func forget(bot botID: UUID) {
-    guard membership[botID] != nil else { return }
+  public func forget(_ memberID: UUID) {
+    guard membership[memberID] != nil else { return }
 
-    configSync.remove(namespace: Self.namespace, key: Self.memberPrefix + Self.key(botID))
+    configSync.remove(namespace: namespace, key: Self.memberPrefix + Self.key(memberID))
   }
 
   public func moveSection(_ sectionID: UUID, toIndex index: Int) {
@@ -81,39 +84,39 @@ public final class BotSectionStore {
     guard let position = WorkspacePosition.between(lower, upper, id: sectionID), position != moving.position else {
       return
     }
-    write(BotSection(id: moving.id, name: moving.name, position: position))
+    write(CustomSection(id: moving.id, name: moving.name, position: position))
   }
 
   private var liveEntries: [ServerSyncEntry] {
-    _ = configSync.revisionsByNamespace[Self.namespace]
-    return configSync.entries(namespace: Self.namespace).filter { $0.deleted != true }
+    _ = configSync.revisionsByNamespace[namespace]
+    return configSync.entries(namespace: namespace).filter { $0.deleted != true }
   }
 
-  private func write(_ section: BotSection) {
+  private func write(_ section: CustomSection) {
     let value: JSONValue = .object(["name": .string(section.name), "position": .string(section.position)])
-    configSync.set(namespace: Self.namespace, key: Self.sectionPrefix + Self.key(section.id), value: value)
+    configSync.set(namespace: namespace, key: Self.sectionPrefix + Self.key(section.id), value: value)
   }
 
   private static func key(_ id: UUID) -> String {
     id.uuidString.lowercased()
   }
 
-  private static func section(from entry: ServerSyncEntry) -> BotSection? {
+  private static func section(from entry: ServerSyncEntry) -> CustomSection? {
     guard entry.key.hasPrefix(sectionPrefix),
       let id = UUID(uuidString: String(entry.key.dropFirst(sectionPrefix.count))),
       case let .object(fields) = entry.value,
       case let .string(name)? = fields["name"],
       case let .string(position)? = fields["position"], WorkspacePosition.isValid(position)
     else { return nil }
-    return BotSection(id: id, name: name, position: position)
+    return CustomSection(id: id, name: name, position: position)
   }
 
   private static func member(from entry: ServerSyncEntry) -> (UUID, UUID)? {
     guard entry.key.hasPrefix(memberPrefix),
-      let botID = UUID(uuidString: String(entry.key.dropFirst(memberPrefix.count))),
+      let memberID = UUID(uuidString: String(entry.key.dropFirst(memberPrefix.count))),
       case let .object(fields) = entry.value,
       case let .string(section)? = fields["section"], let sectionID = UUID(uuidString: section)
     else { return nil }
-    return (botID, sectionID)
+    return (memberID, sectionID)
   }
 }

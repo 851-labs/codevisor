@@ -23,6 +23,7 @@ struct SidebarWorkspaceRow: View {
   var onToggleChildren: () -> Void = {}
   let onActivate: () -> Void
   let lifecycle: Lifecycle
+  var sectionMenu: MoveToSectionMenu? = nil
   @GestureState private var isPressed = false
 
   static let trailingSpacing: CGFloat = 7
@@ -96,6 +97,7 @@ struct SidebarWorkspaceRow: View {
           Label("Rename", systemImage: "pencil")
             .labelStyle(.titleAndIcon)
         }
+        sectionMenu
         Divider()
         Button(action: onArchive) {
           Label("Archive", systemImage: "archivebox")

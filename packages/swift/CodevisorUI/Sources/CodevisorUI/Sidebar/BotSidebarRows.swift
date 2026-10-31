@@ -9,7 +9,7 @@ public enum BotSidebarRowID: Hashable, Sendable {
 public struct BotSidebarRow: Identifiable, Equatable {
   public enum Kind: Equatable {
     case bot(BotConversation, section: UUID?)
-    case section(BotSection, isExpanded: Bool)
+    case section(CustomSection, isExpanded: Bool)
   }
 
   public let kind: Kind
@@ -36,13 +36,13 @@ public struct BotSidebarRow: Identifiable, Equatable {
 public enum BotSidebarRows {
   public struct State: Equatable {
     public var conversations: [BotConversation]
-    public var sections: [BotSection]
+    public var sections: [CustomSection]
     public var membership: [UUID: UUID]
     public var collapsedSectionIDs: Set<UUID>
     public var selectedBotID: UUID?
 
     public init(
-      conversations: [BotConversation], sections: [BotSection] = [], membership: [UUID: UUID] = [:],
+      conversations: [BotConversation], sections: [CustomSection] = [], membership: [UUID: UUID] = [:],
       collapsedSectionIDs: Set<UUID> = [], selectedBotID: UUID? = nil
     ) {
       self.conversations = conversations
