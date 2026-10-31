@@ -66,6 +66,8 @@ on:
       - packages/swift/CodevisorCoreMac/Sources/CodevisorCoreMac/ScreenSharing/**
       - apps/screen-sharing-bench/**
       - packages/net/crates/codevisor-media/**
+      - packages/net/crates/codevisor-net/**
+      - packages/net/crates/codevisor-net-ffi/**
       - .github/workflows/screen-sharing-bench.yml
 
 permissions:
@@ -178,7 +180,6 @@ jobs:
       - name: Run Tier 1
         run: |
           export TIER1_SCENES="$SCENES" TIER1_NETWORKS="${NETWORKS:-N0,N3}"
-          [[ -n "$TIER1_PLANS" ]] || unset TIER1_PLANS
           caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier1.sh "$MODE" "$RUNNER_TEMP/results"
       - name: Record the reports on benchmark-results
         if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' }}
@@ -228,6 +229,7 @@ jobs:
           set-safe-directory: false
       - name: Pick the engines the pull request touches
         run: |
+          set -o pipefail
           engines=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only | apps/screen-sharing-bench/scripts/gate-engines.sh)
           echo "TIER1_GATE_ENGINES=$engines" >> "$GITHUB_ENV"
           echo "Gating engines: $engines"

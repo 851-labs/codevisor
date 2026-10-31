@@ -13,8 +13,8 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
 
   struct Sent {
     let sendNs: Int64
-    var queuedUs: UInt64?
-    var sendingUs: UInt64?
+    let queuedUs: UInt64?
+    let sendingUs: UInt64?
   }
 
   struct Receipt {
@@ -24,7 +24,8 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
   }
 
   let inner: ScreenSharingIrohMediaTransport
-  private let sent = Mutex<[Key: Sent]>([:])
+  private let sendTimes = Mutex<[Key: Int64]>([:])
+  private let acks = Mutex<[Key: ScreenSharingFrameAck]>([:])
   private let receipts = Mutex<[Int64: Receipt]>([:])
 
   init(_ inner: ScreenSharingIrohMediaTransport) {
@@ -40,7 +41,7 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
       try inner.session.sendFrame(
         stream: stream, keyframe: tile.isKeyFrame, ltrToken: tile.ltrToken, meta: meta, data: bytes)
     }
-    sent.withLock { $0[Key(stream: stream, frame: number)] = Sent(sendNs: sendNs) }
+    sendTimes.withLock { $0[Key(stream: stream, frame: number)] = sendNs }
   }
 
   func admission() -> ScreenSharingMediaAdmission {
@@ -68,7 +69,10 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
   }
 
   func sentFrame(_ key: Key) -> Sent? {
-    sent.withLock { $0[key] }
+    guard let sendNs = sendTimes.withLock({ $0[key] }) else { return nil }
+
+    let ack = acks.withLock { $0[key] }
+    return Sent(sendNs: sendNs, queuedUs: ack?.queuedUs, sendingUs: ack?.sendingUs)
   }
 
   func receipt(sourceNs: Int64) -> Receipt? {
@@ -76,11 +80,7 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
   }
 
   private func acked(_ ack: ScreenSharingFrameAck) {
-    sent.withLock { frames in
-      let key = Key(stream: ack.stream, frame: ack.frame)
-      frames[key]?.queuedUs = ack.queuedUs
-      frames[key]?.sendingUs = ack.sendingUs
-    }
+    acks.withLock { $0[Key(stream: ack.stream, frame: ack.frame)] = ack }
   }
 
   private func received(_ frame: ScreenSharingReceivedFrame) {

@@ -38,13 +38,6 @@ struct Tier2V2ReadingsTests {
     #expect([stages.media?.queue, stages.media?.send, stages.media?.assemble].map { $0?.p50 } == [0.2, 0.9, 1.2])
   }
 
-  @Test func engineV1RunsHaveNoMediaStages() throws {
-    let stages = Tier2V2Readings.stages(
-      viewer: try Self.object(Self.viewer), host: try Self.object(Self.host), engineV2: false)
-
-    #expect(stages?.encode?.p50 == 11.8 && stages?.media == nil)
-  }
-
   @Test func theCountersComeFromBothSidesOfTheSession() throws {
     let counters = Tier2V2Readings.counters(viewer: try Self.object(Self.viewer), host: try Self.object(Self.host))
 

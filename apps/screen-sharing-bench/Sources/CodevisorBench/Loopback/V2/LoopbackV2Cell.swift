@@ -67,6 +67,7 @@ struct LoopbackV2Cell {
     return LoopbackV2Recording(
       startNs: startNs, produced: await source.produced, records: readings.records, barcodes: readings.barcodes,
       hostCounters: peers.hostMetrics.counters(), viewerCounters: peers.viewerMetrics.counters(),
+      hostLabels: peers.hostMetrics.snapshot().labels, viewerLabels: peers.viewerMetrics.snapshot().labels,
       hostMedia: V2MediaStatistics.dictionary(peers.hostTap.session.stats()),
       viewerMedia: V2MediaStatistics.dictionary(peers.viewerTap.session.stats()), mailboxDrops: mailbox.droppedFrames,
       taps: (peers.hostTap, peers.viewerTap))

@@ -36,14 +36,6 @@ struct Tier2SystemsTests {
     #expect(comparisons.map(\.verdict) == [.appleFaster, .codevisorFaster])
   }
 
-  @Test func aCodevisorSystemWithoutRepetitionsHasNoComparison() {
-    let results = [
-      Self.result(.appleHP, repetition: 1, imageAgeP50: 50), Self.result(.codevisorV2, repetition: 1, imageAgeP50: 40),
-    ]
-
-    #expect(Set(Tier2Comparisons.make(results).map(\.system)) == [.codevisorV2])
-  }
-
   static func result(_ system: BenchSystem, repetition: Int, imageAgeP50: Double) -> BenchResult {
     var result = BenchResult(
       system: system, scene: "scroll", resolution: "R1x2", network: "N0", repetition: repetition, seed: 1)

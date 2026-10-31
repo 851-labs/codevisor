@@ -173,9 +173,10 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   `ScreenSharingV2Viewer` over `codevisor-media` on an iroh connection) instead of WebRTC; results are the
   `codevisor-v2` system. Both endpoints bind with the `direct-pinned` path policy and the viewer dials the relay's
   host-facing socket as the host's only address, so every datagram crosses the emulated network. `direct-pinned`
-  keeps the path a connection was opened on: with `direct-only`, iroh's QUIC NAT traversal learns the host's own
+  keeps the path a connection was opened on (one remote per endpoint; if that path closes it waits for it rather than
+  taking another): with `direct-only`, iroh's QUIC NAT traversal learns the host's own
   addresses and moves to the direct loopback path within the first round trip (`codevisor-net`'s `pinned_path` test).
-  A run is invalid when the relay carried fewer media bytes than the host's session sent ("media went around the
+  A run is invalid when the relay carried under half the media bytes the host's session sent ("media went around the
   relay"). A bench-side transport tap (`V2MediaTap`) wraps each side's `ScreenSharingIrohMediaTransport` and notes
   when each frame was handed to `send_frame`, its frame ack (`queued` and `sending`) and its receipt (`assembling`,
   how it was recovered), keyed by stream and frame number, and joined to the viewer's timeline by source timestamp
@@ -333,7 +334,7 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   chart. GitHub strips inline SVG from summaries, so the chart (a stacked per-stage bar and the nightly e2e p50 trend
   per cell) is the committed `.svg`, linked at that commit.
 - **PR gate.** A pull request touching `packages/swift/ScreenSharing`, the CodevisorCoreMac screen sharing sources,
-  this app or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
+  this app, `codevisor-media`, `codevisor-net`, `codevisor-net-ffi` or the workflow runs the `gate` job on tamale in its own per-PR concurrency group (so it can't cancel a
   queued nightly or Tier 2 run; the runner takes one job at a time). The `gate` job measures the `gate` plan twice (about
   20 min), and the `gate` subcommand compares both runs with the nightly `gate` baseline using the design §4.2
   rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more

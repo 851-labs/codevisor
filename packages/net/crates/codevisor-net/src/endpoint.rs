@@ -125,7 +125,7 @@ impl NetEndpoint {
             PathPolicy::RelayOnly => builder = builder.clear_ip_transports(),
             PathPolicy::DirectOnly => builder = builder.clear_relay_transports(),
             PathPolicy::DirectPinned => {
-                builder = builder.clear_relay_transports().path_selector(Arc::new(FirstPathSelector));
+                builder = builder.clear_relay_transports().path_selector(Arc::new(FirstPathSelector::default()));
             }
         }
         if config.path_policy != PathPolicy::RelayOnly && !config.bind_addrs.is_empty() {

@@ -45,9 +45,18 @@ final class LoopbackV2Peers {
       host: try loopbackAddress(of: hostEndpoint.addr()), viewer: try loopbackAddress(of: viewerEndpoint.addr()))
     let relayAddress = "\(loopbackHost):\(relay.hostFacing.port)"
     let target = NetTunnelAddr(endpointId: hostEndpoint.addr().endpointId, relayUrl: nil, directAddrs: [relayAddress])
+    let hostMetrics = ScreenSharingMetrics()
+    let encoder = try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: hostMetrics)
     let deadline = ContinuousClock.now + connectTimeout
     async let accepted = V2Accept.connection(on: hostEndpoint, until: deadline)
-    let viewerConnection = try await viewerEndpoint.connect(addr: target, alpn: mediaAlpn(), cancel: nil)
+    let viewerConnection: NetConnectionHandle
+    do {
+      viewerConnection = try await viewerEndpoint.connect(addr: target, alpn: mediaAlpn(), cancel: nil)
+    } catch {
+      await hostEndpoint.close()
+      _ = try? await accepted
+      throw error
+    }
     guard let hostConnection = try await accepted else {
       viewerConnection.close(code: 0, reason: "no host")
       throw LoopbackError.connectionTimedOut
@@ -59,8 +68,6 @@ final class LoopbackV2Peers {
     let viewerTap = V2MediaTap(
       ScreenSharingIrohMediaTransport(
         session: await viewerConnection.openMediaSession(config: ScreenSharingIrohMediaTransport.sessionConfig)))
-    let hostMetrics = ScreenSharingMetrics()
-    let encoder = try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: hostMetrics)
     return LoopbackV2Peers(
       host: ScreenSharingV2Host(transport: hostTap, encoder: encoder, metrics: hostMetrics),
       viewer: ScreenSharingV2Viewer(transport: viewerTap, metrics: ScreenSharingMetrics()), taps: (hostTap, viewerTap),

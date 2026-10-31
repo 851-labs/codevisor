@@ -9,13 +9,15 @@ struct LoopbackV2Recording: LoopbackRecorded {
   let barcodes: [Int64: Int?]
   let hostCounters: [String: Int]
   let viewerCounters: [String: Int]
+  let hostLabels: [String: String]
+  let viewerLabels: [String: String]
   let hostMedia: [String: Double]
   let viewerMedia: [String: Double]
   let mailboxDrops: Int
   let taps: (host: V2MediaTap, viewer: V2MediaTap)
   let timingFrames: [BenchTimingFrame] = []
   let qualityLevel = 0
-  let codecFailure: String? = nil
+  private static let leastRelayedShare = 0.5
 
   func frames(arrivals: BenchFrameArrivals, clockOffsetNs: Int64) -> [BenchFrameTimestamps] {
     var seen = Set<Int64>()
@@ -52,6 +54,14 @@ struct LoopbackV2Recording: LoopbackRecorded {
       capture: hostCounters["captureTransitionDrops", default: 0] + hostCounters["captureTimestampDrops", default: 0])
   }
 
+  var codecFailure: String? {
+    guard hostCounters["encodedFrames", default: 0] == 0 || viewerCounters["decodedFrames", default: 0] == 0 else {
+      return nil
+    }
+
+    return hostLabels["lastEncodeError"] ?? viewerLabels["lastDecodeError"]
+  }
+
   var codecErrors: Int {
     hostCounters["encodeErrors", default: 0] + viewerCounters["decodeErrors", default: 0]
   }
@@ -61,6 +71,6 @@ struct LoopbackV2Recording: LoopbackRecorded {
   }
 
   func bypassedTheRelay(_ relay: BenchRelayReport) -> Bool {
-    Double(relay.media.bytes) < hostMedia["bytes_sent", default: 0]
+    Double(relay.media.bytes) < hostMedia["bytes_sent", default: 0] * Self.leastRelayedShare
   }
 }

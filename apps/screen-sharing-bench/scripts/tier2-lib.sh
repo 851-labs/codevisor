@@ -143,6 +143,10 @@ tier2_check_inputs() {
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
   local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
+  if [[ "$TIER2_ENGINE" == v2 ]] && tier2_runs_system codevisor-r1x2 && tier2_runs_system codevisor-v2; then
+    echo "engine v2 makes codevisor-r1x2 the same system as codevisor-v2; pick one, or engine v1" >&2
+    return 1
+  fi
   local runs
   runs=$(($(tier2_plan | wc -l)))
   ((runs * (TIER2_DURATION + tier2_run_overhead_s) <= tier2_plan_budget_s)) || {
