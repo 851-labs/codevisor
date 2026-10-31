@@ -74,12 +74,15 @@ struct TranscriptPresentableRowHostTests {
     ledger.setExact(10, for: "a")
     ledger.setExact(10, for: "b")
     ledger.setExact(10, for: "c")
+    ledger.setProvisional(10, for: "stale")
     let hosts: [String: Host] = [
       "a": Host(presentation: true, attachments: true),
       "b": Host(presentation: false, attachments: true),
+      "stale": Host(presentation: true, attachments: true),
+      "unmeasured": Host(presentation: true, attachments: true),
     ]
     let resolved = TranscriptMountedWindowReadiness.resolvedKeys(
-      required: ["a", "b", "c"], measurements: ledger, hosts: hosts
+      required: ["a", "b", "c", "stale", "unmeasured"], measurements: ledger, hosts: hosts
     )
     #expect(resolved == ["a"])
   }

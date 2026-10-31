@@ -42,16 +42,19 @@ struct TranscriptMarkdownInvalidationTests {
     #expect(before.measurementRevision == after.measurementRevision)
   }
 
-  @Test func sameSizeTableEditInvalidatesMeasurement() {
-    let before = chunk(.table(headers: ["Name"], alignments: [.leading], rows: [["short"]]))
-    let after = chunk(.table(headers: ["Name"], alignments: [.leading], rows: [["Much longer wrapping cell"]]))
-    #expect(before != after)
-    #expect(before.measurementRevision != after.measurementRevision)
-  }
-
-  @Test func styleEditInvalidatesMeasurement() {
-    let before = chunk(.paragraph(MarkdownText("same words")))
-    let after = chunk(.paragraph(MarkdownText(spans: [.strong([.text("same words")])])))
-    #expect(before.measurementRevision != after.measurementRevision)
+  @Test func sameSizeContentEditInvalidatesMeasurement() {
+    let edits: [(MarkdownBlock, MarkdownBlock)] = [
+      (
+        .table(headers: ["Name"], alignments: [.leading], rows: [["short"]]),
+        .table(headers: ["Name"], alignments: [.leading], rows: [["Much longer wrapping cell"]])
+      ),
+      (.paragraph(MarkdownText("same words")), .paragraph(MarkdownText(spans: [.strong([.text("same words")])]))),
+    ]
+    for (beforeBlock, afterBlock) in edits {
+      let before = chunk(beforeBlock)
+      let after = chunk(afterBlock)
+      #expect(before != after)
+      #expect(before.measurementRevision != after.measurementRevision)
+    }
   }
 }

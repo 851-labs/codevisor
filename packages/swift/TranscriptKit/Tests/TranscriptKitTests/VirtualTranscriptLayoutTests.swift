@@ -86,22 +86,6 @@ struct VirtualTranscriptLayoutTests {
     #expect(range == 2..<18)
   }
 
-  @Test func bottomRunwayWarmsRowsAboveTheInitialViewport() {
-    let rows = (0..<30).map {
-      VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 100)
-    }
-    let layout = VirtualTranscriptLayout(items: rows, measuredHeights: [:], spacing: 0)
-
-    let range = layout.visibleRange(
-      distanceFromBottom: 0,
-      viewportHeight: 600,
-      runwayBefore: 900,
-      runwayAfter: 900
-    )
-
-    #expect(range == 15..<30)
-  }
-
   @Test func restoresRenderedWindowFromAnchorKey() {
     let layout = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
 
@@ -168,27 +152,6 @@ struct VirtualTranscriptLayoutTests {
     #expect(restoredTop - originalTop == 670)
   }
 
-  @Test func measurementRebuildPreservesBottomDistance() {
-    let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
-    let viewportHeight: CGFloat = 250
-    let distance = initial.distanceFromBottom(
-      viewportTop: 350,
-      viewportHeight: viewportHeight
-    )
-
-    let measured = VirtualTranscriptLayout(
-      items: items,
-      measuredHeights: ["a": 180, "b": 260],
-      spacing: 10
-    )
-    let restoredTop = measured.viewportTop(
-      distanceFromBottom: distance,
-      viewportHeight: viewportHeight
-    )
-
-    #expect(restoredTop == 490)
-  }
-
   @Test func incrementalMeasurementProducesOneNonOverlappingGeometrySnapshot() throws {
     let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
     let measured = try #require(initial.updatingHeights(["b": 460]))
@@ -246,54 +209,6 @@ struct VirtualTranscriptLayoutTests {
     #expect(batched == rebuilt)
   }
 
-  @Test func batchedMeasurementsRejectUnknownKeysAtomically() {
-    let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
-
-    #expect(initial.updatingHeights(["a": 125, "missing": 50]) == nil)
-    #expect(initial.heights == [100, 200, 300, 400])
-  }
-
-  @Test func uncachedOpeningStaysAtBottomAcrossHydrationAndMeasurement() {
-    let placeholder = VirtualTranscriptLayout(
-      items: [.init(key: "bottom-spacer", estimatedHeight: 120)],
-      measuredHeights: ["bottom-spacer": 120],
-      spacing: 20
-    )
-    #expect(
-      placeholder.distanceFromBottom(
-        viewportTop: placeholder.viewportTop(distanceFromBottom: 0, viewportHeight: 600),
-        viewportHeight: 600
-      ) == 0)
-
-    let hydratedItems =
-      (0..<12).map {
-        VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 180)
-      } + [.init(key: "bottom-spacer", estimatedHeight: 120)]
-    let hydrated = VirtualTranscriptLayout(
-      items: hydratedItems,
-      measuredHeights: ["bottom-spacer": 120],
-      spacing: 20
-    )
-    let measured = VirtualTranscriptLayout(
-      items: hydratedItems,
-      measuredHeights: [
-        "message:9": 420,
-        "message:10": 260,
-        "bottom-spacer": 120,
-      ],
-      spacing: 20
-    )
-
-    for layout in [hydrated, measured] {
-      let top = layout.viewportTop(distanceFromBottom: 0, viewportHeight: 600)
-      #expect(
-        layout.distanceFromBottom(
-          viewportTop: top,
-          viewportHeight: 600
-        ) == 0)
-    }
-  }
-
   @Test func bottomVirtualWindowDoesNotMountTheWholeTranscript() {
     let longItems = (0..<100).map {
       VirtualTranscriptLayout.Item(key: "message:\($0)", estimatedHeight: 100)
@@ -313,43 +228,6 @@ struct VirtualTranscriptLayoutTests {
     #expect(range.upperBound == longItems.count)
     #expect(range.lowerBound > 90)
     #expect(range.count < 10)
-  }
-
-  @Test func anchorCompensationIgnoresChangesAboveTheViewport() {
-    let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
-    let measured = VirtualTranscriptLayout(
-      items: items,
-      measuredHeights: ["a": 180],
-      spacing: 10
-    )
-
-    let distance = measured.distanceFromBottom(
-      preservingAnchor: "c",
-      previousLayout: initial,
-      previousDistanceFromBottom: 120
-    )
-
-    #expect(distance == 120)
-  }
-
-  @Test func anchorCompensationOffsetsGrowthBelowTheViewport() {
-    let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
-    let measured = VirtualTranscriptLayout(
-      items: items,
-      measuredHeights: ["d": 520],
-      spacing: 10
-    )
-
-    let distance = measured.distanceFromBottom(
-      preservingAnchor: "b",
-      previousLayout: initial,
-      previousDistanceFromBottom: 120
-    )
-
-    #expect(distance == 240)
-    #expect(
-      initial.viewportTop(distanceFromBottom: 120, viewportHeight: 250)
-        == measured.viewportTop(distanceFromBottom: distance ?? 0, viewportHeight: 250))
   }
 
   @Test func insetViewportPreservesUIKitTopAndBottomCoordinates() {

@@ -92,7 +92,7 @@ struct TranscriptWorkedRowProjectionTests {
       .text(id: "answer", markdown: "The bug is in the parser."),
     ])
 
-    for projected in [thinking, running, settled, answering] {
+    for projected in [thinking, rows([commentary]), running, settled, answering] {
       #expect(projected.first?.id == headerID)
       #expect(!projected.contains { $0.id == activityID })
     }
@@ -121,65 +121,11 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(message.turn.workedSectionTitle(.planning, now: .now) == "Worked for 3s")
   }
 
-  @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {
-    let messageID = UUID()
-    let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")
-    let initial = ConversationItem.assistant(
-      AssistantMessage(
-        id: messageID,
-        turn: AssistantTurn(
-          entries: [commentary],
-          isGenerating: true,
-          textPhases: ["commentary": .commentary]
-        )
-      )
-    )
-    let withTool = ConversationItem.assistant(
-      AssistantMessage(
-        id: messageID,
-        turn: AssistantTurn(
-          entries: [
-            commentary,
-            .tool(
-              ToolCall(
-                toolCallId: "read-1",
-                title: "Read source",
-                kind: .read,
-                status: .inProgress
-              )
-            ),
-          ],
-          isGenerating: true,
-          textPhases: ["commentary": .commentary]
-        )
-      )
-    )
-
-    let initialRows = TranscriptActiveRowProjection.rows(for: initial)
-    let updatedRows = TranscriptActiveRowProjection.rows(for: withTool)
-    let headerID = TranscriptPresentationRow.ID.activeWorkedHeader(
-      messageID,
-      .planning
-    )
-
-    #expect(initialRows.first?.id == headerID)
-    #expect(updatedRows.first?.id == headerID)
-    #expect(initialRows.first?.layoutKey == updatedRows.first?.layoutKey)
-    #expect(
-      updatedRows.contains {
-        if case let .activeWorkedItem(reference) = $0.content {
-          reference.itemID == "wgroup:read-1"
-        } else {
-          false
-        }
-      }
-    )
-  }
-
   @Test func deferredWorkedDetailsDoNotProjectALoadingContentRow() throws {
     let message = AssistantMessage(
       turn: AssistantTurn(
-        entries: [.text(id: "answer", markdown: "Done")],
+        entries: [.text(id: "note", markdown: "Checking the code."), .text(id: "answer", markdown: "Done")],
+        textPhases: ["note": .commentary],
         deferredDetailItemId: "detail-1",
         hasDeferredWorkedDetails: true,
         detailRevision: 1

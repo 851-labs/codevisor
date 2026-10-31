@@ -25,6 +25,13 @@ struct TranscriptInitialPresentationGateTests {
     #expect(!partialReveal)
     #expect(!gate.isReady)
 
+    let mismatchedReveal = gate.resolve(
+      isHydrating: false,
+      requiredKeys: ["a", "b", "c"],
+      resolvedKeys: ["a", "c", "d"],
+    )
+    #expect(!mismatchedReveal)
+
     let completeReveal = gate.resolve(
       isHydrating: false,
       requiredKeys: ["a", "b", "c"],
@@ -32,29 +39,6 @@ struct TranscriptInitialPresentationGateTests {
     )
     #expect(completeReveal)
     #expect(gate.isReady)
-  }
-
-  @Test func changingInitialWindowMustAlsoResolveNewRows() {
-    var gate = TranscriptInitialPresentationGate()
-
-    let firstWindowReveal = gate.resolve(
-      isHydrating: false,
-      requiredKeys: ["a", "b"],
-      resolvedKeys: ["a"],
-    )
-    #expect(!firstWindowReveal)
-    let changedWindowReveal = gate.resolve(
-      isHydrating: false,
-      requiredKeys: ["b", "c"],
-      resolvedKeys: ["a", "b"],
-    )
-    #expect(!changedWindowReveal)
-    let finalReveal = gate.resolve(
-      isHydrating: false,
-      requiredKeys: ["b", "c"],
-      resolvedKeys: ["a", "b", "c"],
-    )
-    #expect(finalReveal)
   }
 
   @Test func waitsForPendingMeasurementCommit() {
@@ -112,11 +96,17 @@ struct TranscriptInitialPresentationGateTests {
     )
     #expect(cachedReveal)
     let secondReveal = gate.resolve(
+      isHydrating: false,
+      requiredKeys: ["cached"],
+      resolvedKeys: ["cached"],
+    )
+    #expect(!secondReveal)
+    let hydratingReveal = gate.resolve(
       isHydrating: true,
       requiredKeys: ["different"],
       resolvedKeys: [],
     )
-    #expect(!secondReveal)
+    #expect(!hydratingReveal)
     #expect(gate.isReady)
   }
 

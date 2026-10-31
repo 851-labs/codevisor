@@ -41,14 +41,25 @@ struct TranscriptTextPatchTests {
   @Test func latePageCannotUndoFinalizedTextOrPhase() {
     var turn = AssistantTurn()
     let old = AgentMessagePatch(
-      messageId: "answer", text: "draft", offset: 0,
-      totalLength: 5, generation: 0, stateRevision: 1, phase: .commentary)
+      messageId: "answer", text: "draft text", offset: 0,
+      totalLength: 10, generation: 0, stateRevision: 1, phase: .commentary)
     let final = AgentMessagePatch(
       messageId: "answer", text: "final", offset: 0,
       totalLength: 5, generation: 1, stateRevision: 2, phase: .final)
     for update in [old, final, old] { TranscriptReducer.apply(.agentMessagePatch(update), to: &turn) }
     #expect(turn.entries == [.text(id: "acp:answer", markdown: "final")])
     #expect(turn.textPhases["acp:answer"] == .final)
+
+    var reordered = AssistantTurn()
+    for (revision, phase) in [(2, MessagePhase.final), (1, .commentary)] {
+      TranscriptReducer.apply(
+        .agentMessagePatch(
+          AgentMessagePatch(
+            messageId: "answer", text: "final", offset: 0,
+            totalLength: 5, generation: 0, stateRevision: revision, phase: phase)),
+        to: &reordered)
+    }
+    #expect(reordered.textPhases["acp:answer"] == .final)
   }
 
   @Test func offsetsCountUTF16AndStreamingKeepsCompleteText() {

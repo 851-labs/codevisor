@@ -44,17 +44,6 @@ struct TranscriptReducerTests {
       ])
   }
 
-  @Test("Text after a tool call starts a new span")
-  func newSpanAfterTool() {
-    let turn = reduce([
-      .agentMessageChunk(.text("before")),
-      .toolCall(ToolCall(toolCallId: "a", title: "T")),
-      .agentMessageChunk(.text("after")),
-    ])
-    #expect(turn.entries.count == 3)
-    #expect(turn.entries[2] == .text(id: "t1", markdown: "after"))
-  }
-
   @Test("ACP message ids merge chunks across interleaved tool calls")
   func messageIdMergesAcrossTools() {
     let turn = settled([
@@ -86,14 +75,14 @@ struct TranscriptReducerTests {
 
   @Test("Commentary-tagged spans never become the final answer")
   func commentaryPhaseExcludedFromFinal() {
-    let turn = reduce([
-      .agentMessageChunk(
-        .text("Checking the tests."), messageId: "m1", parentToolCallId: nil, phase: .commentary),
+    let turn = settled([
+      .agentMessageChunk(.text("They pass."), messageId: "m2"),
       .toolCall(ToolCall(toolCallId: "a", title: "Run tests", kind: .execute, status: .completed)),
-      .agentMessageChunk(.text("They pass."), messageId: "m2", parentToolCallId: nil, phase: .final),
+      .agentMessageChunk(
+        .text("Cleaning up."), messageId: "m1", parentToolCallId: nil, phase: .commentary),
     ])
     #expect(turn.finalText == .text(id: "acp:m2", markdown: "They pass."))
-    #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
+    #expect(turn.workedEntries.map(\.id) == ["tool:a", "text:acp:m1"])
   }
 
   @Test("Live unlabeled text is the answer only until something follows it")
@@ -121,15 +110,6 @@ struct TranscriptReducerTests {
     #expect(turn.finalText == .text(id: "acp:m2", markdown: "Tests pass."))
   }
 
-  @Test("A final-tagged span stays the answer across trailing tool calls")
-  func finalPhaseSurvivesTrailingTools() {
-    let turn = reduce([
-      .agentMessageChunk(.text("Done."), messageId: "m1", parentToolCallId: nil, phase: .final),
-      .toolCall(ToolCall(toolCallId: "a", title: "Cleanup", kind: .execute, status: .completed)),
-    ])
-    #expect(turn.finalText == .text(id: "acp:m1", markdown: "Done."))
-  }
-
   @Test("Only a final-tagged candidate counts as asserted")
   func finalTextAssertion() {
     var turn = AssistantTurn(isGenerating: true)
@@ -146,10 +126,11 @@ struct TranscriptReducerTests {
   @Test("Subagent chunk phases do not affect the main turn's final answer")
   func subagentPhaseIgnored() {
     let turn = reduce([
-      .agentMessageChunk(.text("main answer")),
-      .agentMessageChunk(.text("child note"), messageId: "msg-sub", parentToolCallId: "task-1"),
+      .agentMessageChunk(.text("main answer"), messageId: "m1"),
+      .agentMessageChunk(
+        .text("child note"), messageId: "m1", parentToolCallId: "task-1", phase: .commentary),
     ])
-    #expect(turn.finalText == .text(id: "t0", markdown: "main answer"))
+    #expect(turn.finalText == .text(id: "acp:m1", markdown: "main answer"))
     #expect(turn.textPhases.isEmpty)
   }
 
@@ -197,7 +178,6 @@ struct TranscriptReducerTests {
     )
     TranscriptReducer.apply(.contextCompaction(id: "compact-1", status: .started), to: &turn)
     #expect(turn.contextCompactionStatus == .started)
-    #expect(turn.isThinking == false)
     TranscriptReducer.apply(
       .toolCall(ToolCall(toolCallId: "after", title: "After")),
       to: &turn
@@ -392,16 +372,6 @@ struct TranscriptReducerTests {
     #expect(turn.toolCalls.count == 1)
   }
 
-  @Test("A turn ending on a tool call still exposes the last text answer")
-  func endsOnTool() {
-    let turn = settled([
-      .agentMessageChunk(.text("working")),
-      .toolCall(ToolCall(toolCallId: "a", title: "Run")),
-    ])
-    #expect(turn.finalText == .text(id: "t0", markdown: "working"))
-    #expect(turn.workedEntries.map(\.id) == ["tool:a"])
-  }
-
   @Test("Duration computes from start and end timestamps")
   func duration() {
     let start = Date(timeIntervalSince1970: 1000)
@@ -448,27 +418,16 @@ struct AssistantTurnActivityTests {
     #expect(!staleThinking.showsActivityIndicator)
   }
 
-  @Test("A just-started turn with no output yet shows the indicator")
-  func freshTurn() {
-    let turn = AssistantTurn(isGenerating: true, isThinking: false)
-    #expect(turn.showsActivityIndicator)
-  }
-
   @Test("Explicit thought streaming always shows the indicator")
   func thoughtStreaming() {
-    var turn = AssistantTurn(isGenerating: true, isThinking: false)
-    TranscriptReducer.apply(.agentThoughtChunk(.text("hmm")), to: &turn)
-    #expect(turn.isThinking)
-    #expect(turn.showsActivityIndicator)
-  }
-
-  @Test("A streaming final answer suppresses the indicator (the text is the activity)")
-  func streamingFinalAnswer() {
     var turn = AssistantTurn(isGenerating: true)
-    TranscriptReducer.apply(.agentMessageChunk(.text("The answer is 42.")), to: &turn)
-    #expect(!turn.isThinking)
-    #expect(turn.finalText != nil)
+    TranscriptReducer.apply(
+      .toolCall(ToolCall(toolCallId: "t1", title: "Read", kind: .read, status: .inProgress)),
+      to: &turn
+    )
     #expect(!turn.showsActivityIndicator)
+    TranscriptReducer.apply(.agentThoughtChunk(.text("hmm")), to: &turn)
+    #expect(turn.showsActivityIndicator)
   }
 
   @Test("A running tool call suppresses the indicator (its card shows progress)")

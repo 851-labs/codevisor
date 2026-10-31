@@ -61,9 +61,11 @@ struct TranscriptMeasurementLedgerTests {
 
   @Test func exactHeightNeedsNoRecommit() {
     var ledger = TranscriptMeasurementLedger()
+    ledger.setProvisional(880, for: "special:bottom-spacer")
     ledger.setExact(64, for: "special:bottom-spacer")
     #expect(ledger.isStale("special:bottom-spacer") == false)
     #expect(ledger.needsCommit(64, for: "special:bottom-spacer") == false)
+    #expect(ledger["special:bottom-spacer"] == 64)
   }
 
   @Test func markStaleWithoutHeightIsInert() {

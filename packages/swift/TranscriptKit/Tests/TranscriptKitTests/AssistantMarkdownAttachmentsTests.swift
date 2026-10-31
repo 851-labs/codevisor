@@ -106,16 +106,6 @@ struct AssistantMarkdownAttachmentsTests {
       ])
   }
 
-  @Test("Extensionless Markdown destinations remain links")
-  func extensionlessFiles() {
-    let markdown = "Open [the readme](README)."
-    #expect(
-      assistantMarkdownSegments(
-        markdown,
-        attachments: []
-      ) == [.markdown(markdown)])
-  }
-
   @Test("Local link targets are distinguished from web links and anchors")
   func localLinkTargets() {
     #expect(markdownLocalFilePath("README") == "README")
@@ -132,17 +122,19 @@ struct AssistantMarkdownAttachmentsTests {
       Examples:
 
       ```markdown
-      ![Image](./cat.png)
+      ![Image](https://attachments.codevisor.invalid/outside)
       > ```
-      [Still code](./cat.png)
-      [Download](./cat.png)
+      [Still code](https://attachments.codevisor.invalid/outside)
+      [Download](https://attachments.codevisor.invalid/outside)
       ```
 
       ~~~~
-      [Another](../other.pdf)
+      [Another](https://attachments.codevisor.invalid/outside)
       ~~~~
       """#
-    #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
+    #expect(
+      assistantMarkdownSegments(markdown, attachments: [outside], includeUnreferencedAttachments: false)
+        == [.markdown(markdown)])
   }
 
   @Test("Unclosed and quoted fences protect their contents")
@@ -167,24 +159,26 @@ struct AssistantMarkdownAttachmentsTests {
 
     let unclosed = #"""
       ```text
-      [Literal](./inside.txt)
+      [Literal](https://attachments.codevisor.invalid/outside)
       """#
-    #expect(assistantMarkdownSegments(unclosed, attachments: []) == [.markdown(unclosed)])
+    #expect(
+      assistantMarkdownSegments(unclosed, attachments: [outside], includeUnreferencedAttachments: false)
+        == [.markdown(unclosed)])
   }
 
   @Test("Inline and indented code never becomes a file preview")
   func inlineAndIndentedCode() {
     let markdown = #"""
-      Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
+      Use `[Literal](https://attachments.codevisor.invalid/outside)` or ``![Also literal](https://attachments.codevisor.invalid/outside)``.
 
-          [Indented](./block.txt)
+          [Indented](https://attachments.codevisor.invalid/outside)
 
       Open ![Preview](https://attachments.codevisor.invalid/outside).
       """#
     let beforePreview = #"""
-      Use `[Literal](./inline.txt)` or ``![Also literal](./inline.png)``.
+      Use `[Literal](https://attachments.codevisor.invalid/outside)` or ``![Also literal](https://attachments.codevisor.invalid/outside)``.
 
-          [Indented](./block.txt)
+          [Indented](https://attachments.codevisor.invalid/outside)
 
       Open
       """# + " "
@@ -198,8 +192,11 @@ struct AssistantMarkdownAttachmentsTests {
 
   @Test("Escaped Markdown links remain text")
   func escapedLinks() {
-    let markdown = #"Show \[Literal](./one.txt) and \![Image](./two.png)."#
-    #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
+    let target = "https://attachments.codevisor.invalid/outside"
+    let markdown = #"Show \[Literal]("# + target + #") and \![Image]("# + target + ")."
+    #expect(
+      assistantMarkdownSegments(markdown, attachments: [outside], includeUnreferencedAttachments: false)
+        == [.markdown(markdown)])
   }
 
   @Test("Finalization replaces the streamed span and associates files")

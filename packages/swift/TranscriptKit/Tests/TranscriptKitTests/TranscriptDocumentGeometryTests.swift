@@ -39,7 +39,8 @@ struct TranscriptDocumentGeometryTests {
         current, rowCount: 3, changedHeights: [a.layoutKey: 1])
         == nil)
     #expect(
-      TranscriptDocumentGeometry.incrementallyUpdatedLayout(current, rowCount: 2, changedHeights: ["missing": 1])
+      TranscriptDocumentGeometry.incrementallyUpdatedLayout(
+        current, rowCount: 2, changedHeights: [a.layoutKey: 1, "missing": 1])
         == nil)
     let patched = TranscriptDocumentGeometry.incrementallyUpdatedLayout(
       current, rowCount: 2, changedHeights: [a.layoutKey: 150]
@@ -113,13 +114,6 @@ struct TranscriptDocumentGeometryTests {
     #expect(pinned.visibleAnchorKey == nil)
   }
 
-  @Test func planFollowingLatestPinsBottomWithoutAnchor() {
-    let p = plan(previous: layout([row(height: 100)]), distance: 400, follows: true)
-    #expect(p.pinsBottom)
-    #expect(p.distanceToPreserve == 0)
-    #expect(p.visibleAnchorKey == nil)
-  }
-
   @Test func followingReaderStaysAtBottomWhenSettledRowsAppendBelow() {
     let first = row(height: 100)
     let second = row(height: 100)
@@ -129,6 +123,11 @@ struct TranscriptDocumentGeometryTests {
     let following = plan(previous: previous, distance: 0, follows: true, measured: [first.layoutKey: 100])
     #expect(following.pinsBottom)
     #expect(following.resolvedDistanceFromBottom(newLayout: grown, previousLayout: previous) == 0)
+
+    let scrolledAway = plan(previous: previous, distance: 400, follows: true, measured: [first.layoutKey: 100])
+    #expect(scrolledAway.pinsBottom)
+    #expect(scrolledAway.distanceToPreserve == 0)
+    #expect(scrolledAway.visibleAnchorKey == nil)
 
     let reading = plan(previous: previous, distance: 120, follows: false, measured: [first.layoutKey: 100])
     #expect(!reading.pinsBottom)
@@ -235,17 +234,5 @@ struct TranscriptDocumentGeometryTests {
     #expect(window?.anchorKey == rows[1].layoutKey)
     #expect(window?.count == 3)
     #expect(l.renderedWindow(covering: ["missing"]) == nil)
-  }
-
-  @Test func readinessRequiresCommittedMeasurementAndReadyHost() {
-    var ledger = TranscriptMeasurementLedger()
-    ledger.setExact(10, for: "exact")
-    ledger.setProvisional(10, for: "stale")
-    let resolved = TranscriptMountedWindowReadiness.resolvedKeys(
-      required: ["exact", "stale", "unmeasured", "hostNotReady"],
-      measurements: ledger,
-      isHostReady: { $0 != "hostNotReady" }
-    )
-    #expect(resolved == ["exact"])
   }
 }

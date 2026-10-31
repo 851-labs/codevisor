@@ -5,29 +5,19 @@ import ACPKit
 
 @Suite("ToolCall diff totals")
 struct ToolCallDiffTotalsTests {
-  @Test("Streamed diffStats win over content diffs")
+  @Test("Streamed diffStats win over content diffs and sum across paths")
   func statsPrecedence() {
     let call = ToolCall(
       toolCallId: "t",
       title: "Edit",
       kind: .edit,
       content: [.diff(path: "/a", oldText: "one\n", newText: "one\ntwo\n")],
-      diffStats: [ToolCallDiffStat(path: "/a", added: 13, removed: 7)]
-    )
-    #expect(call.diffTotals == LineDiff.Totals(added: 13, removed: 7))
-  }
-
-  @Test("Multi-file stats sum across paths")
-  func multiFileSum() {
-    let call = ToolCall(
-      toolCallId: "t",
-      title: "Edit",
       diffStats: [
-        ToolCallDiffStat(path: "/a", added: 3, removed: 1),
+        ToolCallDiffStat(path: "/a", added: 13, removed: 7),
         ToolCallDiffStat(path: "/b", added: 2, removed: 4),
       ]
     )
-    #expect(call.diffTotals == LineDiff.Totals(added: 5, removed: 5))
+    #expect(call.diffTotals == LineDiff.Totals(added: 15, removed: 11))
   }
 
   @Test("Content diffs are computed when no stats are present")

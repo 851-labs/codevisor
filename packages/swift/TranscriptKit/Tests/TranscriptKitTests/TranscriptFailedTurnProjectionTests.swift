@@ -37,7 +37,6 @@ struct TranscriptFailedTurnProjectionTests {
     let epilogue = try #require(activeRows.last)
 
     #expect(epilogue.id == .assistantChrome(messageID, .epilogue))
-    #expect(epilogue.finishedResponseItemId == messageID)
     #expect(activeRows.map(\.layoutKey) == settledRows.map(\.layoutKey))
     #expect(activeRows.filter { $0.id == .assistantChrome(messageID, .epilogue) }.count == 1)
   }
@@ -133,7 +132,7 @@ struct TranscriptFailedTurnProjectionTests {
     let generatingRows = TranscriptActiveRowProjection.rows(for: generating)
     let answeredRows = TranscriptActiveRowProjection.rows(for: answered)
 
-    #expect(!generatingRows.contains { $0.id == .assistantChrome(generating.id, .epilogue) })
+    #expect(generatingRows.map(\.id) == [.activeChrome(generating.id, .activity)])
     #expect(answeredRows.filter { $0.id == .assistantChrome(answered.id, .epilogue) }.count == 1)
   }
 

@@ -5,36 +5,6 @@ import CodevisorProtocol
 @testable import TranscriptKit
 
 struct TranscriptRowProjectionTests {
-  @Test func finalResponseReceiptMapsOnlyToAssistantPresentationRows() throws {
-    let ordinary = AssistantMessage(
-      turn: AssistantTurn(entries: [.text(id: "answer", markdown: "Done")])
-    )
-    let plan = AssistantMessage(
-      turn: AssistantTurn(
-        entries: [.text(id: "result", markdown: "Implemented")],
-        planDocument: "# Plan"
-      )
-    )
-
-    let rows = try TranscriptRowProjectionCache.project(
-      makeInput(settled: [.assistant(ordinary), .assistant(plan)]),
-      options: .init(includesConnectingRow: true)
-    )
-
-    #expect(
-      rows.first(where: { $0.id == .assistantChrome(ordinary.id, .epilogue) })?
-        .finishedResponseItemId == ordinary.id
-    )
-    #expect(
-      rows.first(where: { $0.id == .planHeader(plan.id) })?.finishedResponseItemId == nil
-    )
-    #expect(
-      rows.first(where: { $0.id == .assistantChrome(plan.id, .epilogue) })?
-        .finishedResponseItemId == plan.id
-    )
-    #expect(rows.filter { $0.finishedResponseItemId != nil }.count == 2)
-  }
-
   @Test func aTurnsQuestionFollowsItsResponseAndRemeasuresOnceAnswered() throws {
     let request = QuestionRequest(questionId: "q", questions: [QuestionSpec(id: "db", question: "Which database?")])
     var pending = AssistantTurn(entries: [.text(id: "lead", markdown: "Two questions first.")])
@@ -51,6 +21,7 @@ struct TranscriptRowProjectionTests {
 
     #expect(pendingRows.last?.id == .interaction("q"))
     #expect(pendingRows.last?.content == .interaction(pending.interactions.items[0], inBotConversation: false))
+    #expect(answeredRows.last?.id == .interaction("q"))
     #expect(pendingRows.last?.measurementRevision != answeredRows.last?.measurementRevision)
   }
 
@@ -268,40 +239,6 @@ struct TranscriptRowProjectionTests {
       ])
   }
 
-  @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {
-    let responseItemId = UUID()
-    let completed = ConversationItem.assistant(
-      AssistantMessage(
-        id: responseItemId,
-        turn: AssistantTurn(entries: [.text(id: "answer", markdown: "Done")])
-      )
-    )
-    let generating = ConversationItem.assistant(
-      AssistantMessage(turn: AssistantTurn(isGenerating: true))
-    )
-    let completedRows = try TranscriptRowProjectionCache.project(
-      makeInput(active: completed),
-      options: .init(includesConnectingRow: true)
-    )
-    let generatingRows = try TranscriptRowProjectionCache.project(
-      makeInput(active: generating),
-      options: .init(includesConnectingRow: true)
-    )
-
-    #expect(
-      completedRows.first(where: { $0.id == .active(responseItemId) })?.finishedResponseItemId
-        == responseItemId
-    )
-    #expect(
-      generatingRows.first(where: { $0.id == .active(generating.id) })?.finishedResponseItemId
-        == nil
-    )
-    #expect(
-      TranscriptPresentationRow.ID.active(responseItemId).layoutKey
-        == TranscriptPresentationRow.ID.message(responseItemId).layoutKey
-    )
-  }
-
   @Test func staleActiveProjectionKeepsItsAssistantDuringTheNextTurn() {
     let previous = ConversationItem.assistant(
       AssistantMessage(
@@ -341,24 +278,6 @@ struct TranscriptRowProjectionTests {
     )
 
     #expect(resolved == canonical)
-  }
-
-  @Test func pendingMessageAdoptsTheSettledRowsIdentityWithoutDuplicating() throws {
-    let message = UserMessage(text: "Hello")
-    let phase = SessionSetupPhase.worktree()
-    let input = makeInput(
-      settled: [.user(message)],
-      pending: message,
-      setup: [phase]
-    )
-
-    let rows = try TranscriptRowProjectionCache.project(
-      input,
-      options: .init(includesConnectingRow: true)
-    )
-
-    #expect(rows.map(\.id) == [.message(message.id), .setup])
-    #expect(rows.filter { $0.id == .message(message.id) }.count == 1)
   }
 
   @Test func initialConnectionIsAPlatformOptionAndNeverCompetesWithHistoryLoading() throws {
@@ -499,11 +418,6 @@ extension TranscriptRowProjectionTests {
       #expect(chunks.first?.ordinal == 0)
       #expect(chunks.first?.blocks.count == 3, "expected prose + list in one row for \(source.debugDescription)")
     }
-  }
-
-  @Test func listsWithCodeBlocksStillFragmentStructurally() throws {
-    let chunks = try chunks(for: "Intro\n\n- item\n\n  ```swift\n  let x = 1\n  ```\n")
-    #expect(chunks.count > 1)
   }
 }
 

@@ -50,18 +50,28 @@ struct ToolCallRawPresentationTests {
     let call = ToolCall(
       toolCallId: "tool-1",
       title: "Tool",
-      rawInput: ["z": 1, "a": "first"]
+      rawInput: ["h": 8, "c": 3, "a": "first/path", "f": 6, "b": 2, "g": 7, "e": 5, "d": 4]
     )
-    let text = call.rawDetailSections()[0].text
-    #expect(text.firstIndex(of: "a")! < text.firstIndex(of: "z")!)
-    #expect(text.contains(#""a" : "first""#))
+    #expect(
+      call.rawDetailSections()[0].text == """
+        {
+          "a" : "first/path",
+          "b" : 2,
+          "c" : 3,
+          "d" : 4,
+          "e" : 5,
+          "f" : 6,
+          "g" : 7,
+          "h" : 8
+        }
+        """)
   }
 
   @Test("Large results start with a bounded preview and retain the full text")
   func boundedPreview() {
-    let output = String(repeating: "abcdefgh", count: 20)
+    let output = String(repeating: "abcdefgh", count: 1_100)
     let call = ToolCall(toolCallId: "run-1", title: "Ran", rawOutput: .string(output))
-    let section = call.rawDetailSections(previewCharacterLimit: 32)[0]
+    let section = call.rawDetailSections()[0]
 
     #expect(section.isTruncated)
     #expect(section.preview.contains("truncated"))

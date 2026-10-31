@@ -53,16 +53,17 @@ struct CodevisorExecutionAppTests {
 
   @Test("A worked section lists the apps of its tool calls in order without repeats")
   func workedSectionApps() throws {
+    let other = #"{"viewId":"v2","serverId":"mcp-g","resourceUri":"ui://g/a.html"}"#
     let first = try execute(status: "completed", state: "completed", apps: "[\(Self.zillow)]")
-    let again = try execute(status: "completed", state: "completed", apps: "[\(Self.zillow)]")
+    let again = try execute(status: "completed", state: "completed", apps: "[\(Self.zillow),\(other)]")
     let items: [WorkedItem] = [
       .text(id: "t", markdown: "Looking"),
       .toolGroup(ToolCallGroup(calls: [first])),
-      .subagents(id: "a", calls: [again]),
+      .subagents(id: "a", calls: [first]),
       .toolGroup(ToolCallGroup(calls: [again])),
     ]
 
-    #expect(TranscriptPluginApps.apps(in: items).map(\.viewId) == ["v1"])
+    #expect(TranscriptPluginApps.apps(in: items).map(\.viewId) == ["v1", "v2"])
   }
 
   @Test("A settled turn shows its apps from the item summary even before its tool calls load")

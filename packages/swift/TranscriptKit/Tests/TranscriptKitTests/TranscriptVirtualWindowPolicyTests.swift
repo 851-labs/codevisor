@@ -46,14 +46,21 @@ struct TranscriptVirtualWindowPolicyTests {
       distanceFromBottom: distance,
       viewportHeight: 400,
       scrollDelta: 100,
-      currentRange: 10..<16
+      currentRange: 10..<40
     )
 
     #expect(target == 5..<29)
   }
 
   @Test func fastScrollAddsBoundedRunwayInDirectionOfTravel() {
-    let distance = layout.distanceFromBottom(viewportTop: 2_000, viewportHeight: 400)
+    let layout = VirtualTranscriptLayout(
+      items: (0..<100).map {
+        .init(key: "row:\($0)", estimatedHeight: 100, spacingAfter: 0)
+      },
+      measuredHeights: [:],
+      spacing: 0
+    )
+    let distance = layout.distanceFromBottom(viewportTop: 5_000, viewportHeight: 400)
     let down = policy.targetRange(
       layout: layout,
       distanceFromBottom: distance,
@@ -69,8 +76,8 @@ struct TranscriptVirtualWindowPolicyTests {
       currentRange: nil
     )
 
-    #expect(down == 15..<40)
-    #expect(up == 0..<29)
+    #expect(down == 45..<78)
+    #expect(up == 26..<59)
   }
 
   @Test func mountPlanSeparatesMandatoryViewportFromDirectionalRunway() {

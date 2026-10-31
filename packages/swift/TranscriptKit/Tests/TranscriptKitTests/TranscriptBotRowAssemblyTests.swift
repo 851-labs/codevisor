@@ -80,30 +80,6 @@ struct TranscriptBotRowAssemblyTests {
       ])
   }
 
-  @Test(arguments: [
-    ("forbidden", "Your organization has disabled Claude subscription access for Claude Code", ""),
-    ("harnessFailed", "ACP connection closed", "Couldn't reply: "),
-  ])
-  func showsAHarnessFailureInPlaceOfTheNoticeThatAnnouncedIt(kind: String, detail: String, prefix: String) throws {
-    let stopped = AssistantMessage(turn: AssistantTurn(stopDetail: detail, stopKind: kind))
-    let conversation = TranscriptBotConversation(
-      messages: [
-        message(userID.uuidString.lowercased(), .user, "hello", at: 0),
-        message("n1", .notice, prefix + detail, at: 1),
-      ],
-      isWorking: false)
-
-    let rows = try TranscriptRowProjectionCache.project(
-      input(settled: [.assistant(stopped)], conversation),
-      options: .init(includesConnectingRow: false, presentsBotConversation: true)
-    )
-
-    #expect(
-      rows.map(\.id) == [
-        .botTimestamp(userID.uuidString.lowercased()), .message(userID), .assistantChrome(stopped.id, .epilogue),
-      ])
-  }
-
   @Test func showsOneCardForAFailureThatPostedSeveralNotices() throws {
     let stopped = AssistantMessage(
       turn: AssistantTurn(stopDetail: "Claude Code couldn't find this chat's saved conversation."))

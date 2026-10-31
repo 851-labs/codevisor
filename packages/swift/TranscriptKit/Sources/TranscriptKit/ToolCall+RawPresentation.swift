@@ -23,10 +23,12 @@ public struct ToolCallRawSection: Sendable, Equatable, Identifiable {
     }
   }
 
-  fileprivate init(kind: Kind, value: JSONValue, previewCharacterLimit: Int) {
+  private static let previewCharacterLimit = 8_192
+
+  fileprivate init(kind: Kind, value: JSONValue) {
     self.kind = kind
     text = Self.displayText(for: value)
-    (preview, isTruncated) = Self.makePreview(text, limit: previewCharacterLimit)
+    (preview, isTruncated) = Self.makePreview(text)
   }
 
   private static func displayText(for value: JSONValue) -> String {
@@ -41,13 +43,12 @@ public struct ToolCallRawSection: Sendable, Equatable, Identifiable {
     return text
   }
 
-  private static func makePreview(_ text: String, limit: Int) -> (String, Bool) {
-    let boundedLimit = max(8, limit)
-    let probe = text.prefix(boundedLimit + 1)
-    guard probe.count > boundedLimit else { return (text, false) }
+  private static func makePreview(_ text: String) -> (String, Bool) {
+    let probe = text.prefix(previewCharacterLimit + 1)
+    guard probe.count > previewCharacterLimit else { return (text, false) }
 
-    let headCount = boundedLimit * 3 / 4
-    let tailCount = boundedLimit - headCount
+    let headCount = previewCharacterLimit * 3 / 4
+    let tailCount = previewCharacterLimit - headCount
     let marker = "\n\n… truncated …\n\n"
     return (String(text.prefix(headCount)) + marker + String(text.suffix(tailCount)), true)
   }
@@ -62,29 +63,20 @@ public extension ToolCall {
     return !(content?.isEmpty ?? true) || rawInput != nil || rawOutput != nil || exitCode != nil
   }
 
-  func rawOutputDetailSection(previewCharacterLimit: Int = 8_192) -> ToolCallRawSection? {
+  func rawOutputDetailSection() -> ToolCallRawSection? {
     guard content?.isEmpty ?? true, let rawOutput else { return nil }
-    return ToolCallRawSection(
-      kind: .output,
-      value: rawOutput,
-      previewCharacterLimit: previewCharacterLimit
-    )
+    return ToolCallRawSection(kind: .output, value: rawOutput)
   }
 
-  func rawDetailSections(previewCharacterLimit: Int = 8_192) -> [ToolCallRawSection] {
+  func rawDetailSections() -> [ToolCallRawSection] {
     let hasTypedContent = !(content?.isEmpty ?? true)
     var sections: [ToolCallRawSection] = []
 
     if let rawInput, kind != .execute, !hasTypedContent {
-      sections.append(
-        ToolCallRawSection(
-          kind: .input,
-          value: rawInput,
-          previewCharacterLimit: previewCharacterLimit
-        ))
+      sections.append(ToolCallRawSection(kind: .input, value: rawInput))
     }
 
-    if let rawOutput = rawOutputDetailSection(previewCharacterLimit: previewCharacterLimit) {
+    if let rawOutput = rawOutputDetailSection() {
       sections.append(rawOutput)
     }
     return sections

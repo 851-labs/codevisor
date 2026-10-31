@@ -267,8 +267,7 @@ enum TranscriptAssistantRowProjection {
         content: last.content,
         estimatedHeight: last.estimatedHeight,
         measurementRevision: last.measurementRevision,
-        spacingAfter: 14,
-        finishedResponseItemId: last.finishedResponseItemId
+        spacingAfter: 14
       ))
     rows.append(contentsOf: responseRows)
     appendChrome(

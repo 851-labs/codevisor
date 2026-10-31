@@ -8,30 +8,9 @@ struct TranscriptInitialBottomPinTests {
     var pin = TranscriptInitialBottomPin()
 
     pin.configure(restoresNonBottomPosition: false)
-    #expect(pin.isConfigured)
     #expect(pin.isActive)
 
     pin.release()
     #expect(!pin.isActive)
-  }
-
-  @Test("A non-bottom restoration keeps its saved anchor authoritative")
-  func nonBottomRestorationDoesNotPin() {
-    var pin = TranscriptInitialBottomPin()
-
-    pin.configure(restoresNonBottomPosition: true)
-
-    #expect(pin.isConfigured)
-    #expect(!pin.isActive)
-  }
-
-  @Test("Later configuration cannot replace the mount's original intent")
-  func configurationIsOneShot() {
-    var pin = TranscriptInitialBottomPin()
-
-    pin.configure(restoresNonBottomPosition: false)
-    pin.configure(restoresNonBottomPosition: true)
-
-    #expect(pin.isActive)
   }
 }

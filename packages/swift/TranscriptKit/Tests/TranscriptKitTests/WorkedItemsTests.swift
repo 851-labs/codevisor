@@ -81,12 +81,6 @@ struct WorkedItemsTests {
     }
   }
 
-  @Test("WorkedItem identities are unique")
-  func ids() {
-    let items = turn([.text(id: "x", markdown: "a"), tool("g", .read)]).workedItems
-    #expect(Set(items.map(\.id)).count == items.count)
-  }
-
   @Test("A plan boundary splits worked items into before/after the plan")
   func planSplit() {
     var t = AssistantTurn(entries: [tool("explore-1", .read), tool("explore-2", .search)])

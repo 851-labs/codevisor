@@ -11,7 +11,8 @@ struct AssistantMarkdownTableImagesTests {
   @Test("Image tables stay intact")
   func tableSegments() {
     let markdown = "| Sign in | Create account |\n| --- | --- |\n| ![Sign in](./sign-in.png) | ![](./create.png) |"
-    #expect(assistantMarkdownSegments(markdown, attachments: []) == [.markdown(markdown)])
+    #expect(
+      assistantMarkdownSegments(markdown, attachments: [], localImagesPendingCapture: true) == [.markdown(markdown)])
   }
 
   @Test("Header images, nested tables, Unicode, and CRLF preserve parser-owned boundaries")

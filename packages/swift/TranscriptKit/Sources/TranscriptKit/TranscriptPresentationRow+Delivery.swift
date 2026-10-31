@@ -21,8 +21,7 @@ extension TranscriptPresentationRow {
       estimatedHeight: estimatedHeight,
       measurementRevision: measurementRevision,
       spacingAfter: spacingAfter,
-      workedSection: workedSection,
-      finishedResponseItemId: finishedResponseItemId
+      workedSection: workedSection
     )
   }
 }

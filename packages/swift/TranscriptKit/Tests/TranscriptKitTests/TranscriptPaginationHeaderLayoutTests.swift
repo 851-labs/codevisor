@@ -20,6 +20,11 @@ struct TranscriptPaginationHeaderLayoutTests {
     )
     #expect(initiallyChanged)
     #expect(layout.height == TranscriptPaginationHeaderLayout.reservedHeight)
+    let changedWhileLoading = layout.reserveIfNeeded(
+      hasOlderHistory: true,
+      isPresented: true
+    )
+    #expect(!changedWhileLoading)
     let changedAfterExhaustion = layout.reserveIfNeeded(
       hasOlderHistory: false,
       isPresented: false

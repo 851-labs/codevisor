@@ -90,10 +90,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     max(0, totalHeight - max(0, viewportHeight) - max(0, distanceFromBottom))
   }
 
-  public func distanceFromBottom(viewportTop: CGFloat, viewportHeight: CGFloat) -> CGFloat {
-    max(0, totalHeight - (max(0, viewportTop) + max(0, viewportHeight)))
-  }
-
   public func distanceFromBottom(
     preservingAnchor key: String,
     previousLayout: VirtualTranscriptLayout,

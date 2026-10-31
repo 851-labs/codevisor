@@ -2332,7 +2332,7 @@
         "file": "packages/swift/TranscriptKit/Sources/TranscriptKit/TranscriptAssistantRowProjection.swift",
         "line": 172
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 98 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 97 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

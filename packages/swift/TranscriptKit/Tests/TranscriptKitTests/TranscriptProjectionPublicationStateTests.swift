@@ -53,40 +53,4 @@ struct TranscriptProjectionPublicationStateTests {
 
     #expect(publication.isPending(currentRequest: current))
   }
-
-  @Test func obsoleteEmptyProjectionCannotOpenInitialPresentationGate() {
-    let loading = request(controllerRevision: 1)
-    let history = request(controllerRevision: 2)
-    var publication = TranscriptProjectionPublicationState(
-      publishedRequest: loading
-    )
-    var gate = TranscriptInitialPresentationGate()
-
-    let obsoleteReveal = gate.resolve(
-      isHydrating: publication.isPending(currentRequest: history),
-      requiredKeys: [],
-      resolvedKeys: []
-    )
-    #expect(!obsoleteReveal)
-    #expect(!gate.isReady)
-
-    publication.publish(history)
-    let aggregateReveal = gate.resolve(
-      isHydrating: publication.isPending(currentRequest: history),
-      isActiveProjectionPending: true,
-      requiredKeys: ["active-aggregate"],
-      resolvedKeys: ["active-aggregate"]
-    )
-    #expect(!aggregateReveal)
-    #expect(!gate.isReady)
-
-    let blockReveal = gate.resolve(
-      isHydrating: false,
-      isActiveProjectionPending: false,
-      requiredKeys: ["markdown-0", "markdown-1"],
-      resolvedKeys: ["markdown-0", "markdown-1"]
-    )
-    #expect(blockReveal)
-    #expect(gate.isReady)
-  }
 }

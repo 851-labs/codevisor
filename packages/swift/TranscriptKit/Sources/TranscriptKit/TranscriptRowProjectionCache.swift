@@ -287,7 +287,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
   public let layoutKey: String
   public let spacingAfter: CGFloat?
   public let workedSection: TranscriptWorkedSectionMembership?
-  public let finishedResponseItemId: UUID?
 
   public var isUserMessage: Bool {
     switch content {
@@ -307,8 +306,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     estimatedHeight: CGFloat,
     measurementRevision: Int = 0,
     spacingAfter: CGFloat? = nil,
-    workedSection: TranscriptWorkedSectionMembership? = nil,
-    finishedResponseItemId: UUID? = nil
+    workedSection: TranscriptWorkedSectionMembership? = nil
   ) {
     self.id = id
     self.content = content
@@ -317,30 +315,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     self.spacingAfter = spacingAfter
     self.workedSection = workedSection
     layoutKey = id.layoutKey
-    if let finishedResponseItemId {
-      self.finishedResponseItemId = finishedResponseItemId
-    } else {
-      self.finishedResponseItemId =
-        switch content {
-        case let .message(item, waitingOnBackgroundTask: _):
-          if case let .assistant(message) = item { message.id } else { nil }
-        case let .assistantResult(message, waitingOnBackgroundTask: _):
-          message.id
-        case let .assistantChrome(message, slice, waitingOnBackgroundTask: _):
-          slice == .epilogue && !message.turn.isGenerating ? message.id : nil
-        case .assistantWorkedHeader, .activeWorkedHeader, .assistantWorkedItem,
-          .activeWorkedItem, .planHeader, .markdownChunk, .assistantAttachment, .pluginApps:
-          nil
-        case let .active(item):
-          if case let .assistant(message) = item, !message.turn.isGenerating {
-            message.id
-          } else {
-            nil
-          }
-        default:
-          nil
-        }
-    }
   }
 }
 

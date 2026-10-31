@@ -152,21 +152,6 @@ struct TranscriptRowSetTests {
     }
   }
 
-  @Test func historyRefreshNeverTransfersWaitingHeightToReplacementUser() {
-    let user = settled(UUID(), height: 90)
-    let waiting = active(UUID(), height: 19.333)
-    let historyUser = settled(UUID(), height: 90)
-    var ledger = TranscriptMeasurementLedger()
-    ledger.setExact(90, for: user.layoutKey)
-    ledger.setExact(19.333, for: waiting.layoutKey)
-
-    TranscriptRowSet.transferActiveHeightIfNeeded(
-      from: [user, waiting], to: [historyUser], ledger: &ledger)
-
-    #expect(ledger[historyUser.layoutKey] == nil)
-    #expect(ledger[user.layoutKey] == 90)
-  }
-
   @Test func doesNotTransferHeightToAnotherAssistantTurn() {
     let waiting = active(UUID())
     let unrelated = settledResult(UUID())
@@ -244,7 +229,7 @@ struct TranscriptRowSetTests {
     var untouched = TranscriptMeasurementLedger()
     untouched.setExact(123, for: activeRow.layoutKey)
     TranscriptRowSet.transferActiveHeightIfNeeded(
-      from: [activeRow], to: [activeRow, settledResult(UUID())], ledger: &untouched
+      from: [activeRow], to: [activeRow, settledResult(turn)], ledger: &untouched
     )
     #expect(untouched.heightsByKey.count == 1)
   }

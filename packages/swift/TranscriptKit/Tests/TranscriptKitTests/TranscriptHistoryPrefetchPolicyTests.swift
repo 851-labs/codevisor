@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import TranscriptKit
 
@@ -58,24 +59,14 @@ struct TranscriptHistoryPrefetchPolicyTests {
       return true
     }
 
-    policy.requestIfNeeded(
-      oldestKey: "oldest",
-      distanceFromTop: 0,
-      threshold: 600,
-      request: request
-    )
-    policy.requestIfNeeded(
-      oldestKey: "oldest",
-      distanceFromTop: 751,
-      threshold: 600,
-      request: request
-    )
-    policy.requestIfNeeded(
-      oldestKey: "oldest",
-      distanceFromTop: 0,
-      threshold: 600,
-      request: request
-    )
+    for distanceFromTop: CGFloat in [0, 750, 0, 751, 0] {
+      policy.requestIfNeeded(
+        oldestKey: "oldest",
+        distanceFromTop: distanceFromTop,
+        threshold: 600,
+        request: request
+      )
+    }
 
     #expect(attempts == 2)
   }
