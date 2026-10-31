@@ -108,7 +108,7 @@ struct TranscriptSendTransitionTests {
     #expect(target.animation(forKey: TranscriptSendAnimationKeys.hide) != nil)
     CATransaction.flush()
     fixture.window.displayIfNeeded()
-    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    view.sendTransitions.startReadyFlights()
     #expect(fixture.events.completed.isEmpty)
     #expect(track.subviews.count == 2)
 
