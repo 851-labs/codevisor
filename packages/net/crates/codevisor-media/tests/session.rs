@@ -163,8 +163,8 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
     let viewer_addr = viewer_endpoint.addr();
     let (host_connection, viewer_connection) =
         tokio::join!(host_endpoint.connect(&viewer_addr, ALPN_SCREEN), viewer_endpoint.accept());
-    let host = MediaSession::new(QuicTransport(host_connection.unwrap()), MediaConfig::default());
-    let viewer = MediaSession::new(QuicTransport(viewer_connection.unwrap().unwrap()), MediaConfig::default());
+    let host = MediaSession::new(QuicTransport::new(host_connection.unwrap()), MediaConfig::default());
+    let viewer = MediaSession::new(QuicTransport::new(viewer_connection.unwrap().unwrap()), MediaConfig::default());
 
     // One frame at a time, each after the previous ack: this checks the real connection's wiring, not its loss
     // handling under a debug build's slow receive path (the simulated-network tests own that).

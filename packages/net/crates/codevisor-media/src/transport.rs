@@ -27,20 +27,42 @@ pub trait DatagramTransport: Send + Sync + 'static {
 }
 
 /// QUIC datagrams on a `codevisor/screen/1` connection.
-pub struct QuicTransport(pub NetConnection);
+pub struct QuicTransport {
+    connection: NetConnection,
+    /// The datagram send buffer's size: the most free space it has shown.
+    buffer: std::sync::atomic::AtomicUsize,
+}
+
+/// Datagrams QUIC may hold before sending them. Anything past this waits in the session's pacer instead, where
+/// admission sees it: QUIC's own buffer (1 MiB by default) would hide a congestion window that stopped opening behind
+/// up to a second of queue. Smaller caps starve fast links, because the session refills QUIC only on tokio's 1 ms
+/// timer once it's full (64 KiB held 300 Mbit/s frames to 16 ms of sending on loopback).
+const MAX_QUIC_QUEUE: usize = 256 << 10;
+
+impl QuicTransport {
+    pub fn new(connection: NetConnection) -> Self {
+        Self { connection, buffer: std::sync::atomic::AtomicUsize::new(0) }
+    }
+
+    pub fn connection(&self) -> &NetConnection {
+        &self.connection
+    }
+}
 
 impl DatagramTransport for QuicTransport {
     fn max_datagram_size(&self) -> Option<usize> {
-        self.0.max_datagram_size()
+        self.connection.max_datagram_size()
     }
 
     fn send(&self, datagram: Bytes) -> SendOutcome {
-        // QUIC drops the oldest queued datagram to make room; hand this one back instead, so the pacer's backlog
-        // (and with it the encoder's admission) sees the congestion.
-        if self.0.datagram_send_buffer_space() < datagram.len() {
+        let space = self.connection.datagram_send_buffer_space();
+        let buffer = self.buffer.fetch_max(space, std::sync::atomic::Ordering::Relaxed).max(space);
+        // QUIC would drop the oldest queued datagram to make room, or queue deeply behind its congestion window;
+        // hand this one back instead, so the pacer's backlog (and with it admission) sees the congestion.
+        if space < datagram.len() || buffer - space + datagram.len() > MAX_QUIC_QUEUE {
             return SendOutcome::Full(datagram);
         }
-        match self.0.send_datagram(datagram) {
+        match self.connection.send_datagram(datagram) {
             Ok(()) => SendOutcome::Sent,
             Err(DatagramSendError::TooLarge | DatagramSendError::Unsupported | DatagramSendError::ConnectionLost) => {
                 SendOutcome::Rejected
@@ -49,25 +71,28 @@ impl DatagramTransport for QuicTransport {
     }
 
     async fn recv(&self) -> Option<Bytes> {
-        self.0.read_datagram().await.ok()
+        self.connection.read_datagram().await.ok()
     }
 
     fn rtt(&self) -> Option<Duration> {
-        self.0.rtt()
+        self.connection.rtt()
     }
 }
 
-/// Plain UDP to one peer: the bench's raw-UDP baseline. It has no round-trip estimate of its own, so it reports the
-/// one it's given. The peer is fixed, or (for the listening side) the source of the first datagram.
+/// Where a [`UdpTransport`] gets its round trip from (the bench reads it off the QUIC connection on the same path).
+pub type RttSource = Box<dyn Fn() -> Option<Duration> + Send + Sync>;
+
+/// Plain UDP to one peer: the bench's raw-UDP baseline. It has no round-trip estimate of its own, so it reports what
+/// its [`RttSource`] says. The peer is fixed, or (for the listening side) the source of the first datagram.
 pub struct UdpTransport {
     socket: UdpSocket,
     peer: Mutex<Option<SocketAddr>>,
     max_datagram: usize,
-    rtt: Duration,
+    rtt: RttSource,
 }
 
 impl UdpTransport {
-    pub fn new(socket: UdpSocket, peer: Option<SocketAddr>, max_datagram: usize, rtt: Duration) -> Self {
+    pub fn new(socket: UdpSocket, peer: Option<SocketAddr>, max_datagram: usize, rtt: RttSource) -> Self {
         Self { socket, peer: Mutex::new(peer), max_datagram, rtt }
     }
 }
@@ -111,7 +136,7 @@ impl DatagramTransport for UdpTransport {
     }
 
     fn rtt(&self) -> Option<Duration> {
-        Some(self.rtt)
+        (self.rtt)()
     }
 }
 

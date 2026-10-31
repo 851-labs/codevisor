@@ -198,7 +198,7 @@ impl NetConnectionHandle {
     /// Starts a screen sharing media session (`codevisor-media`) on this connection, which must use
     /// [`media_alpn`]. The session owns the connection's datagrams from then on.
     pub async fn open_media_session(&self, config: MediaSessionConfig) -> Arc<MediaSessionHandle> {
-        let session = media::MediaSession::new(media::QuicTransport(self.inner.clone()), config.into());
+        let session = media::MediaSession::new(media::QuicTransport::new(self.inner.clone()), config.into());
         Arc::new(MediaSessionHandle { inner: session })
     }
 

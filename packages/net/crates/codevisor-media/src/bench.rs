@@ -199,14 +199,21 @@ async fn viewer(options: &Options) -> Result<String> {
     let endpoint = NetEndpoint::bind(endpoint_config(secret, options.get("bind")?)).await?;
     let udp = UdpSocket::bind(options.get("udp-bind")?).await?;
     eprintln!("viewer {} on {:?}, udp {}", endpoint.endpoint_id(), endpoint.bound_sockets(), udp.local_addr()?);
-    let udp = UdpTransport::new(udp, None, UDP_DATAGRAM, Duration::from_micros(500));
+    // The UDP baseline borrows the round trip of the QUIC connection on the same path, once there is one.
+    let path: Arc<std::sync::OnceLock<codevisor_net::NetConnection>> = Arc::default();
+    let rtt: crate::RttSource = {
+        let path = path.clone();
+        Box::new(move || path.get().and_then(codevisor_net::NetConnection::rtt))
+    };
+    let udp = UdpTransport::new(udp, None, UDP_DATAGRAM, rtt);
     let udp_task = tokio::spawn(serve_viewer(
         MediaSession::new(ImpairedTransport::new(udp, network, VIEWER_SEED), media_config()),
         idle,
     ));
     let connection = endpoint.accept().await?.ok_or_else(|| anyhow!("endpoint closed"))?;
+    let _ = path.set(connection.clone());
     let session =
-        MediaSession::new(ImpairedTransport::new(QuicTransport(connection), network, VIEWER_SEED), media_config());
+        MediaSession::new(ImpairedTransport::new(QuicTransport::new(connection), network, VIEWER_SEED), media_config());
     let (quic_tally, quic_stats) = serve_viewer(session, idle).await;
     let (udp_tally, udp_stats) = udp_task.await?;
     endpoint.close().await;
@@ -262,7 +269,7 @@ async fn loopback(options: &Options) -> Result<String> {
         relay_url: None,
         direct_addrs: viewer_endpoint.bound_sockets(),
     };
-    let viewer_udp = UdpTransport::new(viewer_udp, None, UDP_DATAGRAM, Duration::from_micros(100));
+    let viewer_udp = UdpTransport::new(viewer_udp, None, UDP_DATAGRAM, Box::new(|| Some(Duration::from_micros(100))));
     let udp_viewer = tokio::spawn(serve_viewer(
         MediaSession::new(ImpairedTransport::new(viewer_udp, network, VIEWER_SEED), media_config()),
         idle,
@@ -273,7 +280,7 @@ async fn loopback(options: &Options) -> Result<String> {
         tokio::spawn(async move {
             let connection = endpoint.accept().await?.ok_or_else(|| anyhow!("endpoint closed"))?;
             let session = MediaSession::new(
-                ImpairedTransport::new(QuicTransport(connection), network, VIEWER_SEED),
+                ImpairedTransport::new(QuicTransport::new(connection), network, VIEWER_SEED),
                 media_config(),
             );
             anyhow::Ok(serve_viewer(session, idle).await)
@@ -307,8 +314,9 @@ async fn send_cost(options: &Options) -> Result<String> {
     let host_endpoint = NetEndpoint::bind(endpoint_config(generate_secret_key(), "127.0.0.1:0")).await?;
     let (host, viewer) =
         tokio::join!(connect_quic(&host_endpoint, &viewer_addr, Duration::from_secs(10)), viewer_endpoint.accept());
-    let host = MediaSession::new(QuicTransport(host?), media_config());
-    let viewer = MediaSession::new(QuicTransport(viewer?.ok_or_else(|| anyhow!("endpoint closed"))?), media_config());
+    let host = MediaSession::new(QuicTransport::new(host?), media_config());
+    let viewer =
+        MediaSession::new(QuicTransport::new(viewer?.ok_or_else(|| anyhow!("endpoint closed"))?), media_config());
     let drain = tokio::spawn(async move { while viewer.next_event().await.is_some() {} });
     let mut report = String::from("| Frame | send_frame p50 / p95 ms (Rust) |\n| -- | -- |\n");
     let mut cache = HashMap::new();
@@ -358,22 +366,24 @@ async fn measure(
     let rows = options.rows()?;
     let seconds = options.seconds()?;
     let quic = MediaSession::new(
-        ImpairedTransport::new(QuicTransport(connection.clone()), network, HOST_SEED),
+        ImpairedTransport::new(QuicTransport::new(connection.clone()), network, HOST_SEED),
         media_config(),
     );
     // Let path MTU discovery and the RTT estimate settle before measuring.
     tokio::time::sleep(Duration::from_secs(2)).await;
     let path_rtt = connection.rtt().unwrap_or(Duration::from_micros(500));
     let udp_socket = UdpSocket::bind(if udp_peer.ip().is_loopback() { "127.0.0.1:0" } else { "0.0.0.0:0" }).await?;
+    let rtt: crate::RttSource = {
+        let connection = connection.clone();
+        Box::new(move || connection.rtt())
+    };
     let udp = MediaSession::new(
-        ImpairedTransport::new(
-            UdpTransport::new(udp_socket, Some(udp_peer), UDP_DATAGRAM, path_rtt),
-            network,
-            HOST_SEED,
-        ),
+        ImpairedTransport::new(UdpTransport::new(udp_socket, Some(udp_peer), UDP_DATAGRAM, rtt), network, HOST_SEED),
         media_config(),
     );
     let mut table = String::new();
+    let mut diagnostics =
+        String::from("\nAfter each row, the iroh path (selected) and the sessions' transport refusals:\n");
     let mut json = Vec::new();
     writeln!(
         table,
@@ -393,6 +403,24 @@ async fn measure(
         let stream_base = (index as u8) * 4;
         let udp_result = run_row(&udp, row, stream_base, seconds).await;
         let quic_result = run_row(&quic, row, stream_base, seconds).await;
+        for path in connection.paths().iter().filter(|path| path.selected) {
+            writeln!(
+                diagnostics,
+                "- {}: RTT {:.2} ms, MTU {}, cwnd {}, lost packets {}, congestion events {}, black holes {}; \
+                 rejected sends iroh {} udp {}; estimate iroh {:.0} udp {:.0} Mbit/s",
+                row.name,
+                path.rtt_ms,
+                path.current_mtu,
+                path.cwnd,
+                path.lost_packets,
+                path.congestion_events,
+                path.black_holes_detected,
+                quic_result.stats.transport_rejected,
+                udp_result.stats.transport_rejected,
+                quic_result.stats.estimate_bps / 1e6,
+                udp_result.stats.estimate_bps / 1e6,
+            )?;
+        }
         for (label, result) in [("iroh", &quic_result), ("udp", &udp_result)] {
             let added = if label == "iroh" {
                 format!(
@@ -457,7 +485,7 @@ async fn measure(
     if let Some(path) = options.0.get("json") {
         std::fs::write(path, &json).with_context(|| format!("writing {path}"))?;
     }
-    Ok(format!("{table}\n{json}\n"))
+    Ok(format!("{table}{diagnostics}\n{json}\n"))
 }
 
 /// Sends one row's frames at 60 Hz on `stream_base..stream_base + row.streams` and collects their acks.

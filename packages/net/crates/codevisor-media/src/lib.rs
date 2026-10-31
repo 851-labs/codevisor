@@ -67,7 +67,7 @@ pub mod wire;
 pub use crate::{
     core::Core,
     session::MediaSession,
-    transport::{DatagramTransport, ImpairedTransport, QuicTransport, SendOutcome, UdpTransport},
+    transport::{DatagramTransport, ImpairedTransport, QuicTransport, RttSource, SendOutcome, UdpTransport},
     types::{
         Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, ReceivedFrame, Recovery, Stats,
         give_up_after,

@@ -25,6 +25,8 @@ const FULL_RETRY: Duration = Duration::from_micros(500);
 const SEND_BATCH: usize = 16;
 /// Datagrams handled per wake-up before the session settles (sends, timers, events).
 const RECV_BATCH: usize = 64;
+/// Rounds of already-due timers a settle runs before it yields (the pacer can stay due while it drains a burst).
+const DUE_ROUNDS: usize = 8;
 
 /// One end of a media session, driving a [`Core`] over a transport on the tokio runtime. Every method is cheap and
 /// non-blocking except [`next_event`](Self::next_event): [`send_frame`](Self::send_frame) only packetizes and queues
@@ -183,7 +185,17 @@ impl<T: DatagramTransport> Shared<T> {
             }
         }
         self.pump(now);
-        let state = self.state.lock().unwrap();
+        // Timers already due run now rather than on tokio's next 1 ms tick (a NACK waits on this).
+        let mut state = self.state.lock().unwrap();
+        for _ in 0..DUE_ROUNDS {
+            if !state.core.poll_timeout(now).is_some_and(|next| next <= now) || !state.held.is_empty() {
+                break;
+            }
+            state.core.handle_timeout(now);
+            drop(state);
+            self.pump(now);
+            state = self.state.lock().unwrap();
+        }
         let next = state.core.poll_timeout(now);
         if !state.held.is_empty() {
             // The pacer would say "now" while the transport has no room; wait for room instead of spinning.
