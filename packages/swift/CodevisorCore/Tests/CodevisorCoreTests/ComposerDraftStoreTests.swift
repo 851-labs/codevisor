@@ -106,7 +106,7 @@ struct ComposerDraftStoreTests {
     drafts.savePaneDraft(.init(projectId: UUID(), attachments: [attachment]), forPane: paneId)
 
     drafts.clearPaneDraft(forPane: paneId)
-    drafts.flushPendingWrites()
+    PersistenceEncoding.drain()
 
     #expect(ComposerDraftStore(store: store, attachmentFiles: staging.files).paneDraft(forPane: paneId) == nil)
     #expect(FileManager.default.fileExists(atPath: attachment.fileURL.path))
@@ -140,7 +140,7 @@ struct ComposerDraftStoreTests {
     ])
 
     let drafts = ComposerDraftStore(store: store, attachmentFiles: staging.files)
-    drafts.flushPendingWrites()
+    PersistenceEncoding.drain()
 
     let migrated = try #require(drafts.draft(forServer: "local")?.attachments.first)
     #expect(migrated.id == attachmentId)
@@ -162,7 +162,7 @@ struct ComposerDraftStoreTests {
 
     let relaunched = ComposerDraftStore(store: store, attachmentFiles: staging.files)
     relaunched.removeUnreferencedAttachmentFiles()
-    relaunched.flushPendingWrites()
+    PersistenceEncoding.drain()
 
     #expect(FileManager.default.fileExists(atPath: drafted.fileURL.path))
     #expect(!FileManager.default.fileExists(atPath: orphan.fileURL.path))
@@ -197,8 +197,9 @@ struct ComposerDraftStoreTests {
       ],
       modeId: "plan",
       isGoalComposerArmed: true,
-      isGoalEditing: false,
-      composerTextBeforeGoalEdit: "ordinary draft"
+      isGoalEditing: true,
+      composerTextBeforeGoalEdit: "ordinary draft",
+      selectionWasAutomaticallyCarried: true
     )
 
     ComposerDraftStore(store: store, attachmentFiles: staging.files).saveDraft(expected, forServer: "local")

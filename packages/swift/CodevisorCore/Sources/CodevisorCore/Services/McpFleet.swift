@@ -131,7 +131,6 @@ public enum McpFleet {
       self.isOn = isOn
     }
 
-    public var isPending: Bool { status == .syncing }
   }
 
   nonisolated public static func machineStatus(_ row: MachineReadiness) -> MachineStatus {

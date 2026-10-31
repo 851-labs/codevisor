@@ -16,7 +16,6 @@ extension TerminalRenderer {
 public final class TerminalController {
   public private(set) var hasExited = false
   public private(set) var exitCode: Int?
-  public private(set) var lastError: String?
   public var onExit: (() -> Void)?
   public private(set) var ptySize: (cols: Int, rows: Int)?
   public var onPTYSize: ((_ cols: Int, _ rows: Int) -> Void)?
@@ -52,8 +51,6 @@ public final class TerminalController {
     transport = TerminalTransport(config: config) { event in owner.value?.handle(event) }
     owner.value = self
   }
-
-  public var roundTripTime: Duration? { transport.roundTripTime }
 
   public func start(cols: Int, rows: Int) {
     ownSize = (cols, rows)
@@ -208,7 +205,6 @@ public final class TerminalController {
   }
 
   private func report(_ message: String) {
-    lastError = message
     onError?(message)
   }
 }

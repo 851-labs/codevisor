@@ -106,30 +106,6 @@ extension SessionModelTests {
     #expect(markdown == "Done")
   }
 
-  @Test("Server-backed sessions prompt through the server and consume event stream output")
-  func serverBackedSendStreams() async {
-    let sessionId = UUID()
-    let client = FakeSessionServerClient(sessionId: sessionId)
-    let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString,
-      now: { Date(timeIntervalSince1970: 100) }
-    )
-
-    await model.send("hello server")
-    await settleUntil { !model.isSending }
-
-    #expect(client.promptedTexts == ["hello server"])
-    #expect(model.conversation.count == 2)
-    guard case let .assistant(assistant) = model.conversation.last else {
-      Issue.record("expected assistant")
-      return
-    }
-    #expect(assistant.turn.finalText == .text(id: "t0", markdown: "Echo: hello server"))
-    #expect(assistant.turn.stopReason == .endTurn)
-    #expect(assistant.turn.stopDetail == nil)
-  }
-
   @Test("Prompt acceptance callback fires only after each queue item is accepted")
   func promptAcceptanceCallback() async {
     let sessionId = UUID()

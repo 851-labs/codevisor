@@ -29,8 +29,8 @@ struct WorkspaceBrowserLinksTests {
     #expect(state.selectedCenterTabId == currentTab.id)
     #expect(state.centerTabs[1].root.group(id: result.leafId)?.panes == [linked])
     #expect(state.centerTabs[0] == sourceTab)
-    let restored = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(state))
-    #expect(restored.centerTabs == state.centerTabs)
+    let restored = try JSONDecoder().decode([WorkspaceTab].self, from: JSONEncoder().encode(state.centerTabs))
+    #expect(restored == state.centerTabs)
   }
 
   @Test(arguments: [SplitEdge.leading, .trailing, .top, .bottom])

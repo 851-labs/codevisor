@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Workspace: Codable, Sendable, Equatable, Identifiable {
+public struct Workspace: Sendable, Equatable, Identifiable {
   public let id: UUID
   public var sidebarPosition: String?
   public var sidebarOrderRevision: Int = 0
@@ -22,66 +22,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var mainSessionId: UUID?
 
   public var isDraft: Bool { !isServerSynced }
-
-  private enum CodingKeys: String, CodingKey {
-    case id, name, hasCustomName, rootDirectory, worktreeName, serverId
-    case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived, archivedAt
-    case isServerSynced, sidebarPosition, sidebarOrderRevision, botId, botMachineId, mainSessionId
-  }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    sidebarPosition = try container.decodeIfPresent(String.self, forKey: .sidebarPosition)
-    sidebarOrderRevision = try container.decodeIfPresent(Int.self, forKey: .sidebarOrderRevision) ?? 0
-    id = try container.decode(UUID.self, forKey: .id)
-    name = try container.decode(String.self, forKey: .name)
-    hasCustomName = try container.decode(Bool.self, forKey: .hasCustomName)
-    rootDirectory = try container.decodeIfPresent(String.self, forKey: .rootDirectory)
-    worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
-    serverId = try container.decode(String.self, forKey: .serverId)
-    projectId = try container.decode(UUID.self, forKey: .projectId)
-    let decodedTabs = try container.decode([WorkspaceTab].self, forKey: .centerTabs)
-    if decodedTabs.isEmpty {
-      let replacement = WorkspaceTab.placeholder()
-      centerTabs = [replacement]
-      selectedCenterTabId = replacement.id
-    } else {
-      centerTabs = decodedTabs
-      let decodedSelection = try container.decodeIfPresent(UUID.self, forKey: .selectedCenterTabId)
-      selectedCenterTabId =
-        decodedSelection.flatMap { candidate in decodedTabs.contains { $0.id == candidate } ? candidate : nil }
-        ?? decodedTabs[0].id
-    }
-    createdAt = try container.decode(Date.self, forKey: .createdAt)
-    isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
-    archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
-    isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
-    botId = try container.decodeIfPresent(UUID.self, forKey: .botId)
-    botMachineId = try container.decodeIfPresent(String.self, forKey: .botMachineId)
-    mainSessionId = try container.decodeIfPresent(UUID.self, forKey: .mainSessionId)
-  }
-
-  public func encode(to encoder: Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(id, forKey: .id)
-    try container.encode(name, forKey: .name)
-    try container.encode(hasCustomName, forKey: .hasCustomName)
-    try container.encodeIfPresent(rootDirectory, forKey: .rootDirectory)
-    try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
-    try container.encode(serverId, forKey: .serverId)
-    try container.encode(projectId, forKey: .projectId)
-    try container.encode(centerTabs, forKey: .centerTabs)
-    try container.encode(selectedCenterTabId, forKey: .selectedCenterTabId)
-    try container.encode(createdAt, forKey: .createdAt)
-    try container.encode(isArchived, forKey: .isArchived)
-    try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
-    try container.encode(isServerSynced, forKey: .isServerSynced)
-    try container.encodeIfPresent(sidebarPosition, forKey: .sidebarPosition)
-    try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
-    try container.encodeIfPresent(botId, forKey: .botId)
-    try container.encodeIfPresent(botMachineId, forKey: .botMachineId)
-    try container.encodeIfPresent(mainSessionId, forKey: .mainSessionId)
-  }
 
   public init(
     id: UUID = UUID(),

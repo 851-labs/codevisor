@@ -38,6 +38,7 @@ extension SessionModelTests {
     let followUpID = followUp.id.uuidString.lowercased()
 
     #expect(client.promptedMessageIds.last == followUpID)
+    #expect(client.promptDelivery.deliveries.isEmpty)
     #expect(model.transcriptBotConversation?.messages.map(\.id) == ["b1", followUpID])
     #expect(model.transcriptBotConversation?.isWorking == true)
 
@@ -87,21 +88,6 @@ extension SessionModelTests {
     model.shutdown()
   }
 
-  @Test("A dropped send is retried with the same action id, so the server takes it once")
-  func droppedBotSendIsRetriedIdempotently() async {
-    let (client, model) = await loadedBotModel()
-    client.sendAttempts.failuresLeft = 1
-    let message = UserMessage(text: "ship it")
-    let id = message.id.uuidString.lowercased()
-
-    await model.send(message)
-
-    #expect(client.sendAttempts.actionIds == [id, id])
-    #expect(deliveries(model) == ["b1": nil, id: nil])
-    #expect(model.errorMessage == nil)
-    model.shutdown()
-  }
-
   @Test("A message the server refuses isn't retried, and Delete removes it")
   func refusedBotMessageIsNotRetried() async {
     let (client, model) = await loadedBotModel()
@@ -139,26 +125,6 @@ extension SessionModelTests {
     release.finish()
     await settleUntil { deliveries(model)[id] == .some(nil) }
     #expect(client.sendAttempts.actionIds == [id, id, id, id])
-    #expect(deliveries(model) == ["b1": nil, id: nil])
-    model.shutdown()
-  }
-
-  @Test("A send the server hasn't confirmed yet says Sending until it does")
-  func slowBotSendSaysSending() async {
-    let (client, model) = await loadedBotModel()
-    model.sendingNoticeDelay = .zero
-    let (gate, release) = AsyncStream.makeStream(of: Void.self)
-    client.holdPrompts(until: gate)
-    let message = UserMessage(text: "big question")
-    let id = message.id.uuidString.lowercased()
-
-    let send = Task { await model.send(message) }
-    await client.promptRequests.wait()
-    await settleUntil { deliveries(model)[id] == .some(.sending) }
-
-    release.finish()
-    await send.value
-
     #expect(deliveries(model) == ["b1": nil, id: nil])
     model.shutdown()
   }

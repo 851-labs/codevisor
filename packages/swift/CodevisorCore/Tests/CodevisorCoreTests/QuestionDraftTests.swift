@@ -1,4 +1,5 @@
 import ACPKit
+import CodevisorTestSupport
 import Testing
 
 @testable import CodevisorCore
@@ -49,6 +50,10 @@ struct QuestionDraftTests {
     #expect(draft.page == 1)
     #expect(draft.isLastPage)
     #expect(draft.isPagingForward)
+
+    draft.move(by: -1)
+    #expect(draft.page == 0)
+    #expect(!draft.isPagingForward)
   }
 
   @Test("Plan feedback typed beside a chosen option is sent as its note")
@@ -71,20 +76,18 @@ struct QuestionDraftTests {
   func autoAdvance() async {
     let draft = QuestionDraft(request: QuestionRequest(questionId: "q", questions: [database, checks]))
 
+    draft.pick(QuestionDraft.otherToken, in: database)
     #expect(!draft.advancesAfterPicking(QuestionDraft.otherToken, in: database))
     draft.pick("SQLite", in: database)
     #expect(draft.page == 0)
-    await waitUntil { draft.page == 1 }
+    await awaitObserved { draft.page == 1 }
 
     draft.pick("Lint", in: checks)
     #expect(!draft.advancesAfterPicking("Lint", in: checks))
     #expect(draft.page == 1)
-  }
 
-  private func waitUntil(_ condition: @MainActor () -> Bool) async {
-    for _ in 0..<200 where !condition() {
-      try? await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(condition())
+    let multiSelectFirst = QuestionDraft(request: QuestionRequest(questionId: "m", questions: [checks, database]))
+    multiSelectFirst.pick("Lint", in: checks)
+    #expect(!multiSelectFirst.advancesAfterPicking("Lint", in: checks))
   }
 }

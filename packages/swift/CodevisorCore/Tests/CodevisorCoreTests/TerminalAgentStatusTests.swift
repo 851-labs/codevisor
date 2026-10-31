@@ -47,13 +47,6 @@ struct TerminalAgentStatusTests {
     #expect(pane.terminalActivity == activity)
   }
 
-  @Test("A layout saved before terminal status still decodes, with no status")
-  func persistedLayoutWithoutStatus() throws {
-    let json = #"{"id":"\#(terminal.id.uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"t1"}"#
-    let pane = try JSONDecoder().decode(PaneDescriptorState.self, from: Data(json.utf8))
-    #expect(pane.terminalAgentStatus == nil)
-  }
-
   @Test(
     "A terminal shows the chat indicator for what its program reports, and its ordinary icon when idle",
     arguments: [

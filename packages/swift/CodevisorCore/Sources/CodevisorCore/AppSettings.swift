@@ -5,7 +5,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public static let defaultNotificationSoundPath = "/System/Library/Sounds/Glass.aiff"
 
   public var hasCompletedOnboarding: Bool
-  public var onboardingStep: Int?
   public var importExternalSessions: Bool
   public var shareAnalytics: Bool
   public var shareCrashReports: Bool
@@ -20,7 +19,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
 
   public init(
     hasCompletedOnboarding: Bool = false,
-    onboardingStep: Int? = nil,
     importExternalSessions: Bool = false,
     shareAnalytics: Bool = false,
     shareCrashReports: Bool = false,
@@ -34,7 +32,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     actionRequiredSoundPath: String = AppSettings.defaultNotificationSoundPath
   ) {
     self.hasCompletedOnboarding = hasCompletedOnboarding
-    self.onboardingStep = onboardingStep
     self.importExternalSessions = importExternalSessions
     self.shareAnalytics = shareAnalytics
     self.shareCrashReports = shareCrashReports
@@ -49,7 +46,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
   }
 
   private enum CodingKeys: String, CodingKey {
-    case hasCompletedOnboarding, onboardingStep
+    case hasCompletedOnboarding
     case importExternalSessions, shareAnalytics
     case shareCrashReports, alphaUpdatesEnabled
     case betaUpdatesEnabled
@@ -61,7 +58,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
-    onboardingStep = try container.decodeIfPresent(Int.self, forKey: .onboardingStep)
     importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
     shareAnalytics =
       try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
@@ -93,7 +89,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
-    try container.encodeIfPresent(onboardingStep, forKey: .onboardingStep)
     try container.encode(importExternalSessions, forKey: .importExternalSessions)
     try container.encode(shareAnalytics, forKey: .shareAnalytics)
     try container.encode(shareCrashReports, forKey: .shareCrashReports)
@@ -146,7 +141,6 @@ public final class AppSettingsModel {
   }
 
   public var hasCompletedOnboarding: Bool { settings.hasCompletedOnboarding }
-  public var onboardingStep: Int? { settings.onboardingStep }
   public var importExternalSessions: Bool { settings.importExternalSessions }
   public var shareAnalytics: Bool { settings.shareAnalytics }
   public var shareCrashReports: Bool { settings.shareCrashReports }
@@ -166,12 +160,6 @@ public final class AppSettingsModel {
   public func completeOnboarding(importExternalSessions: Bool) {
     settings.hasCompletedOnboarding = true
     settings.importExternalSessions = importExternalSessions
-    settings.onboardingStep = nil
-    persist()
-  }
-
-  public func setOnboardingStep(_ step: Int?) {
-    settings.onboardingStep = step
     persist()
   }
 

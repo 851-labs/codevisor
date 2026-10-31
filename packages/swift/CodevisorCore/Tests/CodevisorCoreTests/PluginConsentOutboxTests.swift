@@ -74,18 +74,19 @@ struct PluginConsentOutboxTests {
   func failuresDoNotBlock() async throws {
     let outbox = PluginConsentOutbox(store: InMemoryStore())
     let stuck = try outbox.record(key: "stuck", scope: "account", body: oldBody(pluginId: "acme/stuck", version: "1"))
-    try outbox.record(key: "next", scope: "account", body: oldBody(pluginId: "acme/next", version: "1"))
+    let next = try outbox.record(key: "next", scope: "account", body: oldBody(pluginId: "acme/next", version: "1"))
+    var attempted: [String] = []
     var accepted: [String] = []
 
     let outcome = try await outbox.flush(scope: "account") { body in
-      let pluginId = try Self.pluginId(of: body)
-      guard pluginId != "acme/stuck" else { throw Offline() }
-      accepted.append(pluginId)
+      attempted.append(try Self.pluginId(of: body))
+      throw Offline()
     }
     let retry = try await outbox.flush(scope: "account") { accepted.append(try Self.pluginId(of: $0)) }
 
-    #expect(Array(outcome.failures.keys) == [stuck])
-    #expect(accepted == ["acme/next", "acme/stuck"])
+    #expect(Set(attempted) == ["acme/stuck", "acme/next"])
+    #expect(Set(outcome.failures.keys) == [stuck, next])
+    #expect(Set(accepted) == ["acme/stuck", "acme/next"])
     #expect(retry.failures.isEmpty)
   }
 

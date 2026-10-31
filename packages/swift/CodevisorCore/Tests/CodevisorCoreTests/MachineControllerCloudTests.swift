@@ -70,11 +70,10 @@ struct MachineControllerCloudTests {
       makeCloudMachine(deviceId: "dev-only", name: "Only In Cloud"),
     ]
 
-    #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId, "dev-only"])
+    #expect(controller.allMachines.map(\.id) == ["local", "cloud:\(deviceId)", "cloud:dev-only"])
 
     await controller.refreshStatus(for: "local")
     #expect(controller.statusByMachineId["local"]?.cloudDeviceId == deviceId)
-    #expect(controller.cloudOnlyMachines.map(\.deviceId) == ["dev-only"])
     #expect(controller.allMachines.map(\.id) == ["local", "cloud:dev-only"])
   }
 

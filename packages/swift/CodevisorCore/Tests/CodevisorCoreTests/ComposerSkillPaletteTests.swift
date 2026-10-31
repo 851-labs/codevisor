@@ -71,13 +71,6 @@ struct ComposerSkillPaletteTests {
       ])
   }
 
-  @Test("Codevisor skills default to the slash prefix before the harness reports skills")
-  func codevisorSkillsWithoutNativeList() {
-    let merged = ComposerSkillCatalog.merge(native: nil, codevisor: [ServerComposerSkill(name: "deploy")])
-
-    #expect(merged.map(\.invocation) == ["/deploy"])
-  }
-
   @Test("Matches rank exact, then prefix, then substring names, case-insensitively")
   func matchRanking() {
     let skills = ["code-review", "Review", "review-pr", "deploy", "preview"].map {

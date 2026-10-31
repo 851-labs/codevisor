@@ -70,20 +70,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   }
 
   @discardableResult
-  public mutating func addTerminalPane(sessionId: UUID) -> PaneDescriptorState {
-    let paneId = UUID()
-    let pane = PaneDescriptorState(
-      id: paneId,
-      kind: .terminal,
-      name: PaneDescriptorState.defaultTerminalName,
-      terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)"
-    )
-    panes.append(pane)
-    selectedPaneId = pane.id
-    return pane
-  }
-
-  @discardableResult
   public mutating func addChatPane(
     sessionId: UUID? = nil,
     name: String = "New Chat"
@@ -179,14 +165,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       selectedPaneId = pane.id
     }
     return pane
-  }
-
-  public mutating func unbindChatPane(paneId: UUID) {
-    guard let index = panes.firstIndex(where: { $0.id == paneId }),
-      panes[index].kind == .chat
-    else { return }
-    panes[index].chatSessionId = nil
-    panes[index].name = "New Chat"
   }
 
   @discardableResult

@@ -22,15 +22,6 @@ struct ConfigOptionCacheTests {
     #expect(cache.options(forHarness: "codex", onServer: "local").isEmpty)
   }
 
-  @Test("Persists across instances (stale-while-revalidate seed)")
-  func persists() {
-    let store = InMemoryStore()
-    ConfigOptionCache(store: store).store([option("gpt-5.5")], forHarness: "codex", onServer: "local")
-    PersistenceEncoding.drain()
-    let reopened = ConfigOptionCache(store: store)
-    #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "gpt-5.5")
-  }
-
   @Test("Persists full server capabilities per machine, off the caller's thread")
   func serverCapabilitiesPersist() {
     let store = MainThreadSaveRecordingStore()

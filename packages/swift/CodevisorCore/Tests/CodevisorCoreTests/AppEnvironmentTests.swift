@@ -19,28 +19,6 @@ struct AppEnvironmentTests {
     #endif
   }
 
-  @Test("Preview environment seeds sample projects")
-  func previewSeed() {
-    let environment = AppEnvironment.preview()
-    #expect(environment.projectList.projects.count == AppEnvironment.sampleProjects.count)
-  }
-
-  @Test("Preview environment can use a custom seed")
-  func customSeed() {
-    let environment = AppEnvironment.preview(seedProjects: [])
-    #expect(environment.projectList.projects.isEmpty)
-  }
-
-  @Test("Preview harness service returns sample harnesses")
-  func previewHarnessService() async throws {
-    let service = PreviewHarnessService()
-    let ready = await service.readyHarnesses()
-    #expect(ready.contains { $0.id == "claude-code" })
-    let all = await service.allHarnesses()
-    #expect(all.count > ready.count)
-    #expect(all.contains { !$0.isReady })
-  }
-
   @Test("Preview model selection survives a capabilities refresh")
   func previewCapabilitiesRefresh() async {
     let capability = ServerHarnessCapability(
@@ -120,17 +98,6 @@ struct AppEnvironmentTests {
     #expect(remaining.isEmpty)
   }
 
-  @Test("Project recommendations come from recent harness sessions")
-  func projectRecommendations() async {
-    let environment = AppEnvironment.preview(seedProjects: [])
-
-    let recommendations = await environment.recommendedProjectsWithFallback(
-      serverId: "local"
-    )
-
-    #expect(recommendations.isEmpty)
-  }
-
   private func environmentWithWorkspace(
     _ path: String, sessions titles: [String]
   ) async -> (AppEnvironment, Workspace, [ChatSession]) {
@@ -146,27 +113,12 @@ struct AppEnvironmentTests {
     return (environment, workspace, sessions)
   }
 
-  @Test("Closing a chat from a tab preserves its workspace")
-  func closingChatPreservesWorkspace() async {
-    let (environment, workspace, sessions) = await environmentWithWorkspace(
-      "/tmp/preserve-workspace", sessions: ["Chat"])
-    let session = sessions[0]
-    #expect(environment.workspaces.workspaceId(forSession: session.id) == workspace.id)
-
-    environment.closeSession(session)
-
-    #expect(environment.projectList.sessions.count == 1)
-    let retainedWorkspace = environment.workspaces.workspace(id: workspace.id)
-    #expect(retainedWorkspace?.isArchived == false)
-    #expect(retainedWorkspace?.pane(containingChat: session.id) == nil)
-    #expect(retainedWorkspace?.centerTree.allGroups[0].state.selectedPane?.kind == .newTab)
-  }
-
   @Test("Closing the last chat leaves the workspace live on its New Tab page")
   func closingFinalChatKeepsWorkspaceLive() async {
     let (environment, workspace, sessions) = await environmentWithWorkspace(
       "/tmp/archive-workspace", sessions: ["First", "Second"])
     let (first, second) = (sessions[0], sessions[1])
+    #expect(environment.workspaces.workspaceId(forSession: first.id) == workspace.id)
 
     environment.closeSession(first)
     let afterFirst = environment.workspaces.workspace(id: workspace.id)
@@ -178,6 +130,7 @@ struct AppEnvironmentTests {
     let afterFinal = environment.workspaces.workspace(id: workspace.id)
     #expect(afterFinal?.isArchived == false)
     #expect(afterFinal?.pane(containingChat: second.id) == nil)
+    #expect(afterFinal?.centerTree.allGroups[0].state.selectedPane?.kind == .newTab)
     #expect(environment.projectList.sessions.count == 2)
   }
 

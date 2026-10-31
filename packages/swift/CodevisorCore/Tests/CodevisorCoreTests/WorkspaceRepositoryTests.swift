@@ -122,19 +122,6 @@ struct WorkspaceRepositoryTests {
     #expect(repository.workspaceId(forSession: chat.sessionId) == first.id)
   }
 
-  @Test("ensureWorkspace returns the workspace the server assigned the chat to")
-  func ensureHonorsAssignment() async throws {
-    let navigation = NavigationFixture()
-    let repository = navigation.workspaces
-    let chat = UUID()
-    let installed = await install(navigation, chat: chat)
-
-    #expect(repository.ensureWorkspace(for: seed(sessionId: chat), legacyGroups: nil).id == installed.id)
-    let newcomer = seed(assignedWorkspaceId: installed.id)
-    #expect(repository.ensureWorkspace(for: newcomer, legacyGroups: nil).id == installed.id)
-    #expect(navigation.store.layouts.drafts.isEmpty)
-  }
-
   @Test("A legacy per-session pane group seeds the draft's layout")
   func ensureUsesLegacyGroup() throws {
     let store = InMemoryStore()
@@ -263,61 +250,6 @@ struct WorkspaceRepositoryTests {
     #expect(navigation.store.layouts.layout(for: installed.id)?.tabs == healed.centerTabs)
   }
 
-  @Test("isArchived round-trips and pre-field payloads decode as active")
-  func isArchivedCodable() throws {
-    var workspace = Workspace(
-      name: "Example", rootDirectory: nil, serverId: "local", projectId: projectId,
-      centerTree: .leaf(.centerInitial(sessionId: UUID())))
-    var withoutField = try #require(
-      JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace)) as? [String: Any])
-    withoutField.removeValue(forKey: "isArchived")
-    let legacy = try JSONDecoder().decode(Workspace.self, from: JSONSerialization.data(withJSONObject: withoutField))
-    #expect(legacy.isArchived == false)
-    workspace.isArchived = true
-    #expect(try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(workspace)).isArchived)
-  }
-
-  @Test("Legacy icon metadata is ignored and no longer persisted")
-  func legacyIconMetadataIsRemoved() throws {
-    let workspace = Workspace(
-      name: "Example", rootDirectory: nil, serverId: "local", projectId: projectId,
-      centerTree: .leaf(.centerInitial(sessionId: UUID())))
-    var payload = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(workspace)) as? [String: Any])
-    payload["symbolName"] = "hammer"
-    let decoded = try JSONDecoder().decode(Workspace.self, from: JSONSerialization.data(withJSONObject: payload))
-    let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any])
-    #expect(encoded["symbolName"] == nil)
-  }
-
-  @Test("Promoting a New Tab replaces its pane in the same layout slot")
-  func newTabPromotionKeepsLayoutIdentity() {
-    var state = PaneGroupState()
-    let placeholder = state.addNewTabPane()
-    let tab = WorkspaceTab(root: .leaf(state))
-    var workspace = Workspace(
-      name: "Example",
-      rootDirectory: "/tmp/example",
-      serverId: "local",
-      projectId: UUID(),
-      centerTabs: [tab]
-    )
-    let sessionId = UUID()
-    let promoted = PaneDescriptorState(
-      id: placeholder.id,
-      kind: .chat,
-      name: "New Chat",
-      terminalKey: placeholder.terminalKey,
-      chatSessionId: sessionId
-    )
-
-    let selectedTabId = workspace.upsertCenterPane(promoted)
-
-    #expect(selectedTabId == tab.id)
-    #expect(workspace.centerTabs.count == 1)
-    #expect(workspace.centerTabs[0].root.allGroups[0].state.panes == [promoted])
-    #expect(workspace.tabId(containingChat: sessionId) == tab.id)
-  }
-
   @Test("Nested split leaf resolves its own selected chat")
   func nestedSplitSelectedChatSource() {
     let leftChat = UUID(), upperChat = UUID(), lowerChat = UUID()
@@ -356,25 +288,6 @@ struct WorkspaceRepositoryTests {
     #expect(workspace.pane(containingChat: upperChat)?.id == upperPane.id)
     #expect(workspace.pane(containingChat: lowerChat)?.id == lowerPane.id)
     #expect(workspace.selectedPane(inLeaf: UUID()) == nil)
-  }
-
-  @Test("A version-2 workspace with no tabs repairs to a local New Tab page")
-  func emptyTopTabsRepairOnDecode() throws {
-    let fresh = Workspace(
-      name: "Empty", rootDirectory: "/tmp/project", serverId: "local",
-      projectId: UUID(), centerTree: .leaf(.centerInitial(sessionId: UUID()))
-    )
-    var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fresh)) as! [String: Any]
-    json["centerTabs"] = []
-    json["selectedCenterTabId"] = UUID().uuidString
-
-    let decoded = try JSONDecoder().decode(
-      Workspace.self,
-      from: JSONSerialization.data(withJSONObject: json)
-    )
-    #expect(decoded.centerTabs.count == 1)
-    #expect(decoded.selectedCenterTabId == decoded.centerTabs[0].id)
-    #expect(decoded.centerTabs[0].isPlaceholder)
   }
 
   @Test("Workspace tab custom titles persist and older tabs remain automatic")

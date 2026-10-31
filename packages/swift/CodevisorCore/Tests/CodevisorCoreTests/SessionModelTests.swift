@@ -11,28 +11,6 @@ struct SessionModelTests {
     SessionModel.cancellationTerminalEventWaitDelay = .zero
   }
 
-  @Test("A message created before model connection retains its identity")
-  func precreatedMessageRetainsIdentity() async {
-    let sessionId = UUID()
-    let messageId = UUID()
-    let client = FakeSessionServerClient(sessionId: sessionId)
-    client.echoOnPrompt = false
-    let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString
-    )
-    var locallyAppendedID: UUID?
-    model.onLocalUserMessageAppended = { locallyAppendedID = $0 }
-
-    await model.send(UserMessage(id: messageId, text: "  run pwd  "))
-
-    let sent = try! #require(userMessages(model).first)
-    #expect(sent.id == messageId)
-    #expect(sent.text == "run pwd")
-    #expect(locallyAppendedID == messageId)
-    #expect(client.promptedMessageIds == [messageId.uuidString.lowercased()])
-  }
-
   @Test("The optimistic message is visible before prompt transport completes")
   func optimisticMessagePrecedesTransportCompletion() async {
     let sessionId = UUID()
@@ -49,13 +27,15 @@ struct SessionModelTests {
     model.onLocalUserMessageAppended = { locallyAppendedID = $0 }
 
     let send = Task {
-      await model.send(UserMessage(id: messageId, text: "show this now"))
+      await model.send(UserMessage(id: messageId, text: "  show this now  "))
     }
     await settleUntil {
       client.promptedMessageIds.count == 1
     }
 
     #expect(userMessages(model).map(\.id) == [messageId])
+    #expect(userMessages(model).map(\.text) == ["show this now"])
+    #expect(client.promptedTexts == ["show this now"])
     #expect(locallyAppendedID == messageId)
     #expect(client.promptedMessageIds == [messageId.uuidString.lowercased()])
 

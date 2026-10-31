@@ -206,31 +206,28 @@ struct ConfigSyncTests {
     }
   }
 
-  @Test("A machine connecting triggers an immediate targeted pass")
+  @Test("A machine connecting triggers an immediate targeted pass", .timeLimit(.minutes(1)))
   func machineArrivalSyncs() async throws {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    let controller = try makeController(
-      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
-      remotes: [remote]
+    let environment = AppEnvironment(
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      settings: AppSettingsModel(store: InMemoryStore()),
+      machineStore: InMemoryStore(),
+      localServer: StubLocalServer(),
+      machineClientFactory: { $0.id == remote.id ? fake : SyncFakeServerClient(projects: [], sessions: []) }
     )
-    let sync = ConfigSync(machines: controller, store: InMemoryStore())
-    var connected: [String] = []
-    controller.onMachineConnected = { machineId in
-      connected.append(machineId)
-      Task { await sync.synchronizeMachine(machineId) }
-    }
+    defer { environment.machines.stopEventSync() }
+    signIn(environment.machines, machines: [remote])
 
-    await controller.connectMachine(remote.id)
+    await environment.machines.connectMachine(remote.id)
 
-    #expect(connected == [remote.id])
     try await waitForSync {
       fake.operationLog.contains("mcps.reconcile")
         && fake.operationLog.contains("harnesses.reconcile")
         && fake.operationLog.contains("accounts.publish")
         && fake.operationLog.contains("skills.reconcile")
     }
-    controller.stopEventSync()
   }
 
   @Test("Full sync passes reconcile MCPs and publish rosters per machine")

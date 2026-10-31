@@ -5,24 +5,6 @@ import ACPKit
 
 @MainActor
 extension ProjectListModelTests {
-  @Test("Legacy archived-chat overrides are dropped so the server wins again")
-  func purgesLegacyArchivedSessionMarkers() async throws {
-    let persistence = InMemoryStore()
-    try persistence.saveData(
-      Data(#"[{"serverId":"local","id":"\#(UUID().uuidString)"}]"#.utf8),
-      forKey: "pending-archived-sessions-v1"
-    )
-
-    let environment = AppEnvironment(
-      navigationPersistence: persistence,
-      configCache: ConfigOptionCache(store: InMemoryStore()),
-      settings: AppSettingsModel(store: InMemoryStore())
-    )
-
-    #expect(persistence.loadData(forKey: "pending-archived-sessions-v1") == nil)
-    #expect(environment.navigationStore.pendingIntents.isEmpty)
-  }
-
   @Test("Dropping a machine's records drops its waiting changes too")
   func removingMachineRecordsDropsWaitingChanges() async throws {
     let fixture = NavigationFixture()

@@ -198,11 +198,6 @@ public final class ComposerDefaultsStore {
     PersistenceEncoding.drain()
   }
 
-  public func flushPendingWrites() {
-    persist(immediately: true)
-    PersistenceEncoding.drain()
-  }
-
   private func persist(immediately: Bool = false) {
     if persistenceBatchDepth > 0 {
       batchNeedsPersistence = true

@@ -54,13 +54,16 @@ extension SessionModelTests {
 
     #expect(client.sessionEventSinceValues == [0])
     #expect(client.eventSinceValues.isEmpty)
+    #expect(client.promptedTexts == ["first prompt"])
     #expect(model.isSending == false)
+    #expect(model.conversation.count == 2)
     guard case let .assistant(assistant) = model.conversation.last else {
       Issue.record("expected assistant")
       return
     }
     #expect(assistant.turn.finalText == .text(id: "t0", markdown: "Echo: first prompt"))
     #expect(assistant.turn.stopReason == .endTurn)
+    #expect(assistant.turn.stopDetail == nil)
   }
 
   @Test("Harness authentication failures remain distinguishable for recovery UI")

@@ -30,6 +30,7 @@ extension SessionModelTests {
 
     #expect(await model.resumeGoal())
     #expect(model.goal?.status == .active)
+    #expect(client.goalUpdates.last?.1 == .active)
 
     await model.setGoal(tokenBudget: .clear)
     #expect(model.goal?.tokenBudget == nil)
@@ -108,9 +109,10 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
+    #expect(await model.setGoal(objective: "keep this goal"))
     let didSetGoal = await model.setGoal(objective: "goal fails")
     #expect(!didSetGoal)
-    #expect(model.goal == nil)
+    #expect(model.goal?.objective == "keep this goal")
     #expect(model.errorMessage != nil)
   }
 

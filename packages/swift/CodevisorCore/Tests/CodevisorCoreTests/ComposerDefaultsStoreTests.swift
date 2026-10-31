@@ -199,6 +199,9 @@ struct ComposerDefaultsStoreTests {
     let store = InMemoryStore(storage: [
       "composer-defaults": Data(legacy.utf8),
       "composer-defaults-pre-v6-backup": Data(legacy.utf8),
+      "composer-defaults-pre-v5-backup": Data(legacy.utf8),
+      "composer-defaults-pre-v4-backup": Data(legacy.utf8),
+      "composer-defaults-pre-v3-backup": Data(legacy.utf8),
     ])
     let defaults = ComposerDefaultsStore(store: store)
     #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") != nil)
@@ -250,7 +253,7 @@ struct ComposerDefaultsStoreTests {
       projectId: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!,
       createsWorktree: true
     )
-    defaults.flushPendingWrites()
+    PersistenceEncoding.drain()
     let data = try #require(store.loadData(forKey: "composer-defaults"))
     let object = try JSONSerialization.jsonObject(with: data)
     let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])

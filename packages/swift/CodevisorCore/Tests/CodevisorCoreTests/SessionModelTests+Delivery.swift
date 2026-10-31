@@ -183,6 +183,8 @@ extension SessionModelTests {
 
     await model.send(message)
 
+    #expect(userMessages(model).map(\.id) == [message.id])
+    #expect(model.transcriptDeliveries.isEmpty)
     #expect(!failedTurn(model))
     #expect(model.errorMessage == nil)
     model.shutdown()

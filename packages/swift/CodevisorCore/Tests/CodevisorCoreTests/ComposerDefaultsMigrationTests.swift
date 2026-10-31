@@ -128,7 +128,7 @@ struct ComposerDefaultsMigrationTests {
   }
 
   @Test("A V2 migration is idempotent and keeps its original backup")
-  func migrationIsIdempotent() {
+  func migrationIsIdempotent() throws {
     let legacy =
       #"{"machines":{"local":{"lastHarnessId":"codex","runInWorktree":false,"configSelections":{"codex":{"model":"gpt-5.6"}}}},"workspaces":{}}"#
     let legacyData = Data(legacy.utf8)
@@ -139,6 +139,13 @@ struct ComposerDefaultsMigrationTests {
     _ = ComposerDefaultsStore(store: store)
 
     #expect(store.loadData(forKey: "composer-defaults") == migrated)
+    #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == legacyData)
+
+    try store.saveData(
+      Data(#"{"machines":{"local":{"lastHarnessId":"claude-code"}},"workspaces":{}}"#.utf8), forKey: "composer-defaults"
+    )
+    let remigrated = ComposerDefaultsStore(store: store)
+    #expect(remigrated.lastHarnessId(for: .newWorkspace(serverId: "local")) == "claude-code")
     #expect(store.loadData(forKey: "composer-defaults-pre-v7-backup") == legacyData)
   }
 

@@ -13,6 +13,8 @@ struct AppSettingsLegacyDecodingTests {
     #expect(decoded.notificationsEnabled)
     #expect(decoded.systemNotificationsEnabled)
     #expect(decoded.notificationSoundsEnabled)
+    #expect(decoded.confirmBeforeQuitting)
+    #expect(decoded.confirmBeforeClosingWorkingChat)
     #expect(decoded.chatFinishedSoundPath == AppSettings.defaultNotificationSoundPath)
     #expect(decoded.actionRequiredSoundPath == AppSettings.defaultNotificationSoundPath)
   }
@@ -22,18 +24,6 @@ struct AppSettingsLegacyDecodingTests {
     let legacy = Data("{\"hasCompletedOnboarding\": false}".utf8)
     let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
     #expect(decoded.shareAnalytics == false)
-  }
-
-  @Test("Settings saved with the removed theme keys still decode")
-  func removedThemeKeys() throws {
-    let saved = Data(
-      """
-      {"hasCompletedOnboarding": true, "confirmBeforeQuitting": false,
-       "themeMode": "dark", "lightThemeId": "shiki:github-light", "darkThemeId": "custom:mine"}
-      """.utf8)
-    let decoded = try JSONDecoder().decode(AppSettings.self, from: saved)
-    #expect(decoded.hasCompletedOnboarding)
-    #expect(decoded.confirmBeforeQuitting == false)
   }
 
   @Test("Settings saved with the removed permissions-review keys still load and stop being written")

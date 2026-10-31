@@ -38,6 +38,8 @@ struct ModelTests {
   func codable() throws {
     var project = Project.fromFolder(URL(fileURLWithPath: "/w"))
     project.worktreeBase = ProjectWorktreeBase(remote: "upstream", branch: "release/next")
+    project.repoUrl = "git@github.com:acme/widget.git"
+    project.repoKey = "github.com/acme/widget"
     let session = ChatSession(projectId: project.id, title: "S")
     let projectData = try JSONEncoder().encode(project)
     let sessionData = try JSONEncoder().encode(session)
@@ -153,14 +155,6 @@ struct ModelTests {
     let assistant = AssistantMessage(turn: AssistantTurn())
     #expect(ConversationItem.user(user).id == user.id)
     #expect(ConversationItem.assistant(assistant).id == assistant.id)
-  }
-
-  @Test("Empty turn has no final text and no worked content")
-  func emptyTurn() {
-    let turn = AssistantTurn()
-    #expect(turn.finalText == nil)
-    #expect(turn.workedEntries.isEmpty)
-    #expect(turn.toolCalls.isEmpty)
   }
 
   @Test("Only transcript items with a visible presentation are renderable")

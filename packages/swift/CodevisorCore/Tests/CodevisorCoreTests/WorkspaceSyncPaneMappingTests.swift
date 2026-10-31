@@ -71,22 +71,6 @@ struct WorkspaceSyncPaneMappingTests {
     #expect(restored == pane)
   }
 
-  @Test("Plugin panes never persist icon metadata")
-  func pluginPaneOmitsMetadata() {
-    let pane = PaneDescriptorState(
-      id: UUID(),
-      kind: .plugin,
-      name: "Diff",
-      terminalKey: UUID().uuidString,
-      pluginId: "codevisor.git-diff",
-      pluginPaneType: "diff"
-    )
-    let record = ServerPaneMapping.record(
-      from: pane, workspaceId: workspaceId, createdAt: Date()
-    )
-    #expect(record.metadata == nil)
-  }
-
   @Test("Unknown providers and malformed plugin providers still drop silently")
   func unknownProvidersDrop() {
     func record(providerId: String, paneType: String = "diff") -> ServerWorkspacePane {

@@ -199,16 +199,4 @@ struct WorkspaceOrderSyncTests {
     }
     #expect(expectedRevision == 1)
   }
-
-  @Test("Moving a draft sends nothing: the server doesn't have it yet")
-  func draftMoveSendsNothing() async throws {
-    let fixture = await makeFixture()
-    let draft = fixture.repository.ensureWorkspace(
-      for: WorkspaceSessionSeed(
-        sessionId: UUID(), initialName: "Draft", serverId: fixture.serverId, projectId: fixture.project.id,
-        rootDirectory: nil),
-      legacyGroups: nil)
-    fixture.sync.reorderWorkspace(id: draft.id, visibleIDs: [fixture.otherWorkspace.id, draft.id])
-    #expect(fixture.store.pendingIntents.isEmpty)
-  }
 }

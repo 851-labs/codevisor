@@ -11,6 +11,8 @@ extension PaneGroupStateTests {
       """.utf8)
     let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
     #expect(decoded.kind == .terminal)
+    #expect(decoded.terminalActivity == nil)
+    #expect(decoded.liveTitle == nil)
     #expect(decoded.ownerChatSessionId == nil)
     #expect(decoded.pluginId == nil)
     #expect(decoded.pluginPaneType == nil)
@@ -26,23 +28,9 @@ extension PaneGroupStateTests {
       from: JSONEncoder().encode(state)
     )
     #expect(decoded.selectedPaneId == state.panes[0].id)
-  }
 
-  @Test("Repository round-trips state per session")
-  func repository() {
-    let store = InMemoryStore()
-    let repo = DefaultPaneGroupRepository(store: store)
-    let otherSession = UUID()
-    #expect(repo.load(sessionId: sessionId) == nil)
-    var state = PaneGroupState()
-    state.addTerminalPane(sessionId: sessionId)
-    state.addTerminalPane(sessionId: sessionId)
-    repo.save(state, sessionId: sessionId)
-    var other = PaneGroupState()
-    other.addTerminalPane(sessionId: otherSession)
-    repo.save(other, sessionId: otherSession)
-    let restored = DefaultPaneGroupRepository(store: store)
-    #expect(restored.load(sessionId: sessionId) == state)
-    #expect(restored.load(sessionId: otherSession) == other)
+    let second = state.addTerminalPane(sessionId: sessionId)
+    let kept = try JSONDecoder().decode(PaneGroupState.self, from: JSONEncoder().encode(state))
+    #expect(kept.selectedPaneId == second.id)
   }
 }

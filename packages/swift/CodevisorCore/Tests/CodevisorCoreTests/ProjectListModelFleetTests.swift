@@ -61,6 +61,7 @@ struct ProjectListModelFleetTests {
     let fixture = NavigationFixture()
     let model = fixture.projectList
     let client = FakeServerClient()
+    await client.setProbesGitRepositories()
 
     let added = await model.addProject(
       folderURL: URL(fileURLWithPath: "/srv/studio-work"),
@@ -69,6 +70,7 @@ struct ProjectListModelFleetTests {
     )
 
     #expect(added.serverId == "remote-b")
+    #expect(added.isGitRepository)
     #expect(model.projects.contains { $0.serverId == "remote-b" && $0.id == added.id })
     #expect(try await client.listProjects().contains { $0.id == added.id.uuidString })
     #expect(fixture.store.pendingIntents.map(\.machineId) == ["remote-b"])

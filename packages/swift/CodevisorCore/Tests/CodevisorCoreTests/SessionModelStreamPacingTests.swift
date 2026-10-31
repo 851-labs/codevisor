@@ -7,6 +7,10 @@ import ACPKit
 @MainActor
 @Suite("SessionModel stream pacing")
 struct SessionModelStreamPacingTests {
+  private func coalesced(_ events: [ServerSessionStreamEvent]) -> [ServerSessionStreamEvent] {
+    SessionModel.coalesced(events.map { SessionPendingStreamEvent($0) }).map(\.event)
+  }
+
   private func chunk(
     _ text: String,
     messageId: String? = "m1",
@@ -89,7 +93,7 @@ struct SessionModelStreamPacingTests {
 
   @Test("Adjacent same-span text chunks merge into one")
   func adjacentChunksMerge() {
-    let merged = SessionModel.coalesced([chunk("Hel"), chunk("lo "), chunk("world")])
+    let merged = coalesced([chunk("Hel"), chunk("lo "), chunk("world")])
     #expect(merged == [chunk("Hello world")])
   }
 
@@ -101,20 +105,20 @@ struct SessionModelStreamPacingTests {
       chunk("c", messageId: "m2", parent: "tool-1"),
       chunk("d", messageId: "m2", parent: "tool-1", phase: .commentary),
     ]
-    #expect(SessionModel.coalesced(events) == events)
+    #expect(coalesced(events) == events)
   }
 
   @Test("Zero-length retro-tag chunks never merge")
   func retroTagChunksStaySeparate() {
     let events = [chunk("preamble"), chunk("", phase: .commentary), chunk("answer")]
-    #expect(SessionModel.coalesced(events) == events)
+    #expect(coalesced(events) == events)
   }
 
   @Test("Non-text events break a merge run and are preserved in order")
   func nonTextEventsPreserved() {
     let finished = ServerSessionStreamEvent.finished(.endTurn, stopDetail: nil)
     let events = [chunk("a"), chunk("b"), finished, chunk("c"), chunk("d")]
-    #expect(SessionModel.coalesced(events) == [chunk("ab"), finished, chunk("cd")])
+    #expect(coalesced(events) == [chunk("ab"), finished, chunk("cd")])
   }
 
   @Test("Coalescing merged chunks applies identically to applying them singly")
@@ -128,7 +132,7 @@ struct SessionModelStreamPacingTests {
     for update in updates {
       TranscriptReducer.apply(update, to: &single)
     }
-    for case let .update(update) in SessionModel.coalesced(updates.map { .update($0) }) {
+    for case let .update(update) in coalesced(updates.map { .update($0) }) {
       TranscriptReducer.apply(update, to: &merged)
     }
     #expect(merged.entries == single.entries)

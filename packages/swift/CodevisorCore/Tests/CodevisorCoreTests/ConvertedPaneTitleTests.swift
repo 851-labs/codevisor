@@ -47,21 +47,27 @@ struct ConvertedPaneTitleTests {
     #expect(layout.tabs.first?.root.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
   }
 
+  @MainActor
   @Test func aUserRenamedTabKeepsItsTitleAcrossTheConversion() throws {
+    let repository = NavigationFixture().workspaces
     var seeded = PaneGroupState()
     let placeholder = seeded.addNewTabPane()
     var tab = WorkspaceTab(root: .leaf(seeded))
     tab.customTitle = "Remote screen"
     var space = workspace(centerTree: .leaf(PaneGroupState()))
     space.centerTabs = [tab]
+    space.selectedCenterTabId = tab.id
     let leafId = try #require(tab.root.allGroups.first?.id)
+    repository.save(space)
+    let bridge = WorkspacePaneGroupRepository(workspaceId: space.id, groupId: leafId, repository: repository)
 
-    var state = try #require(space.centerTabs[0].root.group(id: leafId))
+    var state = try #require(bridge.load(sessionId: nil))
     let conversion = state.convertNewTabPane(id: placeholder.id, to: .screenSharing, sessionId: nil)
     _ = try #require(conversion)
-    space.centerTabs[0].root = space.centerTabs[0].root.updatingGroup(id: leafId) { _ in state }
+    bridge.save(state, sessionId: nil)
 
-    #expect(space.centerTabs[0].root.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
-    #expect(space.centerTabs[0].customTitle == "Remote screen")
+    let persisted = try #require(repository.workspace(id: space.id)?.centerTabs.first { $0.id == tab.id })
+    #expect(persisted.root.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
+    #expect(persisted.customTitle == "Remote screen")
   }
 }

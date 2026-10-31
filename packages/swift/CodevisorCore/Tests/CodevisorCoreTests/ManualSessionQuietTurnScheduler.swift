@@ -8,6 +8,7 @@ final class ManualSessionQuietTurnScheduler {
   private var nextID = 0
   private var pending: [Int: Operation] = [:]
   private(set) var callCount = 0
+  var pendingCount: Int { pending.count }
 
   lazy var scheduler = SessionQuietTurnScheduler { [weak self] _, operation in
     guard let self else { return SessionQuietTurnCancellation {} }

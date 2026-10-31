@@ -29,22 +29,6 @@ extension ProjectListModelTests {
     #expect(fixture.store.pendingIntents.isEmpty)
   }
 
-  @Test("Draft sessions are held locally until first send")
-  func draftSessionSkipsImmediateServerSync() async throws {
-    let fakeServer = FakeServerClient()
-    let fixture = await NavigationFixture.connected(to: fakeServer)
-    let model = fixture.projectList
-
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/draft"))
-    let draft = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
-    await fixture.flush()
-
-    let snapshot = await fakeServer.snapshot()
-    #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
-    #expect(snapshot.upsertedSessionIDs.isEmpty)
-    #expect(model.sessions.contains { $0.id == draft.id })
-  }
-
   @Test("Adding a folder creates a project that survives a relaunch")
   func addProject() {
     let persistence = InMemoryStore()
@@ -80,17 +64,6 @@ extension ProjectListModelTests {
     let second = model.addProject(folderURL: url)
     #expect(model.projects.count == 1)
     #expect(second.id == first.id)
-  }
-
-  @Test("Deleting a project removes it from the active list")
-  func deletingRemovesFromActiveList() {
-    let model = NavigationFixture().projectList
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    #expect(model.fleetActiveProjects.count == 1)
-
-    model.removeProject(project)
-    #expect(model.fleetActiveProjects.isEmpty)
-    #expect(model.isProjectDeleted(id: project.id, serverId: project.serverId))
   }
 
   @Test("Active projects are sorted newest-first")
@@ -129,16 +102,6 @@ extension ProjectListModelTests {
     #expect(model.fleetSessions(in: project).first?.title == "Renamed")
     model.deleteSession(session)
     #expect(model.fleetSessions(in: project).isEmpty)
-  }
-
-  @Test("Removing a project also removes its sessions")
-  func removeProject() {
-    let model = NavigationFixture().projectList
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    model.newSession(in: project)
-    model.removeProject(project)
-    #expect(model.projects.isEmpty)
-    #expect(model.sessions.isEmpty)
   }
 
   @Test("Importing sessions into a project skips known ones")

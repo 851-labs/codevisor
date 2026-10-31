@@ -147,6 +147,7 @@ struct MachineConnectionTests {
 
     await controller.connectMachine(remote.id)
     await controller.connectMachine(remote.id)
+    #expect(remoteFake.workspaceSnapshotCallCount == 1)
     try await waitForSync { remoteFake.eventStreamSubscriberCount >= 1 }
     #expect(remoteFake.eventStreamSubscriberCount == 1)
   }

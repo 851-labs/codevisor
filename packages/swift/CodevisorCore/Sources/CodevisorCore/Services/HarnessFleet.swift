@@ -14,10 +14,6 @@ public enum HarnessFleet {
     public let authRequired: Bool?
     public var id: String { harnessId }
 
-    public var majorVersion: Int? {
-      version.flatMap { Int($0.drop { $0 == "v" }.prefix { $0.isNumber }) }
-    }
-
     public init(
       harnessId: String, state: String, reason: String?, installed: Bool? = nil, version: String? = nil,
       reportedAt: Date? = nil, name: String? = nil, symbolName: String? = nil, authRequired: Bool? = nil

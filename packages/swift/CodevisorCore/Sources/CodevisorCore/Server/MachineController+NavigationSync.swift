@@ -18,14 +18,6 @@ extension MachineController {
   private static let navigationRefreshDelay: Duration = .milliseconds(300)
   private static let navigationSyncTimeout: Duration = .seconds(30)
 
-  public func startEventSync(for serverId: String, since initialCursor: Int = 0) {
-    startEventSync(
-      serverId: serverId,
-      client: client(for: serverId),
-      since: initialCursor
-    )
-  }
-
   func startEventSync(
     serverId: String,
     client: any CodevisorServerClienting,

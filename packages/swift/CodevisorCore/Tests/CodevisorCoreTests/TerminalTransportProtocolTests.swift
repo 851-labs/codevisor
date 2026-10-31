@@ -172,6 +172,7 @@ struct TerminalTransportProtocolTests {
     )
     try await old.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     old.sendHidden()
+    old.sendFocus()
     old.sendClear()
     await legacy.didSend.wait(for: 1)
     #expect(legacy.sentFrames.map { $0["type"] as? String } == ["input"])
@@ -222,7 +223,7 @@ struct TerminalTransportProtocolTests {
     transport.detach()
   }
 
-  @Test("A claim waits for protocol 2 and is made again after a reconnect", .timeLimit(.minutes(1)))
+  @Test("A claim is made again after a reconnect", .timeLimit(.minutes(1)))
   func claimSurvivesReconnect() async throws {
     let first = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let second = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
@@ -267,6 +268,8 @@ struct TerminalTransportProtocolTests {
     let sockets = SocketSequence([first, second])
     let timing = ReconnectTiming(pingInterval: TerminalTransport.pingInterval)
     let sizes = TestSignal()
+    var claimsAtSizes: [Bool] = []
+    weak var observed: TerminalTransport?
     let transport = TerminalTransport(
       config: CodevisorServerConfig(
         baseURL: URL(string: "https://fixture.invalid")!,
@@ -275,14 +278,18 @@ struct TerminalTransportProtocolTests {
       ),
       sleep: { try await timing.sleep(for: $0) },
       onEvent: { event in
-        if case .ptySize = event { sizes.signal() }
+        guard case .ptySize = event else { return }
+        claimsAtSizes.append(observed?.claimsSize == true)
+        sizes.signal()
       }
     )
+    observed = transport
     defer { transport.detach(); timing.releaseReconnect.signal() }
     transport.sendResize(cols: 80, rows: 24)
     transport.sendFocus()
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     await sizes.wait(for: 2)
+    #expect(claimsAtSizes == [true, false])
     await timing.clock.waitForSleep(timing.pingInterval)
     first.cancel(with: .abnormalClosure, reason: nil)
     await timing.reconnectWaiting.wait()

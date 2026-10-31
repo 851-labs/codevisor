@@ -108,11 +108,6 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
 public struct UpdateMachineGroup: Identifiable, Equatable, Sendable {
   public let id: String
   public let machineName: String
-  public let isLocal: Bool
   public let codevisor: UpdateComponent?
   public let components: [UpdateComponent]
-
-  public var availableCount: Int {
-    components.count(where: \.updateAvailable) + (codevisor?.updateAvailable == true ? 1 : 0)
-  }
 }

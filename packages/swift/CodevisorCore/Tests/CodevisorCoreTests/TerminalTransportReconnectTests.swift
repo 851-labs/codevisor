@@ -6,10 +6,13 @@ import Testing
 
 private final class SilentSocket: ServerWebSocketConnecting, @unchecked Sendable {
   private let lock = NSLock()
+  private var pending: [ServerWebSocketMessage]
   private var sent: [String] = []
   private var waiter: CheckedContinuation<ServerWebSocketMessage, Error>?
   private var closed = false
   let didSend = TestSignal()
+
+  init(messages: [ServerWebSocketMessage] = []) { pending = messages }
 
   var closeCode: URLSessionWebSocketTask.CloseCode { lock.withLock { closed ? .goingAway : .invalid } }
   var frames: [[String: Any]] {
@@ -25,7 +28,8 @@ private final class SilentSocket: ServerWebSocketConnecting, @unchecked Sendable
   }
 
   func receive() async throws -> ServerWebSocketMessage {
-    try await withCheckedThrowingContinuation { continuation in
+    if let next = lock.withLock({ pending.isEmpty ? nil : pending.removeFirst() }) { return next }
+    return try await withCheckedThrowingContinuation { continuation in
       lock.withLock {
         if closed { continuation.resume(throwing: CancellationError()) } else { waiter = continuation }
       }
@@ -43,15 +47,18 @@ private final class SilentSocket: ServerWebSocketConnecting, @unchecked Sendable
 
 private final class FreshSockets: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
+  private let firstMessages: [ServerWebSocketMessage]
   private var opened: [SilentSocket] = []
   private var queries: [String] = []
   let didConnect = TestSignal()
+
+  init(firstMessages: [ServerWebSocketMessage] = []) { self.firstMessages = firstMessages }
 
   var sockets: [SilentSocket] { lock.withLock { opened } }
   var connectQueries: [String] { lock.withLock { queries } }
 
   func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting {
-    let socket = SilentSocket()
+    let socket = lock.withLock { SilentSocket(messages: opened.isEmpty ? firstMessages : []) }
     lock.withLock {
       opened.append(socket)
       queries.append(request.url?.query ?? "")
@@ -72,14 +79,16 @@ private struct CreatedTerminal: ServerRequestTransport {
 @MainActor
 @Suite("Terminal transport reconnect")
 struct TerminalTransportReconnectTests {
-  private func makeTransport(_ sockets: FreshSockets) -> TerminalTransport {
+  private func makeTransport(
+    _ sockets: FreshSockets, onEvent: @escaping TerminalTransport.EventHandler = { _ in }
+  ) -> TerminalTransport {
     TerminalTransport(
       config: CodevisorServerConfig(
         baseURL: URL(string: "https://fixture.invalid")!,
         requestTransport: CreatedTerminal(),
         webSocketTransport: sockets
       ),
-      onEvent: { _ in }
+      onEvent: onEvent
     )
   }
 
@@ -117,20 +126,20 @@ struct TerminalTransportReconnectTests {
 
   @Test("reconnectNow replaces a possibly half-open socket and resumes from the last sequence")
   func reconnectsImmediately() async throws {
-    let sockets = FreshSockets()
-    let transport = makeTransport(sockets)
+    let sockets = FreshSockets(firstMessages: [.string(#"{"type":"output","seq":5,"data":"x"}"#)])
+    let received = TestSignal()
+    let transport = makeTransport(sockets) { event in
+      if case .output = event { received.signal() }
+    }
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
+    await received.wait()
     transport.reconnectNow()
     await sockets.didConnect.wait(for: 2)
 
     #expect(sockets.sockets.count == 2)
     #expect(sockets.sockets[0].isCancelled)
     #expect(!sockets.sockets[1].isCancelled)
-    #expect(sockets.connectQueries == ["lastOutputSeq=0&protocol=2", "lastOutputSeq=0&protocol=2"])
-
+    #expect(sockets.connectQueries == ["lastOutputSeq=0&protocol=2", "lastOutputSeq=5&protocol=2"])
     transport.detach()
-    transport.reconnectNow()
-    transport.sendInput("ignored")
-    #expect(sockets.sockets.count == 2)
   }
 }

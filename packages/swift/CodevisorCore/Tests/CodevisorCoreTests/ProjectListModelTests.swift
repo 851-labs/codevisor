@@ -43,7 +43,7 @@ struct ProjectListModelTests {
     #expect(project.locations.allSatisfy { $0.projectId == id })
 
     let again = model.adoptServerProject(id: id, folderURL: url, name: "widget")
-    #expect(again.id == id)
+    #expect(again == project)
     #expect(model.projects.filter { $0.id == id }.count == 1)
   }
 

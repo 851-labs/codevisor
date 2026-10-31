@@ -26,35 +26,4 @@ struct ArchivedWorkspaceChatTests {
     #expect(fixture.workspaces.loadAll().filter { !$0.isArchived }.isEmpty)
     #expect(fixture.store.layouts.drafts.isEmpty)
   }
-
-  @Test("Upgrading drops the device-only duplicates main minted for archived chats")
-  func migrationDropsMintedDuplicates() throws {
-    let store = InMemoryStore()
-    let archivedId = UUID()
-    let mintedId = UUID()
-    let tab = WorkspaceTab(root: .leaf(PaneGroupState()))
-    func record(_ id: UUID, archived: Bool, synced: Bool) -> [String: Any] {
-      [
-        "id": id.uuidString, "name": "cheddar", "hasCustomName": false, "serverId": "m",
-        "projectId": UUID().uuidString, "createdAt": 0, "isArchived": archived, "isServerSynced": synced,
-        "centerTabs": [try! JSONSerialization.jsonObject(with: JSONEncoder().encode(tab))],
-        "selectedCenterTabId": tab.id.uuidString,
-      ]
-    }
-    let payload: [String: Any] = [
-      "version": 2, "sessionIndex": [String](),
-      "workspaces": [
-        record(archivedId, archived: true, synced: true), record(mintedId, archived: false, synced: false),
-      ],
-    ]
-    try store.saveData(JSONSerialization.data(withJSONObject: payload), forKey: "workspaces")
-
-    NavigationStoreMigration.runIfNeeded(store: store, machineIds: ["m"])
-    PersistenceEncoding.drain()
-
-    let layouts = DeviceLayoutStore(store: store)
-    #expect(layouts.layout(for: archivedId) != nil)
-    #expect(layouts.layout(for: mintedId) == nil)
-    #expect(layouts.drafts.isEmpty)
-  }
 }

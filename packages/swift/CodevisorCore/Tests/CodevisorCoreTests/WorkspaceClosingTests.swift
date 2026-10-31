@@ -12,6 +12,9 @@ struct WorkspaceClosingTests {
     let mainPane = try #require(mainTab.root.allGroups.first?.state.panes.first)
     let sidePane = try #require(sideTab.root.allGroups.first?.state.panes.first)
     #expect(!workspace.isMainChatPane(mainPane))
+    var draftGroup = PaneGroupState()
+    let draftPane = draftGroup.addChatPane()
+    #expect(!workspace.isMainChatPane(draftPane))
 
     workspace.mainSessionId = main
 

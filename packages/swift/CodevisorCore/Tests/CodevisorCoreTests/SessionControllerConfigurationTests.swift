@@ -178,6 +178,7 @@ struct SessionControllerConfigurationTests {
       { $0.worktreeName = "fix/crash" },
       { $0.cwd = "/remote/project-worktree" },
       { $0.configSelections = ["model": "gpt-5.6"] },
+      { $0.unavailableConfigSelections = ["model": "gpt-5.4"] },
     ]
 
     for update in updates {

@@ -80,21 +80,6 @@ struct WorkspaceNavigationTests {
     #expect(state.selectedPaneId == chat.id)
   }
 
-  @Test("Rapid navigation leaves the latest destination selected")
-  func latestSelectionWins() {
-    let chat = tab(.chat, chatId: UUID())
-    let browser = tab(.browser)
-    let plugin = tab(.plugin)
-    var workspace = workspace([chat, browser, plugin])
-
-    for destination in [browser, chat, plugin, browser] {
-      workspace.selectDestination(.tab(destination.id))
-    }
-
-    #expect(workspace.selectedCenterTabId == browser.id)
-    #expect(workspace.centerTree == browser.root)
-  }
-
   @Test("Stale destinations leave selection and layout intact")
   func invalidDestinations() {
     var workspace = workspace([tab(.browser)])

@@ -102,11 +102,13 @@ struct WorkspaceSyncRouteDispositionTests {
       root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id))
     )
     let sync = await fixture.makeSync(layout: [terminalTab])
+    #expect(fixture.projectList.sessions.contains { $0.id == fixture.sessionId })
+    #expect(fixture.repository.workspaceId(forSession: fixture.sessionId) == nil)
 
     #expect(
       sync.routeDisposition(
         workspaceId: fixture.workspaceId,
-        anchorSessionId: UUID()
+        anchorSessionId: fixture.sessionId
       ) == .dismiss
     )
   }

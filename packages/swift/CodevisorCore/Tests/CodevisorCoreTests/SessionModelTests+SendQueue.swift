@@ -74,7 +74,9 @@ extension SessionModelTests {
     await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
     fixture.clock.advance(by: SendQueue.readinessTimeout)
     await fixture.clock.waitForSleep(SendQueue.wakeTimeout - SendQueue.readinessTimeout)
+    let readsBefore = fixture.readiness.reads.value
     fixture.readiness.state = .waiting("Reconnecting to the sandbox…")
+    await fixture.readiness.reads.wait(for: readsBefore + 1)
 
     #expect(fixture.shownDeliveries == [.sending])
     fixture.readiness.state = .ready
@@ -158,6 +160,7 @@ extension SessionModelTests {
 @Observable
 private final class BotReadinessState {
   var state = SendQueue.Readiness.ready
+  @ObservationIgnored let reads = TestSignal()
 }
 
 @MainActor
@@ -182,7 +185,10 @@ private final class BotSendFixture {
   lazy var queue = SendQueue(
     attachments: attachments,
     clock: clock,
-    readiness: { [unowned self] in readiness.state },
+    readiness: { [unowned self] in
+      readiness.reads.signal()
+      return readiness.state
+    },
     connect: { [unowned self] _ in connection },
     deliver: { message, _, model in await model.sendBotMessage(message, afterSequence: 1) },
     onUploaded: { [unowned self] uploaded, sentFileID in uploads.append((uploaded, sentFileID)) },

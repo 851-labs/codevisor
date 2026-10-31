@@ -98,12 +98,6 @@ extension ProjectListModel {
     fleetActiveProjectGroups.first { $0.contains(project) }
   }
 
-  public func fleetSessions(in group: ProjectGroup) -> [ChatSession] {
-    group.members
-      .flatMap { fleetSessions(in: $0) }
-      .sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
-  }
-
   public func mostRecentlyUsedMember(of group: ProjectGroup) -> Project {
     var latestByKey: [String: Date] = [:]
     for session in sessions {

@@ -56,7 +56,6 @@ public final class UpdateCenter {
       return UpdateMachineGroup(
         id: machine.id,
         machineName: machine.name,
-        isLocal: machine.isLocal,
         codevisor: rows.first { $0.kind == .app || $0.kind == .server },
         components: rows.filter { $0.kind == .harness }
       )

@@ -70,6 +70,7 @@ actor FakeServerClient: CodevisorServerClienting {
   private var runLocationUpdates: [FakeRunLocationUpdate] = []
   private var listDelay: (@Sendable () async -> Void)?
   private var projectUpsertDelay: (@Sendable () async -> Void)?
+  private var probesGitRepositories = false
   private var deleteDelay: (@Sendable () async -> Void)?
   private var readResponseDelay: (@Sendable () async -> Void)?
 
@@ -84,6 +85,10 @@ actor FakeServerClient: CodevisorServerClienting {
 
   func setProjectUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
     projectUpsertDelay = delay
+  }
+
+  func setProbesGitRepositories() {
+    probesGitRepositories = true
   }
 
   func setDeleteDelay(_ delay: @escaping @Sendable () async -> Void) {
@@ -111,7 +116,10 @@ actor FakeServerClient: CodevisorServerClienting {
 
   func upsertProject(_ project: Project) async throws -> ServerProject {
     if let projectUpsertDelay { await projectUpsertDelay() }
-    let serverProject = serverProject(from: project)
+    var serverProject = serverProject(from: project)
+    if probesGitRepositories {
+      for index in serverProject.locations.indices { serverProject.locations[index].isGitRepository = true }
+    }
     upsertedProjectIDs.append(serverProject.id)
     changed.signal()
     projects.removeAll { $0.id == serverProject.id }

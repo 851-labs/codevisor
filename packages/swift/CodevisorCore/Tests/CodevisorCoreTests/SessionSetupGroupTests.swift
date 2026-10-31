@@ -71,8 +71,6 @@ struct SessionSetupGroupTests {
     #expect(summary.title == "Sandbox failed after 1m 15s")
     #expect(summary.shownSteps.map(\.id) == ["sandbox-boot"])
     #expect(SandboxStartSummary(steps: [quick])?.title == "Sandbox failed")
-    #expect(SessionSetupGroup.failedSandboxStart(in: [SessionSetupPhase.worktree(startedAt: start), boot]))
-    #expect(!SessionSetupGroup.failedSandboxStart(in: [steps.phase(.create, startedAt: start)]))
     #expect(SandboxStartSummary(steps: []) == nil)
   }
 

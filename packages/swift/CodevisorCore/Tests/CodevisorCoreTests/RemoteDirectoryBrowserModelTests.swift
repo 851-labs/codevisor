@@ -185,10 +185,12 @@ struct RemoteDirectoryBrowserModelTests {
     let model = makeModel(fs)
     await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
+    await model.select("/home/user/src/alpha", inColumn: "/home/user/src")
     let fetchCount = fs.fetchedPaths.count
     await model.select("/home/user/src", inColumn: "/home/user")
     #expect(fs.fetchedPaths.count == fetchCount)
-    #expect(model.columns.count == 2)
+    #expect(model.columns.count == 3)
+    #expect(model.chosenPath == "/home/user/src/alpha")
   }
 
   @Test("Selecting a folder that fails to list keeps the error inside its column")

@@ -83,11 +83,6 @@ public final class AppUpdateModel {
     return false
   }
 
-  public var failureMessage: String? {
-    if case let .failed(_, message) = phase { return message }
-    return nil
-  }
-
   public func checkForUpdates() async {
     guard !isUpdating, let checkHandler else { return }
     reportProgress(nil)

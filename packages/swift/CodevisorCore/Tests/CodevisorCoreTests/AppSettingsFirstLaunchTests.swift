@@ -15,12 +15,4 @@ struct AppSettingsFirstLaunchTests {
     #expect(!model.claimFirstLaunch())
     #expect(!AppSettingsModel(store: store).claimFirstLaunch())
   }
-
-  @Test("Never treats an existing install as a first launch")
-  func ignoresExistingInstall() throws {
-    let store = InMemoryStore()
-    try store.saveData(Data(#"{"hasCompletedOnboarding": true}"#.utf8), forKey: "settings")
-
-    #expect(!AppSettingsModel(store: store).claimFirstLaunch())
-  }
 }

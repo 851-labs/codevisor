@@ -26,18 +26,19 @@ struct TranscriptPageCacheTests {
     let (cache, directory) = makeCache(limit: 2)
     defer { try? FileManager.default.removeItem(at: directory) }
     let chats = [UUID(), UUID(), UUID()]
-    for (offset, chat) in chats.enumerated() {
+    for (offset, chat) in chats.prefix(2).enumerated() {
       cache.store(Data("\(offset)".utf8), machineId: "m", sessionId: chat)
       #expect(await cache.load(machineId: "m", sessionId: chat) == Data("\(offset)".utf8))
-      let url = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        .first { $0.lastPathComponent.contains(chat.uuidString.lowercased()) }
-      if let url {
-        try FileManager.default.setAttributes(
-          [.modificationDate: Date(timeIntervalSince1970: Double(offset) * 100)], ofItemAtPath: url.path)
-      }
+      let url = try #require(
+        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+          .first { $0.lastPathComponent.contains(chat.uuidString.lowercased()) })
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: Double(offset) * 100)], ofItemAtPath: url.path)
     }
-    cache.store(Data("again".utf8), machineId: "m", sessionId: chats[2])
-    #expect(await cache.load(machineId: "m", sessionId: chats[0]) == nil)
-    #expect(await cache.load(machineId: "m", sessionId: chats[2]) == Data("again".utf8))
+    #expect(await cache.load(machineId: "m", sessionId: chats[0]) == Data("0".utf8))
+    cache.store(Data("2".utf8), machineId: "m", sessionId: chats[2])
+    #expect(await cache.load(machineId: "m", sessionId: chats[1]) == nil)
+    #expect(await cache.load(machineId: "m", sessionId: chats[0]) == Data("0".utf8))
+    #expect(await cache.load(machineId: "m", sessionId: chats[2]) == Data("2".utf8))
   }
 }

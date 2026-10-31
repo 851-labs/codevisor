@@ -70,7 +70,6 @@ struct AppUpdateModelTests {
           message: "network unavailable"
         )
     )
-    #expect(model.failureMessage == "network unavailable")
     #expect(model.availableRelease?.version == "1.2.4")
   }
 

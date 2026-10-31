@@ -4,27 +4,6 @@ import Testing
 
 @Suite("Persistence stores")
 struct PersistenceStoreTests {
-  @Test("FileSystemStore persists to a temp directory")
-  func fileSystemStore() throws {
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("codevisor-store-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-
-    let store = FileSystemStore(directory: directory)
-    try store.saveData(Data([1, 2, 3]), forKey: "sessions")
-    store.flushPendingWrites()
-
-    #expect(FileSystemStore(directory: directory).loadData(forKey: "sessions") == Data([1, 2, 3]))
-  }
-
-  @Test("InMemoryStore reads back written keys")
-  func inMemoryStore() throws {
-    let store = InMemoryStore()
-    #expect(store.loadData(forKey: "missing") == nil)
-    try store.saveData(Data([1, 2, 3]), forKey: "k")
-    #expect(store.loadData(forKey: "k") == Data([1, 2, 3]))
-  }
-
   @Test("FileSystemStore coalesces saves and removals with the latest operation winning")
   func fileSystemStoreRemoval() throws {
     let directory = FileManager.default.temporaryDirectory

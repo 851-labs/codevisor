@@ -48,12 +48,15 @@ struct NavigationIncrementalTests {
     #expect(alphaEntry.generation == alphaGeneration)
   }
 
-  @Test("Marking a chat read changes no workspace entry")
+  @Test("Marking a chat read changes no workspace entry and leaves the sidebar list as it was")
   func markReadTouchesNoWorkspace() async {
     let (fixture, alpha, beta, first, _) = await installTwo()
     let generations = [alpha.id, beta.id].map { fixture.store.workspaceEntries.entry($0).generation }
+    let sidebar = fixture.store.workspaceEntries.sidebar
     fixture.store.enqueue(.markSessionRead(sessionId: first.id, throughSequence: 0), machineId: "m")
     #expect([alpha.id, beta.id].map { fixture.store.workspaceEntries.entry($0).generation } == generations)
+    #expect(fixture.store.workspaceEntries.sidebar == sidebar)
+    #expect(sidebar.count == 2)
   }
 
   @Test("A layout save updates its workspace's entry at once, and the next rebuild agrees")
@@ -234,14 +237,5 @@ struct NavigationIncrementalTests {
     newerRecord.archivedAt = "2026-10-26T12:00:00.000Z"
     #expect(await fixture.store.apply(.fixture(cursor: 4, workspaces: [newerRecord]), machineId: "m"))
     #expect(fixture.store.workspaceEntries.archived.map(\.id) == [newer.id, older.id])
-  }
-
-  @Test("An unrelated change leaves the sidebar list as it was")
-  func sidebarStable() async {
-    let (fixture, _, _, first, _) = await installTwo()
-    let sidebar = fixture.store.workspaceEntries.sidebar
-    fixture.store.enqueue(.markSessionRead(sessionId: first.id, throughSequence: 0), machineId: "m")
-    #expect(fixture.store.workspaceEntries.sidebar == sidebar)
-    #expect(sidebar.count == 2)
   }
 }

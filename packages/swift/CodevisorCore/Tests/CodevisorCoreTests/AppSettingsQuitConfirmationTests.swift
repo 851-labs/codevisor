@@ -33,16 +33,9 @@ struct AppSettingsQuitConfirmationTests {
     #expect(model.shouldConfirmBeforeQuitting == false)
   }
 
-  @Test("Legacy settings payloads without the key keep asking")
-  func legacyPayloadDefaultsOn() throws {
-    let legacy = Data(#"{"hasCompletedOnboarding":true}"#.utf8)
-    let decoded = try JSONDecoder().decode(AppSettings.self, from: legacy)
-    #expect(decoded.confirmBeforeQuitting)
-  }
-
   @Test("Asks before closing a working chat by default and persists opting out")
   @MainActor
-  func persistsWorkingChatCloseOptOut() throws {
+  func persistsWorkingChatCloseOptOut() {
     let store = InMemoryStore()
     let model = AppSettingsModel(store: store)
     #expect(model.confirmBeforeClosingWorkingChat)
@@ -50,9 +43,6 @@ struct AppSettingsQuitConfirmationTests {
     model.setConfirmBeforeClosingWorkingChat(false)
     #expect(AppSettingsModel(store: store).confirmBeforeClosingWorkingChat == false)
     #expect(AppSettingsModel(store: store).confirmBeforeQuitting)
-
-    let legacy = Data(#"{"hasCompletedOnboarding":true}"#.utf8)
-    #expect(try JSONDecoder().decode(AppSettings.self, from: legacy).confirmBeforeClosingWorkingChat)
   }
 
   @Test("Deleting all data restores the confirmation")

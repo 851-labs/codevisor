@@ -84,8 +84,6 @@ struct HarnessFleetStatusTests {
     #expect(rows.map(\.harnessId) == ["claude-code", "codex", "gemini"])
     #expect(rows[1].state == "signInRequired")
     #expect(rows[1].version == "v2.0.24")
-    #expect(rows[1].majorVersion == 2)
-    #expect(rows[0].majorVersion == nil)
     #expect(rows[2].reason == "CLI not found on PATH")
   }
 

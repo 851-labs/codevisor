@@ -236,6 +236,7 @@ struct MachineNavigationRefreshTests {
     }
     gesture.cancel()
     await gesture.value
+    #expect(controller.connection(for: "local").navigationSync.manualRefresh == nil)
     #expect(client.snapshots.value == 0)
     #expect(client.probes.value == 0)
     #expect(clock.pendingCount == 0)

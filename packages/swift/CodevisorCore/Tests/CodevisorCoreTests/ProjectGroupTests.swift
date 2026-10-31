@@ -86,7 +86,7 @@ struct ProjectGroupTests {
     #expect(ProjectGroup.groupID(for: real) == "repo|github.com/acme/widget")
   }
 
-  @Test("Fleet groups exclude scratch projects and pool every member's sessions")
+  @Test("Fleet groups exclude scratch projects, and the most recently used member leads")
   func fleetGroupsAndSessions() {
     let laptop = project("widget", serverId: "laptop", repoKey: "github.com/acme/widget", createdAt: 5)
     let desktop = project("widget", serverId: "desktop", repoKey: "github.com/acme/widget", createdAt: 1)
@@ -113,7 +113,6 @@ struct ProjectGroupTests {
 
     let groups = model.fleetActiveProjectGroups
     #expect(groups.map(\.id) == ["repo|github.com/acme/widget"])
-    #expect(model.fleetSessions(in: groups[0]).map(\.title) == ["desktop-new", "laptop-mid", "laptop-old"])
     #expect(model.fleetProjectGroup(containing: laptop)?.id == groups[0].id)
     #expect(model.fleetProjectGroup(containing: scratch) == nil)
     #expect(model.mostRecentlyUsedMember(of: groups[0]).serverId == "desktop")
@@ -150,17 +149,5 @@ struct ProjectGroupTests {
       workspace(desktop, createdAt: 20),
     ])
     #expect(ordered.map(\.id) == ["repo|github.com/acme/widget", "repo|github.com/acme/docs"])
-  }
-
-  @Test("Repo identity survives the client cache round trip")
-  func codableRoundTrip() throws {
-    let original = project("widget", serverId: "laptop", repoKey: "github.com/acme/widget")
-    var withUrl = original
-    withUrl.repoUrl = "git@github.com:acme/widget.git"
-    let data = try JSONEncoder().encode(withUrl)
-    let decoded = try JSONDecoder().decode(Project.self, from: data)
-    #expect(decoded.repoUrl == "git@github.com:acme/widget.git")
-    #expect(decoded.repoKey == "github.com/acme/widget")
-    #expect(decoded == withUrl)
   }
 }

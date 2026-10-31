@@ -23,6 +23,9 @@ private final class StreamSocket: ServerWebSocketConnecting, @unchecked Sendable
       return object
     }
   }
+  var frames: [[String: Any]] {
+    lock.withLock { sent }.compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+  }
   var inputs: [String] {
     lock.withLock { sent }.compactMap {
       guard let object = try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any],
@@ -162,15 +165,12 @@ struct TerminalControllerTests {
     controller.start(cols: 80, rows: 24)
     controller.input(Array("ls\r".utf8))
     controller.input([])
-    controller.resize(cols: 0, rows: 24)
     controller.resize(cols: 90, rows: 24)
+    controller.resize(cols: 0, rows: 24)
     await socket.didSend.wait(for: 2)
     #expect(socket.inputs == ["ls\r"])
-    #expect(controller.roundTripTime == nil)
-    controller.setVisible(false)
-    controller.setVisible(true)
-    controller.clear()
-    controller.reconnect()
+    let resize = try #require(socket.frames.first { $0["type"] as? String == "resize" })
+    #expect(resize["cols"] as? Int == 90 && resize["rows"] as? Int == 24)
     controller.close()
 
     let failing = TerminalController(
@@ -181,10 +181,14 @@ struct TerminalControllerTests {
       ),
       terminalKey: "s", cwd: "/")
     let reported = TestSignal()
-    failing.onError = { _ in reported.signal() }
+    var message: String?
+    failing.onError = {
+      message = $0
+      reported.signal()
+    }
     failing.start(cols: 80, rows: 24)
     await reported.wait()
-    #expect(failing.lastError != nil)
+    #expect(message?.isEmpty == false)
   }
 
   @Test("Only the client whose size the PTY has answers queries, and answers don't claim it", .timeLimit(.minutes(1)))
@@ -243,7 +247,6 @@ struct TerminalControllerTests {
     controller.onPTYSize = { cols, rows in announced = [cols, rows] }
     controller.start(cols: 80, rows: 24)
     await renderer.didWrite.wait(for: 1)
-    #expect(controller.roundTripTime.map { $0 > .milliseconds(30) } == true)
     #expect(controller.ptySize.map { [$0.cols, $0.rows] } == [120, 40])
     #expect(announced == [120, 40])
 

@@ -74,7 +74,7 @@ struct McpFleetStateTests {
       state.settle(sync: sync, machines: machines)
       observe(state)
     }
-    #expect(state.rows(for: entry, sync: sync, machines: machines)[1].isPending)
+    #expect(state.rows(for: entry, sync: sync, machines: machines)[1].status == .syncing)
 
     report(sync, machine: machines[1], rows: [disabled("Linear")], wallMs: 20)
     state.settle(sync: sync, machines: machines)
@@ -121,7 +121,7 @@ struct McpFleetStateTests {
 
     state.abandon(name: "Linear", on: "studio", token: second + 1)
     #expect(rows().map(\.isOn) == [true])
-    #expect(rows().map(\.isPending) == [false])
+    #expect(rows().map { $0.status == .syncing } == [false])
   }
 
   @Test("A reload that misses a machine keeps that machine's last servers")

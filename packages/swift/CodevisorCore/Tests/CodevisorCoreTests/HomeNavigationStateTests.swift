@@ -21,7 +21,6 @@ struct HomeNavigationStateTests {
   func emptyIsNewChat() {
     let state = HomeNavigationState()
     #expect(state.selection == nil)
-    #expect(state.isNewChatSelected)
     #expect(state.clientPage == "home")
     #expect(state.presentedWorkspace == nil)
     #expect(state.detailRoute(fallbackServerId: "m") == .newChat(serverId: "m"))
@@ -38,7 +37,6 @@ struct HomeNavigationStateTests {
     var split = HomeNavigationState(path: [.newChat(serverId: nil)])
     split.open(workspaceRoute(), mode: .split)
     #expect(split.path == [workspaceRoute()])
-    #expect(!split.isNewChatSelected)
   }
 
   @Test("A bot conversation is its own detail page, not a workspace")
@@ -47,7 +45,6 @@ struct HomeNavigationStateTests {
     var state = HomeNavigationState()
     state.open(.bot(serverId: "machine", botId: botId), mode: .split)
 
-    #expect(!state.isNewChatSelected)
     #expect(state.clientPage == "bot")
     #expect(state.presentedWorkspace == nil)
     #expect(state.detailIdentity(promotedDraftSessionId: nil, draftGeneration: generation) == .bot(botId))

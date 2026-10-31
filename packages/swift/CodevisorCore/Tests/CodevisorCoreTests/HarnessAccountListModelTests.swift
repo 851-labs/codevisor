@@ -116,11 +116,12 @@ struct HarnessAccountListModelTests {
       }
       await entered.wait()
       #expect(model.accounts == [account])
-      await model.perform("Removing account…", optimistic: { _ in [] }) {
+      let performed = await model.perform("Removing account…", optimistic: { _ in [] }) {
         if fails { throw Failure.offline }
       }
       release.signal()
       await stale.value
+      #expect(performed == !fails)
       #expect(model.accounts == (fails ? [account] : []))
       #expect((model.errorMessage != nil) == fails)
       #expect(!model.isWorking && !model.isLoading)
@@ -147,29 +148,6 @@ struct HarnessAccountListModelTests {
     await model.load { [named] }
     #expect(model.accounts == [named])
     #expect(model.accountForSignIn?.id == named.id)
-  }
-
-  @Test("A running operation always carries its label, and clears it on success")
-  func operationLabelTracksWork() async throws {
-    let model = HarnessAccountListModel()
-    #expect(model.operation == nil && !model.isWorking)
-
-    let entered = TestSignal()
-    let release = TestSignal()
-    let account = try account()
-    let work = Task {
-      await model.perform("Signing out…", accountId: account.id) {
-        entered.signal()
-        await release.wait()
-      }
-    }
-    await entered.wait()
-    #expect(model.operation == "Signing out…")
-    #expect(model.isWorking == (model.operation != nil))
-    release.signal()
-    #expect(await work.value)
-    #expect(model.operation == nil)
-    #expect(model.isWorking == (model.operation != nil))
   }
 
   private enum Failure: Error { case offline }

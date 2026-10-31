@@ -144,10 +144,6 @@ extension SessionModel {
     flushPendingEvents()
   }
 
-  static func coalesced(_ events: [ServerSessionStreamEvent]) -> [ServerSessionStreamEvent] {
-    coalesced(events.map { SessionPendingStreamEvent($0) }).map(\.event)
-  }
-
   static func coalesced(_ events: [SessionPendingStreamEvent]) -> [SessionPendingStreamEvent] {
     guard events.count > 1 else { return events }
     var result: [SessionPendingStreamEvent] = []

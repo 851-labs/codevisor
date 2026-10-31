@@ -32,13 +32,6 @@ public struct HomeNavigationState: Equatable, Sendable {
 
   public var selection: HomeRoute? { path.last }
 
-  public var isNewChatSelected: Bool {
-    switch selection {
-    case .newChat, .none: true
-    case .workspace, .bot: false
-    }
-  }
-
   public var clientPage: String {
     switch selection {
     case .none: "home"

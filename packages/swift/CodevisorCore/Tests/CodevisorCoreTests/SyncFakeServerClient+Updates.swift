@@ -66,12 +66,6 @@ extension SyncFakeServerClient {
     lock.withLock { _drainPollsRemaining = polls }
   }
 
-  func configureHarnessUpdateInProgress(polls: Int) {
-    lock.withLock { _harnessLifecycleActivePolls = polls }
-  }
-
-  var harnessLifecycleReads: Int { lock.withLock { _harnessLifecycleReads } }
-
   func configureApplyFailure(message: String) {
     lock.withLock { applyFailureMessage = message }
   }
@@ -403,16 +397,7 @@ extension SyncFakeServerClient {
 
   func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
     await harnessReadGate?()
-    return lock.withLock {
-      _harnessLifecycleReads += 1
-      guard _harnessLifecycleActivePolls > 0 else { return _harnesses }
-      _harnessLifecycleActivePolls -= 1
-      return _harnesses.map { harness in
-        var updating = harness
-        updating.lifecycle = ServerHarnessLifecycleState(phase: "updating")
-        return updating
-      }
-    }
+    return lock.withLock { _harnesses }
   }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}

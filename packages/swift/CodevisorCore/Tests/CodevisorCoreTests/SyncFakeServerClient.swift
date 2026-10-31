@@ -23,7 +23,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var botProjectError: (any Error)?
   var composerSkillsHandler: (@Sendable (UUID?, UUID?) async throws -> [ServerComposerSkill])?
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
-  var workspaceOrderHandler: (@Sendable (UUID, String, Int) async throws -> ServerWorkspace)?
   var workspaceSnapshotHandler: (@Sendable () async throws -> FakeWorkspaceSnapshot)?
   var workspaceRenameHandler: (@Sendable (UUID, String, Bool) async throws -> Void)?
   var sessionRenameHandler: (@Sendable (ChatSession) async throws -> Void)?
@@ -49,12 +48,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var nextEventId = 1
   private var _listSessionCallCount = 0
   private var _workspaceSnapshotCallCount = 0
-  var paneUpsertGate: TestSignal?
-  let paneUpsertStarted = TestSignal()
-  var panePromotionGate: TestSignal?
-  let panePromotionStarted = TestSignal()
-  var paneCloseGate: TestSignal?
-  let paneCloseStarted = TestSignal()
   private var _paneMutationLog: [String] = []
 
   init(
@@ -223,9 +216,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
   }
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
-    let handler = lock.withLock { workspaceOrderHandler }
-    if let handler { return try await handler(id, position, expectedRevision) }
-    return try lock.withLock {
+    try lock.withLock {
       guard let index = _workspaces.firstIndex(where: { UUID(uuidString: $0.id) == id }) else {
         throw CodevisorServerClientError.httpStatus(404, "Missing workspace")
       }
@@ -263,13 +254,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
   }
   func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
-    let gate = lock.withLock {
+    lock.withLock { () -> ServerWorkspacePane? in
       _paneMutationLog.append("upsert")
-      return paneUpsertGate
-    }
-    paneUpsertStarted.signal()
-    await gate?.wait()
-    return lock.withLock { () -> ServerWorkspacePane? in
       guard _panes != nil else { return nil }
       _panes?.removeAll { $0.id.caseInsensitiveCompare(pane.id) == .orderedSame }
       _panes?.append(pane)
@@ -281,10 +267,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     _ pane: ServerWorkspacePane,
     session: ChatSession
   ) async throws -> ServerWorkspacePanePromotion? {
-    let gate = lock.withLock { panePromotionGate }
-    panePromotionStarted.signal()
-    await gate?.wait()
-    return lock.withLock {
+    lock.withLock {
       guard
         let paneIndex = _panes?.firstIndex(where: {
           $0.id.caseInsensitiveCompare(pane.id) == .orderedSame
@@ -305,13 +288,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   }
 
   func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
-    let gate = lock.withLock {
+    lock.withLock { () -> ServerWorkspacePane? in
       _paneMutationLog.append("close")
-      return paneCloseGate
-    }
-    paneCloseStarted.signal()
-    await gate?.wait()
-    return lock.withLock { () -> ServerWorkspacePane? in
       guard let panes = _panes else { return nil }
       let workspacePaneIndices = panes.indices.filter {
         panes[$0].workspaceId.caseInsensitiveCompare(workspaceId.uuidString) == .orderedSame
@@ -345,11 +323,9 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _appliedChannels: [ServerUpdateChannel] = []
   var _busy = false
   var _drainPollsRemaining = 0
-  var _harnessLifecycleActivePolls = 0
   var _updateRunActivePolls = 0
   var _updateRunSettled = ServerUpdateRunState.idle
   var updateRunUnsupported = false
-  var _harnessLifecycleReads = 0
   var currentBuildNumber: Int?
   var targetBuildNumber: Int?
   var applyFailureMessage: String?

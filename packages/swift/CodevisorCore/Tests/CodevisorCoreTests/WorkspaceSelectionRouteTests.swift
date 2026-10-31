@@ -59,28 +59,4 @@ struct WorkspaceSelectionRouteTests {
         selectionAlreadyRoutesWorkspace: false
       ) == .workspace(serverId: "stage3v", id: id))
   }
-
-  @Test func theRouteCarriesThisWorkspacesOwnServerIdentity() {
-    let first = workspace(serverId: "stage3v")
-    let second = workspace(serverId: "local")
-
-    #expect(
-      first.selectionRoute(
-        activatedChatSessionId: nil, routingSessionId: nil, selectionAlreadyRoutesWorkspace: false)
-        == .workspace(serverId: "stage3v", id: first.id))
-    #expect(
-      second.selectionRoute(
-        activatedChatSessionId: nil, routingSessionId: nil, selectionAlreadyRoutesWorkspace: false)
-        == .workspace(serverId: "local", id: second.id))
-  }
-
-  @Test func reactivatingAChatlessWorkspaceIsStable() {
-    let space = workspace()
-    let first = space.selectionRoute(
-      activatedChatSessionId: nil, routingSessionId: nil, selectionAlreadyRoutesWorkspace: false)
-    let second = space.selectionRoute(
-      activatedChatSessionId: nil, routingSessionId: nil, selectionAlreadyRoutesWorkspace: false)
-
-    #expect(first == second)
-  }
 }

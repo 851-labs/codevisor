@@ -65,17 +65,6 @@ struct HarnessFleetSeedTests {
     #expect(HarnessFleet.settings(sync).map(\.id) == ["claude-code"])
   }
 
-  @Test("Seeding is idempotent")
-  func idempotent() throws {
-    let sync = try makeSync()
-    let catalog = [harness("claude-code", name: "Claude Code", ready: true, desiredEnabled: true)]
-
-    #expect(HarnessFleet.seed(from: catalog, in: sync) == ["claude-code"])
-    let revision = sync.revisionsByNamespace["harnesses"]
-    #expect(HarnessFleet.seed(from: catalog, in: sync).isEmpty)
-    #expect(sync.revisionsByNamespace["harnesses"] == revision)
-  }
-
   @Test("An onboarded install with an unauthored catalog seeds once from the local machine")
   func environmentSeedsOnce() async {
     let machineStore = InMemoryStore()
@@ -94,8 +83,9 @@ struct HarnessFleetSeedTests {
           harness("codex", name: "Codex", ready: true, desiredEnabled: true),
         ])),
       onboarded: true)
+    later.configSync.remove(namespace: "harnesses", key: "claude-code")
     await later.seedHarnessCatalogIfNeeded(from: "local")
-    #expect(HarnessFleet.settings(later.configSync).map(\.id) == ["claude-code"])
+    #expect(HarnessFleet.settings(later.configSync).isEmpty)
   }
 
   @Test("An authored catalog is left alone and still counts as done")

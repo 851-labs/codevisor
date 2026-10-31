@@ -102,38 +102,7 @@ struct MachineControllerUpdateTests {
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
     #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
     #expect(controller.statusByMachineId["local"]?.label.contains("0.1.97") == true)
-  }
-
-  @Test("Build numbers confirm convergence when version strings differ")
-  func remoteServerUpdateBuildNumberConvergence() async throws {
-    let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureUpdate(
-      current: "0.1.97",
-      latest: "0.1.97-alpha.55",
-      installedVersion: "0.1.97",
-      currentBuildNumber: 100,
-      targetBuildNumber: 200
-    )
-    let projectList = ProjectListModel.fixture()
-    let clock = AdvancingServerUpdateScheduler()
-    let controller = MachineController(
-      store: InMemoryStore(),
-      projectList: projectList,
-      clientFactory: { _ in fake },
-      updatePollInterval: .milliseconds(2),
-      updatePollAttempts: 50,
-      updateScheduler: clock.scheduler
-    )
-    defer { controller.stopEventSync() }
-    controller.serverUpdateChannel = .alpha
-
-    await controller.refreshStatus(for: "local")
-    #expect(controller.serverUpdateInfo(for: "local")?.latestBuildNumber == 200)
-    await controller.updateServer(machineId: "local")
-
-    #expect(fake.appliedUpdates == 1)
-    #expect(controller.serverUpdatePhase(for: "local") == .idle)
-    #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
+    #expect(clock.requestedIntervals.count < 50)
   }
 
   @Test("A failed unattended install surfaces the machine's reason")

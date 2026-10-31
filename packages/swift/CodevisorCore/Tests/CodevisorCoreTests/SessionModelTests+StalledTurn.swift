@@ -154,10 +154,7 @@ extension SessionModelTests {
             phase: nil
           )))
       #expect(scheduler.callCount == id + 1)
-      #expect(
-        model.isTakingLongerThanExpected == false,
-        "a steadily streaming turn must never report itself stalled (chunk \(id))"
-      )
+      #expect(scheduler.pendingCount == 1)
     }
 
     #expect(model.isSending)

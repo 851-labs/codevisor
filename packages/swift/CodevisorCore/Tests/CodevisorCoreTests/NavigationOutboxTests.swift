@@ -138,13 +138,15 @@ struct NavigationOutboxExecutorTests {
     let pane = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "t1")
     fixture.workspaceSync.publishPane(pane, workspaceId: workspace.id)
     fixture.workspaceSync.deletePane(id: pane.id, workspaceId: workspace.id)
+    let logs = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Logs", terminalKey: "t2")
+    fixture.workspaceSync.publishPane(logs, workspaceId: workspace.id)
     await fixture.store.executor.idle(machineId: "m")
     #expect(fake.paneMutationLog.isEmpty)
 
     ready = true
     fixture.store.executor.resume(machineId: "m")
     await fixture.store.executor.idle(machineId: "m")
-    #expect(fake.paneMutationLog == ["close"])
+    #expect(fake.paneMutationLog == ["close", "upsert"])
   }
 
   @Test("A draft workspace's requests wait until the server has the workspace")

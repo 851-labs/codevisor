@@ -71,7 +71,7 @@ struct ProjectRecommenderTests {
   @Test("Ignores root and empty working directories and honors the limit")
   func ignoresDegenerateCwds() {
     let sessions = [
-      session("a", cwd: "/"),
+      session("a", cwd: "/", updatedAt: "2026-06-04T00:00:00Z"),
       session("b", cwd: "/src/one", updatedAt: "2026-06-03T00:00:00Z"),
       session("c", cwd: "/src/two", updatedAt: "2026-06-02T00:00:00Z"),
       session("d", cwd: "/src/three", updatedAt: "2026-06-01T00:00:00Z"),

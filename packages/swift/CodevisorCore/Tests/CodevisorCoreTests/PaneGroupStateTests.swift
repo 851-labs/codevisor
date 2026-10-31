@@ -6,32 +6,6 @@ import Testing
 struct PaneGroupStateTests {
   let sessionId = UUID()
 
-  @Test("The first requested terminal materializes from an empty group")
-  func lazyFirstTerminal() {
-    var state = PaneGroupState()
-
-    #expect(state.panes.isEmpty)
-
-    let added = state.addTerminalPane(sessionId: sessionId)
-
-    #expect(added.name == "Terminal")
-    #expect(added.kind == .terminal)
-    #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
-    #expect(state.panes == [added])
-    #expect(state.selectedPaneId == added.id)
-  }
-
-  @Test("Adding a pane names it Terminal, selects it and uses a synthetic key")
-  func addPane() {
-    var state = PaneGroupState()
-    state.addTerminalPane(sessionId: sessionId)
-    let added = state.addTerminalPane(sessionId: sessionId)
-    #expect(added.name == "Terminal")
-    #expect(state.panes.count == 2)
-    #expect(state.selectedPaneId == added.id)
-    #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
-  }
-
   @Test("Shared reconciliation promotes a placeholder without replacing local presentation")
   func sharedReconciliationPromotesPlaceholder() {
     let paneId = UUID()
@@ -113,11 +87,11 @@ struct PaneGroupStateTests {
   @Test("Closing a non-selected pane keeps the selection")
   func closeKeepsSelection() {
     var state = PaneGroupState()
+    let first = state.addTerminalPane(sessionId: sessionId)
     state.addTerminalPane(sessionId: sessionId)
-    let first = state.panes[0]
-    let second = state.addTerminalPane(sessionId: sessionId)
+    let third = state.addTerminalPane(sessionId: sessionId)
     state.closePane(id: first.id)
-    #expect(state.selectedPaneId == second.id)
+    #expect(state.selectedPaneId == third.id)
   }
 
   @Test("Closing the last remaining pane clears selection")

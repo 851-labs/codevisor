@@ -11,15 +11,6 @@ extension PaneGroupStateTests {
     #expect(state.selectedPaneId == state.panes[0].id)
   }
 
-  @Test("Chat panes close at the group level (the anchor rule is the model's policy)")
-  func chatPaneGroupLocalClose() {
-    var state = PaneGroupState.centerInitial(sessionId: sessionId)
-    let chatId = state.panes[0].id
-    #expect(state.canClosePane(id: chatId))
-    #expect(state.closePane(id: chatId) != nil)
-    #expect(state.panes.isEmpty)
-  }
-
   @Test("Drafts and established chats close at the group level")
   func chatCloseRules() {
     var state = PaneGroupState.centerInitial(sessionId: sessionId)
@@ -65,15 +56,8 @@ extension PaneGroupStateTests {
     #expect(state.selectedPaneId == terminal.id)
   }
 
-  @Test("Dead chat panes heal: unbind back to draft, or reset to a placeholder")
+  @Test("Dead chat panes reset to a placeholder")
   func chatPaneHealing() {
-    var state = PaneGroupState.centerInitial(sessionId: sessionId)
-    let chatId = state.panes[0].id
-    state.unbindChatPane(paneId: chatId)
-    #expect(state.panes[0].chatSessionId == nil)
-    #expect(state.panes[0].name == "New Chat")
-    #expect(state.panes[0].id == chatId)
-
     var dead = PaneGroupState.centerInitial(sessionId: sessionId)
     let deadId = dead.panes[0].id
     let placeholder = dead.resetChatPaneToPlaceholder(id: deadId)

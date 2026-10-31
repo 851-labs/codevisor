@@ -12,28 +12,6 @@ struct SplitTreeTests {
     return state
   }
 
-  @Test("Codable round-trips a nested tree")
-  func codableRoundTrip() throws {
-    let tree = SplitNode.split(
-      orientation: .horizontal,
-      children: [
-        SplitChild(fraction: 0.5, node: .leaf(groupState())),
-        SplitChild(
-          fraction: 0.5,
-          node: .split(
-            orientation: .vertical,
-            children: [
-              SplitChild(fraction: 0.3, node: .leaf(groupState(2))),
-              SplitChild(fraction: 0.7, node: .leaf(groupState())),
-            ])),
-      ])
-    let decoded = try JSONDecoder().decode(
-      SplitNode.self,
-      from: JSONEncoder().encode(tree)
-    )
-    #expect(decoded == tree)
-  }
-
   @Test("Splitting a lone leaf wraps it in a split, new group after for trailing")
   func splitLeafTrailing() {
     let leafId = UUID()
@@ -298,13 +276,15 @@ struct SplitTreeTests {
         SplitChild(fraction: 0.5, node: .leaf(groupState(1), id: a)),
         SplitChild(fraction: 0.5, node: .leaf(groupState(1), id: b)),
       ])
-    let sessionId = UUID()
+    let chat = UUID()
     let updated = tree.updatingGroup(id: b) { state in
       var state = state
-      state.addTerminalPane(sessionId: sessionId)
+      state.addChatPane(sessionId: chat)
       return state
     }
     #expect(updated.group(id: a)?.panes.count == 1)
     #expect(updated.group(id: b)?.panes.count == 2)
+    #expect(updated.groupId(containingChat: chat) == b)
+    #expect(tree.groupId(containingChat: chat) == nil)
   }
 }

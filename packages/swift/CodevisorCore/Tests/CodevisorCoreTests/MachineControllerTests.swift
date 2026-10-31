@@ -6,15 +6,6 @@ import ACPKit
 @MainActor
 @Suite("MachineController")
 struct MachineControllerTests {
-  @Test("Registry starts with local machine selected")
-  func localDefault() {
-    let (controller, projectList, _) = makeController()
-
-    #expect(controller.machines == [.local])
-    #expect(controller.selectedMachine == .local)
-    #expect(projectList.selectedServerId == "local")
-  }
-
   private func legacyRegistry(selecting selectedMachineId: String) -> Data {
     Data(
       """

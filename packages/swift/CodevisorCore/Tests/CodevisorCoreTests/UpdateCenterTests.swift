@@ -110,6 +110,8 @@ struct UpdateCenterTests {
         "server.apply",
       ])
     #expect(appInstalledAfterOperations == 3)
+    #expect(fake.appliedUpdates == 1)
+    #expect(center.updateAllNotice == nil)
     controller.stopEventSync()
   }
 
@@ -281,28 +283,6 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
-  @Test("updateAll pauses a machine's chats once for its harnesses and its server restart")
-  func updateAllPausesOnceForHarnessesAndServer() async throws {
-    let remote = makeRemote("remote-a")
-    let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-    fake.configureHarnesses([makeHarness(updateAvailable: true)])
-    let controller = try makeController(
-      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
-      remotes: [remote]
-    )
-    defer { controller.stopEventSync() }
-    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
-    await controller.refreshStatus(for: remote.id)
-    await center.refresh()
-
-    await center.updateAll()
-
-    #expect(fake.operationLog == ["update.run:claude-code+server", "harness.update:claude-code", "server.apply"])
-    #expect(fake.appliedUpdates == 1)
-    #expect(center.updateAllNotice == nil)
-  }
-
   @Test("updateAll keeps this Mac's chats paused from its harness updates into the app update")
   func updateAllHoldsThePauseForTheApp() async throws {
     let local = SyncFakeServerClient(projects: [], sessions: [])
@@ -448,7 +428,6 @@ extension UpdateCenterTests {
 
     let groups = center.machineGroups
     #expect(groups.map(\.id) == ["local", "cloud:remote-a"])
-    #expect(groups.first?.isLocal == true)
     #expect(groups.first?.codevisor?.kind == .app)
     #expect(groups.first?.codevisor?.title == "Codevisor")
     #expect(groups.first?.codevisor?.detailText == "1.0.0")
@@ -458,7 +437,6 @@ extension UpdateCenterTests {
     #expect(groups.last?.codevisor?.detailText == "0.1.0 → 0.2.0")
     #expect(groups.last?.codevisor?.pendingVersionChange?.latest == "0.2.0")
     #expect(groups.last?.components.map(\.kind) == [.harness])
-    #expect(groups.last?.availableCount == 2)
     #expect(groups.last?.components.map(\.detailText) == ["1.0.0 → 1.2.0"])
     controller.stopEventSync()
   }

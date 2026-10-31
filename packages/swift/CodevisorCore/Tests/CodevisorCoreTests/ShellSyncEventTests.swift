@@ -23,7 +23,7 @@ struct ShellSyncEventTests {
       synced.signal()
     }
 
-    controller.startEventSync(for: "local")
+    controller.startEventSync(serverId: "local", client: controller.client(for: "local"), since: 0)
     fake.emit(kind: "harness.lifecycle.updated", subjectId: "codex")
     fake.emit(kind: "mcp.updated", subjectId: "server")
     fake.emit(
@@ -48,7 +48,7 @@ struct ShellSyncEventTests {
     controller.onSyncChanged = { _, _ in calls.append("sync") }
     controller.onMcpStateChanged = { _ in reachedEnd.signal() }
 
-    controller.startEventSync(for: "local")
+    controller.startEventSync(serverId: "local", client: controller.client(for: "local"), since: 0)
     fake.emit(kind: "harness.notice", subjectId: "codex", payload: .object(["id": .string("n1")]))
     fake.emit(
       kind: "update.changed", subjectId: "server",
@@ -74,7 +74,7 @@ struct ShellSyncEventTests {
     controller.onMcpStateChanged = { _ in reachedEnd.signal() }
     let before = controller.sandboxProfilesLoadKey(composerId: "local")
 
-    controller.startEventSync(for: "local")
+    controller.startEventSync(serverId: "local", client: controller.client(for: "local"), since: 0)
     fake.emit(
       kind: "sync.changed", subjectId: "skills",
       payload: .object(["namespace": .string("skills"), "entries": .array([])]))

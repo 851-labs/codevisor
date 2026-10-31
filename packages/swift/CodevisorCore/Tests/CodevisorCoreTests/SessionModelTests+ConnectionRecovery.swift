@@ -5,25 +5,6 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("Recovery preserves already loaded older history")
-  func recoveryPreservesLoadedOlderHistory() async {
-    let sessionId = UUID()
-    let client = FakeSessionServerClient(sessionId: sessionId)
-    client.initialTranscriptPage = cancellationTranscriptPage(
-      sessionId: sessionId, isGenerating: true, stopReason: nil,
-      eventCursor: 2, text: "Current turn")
-    let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString)
-    defer { model.shutdown() }
-    await model.loadHistoryForInitialDisplay()
-    let old = ConversationItem.user(UserMessage(text: "Earlier loaded message"))
-    model.setConversation([old] + model.conversation)
-    client.initialTranscriptPage?.eventCursor = 3
-    _ = await model.loadHistoryForConnectionRecovery()
-    #expect(model.conversation.contains(old))
-  }
-
   @Test("Transient reconciliation retries preserve the stream and clear status when the snapshot succeeds")
   func transientReconciliationRetriesSilently() async {
     let sessionId = UUID()

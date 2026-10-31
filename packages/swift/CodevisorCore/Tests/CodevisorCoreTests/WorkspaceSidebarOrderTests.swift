@@ -21,8 +21,10 @@ struct WorkspaceSidebarOrderTests {
   }
 
   @Test func everyVisibleSubsetPreservesRelativeOrder() {
-    let rows = [workspace(1, time: 10), workspace(2, time: 20), workspace(3, time: 30), workspace(4, time: 40)]
+    var rows = [workspace(1, time: 10), workspace(2, time: 20), workspace(3, time: 30), workspace(4, time: 40)]
+    for index in rows.indices { rows[index].sidebarPosition = rows[0].effectiveSidebarPosition }
     let sorted = rows.sorted(by: WorkspaceSidebarOrder.precedes)
+    #expect(sorted.map(\.id) == [rows[0].id, rows[2].id, rows[1].id, rows[3].id])
     for mask in 0..<16 {
       let visible = rows.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
       let visibleIDs = Set(visible.map(\.id))

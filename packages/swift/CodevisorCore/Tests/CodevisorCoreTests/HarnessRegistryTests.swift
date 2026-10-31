@@ -6,16 +6,6 @@ import Testing
 
 @MainActor
 struct HarnessRegistryTests {
-  @Test("Every built-in harness has a name and resolves to itself")
-  func builtinNames() {
-    for descriptor in HarnessRegistry.builtin {
-      #expect(!descriptor.displayName.isEmpty)
-      #expect(HarnessRegistry.descriptor(for: descriptor.id) == descriptor)
-    }
-    #expect(HarnessRegistry.displayName(for: "claude-code") == "Claude Code")
-    #expect(HarnessRegistry.displayName(for: "codex") == "Codex")
-  }
-
   @Test("Unknown ids are machine-scoped and humanized rather than shown raw")
   func unknownIds() {
     let custom = HarnessRegistry.descriptor(for: "my-custom_bot")
