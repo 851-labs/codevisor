@@ -13,6 +13,11 @@ public struct ScreenSharingTransportEstimate: Equatable, Sendable {
 
   public init() {}
 
+  package mutating func update(networkUs: Int64, jitterBufferUs: Int64) {
+    self.networkUs = networkUs
+    self.jitterBufferUs = jitterBufferUs
+  }
+
   public mutating func update(statistics: [String: String]) {
     if let roundTrip = roundTripSeconds(statistics) {
       networkUs = Int64((roundTrip * 1_000_000 / 2).rounded())
