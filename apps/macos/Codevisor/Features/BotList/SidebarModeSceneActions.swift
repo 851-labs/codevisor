@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 
 struct SidebarModeSceneActions<Actions>: ViewModifier {

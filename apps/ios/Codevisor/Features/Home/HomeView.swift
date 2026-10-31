@@ -53,6 +53,7 @@ struct HomeView: View {
   @State var sidebarGitLookups = SidebarGitLookups()
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]
   @ClientPreference(SidebarGrouping.collapsedPreferenceKey, default: []) var collapsedGroupIDs: [String]
+  @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var storedSidebarMode
   @State var navigationPresentation: HomeNavigationPresentation?
   @State var hostWindow = WeakWindow()
   #if DEBUG || NAVIGATION_DIAGNOSTICS
