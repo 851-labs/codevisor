@@ -1,25 +1,40 @@
 import CodevisorCore
-import CodevisorUI
 import SwiftUI
 
-struct SectionPromptModifier: ViewModifier {
+public struct SectionPromptModifier: ViewModifier {
   @Binding var prompt: SectionPrompt?
   let store: CustomSectionStore
   @State private var name = ""
+  @State private var presented: SectionPrompt?
 
-  func body(content: Content) -> some View {
+  public init(prompt: Binding<SectionPrompt?>, store: CustomSectionStore) {
+    _prompt = prompt
+    self.store = store
+  }
+
+  public func body(content: Content) -> some View {
     content
       .alert(
-        prompt?.title ?? "",
-        isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } }),
-        presenting: prompt
+        presented?.title ?? "",
+        isPresented: Binding(get: { presented != nil }, set: { if !$0 { dismiss() } }),
+        presenting: presented
       ) { prompt in
         TextField("Name", text: $name)
         Button(prompt.confirmTitle) { confirm(prompt) }
         Button("Cancel", role: .cancel) {}
       }
-      .focusesAlertTextField(when: prompt != nil)
-      .onChange(of: prompt?.id) { name = prompt?.initialName ?? "" }
+      .focusesAlertTextField(when: presented != nil)
+      .onChange(of: prompt) { present(prompt) }
+  }
+
+  private func present(_ prompt: SectionPrompt?) {
+    name = prompt?.initialName ?? ""
+    presented = prompt
+  }
+
+  private func dismiss() {
+    presented = nil
+    prompt = nil
   }
 
   private func confirm(_ prompt: SectionPrompt) {

@@ -37,6 +37,8 @@ struct HomeSidebarContentBuilder {
       preferences: preferences,
       projects: environment.projectList.projects,
       defaultServerId: environment.defaultComposerServerId,
+      sections: environment.workspaceSections.sections,
+      membership: environment.workspaceSections.membership,
       machineGroup: SidebarMachineGroups(
         machines: environment.machines, navigationStore: environment.navigationStore
       ).group(forServer:)

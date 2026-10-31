@@ -1,13 +1,23 @@
 import CodevisorCore
 import SwiftUI
 
-struct MoveToSectionMenu: View {
+public struct MoveToSectionMenu: View {
   let currentSectionID: UUID?
   let sections: [CustomSection]
   let move: (UUID?) -> Void
   let newSection: () -> Void
 
-  var body: some View {
+  public init(
+    currentSectionID: UUID?, sections: [CustomSection], move: @escaping (UUID?) -> Void,
+    newSection: @escaping () -> Void
+  ) {
+    self.currentSectionID = currentSectionID
+    self.sections = sections
+    self.move = move
+    self.newSection = newSection
+  }
+
+  public var body: some View {
     Menu {
       Picker("Move to Section", selection: section) {
         Text("No Section").tag(UUID?.none)

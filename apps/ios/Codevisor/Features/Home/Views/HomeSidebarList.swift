@@ -13,6 +13,11 @@ struct HomeSidebarActions {
   var renameWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   var archiveWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   var restoreWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
+  var moveToSection: (HomeSidebarWorkspaceRef, UUID?) -> Void = { _, _ in }
+  var newSection: (HomeSidebarWorkspaceRef?) -> Void = { _ in }
+  var renameSection: (CustomSection) -> Void = { _ in }
+  var deleteSection: (CustomSection) -> Void = { _ in }
+  var moveSection: (UUID, Int) -> Void = { _, _ in }
   var reorder: (UUID, Int, [UUID]) -> Void = { _, _, _ in }
   var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
@@ -107,6 +112,9 @@ struct HomeSidebarList: View {
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {
     var shown = botsExpanded ? content.bots.flatMap(\.children) : []
     if pinnedExpanded { shown += content.pinned }
+    for group in content.sections where !collapsedGroupIDs.contains(group.collapseID) {
+      shown += group.workspaces
+    }
     if listExpanded {
       for group in content.groups where group.heading == nil || !collapsedGroupIDs.contains(group.id) {
         shown += group.workspaces
@@ -133,28 +141,23 @@ struct HomeSidebarList: View {
   @ViewBuilder
   private func sections(_ content: HomeSidebarContent) -> some View {
     if content.showsBots {
-      Section("Bots", isExpanded: animated($botsExpanded)) {
-        ForEach(content.bots) { bot in
-          botRow(bot)
-        }
-        if content.canCreateBots {
-          Button(action: actions.actions.newBot) {
-            Label("New Bot…", systemImage: "plus")
-          }
-          .accessibilityIdentifier("sidebar.newBot")
-        }
-      }
+      botsSection(content)
     }
     if !content.pinned.isEmpty {
       Section("Pinned", isExpanded: animated($pinnedExpanded)) {
         workspaceRows(content.pinned)
       }
     }
+    ForEach(content.sections) { group in
+      Section(group.section.name, isExpanded: groupExpansion(group.collapseID)) {
+        workspaceRows(group.workspaces, sections: content.customSections)
+      }
+    }
     Section(content.listTitle, isExpanded: animated($listExpanded)) {
       ForEach(content.groups) { group in
         if let heading = group.heading {
           DisclosureGroup(isExpanded: groupExpansion(group.id)) {
-            workspaceRows(group.workspaces)
+            workspaceRows(group.workspaces, sections: content.customSections)
           } label: {
             HomeSidebarGroupLabel(
               heading: heading,
@@ -164,35 +167,55 @@ struct HomeSidebarList: View {
             )
           }
         } else {
-          workspaceRows(group.workspaces)
+          workspaceRows(group.workspaces, sections: content.customSections)
         }
       }
-      if content.pinned.isEmpty && content.groups.allSatisfy(\.workspaces.isEmpty) {
+      if content.listedWorkspaces.isEmpty {
         Text("No Workspaces")
           .foregroundStyle(.tertiary)
       }
     }
     if content.archivedCount > 0 {
-      Section("Archived", isExpanded: animated($archivedExpanded)) {
-        ForEach(content.archived) { workspace in
-          HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
-            .equatable()
+      archivedSection(content)
+    }
+  }
+
+  private func botsSection(_ content: HomeSidebarContent) -> some View {
+    Section("Bots", isExpanded: animated($botsExpanded)) {
+      ForEach(content.bots) { bot in
+        botRow(bot)
+      }
+      if content.canCreateBots {
+        Button(action: actions.actions.newBot) {
+          Label("New Bot…", systemImage: "plus")
         }
-        if content.archivedCount > content.archived.count {
-          Button("Show More") {
-            withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-              archivedLimit += sidebarArchivedPageSize
-            }
-          }
-          .foregroundStyle(.secondary)
-        }
+        .accessibilityIdentifier("sidebar.newBot")
       }
     }
   }
 
-  private func workspaceRows(_ workspaces: [HomeSidebarWorkspace]) -> some View {
+  private func archivedSection(_ content: HomeSidebarContent) -> some View {
+    Section("Archived", isExpanded: animated($archivedExpanded)) {
+      ForEach(content.archived) { workspace in
+        HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
+          .equatable()
+      }
+      if content.archivedCount > content.archived.count {
+        Button("Show More") {
+          withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+            archivedLimit += sidebarArchivedPageSize
+          }
+        }
+        .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  private func workspaceRows(
+    _ workspaces: [HomeSidebarWorkspace], sections: [CustomSection] = []
+  ) -> some View {
     ForEach(workspaces) { workspace in
-      workspaceRow(workspace)
+      workspaceRow(workspace, sections: sections)
     }
     .onMove { source, destination in
       guard let index = source.first else { return }
@@ -202,10 +225,12 @@ struct HomeSidebarList: View {
   }
 
   @ViewBuilder
-  private func workspaceRow(_ workspace: HomeSidebarWorkspace) -> some View {
-    let row = HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
-      .equatable()
-      .tag(workspace.id)
+  private func workspaceRow(_ workspace: HomeSidebarWorkspace, sections: [CustomSection] = []) -> some View {
+    let row = HomeSidebarWorkspaceRowView(
+      workspace: workspace, actions: actions, isSelectionRow: isSelectable, sections: sections
+    )
+    .equatable()
+    .tag(workspace.id)
     if !workspace.hasNestedRows {
       row
     } else {
