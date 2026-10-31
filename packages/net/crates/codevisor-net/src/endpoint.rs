@@ -1,10 +1,11 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
+use bytes::Bytes;
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
     Watcher,
-    endpoint::{Connection, Incoming, presets},
+    endpoint::{Connection, Incoming, SendDatagramError, presets},
     tls::CaTlsConfig,
 };
 use tokio::{
@@ -37,6 +38,15 @@ pub struct PathInfo {
     pub congestion_events: u64,
     pub black_holes_detected: u64,
     pub datagrams_sent: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatagramSendError {
+    /// Larger than the path's current maximum datagram size.
+    TooLarge,
+    /// The peer doesn't accept datagrams, or they're disabled.
+    Unsupported,
+    ConnectionLost,
 }
 
 pub fn generate_secret_key() -> [u8; 32] {
@@ -319,6 +329,26 @@ impl NetConnection {
 
     pub fn datagram_send_buffer_space(&self) -> usize {
         self.connection.datagram_send_buffer_space()
+    }
+
+    /// Sends one datagram as is. Only for a connection whose datagrams have a single owner (a screen connection's
+    /// `codevisor-media` session); [`media`](Self::media)'s router reads and routes every datagram it receives.
+    pub fn send_datagram(&self, datagram: Bytes) -> Result<(), DatagramSendError> {
+        self.connection.send_datagram(datagram).map_err(|error| match error {
+            SendDatagramError::TooLarge => DatagramSendError::TooLarge,
+            SendDatagramError::ConnectionLost(_) => DatagramSendError::ConnectionLost,
+            _ => DatagramSendError::Unsupported,
+        })
+    }
+
+    /// The next datagram the peer sent; an error once the connection is closed.
+    pub async fn read_datagram(&self) -> Result<Bytes> {
+        Ok(self.connection.read_datagram().await?)
+    }
+
+    /// The selected path's round-trip estimate.
+    pub fn rtt(&self) -> Option<Duration> {
+        self.connection.paths().iter().find(|path| path.is_selected()).map(|path| path.rtt())
     }
 
     pub fn media(&self) -> Arc<DatagramRouter> {
