@@ -22,7 +22,7 @@ const cloudCredentials = (
 }
 
 export const liveCloudDeviceId = (config: CodevisorServerConfig): string | undefined =>
-  config.cloud === undefined ? config.cloudDeviceId : config.cloud.deviceId()
+  config.cloud?.deviceId()
 
 export const routeCloud = async (
   config: CodevisorServerConfig,

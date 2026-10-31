@@ -27,7 +27,7 @@ export interface SocketUpgrade {
   readonly socket: Socket
   readonly head: Buffer
   readonly webSocketServer: WebSocketServer
-  readonly clientControl: ClientControlBroker | undefined
+  readonly clientControl: ClientControlBroker
 }
 
 const EVENT_SOCKET_KEEPALIVE_MS = 25_000
@@ -131,7 +131,6 @@ const acceptClientControl = (upgrade: SocketUpgrade, url: URL): boolean => {
   const clientId = matchRoute(url.pathname, "/v1/clients/:id/socket")
   if (request.method !== "GET") return false
   if (clientId === undefined) return false
-  if (clientControl === undefined) return false
 
   accept(upgrade, (webSocket) => {
     clientControl.attach(clientId, webSocket)

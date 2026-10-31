@@ -120,9 +120,15 @@ describe("questions parked by an update restart", () => {
     await waitFor(() => agents.prompts.length === 2)
 
     expect(agents.prompts[1]?.[1]).toBe(
-      parkedAnswerPrompt({ sessionUpdate: "question", ...askedQuestion }, answered)
+      [
+        `<codevisor-event type="question.answered">`,
+        "Codevisor restarted while you were waiting on your question, so the tool call that asked it ended without the user's answer.",
+        "The user has now answered it:",
+        "- Which database? → Postgres — with pgvector",
+        "Continue from where you left off.",
+        "</codevisor-event>"
+      ].join("\n")
     )
-    expect(agents.prompts[1]?.[1]).toContain("- Which database? → Postgres — with pgvector")
     expect(agents.questionAnswers).toEqual([])
     expect(questionOutcomes(services, sessionId)).toEqual(["answered"])
     const page = await transcript(restarted, sessionId)

@@ -73,14 +73,6 @@ const create = (content: string | Buffer = "original") => {
   return path
 }
 
-it("leaves unrelated routes for the next handler", async () => {
-  const { output, end } = response()
-  expect(
-    await routeFileDocuments(makeRequest("GET"), output, new URL("http://localhost/v1/sessions"))
-  ).toBe(false)
-  expect(end).not.toHaveBeenCalled()
-})
-
 it("expands the machine home and responds to unchanged document revisions", async () => {
   const path = create()
   await expect(invoke(document("~"))).rejects.toMatchObject({ code: "not_a_file" })

@@ -58,7 +58,7 @@ export const handleRequest = async (
   response: ServerResponse
 ): Promise<void> => {
   try {
-    if (isBrowserProxyRequest(request)) return forwardToBrowserProxy(routeState, request, response)
+    if (isBrowserProxyRequest(request)) return routeState.browserProxy.handleHTTP(request, response)
 
     const url = parseRequestUrl(request)
     const route: RouteContext = { services, fanout, routeState, request, response, url, config }
@@ -149,15 +149,6 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, request, response, url }) => routeFs(services, request, response, url),
   ({ config, request, response, url }) => routeCloud(config, request, response, url)
 ]
-
-const forwardToBrowserProxy = (
-  routeState: RouteState,
-  request: IncomingMessage,
-  response: ServerResponse
-): void => {
-  if (routeState.browserProxy) routeState.browserProxy.handleHTTP(request, response)
-  else response.writeHead(501).end()
-}
 
 const reconcileAfterConfigMutation = ({
   services,

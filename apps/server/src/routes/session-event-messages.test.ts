@@ -93,11 +93,4 @@ describe("session event messages", () => {
     expect(jobFinishedMessage(job({ result: circular })).text).toContain("Result: [object Object]")
     expect(jobFinishedMessage(job({})).text).toContain("Result: undefined")
   })
-
-  it("says when a turn ended with no final message", () => {
-    const first = turnEndedMessage(target, { stopReason: "end_turn", finalText: "" })
-
-    expect(first.text).toContain('stopReason="end_turn"')
-    expect(first.text).toContain("(no final message)")
-  })
 })

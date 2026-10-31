@@ -124,9 +124,10 @@ describe("project setup destinations", () => {
     await git(["init"], join(baseFolder, "widget"))
     mkdirSync(join(baseFolder, "widget-2"))
     await git(["clone", url, join(baseFolder, "widget-3")], tmpdir())
+    writeFileSync(join(baseFolder, "widget-3", ".env"), "EXISTING=1\n")
 
     const adopted = await jsonRequest(server, "/v1/projects/from-git", {
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, envFiles: [{ path: ".env", contents: "NEW=1\n" }] }),
       method: "POST"
     })
 
@@ -134,6 +135,7 @@ describe("project setup destinations", () => {
       status: 201,
       body: { locations: [{ folderPath: join(baseFolder, "widget-3") }] }
     })
+    expect(readFileSync(join(baseFolder, "widget-3", ".env"), "utf8")).toBe("EXISTING=1\n")
   })
 
   it("gives up when every candidate folder is taken", async () => {
@@ -154,7 +156,7 @@ describe("project setup destinations", () => {
     expect(lastSetup(services, "taken")).toMatchObject({ state: "failed", code: "already_exists" })
   })
 
-  it("rejects env files that aren't env files, are too large, or escape through a link", async () => {
+  it("rejects env files that aren't env files, are too large, or escape the folder", async () => {
     const origin = await makeOrigin()
     const outside = tempDir("codevisor-setup-outside-")
     symlinkSync(outside, join(origin, "linked"))
@@ -171,6 +173,10 @@ describe("project setup destinations", () => {
       })
 
     expect((await request("README.md", "x")).status).toBe(400)
+    expect(await request("../.env", "X=1")).toMatchObject({
+      status: 400,
+      body: { error: "Not an env file path: ../.env" }
+    })
     expect((await request(".env", "x".repeat(1024 * 1024 + 1))).status).toBe(400)
     expect((await request("linked/.env", "SECRET=1")).status).toBe(400)
     expect(existsSync(join(outside, ".env"))).toBe(false)

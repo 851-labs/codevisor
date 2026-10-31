@@ -413,7 +413,7 @@ const clientPlatform = (
   clientId: string
 ): ConnectedClient["platform"] | undefined =>
   routeState.clientControl
-    ?.list()
+    .list()
     .find((client) => client.clientId.toLowerCase() === clientId.toLowerCase())?.platform
 
 const runPromptInBackground = async (

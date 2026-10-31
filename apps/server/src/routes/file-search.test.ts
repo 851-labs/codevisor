@@ -74,7 +74,7 @@ it("reports incomplete searches and honors cancellation", async () => {
     expect((await searchFileEntries(root, "missing", { maxEntries: 1 })).truncated).toBe(true)
     await expect(
       searchFileEntries(root, "txt", { signal: AbortSignal.abort() })
-    ).rejects.toBeDefined()
+    ).rejects.toMatchObject({ name: "AbortError" })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

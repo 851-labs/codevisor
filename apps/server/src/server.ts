@@ -76,7 +76,6 @@ import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
 
 export * from "./server-context.js"
 export { defaultServerConfig } from "./server-config.js"
-export { reconcileOrphanedSessionTurns, reconcileStaleStreamingTurns }
 
 export const makeCodevisorServerApp = (
   services: CodevisorServerServices,

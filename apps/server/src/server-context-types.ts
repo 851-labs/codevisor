@@ -79,7 +79,6 @@ export interface CodevisorServerConfig {
   readonly screenSharingVNC?: ScreenSharingVNCConfig | undefined
   readonly simulators?: Simulators | undefined
   readonly sessionActivity?: SessionActivityController | undefined
-  readonly cloudDeviceId?: string | undefined
   readonly cloud?: CloudServerControl | undefined
   readonly icon?: string | undefined
   readonly workspaceGit?: boolean | undefined
@@ -178,8 +177,8 @@ export interface CodevisorServerApp {
 }
 
 export interface RouteState {
-  readonly clientControl?: ClientControlBroker
-  readonly browserProxy?: BrowserProxy
+  readonly clientControl: ClientControlBroker
+  readonly browserProxy: BrowserProxy
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
   readonly pendingPromptActions: Set<string>
   readonly activePromptSessions: Set<string>

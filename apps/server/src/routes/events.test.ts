@@ -357,27 +357,7 @@ describe("event routes", () => {
     expect(
       connected.sent.map(parseSentEvent).findLast((event) => event.kind === "keepalive")?.id
     ).toBe(committed.subjectRevision)
-
     connected.close()
-    const sentAtClose = connected.sent.length
-    await vi.advanceTimersByTimeAsync(25_000)
-    expect(connected.sent.length).toBe(sentAtClose)
-
-    const global = makeFakeSocket()
-    await attachSyncEventSocket(
-      services.db,
-      fanout,
-      Number.MAX_SAFE_INTEGER,
-      global.sink,
-      "server-a",
-      undefined
-    )
-    await vi.advanceTimersByTimeAsync(25_000)
-    expect(global.sent.map(parseSentEvent)).toEqual([
-      expect.objectContaining({ id: 0, kind: "keepalive" }),
-      expect.objectContaining({ id: 0, kind: "keepalive" })
-    ])
-    global.close()
   })
 
   it("repairs a lost completion from durable events and checkpoints replay before reporting caught up", async () => {

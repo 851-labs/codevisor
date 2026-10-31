@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import { once } from "node:events"
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -46,12 +47,15 @@ describe("X11 desktop clipboard", () => {
   it("watches the clipboard until stopped", async () => {
     const changes: number[] = []
     const twoChanges = Promise.withResolvers<void>()
-    const stop = await x11DesktopClipboard(commands({ python3: WATCHER_OK })).watch(() => {
+    const fake = commands({ python3: WATCHER_OK })
+    const stop = await x11DesktopClipboard(fake).watch(() => {
       changes.push(changes.length)
       if (changes.length === 2) twoChanges.resolve()
     })
     await twoChanges.promise
+    const exited = once(fake.children[0]!, "exit")
     stop()
+    await exited
     expect(changes).toEqual([0, 1])
   })
 

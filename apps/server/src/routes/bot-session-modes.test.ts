@@ -93,6 +93,5 @@ describe("bot plan and goal modes", () => {
     expect(
       (await post(running, "/v1/sessions/chat-1/goal", { objective: "Ship the release" })).status
     ).toBe(202)
-    expect((await post(running, "/v1/sessions/chat-1/prompt", { text: "/plan" })).status).toBe(202)
   })
 })

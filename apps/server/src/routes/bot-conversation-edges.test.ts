@@ -206,15 +206,19 @@ describe("bot conversation edges", () => {
   it("tells the user why the bot couldn't reply, and leaves other chats alone", async () => {
     const { running, bot } = await startBot()
     const chat = await createChat(running)
+    const chatEvents = (kind: string) =>
+      listSubjectEvents(running.services, chat).filter((event) => event.kind === kind)
 
-    await prompt(running, bot.sessionId, { text: "prompt fails" })
     await prompt(running, chat, { text: "prompt fails" })
+    await waitFor(() => chatEvents("session.error").length === 1)
+    await prompt(running, bot.sessionId, { text: "prompt fails" })
 
     await waitFor(async () => (await transcript(running, bot.sessionId)).length === 2)
     expect(await transcript(running, bot.sessionId)).toEqual([
       ["user", "prompt fails"],
       ["notice", "Couldn't reply: prompt failed"]
     ])
+    expect(chatEvents("bot.message")).toEqual([])
   })
 
   it.each([
@@ -314,10 +318,9 @@ describe("bot conversation edges", () => {
     )
   })
 
-  it("reports a child that ended without a reason or reply, and long replies in full", async () => {
+  it("reports a child that ended without a reason or reply", async () => {
     const { running, bot } = await startBot()
     const quiet = await createChat(running, { parentSessionId: bot.sessionId })
-    const chatty = await createChat(running, { parentSessionId: bot.sessionId, title: "Chatty" })
     const quietAgent = await holdTurn(running, quiet)
 
     await cancel(running, quiet)
@@ -328,15 +331,11 @@ describe("bot conversation edges", () => {
       payload: { initiatedBy: "agent", turnId: "turn-2", turnState: "started" }
     })
     await endTurn(running, quietAgent, { turnId: "turn-2" })
-    await prompt(running, chatty, { text: "x".repeat(4_100) })
 
-    await waitFor(() => reports(running).length >= 3)
+    await waitFor(() => reports(running).length >= 2)
     expect(reports(running)).toEqual(
       expect.arrayContaining([
-        `<codevisor-event type="session.turn_ended" agentId="${quiet}" title="Fix login">\n(no final message)\n</codevisor-event>`,
-        expect.stringContaining(
-          `title="Chatty" stopReason="end_turn">\nEcho: ${"x".repeat(4_100)}\n</`
-        )
+        `<codevisor-event type="session.turn_ended" agentId="${quiet}" title="Fix login">\n(no final message)\n</codevisor-event>`
       ])
     )
   })

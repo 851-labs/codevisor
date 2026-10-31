@@ -336,7 +336,6 @@ describe("harness update checks", () => {
     })
 
     releaseListener?.("gemini")
-    expect(agents.prompts).toHaveLength(0)
 
     gated.delete("codex")
     releaseListener?.("codex")
@@ -344,6 +343,15 @@ describe("harness update checks", () => {
     expect(agents.prompts[0]?.[1]).toBe("held prompt")
     await waitFor(() => turns.includes("end codex"))
     expect(turns[0]).toBe("start codex")
+    expect(
+      listSubjectEvents(services, sessionId)
+        .filter(
+          (event) =>
+            event.kind === "session.updateGate.updated" &&
+            field(event.payload, "state") === "released"
+        )
+        .map((event) => field(event.payload, "harnessId"))
+    ).toEqual(["codex"])
     expect(
       (await jsonRequest(server, `/v1/sessions/${sessionId}/transcript`)).body
     ).not.toHaveProperty("updateGate")

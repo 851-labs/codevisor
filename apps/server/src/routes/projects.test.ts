@@ -211,16 +211,18 @@ describe("project routes", () => {
     const { server } = await start()
     const lowerId = "0d604f39-364b-4a17-8fd8-21bddd8c1399"
     const upperId = lowerId.toUpperCase()
+    const folderPath = mkdtempSync(join(tmpdir(), "codevisor-case-project-"))
+    tempDirs.push(folderPath)
 
     const created = await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: "/tmp/case-project", id: upperId }),
+      body: JSON.stringify({ folderPath, id: upperId }),
       method: "POST"
     })
     expect(created.status).toBe(201)
     expect(idOf(created.body)).toBe(lowerId)
 
     const resync = await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: "/tmp/case-project", id: upperId }),
+      body: JSON.stringify({ folderPath, id: upperId }),
       method: "POST"
     })
     expect(idOf(resync.body)).toBe(lowerId)
@@ -230,15 +232,16 @@ describe("project routes", () => {
       body: JSON.stringify({ projectId: upperId, harnessId: "codex" }),
       method: "POST"
     })
-    expect(session.status).not.toBe(404)
-    expect(JSON.stringify(session.body)).not.toContain("Project not found")
+    expect(session).toMatchObject({ status: 201, body: { projectId: lowerId } })
 
     const worktree = await jsonRequest(server, `/v1/projects/${upperId}/worktrees`, {
       body: JSON.stringify({ name: "feature" }),
       method: "POST"
     })
-    expect(worktree.status).not.toBe(404)
-    expect(JSON.stringify(worktree.body)).not.toContain("Project not found")
+    expect(worktree).toMatchObject({
+      status: 422,
+      body: { error: `Project folder is not a git repository: ${folderPath}` }
+    })
   })
 
   it("deletes a project's folder only when asked, and never one holding Codevisor's own files", async () => {

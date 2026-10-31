@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeEventFanout } from "../server.js"
 import { makeServices, run, tempDirs } from "../test-support.js"
-import { promoteAssistantArtifacts, referencedAttachmentIds } from "./assistant-artifacts.js"
+import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
 import { field } from "./response-test-support.js"
 import { sessionEventSink } from "./session-events.js"
 
@@ -17,17 +17,6 @@ afterEach(() => {
 })
 
 describe("assistant artifact promotion", () => {
-  it("extracts attachment file ids from Markdown in order, once each", () => {
-    expect(
-      referencedAttachmentIds(
-        "![a](https://attachments.codevisor.invalid/one) then " +
-          "[b](https://attachments.codevisor.invalid/two) and " +
-          "![again](https://attachments.codevisor.invalid/one) but not ./attachment"
-      )
-    ).toEqual(["one", "two"])
-    expect(referencedAttachmentIds("plain text")).toEqual([])
-  })
-
   it("attaches referenced artifacts to the assistant item before the turn ends", async () => {
     const { services } = await makeServices("server-a")
     const fanout = await run(makeEventFanout)
@@ -44,19 +33,22 @@ describe("assistant artifact promotion", () => {
       })
     )
     const stored = await services.attachments.put(Buffer.from("fake-png"))
-    const file = await run(
-      services.db.createDiskFile({
-        id: randomUUID(),
-        name: "browser-screenshot.png",
-        mimeType: "image/png",
-        sizeBytes: stored.sizeBytes,
-        sha256: stored.sha256,
-        kind: "image",
-        createdAt: new Date().toISOString()
-      })
-    )
+    const image = (name: string) =>
+      run(
+        services.db.createDiskFile({
+          id: randomUUID(),
+          name,
+          mimeType: "image/png",
+          sizeBytes: stored.sizeBytes,
+          sha256: stored.sha256,
+          kind: "image",
+          createdAt: new Date().toISOString()
+        })
+      )
+    const file = await image("browser-screenshot.png")
+    const second = await image("floor-plan.png")
     const sink = sessionEventSink(services, fanout, "server-a", session.id)
-    const markdown = `Here it is:\n\n![House](https://attachments.codevisor.invalid/${file.id})\n\nAlso https://attachments.codevisor.invalid/missing-id is unknown.`
+    const markdown = `Here it is:\n\n![House](https://attachments.codevisor.invalid/${file.id})\n\n[Plan](https://attachments.codevisor.invalid/${second.id}) and ![House again](https://attachments.codevisor.invalid/${file.id})\n\nAlso https://attachments.codevisor.invalid/missing-id is unknown.`
     await sink({
       kind: "session.updated",
       subjectId: "agent-artifacts",
@@ -90,7 +82,8 @@ describe("assistant artifact promotion", () => {
           mimeType: "image/png",
           sizeBytes: stored.sizeBytes,
           kind: "image"
-        }
+        },
+        { fileId: second.id, name: "floor-plan.png" }
       ]
     })
     const ended = published.findIndex((event) => field(event.payload, "turnState") === "ended")
@@ -101,7 +94,10 @@ describe("assistant artifact promotion", () => {
     expect(item).toMatchObject({
       text: markdown,
       isGenerating: false,
-      attachments: [{ fileId: file.id, kind: "image" }]
+      attachments: [
+        { fileId: file.id, kind: "image" },
+        { fileId: second.id, kind: "image" }
+      ]
     })
   })
 
@@ -222,19 +218,5 @@ describe("assistant artifact promotion", () => {
     const finalized = published.find((event) => field(event.payload, "isFinalized") === true)
     expect(finalized?.payload).toMatchObject({ attachments: [{ fileId: file.id }] })
     expect(finalized?.payload).toMatchObject({ messageId: expect.any(String), isFinalized: true })
-  })
-
-  it("does nothing for replies without attachment references", async () => {
-    const { services } = await makeServices("server-b")
-    const fanout = await run(makeEventFanout)
-    const folder = mkdtempSync(join(tmpdir(), "codevisor-artifacts-"))
-    tempDirs.push(folder)
-    const project = await run(services.db.createProject({ folderPath: folder }))
-    const session = await run(
-      services.db.createSession({ projectId: project.id, harnessId: "codex" })
-    )
-    await expect(promoteAssistantArtifacts(services, fanout, "server-b", session.id)).resolves.toBe(
-      false
-    )
   })
 })

@@ -1,28 +1,13 @@
 import { once } from "node:events"
-import { IncomingMessage, ServerResponse } from "node:http"
-import { Socket } from "node:net"
 
 import { describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
 
 import { jsonRequest, start } from "../test-support.js"
-import { routeClientControl } from "./client-control.js"
 
 const workspaceId = "3e6c0a52-5b1f-4d4e-9a0c-2f7d8e1b4c11"
 
 describe("client control routes", () => {
-  it("reports unavailable control infrastructure", async () => {
-    const request = new IncomingMessage(new Socket())
-    await expect(
-      routeClientControl(
-        undefined,
-        { id: "server", name: "Server" },
-        request,
-        new ServerResponse(request),
-        new URL("http://fixture/v1/clients")
-      )
-    ).rejects.toThrow("Client control unavailable")
-  })
   it("round-trips context and navigation through a connected native window", async () => {
     const { server } = await start()
     const socket = new WebSocket(`${server.url.replace("http", "ws")}/v1/clients/window/socket`)

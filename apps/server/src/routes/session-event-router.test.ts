@@ -55,7 +55,6 @@ type Router = Awaited<ReturnType<typeof setUpRouter>>
 
 const ATTENTION_SETTLE_GRACE_MS = 12_000
 
-const shell = { id: "task-1", description: "bun run dev", status: "running", taskType: "shell" }
 const subagent = { id: "task-2", description: "Review", status: "running", taskType: "subagent" }
 
 const turn = async (router: Router, sessionId: string, turnId: string, reply: string) => {
@@ -70,24 +69,6 @@ const turn = async (router: Router, sessionId: string, turnId: string, reply: st
 }
 
 describe("turn ends", () => {
-  it("reports a turn that leaves a dev server running as soon as it ends", async () => {
-    const router = await setUpRouter()
-    const watcher = await router.chat()
-    const worker = await router.chat()
-    await router.watch(watcher, worker)
-
-    await router.emit(worker, { backgroundTasks: [shell] })
-    await turn(router, worker, "turn-1", "Dev server is up")
-    await waitFor(() => router.eventPrompts().length > 0)
-
-    const [delivered, ...rest] = router.eventPrompts()
-    expect(rest).toEqual([])
-    expect(delivered).toContain(
-      `<codevisor-event type="session.turn_ended" agentId="${worker}" title="New Session" stopReason="end_turn"`
-    )
-    expect(delivered).toContain(">\nDev server is up\n</codevisor-event>")
-  })
-
   it("reports a turn held by a running subagent once it settles", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     onTestFinished(() => {
@@ -97,18 +78,22 @@ describe("turn ends", () => {
     const watcher = await router.chat()
     const worker = await router.chat()
     await router.watch(watcher, worker)
+    router.routeState.activeTurnSessions.add(watcher)
 
     await router.emit(worker, { backgroundTasks: [subagent] })
     await turn(router, worker, "turn-1", "Waiting on the review")
     await router.emit(worker, { backgroundTasks: [] })
+    await router.router.recover()
     const beforeSettle = await router.queuedFor(watcher)
     vi.setSystemTime(new Date(Date.now() + ATTENTION_SETTLE_GRACE_MS))
     await run(router.services.db.settleSessionAttention(worker))
     await router.emit(worker, {}, "session.attention.updated")
-    await waitFor(() => router.eventPrompts().length > 0)
+    await waitFor(async () => (await router.queuedFor(watcher)).length > 0)
 
     expect(beforeSettle).toEqual([])
-    expect(router.eventPrompts()).toEqual([expect.stringContaining("\nWaiting on the review\n")])
+    expect(await router.queuedFor(watcher)).toEqual([
+      expect.stringContaining("\nWaiting on the review\n")
+    ])
   })
 
   it("sends a finished turn it never got to announce when it recovers", async () => {

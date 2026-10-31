@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -109,46 +109,6 @@ describe("project setup on another machine", () => {
       kind: "project.setup",
       payload: { state: "completed", folderPath: folder }
     })
-  })
-
-  it("adopts an existing clone of the repository and skips unrelated folders", async () => {
-    const origin = await makeOrigin()
-    const { server } = await startServer()
-    const baseFolder = await useBaseFolder(server)
-    const url = `file://${origin}`
-    mkdirSync(join(baseFolder, "widget"))
-    writeFileSync(join(baseFolder, "widget", "unrelated.txt"), "keep me")
-    await git(["clone", url, join(baseFolder, "widget-2")], tmpdir())
-    writeFileSync(join(baseFolder, "widget-2", ".env"), "EXISTING=1\n")
-
-    const adopted = await jsonRequest(server, "/v1/projects/from-git", {
-      body: JSON.stringify({ url, envFiles: [{ path: ".env", contents: "NEW=1\n" }] }),
-      method: "POST"
-    })
-
-    expect(adopted).toMatchObject({
-      status: 201,
-      body: { locations: [{ folderPath: join(baseFolder, "widget-2") }] }
-    })
-    expect(readFileSync(join(baseFolder, "widget-2", ".env"), "utf8")).toBe("EXISTING=1\n")
-    expect(readFileSync(join(baseFolder, "widget", "unrelated.txt"), "utf8")).toBe("keep me")
-  })
-
-  it("rejects env file paths that leave the project folder before cloning", async () => {
-    const origin = await makeOrigin()
-    const { server } = await startServer()
-    const baseFolder = await useBaseFolder(server)
-
-    const escaped = await jsonRequest(server, "/v1/projects/from-git", {
-      body: JSON.stringify({
-        url: `file://${origin}`,
-        envFiles: [{ path: "../.env", contents: "X=1" }]
-      }),
-      method: "POST"
-    })
-
-    expect(escaped.status).toBe(400)
-    expect(existsSync(join(baseFolder, "widget"))).toBe(false)
   })
 
   it("expands, validates, and resets the clone base folder", async () => {

@@ -198,7 +198,7 @@ describe("agent lifecycle routes", () => {
     })
   })
 
-  it("keeps an idle agent with queued messages unsettled and reports a pending question", async () => {
+  it("keeps an idle agent with queued messages unsettled and reports replies and questions", async () => {
     const { server, services } = await start()
     const project = idOf(
       (
@@ -241,6 +241,26 @@ describe("agent lifecycle routes", () => {
     expect((await wait([asking])).body).toEqual({
       items: [{ agentId: asking, state: "waitingForUser", pendingQuestion: question }],
       timedOut: false
+    })
+
+    await run(
+      services.db.appendEvent("session.output", queued, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "reply-1",
+        content: { type: "text", text: "Done." }
+      })
+    )
+    expect((await jsonRequest(server, `/v1/agents/${queued}`)).body).toEqual({
+      agentId: queued,
+      title: expect.any(String),
+      state: "idle",
+      lastReply: "Done."
+    })
+    expect((await jsonRequest(server, `/v1/agents/${asking}`)).body).toEqual({
+      agentId: asking,
+      title: expect.any(String),
+      state: "waitingForUser",
+      pendingQuestion: question
     })
   })
 

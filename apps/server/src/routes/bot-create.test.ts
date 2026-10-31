@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -104,6 +104,9 @@ describe("bot instructions", () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
     await running.addProject("web-project", "web")
+    const missing = decodeBot(
+      (await createBot(running, { name: "Missing", projectIds: ["web-project"] })).body
+    )
     const chatty = decodeBot(
       (
         await createBot(running, {
@@ -112,9 +115,6 @@ describe("bot instructions", () => {
           conversational: true
         })
       ).body
-    )
-    const missing = decodeBot(
-      (await createBot(running, { name: "Missing", projectIds: ["web-project"] })).body
     )
     const instructions = join(chatty.rootPath, "AGENTS.md")
     writeFileSync(instructions, "# Chatty\n\nYou are a long-lived Codevisor bot.\n")
@@ -126,5 +126,6 @@ describe("bot instructions", () => {
 
     expect(upgraded).toMatch(/You are a long-lived Codevisor bot\.\n\n## Talking to the user/)
     expect(readFileSync(instructions, "utf8")).toBe(upgraded)
+    expect(existsSync(join(missing.rootPath, "AGENTS.md"))).toBe(false)
   })
 })

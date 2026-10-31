@@ -8,12 +8,7 @@ import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { queueRestartResumeOnce, restartNotice } from "../restart-notice.js"
-import {
-  defaultServerConfig,
-  makeEventFanout,
-  reconcileOrphanedSessionTurns,
-  startCodevisorServer
-} from "../server.js"
+import { defaultServerConfig, makeEventFanout, startCodevisorServer } from "../server.js"
 import {
   archiveSessionViaWorkspace,
   jsonRequest,
@@ -25,6 +20,7 @@ import {
   listSubjectEvents,
   waitFor
 } from "../test-support.js"
+import { reconcileOrphanedSessionTurns } from "./prompt-recovery.js"
 
 const isQuestionResolution = (payload: unknown): boolean =>
   typeof payload === "object" &&

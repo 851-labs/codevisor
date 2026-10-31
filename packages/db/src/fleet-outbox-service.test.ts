@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { makeDatabase } from "./index.js"
+import { makeDatabase, type FleetMessage } from "./index.js"
 import { rowReader, text } from "./row-reader.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
@@ -35,6 +35,20 @@ const linkedChild = async (db: Awaited<ReturnType<typeof openDatabase>>) => {
   return { child, plain }
 }
 
+const queueThroughTurns = async (
+  db: Awaited<ReturnType<typeof openDatabase>>,
+  messages: ReadonlyArray<FleetMessage>
+) => {
+  const { child } = await linkedChild(db)
+  for (const queued of messages) {
+    const turnId = queued.id
+    await run(db.appendEvent("session.updated", child.id, { turnState: "started", turnId }))
+    await run(db.appendEvent("session.updated", child.id, { turnState: "ended", turnId }))
+    const [turn] = await run(db.listFleetPendingTurns)
+    await run(db.promoteFleetTurn(turn!, queued))
+  }
+}
+
 const message = (id: string, machineId: string, createdAt = "2100-01-01T00:00:00.000Z") => ({
   id,
   machineId,
@@ -47,9 +61,10 @@ const message = (id: string, machineId: string, createdAt = "2100-01-01T00:00:00
 describe("fleet outbox storage", () => {
   it("keeps queued messages in the order they were sent until each is removed", async () => {
     const db = await openDatabase()
-    for (const id of ["z-first", "a-second", "m-third"]) {
-      await run(db.enqueueFleetMessage(message(id, "machine-b")))
-    }
+    await queueThroughTurns(
+      db,
+      ["z-first", "a-second", "m-third"].map((id) => message(id, "machine-b"))
+    )
 
     await run(db.deleteFleetMessage("a-second"))
 
@@ -61,9 +76,11 @@ describe("fleet outbox storage", () => {
 
   it("hands out a machine's next unexpired message and expires old ones", async () => {
     const db = await openDatabase()
-    await run(db.enqueueFleetMessage(message("old", "machine-b", "2099-12-01T00:00:00.000Z")))
-    await run(db.enqueueFleetMessage(message("other", "machine-c")))
-    await run(db.enqueueFleetMessage(message("new", "machine-b")))
+    await queueThroughTurns(db, [
+      message("old", "machine-b", "2099-12-01T00:00:00.000Z"),
+      message("other", "machine-c"),
+      message("new", "machine-b")
+    ])
 
     const cutoff = "2099-12-15T00:00:00.000Z"
     const next = await run(db.nextFleetMessageFor("machine-b", cutoff))

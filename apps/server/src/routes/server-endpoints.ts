@@ -89,16 +89,12 @@ const streamEvents = ({ services, fanout, response, url }: RouteContext): Promis
 
 const writeProxySession = ({ routeState, request, response }: RouteContext): void => {
   if (request.headers.origin !== undefined) throw new HttpFailure(403, "Native clients only")
-  if (routeState.browserProxy === undefined) throw new HttpFailure(501, "Browser proxy unavailable")
-
   response.setHeader("Cache-Control", "no-store")
   writeJson(response, 201, routeState.browserProxy.session)
 }
 
 const writeProxyFailure = ({ routeState, request, response, url }: RouteContext): void => {
   if (request.headers.origin !== undefined) throw new HttpFailure(403, "Native clients only")
-  if (routeState.browserProxy === undefined) throw new HttpFailure(501, "Browser proxy unavailable")
-
   const authority = url.searchParams.get("authority") ?? ""
   response.setHeader("Cache-Control", "no-store")
   writeJson(response, 200, { failure: routeState.browserProxy.failure(authority) ?? null })

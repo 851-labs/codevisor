@@ -19,14 +19,9 @@ export const ATTACHMENT_URL_ORIGIN = "https://attachments.codevisor.invalid/"
 
 const referencePattern = /https:\/\/attachments\.codevisor\.invalid\/([A-Za-z0-9._-]+)/g
 
-export const referencedAttachmentIds = (markdown: string): ReadonlyArray<string> => {
-  const ids: Array<string> = []
-  for (const match of markdown.matchAll(referencePattern)) {
-    const id = match[1]
-    if (id !== undefined && !ids.includes(id)) ids.push(id)
-  }
-  return ids
-}
+const referencedAttachmentIds = (markdown: string): ReadonlyArray<string> => [
+  ...new Set([...markdown.matchAll(referencePattern)].map((match) => match[1]!))
+]
 
 export const promoteAssistantArtifacts = async (
   services: CodevisorServerServices,

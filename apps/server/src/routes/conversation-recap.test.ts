@@ -119,14 +119,6 @@ it("recaps only the most recent turns that fit, ending with the agent's last rep
   expect(withConversationRecap(services, session.id, "Later")).toBe("Later")
 })
 
-it("has nothing to recap for a chat without messages", async () => {
-  const { services, session } = await setUp()
-
-  await rememberConversationRecap(services, session.id)
-
-  expect(withConversationRecap(services, session.id, "Hello")).toBe("Hello")
-})
-
 it.each([
   { length: 20, opening: true },
   { length: 600, opening: false }

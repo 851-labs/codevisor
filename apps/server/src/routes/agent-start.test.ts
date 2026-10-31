@@ -253,7 +253,7 @@ describe("POST /v1/agents", () => {
     })
   })
 
-  it("leaves a shared start's workspace alone when it fails", async () => {
+  it("refuses a start without a project or caller workspace to place it in", async () => {
     const { startAgent } = await startable()
 
     expect((await startAgent({ isolation: "shared" })).status).toBe(422)
@@ -276,7 +276,7 @@ describe("start rollback", () => {
         () => new Promise(() => undefined),
         async () => {
           ran.push("chat")
-          throw new Error("chat stuck")
+          throw "chat stuck"
         }
       ])
 
@@ -289,17 +289,5 @@ describe("start rollback", () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it("names a cleanup failure that isn't an Error", async () => {
-    const error = await rolledBack(new Error("prompt failed"), [() => Promise.reject("reset")])
-
-    expect(String(error)).toContain("also failed: reset")
-  })
-
-  it("returns the original error when cleanup succeeds", async () => {
-    const cause = new Error("prompt failed")
-
-    expect(await rolledBack(cause, [async () => undefined])).toBe(cause)
   })
 })

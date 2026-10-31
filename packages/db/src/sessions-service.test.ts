@@ -49,10 +49,7 @@ describe("@codevisor/db", () => {
       const project = await run(db.createProject({ folderPath: "/tmp/session-config" }))
       session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
 
-      expect(await run(db.getSessionConfigSelections(session.id))).toEqual({})
-      await expect(run(db.getSessionConfigSelections("missing-session"))).rejects.toThrow(
-        "Session not found: missing-session"
-      )
+      expect((await run(db.getSessionSummary(session.id))).configSelections).toBeUndefined()
       await run(
         db.replaceSessionConfigSelections(session.id, {
           model: "gpt-5.6-sol",
@@ -88,7 +85,7 @@ describe("@codevisor/db", () => {
 
     const reopened = await run(makeDatabase({ filename, serverId: "local" }))
     try {
-      expect(await run(reopened.getSessionConfigSelections(session.id))).toEqual({
+      expect((await run(reopened.getSessionSummary(session.id))).configSelections).toEqual({
         model: "gpt-5.6-sol",
         reasoning: "high",
         speed: "standard"
@@ -111,7 +108,7 @@ describe("@codevisor/db", () => {
     }
     const recovered = await run(makeDatabase({ filename, serverId: "local" }))
     try {
-      expect(await run(recovered.getSessionConfigSelections(session.id))).toEqual({})
+      expect((await run(recovered.getSessionSummary(session.id))).configSelections).toBeUndefined()
     } finally {
       await Effect.runPromise(recovered.close)
     }

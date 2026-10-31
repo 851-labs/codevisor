@@ -5,41 +5,6 @@ import { jsonRequest, makeServices, run, runningServers } from "../test-support.
 import { field } from "./response-test-support.js"
 
 describe("cloud routes", () => {
-  it("advertises the cloud device id when the machine is cloud-connected", async () => {
-    const { services } = await makeServices("server-cloud")
-    const server = await run(
-      startCodevisorServer(
-        services,
-        defaultServerConfig({
-          bootId: "test-boot",
-          id: "server-cloud",
-          port: 0,
-          cloudDeviceId: "device-123"
-        })
-      )
-    )
-    runningServers.push(server)
-    expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
-      cloudDeviceId: "device-123"
-    })
-    expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: true })
-    expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({
-      connected: true,
-      deviceId: "device-123"
-    })
-    expect(
-      (
-        await jsonRequest(server, "/v1/cloud/connect", {
-          method: "POST",
-          body: JSON.stringify({ serverUrl: "https://cloud.example", sessionToken: "token" })
-        })
-      ).status
-    ).toBe(501)
-    expect((await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })).status).toBe(501)
-    expect((await jsonRequest(server, "/v1/cloud/unknown", { method: "GET" })).status).toBe(404)
-    expect((await jsonRequest(server, "/v1/unknown", { method: "GET" })).status).toBe(404)
-  })
-
   it("switches the tunnel's direct paths through live cloud control", async () => {
     const { services } = await makeServices("server-cloud-direct-paths")
     const requested: boolean[] = []
@@ -75,7 +40,7 @@ describe("cloud routes", () => {
     expect(requested).toEqual([true, false])
   })
 
-  it("refuses direct path changes without live cloud control", async () => {
+  it("refuses cloud changes without live cloud control", async () => {
     const { services } = await makeServices("server-cloud-no-direct-paths")
     const server = await run(
       startCodevisorServer(
@@ -89,6 +54,17 @@ describe("cloud routes", () => {
       body: JSON.stringify({ allowed: true })
     })
     expect(response.status).toBe(501)
+    expect(
+      (
+        await jsonRequest(server, "/v1/cloud/connect", {
+          method: "POST",
+          body: JSON.stringify({ serverUrl: "https://cloud.example", sessionToken: "token" })
+        })
+      ).status
+    ).toBe(501)
+    expect((await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })).status).toBe(501)
+    expect((await jsonRequest(server, "/v1/cloud/unknown", { method: "GET" })).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/unknown", { method: "GET" })).status).toBe(404)
   })
 
   it("joins an account with a machine invite instead of a session", async () => {

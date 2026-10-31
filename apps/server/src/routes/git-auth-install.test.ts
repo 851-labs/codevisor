@@ -60,7 +60,7 @@ describe("git sign-in without the host's CLI", () => {
     expect(release.downloads()).toBe(1)
   })
 
-  it("fails the sign-in when the download doesn't check out, so it can be tried again", async () => {
+  it("fails the sign-in when the download doesn't check out", async () => {
     const release = await fakeGhRelease(deviceFlowGh, { checksum: "0".repeat(64) })
     const { server } = await startServer(isolatedGitEnv(), release.gitHosts)
 

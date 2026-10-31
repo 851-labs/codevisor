@@ -77,10 +77,17 @@ describe("/v1/sync", () => {
       method: "PUT"
     })
     expect(stale.body).toMatchObject({ entries: [entry("channel", "alpha", 10)] })
+    await jsonRequest(server, "/v1/sync/settings", {
+      body: JSON.stringify({ entries: [entry("theme", "dark", 11)] }),
+      method: "PUT"
+    })
 
-    const events = await readWebSocketEvents(server, 1, 0)
-    expect(field(events[0], "kind")).toBe("sync.changed")
-    expect(field(events[0], "payload")).toMatchObject({ namespace: "settings" })
+    const events = await readWebSocketEvents(server, 2, 0)
+    expect(events.map((event) => field(event, "kind"))).toEqual(["sync.changed", "sync.changed"])
+    expect(events.map((event) => field(event, "payload"))).toEqual([
+      { namespace: "settings", entries: [entry("channel", "alpha", 10)] },
+      { namespace: "settings", entries: [entry("theme", "dark", 11)] }
+    ])
 
     expect((await jsonRequest(server, "/v1/sync/Bad%2FName")).status).toBe(400)
     expect((await jsonRequest(server, "/v1/sync/settings", { method: "POST" })).status).toBe(405)

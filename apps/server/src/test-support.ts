@@ -22,6 +22,8 @@ import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
 import { WebSocket } from "ws"
 
+import { BrowserProxy } from "./infra/browser-proxy.js"
+import { ClientControlBroker } from "./infra/client-control.js"
 import {
   defaultServerConfig,
   EventFanout,
@@ -37,6 +39,8 @@ export * from "./test-support-agents.js"
 export * from "./test-support-stubs.js"
 
 export const idleRouteState = (): RouteState => ({
+  clientControl: new ClientControlBroker(),
+  browserProxy: new BrowserProxy(),
   activePromptSessions: new Set(),
   promptTurnReleases: new Map(),
   activeTurnSessions: new Set(),

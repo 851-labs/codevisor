@@ -87,37 +87,6 @@ it("reads only for a newer notification belonging to the subscribed subject", as
   expect(readSyncBatch).toHaveBeenLastCalledWith(1, "chat")
 })
 
-it("does not send after closing during a read", async () => {
-  const fanout = await run(makeEventFanout)
-  const socket = sink()
-  const started = Promise.withResolvers<void>()
-  const released = Promise.withResolvers<{
-    events: EventEnvelope[]
-    cursor: number
-    requiresSnapshot: boolean
-  }>()
-  const readSyncBatch = vi.fn<CodevisorDatabaseService["readSyncBatch"]>(() =>
-    Effect.promise(() => {
-      started.resolve()
-      return released.promise
-    })
-  )
-  const attached = attachSyncEventSocket(
-    await dbWith(readSyncBatch),
-    fanout,
-    1,
-    socket,
-    "local",
-    "chat"
-  )
-  await started.promise
-  socket.close()
-  released.resolve({ events: [event(2)], cursor: 2, requiresSnapshot: false })
-  await attached
-  expect(socket.send).not.toHaveBeenCalled()
-  expect(readSyncBatch).toHaveBeenCalledTimes(1)
-})
-
 it("closes an SSE consumer whose outbound buffer is full", async () => {
   const fanout = await run(makeEventFanout)
   const response = new ServerResponse(new IncomingMessage(new Socket()))

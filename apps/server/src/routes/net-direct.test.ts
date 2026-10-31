@@ -3,24 +3,30 @@ import { IncomingMessage, ServerResponse } from "node:http"
 import { Socket } from "node:net"
 
 import type { CloudSocket } from "@codevisor/cloud-client"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
 import type { CloudServerControl, CodevisorServerConfig } from "../server-context.js"
 import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers } from "../test-support.js"
 import { adaptDirectSocket, directHosts, routeNetDirect } from "./net-direct.js"
-import { field, itemsOf } from "./response-test-support.js"
 
-const interfaces = () => ({
-  lo0: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
-  en0: [
-    { address: "192.168.1.20", family: "IPv4", internal: false },
-    { address: "fe80::1", family: "IPv6", internal: false }
-  ],
-  awdl0: [{ address: "169.254.7.7", family: "IPv4", internal: false }],
-  utun9: undefined
-})
+const { interfaces } = vi.hoisted(() => ({
+  interfaces: () => ({
+    lo0: [{ address: "127.0.0.1", family: "IPv4", internal: true }],
+    en0: [
+      { address: "192.168.1.20", family: "IPv4", internal: false },
+      { address: "fe80::1", family: "IPv6", internal: false }
+    ],
+    awdl0: [{ address: "169.254.7.7", family: "IPv4", internal: false }],
+    utun9: undefined
+  })
+}))
+
+vi.mock("node:os", async (original) => ({
+  ...(await original<typeof import("node:os")>()),
+  networkInterfaces: interfaces
+}))
 
 const makeConfig = (overrides: Partial<CodevisorServerConfig>): CodevisorServerConfig =>
   defaultServerConfig({
@@ -71,8 +77,7 @@ describe("routeNetDirect", () => {
       new URL("http://x/v1/net/direct")
     )
     expect(handled).toBe(true)
-    expect(body()).toMatchObject({ deviceId: "cloud-1", port: 4931 })
-    expect(itemsOf(field(body(), "hosts")).length).toBeGreaterThanOrEqual(0)
+    expect(body()).toEqual({ deviceId: "cloud-1", port: 4931, hosts: ["192.168.1.20"] })
   })
 
   it("returns no hosts without a cloud identity, and ignores other routes", () => {

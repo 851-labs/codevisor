@@ -83,6 +83,7 @@ describe("project lifecycle routes", () => {
     })
     expect(await archivedStateOf(workspaceId)).toBe(false)
     expect(await paneCount(workspaceId)).toBe(1)
+    expect(existsSync(folder)).toBe(true)
 
     const renamed = await jsonRequest(server, `/v1/workspaces/${workspaceId}`, {
       body: JSON.stringify({ name: "renamed" }),
@@ -90,46 +91,6 @@ describe("project lifecycle routes", () => {
     })
     expect(renamed.status).toBe(200)
     expect(renamed.body).toMatchObject({ name: "renamed", isArchived: false })
-  })
-
-  it("archives a workspace with no worktree without touching the filesystem", async () => {
-    const { server } = await start()
-    const folder = mkdtempSync(join(tmpdir(), "codevisor-plain-archive-"))
-    tempDirs.push(folder)
-    await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: folder, id: "plain-archive-project" }),
-      method: "POST"
-    })
-    await jsonRequest(server, "/v1/workspaces/plain-workspace", {
-      body: JSON.stringify({
-        projectId: "plain-archive-project",
-        name: "plain",
-        hasCustomName: false
-      }),
-      method: "PUT"
-    })
-    await jsonRequest(server, "/v1/sessions", {
-      body: JSON.stringify({
-        projectId: "plain-archive-project",
-        workspaceId: "plain-workspace",
-        harnessId: "test",
-        deferAgentSession: true
-      }),
-      method: "POST"
-    })
-
-    const archived = await jsonRequest(server, "/v1/workspaces/plain-workspace", {
-      body: JSON.stringify({ isArchived: true }),
-      method: "PATCH"
-    })
-    expect(archived.body).toMatchObject({ isArchived: true })
-
-    const restored = await jsonRequest(server, "/v1/workspaces/plain-workspace", {
-      body: JSON.stringify({ isArchived: false }),
-      method: "PATCH"
-    })
-    expect(restored.body).toMatchObject({ isArchived: false })
-    expect(existsSync(folder)).toBe(true)
   })
 
   it("lists and applies a project's configured worktree base branch", async () => {

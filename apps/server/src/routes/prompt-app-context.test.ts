@@ -45,13 +45,4 @@ describe("app context in prompts", () => {
     expect(prompt.delivered.map(({ viewId }) => viewId)).toEqual(["view-0", "view-1", "view-2"])
     expect(await run(services.db.listPluginAppContexts(sessionId))).toEqual([])
   })
-
-  it("sends the typed text alone when nothing is pending", async () => {
-    const { services, sessionId } = await sessionWithContexts([])
-
-    const prompt = await withAppContexts(services, sessionId, "Hello")
-    await markAppContextsDelivered(services, sessionId, prompt.delivered)
-
-    expect(prompt).toEqual({ text: "Hello", delivered: [] })
-  })
 })

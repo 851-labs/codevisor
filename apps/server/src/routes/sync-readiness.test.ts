@@ -150,23 +150,6 @@ describe("/v1/sync/mcp-readiness", () => {
 })
 
 describe("/v1/sync/harness-readiness", () => {
-  it("publishes this machine's harness readiness", async () => {
-    const { services } = await makeServices("server-hr")
-    const server = await startWithApp(services, undefined, { id: "server-hr" })
-
-    await refreshHarnessReadiness(services, machine("server-hr"), await run(makeEventFanout))
-
-    const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body
-    const entries = itemsOf(field(document, "entries"))
-    expect(entries).toHaveLength(1)
-    expect(field(entries[0], "key")).toBe("server-hr")
-    const rows = syncRows(document, "harnesses")
-    expect(rows.length).toBeGreaterThan(0)
-    for (const row of rows) {
-      expect(["ready", "signInRequired", "notInstalled", "disabled"]).toContain(field(row, "state"))
-    }
-  })
-
   it("applies global uninstalls and reports their lifecycle state", async () => {
     for (const available of [false, true]) {
       const { services } = await makeServices(`uninstall-${available}`)

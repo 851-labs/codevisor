@@ -8,7 +8,6 @@ import {
   appendAndPublish,
   defaultServerConfig,
   makeEventFanout,
-  reconcileStaleStreamingTurns,
   startCodevisorServer
 } from "../server.js"
 import {
@@ -21,7 +20,11 @@ import {
   waitFor,
   listSubjectEvents
 } from "../test-support.js"
-import { drainPromptQueue, makeTurnDispatchListener } from "./prompt-queue.js"
+import {
+  drainPromptQueue,
+  makeTurnDispatchListener,
+  reconcileStaleStreamingTurns
+} from "./prompt-queue.js"
 import { field, idOf } from "./response-test-support.js"
 
 describe("streaming turn sweeps and prompt gating", () => {

@@ -20,17 +20,16 @@ const cloudWithoutDirect = {
 
 describe("websocket upgrades for unavailable sockets", () => {
   it.each([
-    ["a direct socket without a cloud identity", "GET", "/v1/direct", true],
-    ["a live preview socket with no session", "GET", "/v1/live-preview/socket", true],
-    ["a live preview socket without MCP", "GET", "/v1/live-preview/socket?sessionId=s1", true],
-    ["a screen sharing socket while screen sharing is off", "GET", VNC_SOCKET_PATH, true],
-    ["a browser host socket without MCP", "GET", "/v1/browser-use/host/socket", true],
-    ["a client socket opened with POST", "POST", "/v1/clients/c1/socket", true],
-    ["a client socket with no client broker", "GET", "/v1/clients/c1/socket", false],
-    ["a session event socket opened with POST", "POST", "/v1/sessions/s1/events/socket", true]
-  ])("drops %s without upgrading it", async (_name, method, url, withBroker) => {
+    ["a direct socket without a cloud identity", "GET", "/v1/direct"],
+    ["a live preview socket with no session", "GET", "/v1/live-preview/socket"],
+    ["a live preview socket without MCP", "GET", "/v1/live-preview/socket?sessionId=s1"],
+    ["a screen sharing socket while screen sharing is off", "GET", VNC_SOCKET_PATH],
+    ["a browser host socket without MCP", "GET", "/v1/browser-use/host/socket"],
+    ["a client socket opened with POST", "POST", "/v1/clients/c1/socket"],
+    ["a session event socket opened with POST", "POST", "/v1/sessions/s1/events/socket"]
+  ])("drops %s without upgrading it", async (_name, method, url) => {
     const { services } = await makeServices("server-a")
-    const { mcp, ...servicesWithoutMcp } = services
+    const { mcp: _mcp, ...servicesWithoutMcp } = services
     const request = Object.assign(new IncomingMessage(new Socket()), { method, url })
     const socket = new Socket()
     const webSocketServer = new WebSocketServer({ noServer: true })
@@ -48,9 +47,8 @@ describe("websocket upgrades for unavailable sockets", () => {
       socket,
       Buffer.alloc(0),
       webSocketServer,
-      withBroker ? new ClientControlBroker() : undefined
+      new ClientControlBroker()
     )
-    expect(mcp).toBeDefined()
     expect(upgrade).not.toHaveBeenCalled()
     expect(socket.destroyed).toBe(true)
   })

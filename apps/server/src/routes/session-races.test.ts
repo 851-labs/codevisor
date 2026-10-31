@@ -110,7 +110,7 @@ it("concurrent deferred picker changes preserve both selections", async () => {
       value: "fast"
     })
   ])
-  expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+  expect((await run(services.db.getSessionSummary(session.id))).configSelections).toEqual({
     model: "model-saved",
     speed: "fast"
   })

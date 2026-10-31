@@ -6,10 +6,9 @@ import { Effect } from "effect"
 
 import { pendingQuestionRows } from "./common-rows.js"
 import { attempt } from "./errors.js"
-import { pendingQuestionFromRaw, sessionConfigSelectionsFromRaw } from "./event-payloads.js"
+import { pendingQuestionFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { serializeLabels, sessionFromRow } from "./row-mappers.js"
-import { rowReader, text } from "./row-reader.js"
 import { sessionRows } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
@@ -64,7 +63,6 @@ export const makeSessionsService = (
   | "getFinishedTurn"
   | "listFinishedTurns"
   | "markTurnAnnounced"
-  | "getSessionConfigSelections"
   | "updateSession"
   | "replaceSessionConfigSelections"
   | "updateSessionTitleFromHarness"
@@ -87,13 +85,6 @@ export const makeSessionsService = (
         pendingQuestionFromRaw(pendingQuestionJson(sqlite, rawId))
       ),
     ...makeSessionAttentionService(sqlite, getSession),
-    getSessionConfigSelections: (rawId) =>
-      attempt("getSessionConfigSelections", () => {
-        const id = canonicalUuid(rawId)
-        const selections = configSelectionsJson(sqlite, id)
-        if (selections === undefined) throw new Error(`Session not found: ${id}`)
-        return sessionConfigSelectionsFromRaw(selections)
-      }),
     updateSession: (rawId, request) =>
       attempt("updateSession", () => {
         const id = canonicalUuid(rawId)
@@ -176,11 +167,6 @@ const pendingQuestionJson = (sqlite: ServiceContext["sqlite"], rawId: string): s
   pendingQuestionRows.maybe(sqlite.prepare(sessionSql.pendingQuestion).get(canonicalUuid(rawId)))
     ?.pending_question ?? null
 
-const configSelectionsJson = (sqlite: ServiceContext["sqlite"], id: string): string | undefined =>
-  configSelectionRows.maybe(sqlite.prepare(configSelectionSql.byId).get(id))?.config_selections
-
-const configSelectionRows = rowReader({ config_selections: text })
-
 export const sessionListSql = (summarySelect: string): string =>
   `${summarySelect} order by coalesce(sessions.updated_at, sessions.created_at) desc`
 
@@ -217,7 +203,6 @@ const sessionSql = {
 }
 
 const configSelectionSql = {
-  byId: "select config_selections from sessions where id = ?",
   replace: "update sessions set config_selections = ? where id = ?",
   replaceWithUnavailable:
     "update sessions set config_selections = ?, unavailable_config_selections = ? where id = ?"

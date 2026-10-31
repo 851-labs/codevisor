@@ -1,11 +1,8 @@
-import { once } from "node:events"
-import { request, createServer } from "node:http"
+import { request } from "node:http"
 
 import { describe, expect, it } from "vitest"
 
-import { handleRequest } from "../server-router.js"
-import { defaultServerConfig, makeEventFanout } from "../server.js"
-import { idleRouteState, jsonRequest, makeServices, run, start } from "../test-support.js"
+import { jsonRequest, start } from "../test-support.js"
 
 const proxyRequest = (port: number, upgrade = false) =>
   new Promise<number>((resolve, reject) => {
@@ -56,41 +53,6 @@ describe("browser proxy session", () => {
       expect(await proxyRequest(server.port, upgrade)).toBe(407)
     }
   )
-
-  it("reports an unavailable proxy in a router without that service", async () => {
-    const { services } = await makeServices()
-    const fanout = await run(makeEventFanout)
-    const state = idleRouteState()
-    const http = createServer((req, res) => {
-      void handleRequest(
-        services,
-        defaultServerConfig({ bootId: "test-boot" }),
-        fanout,
-        state,
-        req,
-        res
-      )
-    })
-    http.listen(0, "127.0.0.1")
-    await once(http, "listening")
-    try {
-      const address = http.address()
-      if (address === null || typeof address === "string") throw new Error("No listener")
-      const response = await fetch(`http://127.0.0.1:${address.port}/v1/browser/proxy-session`, {
-        method: "POST"
-      })
-      expect(response.status).toBe(501)
-      await response.text()
-      const failure = await fetch(
-        `http://127.0.0.1:${address.port}/v1/browser/proxy-failure?authority=example.com:443`
-      )
-      expect(failure.status).toBe(501)
-      await failure.text()
-      expect(await proxyRequest(address.port)).toBe(501)
-    } finally {
-      await new Promise<void>((resolve) => http.close(() => resolve()))
-    }
-  })
 
   it("issues a separate process-scoped credential and refuses website callers", async () => {
     const { server } = await start()

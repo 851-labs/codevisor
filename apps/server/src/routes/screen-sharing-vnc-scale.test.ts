@@ -181,11 +181,22 @@ describe("Xfce desktop scale (851-2339)", () => {
       message: "The desktop's scale couldn't be set"
     })
     const plain = vncScreenSharing({ port: 5901, name: "Desktop" })
-    expect(
-      (await plain({ ...request, operation: "capabilities" })).displays[0]?.scales
-    ).toBeUndefined()
+    expect(await plain({ ...request, operation: "capabilities" })).toEqual({
+      version: 1,
+      status: "available",
+      provider: "vnc",
+      controlLease: true,
+      displays: [{ id: "vnc:5901", name: "Desktop", width: 0, height: 0 }]
+    })
     expect((await plain({ ...request, operation: "setScale", scale: 2 })).status).toBe(
       "unsupported"
     )
+    expect(await plain({ ...request, operation: "stop" })).toEqual({
+      version: 1,
+      status: "unsupported",
+      provider: "vnc",
+      message: "This machine streams its display over the VNC socket",
+      displays: []
+    })
   })
 })

@@ -19,7 +19,6 @@ export type { ToolGatewayConfig } from "./mcp-gateway.js"
 export type { ExecutionJobFinished, ExecutionJobs } from "./mcp-gateway-jobs.js"
 export type { ExecutionTimers } from "./mcp-gateway-execution.js"
 export type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
-export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 export type { McpOAuthClock } from "./mcp-oauth-clock.js"
 
 export const makeMcpManager = (config: McpManagerConfig): McpManager => {

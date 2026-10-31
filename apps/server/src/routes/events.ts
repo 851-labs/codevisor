@@ -52,7 +52,7 @@ export const handleUpgrade = async (
   socket: Socket,
   head: Buffer,
   webSocketServer: WebSocketServer,
-  clientControl?: ClientControlBroker
+  clientControl: ClientControlBroker
 ): Promise<void> => {
   socket.on("error", () => socket.destroy())
   const upgrade: SocketUpgrade = {

@@ -218,32 +218,29 @@ describe("durable shell subscriptions", () => {
     }
   })
 
-  it.each([false, true])(
-    "does not send after closing during a read (has events: %s)",
-    async (hasEvents) => {
-      const f = await shellFixture()
-      const captured = Promise.withResolvers<void>()
-      const release = Promise.withResolvers<EventEnvelope[]>()
-      try {
-        const client = await f.connect()
-        f.listEvents.mockImplementationOnce(() =>
-          Effect.promise(() => {
-            captured.resolve()
-            return release.promise
-          })
-        )
-        const broadcast = run(f.fanout.publish(attention(2, "unread")))
-        await captured.promise
-        client.socket.close()
-        release.resolve(hasEvents ? [attention(2, "unread")] : [])
-        await broadcast
-        await vi.advanceTimersByTimeAsync(25_000)
-        expect(client.frames.map((e) => [e.id, e.kind])).toEqual([[1, "keepalive"]])
-        expect(f.listEvents).toHaveBeenCalledTimes(2)
-      } finally {
-        release.resolve([])
-        f.close()
-      }
+  it("does not send after closing during a read", async () => {
+    const f = await shellFixture()
+    const captured = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<EventEnvelope[]>()
+    try {
+      const client = await f.connect()
+      f.listEvents.mockImplementationOnce(() =>
+        Effect.promise(() => {
+          captured.resolve()
+          return release.promise
+        })
+      )
+      const broadcast = run(f.fanout.publish(attention(2, "unread")))
+      await captured.promise
+      client.socket.close()
+      release.resolve([attention(2, "unread")])
+      await broadcast
+      await vi.advanceTimersByTimeAsync(25_000)
+      expect(client.frames.map((e) => [e.id, e.kind])).toEqual([[1, "keepalive"]])
+      expect(f.listEvents).toHaveBeenCalledTimes(2)
+    } finally {
+      release.resolve([])
+      f.close()
     }
-  )
+  })
 })

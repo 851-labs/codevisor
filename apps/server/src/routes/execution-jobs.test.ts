@@ -131,7 +131,7 @@ describe("background execute jobs", () => {
     expect(event).toContain(`Full output: ${handle.outputPath}`)
   })
 
-  it("cancels a deleted session's jobs without reporting them to anyone", async () => {
+  it("cancels a deleted session's running jobs", async () => {
     const running = await fixture()
     const parent = await createChat(running, "Lead")
     const child = await createChat(running, "Slow helper")

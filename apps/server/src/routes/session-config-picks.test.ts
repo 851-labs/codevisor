@@ -55,7 +55,7 @@ describe("session configuration picks", () => {
         ).status
       ).toBe(202)
     }
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+    expect((await run(services.db.getSessionSummary(session.id))).configSelections).toEqual({
       model: "model-saved",
       reasoning: "high",
       speed: "fast",
@@ -191,7 +191,6 @@ describe("session configuration picks", () => {
     expect(opened.status).toBe(200)
     expect(field(opened.body, "configOptions")).toEqual([])
     expect(agents.configs).toEqual([])
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual(saved)
     expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
       session: { configSelections: saved }
     })
@@ -225,7 +224,7 @@ describe("session configuration picks", () => {
     expect(picked.body).toEqual({ configId: "model", configOptions: [] })
     expect(agents.loads).toEqual([])
     expect(agents.configs).toEqual([])
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+    expect((await run(services.db.getSessionSummary(session.id))).configSelections).toEqual({
       model: "model-saved",
       reasoning: "low"
     })
@@ -268,7 +267,7 @@ describe("session configuration picks", () => {
       model: "model-saved",
       reasoning: "low"
     })
-    expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe(
+    expect((await run(services.db.getSessionSummary(session.id))).configSelections?.model).toBe(
       "model-saved"
     )
 
@@ -276,7 +275,9 @@ describe("session configuration picks", () => {
       body: JSON.stringify({ configId: "model", value: "model-next" }),
       method: "POST"
     })
-    expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe("model-next")
+    expect((await run(services.db.getSessionSummary(session.id))).configSelections?.model).toBe(
+      "model-next"
+    )
   })
 
   it("publishes a pick made with no runtime loaded to every client", async () => {
@@ -370,7 +371,7 @@ describe("session configuration picks", () => {
     expect(picked.status).toBe(202)
     expect(picked.body).toEqual({ configId: "reasoning", configOptions: [] })
     expect(agents.loads).toEqual([])
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+    expect((await run(services.db.getSessionSummary(session.id))).configSelections).toEqual({
       reasoning: "high"
     })
   })
@@ -398,7 +399,7 @@ describe("session configuration picks", () => {
 
     expect(agents.configs).toEqual([])
     expect(configSelectionsFromTestOptions(restored.configOptions).model).toBe("model-default")
-    expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe(
+    expect((await run(services.db.getSessionSummary(session.id))).configSelections?.model).toBe(
       "model-default"
     )
   })
@@ -435,7 +436,7 @@ describe("session configuration picks", () => {
       model: "model-saved",
       reasoning: "high"
     })
-    const saved = await run(services.db.getSessionConfigSelections(session.id))
-    expect(saved.model).toBe("model-saved")
+    const saved = (await run(services.db.getSessionSummary(session.id))).configSelections
+    expect(saved?.model).toBe("model-saved")
   })
 })

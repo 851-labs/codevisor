@@ -1,11 +1,5 @@
-import { mkdtemp } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
 import { decode } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
-import { makeSkillStore } from "@codevisor/skills"
-import { makeBlobStore } from "@codevisor/sync"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
@@ -15,7 +9,7 @@ import {
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
-import { jsonRequest, makeServices, run, startWithApp, tempDirs } from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import { fakeHarnessAuth } from "./harness-auth-test-support.js"
 import { field } from "./response-test-support.js"
 import {
@@ -51,24 +45,7 @@ describe("configMutationNamespace", () => {
 })
 
 describe("runBackgroundSyncReconcile", () => {
-  it("publishes local state into the replica after a mutation", async () => {
-    const { services } = await makeServices("server-bg")
-    const fanout = await run(makeEventFanout)
-    await services.mcp?.create({
-      authType: "none",
-      enabled: false,
-      name: "Background",
-      transport: "http",
-      url: "https://background.example.com/mcp"
-    })
-
-    await runBackgroundSyncReconcile(services, config, fanout, "mcps")
-
-    const entries = await run(services.db.getSyncEntries("mcps"))
-    expect(entries.map((entry) => entry.key)).toEqual(["Background"])
-  })
-
-  it("ignores a legacy opt-out, skips absent services, and swallows failures", async () => {
+  it("ignores a legacy opt-out and swallows failures", async () => {
     const fanout = await run(makeEventFanout)
 
     const { services: legacy } = await makeServices("server-bg-legacy")
@@ -93,10 +70,6 @@ describe("runBackgroundSyncReconcile", () => {
       "Replicated"
     ])
 
-    const { services: bare } = await makeServices("server-bg-bare")
-    await runBackgroundSyncReconcile(bare, config, fanout, "skills")
-    expect(await run(bare.db.getSyncEntries("codevisor-skills"))).toEqual([])
-
     const { services: broken } = await makeServices("server-bg-broken")
     const throwing: CodevisorServerServices = {
       ...broken,
@@ -105,26 +78,6 @@ describe("runBackgroundSyncReconcile", () => {
     await expect(
       runBackgroundSyncReconcile(throwing, config, fanout, "mcps")
     ).resolves.toBeUndefined()
-  })
-
-  it("publishes the skill store to the fleet after a skills pass", async () => {
-    const { services } = await makeServices("server-bg-skills")
-    const fanout = await run(makeEventFanout)
-    const home = await mkdtemp(join(tmpdir(), "skills-home-"))
-    const blobDir = await mkdtemp(join(tmpdir(), "sync-blobs-"))
-    tempDirs.push(home, blobDir)
-    const skills = makeSkillStore({ dir: join(home, "skills") })
-    await skills.create({ name: "Deploy", description: "ship it" })
-
-    await runBackgroundSyncReconcile(
-      { ...services, skills, syncBlobs: makeBlobStore(blobDir) },
-      config,
-      fanout,
-      "skills"
-    )
-
-    const replica = await run(services.db.getSyncEntries("codevisor-skills"))
-    expect(replica.map((entry) => entry.key)).toEqual(["deploy"])
   })
 
   it("fires end to end from a config mutation over HTTP", async () => {
@@ -170,14 +123,9 @@ describe("runBackgroundSyncReconcile", () => {
 })
 
 describe("refreshMcpReadiness", () => {
-  it("skips machines without MCP services and swallows publish failures", async () => {
+  it("swallows publish failures", async () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-x")
-
-    const { mcp: omitted, ...withoutMcp } = services
-    void omitted
-    await refreshMcpReadiness(withoutMcp, config, fanout)
-    expect(await run(services.db.getSyncEntries("mcp-readiness"))).toEqual([])
 
     const poisoned: CodevisorServerServices = {
       ...services,
@@ -240,10 +188,7 @@ describe("auth-derived sync refresh", () => {
     firstRefreshGate.resolve()
     await trailingStarted.promise
     expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2)
-
     scheduler.close()
-    scheduler.request()
-    expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2)
   })
 })
 

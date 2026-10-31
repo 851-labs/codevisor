@@ -28,6 +28,18 @@ const serve = (accepted: string) => {
   return presented
 }
 
+const splitSse = (event: string, at: number) =>
+  new Response(
+    new ReadableStream({
+      start: (controller) => {
+        controller.enqueue(new TextEncoder().encode(event.slice(0, at)))
+        controller.enqueue(new TextEncoder().encode(event.slice(at)))
+        controller.close()
+      }
+    }),
+    { headers: { "content-type": "text/event-stream" } }
+  )
+
 describe("Streamable HTTP responses", () => {
   it("handles each response shape and keeps the session, protocol and custom headers", async () => {
     const responses = [
@@ -44,9 +56,9 @@ describe("Streamable HTTP responses", () => {
       new Response("upstream failed", { status: 500, statusText: "Failure" }),
       new Response("unexpected", { headers: { "content-type": "text/plain" } }),
       new Response("missing content type"),
-      new Response(
+      splitSse(
         `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: 5, result: {} })}\n\n`,
-        { headers: { "content-type": "text/event-stream" } }
+        24
       ),
       new Response(
         `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })}\n\n`,
@@ -108,7 +120,9 @@ describe("Streamable HTTP responses", () => {
     const firstHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
     expect(firstHeaders.get("authorization")).toBe("Bearer access-token")
     expect(firstHeaders.get("mcp-protocol-version")).toBe("2025-11-25")
-    expect(firstHeaders.get("x-workspace")).toBe("emojis")
+    expect(
+      fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("x-workspace"))
+    ).toEqual(fetchMock.mock.calls.map(() => "emojis"))
     expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("mcp-session-id")).toBe(
       "session-1"
     )

@@ -1,80 +1,15 @@
 import { mkdtempSync } from "node:fs"
-import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { NodeStreamableHttpTransport } from "@codevisor/mcp"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { describe, expect, it } from "vitest"
 
 import { start, tempDirs } from "../test-support.js"
 import { gatewayTransport } from "./gateway-test-support.js"
-import { field } from "./response-test-support.js"
 
 describe("mcp routes", () => {
-  it("loads a large SSE tool catalog without opening the optional notification stream", async () => {
-    const receivedHeaders: Array<string | undefined> = []
-    const upstream = createServer(async (request, response) => {
-      const workspace = request.headers["x-workspace"]
-      receivedHeaders.push(Array.isArray(workspace) ? workspace.join(",") : workspace)
-      if (request.method === "GET") {
-        response.writeHead(500)
-        response.end()
-        return
-      }
-      const chunks: Buffer[] = []
-      for await (const chunk of request) chunks.push(Buffer.from(chunk))
-      const message: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"))
-      const method = field(message, "method")
-      if (method === "notifications/initialized") {
-        response.writeHead(202)
-        response.end()
-        return
-      }
-      const result =
-        method === "initialize"
-          ? {
-              protocolVersion: "2025-11-25",
-              capabilities: { tools: { listChanged: true } },
-              serverInfo: { name: "large-catalog", version: "1" }
-            }
-          : {
-              tools: [
-                {
-                  name: "large_tool",
-                  description: "x".repeat(30_000),
-                  inputSchema: { type: "object" }
-                }
-              ]
-            }
-      response.writeHead(200, { "content-type": "text/event-stream" })
-      response.end(
-        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: field(message, "id"), result })}\n\n`
-      )
-    })
-    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
-    const address = upstream.address()
-    if (address === null || typeof address === "string") throw new Error("Missing upstream port")
-    const transport = new NodeStreamableHttpTransport(
-      new URL(`http://127.0.0.1:${address.port}/mcp`),
-      undefined,
-      { "X-Workspace": "emojis" }
-    )
-    const client = new McpClient({ name: "node-transport-test", version: "1" })
-    try {
-      await client.connect(transport)
-      expect((await client.listTools()).tools).toHaveLength(1)
-      expect(receivedHeaders).not.toContain(undefined)
-      expect(receivedHeaders).toContain("emojis")
-    } finally {
-      await client.close()
-      await new Promise<void>((resolve, reject) =>
-        upstream.close((error) => (error === undefined ? resolve() : reject(error)))
-      )
-    }
-  })
-
   it("serves the fixed session-scoped MCP gateway surface", async () => {
     const { server, services } = await start()
     await services.mcp.create({

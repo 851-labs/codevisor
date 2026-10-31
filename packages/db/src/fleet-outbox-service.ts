@@ -32,7 +32,6 @@ export interface FleetPendingTurn {
 }
 
 export interface FleetOutboxService {
-  readonly enqueueFleetMessage: (message: FleetMessage) => Effect.Effect<void, DatabaseError>
   readonly listFleetMessages: Effect.Effect<ReadonlyArray<FleetMessage>, DatabaseError>
   readonly nextFleetMessageFor: (
     machineId: string,
@@ -53,10 +52,6 @@ export const makeFleetOutboxService = (context: ServiceContext): FleetOutboxServ
   const { sqlite } = context
 
   return {
-    enqueueFleetMessage: (message) =>
-      attempt("enqueueFleetMessage", () => {
-        sqlite.prepare(fleetSql.enqueue).run(...messageValues(message))
-      }),
     listFleetMessages: attempt("listFleetMessages", () =>
       fleetMessageRows.all(sqlite.prepare(fleetSql.list).all()).map(messageFromRow)
     ),

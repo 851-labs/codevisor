@@ -88,20 +88,16 @@ const agentStatus = async (
   services: RouteContext["services"],
   session: SessionSummary,
   page: TranscriptPage
-): Promise<AgentStatus> =>
-  agentStatusOf(session, page, await finalAssistantText(services, session.id))
-
-export const agentStatusOf = (
-  session: SessionSummary,
-  page: Pick<TranscriptPage, "pendingQuestion">,
-  lastReply: string
-): AgentStatus => ({
-  agentId: session.id,
-  title: session.title,
-  state: agentState(session, page),
-  ...(lastReply.length === 0 ? {} : { lastReply }),
-  ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
-})
+): Promise<AgentStatus> => {
+  const lastReply = await finalAssistantText(services, session.id)
+  return {
+    agentId: session.id,
+    title: session.title,
+    state: agentState(session, page),
+    ...(lastReply.length === 0 ? {} : { lastReply }),
+    ...(page.pendingQuestion === undefined ? {} : { pendingQuestion: page.pendingQuestion })
+  }
+}
 
 const knownAgent = async (
   db: RouteContext["services"]["db"],

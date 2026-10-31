@@ -10,7 +10,6 @@ import { makeServices, run, tempDirs } from "../test-support.js"
 import { readAgentItem, searchAgentTranscript } from "./agent-debug.js"
 import { agentState } from "./agent-state.js"
 import { pageRecordsNewestFirst } from "./agent-transcript.js"
-import { agentStatusOf } from "./agents.js"
 import { sessionEventSink } from "./session-events.js"
 
 const bigOutput = `${"build log line\n".repeat(6_000)}FAILED: 3 tests`
@@ -278,27 +277,6 @@ describe("agent transcript records", () => {
 
 describe("agent state", () => {
   const idle = { sidebarState: "idle" } as const satisfies Partial<SessionSummary>
-
-  it("reports the last reply and a pending question only when there are some", () => {
-    const question = {
-      sessionUpdate: "question" as const,
-      questionId: "q-1",
-      questions: [{ id: "a", question: "Ship it?", options: [], allowsOther: true }]
-    }
-
-    expect(agentStatusOf(summary(idle), {}, "")).toEqual({
-      agentId: "agent",
-      title: "Agent",
-      state: "idle"
-    })
-    expect(agentStatusOf(summary(idle), { pendingQuestion: question }, "Done.")).toEqual({
-      agentId: "agent",
-      title: "Agent",
-      state: "waitingForUser",
-      lastReply: "Done.",
-      pendingQuestion: question
-    })
-  })
 
   it("reads working only while the turn is in progress", () => {
     expect(agentState(summary(idle), {})).toBe("idle")

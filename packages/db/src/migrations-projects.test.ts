@@ -131,7 +131,7 @@ describe("@codevisor/db project and archive upgrades", () => {
     ])
     expect(detail.promptQueue.map((item) => item.text)).toEqual(["queued"])
     expect(await run(db.getSessionActionResult("sess-1", "action-1"))).toEqual({})
-    expect(await run(db.getSessionConfigSelections("sess-1"))).toEqual({})
+    expect((await run(db.getSessionSummary("sess-1"))).configSelections).toBeUndefined()
 
     const sqlite = new Database(filename)
     try {

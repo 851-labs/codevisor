@@ -41,6 +41,7 @@ describe("VNC control lease (851-2338)", () => {
     arbiter.receive(a.id, JSON.stringify({ type: "request" }))
     arbiter.leave(a.id)
     expect(arbiter.mayControl(a.id)).toBe(false)
+    expect(arbiter.mayResize(b.id)).toBe(true)
     arbiter.receive(b.id, JSON.stringify({ type: "request" }))
     expect(arbiter.mayControl(b.id)).toBe(true)
   })

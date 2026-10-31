@@ -208,9 +208,6 @@ export interface CodevisorDatabaseService
   readonly getFinishedTurn: (id: string) => Effect.Effect<FinishedTurn | undefined, DatabaseError>
   readonly listFinishedTurns: Effect.Effect<ReadonlyArray<FinishedTurn>, DatabaseError>
   readonly markTurnAnnounced: (id: string, revision: number) => Effect.Effect<void, DatabaseError>
-  readonly getSessionConfigSelections: (
-    id: string
-  ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>
   readonly listSessionsRequiringResume: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly getSessionDetail: (id: string) => Effect.Effect<SessionDetail, DatabaseError>
   readonly listOpenAssistantTexts: (

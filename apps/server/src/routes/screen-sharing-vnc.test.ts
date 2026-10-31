@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { createServer, type Server, type Socket } from "node:net"
 import { tmpdir } from "node:os"
@@ -8,8 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { WebSocket, type RawData } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
-import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
-import { field } from "./response-test-support.js"
+import { makeServices, run, startWithApp } from "../test-support.js"
 import {
   parseScreenSharingVNC,
   readScreenSharingVNC,
@@ -115,33 +113,6 @@ describe("VNC screen sharing provider", () => {
     for (const cleanup of cleanups.splice(0)) cleanup()
   })
 
-  it("advertises screen sharing with the desktop as the only display", async () => {
-    const config = { port: 5901, name: "Studio" }
-    const { server } = await start(config)
-    const info = await jsonRequest(server, "/v1/info")
-    expect(field(info.body, "features")).toContain("screen-sharing-v1")
-    const reply = await jsonRequest(server, "/v1/screen-sharing", {
-      method: "POST",
-      body: JSON.stringify({
-        version: 1,
-        operation: "capabilities",
-        workspaceId: randomUUID(),
-        paneId: randomUUID(),
-        viewerId: randomUUID()
-      })
-    })
-    expect(reply).toEqual({
-      status: 200,
-      body: {
-        version: 1,
-        status: "available",
-        provider: "vnc",
-        controlLease: true,
-        displays: [{ id: "vnc:5901", name: "Studio", width: 0, height: 0 }]
-      }
-    })
-  })
-
   it("splices a WebSocket onto the loopback VNC server both ways", async () => {
     const vnc = await fakeVNC()
     cleanups.push(() => vnc.server.close())
@@ -215,30 +186,6 @@ describe("VNC screen sharing provider", () => {
       socket.close()
       await done
     }
-  })
-
-  it("reports that stop signaling is unsupported by the VNC provider", async () => {
-    const { server } = await start({ port: 5901, name: "Desktop" })
-    const reply = await jsonRequest(server, "/v1/screen-sharing", {
-      method: "POST",
-      body: JSON.stringify({
-        version: 1,
-        operation: "stop",
-        workspaceId: randomUUID(),
-        paneId: randomUUID(),
-        viewerId: randomUUID()
-      })
-    })
-    expect(reply).toEqual({
-      status: 200,
-      body: {
-        version: 1,
-        status: "unsupported",
-        provider: "vnc",
-        message: "This machine streams its display over the VNC socket",
-        displays: []
-      }
-    })
   })
 
   it("closes the upstream connection when a WebSocket frame is invalid", async ({

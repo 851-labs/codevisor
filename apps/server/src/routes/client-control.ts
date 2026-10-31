@@ -8,17 +8,16 @@ import {
 } from "@codevisor/api"
 
 import type { ClientControlBroker } from "../infra/client-control.js"
-import { HttpFailure, matchRouteParams, readSchema, writeJson } from "../server-context.js"
+import { matchRouteParams, readSchema, writeJson } from "../server-context.js"
 
 export const routeClientControl = async (
-  broker: ClientControlBroker | undefined,
+  broker: ClientControlBroker,
   machine: { readonly id: string; readonly name: string },
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
   if (!url.pathname.startsWith("/v1/clients")) return false
-  if (!broker) throw new HttpFailure(501, "Client control unavailable")
   if (url.pathname === "/v1/clients" && request.method === "GET") {
     writeJson(response, 200, await broker.describe(machine, url.searchParams.get("originClientId")))
     return true
