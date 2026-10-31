@@ -118,6 +118,26 @@ describe("bots service", () => {
     await expect(run(db.updateBot("missing", { name: "Nope" }))).rejects.toThrow(/Bot not found/)
   })
 
+  it("archives and unarchives a bot without touching its other fields", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    await seedBot(db)
+
+    const archived = await run(db.updateBot("bot-helper", { isArchived: true }))
+
+    expect(archived).toMatchObject({ isArchived: true, name: "Helper", symbolName: "sparkles" })
+    expect(await run(db.getBot("bot-helper"))).toEqual(archived)
+    expect(
+      await run(db.updateBot("bot-helper", { isArchived: true, name: "Reviewer" }))
+    ).toMatchObject({ isArchived: true, name: "Reviewer" })
+    expect((await run(db.updateBot("bot-helper", { symbolName: "ant" }))).isArchived).toBe(true)
+    expect(await run(db.updateBot("bot-helper", { isArchived: false }))).toMatchObject({
+      isArchived: false,
+      name: "Reviewer",
+      symbolName: "ant"
+    })
+  })
+
   it("appends a project after the bot's others and frees one it removes", async () => {
     useWorktreesRoot()
     const db = await openDatabase()

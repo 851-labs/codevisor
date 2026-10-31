@@ -15,7 +15,11 @@ struct HomeSidebarBotRowView: View, Equatable {
 
   private func onOpen() { actions.actions.openBot(bot.bot) }
   private func onEdit() { actions.actions.editBot(bot.bot) }
+  private func onArchive() { actions.actions.archiveBot(bot.bot) }
+  private func onUnarchive() { actions.actions.unarchiveBot(bot.bot) }
   private func onDelete() { actions.actions.deleteBot(bot.bot) }
+
+  private var isArchived: Bool { bot.bot.isArchived }
 
   var body: some View {
     HStack(spacing: 10) {
@@ -36,33 +40,87 @@ struct HomeSidebarBotRowView: View, Equatable {
           .accessibilityHidden(true)
       }
     }
-    .swipeActions(edge: .trailing) {
-      Button(role: .destructive, action: onDelete) {
-        Image(systemName: "trash")
+    .opacity(isArchived ? 0.6 : 1)
+    .swipeActions(edge: .trailing) { swipeButtons }
+    .contextMenu { menu }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(accessibilityLabel)
+    .accessibilityValue(isArchived ? "Archived" : "")
+    .accessibilityActions { accessibilityButtons }
+    .accessibilityIdentifier("sidebar.bot.\(bot.bot.name)")
+  }
+
+  private var offersArchive: Bool { bot.canArchive && !isArchived }
+
+  @ViewBuilder
+  private var swipeButtons: some View {
+    if isArchived {
+      Button(action: onUnarchive) {
+        Image(systemName: "arrow.uturn.backward")
       }
-      .accessibilityLabel("Delete")
+      .tint(.blue)
+      .accessibilityLabel("Unarchive")
+      deleteSwipe
+    } else {
+      if offersArchive {
+        Button(action: onArchive) {
+          Image(systemName: "archivebox")
+        }
+        .tint(.indigo)
+        .accessibilityLabel("Archive")
+      } else {
+        deleteSwipe
+      }
       Button(action: onEdit) {
         Image(systemName: "pencil")
       }
       .tint(.gray)
       .accessibilityLabel("Edit")
     }
-    .contextMenu {
+  }
+
+  @ViewBuilder
+  private var menu: some View {
+    if isArchived {
+      Button(action: onUnarchive) {
+        Label("Unarchive", systemImage: "arrow.uturn.backward")
+      }
+    } else {
       Button(action: onEdit) {
         Label("Edit", systemImage: "pencil")
       }
-      Divider()
+    }
+    Divider()
+    if offersArchive {
+      Button(action: onArchive) {
+        Label("Archive", systemImage: "archivebox")
+      }
+    } else {
       Button(role: .destructive, action: onDelete) {
-        Label("Delete", systemImage: "trash")
+        Label("Delete…", systemImage: "trash")
       }
     }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(accessibilityLabel)
-    .accessibilityActions {
+  }
+
+  @ViewBuilder
+  private var accessibilityButtons: some View {
+    if isArchived {
+      Button("Unarchive", action: onUnarchive)
+    } else {
       Button("Edit", action: onEdit)
+    }
+    if offersArchive {
+      Button("Archive", action: onArchive)
+    } else {
       Button("Delete", action: onDelete)
     }
-    .accessibilityIdentifier("sidebar.bot.\(bot.bot.name)")
+  }
+
+  private var deleteSwipe: some View {
+    Button(role: .destructive, action: onDelete) {
+      Image(systemName: "trash")
+    }
+    .accessibilityLabel("Delete")
   }
 
   private var label: some View {

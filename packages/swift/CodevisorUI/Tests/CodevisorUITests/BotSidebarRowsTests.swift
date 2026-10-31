@@ -5,11 +5,11 @@ import Testing
 @testable import CodevisorUI
 
 struct BotSidebarRowsTests {
-  private func conversation(_ name: String) -> BotConversation {
+  private func conversation(_ name: String, isArchived: Bool = false) -> BotConversation {
     let record = ServerBot(
       id: UUID().uuidString, serverId: "studio", name: name, symbolName: "sparkles", harnessId: "claude-code",
       projectId: UUID().uuidString, sessionId: UUID().uuidString, workspaceId: UUID().uuidString,
-      rootPath: "/bots/\(name)", projects: [], createdAt: "2026-10-27T00:00:00Z")
+      rootPath: "/bots/\(name)", projects: [], isArchived: isArchived, createdAt: "2026-10-27T00:00:00Z")
     return BotConversation(
       bot: Bot(serverId: "studio", record: record)!, session: nil, activity: .idle, isUnread: false)
   }
@@ -69,5 +69,48 @@ struct BotSidebarRowsTests {
     #expect(rows.map(\.id) == [.bot(atlas.id), .section(work.id), .bot(ledger.id)])
     #expect(BotSidebarRows.step(from: atlas.id, by: 1, in: rows)?.id == ledger.id)
     #expect(BotSidebarRows.step(from: ledger.id, by: 1, in: rows) == nil)
+  }
+
+  @Test(
+    "Archived bots leave their sections for a trailing Archived section that shows only the selected bot while collapsed"
+  )
+  func archivedSection() {
+    let (atlas, scout, ledger, patch) = (
+      conversation("Atlas"), conversation("Scout", isArchived: true), conversation("Ledger"),
+      conversation("Patch", isArchived: true)
+    )
+    let work = section("Work", at: "8000000000008")
+    var state = BotSidebarRows.State(
+      conversations: [atlas, scout, ledger, patch], sections: [work],
+      membership: [scout.id: work.id, ledger.id: work.id], selectedBotID: patch.id)
+
+    let collapsed = BotSidebarRows.derive(state)
+    state.isArchivedExpanded = true
+    let expanded = BotSidebarRows.derive(state)
+    state.conversations = [atlas, ledger]
+    let withoutArchived = BotSidebarRows.derive(state)
+
+    #expect(
+      collapsed.map(\.id) == [.bot(atlas.id), .section(work.id), .bot(ledger.id), .archivedSection, .bot(patch.id)])
+    #expect(
+      expanded.map(\.id) == [
+        .bot(atlas.id), .section(work.id), .bot(ledger.id), .archivedSection, .bot(scout.id), .bot(patch.id),
+      ])
+    #expect(BotSidebarRows.step(from: ledger.id, by: 1, in: expanded)?.id == scout.id)
+    #expect(withoutArchived.map(\.id) == [.bot(atlas.id), .section(work.id), .bot(ledger.id)])
+  }
+
+  @Test("Archiving the selected bot hands the selection to the next active bot, or the previous one at the end")
+  func archiveReplacement() {
+    let (atlas, scout, ledger) = (
+      conversation("Atlas"), conversation("Scout"), conversation("Ledger", isArchived: true)
+    )
+    let rows = BotSidebarRows.derive(
+      BotSidebarRows.State(conversations: [atlas, scout, ledger], isArchivedExpanded: true))
+
+    #expect(BotSidebarRows.replacement(forArchiving: atlas.id, in: rows)?.id == scout.id)
+    #expect(BotSidebarRows.replacement(forArchiving: scout.id, in: rows)?.id == atlas.id)
+    #expect(BotSidebarRows.replacement(forArchiving: ledger.id, in: rows) == nil)
+    #expect(BotSidebarRows.replacement(forArchiving: atlas.id, in: Array(rows.prefix(1))) == nil)
   }
 }

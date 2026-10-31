@@ -120,6 +120,7 @@ struct HomeSidebarContent: Equatable {
   var archived: [HomeSidebarWorkspace] = []
   var archivedCount = 0
   var bots: [HomeSidebarBot] = []
+  var archivedBots: [HomeSidebarBot] = []
   var canCreateBots = false
 
   var showsBots: Bool { !bots.isEmpty || canCreateBots }
@@ -132,7 +133,8 @@ struct HomeSidebarContent: Equatable {
 
   var layout: [UUID] {
     bots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) }
-      + listedWorkspaces.flatMap(\.subtree).map(\.id) + archived.map(\.id)
+      + listedWorkspaces.flatMap(\.subtree).map(\.id)
+      + archivedBots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) } + archived.map(\.id)
   }
 
   private var openWorkspaces: [HomeSidebarWorkspace] {

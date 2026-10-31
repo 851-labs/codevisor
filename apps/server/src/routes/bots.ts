@@ -67,9 +67,11 @@ const updateBot = async (
     services.db.updateBot(current.id, {
       name,
       symbolName: payload.symbolName,
-      mode: requestedMode(current, payload)
+      mode: requestedMode(current, payload),
+      isArchived: payload.isArchived
     })
   )
+  if (bot.isArchived && !current.isArchived) await retireBotRuntime(services, routeState, bot)
   if (name !== undefined && name !== current.name) {
     await applySessionUpdate(services, fanout, bot.sessionId, {
       title: name,
@@ -96,6 +98,22 @@ const updateBot = async (
   await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
   writeJson(response, 200, bot)
   return true
+}
+
+const retireBotRuntime = async (
+  services: CodevisorServerServices,
+  routeState: RouteState,
+  bot: Bot
+): Promise<void> => {
+  const workspaces = (await run(services.db.listWorkspaces)).filter(
+    (workspace) => workspace.id === bot.workspaceId
+  )
+  for (const workspace of workspaces) {
+    await retireWorkspaceRuntime(
+      services,
+      await captureWorkspaceRuntime(services, routeState, workspace)
+    )
+  }
 }
 
 const removeBotCheckouts = async (
@@ -125,15 +143,7 @@ const deleteBot = async (
     const archived = await run(services.db.updateWorkspace(child.id, { isArchived: true }))
     await applyWorkspaceArchiveEffects(services, fanout, config, routeState, archived, false)
   }
-  const workspaces = (await run(services.db.listWorkspaces)).filter(
-    (workspace) => workspace.id === bot.workspaceId
-  )
-  for (const workspace of workspaces) {
-    await retireWorkspaceRuntime(
-      services,
-      await captureWorkspaceRuntime(services, routeState, workspace)
-    )
-  }
+  await retireBotRuntime(services, routeState, bot)
   await removeBotCheckouts(services, config.id, bot)
   await run(services.db.deleteBot(bot.id))
   await run(services.db.deleteProject(bot.projectId))

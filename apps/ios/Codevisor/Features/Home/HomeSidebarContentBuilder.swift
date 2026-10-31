@@ -51,7 +51,7 @@ struct HomeSidebarContentBuilder {
         heading: placement.heading)
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
-    content.bots = botEntries.map { entry in
+    let bots = botEntries.map { entry in
       HomeSidebarBot(
         bot: entry.bot,
         status: environment.projectList.session(entry.bot.sessionId, serverId: entry.bot.serverId)
@@ -63,9 +63,12 @@ struct HomeSidebarContentBuilder {
           HomeSidebarContent.nesting(child, children: children) {
             botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
           }
-        }
+        },
+        canArchive: environment.bots.supportsArchive(on: entry.bot.serverId)
       )
     }
+    content.bots = bots.filter { !$0.bot.isArchived }
+    content.archivedBots = bots.filter(\.bot.isArchived)
     return content
   }
 

@@ -6,12 +6,14 @@ struct BotManagementModifier: ViewModifier {
   @Binding var editing: BotEditorTarget?
   @Binding var deleting: Bot?
   var onCreated: (Bot) -> Void = { _ in }
+  var onArchive: (Bot) -> Void = { _ in }
   var onDeleted: (Bot) -> Void = { _ in }
 
   func body(content: Content) -> some View {
     content
       .sheet(item: $editing) { target in
-        BotEditorView(target: target, environment: environment, onCreated: onCreated, onDelete: delete)
+        BotEditorView(
+          target: target, environment: environment, onCreated: onCreated, onArchive: onArchive, onDelete: delete)
       }
       .confirmationDialog(
         "Delete \(deleting?.name ?? "Bot")?",
@@ -42,8 +44,11 @@ extension View {
     editing: Binding<BotEditorTarget?>,
     deleting: Binding<Bot?>,
     onCreated: @escaping (Bot) -> Void = { _ in },
+    onArchive: @escaping (Bot) -> Void = { _ in },
     onDeleted: @escaping (Bot) -> Void = { _ in }
   ) -> some View {
-    modifier(BotManagementModifier(editing: editing, deleting: deleting, onCreated: onCreated, onDeleted: onDeleted))
+    modifier(
+      BotManagementModifier(
+        editing: editing, deleting: deleting, onCreated: onCreated, onArchive: onArchive, onDeleted: onDeleted))
   }
 }

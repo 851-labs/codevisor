@@ -72,6 +72,7 @@ struct FileCommands: Commands {
         Divider()
 
         CloseWindowMenuItem()
+        ArchiveBotMenuItem()
       } else {
         NewChatMenuItem()
         NewProjectMenuItem()
@@ -153,6 +154,15 @@ private struct ArchiveWorkspaceMenuItem: View {
   var body: some View {
     ShortcutButton(.archiveWorkspace) { actions?.archiveWorkspace?() }
       .disabled(actions?.archiveWorkspace == nil)
+  }
+}
+
+private struct ArchiveBotMenuItem: View {
+  @FocusedValue(\.botListActions) private var actions
+
+  var body: some View {
+    ShortcutButton(.archiveWorkspace, title: "Archive Bot") { actions?.archiveBot?() }
+      .disabled(actions?.archiveBot == nil)
   }
 }
 

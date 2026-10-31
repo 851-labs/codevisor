@@ -7,6 +7,7 @@ import { describe, expect, it, onTestFinished } from "vitest"
 
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
 import {
+  rewindArchivedBotsSql,
   rewindBotModesSql,
   rewindMainSessionSql,
   rewindPluginsSql,
@@ -15,6 +16,7 @@ import {
 } from "./test-support.js"
 
 const v73Schema = `
+  ${rewindArchivedBotsSql}
   ${rewindBotModesSql}
   ${rewindPluginsSql}
   ${rewindMainSessionSql}

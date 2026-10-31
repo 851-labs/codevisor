@@ -13,6 +13,13 @@ struct ChatPaneContentView: View {
   let environment: AppEnvironment
   var role = ChatPaneRole.chat
 
+  private var isReadOnly: Bool { role.isReadOnly || isArchivedBot }
+
+  private var isArchivedBot: Bool {
+    guard let sessionId = descriptor.chatSessionId else { return false }
+    return environment.bots.bot(forSession: sessionId, serverId: hostWorkspace.serverId)?.isArchived == true
+  }
+
   var body: some View {
     if let chatSessionId = role.sessionId(of: descriptor) {
       if let chatSession = environment.projectList.session(chatSessionId, serverId: hostWorkspace.serverId),
@@ -48,7 +55,7 @@ struct ChatPaneContentView: View {
               paneID: descriptor.id,
               controller: controller
             ),
-            isReadOnly: role.isReadOnly,
+            isReadOnly: isReadOnly,
             botMode: role.botMode
           )
           .environment(
@@ -65,7 +72,7 @@ struct ChatPaneContentView: View {
           .onChange(of: chatProject) { _, updatedProject in
             store.reconcile(controller, for: chatSession, project: updatedProject)
           }
-          .attachmentDropTarget(role.isReadOnly ? nil : controller)
+          .attachmentDropTarget(isReadOnly ? nil : controller)
         }
       } else {
         VStack(spacing: 12) {

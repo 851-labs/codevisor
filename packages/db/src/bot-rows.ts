@@ -24,6 +24,7 @@ export interface BotRow {
   readonly harness_id: string
   readonly conversational: number
   readonly mode: BotMode
+  readonly archived_at: string | null
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -48,6 +49,7 @@ export const botRows = rowReader<BotRow>({
   harness_id: text,
   conversational: integer,
   mode: literal("transcript", "bubbles", "conversation"),
+  archived_at: nullable(text),
   created_at: text,
   updated_at: nullable(text)
 })
@@ -114,6 +116,7 @@ export interface UpdateBotRecord {
   readonly name?: string | undefined
   readonly symbolName?: string | undefined
   readonly mode?: BotMode | undefined
+  readonly isArchived?: boolean | undefined
 }
 
 export interface BotOwnerQuery {

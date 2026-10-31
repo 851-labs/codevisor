@@ -252,6 +252,11 @@ const v4FixtureSql = `
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `
 
+export const rewindArchivedBotsSql = `
+  alter table bots drop column archived_at;
+  delete from schema_migrations where id = 88;
+`
+
 export const rewindBotModesSql = `
   alter table bots drop column mode;
   delete from schema_migrations where id = 87;

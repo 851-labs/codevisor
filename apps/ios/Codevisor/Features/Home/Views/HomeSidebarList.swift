@@ -25,6 +25,8 @@ struct HomeSidebarActions {
   var openBot: (Bot) -> Void = { _ in }
   var newBot: () -> Void = {}
   var editBot: (Bot) -> Void = { _ in }
+  var archiveBot: (Bot) -> Void = { _ in }
+  var unarchiveBot: (Bot) -> Void = { _ in }
   var deleteBot: (Bot) -> Void = { _ in }
   var didSelectInSplit: () -> Void = {}
   var refresh: () async -> Void = {}
@@ -121,7 +123,7 @@ struct HomeSidebarList: View {
       }
     }
     shown = shown.flatMap(\.subtree)
-    if archivedExpanded { shown += content.archived }
+    if archivedExpanded { shown += content.archivedBots.flatMap(\.children).flatMap(\.subtree) + content.archived }
     return shown.map(\.id)
   }
 
@@ -175,7 +177,7 @@ struct HomeSidebarList: View {
           .foregroundStyle(.tertiary)
       }
     }
-    if content.archivedCount > 0 {
+    if content.archivedCount > 0 || !content.archivedBots.isEmpty {
       archivedSection(content)
     }
   }
@@ -196,6 +198,9 @@ struct HomeSidebarList: View {
 
   private func archivedSection(_ content: HomeSidebarContent) -> some View {
     Section("Archived", isExpanded: animated($archivedExpanded)) {
+      ForEach(content.archivedBots) { bot in
+        botRow(bot)
+      }
       ForEach(content.archived) { workspace in
         HomeSidebarWorkspaceRowView(workspace: workspace, actions: actions, isSelectionRow: isSelectable)
           .equatable()

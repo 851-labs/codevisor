@@ -13,7 +13,9 @@ struct BotConversationChrome: ViewModifier {
   }
 
   private var header: some View {
-    BotConversationHeader(bot: bot, onOpenDetails: actions.map { actions in { actions.editBot(bot) } })
-      .ignoresSafeArea(edges: .top)
+    BotConversationHeader(
+      bot: bot, onOpenDetails: bot.isArchived ? nil : actions.map { actions in { actions.editBot(bot) } }
+    )
+    .ignoresSafeArea(edges: .top)
   }
 }

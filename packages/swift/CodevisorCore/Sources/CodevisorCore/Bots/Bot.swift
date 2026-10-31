@@ -31,5 +31,6 @@ public struct Bot: Identifiable, Hashable, Sendable {
   public var mode: BotMode {
     record.mode.flatMap(BotMode.init(rawValue:)) ?? (record.conversational == true ? .conversation : .transcript)
   }
+  public var isArchived: Bool { record.isArchived == true }
   public var sourceProjectIds: [String] { record.projects.map(\.projectId) }
 }

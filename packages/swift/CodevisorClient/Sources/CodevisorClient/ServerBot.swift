@@ -27,6 +27,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var projects: [ServerBotProject]
   public var conversational: Bool?
   public var mode: String?
+  public var isArchived: Bool?
   public var createdAt: String
   public var updatedAt: String?
 
@@ -43,6 +44,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     projects: [ServerBotProject],
     conversational: Bool? = nil,
     mode: String? = nil,
+    isArchived: Bool? = nil,
     createdAt: String,
     updatedAt: String? = nil
   ) {
@@ -58,6 +60,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     self.projects = projects
     self.conversational = conversational
     self.mode = mode
+    self.isArchived = isArchived
     self.createdAt = createdAt
     self.updatedAt = updatedAt
   }
@@ -107,11 +110,16 @@ public struct ServerUpdateBotRequest: Encodable, Equatable, Sendable {
   public var symbolName: String?
   public var conversational: Bool?
   public var mode: String?
+  public var isArchived: Bool?
 
-  public init(name: String? = nil, symbolName: String? = nil, conversational: Bool? = nil, mode: String? = nil) {
+  public init(
+    name: String? = nil, symbolName: String? = nil, conversational: Bool? = nil, mode: String? = nil,
+    isArchived: Bool? = nil
+  ) {
     self.name = name
     self.symbolName = symbolName
     self.conversational = conversational
     self.mode = mode
+    self.isArchived = isArchived
   }
 }
