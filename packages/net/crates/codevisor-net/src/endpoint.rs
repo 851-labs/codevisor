@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
     Watcher,
-    endpoint::{Connection, Incoming, presets},
+    endpoint::{ConnectOptions, Connection, Incoming, ServerConfig, presets},
     tls::CaTlsConfig,
 };
 use tokio::{
@@ -13,9 +13,11 @@ use tokio::{
 };
 
 use crate::{
+    ALPN_SCREEN,
     config::{NetConfig, PathPolicy},
     media::DatagramRouter,
     message_stream::MessageStream,
+    screen_transport,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -75,6 +77,8 @@ impl CancelToken {
 
 pub struct NetEndpoint {
     endpoint: Endpoint,
+    /// How screen connections are accepted, when the endpoint takes them: with their own transport config.
+    screen_server_config: Option<Arc<ServerConfig>>,
     addr_updates: Mutex<(watch::Receiver<NetAddr>, bool)>,
     addr_task: JoinHandle<()>,
     accepted: Mutex<Option<mpsc::UnboundedReceiver<Result<NetConnection>>>>,
@@ -122,6 +126,10 @@ impl NetEndpoint {
         }
 
         let endpoint = builder.bind().await.context("failed to bind tunnel endpoint")?;
+        let screen_server_config = config.alpns.iter().any(|alpn| alpn == ALPN_SCREEN).then(|| {
+            let builder = endpoint.create_server_config_builder(config.alpns.clone());
+            Arc::new(builder.set_transport_config(screen_transport::transport_config()).build())
+        });
         let mut watcher = endpoint.watch_addr();
         let (sender, receiver) = watch::channel(net_addr(&watcher.get()));
         let addr_task = tokio::spawn(async move {
@@ -133,6 +141,7 @@ impl NetEndpoint {
         });
         Ok(Self {
             endpoint,
+            screen_server_config,
             addr_updates: Mutex::new((receiver, false)),
             addr_task,
             accepted: Mutex::new(None),
@@ -164,12 +173,17 @@ impl NetEndpoint {
             .map_err(|_| anyhow!("no home relay after {timeout:?}"))
     }
 
+    /// Connects on `alpn`; a screen connection ([`ALPN_SCREEN`]) gets [`screen_transport`]'s config.
     pub async fn connect(&self, addr: &NetAddr, alpn: &[u8]) -> Result<NetConnection> {
-        let connection = self
-            .endpoint
-            .connect(endpoint_addr(addr)?, alpn)
-            .await
-            .with_context(|| format!("connecting to {}", addr.endpoint_id))?;
+        let mut options = ConnectOptions::new();
+        if alpn == ALPN_SCREEN {
+            options = options.with_transport_config(screen_transport::transport_config());
+        }
+        let connection = async {
+            let connecting = self.endpoint.connect_with_opts(endpoint_addr(addr)?, alpn, options).await?;
+            anyhow::Ok(connecting.await?)
+        };
+        let connection = connection.await.with_context(|| format!("connecting to {}", addr.endpoint_id))?;
         Ok(NetConnection::new(connection))
     }
 
@@ -189,7 +203,7 @@ impl NetEndpoint {
         let mut accepted = self.accepted.lock().await;
         let receiver = accepted.get_or_insert_with(|| {
             let (sender, receiver) = mpsc::unbounded_channel();
-            let task = tokio::spawn(drive_accepts(self.endpoint.clone(), sender));
+            let task = tokio::spawn(drive_accepts(self.endpoint.clone(), self.screen_server_config.clone(), sender));
             *self.accept_task.lock().expect("accept task lock") = Some(task);
             receiver
         });
@@ -223,7 +237,11 @@ impl Drop for NetEndpoint {
     }
 }
 
-async fn drive_accepts(endpoint: Endpoint, sender: mpsc::UnboundedSender<Result<NetConnection>>) {
+async fn drive_accepts(
+    endpoint: Endpoint,
+    screen_server_config: Option<Arc<ServerConfig>>,
+    sender: mpsc::UnboundedSender<Result<NetConnection>>,
+) {
     let mut handshakes = JoinSet::new();
     loop {
         tokio::select! {
@@ -237,7 +255,7 @@ async fn drive_accepts(endpoint: Endpoint, sender: mpsc::UnboundedSender<Result<
                     }
                     continue;
                 }
-                handshakes.spawn(handshake(incoming));
+                handshakes.spawn(handshake(incoming, screen_server_config.clone()));
             }
             Some(done) = handshakes.join_next(), if !handshakes.is_empty() => {
                 if let Ok(result) = done && sender.send(result).is_err() {
@@ -253,9 +271,20 @@ async fn drive_accepts(endpoint: Endpoint, sender: mpsc::UnboundedSender<Result<
     }
 }
 
-async fn handshake(incoming: Incoming) -> Result<NetConnection> {
-    let connection = incoming.accept().context("refused incoming connection")?.await?;
+async fn handshake(incoming: Incoming, screen_server_config: Option<Arc<ServerConfig>>) -> Result<NetConnection> {
+    let accepting = match screen_server_config {
+        Some(config) if offers_alpn(&incoming, ALPN_SCREEN) => incoming.accept_with(config),
+        _ => incoming.accept(),
+    };
+    let connection = accepting.context("refused incoming connection")?.await?;
     Ok(NetConnection::new(connection))
+}
+
+/// Whether the client's first packet asks for `alpn`, so the transport config can be chosen before the handshake
+/// (it carries the server's transport parameters). Our clients offer one ALPN each.
+fn offers_alpn(incoming: &Incoming, alpn: &[u8]) -> bool {
+    let offered = incoming.decrypt().and_then(|initial| initial.alpns());
+    offered.is_some_and(|mut offered| offered.any(|offered| offered.is_ok_and(|offered| offered == alpn)))
 }
 
 fn iroh_relay_quic_config(port: u16) -> iroh_relay::RelayQuicConfig {
