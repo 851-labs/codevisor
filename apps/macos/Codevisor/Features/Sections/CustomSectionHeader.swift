@@ -13,9 +13,15 @@ struct CustomSectionHeader: View {
     SidebarSectionHeader(title: section.name, isExpanded: isExpanded, onToggle: onToggle)
       .background(SidebarDropHighlight(isActive: isDropTarget))
       .contextMenu {
-        Button("Rename Section…", systemImage: "pencil", action: onRename)
+        Button(action: onRename) {
+          Label("Rename Section…", systemImage: "pencil")
+            .labelStyle(.titleAndIcon)
+        }
         Divider()
-        Button("Delete Section", systemImage: "trash", role: .destructive, action: onDelete)
+        Button(role: .destructive, action: onDelete) {
+          Label("Delete Section", systemImage: "trash")
+            .labelStyle(.titleAndIcon)
+        }
       }
   }
 }

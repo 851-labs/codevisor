@@ -96,7 +96,12 @@ struct SidebarView: View {
 
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
-    Button("New Section…", systemImage: "folder.badge.plus") { sectionPrompt = .create(moving: nil) }
+    Button {
+      sectionPrompt = .create(moving: nil)
+    } label: {
+      Label("New Section…", systemImage: "folder.badge.plus")
+        .labelStyle(.titleAndIcon)
+    }
     Divider()
     Picker(selection: $grouping) {
       ForEach(SidebarGrouping.allCases, id: \.self) { option in
