@@ -212,13 +212,23 @@ describe("routed ingress", () => {
     expect(fixture.fake.requestsOf("codevisor/account/remove")).toMatchObject([
       { accountId: "work" }
     ])
-    expect(cloud.calls).toEqual(["ensure dev.codevisor/gmail work gmail", "remove work-gmail"])
+    expect(cloud.calls).toEqual(["find dev.codevisor/gmail work gmail", "remove work-gmail"])
     expect(webhookRequests(fixture)).toEqual([])
+  })
+
+  it("creates no inbox for a removed account that never had one", async () => {
+    const { fixture, gmail, cloud, ingress } = await gmailFixture()
+
+    await signOutOfPlugin(fixture.fake.connections, ingress, gmail.id, "work")
+
+    expect(cloud.calls).toEqual(["find dev.codevisor/gmail work gmail"])
   })
 
   it("still deletes inboxes when the plugin can't sign out, and ignores unknown plugins", async () => {
     const { fixture, cloud, ingress } = await gmailFixture()
     const grafana = await grafanaFixture()
+    await grafana.ingress.urls(grafana.grafana.id, "work")
+    grafana.cloud.calls.splice(0)
 
     await signOutOfPlugin(
       grafana.fixture.fake.connections,
@@ -229,9 +239,9 @@ describe("routed ingress", () => {
     await signOutOfPlugin(fixture.fake.connections, ingress, "missing", "work")
 
     expect(grafana.cloud.calls).toEqual([
-      "ensure codevisor.grafana work alerts",
+      "find codevisor.grafana work alerts",
       "remove work-alerts",
-      "ensure codevisor.grafana work silences",
+      "find codevisor.grafana work silences",
       "remove work-silences"
     ])
     expect(cloud.calls).toEqual([])

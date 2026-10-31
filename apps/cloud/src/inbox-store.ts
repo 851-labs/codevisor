@@ -41,6 +41,18 @@ export const provisionInbox = async (
   return existing?.results[0]?.id
 }
 
+export const findInbox = async (
+  db: D1Database,
+  userId: string,
+  target: InboxTarget
+): Promise<string | undefined> => {
+  const row = await db
+    .prepare(inboxSql.byTarget)
+    .bind(userId, target.plugin, target.accountId, target.ingress)
+    .first<IdRow>()
+  return row?.id
+}
+
 export const inboxOwner = async (db: D1Database, inboxId: string): Promise<string | undefined> => {
   const row = await db.prepare(inboxSql.owner).bind(inboxId).first<OwnerRow>()
   return row?.user_id

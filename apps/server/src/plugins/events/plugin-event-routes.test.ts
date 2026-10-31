@@ -199,7 +199,7 @@ describe("plugin event accounts", () => {
 
     expect(accounts).toEqual(["account-work", "account-home", "account-work"])
     expect([unknown.status, unknown.body]).toEqual([
-      500,
+      404,
       { error: 'No account "Play". Accounts: Work, Home' }
     ])
   })

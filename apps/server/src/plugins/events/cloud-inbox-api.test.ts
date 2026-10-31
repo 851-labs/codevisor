@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { MachineApiError } from "../../infra/cloud-inbox.js"
 import { cloudInboxApi } from "./cloud-inbox-api.js"
 
 const recordingCloud = (reply: unknown) => {
@@ -18,6 +19,27 @@ describe("cloud inbox api", () => {
 
     expect(await api.ensure(target)).toEqual({ id: "inbox-1", url: "https://in.example/i/1" })
     expect(requests).toEqual([`POST /api/machine/inboxes ${JSON.stringify(target)}`])
+  })
+
+  it("looks an inbox up by its target, and finds none when the cloud has none", async () => {
+    const { api, requests } = recordingCloud({ id: "inbox-1" })
+    const target = { plugin: "dev.codevisor/alerts", accountId: "a&b", ingress: "alerts" }
+    const missing = cloudInboxApi(async () => {
+      throw new MachineApiError(404, '{"error":"unknown inbox"}')
+    })
+    const down = cloudInboxApi(async () => {
+      throw new MachineApiError(503, "unavailable")
+    })
+
+    expect(await api.find(target)).toBe("inbox-1")
+    expect(requests).toEqual([
+      "GET /api/machine/inboxes?plugin=dev.codevisor%2Falerts&accountId=a%26b&ingress=alerts"
+    ])
+    expect(await missing.find(target)).toBeUndefined()
+    await expect(down.find(target)).rejects.toThrow("Cloud request failed (503)")
+    await expect(recordingCloud({}).api.find(target)).rejects.toThrow(
+      "The cloud didn't return an inbox"
+    )
   })
 
   it("subscribes, unsubscribes and deletes an inbox by its encoded id", async () => {

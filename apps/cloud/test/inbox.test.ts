@@ -26,6 +26,11 @@ import { readJson } from "./json-test-support.js"
 const webhookBody = JSON.stringify({ status: "firing", alerts: [{ fingerprint: "abc" }] })
 const base64 = (text: string): string => btoa(text)
 
+const findInbox = (apiKey: string, target: Record<string, string>): Promise<Response> =>
+  SELF.fetch(`${BASE}/api/machine/inboxes?${new URLSearchParams(target).toString()}`, {
+    headers: { "x-api-key": apiKey }
+  })
+
 describe("inbox provisioning", () => {
   it("returns the same inbox for the same plugin, account and ingress", async () => {
     const machine = await machineIdentity(await devLogin())
@@ -57,6 +62,25 @@ describe("inbox provisioning", () => {
     expect(
       (await createInbox(machine.apiKey, { plugin: "p", accountId: "", ingress: "i" })).status
     ).toBe(200)
+  })
+
+  it("finds an account's inbox by its target without ever creating one", async () => {
+    const owner = await machineIdentity(await devLogin())
+    const stranger = await machineIdentity(await signUpUser())
+    const target = { plugin: "grafana", accountId: crypto.randomUUID(), ingress: "alerts" }
+
+    const before = await Promise.all([
+      findInbox(owner.apiKey, target),
+      findInbox(owner.apiKey, target)
+    ])
+    const created = await readJson(await createInbox(owner.apiKey, target), InboxBody)
+    const found = await findInbox(owner.apiKey, target)
+
+    expect(before.map((response) => response.status)).toEqual([404, 404])
+    expect([found.status, await found.json()]).toEqual([200, { id: created.id }])
+    expect((await findInbox(stranger.apiKey, target)).status).toBe(404)
+    expect((await findInbox(owner.apiKey, { plugin: "grafana", accountId: "" })).status).toBe(400)
+    expect((await findInbox("invalid", target)).status).toBe(401)
   })
 
   it("keeps another account's machines away from an inbox", async () => {

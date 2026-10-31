@@ -43,7 +43,7 @@ const wakeThrough = async (fixture: EventsFixture, count: number): Promise<void>
 }
 
 describe("polling plugin events", () => {
-  it("polls from the saved cursor and paces itself by hasMore and nextPollMs", async () => {
+  it("polls from the saved cursor, keeps it through replies without one, and paces itself by hasMore and nextPollMs", async () => {
     const fixture = await eventsFixture()
     const pinger = await pingPlugin(fixture, "Pinger", {
       "events/poll": replies(
@@ -65,7 +65,7 @@ describe("polling plugin events", () => {
 
     const request = { name: "ping", arguments: { channel: "alerts" }, maxEvents: maxPollEvents }
     expect(fixture.fake.requestsOf("events/poll")).toEqual(
-      [null, "c1", "c2", null].map((cursor) => ({
+      [null, "c1", "c2", "c2"].map((cursor) => ({
         serverId: pinger.id,
         method: "events/poll",
         params: { ...request, cursor },
@@ -149,7 +149,7 @@ const streamingPlugin = (fixture: EventsFixture) =>
   })
 
 describe("streaming plugin events", () => {
-  it("ingests streamed events, saves every cursor and reconnects from the last one", async () => {
+  it("ingests streamed events, saves every cursor it's sent and reconnects from the last one", async () => {
     const fixture = await eventsFixture()
     const streamer = await streamingPlugin(fixture)
     await subscribeTo(fixture, streamer.id, { accountId: "work" })
@@ -159,6 +159,7 @@ describe("streaming plugin events", () => {
     stream.send("notifications/events/active", { cursor: "a1", truncated: false })
     stream.send("notifications/events/event", { ...ping("e1"), cursor: "a2" })
     stream.send("notifications/events/heartbeat", { cursor: "a3" })
+    stream.send("notifications/events/heartbeat", { cursor: null })
     stream.send("notifications/events/error", { cursor: "ignored" })
     stream.end()
     await wakeThrough(fixture, 1)

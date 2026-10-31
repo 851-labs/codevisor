@@ -79,8 +79,8 @@ it("explains when the cloud doesn't hand out an inbox", async () => {
 })
 
 it("keeps a routed ingress out of the paste list and deletes an account's inboxes when it's removed", async () => {
-  const { cloud, requests } = fakeCloud((method, path) =>
-    method === "POST" && path === "/api/machine/inboxes"
+  const { cloud, requests } = fakeCloud((_method, path) =>
+    path.split("?")[0] === "/api/machine/inboxes"
       ? { id: "inbox-1", url: "https://in.example/i/1" }
       : {}
   )
@@ -103,7 +103,7 @@ it("keeps a routed ingress out of the paste list and deletes an account's inboxe
 
   expect([listed.status, listed.body]).toEqual([200, { ingress: [] }])
   expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
-    "POST /api/machine/inboxes",
+    `GET /api/machine/inboxes?plugin=${encodeURIComponent(grafanaId)}&accountId=${account.id}&ingress=push`,
     "DELETE /api/machine/inboxes/inbox-1"
   ])
 })

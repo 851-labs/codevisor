@@ -9,7 +9,7 @@ export interface SourceRun {
   readonly connection: EventConnection
   readonly meta: () => Promise<Record<string, unknown>>
   readonly cursor: () => Promise<string | undefined>
-  readonly saveCursor: (cursor: string | undefined) => Promise<void>
+  readonly saveCursor: (cursor: string) => Promise<void>
   readonly ingest: (occurrences: ReadonlyArray<EventOccurrence>) => Promise<number>
 }
 
@@ -29,7 +29,7 @@ export const pollOnce = async (sourceRun: SourceRun): Promise<number> => {
     requestOptions(sourceRun)
   )
   await sourceRun.ingest(occurrencesOf(result.events))
-  await sourceRun.saveCursor(cursorOf(result.cursor))
+  await saveReplyCursor(sourceRun, result.cursor)
   return nextPollDelay(result)
 }
 
@@ -64,7 +64,7 @@ const onStreamMessage = async (
   params: Record<string, unknown>
 ): Promise<void> => {
   if (method === "notifications/events/event") await sourceRun.ingest(occurrencesOf([params]))
-  if (carriesCursor(method)) await sourceRun.saveCursor(cursorOf(params.cursor))
+  if (carriesCursor(method)) await saveReplyCursor(sourceRun, params.cursor)
 }
 
 const streamMeta = (meta: Record<string, unknown>): { _meta?: Record<string, unknown> } =>
@@ -97,8 +97,10 @@ const occurrenceOf = (value: unknown): ReadonlyArray<EventOccurrence> => {
   ]
 }
 
-const cursorOf = (value: unknown): string | undefined =>
-  typeof value === "string" ? value : undefined
+const saveReplyCursor = async (sourceRun: SourceRun, cursor: unknown): Promise<void> => {
+  if (typeof cursor !== "string") return
+  await sourceRun.saveCursor(cursor)
+}
 
 const nextPollDelay = (result: Record<string, unknown>): number => {
   if (result.hasMore === true) return 0

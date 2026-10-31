@@ -38,7 +38,20 @@ describe("a workspace the client opens itself", () => {
     expect((await harness.machines.list())[0]?.workspaceOpenedAt).toBeUndefined()
   })
 
-  it("keeps the machine until the workspace opens, then watches it whatever its id's case", async () => {
+  it("doesn't defer a workspace the client names, even when asked to", async () => {
+    const harness = await sandboxHarness()
+
+    const started = await harness.machines.create({ ...request, defersWorkspace: true })
+    await harness.machines.settled()
+
+    expect(started.defersWorkspace).toBeUndefined()
+    expect(await harness.machines.get("id-1")).toMatchObject({
+      state: "ready",
+      workspaceId: clientWorkspaceId.toLowerCase()
+    })
+  })
+
+  it("keeps the machine until the workspace opens,then watches it whatever its id's case", async () => {
     const harness = await placedForClient()
     await harness.machines.watch()
     expect(harness.provider.machines.size).toBe(1)

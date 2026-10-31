@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { HttpFailure } from "../server-context.js"
 import {
   JOINED_DEVICE,
   JOINED_SERVER,
@@ -100,13 +101,18 @@ describe("starting an agent on a new sandbox", () => {
     }
   )
 
-  it("creates a sandbox for the workspace a request names, by its lowercase id, without deferring it", async () => {
+  it("refuses an agent for a workspace the request names, since the agent starts in its own", async () => {
     const harness = await sandboxHarness({ onCurl: readyHarness("codex") })
 
-    const started = await harness.machines.create({ ...request, workspaceId: "CHAT-WS", agent })
-    await harness.machines.settled()
+    const refused = harness.machines.create({ ...request, workspaceId: "chat-ws", agent })
 
-    expect(started.defersWorkspace).toBeUndefined()
-    expect(started.workspaceId).toBe("chat-ws")
+    await expect(refused).rejects.toEqual(
+      new HttpFailure(
+        400,
+        "Pass workspaceId or agent, not both: the agent starts in a new workspace of its own"
+      )
+    )
+    expect(await harness.machines.list()).toEqual([])
+    expect(harness.provider.machines.size).toBe(0)
   })
 })

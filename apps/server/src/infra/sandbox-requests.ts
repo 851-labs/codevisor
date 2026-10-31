@@ -11,6 +11,14 @@ export const harnessOf = (request: CreateSandboxRequest): { readonly harnessId?:
   return harnessId === undefined ? {} : { harnessId }
 }
 
+export const requireOneWorkspace = (request: CreateSandboxRequest): void => {
+  if (request.workspaceId === undefined || request.agent === undefined) return
+  throw new HttpFailure(
+    400,
+    "Pass workspaceId or agent, not both: the agent starts in a new workspace of its own"
+  )
+}
+
 export const retryRequest = (failed: Sandbox): CreateSandboxRequest => {
   if (failed.state !== "failed") throw new HttpFailure(409, `${failed.name} hasn't failed`)
   if (failed.profileId === undefined) {

@@ -1,7 +1,7 @@
 import type { McpManager } from "@codevisor/mcp"
 
 import type { SessionEventOutbox } from "../../routes/session-event-outbox.js"
-import { swallowError, type CodevisorServerServices } from "../../server-context.js"
+import { HttpFailure, swallowError, type CodevisorServerServices } from "../../server-context.js"
 import { pluginKeyOf } from "../accounts/plugin-accounts.js"
 import type { PluginPlatform } from "../plugin-platform.js"
 import { cloudInboxApi } from "./cloud-inbox-api.js"
@@ -119,7 +119,8 @@ const choiceMatching = (
     (choice) => choice.id === requested || choice.label.toLowerCase() === wanted
   )
   if (match === undefined)
-    throw new Error(
+    throw new HttpFailure(
+      404,
       `No account "${requested}". Accounts: ${choices.map((choice) => choice.label).join(", ")}`
     )
   return match.id

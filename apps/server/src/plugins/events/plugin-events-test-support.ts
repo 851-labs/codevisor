@@ -293,12 +293,19 @@ export const ping = (eventId: string, data: Record<string, unknown> = {}) => ({
 
 export const fakeInboxes = () => {
   const calls: Array<string> = []
+  const provisioned = new Set<string>()
   let unsubscribeFails = false
   const inboxes: CloudInboxApi = {
     ensure: async (target) => {
       calls.push(`ensure ${target.plugin} ${target.accountId} ${target.ingress}`)
       const id = `${target.accountId}-${target.ingress}`
+      provisioned.add(id)
       return { id, url: `https://inbox.example/i/${id}` }
+    },
+    find: async (target) => {
+      calls.push(`find ${target.plugin} ${target.accountId} ${target.ingress}`)
+      const id = `${target.accountId}-${target.ingress}`
+      return provisioned.has(id) ? id : undefined
     },
     subscribe: async (inboxId) => {
       calls.push(`subscribe ${inboxId}`)
@@ -314,6 +321,7 @@ export const fakeInboxes = () => {
     },
     remove: async (inboxId) => {
       calls.push(`remove ${inboxId}`)
+      provisioned.delete(inboxId)
     }
   }
   return {

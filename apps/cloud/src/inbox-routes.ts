@@ -5,6 +5,7 @@ import { z } from "zod"
 import { inboxRouteConfig } from "./inbox-route-configs.js"
 import {
   deleteInbox,
+  findInbox,
   hooksBaseUrl,
   INBOXES_OFF,
   inboxUrl,
@@ -32,6 +33,17 @@ inboxRoutes.post("/api/machine/inboxes", bodyLimit({ maxSize: 8_192 }), async (c
 
   c.header("Cache-Control", "no-store")
   return c.json({ id, url: inboxUrl(hooksBase, id) })
+})
+
+inboxRoutes.get("/api/machine/inboxes", async (c) => {
+  const target = InboxTargetBody.safeParse(c.req.query())
+  if (!target.success) return c.json({ error: "invalid inbox" }, 400)
+
+  const id = await findInbox(c.env.DB, c.var.machine.userId, target.data)
+  if (id === undefined) return c.json(unknownInbox, 404)
+
+  c.header("Cache-Control", "no-store")
+  return c.json({ id })
 })
 
 inboxRoutes.put("/api/machine/inboxes/:id/devices/self", async (c) => {

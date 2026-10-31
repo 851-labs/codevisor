@@ -14,6 +14,7 @@ export interface IngressUrl {
 
 export interface CloudInboxApi {
   readonly ensure: (target: InboxTarget) => Promise<{ readonly id: string; readonly url: string }>
+  readonly find: (target: InboxTarget) => Promise<string | undefined>
   readonly subscribe: (inboxId: string) => Promise<void>
   readonly unsubscribe: (inboxId: string) => Promise<void>
   readonly route: (inboxId: string, route: string, key: string) => Promise<RouteConfig>
@@ -122,10 +123,12 @@ export const makePluginEventIngress = (deps: PluginEventIngressDeps): PluginEven
       const server = await serverNamed(serverId)
       if (server === undefined) return
       for (const ingress of declaredIngress(server)) {
-        const inbox = await deps.inboxes.ensure(inboxTarget(deps, server, accountId, ingress))
-        routes.delete(inbox.id)
-        subscribed.delete(inbox.id)
-        await deps.inboxes.remove(inbox.id)
+        const inboxId = await deps.inboxes.find(inboxTarget(deps, server, accountId, ingress))
+        if (inboxId === undefined) continue
+
+        routes.delete(inboxId)
+        subscribed.delete(inboxId)
+        await deps.inboxes.remove(inboxId)
       }
     },
     deliver: async (request) => {

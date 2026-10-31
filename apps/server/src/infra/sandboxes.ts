@@ -41,6 +41,7 @@ import { sandboxRemote, type SandboxRemote } from "./sandbox-remote.js"
 import {
   harnessOf,
   newRecord,
+  requireOneWorkspace,
   restoredFields,
   restoreRequest,
   retryRequest
@@ -164,6 +165,7 @@ export const makeSandboxes = (deps: SandboxDeps): Sandboxes => {
     publish?: SandboxSetupPublisher,
     restoring: Partial<Sandbox> = {}
   ): Promise<Sandbox> => {
+    requireOneWorkspace(request)
     requireOwner(deps)
     const profile = await profileOrMissing(deps, request.profileId)
     const provider = await deps.connections.connect(connectionOf(profile))
