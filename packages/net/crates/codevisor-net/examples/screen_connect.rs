@@ -85,12 +85,16 @@ async fn listen(args: &[String]) -> Result<()> {
         println!("\nconnection from {}", connection.remote_id());
         tokio::spawn(async move {
             let Ok(stream) = connection.accept_message_stream().await else { return };
+            let mut echoed = 0;
             while let Ok(Some(message)) = stream.recv().await {
                 if stream.send(message.kind, &message.payload).await.is_err() {
                     return;
                 }
+                echoed += 1;
+                if echoed == 10 {
+                    println!("{}", describe(&connection));
+                }
             }
-            println!("{}", describe(&connection));
         });
     }
     Ok(())
@@ -108,8 +112,9 @@ async fn dial(args: &[String]) -> Result<()> {
     println!("connected in {:.0} ms", started.elapsed().as_secs_f64() * 1000.0);
     let stream = connection.open_message_stream().await?;
     let seconds: f64 = flag(args, "--seconds").unwrap_or("5").parse()?;
+    let pinging = Instant::now();
     let mut pings = Vec::new();
-    while started.elapsed().as_secs_f64() < seconds {
+    while pinging.elapsed().as_secs_f64() < seconds {
         let sent = Instant::now();
         stream.send(MessageKind::Binary, b"ping").await?;
         stream.recv().await?.ok_or_else(|| anyhow!("listener closed the stream"))?;

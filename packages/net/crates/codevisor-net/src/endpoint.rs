@@ -5,7 +5,7 @@ use bytes::Bytes;
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
     Watcher,
-    endpoint::{Connection, ConnectOptions, Incoming, SendDatagramError, ServerConfig, presets},
+    endpoint::{Connection, ConnectOptions, Incoming, QuicTransportConfig, SendDatagramError, ServerConfig, presets},
     tls::CaTlsConfig,
 };
 use tokio::{
@@ -85,6 +85,7 @@ impl CancelToken {
 
 pub struct NetEndpoint {
     endpoint: Endpoint,
+    screen_transport: QuicTransportConfig,
     /// How screen connections are accepted, when the endpoint takes them: with their own transport config.
     screen_server_config: Option<Arc<ServerConfig>>,
     addr_updates: Mutex<(watch::Receiver<NetAddr>, bool)>,
@@ -134,9 +135,11 @@ impl NetEndpoint {
         }
 
         let endpoint = builder.bind().await.context("failed to bind tunnel endpoint")?;
+        let screen_transport = screen_transport::transport_config();
+        // Offering only the screen ALPN, so a connection accepted with this config always negotiates it.
         let screen_server_config = config.alpns.iter().any(|alpn| alpn == ALPN_SCREEN).then(|| {
-            let builder = endpoint.create_server_config_builder(config.alpns.clone());
-            Arc::new(builder.set_transport_config(screen_transport::transport_config()).build())
+            let builder = endpoint.create_server_config_builder(vec![ALPN_SCREEN.to_vec()]);
+            Arc::new(builder.set_transport_config(screen_transport.clone()).build())
         });
         let mut watcher = endpoint.watch_addr();
         let (sender, receiver) = watch::channel(net_addr(&watcher.get()));
@@ -149,6 +152,7 @@ impl NetEndpoint {
         });
         Ok(Self {
             endpoint,
+            screen_transport,
             screen_server_config,
             addr_updates: Mutex::new((receiver, false)),
             addr_task,
@@ -185,7 +189,7 @@ impl NetEndpoint {
     pub async fn connect(&self, addr: &NetAddr, alpn: &[u8]) -> Result<NetConnection> {
         let mut options = ConnectOptions::new();
         if alpn == ALPN_SCREEN {
-            options = options.with_transport_config(screen_transport::transport_config());
+            options = options.with_transport_config(self.screen_transport.clone());
         }
         let connection = async {
             let connecting = self.endpoint.connect_with_opts(endpoint_addr(addr)?, alpn, options).await?;
@@ -280,11 +284,15 @@ async fn drive_accepts(
 }
 
 async fn handshake(incoming: Incoming, screen_server_config: Option<Arc<ServerConfig>>) -> Result<NetConnection> {
+    let tuned = screen_server_config.is_some() && offers_alpn(&incoming, ALPN_SCREEN);
     let accepting = match screen_server_config {
-        Some(config) if offers_alpn(&incoming, ALPN_SCREEN) => incoming.accept_with(config),
+        Some(config) if tuned => incoming.accept_with(config),
         _ => incoming.accept(),
     };
     let connection = accepting.context("refused incoming connection")?.await?;
+    if !tuned && connection.alpn() == ALPN_SCREEN {
+        tracing::warn!("accepted a screen connection on the default transport: its ALPN wasn't readable up front");
+    }
     Ok(NetConnection::new(connection))
 }
 

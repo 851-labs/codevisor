@@ -112,15 +112,13 @@ public actor CloudTunnelEndpoint {
   public func endpoint() async -> NetEndpointHandle? {
     if config == nil { await waitForFirstConfig() }
     guard config?.enabled == true else { return nil }
-    return await currentEndpoint()
+    let handle = await currentEndpoint()
+    return config?.enabled == true ? handle : nil
   }
 
   public func screenSharingEndpoint() async -> NetEndpointHandle? {
     if config == nil { await waitForFirstConfig() }
-    if !screenSharingBindsWithoutCloud {
-      screenSharingBindsWithoutCloud = true
-      if config?.enabled != true { replaceBinding(with: .directOnly) }
-    }
+    screenSharingBindsWithoutCloud = true
     return await currentEndpoint()
   }
 
