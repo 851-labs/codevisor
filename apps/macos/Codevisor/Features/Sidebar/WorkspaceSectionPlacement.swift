@@ -18,6 +18,15 @@ enum WorkspaceSectionPlacement: Hashable {
     }
   }
 
+  init?(_ row: SidebarRow, membership: [UUID: UUID]) {
+    guard row.parentID == nil, case let .workspace(item, .pinned) = row.kind else {
+      self.init(row)
+      return
+    }
+
+    self = membership[item.id].map(Self.section) ?? .unsectioned
+  }
+
   var sectionID: UUID? {
     switch self {
     case let .section(id): id
