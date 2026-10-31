@@ -193,6 +193,7 @@ final public class SessionController {
   public var hostWorkspaceId: UUID?
   var serverClient: (any CodevisorServerClienting)?
   @ObservationIgnored weak var machines: MachineController?
+  @ObservationIgnored public internal(set) weak var fileSource: SessionController?
   let notificationDelivery: (any ChatNotificationDelivering)?
   var hasSentFirst = false
   var connectedHarnessId: String?

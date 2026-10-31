@@ -24,7 +24,7 @@ struct SessionRouteView: View {
         let workspace = entry?.workspace ?? store.workspace(for: session, project: project)
         let controller = store.controller(for: session, project: project)
         SessionContainerView(
-          mount: .chat(session, controller, workspace),
+          mount: .chat(session, workspace),
           project: project,
           store: store,
           onFocusedChatChanged: onFocusedChatChanged

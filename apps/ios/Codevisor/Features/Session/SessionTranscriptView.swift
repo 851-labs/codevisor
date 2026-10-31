@@ -59,7 +59,6 @@ struct SessionTranscriptView: View {
   @State var keyboardAvoidingChatHeight: CGFloat = 0
   @State var keyboardInset = ChatKeyboardInset()
   @State var composerExpanded = false
-  @State var attachmentImages: AttachmentImageStore?
   @State var quickLook = QuickLookController()
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
@@ -103,11 +102,7 @@ struct SessionTranscriptView: View {
       .onAppear { [controller] in
         followsLatest = controller.scrollState?.followMode.followsLatest ?? true
         isAtBottom = controller.scrollState?.isAtBottom ?? true
-        installAttachmentImageStoreIfNeeded()
         updateVisibleTranscriptLifecycle(for: presentationRole)
-      }
-      .onChange(of: controller.previewCacheNamespace) {
-        installAttachmentImageStoreIfNeeded()
       }
       .onChange(of: presentationRole) { _, role in
         IOSNavigationDiagnostics.record(
@@ -189,33 +184,7 @@ struct SessionTranscriptView: View {
         && !controller.hasUnsentBotMessages)
   }
 
-  func installAttachmentImageStoreIfNeeded() {
-    let namespace = controller.previewCacheNamespace
-    guard attachmentImages?.namespace != namespace else { return }
-    attachmentImages = AttachmentImageStore(
-      namespace: namespace,
-      fetch: { [weak controller] source in
-        guard let controller else {
-          throw SessionControllerError.serverUnavailable
-        }
-        return try await controller.fileData(for: source)
-      },
-      fetchPreview: { [weak controller] source in
-        guard let controller else { throw SessionControllerError.serverUnavailable }
-        return try await controller.filePreview(for: source)
-      },
-      fetchPrefix: { [weak controller] source, length in
-        guard let controller else { throw SessionControllerError.serverUnavailable }
-        return try await controller.filePrefix(for: source, length: length)
-      },
-      version: { [weak controller] source in
-        guard let controller else {
-          throw SessionControllerError.serverUnavailable
-        }
-        return try await controller.fileVersion(for: source)
-      }
-    )
-  }
+  var attachmentImages: AttachmentImageStore { SessionAttachmentImages.store(for: controller) }
 
   func updateVisibleTranscriptLifecycle(for role: TranscriptPresentationRole) {
     let shouldOwnLifecycle = role == .foreground

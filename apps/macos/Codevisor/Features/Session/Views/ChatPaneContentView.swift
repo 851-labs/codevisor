@@ -66,7 +66,6 @@ struct ChatPaneContentView: View {
             store.reconcile(controller, for: chatSession, project: updatedProject)
           }
           .attachmentDropTarget(role.isReadOnly ? nil : controller)
-          .attachmentImageStore(role == .fullTranscript ? controller : nil)
         }
       } else {
         VStack(spacing: 12) {

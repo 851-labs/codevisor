@@ -4,7 +4,6 @@ import ACPKit
 import CodevisorUI
 
 struct SessionScreen: View {
-  var controller: SessionController?
   var centerGroup: PaneGroupModel
   var focus: TerminalFocusController = TerminalFocusController()
   var onWorkspaceCommand: ((PaneGroupCommand) -> Bool)?
@@ -40,7 +39,6 @@ struct SessionScreen: View {
         focus.stopTypeToFocus()
         splitDragCoordinator?.dragCancelled()
       }
-      .attachmentImageStore(controller)
   }
 
   private var centerContent: some View {
@@ -73,7 +71,6 @@ struct SessionScreen: View {
 #if DEBUG
   #Preview("Conversation") {
     SessionScreen(
-      controller: .preview(model: .preview()),
       centerGroup: previewPaneGroup(),
     )
     .frame(width: 900, height: 680)

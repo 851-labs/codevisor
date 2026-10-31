@@ -13,7 +13,6 @@ struct ChatScreen: View {
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openSettings) var openSettings
-  @Environment(\.attachmentImages) var attachmentImages
   @Environment(\.quickLook) var quickLook
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.openSubagent) var openSubagent
@@ -84,6 +83,8 @@ struct ChatScreen: View {
     _isInitialTranscriptReady = State(initialValue: isWarm)
   }
 
+  var attachmentImages: AttachmentImageStore { SessionAttachmentImages.store(for: controller) }
+
   var body: some View {
     transcriptSurface
       .onChange(of: controller.userSendSignal) { _, _ in
@@ -103,6 +104,7 @@ struct ChatScreen: View {
         SetupRequestSheet(request: request, controller: controller)
       }
       .modifier(ProjectCloneSheetPresenter(controller: controller))
+      .environment(\.attachmentImages, attachmentImages)
       .pointerStyle(.default)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: earlierHistoryCollapse)

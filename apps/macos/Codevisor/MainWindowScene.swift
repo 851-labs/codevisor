@@ -14,14 +14,13 @@ struct MainWindowScene: Scene {
       if let environment = runtime.environment {
         RootView()
           .frame(minWidth: 480, minHeight: 600)
-          .themedRoot()
           .modifier(DebugMetricsOverlayModifier())
           .overlay {
             if let setup = runtime.firstLaunchSetup, let landing = runtime.firstLaunchLanding {
               FirstLaunchSetupOverlay(setup: setup, landing: landing)
             }
           }
-          .environment(environment)
+          .appWindowRoot(environment)
           .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
       } else if let startupError = runtime.startupError {
         ClientDataStartupFailureView(

@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct ComposerAttachmentRow: View {
@@ -16,5 +17,6 @@ struct ComposerAttachmentRow: View {
         }
       }
     }
+    .environment(\.attachmentImages, SessionAttachmentImages.store(for: controller))
   }
 }

@@ -73,7 +73,6 @@ final class BotTranscriptWindows {
         )
       }
     }
-    .environment(environment)
-    .themedRoot()
+    .appWindowRoot(environment)
   }
 }

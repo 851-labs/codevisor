@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 import CodevisorCoreMac
-import QuickLook
 import CodevisorUI
 
 struct CodevisorApp: App {
@@ -49,7 +48,6 @@ struct RootView: View {
   @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
-  @State private var quickLook = QuickLookController.withAlerts()
   @State var panelLayout = AdaptivePanelLayout()
   @State private var commandPalette = CommandPalette()
 
@@ -64,14 +62,7 @@ struct RootView: View {
       )
       .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
       .background(TransparentTitlebar(isTransparent: showsBotConversation).frame(width: 0, height: 0))
-      .environment(\.quickLook, quickLook)
       .environment(\.openChat, OpenChatAction { await openChat($0) })
-      .quickLookPreview(
-        Binding(
-          get: { quickLook.previewURL },
-          set: { quickLook.updatePreviewURL($0) }
-        )
-      )
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
       .overlay { ErrorBannerLayer() }
       .overlay { CommandPaletteOverlay(palette: commandPalette, store: store) }

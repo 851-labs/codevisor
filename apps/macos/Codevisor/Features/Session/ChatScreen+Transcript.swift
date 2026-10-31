@@ -134,7 +134,7 @@ extension ChatScreen {
               onNearTop: {
                 requestOlderHistoryLoad()
               },
-              markdownImageLoader: attachmentImages?.markdownImageLoader,
+              markdownImageLoader: attachmentImages.markdownImageLoader,
               openMarkdownLink: { url in
                 TranscriptMarkdownLinkOpener.open(
                   url, quickLook: quickLook, attachmentImages: attachmentImages,

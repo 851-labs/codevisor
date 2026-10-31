@@ -5,7 +5,7 @@ import SimulatorPane
 
 struct SessionContainerView: View {
   enum Mount {
-    case chat(ChatSession, SessionController, Workspace)
+    case chat(ChatSession, Workspace)
     case workspace(Workspace)
   }
 
@@ -14,11 +14,7 @@ struct SessionContainerView: View {
   let store: SessionStore
 
   var session: ChatSession? {
-    if case let .chat(session, _, _) = mount { return session }
-    return nil
-  }
-  var controller: SessionController? {
-    if case let .chat(_, controller, _) = mount { return controller }
+    if case let .chat(session, _) = mount { return session }
     return nil
   }
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
@@ -42,14 +38,14 @@ struct SessionContainerView: View {
 
   var mountIdentity: UUID {
     switch mount {
-    case let .chat(session, _, _): return session.id
+    case let .chat(session, _): return session.id
     case let .workspace(snapshot): return snapshot.id
     }
   }
 
   var mountedWorkspace: Workspace {
     switch mount {
-    case let .chat(_, _, workspace), let .workspace(workspace): workspace
+    case let .chat(_, workspace), let .workspace(workspace): workspace
     }
   }
 
@@ -204,7 +200,6 @@ struct SessionContainerView: View {
         )
       }
       SessionScreen(
-        controller: controller,
         centerGroup: chatLeaf.map { configuredCenterModel(leafId: $0.id) } ?? activeCenterModel(in: workspace),
         focus: sessionFocus,
         onWorkspaceCommand: handleWorkspaceCommand,

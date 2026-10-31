@@ -47,6 +47,7 @@ public final class SubagentMirror {
     self.now = now
     controller = SessionController(
       project: parent.project, configCache: parent.configCache, serverClient: parent.serverClient)
+    controller.fileSource = parent
     controller.selectedHarnessId = parent.serverSession?.harnessId ?? parent.activeHarnessId
   }
 
