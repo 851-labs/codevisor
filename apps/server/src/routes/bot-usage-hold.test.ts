@@ -74,7 +74,7 @@ const startLimitedBot = async () => {
   await waitFor(
     async () => (await run(running.services.db.getAutoResume(bot.sessionId)))?.state === "waiting"
   )
-  return { running, sessionId: bot.sessionId, agentSessionId }
+  return { running, botId: bot.id, sessionId: bot.sessionId, agentSessionId }
 }
 
 const stopAtLimit = (running: Running, agentSessionId: string, stopDetail: string) =>
@@ -159,6 +159,24 @@ describe("bots stopped at a usage limit", () => {
         `^${[wakeUpEvent("agent-a"), wakeUpEvent("agent-b"), wakeUpEvent("agent-c"), ""].join("\n\n")}<codevisor-event type="session.usage_limit_reset"`
       )
     )
+  })
+
+  it("keeps wake-ups held when the bot leaves conversation mode, until the limit resets", async () => {
+    const { running, botId, sessionId } = await startLimitedBot()
+    await wakeUp(running, sessionId, "agent-a", 1)
+
+    await jsonRequest(running.server, `/v1/bots/${botId}`, {
+      body: JSON.stringify({ mode: "transcript" }),
+      method: "PATCH"
+    })
+    await waitFor(() => heldQueueLengths(running, sessionId).includes(2))
+    expect(promptTexts(running)).toHaveLength(1)
+    await running.switchAccount("work")
+
+    await waitFor(() => queueDrained(running, sessionId))
+    expect(promptTexts(running)).toHaveLength(2)
+    expect(promptTexts(running)[1]).toContain(wakeUpEvent("agent-a"))
+    expect(promptTexts(running)[1]).toContain("turned off conversation mode")
   })
 
   it("delivers held wake-ups when the user declines the auto-resume", async () => {

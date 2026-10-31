@@ -116,7 +116,7 @@ enum TranscriptBotRowAssembly {
       content: .botMessage(
         message, TranscriptBotMessageContentCache.shared.content(for: message), isGroupTail: isGroupTail),
       estimatedHeight: estimatedHeight(for: message),
-      measurementRevision: message.text.hashValue ^ message.attachments.count,
+      measurementRevision: message.text.hashValue ^ message.attachments.count ^ message.files.map(\.id).hashValue,
       spacingAfter: spacing
     )
   }
