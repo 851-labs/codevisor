@@ -110,7 +110,7 @@ export interface ContainerOptions {
   readonly minFreeDiskGiB: number
 }
 
-export const containerOptions = (values: SandboxFieldValues): ContainerOptions => {
+const containerOptions = (values: SandboxFieldValues): ContainerOptions => {
   const image = optionalString(values, preparedImageKey)
   return {
     ...(image === undefined ? {} : { image }),

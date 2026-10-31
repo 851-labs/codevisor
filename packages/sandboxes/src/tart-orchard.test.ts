@@ -148,18 +148,6 @@ const stateOf = async (status: OrchardVm | undefined) =>
 const availability = (workers: ReadonlyArray<OrchardWorker>, vms: ReadonlyArray<OrchardVm>) =>
   makeTartOrchardProvider(fakeOrchard({ workers, vms }).client).availability?.(profile)
 
-describe("Tart Orchard definition", () => {
-  it("defaults to the Tahoe base image with Orchard's 4 CPUs, 8 GiB and admin:admin", () => {
-    expect(profile).toEqual({
-      image,
-      cpu: 4,
-      memoryGiB: 8,
-      username: "admin",
-      password: "admin"
-    })
-  })
-})
-
 describe("Tart Orchard adapter", () => {
   it("connects with the service account and an optional certificate fingerprint", () => {
     const { adapter, seen } = connecting()

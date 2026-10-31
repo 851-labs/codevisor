@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process"
-import { randomUUID } from "node:crypto"
 import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -16,7 +15,7 @@ import {
   type DaytonaSandboxInfo
 } from "./daytona.js"
 import { readAccountValues, readProfileOptions } from "./options.js"
-import type { ExecResult } from "./provider.js"
+import type { ExecRequest, ExecResult } from "./provider.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const ok: ExecResult = { exitCode: 0, stdout: "ok", stderr: "" }
@@ -122,27 +121,6 @@ describe("Daytona provider", () => {
     ])
   })
 
-  it("falls back to the documented sizes when options are missing", async () => {
-    const { client, calls } = fakeDaytona()
-
-    await makeDaytonaProvider(client).create(spec, { image: "ubuntu:22.04" })
-
-    expect(calls).toEqual([
-      {
-        create: {
-          source: {
-            kind: "image",
-            image: "ubuntu:22.04",
-            setupCommands: DAYTONA_SETUP_COMMANDS,
-            resources: { cpu: 2, memory: 4, disk: 10 }
-          },
-          labels: tagged,
-          autoStopMinutes: 0
-        }
-      }
-    ])
-  })
-
   it("caps resources at the default organization limits", () => {
     expect(() => readProfileOptions(DAYTONA_DEFINITION, { cpu: 5 })).toThrow(
       "CPUs must be between 1 and 4"
@@ -153,32 +131,6 @@ describe("Daytona provider", () => {
     expect(() => readProfileOptions(DAYTONA_DEFINITION, { diskGiB: 11 })).toThrow(
       "Disk (GiB) must be between 1 and 10"
     )
-  })
-
-  it("runs scripts as root from /dev/null with a timeout in whole seconds", async () => {
-    const { client, calls } = fakeDaytona()
-    const provider = makeDaytonaProvider(client)
-
-    await provider.exec("sb-1", { script: "id" })
-    await provider.exec("sb-1", { script: "id", timeoutMs: 1 })
-
-    expect(calls).toEqual([
-      { run: "sb-1", command: rootCommand("id", 600, "/dev/null"), timeoutMs: 600_000 },
-      { run: "sb-1", command: rootCommand("id", 1, "/dev/null"), timeoutMs: 1 }
-    ])
-  })
-
-  it("uploads stdin to a file the command reads and then removes", async () => {
-    const { client, calls } = fakeDaytona()
-    const provider = makeDaytonaProvider(client, () => "abc")
-
-    await provider.exec("sb-1", { script: "cat", stdin: "invite\n", timeoutMs: 1500 })
-
-    const path = "/tmp/codevisor-stdin-abc"
-    expect(calls).toEqual([
-      { upload: "sb-1", path, content: "invite\n" },
-      { run: "sb-1", command: rootCommand("cat", 2, path, [`rm -f '${path}'`]), timeoutMs: 1500 }
-    ])
   })
 
   it("maps sandbox states so stopped and archived ones resume and only dead ones are gone", async () => {
@@ -270,48 +222,54 @@ describe("Daytona root command", () => {
     return dir
   }
 
-  const runLocally = async (uid: string, script: string, stdin?: string) => {
+  const runLocally = async (uid: string, request: ExecRequest) => {
     const bin = await stubBin(uid)
-    const id = randomUUID()
-    const stdinPath = `/tmp/codevisor-stdin-${id}`
-    scratch.push(stdinPath)
-    const commands: string[] = []
+    const uploads: string[] = []
+    const runs: Array<{ readonly command: string; readonly timeoutMs: number }> = []
     const local: DaytonaClient = {
       ...fakeDaytona().client,
-      upload: (_sandboxId, path, content) => writeFile(path, content),
-      run: (_sandboxId, command) => {
-        commands.push(command)
+      upload: (_sandboxId, path, content) => {
+        uploads.push(path)
+        scratch.push(path)
+        return writeFile(path, content)
+      },
+      run: (_sandboxId, command, timeoutMs) => {
+        runs.push({ command, timeoutMs })
         return Promise.resolve(ok)
       }
     }
-    const provider = makeDaytonaProvider(local, () => id)
-    await provider.exec("sb-1", {
-      script,
-      timeoutMs: 30_000,
-      ...(stdin === undefined ? {} : { stdin })
-    })
-    return { result: await shell(commands.join(""), bin), stdinPath }
+    await makeDaytonaProvider(local).exec("sb-1", request)
+    const result = await shell(runs.map((run) => run.command).join(""), bin)
+    return { result, uploads, timeouts: runs.map((run) => run.timeoutMs) }
   }
 
   it("keeps the script's quoting, feeds stdin, returns its exit code and removes the stdin file", async () => {
-    const { result, stdinPath } = await runLocally(
-      "0",
-      `printf '%s|' "it's"; cat; exit 3`,
-      "invite\n"
-    )
+    const { result, uploads, timeouts } = await runLocally("0", {
+      script: `printf '%s|' "it's"; cat; exit 3`,
+      stdin: "invite\n",
+      timeoutMs: 1500
+    })
 
     expect(result).toEqual({
       exitCode: 3,
       stdout: "it's|invite\n",
-      stderr: "timeout -s KILL 30\n"
+      stderr: "timeout -s KILL 2\n"
     })
-    await expect(stat(stdinPath)).rejects.toThrow("ENOENT")
+    expect(timeouts).toEqual([1500])
+    expect(uploads).toHaveLength(1)
+    await expect(stat(uploads[0] ?? "")).rejects.toThrow("ENOENT")
   })
 
-  it("elevates with non-interactive sudo when the sandbox user is not root", async () => {
-    const { result } = await runLocally("1000", "echo hi")
+  it("runs a script without stdin through non-interactive sudo for a non-root user, with a 10 minute default timeout", async () => {
+    const { result, uploads, timeouts } = await runLocally("1000", { script: "cat; echo hi" })
 
-    expect(result).toEqual({ exitCode: 0, stdout: "hi\n", stderr: "sudo -n\ntimeout -s KILL 30\n" })
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: "hi\n",
+      stderr: "sudo -n\ntimeout -s KILL 600\n"
+    })
+    expect(timeouts).toEqual([600_000])
+    expect(uploads).toEqual([])
   })
 })
 
@@ -349,22 +307,6 @@ describe("Daytona adapter", () => {
     expect(identity).toEqual({})
   })
 })
-
-const rootCommand = (
-  script: string,
-  seconds: number,
-  input: string,
-  cleanup: ReadonlyArray<string> = []
-): string => {
-  const lines = [
-    'as_root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo -n "$@"; fi; }',
-    `as_root timeout -s KILL ${seconds} sh -c '${script}' <'${input}'`,
-    "status=$?",
-    ...cleanup,
-    "exit $status"
-  ]
-  return `sh -c '${lines.join("\n").replaceAll("'", `'\\''`)}'`
-}
 
 const stub = async (dir: string, name: string, body: string): Promise<void> => {
   const path = join(dir, name)

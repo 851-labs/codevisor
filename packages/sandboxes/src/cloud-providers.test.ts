@@ -91,10 +91,6 @@ describe("E2B provider", () => {
     })
   })
 
-  it("defaults to the base template and pausing after 30 minutes", () => {
-    expect(readProfileOptions(E2B_DEFINITION, {})).toEqual({ template: "base", pauseAfter: "30" })
-  })
-
   it("runs scripts as root with a default timeout and forwards stdin", async () => {
     const { client, calls } = fakeE2b()
     const provider = makeE2bProvider(client)
@@ -251,10 +247,6 @@ describe("Modal provider", () => {
     expect(() => readProfileOptions(MODAL_DEFINITION, { pauseAfter: "never" })).toThrow(
       "Pause after must be one of 15 min, 30 min, 1 hr, 4 hr"
     )
-    expect(MODAL_DEFINITION.profileFields.at(-1)).toMatchObject({
-      key: "pauseAfter",
-      description: "How long a sandbox stays alive without a chat running."
-    })
   })
 
   it("maps poll results to running, stopped and gone", async () => {

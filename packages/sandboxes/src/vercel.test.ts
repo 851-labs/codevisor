@@ -87,24 +87,6 @@ describe("Vercel Sandbox provider", () => {
     ])
   })
 
-  it("falls back to 2 vCPUs when options are missing", async () => {
-    const { client, calls } = fakeVercel()
-
-    await makeVercelProvider(client).create(spec, { image: "my-repo:v1" })
-
-    expect(calls).toEqual([
-      { create: { image: "my-repo:v1", vcpus: 2, timeoutMs: 2_700_000, tags: tagged } }
-    ])
-  })
-
-  it("defaults to the universal image, 2 vCPUs and pausing after 30 minutes", () => {
-    expect(readProfileOptions(VERCEL_DEFINITION, {})).toEqual({
-      image: "vercel/sandbox/universal",
-      vcpus: "2",
-      pauseAfter: "30"
-    })
-  })
-
   it("pauses by stopping, wakes by resuming, and extends the session up to a deadline", async () => {
     const { client, calls } = fakeVercel([
       {

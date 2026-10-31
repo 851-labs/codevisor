@@ -5,6 +5,7 @@ import { fakeTart, result } from "./tart-test-support.js"
 import {
   IMAGE_PREFIX,
   makeTartProvider,
+  tartAdapter,
   TOOLS_PREFIX,
   vmName,
   type TartImageRecipe
@@ -53,7 +54,7 @@ const imageNameOf = async (tart: ReturnType<typeof fakeTart>): Promise<string> =
 describe("Tart macOS image", () => {
   it("plans an image step only while the prepared image is missing", async () => {
     const tart = fakeTart({ onScript: () => result("ready\n") })
-    const provider = makeTartProvider(tart.host, images())
+    const provider = tartAdapter(tart.host, images()).connect({})
 
     expect(await provider.plan?.(options)).toEqual(withImage)
     await provider.prepare?.(options, withImage, recorder().progress)

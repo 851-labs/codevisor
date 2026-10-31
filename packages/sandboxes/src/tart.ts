@@ -118,7 +118,7 @@ export interface TartOptions {
   readonly minFreeDiskGiB: number
 }
 
-export const tartOptions = (values: SandboxFieldValues): TartOptions => {
+const tartOptions = (values: SandboxFieldValues): TartOptions => {
   const image = optionalString(values, PREPARED_IMAGE_KEY)
   return {
     ...(image === undefined ? {} : { image }),

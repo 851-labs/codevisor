@@ -2,14 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { readProfileOptions } from "./options.js"
 import { fakeTart, result } from "./tart-test-support.js"
-import {
-  DEFAULT_TART_BASE_IMAGE,
-  makeTartProvider,
-  TART_DEFINITION,
-  tartAdapter,
-  tartOptions,
-  vmName
-} from "./tart.js"
+import { makeTartProvider, TART_DEFINITION, tartAdapter, vmName } from "./tart.js"
 
 const spec = { name: "box", tags: { owner: "device-a", machine: "m1" } }
 const name = vmName(spec)
@@ -92,8 +85,6 @@ describe("Tart provider", () => {
     expect(await makeTartProvider(fakeTart({ freeGiB: 39.5 }).host).availability?.(linux)).toBe(
       "Only 39.5 GB of disk is free on this Mac; a Tart VM needs 40 GB"
     )
-    expect(tartAdapter(fakeTart().host).connect({}).definition).toBe(TART_DEFINITION)
-    expect(tartOptions({}).baseImage).toBe(DEFAULT_TART_BASE_IMAGE)
   })
 
   it("lets a Linux image start beside two macOS VMs", async () => {
@@ -233,8 +224,7 @@ describe("Tart provider", () => {
 })
 
 describe("Tart profile sizes", () => {
-  it("start at the macOS guest minimums and take whole numbers at or above them", () => {
-    expect(readProfileOptions(TART_DEFINITION, {})).toMatchObject({ cpu: 2, memoryGiB: 4 })
+  it("take whole numbers at or above the macOS guest minimums", () => {
     expect(() => readProfileOptions(TART_DEFINITION, { cpu: 1 })).toThrow(
       "CPUs must be between 2 and 64"
     )

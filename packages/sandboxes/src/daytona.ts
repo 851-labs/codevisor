@@ -130,10 +130,7 @@ export const daytonaAdapter = (
   }
 }
 
-export const makeDaytonaProvider = (
-  client: DaytonaClient,
-  newId: () => string = randomUUID
-): SandboxProvider => ({
+export const makeDaytonaProvider = (client: DaytonaClient): SandboxProvider => ({
   definition: DAYTONA_DEFINITION,
   provisionStages: ["create"],
   streamsOutput: false,
@@ -150,7 +147,7 @@ export const makeDaytonaProvider = (
   },
   exec: async (sandboxId, request) => {
     const timeoutMs = request.timeoutMs ?? defaultExecTimeoutMs
-    const input = await uploadedStdin(client, sandboxId, request.stdin, newId)
+    const input = await uploadedStdin(client, sandboxId, request.stdin)
     return client.run(sandboxId, rootCommand(request.script, input, timeoutMs), timeoutMs)
   },
   status: async (sandboxId) => ({ state: stateFor(await client.info(sandboxId)) }),
@@ -207,12 +204,11 @@ interface ScriptInput {
 const uploadedStdin = async (
   client: DaytonaClient,
   sandboxId: string,
-  stdin: string | undefined,
-  newId: () => string
+  stdin: string | undefined
 ): Promise<ScriptInput> => {
   if (stdin === undefined) return { path: "/dev/null", cleanup: [] }
 
-  const path = `/tmp/codevisor-stdin-${newId()}`
+  const path = `/tmp/codevisor-stdin-${randomUUID()}`
   await client.upload(sandboxId, path, stdin)
   return { path, cleanup: [`rm -f ${shellQuote(path)}`] }
 }

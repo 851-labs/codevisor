@@ -149,6 +149,3 @@ export class SandboxChoiceNeeded extends Error {
     super(message)
   }
 }
-
-export const isSandboxProviderId = (value: unknown): value is SandboxProviderId =>
-  typeof value === "string" && (SANDBOX_PROVIDER_IDS as ReadonlyArray<string>).includes(value)

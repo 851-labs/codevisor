@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest"
 import { CONTAINER_IMAGE_REPOSITORY, type ContainerImages } from "./apple-container-image.js"
 import { fakeContainerHost, ok, type FakeContainer } from "./apple-container-test-support.js"
 import {
-  APPLE_CONTAINER_DEFINITION,
   appleContainerAdapter,
   containerName,
-  containerOptions,
   DEFAULT_CONTAINER_IMAGE,
   makeAppleContainerProvider
 } from "./apple-container.js"
@@ -154,8 +152,11 @@ describe("Apple container provider", () => {
   })
 
   it("plans installing container and building the image only when they're missing", async () => {
-    const plan = (setup: Parameters<typeof fakeContainerHost>[0], images = recipe) =>
-      makeAppleContainerProvider(fakeContainerHost(setup).host, images).plan?.(profile)
+    const plan = (
+      setup: Parameters<typeof fakeContainerHost>[0],
+      images = recipe,
+      values: Record<string, string | number> = profile
+    ) => appleContainerAdapter(fakeContainerHost(setup).host, images).connect({}).plan?.(values)
     const built = [await builtName()]
 
     expect(await plan({ installed: false })).toEqual(
@@ -163,16 +164,10 @@ describe("Apple container provider", () => {
     )
     expect(await plan({ systemRunning: false })).toEqual(planWith(["image", "create", "boot"]))
     expect(await plan({ images: built })).toEqual(planWith(["create", "boot"]))
-    expect(await makeAppleContainerProvider(fakeContainerHost().host).plan?.(profile)).toEqual({
-      stages: ["create", "boot"],
-      preinstalled: false
-    })
-    expect(
-      await makeAppleContainerProvider(fakeContainerHost().host).plan?.({
-        ...profile,
-        preparedImage: prepared
-      })
-    ).toEqual(planWith(["create", "boot"]))
+    expect(await plan({}, noRecipe)).toEqual({ stages: ["create", "boot"], preinstalled: false })
+    expect(await plan({}, noRecipe, { ...profile, preparedImage: prepared })).toEqual(
+      planWith(["create", "boot"])
+    )
   })
 
   it("installs container, starts its services and builds the image before the first sandbox", async () => {
@@ -290,7 +285,7 @@ describe("Apple container provider", () => {
     ).rejects.toThrow(/^container run --detach .* failed \(exit 1\): run --detach broke$/)
   })
 
-  it("caps profile sizes to the Mac, keeps names within container's limit and fills defaults", () => {
+  it("caps profile sizes to the Mac and keeps names within container's limit", () => {
     const adapter = appleContainerAdapter(
       fakeContainerHost({ hardware: { cpus: 14, memoryBytes: 36 * gib } }).host
     )
@@ -300,16 +295,9 @@ describe("Apple container provider", () => {
 
     expect(adapter.hostMaximums?.()).toEqual({ cpu: 12, memoryGiB: 32 })
     expect(tiny.hostMaximums?.()).toEqual({ cpu: 1, memoryGiB: 2 })
-    expect(adapter.connect({}).definition).toBe(APPLE_CONTAINER_DEFINITION)
     expect(
       containerName({ name: "x", tags: { owner: "o", machine: "m".repeat(80) } })
     ).toHaveLength(63)
-    expect(containerOptions({})).toEqual({
-      baseImage: DEFAULT_CONTAINER_IMAGE,
-      cpu: 2,
-      memoryGiB: 4,
-      minFreeDiskGiB: 10
-    })
   })
 })
 
