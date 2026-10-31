@@ -26,8 +26,10 @@ final class ShareV2Host {
 
   var address: V2EndpointMessage { V2EndpointMessage(endpoint.addr()) }
 
-  func accept() async throws {
-    guard let connection = try await endpoint.accept() else { throw SignalingError.closed }
+  func accept(until deadline: ContinuousClock.Instant) async throws {
+    guard let connection = try await V2Accept.connection(on: endpoint, until: deadline) else {
+      throw SignalingError.closed
+    }
 
     self.connection = connection
     let transport = ScreenSharingIrohMediaTransport(

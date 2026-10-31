@@ -61,9 +61,9 @@ struct ScreenSharingVideoToolboxSessionFactory {
       session, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder, allocator: nil,
       valueOut: &hardware)
     let usesHardware = hardware?.takeRetainedValue() as? Bool
-    guard status != noErr || usesHardware == true else {
-      throw ScreenSharingError.unavailable("The HEVC encoder is not hardware backed.")
-    }
+    guard status != kVTPropertyNotSupportedErr else { return }
+    try check(status, "Query encoder hardware")
+    guard usesHardware == true else { throw ScreenSharingError.unavailable("The HEVC encoder is not hardware backed.") }
   }
 
   private func set(_ session: VTCompressionSession, _ key: CFString, _ value: CFTypeRef) throws {

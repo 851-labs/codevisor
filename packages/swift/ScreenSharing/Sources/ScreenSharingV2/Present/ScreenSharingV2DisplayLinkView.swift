@@ -8,6 +8,7 @@
     private let metalLayer = CAMetalLayer()
     private let compositor: ScreenSharingV2Compositor
     private var running = false
+    private var stopped = false
 
     public init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {
       compositor = try ScreenSharingV2Compositor(layer: metalLayer, mailbox: mailbox, metrics: metrics)
@@ -21,7 +22,7 @@
 
     public override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      guard let window, !running else { return }
+      guard let window, !running, !stopped else { return }
 
       running = true
       compositor.start(framesPerSecond: Float(window.screen?.maximumFramesPerSecond ?? 60))
@@ -38,7 +39,7 @@
     }
 
     public func stop() {
-      running = false
+      stopped = true
       compositor.stop()
     }
 

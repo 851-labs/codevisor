@@ -47,7 +47,7 @@ struct ShareCommand: BenchCommand {
   {
     do {
       try connection.send(host.address)
-      try await host.accept()
+      try await host.accept(until: deadline)
       await BenchSession.hold(connection, until: deadline, signals: signals)
       try BenchOutput.print(await host.finish(viewer: connection.peerIPv4))
     } catch {

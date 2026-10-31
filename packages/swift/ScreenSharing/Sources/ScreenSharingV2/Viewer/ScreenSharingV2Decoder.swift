@@ -8,14 +8,34 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
   private var format: CMVideoFormatDescription?
   private var parameterSets: [Data] = []
   private let metrics: ScreenSharingMetrics
+  private let lock = NSLock()
+  private var stopped = false
 
   init(metrics: ScreenSharingMetrics) {
     self.metrics = metrics
   }
 
-  deinit { stop() }
+  deinit { closeSession() }
 
   func decode(
+    _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64,
+    output: @escaping @Sendable (ScreenSharingV2DecodeResult) -> Void
+  ) throws {
+    try lock.withLock {
+      guard !stopped else { throw ScreenSharingError.unavailable("Decoder stopped.") }
+
+      try decodeLocked(frame, meta: meta, receivedNs: receivedNs, output: output)
+    }
+  }
+
+  func stop() {
+    lock.withLock {
+      stopped = true
+      closeSession()
+    }
+  }
+
+  private func decodeLocked(
     _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64,
     output: @escaping @Sendable (ScreenSharingV2DecodeResult) -> Void
   ) throws {
@@ -29,7 +49,7 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     try submit(sample, context: context)
   }
 
-  func stop() {
+  private func closeSession() {
     if let session {
       VTDecompressionSessionWaitForAsynchronousFrames(session)
       VTDecompressionSessionInvalidate(session)
@@ -48,6 +68,10 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     guard status != noErr else { return }
 
     retained.release()
+    guard status != kVTInvalidSessionErr else {
+      closeSession()
+      throw ScreenSharingV2DecoderError.sessionLost
+    }
     throw ScreenSharingError.codec("Decode frame", status)
   }
 
@@ -55,7 +79,7 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     guard !received.isEmpty, received != parameterSets else { return }
 
     let description = try ScreenSharingV2FormatDescription.make(parameterSets: received)
-    stop()
+    closeSession()
     session = try ScreenSharingV2DecompressionSessionFactory.make(format: description)
     format = description
     parameterSets = received

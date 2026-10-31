@@ -14,6 +14,7 @@ final class LoopbackMediaTransport: ScreenSharingMediaTransport, @unchecked Send
   }
 
   let admissionChecks = TestSignal()
+  let sends = TestSignal()
   let dropped = TestSignal()
   let ltrAcknowledgements = TestSignal()
   private let state = Mutex(State())
@@ -53,6 +54,7 @@ final class LoopbackMediaTransport: ScreenSharingMediaTransport, @unchecked Send
       defer { state.nextFrame += 1; state.dropsNext = false; state.sent.append(tile) }
       return (state.nextFrame, state.peer, state.dropsNext)
     }
+    sends.signal()
     guard !drops else { return dropped.signal() }
 
     peer?.emit(.frame(Self.received(tile, number: number, meta: meta)))

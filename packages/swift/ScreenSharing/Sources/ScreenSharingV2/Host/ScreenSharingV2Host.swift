@@ -12,6 +12,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var recovery = ScreenSharingV2Recovery()
   private var bitrate: ScreenSharingV2BitrateGovernor
   private var retryScheduled = false
+  private var deferredCapture = false
   private var stopped = false
   private var events: Task<Void, Never>?
 
@@ -68,16 +69,20 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
 
   private func encode(_ capture: ScreenSharingV2Capture) {
     slot.encoding(capture)
+    deferredCapture = false
+    let refreshes = recovery.takeRefreshes()
     do {
-      try encoder.encode(capture.request(refreshes: recovery.takeRefreshes()))
+      try encoder.encode(capture.request(refreshes: refreshes))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
+      recovery.restore(refreshes)
     }
   }
 
   private func deferEncode() {
-    metrics.increment("admissionDeferrals")
+    if !deferredCapture { metrics.increment("admissionDeferrals") }
+    deferredCapture = true
     guard !retryScheduled else { return }
 
     retryScheduled = true
@@ -95,9 +100,20 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func encoderOutput(_ output: ScreenSharingTileEncoderOutput) {
-    if case .tile(let tile) = output { send(tile) }
-    if case .failed(let message) = output { metrics.label("lastEncodeError", message) }
+    switch output {
+    case .tile(let tile): send(tile)
+    case .dropped(let tile, let refresh): queue.async { [self] in retry(refresh, tile: tile) }
+    case .failed(let tile, let refresh, let message):
+      metrics.label("lastEncodeError", message)
+      queue.async { [self] in retry(refresh, tile: tile) }
+    }
     queue.async { [self] in pump() }
+  }
+
+  private func retry(_ refresh: ScreenSharingTileRefresh?, tile: Int) {
+    guard let refresh else { return }
+
+    recovery.retry(refresh, tile: tile)
   }
 
   private func send(_ tile: ScreenSharingEncodedTile) {
@@ -105,6 +121,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     do {
       try transport.send(tile, meta: meta.data)
       metrics.increment("sentFrames")
+      queue.async { [self] in recovery.sent(tile) }
     } catch {
       metrics.increment("sendErrors")
       metrics.label("lastSendError", "\(error)")
@@ -116,7 +133,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     switch event {
     case .frameAcked(let ack): observe(ack)
     case .frameLost(let stream, _): queue.async { [self] in lost(tile: Int(stream)) }
-    case .ltrAcked(let stream, let token): acknowledged(token, tile: Int(stream))
+    case .ltrAcked(let stream, let token): queue.async { [self] in acknowledged(token, tile: Int(stream)) }
     case .frame, .frameSkipped: break
     }
   }
@@ -136,8 +153,12 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func acknowledged(_ token: UInt64, tile: Int) {
+    guard recovery.acknowledged(token: token, tile: tile) else {
+      metrics.increment("staleLTRAcknowledgements")
+      return
+    }
+
     metrics.increment("acknowledgedLTRTokens")
     encoder.acknowledge([token], tile: tile)
-    queue.async { [self] in recovery.acknowledged(tile: tile) }
   }
 }

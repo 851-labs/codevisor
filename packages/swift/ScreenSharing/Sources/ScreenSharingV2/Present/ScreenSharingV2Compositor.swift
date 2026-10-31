@@ -84,7 +84,7 @@ final class ScreenSharingV2Compositor: NSObject, CAMetalDisplayLinkDelegate, @un
     guard started else { return }
 
     link.add(to: .current, forMode: .default)
-    RunLoop.current.run()
+    CFRunLoopRun()
   }
 
   private func observeRefresh(_ update: CAMetalDisplayLink.Update) {
@@ -97,14 +97,17 @@ final class ScreenSharingV2Compositor: NSObject, CAMetalDisplayLinkDelegate, @un
   private func render(_ frame: ScreenSharingVideoFrame, isNew: Bool, into drawable: any CAMetalDrawable) {
     guard let textures = encoder.textures(for: frame),
       let encoded = encoder.encode(textures, into: Self.pass(drawable), target: drawable.texture)
-    else { return renderDropped() }
+    else { return renderDropped(isNew: isNew) }
 
     ScreenSharingV2Submission(buffer: encoded.buffer, drawable: drawable, retained: encoded.retained)
       .commit(frame, isNew: isNew, metrics: metrics)
   }
 
-  private func renderDropped() {
+  private func renderDropped(isNew: Bool) {
     metrics.increment("renderDrops")
+    guard isNew else { return }
+
+    state.withLock { $0.selection.redraw() }
   }
 
   private static func pass(_ drawable: any CAMetalDrawable) -> MTLRenderPassDescriptor {

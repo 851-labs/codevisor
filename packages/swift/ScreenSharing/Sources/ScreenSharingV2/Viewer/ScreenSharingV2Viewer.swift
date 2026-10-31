@@ -10,6 +10,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private let transport: any ScreenSharingMediaTransport
   private let decoder: ScreenSharingV2Decoder
   private let gate = Mutex(ScreenSharingV2RecoveryGate())
+  private let stopped = Atomic(false)
   private var tasks: [Task<Void, Never>] = []
 
   public init(transport: any ScreenSharingMediaTransport, metrics: ScreenSharingMetrics) {
@@ -28,6 +29,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   }
 
   public func stop() {
+    stopped.store(true, ordering: .relaxed)
     for task in tasks { task.cancel() }
     transport.close()
     decoder.stop()
@@ -51,6 +53,9 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
     do {
       try decoder.decode(frame, meta: meta, receivedNs: receivedNs) { [weak self] in self?.decoded($0) }
+    } catch ScreenSharingV2DecoderError.sessionLost {
+      metrics.increment("decoderSessionsLost")
+      gate.withLock { $0.needKeyframe(stream: frame.stream) }
     } catch {
       metrics.label("lastDecodeError", error.localizedDescription)
       broke(frame.stream)
@@ -85,6 +90,8 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   }
 
   private func present(_ image: CVPixelBuffer, context: ScreenSharingV2DecodeContext, decodedNs: Int64) {
+    guard !stopped.load(ordering: .relaxed) else { return }
+
     metrics.increment("decodedFrames")
     metrics.observe("decode", milliseconds: Double(decodedNs - context.submittedNs) / 1_000_000)
     metrics.timeline.decoded(ScreenSharingV2ViewerTiming.decoded(context, decodedNs: decodedNs))

@@ -18,6 +18,10 @@ struct ScreenSharingV2RecoveryGate {
     states[stream] = .needsRefresh
   }
 
+  mutating func needKeyframe(stream: UInt8) {
+    states[stream] = .needsKeyframe
+  }
+
   private func isDecodable(_ state: ScreenSharingV2DecodeState, isKeyFrame: Bool, isRefresh: Bool) -> Bool {
     switch state {
     case .needsKeyframe: isKeyFrame

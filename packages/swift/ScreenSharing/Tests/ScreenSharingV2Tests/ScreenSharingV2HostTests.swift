@@ -45,13 +45,49 @@ struct ScreenSharingV2HostTests {
     let host = startedHost()
     defer { host.stop() }
 
-    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    try await sendFirstFrame(through: host, keyframe: true, token: 9)
     transport.emit(.ltrAcked(stream: 0, token: 9))
     transport.emit(.frameLost(stream: 0, frame: 1))
     await encoder.encodes.wait(for: 2)
 
     #expect(encoder.acknowledgedTokens == [9])
     #expect(encoder.requests.last?.refreshes == [0: .longTermReference])
+  }
+
+  @Test func anAcknowledgedReferenceFromBeforeTheLatestKeyframeNoLongerCounts() async throws {
+    let host = startedHost()
+    defer { host.stop() }
+
+    try await sendFirstFrame(through: host, keyframe: true, token: 9)
+    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
+    await encoder.encodes.wait(for: 2)
+    encoder.emitTile(of: encoder.requests[1], keyframe: true, token: nil)
+    await transport.sends.wait(for: 2)
+    transport.emit(.ltrAcked(stream: 0, token: 9))
+    transport.emit(.frameLost(stream: 0, frame: 1))
+    await encoder.encodes.wait(for: 3)
+
+    #expect(encoder.acknowledgedTokens.isEmpty)
+    #expect(encoder.requests.last?.refreshes == [0: .keyframe])
+  }
+
+  @Test func aRefreshTheEncoderDroppedIsAskedForAgainFromTheLastCapture() async throws {
+    let host = startedHost()
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emit(.dropped(tile: 0, refresh: .keyframe))
+    await encoder.encodes.wait(for: 2)
+
+    #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000])
+    #expect(encoder.requests.last?.refreshes == [0: .keyframe])
+  }
+
+  private func sendFirstFrame(through host: ScreenSharingV2Host, keyframe: Bool, token: UInt64?) async throws {
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTile(of: encoder.requests[0], keyframe: keyframe, token: token)
+    await transport.sends.wait(for: 1)
   }
 }

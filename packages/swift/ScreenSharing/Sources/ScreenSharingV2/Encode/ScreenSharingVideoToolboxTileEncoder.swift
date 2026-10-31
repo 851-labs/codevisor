@@ -8,8 +8,8 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     var output: (@Sendable (ScreenSharingTileEncoderOutput) -> Void)?
     var inFlight = 0
     var acknowledged: [UInt64] = []
-    var carriedRefresh: ScreenSharingTileRefresh?
     var lastPresentationNs: Int64 = 0
+    var sessionFailed = false
     var stopped = false
   }
 
@@ -19,16 +19,22 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     let submittedNs: Int64
   }
 
+  private static let sessionFailures: Set<OSStatus> = [
+    kVTVideoEncoderMalfunctionErr, kVTVideoEncoderNotAvailableNowErr, kVTInvalidSessionErr,
+  ]
+
   public let tileCount = 1
-  private let session: VTCompressionSession
+  private let factory: ScreenSharingVideoToolboxSessionFactory
+  private let sessionLock = NSLock()
+  private var session: VTCompressionSession
   private let metrics: ScreenSharingMetrics
   private let state = Mutex(State())
 
   public init(configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics) throws {
-    session = try ScreenSharingVideoToolboxSessionFactory(
+    factory = ScreenSharingVideoToolboxSessionFactory(
       width: configuration.width, height: configuration.height, framesPerSecond: configuration.framesPerSecond,
-      bitrate: configuration.bitrate
-    ).make()
+      bitrate: configuration.bitrate)
+    session = try factory.make()
     self.metrics = metrics
     metrics.label("encoder", "VideoToolbox HEVC Main, low-latency rate control, LTR, no periodic keyframe")
     metrics.label("encoderSize", "\(configuration.width)x\(configuration.height)")
@@ -43,9 +49,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   public func encode(_ request: ScreenSharingTileEncodeRequest) throws {
+    try reopenFailedSession()
     let (submission, acknowledged, presentationNs) = try begin(request)
     let status = VTCompressionSessionEncodeFrame(
-      session, imageBuffer: request.pixelBuffer,
+      currentSession, imageBuffer: request.pixelBuffer,
       presentationTimeStamp: CMTime(value: presentationNs, timescale: 1_000_000_000), duration: .invalid,
       frameProperties: Self.frameOptions(submission.refresh, acknowledged: acknowledged), infoFlagsOut: nil
     ) { [weak self] status, flags, sample in
@@ -53,7 +60,8 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     }
     guard status != noErr else { return }
 
-    finish(submission, delivered: false)
+    state.withLock { $0.inFlight -= 1 }
+    noteSessionFailure(status)
     throw ScreenSharingError.codec("Encode frame", status)
   }
 
@@ -65,7 +73,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
 
   public func setBitrate(_ bitsPerSecond: Int) throws {
     let status = VTSessionSetProperty(
-      session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitsPerSecond as CFNumber)
+      currentSession, key: kVTCompressionPropertyKey_AverageBitRate, value: bitsPerSecond as CFNumber)
     guard status == noErr else { throw ScreenSharingError.codec("Set encoder bitrate", status) }
 
     metrics.label("encoderBitrate", String(bitsPerSecond))
@@ -78,8 +86,34 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     }
     guard wasRunning else { return }
 
+    close(currentSession)
+  }
+
+  private var currentSession: VTCompressionSession { sessionLock.withLock { session } }
+
+  private func reopenFailedSession() throws {
+    guard state.withLock({ $0.sessionFailed && !$0.stopped }) else { return }
+
+    let replacement = try factory.make()
+    let failed = sessionLock.withLock {
+      defer { session = replacement }; return session
+    }
+    close(failed)
+    state.withLock {
+      $0.sessionFailed = false; $0.acknowledged = []
+    }
+    metrics.increment("encoderSessionReopens")
+  }
+
+  private func close(_ session: VTCompressionSession) {
     VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
     VTCompressionSessionInvalidate(session)
+  }
+
+  private func noteSessionFailure(_ status: OSStatus) {
+    guard Self.sessionFailures.contains(status) else { return }
+
+    state.withLock { $0.sessionFailed = true }
   }
 
   private func begin(_ request: ScreenSharingTileEncodeRequest) throws -> (Submission, [UInt64], Int64) {
@@ -87,30 +121,25 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
       guard !state.stopped else { throw ScreenSharingError.unavailable("Encoder stopped.") }
 
       let submittedNs = ScreenSharingMetrics.nowNs
-      let refresh = Self.stronger(request.refreshes[0], state.carriedRefresh)
       let acknowledged = state.acknowledged
-      state.carriedRefresh = nil
       state.acknowledged = []
       state.inFlight += 1
       state.lastPresentationNs = max(state.lastPresentationNs + 1, submittedNs)
-      let submission = Submission(request: request, refresh: refresh, submittedNs: submittedNs)
+      let submission = Submission(request: request, refresh: request.refreshes[0], submittedNs: submittedNs)
       return (submission, acknowledged, state.lastPresentationNs)
     }
   }
 
   private func didEncode(_ submission: Submission, status: OSStatus, flags: VTEncodeInfoFlags, sample: CMSampleBuffer?)
   {
-    guard status == noErr, !flags.contains(.frameDropped), let sample else {
-      report(dropped: submission, status: status)
-      return
-    }
+    state.withLock { $0.inFlight -= 1 }
+    guard status == noErr else { return failed(submission, "VideoToolbox status \(status)", status: status) }
+    guard !flags.contains(.frameDropped), let sample else { return dropped(submission) }
 
     do {
       deliver(try tile(submission, sample: ScreenSharingEncodedSample(sample)))
     } catch {
-      metrics.increment("encodeErrors")
-      finish(submission, delivered: false)
-      emit(.failed(error.localizedDescription))
+      failed(submission, error.localizedDescription, status: noErr)
     }
   }
 
@@ -129,34 +158,22 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     if tile.refresh == .longTermReference { metrics.increment("encodedLTRRefreshes") }
     if tile.ltrToken != nil { metrics.increment("encodedLTRFrames") }
     metrics.observe("encode", milliseconds: Double(tile.encodedNs - tile.submittedNs) / 1_000_000)
-    state.withLock { $0.inFlight -= 1 }
     emit(.tile(tile))
   }
 
-  private func report(dropped submission: Submission, status: OSStatus) {
-    metrics.increment(status == noErr ? "encoderDroppedFrames" : "encodeErrors")
-    finish(submission, delivered: false)
-    emit(.dropped(sourceTimestampNs: submission.request.sourceTimestampNs))
+  private func dropped(_ submission: Submission) {
+    metrics.increment("encoderDroppedFrames")
+    emit(.dropped(tile: 0, refresh: submission.refresh))
   }
 
-  private func finish(_ submission: Submission, delivered: Bool) {
-    state.withLock { state in
-      state.inFlight -= 1
-      guard !delivered else { return }
-
-      state.carriedRefresh = Self.stronger(state.carriedRefresh, submission.refresh)
-    }
+  private func failed(_ submission: Submission, _ message: String, status: OSStatus) {
+    metrics.increment("encodeErrors")
+    noteSessionFailure(status)
+    emit(.failed(tile: 0, refresh: submission.refresh, message: message))
   }
 
   private func emit(_ output: ScreenSharingTileEncoderOutput) {
     state.withLock { $0.output }?(output)
-  }
-
-  private static func stronger(
-    _ first: ScreenSharingTileRefresh?, _ second: ScreenSharingTileRefresh?
-  ) -> ScreenSharingTileRefresh? {
-    if first == .keyframe || second == .keyframe { return .keyframe }
-    return first ?? second
   }
 
   private static func frameOptions(_ refresh: ScreenSharingTileRefresh?, acknowledged: [UInt64]) -> CFDictionary? {
