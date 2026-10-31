@@ -142,6 +142,7 @@ const configuredFeatures = (
   "transcript-pagination-v1",
   "bots-v1",
   "bot-projects-v1",
+  "bot-archive-v1",
   "project-machine-setup-v1",
   ...(services.mcp === undefined ? [] : ["plugins-v2"])
 ]

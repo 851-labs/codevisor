@@ -7,6 +7,7 @@ struct HomeSidebarBot: Identifiable, Equatable {
   let machine: HomeSidebarRowMachine?
   let home: HomeSidebarWorkspace?
   let children: [HomeSidebarWorkspace]
+  var canArchive = false
 
   var id: UUID { bot.id }
 

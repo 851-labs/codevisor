@@ -26,6 +26,7 @@ export const Bot = Schema.Struct({
   projects: Schema.Array(BotProject),
   conversational: Schema.Boolean,
   mode: BotMode,
+  isArchived: Schema.Boolean,
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
 })
@@ -47,7 +48,8 @@ export const UpdateBotRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   symbolName: Schema.optional(Schema.String),
   conversational: Schema.optional(Schema.Boolean),
-  mode: Schema.optional(BotMode)
+  mode: Schema.optional(BotMode),
+  isArchived: Schema.optional(Schema.Boolean)
 })
 export type UpdateBotRequest = typeof UpdateBotRequest.Type
 

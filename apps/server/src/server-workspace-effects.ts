@@ -43,9 +43,11 @@ export const sessionIsArchived = async (
 ): Promise<boolean> => {
   const workspaceId = session.workspaceId
   if (workspaceId === undefined) return false
-  return (await run(services.db.listWorkspaces)).some(
+  const archivedWorkspace = (await run(services.db.listWorkspaces)).some(
     (workspace) => workspace.id.toLowerCase() === workspaceId.toLowerCase() && workspace.isArchived
   )
+  if (archivedWorkspace) return true
+  return (await run(services.db.findBotOwning({ workspaceId })))?.isArchived === true
 }
 
 const startAgentSessionCloses = (

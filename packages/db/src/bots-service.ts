@@ -47,6 +47,7 @@ export const makeBotsService = (
       })),
       conversational: row.conversational === 1,
       mode: row.mode,
+      isArchived: row.archived_at !== null,
       createdAt: row.created_at,
       ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
     }
@@ -58,11 +59,13 @@ export const makeBotsService = (
     return botFromRow(row)
   }
 
-  const requireBot = (id: string): Bot => {
-    const bot = findBot(id)
-    if (bot === undefined) throw new Error(`Bot not found: ${id}`)
-    return bot
+  const requireBotRow = (id: string): BotRow => {
+    const row = botRow(sqlite, id)
+    if (row === undefined) throw new Error(`Bot not found: ${id}`)
+    return row
   }
+
+  const requireBot = (id: string): Bot => botFromRow(requireBotRow(id))
 
   return {
     createBot: (record) =>
@@ -101,7 +104,8 @@ export const makeBotsService = (
     getBot: (id) => attempt("getBot", () => findBot(id)),
     updateBot: (id, record) =>
       attempt("updateBot", () => {
-        const current = requireBot(id)
+        const row = requireBotRow(id)
+        const current = botFromRow(row)
         sqlite
           .prepare(botSql.update)
           .run(
@@ -109,6 +113,7 @@ export const makeBotsService = (
             record.symbolName ?? current.symbolName,
             (record.mode ?? current.mode) === "conversation" ? 1 : 0,
             record.mode ?? current.mode,
+            nextArchivedAt(record.isArchived, row),
             isoTimestamp(),
             current.id
           )
@@ -216,6 +221,11 @@ const fleetBotLink = (workspace: WorkspaceRow): RemoteBotLink | undefined => {
   return { parentSessionId, bot: { botId, botMachineId } }
 }
 
+const nextArchivedAt = (requested: boolean | undefined, row: BotRow): string | null => {
+  if (requested === undefined || requested === (row.archived_at !== null)) return row.archived_at
+  return requested ? isoTimestamp() : null
+}
+
 const touchBot = (sqlite: ServiceContext["sqlite"], id: string): void => {
   sqlite.prepare(botSql.touch).run(isoTimestamp(), id)
 }
@@ -227,8 +237,8 @@ const botSql = {
                 id, server_id, name, symbol_name, slug, project_id, session_id, workspace_id,
                 conversational, mode, created_at
               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  update:
-    "update bots set name = ?, symbol_name = ?, conversational = ?, mode = ?, updated_at = ? where id = ?",
+  update: `update bots set name = ?, symbol_name = ?, conversational = ?, mode = ?, archived_at = ?,
+       updated_at = ? where id = ?`,
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

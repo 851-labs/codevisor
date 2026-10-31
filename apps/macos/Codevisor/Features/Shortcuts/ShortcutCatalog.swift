@@ -151,7 +151,7 @@ enum ShortcutCatalog {
     case .archiveWorkspace:
       ShortcutDefinition(
         .archiveWorkspace, "Archive Workspace", ShortcutCombo("a", [.command, .shift]), category: .chats,
-        context: "Archives the workspace on screen")
+        context: "Archives the workspace on screen, or the selected bot in Chat mode")
     default:
       preconditionFailure("\(id) is not a chat shortcut")
     }

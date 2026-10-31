@@ -28,7 +28,7 @@ struct BotConversationScreen: View {
         if let bot {
           if showsHeader {
             ToolbarItem(placement: .principal) {
-              BotConversationHeader(bot: bot) { onOpenDetails(bot) }
+              BotConversationHeader(bot: bot) { if !bot.isArchived { onOpenDetails(bot) } }
                 .background {
                   WindowFrameProbe { headerWindowBottom = $0.maxY }
                 }
@@ -57,6 +57,7 @@ struct BotConversationScreen: View {
           for: .init(paneID: bot.id, isNewChat: false, windowID: windowID),
           controller: controller
         ),
+        isReadOnly: bot.isArchived,
         preservesComposerFocusOnSend: true,
         topChromeWindowBottom: showsHeader ? headerWindowBottom : hostedHeaderWindowBottom
       )

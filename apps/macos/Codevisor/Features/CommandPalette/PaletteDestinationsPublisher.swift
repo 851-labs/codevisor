@@ -25,7 +25,8 @@ struct PaletteDestinationsPublisher: ViewModifier {
   private var botItems: [CommandPaletteItem] {
     guard botsEnabled else { return [] }
 
-    return BotConversationList(environment: environment, store: store).conversations().map { conversation in
+    let conversations = BotConversationList(environment: environment, store: store).conversations()
+    return conversations.filter { !$0.bot.isArchived }.map { conversation in
       let bot = conversation.bot
       return CommandPaletteItem(id: "bot:\(bot.id)", title: bot.name, icon: .symbol(bot.symbolName)) {
         selection = .bot(serverId: bot.serverId, id: bot.id)

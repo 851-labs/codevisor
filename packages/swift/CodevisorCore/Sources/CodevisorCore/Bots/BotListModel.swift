@@ -34,6 +34,10 @@ public final class BotListModel {
     machines.statusByMachineId[serverId]?.supportsBotProjectChanges == true
   }
 
+  public func supportsArchive(on serverId: String) -> Bool {
+    machines.statusByMachineId[serverId]?.supportsBotArchive == true
+  }
+
   private var machineIdsByServer: [String] {
     var seen = Set<String>()
     return machines.allMachines.map(\.id).filter { machineId in
@@ -81,6 +85,10 @@ public final class BotListModel {
     let record = try await machines.client(for: bot.serverId)
       .updateBot(id: bot.record.id, request)
     store(record, on: bot.serverId)
+  }
+
+  public func setArchived(_ bot: Bot, _ isArchived: Bool) async throws {
+    try await update(bot, ServerUpdateBotRequest(isArchived: isArchived))
   }
 
   public func addProject(_ projectId: UUID, to bot: Bot) async throws {

@@ -38,6 +38,10 @@ struct BotConversationRows: View {
         onDelete: { actions.deleteSection(section) }
       )
       .onDrag { start(.section(section.id)) }
+    case let .archivedSection(isExpanded):
+      SidebarSectionHeader(title: "Archived", isExpanded: isExpanded, onToggle: actions.toggleArchived)
+    case let .archivedBot(conversation):
+      archivedBotRow(conversation, now: now)
     }
   }
 
@@ -57,18 +61,53 @@ struct BotConversationRows: View {
         Label("Edit", systemImage: "pencil")
           .labelStyle(.titleAndIcon)
       }
+      Divider()
       MoveToSectionMenu(
         currentSectionID: section, sections: sections, move: { actions.moveBot(bot.id, $0) },
         newSection: { actions.newSection(bot) })
       Divider()
-      Button(role: .destructive) {
-        actions.delete(bot)
-      } label: {
-        Label("Delete", systemImage: "trash")
-          .labelStyle(.titleAndIcon)
+      if actions.canArchive(bot) {
+        Button {
+          actions.archive(bot)
+        } label: {
+          Label("Archive", systemImage: "archivebox")
+            .labelStyle(.titleAndIcon)
+        }
+        .shortcut(.archiveWorkspace)
+      } else {
+        deleteButton(bot)
       }
     }
     .id(bot.id)
+  }
+
+  private func archivedBotRow(_ conversation: BotConversation, now: Date) -> some View {
+    let bot = conversation.bot
+    return BotConversationRow(conversation: conversation, isSelected: bot.id == selectedBotID, now: now)
+      .opacity(0.6)
+      .onTapGesture { actions.select(bot) }
+      .accessibilityAction(.default) { actions.select(bot) }
+      .accessibilityValue("Archived")
+      .contextMenu {
+        Button {
+          actions.unarchive(bot)
+        } label: {
+          Label("Unarchive", systemImage: "arrow.uturn.backward")
+            .labelStyle(.titleAndIcon)
+        }
+        Divider()
+        deleteButton(bot)
+      }
+      .id(bot.id)
+  }
+
+  private func deleteButton(_ bot: Bot) -> some View {
+    Button(role: .destructive) {
+      actions.delete(bot)
+    } label: {
+      Label("Delete…", systemImage: "trash")
+        .labelStyle(.titleAndIcon)
+    }
   }
 
   private func start(_ drag: BotSidebarDrag) -> NSItemProvider {
@@ -99,7 +138,7 @@ extension BotSidebarRow {
   fileprivate var placedID: BotPlacedRowID {
     switch kind {
     case let .bot(_, section): BotPlacedRowID(id: id, section: section)
-    case .section: BotPlacedRowID(id: id, section: nil)
+    case .section, .archivedSection, .archivedBot: BotPlacedRowID(id: id, section: nil)
     }
   }
 }

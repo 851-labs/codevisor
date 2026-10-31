@@ -13,6 +13,7 @@ struct BotListSidebar: View {
   @State private var stepHandlerOwner = UUID()
   @State private var sectionPrompt: SectionPrompt?
   @ClientPreference(SidebarPreferenceKey.collapsedBotSections, default: []) private var collapsedSectionIDs: [String]
+  @ClientPreference(SidebarPreferenceKey.botArchivedExpanded, default: false) private var archivedExpanded
 
   private var conversations: [BotConversation] {
     BotConversationList(environment: environment, store: store).conversations()
@@ -25,7 +26,7 @@ struct BotListSidebar: View {
       BotSidebarRows.State(
         conversations: conversations, sections: sections.sections, membership: sections.membership,
         collapsedSectionIDs: Set(collapsedSectionIDs.compactMap(UUID.init(uuidString:))),
-        selectedBotID: selectedBotID))
+        isArchivedExpanded: archivedExpanded, selectedBotID: selectedBotID))
   }
 
   private var selectedBotID: UUID? {
@@ -107,10 +108,14 @@ struct BotListSidebar: View {
     BotSidebarRowActions(
       select: select,
       edit: { botEditor = .edit($0) },
+      canArchive: { environment.bots.supportsArchive(on: $0.serverId) },
+      archive: archive,
+      unarchive: { setArchived($0, false) },
       delete: { deletingBot = $0 },
       moveBot: { sections.move($0, to: $1) },
       newSection: { sectionPrompt = .create(moving: $0?.id) },
       toggleSection: toggleSection,
+      toggleArchived: { archivedExpanded.toggle() },
       renameSection: { sectionPrompt = .rename($0) },
       deleteSection: { sections.delete($0.id) },
       moveSection: { sections.moveSection($0, toIndex: $1) }
@@ -129,7 +134,38 @@ struct BotListSidebar: View {
   private var actions: BotListActions {
     BotListActions(
       newBot: canCreateBots ? newBot : nil, newProject: { showingAddProject = true }, stepBot: step,
-      editBot: { botEditor = .edit($0) })
+      editBot: { botEditor = .edit($0) },
+      archiveBot: archivableSelectedBot == nil ? nil : archiveSelectedBot)
+  }
+
+  private func archiveSelectedBot() {
+    if let bot = archivableSelectedBot { archive(bot) }
+  }
+
+  private var archivableSelectedBot: Bot? {
+    guard case let .bot(serverId, id) = selection, let bot = environment.bots.bot(serverId: serverId, id: id),
+      !bot.isArchived, environment.bots.supportsArchive(on: serverId)
+    else { return nil }
+    return bot
+  }
+
+  private func archive(_ bot: Bot) {
+    if selectedBotID == bot.id {
+      selection =
+        BotSidebarRows.replacement(forArchiving: bot.id, in: rows(conversations))
+        .map { .bot(serverId: $0.serverId, id: $0.id) } ?? .newChat(nil)
+    }
+    setArchived(bot, true)
+  }
+
+  private func setArchived(_ bot: Bot, _ isArchived: Bool) {
+    Task {
+      do {
+        try await environment.bots.setArchived(bot, isArchived)
+      } catch {
+        ErrorReporter.shared.report(isArchived ? "Couldn't archive bot" : "Couldn't unarchive bot", error: error)
+      }
+    }
   }
 
   private func newBot() {

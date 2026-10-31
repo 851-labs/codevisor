@@ -307,6 +307,46 @@ describe("bot routes", () => {
     expect(await update({ conversational: true })).toMatchObject({ mode: "conversation" })
   })
 
+  it("archives a bot so it stops and refuses prompts, then unarchives it", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot((await createBot(running, { projectIds: ["api-project"] })).body)
+    const setArchived = async (isArchived: boolean) =>
+      decodeBot(
+        (
+          await jsonRequest(running.server, `/v1/bots/${bot.id}`, {
+            body: JSON.stringify({ isArchived }),
+            method: "PATCH"
+          })
+        ).body
+      )
+    const prompt = (text: string) =>
+      jsonRequest(running.server, `/v1/sessions/${bot.sessionId}/prompt`, {
+        body: JSON.stringify({ text }),
+        method: "POST"
+      })
+    expect(bot.isArchived).toBe(false)
+    const closesBefore = running.agents.closes.length
+
+    const archived = await setArchived(true)
+
+    expect(archived).toMatchObject({ isArchived: true, name: "Release Helper" })
+    expect(await listBots(running)).toEqual([archived])
+    expect(running.agents.closes.length).toBeGreaterThan(closesBefore)
+    expect((await prompt("are you there?")).status).toBe(409)
+    const closesWhileArchived = running.agents.closes.length
+    expect((await setArchived(true)).isArchived).toBe(true)
+    expect(running.agents.closes.length).toBe(closesWhileArchived)
+    expect(existsSync(bot.rootPath)).toBe(true)
+
+    const restored = await setArchived(false)
+
+    expect(restored.isArchived).toBe(false)
+    expect((await prompt("welcome back")).status).toBe(202)
+    await waitFor(() => running.agents.prompts.some(([, input]) => input === "welcome back"))
+    expect(running.agents.prompts.some(([, input]) => input === "are you there?")).toBe(false)
+  })
+
   it("protects a bot's projects, workspace, and chat until the bot is deleted", async () => {
     const running = await setUp()
     const apiFolder = await running.addProject("api-project", "api")

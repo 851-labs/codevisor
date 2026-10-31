@@ -17,15 +17,18 @@ struct BotEditorView: View {
   @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 88
   @ScaledMetric(relativeTo: .title2) private var iconChoiceSize: CGFloat = 44
   let onCreated: (Bot) -> Void
+  let onArchive: (Bot) -> Void
   let onDelete: (Bot) -> Void
 
   init(
     target: BotEditorTarget,
     environment: AppEnvironment,
     onCreated: @escaping (Bot) -> Void,
+    onArchive: @escaping (Bot) -> Void,
     onDelete: @escaping (Bot) -> Void
   ) {
     self.onCreated = onCreated
+    self.onArchive = onArchive
     self.onDelete = onDelete
     _editor = State(initialValue: BotEditorModel(target: target, environment: environment))
   }
@@ -44,7 +47,11 @@ struct BotEditorView: View {
         if let bot = editor.editedBot {
           editedBotModelSection(bot)
           displaySection
-          deleteSection(bot)
+          if environment.bots.supportsArchive(on: bot.serverId) {
+            archiveSection(bot)
+          } else {
+            deleteSection(bot)
+          }
         } else {
           modelSection
           displaySection
@@ -78,6 +85,16 @@ struct BotEditorView: View {
       .interactiveDismissDisabled(editor.isSaving)
       .task(id: editor.serverId) { await editor.loadModels() }
       .onAppear { if isCreating { isNameFocused = true } }
+    }
+  }
+
+  private func archiveSection(_ bot: Bot) -> some View {
+    Section {
+      Button("Archive Bot", systemImage: "archivebox") {
+        dismiss()
+        onArchive(bot)
+      }
+      .frame(maxWidth: .infinity)
     }
   }
 

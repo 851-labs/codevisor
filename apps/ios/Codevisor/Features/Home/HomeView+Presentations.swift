@@ -26,7 +26,7 @@ extension HomeView {
       )
       .botManagement(
         editing: $botEditor, deleting: $deletingBot,
-        onCreated: { openBot($0) }, onDeleted: { closeBot($0) }
+        onCreated: { openBot($0) }, onArchive: { setBotArchived($0, true) }, onDeleted: { closeBot($0) }
       )
       .sheet(item: $presentedSettingsDestination, onDismiss: { clientPresentationCompletion.complete("settings") }) {
         destination in
