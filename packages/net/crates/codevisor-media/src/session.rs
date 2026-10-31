@@ -16,20 +16,12 @@ use crate::{
     types::{Admission, Event, MediaConfig, OutgoingFrame, SendError, Stats},
 };
 
-/// How often the connection's round-trip estimate is copied into the core.
 const RTT_REFRESH: Duration = Duration::from_millis(50);
-/// How soon a datagram the transport had no room for is offered again.
 const FULL_RETRY: Duration = Duration::from_micros(500);
-/// Datagrams taken from the core per lock, so frame hand-offs interleave with a burst going out.
 const SEND_BATCH: usize = 16;
-/// Datagrams handled per wake-up before the session settles (sends, timers, events).
 const RECV_BATCH: usize = 64;
-/// Rounds of already-due timers a settle runs before it yields (the pacer can stay due while it drains a burst).
 const DUE_ROUNDS: usize = 8;
 
-/// One end of a media session, driving a [`Core`] over a transport on the tokio runtime. Every method is cheap and
-/// non-blocking except [`next_event`](Self::next_event): [`send_frame`](Self::send_frame) only packetizes and queues
-/// (so the encoder's thread never waits on the network), and a background task sends, receives and runs the timers.
 pub struct MediaSession<T: DatagramTransport = QuicTransport> {
     shared: Arc<Shared<T>>,
     events: AsyncMutex<mpsc::UnboundedReceiver<Event>>,
@@ -44,10 +36,8 @@ struct Shared<T> {
 
 struct State {
     core: Core,
-    /// Datagrams the transport had no room for; they go before anything new.
     held: VecDeque<Bytes>,
     rtt_at: Option<Instant>,
-    /// Dropped when the transport closes, which ends [`MediaSession::next_event`].
     events: Option<mpsc::UnboundedSender<Event>>,
 }
 
@@ -56,7 +46,6 @@ fn now() -> Instant {
 }
 
 impl<T: DatagramTransport> MediaSession<T> {
-    /// Starts a session. It owns the transport's incoming datagrams from now on. Must run inside a tokio runtime.
     pub fn new(transport: T, config: MediaConfig) -> Self {
         let mut core = Core::new(config, now());
         core.set_max_datagram_size(transport.max_datagram_size());
@@ -70,8 +59,6 @@ impl<T: DatagramTransport> MediaSession<T> {
         Self { shared, events: AsyncMutex::new(receiver), task }
     }
 
-    /// Host: packetizes one encoded tile and queues it for the session's task to send. Returns the frame's number
-    /// within its stream.
     pub fn send_frame(&self, frame: OutgoingFrame<'_>) -> Result<u32, SendError> {
         let now = now();
         let mut state = self.shared.state.lock().unwrap();
@@ -82,13 +69,11 @@ impl<T: DatagramTransport> MediaSession<T> {
         Ok(number)
     }
 
-    /// Viewer: the decoder finished the frame that carried `token`.
     pub fn ack_ltr(&self, stream: u8, token: u64) {
         self.shared.state.lock().unwrap().core.ack_ltr(stream, token);
         self.shared.wake.notify_one();
     }
 
-    /// Host: whether to encode the next capture.
     pub fn admission(&self) -> Admission {
         self.shared.state.lock().unwrap().core.admission()
     }
@@ -97,13 +82,10 @@ impl<T: DatagramTransport> MediaSession<T> {
         self.shared.state.lock().unwrap().core.stats(now())
     }
 
-    /// The next event; `None` once the session's transport closed. Frames and acks wait here until taken, so take
-    /// them promptly: nothing is dropped.
     pub async fn next_event(&self) -> Option<Event> {
         self.events.lock().await.recv().await
     }
 
-    /// The next event if one is waiting.
     pub fn try_next_event(&self) -> Option<Event> {
         self.events.try_lock().ok()?.try_recv().ok()
     }
@@ -112,8 +94,6 @@ impl<T: DatagramTransport> MediaSession<T> {
         &self.shared.transport
     }
 
-    /// Stops the session's task and ends [`next_event`](Self::next_event) once the waiting events are taken. The
-    /// connection stays open; close it separately.
     pub fn close(&self) {
         self.task.abort();
         self.shared.state.lock().unwrap().events = None;
@@ -127,8 +107,6 @@ impl<T: DatagramTransport> Drop for MediaSession<T> {
 }
 
 impl<T: DatagramTransport> Shared<T> {
-    /// Sends what the core has ready, a batch at a time with the lock released while the transport works, so
-    /// [`MediaSession::send_frame`] never waits behind a burst. Then hands the core's events over.
     fn pump(&self, now: Instant) {
         loop {
             let mut batch = {
@@ -171,7 +149,6 @@ impl<T: DatagramTransport> Shared<T> {
         }
     }
 
-    /// Pumps, then says when the core next needs attention.
     fn settle(&self) -> Option<Instant> {
         let now = now();
         {
@@ -184,7 +161,6 @@ impl<T: DatagramTransport> Shared<T> {
             }
         }
         self.pump(now);
-        // Timers already due run now rather than on tokio's next 1 ms tick (a NACK waits on this).
         let mut state = self.state.lock().unwrap();
         let mut now = now;
         for _ in 0..DUE_ROUNDS {
@@ -199,7 +175,6 @@ impl<T: DatagramTransport> Shared<T> {
         }
         let next = state.core.poll_timeout(now);
         if !state.held.is_empty() {
-            // The pacer would say "now" while the transport has no room; wait for room instead of spinning.
             return Some(next.map_or(now + FULL_RETRY, |next| next.max(now + FULL_RETRY)));
         }
         next
@@ -221,7 +196,6 @@ async fn drive<T: DatagramTransport>(shared: Arc<Shared<T>>) {
                 let now = now();
                 let mut state = shared.state.lock().unwrap();
                 state.core.handle_datagram(now, datagram);
-                // Take whatever else already arrived under the same lock, before the next settle's timer scan.
                 let mut closed = false;
                 for _ in 0..RECV_BATCH {
                     match ready_now(shared.transport.recv()) {
@@ -247,7 +221,6 @@ async fn drive<T: DatagramTransport>(shared: Arc<Shared<T>>) {
     shared.state.lock().unwrap().events = None;
 }
 
-/// Polls `future` once: its output if it's ready now, without waiting.
 fn ready_now<F: std::future::Future>(future: F) -> Option<F::Output> {
     let mut future = std::pin::pin!(future);
     let mut context = std::task::Context::from_waker(std::task::Waker::noop());

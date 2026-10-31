@@ -1,24 +1,3 @@
-//! The M1 transport bench: synthetic frames through a [`MediaSession`], over iroh QUIC datagrams and over plain UDP
-//! with the same framing, optionally through one of the benchmark's emulated networks. Run it as the
-//! `media_transport_bench` example on one machine, or on two Macs through `CodevisorBench media-transport`, which
-//! calls [`run`] inside the signed bench app so macOS lets it reach the LAN.
-//!
-//! ```text
-//! viewer   --bind ADDR --udp-bind ADDR --secret HEX [--network N3] [--seconds 10] [--idle-exit-s S]
-//! host     --peer-id ID | --peer-secret HEX, --peer ADDR --udp-peer ADDR [--network N3] [--rows all] [--seconds 10]
-//!          [--json PATH] [--network-label "N3 (dummynet)"]
-//! loopback [--network N3] [--rows all] [--seconds 10] [--json PATH]
-//! send-cost [--frames 300]
-//! ```
-//!
-//! `send-cost` times [`MediaSession::send_frame`] itself over a loopback connection: the Rust side of a frame's
-//! hand-off, to set against what `CodevisorBench media-transport --role ffi-cost` measures from Swift.
-//!
-//! For each row and transport the host reports the frame round trip (`send_frame` to the ack: pacing, both network
-//! legs, assembly and the feedback) and its p50/p95 difference from plain UDP; the share of frames complete within
-//! RTT + 2 ms of their last packet's first arrival (the M1 N3 target), with the RTT taken from the acks themselves;
-//! the recovery delay of frames that lost packets; and the counters.
-
 use std::{
     collections::HashMap,
     fmt::Write as _,
@@ -42,9 +21,7 @@ use crate::{
 
 const INTERVAL: Duration = Duration::from_micros(16_667);
 const DRAIN: Duration = Duration::from_millis(700);
-/// The raw-UDP baseline's datagram size: what iroh reaches on a 1500-byte LAN path after path MTU discovery.
 const UDP_DATAGRAM: usize = 1400;
-/// How long a viewer waits for the host's first frame (the other machine may still be building).
 const FIRST_FRAME_PATIENCE: Duration = Duration::from_secs(1200);
 const HOST_SEED: u64 = 0x5EED_0001;
 const VIEWER_SEED: u64 = 0x5EED_0002;
@@ -52,10 +29,8 @@ const VIEWER_SEED: u64 = 0x5EED_0002;
 #[derive(Debug, Clone, Copy)]
 struct Row {
     name: &'static str,
-    /// Frame bytes per stream per interval.
     frame_bytes: usize,
     streams: u8,
-    /// Every this many frames, one stream's frame is this big instead.
     keyframe: Option<(u32, usize)>,
 }
 
@@ -68,7 +43,6 @@ const ROWS: [Row; 6] = [
     Row { name: "8 Mbit/s + 1 MiB keyframe/s", frame_bytes: 16_667, streams: 1, keyframe: Some((60, 1 << 20)) },
 ];
 
-/// Runs the bench with command-line style arguments and returns its report (markdown, then a JSON line).
 pub async fn run(args: Vec<String>) -> Result<String> {
     let options = Options::parse(&args)?;
     match args.first().map(String::as_str) {
@@ -140,7 +114,6 @@ fn endpoint_config(secret_key: [u8; 32], bind: &str) -> NetConfig {
     }
 }
 
-/// A frame's content is seeded noise; its metadata is the frame's index and a checksum the viewer verifies.
 fn frame_data(cache: &mut HashMap<usize, Bytes>, len: usize) -> Bytes {
     cache
         .entry(len)
@@ -162,7 +135,6 @@ struct ViewerTally {
     skipped: u64,
 }
 
-/// Drains a viewer session until its transport closes or, once frames started, nothing arrives for `idle`.
 async fn serve_viewer<T: DatagramTransport>(session: MediaSession<T>, idle: Duration) -> (ViewerTally, crate::Stats) {
     let mut tally = ViewerTally::default();
     let mut wait = FIRST_FRAME_PATIENCE;
@@ -194,13 +166,11 @@ fn viewer_line(label: &str, tally: &ViewerTally, stats: &crate::Stats) -> String
 async fn viewer(options: &Options) -> Result<String> {
     let secret = secret_key_from_hex(options.get("secret")?)?;
     let network = options.network()?;
-    // Each transport's session sits idle while the host runs the other transport's row.
     let row_idle = Duration::from_secs_f64(options.seconds()? * 2.0) + DRAIN * 2 + Duration::from_secs(5);
     let idle = Duration::from_secs_f64(options.or("idle-exit-s", "0").parse()?).max(row_idle);
     let endpoint = NetEndpoint::bind(endpoint_config(secret, options.get("bind")?)).await?;
     let udp = UdpSocket::bind(options.get("udp-bind")?).await?;
     eprintln!("viewer {} on {:?}, udp {}", endpoint.endpoint_id(), endpoint.bound_sockets(), udp.local_addr()?);
-    // The UDP baseline borrows the round trip of the QUIC connection on the same path, once there is one.
     let path: Arc<std::sync::OnceLock<codevisor_net::NetConnection>> = Arc::default();
     let rtt: crate::RttSource = {
         let path = path.clone();
@@ -221,7 +191,6 @@ async fn viewer(options: &Options) -> Result<String> {
     Ok(format!("{}\n{}\n", viewer_line("iroh", &quic_tally, &quic_stats), viewer_line("udp", &udp_tally, &udp_stats)))
 }
 
-/// The next connection that completes its handshake; a stray or stale one that fails it is skipped.
 async fn accept_screen(endpoint: &NetEndpoint) -> Result<codevisor_net::NetConnection> {
     loop {
         match endpoint.accept().await {
@@ -270,7 +239,6 @@ async fn host(options: &Options) -> Result<String> {
 
 async fn loopback(options: &Options) -> Result<String> {
     let network = options.network()?;
-    // Each transport's viewer sits idle while the other transport runs its row.
     let idle = Duration::from_secs_f64(options.seconds()? * 2.0) + DRAIN * 2 + Duration::from_secs(5);
     let secret = generate_secret_key();
     let viewer_endpoint = NetEndpoint::bind(endpoint_config(secret, "127.0.0.1:0")).await?;
@@ -311,7 +279,6 @@ async fn loopback(options: &Options) -> Result<String> {
     Ok(report)
 }
 
-/// Sizes the frame hand-off is timed at: an HP-like tile, a large tile, a keyframe.
 pub const HAND_OFF_SIZES: [usize; 3] = [64 << 10, 256 << 10, 1 << 20];
 
 async fn send_cost(options: &Options) -> Result<String> {
@@ -359,14 +326,9 @@ async fn send_cost(options: &Options) -> Result<String> {
 struct Measured {
     round_trips_ms: Vec<f64>,
     sending_ms: Vec<f64>,
-    /// Recovery delay of frames that lost packets: completion after the last packet that arrived the first time.
     recoveries_ms: Vec<f64>,
-    /// Frames repaired within the round trip + 2 ms, of `timed` (repaired or lost).
     within: u64,
     timed: u64,
-    /// The path's round trip as the acks show it: the fastest clean frame's first packet out to its ack in, minus the
-    /// viewer's first packet in to complete. Differences on each machine's own clock, no sync needed.
-    /// `measure` lowers it to the transport's fastest so far and counts `within` against it.
     rtt_floor_ms: f64,
     acked: u64,
     lost: u64,
@@ -386,7 +348,6 @@ async fn measure(
         ImpairedTransport::new(QuicTransport::new(connection.clone()), network, HOST_SEED),
         media_config(),
     );
-    // Let path MTU discovery and the RTT estimate settle before measuring.
     tokio::time::sleep(Duration::from_secs(2)).await;
     let path_rtt = connection.rtt().unwrap_or(Duration::from_micros(500));
     let udp_socket = UdpSocket::bind(if udp_peer.ip().is_loopback() { "127.0.0.1:0" } else { "0.0.0.0:0" }).await?;
@@ -421,8 +382,6 @@ async fn measure(
         let stream_base = (index as u8) * 4;
         let mut udp_result = run_row(&udp, row, stream_base, seconds).await;
         let mut quic_result = run_row(&quic, row, stream_base, seconds).await;
-        // Each transport's round trip is the fastest clean ack seen so far: small frames (the first rows) time the
-        // path itself, large ones add their own serialization.
         for (result, floor) in [(&mut udp_result, &mut udp_floor), (&mut quic_result, &mut quic_floor)] {
             *floor = floor.min(result.rtt_floor_ms);
             result.rtt_floor_ms = *floor;
@@ -516,7 +475,6 @@ async fn measure(
     Ok(format!("{table}{diagnostics}\n{json}\n"))
 }
 
-/// Sends one row's frames at 60 Hz on `stream_base..stream_base + row.streams` and collects their acks.
 async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stream_base: u8, seconds: f64) -> Measured {
     let before = session.stats();
     let frames = (seconds / INTERVAL.as_secs_f64()) as u32;
@@ -540,7 +498,6 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
                     measured.recoveries_ms.push(recovery.as_secs_f64() * 1000.0);
                 }
                 Some(receipt) => {
-                    // First packet out to ack in, minus the viewer's first packet in to complete: both network legs.
                     let round_trip = ack.acked_after.saturating_sub(receipt.assembling).as_secs_f64() * 1000.0;
                     measured.rtt_floor_ms = measured.rtt_floor_ms.min(round_trip);
                 }
@@ -555,7 +512,6 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
     };
     let mut index = 0;
     while index < frames {
-        // Take events as they arrive, so an ack is timed when it lands rather than at the next tick.
         tokio::select! {
             biased;
             event = session.next_event() => {

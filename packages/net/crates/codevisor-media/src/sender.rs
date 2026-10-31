@@ -1,6 +1,3 @@
-//! The host half: packetize, protect, pace, retransmit on NACK, probe for missing acks, and turn the viewer's
-//! feedback into events and a capacity estimate.
-
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     time::{Duration, Instant},
@@ -19,11 +16,8 @@ use crate::{
     wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader},
 };
 
-/// Probes for an unanswered frame before the sender stops waiting and reports it lost.
 const MAX_PROBES: u32 = 6;
-/// Unresolved frames kept per stream; older ones are reported lost.
 const MAX_UNRESOLVED: usize = 512;
-/// Loss seen within this long keeps adaptive FEC on.
 const FEC_MEMORY: Duration = Duration::from_secs(10);
 const LOSS_WINDOW: Duration = Duration::from_secs(1);
 const MIN_FEC: f64 = 0.05;
@@ -33,12 +27,10 @@ const MAX_PACING_GAIN: f64 = 4.0;
 
 #[derive(Debug)]
 struct SentFrame {
-    /// Data packets, then parity packets, each a whole datagram.
     packets: Vec<Bytes>,
     data_count: usize,
     submitted: Instant,
     first_tx: Option<Instant>,
-    /// Set once every original packet is out.
     last_tx: Option<Instant>,
     originals_out: usize,
     probes: u32,
@@ -102,7 +94,6 @@ impl Sender {
         }
         let max_shard =
             max_datagram.checked_sub(wire::HEADER_BYTES).filter(|shard| *shard >= 2).ok_or(SendError::PathTooSmall)?;
-        // The fields and the access unit become one payload (FEC protects both), then packets.
         let fields = FrameFields { keyframe: frame.keyframe, ltr_token: frame.ltr_token, meta: frame.meta.to_vec() };
         let payload = fields.payload(frame.data);
         let frame_len =
@@ -194,13 +185,10 @@ impl Sender {
             return;
         }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
-        // Rise at once, decay by halves, so one quiet window doesn't switch protection off.
         self.loss.rate = current.max(self.loss.rate / 2.0).min(1.0);
         self.loss = LossWindow { started: Some(now), sent: 0, nacked: 0, rate: self.loss.rate };
     }
 
-    /// Twice the estimate, so every frame probes for more; faster when that wouldn't drain the backlog within half a
-    /// frame interval, but never past four times the estimate, which would only overflow a slow link's queue.
     fn update_pacing_rate(&mut self, now: Instant) {
         let estimate = self.estimator.estimate_bps();
         let spread = self.config.frame_interval.as_secs_f64() / 2.0;
@@ -208,7 +196,6 @@ impl Sender {
         self.pacer.set_rate(now, drain.clamp(estimate * PACING_GAIN, estimate * MAX_PACING_GAIN));
     }
 
-    /// The next packet the pacer allows out at `now`.
     pub fn poll_transmit(&mut self, now: Instant, stats: &mut Stats) -> Option<Bytes> {
         let (packet, tag) = self.pacer.poll(now)?;
         stats.packets_sent += 1;
@@ -278,7 +265,6 @@ impl Sender {
                 events.push_back(Event::FrameAcked(ack));
             }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
-                // A first packet that was lost and resent would read as queueing; only clean frames time the delay.
                 if !feedback.lost && receipt.recovery == crate::Recovery::None {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
                     let hold_off = self.rtt + self.config.frame_interval;
@@ -288,7 +274,6 @@ impl Sender {
                 self.estimator.on_delivery(now, receipt.original_bytes as usize, span);
             }
         }
-        // Everything below `resolved_below` is settled at the viewer; the bitmap says which of the last 32 it lost.
         let stream = self.streams.get_mut(&feedback.stream).expect("looked up above");
         while let Some(entry) = stream.unresolved.first_entry() {
             let number = *entry.key();
@@ -296,8 +281,6 @@ impl Sender {
                 break;
             }
             let frame = entry.remove();
-            // Past the bitmap's 32 frames the viewer's outcome is unknown here; a needless refresh is cheaper than
-            // encoding on top of a frame the viewer skipped.
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
                 stats.frames_lost += 1;
@@ -309,8 +292,6 @@ impl Sender {
         }
     }
 
-    /// Re-sends the last data packet of every frame whose ack is overdue, which makes the viewer answer for it or
-    /// NACK what it lacks. Frames still unanswered after [`MAX_PROBES`] probes are reported lost.
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
         let timeout = self.ack_timeout();
         let mut probed = false;

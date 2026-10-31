@@ -4,18 +4,10 @@ import Foundation
   import codevisor_net_ffiFFI
 #endif
 
-// The screen sharing media session's frame path (codevisor-media, 851-3815). Frames cross the Swift–Rust boundary
-// through a small C ABI with borrowed buffers instead of uniffi's byte-by-byte `Data` marshalling.
-
-/// Why `MediaSessionHandle.sendFrame` didn't send a frame.
 public enum MediaSendError: Error, Equatable {
-  /// The connection doesn't carry datagrams.
   case noDatagrams
-  /// The path's datagrams can't hold a media header.
   case pathTooSmall
-  /// The metadata is over 64 KiB.
   case metaTooLarge
-  /// The frame needs more than 65 535 packets.
   case frameTooLarge
   case internalFailure
 
@@ -31,8 +23,6 @@ public enum MediaSendError: Error, Equatable {
 }
 
 extension MediaSessionHandle {
-  /// Host: sends one encoded tile, copied before this returns (so `data` is free again at once). Returns the frame's
-  /// number within its stream.
   @discardableResult
   public func sendFrame(
     stream: UInt8, keyframe: Bool, ltrToken: UInt64?, meta: Data = Data(), data: UnsafeRawBufferPointer
@@ -46,7 +36,6 @@ extension MediaSessionHandle {
     return UInt32(number)
   }
 
-  /// Host: as above, from `Data`.
   @discardableResult
   public func sendFrame(
     stream: UInt8, keyframe: Bool, ltrToken: UInt64?, meta: Data = Data(), data: Data
@@ -60,7 +49,6 @@ extension MediaSessionHandle {
 }
 
 extension MediaBytes {
-  /// The frame's bytes, read in place; valid only inside `body`.
   public func withUnsafeBytes<Result>(_ body: (UnsafeRawBufferPointer) throws -> Result) rethrows -> Result {
     try withExtendedLifetime(self) {
       var count = 0
@@ -69,7 +57,6 @@ extension MediaBytes {
     }
   }
 
-  /// A copy of the frame's bytes.
   public var data: Data {
     withUnsafeBytes { Data($0) }
   }

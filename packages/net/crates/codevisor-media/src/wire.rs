@@ -1,28 +1,8 @@
-//! Datagram framing. Every datagram starts with a version/kind byte and a stream byte; all integers are big endian.
-//!
-//! Media packet (kinds [`Kind::Data`] and [`Kind::Parity`]), a 16-byte header before the shard bytes:
-//!
-//! | bytes  | field                                                               |
-//! | ------ | ------------------------------------------------------------------- |
-//! | 0      | version (high nibble) and kind (low nibble)                         |
-//! | 1      | stream (a tile, or any other independent picture sequence)          |
-//! | 2..6   | frame number, counted per stream from 0                             |
-//! | 6..8   | packet index: data shards `0..k`, then parity shards `k..k + m`     |
-//! | 8..10  | `k`, the frame's data packet count                                  |
-//! | 10..12 | `m`, the frame's parity packet count                                |
-//! | 12..16 | the frame payload's length in bytes                                 |
-//!
-//! Feedback ([`Kind::Feedback`], receiver to sender) and NACK ([`Kind::Nack`]) layouts are on [`Feedback`] and
-//! [`Nack`]. Kinds 4 and up are reserved for audio and cursor datagrams.
-
 use bytes::{BufMut, Bytes, BytesMut};
 
 pub const VERSION: u8 = 1;
 pub const HEADER_BYTES: usize = 16;
-/// NACK range length meaning "every data packet of the frame" (the receiver hasn't seen any of it).
 pub const WHOLE_FRAME: u16 = u16::MAX;
-/// The feedback frame number of a report about no frame in particular (an LTR acknowledgement sent before any frame
-/// of the stream was resolved).
 pub const NO_FRAME: u32 = u32::MAX;
 const FEEDBACK_BYTES: usize = 36;
 const LTR_BYTES: usize = 8;
@@ -52,7 +32,6 @@ fn first_byte(kind: Kind) -> u8 {
     VERSION << 4 | kind as u8
 }
 
-/// Reads the version/kind byte. `None` for another version, an unknown kind or a datagram too short to hold one.
 pub fn kind_of(datagram: &[u8]) -> Option<Kind> {
     let first = *datagram.first()?;
     if first >> 4 != VERSION {
@@ -86,7 +65,6 @@ impl PacketHeader {
         out.freeze()
     }
 
-    /// Splits a media packet into its header and shard bytes.
     pub fn decode(mut datagram: Bytes) -> Option<(Self, Bytes)> {
         let kind = kind_of(&datagram)?;
         if !matches!(kind, Kind::Data | Kind::Parity) || datagram.len() < HEADER_BYTES {
@@ -110,47 +88,23 @@ impl PacketHeader {
     }
 }
 
-/// How a frame that completed got its missing packets back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Recovery {
-    /// Every data packet arrived the first time.
     #[default]
     None,
-    /// Parity packets rebuilt the missing data packets.
     Fec,
-    /// Retransmissions answered a NACK (possibly together with parity).
     Nack,
 }
 
-/// What the receiver saw of a frame, in microseconds of its own clock. Frames it gave up on have one too (if any
-/// packet arrived), so a link that loses most of every frame still yields delivery-rate samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameReceipt {
     pub first_rx_us: u64,
-    /// Arrival of the last packet that arrived the first time it was sent, after the first packet.
     pub last_rx_offset_us: u32,
-    /// Completion, after the first packet (0 for a frame given up).
     pub complete_offset_us: u32,
-    /// Datagram bytes that arrived the first time they were sent, after the first packet: the delivery-rate sample's
-    /// numerator, over `last_rx_offset_us`.
     pub original_bytes: u32,
     pub recovery: Recovery,
 }
 
-/// What the receiver reports about one frame, plus its stream's recent history. One small datagram per resolved
-/// frame (and per LTR acknowledgement), so a lost feedback datagram costs nothing the next one doesn't repair.
-///
-/// | bytes  | field                                                                              |
-/// | ------ | ---------------------------------------------------------------------------------- |
-/// | 0..2   | version/kind, stream                                                               |
-/// | 2..6   | the frame reported on                                                              |
-/// | 6      | flags: 1 lost, 2 receipt present, 4 LTR token present                              |
-/// | 7      | recovery of the reported frame: 0 none, 1 FEC, 2 NACK                              |
-/// | 8..12  | `resolved_below`: every frame before this one is delivered or given up             |
-/// | 12..16 | lost bitmap: bit `i` set means frame `resolved_below - 1 - i` was given up         |
-/// | 16..36 | receipt: first packet arrival (u64 µs); last original arrival and completion (u32 µs after it); bytes  |
-/// |        | that arrived the first time they were sent after the first packet (u32)                                |
-/// | 36..44 | the newest LTR token the receiver's decoder acknowledged on this stream (optional)                     |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Feedback {
     pub stream: u8,
@@ -245,24 +199,14 @@ impl Feedback {
     }
 }
 
-/// A request to retransmit data packets of one frame.
-///
-/// | bytes | field                                                                       |
-/// | ----- | --------------------------------------------------------------------------- |
-/// | 0..2  | version/kind, stream                                                        |
-/// | 2..6  | frame                                                                       |
-/// | 6..8  | range count                                                                 |
-/// | 8..   | ranges of data packet indices: start (u16) and length (u16, [`WHOLE_FRAME`]) |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nack {
     pub stream: u8,
     pub frame: u32,
-    /// `(first index, count)` pairs.
     pub ranges: Vec<(u16, u16)>,
 }
 
 impl Nack {
-    /// Builds the ranges from sorted, distinct indices, keeping the first 64 ranges.
     pub fn from_indices(stream: u8, frame: u32, indices: impl IntoIterator<Item = u16>) -> Self {
         let mut ranges: Vec<(u16, u16)> = Vec::new();
         for index in indices {
@@ -314,9 +258,6 @@ impl Nack {
     }
 }
 
-/// The per-frame fields the transport carries in front of the access unit, inside the packetized (and FEC-protected)
-/// frame payload: a flags byte (1 keyframe, 2 LTR token present), the optional LTR token (u64), the metadata length
-/// (u16) and the metadata, then the access unit.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FrameFields {
     pub keyframe: bool,
@@ -331,7 +272,6 @@ impl FrameFields {
         1 + if self.ltr_token.is_some() { 8 } else { 0 } + 2 + self.meta.len()
     }
 
-    /// The frame payload: these fields, then `data`.
     pub fn payload(&self, data: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.prefix_len() + data.len());
         out.push(u8::from(self.keyframe) | if self.ltr_token.is_some() { 2 } else { 0 });
@@ -344,7 +284,6 @@ impl FrameFields {
         out
     }
 
-    /// Splits a frame payload back into its fields and the access unit.
     pub fn parse(mut payload: Bytes) -> Option<(Self, Bytes)> {
         let flags = *payload.first()?;
         let mut at = 1;

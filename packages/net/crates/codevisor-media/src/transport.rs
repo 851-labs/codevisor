@@ -9,34 +9,22 @@ use crate::netsim::{Fate, NetworkConditions, NetworkModel};
 #[derive(Debug, PartialEq, Eq)]
 pub enum SendOutcome {
     Sent,
-    /// The transport has no room right now; offer this datagram again shortly.
     Full(Bytes),
-    /// Too large for the path, or the connection is gone.
     Rejected,
 }
 
-/// Where a [`crate::MediaSession`]'s datagrams go: QUIC datagrams on an iroh connection in the product, plain UDP
-/// as the raw-UDP baseline (and the design's fallback), or either through an emulated network in the bench.
 pub trait DatagramTransport: Send + Sync + 'static {
     fn max_datagram_size(&self) -> Option<usize>;
-    /// Sends without waiting. A full send buffer hands the datagram back instead of dropping an older one.
     fn send(&self, datagram: Bytes) -> SendOutcome;
-    /// The next received datagram; `None` once the transport is closed. Must be cancel safe.
     fn recv(&self) -> impl Future<Output = Option<Bytes>> + Send;
     fn rtt(&self) -> Option<Duration>;
 }
 
-/// QUIC datagrams on a `codevisor/screen/1` connection.
 pub struct QuicTransport {
     connection: NetConnection,
-    /// The datagram send buffer's size: the most free space it has shown.
     buffer: std::sync::atomic::AtomicUsize,
 }
 
-/// Datagrams QUIC may hold before sending them. Anything past this waits in the session's pacer instead, where
-/// admission sees it: QUIC's own buffer (1 MiB by default) would hide a congestion window that stopped opening behind
-/// up to a second of queue. Smaller caps starve fast links, because the session refills QUIC only on tokio's 1 ms
-/// timer once it's full (64 KiB held 300 Mbit/s frames to 16 ms of sending on loopback).
 const MAX_QUIC_QUEUE: usize = 256 << 10;
 
 impl QuicTransport {
@@ -57,8 +45,6 @@ impl DatagramTransport for QuicTransport {
     fn send(&self, datagram: Bytes) -> SendOutcome {
         let space = self.connection.datagram_send_buffer_space();
         let buffer = self.buffer.fetch_max(space, std::sync::atomic::Ordering::Relaxed).max(space);
-        // QUIC would drop the oldest queued datagram to make room, or queue deeply behind its congestion window;
-        // hand this one back instead, so the pacer's backlog (and with it admission) sees the congestion.
         if space < datagram.len() || buffer - space + datagram.len() > MAX_QUIC_QUEUE {
             return SendOutcome::Full(datagram);
         }
@@ -79,11 +65,8 @@ impl DatagramTransport for QuicTransport {
     }
 }
 
-/// Where a [`UdpTransport`] gets its round trip from (the bench reads it off the QUIC connection on the same path).
 pub type RttSource = Box<dyn Fn() -> Option<Duration> + Send + Sync>;
 
-/// Plain UDP to one peer: the bench's raw-UDP baseline. It has no round-trip estimate of its own, so it reports what
-/// its [`RttSource`] says. The peer is fixed, or (for the listening side) the source of the first datagram.
 pub struct UdpTransport {
     socket: UdpSocket,
     peer: Mutex<Option<SocketAddr>>,
@@ -109,7 +92,6 @@ impl DatagramTransport for UdpTransport {
         match self.socket.try_send_to(&datagram, peer) {
             Ok(_) => SendOutcome::Sent,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => SendOutcome::Full(datagram),
-            // macOS answers a full socket buffer with ENOBUFS rather than blocking.
             Err(error) if error.raw_os_error() == Some(55) => SendOutcome::Full(datagram),
             Err(_) => SendOutcome::Rejected,
         }
@@ -118,7 +100,6 @@ impl DatagramTransport for UdpTransport {
     async fn recv(&self) -> Option<Bytes> {
         loop {
             self.socket.readable().await.ok()?;
-            // Datagrams on a path never exceed its MTU; anything longer is truncated and fails its header checks.
             let mut buffer = vec![0u8; self.max_datagram.max(1500) + 64];
             let (len, from) = match self.socket.try_recv_from(&mut buffer) {
                 Ok(received) => received,
@@ -140,13 +121,9 @@ impl DatagramTransport for UdpTransport {
     }
 }
 
-/// Sends through a seeded [`NetworkModel`] before the inner transport: the loss, delay and link rate of one of the
-/// benchmark's network conditions, applied to this end's outgoing datagrams (wrap both ends for both directions).
-/// The reported round trip adds the emulated delay both ways.
 pub struct ImpairedTransport<T> {
     inner: std::sync::Arc<T>,
     model: Mutex<(NetworkModel, Instant)>,
-    /// Datagrams waiting in the delay queue; while there are any, new ones queue behind them to keep the order.
     queued: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     delayed: mpsc::UnboundedSender<(Instant, Bytes)>,
     forwarder: tokio::task::JoinHandle<()>,
@@ -195,7 +172,6 @@ impl<T: DatagramTransport> DatagramTransport for ImpairedTransport<T> {
             return SendOutcome::Sent;
         };
         let due = *epoch + at;
-        // Due now with nothing ahead of it (N0, or an idle link): send at once rather than through a 1 ms timer.
         if due <= now && self.queued.load(std::sync::atomic::Ordering::SeqCst) == 0 {
             return self.inner.send(datagram);
         }

@@ -22,7 +22,6 @@ lipo -create target/aarch64-apple-ios-sim/release/$lib target/x86_64-apple-ios/r
 cargo run --release --locked -p codevisor-net-ffi --bin uniffi-bindgen -- generate \
   --library target/aarch64-apple-darwin/release/$lib --language swift --out-dir "$work/swift"
 cp "$work/swift/codevisor_net_ffiFFI.h" crates/codevisor-net-ffi/include/codevisor_media.h "$work/headers/"
-# The media frame path's C ABI joins uniffi's header in the same module.
 sed 's|header "codevisor_net_ffiFFI.h"|&\n    header "codevisor_media.h"|' "$work/swift/codevisor_net_ffiFFI.modulemap" \
   > "$work/headers/module.modulemap"
 

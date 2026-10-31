@@ -1,22 +1,13 @@
-//! The capacity estimate: a windowed maximum of per-frame delivery rates (as BBR's bandwidth filter), cut back by a
-//! delay detector when frames start finding a standing queue (the idea of GCC's overuse detector, without its slow
-//! ramp: pacing at twice the estimate lets every frame probe for more).
-
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
 };
 
-/// Delivery samples older than this leave the maximum filter.
 const RATE_WINDOW: Duration = Duration::from_secs(1);
-/// The minimum one-way delay is tracked over this long, so the clock offset between the hosts cancels out.
 const DELAY_WINDOW: Duration = Duration::from_secs(10);
-/// A frame whose first packet waits this much longer than the minimum found a queue the previous frames left.
 const QUEUE_THRESHOLD: Duration = Duration::from_millis(2);
-/// Consecutive growing over-threshold samples before backing off.
 const OVERUSE_SAMPLES: u32 = 2;
 const BACKOFF: f64 = 0.85;
-/// A frame spread over less than this was sent faster than it can be timed.
 const MIN_SPAN: Duration = Duration::from_micros(100);
 const MIN_RATE_BPS: f64 = 500e3;
 
@@ -48,12 +39,10 @@ impl Estimator {
         self.estimate_bps
     }
 
-    /// The latest queueing delay seen by a frame's first packet, in microseconds.
     pub fn queue_delay_us(&self) -> i64 {
         self.queue_delay_us
     }
 
-    /// A frame delivered `bytes` after its first packet over `span` (first to last arrival at the receiver).
     pub fn on_delivery(&mut self, now: Instant, bytes: usize, span: Duration) {
         if span < MIN_SPAN || bytes == 0 {
             return;
@@ -67,8 +56,6 @@ impl Estimator {
         self.estimate_bps = max.clamp(MIN_RATE_BPS, self.max_bps);
     }
 
-    /// One frame's first-packet one-way delay, as the receiver's arrival minus the sender's departure in their own
-    /// clocks (so it includes an unknown, constant offset).
     pub fn on_delay(&mut self, now: Instant, one_way_us: i64, hold_off: Duration) {
         while self.min_delay.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > DELAY_WINDOW) {
             self.min_delay.pop_front();
@@ -108,7 +95,6 @@ mod tests {
     fn estimate_is_the_fastest_recent_delivery_and_forgets_old_ones() {
         let start = Instant::now();
         let mut estimator = Estimator::new(10e6, 1e9);
-        // 125 000 bytes over 10 ms is 100 Mbit/s; over 20 ms, 50 Mbit/s.
         estimator.on_delivery(start, 125_000, 10 * MS);
         estimator.on_delivery(start + 500 * MS, 125_000, 20 * MS);
         assert_eq!(estimator.estimate_bps(), 100e6);
@@ -122,7 +108,6 @@ mod tests {
     fn a_growing_standing_queue_backs_off_once_per_hold_off() {
         let start = Instant::now();
         let mut estimator = Estimator::new(100e6, 1e9);
-        // The clock offset (5 s) cancels against the minimum.
         let offset = 5_000_000;
         estimator.on_delay(start, offset, 20 * MS);
         estimator.on_delay(start + 16 * MS, offset + 1_000, 20 * MS);

@@ -1,5 +1,3 @@
-//! Frame-spread pacing: a token bucket in front of the transport. Retransmissions and probes go before new packets.
-
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
@@ -7,12 +5,10 @@ use std::{
 
 use bytes::Bytes;
 
-/// What a queued packet is, so the sender can time the frame it belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketTag {
     pub stream: u8,
     pub frame: u32,
-    /// The first transmission of this packet, rather than a retransmission or probe.
     pub original: bool,
 }
 
@@ -27,7 +23,6 @@ pub struct Pacer {
     updated: Option<Instant>,
 }
 
-/// The bucket holds this much sending time, so a timer that fires late (tokio's resolution is 1 ms) still keeps up.
 const BURST_TIME: Duration = Duration::from_millis(1);
 const MIN_BURST_BYTES: f64 = 4.0 * 1500.0;
 
@@ -62,14 +57,12 @@ impl Pacer {
         self.urgent.is_empty() && self.queue.is_empty()
     }
 
-    /// Changes the rate from now on, keeping the credit earned at the old rate.
     pub fn set_rate(&mut self, now: Instant, rate_bps: f64) {
         self.refill(now);
         self.rate_bps = rate_bps.max(1.0);
         self.burst_bytes = burst_for(self.rate_bps);
     }
 
-    /// The next packet, if the bucket allows sending at `now`.
     pub fn poll(&mut self, now: Instant) -> Option<(Bytes, PacketTag)> {
         self.refill(now);
         if self.credit_bytes <= 0.0 {
@@ -81,7 +74,6 @@ impl Pacer {
         Some((packet, tag))
     }
 
-    /// When [`poll`](Self::poll) will next return a packet; `None` when nothing is queued.
     pub fn next_send(&self, now: Instant) -> Option<Instant> {
         if self.is_empty() {
             return None;
@@ -91,7 +83,6 @@ impl Pacer {
         if credit > 0.0 {
             return Some(now);
         }
-        // A hair past the exact instant, so the credit is positive when the timer fires.
         Some(now + Duration::from_secs_f64(-credit * 8.0 / self.rate_bps) + Duration::from_micros(1))
     }
 
@@ -119,7 +110,6 @@ mod tests {
     #[test]
     fn spreads_a_backlog_at_the_rate_after_one_burst() {
         let start = Instant::now();
-        // 48 Mbit/s: 6000 bytes per ms, so the burst is the 6000-byte minimum (five 1200-byte packets).
         let mut pacer = Pacer::new(48e6);
         for _ in 0..10 {
             pacer.push(Bytes::from(vec![0; 1200]), tag(true));
@@ -136,7 +126,6 @@ mod tests {
         while pacer.poll(later).is_some() {
             sent += 1;
         }
-        // 700 µs earns 4200 bytes: four more packets, the last on credit.
         assert_eq!(sent, 9);
         assert_eq!(pacer.backlog_bytes(), 1200);
     }

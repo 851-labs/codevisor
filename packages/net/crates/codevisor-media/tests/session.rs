@@ -16,8 +16,6 @@ use tokio::sync::mpsc;
 
 type Rule = Box<dyn FnMut(&Bytes) -> bool + Send>;
 
-/// One end of an in-memory link. `drop` decides per outgoing datagram; `room` limits how many datagrams it takes
-/// before reporting itself full.
 struct MemoryTransport {
     out: Mutex<Option<mpsc::UnboundedSender<Bytes>>>,
     incoming: tokio::sync::Mutex<mpsc::UnboundedReceiver<Bytes>>,
@@ -89,7 +87,6 @@ async fn the_session_timers_repair_a_lost_tail_with_no_more_traffic() {
     let (host_end, viewer_end) = MemoryTransport::pair();
     let mut first = true;
     *host_end.drop.lock().unwrap() = Box::new(move |datagram| {
-        // The frame's last data packet (index 4 of 5), the first time only.
         let last = PacketHeader::decode(datagram.clone()).is_some_and(|(header, _)| header.index == 4);
         let drop = last && first;
         first &= !drop;
@@ -166,9 +163,6 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
     let host = MediaSession::new(QuicTransport::new(host_connection.unwrap()), MediaConfig::default());
     let viewer = MediaSession::new(QuicTransport::new(viewer_connection.unwrap().unwrap()), MediaConfig::default());
 
-    // One frame at a time, each after the previous ack: this checks the real connection's wiring, not its loss
-    // handling under a debug build's slow receive path (the simulated-network tests own that).
-    // (stream, keyframe, LTR token, metadata, access unit)
     type Sent = (u8, bool, Option<u64>, Vec<u8>, Bytes);
     let sent: Vec<Sent> = [1, 1200, 64_000, 200_000, 300]
         .into_iter()
@@ -209,7 +203,6 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
         }
         (received, ltr)
     };
-    // A deadlock guard only; the exchange takes milliseconds.
     let (received, ltr) = tokio::time::timeout(Duration::from_secs(60), exchange).await.expect("exchange finishes");
     assert_eq!(received, sent);
     assert_eq!(ltr, Some((1, 7)));

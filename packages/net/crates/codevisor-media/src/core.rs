@@ -12,10 +12,6 @@ use crate::{
     wire::{self, Feedback, Kind, Nack, PacketHeader},
 };
 
-/// The whole transport as a state machine with no I/O and no clock of its own (the shape of `quinn-proto`): feed it
-/// datagrams and the time, and take datagrams, wake-up times and events out. One `Core` is one end of a session and
-/// can both send and receive streams; [`crate::MediaSession`] drives it over a real connection, and the tests drive
-/// two of them over a simulated link.
 #[derive(Debug)]
 pub struct Core {
     sender: Sender,
@@ -38,25 +34,21 @@ impl Core {
         }
     }
 
-    /// The path's round trip, from the connection's estimate. It times NACK retries, give-up and ack probes.
     pub fn set_rtt(&mut self, rtt: Duration) {
         self.rtt = rtt;
         self.sender.set_rtt(rtt);
         self.receiver.set_rtt(rtt);
     }
 
-    /// The largest datagram the path takes now. Frames are packetized at the size current when they're sent.
     pub fn set_max_datagram_size(&mut self, size: Option<usize>) {
         self.max_datagram = size;
     }
 
-    /// Packetizes and queues one frame; returns its number within its stream.
     pub fn send_frame(&mut self, now: Instant, frame: OutgoingFrame<'_>) -> Result<u32, SendError> {
         let max_datagram = self.max_datagram.ok_or(SendError::NoDatagrams)?;
         self.sender.send_frame(now, frame, max_datagram, &mut self.events, &mut self.stats)
     }
 
-    /// Viewer: the decoder finished the frame that carried `token`.
     pub fn ack_ltr(&mut self, stream: u8, token: u64) {
         self.receiver.ack_ltr(stream, token);
     }
@@ -86,12 +78,10 @@ impl Core {
         self.sender.handle_timeout(now, &mut self.events, &mut self.stats);
     }
 
-    /// The next datagram to send at `now`: feedback first (it's tiny and time-critical), then media as pacing allows.
     pub fn poll_transmit(&mut self, now: Instant) -> Option<Bytes> {
         self.receiver.poll_transmit().or_else(|| self.sender.poll_transmit(now, &mut self.stats))
     }
 
-    /// When to call [`handle_timeout`](Self::handle_timeout) and [`poll_transmit`](Self::poll_transmit) next.
     pub fn poll_timeout(&self, now: Instant) -> Option<Instant> {
         [self.receiver.poll_timeout(), self.sender.poll_timeout(now)].into_iter().flatten().min()
     }
@@ -110,7 +100,6 @@ impl Core {
         self.stats
     }
 
-    /// Counts a datagram the transport refused (too large for the path, or the connection is gone).
     pub fn note_transport_rejected(&mut self) {
         self.stats.transport_rejected += 1;
     }
