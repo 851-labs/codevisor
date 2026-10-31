@@ -229,7 +229,7 @@ fn a_frame_is_spread_over_at_most_half_an_interval_and_feedback_times_it() {
     sim.run_for(30 * MS);
     let packets = sim.sent_packets();
     let spread = packets.last().unwrap().0 - packets.first().unwrap().0;
-    assert!(spread <= INTERVAL / 2 && spread >= INTERVAL / 2 - MS, "{spread:?}");
+    assert!(spread <= INTERVAL / 2 && spread >= INTERVAL / 2 - 2 * MS, "{spread:?}");
 
     let ack = sim.acks()[0];
     assert_eq!(ack.sending, spread);

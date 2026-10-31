@@ -24,6 +24,8 @@ pub struct Pacer {
 }
 
 const BURST_TIME: Duration = Duration::from_millis(1);
+const FRAME_BURST_TIME: Duration = Duration::from_millis(2);
+const FRAME_BURST_BYTES: f64 = 128.0 * 1024.0;
 const MIN_BURST_BYTES: f64 = 4.0 * 1500.0;
 
 impl Pacer {
@@ -96,7 +98,8 @@ impl Pacer {
 }
 
 fn burst_for(rate_bps: f64) -> f64 {
-    (rate_bps / 8.0 * BURST_TIME.as_secs_f64()).max(MIN_BURST_BYTES)
+    let bytes_in = |time: Duration| rate_bps / 8.0 * time.as_secs_f64();
+    bytes_in(BURST_TIME).max(bytes_in(FRAME_BURST_TIME).min(FRAME_BURST_BYTES)).max(MIN_BURST_BYTES)
 }
 
 #[cfg(test)]
@@ -110,24 +113,38 @@ mod tests {
     #[test]
     fn spreads_a_backlog_at_the_rate_after_one_burst() {
         let start = Instant::now();
-        let mut pacer = Pacer::new(48e6);
-        for _ in 0..10 {
+        let mut pacer = Pacer::new(2e9);
+        for _ in 0..300 {
             pacer.push(Bytes::from(vec![0; 1200]), tag(true));
         }
         let mut sent = 0;
         while pacer.poll(start).is_some() {
             sent += 1;
         }
-        assert_eq!(sent, 5);
+        assert_eq!(sent, 209);
         let next = pacer.next_send(start).unwrap();
-        assert!(next > start && next <= start + Duration::from_micros(2));
+        assert!(next > start && next <= start + Duration::from_micros(5));
 
-        let later = start + Duration::from_micros(700);
+        let later = start + Duration::from_micros(100);
         while pacer.poll(later).is_some() {
             sent += 1;
         }
-        assert_eq!(sent, 9);
-        assert_eq!(pacer.backlog_bytes(), 1200);
+        assert_eq!(sent, 230);
+        assert_eq!(pacer.backlog_bytes(), 70 * 1200);
+    }
+
+    #[test]
+    fn a_frame_leaves_in_one_burst_when_the_rate_carries_it_in_2_ms() {
+        let start = Instant::now();
+        let mut pacer = Pacer::new(420e6);
+        for _ in 0..80 {
+            pacer.push(Bytes::from(vec![0; 1200]), tag(true));
+        }
+        let mut sent = 0;
+        while pacer.poll(start).is_some() {
+            sent += 1;
+        }
+        assert_eq!(sent, 80);
     }
 
     #[test]

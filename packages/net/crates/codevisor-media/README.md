@@ -11,7 +11,11 @@ no jitter buffer and no queue deeper than one frame.
   packets that fit the path's current datagram size, each with a 16-byte header.
 - **Frame-spread pacing.** A frame's packets leave at twice the capacity estimate. When that wouldn't finish within
   half a frame interval they go faster, but never past four times the estimate, which would only overflow a slow
-  link's queue. The pacer is a token bucket holding 1 ms of sending, because tokio's timers fire at 1 ms resolution.
+  link's queue. The pacer is a token bucket holding the larger of 1 ms of sending (tokio's timers fire at 1 ms
+  resolution) and 2 ms of sending up to 128 KiB. So a frame the pacing rate carries in 2 ms, a 92 KB scroll frame at
+  the minis' estimate, leaves in one burst. With only 1 ms, the rest of such a frame waited for a late timer, and the
+  estimate, learning from those spread deliveries, settled near 200 Mbit/s on the gigabit lab link. On slow links
+  the bucket stays a few packets.
 - **Loss recovery, cheapest first.**
   1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
      packets, at least 1 ms).
