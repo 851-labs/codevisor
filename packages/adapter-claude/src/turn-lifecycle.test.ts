@@ -7,7 +7,9 @@ import {
   initMessage,
   makeProvider,
   payloadOf,
+  rateLimitEvent,
   resultMessage,
+  resultWith,
   run,
   sdkMessage,
   startTestSession,
@@ -166,17 +168,12 @@ describe("ClaudeProvider", () => {
     }
   )
 
-  it.each(["premature", "failed"])("ignores a %s background completion", async (completion) => {
+  it("ignores a premature background completion", async () => {
     const { fake, created, events } = await startTestSession()
     const prompt = run(created.handle.prompt("new request"))
     await fake.nextPrompt()
 
-    if (completion === "failed") {
-      fake.push(streamEvent({ message: { id: "msg-final" }, type: "message_start" }))
-      fake.push(streamEvent({ delta: { stop_reason: "end_turn" }, type: "message_delta" }))
-    }
-    const subtype = completion === "failed" ? "error_during_execution" : "success"
-    fake.push(sdkMessage({ ...resultMessage(subtype), origin: { kind: "task-notification" } }))
+    fake.push(sdkMessage({ ...resultMessage(), origin: { kind: "task-notification" } }))
     fake.push(systemMessage("session_state_changed", { state: "idle" }))
     await fake.drain()
     expect(events.map(payloadOf).filter((payload) => payload.turnState === "ended")).toHaveLength(0)
@@ -186,6 +183,117 @@ describe("ClaudeProvider", () => {
 
     fake.push(resultMessage())
     await prompt
+    await run(created.handle.close)
+  })
+
+  it("retries a failed background result at idle like the turn's own result", async () => {
+    vi.useFakeTimers()
+    const { fake, created, events } = await startTestSession()
+    const prompt = run(created.handle.prompt("new request"))
+    await fake.nextPrompt()
+    const continuations = () =>
+      fake.userMessages.filter((message) => message.message.content === "Please continue.")
+
+    fake.push(streamEvent({ message: { id: "msg-final" }, type: "message_start" }))
+    fake.push(streamEvent({ delta: { stop_reason: "end_turn" }, type: "message_delta" }))
+    fake.push(
+      sdkMessage({
+        ...resultMessage("error_during_execution"),
+        origin: { kind: "task-notification" }
+      })
+    )
+    await fake.drain()
+    expect(events.map(payloadOf).filter((payload) => payload.retrying !== undefined)).toHaveLength(
+      0
+    )
+
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await fake.drain()
+    expect(events.map(payloadOf).filter((payload) => payload.retrying !== undefined)).toMatchObject(
+      [{ retrying: { attempt: 1, of: 3 } }]
+    )
+    await vi.advanceTimersByTimeAsync(999)
+    expect(continuations()).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(1)
+    await fake.drain()
+    expect(continuations()).toHaveLength(1)
+    expect(events.map(payloadOf).filter((payload) => payload.turnState === "ended")).toHaveLength(0)
+
+    fake.push(resultMessage())
+    await prompt
+    await run(created.handle.close)
+  })
+
+  it("ends the turn at a usage limit when Claude folds the prompt into a background-task query", async () => {
+    const { fake, created, events } = await startTestSession()
+    let completed = false
+    const prompt = run(created.handle.prompt("Yes, resume. Keep going.")).then(() => {
+      completed = true
+    })
+    await fake.nextPrompt()
+
+    fake.push(
+      sdkMessage({
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          id: "msg-check",
+          role: "assistant",
+          content: [
+            { type: "text", text: "The run finished. Checking its result." },
+            { type: "tool_use", id: "toolu-check", name: "Bash", input: { command: "gh run view" } }
+          ],
+          stop_reason: "tool_use"
+        }
+      })
+    )
+    fake.push(
+      sdkMessage({
+        type: "user",
+        parent_tool_use_id: null,
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu-check", content: "success" }]
+        }
+      })
+    )
+    fake.push(
+      rateLimitEvent({ rateLimitType: "five_hour", resetsAt: 1_761_001_200, status: "rejected" })
+    )
+    const limitText = "You've hit your 5-hour limit · resets 4pm (America/Los_Angeles)"
+    fake.push(
+      sdkMessage({
+        type: "assistant",
+        error: "rate_limit",
+        parent_tool_use_id: null,
+        message: {
+          id: "msg-limit",
+          role: "assistant",
+          content: [{ type: "text", text: limitText }],
+          stop_reason: "stop_sequence"
+        }
+      })
+    )
+    fake.push(
+      sdkMessage({
+        ...resultWith({ is_error: true, result: limitText, stop_reason: "stop_sequence" }),
+        origin: { kind: "task-notification" }
+      })
+    )
+    await fake.drain()
+    expect(completed).toBe(false)
+
+    fake.push(systemMessage("session_state_changed", { state: "idle" }))
+    await prompt
+    expect(events.map(payloadOf).filter((payload) => payload.turnState === "ended")).toMatchObject([
+      {
+        initiatedBy: "user",
+        resetsAt: "2025-10-20T23:00:00.000Z",
+        stopDetail: limitText,
+        stopKind: "usageLimit",
+        stopReason: "end_turn"
+      }
+    ])
     await run(created.handle.close)
   })
 

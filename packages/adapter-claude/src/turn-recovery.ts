@@ -54,13 +54,15 @@ export const handleResult = (session: ClaudeSession, message: ResultMessage): vo
 
 export const finishDeferredTaskResult = (session: ClaudeSession): void => {
   const message = session.deferredTaskResult
-  if (message === undefined || !session.turnActive) return
-  if (session.awaitingRecoveryResult || !session.rootReplyComplete) return
-  if (message.subtype !== "success" || message.is_error) return
+  if (message === undefined || !session.turnActive || session.awaitingRecoveryResult) return
+  if (succeeded(message) && !session.rootReplyComplete) return
 
   logDeferredTaskResult(session, message, "resolved_at_idle")
   resolveTurnResult(session, message, false)
 }
+
+const succeeded = (message: ResultMessage): boolean =>
+  message.subtype === "success" && !message.is_error
 
 const resolveTurnResult = (
   session: ClaudeSession,
