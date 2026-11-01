@@ -1,7 +1,7 @@
 import Accelerate
 import Foundation
 
-struct EncodeLabGaussianBlur {
+struct BenchGaussianBlur {
   static let radius = 5
   static let sigma: Float = 1.5
   static let kernel: [Float] = {
@@ -25,7 +25,7 @@ struct EncodeLabGaussianBlur {
           UInt32(Self.kernel.count), 0, 0, vImage_Flags(kvImageEdgeExtend))
       }
     }
-    guard status == kvImageNoError else { throw EncodeLabError.transfer("blur", Int32(status)) }
+    guard status == kvImageNoError else { throw BenchFidelityError.blur(Int(status)) }
 
     return output
   }
