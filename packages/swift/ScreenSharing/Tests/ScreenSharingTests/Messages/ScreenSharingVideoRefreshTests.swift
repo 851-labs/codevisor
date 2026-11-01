@@ -112,6 +112,37 @@ struct ScreenSharingVideoRefreshTests {
     #expect(sends == 3)
   }
 
+  @Test @MainActor func aRequestIsRepeatedOnlyAfterATickInWhichNoVideoArrived() async {
+    let clock = TestClock()
+    let origin = clock.now
+    var sends = 0
+    let received = ReceivedVideoBytes()
+    received.count = 1_000
+    let requester = ScreenSharingRefreshRequester(
+      available: { true },
+      send: {
+        sends += 1; return true
+      },
+      receivedMediaBytes: { received.count },
+      nowNs: {
+        let parts = origin.duration(to: clock.now).components
+        return parts.seconds * 1_000_000_000 + parts.attoseconds / 1_000_000_000
+      }, sleep: { try await clock.sleep(for: $0) })
+    requester.update(.init(revision: 1, needed: true))
+    #expect(sends == 1)
+    for tick in 1...3 {
+      await clock.waitForSleep(.milliseconds(100), count: tick)
+      received.count += 500_000
+      clock.advance(by: .milliseconds(100))
+    }
+    await clock.waitForSleep(.milliseconds(100), count: 4)
+    #expect(sends == 1)
+    clock.advance(by: .milliseconds(100))
+    await clock.waitForSleep(.milliseconds(100), count: 5)
+    #expect(sends == 2)
+    await requester.close()?.value
+  }
+
   @Test func cachedRefreshUsesLatestBufferAndStrictlyIncreasingTimestamps() throws {
     var pixel: CVPixelBuffer?
     #expect(CVPixelBufferCreate(nil, 16, 16, kCVPixelFormatType_32BGRA, nil, &pixel) == kCVReturnSuccess)

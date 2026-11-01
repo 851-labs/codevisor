@@ -128,6 +128,7 @@ package struct ScreenSharingRefreshRateLimit {
 package final class ScreenSharingRefreshRequester {
   private let send: () -> Bool
   private let available: () -> Bool
+  private let receivedMediaBytes: ScreenSharingReceivedMediaBytes
   private let nowNs: @Sendable () -> Int64
   private let sleep: @Sendable (Duration) async throws -> Void
   private var task: Task<Void, Never>?
@@ -138,10 +139,12 @@ package final class ScreenSharingRefreshRequester {
 
   package init(
     available: @escaping () -> Bool, send: @escaping () -> Bool,
+    receivedMediaBytes: @escaping ScreenSharingReceivedMediaBytes = { nil },
     nowNs: @escaping @Sendable () -> Int64 = { ScreenSharingMetrics.nowNs },
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
-    self.available = available; self.send = send; self.nowNs = nowNs; self.sleep = sleep
+    self.available = available; self.send = send; self.receivedMediaBytes = receivedMediaBytes
+    self.nowNs = nowNs; self.sleep = sleep
   }
 
   package func update(_ event: ScreenSharingRefreshSignal.Event) {
@@ -152,12 +155,16 @@ package final class ScreenSharingRefreshRequester {
     wake()
     guard task == nil else { return }
     let sleep = sleep
+    let receivedMediaBytes = receivedMediaBytes
     task = Task { @MainActor [weak self] in
+      var media = ScreenSharingMediaArrival()
+      _ = media.record(await receivedMediaBytes())
       do {
         while !Task.isCancelled {
           try await sleep(.milliseconds(100))
+          let mediaArrived = media.record(await receivedMediaBytes())
           guard !Task.isCancelled, let self, !self.closed, self.needed else { return }
-          self.wake()
+          if !mediaArrived { self.wake() }
         }
       } catch {}
     }

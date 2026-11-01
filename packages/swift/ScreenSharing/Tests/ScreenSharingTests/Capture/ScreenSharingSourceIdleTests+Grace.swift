@@ -80,10 +80,40 @@ extension ScreenSharingSourceIdleTests {
     #expect(clock.pendingCount == 0 && outcomes.count == 9)
   }
 
-  @Test @MainActor func promotedDefaultsAnnounceAt100msAndExtendA100msGraceAtMostFourTimes() async {
+  @Test @MainActor func videoStillArrivingExtendsTheGraceUntilDeliveryStalls() async {
+    let clock = TestClock()
+    let audit = ScreenSharingDeliveryAudit()
+    let settled = TestSignal()
+    var outcomes: [ScreenSharingDeliveryVerifier.Outcome] = []
+    let received = ReceivedVideoBytes()
+    let verifier = ScreenSharingDeliveryVerifier(
+      audit: audit, grace: .milliseconds(100), receivedMediaBytes: { received.count },
+      refresh: {},
+      report: {
+        outcomes.append($0)
+        settled.signal()
+      },
+      sleep: { try await clock.sleep(for: $0) })
+    audit.decoded(sourceTimestampNs: 10)
+    verifier.noticed(latestTimestampNs: 50)
+    for window in 1...3 {
+      await clock.waitForSleep(.milliseconds(100), count: window)
+      received.count += 1_000_000
+      clock.advance(by: .milliseconds(100))
+      await settled.wait(for: window)
+    }
+    #expect(outcomes == Array(repeating: .graceExtended, count: 3) && audit.pendingTargetNs == 50)
+    await clock.waitForSleep(.milliseconds(100), count: 4)
+    clock.advance(by: .milliseconds(100))
+    await settled.wait(for: 4)
+    #expect(outcomes.last == .refresh)
+    await verifier.close()?.value
+  }
+
+  @Test @MainActor func promotedDefaultsAnnounceAt100msAndExtendA100msGraceForAtMostFiveSeconds() async {
     #expect(ScreenSharingSourceIdleMonitor.defaultThresholdNs == 100_000_000)
     #expect(ScreenSharingDeliveryVerifier.defaultGrace == .milliseconds(100))
-    #expect(ScreenSharingDeliveryVerifier.defaultGraceExtensions == 4)
+    #expect(ScreenSharingDeliveryVerifier.defaultGraceExtensions == 50)
     let monitor = ScreenSharingSourceIdleMonitor()
     #expect(monitor.recordSubmission(timestampNs: 1, nowNs: 0))
     monitor.recordEncoded(timestampNs: 1)
@@ -100,14 +130,14 @@ extension ScreenSharingSourceIdleTests {
         settled.signal()
       },
       sleep: { try await clock.sleep(for: $0) })
-    verifier.noticed(latestTimestampNs: 100)
-    for window in 1...5 {
+    verifier.noticed(latestTimestampNs: 1_000)
+    for window in 1...51 {
       await clock.waitForSleep(.milliseconds(100), count: window)
       audit.decoded(sourceTimestampNs: Int64(window * 10))
       clock.advance(by: .milliseconds(100))
       await settled.wait(for: window)
     }
-    #expect(outcomes == Array(repeating: .graceExtended, count: 4) + [.refresh])
+    #expect(outcomes == Array(repeating: .graceExtended, count: 50) + [.refresh])
     let legacy = ScreenSharingDeliveryVerifier(
       audit: ScreenSharingDeliveryAudit(), grace: .milliseconds(500),
       graceExtensions: 0, refresh: {}, report: { _ in },
