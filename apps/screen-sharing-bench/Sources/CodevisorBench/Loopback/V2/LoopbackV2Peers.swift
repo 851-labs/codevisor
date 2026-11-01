@@ -7,6 +7,7 @@ import ScreenSharingV2
 final class LoopbackV2Peers {
   private static let connectTimeout = Duration.seconds(15)
   private static let loopbackHost = "127.0.0.1"
+  private static let pinnedPolicy = "direct-pinned"
 
   let hostMetrics: ScreenSharingMetrics
   let viewerMetrics: ScreenSharingMetrics
@@ -20,10 +21,10 @@ final class LoopbackV2Peers {
   static func connect(
     through relay: LoopbackRelay, configuration: ScreenSharingVideoConfiguration
   ) async throws -> LoopbackV2Peers {
-    let hostEndpoint = try await bindPinned()
+    let hostEndpoint = try await V2Endpoint.bind(pathPolicy: pinnedPolicy)
     let viewerEndpoint: NetEndpointHandle
     do {
-      viewerEndpoint = try await bindPinned()
+      viewerEndpoint = try await V2Endpoint.bind(pathPolicy: pinnedPolicy)
     } catch {
       await hostEndpoint.close()
       throw error
@@ -99,13 +100,6 @@ final class LoopbackV2Peers {
     viewer.stop()
     for connection in connections { connection.close(code: 0, reason: "done") }
     for endpoint in endpoints { await endpoint.close() }
-  }
-
-  private static func bindPinned() async throws -> NetEndpointHandle {
-    try await netBindEndpoint(
-      config: NetEndpointConfig(
-        secretKeyHex: netGenerateSecretKeyHex(), relays: [], trustAnchorsPem: [], pathPolicy: "direct-pinned",
-        alpns: [mediaAlpn()]))
   }
 
   private static func loopbackAddress(of addr: NetTunnelAddr) throws -> BenchUDPAddress {
