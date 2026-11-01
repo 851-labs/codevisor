@@ -33,6 +33,21 @@ on:
         required: false
         default: N0
         type: string
+      engine:
+        description: Codevisor engine for the Codevisor systems, v1 (WebRTC) or v2
+        required: false
+        default: v1
+        type: string
+      present:
+        description: Engine v2 presentation on the viewer, arrival or display-link
+        required: false
+        default: arrival
+        type: string
+      systems:
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor)
+        required: false
+        default: apple-hp,codevisor-r1x2,codevisor
+        type: string
   workflow_call:
     inputs:
       scenes:
@@ -65,6 +80,21 @@ on:
         required: false
         default: N0
         type: string
+      engine:
+        description: Codevisor engine for the Codevisor systems, v1 (WebRTC) or v2
+        required: false
+        default: v1
+        type: string
+      present:
+        description: Engine v2 presentation on the viewer, arrival or display-link
+        required: false
+        default: arrival
+        type: string
+      systems:
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor)
+        required: false
+        default: apple-hp,codevisor-r1x2,codevisor
+        type: string
 
 permissions:
   contents: read
@@ -82,6 +112,9 @@ env:
   TIER2_FLOOR_REPS: ${{ inputs.floor-repetitions }}
   TIER2_C4: ${{ inputs.c4 && '1' || '0' }}
   TIER2_NETWORK: ${{ inputs.network }}
+  TIER2_ENGINE: ${{ inputs.engine }}
+  TIER2_PRESENT: ${{ inputs.present }}
+  TIER2_SYSTEMS: ${{ inputs.systems }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:

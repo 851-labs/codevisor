@@ -30,6 +30,7 @@ let package = Package(
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
     .library(name: "ScreenSharingWebRTC", targets: ["ScreenSharingWebRTC"]),
+    .library(name: "ScreenSharingV2", targets: ["ScreenSharingV2"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
   dependencies: [
@@ -63,6 +64,12 @@ let package = Package(
       swiftSettings: strictSwiftSettings
     ),
     .target(
+      name: "ScreenSharingV2", dependencies: ["ScreenSharing", "CodevisorNet"],
+      path: "ScreenSharing/Sources/ScreenSharingV2", swiftSettings: strictSwiftSettings),
+    .testTarget(
+      name: "ScreenSharingV2Tests", dependencies: ["ScreenSharingV2", "CodevisorNet", "CodevisorTestSupport"],
+      path: "ScreenSharing/Tests/ScreenSharingV2Tests", swiftSettings: strictSwiftSettings),
+    .target(
       name: "ScreenSharingBench",
       path: "ScreenSharing/Sources/ScreenSharingBench",
       swiftSettings: strictSwiftSettings
@@ -76,7 +83,7 @@ let package = Package(
     .executableTarget(
       name: "CodevisorBench",
       dependencies: [
-        "ScreenSharing", "ScreenSharingWebRTC", "ScreenSharingBench", "ScreenSharingBenchScenes",
+        "ScreenSharing", "ScreenSharingWebRTC", "ScreenSharingV2", "ScreenSharingBench", "ScreenSharingBenchScenes",
         "CGVirtualDisplayPrivate", "CodevisorNet",
       ],
       path: "ScreenSharing/Sources/CodevisorBench",

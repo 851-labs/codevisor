@@ -230,6 +230,13 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
 - `share [--port 47593] [--duration <s>] [--ready-file <path>] [--stop-file <path>]` is the Codevisor host: it waits for one viewer
   on TCP, answers its offer with a `ScreenSharingSender` built from `ScreenSharingProductProfile`, captures the
   main display once connected and runs `ScreenSharingQualityLoop`, as the host service does.
+- `share --engine v2` and `view --source codevisor --engine v2 [--present arrival|display-link]` run engine v2
+  (`ScreenSharingV2`) instead: the host binds an iroh endpoint (direct paths only, ALPN `codevisor/screen/1`) and sends
+  its address over the signaling connection; the viewer adds the host's signaling IPv4 to each port and connects. The
+  viewer reports the timeline, the media session's counters and the QUIC round trip as `selected_candidates`, so N3
+  runs prove their shaped path the same way. The workflow's `engine` (v1), `present` (arrival) and `systems`
+  (`apple-hp,codevisor-r1x2,codevisor`) inputs pick them; with `engine: v2` the Codevisor rows are engine v2, and
+  `meta.json` records `engine` and `presentation`.
 - `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
   product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
   the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of

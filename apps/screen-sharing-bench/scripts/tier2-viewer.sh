@@ -16,7 +16,8 @@ start_system() {
   local signals=(--duration "$seconds" --ready-file "$work/ready" --stop-file "$work/stop")
   case "$system" in
     apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
-    codevisor | codevisor-r1x2) bench_window view --source codevisor --host "$TIER2_HOST_IP" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
+    codevisor | codevisor-r1x2) bench_window view --source codevisor --host "$TIER2_HOST_IP" $(tier2_engine_options) \
+      --present "$TIER2_PRESENT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
     floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
   system_job=$!
@@ -54,7 +55,8 @@ write_meta() {
   ((observed)) && observed_json=true
   cat >"$dir/meta.json" <<JSON
 {"index": $index, "scene": "$scene", "system": "${system%-r1x2}", "resolution": "$(tier2_resolution "$system")",
- "network": "$TIER2_NETWORK", "repetition": $rep, "seed": $TIER2_SEED,
+ "network": "$TIER2_NETWORK", "engine": "$TIER2_ENGINE", "presentation": "$TIER2_PRESENT",
+ "repetition": $rep, "seed": $TIER2_SEED,
  "duration_s": $TIER2_DURATION, "host_observer": $observed_json, "git_sha": "$commit", "started_at": "$started_at",
  "github_run_id": "${GITHUB_RUN_ID:-}"}
 JSON

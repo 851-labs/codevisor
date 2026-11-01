@@ -23,6 +23,10 @@ public final class ScreenSharingFrameTimeline: @unchecked Sendable {
     lock.withLock { transport.update(statistics: statistics) }
   }
 
+  package func observeTransport(networkUs: Int64, jitterBufferUs: Int64) {
+    lock.withLock { transport.update(networkUs: networkUs, jitterBufferUs: jitterBufferUs) }
+  }
+
   package func observeRefresh(targetNs: Int64, periodNs: Int64) {
     lock.withLock { refreshGrid = ScreenSharingRefreshGrid(targetNs: targetNs, periodNs: periodNs) }
   }

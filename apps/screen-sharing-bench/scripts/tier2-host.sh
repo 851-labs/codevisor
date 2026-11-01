@@ -24,7 +24,7 @@ start_share() {
   local virtual=()
   [[ "$system" == codevisor-r1x2 ]] && virtual=(--virtual-display R1x2)
   bench share --duration "$((TIER2_DURATION + 240))" --ready-file "$work/ready" --stop-file "$work/stop" \
-    ${virtual[@]+"${virtual[@]}"} >"$dir/share.json" 2>"$dir/share.err" &
+    $(tier2_engine_options) ${virtual[@]+"${virtual[@]}"} >"$dir/share.json" 2>"$dir/share.err" &
   share_job=$!
   wait_for_file "$work/ready" 30 "$share_job" || return 1
   shared_display=$(awk '{ print $3 }' "$work/ready")
