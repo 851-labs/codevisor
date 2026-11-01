@@ -126,6 +126,7 @@ package struct ScreenSharingRefreshRateLimit {
 
 @MainActor
 package final class ScreenSharingRefreshRequester {
+  package static let repeatWhileArrivingNs: Int64 = 1_000_000_000
   private let send: () -> Bool
   private let available: () -> Bool
   private let receivedMediaBytes: ScreenSharingReceivedMediaBytes
@@ -136,6 +137,7 @@ package final class ScreenSharingRefreshRequester {
   private var needed = false
   private var closed = false
   private var rateLimit = ScreenSharingRefreshRateLimit()
+  private var lastSentNs: Int64?
 
   package init(
     available: @escaping () -> Bool, send: @escaping () -> Bool,
@@ -157,22 +159,29 @@ package final class ScreenSharingRefreshRequester {
     let sleep = sleep
     let receivedMediaBytes = receivedMediaBytes
     task = Task { @MainActor [weak self] in
-      var media = ScreenSharingMediaArrival()
-      _ = media.record(await receivedMediaBytes())
+      var media = ScreenSharingMediaArrival(receivedMediaBytes)
+      await media.start()
       do {
         while !Task.isCancelled {
           try await sleep(.milliseconds(100))
-          let mediaArrived = media.record(await receivedMediaBytes())
+          let mediaArrived = await media.arrivedSinceLastSample()
           guard !Task.isCancelled, let self, !self.closed, self.needed else { return }
-          if !mediaArrived { self.wake() }
+          if !mediaArrived || self.sentLongAgo { self.wake() }
         }
       } catch {}
     }
   }
 
   package func wake() {
-    guard !closed, needed, available(), rateLimit.allow(nowNs: nowNs()) else { return }
-    _ = send()
+    guard !closed, needed, available() else { return }
+    let now = nowNs()
+    guard rateLimit.allow(nowNs: now), send() else { return }
+    lastSentNs = now
+  }
+
+  private var sentLongAgo: Bool {
+    guard let lastSentNs else { return true }
+    return nowNs() - lastSentNs >= Self.repeatWhileArrivingNs
   }
 
   @discardableResult

@@ -112,7 +112,7 @@ struct ScreenSharingVideoRefreshTests {
     #expect(sends == 3)
   }
 
-  @Test @MainActor func aRequestIsRepeatedOnlyAfterATickInWhichNoVideoArrived() async {
+  @Test @MainActor func aRequestIsRepeatedAfterATickWithoutVideoOrOnceASecondWhileVideoArrives() async {
     let clock = TestClock()
     let origin = clock.now
     var sends = 0
@@ -140,6 +140,16 @@ struct ScreenSharingVideoRefreshTests {
     clock.advance(by: .milliseconds(100))
     await clock.waitForSleep(.milliseconds(100), count: 5)
     #expect(sends == 2)
+    for tick in 5...13 {
+      received.count += 500_000
+      clock.advance(by: .milliseconds(100))
+      await clock.waitForSleep(.milliseconds(100), count: tick + 1)
+    }
+    #expect(sends == 2)
+    received.count += 500_000
+    clock.advance(by: .milliseconds(100))
+    await clock.waitForSleep(.milliseconds(100), count: 15)
+    #expect(sends == 3, "video arriving for a whole second doesn't hold the request back any longer")
     await requester.close()?.value
   }
 
