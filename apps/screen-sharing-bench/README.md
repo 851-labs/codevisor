@@ -160,7 +160,7 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   decode, render queue and present. The relay also notes when it delivers the last RTP packet of each video frame
   (`BenchFrameArrivals`; SRTP leaves the RTP header readable), and the barcode tap gives each decoded frame's RTP
   timestamp, so the network stage splits into `send` (encoder output → frame complete: pacing, the relay and the
-  emulated network) and `decode_queue` (frame complete → decoder input: the jitter buffer and playout delay).
+  emulated network) and `decode_queue` (frame complete → decoder input: the jitter buffer, which holds a frame until its references are complete; the product forces no playout delay).
   `e2e_outside_jitter_buffer_ms` is e2e without that wait. `timing_frame_check` pairs each WebRTC timing frame (`googTimingFrameInfo`,
   sampled twice a second; WebRTC keeps the slowest recent frame) with the timeline frame captured within 8 ms of it,
   and compares encode, decode and capture to decoded; it agrees when each median difference is within 5 ms.
@@ -300,9 +300,8 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more
   than max(15%, 3 ms), p95 up more than max(20%, 5 ms)) is judged on e2e outside the jitter buffer once the runs and
   every baseline nightly split it out, and the jitter buffer gets its own rule (p50 up more than max(100%, 40 ms));
-  N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. At N0, WebRTC's
-  jitter estimate for scroll, video and test cards sits at the product's 80 ms playout cap, and each process lands
-  either at the cap or well below it, so whole e2e there can move by 30% between unchanged runs. The summary also
+  N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. The jitter buffer's
+  wait can swing between processes independently of the rest of the pipeline, so N0 judges it on its own. The summary also
   says how long the gate waited for tamale and which bench runs were active meanwhile.
   Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
   cancels a gate still queued or running for it.

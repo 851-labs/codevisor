@@ -12,12 +12,9 @@ import Testing
     func record(_ trials: [String: String]) { lock.withLock { applied.append(trials) } }
   }
 
-  private static let productTrials = [
-    "WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80", "WebRTC-Video-Pacing": "factor:10",
-    "WebRTC-FrameDropper": "Disabled",
-  ]
+  private static let productTrials = ScreenSharingProductProfile.fieldTrials
   private static let productString =
-    "WebRTC-ForcePlayoutDelay/min_ms:15,max_ms:80/WebRTC-FrameDropper/Disabled/WebRTC-Video-Pacing/factor:10/"
+    "WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:0/WebRTC-FrameDropper/Disabled/WebRTC-Video-Pacing/factor:10/"
 
   @Test func everyFactoryInstallsTheProductTrialsOnceAndLabelsThem() {
     let recorder = Recorder()
