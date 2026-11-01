@@ -9,8 +9,12 @@ enum ScreenSharingPeerStatistics {
     let values: [String: NSObject]
   }
 
+  static func entries(_ report: RTCStatisticsReport) -> [Entry] {
+    report.statistics.values.map { Entry(id: $0.id, type: $0.type, values: $0.values) }
+  }
+
   static func values(_ report: RTCStatisticsReport, including extraFields: [String] = []) -> [String: String] {
-    values(report.statistics.values.map { Entry(id: $0.id, type: $0.type, values: $0.values) }, including: extraFields)
+    values(entries(report), including: extraFields)
   }
 
   static func values(_ entries: [Entry], including extraFields: [String] = []) -> [String: String] {

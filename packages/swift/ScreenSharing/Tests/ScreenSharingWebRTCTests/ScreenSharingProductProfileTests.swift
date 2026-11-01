@@ -43,6 +43,8 @@ struct ScreenSharingProductProfileTests {
       ScreenSharingVideoFrame(
         pixelBuffer: try Self.picture(width: 320, height: 192), timestampNs: ScreenSharingHDRLoopbackTests.now()))
     await arrived.cancellableWait()
+    let receivedBytes = await ScreenSharingInboundVideo(transport: receiver.transport).bytesReceived()
+    #expect((receivedBytes ?? 0) > 0)
 
     let labels = hostMetrics.snapshot().labels
     #expect(labels["videoCodec"] == "hevc444")
