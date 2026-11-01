@@ -32,13 +32,25 @@ final class CodevisorV2Viewer {
   }
 
   private init(host: String, address: V2EndpointMessage, presentation: V2Presentation) async throws {
-    endpoint = try await V2Endpoint.bind()
-    connection = try await endpoint.connect(addr: address.addr(reachingHost: host), alpn: mediaAlpn(), cancel: nil)
-    transport = ScreenSharingIrohMediaTransport(
+    let endpoint = try await V2Endpoint.bind()
+    let connection = try await endpoint.connect(
+      addr: address.addr(reachingHost: host), alpn: mediaAlpn(), cancel: nil)
+    let transport = ScreenSharingIrohMediaTransport(
       session: await connection.openMediaSession(config: ScreenSharingIrohMediaTransport.sessionConfig))
-    viewer = ScreenSharingV2Viewer(transport: transport, metrics: ScreenSharingMetrics())
+    let viewer = ScreenSharingV2Viewer(transport: transport, metrics: ScreenSharingMetrics())
     viewer.frames.retainsLatest = true
-    surface = try V2Surface(presentation, mailbox: viewer.frames, metrics: viewer.metrics)
+    do {
+      surface = try V2Surface(presentation, mailbox: viewer.frames, metrics: viewer.metrics)
+    } catch {
+      viewer.stop()
+      connection.close(code: 0, reason: "viewer setup failed")
+      await endpoint.close()
+      throw error
+    }
+    self.endpoint = endpoint
+    self.connection = connection
+    self.transport = transport
+    self.viewer = viewer
     viewer.start()
   }
 

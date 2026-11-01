@@ -20,6 +20,11 @@ struct ScreenSharingV2Recovery {
     return true
   }
 
+  mutating func unsent(_ tile: ScreenSharingEncodedTile) {
+    if tile.isKeyFrame { acknowledgedTiles.remove(tile.tile) }
+    lost(tile: tile.tile)
+  }
+
   mutating func lost(tile: Int) {
     retry(acknowledgedTiles.contains(tile) ? .longTermReference : .keyframe, tile: tile)
   }

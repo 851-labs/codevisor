@@ -11,7 +11,6 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   private let acknowledged = Mutex<[UInt64]>([])
   private let output = Mutex<(@Sendable (ScreenSharingTileEncoderOutput) -> Void)?>(nil)
 
-  var framesInFlight: Int { 0 }
   var requests: [ScreenSharingTileEncodeRequest] { recorded.withLock { $0 } }
   var acknowledgedTokens: [UInt64] { acknowledged.withLock { $0 } }
 

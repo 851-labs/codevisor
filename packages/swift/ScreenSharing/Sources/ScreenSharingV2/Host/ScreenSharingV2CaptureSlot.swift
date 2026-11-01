@@ -16,6 +16,10 @@ struct ScreenSharingV2CaptureSlot {
     lastEncoded = capture
   }
 
+  mutating func requeueLastEncoded() {
+    waiting = waiting ?? lastEncoded
+  }
+
   mutating func clear() {
     waiting = nil
     lastEncoded = nil

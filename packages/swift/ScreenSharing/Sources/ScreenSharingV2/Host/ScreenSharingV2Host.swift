@@ -2,8 +2,6 @@ import Dispatch
 import ScreenSharing
 
 public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Sendable {
-  private static let admissionRetry = DispatchTimeInterval.milliseconds(1)
-
   public let metrics: ScreenSharingMetrics
   private let transport: any ScreenSharingMediaTransport
   private let encoder: any ScreenSharingTileEncoder
@@ -13,6 +11,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var bitrate: ScreenSharingV2BitrateGovernor
   private var retryScheduled = false
   private var deferredCapture = false
+  private var encoding = false
   private var stopped = false
   private var events: Task<Void, Never>?
 
@@ -57,11 +56,11 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func pump() {
-    guard !stopped, encoder.framesInFlight == 0 else { return }
+    guard !stopped, !encoding else { return }
     guard let capture = slot.next(refreshing: recovery.isPending) else { return }
 
     let admission = transport.admission()
-    guard admission.admit else { return deferEncode() }
+    guard admission.admit else { return deferEncode(admission) }
 
     adjustBitrate(admission)
     encode(capture)
@@ -70,23 +69,26 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func encode(_ capture: ScreenSharingV2Capture) {
     slot.encoding(capture)
     deferredCapture = false
+    encoding = true
     let refreshes = recovery.takeRefreshes()
     do {
       try encoder.encode(capture.request(refreshes: refreshes))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
+      encoding = false
       recovery.restore(refreshes)
+      slot.requeueLastEncoded()
     }
   }
 
-  private func deferEncode() {
+  private func deferEncode(_ admission: ScreenSharingMediaAdmission) {
     if !deferredCapture { metrics.increment("admissionDeferrals") }
     deferredCapture = true
     guard !retryScheduled else { return }
 
     retryScheduled = true
-    queue.asyncAfter(deadline: .now() + Self.admissionRetry) { [self] in
+    queue.asyncAfter(deadline: .now() + ScreenSharingV2AdmissionRetry.delay(after: admission)) { [self] in
       retryScheduled = false
       pump()
     }
@@ -107,10 +109,14 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
       metrics.label("lastEncodeError", message)
       queue.async { [self] in retry(refresh, tile: tile) }
     }
-    queue.async { [self] in pump() }
+    queue.async { [self] in
+      encoding = false
+      pump()
+    }
   }
 
   private func retry(_ refresh: ScreenSharingTileRefresh?, tile: Int) {
+    slot.requeueLastEncoded()
     guard let refresh else { return }
 
     recovery.retry(refresh, tile: tile)
@@ -125,7 +131,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     } catch {
       metrics.increment("sendErrors")
       metrics.label("lastSendError", "\(error)")
-      queue.async { [self] in recovery.lost(tile: tile.tile) }
+      queue.async { [self] in recovery.unsent(tile) }
     }
   }
 

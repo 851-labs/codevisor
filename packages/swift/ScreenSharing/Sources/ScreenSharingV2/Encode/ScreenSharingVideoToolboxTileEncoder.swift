@@ -6,7 +6,8 @@ import VideoToolbox
 public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   private struct State {
     var output: (@Sendable (ScreenSharingTileEncoderOutput) -> Void)?
-    var inFlight = 0
+    var inFlight: Set<UInt64> = []
+    var nextSubmission: UInt64 = 0
     var acknowledged: [UInt64] = []
     var lastPresentationNs: Int64 = 0
     var sessionFailed = false
@@ -14,6 +15,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   private struct Submission: Sendable {
+    let id: UInt64
     let request: ScreenSharingTileEncodeRequest
     let refresh: ScreenSharingTileRefresh?
     let submittedNs: Int64
@@ -42,8 +44,6 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
 
   deinit { stop() }
 
-  public var framesInFlight: Int { state.withLock { $0.inFlight } }
-
   public func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     state.withLock { $0.output = handler }
   }
@@ -60,7 +60,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     }
     guard status != noErr else { return }
 
-    state.withLock { $0.inFlight -= 1 }
+    _ = release(submission)
     noteSessionFailure(status)
     throw ScreenSharingError.codec("Encode frame", status)
   }
@@ -123,16 +123,18 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
       let submittedNs = ScreenSharingMetrics.nowNs
       let acknowledged = state.acknowledged
       state.acknowledged = []
-      state.inFlight += 1
+      state.nextSubmission += 1
+      state.inFlight.insert(state.nextSubmission)
       state.lastPresentationNs = max(state.lastPresentationNs + 1, submittedNs)
-      let submission = Submission(request: request, refresh: request.refreshes[0], submittedNs: submittedNs)
+      let submission = Submission(
+        id: state.nextSubmission, request: request, refresh: request.refreshes[0], submittedNs: submittedNs)
       return (submission, acknowledged, state.lastPresentationNs)
     }
   }
 
   private func didEncode(_ submission: Submission, status: OSStatus, flags: VTEncodeInfoFlags, sample: CMSampleBuffer?)
   {
-    state.withLock { $0.inFlight -= 1 }
+    guard release(submission) else { return }
     guard status == noErr else { return failed(submission, "VideoToolbox status \(status)", status: status) }
     guard !flags.contains(.frameDropped), let sample else { return dropped(submission) }
 
@@ -170,6 +172,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     metrics.increment("encodeErrors")
     noteSessionFailure(status)
     emit(.failed(tile: 0, refresh: submission.refresh, message: message))
+  }
+
+  private func release(_ submission: Submission) -> Bool {
+    state.withLock { $0.inFlight.remove(submission.id) != nil }
   }
 
   private func emit(_ output: ScreenSharingTileEncoderOutput) {

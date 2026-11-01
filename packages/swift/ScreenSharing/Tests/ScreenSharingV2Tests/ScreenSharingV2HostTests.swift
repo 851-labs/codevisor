@@ -32,8 +32,7 @@ struct ScreenSharingV2HostTests {
     let host = startedHost()
     defer { host.stop() }
 
-    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    try await sendFirstFrame(through: host, keyframe: true, token: nil)
     transport.emit(.frameLost(stream: 0, frame: 0))
     await encoder.encodes.wait(for: 2)
 
@@ -71,17 +70,18 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.last?.refreshes == [0: .keyframe])
   }
 
-  @Test func aRefreshTheEncoderDroppedIsAskedForAgainFromTheLastCapture() async throws {
+  @Test(arguments: [ScreenSharingTileRefresh.keyframe, nil])
+  func aFrameTheEncoderDroppedIsEncodedAgainFromTheLastCapture(refresh: ScreenSharingTileRefresh?) async throws {
     let host = startedHost()
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
     await encoder.encodes.wait(for: 1)
-    encoder.emit(.dropped(tile: 0, refresh: .keyframe))
+    encoder.emit(.dropped(tile: 0, refresh: refresh))
     await encoder.encodes.wait(for: 2)
 
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000])
-    #expect(encoder.requests.last?.refreshes == [0: .keyframe])
+    #expect(encoder.requests.last?.refreshes == refresh.map { [0: $0] } ?? [:])
   }
 
   private func sendFirstFrame(through host: ScreenSharingV2Host, keyframe: Bool, token: UInt64?) async throws {
