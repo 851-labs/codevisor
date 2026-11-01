@@ -14,6 +14,7 @@ struct ScreenSharingReceiverRecoveryTests {
     let metrics = ScreenSharingMetrics()
     let codecFactory: ScreenSharingCodecFactory
     let channel = RefreshChannelDouble()
+    let received = ReceivedVideo()
     let recovery: ScreenSharingReceiverRecovery
     static let requesterInterval = Duration.milliseconds(100)
     var audit: ScreenSharingDeliveryAudit { codecFactory.deliveryAudit }
@@ -25,10 +26,11 @@ struct ScreenSharingReceiverRecoveryTests {
       let clock = clock
       let origin = clock.now
       let metrics = metrics
+      let received = received
       codecFactory = ScreenSharingCodecFactory(metrics: metrics)
       recovery = ScreenSharingReceiverRecovery(
         metrics: metrics, codecFactory: codecFactory, videoRefresh: channel, grace: grace,
-        graceExtensions: graceExtensions,
+        graceExtensions: graceExtensions, receivedMediaBytes: { received.bytes },
         nowNs: { nanoseconds(origin.duration(to: clock.now)) },
         sleep: { try await clock.sleep(for: $0) })
     }
@@ -58,6 +60,39 @@ struct ScreenSharingReceiverRecoveryTests {
     func close() async {
       for task in recovery.close() { await task.value }
     }
+  }
+
+  @MainActor
+  final class ReceivedVideo {
+    var bytes: Int64?
+  }
+
+  @Test func aKeyframeStillArrivingIsNeitherRequestedNorRepeatedUntilDeliveryStalls() async {
+    let grace = Duration.milliseconds(250)
+    let harness = Harness(grace: grace)
+    harness.received.bytes = 0
+    harness.audit.decoded(sourceTimestampNs: 100, nowNs: 1)
+    harness.recovery.handle(.sourceIdle(latestTimestampNs: 900))
+    await harness.clock.waitForSleep(grace)
+    harness.received.bytes = 1_000_000
+    harness.clock.advance(by: grace)
+    await harness.clock.waitForSleep(grace, count: 2)
+    #expect(harness.counters["sourceIdleGraceExtensions"] == 1 && harness.channel.sent.isEmpty)
+
+    harness.clock.advance(by: grace)
+    await harness.channel.sends.wait()
+    #expect(harness.channel.sent == [.keyframe])
+    await harness.clock.waitForSleep(Harness.requesterInterval)
+    harness.received.bytes = 2_000_000
+    harness.clock.advance(by: Harness.requesterInterval)
+    await harness.clock.waitForSleep(Harness.requesterInterval, count: 2)
+    #expect(harness.channel.sent == [.keyframe])
+
+    harness.clock.advance(by: Harness.requesterInterval)
+    await harness.channel.sends.wait(for: 2)
+    #expect(harness.channel.sent == [.keyframe, .keyframe])
+    await harness.close()
+    #expect(harness.clock.pendingCount == 0)
   }
 
   @Test func aNoticeAlreadyCoveredByDecodedContentIsVerifiedWithoutStartingATimer() async {

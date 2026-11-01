@@ -250,13 +250,14 @@ package final class ScreenSharingDeliveryVerifier {
   }
 
   package static let defaultGrace: Duration = .milliseconds(100)
-  package static let defaultGraceExtensions = 4
-  package static let maximumGraceExtensions = 10
+  package static let defaultGraceExtensions = 50
+  package static let maximumGraceExtensions = 50
   nonisolated static let initialRetryDelayMs: Int64 = 100
   nonisolated static let maximumRetryDelayMs: Int64 = 5000
   private let audit: ScreenSharingDeliveryAudit
   private let grace: Duration
   private let graceExtensions: Int
+  private let receivedMediaBytes: ScreenSharingReceivedMediaBytes
   private let refresh: () -> Void
   private let report: (Outcome) -> Void
   private let sleep: @Sendable (Duration) async throws -> Void
@@ -274,10 +275,12 @@ package final class ScreenSharingDeliveryVerifier {
   package init(
     audit: ScreenSharingDeliveryAudit, grace: Duration = ScreenSharingDeliveryVerifier.defaultGrace,
     graceExtensions: Int = ScreenSharingDeliveryVerifier.defaultGraceExtensions,
+    receivedMediaBytes: @escaping ScreenSharingReceivedMediaBytes = { nil },
     refresh: @escaping () -> Void, report: @escaping (Outcome) -> Void,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.audit = audit; self.grace = grace; self.refresh = refresh; self.report = report
+    self.receivedMediaBytes = receivedMediaBytes
     self.graceExtensions = min(max(graceExtensions, 0), Self.maximumGraceExtensions)
     self.sleep = sleep
   }
@@ -296,15 +299,21 @@ package final class ScreenSharingDeliveryVerifier {
     let sleep = sleep
     let grace = grace
     let extensions = graceExtensions
+    let receivedMediaBytes = receivedMediaBytes
     let target = latestTimestampNs
     var mark = audit.latestDecodedTimestampNs
     task = Task { @MainActor [weak self] in
+      var media = ScreenSharingMediaArrival()
+      _ = media.record(await receivedMediaBytes())
       var extended = 0
       while true {
         do { try await sleep(grace) } catch { return }
+        let mediaArrived = media.record(await receivedMediaBytes())
         guard let self, !Task.isCancelled, !self.closed else { return }
         let latest = self.audit.latestDecodedTimestampNs
-        guard extended < extensions, let latest, latest < target, latest != mark else { break }
+        if let latest, latest >= target { break }
+        let decodedNewer = latest != nil && latest != mark
+        guard extended < extensions, decodedNewer || mediaArrived else { break }
         mark = latest
         extended += 1
         self.report(.graceExtended)

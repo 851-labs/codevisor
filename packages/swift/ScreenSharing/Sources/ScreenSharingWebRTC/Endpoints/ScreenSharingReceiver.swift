@@ -26,8 +26,10 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     self.mailbox = mailbox
     let renderer = ScreenSharingPeerRenderer(mailbox: mailbox, metrics: metrics)
     self.renderer = renderer
+    let inboundVideo = ScreenSharingInboundVideo(transport: staged.transport)
     recovery = ScreenSharingReceiverRecovery(
-      metrics: metrics, codecFactory: staged.codecFactory, videoRefresh: staged.videoRefresh)
+      metrics: metrics, codecFactory: staged.codecFactory, videoRefresh: staged.videoRefresh,
+      receivedMediaBytes: { await inboundVideo.bytesReceived() })
     super.init(staged: staged)
     delegate.onVideoTrack = { [transport] track in transport.attach(track, renderer: renderer) }
     codecFactory.refreshSignal.request()
