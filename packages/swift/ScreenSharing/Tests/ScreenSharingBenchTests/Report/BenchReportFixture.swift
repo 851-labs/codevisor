@@ -7,11 +7,14 @@ enum BenchReportFixture {
       run: BenchRun(
         id: "gha-12345-1", tier: 2, startedAt: Date(timeIntervalSince1970: 1_793_268_000), gitSha: "e3e2b0613",
         trigger: "nightly"),
-      environment: environment, calibration: calibration, results: [appleResult, codevisorResult],
+      environment: environment, calibration: calibration, results: [appleResult, codevisorResult, codevisorV2Result],
       comparisons: [
         BenchComparison(
           scene: "scroll", resolution: "R1", network: "N0", metric: "image_age_ms.p50", appleHp: [48, 50, 51],
-          codevisor: [61, 62, 60], noiseBandMs: 3, verdict: .appleFaster)
+          codevisor: [61, 62, 60], noiseBandMs: 3, verdict: .appleFaster),
+        BenchComparison(
+          scene: "scroll", resolution: "R1x2", network: "N0", metric: "image_age_ms.p50", system: .codevisorV2,
+          appleHp: [48, 50, 51], codevisor: [40, 41, 39], noiseBandMs: 3, verdict: .codevisorFaster),
       ])
   }
 
@@ -93,6 +96,30 @@ enum BenchReportFixture {
     result.unreadableFraction = 0.02
     result.valid = false
     result.invalidReason = "unreadable captures above 1%"
+    return result
+  }
+
+  private static var codevisorV2Result: BenchResult {
+    var result = BenchResult(
+      system: .codevisorV2, scene: "scroll", resolution: "R1x2", network: "N0", repetition: 1, seed: 7)
+    result.imageAgeMs = distribution([39, 40, 47])
+    result.updatesPerS = 59.8
+    result.shownRatio = 0.99
+    var stages = BenchStageTimings()
+    stages.encode = distribution([10.9, 11.2, 14])
+    var media = BenchMediaStages()
+    media.handOff = distribution([0.1, 0.1, 0.3])
+    media.queue = distribution([0.2, 0.3, 0.6])
+    media.send = distribution([0.8, 1, 2.4])
+    media.network = distribution([0.3, 0.4, 1])
+    media.assemble = distribution([1.1, 1.3, 3])
+    media.recover = distribution([4.2])
+    stages.media = media
+    result.stagesMs = stages
+    result.media = BenchMediaCounters(
+      framesSent: 3_540, framesLost: 1, tilesSkipped: 1, droppedBeforeEncode: 12, admissionDeferrals: 3, nacksSent: 4,
+      packetsRetransmitted: 6, parityPackets: 0, fecRepairs: 0, nackRepairs: 2, ltrRefreshes: 1, keyframes: 1,
+      capacityKbps: 352_000, roundTripMs: 0.8)
     return result
   }
 }

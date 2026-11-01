@@ -35,9 +35,9 @@ struct ResultsMarkdown {
 
   private var table: [String] {
     let header = [
-      "| scene | network | e2e p50 ms | p50 range | outside jitter buffer | e2e p95 ms | vs nightlies | updates/s | freezes "
-        + "| Mbit/s | valid |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| system | scene | network | e2e p50 ms | p50 range | outside jitter buffer | e2e p95 ms | vs nightlies "
+        + "| updates/s | freezes | Mbit/s | valid |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     return header + history.summaries.map(row)
   }
@@ -45,7 +45,7 @@ struct ResultsMarkdown {
   private func row(_ summary: BenchCellSummary) -> String {
     let range = summary.e2eP50MinMs.flatMap { low in summary.e2eP50MaxMs.map { "\(format(low))–\(format($0))" } }
     let cells = [
-      summary.cell.scene, summary.cell.network, format(summary.e2eP50Ms), range ?? "–",
+      summary.cell.system.rawValue, summary.cell.scene, summary.cell.network, format(summary.e2eP50Ms), range ?? "–",
       format(summary.e2eOutsideJitterBufferP50Ms), format(summary.e2eP95Ms),
       versusBaseline(summary), format(summary.updatesPerS), summary.freezeRatio.map { format($0 * 100) + "%" } ?? "–",
       format(summary.bitrateMbps), "\(summary.valid)/\(summary.repetitions)",

@@ -66,6 +66,35 @@ struct BenchLoopbackAnalysisTests {
     #expect(result.e2eOutsideJitterBufferMs == BenchDistribution([19]), "only frames with a complete time count")
   }
 
+  @Test func mediaTimestampsSplitTheEngineV2NetworkStage() throws {
+    let plain = Self.frame(sourceNs: 300 * Self.ms)
+    let repaired = Self.withMedia(Self.frame(sourceNs: 400 * Self.ms), firstInAfterEncodeUs: 1_000, recovery: .nack)
+    let frames = [Self.withMedia(Self.frame(sourceNs: 200 * Self.ms), firstInAfterEncodeUs: 1_500, recovery: .none)]
+    let analysis = BenchLoopbackAnalysis(
+      produced: Self.produced, frames: frames + [repaired, plain], windowNs: Self.window, cadence: Self.cadence,
+      endpoint: .committed)
+    var result = Self.result
+
+    analysis.apply(to: &result)
+
+    let media = try #require(result.stagesMs?.media)
+    #expect(media.handOff == BenchDistribution([0.5, 0.5]) && media.queue == BenchDistribution([0.25, 0.25]))
+    #expect(media.send == BenchDistribution([1.25, 1.25]) && media.network == BenchDistribution([1, 1]))
+    #expect(media.assemble == BenchDistribution([1.5, 2]))
+    #expect(media.recover == BenchDistribution([2]), "only frames completed by NACK or FEC")
+  }
+
+  @Test func framesWithoutMediaTimestampsHaveNoMediaStages() {
+    let analysis = BenchLoopbackAnalysis(
+      produced: Self.produced, frames: [Self.frame(sourceNs: 300 * Self.ms)], windowNs: Self.window,
+      cadence: Self.cadence, endpoint: .committed)
+    var result = Self.result
+
+    analysis.apply(to: &result)
+
+    #expect(result.stagesMs?.media == nil)
+  }
+
   @Test func onGlassLatencyUsesOnlyFramesThatReachedTheGlass() {
     var shown = Self.frame(sourceNs: 300 * Self.ms)
     shown.onGlassNs = shown.renderCommitNs + 9 * Self.ms
@@ -94,6 +123,17 @@ struct BenchLoopbackAnalysisTests {
 
   private static var result: BenchResult {
     BenchResult(system: .codevisor, scene: "typing", resolution: "R1", network: "N0", repetition: 1, seed: 7)
+  }
+
+  private static func withMedia(
+    _ frame: BenchFrameTimestamps, firstInAfterEncodeUs: Int64, recovery: BenchMediaRecovery
+  ) -> BenchFrameTimestamps {
+    var frame = frame
+    let sendNs = frame.encodeOutputNs + 500_000
+    frame.media = BenchMediaFrameTimestamps(
+      sendNs: sendNs, firstPacketOutNs: sendNs + 250_000, lastPacketOutNs: sendNs + 1_500_000,
+      firstPacketInNs: frame.encodeOutputNs + firstInAfterEncodeUs * 1000, recovery: recovery)
+    return frame
   }
 
   private static func frame(sourceNs: Int64, latencyMs: Int64 = 21) -> BenchFrameTimestamps {

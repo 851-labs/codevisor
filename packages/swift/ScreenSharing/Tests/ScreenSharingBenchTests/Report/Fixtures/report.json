@@ -41,6 +41,25 @@
       "resolution" : "R1",
       "scene" : "scroll",
       "verdict" : "apple-faster"
+    },
+    {
+      "apple_hp" : [
+        48,
+        50,
+        51
+      ],
+      "codevisor" : [
+        40,
+        41,
+        39
+      ],
+      "metric" : "image_age_ms.p50",
+      "network" : "N0",
+      "noise_band_ms" : 3,
+      "resolution" : "R1x2",
+      "scene" : "scroll",
+      "system" : "codevisor-v2",
+      "verdict" : "codevisor-faster"
     }
   ],
   "environment" : {
@@ -232,6 +251,87 @@
       "unreadable_fraction" : 0.02,
       "updates_per_s" : 31.5,
       "valid" : false
+    },
+    {
+      "image_age_ms" : {
+        "count" : 3,
+        "max" : 47,
+        "p50" : 40,
+        "p95" : 47
+      },
+      "media" : {
+        "admission_deferrals" : 3,
+        "capacity_kbps" : 352000,
+        "dropped_before_encode" : 12,
+        "fec_repairs" : 0,
+        "frames_lost" : 1,
+        "frames_sent" : 3540,
+        "keyframes" : 1,
+        "ltr_refreshes" : 1,
+        "nack_repairs" : 2,
+        "nacks_sent" : 4,
+        "packets_retransmitted" : 6,
+        "parity_packets" : 0,
+        "round_trip_ms" : 0.8,
+        "tiles_skipped" : 1
+      },
+      "network" : "N0",
+      "repetition" : 1,
+      "resolution" : "R1x2",
+      "scene" : "scroll",
+      "seed" : 7,
+      "shown_ratio" : 0.99,
+      "skipped_versions" : 0,
+      "stages_ms" : {
+        "encode" : {
+          "count" : 3,
+          "max" : 14,
+          "p50" : 11.2,
+          "p95" : 14
+        },
+        "media" : {
+          "assemble" : {
+            "count" : 3,
+            "max" : 3,
+            "p50" : 1.3,
+            "p95" : 3
+          },
+          "hand_off" : {
+            "count" : 3,
+            "max" : 0.3,
+            "p50" : 0.1,
+            "p95" : 0.3
+          },
+          "network" : {
+            "count" : 3,
+            "max" : 1,
+            "p50" : 0.4,
+            "p95" : 1
+          },
+          "queue" : {
+            "count" : 3,
+            "max" : 0.6,
+            "p50" : 0.3,
+            "p95" : 0.6
+          },
+          "recover" : {
+            "count" : 1,
+            "max" : 4.2,
+            "p50" : 4.2,
+            "p95" : 4.2
+          },
+          "send" : {
+            "count" : 3,
+            "max" : 2.4,
+            "p50" : 1,
+            "p95" : 2.4
+          }
+        }
+      },
+      "system" : "codevisor-v2",
+      "unreadable_fraction" : 0,
+      "updates_per_s" : 59.8,
+      "valid" : true
     }
   ],
   "run" : {

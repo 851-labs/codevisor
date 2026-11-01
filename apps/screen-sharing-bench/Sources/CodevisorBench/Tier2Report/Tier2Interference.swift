@@ -9,8 +9,8 @@ struct Tier2Interference: Encodable {
   let bitrateDeltaPct: Double?
 
   static func make(_ measurements: [Tier2Measurement]) -> [Tier2Interference] {
-    [Tier2RunMeta.System.appleHP, .codevisor].compactMap { system in
-      let runs = measurements.filter { $0.files.meta.system == system && $0.files.meta.scene == scene }
+    BenchSystem.allCases.compactMap { system in
+      let runs = measurements.filter { $0.files.meta.benchSystem == system && $0.files.meta.scene == scene }
       let off = runs.filter { !$0.files.meta.hostObserver && $0.invalidReason == nil }
       let conditions = Set(off.map { "\($0.files.meta.resolutionLabel) \($0.files.meta.networkLabel)" })
       let on = runs.filter {

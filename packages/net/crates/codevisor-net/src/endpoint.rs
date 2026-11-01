@@ -18,6 +18,7 @@ use crate::{
     config::{NetConfig, PathPolicy},
     media::DatagramRouter,
     message_stream::MessageStream,
+    pinned_path::FirstPathSelector,
     screen_transport,
 };
 
@@ -123,6 +124,9 @@ impl NetEndpoint {
             PathPolicy::Auto => {}
             PathPolicy::RelayOnly => builder = builder.clear_ip_transports(),
             PathPolicy::DirectOnly => builder = builder.clear_relay_transports(),
+            PathPolicy::DirectPinned => {
+                builder = builder.clear_relay_transports().path_selector(Arc::new(FirstPathSelector::default()));
+            }
         }
         if config.path_policy != PathPolicy::RelayOnly && !config.bind_addrs.is_empty() {
             builder = builder.clear_ip_transports();

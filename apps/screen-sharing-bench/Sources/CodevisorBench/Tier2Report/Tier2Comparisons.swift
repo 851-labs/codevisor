@@ -18,7 +18,10 @@ enum Tier2Comparisons {
   static func make(_ results: [BenchResult]) -> [BenchComparison] {
     let valid = results.filter(\.valid)
     return Tier2Group.all(valid).flatMap { group in
-      metrics.compactMap { compare($0, in: valid.filter(group.contains), group: group) }
+      let results = valid.filter(group.contains)
+      return BenchSystem.codevisorSystems.flatMap { system in
+        metrics.compactMap { compare($0, system: system, in: results, group: group) }
+      }
     }
   }
 
@@ -31,15 +34,17 @@ enum Tier2Comparisons {
     return outcome.basis?.rawValue ?? "–"
   }
 
-  private static func compare(_ metric: Metric, in results: [BenchResult], group: Tier2Group) -> BenchComparison? {
+  private static func compare(
+    _ metric: Metric, system: BenchSystem, in results: [BenchResult], group: Tier2Group
+  ) -> BenchComparison? {
     let apple = results.filter { $0.system == .appleHP }.compactMap(metric.value)
-    let ours = results.filter { $0.system == .codevisor }.compactMap(metric.value)
+    let ours = results.filter { $0.system == system }.compactMap(metric.value)
     guard let outcome = BenchSystemComparison.verdict(appleHp: apple, codevisor: ours, better: metric.better) else {
       return nil
     }
 
     return BenchComparison(
-      scene: group.scene, resolution: group.resolution, network: group.network, metric: metric.name,
+      scene: group.scene, resolution: group.resolution, network: group.network, metric: metric.name, system: system,
       appleHp: apple, codevisor: ours, noiseBandMs: outcome.noiseBand, verdict: outcome.verdict)
   }
 }

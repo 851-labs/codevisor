@@ -9,6 +9,7 @@ pub enum PathPolicy {
     Auto,
     RelayOnly,
     DirectOnly,
+    DirectPinned,
 }
 
 impl FromStr for PathPolicy {
@@ -19,7 +20,8 @@ impl FromStr for PathPolicy {
             "auto" | "" => Ok(Self::Auto),
             "relay-only" => Ok(Self::RelayOnly),
             "direct-only" => Ok(Self::DirectOnly),
-            other => bail!("unknown path policy {other:?} (expected auto, relay-only or direct-only)"),
+            "direct-pinned" => Ok(Self::DirectPinned),
+            other => bail!("unknown path policy {other:?} (expected auto, relay-only, direct-only or direct-pinned)"),
         }
     }
 }
@@ -72,6 +74,7 @@ mod tests {
         assert_eq!("".parse::<PathPolicy>().unwrap(), PathPolicy::Auto);
         assert_eq!("relay-only".parse::<PathPolicy>().unwrap(), PathPolicy::RelayOnly);
         assert_eq!("direct-only".parse::<PathPolicy>().unwrap(), PathPolicy::DirectOnly);
+        assert_eq!("direct-pinned".parse::<PathPolicy>().unwrap(), PathPolicy::DirectPinned);
         assert!("relay".parse::<PathPolicy>().is_err());
     }
 
