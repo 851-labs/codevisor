@@ -34,15 +34,8 @@ extension HomeView {
         guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
         withSidebarReflow { environment.unarchiveWorkspace(workspace) }
       },
-      moveToSection: { ref, sectionID in
-        withSidebarReflow { environment.workspaceSections.move(ref.id, to: sectionID) }
-      },
-      newSection: { ref in sectionPrompt = .create(moving: ref?.id) },
-      renameSection: { section in sectionPrompt = .rename(section) },
-      deleteSection: { section in withSidebarReflow { deleteSection(section) } },
-      moveSection: { id, index in
-        withSidebarReflow { environment.workspaceSections.moveSection(id, toIndex: index) }
-      },
+      workspaceSections: sectionActions(for: environment.workspaceSections, prompt: $sectionPrompt),
+      botSections: sectionActions(for: environment.botSections, prompt: $botSectionPrompt),
       reorder: { id, index, group in commitWorkspaceMove(id, toIndex: index, within: group) },
       moveTab: { tabId, successor, workspace in
         withSidebarReflow {
@@ -110,8 +103,20 @@ extension HomeView {
     )
   }
 
-  private func deleteSection(_ section: CustomSection) {
-    environment.workspaceSections.delete(section.id)
+  private func sectionActions(
+    for store: CustomSectionStore, prompt: Binding<SectionPrompt?>
+  ) -> HomeSidebarSectionActions {
+    HomeSidebarSectionActions(
+      move: { id, sectionID in withSidebarReflow { store.move(id, to: sectionID) } },
+      create: { prompt.wrappedValue = .create(moving: $0) },
+      rename: { prompt.wrappedValue = .rename($0) },
+      delete: { section in withSidebarReflow { deleteSection(section, from: store) } },
+      reorder: { id, index in withSidebarReflow { store.moveSection(id, toIndex: index) } }
+    )
+  }
+
+  private func deleteSection(_ section: CustomSection, from store: CustomSectionStore) {
+    store.delete(section.id)
     collapsedGroupIDs.removeAll { $0 == SidebarWorkspaceGroup.customSectionID(section.id) }
   }
 

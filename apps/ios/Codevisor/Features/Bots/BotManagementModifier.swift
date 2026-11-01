@@ -32,6 +32,7 @@ struct BotManagementModifier: ViewModifier {
     Task {
       do {
         try await environment.bots.delete(bot)
+        environment.botSections.forget(bot.id)
       } catch {
         ErrorReporter.shared.report("Couldn't delete bot", error: error)
       }

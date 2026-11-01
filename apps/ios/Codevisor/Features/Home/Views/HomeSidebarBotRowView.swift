@@ -8,9 +8,11 @@ struct HomeSidebarBotRowView: View, Equatable {
   let bot: HomeSidebarBot
   let actions: HomeSidebarActionHandler
   var isSelectionRow = false
+  var sections: [CustomSection]?
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.bot == rhs.bot && lhs.actions === rhs.actions && lhs.isSelectionRow == rhs.isSelectionRow
+      && lhs.sections == rhs.sections
   }
 
   private func onOpen() { actions.actions.openBot(bot.bot) }
@@ -88,6 +90,13 @@ struct HomeSidebarBotRowView: View, Equatable {
     } else {
       Button(action: onEdit) {
         Label("Edit", systemImage: "pencil")
+      }
+      if let sections {
+        Divider()
+        MoveToSectionMenu(
+          currentSectionID: bot.sectionID, sections: sections,
+          move: { actions.actions.botSections.move(bot.bot.id, $0) },
+          newSection: { actions.actions.botSections.create(bot.bot.id) })
       }
     }
     Divider()

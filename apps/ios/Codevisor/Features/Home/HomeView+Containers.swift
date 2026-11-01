@@ -31,6 +31,7 @@ extension HomeView {
     } else {
       refreshableNavigationContent
         .modifier(SectionPromptModifier(prompt: $sectionPrompt, store: environment.workspaceSections))
+        .modifier(SectionPromptModifier(prompt: $botSectionPrompt, store: environment.botSections))
     }
   }
 

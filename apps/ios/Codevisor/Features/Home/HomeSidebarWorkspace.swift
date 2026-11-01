@@ -113,6 +113,14 @@ struct HomeSidebarContent: Equatable {
     var collapseID: String { SidebarWorkspaceGroup.customSectionID(section.id) }
   }
 
+  struct BotSectionGroup: Identifiable, Equatable {
+    let section: CustomSection
+    let bots: [HomeSidebarBot]
+
+    var id: UUID { section.id }
+    var collapseID: String { SidebarWorkspaceGroup.customSectionID(section.id) }
+  }
+
   var listTitle = SidebarGrouping.flat.listTitle
   var pinned: [HomeSidebarWorkspace] = []
   var sections: [SectionGroup] = []
@@ -121,18 +129,25 @@ struct HomeSidebarContent: Equatable {
   var archivedCount = 0
   var bots: [HomeSidebarBot] = []
   var archivedBots: [HomeSidebarBot] = []
+  var botSections: [CustomSection] = []
   var canCreateBots = false
 
   var showsBots: Bool { !bots.isEmpty || canCreateBots }
 
   var customSections: [CustomSection] { sections.map(\.section) }
 
+  var unsectionedBots: [HomeSidebarBot] { bots.filter { $0.sectionID == nil } }
+
+  var botSectionGroups: [BotSectionGroup] {
+    botSections.map { section in BotSectionGroup(section: section, bots: bots.filter { $0.sectionID == section.id }) }
+  }
+
   var listedWorkspaces: [HomeSidebarWorkspace] {
     pinned + sections.flatMap(\.workspaces) + groups.flatMap(\.workspaces)
   }
 
   var layout: [UUID] {
-    bots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) }
+    (unsectionedBots + botSectionGroups.flatMap(\.bots)).flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) }
       + listedWorkspaces.flatMap(\.subtree).map(\.id)
       + archivedBots.flatMap { [$0.id] + $0.children.flatMap(\.subtree).map(\.id) } + archived.map(\.id)
   }

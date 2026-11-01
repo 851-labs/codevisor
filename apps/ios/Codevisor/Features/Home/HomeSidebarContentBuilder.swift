@@ -56,6 +56,7 @@ struct HomeSidebarContentBuilder {
         heading: placement.heading)
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
+    let membership = environment.botSections.membership
     let bots = botEntries.map { entry in
       HomeSidebarBot(
         bot: entry.bot,
@@ -69,11 +70,13 @@ struct HomeSidebarContentBuilder {
             botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
           }
         },
-        canArchive: environment.bots.supportsArchive(on: entry.bot.serverId)
+        canArchive: environment.bots.supportsArchive(on: entry.bot.serverId),
+        sectionID: membership[entry.bot.id]
       )
     }
     content.bots = bots.filter { !$0.bot.isArchived }
     content.archivedBots = bots.filter(\.bot.isArchived)
+    content.botSections = environment.botSections.sections
     return content
   }
 

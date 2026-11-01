@@ -13,11 +13,8 @@ struct HomeSidebarActions {
   var renameWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   var archiveWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   var restoreWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
-  var moveToSection: (HomeSidebarWorkspaceRef, UUID?) -> Void = { _, _ in }
-  var newSection: (HomeSidebarWorkspaceRef?) -> Void = { _ in }
-  var renameSection: (CustomSection) -> Void = { _ in }
-  var deleteSection: (CustomSection) -> Void = { _ in }
-  var moveSection: (UUID, Int) -> Void = { _, _ in }
+  var workspaceSections = HomeSidebarSectionActions()
+  var botSections = HomeSidebarSectionActions()
   var reorder: (UUID, Int, [UUID]) -> Void = { _, _, _ in }
   var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
@@ -129,12 +126,21 @@ struct HomeSidebarList: View {
   }
 
   private func detailedWorkspaceIDs(_ content: HomeSidebarContent) -> [UUID] {
-    let showsBotChildren = mode?.wrappedValue == .chat || (mode == nil && botsExpanded)
-    var shown = showsBotChildren ? content.bots.flatMap(\.children) : []
+    var shown = shownBots(content).flatMap(\.children)
     if showsCode { shown += codeWorkspaces(content) }
     shown = shown.flatMap(\.subtree)
     if archivedExpanded { shown += archivedWorkspaces(content) }
     return shown.map(\.id)
+  }
+
+  private func shownBots(_ content: HomeSidebarContent) -> [HomeSidebarBot] {
+    switch mode?.wrappedValue {
+    case .chat:
+      let expanded = content.botSectionGroups.filter { !collapsedGroupIDs.contains($0.collapseID) }
+      return content.unsectionedBots + expanded.flatMap(\.bots)
+    case .code: return []
+    case nil: return botsExpanded ? content.bots : []
+    }
   }
 
   private func codeWorkspaces(_ content: HomeSidebarContent) -> [HomeSidebarWorkspace] {
@@ -172,7 +178,7 @@ struct HomeSidebarList: View {
   private func sections(_ content: HomeSidebarContent) -> some View {
     switch mode?.wrappedValue {
     case .chat:
-      Section { botRows(content) }
+      chatSections(content)
       archivedSection(content)
     case .code:
       codeSections(content)
@@ -220,23 +226,41 @@ struct HomeSidebarList: View {
     }
   }
 
-  private func botsSection(_ content: HomeSidebarContent) -> some View {
-    Section("Bots", isExpanded: animated($botsExpanded)) {
-      botRows(content)
+  @ViewBuilder
+  private func chatSections(_ content: HomeSidebarContent) -> some View {
+    if !content.unsectionedBots.isEmpty {
+      Section {
+        ForEach(content.unsectionedBots) { bot in
+          botRow(bot, sections: content.botSections)
+        }
+      }
+    }
+    ForEach(content.botSectionGroups) { group in
+      Section(group.section.name, isExpanded: groupExpansion(group.collapseID)) {
+        ForEach(group.bots) { bot in
+          botRow(bot, sections: content.botSections)
+        }
+      }
+    }
+    if content.canCreateBots {
+      Section { newBotButton }
     }
   }
 
-  @ViewBuilder
-  private func botRows(_ content: HomeSidebarContent) -> some View {
-    ForEach(content.bots) { bot in
-      botRow(bot)
-    }
-    if content.canCreateBots {
-      Button(action: actions.actions.newBot) {
-        Label("New Bot…", systemImage: "plus")
+  private func botsSection(_ content: HomeSidebarContent) -> some View {
+    Section("Bots", isExpanded: animated($botsExpanded)) {
+      ForEach(content.bots) { bot in
+        botRow(bot)
       }
-      .accessibilityIdentifier("sidebar.newBot")
+      if content.canCreateBots { newBotButton }
     }
+  }
+
+  private var newBotButton: some View {
+    Button(action: actions.actions.newBot) {
+      Label("New Bot…", systemImage: "plus")
+    }
+    .accessibilityIdentifier("sidebar.newBot")
   }
 
   @ViewBuilder
@@ -310,8 +334,8 @@ struct HomeSidebarList: View {
   }
 
   @ViewBuilder
-  private func botRow(_ bot: HomeSidebarBot) -> some View {
-    let row = HomeSidebarBotRowView(bot: bot, actions: actions, isSelectionRow: isSelectable)
+  private func botRow(_ bot: HomeSidebarBot, sections: [CustomSection]? = nil) -> some View {
+    let row = HomeSidebarBotRowView(bot: bot, actions: actions, isSelectionRow: isSelectable, sections: sections)
       .equatable()
       .tag(bot.id)
     if !bot.hasNestedRows {
