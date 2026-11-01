@@ -53,6 +53,11 @@ on:
         required: false
         default: ""
         type: string
+      lab:
+        description: Run only this lab command on one mini, as <tamale|croissant> <subcommand> [--option value …]
+        required: false
+        default: ""
+        type: string
   pull_request:
     types: [opened, synchronize, reopened, closed]
     paths:
@@ -83,6 +88,7 @@ jobs:
       tier2: ${{ steps.plan.outputs.tier2 }}
       calibration: ${{ steps.plan.outputs.calibration }}
       encode_lab: ${{ steps.plan.outputs.encode_lab }}
+      lab: ${{ steps.plan.outputs.lab }}
     steps:
       - name: Plan the run
         id: plan
@@ -96,9 +102,10 @@ jobs:
           TIER2_INPUT: ${{ inputs.tier2 }}
           CALIBRATION_INPUT: ${{ inputs.calibration }}
           ENCODE_LAB: ${{ inputs.encode_lab }}
+          LAB: ${{ inputs.lab }}
           NIGHTLY_TIER2: ${{ vars.SCREEN_SHARING_BENCH_NIGHTLY_TIER2 }}
         run: |
-          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false own_window=false encode_lab=false
+          run=true mode=nightly trigger=$EVENT publish=false tier2=false calibration=false own_window=false encode_lab=false lab=false
           preflight="--quiet --allow-locked"
           pacific_cron="0 10 * * *"
           [[ "$(TZ=America/Los_Angeles date +%z)" == -0800 ]] && pacific_cron="0 11 * * *"
@@ -114,6 +121,7 @@ jobs:
               [[ -n "$SCENES$NETWORKS" ]] && mode=custom trigger=adhoc
               [[ "$mode" == custom && "$SOURCE" == own-window ]] && own_window=true preflight="--quiet"
               [[ -n "$ENCODE_LAB" ]] && run=false encode_lab=true
+              [[ -n "$LAB" ]] && run=false encode_lab=false lab=true
               ;;
           esac
           [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]] && publish=true
@@ -121,7 +129,7 @@ jobs:
           {
             echo "run=$run"; echo "mode=$mode"; echo "trigger=$trigger"; echo "preflight=$preflight"
             echo "publish=$publish"; echo "tier2=$tier2"; echo "calibration=$calibration"; echo "own_window=$own_window"
-            echo "encode_lab=$encode_lab"
+            echo "encode_lab=$encode_lab"; echo "lab=$lab"
           } | tee -a "$GITHUB_OUTPUT"
 
   tier1:
@@ -297,3 +305,36 @@ jobs:
           name: encode-lab-tamale
           path: ${{ runner.temp }}/results
           retention-days: 90
+
+  lab:
+    needs: plan
+    if: ${{ needs.plan.outputs.lab == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, "${{ startsWith(inputs.lab, 'croissant ') && 'croissant' || 'tamale' }}"]
+    timeout-minutes: 30
+    concurrency:
+      group: screen-sharing-lab-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      LAB: ${{ inputs.lab }}
+    steps:
+      - name: Check the inputs
+        run: |
+          [[ "$LAB" =~ ^(tamale|croissant)\ [a-z0-9-]+(\ [a-zA-Z0-9=,.:/_-]+)*$ ]] || {
+            echo "lab must be <tamale|croissant> <subcommand> [--option value …] in plain characters"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          set-safe-directory: false
+      - uses: ./.github/actions/build-screen-sharing-bench
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+      - name: Install the build where the permission grants are
+        run: apps/screen-sharing-bench/scripts/install-granted.sh
+      - name: Run the lab command
+        run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/lab.sh "$RUNNER_TEMP/results" $LAB
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: lab
+          path: ${{ runner.temp }}/results
