@@ -20,8 +20,7 @@ struct ScreenSharingInboundVideo: Sendable {
 
   static func bytesReceived(in entries: [ScreenSharingPeerStatistics.Entry]) -> Int64? {
     let counters = entries.filter { $0.type == "inbound-rtp" && $0.values["kind"] as? String == "video" }
-      .flatMap { [$0.values["bytesReceived"], $0.values["retransmittedBytesReceived"]] }
-      .compactMap { ($0 as? NSNumber)?.int64Value }
+      .compactMap { ($0.values["bytesReceived"] as? NSNumber)?.int64Value }
     guard !counters.isEmpty else { return nil }
     return counters.reduce(0, +)
   }

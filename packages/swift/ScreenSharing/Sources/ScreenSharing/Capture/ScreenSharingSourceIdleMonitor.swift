@@ -251,7 +251,6 @@ package final class ScreenSharingDeliveryVerifier {
 
   package static let defaultGrace: Duration = .milliseconds(100)
   package static let defaultGraceExtensions = 50
-  package static let maximumGraceExtensions = 50
   nonisolated static let initialRetryDelayMs: Int64 = 100
   nonisolated static let maximumRetryDelayMs: Int64 = 5000
   private let audit: ScreenSharingDeliveryAudit
@@ -281,7 +280,7 @@ package final class ScreenSharingDeliveryVerifier {
   ) {
     self.audit = audit; self.grace = grace; self.refresh = refresh; self.report = report
     self.receivedMediaBytes = receivedMediaBytes
-    self.graceExtensions = min(max(graceExtensions, 0), Self.maximumGraceExtensions)
+    self.graceExtensions = max(graceExtensions, 0)
     self.sleep = sleep
   }
 
@@ -303,12 +302,12 @@ package final class ScreenSharingDeliveryVerifier {
     let target = latestTimestampNs
     var mark = audit.latestDecodedTimestampNs
     task = Task { @MainActor [weak self] in
-      var media = ScreenSharingMediaArrival()
-      _ = media.record(await receivedMediaBytes())
+      var media = ScreenSharingMediaArrival(receivedMediaBytes)
+      await media.start()
       var extended = 0
       while true {
         do { try await sleep(grace) } catch { return }
-        let mediaArrived = media.record(await receivedMediaBytes())
+        let mediaArrived = await media.arrivedSinceLastSample()
         guard let self, !Task.isCancelled, !self.closed else { return }
         let latest = self.audit.latestDecodedTimestampNs
         if let latest, latest >= target { break }
