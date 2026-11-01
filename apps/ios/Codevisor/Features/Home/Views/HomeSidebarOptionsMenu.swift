@@ -4,8 +4,9 @@ import SwiftUI
 
 struct HomeSidebarOptionsMenu: View {
   let sections: [CustomSection]
-  let actions: HomeSidebarActions
+  let actions: HomeSidebarSectionActions
   var managesSections = true
+  var showsGrouping = true
   @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) private var grouping
 
   var body: some View {
@@ -14,14 +15,16 @@ struct HomeSidebarOptionsMenu: View {
         HomeSidebarSectionsMenu(sections: sections, actions: actions)
         Divider()
       }
-      Picker(selection: $grouping) {
-        ForEach(SidebarGrouping.allCases, id: \.self) { option in
-          Text(option.title).tag(option)
+      if showsGrouping {
+        Picker(selection: $grouping) {
+          ForEach(SidebarGrouping.allCases, id: \.self) { option in
+            Text(option.title).tag(option)
+          }
+        } label: {
+          Label("Grouping", systemImage: "rectangle.3.group")
         }
-      } label: {
-        Label("Grouping", systemImage: "rectangle.3.group")
+        .pickerStyle(.menu)
       }
-      .pickerStyle(.menu)
       Menu {
         Section {
           ForEach(SidebarRowDetail.trailingDetails) { detail in

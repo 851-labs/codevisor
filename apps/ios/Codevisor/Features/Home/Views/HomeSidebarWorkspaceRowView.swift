@@ -128,7 +128,8 @@ struct HomeSidebarWorkspaceRowView: View, Equatable {
         Divider()
         MoveToSectionMenu(
           currentSectionID: slot.sectionID, sections: sections,
-          move: { actions.actions.moveToSection(ref, $0) }, newSection: { actions.actions.newSection(ref) })
+          move: { actions.actions.workspaceSections.move(ref.id, $0) },
+          newSection: { actions.actions.workspaceSections.create(ref.id) })
       }
       Divider()
       Button(action: onArchive) {

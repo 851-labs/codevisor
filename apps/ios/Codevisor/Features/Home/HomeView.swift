@@ -49,6 +49,7 @@ struct HomeView: View {
   @State var renamingTab: HomeTabRenameRequest?
   @State var tabRenameTitle = ""
   @State var sectionPrompt: SectionPrompt?
+  @State var botSectionPrompt: SectionPrompt?
   @State var sidebarActionHandler = HomeSidebarActionHandler(HomeSidebarActions())
   @State var sidebarGitLookups = SidebarGitLookups()
   @ClientPreference(SidebarPreferenceKey.pinnedWorkspaces, default: []) var pinnedWorkspaceIDs: [String]

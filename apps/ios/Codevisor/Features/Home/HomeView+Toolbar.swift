@@ -17,9 +17,7 @@ extension HomeView {
     }
     if hasRemoteMachines || showsSampleSidebar {
       ToolbarItem(placement: .topBarTrailing) {
-        HomeSidebarOptionsMenu(
-          sections: environment.workspaceSections.sections, actions: sidebarActions,
-          managesSections: !showsSampleSidebar)
+        sidebarOptionsMenu
       }
     }
     if hasRemoteMachines && showsSidebarModes {
@@ -31,6 +29,19 @@ extension HomeView {
       ToolbarItem(placement: .principal) {
         HomeSyncIndicatorLabel(text: syncIndicator.label ?? "Syncing…")
       }
+    }
+  }
+
+  @ViewBuilder
+  private var sidebarOptionsMenu: some View {
+    if sidebarMode.wrappedValue == .chat {
+      HomeSidebarOptionsMenu(
+        sections: environment.botSections.sections, actions: sidebarActions.botSections,
+        managesSections: !showsSampleSidebar, showsGrouping: false)
+    } else {
+      HomeSidebarOptionsMenu(
+        sections: environment.workspaceSections.sections, actions: sidebarActions.workspaceSections,
+        managesSections: !showsSampleSidebar)
     }
   }
 
