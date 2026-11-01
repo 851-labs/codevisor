@@ -36,8 +36,8 @@ struct ResultsGate {
       "A cell fails only when both runs cross a threshold against the median of the last "
         + "\(BenchRegressionGate.baselineRuns) nightlies (design §4.2). At N0, once the runs and every baseline nightly "
         + "split out the jitter buffer, latency is judged outside it and the jitter buffer has its own rule (p50 up "
-        + "more than max(100%, 40 ms)): there WebRTC's jitter estimate sits at the product's 80 ms playout cap and "
-        + "lands either at the cap or well below it from one process to the next.", "",
+        + "more than max(100%, 40 ms)): with the 15–80 ms playout delay that the product used before 851-3814, WebRTC's "
+        + "jitter estimate sat at the 80 ms cap or well below it from one process to the next.", "",
       "| scene | network | nightlies | latency judged | p50 baseline | run 1 | run 2 | p95 baseline | run 1 | run 2 "
         + "| jitter buffer baseline | run 1 | run 2 | result |",
       "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",

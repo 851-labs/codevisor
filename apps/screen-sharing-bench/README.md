@@ -300,9 +300,10 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   rules (`BenchRegressionGate`): a cell fails only when both runs cross a threshold. At N0, latency (p50 up more
   than max(15%, 3 ms), p95 up more than max(20%, 5 ms)) is judged on e2e outside the jitter buffer once the runs and
   every baseline nightly split it out, and the jitter buffer gets its own rule (p50 up more than max(100%, 40 ms));
-  N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. At N0, WebRTC's
-  jitter estimate for scroll, video and test cards sits at the product's 80 ms playout cap, and each process lands
-  either at the cap or well below it, so whole e2e there can move by 30% between unchanged runs. The summary also
+  N3 is judged on whole e2e, where jitter-buffer growth under loss is a regression. Under the 15–80 ms
+  playout delay the product used before 851-3814, WebRTC's jitter estimate for scroll, video and test cards at N0 sat
+  at the 80 ms cap or well below it from one process to the next, so whole e2e there could move by 30% between
+  unchanged runs; the product now forces a zero playout delay. The summary also
   says how long the gate waited for tamale and which bench runs were active meanwhile.
   Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
   cancels a gate still queued or running for it.
