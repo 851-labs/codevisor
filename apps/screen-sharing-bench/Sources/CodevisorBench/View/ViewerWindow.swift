@@ -2,9 +2,7 @@ import AppKit
 import ScreenSharing
 
 final class ViewerWindow: NSWindow {
-  static func presented() throws -> ViewerWindow {
-    guard let screen = NSScreen.main else { throw BenchUsageError(message: "this Mac has no screen") }
-
+  static func presented(on screen: NSScreen) -> ViewerWindow {
     let window = ViewerWindow(screen: screen)
     NSApplication.shared.activate()
     window.makeKeyAndOrderFront(nil)

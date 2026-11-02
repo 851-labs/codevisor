@@ -5,6 +5,7 @@ struct ScreenSharingApp {
   static let bundleIdentifier = "com.apple.ScreenSharing"
   private static let fullScreenAttribute = "AXFullScreen"
   private static let pollInterval = Duration.milliseconds(250)
+  private static let windowInset = 40.0
 
   let application: NSRunningApplication
   private var accessibility: AccessibilityElement { .application(application.processIdentifier) }
@@ -42,10 +43,13 @@ struct ScreenSharingApp {
     throw AppleHPError.noSessionWindow(windows.map(WindowDescription.init))
   }
 
-  func makeFullScreen(_ window: AccessibilityElement, screen: CGRect, timeout: Duration) async throws {
+  func makeFullScreen(_ window: AccessibilityElement, on display: CGRect, timeout: Duration) async throws {
+    if window.frame.map(display.intersects) != true {
+      window.set(kAXPositionAttribute, to: CGPoint(x: display.minX + Self.windowInset, y: display.minY + Self.windowInset))
+    }
     window.set(Self.fullScreenAttribute, to: true)
     let limit = ContinuousClock.now + timeout
-    while window.frame?.size != screen.size || window.bool(Self.fullScreenAttribute) != true {
+    while window.frame != display || window.bool(Self.fullScreenAttribute) != true {
       guard ContinuousClock.now < limit else { throw AppleHPError.notFullScreen(WindowDescription(window)) }
 
       try await Task.sleep(for: Self.pollInterval)

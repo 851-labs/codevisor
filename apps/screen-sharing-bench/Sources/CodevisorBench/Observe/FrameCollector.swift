@@ -8,12 +8,14 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
   let continuousMinusAbsoluteNs = BenchMachClock.continuousMinusAbsoluteNs()
   private let layout: BenchBarcodeLayout
   private let relay: VersionRelay?
+  private let stills: StillKeeper?
   private let observations = Mutex<[BenchObservation]>([])
   private let failure = Mutex<(any Error)?>(nil)
 
-  init(layout: BenchBarcodeLayout, relay: VersionRelay?) {
+  init(layout: BenchBarcodeLayout, relay: VersionRelay?, stills: StillKeeper?) {
     self.layout = layout
     self.relay = relay
+    self.stills = stills
   }
 
   func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -29,6 +31,7 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
 
       observations.withLock { $0.append(observation) }
       relay?.forward(observation)
+      keepStill(of: sampleBuffer, version: observation.version)
     } catch {
       failure.withLock { $0 = $0 ?? error }
     }
@@ -36,6 +39,12 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
 
   func stream(_ stream: SCStream, didStopWithError error: any Error) {
     failure.withLock { $0 = $0 ?? error }
+  }
+
+  private func keepStill(of sampleBuffer: CMSampleBuffer, version: Int?) {
+    guard let stills, let version, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+    stills.offer(image, version: version)
   }
 
   func collected() throws -> [BenchObservation] {
