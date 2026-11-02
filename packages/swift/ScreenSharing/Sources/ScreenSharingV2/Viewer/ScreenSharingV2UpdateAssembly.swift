@@ -14,11 +14,12 @@ struct ScreenSharingV2UpdateAssembly {
   static let maximumPending = 8
 
   private var pending: [Group] = []
-
-  var waitingCount: Int { pending.count }
+  private var newestReleased: UInt32?
 
   mutating func received(_ update: ScreenSharingTileUpdate, tile: Int) {
-    for index in pending.indices where pending[index].update.id != update.id {
+    guard !isReleased(update.id) else { return }
+
+    for index in pending.indices where Self.precedes(pending[index].update.id, update.id) {
       if !pending[index].arrived.contains(tile) { pending[index].waiting.remove(tile) }
     }
     if let index = pending.firstIndex(where: { $0.update.id == update.id }) {
@@ -28,7 +29,8 @@ struct ScreenSharingV2UpdateAssembly {
 
     var group = Group(update: update, waiting: update.tiles)
     group.arrived.insert(tile)
-    pending.append(group)
+    let position = pending.firstIndex { Self.precedes(update.id, $0.update.id) } ?? pending.endIndex
+    pending.insert(group, at: position)
   }
 
   mutating func resolve(update id: UInt32, tile: Int, _ outcome: Outcome) -> Bool {
@@ -51,11 +53,23 @@ struct ScreenSharingV2UpdateAssembly {
     var ready: [Group] = []
     while let first = pending.first, first.waiting.isEmpty || pending.count > Self.maximumPending {
       ready.append(pending.removeFirst())
+      newestReleased = first.update.id
     }
     return ready
   }
 
   mutating func clear() {
     pending = []
+    newestReleased = nil
+  }
+
+  private func isReleased(_ id: UInt32) -> Bool {
+    guard let newestReleased else { return false }
+
+    return !Self.precedes(newestReleased, id)
+  }
+
+  private static func precedes(_ earlier: UInt32, _ later: UInt32) -> Bool {
+    Int32(bitPattern: later &- earlier) > 0
   }
 }

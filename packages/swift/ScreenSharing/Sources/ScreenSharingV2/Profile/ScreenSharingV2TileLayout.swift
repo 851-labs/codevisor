@@ -2,6 +2,7 @@ import CoreGraphics
 
 public struct ScreenSharingV2TileLayout: Equatable, Sendable {
   public static let rowAlignment = 16
+  public static let maximumCount = 8
   private static let shortestTile = 64
 
   public let width: Int
@@ -10,7 +11,7 @@ public struct ScreenSharingV2TileLayout: Equatable, Sendable {
   public let tileHeight: Int
 
   public init(width: Int, height: Int, count: Int) {
-    let count = min(max(1, count), max(1, height / Self.shortestTile))
+    let count = min(max(1, count), Self.maximumCount, max(1, height / Self.shortestTile))
     let stripe = (height + count - 1) / count
     let aligned = (stripe + Self.rowAlignment - 1) / Self.rowAlignment * Self.rowAlignment
     self.init(width: width, height: height, count: count, tileHeight: count == 1 ? height : aligned)
@@ -20,7 +21,7 @@ public struct ScreenSharingV2TileLayout: Equatable, Sendable {
     self.width = width
     self.height = height
     self.tileHeight = max(1, tileHeight)
-    self.count = min(max(1, count), (height + self.tileHeight - 1) / self.tileHeight)
+    self.count = min(max(1, count), Self.maximumCount, (height + self.tileHeight - 1) / self.tileHeight)
   }
 
   public var tiles: Set<Int> { Set(0..<count) }
@@ -31,9 +32,13 @@ public struct ScreenSharingV2TileLayout: Equatable, Sendable {
   }
 
   public func tiles(touching rects: [CGRect]?) -> Set<Int> {
-    guard let rects else { return tiles }
+    guard let rects, rects.allSatisfy(fits) else { return tiles }
 
     return rects.reduce(into: []) { touched, rect in touched.formUnion(tiles(touching: rect)) }
+  }
+
+  private func fits(_ rect: CGRect) -> Bool {
+    rect.isEmpty || CGRect(x: 0, y: 0, width: width, height: height).insetBy(dx: -1, dy: -1).contains(rect)
   }
 
   private func tiles(touching rect: CGRect) -> Set<Int> {

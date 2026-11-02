@@ -27,7 +27,13 @@ struct ScreenSharingV2TileLayoutTests {
     #expect(layout.tiles(touching: []).isEmpty)
     #expect(layout.tiles(touching: [CGRect(x: 10, y: 0, width: 5, height: 544)]) == [0])
     #expect(layout.tiles(touching: [CGRect(x: 10, y: 543.5, width: 5, height: 1)]) == [0, 1])
-    #expect(layout.tiles(touching: [CGRect(x: 0, y: 2000, width: 9000, height: 900)]) == [3])
-    #expect(layout.tiles(touching: [CGRect(x: 4000, y: 0, width: 5, height: 5), .zero]).isEmpty)
+    #expect(layout.tiles(touching: [CGRect(x: 0, y: 2000, width: 3840, height: 160)]) == [3])
+    #expect(layout.tiles(touching: [CGRect(x: 0, y: 0, width: 5, height: 5), .zero]) == [0])
+  }
+
+  @Test func aDirtyRectOutsideThePictureMarksEveryTile() {
+    let layout = ScreenSharingV2TileLayout(width: 3840, height: 2160, count: 4)
+
+    #expect(layout.tiles(touching: [CGRect(x: 0, y: 2000, width: 9000, height: 900)]) == [0, 1, 2, 3])
   }
 }

@@ -26,4 +26,11 @@ struct ScreenSharingV2PixelPlane {
 
     return CVPixelBufferGetBytesPerRowOfPlane(buffer, index)
   }
+
+  func rows(_ rows: Range<Int>, of buffer: CVPixelBuffer, height: Int) -> Range<Int> {
+    let planeHeight = self.height(of: buffer)
+    let lower = rows.lowerBound * planeHeight / height
+    let upper = min(planeHeight, (rows.upperBound * planeHeight + height - 1) / height)
+    return lower..<upper
+  }
 }

@@ -60,28 +60,10 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
     let pool = try lock.withLock {
       let key = PoolKey(pixelFormat: pixelFormat, height: height)
       if let pool = pools[key] { return pool }
-      let pool = try Self.pool(width: layout.width, height: height, pixelFormat: pixelFormat)
+      let pool = try ScreenSharingV2PixelPool.make(width: layout.width, height: height, pixelFormat: pixelFormat)
       pools[key] = pool
       return pool
     }
-    var buffer: CVPixelBuffer?
-    let status = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-    guard status == kCVReturnSuccess, let buffer else { throw ScreenSharingError.codec("Allocate tile", status) }
-
-    return buffer
-  }
-
-  private static func pool(width: Int, height: Int, pixelFormat: OSType) throws -> CVPixelBufferPool {
-    let attributes: [CFString: Any] = [
-      kCVPixelBufferPixelFormatTypeKey: pixelFormat,
-      kCVPixelBufferWidthKey: width,
-      kCVPixelBufferHeightKey: height,
-      kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any](),
-    ]
-    var pool: CVPixelBufferPool?
-    let status = CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &pool)
-    guard status == kCVReturnSuccess, let pool else { throw ScreenSharingError.codec("Create tile pool", status) }
-
-    return pool
+    return try ScreenSharingV2PixelPool.buffer(from: pool)
   }
 }
