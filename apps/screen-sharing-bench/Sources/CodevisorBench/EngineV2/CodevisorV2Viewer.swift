@@ -8,27 +8,38 @@ final class CodevisorV2Viewer {
   private static let connectRetry = Duration.milliseconds(250)
   private static let firstFrameTimeout = Duration.seconds(20)
   private static let firstFramePoll = Duration.milliseconds(20)
+  private static let controlTimeout = Duration.seconds(15)
 
   private let endpoint: NetEndpointHandle
   private let connection: NetConnectionHandle
   private let transport: ScreenSharingIrohMediaTransport
   private let viewer: ScreenSharingV2Viewer
   private let surface: V2Surface
+  private var control: BenchViewerControl?
 
   static func run(
-    in window: ViewerWindow, host: String, port: UInt16, presentation: V2Presentation,
+    in window: ViewerWindow, host: String, port: UInt16, presentation: V2Presentation, takesControl: Bool,
     until deadline: ContinuousClock.Instant, signals: BenchSignalFiles
   ) async throws -> CodevisorV2ViewResult {
     let signaling = try await SignalingSocket.connect(host: host, port: port, until: deadline, retry: connectRetry)
     let address = try await receive(signaling)
+    let channel = SignalingControlChannel(signaling)
+    channel.startReceiving()
     let viewer = try await CodevisorV2Viewer(host: host, address: address, presentation: presentation)
     window.show(viewer.surface.view)
     defer { viewer.stop() }
 
     try await viewer.waitForFirstFrame()
+    if takesControl { try await viewer.takeControl(over: channel) }
     try signals.markReady("presenting")
-    await BenchSession.hold(signaling, until: deadline, signals: signals)
+    await BenchSession.hold(signaling, until: deadline, signals: signals, control: channel)
     return viewer.result(host: host, presentation: presentation)
+  }
+
+  private func takeControl(over channel: SignalingControlChannel) async throws {
+    guard let videoSurface = surface.videoSurface else { throw BenchControlError.noInputSurface }
+
+    control = try await BenchViewerControl.acquire(over: channel, surface: videoSurface, timeout: Self.controlTimeout)
   }
 
   private init(host: String, address: V2EndpointMessage, presentation: V2Presentation) async throws {
@@ -67,10 +78,12 @@ final class CodevisorV2Viewer {
     CodevisorV2ViewResult(
       host: host, presentation: presentation, metrics: viewer.metrics, droppedFrames: viewer.frames.droppedFrames,
       media: V2MediaStatistics.dictionary(transport.session.stats()),
-      paths: connection.paths().map { "\($0.isRelay ? "relay" : "direct") \($0.remote) \($0.rttMs) ms" })
+      paths: connection.paths().map { "\($0.isRelay ? "relay" : "direct") \($0.remote) \($0.rttMs) ms" },
+      control: control?.summary)
   }
 
   private func stop() {
+    control?.stop()
     surface.stop()
     viewer.stop()
     connection.close(code: 0, reason: "done")

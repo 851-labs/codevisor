@@ -9,6 +9,7 @@ struct Tier2RunMeta: Decodable {
   }
 
   static let engineV2 = "v2"
+  static let inputScene = "input"
 
   let index: Int
   let scene: String
@@ -43,5 +44,13 @@ struct Tier2RunMeta: Decodable {
 
   var isCodevisor: Bool {
     system == .codevisor || system == .codevisorV2
+  }
+
+  var isInput: Bool {
+    scene == Self.inputScene
+  }
+
+  var isLocalInputFloor: Bool {
+    isInput && system == .floor
   }
 }

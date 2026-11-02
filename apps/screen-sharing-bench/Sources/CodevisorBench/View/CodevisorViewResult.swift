@@ -10,11 +10,12 @@ struct CodevisorViewResult: Encodable {
   let mailboxDroppedFrames: Int
   let selectedCandidates: [String: String]
   let inbound: [String: String]
+  let control: BenchViewerControlSummary?
 
   @MainActor
   init(
     host: String, firstPresentedNs: Int64?, metrics: ScreenSharingMetrics, droppedFrames: Int,
-    statistics: [String: String]
+    statistics: [String: String], control: BenchViewerControlSummary?
   ) {
     let snapshot = metrics.snapshot()
     self.host = host
@@ -25,5 +26,6 @@ struct CodevisorViewResult: Encodable {
     mailboxDroppedFrames = droppedFrames
     selectedCandidates = statistics.filter { $0.key.contains("candidate") }
     inbound = statistics.filter { $0.key.hasPrefix("inbound-rtp.") || $0.key.hasPrefix("codec.") }
+    self.control = control
   }
 }

@@ -11,7 +11,7 @@ struct ViewCommand: BenchCommand {
     "Show the Codevisor stream from the host full screen, or (--source null) the floor: barcodes drawn from UDP"
   static let usage = """
     --source codevisor --host <ipv4> [--port <port>] [--engine v1|v2] [--present arrival|display-link] \
-      [--duration <seconds>] \(BenchSignalFiles.usage)
+      [--control] [--duration <seconds>] \(BenchSignalFiles.usage)
       view --source null [--port <udp port>] [--duration <seconds>] \(BenchSignalFiles.usage)
     """
 
@@ -23,6 +23,7 @@ struct ViewCommand: BenchCommand {
   private let source: Source
   private let engine: BenchEngine
   private let presentation: V2Presentation
+  private let takesControl: Bool
   private let host: String?
   private let port: UInt16
   private let duration: Duration
@@ -32,6 +33,7 @@ struct ViewCommand: BenchCommand {
     source = try options.choice("source", default: Source.codevisor)
     engine = try options.choice("engine", default: BenchEngine.v1)
     presentation = try options.choice("present", default: V2Presentation.arrival)
+    takesControl = try options.flag("control")
     host = try options.string("host")
     let defaultPort = source == .codevisor ? SignalingSocket.defaultPort : Self.defaultFloorPort
     port = UInt16(try options.integer("port", default: Int(defaultPort), in: Self.ports))
@@ -39,6 +41,12 @@ struct ViewCommand: BenchCommand {
     signals = try BenchSignalFiles(options: options)
     guard (source == .codevisor) == (host != nil) else {
       throw BenchUsageError(message: "--host is required with --source codevisor and only then")
+    }
+    guard !takesControl || source == .codevisor else {
+      throw BenchUsageError(message: "--control needs --source codevisor")
+    }
+    guard !takesControl || engine == .v1 || presentation == .arrival else {
+      throw BenchUsageError(message: "--control with --engine v2 needs --present arrival")
     }
   }
 
@@ -51,10 +59,12 @@ struct ViewCommand: BenchCommand {
     case .codevisor where engine == .v2:
       try BenchOutput.print(
         try await CodevisorV2Viewer.run(
-          in: window, host: host ?? "", port: port, presentation: presentation, until: deadline, signals: signals))
+          in: window, host: host ?? "", port: port, presentation: presentation, takesControl: takesControl,
+          until: deadline, signals: signals))
     case .codevisor:
       try BenchOutput.print(
-        try await CodevisorViewer.run(in: window, host: host ?? "", port: port, until: deadline, signals: signals))
+        try await CodevisorViewer.run(
+          in: window, host: host ?? "", port: port, takesControl: takesControl, until: deadline, signals: signals))
     case .null:
       try BenchOutput.print(try await FloorViewer.run(in: window, port: port, until: deadline, signals: signals))
     }

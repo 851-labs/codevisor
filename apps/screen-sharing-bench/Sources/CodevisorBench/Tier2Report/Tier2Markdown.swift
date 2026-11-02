@@ -3,12 +3,14 @@ import ScreenSharingBench
 struct Tier2Markdown {
   let report: BenchReport
   let floors: Tier2Floors
+  let inputFloors: Tier2InputFloors
   let interference: [Tier2Interference]
   let measurements: [Tier2Measurement]
 
   var text: String {
     [
-      targetTable, verdictTable, Tier2Milestone(report: report, floors: floors).text, Tier2V2Table(report.results).text,
+      targetTable, verdictTable, Tier2InputTable(measurements, floors: inputFloors).text,
+      Tier2Milestone(report: report, floors: floors).text, Tier2V2Table(report.results).text,
       floorTable, interferenceTable, Tier2RunTable(measurements).text,
     ]
     .compactMap(\.self)

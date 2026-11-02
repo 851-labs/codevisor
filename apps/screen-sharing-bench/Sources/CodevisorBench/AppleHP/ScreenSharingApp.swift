@@ -60,6 +60,14 @@ struct ScreenSharingApp {
     MenuMarks.checked(in: accessibility)
   }
 
+  var controlMode: ControlMode {
+    ControlMode.read(in: accessibility)
+  }
+
+  func enterControlMode(timeout: Duration) async -> ControlMode {
+    await ControlMode.enter(in: accessibility, timeout: timeout)
+  }
+
   func quit(timeout: Duration) async {
     application.terminate()
     let limit = ContinuousClock.now + timeout

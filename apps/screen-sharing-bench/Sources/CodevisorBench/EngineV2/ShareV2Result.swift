@@ -14,10 +14,11 @@ struct ShareV2Result: Encodable {
   let labels: [String: String]
   let timings: [String: ScreenSharingMetrics.Timing]
   let media: [String: Double]
+  let control: BenchHostControlSummary
 
   init(
     viewer: String, display: ShareDisplay, configuration: ScreenSharingVideoConfiguration, captureError: (any Error)?,
-    metrics: ScreenSharingMetrics.Snapshot, media: [String: Double]
+    metrics: ScreenSharingMetrics.Snapshot, media: [String: Double], control: BenchHostControlSummary
   ) {
     self.viewer = viewer
     self.display = display
@@ -27,5 +28,6 @@ struct ShareV2Result: Encodable {
     labels = metrics.labels
     timings = metrics.timings
     self.media = media
+    self.control = control
   }
 }

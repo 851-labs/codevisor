@@ -4,8 +4,8 @@ The screen sharing benchmark app (`CodevisorBench.app`), specified in the
 [benchmark design](https://linear.app/851/document/screen-sharing-v2-benchmark-design-851-3582-0309dbbc943b)
 (851-3582). It's a dev tool: not shipped, and no product target depends on it.
 
-One binary with subcommands (`player`, `generate`, `observe`, `calibrate`, `sample`, `loopback`, and later `host`
-and `viewer`).
+One binary with subcommands (`player`, `generate`, `observe`, `calibrate`, `sample`, `loopback`, `share`, `view`,
+`inject` and more; `CodevisorBench` with no arguments lists them).
 Pure logic (barcode, stats, clock offset, network model, report) lives in the `ScreenSharingBench`
 library in `packages/swift/ScreenSharing/Sources/ScreenSharingBench`.
 
@@ -273,11 +273,44 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   the barcode, which then never changes. It keeps Screen Sharing frontmost (counting `focus_losses`; any makes the
   run invalid), reports whether its full-screen window was on screen and the checked menu items, and quits Screen Sharing.app at the end. Tier 2
   launches every windowless command with `open -g` (`CODEVISOR_BENCH_BACKGROUND=1`) so none takes focus.
+- `inject --output <events.jsonl> [--keys 200] [--clicks 200] [--seed 7] [--start-delay <s>] [--duration <s>]` posts
+  space presses and left clicks (at the centre of the main display) with `CGEventPost`, in a seeded order, 150–350 ms
+  apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
+  before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
+  many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
+- `view --control` (Codevisor; engine v2 only with `--present arrival`, the presentation with an input surface) takes the control lease like the product's Control mode once
+  the first frame is shown, and marks itself ready only once granted: it sends a request, then a heartbeat every second,
+  and forwards the product `ScreenSharingVideoSurface`'s input (its keyboard event tap and mouse handling) through
+  `ScreenSharingInputForwarder`. `share` always serves control with the product `ScreenSharingHostControl` and
+  `ScreenSharingInputInjector` on the shared display (deadline checked every 250 ms, Accessibility required on the
+  host). Both results carry a `control` summary (grants, denials, revocations, forwarded and injected events). Engine
+  v1 carries control messages on the product's negotiated control data channel. Engine v2 has no input path yet (E8
+  puts control on QUIC streams), so the bench carries the same `ScreenSharingControlMessage`s as JSON lines on its own
+  TCP signaling connection (`SignalingControlChannel`, `TCP_NODELAY`, on the same wired path as the media), which stays
+  open for the whole session. That is bench-only: it measures v2's picture path behind a stand-in input transport, not
+  E8's.
+- `apple-hp --control` makes sure Screen Sharing is in Control mode before it marks itself ready: the View menu offers
+  "Switch to Observe Mode" while controlling and "Switch to Control Mode" while observing, so it presses the latter if
+  present and fails if Screen Sharing still observes. It reports `control_mode` and `mode_at_end`.
 - `sample --output <file.jsonl>` also writes one `BenchUsageSecond` line a second. A process name of the
   form `CodevisorBench:share` matches only the bench processes running that subcommand. It finds processes in one
   `/bin/ps -axo pid,time,comm` listing a second (`ps` is setuid, so it sees root's `screensharingd`). Processes
   that `proc_pid_rusage` can't read without root get their CPU time from that listing (10 ms resolution) and
   no power; a system with any such process in any second reports no power.
+
+**S7, input to photon (851-3596).** `scenes: input` runs the `input` scene: the host's player flips its square on
+every key press or click it receives. In each run the viewer starts `inject` 8 s after measurement starts (200 space
+presses and 200 clicks by default, `TIER2_INPUT_EVENTS`; about 100 s, so dispatch with `duration: 115`), with Apple HP
+in Control mode (`apple-hp --control`) and Codevisor holding the control lease (`view --control`). Only the viewer's
+clock is used: `BenchInputToPhoton` pairs each posted event with the viewer observer's first frame showing another
+version (`BenchInputResponses`), for all events and per kind. The floor of the input scene is C6 instead of C3: the
+viewer runs `player --scene input` locally and the same `inject`, with nothing shared (the host sits that run out). Its unreadable fraction counts only the frames from the first event to 1 s after the last, so the player's window closing after the events doesn't count. A
+run is invalid when no event was posted, any event went to another frontmost app than Screen Sharing or CodevisorBench,
+Codevisor never held or lost the lease, Screen Sharing was in Observe mode, or no event changed the picture. The report
+adds `i2p_ms` to each result, `local_i2p_ms` (the pooled floor) to the calibration, `i2p_ms.p50` and `i2p_ms.p95` to the
+verdicts, and an "Input to photon" table: events, answered, p50/p95/max, key and click p50, p50 and p95 above the floor,
+and p50 above Apple HP's on the same network against M3's target (at most 8 ms). Apple HP is always R1x2, so a
+one-dispatch S7 that fits 30 minutes is `scenes: input, duration: 115, systems: apple-hp,codevisor,codevisor-v2`.
 
 Image age is `BenchSharingAnalysis`: the viewer observer's first PTS of each version minus the host
 observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). Apple HP runs count only when `apple-hp` selected High Performance in Screen Sharing's

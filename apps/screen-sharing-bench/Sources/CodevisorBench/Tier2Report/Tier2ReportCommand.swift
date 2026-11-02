@@ -28,15 +28,18 @@ struct Tier2ReportCommand: BenchCommand {
     }
 
     let floors = Tier2Floors(measurements)
+    let inputFloors = Tier2InputFloors(measurements)
     let results = Self.results(measurements, floors: floors)
     let interference = Tier2Interference.make(measurements)
     let report = BenchReport(
       run: try Self.run(runID, measurements), environment: environment,
       calibration: BenchCalibration(
-        nullSharingImageAgeMs: floors.pooledMs, observerInterference: Tier2Interference.calibration(interference)),
+        nullSharingImageAgeMs: floors.pooledMs, localI2pMs: inputFloors.pooledMs,
+        observerInterference: Tier2Interference.calibration(interference)),
       results: results, comparisons: Tier2Comparisons.make(results))
     if let output { try BenchReportCodec.write(report, to: URL(fileURLWithPath: output)) }
-    let summary = Tier2Markdown(report: report, floors: floors, interference: interference, measurements: measurements)
+    let summary = Tier2Markdown(
+      report: report, floors: floors, inputFloors: inputFloors, interference: interference, measurements: measurements)
     if let markdown { try summary.text.write(toFile: markdown, atomically: true, encoding: .utf8) }
     print(summary.text)
   }

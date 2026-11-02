@@ -39,6 +39,10 @@ start_share() {
 measure() {
   local scene=$1 system=$2 dir=$3 observed=$4
   local pids=() display=() player_display=()
+  if tier2_is_local_input_floor "$scene" "$system"; then
+    say "the input floor runs on the viewer; nothing to host"
+    return 0
+  fi
   if tier2_on_virtual_display "$system"; then
     display=(--display "$shared_display")
     player_display=(--display-id "$shared_display")

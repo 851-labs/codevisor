@@ -11,13 +11,20 @@ viewer_processes="Screen Sharing,CodevisorBench:view,VTDecoderXPCService"
 trap 'network_reset; rm -rf "$work"' EXIT
 
 start_system() {
-  local system=$1 dir=$2
+  local system=$1 dir=$2 scene=$3
   local seconds=$((TIER2_DURATION + 240))
   local signals=(--duration "$seconds" --ready-file "$work/ready" --stop-file "$work/stop")
+  local control=()
+  [[ "$scene" == input ]] && control=(--control)
+  if tier2_is_local_input_floor "$scene" "$system"; then
+    touch "$work/ready"
+    return 0
+  fi
   case "$system" in
-    apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
+    apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" ${control[@]+"${control[@]}"} "${signals[@]}" \
+      >"$dir/system.json" 2>"$dir/system.err" & ;;
     codevisor | codevisor-r1x2 | codevisor-v2) bench_window view --source codevisor --host "$TIER2_HOST_IP" $(tier2_engine_options "$system") \
-      --present "$TIER2_PRESENT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
+      --present "$TIER2_PRESENT" ${control[@]+"${control[@]}"} "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
     floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
   system_job=$!
@@ -31,8 +38,22 @@ stop_system() {
   pkill -x "Screen Sharing" || true
 }
 
+start_input() {
+  local dir=$1 system=$2 scene=$3
+  [[ "$scene" == input ]] || return 0
+  if tier2_is_local_input_floor "$scene" "$system"; then
+    bench_window player --scene input --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \
+      >"$dir/player.json" 2>"$dir/player.err" &
+    pids+=($!)
+  fi
+  bench inject --keys "$TIER2_INPUT_EVENTS" --clicks "$TIER2_INPUT_EVENTS" --seed "$TIER2_SEED" \
+    --start-delay "$tier2_input_lead_s" --duration "$(tier2_input_window_s)" --output "$dir/input-events.jsonl" \
+    >"$dir/inject.json" 2>"$dir/inject.err" &
+  pids+=($!)
+}
+
 measure() {
-  local dir=$1 system=$2
+  local dir=$1 system=$2 scene=$3
   local pids=()
   bench calibrate --check c2 --responder "$TIER2_HOST_IP" --duration "$((TIER2_DURATION + 18))" \
     --output "$dir/clock.jsonl" >"$dir/clock.json" 2>"$dir/clock.err" &
@@ -44,6 +65,7 @@ measure() {
   bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$viewer_processes" \
     --output "$dir/viewer-usage.jsonl" >"$dir/viewer-sample.json" 2>"$dir/viewer-sample.err" &
   pids+=($!)
+  start_input "$dir" "$system" "$scene"
   local failed=0
   for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
   return "$failed"
@@ -73,12 +95,12 @@ run_one() {
   preflight "$dir/viewer-before-preflight.json" || status="viewer preflight failed"
   meet viewer "$name-start" "$status" || { say "skipping $name: not ready at start"; return 0; }
   meet viewer "$name-system" || { say "skipping $name: the host could not start"; return 0; }
-  start_system "$system" "$dir" || status="$system did not become ready"
+  start_system "$system" "$dir" "$scene" || status="$system did not become ready"
   meet viewer "$name-ready" "$status" || { say "skipping $name: $status"; stop_system; return 0; }
   [[ "$TIER2_NETWORK" == N0 ]] || network_check "$dir"
   meet viewer "$name-measure" || { say "skipping $name: host preflight failed"; stop_system; return 0; }
   say "measuring $name"
-  measure "$dir" "$system" || say "a viewer measurement process failed in $name"
+  measure "$dir" "$system" "$scene" || say "a viewer measurement process failed in $name"
   meet viewer "$name-done" || true
   stop_system
   preflight "$dir/viewer-after-preflight.json" || true
