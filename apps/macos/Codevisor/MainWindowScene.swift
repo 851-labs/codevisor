@@ -12,31 +12,16 @@ struct MainWindowScene: Scene {
   var body: some Scene {
     WindowGroup(id: Self.id) {
       if let environment = runtime.environment {
-        RootView()
-          .frame(minWidth: 480, minHeight: 600)
-          .modifier(DebugMetricsOverlayModifier())
-          .overlay {
-            if let setup = runtime.firstLaunchSetup, let landing = runtime.firstLaunchLanding {
-              FirstLaunchSetupOverlay(setup: setup, landing: landing)
-            }
-          }
-          .appWindowRoot(environment)
-          .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-      } else if let startupError = runtime.startupError {
-        ClientDataStartupFailureView(
-          message: startupError,
-          retry: runtime.retry,
-          showDataFolder: {
-            NSWorkspace.shared.activateFileViewerSelecting([
-              CodevisorAppVariant.applicationSupportURL()
-            ])
-          }
-        )
-        .frame(minWidth: 480, minHeight: 600)
+        FirstLaunchSetupOverlay(setup: runtime.firstLaunchSetup, landing: runtime.firstLaunchLanding) {
+          RootView()
+            .frame(minWidth: 480, minHeight: 600)
+            .modifier(DebugMetricsOverlayModifier())
+        }
+        .appWindowRoot(environment)
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
       } else {
-        ClientDataStartupView()
+        ClientDataLaunchView(runtime: runtime)
           .frame(minWidth: 480, minHeight: 600)
-          .task { await runtime.startIfNeeded() }
       }
     }
     .defaultSize(width: 1280, height: 820)

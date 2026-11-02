@@ -2,35 +2,46 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-struct FirstLaunchSetupOverlay: View {
-  let setup: FirstLaunchSetup
-  let landing: FirstLaunchLanding
-  @State private var phase = FirstLaunchOverlayPhase.covering
+struct FirstLaunchSetupOverlay<Content: View>: View {
+  let setup: FirstLaunchSetup?
+  let landing: FirstLaunchLanding?
+  let content: Content
+  @State private var phase: FirstLaunchOverlayPhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let composerStyle = ComposerCardStyle()
 
+  init(setup: FirstLaunchSetup?, landing: FirstLaunchLanding?, @ViewBuilder content: () -> Content) {
+    self.setup = setup
+    self.landing = landing
+    self.content = content()
+    _phase = State(initialValue: setup == nil ? .gone : .covering)
+  }
+
   var body: some View {
     ZStack {
-      Color(nsColor: .windowBackgroundColor)
-        .ignoresSafeArea()
-        .opacity(phase.coversApp ? 1 : 0)
-      if phase != .gone {
+      content
+        .opacity(phase.coversApp ? 0 : 1)
+        .allowsHitTesting(!phase.coversApp)
+        .accessibilityHidden(phase.coversApp)
+      if phase != .gone, let setup {
         FirstLaunchSetupView(
           setup: setup,
           phase: phase,
-          composerFrame: landing.composerFrame,
+          composerFrame: landing?.composerFrame,
           composerCornerRadius: composerStyle.cornerRadius
-        )
+        ) {
+          FirstLaunchGetStartedButton(isReady: setup.canGetStarted) { setup.getStarted() }
+        }
+        .background(FirstLaunchKeyboard(isCovering: phase == .covering) { setup.getStarted() })
+        .allowsHitTesting(phase == .covering)
       }
     }
-    .background(FirstLaunchKeyboard(isCovering: phase == .covering) { setup.getStarted() })
-    .allowsHitTesting(phase == .covering)
-    .onChange(of: setup.presentation) { _, presentation in leave(after: presentation) }
+    .onChange(of: setup?.presentation) { _, presentation in leave(after: presentation) }
   }
 
-  private func leave(after presentation: FirstLaunchPresentation) {
+  private func leave(after presentation: FirstLaunchPresentation?) {
     guard phase == .covering, presentation != .visible else { return }
-    if presentation == .dismissed, !reduceMotion, landing.composerFrame != nil {
+    if presentation == .dismissed, !reduceMotion, landing?.composerFrame != nil {
       morphIntoComposer()
     } else {
       crossfade()
@@ -57,7 +68,7 @@ struct FirstLaunchSetupOverlay: View {
     }
   }
 
-  private static let morph = Animation.smooth(duration: 0.45)
-  private static let reveal = Animation.easeOut(duration: 0.2)
-  private static let crossfadeOut = Animation.smooth(duration: 0.35)
+  private static var morph: Animation { .smooth(duration: 0.45) }
+  private static var reveal: Animation { .easeOut(duration: 0.2) }
+  private static var crossfadeOut: Animation { .smooth(duration: 0.35) }
 }

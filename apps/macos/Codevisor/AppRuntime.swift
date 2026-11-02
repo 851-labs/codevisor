@@ -18,6 +18,16 @@ final class AppRuntime {
   @ObservationIgnored private var startupInProgress = false
   @ObservationIgnored let serverAgent = MacServerAgentController()
 
+  private init() {
+    guard Self.startsFresh else { return }
+    showFirstLaunchSetup()
+  }
+
+  private static var startsFresh: Bool {
+    !AppPreview.isRunning
+      && ClientStorageBootstrap.startsFresh(directory: CodevisorAppVariant.applicationSupportURL())
+  }
+
   private static func makeRuntime(
     serverAgent: MacServerAgentController,
     storage: ClientStorage,
@@ -54,6 +64,7 @@ final class AppRuntime {
 
   func retry() {
     startupError = nil
+    firstLaunchSetup?.retryLocalData()
     Task { await startIfNeeded() }
   }
 
@@ -76,6 +87,8 @@ final class AppRuntime {
       startupError = nil
       if runtime.isFirstLaunch, !AppPreview.isRunning {
         startFirstLaunchSetup(runtime.environment)
+      } else {
+        closeFirstLaunchSetup()
       }
       if !AppPreview.isRunning {
         Task { @MainActor in
@@ -85,15 +98,27 @@ final class AppRuntime {
       }
     } catch {
       startupError = error.localizedDescription
+      firstLaunchSetup?.localDataFailed()
     }
   }
 
   private func startFirstLaunchSetup(_ environment: AppEnvironment) {
     ClientPreferences.shared.set(true, forKey: RootView.sidebarCollapsedKey)
     ClientPreferences.shared.set(false, forKey: WorkspaceInspectorPresentation.presentedKey)
-    let setup = FirstLaunchSetup(work: LiveFirstLaunchSetupWork(environment: environment))
+    let setup = firstLaunchSetup ?? showFirstLaunchSetup()
+    Task { await setup.run(LiveFirstLaunchSetupWork(environment: environment)) }
+  }
+
+  @discardableResult
+  private func showFirstLaunchSetup() -> FirstLaunchSetup {
+    let setup = FirstLaunchSetup()
     firstLaunchSetup = setup
     firstLaunchLanding = FirstLaunchLanding()
-    Task { await setup.run() }
+    return setup
+  }
+
+  private func closeFirstLaunchSetup() {
+    firstLaunchSetup = nil
+    firstLaunchLanding = nil
   }
 }

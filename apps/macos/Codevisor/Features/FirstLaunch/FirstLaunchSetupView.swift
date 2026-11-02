@@ -2,11 +2,12 @@ import AppKit
 import CodevisorCore
 import SwiftUI
 
-struct FirstLaunchSetupView: View {
+struct FirstLaunchSetupView<Footer: View>: View {
   let setup: FirstLaunchSetup
   let phase: FirstLaunchOverlayPhase
   let composerFrame: CGRect?
   let composerCornerRadius: CGFloat
+  @ViewBuilder let footer: () -> Footer
   @State private var cardFrame: CGRect?
 
   var body: some View {
@@ -26,9 +27,11 @@ struct FirstLaunchSetupView: View {
       FirstLaunchSetupTitle(isFinished: setup.isComplete)
         .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
       card(morph)
-      FirstLaunchGetStartedButton(isReady: setup.canGetStarted) { setup.getStarted() }
+      footer()
         .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .ignoresSafeArea()
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Getting things set up")
   }

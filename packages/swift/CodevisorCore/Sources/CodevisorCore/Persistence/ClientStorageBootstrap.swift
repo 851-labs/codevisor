@@ -21,6 +21,15 @@ public enum ClientStorageBootstrap {
   private static let legacyDataMigrationName = "legacy file and defaults import"
   private static let retiredDirectMachinesMigrationName = "queue directly paired machines for the cloud account"
 
+  public static func startsFresh(
+    directory: URL,
+    legacyDirectory: URL? = CodevisorAppVariant.legacyApplicationSupportURL(),
+    fileManager: FileManager = .default
+  ) -> Bool {
+    let stored = [directory.appendingPathComponent(ClientDatabase.fileName), legacyDirectory].compactMap { $0 }
+    return !stored.contains { fileManager.fileExists(atPath: $0.path) }
+  }
+
   @MainActor
   public static func open(
     directory: URL,

@@ -18,6 +18,9 @@ struct FirstLaunchStepIndicator: View {
       Image(systemName: "minus.circle")
         .foregroundStyle(.tertiary)
         .opacity(outcome == .skipped ? 1 : 0)
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
+        .opacity(outcome == .failed ? 1 : 0)
     }
     .font(.system(size: 15))
     .frame(width: 18, height: 18)
