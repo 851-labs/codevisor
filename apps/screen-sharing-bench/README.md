@@ -278,7 +278,7 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
   before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
   many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
-- `view --control` (Codevisor, `--present arrival` only) takes the control lease like the product's Control mode once
+- `view --control` (Codevisor; engine v2 only with `--present arrival`, the presentation with an input surface) takes the control lease like the product's Control mode once
   the first frame is shown, and marks itself ready only once granted: it sends a request, then a heartbeat every second,
   and forwards the product `ScreenSharingVideoSurface`'s input (its keyboard event tap and mouse handling) through
   `ScreenSharingInputForwarder`. `share` always serves control with the product `ScreenSharingHostControl` and

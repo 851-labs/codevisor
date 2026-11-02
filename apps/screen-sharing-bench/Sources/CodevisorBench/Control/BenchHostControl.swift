@@ -26,7 +26,12 @@ final class BenchHostControl {
     channel.onAvailabilityChanged = { [weak control] available in
       if !available { control?.revoke("The control channel closed.") }
     }
-    watchdog = Task { [weak control] in await Self.checkDeadlines(of: control) }
+    watchdog = Task { [weak control] in
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: Self.deadlineCheck) } catch { return }
+        control?.checkDeadline()
+      }
+    }
   }
 
   var summary: BenchHostControlSummary {
@@ -48,12 +53,5 @@ final class BenchHostControl {
     guard AXIsProcessTrusted() else { return "CodevisorBench has no Accessibility grant on the host." }
 
     return nil
-  }
-
-  private static func checkDeadlines(of control: ScreenSharingHostControl?) async {
-    while !Task.isCancelled {
-      do { try await Task.sleep(for: deadlineCheck) } catch { return }
-      control?.checkDeadline()
-    }
   }
 }

@@ -26,9 +26,6 @@ enum ControlMode: String, Encodable {
   }
 
   private static func menuItem(titled title: String, in application: AccessibilityElement) -> AccessibilityElement? {
-    guard let bar = application.element(kAXMenuBarAttribute) else { return nil }
-
-    return bar.children().lazy.flatMap { $0.children() }.flatMap { $0.children() }
-      .first { $0.string(kAXTitleAttribute) == title }
+    MenuMarks.entries(in: application).first { $0.entry.string(kAXTitleAttribute) == title }?.entry
   }
 }

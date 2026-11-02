@@ -13,6 +13,8 @@ final class SignalingConnection: Sendable {
   init(descriptor: Int32, peerIPv4: String) {
     self.descriptor = descriptor
     self.peerIPv4 = peerIPv4
+    var noSignal: Int32 = 1
+    setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
   }
 
   deinit {

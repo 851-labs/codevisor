@@ -46,6 +46,7 @@ final class BenchViewerControl {
   }
 
   func stop() {
+    channel.onMessage = nil
     heartbeat?.cancel()
     surface.endInput()
     if let lease = forwarder.lease { channel.send(.release(lease: lease)) }
@@ -56,7 +57,7 @@ final class BenchViewerControl {
     switch message {
     case .grant(let request, let lease) where request == self.request: begin(lease)
     case .denied(let request, let reason) where request == self.request: log.denial = reason
-    case .revoked(_, let reason): revoked(reason)
+    case .revoked(let lease, let reason) where lease == forwarder.lease: revoked(reason)
     default: break
     }
   }
@@ -83,6 +84,7 @@ final class BenchViewerControl {
 
   private func inputReleased() {
     log.inputReleases += 1
+    log.losses.append("the surface released input: \(surface.inputFailureMessage ?? "focus left the video")")
   }
 
   private func beat(_ lease: UUID) async {

@@ -42,8 +42,11 @@ struct ViewCommand: BenchCommand {
     guard (source == .codevisor) == (host != nil) else {
       throw BenchUsageError(message: "--host is required with --source codevisor and only then")
     }
-    guard !takesControl || (source == .codevisor && presentation == .arrival) else {
-      throw BenchUsageError(message: "--control needs --source codevisor and --present arrival")
+    guard !takesControl || source == .codevisor else {
+      throw BenchUsageError(message: "--control needs --source codevisor")
+    }
+    guard !takesControl || engine == .v1 || presentation == .arrival else {
+      throw BenchUsageError(message: "--control with --engine v2 needs --present arrival")
     }
   }
 

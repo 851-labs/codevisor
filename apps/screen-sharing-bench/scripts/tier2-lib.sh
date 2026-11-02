@@ -173,7 +173,10 @@ tier2_check_input_scene() {
     echo "input events must be 1 to 400 of each kind, not $TIER2_INPUT_EVENTS" >&2
     return 1
   fi
-  [[ "$TIER2_PRESENT" == arrival ]] || { echo "the input scene needs the arrival presentation" >&2; return 1; }
+  if [[ "$TIER2_PRESENT" != arrival ]] && { [[ "$TIER2_ENGINE" == v2 ]] || tier2_runs_system codevisor-v2; }; then
+    echo "the input scene needs the arrival presentation for engine v2" >&2
+    return 1
+  fi
   local needed_s=$(((2 * TIER2_INPUT_EVENTS * tier2_input_budget_ms_per_event + 999) / 1000))
   (($(tier2_input_window_s) >= needed_s)) || {
     echo "the input scene needs about ${needed_s}s after an ${tier2_input_lead_s}s lead; raise duration" >&2

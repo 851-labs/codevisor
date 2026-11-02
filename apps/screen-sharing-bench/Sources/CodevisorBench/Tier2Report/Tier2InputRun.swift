@@ -13,18 +13,17 @@ enum Tier2InputRun {
   static func invalidReason(_ files: Tier2RunFiles, _ toPhoton: BenchInputToPhoton?) -> String? {
     guard files.meta.isInput else { return nil }
     guard let toPhoton, toPhoton.events > 0 else { return "no input events were posted" }
-    if let app = otherFrontmostApp(files) { return "\(app) was frontmost during some input events" }
+    guard case .array(let frontmost)? = files.inject?["frontmost"] else { return "the injector wrote no result" }
+    if let app = otherApp(frontmost, files) { return "\(app) was frontmost during some input events" }
     if let reason = controlProblem(files) { return reason }
     guard toPhoton.answered != nil else { return "no input event changed the viewer's picture" }
 
     return nil
   }
 
-  private static func otherFrontmostApp(_ files: Tier2RunFiles) -> String? {
-    guard case .array(let apps)? = files.inject?["frontmost"] else { return "no app" }
-
+  private static func otherApp(_ frontmost: [JSONValue], _ files: Tier2RunFiles) -> String? {
     let expected = files.meta.system == .appleHP ? screenSharingApp : benchApp
-    return apps.compactMap { $0["app"]?.string }.first { $0 != expected }
+    return frontmost.compactMap { $0["app"]?.string }.first { $0 != expected }
   }
 
   private static func controlProblem(_ files: Tier2RunFiles) -> String? {
