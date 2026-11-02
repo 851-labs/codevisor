@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { isRemoteScope } from "./codevisor-agent-caller.js"
 import type { QueryParameter } from "./codevisor-api-tool-spec.js"
+import { BOT_TOOL_DEFAULTS } from "./codevisor-api-tools-bots.js"
 import type { CodevisorApiToolSpec } from "./codevisor-api-tools.js"
 import { callerDefault, pathArgumentName, pathParameterNames } from "./codevisor-tool-schema.js"
 import { budgetedWaitPayload } from "./codevisor-wait-budget.js"
@@ -167,6 +168,7 @@ const bodyPayload = (
   const payload = definedArguments(args, bodyPropertyNames(spec.body!))
   if (spec.name === "agents.message") return { ...payload, fromSessionId: context.sessionId }
   if (spec.name === "agents.start") return startPayload(payload, context)
+  if (spec.name === "bots.create") return { ...BOT_TOOL_DEFAULTS, ...payload }
   return payload
 }
 

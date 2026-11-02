@@ -1,6 +1,6 @@
 ---
 name: codevisor-agents
-description: Use when you want help with your task (research, reading code, a review, a small piece of the same change), another harness or model alongside you, separate pieces of work that each need their own branch or PR, an agent per issue, PR, or task, or when orchestrating, supervising, reviewing, answering, or cleaning up other agents. Also use it whenever you're tempted by a harness's built-in subagent (a Task or Agent tool, spawn_agent).
+description: Use when you want help with your task (research, reading code, a review, a small piece of the same change), another harness or model alongside you, separate pieces of work that each need their own branch or PR, an agent per issue, PR, or task, or when orchestrating, supervising, reviewing, answering, or cleaning up other agents. Also use it whenever you're tempted by a harness's built-in subagent (a Task or Agent tool, spawn_agent). Also use it to list, create, change, archive, or delete Codevisor bots.
 ---
 
 # Codevisor agents
@@ -232,6 +232,40 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 ## Agents on other machines
 
 `(await machines.get("macbook")).agents.start({ …, project: "codevisor" })` starts an agent on that machine. Pass `project`, since that machine has its own projects, or `noProject: true` for a throwaway chat in a fresh empty folder there; harness and model still default to yours. You aren't subscribed across machines, so check with that machine's `agents.status`. See `codevisor-machines`.
+
+## Bots
+
+A **bot** is a Codevisor chat with its own folder and read-only checkouts of one or more projects. It shows in the sidebar's Chat mode.
+
+| To                                     | Call                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------- |
+| List bots, archived ones included      | `bots.list()`                                                                           |
+| Read one                               | `bots.get({ botId })`                                                                   |
+| Create one                             | `bots.create({ name, harnessId, projectIds, configSelections?, symbolName?, mode? })`   |
+| Rename it, or change icon, mode, model | `bots.update({ botId, name?, symbolName?, mode?, configSelections? })`                  |
+| Archive or restore it                  | `bots.update({ botId, isArchived: true })` or `isArchived: false`                       |
+| Add or remove a project                | `bots.projects_add({ botId, projectId })`, `bots.projects_remove({ botId, projectId })` |
+| Delete it                              | `bots.delete({ botId, confirm: true })`                                                 |
+
+```js
+;async () => {
+  const codevisor = machines.current.tools.codevisor
+  const { items } = await codevisor.projects.list()
+  const project = items.find((p) => p.name === "web")
+  return codevisor.bots.create({
+    name: "Release Notes",
+    harnessId: "codex",
+    projectIds: [project.projectId],
+    configSelections: { model: "gpt-6" }
+  })
+}
+```
+
+- A bot runs on one machine. Create it with that machine's handle and that machine's `projectIds`: `(await machines.get("studio")).tools.codevisor.bots.create(…)`.
+- `harnessId` is an id from `harnesses.list()` and can't change later.
+- `configSelections` sets the bot chat's options, such as `{ model }`. `server.capabilities({ harnessId })` lists each option's `id` and values. Leave it out for the harness defaults.
+- `mode` is `conversation` (the default), `transcript`, or `bubbles`.
+- `symbolName` is one of the icons listed in the tool's input schema. It defaults to `sparkles`.
 
 ## Common mistakes
 

@@ -25,7 +25,12 @@ const agentNamed = (value: unknown): unknown => {
   )
 }
 
+const botRoutePattern = /^\/v1\/(?:bots|sessions\/:id\/bot)(?:\/|$)/
+
+const isBotRoute = (path: string): boolean => botRoutePattern.test(path)
+
 export const recordIdName = (path: string): string | undefined => {
+  if (isBotRoute(path)) return "botId"
   const resource = resourceSegment(path)
   return resource === undefined ? undefined : recordIdNames[resource]
 }
@@ -90,7 +95,7 @@ const listKeys: Readonly<Record<string, string>> = {
 
 const listShape = (path: string, body: unknown): ListShape | undefined => {
   if (Array.isArray(body)) return { items: body }
-  if (!isPlainRecord(body)) return undefined
+  if (!isPlainRecord(body) || isBotRoute(path)) return undefined
   const literal = lastLiteralSegment(path)
   const key = literal === undefined ? undefined : (listKeys[literal] ?? literal)
   const items = key === undefined ? undefined : body[key]

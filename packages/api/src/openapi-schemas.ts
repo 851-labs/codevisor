@@ -396,6 +396,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/skills": SkillsList,
   "GET /v1/bots": arrayOf(Bot),
   "POST /v1/bots": Bot,
+  "GET /v1/bots/:id": Bot,
   "PATCH /v1/bots/:id": Bot,
   "POST /v1/bots/:id/projects": Bot,
   "DELETE /v1/bots/:id/projects/:projectId": Bot,

@@ -25,6 +25,8 @@ import {
 import { createBot } from "./bot-create.js"
 import { renameInstructions, switchInstructionsMode } from "./bot-instructions.js"
 import { removeBotCheckout, routeBotProjects, tellBot } from "./bot-projects.js"
+import { refusePlanConfigForBot } from "./bot-session-modes.js"
+import { applySessionConfigPick } from "./session-config.js"
 import { applySessionUpdate } from "./session-workspace.js"
 
 const getBotOrFail = async (services: CodevisorServerServices, id: string): Promise<Bot> => {
@@ -63,6 +65,7 @@ const updateBot = async (
   const current = await getBotOrFail(services, id)
   const name = payload.name?.trim()
   if (name !== undefined && name.length === 0) throw new HttpFailure(422, "A bot needs a name")
+  await applyConfigSelections(services, config, fanout, current, payload.configSelections ?? {})
   const bot = await run(
     services.db.updateBot(current.id, {
       name,
@@ -98,6 +101,20 @@ const updateBot = async (
   await appendAndPublish(services.db, fanout, "bot.updated", bot.id, { id: bot.id })
   writeJson(response, 200, bot)
   return true
+}
+
+const applyConfigSelections = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  bot: Bot,
+  selections: Readonly<Record<string, string>>
+): Promise<void> => {
+  const picks = Object.entries(selections).map(([configId, value]) => ({ configId, value }))
+  for (const pick of picks) await refusePlanConfigForBot(services, bot.sessionId, pick)
+  for (const pick of picks) {
+    await applySessionConfigPick(services, fanout, config.id, bot.sessionId, pick)
+  }
 }
 
 const retireBotRuntime = async (
@@ -184,6 +201,10 @@ export const routeBots = async (
   }
   const botId = matchRoute(url.pathname, "/v1/bots/:id")
   if (botId === undefined) return false
+  if (request.method === "GET") {
+    writeJson(response, 200, await getBotOrFail(services, botId))
+    return true
+  }
   if (request.method === "PATCH") {
     return updateBot(services, config, fanout, routeState, botId, request, response)
   }

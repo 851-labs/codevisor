@@ -33,6 +33,26 @@ describe("Codevisor tool result shapes", () => {
     })
   })
 
+  it("returns a bot as one record named botId, also from its project routes", () => {
+    const bot = {
+      id: "b1",
+      projectId: "home",
+      sessionId: "s1",
+      projects: [{ projectId: "p1", folderName: "web" }]
+    }
+    const named = {
+      botId: "b1",
+      projectId: "home",
+      agentId: "s1",
+      projects: [{ projectId: "p1", folderName: "web" }]
+    }
+    expect(shaped("/v1/bots", [bot])).toEqual({ items: [named] })
+    expect(shaped("/v1/bots/:id", bot)).toEqual(named)
+    expect(shaped("/v1/bots/:id/projects", bot)).toEqual(named)
+    expect(shaped("/v1/bots/:id/projects/:projectId", bot)).toEqual(named)
+    expect(shaped("/v1/sessions/:id/bot/projects", bot)).toEqual(named)
+  })
+
   it("calls sessions agents everywhere in a result, however deeply nested", () => {
     expect(
       shaped("/v1/sessions/:id", {

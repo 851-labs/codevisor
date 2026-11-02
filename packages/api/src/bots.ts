@@ -49,7 +49,8 @@ export const UpdateBotRequest = Schema.Struct({
   symbolName: Schema.optional(Schema.String),
   conversational: Schema.optional(Schema.Boolean),
   mode: Schema.optional(BotMode),
-  isArchived: Schema.optional(Schema.Boolean)
+  isArchived: Schema.optional(Schema.Boolean),
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })
 export type UpdateBotRequest = typeof UpdateBotRequest.Type
 

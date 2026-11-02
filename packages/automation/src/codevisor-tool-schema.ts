@@ -9,6 +9,7 @@ export const pathParameterNames = (path: string): ReadonlyArray<string> =>
 
 const idArgumentNames = {
   agents: "agentId",
+  bots: "botId",
   projects: "projectId",
   workspaces: "workspaceId",
   sessions: "agentId",

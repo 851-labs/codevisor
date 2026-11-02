@@ -169,6 +169,7 @@ export const endpoints = [
   "DELETE /v1/skills/:name",
   "GET /v1/bots",
   "POST /v1/bots",
+  "GET /v1/bots/:id",
   "PATCH /v1/bots/:id",
   "DELETE /v1/bots/:id",
   "POST /v1/bots/:id/projects",

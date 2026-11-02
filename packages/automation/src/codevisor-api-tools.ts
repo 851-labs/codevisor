@@ -1,5 +1,6 @@
 import type { CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 import { codevisorAgentApiTools } from "./codevisor-api-tools-agents.js"
+import { codevisorBotApiTools } from "./codevisor-api-tools-bots.js"
 import { codevisorClientApiTools } from "./codevisor-api-tools-clients.js"
 import { codevisorExtensionApiTools } from "./codevisor-api-tools-extensions.js"
 import { codevisorHarnessApiTools } from "./codevisor-api-tools-harnesses.js"
@@ -21,6 +22,7 @@ export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
   ...codevisorServerApiTools,
   ...codevisorSandboxApiTools,
   ...codevisorSessionApiTools,
+  ...codevisorBotApiTools,
   ...codevisorJobApiTools,
   ...codevisorExtensionApiTools,
   ...codevisorHarnessApiTools,

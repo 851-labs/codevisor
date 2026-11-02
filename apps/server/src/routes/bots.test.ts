@@ -7,7 +7,8 @@ import { worktreeTrashQueue } from "@codevisor/worktrees"
 import { Effect, Schema } from "effect"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { jsonRequest, listEvents, waitFor } from "../test-support.js"
+import { jsonRequest, listEvents, run, waitFor } from "../test-support.js"
+import { field } from "../unknown-values.js"
 import { createBot, decodeBot, git, listBots, listProjects, setUp } from "./bot-test-support.js"
 
 describe("bot routes", () => {
@@ -262,6 +263,42 @@ describe("bot routes", () => {
     expect(missing.status).toBe(404)
   })
 
+  it("reads one bot and changes its chat's model, refusing plan mode before any change", async () => {
+    const running = await setUp()
+    await running.addProject("api-project", "api")
+    const bot = decodeBot(
+      (await createBot(running, { projectIds: ["api-project"], configSelections: { model: "a" } }))
+        .body
+    )
+    const update = (body: object) =>
+      jsonRequest(running.server, `/v1/bots/${bot.id}`, {
+        body: JSON.stringify(body),
+        method: "PATCH"
+      })
+    const selections = async () =>
+      (await run(running.services.db.getSessionSummary(bot.sessionId))).configSelections
+
+    const read = await jsonRequest(running.server, `/v1/bots/${bot.id}`)
+
+    expect(read.status).toBe(200)
+    expect(decodeBot(read.body)).toEqual(bot)
+    expect((await jsonRequest(running.server, "/v1/bots/missing")).status).toBe(404)
+
+    const changed = await update({ configSelections: { model: "b", effort: "high" } })
+
+    expect(changed.status).toBe(200)
+    expect(await selections()).toMatchObject({ model: "b", effort: "high" })
+
+    const refused = await update({ name: "Planner", configSelections: { mode: "plan" } })
+
+    expect([refused.status, field(refused.body, "error")]).toEqual([
+      409,
+      "Bots can't use plan mode"
+    ])
+    expect((await listBots(running))[0]?.name).toBe("Release Helper")
+    expect((await selections())?.["mode"]).toBeUndefined()
+  })
+
   it("switches a bot's display mode and tells the bot only when conversation mode changes", async () => {
     const running = await setUp()
     await running.addProject("api-project", "api")
@@ -415,6 +452,8 @@ describe("bot routes", () => {
   it("ignores unsupported bot methods", async () => {
     const running = await setUp()
     expect((await jsonRequest(running.server, "/v1/bots", { method: "PUT" })).status).toBe(404)
-    expect((await jsonRequest(running.server, "/v1/bots/some-bot")).status).toBe(404)
+    expect((await jsonRequest(running.server, "/v1/bots/some-bot", { method: "PUT" })).status).toBe(
+      404
+    )
   })
 })
