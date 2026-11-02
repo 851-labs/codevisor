@@ -17,6 +17,7 @@ public final class BotEditorModel {
   public private(set) var createdBot: Bot?
   public private(set) var errorMessage: String?
   public private(set) var changingProjectIds: Set<UUID> = []
+  public let projectSetup: BotProjectSetup
   private var draftProjectIds: [UUID] = []
   private var addingProjectIds: [UUID] = []
   @ObservationIgnored private let environment: AppEnvironment
@@ -25,6 +26,7 @@ public final class BotEditorModel {
   public init(target: BotEditorTarget, environment: AppEnvironment) {
     self.target = target
     self.environment = environment
+    projectSetup = BotProjectSetup(environment: environment)
     switch target {
     case .create:
       name = ""
@@ -84,8 +86,14 @@ public final class BotEditorModel {
     projectIds.compactMap { id in eligibleProjects.first { $0.id == id } }
   }
 
-  public var addableProjects: [Project] {
-    eligibleProjects.filter { !projectIds.contains($0.id) }
+  public var addableProjectGroups: [ProjectGroup] {
+    environment.projectList.fleetActiveProjectGroupsByWorkspaceRecency(environment.workspaces.loadAll())
+      .filter(canAdd)
+  }
+
+  private func canAdd(_ group: ProjectGroup) -> Bool {
+    guard let member = group.member(on: serverId) else { return group.isGitRepository }
+    return member.isGitRepository && !projectIds.contains(member.id)
   }
 
   public var projectCount: Int {
@@ -108,6 +116,37 @@ public final class BotEditorModel {
     addingProjectIds.append(id)
     await changeProject(id) { try await $0.addProject(id, to: bot) }
     addingProjectIds.removeAll { $0 == id }
+  }
+
+  public func addProject(from group: ProjectGroup) async {
+    guard let member = group.member(on: serverId) else { return await cloneProject(group) }
+
+    await addProject(member.id)
+  }
+
+  private func cloneProject(_ group: ProjectGroup) async {
+    await projectSetup.clone(group, to: serverId) { [weak self] project in
+      Task { await self?.addNewProject(project) }
+    }
+  }
+
+  public func addNewProject(_ project: Project) async {
+    let client = environment.machines.client(for: project.serverId)
+    await environment.projectList.refreshFromServer(serverId: project.serverId, client: client)
+    guard project.serverId == serverId else { return }
+    guard await Self.isGitRepository(project, on: client) != false else {
+      errorMessage = "\(project.name) isn't a git repository, so a bot can't use it."
+      return
+    }
+
+    await addProject(project.id)
+  }
+
+  private static func isGitRepository(_ project: Project, on client: any CodevisorServerClienting) async -> Bool? {
+    guard let listed = try? await client.listProjects() else { return nil }
+
+    let match = listed.first { $0.id.caseInsensitiveCompare(project.id.uuidString) == .orderedSame }
+    return (try? match?.project(serverId: project.serverId))?.isGitRepository
   }
 
   public func removeProject(_ id: UUID) async {

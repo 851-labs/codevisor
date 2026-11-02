@@ -88,7 +88,7 @@ extension ProjectMachineSetup.SetupProgress {
 extension ProjectMachineSetup.Plan {
   public var remoteProvider: GitHostProvider { provider ?? .github }
   public var pushTitle: String { "Push to Remote" }
-  public var cloneTitle: String { "Clone to \(targetMachineName)" }
+  public var cloneTitle: String { "Clone Project" }
   public var createRepoTitle: String { "Create Repo on \(remoteProvider.displayName)" }
   public var repoPlaceholder: String { "https://\(remoteProvider.defaultHost)/you/\(projectName)" }
 }

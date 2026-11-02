@@ -8,6 +8,7 @@ struct ManageProjectsSheet: View {
 
   let serverId: String
   let onDeleted: (ProjectGroup) -> Void
+  var onAdded: ((Project) -> Void)?
 
   @State private var navigationPath = NavigationPath()
   @State private var modal: Modal?
@@ -84,7 +85,7 @@ struct ManageProjectsSheet: View {
           client: environment.machines.client(for: serverId),
           machineName: machineName,
           serverId: serverId,
-          onCloned: { _ in self.modal = nil }
+          onCloned: cloned
         )
       }
     }
@@ -151,7 +152,25 @@ struct ManageProjectsSheet: View {
     }
   }
 
+  private func cloned(_ project: Project) {
+    modal = nil
+    guard let onAdded else { return }
+
+    dismiss()
+    onAdded(project)
+  }
+
   private func addFolder(_ url: URL) {
+    guard let onAdded else { return addFolderInPlace(url) }
+
+    let projectList = environment.projectList
+    let client = environment.machines.client(for: serverId)
+    let serverId = serverId
+    dismiss()
+    Task { onAdded(await projectList.addProject(folderURL: url, serverId: serverId, client: client)) }
+  }
+
+  private func addFolderInPlace(_ url: URL) {
     withAnimation {
       _ = environment.projectList.addProject(folderURL: url, serverId: serverId)
       navigationPath = NavigationPath()

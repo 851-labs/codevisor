@@ -11,6 +11,7 @@ struct BotEditorSheet: View {
 
   @Environment(\.dismiss) private var dismiss
   @State private var editor: BotEditorModel
+  @State private var showingNewProject = false
   private let environment: AppEnvironment
   private let store: SessionStore?
   let onSaved: (Bot) -> Void
@@ -71,6 +72,17 @@ struct BotEditorSheet: View {
       }
     }
     .task(id: editor.serverId) { await editor.loadModels() }
+    .sheet(isPresented: isShowingProjectSetup) {
+      if let setup = editor.projectSetup.setup {
+        ProjectSetupSheet(setup: setup)
+      }
+    }
+    .sheet(isPresented: $showingNewProject) {
+      NewProjectSheet(serverId: editor.serverId) { project in
+        Task { await editor.addNewProject(project) }
+      }
+      .environment(environment)
+    }
     .frame(width: 460)
     .frame(maxHeight: 640)
     .presentationSizing(.form.fitted(horizontal: false, vertical: true))
@@ -119,18 +131,33 @@ struct BotEditorSheet: View {
     } header: {
       Text("Projects")
     } footer: {
-      if editor.canChangeProjects, !editor.addableProjects.isEmpty {
+      if editor.canChangeProjects {
         HStack {
           Spacer()
-          Menu("Add Project") {
-            ForEach(editor.addableProjects) { project in
-              Button(project.name) { Task { await editor.addProject(project.id) } }
-            }
-          }
-          .fixedSize()
+          addProjectMenu
         }
       }
     }
+  }
+
+  private var addProjectMenu: some View {
+    Menu("Add Project") {
+      ForEach(editor.addableProjectGroups) { group in
+        Button(group.name) { Task { await editor.addProject(from: group) } }
+      }
+      Divider()
+      Button("New Project…") { showingNewProject = true }
+    }
+    .fixedSize()
+  }
+
+  private var isShowingProjectSetup: Binding<Bool> {
+    Binding(
+      get: { editor.projectSetup.isPresented },
+      set: { presented in
+        if !presented { editor.projectSetup.dismiss() }
+      }
+    )
   }
 
   private func projectRow(_ project: Project) -> some View {

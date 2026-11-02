@@ -21,6 +21,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _bots: [ServerBot] = []
   var botCreateHandler: (@Sendable (ServerCreateBotRequest) async throws -> ServerBot)?
   var botProjectError: (any Error)?
+  var listedProjects: [ServerProject]?
   var composerSkillsHandler: (@Sendable (UUID?, UUID?) async throws -> [ServerComposerSkill])?
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
   var workspaceSnapshotHandler: (@Sendable () async throws -> FakeWorkspaceSnapshot)?
@@ -150,7 +151,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       try await handler?()
       ?? lock.withLock { FakeWorkspaceSnapshot(workspaces: _workspaces, panes: _panes ?? []) }
     return ServerNavigationSnapshot(
-      eventCursor: cursor, projects: try await listProjects(), sessions: try await listSessions(),
+      eventCursor: cursor, projects: lock.withLock { _projects }, sessions: try await listSessions(),
       workspaces: state.workspaces, panes: state.panes)
   }
 
@@ -208,7 +209,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     return .object(result)
   }
 
-  func listProjects() async throws -> [ServerProject] { lock.withLock { _projects } }
+  func listProjects() async throws -> [ServerProject] { lock.withLock { listedProjects ?? _projects } }
   func listSessions() async throws -> [ServerSession] {
     lock.withLock {
       _listSessionCallCount += 1

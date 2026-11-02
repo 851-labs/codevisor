@@ -13,6 +13,7 @@ struct BotEditorView: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var editor: BotEditorModel
   @State private var confirmsDelete = false
+  @State private var showingNewProject = false
   @FocusState private var isNameFocused: Bool
   @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 88
   @ScaledMetric(relativeTo: .title2) private var iconChoiceSize: CGFloat = 44
@@ -84,6 +85,16 @@ struct BotEditorView: View {
       .disabled(editor.isSaving)
       .interactiveDismissDisabled(editor.isSaving)
       .task(id: editor.serverId) { await editor.loadModels() }
+      .sheet(isPresented: isShowingProjectSetup) {
+        if let setup = editor.projectSetup.setup {
+          ProjectSetupScreen(setup: setup)
+        }
+      }
+      .sheet(isPresented: $showingNewProject) {
+        ManageProjectsSheet(serverId: editor.serverId, onDeleted: { _ in }) { project in
+          Task { await editor.addNewProject(project) }
+        }
+      }
       .onAppear { if isCreating { isNameFocused = true } }
     }
   }
@@ -217,18 +228,32 @@ struct BotEditorView: View {
         if editor.eligibleProjects.isEmpty {
           Text("This machine has no git projects yet.")
             .foregroundStyle(.secondary)
-        } else if !editor.addableProjects.isEmpty {
-          Menu {
-            ForEach(editor.addableProjects) { project in
-              Button(project.name) { Task { await editor.addProject(project.id) } }
-            }
-          } label: {
-            Label("Add Project", systemImage: "folder.badge.plus")
-          }
-          .accessibilityIdentifier("botEditor.addProject")
         }
+        addProjectMenu
       }
     }
+  }
+
+  private var addProjectMenu: some View {
+    Menu {
+      ForEach(editor.addableProjectGroups) { group in
+        Button(group.name) { Task { await editor.addProject(from: group) } }
+      }
+      Divider()
+      Button("New Project…") { showingNewProject = true }
+    } label: {
+      Label("Add Project", systemImage: "folder.badge.plus")
+    }
+    .accessibilityIdentifier("botEditor.addProject")
+  }
+
+  private var isShowingProjectSetup: Binding<Bool> {
+    Binding(
+      get: { editor.projectSetup.isPresented },
+      set: { presented in
+        if !presented { editor.projectSetup.dismiss() }
+      }
+    )
   }
 
   private func projectLabel(_ name: String) -> some View {
