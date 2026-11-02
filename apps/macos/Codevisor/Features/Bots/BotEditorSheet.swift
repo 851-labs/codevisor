@@ -4,7 +4,7 @@ import CodevisorUI
 import SwiftUI
 
 struct BotEditorSheet: View {
-  private static let avatarSize: CGFloat = 40
+  private static let avatarSize: CGFloat = 64
 
   private struct ModelChoice: Hashable {
     let harnessId: String
@@ -34,9 +34,6 @@ struct BotEditorSheet: View {
       Section { header }
       Section {
         TextField("Name", text: $editor.name, prompt: Text("Bot name"))
-        if let mascot = editor.mascot, editor.mascotOptions != nil {
-          BotMascotRow(mascot: mascot, serverId: editor.serverId) { editsMascot = true }
-        }
         Picker("Machine", selection: $editor.serverId) {
           ForEach(editor.machines) { machine in
             Label(machine.name, systemImage: machine.icon.systemImage).tag(machine.id)
@@ -95,8 +92,7 @@ struct BotEditorSheet: View {
       title: editor.trimmedName.isEmpty ? "New Bot" : editor.trimmedName, subtitle: subtitle,
       isWorking: editor.isSaving
     ) {
-      BotAvatar(
-        mascot: editor.mascot, serverId: editor.serverId, symbolName: editor.symbolName, size: Self.avatarSize)
+      BotEditableAvatar(editor: editor, size: Self.avatarSize) { editsMascot = true }
     }
   }
 

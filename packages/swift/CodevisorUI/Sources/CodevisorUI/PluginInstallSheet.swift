@@ -91,6 +91,7 @@ private struct PluginInstallSummary: View {
     Section {
       SheetHeaderCard(title: entry.name, subtitle: entry.description, subtitleLineLimit: nil) {
         PluginCatalogIcon(entry: entry, client: client, side: 40)
+          .accessibilityHidden(true)
       }
       #if os(iOS)
         PluginAgeRatingRow(subject: subject)

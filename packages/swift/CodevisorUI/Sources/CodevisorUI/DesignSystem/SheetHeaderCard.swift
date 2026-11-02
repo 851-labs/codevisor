@@ -23,7 +23,7 @@ public struct SheetHeaderCard<Icon: View>: View {
 
   public var body: some View {
     HStack(spacing: 12) {
-      icon.accessibilityHidden(true)
+      icon
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
           .font(.headline)

@@ -8,14 +8,16 @@ struct BotIdentityAvatar: View {
 
   var body: some View {
     if editor.mascot != nil, editor.mascotOptions != nil {
-      VStack(spacing: 8) {
-        Button(action: edit) { avatar }
-          .buttonStyle(.plain)
-          .accessibilityHidden(true)
-        Button("Edit Mascot", action: edit)
-          .buttonStyle(.borderless)
-          .font(.subheadline)
+      Button(action: edit) {
+        VStack(spacing: 8) {
+          avatar
+          Text("Edit")
+            .font(.subheadline)
+            .foregroundStyle(.tint)
+        }
       }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Edit Mascot")
     } else {
       avatar
     }
