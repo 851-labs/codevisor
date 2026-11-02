@@ -1,4 +1,5 @@
 import CodevisorCore
+import StreamMarkdown
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,9 +11,10 @@ import UniformTypeIdentifiers
 
 extension View {
   public func attachmentContextMenu(
-    file: PreviewFile, image: OSImage?, openInNewTab: (@MainActor () -> Void)? = nil
+    file: PreviewFile, image: OSImage?, openInNewTab: (@MainActor () -> Void)? = nil,
+    quickLook: (@MainActor () -> Void)? = nil
   ) -> some View {
-    modifier(AttachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab))
+    modifier(AttachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab, quickLook: quickLook))
   }
 }
 
@@ -67,9 +69,11 @@ public func attachmentContentType(name: String, mimeType: String) -> UTType {
 
 private struct AttachmentContextMenu: ViewModifier {
   @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.markdownBlockChrome) private var chrome
   let file: PreviewFile
   let image: OSImage?
   let openInNewTab: (@MainActor () -> Void)?
+  let quickLook: (@MainActor () -> Void)?
 
   @State private var isCopying = false
   @State private var copyFailed = false
@@ -83,11 +87,14 @@ private struct AttachmentContextMenu: ViewModifier {
   func body(content: Content) -> some View {
     content
       .contextMenu {
+        if chrome == .bubble, let quickLook, !file.isPendingCapture {
+          Button("Quick Look", systemImage: "eye", action: quickLook)
+        }
         if let openInNewTab, !file.isPendingCapture {
           Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle", action: openInNewTab)
         }
         if let attachmentImages, offersFileActions {
-          Button(kind.copyTitle, systemImage: "doc.on.doc") {
+          Button(chrome == .bubble ? "Copy" : kind.copyTitle, systemImage: "doc.on.doc") {
             copy(using: attachmentImages)
           }
           .disabled(isCopying)

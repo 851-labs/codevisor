@@ -34,24 +34,42 @@ public enum TranscriptBotMessageWidth {
     return width
   }
 
+  private static var codeFont: MessageFont {
+    MessageFont.monospacedSystemFont(
+      ofSize: MessageFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular)
+  }
+
   private static func measure(_ markdown: String, body: MessageFont) -> CGFloat {
-    let code = MessageFont.monospacedSystemFont(ofSize: body.pointSize * 0.9, weight: .regular)
+    let code = codeFont
     var inFence = false
     var widest: CGFloat = 0
     for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if trimmed.hasPrefix("```") {
+      if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
         inFence.toggle()
         continue
       }
-      let font = inFence ? code : body
-      let indent: CGFloat =
-        !inFence && trimmed.range(of: #"^([-*+]|\d+[.)])\s"#, options: .regularExpression) != nil ? 24 : 0
-      let width = (String(line) as NSString).size(withAttributes: [.font: font]).width
-      let codeSpans = inFence ? 0 : CGFloat(line.filter { $0 == "`" }.count / 2)
-      widest = max(widest, ceil(width + indent + codeSpans * 14 + (inFence ? 24 : 4)))
+      let width = inFence ? codeWidth(of: line, font: code) : textWidth(of: line, font: body)
+      widest = max(widest, ceil(width))
     }
     return max(widest, 1)
+  }
+
+  private static func codeWidth(of line: Substring, font: MessageFont) -> CGFloat {
+    (String(line) as NSString).size(withAttributes: [.font: font]).width + 24
+  }
+
+  private static func linkTextOnly(_ line: String) -> String {
+    line.replacingOccurrences(of: #"!?\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+  }
+
+  private static func textWidth(of line: Substring, font: MessageFont) -> CGFloat {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let quoteDepth = trimmed.prefix { $0 == ">" || $0 == " " }.filter { $0 == ">" }.count
+    let shown = linkTextOnly(quoteDepth > 0 ? String(trimmed.drop { $0 == ">" || $0 == " " }) : String(line))
+    let isListItem = shown.range(of: #"^\s*([-*+]|\d+[.)])\s"#, options: .regularExpression) != nil
+    let indent = (isListItem ? 24 : 0) + CGFloat(quoteDepth) * MarkdownFragmentMetrics.quoteIndent
+    let codeSpans = CGFloat(line.filter { $0 == "`" }.count / 2)
+    return (shown as NSString).size(withAttributes: [.font: font]).width + indent + codeSpans * 14 + 4
   }
 }
 

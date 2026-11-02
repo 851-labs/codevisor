@@ -64,7 +64,7 @@ enum TranscriptBubbleConversation {
 }
 
 enum TranscriptBubbleSplitter {
-  private enum Kind {
+  enum Kind {
     case paragraph
     case heading
     case list
@@ -72,11 +72,35 @@ enum TranscriptBubbleSplitter {
     case table
     case code(fence: String)
     case rule
+
+    var canStandAlone: Bool {
+      switch self {
+      case .code, .table, .quote, .paragraph: true
+      default: false
+      }
+    }
+
+    var splitsParts: Bool {
+      if case .rule = self { return true }
+      return false
+    }
   }
 
-  private struct Block {
+  struct Block {
     var kind: Kind
     var lines: [Substring]
+    var source: Range<String.Index>
+
+    init(kind: Kind, line: Substring) {
+      self.kind = kind
+      lines = [line]
+      source = line.startIndex..<line.endIndex
+    }
+
+    mutating func append(_ line: Substring) {
+      lines.append(line)
+      source = source.lowerBound..<line.endIndex
+    }
   }
 
   private static let cache = Cache()
@@ -88,7 +112,7 @@ enum TranscriptBubbleSplitter {
   private static func split(_ markdown: String) -> [String] {
     var bubbles: [String] = []
     var heading: String?
-    for block in blocks(in: markdown) {
+    for block in blocks(in: normalized(markdown)) {
       let text = block.lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
       switch block.kind {
       case .rule:
@@ -104,15 +128,17 @@ enum TranscriptBubbleSplitter {
     return bubbles.filter { !$0.isEmpty }
   }
 
-  private static func blocks(in markdown: String) -> [Block] {
+  static func normalized(_ markdown: String) -> String {
+    markdown.replacingOccurrences(of: "\r\n", with: "\n")
+  }
+
+  static func blocks(in markdown: String) -> [Block] {
     var blocks: [Block] = []
     var current: Block?
     var pendingBlank = false
-    for line in markdown.replacingOccurrences(of: "\r\n", with: "\n").split(
-      separator: "\n", omittingEmptySubsequences: false)
-    {
+    for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
       if var block = current, case let .code(fence) = block.kind {
-        block.lines.append(line)
+        block.append(line)
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.hasPrefix(fence), trimmed.allSatisfy({ $0 == fence.first }) {
           blocks.append(block)
@@ -129,12 +155,12 @@ enum TranscriptBubbleSplitter {
       }
       if var block = current, continues(block, with: line, afterBlank: pendingBlank) {
         if pendingBlank { block.lines.append("") }
-        block.lines.append(line)
+        block.append(line)
         current = block
       } else {
         if let block = current { blocks.append(block) }
         let kind = kind(of: line)
-        current = Block(kind: kind, lines: [line])
+        current = Block(kind: kind, line: line)
         if case .heading = kind {
           blocks.append(current!)
           current = nil
@@ -157,8 +183,8 @@ enum TranscriptBubbleSplitter {
       if case .list = kind(of: line) { return true }
       return !afterBlank && startsParagraph(line)
     case .quote:
-      if line.drop(while: { $0 == " " }).hasPrefix(">") { return true }
-      return !afterBlank && startsParagraph(line)
+      guard !afterBlank else { return false }
+      return line.drop(while: { $0 == " " }).hasPrefix(">") || startsParagraph(line)
     case .table:
       return !afterBlank && line.contains("|")
     case .paragraph:

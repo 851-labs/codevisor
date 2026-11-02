@@ -21,6 +21,7 @@ struct AttachmentThumbnailView: View {
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.quickLook) private var quickLook
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.markdownBlockChrome) private var chrome
   let file: PreviewFile
 
   @State private var image: UIImage?
@@ -42,7 +43,7 @@ struct AttachmentThumbnailView: View {
           }
           .overlay {
             AttachmentLoadingOverlay(isLoading: isLoadingPreview)
-              .clipShape(RoundedRectangle(cornerRadius: 8))
+              .clipShape(shape)
           }
       } else {
         fileChip
@@ -79,8 +80,7 @@ struct AttachmentThumbnailView: View {
     let size = thumbnailSize
     return ZStack {
       if file.kind != .image {
-        RoundedRectangle(cornerRadius: 8)
-          .fill(Color.bubbleBackground)
+        shape.fill(Color.bubbleBackground)
       }
       if let image = image ?? knownImage {
         Image(uiImage: image)
@@ -92,24 +92,29 @@ struct AttachmentThumbnailView: View {
       }
     }
     .frame(width: size.width, height: size.height)
-    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .clipShape(shape)
     .overlay {
-      if file.kind != .image {
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(.separator, lineWidth: 1)
+      if file.kind != .image, chrome.drawsFrame {
+        shape.strokeBorder(.separator, lineWidth: 1)
       }
     }
     .transcriptSendAttachmentTarget(
       id: sentFileID, cornerRadius: 8, fill: hasCard ? .bubbleBackground : .clear,
       stroke: hasCard ? Color(uiColor: .separator) : .clear
     )
-    .contentShape(RoundedRectangle(cornerRadius: 8))
+    .contentShape(shape)
     .onTapGesture { preview() }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
     .accessibilityValue(isLoadingPreview ? "Loading" : "")
-    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
+    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab, quickLook: preview)
+  }
+
+  private var isBubble: Bool { chrome == .bubble }
+
+  private var shape: RoundedRectangle {
+    isBubble ? UserBubbleBackground.shape(for: dynamicTypeSize) : RoundedRectangle(cornerRadius: 8)
   }
 
   static let maximumSize = CGSize(width: 280, height: 280)
@@ -164,7 +169,7 @@ struct AttachmentThumbnailView: View {
   }
 
   private var fileChip: some View {
-    fileChipButton.attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab)
+    fileChipButton.attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab, quickLook: preview)
   }
 
   private var fileChipButton: some View {
@@ -179,22 +184,29 @@ struct AttachmentThumbnailView: View {
           .foregroundStyle(.primary)
       }
       .font(.callout)
-      .padding(.horizontal, 10)
+      .padding(.horizontal, isBubble ? 12 : 10)
       .padding(.vertical, 8)
-      .frame(minHeight: 56)
-      .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 200, alignment: .leading)
-      .background(Color.bubbleBackground, in: RoundedRectangle(cornerRadius: 8))
-      .overlay(
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(.separator, lineWidth: 1)
-      )
+      .frame(minHeight: isBubble ? nil : 56)
+      .frame(maxWidth: chipMaxWidth, alignment: .leading)
+      .fixedSize(horizontal: isBubble && !dynamicTypeSize.isAccessibilitySize, vertical: false)
+      .background(Color.bubbleBackground, in: shape)
+      .overlay {
+        if !isBubble {
+          shape.strokeBorder(.separator, lineWidth: 1)
+        }
+      }
       .transcriptSendAttachmentTarget(
         id: sentFileID, cornerRadius: 8, fill: .bubbleBackground, stroke: Color(uiColor: .separator))
     }
     .buttonStyle(.plain)
-    .pointerHighlight(RoundedRectangle(cornerRadius: 8))
+    .pointerHighlight(shape)
     .accessibilityLabel(file.name)
     .accessibilityValue(isLoadingPreview ? "Loading" : "")
+  }
+
+  private var chipMaxWidth: CGFloat {
+    if dynamicTypeSize.isAccessibilitySize { return .infinity }
+    return isBubble ? 260 : 200
   }
 
   private func openInNewTab() {

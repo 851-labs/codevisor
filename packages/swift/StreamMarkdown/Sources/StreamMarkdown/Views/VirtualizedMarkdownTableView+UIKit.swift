@@ -89,6 +89,7 @@
     let theme: MarkdownTheme
     let bleed: CGFloat
     let linkAction: MarkdownLinkAction?
+    @Environment(\.markdownBlockChrome) private var chrome
 
     func makeUIViewController(context: Context) -> NativeVirtualizedTableController {
       let controller = NativeVirtualizedTableController()
@@ -97,7 +98,8 @@
     }
 
     func updateUIViewController(_ controller: NativeVirtualizedTableController, context: Context) {
-      controller.tableView.configure(layout: layout, theme: theme, bleed: bleed, linkAction: linkAction)
+      controller.tableView.configure(
+        layout: layout, theme: theme, bleed: bleed, linkAction: linkAction, showsBorder: chrome.drawsFrame)
     }
   }
 
@@ -160,10 +162,11 @@
 
     func configure(
       layout: UIKitMarkdownTableLayout?, theme: MarkdownTheme, bleed: CGFloat,
-      linkAction: MarkdownLinkAction?
+      linkAction: MarkdownLinkAction?, showsBorder: Bool
     ) {
       self.linkAction = linkAction
       borderColor = UIColor(theme.tableBorderColor)
+      border.isHidden = !showsBorder
       let insets = UIEdgeInsets(top: 0, left: bleed, bottom: 0, right: bleed)
       if horizontalScrollView.contentInset != insets {
         horizontalScrollView.contentInset = insets

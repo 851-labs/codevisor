@@ -221,6 +221,113 @@ struct TranscriptBotRowAssemblyTests {
     #expect(rows.map(\.spacingAfter) == [2, nil, 2, nil])
   }
 
+  @Test func showsCodeBlocksAndTablesAsTheirOwnItemsBetweenTextBubbles() throws {
+    let text = """
+      Here's the fix:
+
+      ```swift
+      let x = 1
+
+      print(x)
+      ```
+      Then check the numbers:
+      | Case | Time |
+      | --- | --- |
+      | cold | 2s |
+
+      That's it.
+      """
+    let conversation = TranscriptBotConversation(
+      messages: [message("b1", .bot, text, at: 0), message("b2", .bot, "Anything else?", at: 1)], isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(conversation), options: .init(includesConnectingRow: false, presentsBotConversation: true))
+
+    let parts = botParts(rows)
+    #expect(
+      parts.map(\.text) == [
+        "Here's the fix:", "```swift\nlet x = 1\n\nprint(x)\n```", "Then check the numbers:",
+        "| Case | Time |\n| --- | --- |\n| cold | 2s |", "That's it.", "Anything else?",
+      ])
+    #expect(parts.map(\.isStandaloneBlock) == [false, true, false, true, false, false])
+    #expect(
+      parts.map(\.copyText) == [
+        "Here's the fix:", "let x = 1\n\nprint(x)", "Then check the numbers:",
+        "| Case | Time |\n| --- | --- |\n| cold | 2s |", "That's it.", "Anything else?",
+      ])
+    #expect(
+      groupTails(rows) == ["b1:0": false, "b1:1": false, "b1:2": false, "b1:3": false, "b1:4": false, "b2": true])
+  }
+
+  @Test func keepsTextWithoutBlocksAndALoneCodeBlockAsOneItem() throws {
+    let conversation = TranscriptBotConversation(
+      messages: [
+        message("b1", .bot, "Steps:\n1. Run it\n   ```\n   make\n   ```\n2. Done", at: 0),
+        message("b2", .bot, "```\nmake\n```", at: 1),
+        message("b3", .bot, "| not a table", at: 2),
+      ],
+      isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(conversation), options: .init(includesConnectingRow: false, presentsBotConversation: true))
+
+    #expect(rows.map(\.id) == [.botTimestamp("b1"), .botMessage("b1"), .botMessage("b2"), .botMessage("b3")])
+  }
+
+  @Test func showsAttachedImagesInPlaceBetweenTextBubbles() throws {
+    let image = Attachment(fileId: "img", name: "shot.png", mimeType: "image/png", sizeBytes: 1, kind: .image)
+    let text = "Before\n\n![shot](https://attachments.codevisor.invalid/img?name=shot.png)\n\nAfter"
+    let conversation = TranscriptBotConversation(
+      messages: [
+        TranscriptBotMessage(id: "b1", sender: .bot, text: text, attachments: [image], sentAt: start)
+      ],
+      isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(conversation), options: .init(includesConnectingRow: false, presentsBotConversation: true))
+
+    let parts = botParts(rows)
+    #expect(parts.map(\.text) == ["Before", "", "After"])
+    #expect(parts.map(\.files.count) == [0, 1, 0])
+  }
+
+  @Test func givesQuotesImagesAndFileReferencesTheirOwnPartsAndSplitsAtRules() throws {
+    let text = """
+      Intro
+
+      > Quoted line
+
+      > [!NOTE]
+      > Second quote
+
+      ---
+
+      After the rule
+
+      ![chart](https://example.com/chart.png)
+
+      [report.pdf](/tmp/report.pdf)
+
+      [the loop](/tmp/a.swift:12)
+      """
+    let conversation = TranscriptBotConversation(messages: [message("b1", .bot, text, at: 0)], isWorking: false)
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(conversation), options: .init(includesConnectingRow: false, presentsBotConversation: true))
+
+    let parts = botParts(rows)
+    #expect(
+      parts.map(\.style) == [
+        .text, .quote, .callout, .text, .image(source: "https://example.com/chart.png", alt: "chart"), .text, .text,
+      ])
+    #expect(
+      parts.map(\.copyText) == [
+        "Intro", "> Quoted line", "> [!NOTE]\n> Second quote", "After the rule",
+        "![chart](https://example.com/chart.png)", "", "[the loop](/tmp/a.swift:12)",
+      ])
+    #expect(parts.map { $0.files.map(\.name) } == [[], [], [], [], [], ["report.pdf"], []])
+  }
+
   @Test func keepsTheAgentTranscriptForTheFullTranscriptView() throws {
     let rows = try TranscriptRowProjectionCache.project(
       input(
@@ -237,6 +344,17 @@ struct TranscriptBotRowAssemblyTests {
     _ id: String, _ sender: TranscriptBotMessage.Sender, _ text: String, at seconds: TimeInterval
   ) -> TranscriptBotMessage {
     TranscriptBotMessage(id: id, sender: sender, text: text, sentAt: start.addingTimeInterval(seconds))
+  }
+
+  private func botParts(
+    _ rows: [TranscriptPresentationRow]
+  ) -> [(
+    text: String, isStandaloneBlock: Bool, files: [PreviewFile], copyText: String, style: TranscriptBotPartStyle
+  )] {
+    rows.compactMap { row in
+      guard case let .botMessage(_, content, _) = row.content else { return nil }
+      return (content.text, content.isStandaloneBlock, content.files, content.copyText, content.partStyle)
+    }
   }
 
   private func groupTails(_ rows: [TranscriptPresentationRow]) -> [String: Bool] {

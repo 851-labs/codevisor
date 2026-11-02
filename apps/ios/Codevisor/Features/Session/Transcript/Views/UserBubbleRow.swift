@@ -26,31 +26,51 @@ struct UserBubbleRow: View {
 }
 
 struct BotBubbleRow: View {
-  let id: String
+  let message: TranscriptBotMessage
   let content: TranscriptBotMessageContent
 
   var body: some View {
     VStack(alignment: .leading, spacing: TranscriptSendFlightGeometry.attachmentSpacing) {
-      if content.isStandaloneBlock {
-        HStack {
-          markdown
-            .contextMenu {
-              Button("Copy", systemImage: "doc.on.doc") { PlatformPasteboard.copy(content.text) }
-            }
-          Spacer(minLength: 40)
-        }
-        .padding(.vertical, 4)
-      } else {
-        MessageBubbleView(side: .leading, text: content.text, attachments: []) {
-          markdown
-        }
-      }
+      part
       TranscriptInlineFileStack(files: content.files) { AttachmentThumbnailView(file: $0) }
+        .environment(\.markdownBlockChrome, .bubble)
     }
   }
 
+  @ViewBuilder private var part: some View {
+    switch content.partStyle {
+    case .text:
+      if !content.text.isEmpty {
+        bubble(insets: TranscriptSendFlightGeometry.bubbleTextInsets) { markdown }
+      }
+    case .quote:
+      bubble(insets: TranscriptSendFlightGeometry.bubbleTextInsets) { blockMarkdown }
+    case .callout:
+      if let callout = content.callout {
+        bubble(insets: TranscriptSendFlightGeometry.bubbleTextInsets) {
+          TranscriptBotCalloutView(callout: callout, streamID: message.id)
+            .transcriptBotMessageWidth(fitting: content)
+        }
+      }
+    case .code, .table:
+      bubble(insets: (0, 0)) { blockMarkdown }
+    case let .image(source, alt):
+      TranscriptBotImagePart(source: source, alt: alt)
+    }
+  }
+
+  private func bubble(
+    insets: (horizontal: CGFloat, vertical: CGFloat), @ViewBuilder content body: @escaping () -> some View
+  ) -> some View {
+    MessageBubbleView(side: .leading, text: content.copyText, attachments: [], insets: insets, content: body)
+  }
+
+  private var blockMarkdown: some View {
+    markdown.environment(\.markdownBlockChrome, .bubble)
+  }
+
   private var markdown: some View {
-    MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: id)
+    MarkdownBlockGroupsView(blocks: content.blocks, documentSource: content.markdown, streamID: message.id)
       .transcriptBotMessageWidth(fitting: content)
   }
 }
@@ -68,6 +88,7 @@ struct MessageBubbleView<Content: View>: View {
   let text: String
   let attachments: [Attachment]
   var fill = Color.bubbleBackground
+  var insets = TranscriptSendFlightGeometry.bubbleTextInsets
   @ViewBuilder let content: () -> Content
 
   private var alignment: HorizontalAlignment { side == .trailing ? .trailing : .leading }
@@ -88,14 +109,15 @@ struct MessageBubbleView<Content: View>: View {
               \.streamMarkdownTextLayoutWidth,
               rowLayoutWidth.map { max(1, $0 - 64) }
             )
-            .padding(.horizontal, TranscriptSendFlightGeometry.bubbleTextInsets.horizontal)
-            .padding(.vertical, TranscriptSendFlightGeometry.bubbleTextInsets.vertical)
+            .padding(.horizontal, insets.horizontal)
+            .padding(.vertical, insets.vertical)
             .background {
               UserBubbleBackground(color: fill)
                 .background(
                   UserBubbleBackground.transcriptBackdrop(),
                   in: UserBubbleBackground.shape(for: dynamicTypeSize))
             }
+            .clipShape(UserBubbleBackground.shape(for: dynamicTypeSize))
             .contentShape(.contextMenuPreview, UserBubbleBackground.shape(for: dynamicTypeSize))
             .contextMenu {
               if !selection.isActive {

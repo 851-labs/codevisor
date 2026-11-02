@@ -80,6 +80,10 @@
       document.setBorderColor(color)
     }
 
+    func setShowsBorder(_ showsBorder: Bool) {
+      document.layer?.borderWidth = showsBorder ? 1 : 0
+    }
+
     override func layout() {
       super.layout()
       let columnWidth = contentView.bounds.width - contentInsets.left - contentInsets.right

@@ -1,7 +1,9 @@
+import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
 public struct TranscriptInlineFile<Thumbnail: View>: View {
+  @Environment(\.markdownBlockChrome) private var chrome
   private let file: PreviewFile
   private let label: String
   private let showsCaption: Bool
@@ -17,8 +19,26 @@ public struct TranscriptInlineFile<Thumbnail: View>: View {
   }
 
   public var body: some View {
+    if chrome.drawsFrame {
+      framed
+    } else {
+      bubbled
+    }
+  }
+
+  @ViewBuilder private var framed: some View {
     if file.showsTextPreview {
       TranscriptFilePreview(file: file) { captioned }
+    } else {
+      captioned
+    }
+  }
+
+  @ViewBuilder private var bubbled: some View {
+    if file.isPatch {
+      TranscriptFilePreview(file: file) { captioned }
+    } else if let delimiter = file.tableDelimiter {
+      TranscriptBotTablePreview(file: file, delimiter: delimiter) { captioned }
     } else {
       captioned
     }

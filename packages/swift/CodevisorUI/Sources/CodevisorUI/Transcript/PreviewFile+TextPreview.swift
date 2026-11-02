@@ -15,6 +15,14 @@ extension PreviewFile {
 
   var isPatch: Bool { highlightLanguage == Self.diffLanguage }
 
+  var tableDelimiter: Character? {
+    switch ((name as NSString).pathExtension.lowercased(), mimeType.lowercased()) {
+    case ("csv", _), (_, "text/csv"): ","
+    case ("tsv", _), ("tab", _), (_, "text/tab-separated-values"): "\t"
+    default: nil
+    }
+  }
+
   private static let diffLanguage = "diff"
 
   private var declaredType: UTType? {

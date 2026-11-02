@@ -6,6 +6,7 @@ public struct TranscriptBotMessageContent: Equatable, Sendable {
   public let markdown: String
   public let files: [PreviewFile]
   public let blocks: [MarkdownBlock]
+  public let callout: TranscriptBotCallout?
 
   public init(_ message: TranscriptBotMessage) {
     if message.isTranscriptMarkdown {
@@ -13,22 +14,24 @@ public struct TranscriptBotMessageContent: Equatable, Sendable {
       markdown = message.text
       files = message.files
       blocks = MarkdownParser().parse(message.text)
-      return
+    } else {
+      let segments = assistantMarkdownSegments(message.text, attachments: message.attachments)
+      text = Self.markdown(in: segments).trimmingCharacters(in: .whitespacesAndNewlines)
+      markdown = Self.bubbleMarkdown(text)
+      files = Self.unique(Self.files(in: segments))
+      blocks = MarkdownParser().parse(markdown)
     }
-    let segments = assistantMarkdownSegments(message.text, attachments: message.attachments)
-    text = Self.markdown(in: segments).trimmingCharacters(in: .whitespacesAndNewlines)
-    markdown = Self.bubbleMarkdown(text)
-    files = Self.unique(Self.files(in: segments))
-    blocks = MarkdownParser().parse(markdown)
+    callout = TranscriptBotPartStyle(blocks: blocks) == .quote ? TranscriptBotCallout(quote: text) : nil
   }
 
-  public var isStandaloneBlock: Bool {
-    guard blocks.count == 1 else { return false }
-    switch blocks[0] {
-    case .codeBlock, .table: return true
-    default: return false
-    }
+  public var copyText: String {
+    guard blocks.count == 1, case let .codeBlock(_, code, _) = blocks[0] else { return text }
+    return code
   }
+
+  public var partStyle: TranscriptBotPartStyle { callout == nil ? TranscriptBotPartStyle(blocks: blocks) : .callout }
+
+  public var isStandaloneBlock: Bool { partStyle.standsAlone }
 
   static func bubbleMarkdown(_ text: String) -> String {
     var lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")

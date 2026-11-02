@@ -13,6 +13,7 @@ enum TranscriptBotRowAssembly {
   ) throws -> [TranscriptPresentationRow] {
     let stoppedTurn = stoppedLatestTurn(in: input)
     let messages = withoutStopNotice(conversation.messages, for: stoppedTurn)
+      .flatMap(TranscriptBotMessageParts.parts(of:))
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(messages.count + 4)
     var previous: TranscriptBotMessage?
@@ -160,7 +161,7 @@ enum TranscriptBotRowAssembly {
 
   private static func estimatedHeight(for message: TranscriptBotMessage) -> CGFloat {
     let lines = max(1, message.text.count / 70 + message.text.filter { $0 == "\n" }.count + 1)
-    let attachments: CGFloat = message.attachments.isEmpty ? 0 : 140
+    let attachments: CGFloat = message.attachments.isEmpty && message.files.isEmpty ? 0 : 140
     return CGFloat(lines) * 20 + 20 + attachments
   }
 }

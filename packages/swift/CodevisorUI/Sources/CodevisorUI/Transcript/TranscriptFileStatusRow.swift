@@ -4,6 +4,8 @@ import TranscriptKit
 
 struct TranscriptFileStatusRow<Status: View>: View {
   @Environment(\.markdownTheme) private var theme
+  @Environment(\.markdownBlockChrome) private var chrome
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let file: PreviewFile
   @ViewBuilder let status: Status
 
@@ -18,9 +20,13 @@ struct TranscriptFileStatusRow<Status: View>: View {
       Spacer(minLength: 8)
       status
     }
-    .padding(.horizontal, 10)
+    .padding(.horizontal, chrome.drawsFrame ? 10 : 12)
     .padding(.vertical, 8)
-    .background(theme.codeBackground, in: RoundedRectangle(cornerRadius: 8))
+    .background(chrome.drawsFrame ? theme.codeBackground : Color.bubbleBackground, in: shape)
+  }
+
+  private var shape: RoundedRectangle {
+    chrome.drawsFrame ? RoundedRectangle(cornerRadius: 8) : UserBubbleBackground.shape(for: dynamicTypeSize)
   }
 
   private var displayPath: String {

@@ -6,6 +6,7 @@ public struct MarkdownBlockGroupsView: View {
   private let documentSource: String
   private let streamID: String
   @Environment(\.markdownTheme) private var theme
+  @Environment(\.markdownBlockChrome) private var chrome
 
   public init(blocks: [MarkdownBlock], documentSource: String, streamID: String) {
     self.blocks = blocks
@@ -16,7 +17,7 @@ public struct MarkdownBlockGroupsView: View {
 
   public var body: some View {
     #if canImport(AppKit)
-      if SettledMarkdownRepresentable.canRender(blocks) {
+      if chrome.drawsFrame, SettledMarkdownRepresentable.canRender(blocks) {
         SettledMarkdownRepresentable(blocks: blocks, streamID: streamID)
       } else {
         groupedBlocks

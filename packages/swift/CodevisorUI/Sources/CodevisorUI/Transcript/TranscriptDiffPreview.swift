@@ -4,11 +4,24 @@ import TranscriptKit
 
 struct TranscriptDiffPreview: View {
   @Environment(\.markdownTheme) private var theme
+  @Environment(\.markdownBlockChrome) private var chrome
   let file: PreviewFile
   let diff: UnifiedDiff
   let isTruncated: Bool
 
   var body: some View {
+    if chrome.drawsFrame {
+      framed
+    } else {
+      TranscriptBotFileBubble(file: file, showsName: false, note: isTruncated ? "Showing the start of the file" : nil) {
+        CodeBlockHeightLimit(maxHeight: TranscriptFilePreviewMetrics.maximumContentHeight) {
+          sections
+        }
+      }
+    }
+  }
+
+  private var framed: some View {
     VStack(alignment: .leading, spacing: 4) {
       VStack(alignment: .leading, spacing: 0) {
         header

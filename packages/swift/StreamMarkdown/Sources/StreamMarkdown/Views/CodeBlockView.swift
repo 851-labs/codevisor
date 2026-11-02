@@ -16,6 +16,7 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
   private let accessory: Accessory
 
   @Environment(\.markdownTheme) private var theme
+  @Environment(\.markdownBlockChrome) private var chrome
   @State private var highlighted: CodeHighlightSnapshot?
   @State private var plainMemo = PlainCodeMemo()
   @State private var usesPreparedLayout: Bool
@@ -46,26 +47,16 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        title
-        if !isComplete {
-          ProgressView()
-            .controlSize(.mini)
-        }
-        Spacer()
-        accessory
+      if chrome.drawsFrame {
+        header
+        Divider()
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 6)
-
-      Divider()
-
       CodeBlockHeightLimit(maxHeight: maxHeight) {
         codeText
       }
     }
-    .background(theme.codeBackground)
-    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .background(chrome.drawsFrame ? theme.codeBackground : .clear)
+    .clipShape(RoundedRectangle(cornerRadius: chrome.drawsFrame ? 8 : 0))
     .task(id: highlightTaskKey) {
       guard let highlighter = theme.codeHighlighter else { return }
       if settledCacheProbe != nil { return }
@@ -90,6 +81,26 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
     }
   }
 
+  private var header: some View {
+    HStack {
+      title
+      if !isComplete {
+        ProgressView()
+          .controlSize(.mini)
+      }
+      Spacer()
+      accessory
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 6)
+  }
+
+  private var codeInsets: EdgeInsets {
+    let insets = chrome.codeInsets
+    return EdgeInsets(
+      top: insets.vertical, leading: insets.horizontal, bottom: insets.vertical, trailing: insets.horizontal)
+  }
+
   @ViewBuilder private var codeText: some View {
     #if canImport(AppKit)
       if usesPreparedLayout {
@@ -99,7 +110,8 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
       } else {
         HorizontalCodeScrollView(
           text: renderedText,
-          foreground: theme.codeForeground
+          foreground: theme.codeForeground,
+          insets: chrome.codeInsets
         )
       }
     #elseif canImport(UIKit)
@@ -107,7 +119,7 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
         if usesPreparedLayout {
           PreparedSelectableTextView(
             text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
-          ).padding(10)
+          ).padding(codeInsets)
         } else {
           SelectableTextView(
             attributedText: nativeMemo.attributed(
@@ -116,7 +128,7 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
             ),
             fillsWidth: false
           )
-          .padding(10)
+          .padding(codeInsets)
         }
       }
     #else
@@ -124,7 +136,7 @@ public struct CodeBlockView<Title: View, Accessory: View>: View {
         Text(renderedText)
           .font(.system(.caption, design: .monospaced))
           .foregroundStyle(theme.codeForeground)
-          .padding(10)
+          .padding(codeInsets)
       }
     #endif
   }
@@ -210,15 +222,16 @@ extension CodeBlockView where Title == CodeBlockLanguageTitle, Accessory == Code
   private struct HorizontalCodeScrollView: NSViewRepresentable {
     let text: AttributedString
     let foreground: Color
+    let insets: (horizontal: CGFloat, vertical: CGFloat)
 
     func makeNSView(context: Context) -> CodeScrollView {
       let scrollView = CodeScrollView()
-      scrollView.setContent(text, foreground: foreground)
+      scrollView.setContent(text, foreground: foreground, insets: insets)
       return scrollView
     }
 
     func updateNSView(_ scrollView: CodeScrollView, context: Context) {
-      scrollView.setContent(text, foreground: foreground)
+      scrollView.setContent(text, foreground: foreground, insets: insets)
     }
 
     func sizeThatFits(
@@ -283,10 +296,13 @@ extension CodeBlockView where Title == CodeBlockLanguageTitle, Accessory == Code
       fatalError("init(coder:) has not been implemented")
     }
 
-    func setContent(_ text: AttributedString, foreground: Color) {
-      guard renderedText != text || renderedForeground != foreground else { return }
+    func setContent(_ text: AttributedString, foreground: Color, insets: (horizontal: CGFloat, vertical: CGFloat)) {
+      let inset = NSSize(width: insets.horizontal, height: insets.vertical)
+      guard renderedText != text || renderedForeground != foreground || codeTextView.textContainerInset != inset
+      else { return }
       renderedText = text
       renderedForeground = foreground
+      codeTextView.textContainerInset = inset
 
       codeTextView.textStorage?.setAttributedString(
         nativeCodeAttributedString(text, foreground: NSColor(foreground))
@@ -297,8 +313,8 @@ extension CodeBlockView where Title == CodeBlockLanguageTitle, Accessory == Code
       layoutManager.ensureLayout(for: textContainer)
       let used = layoutManager.usedRect(for: textContainer)
       let size = CGSize(
-        width: max(1, ceil(used.width) + 20),
-        height: max(1, ceil(used.height) + 20)
+        width: max(1, ceil(used.width) + inset.width * 2),
+        height: max(1, ceil(used.height) + inset.height * 2)
       )
       contentFittingSize = size
       if codeTextView.frame.size != size {

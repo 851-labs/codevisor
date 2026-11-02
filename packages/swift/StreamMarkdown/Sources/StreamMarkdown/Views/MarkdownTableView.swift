@@ -87,6 +87,7 @@
     let renderMemo: MarkdownTableRenderMemo
     @Environment(\.markdownLinkAction) var linkAction
     @Environment(\.markdownTableBleedLimit) var bleedLimit
+    @Environment(\.markdownBlockChrome) var chrome
 
     private static let minimumWidth: CGFloat = 180
 
@@ -120,6 +121,7 @@
       let bleedContainer = TableBleedContainer(tableTextView: textView)
       bleedContainer.bleedLimit = bleedLimit
       bleedContainer.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))
+      bleedContainer.scrollView.setShowsBorder(chrome.drawsFrame)
       return bleedContainer
     }
 
@@ -132,18 +134,19 @@
     ) -> CGSize? {
       guard let proposed = proposal.width, proposed.isFinite else {
         let ideal = container.bounds.width > 1 ? container.bounds.width : 400
-        return CGSize(
-          width: ideal, height: renderMemo.size(for: model, width: layoutWidth(for: ideal)).height
-        )
+        return CGSize(width: ideal, height: height(at: ideal))
       }
       if proposed <= 1 {
-        return CGSize(
-          width: Self.minimumWidth,
-          height: renderMemo.size(for: model, width: layoutWidth(for: Self.minimumWidth)).height
-        )
+        return CGSize(width: Self.minimumWidth, height: height(at: Self.minimumWidth))
       }
-      return CGSize(
-        width: proposed, height: renderMemo.size(for: model, width: layoutWidth(for: proposed)).height)
+      return CGSize(width: proposed, height: height(at: proposed))
+    }
+
+    private func height(at width: CGFloat) -> CGFloat {
+      let width = layoutWidth(for: width)
+      let height = renderMemo.size(for: model, width: width).height
+      guard !chrome.drawsFrame else { return height }
+      return height - renderMemo.trailingBlank(for: model, width: width)
     }
   }
 
@@ -165,6 +168,12 @@
       let width = Self.normalized(width)
       let entry = entry(for: model, width: width)
       return cache.size(of: entry)
+    }
+
+    func trailingBlank(for model: TableModel, width: CGFloat) -> CGFloat {
+      let entry = entry(for: model, width: Self.normalized(width))
+      _ = cache.size(of: entry)
+      return entry.trailingBlank
     }
 
     func minimumWidth(for model: TableModel) -> CGFloat {
@@ -276,6 +285,7 @@
       let attributedString: NSAttributedString
       fileprivate let width: CGFloat
       fileprivate var size: CGSize?
+      fileprivate var trailingBlank: CGFloat = 0
       fileprivate var lastAccess: UInt64
 
       fileprivate init(
@@ -355,6 +365,7 @@
       let used = measurementLayoutManager.usedRect(for: measurementContainer)
       let size = CGSize(width: ceil(used.width), height: ceil(used.height))
       entry.size = size
+      entry.trailingBlank = floor(measurementLayoutManager.extraLineFragmentUsedRect.height)
       measurementCount += 1
       return size
     }

@@ -32,6 +32,7 @@
       container.scrollView.tableTextView.linkAction = linkAction
       container.scrollView.tableTextView.update(model: model, renderMemo: renderMemo)
       container.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))
+      container.scrollView.setShowsBorder(chrome.drawsFrame)
     }
   }
 

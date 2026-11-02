@@ -7,6 +7,7 @@
     let borderColor: Color
     @Environment(\.markdownLinkAction) private var linkAction
     @Environment(\.markdownTableBleedLimit) private var bleedLimit
+    @Environment(\.markdownBlockChrome) private var chrome
 
     func makeNSView(context: Context) -> TableBleedContainer {
       let textView = TableTextView(frame: CGRect(origin: .zero, size: layout.size), textContainer: layout.container)
@@ -34,6 +35,7 @@
       textView.linkAction = linkAction
       view.bleedLimit = bleedLimit
       view.scrollView.setBorderColor(NSColor(borderColor))
+      view.scrollView.setShowsBorder(chrome.drawsFrame)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: TableBleedContainer, context: Context) -> CGSize? {

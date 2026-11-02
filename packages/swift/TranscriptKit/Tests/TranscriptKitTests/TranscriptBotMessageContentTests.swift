@@ -42,6 +42,26 @@ struct TranscriptBotMessageContentTests {
     #expect(content(code).markdown == code)
   }
 
+  @Test("A lone code block copies just its code; anything else copies its markdown")
+  func copyText() {
+    #expect(content("```ts\nlet x = 1\n```").copyText == "let x = 1")
+    #expect(content("| A |\n| - |\n| 1 |").copyText == "| A |\n| - |\n| 1 |")
+  }
+
+  @Test("A callout quote drops its marker line and keeps a label")
+  func callouts() {
+    let warning = content("> [!WARNING]\n> Back up first.\n> It deletes the cache.")
+    #expect(warning.partStyle == .callout)
+    #expect(warning.callout?.label == "Warning")
+    #expect(
+      warning.callout?.blocks == [
+        .paragraph(MarkdownText(spans: [.text("Back up first."), .hardBreak, .text("It deletes the cache.")]))
+      ])
+    #expect(content("> [!tip]\n> Use the cache.").callout?.label == "Tip")
+    #expect(content("> [!SHRUG]\n> Not a callout.").partStyle == .quote)
+    #expect(content("> Just a quote.").callout == nil)
+  }
+
   @Test("Cached content is replaced when a message's text changes")
   func cacheFollowsEdits() {
     let cache = TranscriptBotMessageContentCache()

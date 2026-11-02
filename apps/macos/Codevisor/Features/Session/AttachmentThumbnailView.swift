@@ -19,6 +19,8 @@ struct AttachmentThumbnailView: View {
   @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.quickLook) private var quickLook
   @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.markdownBlockChrome) private var chrome
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let file: PreviewFile
 
   @State private var image: NSImage?
@@ -44,16 +46,16 @@ struct AttachmentThumbnailView: View {
           }
           .overlay {
             AttachmentLoadingOverlay(isLoading: isLoadingPreview)
-              .clipShape(RoundedRectangle(cornerRadius: 8))
+              .clipShape(shape)
           }
       } else {
-        AttachmentFileChip(name: file.name, isLoading: isLoadingPreview) {
+        AttachmentFileChip(name: file.name, isLoading: isLoadingPreview, isBubble: chrome == .bubble) {
           preview()
         }
         .transcriptSendAttachmentTarget(
           id: sentFileID, cornerRadius: 8, fill: .bubbleBackground, stroke: Color(nsColor: .separatorColor)
         )
-        .attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab)
+        .attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab, quickLook: preview)
       }
     }
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
@@ -87,8 +89,7 @@ struct AttachmentThumbnailView: View {
     let size = thumbnailSize
     return ZStack {
       if file.kind != .image {
-        RoundedRectangle(cornerRadius: 8)
-          .fill(Color.bubbleBackground)
+        shape.fill(Color.bubbleBackground)
       }
       if let image = image ?? knownImage {
         Image(nsImage: image)
@@ -100,18 +101,17 @@ struct AttachmentThumbnailView: View {
       }
     }
     .frame(width: size.width, height: size.height)
-    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .clipShape(shape)
     .overlay {
-      if file.kind != .image {
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(.separator, lineWidth: 1)
+      if file.kind != .image, chrome.drawsFrame {
+        shape.strokeBorder(.separator, lineWidth: 1)
       }
     }
     .transcriptSendAttachmentTarget(
       id: sentFileID, cornerRadius: 8, fill: hasCard ? .bubbleBackground : .clear,
       stroke: hasCard ? Color(nsColor: .separatorColor) : .clear
     )
-    .contentShape(RoundedRectangle(cornerRadius: 8))
+    .contentShape(shape)
     .onTapGesture {
       preview()
     }
@@ -121,7 +121,11 @@ struct AttachmentThumbnailView: View {
     .accessibilityAddTraits([.isImage, .isButton])
     .accessibilityAction(.default, preview)
     .accessibilityValue(isLoadingPreview ? "Loading" : "")
-    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
+    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab, quickLook: preview)
+  }
+
+  private var shape: RoundedRectangle {
+    chrome == .bubble ? UserBubbleBackground.shape(for: dynamicTypeSize) : RoundedRectangle(cornerRadius: 8)
   }
 
   static let maximumSize = CGSize(width: 320, height: 280)
@@ -200,8 +204,10 @@ private struct AttachmentThumbnailLoadID: Hashable {
 }
 
 struct AttachmentFileChip: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let name: String
   var isLoading = false
+  var isBubble = false
   var onTap: (() -> Void)? = nil
 
   var body: some View {
@@ -213,21 +219,28 @@ struct AttachmentFileChip: View {
         .foregroundStyle(.primary)
     }
     .font(.callout)
-    .padding(.horizontal, 10)
-    .frame(height: 56)
-    .frame(maxWidth: 200)
-    .background(RoundedRectangle(cornerRadius: 8).fill(Color.bubbleBackground))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(.separator, lineWidth: 1)
-    )
-    .contentShape(RoundedRectangle(cornerRadius: 8))
+    .padding(.horizontal, isBubble ? 12 : 10)
+    .padding(.vertical, isBubble ? 7 : 0)
+    .frame(height: isBubble ? nil : 56)
+    .frame(maxWidth: isBubble ? 260 : 200)
+    .fixedSize(horizontal: isBubble, vertical: false)
+    .background(shape.fill(Color.bubbleBackground))
+    .overlay {
+      if !isBubble {
+        shape.strokeBorder(.separator, lineWidth: 1)
+      }
+    }
+    .contentShape(shape)
     .onTapGesture { onTap?() }
     .help(name)
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(onTap == nil ? [] : .isButton)
     .accessibilityAction(.default) { onTap?() }
     .accessibilityValue(isLoading ? "Loading" : "")
+  }
+
+  private var shape: RoundedRectangle {
+    isBubble ? UserBubbleBackground.shape(for: dynamicTypeSize) : RoundedRectangle(cornerRadius: 8)
   }
 }
 

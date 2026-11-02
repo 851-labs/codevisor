@@ -4,6 +4,7 @@ import TranscriptKit
 
 public struct TranscriptFilePreview<Fallback: View>: View {
   @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.markdownBlockChrome) private var chrome
   @State private var loaded: FileTextPreview?
   @State private var layoutWaitExpired = false
   private let file: PreviewFile
@@ -23,7 +24,8 @@ public struct TranscriptFilePreview<Fallback: View>: View {
 
   @ViewBuilder private var content: some View {
     switch preview {
-    case let .text(excerpt): TranscriptFileCodeBlock(file: file, excerpt: excerpt)
+    case let .text(excerpt) where chrome.drawsFrame: TranscriptFileCodeBlock(file: file, excerpt: excerpt)
+    case .text: fallback
     case let .diff(diff, isTruncated): TranscriptDiffPreview(file: file, diff: diff, isTruncated: isTruncated)
     case .missing: TranscriptMissingFileRow(file: file)
     case .binary, .unavailable: fallback
