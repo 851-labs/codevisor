@@ -10,18 +10,20 @@ final class ShareV2Host {
   private let capture = ScreenSharingCapture(pixelFormat: ScreenSharingV2Profile.capturePixelFormat)
   private let configuration: ScreenSharingVideoConfiguration
   private let endpoint: NetEndpointHandle
+  private let control: BenchHostControl
   private var connection: NetConnectionHandle?
   private var transport: ScreenSharingIrohMediaTransport?
   private var host: ScreenSharingV2Host?
   private var captureError: (any Error)?
 
-  init(displayID: CGDirectDisplayID) async throws {
+  init(displayID: CGDirectDisplayID, control channel: SignalingControlChannel) async throws {
     self.displayID = displayID
     let mode = CGDisplayCopyDisplayMode(displayID)
     configuration = try ScreenSharingV2Profile.captureConfiguration(
       width: mode?.pixelWidth ?? CGDisplayPixelsWide(displayID),
       height: mode?.pixelHeight ?? CGDisplayPixelsHigh(displayID))
     endpoint = try await V2Endpoint.bind()
+    control = BenchHostControl(channel: channel, displayID: displayID)
   }
 
   var address: V2EndpointMessage { V2EndpointMessage(endpoint.addr()) }
@@ -44,13 +46,14 @@ final class ShareV2Host {
 
   func finish(viewer: String) async -> ShareV2Result {
     let statistics = transport.map { V2MediaStatistics.dictionary($0.session.stats()) } ?? [:]
+    control.stop()
     try? await capture.stop()
     host?.stop()
     connection?.close(code: 0, reason: "done")
     await endpoint.close()
     return ShareV2Result(
       viewer: viewer, display: ShareDisplay(displayID), configuration: configuration, captureError: captureError,
-      metrics: metrics.snapshot(), media: statistics)
+      metrics: metrics.snapshot(), media: statistics, control: control.summary)
   }
 
   private func startCapture(into host: ScreenSharingV2Host) async {

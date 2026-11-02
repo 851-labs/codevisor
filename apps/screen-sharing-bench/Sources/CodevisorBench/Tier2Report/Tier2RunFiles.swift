@@ -13,6 +13,8 @@ struct Tier2RunFiles {
   let system: [String: JSONValue]?
   let share: [String: JSONValue]?
   let networkCheck: [String: JSONValue]?
+  let inputEvents: [BenchInputEvent]?
+  let inject: [String: JSONValue]?
 
   init(directory: URL) throws {
     self.directory = directory
@@ -30,6 +32,12 @@ struct Tier2RunFiles {
       try? Self.plain.decode([String: JSONValue].self, from: $0)
     }
     system = Self.optional(directory, "system.json").flatMap {
+      try? Self.plain.decode([String: JSONValue].self, from: $0)
+    }
+    inputEvents = try Self.optional(directory, "input-events.jsonl").map {
+      try Self.lines(BenchInputEvent.self, $0, Self.plain)
+    }
+    inject = Self.optional(directory, "inject.json").flatMap {
       try? Self.plain.decode([String: JSONValue].self, from: $0)
     }
   }

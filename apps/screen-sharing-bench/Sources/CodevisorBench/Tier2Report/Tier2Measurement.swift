@@ -10,6 +10,7 @@ struct Tier2Measurement {
   let analysis: BenchSharingAnalysis?
   let hostUsage: BenchUsageSummary?
   let viewerUsage: BenchUsageSummary?
+  let inputToPhoton: BenchInputToPhoton?
   let invalidReason: String?
 
   init(_ files: Tier2RunFiles) {
@@ -26,7 +27,11 @@ struct Tier2Measurement {
     viewerUsage = analysis.map {
       BenchUsageSummary(files.viewerUsage, in: $0.window, processes: Tier2Processes.viewer(files.meta.system))
     }
-    invalidReason = Self.invalidReason(files, clock: clock, analysis: analysis)
+    let inputToPhoton = Tier2InputRun.toPhoton(files)
+    self.inputToPhoton = inputToPhoton
+    invalidReason =
+      Self.invalidReason(files, clock: clock, analysis: analysis)
+      ?? Tier2InputRun.invalidReason(files, inputToPhoton)
   }
 
   var result: BenchResult? {
@@ -69,13 +74,9 @@ struct Tier2Measurement {
   private static func invalidReason(
     _ files: Tier2RunFiles, clock: BenchClockTrack?, analysis: BenchSharingAnalysis?
   ) -> String? {
-    guard files.meta.githubRunId?.isEmpty == false else { return "not a workflow run (development only)" }
-    guard let clock else { return "no clock probes were answered" }
-    guard clock.quality.epsilonMs <= ClockProbeResult.maximumEpsilonMs else { return "clock ε above 0.5 ms" }
-    guard clock.quality.residualMs <= ClockProbeResult.maximumResidualMs else { return "clock residual above 0.2 ms" }
+    if let reason = runReason(files, clock: clock) { return reason }
+    guard !files.meta.isLocalInputFloor else { return localFloorReason(files) }
     guard let analysis else { return "the observers never overlapped for longer than the warm-up" }
-    guard !files.ciBusy else { return "a CI job ran on a mini during the run" }
-    if let problem = files.preflightProblems.first { return "preflight: \(problem)" }
     guard files.meta.system != .appleHP || files.ranHighPerformance else {
       return "the bench did not choose High Performance"
     }
@@ -90,6 +91,25 @@ struct Tier2Measurement {
       return "Screen Sharing lost focus during the run"
     }
     guard analysis.viewerUnreadableFraction <= unreadableLimit || files.meta.scene == unreadableExempt else {
+      return "viewer unreadable fraction above 1%"
+    }
+
+    return nil
+  }
+
+  private static func runReason(_ files: Tier2RunFiles, clock: BenchClockTrack?) -> String? {
+    guard files.meta.githubRunId?.isEmpty == false else { return "not a workflow run (development only)" }
+    guard let clock else { return "no clock probes were answered" }
+    guard clock.quality.epsilonMs <= ClockProbeResult.maximumEpsilonMs else { return "clock ε above 0.5 ms" }
+    guard clock.quality.residualMs <= ClockProbeResult.maximumResidualMs else { return "clock residual above 0.2 ms" }
+    guard !files.ciBusy else { return "a CI job ran on a mini during the run" }
+    if let problem = files.preflightProblems.first { return "preflight: \(problem)" }
+
+    return nil
+  }
+
+  private static func localFloorReason(_ files: Tier2RunFiles) -> String? {
+    guard BenchObservedVersions(files.viewer).unreadableFraction <= unreadableLimit else {
       return "viewer unreadable fraction above 1%"
     }
 

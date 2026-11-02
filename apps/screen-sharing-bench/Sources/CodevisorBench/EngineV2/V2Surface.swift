@@ -5,6 +5,7 @@ import ScreenSharingV2
 @MainActor
 struct V2Surface {
   let view: NSView
+  let videoSurface: ScreenSharingVideoSurface?
   private let stopper: () -> Void
 
   init(_ presentation: V2Presentation, mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {
@@ -12,10 +13,12 @@ struct V2Surface {
     case .displayLink:
       let view = try ScreenSharingV2DisplayLinkView(mailbox: mailbox, metrics: metrics)
       self.view = view
+      videoSurface = nil
       stopper = { view.stop() }
     case .arrival:
       let surface = try ScreenSharingVideoSurface(mailbox: mailbox, metrics: metrics)
       view = surface
+      videoSurface = surface
       stopper = { surface.stop() }
     }
   }

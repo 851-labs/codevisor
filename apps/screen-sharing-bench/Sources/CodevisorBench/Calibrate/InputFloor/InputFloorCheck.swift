@@ -27,7 +27,7 @@ struct InputFloorCheck: CalibrationCheck {
   }
 
   func run() async throws {
-    try KeyPoster.requireAccess()
+    try InputPoster.requireAccess()
     let display = try await ScreenObserver.display(id: displayID)
     let scene = try target == .window ? KeyScene.presented(on: display.displayID, layout: layout) : nil
     defer { scene?.close() }
@@ -51,7 +51,7 @@ struct InputFloorCheck: CalibrationCheck {
       try await Task.sleep(for: .milliseconds(Self.shortestSpacingMs + random.nextUnitInterval() * Self.spacingRangeMs))
       guard scene?.hasFocus ?? true else { return PostedEvents(timesNs: eventsNs, lostFocus: true) }
 
-      eventsNs.append(try KeyPoster.pressSpace())
+      eventsNs.append(try InputPoster.pressSpace())
     }
     return PostedEvents(timesNs: eventsNs, lostFocus: false)
   }

@@ -36,19 +36,21 @@ struct ShareCommand: BenchCommand {
 
     switch engine {
     case .v1: try await share(try await ShareHost(displayID: shared.id), over: connection, until: deadline)
-    case .v2: try await share(try await ShareV2Host(displayID: shared.id), over: connection, until: deadline)
+    case .v2: try await shareV2(on: shared.id, over: connection, until: deadline)
     }
   }
 
-  private func share(
-    _ host: ShareV2Host, over connection: SignalingConnection, until deadline: ContinuousClock.Instant
+  private func shareV2(
+    on displayID: CGDirectDisplayID, over connection: SignalingConnection, until deadline: ContinuousClock.Instant
   )
     async throws
   {
+    let control = SignalingControlChannel(connection)
+    let host = try await ShareV2Host(displayID: displayID, control: control)
     do {
       try connection.send(host.address)
       try await host.accept(until: deadline)
-      await BenchSession.hold(connection, until: deadline, signals: signals)
+      await BenchSession.hold(connection, until: deadline, signals: signals, control: control)
       try BenchOutput.print(await host.finish(viewer: connection.peerIPv4))
     } catch {
       _ = await host.finish(viewer: connection.peerIPv4)

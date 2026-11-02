@@ -24,6 +24,7 @@ enum Tier2Result {
     result.energyMw = BenchResult.PerMachine(
       host: measurement.hostUsage?.powerMw, viewer: measurement.viewerUsage?.powerMw)
     result.unreadableFraction = analysis.viewerUnreadableFraction
+    result.i2pMs = measurement.inputToPhoton?.answered
     if measurement.files.meta.isCodevisor {
       let files = measurement.files
       result.stagesMs = Tier2V2Readings.stages(

@@ -6,19 +6,22 @@ final class CodevisorViewer {
   private static let connectRetry = Duration.milliseconds(250)
   private static let statisticsInterval = Duration.seconds(1)
   private static let firstFrameTimeout = Duration.seconds(20)
+  private static let controlTimeout = Duration.seconds(15)
 
   private let receiver: ScreenSharingReceiver
   private let surface: ScreenSharingVideoSurface
   private let firstFrame = FirstPresentation()
+  private var control: BenchViewerControl?
 
   static func run(
-    in window: ViewerWindow, host: String, port: UInt16, until deadline: ContinuousClock.Instant,
+    in window: ViewerWindow, host: String, port: UInt16, takesControl: Bool, until deadline: ContinuousClock.Instant,
     signals: BenchSignalFiles
   ) async throws -> CodevisorViewResult {
     let viewer = try await CodevisorViewer(in: window)
     do {
       let connection = try await viewer.connect(host: host, port: port, until: deadline)
       try await viewer.firstFrame.wait(timeout: firstFrameTimeout)
+      if takesControl { try await viewer.takeControl() }
       try signals.markReady("presenting")
       let polling = Task { await viewer.pollStatistics() }
       await BenchSession.hold(connection, until: deadline, signals: signals)
@@ -28,6 +31,11 @@ final class CodevisorViewer {
       _ = await viewer.finish(host: host)
       throw error
     }
+  }
+
+  private func takeControl() async throws {
+    control = try await BenchViewerControl.acquire(
+      over: receiver.controlChannel, surface: surface, timeout: Self.controlTimeout)
   }
 
   private init(in window: ViewerWindow) async throws {
@@ -60,10 +68,11 @@ final class CodevisorViewer {
   }
 
   private func finish(host: String) async -> CodevisorViewResult {
+    control?.stop()
     let statistics = await receiver.statistics()
     let result = CodevisorViewResult(
       host: host, firstPresentedNs: firstFrame.presentedNs, metrics: receiver.metrics,
-      droppedFrames: receiver.mailbox.droppedFrames, statistics: statistics)
+      droppedFrames: receiver.mailbox.droppedFrames, statistics: statistics, control: control?.summary)
     receiver.close()
     _ = await receiver.awaitClosed()
     return result

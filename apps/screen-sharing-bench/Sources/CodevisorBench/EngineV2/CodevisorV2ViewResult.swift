@@ -13,10 +13,11 @@ struct CodevisorV2ViewResult: Encodable {
   let media: [String: Double]
   let paths: [String]
   let selectedCandidates: [String: String]
+  let control: BenchViewerControlSummary?
 
   init(
     host: String, presentation: V2Presentation, metrics: ScreenSharingMetrics, droppedFrames: Int,
-    media: [String: Double], paths: [String]
+    media: [String: Double], paths: [String], control: BenchViewerControlSummary?
   ) {
     let snapshot = metrics.snapshot()
     self.host = host
@@ -29,5 +30,6 @@ struct CodevisorV2ViewResult: Encodable {
     self.media = media
     self.paths = paths
     selectedCandidates = ["media.currentRoundTripTime": String((media["rtt_ms"] ?? 0) / 1000)]
+    self.control = control
   }
 }

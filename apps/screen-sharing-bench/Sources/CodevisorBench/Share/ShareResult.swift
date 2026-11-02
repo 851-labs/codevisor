@@ -12,12 +12,13 @@ struct ShareResult: Encodable {
   let counters: [String: Int]
   let labels: [String: String]
   let selectedCandidates: [String: String]
+  let control: BenchHostControlSummary
 
   init(
     viewer: String, display: ShareDisplay, codec: ScreenSharingVideoCodec?,
     configuration: ScreenSharingVideoConfiguration,
     connectedNs: Int64?, captureError: (any Error)?, metrics: ScreenSharingMetrics.Snapshot,
-    statistics: [String: String]
+    statistics: [String: String], control: BenchHostControlSummary
   ) {
     self.viewer = viewer
     self.display = display
@@ -29,5 +30,6 @@ struct ShareResult: Encodable {
     counters = metrics.counters
     labels = metrics.labels
     selectedCandidates = statistics.filter { $0.key.contains("candidate") }
+    self.control = control
   }
 }

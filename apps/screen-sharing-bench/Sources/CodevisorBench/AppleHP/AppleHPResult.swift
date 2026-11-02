@@ -6,5 +6,7 @@ struct AppleHPResult: Encodable {
   let sessionOnScreen: Bool
   let window: WindowDescription
   let checkedMenuItems: [String]
+  let controlMode: ControlMode
+  let modeAtEnd: ControlMode
   let windowSharingStates: [Int]
 }

@@ -10,6 +10,8 @@ enum Tier2Comparisons {
   static let metrics = [
     Metric(name: "image_age_ms.p50", better: .lower) { $0.imageAgeMs?.p50 },
     Metric(name: "image_age_ms.p95", better: .lower) { $0.imageAgeMs?.p95 },
+    Metric(name: "i2p_ms.p50", better: .lower) { $0.i2pMs?.p50 },
+    Metric(name: "i2p_ms.p95", better: .lower) { $0.i2pMs?.p95 },
     Metric(name: "updates_per_s", better: .higher) { $0.updatesPerS },
     Metric(name: "cpu_pct.host.p50", better: .lower) { $0.cpuPct?.host?.p50 },
     Metric(name: "cpu_pct.viewer.p50", better: .lower) { $0.cpuPct?.viewer?.p50 },

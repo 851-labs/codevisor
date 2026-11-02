@@ -8,6 +8,7 @@ final class ShareHost {
   private let metrics = ScreenSharingMetrics()
   private let capture = ScreenSharingCapture()
   private let sender: ScreenSharingSender
+  private let control: BenchHostControl
   private var configuration: ScreenSharingVideoConfiguration
   private var captureTask: Task<Void, Never>?
   private var qualityTask: Task<Void, Never>?
@@ -23,6 +24,7 @@ final class ShareHost {
       width: mode?.pixelWidth ?? CGDisplayPixelsWide(displayID),
       height: mode?.pixelHeight ?? CGDisplayPixelsHigh(displayID))
     sender = try await ScreenSharingSender(configuration: configuration, metrics: metrics)
+    control = BenchHostControl(channel: sender.controlChannel, displayID: displayID)
     sender.onConnectionChanged = { [weak self] state in self?.connectionChanged(state) }
   }
 
@@ -36,6 +38,7 @@ final class ShareHost {
 
   func finish(viewer: String) async -> ShareResult {
     let statistics = await sender.statistics()
+    control.stop()
     qualityTask?.cancel()
     await captureTask?.value
     try? await capture.stop()
@@ -44,7 +47,7 @@ final class ShareHost {
     return ShareResult(
       viewer: viewer, display: ShareDisplay(displayID), codec: codec, configuration: configuration,
       connectedNs: connectedNs,
-      captureError: captureError, metrics: metrics.snapshot(), statistics: statistics)
+      captureError: captureError, metrics: metrics.snapshot(), statistics: statistics, control: control.summary)
   }
 
   private func connectionChanged(_ state: String) {

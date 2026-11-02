@@ -24,6 +24,9 @@ tier2_plan_budget_s=2700
 : "${TIER2_CLOCK_PORT:=47592}"
 : "${TIER2_NETWORK_CHECK_PORT:=47596}"
 : "${TIER2_SEED:=1}"
+: "${TIER2_INPUT_EVENTS:=200}"
+tier2_input_lead_s=8
+tier2_input_budget_ms_per_event=263
 
 bench() {
   CODEVISOR_BENCH_BACKGROUND=1 "$tier2_scripts/run-installed.sh" "$@"
@@ -134,13 +137,14 @@ meet_on_build() {
 }
 
 tier2_check_inputs() {
-  local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards)"
+  local scene_pattern="(idle-cursor|typing|scroll|window-drag|video|test-cards|input)"
   [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || { echo "unknown scene in $TIER2_SCENES" >&2; return 1; }
   [[ "$TIER2_REPS" =~ ^[1-4]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
   [[ "$TIER2_NETWORK" =~ ^N[03]$ ]] || { echo "network must be N0 or N3, not $TIER2_NETWORK" >&2; return 1; }
   [[ "$TIER2_ENGINE" =~ ^v[12]$ ]] || { echo "engine must be v1 or v2, not $TIER2_ENGINE" >&2; return 1; }
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
+  tier2_check_input_scene || return 1
   local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   if [[ "$TIER2_ENGINE" == v2 ]] && tier2_runs_system codevisor-r1x2 && tier2_runs_system codevisor-v2; then
@@ -153,6 +157,32 @@ tier2_check_inputs() {
     echo "$runs runs of ${TIER2_DURATION}s don't fit the ${tier2_plan_budget_s}s budget" >&2
     return 1
   }
+}
+
+tier2_runs_input() {
+  [[ ",$TIER2_SCENES," == *,input,* ]]
+}
+
+tier2_input_window_s() {
+  echo $((TIER2_DURATION - tier2_input_lead_s))
+}
+
+tier2_check_input_scene() {
+  tier2_runs_input || return 0
+  if ! [[ "$TIER2_INPUT_EVENTS" =~ ^[0-9]+$ ]] || ((TIER2_INPUT_EVENTS < 1 || TIER2_INPUT_EVENTS > 400)); then
+    echo "input events must be 1 to 400 of each kind, not $TIER2_INPUT_EVENTS" >&2
+    return 1
+  fi
+  [[ "$TIER2_PRESENT" == arrival ]] || { echo "the input scene needs the arrival presentation" >&2; return 1; }
+  local needed_s=$(((2 * TIER2_INPUT_EVENTS * tier2_input_budget_ms_per_event + 999) / 1000))
+  (($(tier2_input_window_s) >= needed_s)) || {
+    echo "the input scene needs about ${needed_s}s after an ${tier2_input_lead_s}s lead; raise duration" >&2
+    return 1
+  }
+}
+
+tier2_is_local_input_floor() {
+  [[ "$1" == input && "$2" == floor ]]
 }
 
 preflight() {
