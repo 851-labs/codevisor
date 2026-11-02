@@ -10,17 +10,14 @@ public final class FirstLaunchSetup {
   private var visibleCounts: [FirstLaunchStep: Int] = [:]
   private var isNewInstall: Bool?
 
-  @ObservationIgnored private let work: any FirstLaunchSetupWork
   @ObservationIgnored private let timing: FirstLaunchSetupTiming
   @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored private var changeWaiters: [CheckedContinuation<Void, Never>] = []
 
   public init(
-    work: any FirstLaunchSetupWork,
     timing: FirstLaunchSetupTiming = .standard,
     clock: some Clock<Duration> & Sendable = ContinuousClock()
   ) {
-    self.work = work
     self.timing = timing
     sleep = { try await clock.sleep(for: $0) }
   }
@@ -48,8 +45,17 @@ public final class FirstLaunchSetup {
     changed()
   }
 
-  public func run() async {
-    async let steps: Void = performSteps()
+  public func localDataFailed() {
+    set(.localData, .failed)
+  }
+
+  public func retryLocalData() {
+    set(.localData, .running)
+  }
+
+  public func run(_ work: any FirstLaunchSetupWork) async {
+    set(.localData, .done)
+    async let steps: Void = performSteps(work)
     async let harnesses: Void = revealNames(of: .harnesses)
     async let projects: Void = revealNames(of: .projects)
     await present()
@@ -119,7 +125,7 @@ public final class FirstLaunchSetup {
     ])
   }
 
-  private func performSteps() async {
+  private func performSteps(_ work: any FirstLaunchSetupWork) async {
     set(.server, .running)
     guard await work.startServer() == .ready else {
       set(.server, .skipped)
@@ -127,7 +133,7 @@ public final class FirstLaunchSetup {
       return
     }
 
-    isNewInstall = await askIfNewInstall()
+    isNewInstall = await askIfNewInstall(work)
     changed()
     guard isNewInstall == true, presentation == .visible else { return }
 
@@ -149,7 +155,7 @@ public final class FirstLaunchSetup {
     _ = await (harnesses, projects, models)
   }
 
-  private func askIfNewInstall() async -> Bool? {
+  private func askIfNewInstall(_ work: any FirstLaunchSetupWork) async -> Bool? {
     while presentation == .visible, !Task.isCancelled {
       if let answer = try? await work.isNewInstall() { return answer }
       try? await sleep(timing.serverAnswerRetry)

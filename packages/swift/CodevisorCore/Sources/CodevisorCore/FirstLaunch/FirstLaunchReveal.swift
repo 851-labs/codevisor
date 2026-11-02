@@ -16,6 +16,7 @@ public enum FirstLaunchReveal {
     outcomes: [FirstLaunchStep: FirstLaunchStepOutcome]
   ) -> FirstLaunchStepOutcome {
     guard let current, step.rawValue >= current.rawValue else { return outcomes[step, default: .pending] }
-    return step == current ? .running : .pending
+    guard step == current else { return .pending }
+    return outcomes[step] == .failed ? .failed : .running
   }
 }

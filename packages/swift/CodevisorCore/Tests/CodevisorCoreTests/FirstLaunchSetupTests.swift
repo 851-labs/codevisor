@@ -6,21 +6,33 @@ import Testing
 @MainActor
 @Suite("First-launch setup screen")
 struct FirstLaunchSetupTests {
-  @Test("Shows Starting Codevisor from the first frame, before the server answers")
+  @Test("Shows Preparing local data from the first frame, then Starting Codevisor until the server answers")
   func showsBeforeServerAnswers() async {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
+    let setup = FirstLaunchSetup(clock: clock)
     #expect(setup.presentation == .visible)
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.running, .pending, .pending, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.running, .pending, .pending, .pending, .pending])
 
-    let running = Task { await setup.run() }
+    let running = Task { await setup.run(work) }
     await clock.waitForSleep(.seconds(15))
     #expect(setup.presentation == .visible)
-    #expect(setup.revealed(.server) == .running)
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending, .pending])
 
     work.server.resolve(.failed)
     await running.value
+  }
+
+  @Test("Shows a local data failure on its row and spins again on retry")
+  func showsLocalDataFailure() {
+    let setup = FirstLaunchSetup(clock: TestClock())
+
+    setup.localDataFailed()
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.failed, .pending, .pending, .pending, .pending])
+    #expect(!setup.isComplete)
+
+    setup.retryLocalData()
+    #expect(setup.revealed(.localData) == .running)
   }
 
   @Test("Carries on once the server confirms a new install")
@@ -31,8 +43,8 @@ struct FirstLaunchSetupTests {
     work.harnesses.resolve([])
     work.projects.resolve([])
     work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     await clock.waitForSleep(.seconds(15))
     #expect(setup.revealed(.server) == .running)
 
@@ -51,8 +63,8 @@ struct FirstLaunchSetupTests {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     await clock.waitForSleep(.seconds(15))
     #expect(setup.presentation == .visible)
 
@@ -61,15 +73,15 @@ struct FirstLaunchSetupTests {
 
     #expect(setup.presentation == .notNeeded)
     #expect(!setup.canGetStarted)
-    #expect(FirstLaunchStep.allCases.map { setup.outcomes[$0] } == [.running, nil, nil, nil])
+    #expect(FirstLaunchStep.allCases.map { setup.outcomes[$0] } == [.done, .running, nil, nil, nil])
   }
 
   @Test("Hands off to the startup view when the server doesn't answer within fifteen seconds")
   func handsOffWithoutServerAnswer() async {
     let clock = TestClock()
     let work = FirstLaunchFakeWork()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     await clock.waitForSleep(.seconds(15))
     clock.advance(by: .seconds(15))
 
@@ -85,8 +97,8 @@ struct FirstLaunchSetupTests {
     let work = FirstLaunchFakeWork()
     work.server.resolve(.ready)
     work.newInstall.fail()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     await clock.waitForSleep(.milliseconds(500))
     clock.advance(by: .milliseconds(500))
     await clock.waitForSleep(.milliseconds(500), count: 2)
@@ -104,8 +116,8 @@ struct FirstLaunchSetupTests {
   @Test("Hands a failed server start to the startup failure view")
   func handsOffServerFailure() async {
     let work = FirstLaunchFakeWork()
-    let setup = FirstLaunchSetup(work: work, clock: TestClock())
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: TestClock())
+    let running = Task { await setup.run(work) }
 
     work.server.resolve(.failed)
     await running.value
@@ -118,8 +130,8 @@ struct FirstLaunchSetupTests {
   func offersGetStartedWhenDone() async {
     let clock = TestClock()
     let work = readyExceptHarnesses()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     await confirmed(setup)
     setup.getStarted()
     #expect(setup.presentation == .visible)
@@ -149,8 +161,8 @@ struct FirstLaunchSetupTests {
     timing.harnessesTimeout = .seconds(60)
     timing.projectsTimeout = .seconds(60)
     timing.modelsTimeout = .seconds(60)
-    let setup = FirstLaunchSetup(work: work, timing: timing, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(timing: timing, clock: clock)
+    let running = Task { await setup.run(work) }
     await confirmed(setup)
 
     await clock.waitForSleep(.seconds(15))
@@ -170,17 +182,17 @@ struct FirstLaunchSetupTests {
   func skipsSlowSteps() async {
     let clock = TestClock()
     let work = newInstall()
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     for limit in [Duration.seconds(5), .seconds(10), .seconds(12)] {
       await clock.waitForSleep(limit)
     }
     await confirmed(setup)
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .done, .running, .pending, .pending])
 
     clock.advance(by: .seconds(5))
     await awaitObserved { setup.revealed(.harnesses) == .skipped }
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .running, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .done, .skipped, .running, .pending])
 
     clock.advance(by: .seconds(5))
     await awaitObserved { setup.revealed(.projects) == .skipped }
@@ -188,7 +200,7 @@ struct FirstLaunchSetupTests {
 
     clock.advance(by: .seconds(2))
     await awaitObserved { setup.isComplete }
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .skipped, .skipped, .skipped])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .done, .skipped, .skipped, .skipped])
     #expect(setup.detailCandidates(for: .harnesses).isEmpty)
 
     await clock.waitForSleep(.milliseconds(400))
@@ -201,12 +213,12 @@ struct FirstLaunchSetupTests {
   func revealsInOrder() async {
     let work = newInstall()
     work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, timing: .instant, clock: TestClock())
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(timing: .instant, clock: TestClock())
+    let running = Task { await setup.run(work) }
 
     work.projects.resolve(["api", "web"])
     await awaitObserved { setup.outcomes[.projects] == .done && setup.outcomes[.models] == .done }
-    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .running, .pending, .pending])
+    #expect(FirstLaunchStep.allCases.map(setup.revealed) == [.done, .done, .running, .pending, .pending])
     #expect(setup.detailCandidates(for: .projects).isEmpty)
 
     work.harnesses.resolve(["Claude Code", "Codex"])
@@ -221,8 +233,8 @@ struct FirstLaunchSetupTests {
     let clock = TestClock()
     let work = newInstall()
     work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, clock: clock)
-    let running = Task { await setup.run() }
+    let setup = FirstLaunchSetup(clock: clock)
+    let running = Task { await setup.run(work) }
     await confirmed(setup)
 
     work.reportProjectsAdded(["api", "web"])
@@ -263,9 +275,9 @@ struct FirstLaunchSetupTests {
     work.harnesses.resolve(["Codex"])
     work.projects.fail()
     work.models.resolve(())
-    let setup = FirstLaunchSetup(work: work, timing: .instant, clock: TestClock())
+    let setup = FirstLaunchSetup(timing: .instant, clock: TestClock())
 
-    await setup.run()
+    await setup.run(work)
 
     #expect(setup.revealed(.projects) == .skipped)
     #expect(setup.revealed(.models) == .done)
