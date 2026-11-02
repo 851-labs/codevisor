@@ -95,6 +95,7 @@ export class FakeCodexClient implements CodexClient {
     try {
       switch (method) {
         case "initialize":
+        case "account/login/start":
           return {}
         case "thread/start":
           return { model: this.startModel, thread: { id: "thread-new" } }

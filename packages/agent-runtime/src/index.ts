@@ -11,6 +11,7 @@ import { inspectHarnessSession } from "./inspect-harness.js"
 import { adapterPromise } from "./types.js"
 
 export * from "./types.js"
+export { untrackedSteps, type InspectionSteps } from "./inspection-steps.js"
 export * from "./attachments.js"
 export * from "./diff-stats.js"
 export * from "./shell-env.js"

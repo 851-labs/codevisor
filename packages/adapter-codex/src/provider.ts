@@ -11,9 +11,11 @@ import {
   type HarnessAccountContext,
   type HarnessDefinition,
   type HarnessSessionTitle,
+  type InspectionSteps,
   type LoadedAgentSession,
   type ProviderEnvironment,
-  type ToolGatewayConfig
+  type ToolGatewayConfig,
+  untrackedSteps
 } from "@codevisor/agent-runtime"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
@@ -87,11 +89,15 @@ export const makeCodexProvider = (
     cwd: string,
     account?: HarnessAccountContext,
     toolGateway?: ToolGatewayConfig,
-    disabledFeatures: ReadonlyArray<string> = []
+    disabledFeatures: ReadonlyArray<string> = [],
+    steps: InspectionSteps = untrackedSteps
   ): Promise<CodexClient> => {
+    steps.enter("locate codex")
     const command = locateCodex(definition)
+    steps.enter("shell environment")
     const parentEnv = { ...(await environment.envFor(cwd)) }
     if (account?.oauth) delete parentEnv.OPENAI_API_KEY
+    steps.enter("spawn app-server")
     const client = await connector({
       command,
       cwd,
@@ -108,7 +114,7 @@ export const makeCodexProvider = (
       }
     })
     try {
-      return await initializeClient(client, account)
+      return await initializeClient(client, account, steps)
     } catch (cause) {
       client.close()
       throw cause
@@ -263,8 +269,10 @@ export const makeCodexProvider = (
 
 const initializeClient = async (
   client: CodexClient,
-  account: HarnessAccountContext | undefined
+  account: HarnessAccountContext | undefined,
+  steps: InspectionSteps
 ): Promise<CodexClient> => {
+  steps.enter("initialize")
   await client.request("initialize", {
     capabilities: { experimentalApi: true },
     clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
@@ -272,5 +280,5 @@ const initializeClient = async (
   client.notify("initialized")
   if (account?.oauth === undefined) return client
 
-  return connectSharedCodexAccount(client, account.oauth)
+  return connectSharedCodexAccount(client, account.oauth, steps)
 }

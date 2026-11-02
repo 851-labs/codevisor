@@ -1,4 +1,8 @@
-import type { HarnessAccountContext } from "@codevisor/agent-runtime"
+import {
+  untrackedSteps,
+  type HarnessAccountContext,
+  type InspectionSteps
+} from "@codevisor/agent-runtime"
 
 import type { CodexClient } from "./client.js"
 import { isRecord } from "./internal.js"
@@ -9,8 +13,10 @@ class CodexSignInRequired extends Error {
 
 export const connectSharedCodexAccount = async (
   client: CodexClient,
-  oauth: NonNullable<HarnessAccountContext["oauth"]>
+  oauth: NonNullable<HarnessAccountContext["oauth"]>,
+  steps: InspectionSteps = untrackedSteps
 ): Promise<CodexClient> => {
+  steps.enter("ChatGPT sign-in token")
   let current = await oauth.token()
   if (!current.accountId)
     throw new CodexSignInRequired("This ChatGPT account needs to be reconnected")
@@ -40,6 +46,7 @@ export const connectSharedCodexAccount = async (
       ...(next.planType ? { chatgptPlanType: next.planType } : {})
     }
   })
+  steps.enter("account/login/start")
   await client.request("account/login/start", {
     type: "chatgptAuthTokens",
     accessToken: current.accessToken,

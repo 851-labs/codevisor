@@ -26,11 +26,18 @@ const sessionThatRecordsClose = () => {
   return { session, closed: closed.promise, closes: () => closes }
 }
 
-const runtimeCreating = (created: Promise<CreatedAgentSession>) => {
+const runtimeCreating = (
+  created: Promise<CreatedAgentSession>,
+  stepsEntered: ReadonlyArray<string> = []
+) => {
   const provider: AgentProvider = {
     id: "claude",
     readiness: () => ({ state: "ready" }),
-    createSession: () => adapterSession("createSession", () => created),
+    createSession: (_definition, _cwd, _emit, _account, _toolGateway, sessionOptions) =>
+      adapterSession("createSession", () => {
+        for (const step of stepsEntered) sessionOptions?.inspectionSteps?.enter(step)
+        return created
+      }),
     loadSession: () => Effect.die("unused")
   }
   return makeAgentRuntime({ env: { PATH: "/bin" }, providers: { claude: provider } })
@@ -63,6 +70,25 @@ describe("inspectHarness", () => {
     await late.closed
 
     expect(late.closes()).toBe(1)
+  })
+
+  it("marks a timeout and names the step the adapter was stuck in", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const never = Promise.withResolvers<CreatedAgentSession>()
+    const runtime = runtimeCreating(never.promise, ["initialize", "thread/start"])
+
+    const inspection = inspect(runtime).then(
+      () => undefined,
+      (error: unknown) => error
+    )
+    await vi.advanceTimersByTimeAsync(INSPECTION_TIMEOUT_MS)
+
+    expect(await inspection).toMatchObject({
+      timedOut: true,
+      message: expect.stringMatching(
+        /^Harness inspection timed out after 15000ms \(stuck in thread\/start for \d+ms, after initialize \d+ms\)$/
+      )
+    })
   })
 
   it("closes the session once it has read the harness capabilities", async () => {

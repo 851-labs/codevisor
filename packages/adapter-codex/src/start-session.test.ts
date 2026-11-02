@@ -222,6 +222,36 @@ describe("CodexProvider", () => {
     expect(client.requests.map((request) => request.method)).toContain("thread/start")
   })
 
+  it("reports each startup step to an inspection, including the ChatGPT sign-in", async () => {
+    const steps: string[] = []
+    const provider = makeCodexProvider(environment, {
+      connector: async () => new FakeCodexClient()
+    })
+    const account = {
+      id: "shared-codex",
+      profileKind: "managed" as const,
+      oauth: { token: async () => ({ accessToken: "token", accountId: "workspace" }) }
+    }
+
+    await run(
+      provider.createSession(definition, "/tmp/project", async () => {}, account, undefined, {
+        inspectionSteps: { enter: (step) => steps.push(step) }
+      })
+    )
+
+    expect(steps).toEqual([
+      "locate codex",
+      "shell environment",
+      "spawn app-server",
+      "initialize",
+      "ChatGPT sign-in token",
+      "account/login/start",
+      "thread/start",
+      "model/list",
+      "skills/list"
+    ])
+  })
+
   it("stops the app-server when its handshake fails", async () => {
     const client = new HandshakeFailingClient()
     const provider = makeCodexProvider(environment, { connector: async () => client })

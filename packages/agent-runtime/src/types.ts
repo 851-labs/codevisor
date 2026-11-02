@@ -14,6 +14,7 @@ import { isRecord } from "@codevisor/api"
 import { Effect, Schema } from "effect"
 
 import type { HarnessDefinition, ProviderId } from "./harness-definition-types.js"
+import type { InspectionSteps } from "./inspection-steps.js"
 
 export class AgentRuntimeError extends Schema.TaggedErrorClass<AgentRuntimeError>()(
   "AgentRuntimeError",
@@ -21,7 +22,8 @@ export class AgentRuntimeError extends Schema.TaggedErrorClass<AgentRuntimeError
     operation: Schema.String,
     message: Schema.String,
     authRequired: Schema.optional(Schema.Boolean),
-    conversationMissing: Schema.optional(Schema.Boolean)
+    conversationMissing: Schema.optional(Schema.Boolean),
+    timedOut: Schema.optional(Schema.Boolean)
   }
 ) {}
 
@@ -206,6 +208,7 @@ export interface LoadedAgentSession {
 export interface CreateSessionOptions {
   readonly modelListTimeoutMs?: number
   readonly skillListTimeoutMs?: number
+  readonly inspectionSteps?: InspectionSteps
   readonly configSelections?: Readonly<Record<string, string>>
   readonly bot?: boolean
   readonly forkFrom?: string

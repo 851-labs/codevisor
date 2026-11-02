@@ -1,8 +1,10 @@
 import {
   sanitizeModelValue,
+  untrackedSteps,
   type CreateSessionOptions,
   type HarnessAccountContext,
   type HarnessDefinition,
+  type InspectionSteps,
   type InterruptedTurnResume,
   type ProviderEnvironment,
   type RuntimeEmit,
@@ -28,7 +30,8 @@ export interface CodexStartSessionDeps {
     cwd: string,
     account?: HarnessAccountContext,
     toolGateway?: ToolGatewayConfig,
-    disabledFeatures?: ReadonlyArray<string>
+    disabledFeatures?: ReadonlyArray<string>,
+    steps?: InspectionSteps
   ) => Promise<CodexClient>
   readonly environment: ProviderEnvironment
   readonly readConfigFile: (path: string) => string | undefined
@@ -52,12 +55,14 @@ export const makeStartSession = ({
     toolGateway?: ToolGatewayConfig,
     sessionOptions?: CreateSessionOptions
   ): Promise<CodexSession> => {
+    const steps = sessionOptions?.inspectionSteps ?? untrackedSteps
     const client = await connect(
       definition,
       cwd,
       account,
       toolGateway,
-      disabledFeaturesFor(sessionOptions)
+      disabledFeaturesFor(sessionOptions),
+      steps
     )
     try {
       return await openSession(
@@ -69,6 +74,7 @@ export const makeStartSession = ({
           emit,
           resumeThreadId,
           sessionOptions,
+          steps,
           toolGateway
         }
       )
@@ -86,16 +92,18 @@ interface SessionRequest {
   readonly emit: RuntimeEmit
   readonly resumeThreadId: string | undefined
   readonly sessionOptions: CreateSessionOptions | undefined
+  readonly steps: InspectionSteps
   readonly toolGateway: ToolGatewayConfig | undefined
 }
 
 const openSession = async (
   client: CodexClient,
   { environment, readConfigFile }: Omit<CodexStartSessionDeps, "connect">,
-  { account, cwd, emit, resumeThreadId, sessionOptions, toolGateway }: SessionRequest
+  { account, cwd, emit, resumeThreadId, sessionOptions, steps, toolGateway }: SessionRequest
 ): Promise<CodexSession> => {
   const config = codexThreadConfig({ environment, readConfigFile, account, toolGateway })
   const opened = { resumeThreadId, forkFrom: sessionOptions?.forkFrom }
+  steps.enter("thread/start")
   const response: unknown = await openThread(client, cwd, opened, config)
 
   const threadId = threadIdFrom(response)
@@ -103,12 +111,14 @@ const openSession = async (
 
   const session = newCodexSession({ client, cwd, emit, resumeThreadId, response, threadId })
   try {
+    steps.enter("model/list")
     const modelList = await client.request("model/list", {})
     session.models = codexModelsFrom(modelList)
     adoptDefaultEffort(session)
   } catch {
     session.models = []
   }
+  steps.enter("skills/list")
   await refreshCodexSkills(session, false)
 
   attachToClient(session, resumeThreadId !== undefined || opened.forkFrom !== undefined)

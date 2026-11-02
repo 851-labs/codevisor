@@ -2,11 +2,16 @@ import { Cause, Effect } from "effect"
 
 import { withSteeringSupport } from "./agent-runtime-core.js"
 import type { HarnessDefinition } from "./harness-definition-types.js"
+import {
+  makeInspectionStepLog,
+  type InspectionStepLog,
+  type InspectionSteps
+} from "./inspection-steps.js"
 import { placeConfigValue } from "./model-selection.js"
 import {
+  AgentRuntimeError,
   runtimeError,
   type AgentProvider,
-  type AgentRuntimeError,
   type AgentSessionMetadata,
   type CreatedAgentSession,
   type HarnessAccountContext
@@ -27,29 +32,33 @@ export const inspectHarnessSession = (
   inspection: HarnessInspection
 ): Effect.Effect<AgentSessionMetadata, AgentRuntimeError> =>
   Effect.gen(function* () {
-    const created = yield* createInspectionSession(inspection).pipe(
+    const steps = makeInspectionStepLog()
+    const created = yield* createInspectionSession(inspection, steps).pipe(
       Effect.timeout(INSPECTION_TIMEOUT_MS),
-      Effect.mapError((cause) =>
-        runtimeError(
-          "inspectHarness",
-          cause._tag === "TimeoutError"
-            ? new Error(`Harness inspection timed out after ${INSPECTION_TIMEOUT_MS}ms`)
-            : cause
-        )
-      )
+      Effect.mapError((cause) => {
+        if (cause._tag === "TimeoutError") return inspectionTimedOut(steps)
+        return runtimeError("inspectHarness", cause)
+      })
     )
     return yield* describeSession(inspection, created).pipe(
       Effect.ensuring(Effect.sync(() => closeInBackground(created)))
     )
   })
 
-const createInspectionSession = ({
-  definition,
-  provider,
-  cwd,
-  account,
-  configSelections
-}: HarnessInspection): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
+const inspectionTimedOut = (steps: InspectionStepLog): AgentRuntimeError => {
+  const progress = steps.describe()
+  const detail = progress === undefined ? "" : ` (${progress})`
+  return new AgentRuntimeError({
+    operation: "inspectHarness",
+    message: `Harness inspection timed out after ${INSPECTION_TIMEOUT_MS}ms${detail}`,
+    timedOut: true
+  })
+}
+
+const createInspectionSession = (
+  { definition, provider, cwd, account, configSelections }: HarnessInspection,
+  steps: InspectionSteps
+): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
   provider.createSession(
     definition,
     cwd,
@@ -60,6 +69,7 @@ const createInspectionSession = ({
     {
       modelListTimeoutMs: Math.max(3_000, INSPECTION_TIMEOUT_MS - 3_000),
       skillListTimeoutMs: 2_000,
+      inspectionSteps: steps,
       ...(configSelections === undefined ? {} : { configSelections })
     }
   )

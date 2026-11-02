@@ -16,6 +16,31 @@ const HarnessOptionIds = Schema.Struct({
 })
 
 describe("session catalog routes", () => {
+  it("keeps showing a harness's last known models when its check times out", async () => {
+    const { agents, server, workspaceFolder } = await setUpWorkspace()
+    const capabilitiesPath = `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}`
+    const inspected = await jsonRequest(server, capabilitiesPath)
+    agents.timingOutInspections.add(agents.inspections.at(-1)![1])
+
+    const timedOut = await jsonRequest(server, capabilitiesPath)
+
+    expect(timedOut.body).toEqual(inspected.body)
+    expect(timedOut.body).toMatchObject({
+      harnesses: [
+        { harness: { id: "codex" }, configOptions: [{ id: "model" }, { id: "reasoning" }] }
+      ]
+    })
+  })
+
+  it("leaves a harness without models when its first check times out", async () => {
+    const { agents, server } = await setUpWorkspace()
+    agents.timingOutInspections.add(tmpdir())
+
+    expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
+      harnesses: [{ harness: { id: "codex" }, configOptions: [] }]
+    })
+  })
+
   it("lists harnesses, rescans, and discovers capabilities", async () => {
     const { agents, server, workspace, workspaceFolder, workspaceRoot } = await setUpWorkspace()
     const noModesFolder = join(workspaceRoot, "no-modes")

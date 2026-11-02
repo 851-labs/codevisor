@@ -12,6 +12,7 @@ import { Effect } from "effect"
 
 import { observableFixture } from "./changes-test-support.js"
 import { dependencyConfigOptions } from "./test-support-config-options.js"
+import { stubInspectHarness } from "./test-support-inspections.js"
 import { modesIn, questionAskedBy, questionEvent } from "./test-support-questions.js"
 import { harnesses, withoutTaskControls } from "./test-support-stubs.js"
 
@@ -35,6 +36,7 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
   readonly inspections: Array<readonly [string, string]>
   readonly inspectionConfigs: Array<Readonly<Record<string, string>> | undefined>
+  readonly timingOutInspections: Set<string>
   readonly startSelections: Array<Readonly<Record<string, string>> | undefined>
   readonly creations: Array<readonly [string, string]>
   readonly environmentRefreshes: Array<number>
@@ -57,6 +59,7 @@ export const makeAgents = (): AgentRuntimeService & {
   const inspectionConfigs: Array<Readonly<Record<string, string>> | undefined> = observableFixture(
     []
   )
+  const timingOutInspections = new Set<string>()
   const creations: Array<readonly [string, string]> = observableFixture([])
   const startSelections: Array<Readonly<Record<string, string>> | undefined> = observableFixture([])
   const environmentRefreshes: Array<number> = observableFixture([])
@@ -91,6 +94,7 @@ export const makeAgents = (): AgentRuntimeService & {
     questionAnswers,
     inspections,
     inspectionConfigs,
+    timingOutInspections,
     startSelections,
     creations,
     environmentRefreshes,
@@ -126,61 +130,7 @@ export const makeAgents = (): AgentRuntimeService & {
       }),
     reconcileConfigValue: (_harnessId, option, value) =>
       option.id === "model" && value.endsWith("-legacy") ? value.slice(0, -7) : undefined,
-    inspectHarness: (harnessId, cwd, _account, configSelections) =>
-      Effect.sync(() => {
-        inspections.push([harnessId, cwd])
-        inspectionConfigs.push(configSelections)
-        if (cwd.includes("capability-fail")) {
-          throw new Error("capability probe failed")
-        }
-        if (cwd.includes("no-modes")) {
-          return {
-            sessionId: `inspect-${harnessId}`,
-            configOptions: []
-          }
-        }
-        if (cwd.includes("native-skills")) {
-          return {
-            sessionId: `inspect-${harnessId}`,
-            configOptions: [],
-            skills: {
-              invocationPrefix: "/",
-              skills: [{ invocation: "/review", name: "review", source: "builtin" as const }]
-            }
-          }
-        }
-        const unapplied = configSelections?.model === "gpt-gone"
-        const model = unapplied ? "gpt-5" : (configSelections?.model ?? "gpt-5")
-        return {
-          ...(unapplied ? { unappliedConfigSelections: { model: "gpt-gone" } } : {}),
-          sessionId: `inspect-${harnessId}`,
-          supportsGoals: true,
-          supportsSteering: true,
-          modes: {
-            currentModeId: "default",
-            availableModes: [{ id: "default", name: "Default" }]
-          },
-          configOptions: [
-            {
-              id: "model",
-              name: "Model",
-              category: "model",
-              currentValue: model,
-              options: [{ value: "gpt-5", name: "GPT-5" }]
-            },
-            {
-              id: "reasoning",
-              name: "Reasoning",
-              category: "thought_level",
-              currentValue: model === "gpt-next" ? "high" : "medium",
-              options:
-                model === "gpt-next"
-                  ? [{ value: "high", name: "High" }]
-                  : [{ value: "medium", name: "Medium" }]
-            }
-          ]
-        }
-      }),
+    inspectHarness: stubInspectHarness({ inspections, inspectionConfigs, timingOutInspections }),
     loadAgentSession: (
       harnessId,
       agentSessionId,

@@ -6,6 +6,12 @@ import type { Harness, HarnessCapability } from "@codevisor/api"
 import { decorateHarnessSettings } from "../infra/harness-preferences.js"
 import type { CodevisorServerServices } from "../server-context.js"
 import { existingDirectory, run } from "../server-http.js"
+import {
+  inspectionTimedOut,
+  makeCapabilityMemory,
+  type CapabilityMemory,
+  type CapabilityRequest
+} from "./harness-capability-memory.js"
 import { conflictFrom } from "./harness-errors.js"
 
 export const discoverCapabilities = async (
@@ -77,6 +83,17 @@ const capabilityFromMetadata = (
   }
 }
 
+const capabilityMemories = new WeakMap<CodevisorServerServices, CapabilityMemory>()
+
+const capabilityMemory = (services: CodevisorServerServices): CapabilityMemory => {
+  let memory = capabilityMemories.get(services)
+  if (memory === undefined) {
+    memory = makeCapabilityMemory()
+    capabilityMemories.set(services, memory)
+  }
+  return memory
+}
+
 const failedHarnessCapability = (harness: Harness, cause: unknown): HarnessCapability => {
   console.error(
     `[harnesses] inspecting ${harness.id} failed; it will be missing from the model picker: ${conflictFrom(cause).message}`
@@ -87,6 +104,17 @@ const failedHarnessCapability = (harness: Harness, cause: unknown): HarnessCapab
   }
 }
 
+const rememberedHarnessCapability = (
+  harness: Harness,
+  cause: unknown,
+  remembered: HarnessCapability
+): HarnessCapability => {
+  console.error(
+    `[harnesses] inspecting ${harness.id} failed; showing its last known models: ${conflictFrom(cause).message}`
+  )
+  return { ...remembered, harness }
+}
+
 const inspectHarnessCapability = async (
   services: CodevisorServerServices,
   harness: Harness,
@@ -94,20 +122,31 @@ const inspectHarnessCapability = async (
   requestedHarnessId: string | undefined,
   requestedConfigSelections: Readonly<Record<string, string>>
 ): Promise<HarnessCapability> => {
+  const configSelections = requestedHarnessId === harness.id ? requestedConfigSelections : undefined
+  let request: CapabilityRequest | undefined
   try {
     const account = await services.auth?.activeAccountContext(harness.id)
+    request = { harnessId: harness.id, accountId: account?.id, cwd, configSelections }
     const metadata = await run(
-      services.agents.inspectHarness(
-        harness.id,
-        cwd,
-        account,
-        requestedHarnessId === harness.id ? requestedConfigSelections : undefined
-      )
+      services.agents.inspectHarness(harness.id, cwd, account, configSelections)
     )
-    return capabilityFromMetadata(harness, metadata)
+    const capability = capabilityFromMetadata(harness, metadata)
+    capabilityMemory(services).remember(request, capability)
+    return capability
   } catch (cause) {
-    return failedHarnessCapability(harness, cause)
+    const remembered = rememberedAfterTimeout(services, request, cause)
+    if (remembered === undefined) return failedHarnessCapability(harness, cause)
+    return rememberedHarnessCapability(harness, cause, remembered)
   }
+}
+
+const rememberedAfterTimeout = (
+  services: CodevisorServerServices,
+  request: CapabilityRequest | undefined,
+  cause: unknown
+): HarnessCapability | undefined => {
+  if (request === undefined || !inspectionTimedOut(cause)) return undefined
+  return capabilityMemory(services).recall(request)
 }
 
 const discoverHarnessesWithAuthMode = async (
