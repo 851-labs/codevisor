@@ -87,7 +87,9 @@ Each command prints one JSON result to stdout; a check that fails its pass crite
   `(version, pts_ns, callback_ns)` lines after a header naming the clock (`BenchObserverLog`). Unreadable
   frames are kept, with the reason. `--region barcode` (the default) captures only the 512×32 px strip, so
   the observer costs little; the summary reports the observer's own CPU and power from `proc_pid_rusage`.
-  `--barcode-x`, `--barcode-y` and `--block-size` move the strip.
+  `--barcode-x`, `--barcode-y` and `--block-size` move the strip. With `--region full`,
+  `--stills <dir> --stills-versions <v>,<v>…` also writes the last frame of each listed version as
+  `<dir>/<version>.png`, captured in sRGB (T8 below).
 - `calibrate --check c1 [--duration 30]` runs two observers on the same display, the barcode strip and the
   full display, and reports |ΔPTS| per version both saw. It passes when p95 ≤ 16.7 ms. Run it while the
   player (or `--check on-glass`) draws.
@@ -267,6 +269,8 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
   each version that `observe --relay <viewer ipv4>:47594` on the host sends the moment the host observer
   first sees it (`BenchVersionMessage`, 20 bytes), through the same surface.
+  `view` and `apple-hp` take `--virtual-display R1x2`, which shows the window on a virtual display of that size
+  (T8 below), and write `<state> display <id>` to the ready file.
 - `apple-hp [--host tamales-Mac-Mini.local]` opens `vnc://<host>` in Screen Sharing.app (the saved Bonjour
   entry `tamales-Mac-Mini.local`, never an IP), makes the session window full screen through Accessibility and
   parks the pointer at the bottom of the screen: a pointer at the top edge reveals the full-screen menu bar over
@@ -333,6 +337,52 @@ ratio at least 0.9, no image older than 1 s) and a table of v2 stages and counte
 `stages_ms` from the viewer's frame timeline (`hostQueue` is `capture_queue`, the jitter-buffer estimate
 `decode_queue`) and, for v2, `stages_ms.media` (`queue` and `send` from the host's frame acks, `assemble` from the
 viewer) and `media` from both sides' counters. These cover the whole session, not only the measured window.
+
+## Text fidelity: T8 (851-3597)
+
+T8 measures how faithfully each system shows S6 (`test-cards`) at 1:1. A Tier 2 run of `test-cards` adds
+`--region full --stills` to both observers for versions 4, 5, 6, 8, 9 and 10 (fewer when the run is short; the
+photo card, every fourth version, is skipped), and `tier2-report` compares the viewer's still of each version with
+the host observer's still of the same version. Host font rendering is in both, so it cancels. The metrics live in
+`ScreenSharingBench/Fidelity`, and the result is `results[].text` in the v1 report, with every field optional:
+
+- **1:1.** `BenchRegistration` looks for the four corner fiducials (`BenchTestCardLayout.geometry`) in each still:
+  a coarse search at ¼ size, then a full-size search for the offset that fits all four, then each fiducial alone
+  within ±2 px. The still is 1:1 only when every fiducial lands at the same integer offset and matches its template
+  (mean error at most 48 levels). Otherwise the run reports `one_to_one: false` and no numbers, and the summary
+  gives the reason (`not_1to1: …`).
+- **`psnr_y`, `psnr_y_text`, `ssim_y`** come from the text cards (light and dark). They use BT.709 luma in full range
+  (0.2126 R + 0.7152 G + 0.0722 B on the sRGB bytes). PSNR pools the squared error over every compared frame.
+  `psnr_y_text` uses only the text mask: reference pixels more than 16 levels from the card's most common luma,
+  dilated by 1 px, without the barcode and fiducials. `ssim_y` is Wang 2004 (11×11 Gaussian, σ 1.5, K1 0.01,
+  K2 0.03, edges extended), averaged over the frame and then over the frames.
+- **`psnr_cbcr`** comes from the chroma card: the PSNR of BT.709 Cb and Cr (full range, pooled), the signal that
+  separates 4:4:4 from 4:2:0.
+- **`delta_e00_mean`, `delta_e00_p95`** are CIEDE2000 (Sharma 2005; sRGB to CIELAB D65) over the chroma card's
+  coloured text: inside each of the six tiles (2 px in from its edges), the pixels more than 32 levels in any channel
+  from the tile's most common colour.
+- **Report.** An identical frame has PSNR ∞. JSON can't hold that, so the report writes 100 dB, like encode-lab.
+  The summary's "Text fidelity" table lists each run, with the frames it compared.
+
+Self-checks. An image compared with itself gives PSNR ∞ and SSIM 1. For a 4:2:0 round trip (2×2 box average of Cb
+and Cr, repeated back to full size), one-pixel red/blue stripes give exactly 10.73 dB `psnr_cbcr`, and the
+generator's R1 chroma card gives 16.48 dB. Every run's summary also gives the "4:2:0 reference psnr_cbcr", the same
+round trip applied to that run's host still. A system above it keeps more chroma than 4:2:0 could.
+
+Apple HP always gives tamale a 1920×1080 pt @2x display (3840×2160 px), so on croissant's 1920×1080 @1x display it is
+shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` makes `view` and `apple-hp`
+(`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
+full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
+it: 16 px for a 3840 px host). Engine v1 and v2 both stream R1x2 at 2560×1440 for now, so their R1x2 rows report
+`not_1to1`, and their numbers come from R1 (the host's physical 1920×1080 display on croissant's `main` display).
+When E5 streams native 3840×2160, the same viewer display makes Codevisor 1:1 at R1x2 too.
+
+```sh
+gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
+  -f floor-repetitions=0 -f c4=false -f viewer-display=R1x2 -f systems=apple-hp,codevisor-r1x2,codevisor-v2
+gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
+  -f floor-repetitions=0 -f c4=false -f engine=v2 -f systems=codevisor
+```
 
 ## Benchmark workflow, results and gate (851-3594)
 
@@ -451,6 +501,15 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   no native score. `engine=vcp` with `444f` input is compared in full range, the range it encodes.
 - **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
   rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
+
+## Lab job
+
+`gh workflow run screen-sharing-bench.yml --ref <branch> -f lab='croissant player --display virtual --resolution R1x2'`
+runs only the `lab` job. It builds and installs the bench on the named mini (`tamale` or `croissant`), then runs
+`scripts/lab.sh`: one subcommand, with a preflight 8 s in so its display list shows what the command created. The
+command's output goes to the job summary and the `lab` artifact. The job has its own concurrency group
+(`screen-sharing-lab-*`), so check `gh run list` and agree on the mini first. The first lab run (41267527233) showed
+that croissant's M6 brings a 1920×1080 @2x virtual display (3840 px of backing) online.
 
 ## Signing and permissions
 

@@ -333,7 +333,11 @@ jobs:
   lab:
     needs: plan
     if: ${{ needs.plan.outputs.lab == 'true' }}
-    runs-on: [self-hosted, macOS, ARM64, "${{ startsWith(inputs.lab, 'croissant ') && 'croissant' || 'tamale' }}"]
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - ${{ startsWith(inputs.lab, 'croissant ') && 'croissant' || 'tamale' }}
     timeout-minutes: 30
     concurrency:
       group: screen-sharing-lab-${{ github.workflow }}-${{ github.ref }}

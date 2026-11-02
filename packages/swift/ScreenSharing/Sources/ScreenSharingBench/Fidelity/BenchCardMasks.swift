@@ -15,7 +15,8 @@ public enum BenchCardMasks {
     for tile in tiles.map({ $0.insetBy(tileEdgeInset) }) {
       let paper = modeColor(reference, in: tile)
       for y in tile.y..<tile.maxY {
-        for x in tile.x..<tile.maxX where reference.pixel(x: x, y: y).largestChannelDifference(from: paper) > inkChannelThreshold {
+        for x in tile.x..<tile.maxX
+        where reference.pixel(x: x, y: y).largestChannelDifference(from: paper) > inkChannelThreshold {
           mask[y * reference.width + x] = true
         }
       }

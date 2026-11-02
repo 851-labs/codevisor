@@ -14,7 +14,8 @@ struct BenchTestCardGeometryTests {
       try BenchTextFidelityAnalysis(
         [BenchCardCapture(version: version, kind: kind, reference: card, shown: card)], geometry: Self.geometry))
 
-    #expect(BenchRegistration.register(BenchLumaImage(BenchYCbCrPlanes(card)), geometry: Self.geometry) == .registered(.zero))
+    #expect(
+      BenchRegistration.register(BenchLumaImage(BenchYCbCrPlanes(card)), geometry: Self.geometry) == .registered(.zero))
     #expect(analysis.fidelity.oneToOne == true)
   }
 

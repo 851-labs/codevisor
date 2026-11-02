@@ -28,7 +28,8 @@ struct Tier2TextTable {
       fidelity.deltaE00Mean, fidelity.deltaE00P95,
     ].map(Self.number)
     let oneToOne = analysis.notOneToOneReason.map { "not_1to1: \($0)" } ?? "yes"
-    return "| \(measurement.files.directory.lastPathComponent) | \(meta.benchSystem?.rawValue ?? meta.system.rawValue) | "
+    return
+      "| \(measurement.files.directory.lastPathComponent) | \(meta.benchSystem?.rawValue ?? meta.system.rawValue) | "
       + "\(meta.resolutionLabel) | \(meta.viewerDisplay ?? "main") | " + numbers.joined(separator: " | ")
       + " | \(analysis.textFrames), \(analysis.chromaFrames) | \(oneToOne) |"
   }

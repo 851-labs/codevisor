@@ -45,7 +45,8 @@ struct ScreenSharingApp {
 
   func makeFullScreen(_ window: AccessibilityElement, on display: CGRect, timeout: Duration) async throws {
     if window.frame.map(display.intersects) != true {
-      window.set(kAXPositionAttribute, to: CGPoint(x: display.minX + Self.windowInset, y: display.minY + Self.windowInset))
+      window.set(
+        kAXPositionAttribute, to: CGPoint(x: display.minX + Self.windowInset, y: display.minY + Self.windowInset))
     }
     window.set(Self.fullScreenAttribute, to: true)
     let limit = ContinuousClock.now + timeout

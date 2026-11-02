@@ -31,7 +31,11 @@ final class StillKeeper: Sendable {
   }
 
   func finish() async throws {
-    if let last = held.withLock({ current in defer { current = nil }; return current }) { write(last) }
+    if let last = held.withLock({ current in
+      defer { current = nil }; return current
+    }) {
+      write(last)
+    }
     await withCheckedContinuation { continuation in writer.async { continuation.resume() } }
     if let error = failure.withLock({ $0 }) { throw error }
   }

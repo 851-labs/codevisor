@@ -21,7 +21,9 @@ enum BenchFidelityImages {
   static func textCard() -> BenchRGBImage {
     var image = filled(white)
     for row in 0..<4 {
-      for x in stride(from: 30, to: 130, by: 3) { image.fill(BenchPixelRect(x: x, y: 34 + row * 9, width: 2, height: 5), ink) }
+      for x in stride(from: 30, to: 130, by: 3) {
+        image.fill(BenchPixelRect(x: x, y: 34 + row * 9, width: 2, height: 5), ink)
+      }
     }
     return withFiducials(image)
   }
@@ -29,7 +31,9 @@ enum BenchFidelityImages {
   static func chromaCard() -> BenchRGBImage {
     var image = filled(white)
     image.fill(geometry.chromaTiles[0], paper)
-    for x in stride(from: 37, to: 124, by: 4) { image.fill(BenchPixelRect(x: x, y: 40, width: 1, height: 20), colouredInk) }
+    for x in stride(from: 37, to: 124, by: 4) {
+      image.fill(BenchPixelRect(x: x, y: 40, width: 1, height: 20), colouredInk)
+    }
     return withFiducials(image)
   }
 

@@ -12,7 +12,8 @@ struct BenchChromaSubsamplingTests {
   }
 
   @Test func oneColumnRedBlueStripesLoseTheDocumentedAmount() {
-    let planes = BenchYCbCrPlanes(Self.image(width: 8, height: 6) { x, _ in x.isMultiple(of: 2) ? Self.red : Self.blue })
+    let planes = BenchYCbCrPlanes(
+      Self.image(width: 8, height: 6) { x, _ in x.isMultiple(of: 2) ? Self.red : Self.blue })
     let roundTrip = BenchChromaSubsampling.roundTrip420(planes)
 
     #expect(BenchSimilarity.psnr([planes.blue, planes.red], [planes.blue, planes.red]) == .infinity)
