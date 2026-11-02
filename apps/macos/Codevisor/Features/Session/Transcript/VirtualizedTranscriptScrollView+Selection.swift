@@ -394,7 +394,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     textSelection.autoScrollTask = nil
   }
 
-  private func selectionAutoScrollTick() {
+  func selectionAutoScrollTick() {
     guard textSelection.isDragging, let windowPoint = textSelection.lastDragLocationInWindow else {
       stopSelectionAutoScroll()
       return
@@ -475,9 +475,11 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       let hit = window.contentView?.hitTest(event.locationInWindow),
       hit.isDescendant(of: self)
     else { return }
-    if hit is any TranscriptTextSurface || hit is NSScroller || hit === transcriptDocumentView {
-      return
-    }
+    guard !keepsSelection(whenPressing: hit) else { return }
     clearTranscriptSelection()
+  }
+
+  private func keepsSelection(whenPressing hit: NSView) -> Bool {
+    hit is any TranscriptTextSurface || hit is NSScroller || hit === transcriptDocumentView || hit === titlebarRegion
   }
 }

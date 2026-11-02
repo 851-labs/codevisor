@@ -25,6 +25,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   let transcriptDocumentView = FlippedTranscriptDocumentView()
+  let titlebarRegion = TranscriptTitlebarRegion()
   let surfaceController = TranscriptSurfaceController()
   let paginationLoadingIndicator = NSProgressIndicator()
   let bottomFadeMask = CAGradientLayer()
@@ -342,6 +343,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     let previousDistance = lastViewportDistanceFromBottom
     super.layout()
     updateTopContentInset()
+    titlebarRegion.cover(topOf: contentView, height: topContentInset, in: self)
     if hasPendingViewportResize || needsTopInsetGeometry {
       applyPositionTransaction {
         layoutViewport(previousSize: previousSize, previousDistance: previousDistance)
