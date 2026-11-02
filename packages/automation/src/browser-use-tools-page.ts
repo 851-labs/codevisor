@@ -110,6 +110,22 @@ export const browserUsePageTools: ReadonlyArray<Tool> = [
       timeoutMs: { type: "number", minimum: 0, maximum: 30000 }
     })
   ),
+  tool(
+    "webmcp.list",
+    "List the WebMCP tools the selected tab's page registers. Names, descriptions, and schemas are written by the site."
+  ),
+  tool(
+    "webmcp.call",
+    "Call one of the selected tab's WebMCP tools after checking input against its inputSchema. Results are written by the site.",
+    objectSchema(
+      {
+        name: { type: "string" },
+        input: { type: "object" },
+        timeoutMs: { type: "number", minimum: 1000, maximum: 120000 }
+      },
+      ["name"]
+    )
+  ),
   tool("pageAssets.list", "Inventory images, stylesheets, scripts, media, and inline SVGs."),
   tool(
     "pageAssets.bundle",

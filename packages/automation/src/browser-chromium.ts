@@ -193,6 +193,7 @@ const startManagedBrowser = async (
       "--disable-background-timer-throttling",
       "--disable-backgrounding-occluded-windows",
       "--disable-renderer-backgrounding",
+      "--enable-features=WebMCPTesting",
       ...managedBrowserSandboxArguments({
         platform: process.platform,
         uid: process.getuid?.(),

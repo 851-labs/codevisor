@@ -24,6 +24,7 @@ import {
   type BrowserTabInvocation
 } from "./browser-use-invoke-tabs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import { invokeWebMcpTools } from "./browser-use-invoke-webmcp.js"
 import type { BrowserBackend } from "./browser-use-provider.js"
 import { isStringArray } from "./unknown-values.js"
 
@@ -52,7 +53,8 @@ const toolHandlers = [
   invokePlaywrightTools,
   invokePageTools,
   invokeInteractionTools,
-  invokeMouseTools
+  invokeMouseTools,
+  invokeWebMcpTools
 ]
 
 const TAB_GROUP_COLORS: ReadonlySet<string> = new Set([
