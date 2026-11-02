@@ -38,9 +38,9 @@ struct ResultsGate {
         + "split out the jitter buffer, latency is judged outside it and the jitter buffer has its own rule (p50 up "
         + "more than max(100%, 40 ms)), because the jitter buffer's wait can swing between processes independently of "
         + "the rest of the pipeline.", "",
-      "| scene | network | nightlies | latency judged | p50 baseline | run 1 | run 2 | p95 baseline | run 1 | run 2 "
-        + "| jitter buffer baseline | run 1 | run 2 | result |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| system | scene | network | nightlies | latency judged | p50 baseline | run 1 | run 2 | p95 baseline | run 1 "
+        + "| run 2 | jitter buffer baseline | run 1 | run 2 | result |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     return (header + verdicts.map(row)).joined(separator: "\n")
   }
@@ -53,7 +53,7 @@ struct ResultsGate {
     let p95: (BenchGateSample) -> Double? = outside ? \.e2eOutsideJitterBufferP95Ms : \.e2eP95Ms
     let cells =
       [
-        verdict.cell.scene, verdict.cell.network, "\(verdict.baseline.count)",
+        verdict.cell.system.rawValue, verdict.cell.scene, verdict.cell.network, "\(verdict.baseline.count)",
         outside ? "e2e outside jitter buffer" : "e2e",
       ] + columns(p50, verdict) + columns(p95, verdict) + columns(\.jitterBufferP50Ms, verdict) + [result(verdict)]
     return "| " + cells.joined(separator: " | ") + " |"

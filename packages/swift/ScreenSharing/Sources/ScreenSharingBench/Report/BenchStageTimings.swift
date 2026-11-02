@@ -11,6 +11,7 @@ public struct BenchStageTimings: Codable, Sendable, Equatable {
   public var renderQueue: BenchDistribution?
   public var present: BenchDistribution?
   public var networkResidual: BenchDistribution?
+  public var media: BenchMediaStages?
   public var timingFrameCheck: BenchTimingFrameCheck?
 
   public init() {}
@@ -25,6 +26,7 @@ public struct BenchStageTimings: Codable, Sendable, Equatable {
     decode = Self.span(frames) { ($0.decodeInputNs, $0.decodeOutputNs) }
     renderQueue = Self.span(frames) { ($0.decodeOutputNs, $0.renderCommitNs) }
     present = Self.span(frames) { frame in frame.onGlassNs.map { (frame.renderCommitNs, $0) } }
+    media = BenchMediaStages(frames: frames)
   }
 
   private static func span(

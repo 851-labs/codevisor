@@ -79,6 +79,7 @@ public struct BenchResult: Codable, Sendable, Equatable {
   public var drops: Drops?
   public var codecErrors: Int?
   public var relay: BenchRelayReport?
+  public var media: BenchMediaCounters?
   public var unreadableFraction: Double = 0
   public var valid = true
   public var invalidReason: String?

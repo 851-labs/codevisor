@@ -1,7 +1,8 @@
 import ScreenSharing
 import ScreenSharingBench
 
-struct LoopbackRecording {
+struct LoopbackRecording: LoopbackRecorded {
+  let system = BenchSystem.codevisor
   let startNs: Int64
   let produced: [BenchVersionEvent]
   let readings: LoopbackInstruments.Readings
@@ -45,10 +46,12 @@ struct LoopbackRecording {
       capture: hostCounters["captureTransitionDrops", default: 0] + hostCounters["captureTimestampDrops", default: 0])
   }
 
-  func unreadableFraction(of produced: [BenchVersionEvent]) -> Double {
-    let checked = produced.compactMap { event in readings.barcodes[event.ns].map { $0 == event.version } }
-    guard !checked.isEmpty else { return 0 }
+  var barcodes: [Int64: Int?] { readings.barcodes }
+  var timingFrames: [BenchTimingFrame] { Array(readings.timingFrames) }
+  var qualityLevel: Int { readings.qualityLevel }
+  var media: BenchMediaCounters? { nil }
 
-    return Double(checked.count { !$0 }) / Double(checked.count)
+  func bypassedTheRelay(_ relay: BenchRelayReport) -> Bool {
+    false
   }
 }

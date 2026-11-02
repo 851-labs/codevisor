@@ -22,13 +22,13 @@ viewer_addresses() {
 start_share() {
   local dir=$1 system=$2
   local virtual=()
-  [[ "$system" == codevisor-r1x2 ]] && virtual=(--virtual-display R1x2)
+  tier2_on_virtual_display "$system" && virtual=(--virtual-display R1x2)
   bench share --duration "$((TIER2_DURATION + 240))" --ready-file "$work/ready" --stop-file "$work/stop" \
-    $(tier2_engine_options) ${virtual[@]+"${virtual[@]}"} >"$dir/share.json" 2>"$dir/share.err" &
+    $(tier2_engine_options "$system") ${virtual[@]+"${virtual[@]}"} >"$dir/share.json" 2>"$dir/share.err" &
   share_job=$!
   wait_for_file "$work/ready" 30 "$share_job" || return 1
   shared_display=$(awk '{ print $3 }' "$work/ready")
-  [[ "$system" != codevisor-r1x2 || "$shared_display" =~ ^[0-9]+$ ]] || {
+  ! tier2_on_virtual_display "$system" || [[ "$shared_display" =~ ^[0-9]+$ ]] || {
     say "share named no display"
     stop_share
     return 1
@@ -39,7 +39,7 @@ start_share() {
 measure() {
   local scene=$1 system=$2 dir=$3 observed=$4
   local pids=() display=() player_display=()
-  if [[ "$system" == codevisor-r1x2 ]]; then
+  if tier2_on_virtual_display "$system"; then
     display=(--display "$shared_display")
     player_display=(--display-id "$shared_display")
   fi

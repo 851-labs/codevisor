@@ -2,6 +2,7 @@ import ScreenSharingBench
 import ScreenSharingBenchScenes
 
 struct LoopbackSettings: Sendable {
+  let engine: BenchEngine
   let durationSeconds: Int
   let warmUpSeconds: Int
   let seed: UInt64
@@ -11,4 +12,11 @@ struct LoopbackSettings: Sendable {
   let display: PlayerDisplayChoice
 
   var canvas: BenchSceneCanvas { BenchSceneCanvas(resolution) }
+
+  var system: BenchSystem {
+    switch engine {
+    case .v1: .codevisor
+    case .v2: .codevisorV2
+    }
+  }
 }

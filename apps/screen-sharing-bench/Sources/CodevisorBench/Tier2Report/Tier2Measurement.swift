@@ -30,17 +30,9 @@ struct Tier2Measurement {
   }
 
   var result: BenchResult? {
-    guard let system = benchSystem, let analysis else { return nil }
+    guard let system = files.meta.benchSystem, let analysis else { return nil }
 
     return Tier2Result.make(self, system: system, analysis: analysis)
-  }
-
-  private var benchSystem: BenchSystem? {
-    switch files.meta.system {
-    case .appleHP: .appleHP
-    case .codevisor: .codevisor
-    case .floor: nil
-    }
   }
 
   private static func hostUsage(
@@ -60,7 +52,7 @@ struct Tier2Measurement {
 
   var encodedPixels: String? {
     switch files.meta.system {
-    case .codevisor: files.share?["capture_size"]?.string
+    case .codevisor, .codevisorV2: files.share?["capture_size"]?.string
     case .appleHP: files.hostDisplayDuringRun.map { "\($0) shown; HP's encoded size isn't visible" }
     case .floor: nil
     }

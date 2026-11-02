@@ -8,10 +8,12 @@ public struct BenchFrameTimestamps: Codable, Sendable, Equatable {
   public var decodeOutputNs: Int64
   public var renderCommitNs: Int64
   public var onGlassNs: Int64?
+  public var media: BenchMediaFrameTimestamps?
 
   public init(
     sourceNs: Int64, captureCallbackNs: Int64, encodeSubmitNs: Int64, encodeOutputNs: Int64, decodeInputNs: Int64,
-    decodeOutputNs: Int64, renderCommitNs: Int64, onGlassNs: Int64? = nil, frameCompleteNs: Int64? = nil
+    decodeOutputNs: Int64, renderCommitNs: Int64, onGlassNs: Int64? = nil, frameCompleteNs: Int64? = nil,
+    media: BenchMediaFrameTimestamps? = nil
   ) {
     self.sourceNs = sourceNs
     self.captureCallbackNs = captureCallbackNs
@@ -22,6 +24,7 @@ public struct BenchFrameTimestamps: Codable, Sendable, Equatable {
     self.renderCommitNs = renderCommitNs
     self.onGlassNs = onGlassNs
     self.frameCompleteNs = frameCompleteNs
+    self.media = media
   }
 
   public func endNs(at endpoint: BenchEndpoint) -> Int64? {
@@ -37,6 +40,6 @@ public struct BenchFrameTimestamps: Codable, Sendable, Equatable {
       encodeSubmitNs: encodeSubmitNs + offset, encodeOutputNs: encodeOutputNs + offset,
       decodeInputNs: decodeInputNs + offset, decodeOutputNs: decodeOutputNs + offset,
       renderCommitNs: renderCommitNs + offset, onGlassNs: onGlassNs.map { $0 + offset },
-      frameCompleteNs: frameCompleteNs.map { $0 + offset })
+      frameCompleteNs: frameCompleteNs.map { $0 + offset }, media: media?.shifted(byNs: offset))
   }
 }

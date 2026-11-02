@@ -59,7 +59,7 @@ struct Tier2RunFiles {
   var shapedPathProven: Bool {
     switch meta.system {
     case .appleHP: Self.allIPv4(preflights["host-during-preflight.json"]?.screenSharingPeers ?? [])
-    case .codevisor: (candidateRoundTripS ?? 0) >= Self.shapedRoundTripS
+    case .codevisor, .codevisorV2: (candidateRoundTripS ?? 0) >= Self.shapedRoundTripS
     case .floor: true
     }
   }

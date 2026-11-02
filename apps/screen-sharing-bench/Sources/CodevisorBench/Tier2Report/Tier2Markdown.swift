@@ -7,8 +7,12 @@ struct Tier2Markdown {
   let measurements: [Tier2Measurement]
 
   var text: String {
-    [targetTable, verdictTable, floorTable, interferenceTable, Tier2RunTable(measurements).text]
-      .joined(separator: "\n\n") + "\n"
+    [
+      targetTable, verdictTable, Tier2Milestone(report: report, floors: floors).text, Tier2V2Table(report.results).text,
+      floorTable, interferenceTable, Tier2RunTable(measurements).text,
+    ]
+    .compactMap(\.self)
+    .joined(separator: "\n\n") + "\n"
   }
 
   private var targetTable: String {
@@ -18,7 +22,7 @@ struct Tier2Markdown {
       "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = Tier2Group.all(report.results).flatMap { group in
-      [BenchSystem.appleHP, .codevisor].compactMap { system in
+      BenchSystem.allCases.compactMap { system in
         Tier2SystemRow(group: group, system: system, results: report.results, encoded: encoded(group, system))?.text
       }
     }
@@ -28,7 +32,7 @@ struct Tier2Markdown {
   private func encoded(_ group: Tier2Group, _ system: BenchSystem) -> String? {
     measurements.first { measurement in
       let meta = measurement.files.meta
-      return measurement.invalidReason == nil && meta.scene == group.scene && meta.system.rawValue == system.rawValue
+      return measurement.invalidReason == nil && meta.scene == group.scene && meta.benchSystem == system
         && meta.resolutionLabel == group.resolution && meta.networkLabel == group.network
         && measurement.encodedPixels != nil
     }?.encodedPixels
@@ -44,11 +48,13 @@ struct Tier2Markdown {
 
   private var verdictTable: String {
     let header = [
-      "| Scene | Resolution | Network | Metric | Apple HP reps | Codevisor reps | Noise band | Verdict | Rule |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| Scene | Resolution | Network | System | Metric | Apple HP reps | System reps | Noise band | Verdict | Rule |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let rows = report.comparisons.map { comparison in
-      "| \(comparison.scene) | \(comparison.resolution) | \(comparison.network) | \(comparison.metric) | \(Tier2Format.list(comparison.appleHp)) | "
+      "| \(comparison.scene) | \(comparison.resolution) | \(comparison.network) | "
+        + "\((comparison.system ?? .codevisor).rawValue) | \(comparison.metric) | "
+        + "\(Tier2Format.list(comparison.appleHp)) | "
         + "\(Tier2Format.list(comparison.codevisor)) | \(Tier2Format.number(comparison.noiseBandMs)) | "
         + "\(comparison.verdict.rawValue) | \(Tier2Comparisons.basis(of: comparison)) |"
     }

@@ -2,6 +2,7 @@ pub mod config;
 pub mod endpoint;
 pub mod media;
 pub mod message_stream;
+mod pinned_path;
 pub mod screen_transport;
 
 pub use config::{NetConfig, PathPolicy, RelaySpec, secret_key_from_hex};
