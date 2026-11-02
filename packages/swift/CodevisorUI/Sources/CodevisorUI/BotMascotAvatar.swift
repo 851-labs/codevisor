@@ -1,7 +1,7 @@
-import AppKit
+import CodevisorCore
 import SwiftUI
 
-struct BotPipAvatar: View {
+public struct BotMascotAvatar: View {
   private static let scale = 1.1
   private static let drop = 0.12
   private static let fill = LinearGradient(
@@ -10,19 +10,22 @@ struct BotPipAvatar: View {
     endPoint: .bottom
   )
 
-  let image: NSImage
+  let mascot: ServerBotMascot
+  let serverId: String
   let size: CGFloat
 
-  var body: some View {
-    Image(nsImage: image)
-      .resizable()
-      .interpolation(.high)
-      .scaledToFit()
+  public init(mascot: ServerBotMascot, serverId: String, size: CGFloat) {
+    self.mascot = mascot
+    self.serverId = serverId
+    self.size = size
+  }
+
+  public var body: some View {
+    BotMascotImage(mascot: mascot, serverId: serverId)
       .frame(width: size * Self.scale, height: size * Self.scale)
       .offset(y: size * Self.drop)
       .frame(width: size, height: size)
       .background(Self.fill)
       .clipShape(.circle)
-      .accessibilityHidden(true)
   }
 }

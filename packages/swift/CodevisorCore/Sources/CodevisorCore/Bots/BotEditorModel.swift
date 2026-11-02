@@ -6,12 +6,13 @@ import Observation
 public final class BotEditorModel {
   public let target: BotEditorTarget
   public var name: String
-  public var symbolName: String
+  public var mascot: ServerBotMascot?
   public var serverId: String {
     didSet { if serverId != oldValue { draftProjectIds = [] } }
   }
   public var mode = BotMode.conversation
   public private(set) var models: BotModelSelection?
+  public private(set) var mascotOptions: ServerBotMascotOptions?
   public private(set) var isSaving = false
   public private(set) var didSave = false
   public private(set) var createdBot: Bot?
@@ -30,11 +31,10 @@ public final class BotEditorModel {
     switch target {
     case .create:
       name = ""
-      symbolName = BotIcon.fallback.systemImage
       serverId = environment.defaultBotServerId
     case let .edit(bot):
       name = bot.name
-      symbolName = bot.symbolName
+      mascot = bot.mascot
       serverId = bot.serverId
       mode = bot.mode
     }
@@ -43,6 +43,10 @@ public final class BotEditorModel {
   public var editedBot: Bot? {
     if case let .edit(bot) = target { return bot }
     return nil
+  }
+
+  public var symbolName: String {
+    editedBot?.symbolName ?? BotIcon.fallback.systemImage
   }
 
   public var trimmedName: String {
@@ -183,6 +187,15 @@ public final class BotEditorModel {
     await selection.seedDefaults()
   }
 
+  public func loadMascotOptions() async {
+    mascotOptions = nil
+    let options = try? await environment.machines.client(for: serverId).botMascotOptions()
+    guard !Task.isCancelled else { return }
+
+    mascotOptions = options
+    mascot = mascot ?? options?.nextBotMascot
+  }
+
   @discardableResult
   public func save() async -> Bool {
     guard canSave else { return false }
@@ -194,7 +207,7 @@ public final class BotEditorModel {
         try await environment.bots.update(
           bot,
           ServerUpdateBotRequest(
-            name: trimmedName, symbolName: symbolName, conversational: mode == .conversation, mode: mode.rawValue)
+            name: trimmedName, mascot: mascot, conversational: mode == .conversation, mode: mode.rawValue)
         )
       } else {
         guard let models, let harnessId = models.harnessId else { return false }
@@ -203,6 +216,7 @@ public final class BotEditorModel {
             id: botId.uuidString.lowercased(),
             name: trimmedName,
             symbolName: symbolName,
+            mascot: mascot,
             harnessId: harnessId,
             configSelections: models.configSelections,
             projectIds: selectedProjects.map { $0.id.uuidString.lowercased() },

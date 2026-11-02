@@ -34,6 +34,7 @@ export const makeBotsService = (
       serverId: row.server_id,
       name: row.name,
       symbolName: row.symbol_name,
+      mascot: { color: row.mascot_color, hat: row.mascot_hat, eyewear: row.mascot_eyewear },
       harnessId: row.harness_id,
       projectId: row.project_id,
       sessionId: row.session_id,
@@ -79,6 +80,9 @@ export const makeBotsService = (
               config.serverId,
               record.name,
               record.symbolName,
+              record.mascot.color,
+              record.mascot.hat,
+              record.mascot.eyewear,
               record.slug,
               canonicalUuid(record.projectId),
               canonicalUuid(record.sessionId),
@@ -106,11 +110,15 @@ export const makeBotsService = (
       attempt("updateBot", () => {
         const row = requireBotRow(id)
         const current = botFromRow(row)
+        const mascot = record.mascot ?? current.mascot
         sqlite
           .prepare(botSql.update)
           .run(
             record.name ?? current.name,
             record.symbolName ?? current.symbolName,
+            mascot.color,
+            mascot.hat,
+            mascot.eyewear,
             (record.mode ?? current.mode) === "conversation" ? 1 : 0,
             record.mode ?? current.mode,
             nextArchivedAt(record.isArchived, row),
@@ -234,11 +242,11 @@ const botSql = {
   byId: `${botSelect} where bots.id = ?`,
   list: `${botSelect} order by bots.created_at asc, bots.id asc`,
   insert: `insert into bots (
-                id, server_id, name, symbol_name, slug, project_id, session_id, workspace_id,
-                conversational, mode, created_at
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  update: `update bots set name = ?, symbol_name = ?, conversational = ?, mode = ?, archived_at = ?,
-       updated_at = ? where id = ?`,
+                id, server_id, name, symbol_name, mascot_color, mascot_hat, mascot_eyewear, slug,
+                project_id, session_id, workspace_id, conversational, mode, created_at
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  update: `update bots set name = ?, symbol_name = ?, mascot_color = ?, mascot_hat = ?,
+       mascot_eyewear = ?, conversational = ?, mode = ?, archived_at = ?, updated_at = ? where id = ?`,
   touch: "update bots set updated_at = ? where id = ?",
   delete: "delete from bots where id = ?",
   owning: `${botSelect}

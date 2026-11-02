@@ -13,6 +13,14 @@ extension CodevisorServerClient {
     try await send("/v1/bots/\(pathComponent(id))", method: "PATCH", body: request)
   }
 
+  public func botMascotOptions() async throws -> ServerBotMascotOptions {
+    try await get("/v1/bot-mascots")
+  }
+
+  public func botMascotImage(_ mascot: ServerBotMascot) async throws -> Data {
+    try await performRaw(mascot.imagePath, method: "GET", body: nil, contentType: nil)
+  }
+
   public func addBotProject(botId: String, projectId: String) async throws -> ServerBot {
     try await send(
       "/v1/bots/\(pathComponent(botId))/projects",

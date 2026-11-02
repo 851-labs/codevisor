@@ -24,6 +24,7 @@ import {
 } from "../server-context.js"
 import { createBot } from "./bot-create.js"
 import { renameInstructions, switchInstructionsMode } from "./bot-instructions.js"
+import { assertBotMascot } from "./bot-mascots.js"
 import { removeBotCheckout, routeBotProjects, tellBot } from "./bot-projects.js"
 import { refusePlanConfigForBot } from "./bot-session-modes.js"
 import { applySessionConfigPick } from "./session-config.js"
@@ -65,11 +66,13 @@ const updateBot = async (
   const current = await getBotOrFail(services, id)
   const name = payload.name?.trim()
   if (name !== undefined && name.length === 0) throw new HttpFailure(422, "A bot needs a name")
+  if (payload.mascot !== undefined) assertBotMascot(payload.mascot)
   await applyConfigSelections(services, config, fanout, current, payload.configSelections ?? {})
   const bot = await run(
     services.db.updateBot(current.id, {
       name,
       symbolName: payload.symbolName,
+      mascot: payload.mascot,
       mode: requestedMode(current, payload),
       isArchived: payload.isArchived
     })

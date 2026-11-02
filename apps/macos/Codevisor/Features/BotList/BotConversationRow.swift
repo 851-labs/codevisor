@@ -13,7 +13,7 @@ struct BotConversationRow: View {
     HoverableRow(isSelected: isSelected, isHoverForced: isDropTarget) { _ in
       HStack(spacing: 6) {
         BotUnreadDot(isVisible: conversation.isUnread && !isSelected)
-        BotAvatar(botID: conversation.bot.id, symbolName: conversation.bot.symbolName, size: Self.avatarSize)
+        BotAvatar(bot: conversation.bot, size: Self.avatarSize)
         VStack(alignment: .leading, spacing: 2) {
           BotConversationTitleLine(name: conversation.bot.name, timestamp: timestamp)
           BotConversationPreview(conversation: conversation)

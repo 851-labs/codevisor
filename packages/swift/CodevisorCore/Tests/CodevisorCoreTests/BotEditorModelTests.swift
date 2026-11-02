@@ -6,14 +6,23 @@ import Testing
 @MainActor
 @Suite("BotEditorModel")
 struct BotEditorModelTests {
-  @Test("Editing a bot starts from its name, icon, and conversation mode and only needs a name to save")
+  private static let crowned = ServerBotMascot(color: "sky", hat: "crown", eyewear: "none")
+  private static let options = ServerBotMascotOptions(
+    colors: [.init(id: "sky", title: "Sky", gradient: ["#D3EEFF", "#7DC2F5"])],
+    hats: [.init(id: "none", title: "None"), .init(id: "crown", title: "Crown")],
+    eyewear: [.init(id: "none", title: "None")],
+    nextBotMascot: ServerBotMascot(color: "lilac", hat: "none", eyewear: "none")
+  )
+
+  @Test("Editing a bot starts from its name, mascot, and conversation mode and only needs a name to save")
   func editingNeedsOnlyAName() throws {
     let environment = AppEnvironment.preview(seedProjects: [], seedSessions: [])
-    let bot = try #require(Bot(serverId: CodevisorMachine.local.id, record: .fixture(name: "Helper")))
+    let bot = try #require(
+      Bot(serverId: CodevisorMachine.local.id, record: .fixture(name: "Helper", mascot: Self.crowned)))
     let editor = BotEditorModel(target: .edit(bot), environment: environment)
 
     #expect(editor.name == "Helper")
-    #expect(editor.symbolName == bot.symbolName)
+    #expect(editor.mascot == Self.crowned)
     #expect(editor.mode == .transcript)
     #expect(editor.canSave)
     editor.name = "   "
@@ -66,20 +75,44 @@ struct BotEditorModelTests {
     }
   }
 
-  private func editedBot(
-    features: [String],
-    projectIds: [UUID]
-  ) async throws -> (BotEditorModel, SyncFakeServerClient) {
+  @Test("A new bot starts from the machine's next mascot, and an edited bot saves the one picked")
+  func mascotComesFromTheMachine() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureInfoFeatures(features)
-    fake.setBots([.fixture(projectIds: projectIds)])
-    let environment = AppEnvironment(
+    fake.botMascotOptionsResult = Self.options
+    let creator = BotEditorModel(target: .create, environment: makeEnvironment(fake))
+    let (editor, editedFake) = try await editedBot(features: ["bots-v1"], projectIds: [], mascot: Self.crowned)
+    editedFake.botMascotOptionsResult = Self.options
+
+    await creator.loadMascotOptions()
+    await editor.loadMascotOptions()
+    #expect(creator.mascot == Self.options.nextBotMascot)
+    #expect(editor.mascot == Self.crowned)
+    #expect(editor.mascotOptions == Self.options)
+
+    editor.mascot?.hat = "none"
+    #expect(await editor.save())
+    #expect(try await editedFake.listBots().first?.mascot?.hat == "none")
+  }
+
+  private func makeEnvironment(_ fake: SyncFakeServerClient) -> AppEnvironment {
+    AppEnvironment(
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: AppSettingsModel(store: InMemoryStore()),
       machineStore: InMemoryStore(),
       harnessService: PreviewHarnessService(),
       machineClientFactory: { _ in fake }
     )
+  }
+
+  private func editedBot(
+    features: [String],
+    projectIds: [UUID],
+    mascot: ServerBotMascot? = nil
+  ) async throws -> (BotEditorModel, SyncFakeServerClient) {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureInfoFeatures(features)
+    fake.setBots([.fixture(projectIds: projectIds, mascot: mascot)])
+    let environment = makeEnvironment(fake)
     await environment.machines.refreshStatus(for: CodevisorMachine.local.id)
     await environment.bots.refresh(serverId: CodevisorMachine.local.id)
     let bot = try #require(environment.bots.bots.first)

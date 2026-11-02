@@ -44,6 +44,9 @@
       "path": "../../packages/automation"
     },
     {
+      "path": "../../packages/bot-mascot"
+    },
+    {
       "path": "../../packages/cloud-client"
     },
     {

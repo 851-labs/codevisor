@@ -48,6 +48,7 @@ describe("Codevisor built-in tools", () => {
           id: `bot-${id}`,
           name: id,
           symbolName: "sparkles",
+          mascot: { color: "mint", hat: "none", eyewear: "none" },
           slug: id,
           projectId: project.id,
           sessionId: `chat-${id}`,

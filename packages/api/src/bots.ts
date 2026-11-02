@@ -13,11 +13,40 @@ export type BotProject = typeof BotProject.Type
 export const BotMode = Schema.Literals(["transcript", "bubbles", "conversation"])
 export type BotMode = typeof BotMode.Type
 
+export const BotMascot = Schema.Struct({
+  color: Schema.String,
+  hat: Schema.String,
+  eyewear: Schema.String
+})
+export type BotMascot = typeof BotMascot.Type
+
+export const BotMascotChoice = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String
+})
+export type BotMascotChoice = typeof BotMascotChoice.Type
+
+export const BotMascotColorChoice = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  gradient: Schema.Array(Schema.String)
+})
+export type BotMascotColorChoice = typeof BotMascotColorChoice.Type
+
+export const BotMascotOptions = Schema.Struct({
+  colors: Schema.Array(BotMascotColorChoice),
+  hats: Schema.Array(BotMascotChoice),
+  eyewear: Schema.Array(BotMascotChoice),
+  nextBotMascot: BotMascot
+})
+export type BotMascotOptions = typeof BotMascotOptions.Type
+
 export const Bot = Schema.Struct({
   id: Schema.String,
   serverId: Schema.String,
   name: Schema.String,
   symbolName: Schema.String,
+  mascot: BotMascot,
   harnessId: Schema.String,
   projectId: Schema.String,
   sessionId: Schema.String,
@@ -36,6 +65,7 @@ export const CreateBotRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   name: Schema.String,
   symbolName: Schema.String,
+  mascot: Schema.optional(BotMascot),
   harnessId: Schema.String,
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   projectIds: Schema.Array(Schema.String),
@@ -47,6 +77,7 @@ export type CreateBotRequest = typeof CreateBotRequest.Type
 export const UpdateBotRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   symbolName: Schema.optional(Schema.String),
+  mascot: Schema.optional(BotMascot),
   conversational: Schema.optional(Schema.Boolean),
   mode: Schema.optional(BotMode),
   isArchived: Schema.optional(Schema.Boolean),

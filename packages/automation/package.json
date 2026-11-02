@@ -19,6 +19,7 @@
     "@babel/parser": "7.29.7",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
+    "@codevisor/bot-mascot": "workspace:*",
     "@codevisor/db": "workspace:*",
     "@jitl/quickjs-ng-wasmfile-release-sync": "0.32.0",
     "@modelcontextprotocol/sdk": "1.29.0",

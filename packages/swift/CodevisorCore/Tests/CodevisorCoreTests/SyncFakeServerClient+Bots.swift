@@ -18,6 +18,18 @@ extension SyncFakeServerClient {
     return bot
   }
 
+  func updateBot(id: String, _ request: ServerUpdateBotRequest) async throws -> ServerBot {
+    try changeBot(id) { bot in
+      bot.name = request.name ?? bot.name
+      bot.mascot = request.mascot ?? bot.mascot
+    }
+  }
+
+  func botMascotOptions() async throws -> ServerBotMascotOptions {
+    guard let botMascotOptionsResult else { throw CodevisorServerClientError.invalidResponse }
+    return botMascotOptionsResult
+  }
+
   func addBotProject(botId: String, projectId: String) async throws -> ServerBot {
     try changeBot(botId) { bot in
       bot.projects.append(
@@ -54,13 +66,15 @@ extension ServerBot {
     projectId: UUID = UUID(),
     sessionId: UUID = UUID(),
     workspaceId: UUID = UUID(),
-    projectIds: [UUID] = []
+    projectIds: [UUID] = [],
+    mascot: ServerBotMascot? = nil
   ) -> ServerBot {
     ServerBot(
       id: id.uuidString.lowercased(),
       serverId: "server-a",
       name: name,
       symbolName: "sparkles",
+      mascot: mascot,
       harnessId: "codex",
       projectId: projectId.uuidString.lowercased(),
       sessionId: sessionId.uuidString.lowercased(),

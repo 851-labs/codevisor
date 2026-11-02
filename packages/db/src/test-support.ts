@@ -252,6 +252,13 @@ const v4FixtureSql = `
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `
 
+export const rewindBotMascotsSql = `
+  alter table bots drop column mascot_color;
+  alter table bots drop column mascot_hat;
+  alter table bots drop column mascot_eyewear;
+  delete from schema_migrations where id = 90;
+`
+
 export const rewindSteeredPromptsSql = `
   alter table prompt_queue_items drop column steered;
   delete from schema_migrations where id = 89;

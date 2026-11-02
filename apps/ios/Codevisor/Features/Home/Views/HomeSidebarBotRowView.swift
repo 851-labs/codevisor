@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HomeSidebarBotRowView: View, Equatable {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .body) private var mascotSize: CGFloat = 24
 
   let bot: HomeSidebarBot
   let actions: HomeSidebarActionHandler
@@ -138,10 +139,12 @@ struct HomeSidebarBotRowView: View, Equatable {
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
         .frame(maxWidth: .infinity, alignment: .leading)
     } icon: {
-      if bot.status == .idle {
-        HomeSidebarSymbol(name: bot.bot.symbolName)
-      } else {
+      if bot.status != .idle {
         HomeStatusIndicator(status: bot.status)
+      } else if let mascot = bot.bot.mascot {
+        BotMascotAvatar(mascot: mascot, serverId: bot.bot.serverId, size: mascotSize)
+      } else {
+        HomeSidebarSymbol(name: bot.bot.symbolName)
       }
     }
     .contentShape(Rectangle())

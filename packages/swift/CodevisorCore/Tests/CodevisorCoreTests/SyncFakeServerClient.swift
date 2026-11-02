@@ -22,6 +22,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var botCreateHandler: (@Sendable (ServerCreateBotRequest) async throws -> ServerBot)?
   var botProjectError: (any Error)?
   var listedProjects: [ServerProject]?
+  var botMascotOptionsResult: ServerBotMascotOptions?
   var composerSkillsHandler: (@Sendable (UUID?, UUID?) async throws -> [ServerComposerSkill])?
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
   var workspaceSnapshotHandler: (@Sendable () async throws -> FakeWorkspaceSnapshot)?

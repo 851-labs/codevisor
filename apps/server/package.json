@@ -28,6 +28,7 @@
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
     "@codevisor/automation": "workspace:*",
+    "@codevisor/bot-mascot": "workspace:*",
     "@codevisor/cloud-client": "workspace:*",
     "@codevisor/db": "workspace:*",
     "@codevisor/sandboxes": "workspace:*",

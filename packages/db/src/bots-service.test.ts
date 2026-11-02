@@ -40,6 +40,7 @@ const seedBot = async (db: CodevisorDatabaseService) => {
       id: "bot-helper",
       name: "Helper",
       symbolName: "sparkles",
+      mascot: { color: "mint", hat: "none", eyewear: "none" },
       slug: "helper",
       projectId: home.id,
       sessionId: "chat-helper",
@@ -103,18 +104,25 @@ describe("bots service", () => {
     expect(await run(db.findBotOwning({ projectId: unrelated.id }))).toBeUndefined()
   })
 
-  it("renames a bot and changes its icon", async () => {
+  it("renames a bot and changes its icon and mascot", async () => {
     useWorktreesRoot()
     const db = await openDatabase()
     await seedBot(db)
+    const mascot = { color: "sky", hat: "crown", eyewear: "monocle" }
 
     const renamed = await run(db.updateBot("bot-helper", { name: "Reviewer" }))
-    expect(renamed).toMatchObject({ name: "Reviewer", symbolName: "sparkles" })
-    expect(renamed.updatedAt).toBeDefined()
-    expect(await run(db.updateBot("bot-helper", { symbolName: "ant" }))).toMatchObject({
+    expect(renamed).toMatchObject({
       name: "Reviewer",
-      symbolName: "ant"
+      symbolName: "sparkles",
+      mascot: { color: "mint", hat: "none", eyewear: "none" }
     })
+    expect(renamed.updatedAt).toBeDefined()
+    expect(await run(db.updateBot("bot-helper", { symbolName: "ant", mascot }))).toMatchObject({
+      name: "Reviewer",
+      symbolName: "ant",
+      mascot
+    })
+    expect((await run(db.getBot("bot-helper")))?.mascot).toEqual(mascot)
     await expect(run(db.updateBot("missing", { name: "Nope" }))).rejects.toThrow(/Bot not found/)
   })
 
@@ -382,6 +390,7 @@ describe("bot workspaces", () => {
         id: "bot-quiet",
         name: "Quiet",
         symbolName: "sparkles",
+        mascot: { color: "mint", hat: "none", eyewear: "none" },
         slug: "quiet",
         projectId: home.id,
         sessionId: "chat-quiet",

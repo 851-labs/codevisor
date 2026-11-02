@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { isBrowserProxyRequest } from "./infra/browser-forward-proxy.js"
 import { routeAgents } from "./routes/agents.js"
 import { routeAutoResume } from "./routes/auto-resume-routes.js"
+import { routeBotMascots } from "./routes/bot-mascots.js"
 import { routeBots } from "./routes/bots.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
@@ -121,6 +122,7 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   routeWorkspaces,
   ({ services, config, fanout, routeState, request, response, url }) =>
     routeBots(services, config, fanout, routeState, request, response, url),
+  ({ services, request, response, url }) => routeBotMascots(services, request, response, url),
   routeHarnesses,
   ({ services, request, response, url }) => routeBrowserUse(services, request, response, url),
   ({ services, config, fanout, request, response, url }) =>

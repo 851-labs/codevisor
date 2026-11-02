@@ -26,6 +26,7 @@ public struct Bot: Identifiable, Hashable, Sendable {
 
   public var name: String { record.name }
   public var symbolName: String { BotIcon(resolving: record.symbolName).systemImage }
+  public var mascot: ServerBotMascot? { record.mascot }
   public var harnessId: String { record.harnessId }
   public var rootPath: String { record.rootPath }
   public var mode: BotMode {

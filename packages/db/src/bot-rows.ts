@@ -1,6 +1,7 @@
 import type {
   AttachmentRef,
   Bot,
+  BotMascot,
   BotMessage,
   BotMessageSender,
   BotMode,
@@ -17,6 +18,9 @@ export interface BotRow {
   readonly server_id: string
   readonly name: string
   readonly symbol_name: string
+  readonly mascot_color: string
+  readonly mascot_hat: string
+  readonly mascot_eyewear: string
   readonly slug: string
   readonly project_id: string
   readonly session_id: string
@@ -42,6 +46,9 @@ export const botRows = rowReader<BotRow>({
   server_id: text,
   name: text,
   symbol_name: text,
+  mascot_color: text,
+  mascot_hat: text,
+  mascot_eyewear: text,
   slug: text,
   project_id: text,
   session_id: text,
@@ -104,6 +111,7 @@ export interface CreateBotRecord {
   readonly id: string
   readonly name: string
   readonly symbolName: string
+  readonly mascot: BotMascot
   readonly slug: string
   readonly projectId: string
   readonly sessionId: string
@@ -115,6 +123,7 @@ export interface CreateBotRecord {
 export interface UpdateBotRecord {
   readonly name?: string | undefined
   readonly symbolName?: string | undefined
+  readonly mascot?: BotMascot | undefined
   readonly mode?: BotMode | undefined
   readonly isArchived?: boolean | undefined
 }

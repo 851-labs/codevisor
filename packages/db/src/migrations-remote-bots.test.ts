@@ -8,6 +8,7 @@ import { describe, expect, it, onTestFinished } from "vitest"
 import { botPath, makeDatabase, type CodevisorDatabaseService } from "./index.js"
 import {
   rewindArchivedBotsSql,
+  rewindBotMascotsSql,
   rewindBotModesSql,
   rewindMainSessionSql,
   rewindPluginsSql,
@@ -17,6 +18,7 @@ import {
 } from "./test-support.js"
 
 const v73Schema = `
+  ${rewindBotMascotsSql}
   ${rewindSteeredPromptsSql}
   ${rewindArchivedBotsSql}
   ${rewindBotModesSql}
@@ -67,6 +69,7 @@ const seedV73 = async (filename: string) => {
       id: "bot-helper",
       name: "Helper",
       symbolName: "sparkles",
+      mascot: { color: "mint", hat: "none", eyewear: "none" },
       slug: "helper",
       projectId: home.id,
       sessionId: "chat-home",

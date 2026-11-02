@@ -40,6 +40,7 @@ describe("bot display mode upgrade", () => {
           id: `bot-${slug}`,
           name: slug,
           symbolName: "sparkles",
+          mascot: { color: "mint", hat: "none", eyewear: "none" },
           slug,
           projectId: home.id,
           sessionId: `chat-${slug}`,

@@ -1,35 +1,18 @@
 import { AddBotProjectRequest, BotMode, CreateBotRequest, UpdateBotRequest } from "@codevisor/api"
+import { botMascotColors, botMascotEyewear, botMascotHats } from "@codevisor/bot-mascot"
 import { Schema } from "effect"
 
 import { apiTool, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 
-const BOT_SYMBOL_NAMES = [
-  "sparkles",
-  "brain",
-  "wand.and.stars",
-  "hammer",
-  "wrench.and.screwdriver",
-  "ant",
-  "ladybug",
-  "shield.lefthalf.filled",
-  "magnifyingglass",
-  "doc.text",
-  "book",
-  "paintbrush",
-  "chart.line.uptrend.xyaxis",
-  "bolt",
-  "flame",
-  "leaf",
-  "paperplane",
-  "bell",
-  "star",
-  "cpu"
-] as const
-
 export const BOT_TOOL_DEFAULTS = { symbolName: "sparkles", mode: "conversation" } as const
 
-const BotSymbolName = Schema.Literals(BOT_SYMBOL_NAMES).annotate({
-  description: "The bot's icon, an SF Symbol name. Defaults to sparkles."
+const BotMascot = Schema.Struct({
+  color: Schema.Literals(botMascotColors.map((color) => color.id)),
+  hat: Schema.Literals(["none", ...botMascotHats.map((hat) => hat.id)]),
+  eyewear: Schema.Literals(["none", ...botMascotEyewear.map((eyewear) => eyewear.id)])
+}).annotate({
+  description:
+    "The bot's avatar, a mascot with a body color, a hat and eyewear (none for neither). A new bot gets the next color in turn and no hat or eyewear."
 })
 
 const ConfigSelections = Schema.Record(Schema.String, Schema.String).annotate({
@@ -51,14 +34,14 @@ const CreateBotBody = Schema.Struct({
     description: "Projects from projects.list() to check out into the bot's folder. At least one."
   }),
   configSelections: Schema.optional(ConfigSelections),
-  symbolName: Schema.optional(BotSymbolName),
+  mascot: Schema.optional(BotMascot),
   mode: Schema.optional(BotModeChoice)
 })
 
 const UpdateBotBody = Schema.Struct({
   name: UpdateBotRequest.fields.name,
   configSelections: Schema.optional(ConfigSelections),
-  symbolName: Schema.optional(BotSymbolName),
+  mascot: Schema.optional(BotMascot),
   mode: Schema.optional(BotModeChoice),
   isArchived: Schema.optional(
     Schema.Boolean.annotate({
@@ -70,7 +53,7 @@ const UpdateBotBody = Schema.Struct({
 export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "bots.list",
-    "List this machine's Codevisor bots, archived ones included: botId, name, symbolName, harnessId, mode, isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status or agents.message).",
+    "List this machine's Codevisor bots, archived ones included: botId, name, mascot, harnessId, mode, isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status or agents.message).",
     "GET",
     "/v1/bots"
   ),
@@ -84,7 +67,7 @@ export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "bots.update",
-    "Change a bot's name, icon, mode or chat options such as its model, or archive (isArchived: true) and restore it. Pass only what changes. Returns the bot.",
+    "Change a bot's name, mascot, mode or chat options such as its model, or archive (isArchived: true) and restore it. Pass only what changes. Returns the bot.",
     "PATCH",
     "/v1/bots/:id",
     { body: UpdateBotBody }

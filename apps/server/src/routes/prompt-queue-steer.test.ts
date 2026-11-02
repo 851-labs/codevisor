@@ -26,6 +26,7 @@ const liveBotTurn = async () => {
       id: "bot-1",
       name: "Bot",
       symbolName: "sparkles",
+      mascot: { color: "mint", hat: "none", eyewear: "none" },
       slug: "bot",
       projectId: project.id,
       sessionId: "chat-bot",

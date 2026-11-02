@@ -34,6 +34,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { writeInstructions, type BotRepository } from "./bot-instructions.js"
+import { newBotMascot } from "./bot-mascots.js"
 import { isBotProject, isScratchProject } from "./project-probe.js"
 import { availableWorktreeName, slugifyWorktreeName } from "./project-worktree-create.js"
 import { applySessionUpdate, createSessionIfMissing } from "./session-workspace.js"
@@ -209,6 +210,7 @@ export const createBot = async (
   }
   const name = payload.name.trim()
   if (name.length === 0) throw new HttpFailure(422, "A bot needs a name")
+  const mascot = await newBotMascot(services, payload.mascot)
   const sources = await resolveSources(services, config.id, payload.projectIds)
   const slug = await allocateBotFolder(services, name)
   const created: CreatedBotResources = { slug, checkouts: [] }
@@ -250,6 +252,7 @@ export const createBot = async (
         id: (payload.id ?? randomUUID()).toLowerCase(),
         name,
         symbolName: payload.symbolName,
+        mascot,
         slug,
         projectId: home.id,
         sessionId: session.id,

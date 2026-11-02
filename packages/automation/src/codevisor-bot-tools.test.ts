@@ -57,14 +57,12 @@ describe("bot tools", () => {
       name: "Notes",
       harnessId: "codex",
       projectIds: ["p1"],
-      symbolName: "book",
+      mascot: { color: "sky", hat: "crown", eyewear: "none" },
       mode: "transcript"
     })
 
     expect(create.inputSchema.required).toEqual(["name", "harnessId", "projectIds"])
-    expect(JSON.stringify(create.inputSchema.properties?.["symbolName"])).toContain(
-      "wand.and.stars"
-    )
+    expect(JSON.stringify(create.inputSchema.properties?.["mascot"])).toContain("propeller")
     expect(sent.map((request) => request.body)).toEqual([
       {
         name: "Triage",
@@ -77,7 +75,8 @@ describe("bot tools", () => {
         name: "Notes",
         harnessId: "codex",
         projectIds: ["p1"],
-        symbolName: "book",
+        symbolName: "sparkles",
+        mascot: { color: "sky", hat: "crown", eyewear: "none" },
         mode: "transcript"
       }
     ])

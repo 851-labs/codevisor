@@ -16,7 +16,6 @@ struct BotEditorView: View {
   @State private var showingNewProject = false
   @FocusState private var isNameFocused: Bool
   @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 88
-  @ScaledMetric(relativeTo: .title2) private var iconChoiceSize: CGFloat = 44
   let onCreated: (Bot) -> Void
   let onArchive: (Bot) -> Void
   let onDelete: (Bot) -> Void
@@ -40,7 +39,7 @@ struct BotEditorView: View {
     NavigationStack {
       Form {
         identitySection
-        iconSection
+        BotMascotSection(editor: editor, showsPreview: false)
         if isCreating {
           machineSection
         }
@@ -85,6 +84,7 @@ struct BotEditorView: View {
       .disabled(editor.isSaving)
       .interactiveDismissDisabled(editor.isSaving)
       .task(id: editor.serverId) { await editor.loadModels() }
+      .task(id: editor.serverId) { await editor.loadMascotOptions() }
       .sheet(isPresented: isShowingProjectSetup) {
         if let setup = editor.projectSetup.setup {
           ProjectSetupScreen(setup: setup)
@@ -129,7 +129,8 @@ struct BotEditorView: View {
   private var identitySection: some View {
     Section {
       VStack(spacing: 16) {
-        BotAvatar(symbolName: editor.symbolName, size: iconSize)
+        BotAvatar(
+          mascot: editor.mascot, serverId: editor.serverId, symbolName: editor.symbolName, size: iconSize)
         TextField("Bot Name", text: $editor.name)
           .font(.title2.weight(.semibold))
           .multilineTextAlignment(.center)
@@ -144,41 +145,6 @@ struct BotEditorView: View {
       .frame(maxWidth: .infinity)
       .padding(.vertical, 8)
     }
-  }
-
-  private var iconSection: some View {
-    Section {
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: iconChoiceSize), spacing: 12)], spacing: 12) {
-        ForEach(BotIcon.choices) { choice in
-          iconChoice(choice)
-        }
-      }
-      .padding(.vertical, 6)
-    }
-  }
-
-  private func iconChoice(_ choice: BotIcon) -> some View {
-    let isSelected = editor.symbolName == choice.systemImage
-    return Button {
-      editor.symbolName = choice.systemImage
-    } label: {
-      Image(systemName: choice.systemImage)
-        .font(.system(size: iconChoiceSize * 0.42))
-        .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-        .frame(width: iconChoiceSize, height: iconChoiceSize)
-        .background(
-          isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color(.tertiarySystemFill)),
-          in: .circle
-        )
-        .overlay {
-          Circle()
-            .strokeBorder(Color.accentColor.opacity(isSelected ? 0.35 : 0), lineWidth: 3)
-            .padding(-5)
-        }
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(choice.title)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
   private var machineSection: some View {

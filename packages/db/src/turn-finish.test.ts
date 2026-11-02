@@ -52,6 +52,7 @@ const botWithChild = async (db: CodevisorDatabaseService) => {
       id: "bot-helper",
       name: "Helper",
       symbolName: "sparkles",
+      mascot: { color: "mint", hat: "none", eyewear: "none" },
       slug: "helper",
       projectId: home.id,
       sessionId: "chat-helper",

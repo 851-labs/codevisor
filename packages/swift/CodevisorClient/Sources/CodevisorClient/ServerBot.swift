@@ -19,6 +19,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
   public var serverId: String
   public var name: String
   public var symbolName: String
+  public var mascot: ServerBotMascot?
   public var harnessId: String
   public var projectId: String
   public var sessionId: String
@@ -36,6 +37,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     serverId: String,
     name: String,
     symbolName: String,
+    mascot: ServerBotMascot? = nil,
     harnessId: String,
     projectId: String,
     sessionId: String,
@@ -52,6 +54,7 @@ public struct ServerBot: Codable, Equatable, Hashable, Identifiable, Sendable {
     self.serverId = serverId
     self.name = name
     self.symbolName = symbolName
+    self.mascot = mascot
     self.harnessId = harnessId
     self.projectId = projectId
     self.sessionId = sessionId
@@ -70,6 +73,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
   public var id: String?
   public var name: String
   public var symbolName: String
+  public var mascot: ServerBotMascot?
   public var harnessId: String
   public var configSelections: [String: String]?
   public var projectIds: [String]
@@ -80,6 +84,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     id: String? = nil,
     name: String,
     symbolName: String,
+    mascot: ServerBotMascot? = nil,
     harnessId: String,
     configSelections: [String: String]? = nil,
     projectIds: [String],
@@ -89,6 +94,7 @@ public struct ServerCreateBotRequest: Encodable, Equatable, Sendable {
     self.id = id
     self.name = name
     self.symbolName = symbolName
+    self.mascot = mascot
     self.harnessId = harnessId
     self.configSelections = configSelections
     self.projectIds = projectIds
@@ -108,16 +114,18 @@ public struct ServerAddBotProjectRequest: Encodable, Equatable, Sendable {
 public struct ServerUpdateBotRequest: Encodable, Equatable, Sendable {
   public var name: String?
   public var symbolName: String?
+  public var mascot: ServerBotMascot?
   public var conversational: Bool?
   public var mode: String?
   public var isArchived: Bool?
 
   public init(
-    name: String? = nil, symbolName: String? = nil, conversational: Bool? = nil, mode: String? = nil,
-    isArchived: Bool? = nil
+    name: String? = nil, symbolName: String? = nil, mascot: ServerBotMascot? = nil, conversational: Bool? = nil,
+    mode: String? = nil, isArchived: Bool? = nil
   ) {
     self.name = name
     self.symbolName = symbolName
+    self.mascot = mascot
     self.conversational = conversational
     self.mode = mode
     self.isArchived = isArchived

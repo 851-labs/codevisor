@@ -11,7 +11,7 @@ struct BotConversationHeader: View {
   var body: some View {
     Button(action: onOpenDetails) {
       VStack(spacing: -8) {
-        BotAvatar(symbolName: bot.symbolName, size: avatarSize)
+        BotAvatar(bot: bot, size: avatarSize)
           .zIndex(1)
         HStack(spacing: 3) {
           Text(bot.name)

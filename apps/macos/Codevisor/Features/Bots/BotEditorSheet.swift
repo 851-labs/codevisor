@@ -4,6 +4,8 @@ import CodevisorUI
 import SwiftUI
 
 struct BotEditorSheet: View {
+  private static let avatarSize: CGFloat = 40
+
   private struct ModelChoice: Hashable {
     let harnessId: String
     let value: String
@@ -31,12 +33,6 @@ struct BotEditorSheet: View {
       Section { header }
       Section {
         TextField("Name", text: $editor.name, prompt: Text("Bot name"))
-        Picker("Icon", selection: $editor.symbolName) {
-          ForEach(BotIcon.choices) { choice in
-            Label(choice.title, systemImage: choice.systemImage).tag(choice.systemImage)
-          }
-        }
-        .pickerStyle(.menu)
         Picker("Machine", selection: $editor.serverId) {
           ForEach(editor.machines) { machine in
             Label(machine.name, systemImage: machine.icon.systemImage).tag(machine.id)
@@ -45,6 +41,7 @@ struct BotEditorSheet: View {
         .pickerStyle(.menu)
         .disabled(editor.editedBot != nil)
       }
+      BotMascotSection(editor: editor)
       projectsSection
       if let bot = editor.editedBot {
         editedBotModelSection(bot)
@@ -72,6 +69,7 @@ struct BotEditorSheet: View {
       }
     }
     .task(id: editor.serverId) { await editor.loadModels() }
+    .task(id: editor.serverId) { await editor.loadMascotOptions() }
     .sheet(isPresented: isShowingProjectSetup) {
       if let setup = editor.projectSetup.setup {
         ProjectSetupSheet(setup: setup)
@@ -93,13 +91,8 @@ struct BotEditorSheet: View {
       title: editor.trimmedName.isEmpty ? "New Bot" : editor.trimmedName, subtitle: subtitle,
       isWorking: editor.isSaving
     ) {
-      Image(systemName: editor.symbolName)
-        .font(.system(size: 20))
-        .symbolRenderingMode(.monochrome)
-        .foregroundStyle(.white)
-        .frame(width: 40, height: 40)
-        .background(Color.accentColor.gradient, in: .rect(cornerRadius: 9, style: .continuous))
-        .contentTransition(.symbolEffect(.replace))
+      BotAvatar(
+        mascot: editor.mascot, serverId: editor.serverId, symbolName: editor.symbolName, size: Self.avatarSize)
     }
   }
 

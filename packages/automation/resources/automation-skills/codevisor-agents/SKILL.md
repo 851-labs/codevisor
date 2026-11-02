@@ -237,15 +237,15 @@ If `context.current()` has a `parentAgentId` and you are blocked, ask your paren
 
 A **bot** is a Codevisor chat with its own folder and read-only checkouts of one or more projects. It shows in the sidebar's Chat mode.
 
-| To                                     | Call                                                                                    |
-| -------------------------------------- | --------------------------------------------------------------------------------------- |
-| List bots, archived ones included      | `bots.list()`                                                                           |
-| Read one                               | `bots.get({ botId })`                                                                   |
-| Create one                             | `bots.create({ name, harnessId, projectIds, configSelections?, symbolName?, mode? })`   |
-| Rename it, or change icon, mode, model | `bots.update({ botId, name?, symbolName?, mode?, configSelections? })`                  |
-| Archive or restore it                  | `bots.update({ botId, isArchived: true })` or `isArchived: false`                       |
-| Add or remove a project                | `bots.projects_add({ botId, projectId })`, `bots.projects_remove({ botId, projectId })` |
-| Delete it                              | `bots.delete({ botId, confirm: true })`                                                 |
+| To                                       | Call                                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| List bots, archived ones included        | `bots.list()`                                                                           |
+| Read one                                 | `bots.get({ botId })`                                                                   |
+| Create one                               | `bots.create({ name, harnessId, projectIds, configSelections?, mascot?, mode? })`       |
+| Rename it, or change mascot, mode, model | `bots.update({ botId, name?, mascot?, mode?, configSelections? })`                      |
+| Archive or restore it                    | `bots.update({ botId, isArchived: true })` or `isArchived: false`                       |
+| Add or remove a project                  | `bots.projects_add({ botId, projectId })`, `bots.projects_remove({ botId, projectId })` |
+| Delete it                                | `bots.delete({ botId, confirm: true })`                                                 |
 
 ```js
 ;async () => {
@@ -265,7 +265,7 @@ A **bot** is a Codevisor chat with its own folder and read-only checkouts of one
 - `harnessId` is an id from `harnesses.list()` and can't change later.
 - `configSelections` sets the bot chat's options, such as `{ model }`. `server.capabilities({ harnessId })` lists each option's `id` and values. Leave it out for the harness defaults.
 - `mode` is `conversation` (the default), `transcript`, or `bubbles`.
-- `symbolName` is one of the icons listed in the tool's input schema. It defaults to `sparkles`.
+- `mascot` is the bot's avatar: `{ color, hat, eyewear }`, with the choices listed in the tool's input schema. A new bot gets the next color in turn and no hat or eyewear.
 
 ## Common mistakes
 
