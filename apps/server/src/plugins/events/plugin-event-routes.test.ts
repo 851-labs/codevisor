@@ -9,6 +9,7 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, waitFor } from "../../test-support.js"
+import { stringField } from "../../unknown-values.js"
 import { makePluginAccountStore } from "../accounts/plugin-account-store.js"
 import {
   createChat,
@@ -46,6 +47,11 @@ const pingsStored = async (running: PluginServer, serverId: string, count: numbe
       (await run(running.services.db.recentPluginEvents(serverId, "test.ping", 10))).length ===
       count
   )
+
+const subscriptionChanges = async (running: PluginServer) =>
+  (await run(running.services.db.readSyncBatch(0))).events
+    .filter((event) => event.kind === "plugin.subscriptions.updated")
+    .map((event) => stringField(event.payload, "sessionId"))
 
 const seedAccounts = async (running: PluginServer, labels: ReadonlyArray<string>) => {
   const store = makePluginAccountStore(running.services.db, "server-a")
@@ -138,6 +144,25 @@ describe("plugin event routes", () => {
       )
     ).toEqual(expect.arrayContaining([created.id, bystander.id]))
     expect(removed.body).toEqual({ removed: true })
+  })
+
+  it("titles subscriptions and announces each change to a chat's subscriptions", async () => {
+    const running = await startPluginServer()
+    await installTestEvents(running)
+    const watcher = await createChat(running, "Watcher")
+    const bystander = await createChat(running, "Bystander")
+
+    const created = decode(PluginEventSubscription)(
+      (await subscribe(running, { sessionId: watcher })).body
+    )
+    await subscribe(running, { sessionId: bystander, event: "test.counter" })
+    await jsonRequest(running.server, `/v1/plugins/events/subscriptions/${created.id}`, {
+      method: "DELETE"
+    })
+    await waitFor(async () => (await subscriptionChanges(running)).length === 3)
+
+    expect(created.eventTitle).toBe("Ping")
+    expect(await subscriptionChanges(running)).toEqual([watcher, bystander, watcher])
   })
 
   it("explains requests it can't serve", async () => {

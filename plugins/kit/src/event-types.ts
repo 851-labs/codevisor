@@ -7,6 +7,7 @@ export type DeliveryMode = "poll" | "push" | "webhook"
 
 export interface EventType {
   name: string
+  title?: string
   description: string
   delivery: ReadonlyArray<DeliveryMode>
   inputSchema: Record<string, unknown>

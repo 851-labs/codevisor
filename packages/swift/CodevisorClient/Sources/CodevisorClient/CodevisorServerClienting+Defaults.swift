@@ -175,6 +175,8 @@ public extension CodevisorServerClienting {
 
   func listPluginEventSubscriptions() async throws -> [ServerPluginEventSubscription] { [] }
 
+  func listPluginEventSubscriptions(sessionId: UUID) async throws -> [ServerPluginEventSubscription] { [] }
+
   func removePluginEventSubscription(id: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }

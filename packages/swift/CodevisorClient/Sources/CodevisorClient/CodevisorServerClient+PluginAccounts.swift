@@ -54,6 +54,12 @@ extension CodevisorServerClient {
     return response.subscriptions
   }
 
+  public func listPluginEventSubscriptions(sessionId: UUID) async throws -> [ServerPluginEventSubscription] {
+    let response: SubscriptionsResponse = try await get(
+      "/v1/plugins/events/subscriptions?sessionId=\(sessionId.uuidString)")
+    return response.subscriptions
+  }
+
   public func removePluginEventSubscription(id: String) async throws {
     try await sendNoResponse("/v1/plugins/events/subscriptions/\(pathComponent(id))", method: "DELETE")
   }

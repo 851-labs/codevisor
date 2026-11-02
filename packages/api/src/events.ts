@@ -37,6 +37,7 @@ export const EventKind = Schema.Literals([
   "restart.drain.updated",
   "update.run.updated",
   "mcp.updated",
+  "plugin.subscriptions.updated",
   "bot.updated",
   "bot.message",
   "sync.changed"

@@ -10,6 +10,7 @@ public final class MachineController {
   public let sandboxMachineProfiles = SandboxMachineProfiles()
   var sandboxAvailabilityRevision = 0
   var sandboxSettingsRevision = 0
+  public internal(set) var pluginSubscriptionsRevision = 0
 
   public typealias ClientFactory = @MainActor (CodevisorMachine) -> any CodevisorServerClienting
 

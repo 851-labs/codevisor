@@ -70,6 +70,7 @@ const eventTypeOf = (server: McpServer, raw: Record<string, unknown>): PluginEve
   plugin: server.id,
   pluginName: server.name,
   name: String(raw.name),
+  ...(typeof raw.title === "string" ? { title: raw.title } : {}),
   ...(typeof raw.description === "string" ? { description: raw.description } : {}),
   delivery: deliveryModes(raw.delivery),
   ...(raw.inputSchema === undefined ? {} : { inputSchema: raw.inputSchema }),

@@ -9,6 +9,7 @@ export const counterEvent = "test.counter"
 export const testEventTypes: ReadonlyArray<EventType> = [
   {
     name: pingEvent,
+    title: "Ping",
     description: "A test ping published by the emit tool.",
     delivery: ["poll", "push"],
     inputSchema: emptyArguments,
@@ -25,6 +26,7 @@ export const testEventTypes: ReadonlyArray<EventType> = [
   },
   {
     name: counterEvent,
+    title: "Counter tick",
     description: "A counter tick, published by the emit tool or the optional interval timer.",
     delivery: ["poll", "push"],
     inputSchema: emptyArguments,

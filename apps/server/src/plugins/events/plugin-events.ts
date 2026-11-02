@@ -61,6 +61,7 @@ export interface PluginEventsDeps {
   readonly webhooks?: (ingest: PluginEventIngest) => WebhookSources
   readonly ingress?: PluginEventIngress
   readonly resolveAccount?: (serverId: string, requested?: string) => Promise<string | undefined>
+  readonly onSubscriptionsChanged?: (sessionId: string) => void
 }
 
 export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
@@ -69,13 +70,17 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
   const refreshSources = (): void => {
     void sources.refresh().catch(() => undefined)
   }
+  const subscriptionsChanged = (sessionId: string): void => {
+    refreshSources()
+    deps.onSubscriptionsChanged?.(sessionId)
+  }
   const delivery = makePluginEventDelivery({
     db: deps.db,
     outbox: deps.outbox,
     now: deps.now,
     pluginName,
     accountLabel: deps.accountLabel ?? (async () => undefined),
-    onSubscriptionsChanged: refreshSources
+    onSubscriptionsChanged: subscriptionsChanged
   })
   const ingest = makePluginEventIngest({
     db: deps.db,
@@ -104,14 +109,15 @@ export const makePluginEvents = (deps: PluginEventsDeps): PluginEvents => {
         subscriptionDeps,
         await withAccount(deps, types, request)
       )
-      refreshSources()
+      subscriptionsChanged(created.sessionId)
       return created
     },
     subscriptions: (sessionId) => listSubscriptions(subscriptionDeps, sessionId),
     unsubscribe: async (subscriptionId) => {
+      const existing = await run(deps.db.getPluginEventSubscription(subscriptionId))
       const removed = await run(deps.db.deletePluginEventSubscription(subscriptionId))
       ingest.forgetSubscription(subscriptionId)
-      refreshSources()
+      if (existing !== undefined) subscriptionsChanged(existing.sessionId)
       return removed
     },
     preview: (request) => previewSubscription(subscriptionDeps, request),

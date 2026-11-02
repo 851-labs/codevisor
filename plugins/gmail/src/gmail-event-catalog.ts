@@ -9,6 +9,7 @@ const stringList = { type: "array", items: { type: "string" } }
 export const gmailEventTypes: ReadonlyArray<EventType> = [
   {
     name: messageReceivedEvent,
+    title: "New email",
     description: "A new message arrived in the inbox. Mail you sent yourself is skipped.",
     delivery: ["push"],
     inputSchema: emptyArguments,

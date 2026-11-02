@@ -187,17 +187,50 @@ describe("subscribing to plugin events", () => {
     expect(created.arguments).toEqual({ channel: "alerts" })
   })
 
-  it("names subscriptions by plugin id once the plugin is gone", async () => {
+  it("labels subscriptions with the event's title, and by plugin id once the plugin is gone", async () => {
     const fixture = await eventsFixture()
-    const pinger = await pingPlugin(fixture)
+    const pinger = await pingPlugin(fixture, "Pinger", {
+      "events/list": eventList(pingType({ title: "Ping" }))
+    })
     const events = fixture.engine()
-    await events.subscribe({ sessionId: fixture.session.id, plugin: pinger.id, event: "ping" })
+    const created = await events.subscribe({
+      sessionId: fixture.session.id,
+      plugin: pinger.id,
+      event: "ping"
+    })
+    const listed = await events.subscriptions(fixture.session.id)
 
     fixture.fake.remove(pinger.id)
+    const orphaned = await events.subscriptions(fixture.session.id)
 
-    expect((await events.subscriptions()).map((subscription) => subscription.pluginName)).toEqual([
-      pinger.id
+    expect(
+      [created, ...listed].map(({ pluginName, eventTitle }) => [pluginName, eventTitle])
+    ).toEqual([
+      ["Pinger", "Ping"],
+      ["Pinger", "Ping"]
     ])
+    expect(orphaned.map(({ pluginName, eventTitle }) => [pluginName, eventTitle])).toEqual([
+      [pinger.id, undefined]
+    ])
+  })
+
+  it("tells the chat each time its subscriptions change", async () => {
+    const fixture = await eventsFixture()
+    const pinger = await pingPlugin(fixture)
+    const changed: Array<string> = []
+    const events = fixture.engine({
+      onSubscriptionsChanged: (sessionId) => changed.push(sessionId)
+    })
+    const created = await events.subscribe({
+      sessionId: fixture.session.id,
+      plugin: pinger.id,
+      event: "ping"
+    })
+
+    await events.unsubscribe(created.id)
+    await events.unsubscribe(created.id)
+
+    expect(changed).toEqual([fixture.session.id, fixture.session.id])
   })
 
   it("removes a subscription once", async () => {

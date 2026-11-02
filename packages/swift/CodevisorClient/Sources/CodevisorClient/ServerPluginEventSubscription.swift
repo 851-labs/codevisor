@@ -7,6 +7,7 @@ public struct ServerPluginEventSubscription: Codable, Equatable, Identifiable, S
   public var pluginName: String
   public var accountId: String?
   public var event: String
+  public var eventTitle: String?
   public var filter: String?
   public var explained: String
   public var note: String?
@@ -21,6 +22,7 @@ public struct ServerPluginEventSubscription: Codable, Equatable, Identifiable, S
     plugin: String,
     pluginName: String,
     event: String,
+    eventTitle: String? = nil,
     explained: String,
     note: String? = nil,
     once: Bool = false,
@@ -33,6 +35,7 @@ public struct ServerPluginEventSubscription: Codable, Equatable, Identifiable, S
     self.plugin = plugin
     self.pluginName = pluginName
     self.event = event
+    self.eventTitle = eventTitle
     self.explained = explained
     self.note = note
     self.once = once

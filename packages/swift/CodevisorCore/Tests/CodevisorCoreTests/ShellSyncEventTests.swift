@@ -96,6 +96,27 @@ struct ShellSyncEventTests {
     #expect(controller.sandboxAvailabilityRevision == 3)
   }
 
+  @Test("Each change to a chat's plugin subscriptions bumps the subscriptions revision")
+  func pluginSubscriptionChanges() async {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let controller = makeController(fake)
+    defer { controller.stopEventSync() }
+    let reachedEnd = TestSignal()
+    controller.onMcpStateChanged = { _ in reachedEnd.signal() }
+    let before = controller.pluginSubscriptionsRevision
+
+    controller.startEventSync(serverId: "local", client: controller.client(for: "local"), since: 0)
+    for _ in 0..<2 {
+      fake.emit(
+        kind: "plugin.subscriptions.updated", subjectId: "plugin-event-subscriptions",
+        payload: .object(["sessionId": .string(UUID().uuidString)]))
+    }
+    fake.emit(kind: "mcp.updated", subjectId: "server")
+    await reachedEnd.wait()
+
+    #expect(controller.pluginSubscriptionsRevision == before + 2)
+  }
+
   private func makeController(_ fake: SyncFakeServerClient) -> MachineController {
     let navigation = NavigationFixture()
     return MachineController(

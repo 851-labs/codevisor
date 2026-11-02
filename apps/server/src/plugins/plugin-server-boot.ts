@@ -17,7 +17,7 @@ export const startPlugins = (
   outbox: SessionEventOutbox,
   config: Pick<CodevisorServerConfig, "id" | "name">
 ): (() => void) => {
-  routeState.pluginEvents = startPluginEvents(services, outbox)
+  routeState.pluginEvents = startPluginEvents(services, fanout, outbox)
   routeState.pluginDiscovery = startPluginDiscovery(services, fanout, routeState.pluginEvents, {
     id: config.id,
     name: config.name

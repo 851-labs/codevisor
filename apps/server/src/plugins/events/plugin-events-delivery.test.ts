@@ -140,7 +140,10 @@ describe("delivering plugin events", () => {
   it("removes a once subscription after its first match, even when a batch matches twice", async () => {
     const fixture = await eventsFixture()
     const pinger = await pingPlugin(fixture)
-    const events = fixture.engine()
+    const changed: Array<string> = []
+    const events = fixture.engine({
+      onSubscriptionsChanged: (sessionId) => changed.push(sessionId)
+    })
     const subscription = await events.subscribe({
       sessionId: fixture.session.id,
       plugin: pinger.id,
@@ -152,6 +155,7 @@ describe("delivering plugin events", () => {
 
     expect(fixture.outbox.delivered).toHaveLength(1)
     expect(await events.subscriptions()).toEqual([])
+    expect(changed).toEqual([fixture.session.id, fixture.session.id])
   })
 
   it(`pauses a subscription after ${maxEventsPerDay} events in a day`, async () => {

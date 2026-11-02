@@ -1,7 +1,13 @@
 import type { McpManager } from "@codevisor/mcp"
 
 import type { SessionEventOutbox } from "../../routes/session-event-outbox.js"
-import { HttpFailure, swallowError, type CodevisorServerServices } from "../../server-context.js"
+import {
+  appendAndPublish,
+  HttpFailure,
+  swallowError,
+  type CodevisorServerServices,
+  type EventFanout
+} from "../../server-context.js"
 import { pluginKeyOf } from "../accounts/plugin-accounts.js"
 import type { PluginPlatform } from "../plugin-platform.js"
 import { cloudInboxApi } from "./cloud-inbox-api.js"
@@ -14,6 +20,7 @@ import { makePluginEvents, type PluginEvents } from "./plugin-events.js"
 
 export const startPluginEvents = (
   services: CodevisorServerServices,
+  fanout: EventFanout,
   outbox: SessionEventOutbox
 ): PluginEvents | undefined => {
   if (services.mcp === undefined) return undefined
@@ -27,6 +34,7 @@ export const startPluginEvents = (
     outbox,
     now: Date.now,
     timers: systemEventTimers,
+    onSubscriptionsChanged: (sessionId) => publishSubscriptionsChanged(services, fanout, sessionId),
     ...(ingress === undefined ? {} : { ingress }),
     ...(webhooks === undefined ? {} : { webhooks }),
     ...(platform === undefined ? {} : accountHooks(platform))
@@ -34,6 +42,18 @@ export const startPluginEvents = (
   void events.start().catch(swallowError)
   return events
 }
+
+const publishSubscriptionsChanged = (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  sessionId: string
+): void => {
+  void appendAndPublish(services.db, fanout, "plugin.subscriptions.updated", subscriptionsSubject, {
+    sessionId
+  }).catch(swallowError)
+}
+
+const subscriptionsSubject = "plugin-event-subscriptions"
 
 export const mcpEventConnections = (mcp: McpManager): PluginEventConnections => ({
   servers: () => mcp.list(),

@@ -8,6 +8,7 @@ extension MachineController {
     "harness.auth.updated",
     "harness.notice",
     "mcp.updated",
+    "plugin.subscriptions.updated",
     "bot.updated",
     "update.changed",
     "restart.drain.updated",
@@ -84,6 +85,8 @@ extension MachineController {
       }
     case "mcp.updated":
       onMcpStateChanged?(serverId)
+    case "plugin.subscriptions.updated":
+      pluginSubscriptionsRevision += 1
     case "bot.updated":
       onBotsChanged?(serverId)
     case "update.changed":
@@ -246,6 +249,7 @@ extension MachineController {
     guard !Task.isCancelled else { return }
 
     startEventSync(serverId: serverId, client: client, since: snapshot.eventCursor)
+    pluginSubscriptionsRevision += 1
     notifySessionStatesChanged(serverId: serverId)
     markNavigationCurrent(serverId: serverId)
   }

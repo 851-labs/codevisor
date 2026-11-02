@@ -28,6 +28,11 @@ export interface PluginEventSubscriptionsDeps {
   readonly pluginName: (serverId: string) => Promise<string>
 }
 
+export interface SubscriptionLabels {
+  readonly pluginName: string
+  readonly eventTitle?: string
+}
+
 export const previewScanLimit = 50
 
 export const createSubscription = async (
@@ -52,7 +57,7 @@ export const createSubscription = async (
       createdBy: request.createdBy ?? "agent"
     })
   )
-  return publicSubscription(record, type.pluginName)
+  return publicSubscription(record, eventLabels(type))
 }
 
 export const listSubscriptions = async (
@@ -61,9 +66,7 @@ export const listSubscriptions = async (
 ): Promise<ReadonlyArray<PluginEventSubscription>> => {
   const records = await run(deps.db.listPluginEventSubscriptions(sessionId))
   return Promise.all(
-    records.map(async (record) =>
-      publicSubscription(record, await deps.pluginName(record.serverId))
-    )
+    records.map(async (record) => publicSubscription(record, await recordLabels(deps, record)))
   )
 }
 
@@ -93,14 +96,15 @@ export const previewSubscription = async (
 
 export const publicSubscription = (
   record: PluginEventSubscriptionRecord,
-  pluginName: string
+  labels: SubscriptionLabels
 ): PluginEventSubscription => ({
   id: record.id,
   sessionId: record.sessionId,
   plugin: record.serverId,
-  pluginName,
+  pluginName: labels.pluginName,
   ...(record.accountId === undefined ? {} : { accountId: record.accountId }),
   event: record.eventName,
+  ...(labels.eventTitle === undefined ? {} : { eventTitle: labels.eventTitle }),
   arguments: record.arguments,
   ...(record.filter === undefined ? {} : { filter: record.filter }),
   explained: record.explained,
@@ -109,6 +113,20 @@ export const publicSubscription = (
   createdBy: record.createdBy,
   ...(record.pausedReason === undefined ? {} : { pausedReason: record.pausedReason }),
   createdAt: record.createdAt
+})
+
+const recordLabels = async (
+  deps: PluginEventSubscriptionsDeps,
+  record: PluginEventSubscriptionRecord
+): Promise<SubscriptionLabels> => {
+  const type = await deps.types.find(record.serverId, record.eventName)
+  if (type !== undefined) return eventLabels(type)
+  return { pluginName: await deps.pluginName(record.serverId) }
+}
+
+const eventLabels = (type: PluginEventType): SubscriptionLabels => ({
+  pluginName: type.pluginName,
+  ...(type.title === undefined ? {} : { eventTitle: type.title })
 })
 
 const requireEventType = async (

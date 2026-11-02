@@ -31,6 +31,7 @@ struct WorkspaceInspectorView: View {
   let activeFilePath: String?
   let chatUsage: SessionUsage?
   let activity: Date?
+  let subscriptionsRevision: Int
   let client: any CodevisorServerClienting
   let desktop: MachineDesktopSession?
   let onOpenDesktop: () -> Void
@@ -46,6 +47,11 @@ struct WorkspaceInspectorView: View {
     var overflowsTrailing: Bool { offset + width < contentWidth - 1 }
   }
 
+  private struct SubscriptionsKey: Equatable {
+    let sessionId: UUID?
+    let revision: Int
+  }
+
   private static let tabOverflowInset: CGFloat = 40
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -56,6 +62,7 @@ struct WorkspaceInspectorView: View {
   @State private var visited: Set<WorkspaceInspectorTab> = []
   @State private var chatContexts: [UUID: ServerSessionContext] = [:]
   @State private var lastLoadedChatId: UUID?
+  @State private var subscriptions = ChatPluginSubscriptionsModel()
   @ClientPreference("workspace.inspectorCollapsedSections", default: []) private var collapsedSections: [String]
 
   var body: some View {
@@ -246,6 +253,12 @@ struct WorkspaceInspectorView: View {
           }
         }
 
+        if !subscriptions.events.isEmpty {
+          WorkspaceInspectorSubscriptionsSection(
+            events: subscriptions.events, serverId: workspace.serverId, client: client,
+            isExpanded: expansion("Subscriptions"))
+        }
+
         if !tasks.isEmpty {
           WorkspaceInspectorTasksSection(tasks: tasks, isExpanded: expansion("Tasks"))
         }
@@ -261,6 +274,9 @@ struct WorkspaceInspectorView: View {
         }
       }
       .padding(.vertical, 10)
+    }
+    .task(id: SubscriptionsKey(sessionId: harnessChat?.id, revision: subscriptionsRevision)) {
+      await subscriptions.load(sessionId: harnessChat?.id, client: client)
     }
   }
 

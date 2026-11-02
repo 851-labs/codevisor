@@ -18,7 +18,7 @@ export interface PluginEventDeliveryDeps {
   readonly now: () => number
   readonly pluginName: (serverId: string) => Promise<string>
   readonly accountLabel: (serverId: string, accountId: string) => Promise<string | undefined>
-  readonly onSubscriptionsChanged: () => void
+  readonly onSubscriptionsChanged: (sessionId: string) => void
 }
 
 export const maxEventsPerDay = 200
@@ -29,7 +29,8 @@ export const makePluginEventDelivery = (deps: PluginEventDeliveryDeps) => {
   const deliverOne = async (pending: PendingPluginEventDelivery): Promise<void> => {
     const subscription = await run(deps.db.getPluginEventSubscription(pending.subscriptionId))
     if (subscription === undefined) return
-    if (await overDailyBudget(deps, subscription)) return pauseForBudget(deps, pending)
+    if (await overDailyBudget(deps, subscription))
+      return pauseForBudget(deps, subscription, pending)
 
     await deps.outbox.deliver(
       subscription.sessionId,
@@ -66,6 +67,7 @@ const overDailyBudget = async (
 
 const pauseForBudget = async (
   deps: PluginEventDeliveryDeps,
+  subscription: PluginEventSubscriptionRecord,
   pending: PendingPluginEventDelivery
 ): Promise<void> => {
   await run(
@@ -75,7 +77,7 @@ const pauseForBudget = async (
     )
   )
   await run(deps.db.markPluginEventDelivered(pending.subscriptionId, pending.event.id))
-  deps.onSubscriptionsChanged()
+  deps.onSubscriptionsChanged(subscription.sessionId)
 }
 
 const removeSubscription = async (
@@ -83,7 +85,7 @@ const removeSubscription = async (
   subscription: PluginEventSubscriptionRecord
 ): Promise<void> => {
   await run(deps.db.deletePluginEventSubscription(subscription.id))
-  deps.onSubscriptionsChanged()
+  deps.onSubscriptionsChanged(subscription.sessionId)
 }
 
 const sessionEvent = async (

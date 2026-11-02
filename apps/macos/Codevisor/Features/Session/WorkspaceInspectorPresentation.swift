@@ -147,6 +147,7 @@ struct WorkspaceInspectorPresentation: ViewModifier {
         store.controllers[SessionStore.SessionKey(serverId: $0.serverId, sessionId: $0.id)]?.model?.usage
       },
       activity: activity(in: workspace),
+      subscriptionsRevision: environment.machines.pluginSubscriptionsRevision,
       client: environment.machines.client(for: workspace.serverId),
       desktop: desktop,
       onOpenDesktop: {
