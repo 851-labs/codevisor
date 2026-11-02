@@ -37,6 +37,14 @@ struct AccessibilityElement: @unchecked Sendable {
   }
 
   @discardableResult
+  func set(_ attribute: String, to point: CGPoint) -> AXError {
+    var point = point
+    guard let value = AXValueCreate(.cgPoint, &point) else { return .failure }
+
+    return AXUIElementSetAttributeValue(element, attribute as CFString, value)
+  }
+
+  @discardableResult
   func press() -> AXError {
     AXUIElementPerformAction(element, kAXPressAction as CFString)
   }

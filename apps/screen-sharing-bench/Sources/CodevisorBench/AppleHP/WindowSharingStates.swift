@@ -6,10 +6,9 @@ enum WindowSharingStates {
     windows(of: pid, options: [.optionAll]).compactMap { $0[kCGWindowSharingState as String] as? Int }
   }
 
-  static func coversScreen(_ pid: pid_t, screen: CGRect) -> Bool {
+  static func coversDisplay(_ pid: pid_t, bounds: CGRect) -> Bool {
     windows(of: pid, options: [.optionOnScreenOnly, .excludeDesktopElements]).contains { window in
-      (window[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }?.size
-        == screen.size
+      (window[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } == bounds
     }
   }
 

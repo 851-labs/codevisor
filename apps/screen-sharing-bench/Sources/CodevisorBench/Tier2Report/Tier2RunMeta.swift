@@ -15,6 +15,7 @@ struct Tier2RunMeta: Decodable {
   let scene: String
   let resolution: String?
   let network: String?
+  let viewerDisplay: String?
   let engine: String?
   let system: System
   let repetition: Int

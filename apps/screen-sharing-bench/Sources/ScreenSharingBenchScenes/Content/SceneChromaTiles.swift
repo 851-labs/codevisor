@@ -14,14 +14,21 @@ enum SceneChromaTiles {
   private static let paddingPoints = 12
 
   static func draw(on bitmap: SceneBitmap, in area: CGRect, scale: Int) {
+    for (tile, pair) in zip(tiles(in: area), pairs) {
+      bitmap.fill(tile, with: pair.paper)
+      drawText(on: bitmap, at: tile.origin, ink: pair.ink, scale: scale)
+    }
+  }
+
+  static func tiles(in area: CGRect) -> [CGRect] {
     let rows = (pairs.count + columns - 1) / columns
-    let tile = CGSize(
+    let size = CGSize(
       width: (area.width / CGFloat(columns)).rounded(.down), height: (area.height / CGFloat(rows)).rounded(.down))
-    for (index, pair) in pairs.enumerated() {
-      let origin = CGPoint(
-        x: area.minX + CGFloat(index % columns) * tile.width, y: area.minY + CGFloat(index / columns) * tile.height)
-      bitmap.fill(CGRect(origin: origin, size: tile), with: pair.paper)
-      drawText(on: bitmap, at: origin, ink: pair.ink, scale: scale)
+    return pairs.indices.map { index in
+      CGRect(
+        origin: CGPoint(
+          x: area.minX + CGFloat(index % columns) * size.width, y: area.minY + CGFloat(index / columns) * size.height),
+        size: size)
     }
   }
 

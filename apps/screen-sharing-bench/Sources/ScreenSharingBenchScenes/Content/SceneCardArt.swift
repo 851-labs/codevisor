@@ -32,18 +32,19 @@ enum SceneCardArt {
     let bitmap = try SceneBitmap(.color, width: canvas.pixelWidth, height: canvas.pixelHeight)
     bitmap.fill(
       CGRect(x: 0, y: 0, width: canvas.pixelWidth, height: canvas.pixelHeight), with: CGColor(gray: 0.5, alpha: 1))
+    SceneChromaTiles.draw(on: bitmap, in: chromaAreas(canvas, top: top).tiles, scale: canvas.scale)
+    SceneChromaPatterns.draw(on: bitmap, in: chromaAreas(canvas, top: top).patterns)
+    return bitmap
+  }
+
+  static func chromaAreas(_ canvas: BenchSceneCanvas, top: Int) -> (tiles: CGRect, patterns: CGRect) {
     let margin = canvas.pixels(marginPoints)
     let area = CGRect(
       x: margin, y: top + margin, width: canvas.pixelWidth - 2 * margin, height: canvas.pixelHeight - top - 2 * margin)
     let split = area.minY + area.height * 0.55
-    SceneChromaTiles.draw(
-      on: bitmap, in: CGRect(x: area.minX, y: area.minY, width: area.width, height: split - area.minY),
-      scale: canvas.scale)
-    SceneChromaPatterns.draw(
-      on: bitmap,
-      in: CGRect(
-        x: area.minX, y: split + CGFloat(margin) / 2, width: area.width, height: area.maxY - split - CGFloat(margin) / 2
-      ))
-    return bitmap
+    let tiles = CGRect(x: area.minX, y: area.minY, width: area.width, height: split - area.minY)
+    let patterns = CGRect(
+      x: area.minX, y: split + CGFloat(margin) / 2, width: area.width, height: area.maxY - split - CGFloat(margin) / 2)
+    return (tiles, patterns)
   }
 }

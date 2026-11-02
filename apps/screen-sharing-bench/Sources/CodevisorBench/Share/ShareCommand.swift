@@ -7,7 +7,7 @@ struct ShareCommand: BenchCommand {
   static let name = "share"
   static let summary = "Share this Mac's main display through the Codevisor engine (the Tier 2 host)"
   static let usage =
-    "[--port <port>] [--duration <seconds>] [--virtual-display R1|R1x2|R2|R3] [--engine v1|v2] "
+    "[--port <port>] [--duration <seconds>] \(VirtualDisplayOption.usage) [--engine v1|v2] "
     + BenchSignalFiles.usage
 
   private static let durations = 1...7200
@@ -24,7 +24,7 @@ struct ShareCommand: BenchCommand {
     port = UInt16(try options.integer("port", default: Int(SignalingSocket.defaultPort), in: Self.ports))
     duration = .seconds(try options.integer("duration", default: 120, in: Self.durations))
     signals = try BenchSignalFiles(options: options)
-    virtualDisplay = try options.string("virtual-display").map(Self.resolution)
+    virtualDisplay = try VirtualDisplayOption.read(from: options)
     engine = try options.choice("engine", default: BenchEngine.v1)
   }
 
@@ -84,14 +84,6 @@ struct ShareCommand: BenchCommand {
 
     try signals.markReady("listening display \(display)")
     return try SignalingSocket.accept(on: listener, timeout: timeout)
-  }
-
-  private static func resolution(_ text: String) throws -> BenchSceneResolution {
-    guard let resolution = BenchSceneResolution(rawValue: text) else {
-      throw BenchUsageError(message: "--virtual-display takes R1, R1x2, R2 or R3, not \(text)")
-    }
-
-    return resolution
   }
 
   @concurrent

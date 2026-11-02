@@ -51,7 +51,7 @@ measure() {
     local relay=()
     [[ "$system" == floor ]] && relay=(--relay "$TIER2_VIEWER_IP:$TIER2_FLOOR_PORT")
     bench observe --duration "$((TIER2_DURATION + 12))" --output "$dir/host.jsonl" ${relay[@]+"${relay[@]}"} \
-      ${display[@]+"${display[@]}"} \
+      ${display[@]+"${display[@]}"} $(tier2_stills_options "$scene" "$system" "$dir/host-stills") \
       >"$dir/host-observe.json" 2>"$dir/host-observe.err" &
     pids+=($!)
   fi

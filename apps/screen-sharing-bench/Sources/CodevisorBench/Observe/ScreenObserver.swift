@@ -11,24 +11,29 @@ final class ScreenObserver {
   let source: String
   private let stream: SCStream
   private let collector: FrameCollector
+  private let stills: StillKeeper?
 
-  private init(stream: SCStream, collector: FrameCollector, source: String) {
+  private init(stream: SCStream, collector: FrameCollector, source: String, stills: StillKeeper?) {
     self.stream = stream
     self.collector = collector
     self.source = source
+    self.stills = stills
   }
 
   static func start(
-    display: SCDisplay, region: ObserverRegion, layout: BenchBarcodeLayout, relay: VersionRelay? = nil
+    display: SCDisplay, region: ObserverRegion, layout: BenchBarcodeLayout, relay: VersionRelay? = nil,
+    stills: StillKeeper? = nil
   ) async throws -> ScreenObserver {
     let filter = SCContentFilter(display: display, excludingWindows: [])
     let scale = CGFloat(filter.pointPixelScale)
-    let collector = FrameCollector(layout: capturedLayout(layout, region: region), relay: relay)
-    let stream = SCStream(
-      filter: filter, configuration: configuration(display, region, layout, scale), delegate: collector)
+    let collector = FrameCollector(layout: capturedLayout(layout, region: region), relay: relay, stills: stills)
+    let configuration = configuration(display, region, layout, scale)
+    if stills != nil { configuration.colorSpaceName = CGColorSpace.sRGB }
+    let stream = SCStream(filter: filter, configuration: configuration, delegate: collector)
     try stream.addStreamOutput(collector, type: .screen, sampleHandlerQueue: collector.queue)
     try await stream.startCapture()
-    return ScreenObserver(stream: stream, collector: collector, source: describe(display, region, layout))
+    return ScreenObserver(
+      stream: stream, collector: collector, source: describe(display, region, layout), stills: stills)
   }
 
   static func display(id: CGDirectDisplayID?) async throws -> SCDisplay {
@@ -53,6 +58,7 @@ final class ScreenObserver {
       _ = try collector.collected()
       throw error
     }
+    try await stills?.finish()
     return try collector.collected()
   }
 

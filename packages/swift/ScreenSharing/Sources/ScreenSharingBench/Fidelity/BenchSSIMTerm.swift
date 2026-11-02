@@ -1,4 +1,4 @@
-struct EncodeLabSSIMTerm {
+struct BenchSSIMTerm {
   static let c1: Float = (0.01 * 255) * (0.01 * 255)
   static let c2: Float = (0.03 * 255) * (0.03 * 255)
 

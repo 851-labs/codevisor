@@ -6,6 +6,7 @@ struct BenchSignalFiles: Sendable {
 
   let ready: String?
   let stop: String?
+  private var readyDetail: String?
 
   @MainActor
   init(options: BenchOptions) throws {
@@ -16,7 +17,14 @@ struct BenchSignalFiles: Sendable {
   func markReady(_ state: String) throws {
     guard let ready else { return }
 
-    try "\(state)\n".write(toFile: ready, atomically: true, encoding: .utf8)
+    let line = [state, readyDetail].compactMap(\.self).joined(separator: " ")
+    try "\(line)\n".write(toFile: ready, atomically: true, encoding: .utf8)
+  }
+
+  func describing(_ detail: String) -> BenchSignalFiles {
+    var described = self
+    described.readyDetail = detail
+    return described
   }
 
   func waitForStop(until deadline: ContinuousClock.Instant) async {

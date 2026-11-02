@@ -13,11 +13,12 @@ trap 'network_reset; rm -rf "$work"' EXIT
 start_system() {
   local system=$1 dir=$2 scene=$3
   local seconds=$((TIER2_DURATION + 240))
-  local signals=(--duration "$seconds" --ready-file "$work/ready" --stop-file "$work/stop")
+  local signals=(--duration "$seconds" --ready-file "$work/ready" --stop-file "$work/stop" $(tier2_viewer_display_options))
   local control=()
   [[ "$scene" == input ]] && control=(--control)
   if tier2_is_local_input_floor "$scene" "$system"; then
     touch "$work/ready"
+    viewer_display_id=""
     return 0
   fi
   case "$system" in
@@ -28,7 +29,9 @@ start_system() {
     floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac
   system_job=$!
-  wait_for_file "$work/ready" 60 "$system_job"
+  wait_for_file "$work/ready" 60 "$system_job" || return 1
+  viewer_display_id=$(awk '{ print $NF }' "$work/ready")
+  [[ "$TIER2_VIEWER_DISPLAY" == main || "$viewer_display_id" =~ ^[0-9]+$ ]] || { say "$system named no display"; return 1; }
 }
 
 stop_system() {
@@ -54,12 +57,14 @@ start_input() {
 
 measure() {
   local dir=$1 system=$2 scene=$3
-  local pids=()
+  local pids=() display=()
+  [[ "$TIER2_VIEWER_DISPLAY" == main || -z "${viewer_display_id:-}" ]] || display=(--display "$viewer_display_id")
   bench calibrate --check c2 --responder "$TIER2_HOST_IP" --duration "$((TIER2_DURATION + 18))" \
     --output "$dir/clock.jsonl" >"$dir/clock.json" 2>"$dir/clock.err" &
   pids+=($!)
   bench observe --duration "$((TIER2_DURATION + 14))" --output "$dir/viewer.jsonl" \
-    --block-size "$(tier2_viewer_block_size "$system")" \
+    --block-size "$(tier2_viewer_block_size "$system")" ${display[@]+"${display[@]}"} \
+    $(tier2_stills_options "$scene" "$system" "$dir/viewer-stills") \
     >"$dir/viewer-observe.json" 2>"$dir/viewer-observe.err" &
   pids+=($!)
   bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$viewer_processes" \
@@ -77,7 +82,7 @@ write_meta() {
   ((observed)) && observed_json=true
   cat >"$dir/meta.json" <<JSON
 {"index": $index, "scene": "$scene", "system": "$(tier2_meta_system "$system")", "resolution": "$(tier2_resolution "$system")",
- "network": "$TIER2_NETWORK", "engine": "$(tier2_engine "$system")", "presentation": "$TIER2_PRESENT",
+ "network": "$TIER2_NETWORK", "viewer_display": "$TIER2_VIEWER_DISPLAY", "engine": "$(tier2_engine "$system")", "presentation": "$TIER2_PRESENT",
  "repetition": $rep, "seed": $TIER2_SEED,
  "duration_s": $TIER2_DURATION, "host_observer": $observed_json, "git_sha": "$commit", "started_at": "$started_at",
  "github_run_id": "${GITHUB_RUN_ID:-}"}
