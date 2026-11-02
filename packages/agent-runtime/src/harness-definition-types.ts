@@ -50,6 +50,11 @@ export interface HarnessInstallMethodSpec {
   readonly recommended?: boolean
 }
 
+export interface ReleaseChannelSetting {
+  readonly file: string
+  readonly key: string
+}
+
 export type UpdateCheckSpec =
   | { readonly kind: "npm"; readonly packageName: string; readonly distTag?: string }
   | {
@@ -58,6 +63,12 @@ export type UpdateCheckSpec =
     }
   | { readonly kind: "github"; readonly repo: string }
   | { readonly kind: "pypi"; readonly packageName: string }
+  | {
+      readonly kind: "releaseChannel"
+      readonly baseUrl: string
+      readonly channelSetting: ReleaseChannelSetting
+      readonly defaultChannel: string
+    }
   | {
       readonly kind: "sparkle"
       readonly appcastUrl: string

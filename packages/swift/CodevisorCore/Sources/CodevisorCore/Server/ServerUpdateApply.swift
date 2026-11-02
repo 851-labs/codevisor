@@ -17,7 +17,7 @@ struct ServerUpdateApply {
       do {
         let request = ServerUpdateRunRequest(harnessIds: harnessIds, serverChannel: channel)
         return try await client.startUpdateRun(request).server ?? declined
-      } catch CodevisorServerClientError.httpStatus(404, _) {
+      } catch {
         return try await client.applyServerUpdate(channel: channel)
       }
     }

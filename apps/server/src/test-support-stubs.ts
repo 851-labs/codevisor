@@ -138,7 +138,8 @@ export const idleUpdateRun = (): UpdateRun => {
     start: async () => ({ run: idle }),
     startServerUpdate: async () => ({ accepted: false, targetVersion: "0.0.0" }),
     cancel: async () => idle,
-    noteChatsChanged: () => {}
+    noteChatsChanged: () => {},
+    restartsServer: () => false
   }
 }
 

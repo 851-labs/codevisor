@@ -23,7 +23,8 @@ const drainState = (overrides: Partial<RestartDrainState>): RestartDrainState =>
 const progressFor = async (
   drain: RestartDrainState,
   updatingHarnessId?: string,
-  info: UpdateInfo = release
+  info: UpdateInfo = release,
+  restartsServer = false
 ) => {
   const { services } = await makeServices("server-a")
   const idle = idleRouteState()
@@ -33,6 +34,7 @@ const progressFor = async (
     restart: { ...idle.restart, state: () => drain },
     updateRun: {
       ...run,
+      restartsServer: () => restartsServer,
       state: () => ({
         ...run.state(),
         ...(updatingHarnessId === undefined ? {} : { currentHarnessId: updatingHarnessId })
@@ -67,5 +69,13 @@ describe("server update progress while chats are paused", () => {
     expect(
       await progressFor(drainState({ state: "drained", harnessIds: ["codex"] }), "codex")
     ).toBeUndefined()
+  })
+
+  it("reports the harness step of a server update while only that harness's chats are paused", async () => {
+    const harnessStep = drainState({ state: "drained", harnessIds: ["claude-code"] })
+    expect(await progressFor(harnessStep, "claude-code", release, true)).toMatchObject({
+      state: "draining",
+      message: "Updating Claude Code first"
+    })
   })
 })

@@ -399,7 +399,10 @@ describe("harness lifecycle install/update execution", () => {
     const lifecycle = makeHarnessLifecycleManager({
       agents,
       db,
-      fetchImpl: async () => jsonResponse({ "dist-tags": { latest: "2.1.216" } }),
+      fetchImpl: async (url) =>
+        url.endsWith("/claude-code-releases/latest")
+          ? jsonResponse("2.1.216\n")
+          : jsonResponse({}, 404),
       home: "/Users/dev",
       realpath: () => binary,
       resolveEnv: async () => ({ PATH: "" }),
@@ -408,7 +411,11 @@ describe("harness lifecycle install/update execution", () => {
     })
 
     const outcomes = await lifecycle.checkForUpdates(true)
-    expect(outcomes[0]?.info).toMatchObject({ installOrigin: "curl", source: "npm" })
+    expect(outcomes[0]?.info).toMatchObject({
+      installOrigin: "curl",
+      latestVersion: "2.1.216",
+      source: "releaseChannel"
+    })
 
     const applied = lifecycle.applyUpdate("claude-code")
     await spawned

@@ -165,13 +165,15 @@ describe("update run", () => {
     expect(world.states).toEqual(["pausing", "updating", "continuing", "idle"])
   })
 
-  it("holds the pause across harness installs and the server restart", async () => {
+  it("pauses only the updating harness's chats, then every chat just before the restart", async () => {
     const world = makeWorld()
 
     const started = await world.updates.start({
       harnessIds: ["codex"],
       serverChannel: "stable"
     })
+    await world.settled("updating")
+    expect(world.updates.restartsServer()).toBe(true)
     await world.installed("codex")
     await world.settled("restarting")
 
@@ -183,12 +185,14 @@ describe("update run", () => {
     })
     expect(world.steps).toEqual([
       "prepare codex",
-      "pause all chats",
-      "pause all chats",
+      "pause codex",
+      "pause codex",
       "extend grace",
       "install codex",
+      "pause all chats",
       "restart server"
     ])
+    expect(world.states).toEqual(["pausing", "updating", "pausing", "restarting"])
   })
 
   it("keeps chats paused for the app update, and continues them if the app never restarts", async () => {
@@ -204,17 +208,36 @@ describe("update run", () => {
     expect(world.updates.state().state).toBe("idle")
   })
 
-  it("releases the chats when a harness step breaks", async () => {
+  it("carries on past a harness whose install breaks, through the server restart", async () => {
     const world = makeWorld()
 
-    await world.updates.start({ harnessIds: ["codex"] })
+    await world.updates.start({ harnessIds: ["codex", "gemini"], serverChannel: "stable" })
     await world.brokeInstalling("codex", new Error("terminal unavailable"))
+    await world.installed("gemini")
+    await world.settled("restarting")
+
+    expect(world.steps.slice(-6)).toEqual([
+      "log: The codex update failed: terminal unavailable",
+      "pause codex+gemini",
+      "extend grace",
+      "install gemini",
+      "pause all chats",
+      "restart server"
+    ])
+    expect(world.steps).not.toContain("continue chats")
+  })
+
+  it("keeps a harness-only run going when one install breaks, then continues the chats", async () => {
+    const world = makeWorld()
+
+    await world.updates.start({ harnessIds: ["codex", "gemini"] })
+    await world.brokeInstalling("codex", new Error("terminal unavailable"))
+    await world.installed("gemini")
     await world.settled("idle")
 
-    expect(world.steps.slice(-2)).toEqual([
-      "log: Update run failed: terminal unavailable",
-      "continue chats"
-    ])
+    expect(world.steps).toContain("log: The codex update failed: terminal unavailable")
+    expect(world.steps.slice(-2)).toEqual(["install gemini", "continue chats"])
+    expect(world.updates.restartsServer()).toBe(false)
   })
 
   it("changes nothing when the server is already current", async () => {
@@ -233,7 +256,9 @@ describe("update run", () => {
     await world.updates.start({ harnessIds: ["codex"], serverChannel: "stable" })
     await world.settled("updating")
 
-    await expect(world.updates.startServerUpdate("stable")).rejects.toMatchObject({ status: 409 })
+    await expect(world.updates.startServerUpdate("stable")).resolves.toMatchObject({
+      accepted: true
+    })
     await world.installed("codex")
     await world.settled("restarting")
     await expect(world.updates.startServerUpdate("stable")).resolves.toMatchObject({
@@ -249,9 +274,6 @@ describe("update run", () => {
     await world.settled("updating")
 
     await world.updates.start({ harnessIds: ["codex", "claude-code"] })
-    await expect(
-      world.updates.start({ harnessIds: ["gemini"], serverChannel: "stable" })
-    ).rejects.toMatchObject({ status: 409 })
     await world.installed("claude-code")
     await world.installed("codex")
     await world.settled("continuing")
@@ -261,7 +283,7 @@ describe("update run", () => {
     expect(world.steps).toContain("pause claude-code+codex")
   })
 
-  it("adds harnesses to a restart pause without narrowing it", async () => {
+  it("widens an app-update hold to every chat only after the joined harnesses install", async () => {
     const world = makeWorld()
     await world.updates.start({ harnessIds: ["claude-code"], holdForAppUpdate: true })
     await world.settled("updating")
@@ -272,11 +294,27 @@ describe("update run", () => {
     await world.settled("holding")
 
     expect(world.steps.filter((step) => step.startsWith("pause"))).toEqual([
-      "pause all chats",
-      "pause all chats",
-      "pause all chats",
+      "pause claude-code",
+      "pause claude-code",
+      "pause claude-code+codex",
+      "pause claude-code+codex",
       "pause all chats"
     ])
+  })
+
+  it("lets a server update join a running harness run and restart once its installs finish", async () => {
+    const world = makeWorld()
+    await world.updates.start({ harnessIds: ["claude-code"] })
+    await world.settled("updating")
+
+    const joined = await world.updates.start({ harnessIds: ["codex"], serverChannel: "stable" })
+    await world.installed("claude-code")
+    await world.installed("codex")
+    await world.settled("restarting")
+
+    expect(joined.server).toMatchObject({ accepted: true, targetVersion: "0.2.0" })
+    expect(world.steps.slice(-2)).toEqual(["pause all chats", "restart server"])
+    expect(world.steps).not.toContain("continue chats")
   })
 
   it("refuses to join a run whose harness installs are done", async () => {
@@ -290,16 +328,42 @@ describe("update run", () => {
     })
   })
 
-  it("unprepares every harness when one can't start updating", async () => {
+  it("skips a harness that can't start updating and updates the rest", async () => {
     const world = makeWorld()
     world.failingPrepare.add("gemini")
 
-    await expect(world.updates.start({ harnessIds: ["codex", "gemini"] })).rejects.toMatchObject({
+    const started = await world.updates.start({ harnessIds: ["codex", "gemini"] })
+    await world.installed("codex")
+    await world.settled("idle")
+
+    expect(started.run.harnessIds).toEqual(["codex"])
+    expect(world.steps.slice(0, 3)).toEqual([
+      "prepare codex",
+      "log: Skipping the gemini update: gemini is not installed",
+      "pause codex"
+    ])
+    await expect(world.updates.start({ harnessIds: ["gemini"] })).rejects.toMatchObject({
       status: 409,
       message: "gemini is not installed"
     })
-    expect(world.steps).toEqual(["prepare codex", "unprepare codex"])
-    expect(world.updates.state().state).toBe("idle")
+  })
+
+  it("never lets a harness that can't start updating stop the server update", async () => {
+    const world = makeWorld()
+    world.failingPrepare.add("claude-code")
+
+    const started = await world.updates.start({
+      harnessIds: ["claude-code"],
+      serverChannel: "stable"
+    })
+    await world.settled("restarting")
+
+    expect(started.server).toMatchObject({ accepted: true })
+    expect(world.steps).toEqual([
+      "log: Skipping the claude-code update: claude-code is not installed",
+      "pause all chats",
+      "restart server"
+    ])
   })
 
   it("can only be cancelled while chats are pausing, and then installs nothing", async () => {

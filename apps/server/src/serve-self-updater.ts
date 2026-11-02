@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process"
-import { createWriteStream, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { createWriteStream, existsSync, mkdirSync } from "node:fs"
+import { join } from "node:path"
 import { pipeline } from "node:stream/promises"
 
-import type { UpdateInfo } from "@codevisor/api"
+import type { UpdateApplyState, UpdateInfo } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { installRuntime, planRestart, resolveInstallRoot } from "@codevisor/updater"
 import {
@@ -23,25 +23,11 @@ import {
 import type { ServerRelease, ServerUpdateChannel } from "@codevisor/updater"
 import { Effect } from "effect"
 
+import { failedApply, handOffToHostApp, latestApplyState } from "./serve-app-handoff.js"
 import { SERVER_PROCESS_TITLE, SERVER_UPDATE_CHECK_TTL_MS } from "./serve-boot.js"
 import type { CodevisorServerUpdater } from "./server.js"
 
 const APP_UPDATE_HANDOFF_EXIT_CODE = 85
-
-const writeAppUpdateRequest = (path: string, version: string): void => {
-  mkdirSync(dirname(path), { recursive: true })
-  const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(
-    temporary,
-    `${JSON.stringify({
-      version,
-      requestedAt: new Date().toISOString(),
-      pid: process.pid
-    })}\n`,
-    { encoding: "utf8", mode: 0o600 }
-  )
-  renameSync(temporary, path)
-}
 
 const startDetachedHandoff = (
   command: string,
@@ -117,9 +103,11 @@ export const makeSelfUpdater = (options: {
     return fileChannel ?? (await syncedChannel()) ?? requested
   }
 
+  let lastFailure: UpdateApplyState | undefined
+
   const withApplyState = (info: UpdateInfo): UpdateInfo => {
-    if (!appHosted()) return info
-    const lastApply = readAppUpdateApplyState(options.dataDir)
+    const reported = appHosted() ? readAppUpdateApplyState(options.dataDir) : undefined
+    const lastApply = latestApplyState(reported, lastFailure)
     return lastApply === undefined ? info : { ...info, lastApply }
   }
 
@@ -193,6 +181,18 @@ export const makeSelfUpdater = (options: {
   const apply = async (applyOptions?: {
     readonly channel?: ServerUpdateChannel
   }): Promise<void> => {
+    lastFailure = undefined
+    try {
+      await applyRelease(applyOptions)
+    } catch (cause) {
+      lastFailure = failedApply(cause)
+      throw cause
+    }
+  }
+
+  const applyRelease = async (applyOptions?: {
+    readonly channel?: ServerUpdateChannel
+  }): Promise<void> => {
     const channel = await resolveChannel(applyOptions?.channel ?? "stable")
     const info = await check({ channel })
     if (!info.updateAvailable) {
@@ -202,7 +202,11 @@ export const makeSelfUpdater = (options: {
       console.log("Handing update off to the host macOS app")
       const requestPath = process.env.CODEVISOR_APP_UPDATE_REQUEST_PATH
       if (requestPath !== undefined && requestPath.length > 0) {
-        writeAppUpdateRequest(requestPath, info.latestVersion)
+        await handOffToHostApp({
+          requestPath,
+          dataDir: options.dataDir,
+          version: info.latestVersion
+        })
         return
       }
       setTimeout(() => process.exit(APP_UPDATE_HANDOFF_EXIT_CODE), 300)

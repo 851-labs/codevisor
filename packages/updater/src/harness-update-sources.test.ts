@@ -9,6 +9,7 @@ import {
   checkGithubLatest,
   checkNpmLatest,
   checkPypiLatest,
+  checkReleaseChannelLatest,
   detectBrewPackage,
   detectInstallOrigin,
   isNewerVersion,
@@ -142,6 +143,32 @@ describe("latest-version checkers", () => {
     await expect(checkGithubLatest("x/versionless", fetchImpl)).resolves.toEqual({})
     await expect(checkGithubLatest("x/tagless", fetchImpl)).resolves.toEqual({})
     await expect(checkBrewLatest("hollow", fetchImpl)).resolves.toEqual({})
+  })
+
+  it("reads a release channel's plain-text version pointer", async () => {
+    const base = "https://downloads.example.com/releases"
+    const pointers: Record<string, string> = {
+      [`${base}/latest`]: "2.1.314\n",
+      [`${base}/stable`]: "2.1.308",
+      [`${base}/broken`]: "<Error>NoSuchKey</Error>"
+    }
+    const fetchImpl: FetchLike = async (url) => {
+      const body = pointers[url]
+      if (body === undefined) return jsonResponse({}, 404)
+      return { ...jsonResponse({}), text: async () => body }
+    }
+
+    await expect(checkReleaseChannelLatest(base, "latest", fetchImpl)).resolves.toEqual({
+      channel: "latest",
+      latestVersion: "2.1.314"
+    })
+    await expect(checkReleaseChannelLatest(base, "stable", fetchImpl)).resolves.toEqual({
+      channel: "stable",
+      latestVersion: "2.1.308"
+    })
+    await expect(checkReleaseChannelLatest(base, "broken", fetchImpl)).resolves.toEqual({})
+    await expect(checkReleaseChannelLatest(base, "missing", fetchImpl)).resolves.toEqual({})
+    await expect(checkReleaseChannelLatest(base, "latest", failingFetch)).resolves.toEqual({})
   })
 })
 

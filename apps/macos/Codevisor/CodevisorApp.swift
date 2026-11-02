@@ -109,11 +109,6 @@ struct RootView: View {
           ChromiumAutomationBridge.shared.addStore(created)
         }
         if !AppPreview.isRunning {
-          environment.localServer?.onUpdateRequested = { [environment] in
-            Task { @MainActor in
-              await environment.appUpdate.installUpdateUnattended()
-            }
-          }
           await environment.cloud.bootstrap()
         }
       }

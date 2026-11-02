@@ -33,6 +33,7 @@ final class ServerUpdateRun {
   private let pollAttempts: Int
   private let initialVersion: String?
   private var initialHealth: ServerHealth?
+  private var holdsRequests = false
 
   init(
     connection: MachineConnection,
@@ -58,7 +59,6 @@ final class ServerUpdateRun {
   func perform() async {
     showStarting()
     defer { clearActivity() }
-    machine.beginWaiting()
     initialHealth = try? await client.health()
     do {
       let applied = try await apply.start(channel)
@@ -84,6 +84,13 @@ final class ServerUpdateRun {
 
   private var versionBeforeUpdate: String? {
     initialVersion ?? initialHealth?.version
+  }
+
+  private func holdRequests() {
+    guard !holdsRequests else { return }
+
+    holdsRequests = true
+    machine.beginWaiting()
   }
 
   private func showStarting() {
@@ -158,7 +165,7 @@ final class ServerUpdateRun {
 
     switch report.state {
     case "failed":
-      failOnMachine(report)
+      await failOnMachine(report)
       return .finished
     case "draining":
       showDraining(report, wait: &wait)
@@ -171,8 +178,9 @@ final class ServerUpdateRun {
     }
   }
 
-  private func failOnMachine(_ report: ServerUpdateApplyState) {
+  private func failOnMachine(_ report: ServerUpdateApplyState) async {
     connection.updatePhase = .failed(report.message ?? "The update failed on the machine.")
+    await resumePausedChats()
     machine.markReady()
     machine.resumeEventStream()
   }
@@ -184,6 +192,7 @@ final class ServerUpdateRun {
   }
 
   private func showInstalling(_ report: ServerUpdateApplyState, wait: inout ServerUpdateWait) {
+    holdRequests()
     let progress = Self.installProgress(report.progress)
     let message = report.message ?? "Installing…"
     wait.noteInstall(progress: progress, message: message)
@@ -195,6 +204,7 @@ final class ServerUpdateRun {
   private func followDataUpgrade(_ wait: inout ServerUpdateWait) async -> Step {
     guard let health = await machine.probeDataUpgrade() else { return .proceed }
 
+    holdRequests()
     let migration = connection.dataUpgradeProgress
     if health.database == "failed" {
       failDataUpgrade(migration)
@@ -225,6 +235,7 @@ final class ServerUpdateRun {
   }
 
   private func showRestarting() {
+    holdRequests()
     connection.updateProgress = nil
     connection.updateStatusMessage = "Restarting…"
   }
@@ -284,6 +295,7 @@ final class ServerUpdateRun {
   }
 
   private func finishUnconverged() async {
+    await resumePausedChats()
     machine.markReady()
     let refreshed = try? await client.updateInfo(refresh: true, channel: channel)
     if let refreshed { connection.updateInfo = refreshed }
@@ -297,6 +309,10 @@ final class ServerUpdateRun {
 
     connection.updatePhase = .failed(
       Self.notConvergedMessage(initial: initialHealth, current: try? await client.health(), refreshed: refreshed))
+  }
+
+  private func resumePausedChats() async {
+    try? await client.cancelRestartDrain()
   }
 
   private func serverAnswers() async -> Bool {

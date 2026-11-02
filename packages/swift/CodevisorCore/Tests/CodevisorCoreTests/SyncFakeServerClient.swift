@@ -326,6 +326,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _updateRunActivePolls = 0
   var _updateRunSettled = ServerUpdateRunState.idle
   var updateRunUnsupported = false
+  var updateRunRefusal: (any Error)?
+  var neverRestarts = false
   var currentBuildNumber: Int?
   var targetBuildNumber: Int?
   var applyFailureMessage: String?

@@ -14,7 +14,7 @@ export const withRestartDrain = (
   info: UpdateInfo
 ): UpdateInfo => {
   const drain = routeState.restart.state()
-  if (drain.state === "idle" || drain.harnessIds !== undefined) return info
+  if (!reportsRestart(drain, routeState)) return info
   if (info.lastApply?.state === "failed") return info
   if (installStartedAfterDrain(info, drain.startedAt)) return info
 
@@ -31,6 +31,15 @@ export const publishUpdateChanged = (
   if (routeState.updateSignature.value === signature) return
   routeState.updateSignature.value = signature
   void appendAndPublish(services.db, fanout, "update.changed", "server", info).catch(swallowError)
+}
+
+const reportsRestart = (
+  drain: ReturnType<RouteState["restart"]["state"]>,
+  routeState: RouteState
+): boolean => {
+  if (drain.state === "idle") return false
+
+  return drain.harnessIds === undefined || routeState.updateRun.restartsServer()
 }
 
 const installStartedAfterDrain = (info: UpdateInfo, drainStartedAt: string): boolean =>

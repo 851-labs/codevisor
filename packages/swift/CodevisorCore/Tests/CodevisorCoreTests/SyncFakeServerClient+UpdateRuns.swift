@@ -8,10 +8,15 @@ extension SyncFakeServerClient {
     lock.withLock { _updateRunActivePolls = polls }
   }
 
+  func configureUpdateRunRefusal(_ error: any Error) {
+    lock.withLock { updateRunRefusal = error }
+  }
+
   func startUpdateRun(_ request: ServerUpdateRunRequest) async throws -> ServerUpdateRunStarted {
     if lock.withLock({ updateRunUnsupported }) {
       throw CodevisorServerClientError.httpStatus(404, "{\"error\":\"Route not found\"}")
     }
+    if let refusal = lock.withLock({ updateRunRefusal }) { throw refusal }
     lock.withLock { _operationLog.append(Self.describe(request)) }
     for harnessId in request.harnessIds {
       _ = try? await updateHarness(id: harnessId)

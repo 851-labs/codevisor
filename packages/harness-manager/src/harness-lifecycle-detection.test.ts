@@ -1,4 +1,8 @@
-import type { HarnessDefinition } from "@codevisor/agent-runtime"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { harnessCatalog, type HarnessDefinition } from "@codevisor/agent-runtime"
 import type { FetchLike } from "@codevisor/updater"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -274,5 +278,56 @@ describe("harness lifecycle update detection", () => {
       realpath: (path) => path
     })
     await expect(lifecycle.checkForUpdates(true)).resolves.toEqual([])
+  })
+
+  it("checks a native Claude install against its configured native channel, not npm", async () => {
+    const claude = harnessCatalog.find((definition) => definition.id === "claude-code")!
+    const home = mkdtempSync(join(tmpdir(), "codevisor-claude-home-"))
+    try {
+      const fetched: Array<string> = []
+      const fetchImpl: FetchLike = async (url) => {
+        fetched.push(url)
+        if (url.includes("registry.npmjs.org"))
+          return jsonResponse({ "dist-tags": { latest: "2.1.316" } })
+        if (url.endsWith("/claude-code-releases/latest")) return jsonResponse("2.1.314\n")
+        if (url.endsWith("/claude-code-releases/stable")) return jsonResponse("2.1.315")
+        return jsonResponse({}, 404)
+      }
+      const check = async () => {
+        const lifecycle = makeHarnessLifecycleManager({
+          agents: agentsStub(
+            [claude],
+            [harness("claude-code", `${home}/.local/bin/claude`, "2.1.314")]
+          ),
+          db: await makeDb(),
+          fetchImpl,
+          home,
+          realpath: (path) => path
+        })
+        return (await lifecycle.checkForUpdates(true))[0]?.info
+      }
+
+      expect(await check()).toMatchObject({
+        channel: "latest",
+        installOrigin: "curl",
+        latestVersion: "2.1.314",
+        source: "releaseChannel",
+        updateAvailable: false
+      })
+      expect(fetched.some((url) => url.includes("registry.npmjs.org"))).toBe(false)
+
+      mkdirSync(join(home, ".claude"))
+      writeFileSync(
+        join(home, ".claude", "settings.json"),
+        JSON.stringify({ autoUpdatesChannel: "stable" })
+      )
+      expect(await check()).toMatchObject({
+        channel: "stable",
+        latestVersion: "2.1.315",
+        updateAvailable: true
+      })
+    } finally {
+      rmSync(home, { force: true, recursive: true })
+    }
   })
 })

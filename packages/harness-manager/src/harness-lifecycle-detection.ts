@@ -9,6 +9,7 @@ import {
   checkGithubLatest,
   checkNpmLatest,
   checkPypiLatest,
+  checkReleaseChannelLatest,
   detectBrewPackage,
   detectInstallOrigin,
   isNewerVersion,
@@ -20,6 +21,7 @@ import {
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { appBundlePath, run } from "./harness-lifecycle-support.js"
 import type { HarnessUpdateCheckOutcome } from "./harness-lifecycle-types.js"
+import { configuredReleaseChannel } from "./harness-release-channel.js"
 
 const UPDATE_VERIFICATION_TIMEOUT_MS = 2 * 60_000
 const UPDATE_VERIFICATION_POLL_INTERVAL_MS = 500
@@ -97,6 +99,12 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
       }
       case "github":
         return checkGithubLatest(source.check.repo, fetchImpl)
+      case "releaseChannel":
+        return checkReleaseChannelLatest(
+          source.check.baseUrl,
+          configuredReleaseChannel(source.check, config.home),
+          fetchImpl
+        )
       default: {
         const url =
           arch === "x64" && source.check.appcastUrlX64 !== undefined

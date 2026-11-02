@@ -85,7 +85,7 @@ const prompt = (server: RunningCodevisorServer, sessionId: string, text: string)
   })
 
 describe("update runs", () => {
-  it("keeps chats paused from the harness install through the server restart", async () => {
+  it("pauses the harness's chats during its install and every chat for the server restart", async () => {
     const { agents, services } = await makeServices("server-a")
     const steps: Array<string> = observableFixture([])
     const install = Promise.withResolvers<void>()
@@ -102,6 +102,7 @@ describe("update runs", () => {
       }
     )
     const chat = await openChat(server, "codex", "Busy")
+    const other = await openChat(server, "claude-code", "Other")
     await prompt(server, chat, "prompt until cancelled")
     await waitFor(() => agents.prompts.length === 1)
 
@@ -121,6 +122,10 @@ describe("update runs", () => {
       lastApply: { state: "draining", message: "Updating Codex first" }
     })
     expect((await prompt(server, chat, "while updating")).status).toBe(409)
+    expect((await prompt(server, other, "another harness")).body).toMatchObject({
+      delivered: "sent"
+    })
+    await waitFor(() => agents.prompts.length === 2)
     const cancelled = await jsonRequest(server, "/v1/updates/run", { method: "DELETE" })
     expect(cancelled.status).toBe(409)
 
@@ -129,11 +134,9 @@ describe("update runs", () => {
     expect(steps).toEqual(["prepare codex", "install codex", "restart server"])
     expect(agents.cancellations).toHaveLength(1)
     expect(await runState(server)).toBe("restarting")
-    expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({
-      state: "drained",
-      pausedSessionIds: [chat]
-    })
-    expect(agents.prompts).toHaveLength(1)
+    expect((await jsonRequest(server, "/v1/restart/drain")).body).not.toHaveProperty("harnessIds")
+    expect((await prompt(server, other, "while restarting")).status).toBe(409)
+    expect(agents.prompts).toHaveLength(2)
   })
 
   it("pauses only the updating harness's chats, then continues them once", async () => {

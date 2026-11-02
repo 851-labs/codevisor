@@ -96,6 +96,7 @@ export type {
   InstallOrigin,
   HarnessInstallMethodSpec,
   UpdateCheckSpec,
+  ReleaseChannelSetting,
   UpdateApplySpec,
   HarnessUpdateSource,
   NativeMcpConfigSpec,

@@ -34,7 +34,12 @@ export const claudeCodeHarness: HarnessDefinition = {
       },
       {
         apply: { args: ["update"], kind: "selfUpdate" },
-        check: { kind: "npm", packageName: "@anthropic-ai/claude-code" },
+        check: {
+          baseUrl: "https://downloads.claude.ai/claude-code-releases",
+          channelSetting: { file: ".claude/settings.json", key: "autoUpdatesChannel" },
+          defaultChannel: "latest",
+          kind: "releaseChannel"
+        },
         when: "any"
       }
     ]

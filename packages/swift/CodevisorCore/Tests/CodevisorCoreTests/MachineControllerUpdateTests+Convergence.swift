@@ -107,4 +107,88 @@ extension MachineControllerUpdateTests {
       ServerUpdateRun.notConvergedMessage(initial: before, current: rebooted, refreshed: nil)
         == "The server restarted into 0.1.1, but a newer release is still available. Try updating again.")
   }
+
+  @Test("Requests keep flowing while the machine pauses chats, and wait only once it restarts")
+  func remoteServerUpdateHoldsRequestsOnlyForTheRestart() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureDrain(polls: 3)
+    let clock = AdvancingServerUpdateScheduler()
+    let controller = makeController(fake: fake, attempts: 50, clock: clock)
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+    var seen: [ServerAvailability] = []
+    clock.onSleep = { [weak controller] in
+      guard let availability = controller?.availability(for: "local"), seen.last != availability else { return }
+      seen.append(availability)
+    }
+
+    await controller.updateServer(machineId: "local")
+
+    #expect(seen == [.ready, .waiting(.updating)])
+    #expect(controller.serverUpdatePhase(for: "local") == .idle)
+    #expect(controller.availability(for: "local") == .ready)
+  }
+
+  @Test("A machine that never restarts gets its paused chats back and stays usable")
+  func remoteServerUpdateNeverRestartingReleasesChats() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureNeverRestarts()
+    let clock = AdvancingServerUpdateScheduler()
+    let controller = makeController(fake: fake, attempts: 3, clock: clock)
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+    var held = false
+    clock.onSleep = { [weak controller] in
+      if controller?.availability(for: "local") != .ready { held = true }
+    }
+
+    await controller.updateServer(machineId: "local")
+
+    #expect(
+      controller.serverUpdatePhase(for: "local")
+        == .failed(
+          "The server is still running the previous version and never restarted. Check it on the machine directly."))
+    #expect(fake.operationLog.last == "restart.drain.cancel")
+    #expect(!held)
+    #expect(controller.availability(for: "local") == .ready)
+  }
+
+  @Test("A failure the machine reports gives its paused chats back")
+  func remoteServerUpdateReportedFailureReleasesChats() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureApplyFailure(message: "Codevisor isn't open on this Mac, so it couldn't install the update.")
+    let clock = AdvancingServerUpdateScheduler()
+    let controller = makeController(fake: fake, attempts: 50, clock: clock)
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+
+    await controller.updateServer(machineId: "local")
+
+    #expect(
+      controller.serverUpdatePhase(for: "local")
+        == .failed("Codevisor isn't open on this Mac, so it couldn't install the update."))
+    #expect(fake.operationLog == ["restart.drain.cancel"])
+    #expect(controller.availability(for: "local") == .ready)
+  }
+
+  @Test("A harness run the machine refuses never stops its Codevisor update")
+  func remoteServerUpdateSurvivesRefusedHarnessRun() async throws {
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
+    fake.configureUpdateRunRefusal(
+      CodevisorServerClientError.httpStatus(409, #"{"error":"An operation is already running for codex"}"#))
+    let clock = AdvancingServerUpdateScheduler()
+    let controller = makeController(fake: fake, attempts: 50, clock: clock)
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: "local")
+
+    await controller.updateServer(machineId: "local", harnessIds: ["codex"])
+
+    #expect(fake.appliedUpdates == 1)
+    #expect(controller.serverUpdatePhase(for: "local") == .idle)
+    #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
+  }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ACPKit
+import CodevisorTestSupport
 @testable import CodevisorCore
 
 @MainActor
@@ -187,5 +188,26 @@ struct AppEnvironmentTests {
         if case .setWorkspaceArchived = entry.intent { return true }
         return false
       })
+  }
+
+  @Test("A server's update request installs the app update without waiting for a window")
+  func updateRequestInstallsAppUpdate() async throws {
+    let localServer = StubLocalServer()
+    let appUpdate = AppUpdateModel(currentVersion: "1.0")
+    let installed = TestSignal()
+    appUpdate.unattendedInstallHandler = { installed.signal() }
+    let environment = AppEnvironment(
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      settings: AppSettingsModel(store: InMemoryStore()),
+      localServer: localServer,
+      appUpdate: appUpdate
+    )
+
+    let requestUpdate = try #require(localServer.onUpdateRequested)
+    requestUpdate()
+
+    await installed.wait()
+    #expect(installed.value == 1)
+    withExtendedLifetime(environment) {}
   }
 }

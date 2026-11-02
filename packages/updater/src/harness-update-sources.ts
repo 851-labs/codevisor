@@ -122,6 +122,25 @@ export const checkGithubLatest = async (
   }
 }
 
+export const checkReleaseChannelLatest = async (
+  baseUrl: string,
+  channel: string,
+  fetchImpl: FetchLike = fetch
+): Promise<LatestVersionResult> => {
+  try {
+    const response = await fetchImpl(`${baseUrl}/${encodeURIComponent(channel)}`, {
+      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)
+    })
+    if (!response.ok) return none
+    const version = (await response.text()).trim()
+    return releaseVersionPattern.test(version) ? { channel, latestVersion: version } : none
+  } catch {
+    return none
+  }
+}
+
+const releaseVersionPattern = /^\d+\.\d+\.\d+[0-9A-Za-z.+-]*$/
+
 const resolveBinaryPath = (
   binaryPath: string,
   realpath: ((path: string) => string) | undefined

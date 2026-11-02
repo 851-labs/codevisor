@@ -28,6 +28,7 @@ export interface UpdateRun {
   readonly startServerUpdate: (channel: ServerUpdateChannel) => Promise<ServerUpdateAccepted>
   readonly cancel: () => Promise<UpdateRunState>
   readonly noteChatsChanged: () => void
+  readonly restartsServer: () => boolean
 }
 
 export interface UpdateRunDeps {
@@ -53,6 +54,11 @@ interface CheckedServer {
   readonly info: UpdateInfo
 }
 
+interface PreparedHarnesses {
+  readonly prepared: ReadonlyArray<string>
+  readonly refusal: HttpFailure | undefined
+}
+
 interface Progress {
   readonly state: UpdateRunState["state"]
   readonly harnessIds: ReadonlyArray<string>
@@ -67,6 +73,7 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
   let progress: Progress = idleProgress()
   let queue: Array<string> = []
   let scope: PauseScope = allChats
+  let ending: Ending = continueEnding
   let acceptingHarnesses = false
 
   const state = (): UpdateRunState => ({
@@ -93,20 +100,25 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
     return deps.server
   }
 
-  const prepareHarnesses = async (harnessIds: ReadonlyArray<string>): Promise<void> => {
-    if (harnessIds.length === 0) return
-
-    const harnesses = harnessSteps()
+  const prepareHarnesses = async (
+    harnessIds: ReadonlyArray<string>
+  ): Promise<PreparedHarnesses> => {
     const prepared: Array<string> = []
-    try {
-      for (const harnessId of harnessIds) {
-        await harnesses.prepareUpdate(harnessId)
+    let refusal: HttpFailure | undefined
+    for (const harnessId of harnessIds) {
+      try {
+        await harnessSteps().prepareUpdate(harnessId)
         prepared.push(harnessId)
+      } catch (cause) {
+        refusal ??= refusalFrom(cause)
+        log(`Skipping the ${harnessId} update: ${failureMessage(cause)}`)
       }
-    } catch (cause) {
-      for (const harnessId of prepared) harnesses.cancelUpdate(harnessId)
-      throw new HttpFailure(409, failureMessage(cause))
     }
+    return { prepared, refusal }
+  }
+
+  const unprepare = (harnessIds: ReadonlyArray<string>): void => {
+    for (const harnessId of harnessIds) harnessSteps().cancelUpdate(harnessId)
   }
 
   const checkServer = async (channel: ServerUpdateChannel): Promise<CheckedServer> => {
@@ -129,17 +141,33 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
   }
 
   const join = async (request: UpdateRunRequest): Promise<UpdateRunStarted> => {
-    if (!joinable(request, acceptingHarnesses)) {
-      throw new HttpFailure(409, "An update is already running")
-    }
+    if (!acceptingHarnesses) throw new HttpFailure(409, "An update is already running")
 
     const added = request.harnessIds.filter((harnessId) => !progress.harnessIds.includes(harnessId))
-    await prepareHarnesses(added)
-    queue = [...queue, ...added]
-    if (scope.kind === "harnesses") scope = harnessChats([...scope.harnessIds, ...added])
-    advance({ ...progress, harnessIds: [...progress.harnessIds, ...added] })
+    const { prepared, refusal } = await prepareHarnesses(added)
+    const server = await serverForJoin(request)
+    if (!acceptingHarnesses) {
+      unprepare(prepared)
+      throw new HttpFailure(409, "An update is already running")
+    }
+    if (nothingToJoin(prepared, refusal, request, server)) throw refusal
+
+    adoptEnding(request, server)
+    queue = [...queue, ...prepared]
+    if (scope.kind === "harnesses") scope = harnessChats([...scope.harnessIds, ...prepared])
+    advance({ ...progress, harnessIds: [...progress.harnessIds, ...prepared] })
     void restart.begin(scope)
-    return { run: state() }
+    return { run: state(), ...(server === undefined ? {} : { server: server.accepted }) }
+  }
+
+  const serverForJoin = (request: UpdateRunRequest): Promise<CheckedServer> | undefined => {
+    if (request.serverChannel === undefined) return undefined
+    return checkServer(request.serverChannel)
+  }
+
+  const adoptEnding = (request: UpdateRunRequest, server: CheckedServer | undefined): void => {
+    const requested = endingFor(request, server)
+    if (requested.kind === "restartServer" || ending.kind === "continue") ending = requested
   }
 
   const start = async (request: UpdateRunRequest): Promise<UpdateRunStarted> => {
@@ -150,6 +178,7 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
   }
 
   const startServerUpdate = async (channel: ServerUpdateChannel): Promise<ServerUpdateAccepted> => {
+    if (acceptingHarnesses) return joinServerUpdate(channel)
     if (isBusy() && !awaitsRestart(progress)) {
       throw new HttpFailure(409, "An update is already running")
     }
@@ -159,37 +188,43 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
     return server.accepted
   }
 
+  const joinServerUpdate = async (channel: ServerUpdateChannel): Promise<ServerUpdateAccepted> => {
+    const { server } = await join({ harnessIds: [], serverChannel: channel })
+    if (server === undefined) throw new HttpFailure(409, "An update is already running")
+    return server
+  }
+
   const launch = async (
     request: UpdateRunRequest,
     server: CheckedServer | undefined
   ): Promise<UpdateRunStarted> => {
-    const harnessIds = [...new Set(request.harnessIds)]
-    await prepareHarnesses(harnessIds)
-    const ending = endingFor(request, server)
+    const requested = [...new Set(request.harnessIds)]
+    const { prepared, refusal } = await prepareHarnesses(requested)
+    const next = endingFor(request, server)
     const withServer = server === undefined ? {} : { server: server.accepted }
-    if (harnessIds.length === 0 && ending.kind !== "restartServer")
+    if (prepared.length === 0 && next.kind === "continue" && refusal !== undefined) throw refusal
+    if (prepared.length === 0 && next.kind !== "restartServer")
       return { run: state(), ...withServer }
 
-    queue = [...harnessIds]
+    queue = [...prepared]
+    ending = next
     acceptingHarnesses = true
-    scope = ending.kind === "continue" ? harnessChats(harnessIds) : allChats
-    advance({ state: "pausing", harnessIds, startedAt: new Date().toISOString() })
-    void execute(ending).catch(async (cause: unknown) => {
+    scope = prepared.length === 0 ? allChats : harnessChats(prepared)
+    advance({ state: "pausing", harnessIds: prepared, startedAt: new Date().toISOString() })
+    void execute().catch(async (cause: unknown) => {
       log(`Update run failed: ${failureMessage(cause)}`)
       await continueChats()
     })
     return { run: state(), ...withServer }
   }
 
-  const execute = async (ending: Ending): Promise<void> => {
+  const execute = async (): Promise<void> => {
     const paused = await restart.begin(scope)
     if (paused.state !== "drained") return abandon()
 
     advance({ ...progress, state: "updating" })
     await updateHarnesses()
-    if (ending.kind === "restartServer") return restartServer(ending.channel, ending.info)
-    if (ending.kind === "holdForAppUpdate") return holdForAppUpdate()
-    return continueChats()
+    await finish()
   }
 
   const updateHarnesses = async (): Promise<void> => {
@@ -197,11 +232,37 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
       await restart.begin(scope)
       restart.extendGrace()
       advance({ ...progress, currentHarnessId: harnessId })
-      await harnessSteps().applyUpdate(harnessId)
+      await applyHarnessUpdate(harnessId)
     }
     acceptingHarnesses = false
     const { currentHarnessId: _finished, ...rest } = progress
     advance(rest)
+  }
+
+  const applyHarnessUpdate = async (harnessId: string): Promise<void> => {
+    try {
+      await harnessSteps().applyUpdate(harnessId)
+    } catch (cause) {
+      log(`The ${harnessId} update failed: ${failureMessage(cause)}`)
+    }
+  }
+
+  const finish = async (): Promise<void> => {
+    const final = ending
+    if (final.kind === "continue") return continueChats()
+    if (!(await pauseAllChats())) return abandon()
+
+    if (final.kind === "restartServer") return restartServer(final.channel, final.info)
+    return holdForAppUpdate()
+  }
+
+  const pauseAllChats = async (): Promise<boolean> => {
+    if (scope.kind === "all") return true
+
+    scope = allChats
+    advance({ ...progress, state: "pausing" })
+    const paused = await restart.begin(allChats)
+    return paused.state === "drained"
   }
 
   const restartServer = async (channel: ServerUpdateChannel, info: UpdateInfo): Promise<void> => {
@@ -226,7 +287,7 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
   }
 
   const abandon = (): void => {
-    for (const harnessId of queue) harnessSteps().cancelUpdate(harnessId)
+    unprepare(queue)
     queue = []
     acceptingHarnesses = false
     advance(idleProgress())
@@ -257,26 +318,40 @@ export const makeUpdateRun = (deps: UpdateRunDeps): UpdateRun => {
       }
       if (progress.state === "pausing") deps.onChange()
       settleContinuing()
-    }
+    },
+    restartsServer: () => isBusy() && ending.kind === "restartServer"
   }
 }
+
+const continueEnding: Ending = { kind: "continue" }
 
 const endingFor = (request: UpdateRunRequest, server: CheckedServer | undefined): Ending => {
   if (server?.accepted.accepted === true && request.serverChannel !== undefined) {
     return { kind: "restartServer", channel: request.serverChannel, info: server.info }
   }
   if (request.holdForAppUpdate === true) return { kind: "holdForAppUpdate" }
-  return { kind: "continue" }
+  return continueEnding
 }
+
+const refusalFrom = (cause: unknown): HttpFailure =>
+  cause instanceof HttpFailure ? cause : new HttpFailure(409, failureMessage(cause))
+
+const nothingToJoin = (
+  prepared: ReadonlyArray<string>,
+  refusal: HttpFailure | undefined,
+  request: UpdateRunRequest,
+  server: CheckedServer | undefined
+): refusal is HttpFailure =>
+  prepared.length === 0 &&
+  refusal !== undefined &&
+  server === undefined &&
+  request.holdForAppUpdate !== true
 
 const idleProgress = (): Progress => ({
   state: "idle",
   harnessIds: [],
   startedAt: new Date().toISOString()
 })
-
-const joinable = (request: UpdateRunRequest, acceptingHarnesses: boolean): boolean =>
-  acceptingHarnesses && request.serverChannel === undefined && request.holdForAppUpdate !== true
 
 const awaitsRestart = (progress: Progress): boolean =>
   progress.state === "holding" || progress.state === "restarting"

@@ -58,6 +58,10 @@ extension SyncFakeServerClient {
     lock.withLock { restartDowntime = polls }
   }
 
+  func configureNeverRestarts() {
+    lock.withLock { neverRestarts = true }
+  }
+
   func configureBusy(_ value: Bool) {
     lock.withLock { _busy = value }
   }
@@ -335,6 +339,7 @@ extension SyncFakeServerClient {
           draining: true
         )
       }
+      if neverRestarts { return ServerUpdateApplied(accepted: true, targetVersion: targetVersion) }
       if applyProgressReports.isEmpty { performSimulatedRestart() } else { applyingProgressReports = true }
       return ServerUpdateApplied(
         accepted: true,

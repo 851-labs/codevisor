@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -6,6 +6,7 @@ import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import {
   APP_UPDATE_CHANNEL_FILE,
   APP_UPDATE_FEED_FILE,
+  APP_UPDATE_STATUS_FILE,
   DEFAULT_ALPHA_SERVER_MANIFEST_URL,
   DEFAULT_STABLE_SERVER_MANIFEST_URL,
   DEFAULT_SPARKLE_FEED_URL
@@ -13,6 +14,11 @@ import {
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import {
+  APP_HANDOFF_POLL_MS,
+  APP_HANDOFF_TIMEOUT_MS,
+  HOST_APP_SILENT_MESSAGE
+} from "./serve-app-handoff.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
 
 const feed = `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
@@ -67,17 +73,28 @@ describe("makeSelfUpdater release resolution", () => {
       if (url === customFeedURL || url === DEFAULT_SPARKLE_FEED_URL) {
         return new Response(feed, { status: feedStatus })
       }
+      if (url.endsWith(".tar.gz")) return new Response("", { status: 404 })
       throw new Error(`unexpected fetch ${url}`)
     })
   })
 
   afterEach(async () => {
+    vi.useRealTimers()
     await Effect.runPromise(db.close)
     vi.unstubAllEnvs()
     rmSync(dataDir, { recursive: true, force: true })
   })
 
   const requestedURLs = () => fetch.mock.calls.map((call) => requestURL(call[0]))
+
+  const requestPath = () => join(dataDir, "app-update-request.json")
+
+  const hostAppHanding = () => {
+    vi.stubEnv("CODEVISOR_APP_HOSTED", "1")
+    vi.stubEnv("CODEVISOR_APP_UPDATE_REQUEST_PATH", requestPath())
+    writeFileSync(join(dataDir, APP_UPDATE_CHANNEL_FILE), "alpha\n")
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] })
+  }
 
   const updater = () =>
     makeSelfUpdater({
@@ -181,5 +198,63 @@ describe("makeSelfUpdater release resolution", () => {
 
     await instance.check({ channel: "alpha", force: true })
     expect(fetch).toHaveBeenCalledTimes(afterStable + afterAlpha)
+  })
+
+  describe("applying", () => {
+    it("app-hosted: fails fast, withdraws the request and says why when the app never answers", async () => {
+      hostAppHanding()
+      const instance = updater()
+
+      const applied = instance.apply({ channel: "alpha" }).then(
+        () => "applied",
+        (cause: Error) => cause.message
+      )
+      await vi.advanceTimersByTimeAsync(APP_HANDOFF_TIMEOUT_MS - APP_HANDOFF_POLL_MS)
+      expect(existsSync(requestPath())).toBe(true)
+      await vi.advanceTimersByTimeAsync(APP_HANDOFF_POLL_MS)
+
+      await expect(applied).resolves.toBe(HOST_APP_SILENT_MESSAGE)
+      expect(existsSync(requestPath())).toBe(false)
+      expect((await instance.check({ channel: "alpha" })).lastApply).toMatchObject({
+        state: "failed",
+        message: HOST_APP_SILENT_MESSAGE
+      })
+    })
+
+    it("app-hosted: hands over once the app reports it has taken the update", async () => {
+      hostAppHanding()
+      const instance = updater()
+
+      const applied = instance.apply({ channel: "alpha" }).then(() => "applied")
+      await vi.advanceTimersByTimeAsync(APP_HANDOFF_POLL_MS)
+      expect(existsSync(requestPath())).toBe(true)
+      writeFileSync(
+        join(dataDir, APP_UPDATE_STATUS_FILE),
+        JSON.stringify({
+          state: "installing",
+          message: "Downloading…",
+          at: new Date().toISOString()
+        })
+      )
+      await vi.advanceTimersByTimeAsync(APP_HANDOFF_POLL_MS)
+
+      await expect(applied).resolves.toBe("applied")
+      expect((await instance.check({ channel: "alpha" })).lastApply).toMatchObject({
+        state: "installing",
+        message: "Downloading…"
+      })
+    })
+
+    it("standalone: reports a failed self-update to clients", async () => {
+      vi.stubEnv("CODEVISOR_APP_HOSTED", "")
+      const instance = updater()
+
+      await expect(instance.apply({ channel: "alpha" })).rejects.toThrow(/HTTP 404/)
+
+      expect((await instance.check({ channel: "alpha" })).lastApply).toMatchObject({
+        state: "failed",
+        message: expect.stringMatching(/^Failed to download .*: HTTP 404$/)
+      })
+    })
   })
 })

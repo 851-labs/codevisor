@@ -44,9 +44,10 @@ struct UpdateAllRun {
 
   private func updateHarnessesThenApp(_ machine: UpdateAllPlan.Machine, app: UpdateComponent) async -> Bool {
     let held = await updateHarnesses(machine, holdForAppUpdate: true)
-    guard held?.isHoldingForAppUpdate == true else { return false }
     guard noEarlierFailure() else {
-      try? await machines.client(for: machine.machineId).cancelRestartDrain()
+      if held?.isHoldingForAppUpdate == true {
+        try? await machines.client(for: machine.machineId).cancelRestartDrain()
+      }
       return false
     }
 

@@ -2,15 +2,26 @@ import Foundation
 import Testing
 @testable import CodevisorCore
 
+enum HarnessUpdateTrouble: CaseIterable, Sendable {
+  case reportedFailure
+  case runRefused
+}
+
 extension UpdateCenterTests {
-  @Test("Failed harnesses never prevent remote server or local app updates")
-  func harnessFailureDoesNotBlockCodevisor() async throws {
+  @Test(
+    "Failed harnesses never prevent remote server or local app updates",
+    arguments: HarnessUpdateTrouble.allCases)
+  func harnessFailureDoesNotBlockCodevisor(trouble: HarnessUpdateTrouble) async throws {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "1.0", latest: "2.0")
     var harness = makeHarness(updateAvailable: true)
     harness.lifecycle = ServerHarnessLifecycleState(phase: "failed", error: "installer failed")
     fake.configureHarnesses([harness])
+    if trouble == .runRefused {
+      fake.configureUpdateRunRefusal(
+        CodevisorServerClientError.httpStatus(409, #"{"error":"An operation is already running"}"#))
+    }
     let controller = try makeController(fakes: ["local": fake, remote.id: fake], remotes: [remote])
     defer { controller.stopEventSync() }
     let app = AppUpdateModel(currentVersion: "1.0")

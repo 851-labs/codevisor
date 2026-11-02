@@ -127,6 +127,7 @@ public final class AppEnvironment {
       self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
     }
     applyLocalNetworkAccess()
+    wireAppUpdateRequests()
     wireCloudRefreshAndAdoption()
     projectList.showsImportedSessions = settings.importExternalSessions
     machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
@@ -139,6 +140,12 @@ public final class AppEnvironment {
       machines.machine(for: machines.selectedMachineId) != nil
     {
       self.composerDefaults.rememberNewWorkspaceServer(serverId: machines.selectedMachineId)
+    }
+  }
+
+  private func wireAppUpdateRequests() {
+    localServer?.onUpdateRequested = { [weak self] in
+      Task { @MainActor in await self?.appUpdate.installUpdateUnattended() }
     }
   }
 
