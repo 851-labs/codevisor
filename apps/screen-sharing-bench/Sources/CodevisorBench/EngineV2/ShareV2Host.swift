@@ -40,6 +40,7 @@ final class ShareV2Host {
     let host = ScreenSharingV2Host(transport: transport, encoder: encoder, metrics: metrics)
     self.transport = transport
     self.host = host
+    capture.pixelFormat = encoder.sourcePixelFormat
     host.start()
     await startCapture(into: host)
   }

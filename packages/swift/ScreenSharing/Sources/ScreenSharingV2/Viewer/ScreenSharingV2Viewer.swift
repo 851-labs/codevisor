@@ -60,7 +60,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     metrics.increment("receivedFrames")
     metrics.observe("assemble", milliseconds: Double(frame.assemblingUs) / 1000)
     if frame.recovery != .none { metrics.increment("recovered.\(frame.recovery.rawValue)") }
-    guard let meta = try? ScreenSharingV2FrameMeta(frame.meta), meta.update.tiles.contains(Int(frame.stream)) else {
+    guard let meta = try? ScreenSharingV2FrameMeta(frame.meta), Int(frame.stream) < meta.layout.count else {
       return rejected("unreadableMeta")
     }
     guard admits(frame, meta: meta) else {

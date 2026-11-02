@@ -4,6 +4,7 @@ import Synchronization
 
 public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   public let layout: ScreenSharingV2TileLayout
+  public let sourcePixelFormat = ScreenSharingV2Profile.capturePixelFormat
   private let sessions: [ScreenSharingVideoToolboxTileSession]
   private let cutter: ScreenSharingV2TileCutter
   private let metrics: ScreenSharingMetrics

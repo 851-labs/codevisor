@@ -6,6 +6,7 @@ import Synchronization
 
 final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   let layout: ScreenSharingV2TileLayout
+  let sourcePixelFormat = ScreenSharingV2Profile.capturePixelFormat
   let encodes = TestSignal()
   private let recorded = Mutex<[ScreenSharingTileEncodeRequest]>([])
   private let acknowledged = Mutex<[UInt64]>([])

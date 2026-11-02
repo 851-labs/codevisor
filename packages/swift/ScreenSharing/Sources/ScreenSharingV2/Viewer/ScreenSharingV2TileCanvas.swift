@@ -1,9 +1,12 @@
 import CoreVideo
 import ScreenSharing
+import VideoToolbox
 
 struct ScreenSharingV2TileCanvas: @unchecked Sendable {
   let layout: ScreenSharingV2TileLayout
   private var images: [Int: CVPixelBuffer] = [:]
+  private var newestFormat: OSType?
+  private var transfer: VTPixelTransferSession?
   private var pool: (pixelFormat: OSType, pool: CVPixelBufferPool)?
 
   init(layout: ScreenSharingV2TileLayout) {
@@ -12,6 +15,7 @@ struct ScreenSharingV2TileCanvas: @unchecked Sendable {
 
   mutating func place(_ image: CVPixelBuffer, tile: Int) {
     images[tile] = image
+    newestFormat = CVPixelBufferGetPixelFormatType(image)
   }
 
   mutating func compose() throws -> CVPixelBuffer? {
@@ -32,6 +36,33 @@ struct ScreenSharingV2TileCanvas: @unchecked Sendable {
     }
     if let first = images.values.first { CVBufferPropagateAttachments(first, target) }
     return target
+  }
+
+  private mutating func converted(_ image: CVPixelBuffer, to pixelFormat: OSType) throws -> CVPixelBuffer {
+    guard CVPixelBufferGetPixelFormatType(image) != pixelFormat else { return image }
+
+    var created: CVPixelBuffer?
+    let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any]()] as CFDictionary
+    let status = CVPixelBufferCreate(
+      nil, CVPixelBufferGetWidth(image), CVPixelBufferGetHeight(image), pixelFormat, attributes, &created)
+    guard status == kCVReturnSuccess, let created else { throw ScreenSharingError.codec("Allocate tile", status) }
+
+    try ScreenSharingV2TileCanvas.check(VTPixelTransferSessionTransferImage(try session(), from: image, to: created))
+    return created
+  }
+
+  private mutating func session() throws -> VTPixelTransferSession {
+    if let transfer { return transfer }
+    var created: VTPixelTransferSession?
+    try Self.check(VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &created))
+    guard let created else { throw ScreenSharingError.unavailable("No pixel transfer session.") }
+
+    transfer = created
+    return created
+  }
+
+  private static func check(_ status: OSStatus) throws {
+    guard status == noErr else { throw ScreenSharingError.codec("Convert tile", status) }
   }
 
   private func copy(_ image: CVPixelBuffer, into target: CVPixelBuffer, rows: Range<Int>) {

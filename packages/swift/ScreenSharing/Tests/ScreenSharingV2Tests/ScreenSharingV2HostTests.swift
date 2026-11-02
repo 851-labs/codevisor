@@ -91,7 +91,8 @@ struct ScreenSharingV2HostTests {
     encoder.emitTiles(of: encoder.requests[0])
     await scheduler.scheduled.wait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs / 2)
-    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
+    host.push(
+      try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
     await encoder.encodes.wait(for: 2)
     encoder.emitTiles(of: encoder.requests[1])
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs - ScreenSharingV2Profile.refinementGapNs / 2)
@@ -117,7 +118,8 @@ struct ScreenSharingV2HostTests {
     await scheduler.scheduled.wait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
     await encoder.encodes.wait(for: 2)
-    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
+    host.push(
+      try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
     await encoder.encodes.wait(for: 3)
 
     #expect(encoder.requests[1].update.tiles == [0])

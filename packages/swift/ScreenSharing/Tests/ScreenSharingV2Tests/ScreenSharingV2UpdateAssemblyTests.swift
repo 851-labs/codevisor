@@ -47,4 +47,15 @@ struct ScreenSharingV2UpdateAssemblyTests {
 
     #expect(assembly.ready().map(\.update.id) == [1])
   }
+
+  @Test func aTileTheUpdateDidNotListIsComposedWithIt() {
+    var assembly = ScreenSharingV2UpdateAssembly()
+    let first = ScreenSharingTileUpdate(id: 1, tiles: [0])
+    assembly.received(first, tile: 0)
+    assembly.received(first, tile: 1)
+    _ = assembly.resolve(update: 1, tile: 1, .missing)
+    _ = assembly.resolve(update: 1, tile: 0, .missing)
+
+    #expect(assembly.ready().map(\.update.id) == [1])
+  }
 }
