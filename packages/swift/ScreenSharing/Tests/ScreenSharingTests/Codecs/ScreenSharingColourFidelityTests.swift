@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreVideo
 import Foundation
 import Testing
@@ -50,6 +51,77 @@ extension HardwareCodecTests {
           abs(rgb.r - colour.r) <= 2 && abs(rgb.g - colour.g) <= 2 && abs(rgb.b - colour.b) <= 2, "\(colour) -> \(rgb)")
       }
     }
+
+    #if os(macOS)
+      @Test func capturedYCbCrFramesKeepTheirColoursThroughHEVCMain() async throws {
+        let metrics = ScreenSharingMetrics()
+        let configuration = try ScreenSharingVideoConfiguration(
+          width: 320, height: 192, framesPerSecond: 30, bitrate: 8_000_000)
+        let encoder = try ScreenSharingEncoder(configuration: configuration, metrics: metrics, codec: .hevc)
+        let encoded = CodecOutputLog<ScreenSharingEncodedFrame>()
+        encoded.follow(encoder)
+        let decoded = CodecOutputLog<ScreenSharingVideoFrame>()
+        let decoder = ScreenSharingDecoder(metrics: metrics, codec: .hevc) { decoded.record($0) }
+        defer {
+          encoder.stop()
+          decoder.stop()
+        }
+        let picture = try Self.capturedBands(width: 320, height: 192)
+        ScreenSharingCaptureColorTags.tagStandardTransfer(picture)
+        for index in 0..<4 {
+          let frame = ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: Int64(index) * 33_333_333)
+          let output = try #require(try await encoded.nextItem { try #require(try encoder.encode(frame)) })
+          _ = try #require(try await decoded.nextItem { try decoder.decode(output) })
+        }
+        let output = try #require(decoded.items.last).pixelBuffer
+        for (index, colour) in Self.colours.enumerated() {
+          let rgb = Self.rgb(output, x: index * 80 + 40, y: 96)
+          #expect(
+            abs(rgb.r - colour.r) <= 3 && abs(rgb.g - colour.g) <= 3 && abs(rgb.b - colour.b) <= 3,
+            "\(colour) -> \(rgb)")
+        }
+      }
+
+      static func capturedBands(width: Int, height: Int) throws -> CVPixelBuffer {
+        var created: CVPixelBuffer?
+        let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary
+        _ = CVPixelBufferCreate(
+          nil, width, height, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, attributes, &created)
+        let buffer = try #require(created)
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let luma = try #require(CVPixelBufferGetBaseAddressOfPlane(buffer, 0)).assumingMemoryBound(to: UInt8.self)
+        let chroma = try #require(CVPixelBufferGetBaseAddressOfPlane(buffer, 1)).assumingMemoryBound(to: UInt8.self)
+        let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
+        for row in 0..<height {
+          for column in 0..<width {
+            let (y, cb, cr) = videoRange709(colours[column / (width / colours.count)])
+            luma[row * lumaStride + column] = y
+            guard row.isMultiple(of: 2), column.isMultiple(of: 2) else { continue }
+
+            chroma[row / 2 * chromaStride + column] = cb
+            chroma[row / 2 * chromaStride + column + 1] = cr
+          }
+        }
+        CVBufferSetAttachment(
+          buffer, kCVImageBufferCGColorSpaceKey, CGColorSpace(name: CGColorSpace.sRGB)!, .shouldPropagate)
+        CVBufferSetAttachment(
+          buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(
+          buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(
+          buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+        return buffer
+      }
+
+      private static func videoRange709(_ colour: (r: Int, g: Int, b: Int)) -> (UInt8, UInt8, UInt8) {
+        let (r, g, b) = (Double(colour.r) / 255, Double(colour.g) / 255, Double(colour.b) / 255)
+        let y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        func code(_ value: Double) -> UInt8 { UInt8(min(255, max(0, value.rounded()))) }
+        return (code(16 + 219 * y), code(128 + 224 * (b - y) / 1.8556), code(128 + 224 * (r - y) / 1.5748))
+      }
+    #endif
 
     @Test func bgraFramesIntoHEVCMainComeOutAsMain() async throws {
       let metrics = ScreenSharingMetrics()
@@ -125,7 +197,9 @@ extension HardwareCodecTests {
       let yPlane = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!.assumingMemoryBound(to: UInt8.self)
       let uvPlane = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!.assumingMemoryBound(to: UInt8.self)
       var luma = Double(yPlane[y * CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) + x]) / 255
-      let uvIndex = y * CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) + x * 2
+      let subsampled = CVPixelBufferGetWidthOfPlane(buffer, 1) < CVPixelBufferGetWidth(buffer)
+      let uvIndex =
+        (subsampled ? y / 2 : y) * CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) + (subsampled ? x / 2 : x) * 2
       var u = Double(uvPlane[uvIndex]) / 255 - 128.0 / 255, v = Double(uvPlane[uvIndex + 1]) / 255 - 128.0 / 255
       if !fullRange {
         luma = (luma - 16.0 / 255) * (255.0 / 219)

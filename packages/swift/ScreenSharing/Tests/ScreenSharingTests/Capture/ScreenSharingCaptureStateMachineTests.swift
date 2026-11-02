@@ -1,5 +1,6 @@
 #if os(macOS)
   import CodevisorTestSupport
+  import CoreGraphics
   import CoreMedia
   import CoreVideo
   import Foundation
@@ -287,21 +288,35 @@
       #expect(fixture.metrics.snapshot().counters["captureCallbacksComplete"] == 1)
     }
 
-    @Test func standardRangeYCbCrFramesCarryTheSRGBTransferTheyWereCapturedIn() async throws {
+    @Test(arguments: [
+      (
+        kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, CGColorSpace.sRGB as String,
+        kCVImageBufferTransferFunction_sRGB as String
+      ),
+      (
+        kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, CGColorSpace.displayP3 as String,
+        kCVImageBufferTransferFunction_ITU_R_709_2 as String
+      ),
+      (kCVPixelFormatType_32BGRA, CGColorSpace.sRGB as String, kCVImageBufferTransferFunction_ITU_R_709_2 as String),
+    ])
+    func onlySRGBYCbCrFramesAreRetaggedWithTheTransferTheyWereCapturedIn(
+      pixelFormat: OSType, space: String, delivered: String
+    ) async throws {
       let fixture = CaptureFixture()
       try await fixture.start()
       let output = try #require(fixture.target.output)
       let sample = try Self.screenSample(
-        presentationNs: 1, pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+        presentationNs: 1, pixelFormat: pixelFormat, space: space as CFString,
         transfer: kCVImageBufferTransferFunction_ITU_R_709_2)
       output.deliver(sample, of: .screen)
-      let pixel = try #require(fixture.sink.pixelBuffers.first)
+      let pixel = try #require(fixture.sink.lastPixelBuffer)
       let transfer = CVBufferCopyAttachment(pixel, kCVImageBufferTransferFunctionKey, nil) as? String
-      #expect(transfer == kCVImageBufferTransferFunction_sRGB as String)
+      #expect(transfer == delivered)
     }
 
     private static func screenSample(
-      presentationNs: Int64, pixelFormat: OSType = kCVPixelFormatType_32BGRA, transfer: CFString? = nil
+      presentationNs: Int64, pixelFormat: OSType = kCVPixelFormatType_32BGRA, space: CFString? = nil,
+      transfer: CFString? = nil
     ) throws -> CMSampleBuffer {
       var pixel: CVPixelBuffer?
       #expect(
@@ -310,6 +325,9 @@
           == kCVReturnSuccess)
       let buffer = try #require(pixel)
       if let transfer { CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, transfer, .shouldPropagate) }
+      if let space, let colorSpace = CGColorSpace(name: space) {
+        CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, colorSpace, .shouldPropagate)
+      }
       var format: CMFormatDescription?
       #expect(
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &format)
@@ -483,9 +501,15 @@
 
   private final class RecordingFrameSink: ScreenSharingFrameSink, @unchecked Sendable {
     private let lock = NSLock()
-    private var pushed: [ScreenSharingVideoFrame] = []
-    var frames: [Int64] { lock.withLock { pushed.map(\.timestampNs) } }
-    var pixelBuffers: [CVPixelBuffer] { lock.withLock { pushed.map(\.pixelBuffer) } }
-    func push(_ frame: ScreenSharingVideoFrame) { lock.withLock { pushed.append(frame) } }
+    private var pushed: [Int64] = []
+    private var last: CVPixelBuffer?
+    var frames: [Int64] { lock.withLock { pushed } }
+    var lastPixelBuffer: CVPixelBuffer? { lock.withLock { last } }
+    func push(_ frame: ScreenSharingVideoFrame) {
+      lock.withLock {
+        pushed.append(frame.timestampNs)
+        last = frame.pixelBuffer
+      }
+    }
   }
 #endif
