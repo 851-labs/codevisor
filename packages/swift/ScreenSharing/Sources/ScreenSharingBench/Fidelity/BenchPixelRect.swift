@@ -14,10 +14,6 @@ public struct BenchPixelRect: Sendable, Equatable, Codable {
   public var maxX: Int { x + width }
   public var maxY: Int { y + height }
 
-  public func contains(x px: Int, y py: Int) -> Bool {
-    px >= x && px < maxX && py >= y && py < maxY
-  }
-
   public func insetBy(_ amount: Int) -> BenchPixelRect {
     BenchPixelRect(
       x: x + amount, y: y + amount, width: max(0, width - 2 * amount), height: max(0, height - 2 * amount))

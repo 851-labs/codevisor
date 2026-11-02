@@ -11,16 +11,15 @@ public enum BenchChromaSubsampling {
   private static func roundTrip(_ plane: [Float], width: Int, height: Int) -> [Float] {
     var output = plane
     for top in stride(from: 0, to: height, by: block) {
+      let rows = top..<min(top + block, height)
       for left in stride(from: 0, to: width, by: block) {
-        let indices = blockIndices(left: left, top: top, width: width, height: height)
-        let mean = indices.reduce(Float(0)) { $0 + plane[$1] } / Float(indices.count)
-        for index in indices { output[index] = mean }
+        let columns = left..<min(left + block, width)
+        var sum: Float = 0
+        for y in rows { for x in columns { sum += plane[y * width + x] } }
+        let mean = sum / Float(rows.count * columns.count)
+        for y in rows { for x in columns { output[y * width + x] = mean } }
       }
     }
     return output
-  }
-
-  private static func blockIndices(left: Int, top: Int, width: Int, height: Int) -> [Int] {
-    (top..<min(top + block, height)).flatMap { y in (left..<min(left + block, width)).map { y * width + $0 } }
   }
 }

@@ -1,8 +1,10 @@
-import CoreGraphics
+import AppKit
 import ScreenSharingBenchScenes
 
 @MainActor
 struct SharedDisplay {
+  private static let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
+
   let id: CGDirectDisplayID
   private let virtualDisplay: PlayerVirtualDisplay?
 
@@ -12,5 +14,23 @@ struct SharedDisplay {
     let display = try PlayerVirtualDisplay(resolution)
     _ = try await display.screen()
     return SharedDisplay(id: display.displayID, virtualDisplay: display)
+  }
+
+  var bounds: CGRect {
+    CGDisplayBounds(id)
+  }
+
+  var readyDetail: String {
+    "display \(id)"
+  }
+
+  func screen() throws -> NSScreen {
+    guard
+      let screen = NSScreen.screens.first(where: {
+        $0.deviceDescription[Self.screenNumberKey] as? CGDirectDisplayID == id
+      })
+    else { throw BenchUsageError(message: "no screen for display \(id)") }
+
+    return screen
   }
 }

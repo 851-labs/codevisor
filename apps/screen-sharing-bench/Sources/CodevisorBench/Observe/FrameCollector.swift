@@ -31,7 +31,7 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
 
       observations.withLock { $0.append(observation) }
       relay?.forward(observation)
-      keepStill(of: sampleBuffer, version: observation.version)
+      keepStill(of: sampleBuffer, observation: observation)
     } catch {
       failure.withLock { $0 = $0 ?? error }
     }
@@ -41,10 +41,12 @@ final class FrameCollector: NSObject, SCStreamOutput, SCStreamDelegate, Sendable
     failure.withLock { $0 = $0 ?? error }
   }
 
-  private func keepStill(of sampleBuffer: CMSampleBuffer, version: Int?) {
-    guard let stills, let version, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+  private func keepStill(of sampleBuffer: CMSampleBuffer, observation: BenchObservation) {
+    guard let stills, let version = observation.version, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+      return
+    }
 
-    stills.offer(image, version: version)
+    stills.offer(image, version: version, ptsNs: observation.ptsNs)
   }
 
   func collected() throws -> [BenchObservation] {

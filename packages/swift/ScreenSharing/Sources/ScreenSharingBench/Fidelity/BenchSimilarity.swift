@@ -36,6 +36,6 @@ public enum BenchSimilarity {
 
   public static func ssim(_ reference: [Float], _ shown: [Float], width: Int, height: Int) throws -> Double {
     let map = try ssimMap(reference, shown, width: width, height: height)
-    return Double(vDSP.sum(map)) / Double(map.count)
+    return map.reduce(0.0) { $0 + Double($1) } / Double(map.count)
   }
 }

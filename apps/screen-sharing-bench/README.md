@@ -88,8 +88,9 @@ Each command prints one JSON result to stdout; a check that fails its pass crite
   frames are kept, with the reason. `--region barcode` (the default) captures only the 512×32 px strip, so
   the observer costs little; the summary reports the observer's own CPU and power from `proc_pid_rusage`.
   `--barcode-x`, `--barcode-y` and `--block-size` move the strip. With `--region full`,
-  `--stills <dir> --stills-versions <v>,<v>…` also writes the last frame of each listed version as
-  `<dir>/<version>.png`, captured in sRGB (T8 below).
+  `--stills <dir> --stills-versions <v>,<v>…` also writes, for each listed version, its last frame within 2 s of its
+  first as `<dir>/<version>.png`, captured in sRGB (T8 below). The 2 s cut keeps a viewer that updates in tiles from
+  saving a frame where the next card has started to arrive under the old barcode.
 - `calibrate --check c1 [--duration 30]` runs two observers on the same display, the barcode strip and the
   full display, and reports |ΔPTS| per version both saw. It passes when p95 ≤ 16.7 ms. Run it while the
   player (or `--check on-glass`) draws.
@@ -342,7 +343,8 @@ viewer) and `media` from both sides' counters. These cover the whole session, no
 
 T8 measures how faithfully each system shows S6 (`test-cards`) at 1:1. A Tier 2 run of `test-cards` adds
 `--region full --stills` to both observers for versions 4, 5, 6, 8, 9 and 10 (fewer when the run is short; the
-photo card, every fourth version, is skipped), and `tier2-report` compares the viewer's still of each version with
+photo card, every fourth version, is skipped; full-display capture makes the observers of these runs costlier than
+the barcode strip, so compare test-cards latency and CPU only with other test-cards runs), and `tier2-report` compares the viewer's still of each version with
 the host observer's still of the same version. Host font rendering is in both, so it cancels. The metrics live in
 `ScreenSharingBench/Fidelity`, and the result is `results[].text` in the v1 report, with every field optional:
 

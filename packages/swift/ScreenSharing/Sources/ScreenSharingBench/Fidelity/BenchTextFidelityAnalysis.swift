@@ -14,7 +14,7 @@ public struct BenchTextFidelityAnalysis: Sendable {
     case .success(let totals):
       fidelity = totals.fidelity
       notOneToOneReason = nil
-      reference420PsnrCbcr = totals.chroma420.psnr
+      reference420PsnrCbcr = totals.chroma420.psnr.map { min($0, BenchTextFidelity.identicalPSNR) }
     case .failure(let failure):
       fidelity = .notOneToOne
       notOneToOneReason = failure.reason

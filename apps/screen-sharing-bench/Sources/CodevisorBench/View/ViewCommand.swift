@@ -55,8 +55,9 @@ struct ViewCommand: BenchCommand {
 
   func run() async throws {
     let deadline = ContinuousClock.now + duration
-    let display = try await ViewerDisplay.make(virtualDisplay)
-    let window = ViewerWindow.presented(on: display.screen)
+    let display = try await SharedDisplay.make(virtualDisplay)
+    defer { withExtendedLifetime(display) {} }
+    let window = ViewerWindow.presented(on: try display.screen())
     defer { window.close() }
     let signals = signals.describing(display.readyDetail)
 

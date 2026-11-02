@@ -18,10 +18,12 @@ struct Tier2TextFidelityTests {
     let analysis = try #require(try Tier2TextFidelity.analysis(in: run, canvas: Self.canvas))
 
     #expect(analysis.textFrames == 1 && analysis.chromaFrames == 1)
+    let ssim = try #require(analysis.fidelity.ssimY)
+    #expect(abs(ssim - 1) < 1e-6)
     #expect(
       analysis.fidelity
         == BenchTextFidelity(
-          psnrY: 100, psnrYText: 100, ssimY: 1, psnrCbcr: 100, deltaE00Mean: 0, deltaE00P95: 0, oneToOne: true))
+          psnrY: 100, psnrYText: 100, ssimY: ssim, psnrCbcr: 100, deltaE00Mean: 0, deltaE00P95: 0, oneToOne: true))
   }
 
   private static func writeStills(versions: [Int], to directory: URL) async throws {

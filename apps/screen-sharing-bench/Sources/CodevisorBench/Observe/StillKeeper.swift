@@ -5,8 +5,11 @@ import Synchronization
 final class StillKeeper: Sendable {
   private struct Held: @unchecked Sendable {
     let version: Int
+    let firstPtsNs: Int64
     let buffer: CVPixelBuffer
   }
+
+  private static let settledWindowNs: Int64 = 2_000_000_000
 
   private let directory: URL
   private let versions: Set<Int>
@@ -20,12 +23,17 @@ final class StillKeeper: Sendable {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   }
 
-  func offer(_ buffer: CVPixelBuffer, version: Int) {
-    let next = versions.contains(version) ? Held(version: version, buffer: buffer) : nil
+  func offer(_ buffer: CVPixelBuffer, version: Int, ptsNs: Int64) {
     let finished = held.withLock { current -> Held? in
+      if let same = current, same.version == version {
+        if ptsNs - same.firstPtsNs <= Self.settledWindowNs {
+          current = Held(version: version, firstPtsNs: same.firstPtsNs, buffer: buffer)
+        }
+        return nil
+      }
       let previous = current
-      current = next
-      return previous?.version == version ? nil : previous
+      current = versions.contains(version) ? Held(version: version, firstPtsNs: ptsNs, buffer: buffer) : nil
+      return previous
     }
     if let finished { write(finished) }
   }

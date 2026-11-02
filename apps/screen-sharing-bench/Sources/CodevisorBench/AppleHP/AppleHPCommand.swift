@@ -34,7 +34,8 @@ struct AppleHPCommand: BenchCommand {
   func run() async throws {
     guard AXIsProcessTrusted() else { throw AppleHPError.notTrusted }
 
-    let display = try await ViewerDisplay.make(virtualDisplay)
+    let display = try await SharedDisplay.make(virtualDisplay)
+    defer { withExtendedLifetime(display) {} }
     let signals = signals.describing(display.readyDetail)
     let deadline = ContinuousClock.now + duration
     let app = try await ScreenSharingApp.connect(to: host)
