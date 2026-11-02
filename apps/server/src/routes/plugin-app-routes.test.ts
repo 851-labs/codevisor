@@ -8,6 +8,7 @@ import {
   secured,
   shell
 } from "../plugins/apps/plugin-app-route-support.js"
+import { contentSizeScript } from "../plugins/apps/plugin-app-size.js"
 import { alertsHtml, boardHtml, zillowPlugin } from "../plugins/apps/plugin-app-test-support.js"
 import { jsonRequest, start, startWithApp } from "../test-support.js"
 
@@ -68,6 +69,7 @@ describe("plugin app views", () => {
       `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.example;`
     )
     expect(loaded.boot?.html).toContain(alertsHtml.slice(alertsHtml.indexOf("<title>")))
+    expect(loaded.boot?.html).toContain(contentSizeScript())
   })
 
   it("serves the app document itself for the frame on its own origin, with no route back to the server", async () => {

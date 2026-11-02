@@ -245,6 +245,29 @@ describe("plugin app bridge", () => {
     ])
   })
 
+  it("sizes the app to its measured content until the app reports a size itself", () => {
+    const { fromApp, toNative } = bridged()
+    const measured = (height: unknown) =>
+      fromApp({
+        jsonrpc: "2.0",
+        method: "codevisor/notifications/content-size",
+        params: { height }
+      })
+
+    measured(520)
+    measured("tall")
+    fromApp({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width: 10 } })
+    measured(560)
+    fromApp({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: 300 } })
+    measured(600)
+
+    expect(toNative).toEqual([
+      { type: "size", height: 520 },
+      { type: "size", height: 560 },
+      { type: "size", height: 300 }
+    ])
+  })
+
   it("posts messages to the chat only right after a gesture in the app", async () => {
     const idle = bridged({ gesture: false })
     const { viewId: _viewId, ...paneBoot } = boot

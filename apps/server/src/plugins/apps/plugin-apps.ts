@@ -13,6 +13,7 @@ import {
 } from "./plugin-app-csp.js"
 import { openAiGlobals, openAiShimScript } from "./plugin-app-openai.js"
 import { appShellHtml, policyMeta, scriptJson, withPreamble } from "./plugin-app-shell.js"
+import { contentSizeScript } from "./plugin-app-size.js"
 import {
   APP_LAUNCH_TTL_MS,
   APP_SESSION_TTL_MS,
@@ -263,7 +264,9 @@ const appPreamble = (
   context: Readonly<Record<string, unknown>>,
   view: PluginAppView | undefined
 ): string =>
-  policyMeta(appPolicy(sandbox.csp)) + openAiShimScript(scriptJson(openAiGlobals(context, view)))
+  policyMeta(appPolicy(sandbox.csp)) +
+  openAiShimScript(scriptJson(openAiGlobals(context, view))) +
+  contentSizeScript()
 
 const hostContext = (found: AppTarget, display: AppDisplay): Record<string, unknown> => {
   const displayMode = display.displayMode ?? found.displayMode

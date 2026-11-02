@@ -40,7 +40,7 @@ export const scriptJson = (value: unknown): string =>
     .replaceAll(" ", "\\u2029")
 
 const shellStyle =
-  "html,body{margin:0;padding:0;background:transparent}iframe{display:block;border:0;width:100%;height:100vh}"
+  "html,body{margin:0;padding:0;background:transparent;overflow:hidden;overscroll-behavior:none}iframe{display:block;border:0;width:100%;height:100vh}"
 
 const bootScript = (boot: BridgeBoot): string =>
   [

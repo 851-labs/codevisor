@@ -6,8 +6,19 @@
     var contextActions: [PluginAppContextAction] = []
     private var onVisible: (() -> Void)?
     private var occlusionObserver: (any NSObjectProtocol)?
+    private var scrollAxis = PluginAppScrollAxisLock()
 
     var isWindowVisible: Bool { window?.occlusionState.contains(.visible) == true }
+
+    override func scrollWheel(with event: NSEvent) {
+      let axis = scrollAxis.axis(of: event)
+      guard axis == .vertical, let enclosingScrollView else {
+        super.scrollWheel(with: event)
+        return
+      }
+
+      enclosingScrollView.scrollWheel(with: event)
+    }
 
     func whenVisible(_ action: @escaping () -> Void) {
       onVisible = action

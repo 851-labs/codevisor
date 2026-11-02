@@ -173,13 +173,23 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
     }
   }
 
+  let appReportsSize = false
+
   const reportSize = (params: Params): void => {
-    if (typeof params.height === "number") host.post({ type: "size", height: params.height })
+    if (typeof params.height !== "number") return
+    appReportsSize = true
+    host.post({ type: "size", height: params.height })
+  }
+
+  const reportMeasuredSize = (params: Params): void => {
+    if (appReportsSize || typeof params.height !== "number") return
+    host.post({ type: "size", height: params.height })
   }
 
   const notifications = new Map<string, (params: Params) => void>([
     ["ui/notifications/initialized", deliverToolData],
-    ["ui/notifications/size-changed", reportSize]
+    ["ui/notifications/size-changed", reportSize],
+    ["codevisor/notifications/content-size", reportMeasuredSize]
   ])
 
   const answer = async (id: unknown, method: string, params: Params): Promise<void> => {
