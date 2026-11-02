@@ -46,15 +46,14 @@ public final class FirstLaunchSetup {
   }
 
   public func localDataFailed() {
-    set(.localData, .failed)
+    set(.server, .failed)
   }
 
   public func retryLocalData() {
-    set(.localData, .running)
+    set(.server, .running)
   }
 
   public func run(_ work: any FirstLaunchSetupWork) async {
-    set(.localData, .done)
     async let steps: Void = performSteps(work)
     async let harnesses: Void = revealNames(of: .harnesses)
     async let projects: Void = revealNames(of: .projects)

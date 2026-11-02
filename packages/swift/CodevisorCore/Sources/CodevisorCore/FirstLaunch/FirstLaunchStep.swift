@@ -1,5 +1,4 @@
 public enum FirstLaunchStep: Int, CaseIterable, Identifiable, Sendable {
-  case localData
   case server
   case harnesses
   case projects
@@ -9,7 +8,6 @@ public enum FirstLaunchStep: Int, CaseIterable, Identifiable, Sendable {
 
   public var title: String {
     switch self {
-    case .localData: "Preparing local data"
     case .server: "Starting Codevisor"
     case .harnesses: "Finding your harnesses"
     case .projects: "Adding recent projects"
