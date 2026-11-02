@@ -1,4 +1,5 @@
 import {
+  steerSettlementOf,
   usageLimitsObservation,
   type RuntimeEvent,
   type RuntimeEventSink,
@@ -11,6 +12,7 @@ import { usageLimitsKey } from "../infra/usage-limits-cache.js"
 import {
   appendAndPublish,
   run,
+  swallowError,
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
@@ -19,6 +21,7 @@ import { promoteAssistantArtifacts, withClosedTextCapture } from "./assistant-ar
 import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
 import { echoesHiddenPrompt } from "./hidden-prompt-titles.js"
+import { settleSteeredPrompt } from "./prompt-steering.js"
 import { persistToolImages, toolImageCandidates } from "./tool-images.js"
 
 const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
@@ -62,6 +65,10 @@ export const sessionEventSink =
       event.kind === "session.updated" ? usageLimitsObservation(event.payload) : undefined
     if (observation !== undefined) {
       return observeUsageLimits(services, sessionId, observation).catch(() => undefined)
+    }
+    const steer = event.kind === "session.updated" ? steerSettlementOf(event.payload) : undefined
+    if (steer !== undefined) {
+      return settleSteeredPrompt(services, fanout, serverId, sessionId, steer).catch(swallowError)
     }
     const payload = objectPayload(event.payload)
     if (event.kind === "session.output" && parksQuestionForUpdate(services, sessionId, payload)) {

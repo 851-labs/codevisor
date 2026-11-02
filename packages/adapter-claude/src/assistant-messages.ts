@@ -160,6 +160,7 @@ const emitAssistantTool = (
   const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
   let skill: ReturnType<typeof skillCallMeta> | undefined
   if (toolName === SKILL_TOOL) skill = skillCallMeta(session, toolUseId, block.input, parentId)
+  session.finishedToolTitles.set(toolUseId, toolTitle(toolName, block.input))
   void session.emit({
     kind: "session.output",
     payload: {
@@ -167,7 +168,7 @@ const emitAssistantTool = (
       rawInput: block.input,
       sessionUpdate: "tool_call_update",
       status: "in_progress",
-      title: toolTitle(toolName, block.input),
+      title: toolTitle(toolName, block.input, "running"),
       toolCallId: toolUseId,
       ...(stats === undefined ? {} : { diffStats: stats }),
       ...skill,

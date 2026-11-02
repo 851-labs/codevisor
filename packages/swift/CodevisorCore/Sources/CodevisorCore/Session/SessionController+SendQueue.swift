@@ -126,8 +126,8 @@ extension SessionController {
     switch route {
     case let .bot(afterSequence):
       await model.sendBotMessage(message, afterSequence: afterSequence ?? model.botMessages.last?.sequence)
-    case let .agent(delivery):
-      await model.send(message, startedAt: pendingSendStartedAt, delivery: delivery)
+    case let .agent(delivery, landsInQueue):
+      await model.send(message, startedAt: pendingSendStartedAt, delivery: delivery, landsInQueue: landsInQueue)
     }
   }
 

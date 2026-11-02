@@ -80,7 +80,22 @@ struct SessionTranscriptView: View {
   @State var sendAnimationSourceFrame: CGRect?
   @State var queueSendAnimation = IOSQueueSendAnimation()
 
-  var userBubbleStyle: UserBubbleStyle {
+  private func installQueuedPromptFlight() {
+    controller.onQueuedPromptWillFly = { [weak controller] messageID in
+      guard let controller, !UIAccessibility.isReduceMotionEnabled else { return }
+      let style = Self.bubbleStyle(for: controller)
+      TranscriptQueueSendSources.shared.stageFlight(
+        for: messageID,
+        session: ObjectIdentifier(controller),
+        bubble: style.fill,
+        revealsBubbleInFlight: style == .accent
+      )
+    }
+  }
+
+  var userBubbleStyle: UserBubbleStyle { Self.bubbleStyle(for: controller) }
+
+  private static func bubbleStyle(for controller: SessionController) -> UserBubbleStyle {
     controller.presentsBotConversation || controller.presentsBubbleTranscript ? .accent : .standard
   }
 
@@ -346,6 +361,7 @@ struct SessionTranscriptView: View {
     .onChange(of: ObjectIdentifier(controller)) { _, _ in
       queueSendAnimation.cancel()
     }
+    .onChange(of: ObjectIdentifier(controller), initial: true) { installQueuedPromptFlight() }
     .onChange(of: controller.userSendAnimationRequest) { _, _ in
       queueSendAnimation.cancel()
     }

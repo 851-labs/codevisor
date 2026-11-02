@@ -240,6 +240,7 @@ extension SessionController {
       if let supportsSteering = capability.supportsSteering {
         supportsSteeringByHarness[capability.harness.id] = supportsSteering
       }
+      steersAtNextStepByHarness[capability.harness.id] = capability.steersAtNextStep ?? false
     }
     if acceptsNewChatDefaults {
       applyNewChatSelectionPolicy(capabilities)

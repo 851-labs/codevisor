@@ -27,11 +27,11 @@ struct PromptQueueRow: View {
 
   var body: some View {
     HStack(alignment: .queueRowFirstLine, spacing: 8) {
-      Image(systemName: "line.3.horizontal")
+      Image(systemName: PromptQueueSymbol.name(steered: item.isNextStep))
         .font(.caption)
         .foregroundStyle(.tertiary)
         .frame(width: 14)
-        .help("Drag to reorder")
+        .help(item.isNextStep ? "" : "Drag to reorder")
         .accessibilityHidden(true)
       content
       MessageAttributionText(item.attribution)
@@ -51,16 +51,23 @@ struct PromptQueueRow: View {
     .padding(.vertical, 3)
     .background(selectionShape.fill(rowFill))
     .contentShape(selectionShape)
-    .onTapGesture(perform: onEdit)
+    .onTapGesture(perform: editIfQueued)
     .onHover { isHovered = $0 }
     .accessibilityElement(children: .contain)
     .accessibilityActions {
       if controller.canSendQueuedPromptNow, !isBeingEdited {
         Button(PromptQueueActionTitle.sendNow) { Task { await controller.sendQueuedPromptNow(id: item.id) } }
       }
-      Button(PromptQueueActionTitle.edit, action: onEdit)
-      Button(PromptQueueActionTitle.remove) { Task { await controller.deleteQueuedPrompt(id: item.id) } }
+      if !item.isNextStep {
+        Button(PromptQueueActionTitle.edit, action: onEdit)
+        Button(PromptQueueActionTitle.remove) { Task { await controller.deleteQueuedPrompt(id: item.id) } }
+      }
     }
+  }
+
+  private func editIfQueued() {
+    guard !item.isNextStep else { return }
+    onEdit()
   }
 
   private var content: some View {
@@ -69,13 +76,14 @@ struct PromptQueueRow: View {
       .foregroundStyle(isBeingEdited ? .primary : .secondary)
       .lineLimit(1)
       .truncationMode(.tail)
+      .background(TranscriptQueueSendAnchor(id: item.id, text: item.text))
       .alignmentGuide(.queueRowFirstLine) { $0[.firstTextBaseline] - textCapCenter }
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
-      .help(PromptQueueActionTitle.edit)
+      .help(item.isNextStep ? "" : PromptQueueActionTitle.edit)
       .accessibilityAddTraits(.isButton)
-      .accessibilityHint("Edits this queued message in the composer")
-      .accessibilityAction(.default, onEdit)
+      .accessibilityHint(item.isNextStep ? "" : "Edits this queued message in the composer")
+      .accessibilityAction(.default, editIfQueued)
   }
 }
 

@@ -245,4 +245,8 @@ export type AgentRuntimeCore = ReturnType<typeof makeAgentRuntimeCore>
 export const withSteeringSupport = (
   metadata: AgentSessionMetadata,
   handle: AgentSessionHandle
-): AgentSessionMetadata => ({ ...metadata, supportsSteering: handle.steer !== undefined })
+): AgentSessionMetadata => ({
+  ...metadata,
+  supportsSteering: handle.steer !== undefined,
+  ...(handle.steersAtNextStep === true ? { steersAtNextStep: true } : {})
+})

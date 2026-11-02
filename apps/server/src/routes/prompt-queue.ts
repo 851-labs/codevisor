@@ -1,25 +1,17 @@
-import {
-  AgentRuntimeError,
-  harnessFailureKind,
-  isCompactPrompt,
-  plainFailureText
-} from "@codevisor/agent-runtime"
+import { AgentRuntimeError, harnessFailureKind, plainFailureText } from "@codevisor/agent-runtime"
 import type {
   AttachmentRef,
   ConnectedClient,
   EventEnvelope,
   PromptAttribution,
-  PromptOrigin,
-  PromptQueueItem
+  PromptOrigin
 } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 
 import {
   appendAndPublish,
   failureMessage,
   forgetTurnIfArchived,
-  resolvePromptAttachments,
   run,
   sessionIsArchived,
   swallowError,
@@ -30,20 +22,16 @@ import {
 import { isRecord } from "../unknown-values.js"
 import { conversationalBotForSession } from "./bot-turns.js"
 import { coalesceWakeUps, heldForUsageLimit } from "./bot-usage-hold.js"
-import { withConversationRecap } from "./conversation-recap.js"
 import { heldByParkedQuestion } from "./parked-questions.js"
-import {
-  markAppContextsDelivered,
-  withAppContexts,
-  type AppContextPrompt
-} from "./prompt-app-context.js"
+import { markAppContextsDelivered } from "./prompt-app-context.js"
 import { logPromptFailure } from "./prompt-failures.js"
-import { withCodevisorSkills } from "./prompt-skills.js"
+import { promptInput } from "./prompt-input.js"
+import { publishPromptQueue } from "./prompt-queue-publish.js"
+import { steerClaimedPrompt } from "./prompt-steering.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
-import { answeredPendingQuestion } from "./question-replies.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 import { pausedForUpdate, sessionHarnessId } from "./update-pause-gate.js"
-import { recordUserPrompt, steeredPrompt } from "./user-prompts.js"
+import { recordUserPrompt } from "./user-prompts.js"
 
 export const hasLiveTurn = (routeState: RouteState, sessionId: string): boolean =>
   routeState.activePromptSessions.has(sessionId) || routeState.activeTurnSessions.has(sessionId)
@@ -77,15 +65,7 @@ export const reconcileStaleStreamingTurns = async (
   return repaired
 }
 
-export const publishPromptQueue = async (
-  db: CodevisorDatabaseService,
-  fanout: EventFanout,
-  sessionId: string
-): Promise<ReadonlyArray<PromptQueueItem>> => {
-  const queue = await run(db.listPromptQueue(sessionId))
-  await appendAndPublish(db, fanout, "session.queue.updated", sessionId, { queue })
-  return queue
-}
+export { publishPromptQueue }
 
 export const makeTurnDispatchListener =
   (
@@ -335,77 +315,6 @@ const steerPendingPrompts = async (
     }
     return
   }
-}
-
-const steerClaimedPrompt = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
-  sessionId: string,
-  item: PromptQueueItem
-): Promise<boolean> => {
-  if (await answeredPendingQuestion(services, fanout, serverId, sessionId, item)) {
-    await run(services.db.completePromptQueueItem(sessionId, item.id))
-    return true
-  }
-
-  const steered = await steerIntoRunningTurn(services, fanout, serverId, sessionId, item).catch(
-    () => false
-  )
-  if (!steered) {
-    await run(services.db.releasePromptQueueItem(sessionId, item.id))
-    return false
-  }
-
-  await recordUserPrompt(services, fanout, serverId, sessionId, steeredPrompt(item))
-  await run(services.db.completePromptQueueItem(sessionId, item.id))
-  return true
-}
-
-const steerIntoRunningTurn = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  serverId: string,
-  sessionId: string,
-  item: PromptQueueItem
-): Promise<boolean> => {
-  const steer = services.agents.steer
-  /* v8 ignore next */
-  if (steer === undefined) return false
-  if (isCompactPrompt(item.text)) return false
-
-  const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
-  const prompt = await promptInput(services, sessionId, item, agentSession.skills)
-  const steered = await run(steer(agentSession.sessionId, prompt.input))
-  if (steered) await markAppContextsDelivered(services, sessionId, prompt.delivered)
-  return steered
-}
-
-const promptInput = async (
-  services: CodevisorServerServices,
-  sessionId: string,
-  item: Pick<PromptQueueItem, "text" | "attachments" | "origin">,
-  skills: Parameters<typeof withCodevisorSkills>[3]
-) => {
-  const refs = item.attachments ?? []
-  const prompt = await promptText(services, sessionId, item, skills)
-  if (refs.length === 0) return { input: prompt.text, delivered: prompt.delivered }
-  const attachments = await resolvePromptAttachments(services, refs)
-  return { input: { attachments, text: prompt.text }, delivered: prompt.delivered }
-}
-
-const promptText = async (
-  services: CodevisorServerServices,
-  sessionId: string,
-  item: Pick<PromptQueueItem, "text" | "origin">,
-  skills: Parameters<typeof withCodevisorSkills>[3]
-): Promise<AppContextPrompt> => {
-  if (isCompactPrompt(item.text)) return { text: item.text, delivered: [] }
-
-  const text = withConversationRecap(services, sessionId, item.text)
-  if (item.origin === "system") return { text, delivered: [] }
-  const typed = await withCodevisorSkills(services, sessionId, text, skills)
-  return withAppContexts(services, sessionId, typed)
 }
 
 const clientPlatform = (

@@ -45,6 +45,7 @@ const reconcileSession = async (
     await clearStoppedTasks(services, fanout, serverId, session.id)
     return
   }
+  await run(services.db.releaseSteeredPromptQueueItems(session.id))
   const snapshot = await inspectSession(services, session.id)
   const processingPrompts = await reconcilePromptClaims(services, session.id)
   const { page, hasOrphanedTurn, hasOrphanedTasks } = snapshot

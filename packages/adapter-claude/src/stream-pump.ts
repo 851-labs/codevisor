@@ -2,6 +2,7 @@ import type { Options as ClaudeOptions } from "@anthropic-ai/claude-agent-sdk"
 import { redactSecrets, runtimeError } from "@codevisor/agent-runtime"
 
 import type { ClaudeQuery, ClaudeQueryFn, ClaudeSession } from "./session.js"
+import { dropPendingSteers } from "./steer-absorption.js"
 import { applyStreamMessage } from "./stream-messages.js"
 import { resumeSessionAfterStreamDeath } from "./stream-recovery.js"
 import { reportRuntimeState } from "./system-messages.js"
@@ -50,6 +51,7 @@ export const makeStreamPump = (session: ClaudeSession, deps: StreamPumpDeps): St
 
 const endStream = (session: ClaudeSession, failure: string | undefined): void => {
   session.streamEnded = true
+  dropPendingSteers(session)
   if (!session.retired && !session.abort.signal.aborted) logProcessEnd(session, failure)
   if (session.runtimeState !== "idle") reportRuntimeState(session, "idle")
 }

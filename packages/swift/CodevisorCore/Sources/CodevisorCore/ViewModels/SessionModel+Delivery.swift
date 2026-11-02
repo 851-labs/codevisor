@@ -5,6 +5,7 @@ struct OutgoingMessage: Equatable {
   let message: UserMessage
   let delivery: ServerPromptDelivery?
   var afterBotSequence: Int? = nil
+  var landsInQueue = false
 }
 
 struct UnreachedSend: Equatable {
@@ -22,13 +23,13 @@ extension SessionModel {
 
   var transcriptOutgoingMessages: [UserMessage] {
     guard !presentsBotConversation else { return [] }
-    return outgoingMessages.filter { $0.delivery != .queue }.map(\.message)
+    return outgoingMessages.filter { !$0.landsInQueue }.map(\.message)
   }
 
   var unsentQueuedMessages: [UnsentQueuedMessage] {
     guard !presentsBotConversation else { return [] }
     let deliveries = transcriptDeliveries
-    return outgoingMessages.filter { $0.delivery == .queue }.map { outgoing in
+    return outgoingMessages.filter(\.landsInQueue).map { outgoing in
       UnsentQueuedMessage(
         id: outgoing.message.id, text: outgoing.message.text, attachmentCount: outgoing.message.attachments.count,
         delivery: deliveries[outgoing.message.id])
@@ -46,9 +47,13 @@ extension SessionModel {
     return deliveries
   }
 
-  func sendOutgoing(_ message: UserMessage, delivery: ServerPromptDelivery?, afterBotSequence: Int? = nil) async {
-    outgoingMessages.append(OutgoingMessage(message: message, delivery: delivery, afterBotSequence: afterBotSequence))
-    if delivery != .queue { onLocalUserMessageAppended?(message.id) }
+  func sendOutgoing(
+    _ message: UserMessage, delivery: ServerPromptDelivery?, afterBotSequence: Int? = nil, landsInQueue: Bool = false
+  ) async {
+    outgoingMessages.append(
+      OutgoingMessage(
+        message: message, delivery: delivery, afterBotSequence: afterBotSequence, landsInQueue: landsInQueue))
+    if !landsInQueue { onLocalUserMessageAppended?(message.id) }
     await startConsumer()
     await deliverOutgoing(message.id)
   }

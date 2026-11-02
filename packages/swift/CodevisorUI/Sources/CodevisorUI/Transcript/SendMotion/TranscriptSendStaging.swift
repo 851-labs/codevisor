@@ -118,30 +118,89 @@ public final class TranscriptSendStaging {
       return
     }
     let track = overlay.makeTrack()
-    let editorFrame = track.convert(Self.visibleBounds(of: textView), from: textView)
-    let glyphRect = track.convert(textRect, from: textView)
-    let pill = TranscriptSendPillView(
-      frame: TranscriptSendMorphGeometry.startBubble(editorFrame: editorFrame, textRect: glyphRect),
-      cornerRadius: UserBubbleBackground.cornerRadius(for: Self.dynamicTypeSize(of: textView)))
-    pill.setFill(
-      backdrop: Self.resolved(UserBubbleBackground.transcriptBackdrop(), in: textView),
-      tint: Self.resolved(bubble, in: textView))
-    pill.hidesFill = revealsBubbleInFlight
-    glyphs.frame = editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
-    pill.addSubview(glyphs)
+    let source = StageSource(
+      view: textView,
+      glyphs: glyphs,
+      editorFrame: track.convert(Self.visibleBounds(of: textView), from: textView),
+      glyphRect: track.convert(textRect, from: textView),
+      lineHeight: lineHeight,
+      text: Self.attributedText(of: textView),
+      bubble: bubble,
+      revealsBubbleInFlight: revealsBubbleInFlight
+    )
+    let pieces = departingPieces(attachmentIDs, in: window, track: track)
+    begin(source, session: session, overlay: overlay, track: track, pieces: pieces, followsComposer: followsComposer)
+  }
+
+  public func stage(
+    session: ObjectIdentifier,
+    from view: TranscriptSendPlatformView,
+    textRect: CGRect,
+    text: NSAttributedString,
+    bubble: Color,
+    revealsBubbleInFlight: Bool = false
+  ) {
+    cancel(session: session)
+    let width = Self.lineWidth(of: text, from: textRect)
+    guard let window = view.window,
+      let overlay = TranscriptSendOverlayView.overlay(in: window),
+      let (glyphs, height) = Self.renderedText(text, width: width, appearanceOf: view)
+    else { return }
+    let track = overlay.makeTrack()
+    let lines = CGRect(x: textRect.minX, y: textRect.midY - height / 2, width: width, height: height)
+    let frame = track.convert(lines, from: view)
+    let source = StageSource(
+      view: view, glyphs: glyphs, editorFrame: frame, glyphRect: frame, lineHeight: height, text: text,
+      bubble: bubble, revealsBubbleInFlight: revealsBubbleInFlight)
+    begin(source, session: session, overlay: overlay, track: track, pieces: [], followsComposer: false)
+  }
+
+  private static let maxLineStretch: CGFloat = 1.5
+
+  private static func lineWidth(of text: NSAttributedString, from textRect: CGRect) -> CGFloat {
+    let natural = ceil(text.size().width)
+    return min(max(textRect.width, natural), textRect.width * maxLineStretch)
+  }
+
+  private struct StageSource {
+    let view: TranscriptSendPlatformView
+    let glyphs: TranscriptSendPlatformView
+    let editorFrame: CGRect
+    let glyphRect: CGRect
+    let lineHeight: CGFloat
+    let text: NSAttributedString?
+    let bubble: Color
+    let revealsBubbleInFlight: Bool
+  }
+
+  private func departingPieces(
+    _ attachmentIDs: [String], in window: TranscriptSendPlatformWindow, track: TranscriptSendTrack
+  ) -> [TranscriptSendAttachmentPiece] {
     let sources = TranscriptSendAttachmentAnchorView.sources(in: window, ids: Set(attachmentIDs))
     let pieces = attachmentIDs.compactMap { id in sources.first { $0.attachmentID == id } }
       .compactMap { TranscriptSendAttachmentPiece(source: $0, frame: track.convert($0.bounds, from: $0)) }
-    for piece in pieces { track.addSubview(piece) }
     TranscriptSendAttachmentDepartures.shared.depart(pieces)
+    return pieces
+  }
+
+  private func begin(
+    _ source: StageSource,
+    session: ObjectIdentifier,
+    overlay: TranscriptSendOverlayView,
+    track: TranscriptSendTrack,
+    pieces: [TranscriptSendAttachmentPiece],
+    followsComposer: Bool
+  ) {
+    let pill = pill(for: source)
+    for piece in pieces { track.addSubview(piece) }
     track.addSubview(pill)
-    transcriptSendLog.debug("staged composer glyphs with \(pieces.count) attachments")
+    transcriptSendLog.debug("staged glyphs with \(pieces.count) attachments")
     let stage = TranscriptSendStage(
       snapshot: pill,
-      editorFrame: editorFrame,
-      textRect: glyphRect,
-      lineHeight: lineHeight,
-      text: Self.attributedText(of: textView),
+      editorFrame: source.editorFrame,
+      textRect: source.glyphRect,
+      lineHeight: source.lineHeight,
+      text: source.text,
       pieces: pieces,
       track: track
     )
@@ -155,7 +214,7 @@ public final class TranscriptSendStaging {
       beginMorph(stage, toward: found.0, provider: found.1, in: overlay)
     } else {
       #if canImport(UIKit)
-        if followsComposer, let container = textView.superview {
+        if followsComposer, let container = source.view.superview {
           stage.board(TranscriptSendCarrier(content: container, overlay: overlay))
         }
       #endif
@@ -164,6 +223,19 @@ public final class TranscriptSendStaging {
       deadline: .now()
         + (isHeld ? TranscriptSendMotion.heldStagingTimeout : TranscriptSendMotion.stagingTimeout),
       execute: timeout)
+  }
+
+  private func pill(for source: StageSource) -> TranscriptSendPillView {
+    let pill = TranscriptSendPillView(
+      frame: TranscriptSendMorphGeometry.startBubble(editorFrame: source.editorFrame, textRect: source.glyphRect),
+      cornerRadius: UserBubbleBackground.cornerRadius(for: Self.dynamicTypeSize(of: source.view)))
+    pill.setFill(
+      backdrop: Self.resolved(UserBubbleBackground.transcriptBackdrop(), in: source.view),
+      tint: Self.resolved(source.bubble, in: source.view))
+    pill.hidesFill = source.revealsBubbleInFlight
+    source.glyphs.frame = source.editorFrame.offsetBy(dx: -pill.frame.minX, dy: -pill.frame.minY)
+    pill.addSubview(source.glyphs)
+    return pill
   }
 
   static func attributedText(of view: TranscriptSendPlatformView) -> NSAttributedString? {

@@ -830,9 +830,9 @@
       "location": {
         "character": 11,
         "file": "packages/swift/CodevisorCore/Sources/CodevisorCore/Session/SessionController+Connection.swift",
-        "line": 244
+        "line": 272
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 106 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 100 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

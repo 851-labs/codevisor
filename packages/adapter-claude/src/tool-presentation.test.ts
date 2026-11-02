@@ -10,6 +10,7 @@ import {
   resultMessage,
   run,
   sdkMessage,
+  startTestSession,
   streamEvent
 } from "./test-support.js"
 import { webSearchSources } from "./tool-presentation.js"
@@ -117,7 +118,8 @@ describe("ClaudeProvider", () => {
       expect.objectContaining({
         kind: "web_search",
         sessionUpdate: "tool_call_update",
-        title: "Searched for swift concurrency actors",
+        status: "in_progress",
+        title: "Searching for swift concurrency actors",
         toolCallId: "ws-1"
       })
     )
@@ -125,7 +127,8 @@ describe("ClaudeProvider", () => {
       expect.objectContaining({
         kind: "fetch",
         sessionUpdate: "tool_call_update",
-        title: "Fetched https://example.com/docs",
+        status: "in_progress",
+        title: "Fetching https://example.com/docs",
         toolCallId: "wf-1"
       })
     )
@@ -218,5 +221,46 @@ describe("webSearchSources", () => {
     expect(webSearchSources('Links: [{"title":"A","url":"https://a"}]')).toEqual([])
     expect(webSearchSources('Web search results for query: "x"\n\nLinks: [not json')).toEqual([])
     expect(webSearchSources(undefined)).toEqual([])
+  })
+
+  it("titles a command as running until its result arrives, then as ran", async () => {
+    const { fake, events, created } = await startTestSession()
+    const promptPromise = run(created.handle.prompt("run the tests"))
+    await fake.nextPrompt()
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [
+            { id: "bash-1", input: { command: "bun run test" }, name: "Bash", type: "tool_use" }
+          ],
+          role: "assistant"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "assistant"
+      })
+    )
+    fake.push(
+      sdkMessage({
+        message: {
+          content: [{ content: "ok", tool_use_id: "bash-1", type: "tool_result" }],
+          role: "user"
+        },
+        parent_tool_use_id: null,
+        session_id: "sdk-session-1",
+        type: "user"
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    const titles = events
+      .map(payloadOf)
+      .filter((payload) => payload.toolCallId === "bash-1" && typeof payload.title === "string")
+      .map((payload) => [payload.status, payload.title])
+    expect(titles).toEqual([
+      ["in_progress", "Running bun run test"],
+      ["completed", "Ran bun run test"]
+    ])
   })
 })

@@ -45,6 +45,7 @@ struct ChatScreen: View {
   @State var projectionPublication = TranscriptProjectionPublicationState()
   @State var projectionWorker = TranscriptSettledProjectionWorker()
   @State var presentationVisibilityOwner = UUID()
+  @State var showsPromptQueue = false
   @Namespace var composerGlassNamespace
   var composerCardStyle = ComposerCardStyle()
 
@@ -139,6 +140,10 @@ struct ChatScreen: View {
         isTranscriptMounted = true
       }
       .onChange(of: botMode, initial: true) { controller.presentBot(as: botMode) }
+      .onChange(of: ObjectIdentifier(controller), initial: true) { QueuedPromptFlight.install(on: controller) }
+      .onChange(of: hasPromptQueue, initial: true) { _, hasQueue in
+        withAnimation(Motion.glassMorph(reduceMotion: reduceMotion)) { showsPromptQueue = hasQueue }
+      }
       .task(id: contentLoadingIdentity) {
         guard isTranscriptMounted else { return }
         guard !isReadOnly else {

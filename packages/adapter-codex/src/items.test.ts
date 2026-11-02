@@ -182,7 +182,7 @@ describe("CodexProvider", () => {
         kind: "execute",
         rawInput: { command: "rg runner\nprintf 'second line'" },
         status: "in_progress",
-        title: "Ran rg runner"
+        title: "Running rg runner"
       })
     )
     expect(payloads).toContainEqual(
@@ -190,6 +190,7 @@ describe("CodexProvider", () => {
         sessionUpdate: "tool_call_update",
         toolCallId: "item-cmd",
         status: "completed",
+        title: "Ran rg runner",
         exitCode: 0,
         rawInput: { command: "rg runner\nprintf 'second line'" },
         rawOutput: "release.yml"

@@ -130,6 +130,7 @@ final public class SessionController {
   public var transcriptRevealRequest: TranscriptRevealRequest?
   public internal(set) var userSendAnimationRequest: UserSendAnimationRequest?
   @ObservationIgnored var userSendAnimationCoordinator = UserSendAnimationCoordinator()
+  @ObservationIgnored public var onQueuedPromptWillFly: ((UUID) -> Void)?
 
   public var project: Project {
     didSet {
@@ -216,6 +217,7 @@ final public class SessionController {
   var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
   var supportsGoalsByHarness: [String: Bool] = [:]
   var supportsSteeringByHarness: [String: Bool] = [:]
+  var steersAtNextStepByHarness: [String: Bool] = [:]
   var queuedPromptEdit: QueuedPromptEdit?
   var harnessCapabilityRequestRevision: UInt64 = 0
   var retargetRevision: UInt64 = 0

@@ -18,7 +18,16 @@ struct IOSPromptQueueSheet: View {
   var body: some View {
     NavigationStack {
       List {
-        ForEach(displayedQueue) { item in
+        ForEach(nextStepQueue) { item in
+          IOSPromptQueueRow(
+            item: item,
+            canSendNow: controller.canSendQueuedPromptNow,
+            isBusy: busyIDs.contains(item.id),
+            actions: rowActions(for: item)
+          )
+          .moveDisabled(true)
+        }
+        ForEach(waitingQueue) { item in
           IOSPromptQueueRow(
             item: item,
             canSendNow: controller.canSendQueuedPromptNow,
@@ -70,8 +79,16 @@ struct IOSPromptQueueSheet: View {
     }
     ToolbarItem(placement: .primaryAction) {
       EditButton()
-        .disabled(displayedQueue.count < 2 || isReordering)
+        .disabled(waitingQueue.count < 2 || isReordering)
     }
+  }
+
+  private var nextStepQueue: [ServerPromptQueueItem] {
+    displayedQueue.filter(\.isNextStep)
+  }
+
+  private var waitingQueue: [ServerPromptQueueItem] {
+    displayedQueue.filter { !$0.isNextStep }
   }
 
   private func rowActions(for item: ServerPromptQueueItem) -> IOSPromptQueueRow.Actions {
@@ -114,8 +131,10 @@ struct IOSPromptQueueSheet: View {
 
   private func moveQueue(from source: IndexSet, to destination: Int) {
     guard !isReordering, busyIDs.isEmpty else { return }
-    displayedQueue.move(fromOffsets: source, toOffset: destination)
-    let orderedIDs = displayedQueue.map(\.id)
+    var waiting = waitingQueue
+    waiting.move(fromOffsets: source, toOffset: destination)
+    displayedQueue = nextStepQueue + waiting
+    let orderedIDs = waiting.map(\.id)
     isReordering = true
 
     Task {

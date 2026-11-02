@@ -11,11 +11,13 @@ import {
   rewindBotModesSql,
   rewindMainSessionSql,
   rewindPluginsSql,
+  rewindSteeredPromptsSql,
   run,
   tempDatabase
 } from "./test-support.js"
 
 const v73Schema = `
+  ${rewindSteeredPromptsSql}
   ${rewindArchivedBotsSql}
   ${rewindBotModesSql}
   ${rewindPluginsSql}

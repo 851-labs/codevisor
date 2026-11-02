@@ -28,6 +28,7 @@ import { endSessionRequest } from "./restart-resume.js"
 import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
+import { dropPendingSteers, trackSteer } from "./steer-absorption.js"
 import {
   ensureObservedTurnStarted,
   ensureTurnStarted,
@@ -117,6 +118,7 @@ const stopTurn = async (
 
     session.retired = true
     failDeferredPrompts(session, retiredError())
+    dropPendingSteers(session)
     if (session.backgroundTasks.size > 0) {
       session.backgroundTasks.clear()
       await emitBackgroundTasks(session)
@@ -148,6 +150,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
   close: adapterPromise("close", async () => {
     session.retired = true
     failDeferredPrompts(session, retiredError())
+    dropPendingSteers(session)
     await cancelClaudePendingQuestions(session)
     session.input.end()
     session.abort.abort()
@@ -180,7 +183,14 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       })
       return pending.promise
     }),
-  steer: (input) =>
+  steersAtNextStep: true,
+  interruptStep: adapterPromise("interruptStep", async () => {
+    if (!interruptsStepForSteer(session)) return false
+    session.stepInterrupted = true
+    await session.q.interrupt()
+    return true
+  }),
+  steer: (input, steerId) =>
     adapterPromise("steer", async () => {
       if (
         !session.turnActive ||
@@ -198,6 +208,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
         session_id: session.sdkSessionId,
         type: "user"
       })
+      if (steerId !== undefined) trackSteer(session, steerId)
       return true
     }),
   setConfigOption: (configId, value) =>
@@ -310,6 +321,14 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
     claudeSessionContextFrom(await session.q.getContextUsage())
   )
 })
+
+const interruptsStepForSteer = (session: ClaudeSession): boolean =>
+  session.turnActive &&
+  session.pendingSteers.length > 0 &&
+  !session.retired &&
+  !session.streamEnded &&
+  !session.interruptRequested &&
+  session.cancelInFlight === undefined
 
 const followModelDefaultEffort = async (session: ClaudeSession): Promise<void> => {
   const effort = session.effortDefaults.get(session.currentModel) ?? "default"

@@ -186,6 +186,7 @@ extension SessionController {
     modeStateByHarness = [:]
     supportsGoalsByHarness = [:]
     supportsSteeringByHarness = [:]
+    steersAtNextStepByHarness = [:]
     pendingConfiguration.restoreValues([:])
     selectedHarnessId = nil
     if seedFromCachedServerCapabilities() {
@@ -253,6 +254,19 @@ extension SessionController {
       serverClient: serverClient,
       session: &serverSession
     )
+  }
+
+  private func applyPersistedRuntime(
+    _ metadata: ServerSessionRuntimeMetadata, to model: SessionModel, harnessId: String
+  ) {
+    model.applyRuntimeMetadata(modeState: metadata.modes, configOptions: metadata.configOptions)
+    if !metadata.configOptions.isEmpty { configOptionsByHarness[harnessId] = metadata.configOptions }
+    if let modes = metadata.modes { modeStateByHarness[harnessId] = modes }
+    if let supportsGoals = metadata.supportsGoals { supportsGoalsByHarness[harnessId] = supportsGoals }
+    if let supportsSteering = metadata.supportsSteering {
+      supportsSteeringByHarness[harnessId] = supportsSteering
+    }
+    steersAtNextStepByHarness[harnessId] = metadata.steersAtNextStep ?? false
   }
 
   private func connectServerSession(
@@ -355,13 +369,7 @@ extension SessionController {
     }
 
     if let metadata = persistedRuntime {
-      model.applyRuntimeMetadata(modeState: metadata.modes, configOptions: metadata.configOptions)
-      if !metadata.configOptions.isEmpty { configOptionsByHarness[harnessId] = metadata.configOptions }
-      if let modes = metadata.modes { modeStateByHarness[harnessId] = modes }
-      if let supportsGoals = metadata.supportsGoals { supportsGoalsByHarness[harnessId] = supportsGoals }
-      if let supportsSteering = metadata.supportsSteering {
-        supportsSteeringByHarness[harnessId] = supportsSteering
-      }
+      applyPersistedRuntime(metadata, to: model, harnessId: harnessId)
     }
     didLoadExistingRuntimeConfiguration = true
     didFinishExistingRuntimeConfiguration = true

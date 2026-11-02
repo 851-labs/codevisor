@@ -13,7 +13,8 @@ extension SessionModel {
   public func send(
     _ outgoingMessage: UserMessage,
     startedAt: Date? = nil,
-    delivery: ServerPromptDelivery = .steer
+    delivery: ServerPromptDelivery = .steer,
+    landsInQueue: Bool = false
   ) async {
     let trimmed = outgoingMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return }
@@ -33,7 +34,7 @@ extension SessionModel {
     }
 
     if isSending {
-      await sendOutgoing(message, delivery: delivery)
+      await sendOutgoing(message, delivery: delivery, landsInQueue: landsInQueue || delivery == .queue)
       return
     }
 

@@ -255,7 +255,7 @@ describe("ClaudeProvider", () => {
         kind: "execute",
         parentToolCallId: "parent-agent-1",
         sessionUpdate: "tool_call_update",
-        title: "Ran ls -la",
+        title: "Running ls -la",
         toolCallId: "sub-bash-1"
       })
     )

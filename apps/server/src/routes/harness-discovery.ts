@@ -76,6 +76,7 @@ const capabilityFromMetadata = (
     ...(metadata.supportsSteering === undefined
       ? {}
       : { supportsSteering: metadata.supportsSteering }),
+    ...(metadata.steersAtNextStep === true ? { steersAtNextStep: true } : {}),
     ...(metadata.skills === undefined ? {} : { skills: metadata.skills }),
     ...(metadata.unappliedConfigSelections === undefined
       ? {}

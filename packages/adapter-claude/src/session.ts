@@ -18,6 +18,11 @@ import type { ClaudeSkillCall } from "./skill-tool.js"
 import type { ClaudeSkills, ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
+export interface PendingSteer {
+  readonly id: string
+  startsToSkip: number
+}
+
 export interface DeferredClaudePrompt {
   readonly input: string | PromptInput
   readonly pending: Deferred<{ stopReason: string }>
@@ -181,6 +186,8 @@ export interface ClaudeSession {
   awaitingRecoveryResult: boolean
   rootReplyComplete: boolean
   readonly deferredPrompts: Array<DeferredClaudePrompt>
+  readonly pendingSteers: Array<PendingSteer>
+  requestInFlight: boolean
   turnCompletion: Deferred<void> | undefined
   cancelInFlight: Promise<CancelResult> | undefined
   readonly resumesInterruptedTurns: boolean
@@ -190,6 +197,7 @@ export interface ClaudeSession {
   startupFailure: string | undefined
   pendingUserCommands: number
   interruptRequested: boolean
+  stepInterrupted: boolean
   truncationCount: number
   transientRetries: number
   streamRecoveries: number
@@ -214,6 +222,7 @@ export interface ClaudeSession {
   readonly skills: ClaudeSkills
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
+  readonly finishedToolTitles: Map<string, string>
   readonly taskToolUses: Map<string, ClaudeTaskToolUse>
   readonly skillCalls: Map<string, ClaudeSkillCall>
   readonly tasks: ClaudeTaskState

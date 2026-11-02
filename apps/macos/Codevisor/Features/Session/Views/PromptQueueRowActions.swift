@@ -23,6 +23,9 @@ struct PromptQueueRowActions: View {
       PromptQueueIconButton(systemImage: "trash", help: PromptQueueActionTitle.remove, isRowHovered: isHovered) {
         Task { await controller.deleteQueuedPrompt(id: item.id) }
       }
+      .opacity(item.isNextStep ? 0 : 1)
+      .allowsHitTesting(!item.isNextStep)
+      .accessibilityHidden(item.isNextStep)
     }
   }
 }

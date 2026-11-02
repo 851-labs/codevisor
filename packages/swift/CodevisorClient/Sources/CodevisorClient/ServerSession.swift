@@ -25,6 +25,7 @@ public struct ServerSessionRuntimeMetadata: Codable, Equatable, Sendable {
   public var configOptions: [SessionConfigOption]
   public var supportsGoals: Bool?
   public var supportsSteering: Bool?
+  public var steersAtNextStep: Bool?
 }
 
 public enum ServerPromptDelivery: String, Codable, Sendable {
@@ -62,8 +63,10 @@ public struct ServerPromptQueueItem: Codable, Identifiable, Equatable, Sendable 
   public var attachments: [ServerAttachmentRef]?
   public var origin: String?
   public var attribution: UserMessageAttribution? = nil
+  public var steered: Bool? = nil
 
   public var isSystem: Bool { origin == "system" }
+  public var isNextStep: Bool { steered == true }
 
   public init(
     id: String, sessionId: String, text: String, createdAt: String, updatedAt: String,

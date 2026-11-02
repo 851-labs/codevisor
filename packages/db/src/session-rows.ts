@@ -62,6 +62,7 @@ export interface PromptQueueRow {
   readonly updated_at: string
   readonly attachments: string | null
   readonly state: "pending" | "processing"
+  readonly steered: number
   readonly position: number
   readonly client_id?: string | null
   readonly origin?: string | null
@@ -127,6 +128,7 @@ export const promptQueueRows = rowReader<PromptQueueRow>({
   updated_at: text,
   attachments: nullable(text),
   state: literal("pending", "processing"),
+  steered: integer,
   position: integer,
   client_id: optional(nullable(text)),
   origin: optional(nullable(text)),

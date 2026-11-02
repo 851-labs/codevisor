@@ -118,6 +118,7 @@ final class SessionPromptQueue {
     do {
       let snapshot = try await transport.promptQueue()
       guard !Task.isCancelled, loadRevision == revision else { return }
+      rememberRemovedItems(in: snapshot)
       items = snapshot
       revision &+= 1
     } catch {
@@ -155,7 +156,8 @@ final class SessionPromptQueue {
     _ items: [ServerPromptQueueItem], orderedBy ids: [String]
   ) -> [ServerPromptQueueItem] {
     let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-    let ordered = ids.compactMap { byID[$0] }
-    return ordered + items.filter { !ids.contains($0.id) }
+    let ordered = ids.compactMap { byID[$0] }.filter { !$0.isNextStep }
+    let nextSteps = items.filter(\.isNextStep)
+    return nextSteps + ordered + items.filter { !$0.isNextStep && !ids.contains($0.id) }
   }
 }

@@ -28,6 +28,7 @@ import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./servic
 import { makeSessionForkService } from "./session-fork-service.js"
 import { makeSessionSubscriptionsService } from "./session-subscriptions-service.js"
 import { makeSessionsService } from "./sessions-service.js"
+import { makeSteeredPromptQueueService } from "./steered-prompt-queue-service.js"
 import { makeStreamingReconciliationService } from "./streaming-reconciliation-service.js"
 import { makeSyncService } from "./sync-service.js"
 import { makeTerminalPaneTitlesService } from "./terminal-pane-titles.js"
@@ -66,6 +67,7 @@ export const createService = (
     ...makeStreamingReconciliationService(context),
     ...makeEventsService(context),
     ...makePromptQueueService(context),
+    ...makeSteeredPromptQueueService(context),
     ...makeSessionSubscriptionsService(context),
     ...makePluginEventSubscriptionsService(context),
     ...makePluginAppContextsService(context),

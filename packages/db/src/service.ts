@@ -63,6 +63,7 @@ import type {
 import type { SessionForkService } from "./session-fork-service.js"
 import type { SessionStateService } from "./session-state-types.js"
 import type { SessionSubscriptionsService } from "./session-subscriptions-service.js"
+import type { SteeredPromptQueueService } from "./steered-prompt-queue-types.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
 import type { FinishedTurn } from "./turn-finish.js"
@@ -93,7 +94,8 @@ export interface CodevisorDatabaseService
     PluginDatabaseService,
     AutoResumeService,
     FileStorageService,
-    FleetOutboxService {
+    FleetOutboxService,
+    SteeredPromptQueueService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>

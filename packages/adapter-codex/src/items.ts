@@ -166,7 +166,7 @@ function emitCommandItem(
         kind: "execute",
         sessionUpdate: "tool_call",
         status: "in_progress",
-        title: command.length > 0 ? `Ran ${firstLine(command)}` : "Ran command",
+        title: commandTitle("Running", command),
         toolCallId: itemId,
         ...(command.length > 0 ? { rawInput: { command } } : {})
       })
@@ -176,6 +176,7 @@ function emitCommandItem(
       event({
         sessionUpdate: "tool_call_update",
         status: commandStatus(item),
+        title: commandTitle("Ran", startedCommand(session, itemId, command)),
         toolCallId: itemId,
         ...(command.length > 0 ? { rawInput: { command } } : {}),
         ...(typeof item.aggregatedOutput === "string" ? { rawOutput: item.aggregatedOutput } : {}),
@@ -184,6 +185,12 @@ function emitCommandItem(
     )
   }
 }
+
+const startedCommand = (session: CodexSession, itemId: string, command: string): string =>
+  command.length > 0 ? command : (session.itemTitles.get(itemId) ?? "")
+
+const commandTitle = (verb: "Running" | "Ran", command: string): string =>
+  command.length > 0 ? `${verb} ${firstLine(command)}` : `${verb} command`
 
 function emitFileChangeItem(
   session: CodexSession,

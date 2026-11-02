@@ -19,6 +19,10 @@ public enum Motion {
     reduceMotion ? nil : .snappy(duration: 0.2)
   }
 
+  public static func glassMorph(reduceMotion: Bool = false) -> Animation? {
+    reduceMotion ? nil : .bouncy(duration: 0.4, extraBounce: 0.05)
+  }
+
   public static func listReflow(reduceMotion: Bool = false) -> Animation? {
     reduceMotion ? nil : .smooth(duration: listReflowDuration)
   }

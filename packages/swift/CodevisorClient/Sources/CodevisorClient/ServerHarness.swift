@@ -415,6 +415,7 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
   public var configOptions: [SessionConfigOption]
   public var supportsGoals: Bool?
   public var supportsSteering: Bool?
+  public var steersAtNextStep: Bool?
   public var skills: SessionSkills?
   public var unappliedConfigSelections: [String: String]?
 
@@ -424,6 +425,7 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     configOptions: [SessionConfigOption],
     supportsGoals: Bool? = nil,
     supportsSteering: Bool? = nil,
+    steersAtNextStep: Bool? = nil,
     skills: SessionSkills? = nil,
     unappliedConfigSelections: [String: String]? = nil
   ) {
@@ -432,6 +434,7 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     self.configOptions = configOptions
     self.supportsGoals = supportsGoals
     self.supportsSteering = supportsSteering
+    self.steersAtNextStep = steersAtNextStep
     self.skills = skills
     self.unappliedConfigSelections = unappliedConfigSelections
   }

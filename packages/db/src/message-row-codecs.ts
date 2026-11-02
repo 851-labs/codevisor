@@ -85,7 +85,8 @@ export const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
     ...(attachments === undefined ? {} : { attachments }),
     ...(row.client_id == null ? {} : { clientId: row.client_id }),
     ...(row.origin === "system" ? { origin: "system" as const } : {}),
-    ...attributionField(parseAttribution(row.attribution))
+    ...attributionField(parseAttribution(row.attribution)),
+    ...(row.steered === 1 ? { steered: true } : {})
   }
 }
 

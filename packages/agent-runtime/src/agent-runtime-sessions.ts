@@ -14,6 +14,7 @@ export type AgentSessionOperations = Pick<
   | "answerQuestion"
   | "authenticateHarness"
   | "cancel"
+  | "interruptStep"
   | "clearGoal"
   | "closeAgentSession"
   | "logoutHarness"
@@ -71,12 +72,14 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
         const session = yield* sessionFor(sessionId)
         return yield* session.handle.prompt(input)
       }),
-    steer: (sessionId, input) =>
+    steer: (sessionId, input, steerId) =>
       Effect.suspend(() => {
         const steer = sessions.get(sessionId)?.handle.steer
-        return steer === undefined ? Effect.succeed(false) : steer(input)
+        return steer === undefined ? Effect.succeed(false) : steer(input, steerId)
       }),
     cancel: (sessionId) => stopTurn(sessionId, "cancel", (handle) => handle.cancel),
+    interruptStep: (sessionId) =>
+      Effect.suspend(() => sessions.get(sessionId)?.handle.interruptStep ?? Effect.succeed(false)),
     pauseForRestart: (sessionId) =>
       stopTurn(sessionId, "pauseForRestart", (handle) => handle.pauseForRestart ?? handle.cancel),
     closeAgentSession: (sessionId) =>

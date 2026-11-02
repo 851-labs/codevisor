@@ -4,8 +4,9 @@ import { maybeEmitStreamStats } from "./diff-stats.js"
 import { isRecord, recordOf } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
+import { absorbPendingSteers } from "./steer-absorption.js"
 import { toolKind } from "./tool-presentation.js"
-import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
+import { ensureObservedTurnStarted, ensureTurnStarted } from "./turn-lifecycle.js"
 
 const streamMessageId = (inner: unknown): string | undefined => {
   if (!isRecord(inner)) return undefined
@@ -22,12 +23,19 @@ const startStreamMessage = (
   if (parentId === undefined) {
     session.currentMessageId = innerId
     session.currentMessageTextStreamed = false
-    void ensureObservedTurnStarted(session)
+    void startRootMessageTurn(session)
+    session.requestInFlight = false
+    session.stepInterrupted = false
     session.rootReplyComplete = false
     session.deferredTaskResult = undefined
   } else if (innerId !== undefined && innerId !== "") {
     session.subagentMessageIds.set(parentId, innerId)
   }
+}
+
+const startRootMessageTurn = (session: ClaudeSession): Promise<void> => {
+  if (absorbPendingSteers(session)) return ensureTurnStarted(session, "user")
+  return ensureObservedTurnStarted(session)
 }
 
 const startStreamBlock = (

@@ -162,8 +162,8 @@ const botHandle = (handle: AgentSessionHandle, state: BotGuardState): AgentSessi
 
 const botSteer =
   (steer: NonNullable<AgentSessionHandle["steer"]>) =>
-  (input: string | PromptInput): Effect.Effect<boolean, AgentRuntimeError> =>
-    steer(asPlainText(input))
+  (input: string | PromptInput, steerId?: string): Effect.Effect<boolean, AgentRuntimeError> =>
+    steer(asPlainText(input), steerId)
 
 const asPlainText = (input: string | PromptInput): PromptInput => {
   const prompt = normalizePromptInput(input)

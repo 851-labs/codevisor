@@ -20,9 +20,12 @@ final class SendQueue {
 
   enum Route: Equatable {
     case bot(afterSequence: Int?)
-    case agent(ServerPromptDelivery)
+    case agent(ServerPromptDelivery, landsInQueue: Bool)
 
-    var landsInPromptQueue: Bool { self == .agent(.queue) }
+    var landsInPromptQueue: Bool {
+      guard case let .agent(_, landsInQueue) = self else { return false }
+      return landsInQueue
+    }
   }
 
   struct Unsent: Equatable {

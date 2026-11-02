@@ -16,8 +16,11 @@ import type { CodevisorServerServices } from "../server-context.js"
 import { refuseWhileUpdating, sendQueuedPromptNow } from "./prompt-delivery.js"
 import type { PromptDeliveryOutcome } from "./prompt-delivery.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
+import { interruptRunningStep } from "./prompt-steering.js"
 import type { RouteContext } from "./route-context.js"
 import { routeParam } from "./route-params.js"
+import { cancelTurn } from "./session-actions.js"
+import { ensureAgentSessionFor } from "./session-workspace.js"
 import { MAX_PROMPT_ATTACHMENTS } from "./sessions.js"
 
 export const routeSessionQueue = (route: RouteContext): Promise<boolean> | undefined => {
@@ -76,7 +79,7 @@ const listQueue = async (
   { services, response }: RouteContext,
   sessionId: string
 ): Promise<boolean> => {
-  writeJson(response, 200, await run(services.db.listPromptQueue(sessionId)))
+  writeJson(response, 200, await run(services.db.listVisiblePromptQueue(sessionId)))
   return true
 }
 
@@ -125,11 +128,37 @@ const sendNow = async (route: RouteContext, params: Record<string, string>): Pro
   const id = routeParam(params, "id")
   const queueId = routeParam(params, "queueId")
   await refuseWhileUpdating(services, routeState, id)
+  if (await isSteered(route, id, queueId)) return interruptForSteer(route, id, queueId)
 
   const outcome = await sendQueuedPromptNow(services, fanout, routeState, config.id, id, queueId)
   writeJson(response, 200, acceptedPrompt(id, queueId, outcome))
   void drainQueueQuietly(route, id)
   return true
+}
+
+const isSteered = async (
+  route: RouteContext,
+  sessionId: string,
+  queueId: string
+): Promise<boolean> => {
+  const queue = await run(route.services.db.listVisiblePromptQueue(sessionId))
+  return queue.some((item) => item.id === queueId && item.steered === true)
+}
+
+const interruptForSteer = async (
+  route: RouteContext,
+  sessionId: string,
+  queueId: string
+): Promise<boolean> => {
+  if (!(await interruptStep(route, sessionId))) await cancelTurn(route, sessionId)
+  writeJson(route.response, 200, acceptedPrompt(sessionId, queueId, { delivered: "steered" }))
+  return true
+}
+
+const interruptStep = async (route: RouteContext, sessionId: string): Promise<boolean> => {
+  const { services, fanout, config } = route
+  const agentSession = await ensureAgentSessionFor(services, fanout, config.id, sessionId)
+  return interruptRunningStep(services, agentSession.sessionId)
 }
 
 const writeNoContent = (response: ServerResponse): void => {

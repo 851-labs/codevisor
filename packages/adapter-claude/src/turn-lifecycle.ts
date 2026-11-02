@@ -47,17 +47,20 @@ export const finishActiveTurn = (
   const toolEvents: Array<RuntimeEvent> = []
   for (const toolUseId of Array.from(session.openToolCalls)) {
     session.openToolCalls.delete(toolUseId)
+    const title = session.finishedToolTitles.get(toolUseId)
     toolEvents.push({
       kind: "session.output",
       payload: {
         sessionUpdate: "tool_call_update",
         status: wasInterrupted ? "cancelled" : "failed",
-        toolCallId: toolUseId
+        toolCallId: toolUseId,
+        ...(title === undefined ? {} : { title })
       },
       subjectId: session.key
     })
   }
   session.accumulators.clear()
+  session.finishedToolTitles.clear()
   session.taskToolUses.clear()
   session.skillCalls.clear()
   session.subagentMessageIds.clear()
@@ -132,6 +135,7 @@ export const ensureTurnStarted = (
 ): Promise<void> => {
   if (session.turnActive) return Promise.resolve()
   session.turnActive = true
+  session.requestInFlight = true
   session.deferredTaskResult = undefined
   session.awaitingRecoveryResult = false
   session.rootReplyComplete = false

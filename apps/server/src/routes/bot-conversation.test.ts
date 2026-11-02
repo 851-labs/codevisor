@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { BotConversationPage, decode, SessionSummary } from "@codevisor/api"
-import { describe, expect, it } from "vitest"
+import { Effect } from "effect"
+import { describe, expect, it, vi } from "vitest"
 
 import { jsonRequest, listSubjectEvents, run, waitFor } from "../test-support.js"
 import { createBot, decodeBot, endedTurns, setUp, type Running } from "./bot-test-support.js"
@@ -20,6 +21,22 @@ const prompt = (running: Running, sessionId: string, text: string, messageId?: s
     body: JSON.stringify({ text, ...(messageId === undefined ? {} : { messageId }) }),
     method: "POST"
   })
+
+const readsSteersAtNextStep = ({ agents }: Running): ReadonlyArray<string> => {
+  const interrupted: Array<string> = []
+  const load = agents.loadAgentSession.bind(agents)
+  vi.spyOn(agents, "loadAgentSession").mockImplementation((...args) =>
+    Effect.map(load(...args), (metadata) => ({ ...metadata, steersAtNextStep: true }))
+  )
+  Object.assign(agents, {
+    interruptStep: (id: string) =>
+      Effect.sync(() => {
+        interrupted.push(id)
+        return true
+      })
+  })
+  return interrupted
+}
 
 const startBot = async () => {
   const running = await setUp()
@@ -161,6 +178,24 @@ describe("bot conversations", () => {
     await waitFor(async () => !(await conversation(running, bot.sessionId)).working)
     expect(running.agents.prompts).toHaveLength(1)
     expect(await transcript(running, bot.sessionId)).toHaveLength(2)
+  })
+
+  it("interrupts the running step at once so the bot reads a message sent mid-turn straight away", async () => {
+    const { running, bot } = await startBot()
+    const interrupted = readsSteersAtNextStep(running)
+
+    await prompt(running, bot.sessionId, "prompt until cancelled")
+    await waitFor(() => running.agents.prompts.length === 1)
+    await prompt(running, bot.sessionId, "also do this")
+
+    await waitFor(() => interrupted.length === 1)
+    expect(interrupted).toEqual([running.agents.prompts[0]![0]])
+    expect(running.agents.cancellations).toEqual([])
+    expect(await run(running.services.db.listVisiblePromptQueue(bot.sessionId))).toEqual([])
+    expect(await transcript(running, bot.sessionId)).toEqual([
+      ["user", "prompt until cancelled"],
+      ["user", "also do this"]
+    ])
   })
 
   it("leaves a bot without conversation mode on the transcript and queue", async () => {

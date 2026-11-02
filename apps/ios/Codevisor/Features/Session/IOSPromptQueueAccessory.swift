@@ -21,6 +21,11 @@ struct IOSPromptQueueAccessory: View {
     controller.unsentQueuedMessages.contains { $0.delivery?.isFailed == true }
   }
 
+  private var leadingSymbol: String {
+    if hasUndelivered { return "exclamationmark.circle.fill" }
+    return PromptQueueSymbol.name(steered: firstItem?.isNextStep == true)
+  }
+
   private var countText: String {
     count == 1 ? "1 message" : "\(count) messages"
   }
@@ -30,7 +35,7 @@ struct IOSPromptQueueAccessory: View {
       isPresentingQueue = true
     } label: {
       HStack(spacing: 8) {
-        Image(systemName: hasUndelivered ? "exclamationmark.circle.fill" : "clock")
+        Image(systemName: leadingSymbol)
           .font(.subheadline.weight(.medium))
           .foregroundStyle(hasUndelivered ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
         if let firstItem {
@@ -39,6 +44,7 @@ struct IOSPromptQueueAccessory: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.tail)
+            .background(TranscriptQueueSendAnchor(id: firstItem.id, text: firstItem.text))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         if count > 1 {

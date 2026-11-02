@@ -6,7 +6,7 @@ import { recordBackgroundTaskOutput } from "./background-task-output.js"
 import { acceptForkedCommandMessage, startForkedCommand } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
-import type { ClaudeSession, ClaudeTaskToolUse } from "./session.js"
+import type { ClaudeSession, ClaudeTaskToolUse, ToolInputAccumulator } from "./session.js"
 import { attachSkillText, skillResultMeta } from "./skill-tool.js"
 import { handleStreamEvent } from "./stream-events.js"
 import { handleSystemMessage } from "./system-messages.js"
@@ -85,6 +85,7 @@ const handleToolResult = (
 ): void => {
   const toolUseId = block.tool_use_id
   session.openToolCalls.delete(toolUseId)
+  if (message.parent_tool_use_id === null) session.requestInFlight = true
   recordBackgroundTaskOutput(session, block.content)
   const accumulator = session.accumulators.get(toolUseId)
   const taskToolUse = session.taskToolUses.get(toolUseId)
@@ -95,10 +96,7 @@ const handleToolResult = (
   }
   if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) return
   emitSubagentReport(session, toolUseId, message.tool_use_result)
-  const doneTitle =
-    accumulator !== undefined && accumulator.titledPath !== undefined
-      ? finishedToolTitle(accumulator.toolName, accumulator.titledPath)
-      : undefined
+  const doneTitle = finishedTitle(session, toolUseId, accumulator)
   const sources = block.is_error === true ? [] : webSearchSources(block.content)
   const skill = skillResultMeta(session, toolUseId, block.is_error === true)
   void session.emit({
@@ -114,6 +112,17 @@ const handleToolResult = (
     },
     subjectId: session.key
   })
+}
+
+const finishedTitle = (
+  session: ClaudeSession,
+  toolUseId: string,
+  accumulator: ToolInputAccumulator | undefined
+): string | undefined => {
+  const recorded = session.finishedToolTitles.get(toolUseId)
+  session.finishedToolTitles.delete(toolUseId)
+  if (accumulator?.titledPath === undefined) return recorded
+  return finishedToolTitle(accumulator.toolName, accumulator.titledPath) ?? recorded
 }
 
 const applyTaskToolResult = (

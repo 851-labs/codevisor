@@ -18,6 +18,10 @@ struct IOSPromptQueueRow: View {
 
   var body: some View {
     HStack(alignment: .center, spacing: 12) {
+      Image(systemName: PromptQueueSymbol.name(steered: item.isNextStep))
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
       message
       MessageAttributionText(item.attribution)
         .fixedSize()
@@ -31,7 +35,9 @@ struct IOSPromptQueueRow: View {
     .frame(minHeight: Typography.minimumInteractiveTargetSize)
     .disabled(isBusy)
     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-      Button(PromptQueueActionTitle.remove, systemImage: "trash", role: .destructive, action: actions.remove)
+      if !item.isNextStep {
+        Button(PromptQueueActionTitle.remove, systemImage: "trash", role: .destructive, action: actions.remove)
+      }
     }
     .swipeActions(edge: .leading, allowsFullSwipe: true) {
       if canSendNow {
@@ -43,18 +49,22 @@ struct IOSPromptQueueRow: View {
       if canSendNow {
         Button(PromptQueueActionTitle.sendNow, systemImage: "arrow.turn.right.up", action: actions.sendNow)
       }
-      Button(PromptQueueActionTitle.edit, systemImage: "pencil", action: actions.edit)
-      Button(PromptQueueActionTitle.remove, systemImage: "trash", role: .destructive, action: actions.remove)
+      if !item.isNextStep {
+        Button(PromptQueueActionTitle.edit, systemImage: "pencil", action: actions.edit)
+        Button(PromptQueueActionTitle.remove, systemImage: "trash", role: .destructive, action: actions.remove)
+      }
     }
     .accessibilityActions {
       if canSendNow { Button(PromptQueueActionTitle.sendNow, action: actions.sendNow) }
-      Button(PromptQueueActionTitle.edit, action: actions.edit)
-      Button(PromptQueueActionTitle.remove, action: actions.remove)
+      if !item.isNextStep {
+        Button(PromptQueueActionTitle.edit, action: actions.edit)
+        Button(PromptQueueActionTitle.remove, action: actions.remove)
+      }
     }
   }
 
   private var message: some View {
-    Button(action: actions.edit) {
+    Button(action: editIfQueued) {
       Text(PromptQueuePreviewText.singleLine(item.text))
         .font(.body)
         .foregroundStyle(.primary)
@@ -65,7 +75,12 @@ struct IOSPromptQueueRow: View {
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityHint("Edits the queued message in the composer")
+    .accessibilityHint(item.isNextStep ? "" : "Edits the queued message in the composer")
+  }
+
+  private func editIfQueued() {
+    guard !item.isNextStep else { return }
+    actions.edit()
   }
 }
 

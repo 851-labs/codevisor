@@ -44,6 +44,10 @@ export const handleResult = (session: ClaudeSession, message: ResultMessage): vo
     }
     return
   }
+  if (session.stepInterrupted) {
+    session.stepInterrupted = false
+    return
+  }
   if (isStartupFailure(session, message)) {
     recordStartupFailure(session, message)
     return

@@ -347,7 +347,8 @@ export const PromptQueueItem = Schema.Struct({
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   clientId: Schema.optional(Schema.String),
   origin: Schema.optional(PromptOrigin),
-  attribution: Schema.optional(PromptAttribution)
+  attribution: Schema.optional(PromptAttribution),
+  steered: Schema.optional(Schema.Boolean)
 })
 export type PromptQueueItem = typeof PromptQueueItem.Type
 

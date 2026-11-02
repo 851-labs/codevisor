@@ -58,39 +58,61 @@ export const finishedToolTitle = (toolName: string, path: string): string | unde
   }
 }
 
-export const toolTitle = (toolName: string, input: unknown): string => {
-  if (isRecord(input)) {
-    if (typeof input.file_path === "string") {
-      const file = input.file_path.split("/").at(-1) ?? input.file_path
-      switch (toolName) {
-        case "Read":
-          return `Read ${file}`
-        case "Edit":
-        case "MultiEdit":
-          return `Edited ${file}`
-        case "Write":
-          return `Wrote ${file}`
-        default:
-          break
-      }
-    }
-    if (toolName === "Bash" && typeof input.command === "string") {
-      return `Ran ${input.command.split("\n")[0]?.slice(0, 80) ?? ""}`
-    }
-    if (toolName === "WebSearch" && typeof input.query === "string") {
-      return `Searched for ${input.query}`
-    }
-    if (toolName === "WebFetch" && typeof input.url === "string") {
-      return `Fetched ${input.url}`
-    }
-    if (typeof input.pattern === "string") {
-      return `Searched for ${input.pattern}`
-    }
-    if ((toolName === "Task" || toolName === "Agent") && typeof input.description === "string") {
-      return `Agent: ${input.description}`
-    }
+export type ToolTense = "running" | "finished"
+
+export const toolTitle = (
+  toolName: string,
+  input: unknown,
+  tense: ToolTense = "finished"
+): string => {
+  const subject = isRecord(input) ? toolSubject(toolName, input) : undefined
+  if (subject === undefined) return toolName
+  if (subject.verb === undefined) return subject.text
+  return `${toolVerbs[subject.verb][tense]} ${subject.text}`
+}
+
+type ToolVerb = keyof typeof toolVerbs
+
+interface ToolSubject {
+  readonly verb?: ToolVerb
+  readonly text: string
+}
+
+const toolVerbs = {
+  read: { running: "Reading", finished: "Read" },
+  edit: { running: "Editing", finished: "Edited" },
+  write: { running: "Writing", finished: "Wrote" },
+  run: { running: "Running", finished: "Ran" },
+  search: { running: "Searching for", finished: "Searched for" },
+  fetch: { running: "Fetching", finished: "Fetched" }
+} as const
+
+const fileVerbs: Readonly<Record<string, ToolVerb>> = {
+  Read: "read",
+  Edit: "edit",
+  MultiEdit: "edit",
+  Write: "write"
+}
+
+const toolSubject = (toolName: string, input: Record<string, unknown>): ToolSubject | undefined => {
+  const fileVerb = fileVerbs[toolName]
+  if (fileVerb !== undefined && typeof input.file_path === "string") {
+    return { verb: fileVerb, text: fileNameOf(input.file_path) }
   }
-  return toolName
+  if (toolName === "Bash" && typeof input.command === "string") {
+    return { verb: "run", text: input.command.split("\n")[0]?.slice(0, 80) ?? "" }
+  }
+  if (toolName === "WebSearch" && typeof input.query === "string") {
+    return { verb: "search", text: input.query }
+  }
+  if (toolName === "WebFetch" && typeof input.url === "string") {
+    return { verb: "fetch", text: input.url }
+  }
+  if (typeof input.pattern === "string") return { verb: "search", text: input.pattern }
+  if ((toolName === "Task" || toolName === "Agent") && typeof input.description === "string") {
+    return { text: `Agent: ${input.description}` }
+  }
+  return undefined
 }
 
 export interface WebSearchSource {

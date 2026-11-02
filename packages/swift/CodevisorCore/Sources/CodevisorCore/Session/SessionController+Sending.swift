@@ -13,7 +13,7 @@ extension SessionController {
 
   public func send(delivery: ServerPromptDelivery = .steer) async {
     if presentsBotConversation { return sendToBot() }
-    sendToAgent(delivery: resolvedDelivery(for: delivery))
+    sendToAgent(delivery: resolvedDelivery(for: delivery), landsInQueue: sendLandsInQueue(delivery))
   }
 
   public func compact() {
@@ -22,10 +22,10 @@ extension SessionController {
     let message = UserMessage(text: "/\(SessionSkills.compactCommand)", attachments: [])
     beginOptimisticSend()
     userSendSignal &+= 1
-    sends.enqueue(message, attachmentIDs: [], route: .agent(.queue))
+    sends.enqueue(message, attachmentIDs: [], route: .agent(.queue, landsInQueue: true))
   }
 
-  private func sendToAgent(delivery: ServerPromptDelivery) {
+  private func sendToAgent(delivery: ServerPromptDelivery, landsInQueue: Bool) {
     guard canSend else { return }
 
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -34,11 +34,11 @@ extension SessionController {
     rememberSentPreviews(of: sent)
     beginOptimisticSend()
     userSendSignal &+= 1
-    if delivery != .queue {
+    if !landsInQueue {
       requestUserSendAnimation(for: message.id)
       pendingSendStartedAt = Date()
     }
-    sends.enqueue(message, attachmentIDs: sent.map(\.id), route: .agent(delivery))
+    sends.enqueue(message, attachmentIDs: sent.map(\.id), route: .agent(delivery, landsInQueue: landsInQueue))
     composerText = ""
     wakeSandboxForSend()
     startChat(for: message.text)

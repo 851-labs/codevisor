@@ -75,6 +75,7 @@ export interface AgentSessionMetadata {
   readonly configOptions: ReadonlyArray<SessionConfigOption>
   readonly supportsGoals?: boolean
   readonly supportsSteering?: boolean
+  readonly steersAtNextStep?: boolean
   readonly skills?: SessionSkills
   readonly unappliedConfigSelections?: Readonly<Record<string, string>>
 }
@@ -167,8 +168,13 @@ export interface AgentSessionHandle {
   readonly resumable?: boolean
   readonly exited?: () => boolean
   readonly prompt: (input: string | PromptInput) => Effect.Effect<PromptResult, AgentRuntimeError>
-  readonly steer?: (input: string | PromptInput) => Effect.Effect<boolean, AgentRuntimeError>
+  readonly steer?: (
+    input: string | PromptInput,
+    steerId?: string
+  ) => Effect.Effect<boolean, AgentRuntimeError>
+  readonly steersAtNextStep?: boolean
   readonly cancel: Effect.Effect<CancelResult, AgentRuntimeError>
+  readonly interruptStep?: Effect.Effect<boolean, AgentRuntimeError>
   readonly pauseForRestart?: Effect.Effect<CancelResult, AgentRuntimeError>
   readonly setMode: (modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (

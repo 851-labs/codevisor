@@ -6,6 +6,11 @@ extension SessionController {
     return supportsSteeringByHarness[harnessId] ?? false
   }
 
+  var steersAtNextStep: Bool {
+    guard let harnessId = connectedHarnessId ?? selectedHarnessId else { return false }
+    return steersAtNextStepByHarness[harnessId] ?? false
+  }
+
   public var canQueueMessages: Bool {
     isSending && !presentsBotConversation && !isAwaitingAnswer
   }
@@ -20,7 +25,7 @@ extension SessionController {
 
   public func sendLandsInQueue(_ delivery: ServerPromptDelivery) -> Bool {
     guard canQueueMessages else { return false }
-    return delivery == .queue || !supportsSteering
+    return delivery == .queue || !supportsSteering || steersAtNextStep
   }
 
   @discardableResult
@@ -29,6 +34,7 @@ extension SessionController {
   }
 
   func resolvedDelivery(for delivery: ServerPromptDelivery) -> ServerPromptDelivery {
-    sendLandsInQueue(delivery) ? .queue : .steer
+    guard canQueueMessages, delivery == .queue || !supportsSteering else { return .steer }
+    return .queue
   }
 }

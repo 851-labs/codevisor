@@ -76,6 +76,28 @@ extension SessionModelTests {
     model.shutdown()
   }
 
+  @Test("A steer the agent reads at its next step waits in the queue row, never the transcript, until it is queued")
+  func nextStepSteerWaitsInTheQueueRow() async {
+    let (client, model) = await busyNormalModel()
+    client.promptDelivery.answerSteers(with: "steered")
+    let message = UserMessage(text: "make the bot mode a select")
+    let id = message.id.uuidString.lowercased()
+
+    await model.send(message, delivery: .steer, landsInQueue: true)
+
+    #expect(client.sendAttempts.actionIds.last == id)
+    #expect(model.transcriptOutgoingMessages.isEmpty)
+    #expect(model.unsentQueuedMessages.map(\.text) == ["make the bot mode a select"])
+    var nextStep = ServerPromptQueueItem(
+      id: id, sessionId: client.sessionId.uuidString, text: message.text,
+      createdAt: "2026-11-02T00:00:00.000Z", updatedAt: "2026-11-02T00:00:00.000Z")
+    nextStep.steered = true
+    model.promptQueue.apply([nextStep])
+    #expect(model.outgoingMessages.isEmpty)
+    #expect(model.queuedPrompts.map(\.isNextStep) == [true])
+    model.shutdown()
+  }
+
   @Test("A send that hasn't reached the server yet says Sending, whether or not the agent is working")
   func slowSendsSaySending() async {
     let (client, model) = normalModel()
