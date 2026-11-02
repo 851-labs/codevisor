@@ -109,7 +109,9 @@ struct Tier2Measurement {
   }
 
   private static func localFloorReason(_ files: Tier2RunFiles) -> String? {
-    guard BenchObservedVersions(files.viewer).unreadableFraction <= unreadableLimit else {
+    let window = Tier2InputRun.window(files)
+    let frames = files.viewer.filter { window?.contains($0.ptsNs) ?? true }
+    guard BenchObservedVersions(frames).unreadableFraction <= unreadableLimit else {
       return "viewer unreadable fraction above 1%"
     }
 

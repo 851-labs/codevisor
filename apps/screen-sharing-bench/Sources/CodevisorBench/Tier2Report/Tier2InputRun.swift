@@ -3,11 +3,19 @@ import ScreenSharingBench
 enum Tier2InputRun {
   private static let screenSharingApp = "com.apple.ScreenSharing"
   private static let benchApp = "com.851labs.CodevisorBench"
+  private static let lastResponseMarginNs: Int64 = 1_000_000_000
 
   static func toPhoton(_ files: Tier2RunFiles) -> BenchInputToPhoton? {
     guard files.meta.isInput, let events = files.inputEvents else { return nil }
 
     return BenchInputToPhoton(events: events, observations: files.viewer)
+  }
+
+  static func window(_ files: Tier2RunFiles) -> ClosedRange<Int64>? {
+    guard let first = files.inputEvents?.map(\.postedNs).min(), let last = files.inputEvents?.map(\.postedNs).max()
+    else { return nil }
+
+    return first...(last + lastResponseMarginNs)
   }
 
   static func invalidReason(_ files: Tier2RunFiles, _ toPhoton: BenchInputToPhoton?) -> String? {

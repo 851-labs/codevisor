@@ -304,7 +304,7 @@ presses and 200 clicks by default, `TIER2_INPUT_EVENTS`; about 100 s, so dispatc
 in Control mode (`apple-hp --control`) and Codevisor holding the control lease (`view --control`). Only the viewer's
 clock is used: `BenchInputToPhoton` pairs each posted event with the viewer observer's first frame showing another
 version (`BenchInputResponses`), for all events and per kind. The floor of the input scene is C6 instead of C3: the
-viewer runs `player --scene input` locally and the same `inject`, with nothing shared (the host sits that run out). A
+viewer runs `player --scene input` locally and the same `inject`, with nothing shared (the host sits that run out). Its unreadable fraction counts only the frames from the first event to 1 s after the last, so the player's window closing after the events doesn't count. A
 run is invalid when no event was posted, any event went to another frontmost app than Screen Sharing or CodevisorBench,
 Codevisor never held or lost the lease, Screen Sharing was in Observe mode, or no event changed the picture. The report
 adds `i2p_ms` to each result, `local_i2p_ms` (the pooled floor) to the calibration, `i2p_ms.p50` and `i2p_ms.p95` to the
