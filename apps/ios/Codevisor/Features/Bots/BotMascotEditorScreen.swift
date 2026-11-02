@@ -13,7 +13,7 @@ struct BotMascotEditorScreen: View {
   @State private var mascot: ServerBotMascot
   @State private var category = BotMascotCategory.color
   @ScaledMetric(relativeTo: .largeTitle) private var previewSide: CGFloat = 200
-  @ScaledMetric(relativeTo: .title) private var swatchSide: CGFloat = 36
+  @ScaledMetric(relativeTo: .title) private var swatchSide: CGFloat = 28
 
   init(
     mascot: ServerBotMascot,

@@ -14,7 +14,7 @@ struct BotMascotColorRow: View {
   }
 
   private var swatches: some View {
-    HStack(spacing: side / 3) {
+    HStack(spacing: side / 4) {
       ForEach(colors) { color in
         BotMascotColorSwatch(color: color, side: side, isSelected: color.id == selection) {
           selection = color.id
