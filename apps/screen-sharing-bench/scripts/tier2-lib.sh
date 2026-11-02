@@ -14,12 +14,15 @@
 : "${TIER2_ENGINE:=v1}"
 : "${TIER2_PRESENT:=arrival}"
 : "${TIER2_SYSTEMS:=apple-hp,codevisor-r1x2,codevisor}"
+: "${TIER2_VIEWER_DISPLAY:=main}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=100
 tier2_settle_limit_s=600
 tier2_abort_wait_s=120
 tier2_plan_budget_s=2700
+tier2_first_still_version=4
+tier2_last_still_version=11
 : "${TIER2_FLOOR_PORT:=47594}"
 : "${TIER2_CLOCK_PORT:=47592}"
 : "${TIER2_NETWORK_CHECK_PORT:=47596}"
@@ -103,11 +106,41 @@ tier2_resolution() {
   esac
 }
 
-tier2_viewer_block_size() {
-  case "$(tier2_resolution "$1")" in
-    R1x2) echo 8 ;;
-    *) echo 16 ;;
+tier2_display_pixel_width() {
+  case "$1" in
+    R1x2) echo 3840 ;;
+    *) echo 1920 ;;
   esac
+}
+
+tier2_viewer_block_size() {
+  [[ "$1" == floor ]] && { echo 16; return; }
+  local host viewer
+  host=$(tier2_display_pixel_width "$(tier2_resolution "$1")")
+  viewer=$(tier2_display_pixel_width "$TIER2_VIEWER_DISPLAY")
+  echo $((16 * viewer / host))
+}
+
+tier2_viewer_display_options() {
+  [[ "$TIER2_VIEWER_DISPLAY" == main ]] || echo --virtual-display "$TIER2_VIEWER_DISPLAY"
+}
+
+tier2_stills_versions() {
+  local last=$((TIER2_DURATION / 3 - 2)) version versions=()
+  ((last > tier2_last_still_version)) && last=$tier2_last_still_version
+  for ((version = tier2_first_still_version; version <= last; version++)); do
+    ((version % 4 == 3)) || versions+=("$version")
+  done
+  local IFS=,
+  echo "${versions[*]}"
+}
+
+tier2_stills_options() {
+  local scene=$1 system=$2 directory=$3 versions
+  [[ "$scene" == test-cards && "$system" != floor ]] || return 0
+  versions=$(tier2_stills_versions)
+  [[ -n "$versions" ]] || return 0
+  echo --region full --stills "$directory" --stills-versions "$versions"
 }
 
 meet() {
@@ -145,6 +178,7 @@ tier2_check_inputs() {
   [[ "$TIER2_ENGINE" =~ ^v[12]$ ]] || { echo "engine must be v1 or v2, not $TIER2_ENGINE" >&2; return 1; }
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
   tier2_check_input_scene || return 1
+  [[ "$TIER2_VIEWER_DISPLAY" =~ ^(main|R1x2)$ ]] || { echo "viewer display must be main or R1x2" >&2; return 1; }
   local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   if [[ "$TIER2_ENGINE" == v2 ]] && tier2_runs_system codevisor-r1x2 && tier2_runs_system codevisor-v2; then

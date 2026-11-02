@@ -48,6 +48,11 @@ on:
         required: false
         default: apple-hp,codevisor-r1x2,codevisor
         type: string
+      viewer-display:
+        description: Where croissant shows every system, main (its 1920x1080 display) or R1x2 (a 3840x2160 virtual display, so Apple HP is 1:1)
+        required: false
+        default: main
+        type: string
   workflow_call:
     inputs:
       scenes:
@@ -95,6 +100,11 @@ on:
         required: false
         default: apple-hp,codevisor-r1x2,codevisor
         type: string
+      viewer-display:
+        description: Where croissant shows every system, main (its 1920x1080 display) or R1x2 (a 3840x2160 virtual display, so Apple HP is 1:1)
+        required: false
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -115,6 +125,7 @@ env:
   TIER2_ENGINE: ${{ inputs.engine }}
   TIER2_PRESENT: ${{ inputs.present }}
   TIER2_SYSTEMS: ${{ inputs.systems }}
+  TIER2_VIEWER_DISPLAY: ${{ inputs.viewer-display }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:

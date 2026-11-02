@@ -12,6 +12,7 @@ struct Tier2Measurement {
   let viewerUsage: BenchUsageSummary?
   let inputToPhoton: BenchInputToPhoton?
   let invalidReason: String?
+  let textFidelity: BenchTextFidelityAnalysis?
 
   init(_ files: Tier2RunFiles) {
     let clock = BenchClockTrack(bursts: files.clockBursts.filter { !$0.isEmpty })
@@ -32,12 +33,22 @@ struct Tier2Measurement {
     invalidReason =
       Self.invalidReason(files, clock: clock, analysis: analysis)
       ?? Tier2InputRun.invalidReason(files, inputToPhoton)
+    textFidelity = Self.textFidelity(files)
   }
 
   var result: BenchResult? {
     guard let system = files.meta.benchSystem, let analysis else { return nil }
 
     return Tier2Result.make(self, system: system, analysis: analysis)
+  }
+
+  private static func textFidelity(_ files: Tier2RunFiles) -> BenchTextFidelityAnalysis? {
+    do {
+      return try Tier2TextFidelity.analysis(of: files)
+    } catch {
+      BenchConsole.error("no text fidelity for \(files.directory.lastPathComponent): \(error)")
+      return nil
+    }
   }
 
   private static func hostUsage(
