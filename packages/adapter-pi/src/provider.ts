@@ -1,5 +1,6 @@
 import {
   adapterPromise,
+  adapterSession,
   clampFailureDetail,
   locateHarnessBinary,
   listPiAgentSessions,
@@ -121,13 +122,13 @@ export const makePiProvider = (
         ? { detail: "CLI not found on PATH", state: "unavailable" }
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway, sessionOptions) =>
-      adapterPromise("createSession", async () =>
+      adapterSession("createSession", async () =>
         createdSession(
           await start(definition, cwd, emit, account, toolGateway, forkArgs(sessionOptions))
         )
       ),
     loadSession: (definition, agentSessionId, cwd, emit, account, toolGateway) =>
-      adapterPromise("loadSession", async () => {
+      adapterSession("loadSession", async () => {
         const session = await start(definition, cwd, emit, account, toolGateway, [
           "--session",
           agentSessionId

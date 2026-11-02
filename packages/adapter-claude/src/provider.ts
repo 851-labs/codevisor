@@ -8,6 +8,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk"
 import {
   adapterPromise,
+  adapterSession,
   listClaudeAgentSessions,
   preferHarnessSessionTitles,
   type AgentProvider,
@@ -103,7 +104,7 @@ export const makeClaudeProvider = (
       toolGateway,
       sessionOptions
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
-      adapterPromise("createSession", async () => {
+      adapterSession("createSession", async () => {
         const session = await startSession(
           definition,
           cwd,
@@ -148,7 +149,7 @@ export const makeClaudeProvider = (
       toolGateway,
       sessionOptions
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
-      adapterPromise("loadSession", async () => {
+      adapterSession("loadSession", async () => {
         const session = await startSession(
           definition,
           cwd,

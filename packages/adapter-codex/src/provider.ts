@@ -1,5 +1,6 @@
 import {
   adapterPromise,
+  adapterSession,
   listCodexAgentSessions,
   preferHarnessSessionTitles,
   type AgentProvider,
@@ -106,20 +107,12 @@ export const makeCodexProvider = (
             })
       }
     })
-    await client.request("initialize", {
-      capabilities: { experimentalApi: true },
-      clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
-    })
-    client.notify("initialized")
-    if (account?.oauth) {
-      try {
-        return await connectSharedCodexAccount(client, account.oauth)
-      } catch (cause) {
-        client.close()
-        throw cause
-      }
+    try {
+      return await initializeClient(client, account)
+    } catch (cause) {
+      client.close()
+      throw cause
     }
-    return client
   }
 
   const listHarnessSessionTitles = async (
@@ -172,7 +165,7 @@ export const makeCodexProvider = (
       toolGateway,
       sessionOptions
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
-      adapterPromise("createSession", async () => {
+      adapterSession("createSession", async () => {
         const session = await startSession(
           definition,
           cwd,
@@ -203,7 +196,7 @@ export const makeCodexProvider = (
       toolGateway,
       sessionOptions
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
-      adapterPromise("loadSession", async () => {
+      adapterSession("loadSession", async () => {
         const session = await startSession(
           definition,
           cwd,
@@ -266,4 +259,18 @@ export const makeCodexProvider = (
         : { detail: "CLI not found on PATH", state: "unavailable" }
     }
   }
+}
+
+const initializeClient = async (
+  client: CodexClient,
+  account: HarnessAccountContext | undefined
+): Promise<CodexClient> => {
+  await client.request("initialize", {
+    capabilities: { experimentalApi: true },
+    clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
+  })
+  client.notify("initialized")
+  if (account?.oauth === undefined) return client
+
+  return connectSharedCodexAccount(client, account.oauth)
 }

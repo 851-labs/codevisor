@@ -1,14 +1,14 @@
 import type { Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { Cause, Effect } from "effect"
+import { Effect } from "effect"
 
-import { makeAgentRuntimeCore, withSteeringSupport } from "./agent-runtime-core.js"
+import { makeAgentRuntimeCore } from "./agent-runtime-core.js"
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
 import { sessionGuardFor } from "./bot-session-guard.js"
 import { harnessCatalog } from "./harness-catalog.js"
-import { placeConfigValue } from "./model-selection.js"
-import { adapterPromise, runtimeError } from "./types.js"
+import { inspectHarnessSession } from "./inspect-harness.js"
+import { adapterPromise } from "./types.js"
 
 export * from "./types.js"
 export * from "./attachments.js"
@@ -167,68 +167,11 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         return metadata.sessionId
       }),
     inspectHarness: (harnessId, cwd, account, configSelections) =>
-      Effect.gen(function* () {
-        const { definition, provider } = yield* definitionFor(harnessId)
-        const timeoutMs = 15_000
-        const created = yield* provider
-          .createSession(
-            definition,
-            cwd,
-            /* v8 ignore next */
-            () => Promise.resolve(),
-            account,
-            undefined,
-            {
-              modelListTimeoutMs: Math.max(3_000, timeoutMs - 3_000),
-              skillListTimeoutMs: 2_000,
-              ...(configSelections === undefined ? {} : { configSelections })
-            }
-          )
-          .pipe(
-            Effect.timeout(timeoutMs),
-            Effect.mapError((cause) =>
-              runtimeError(
-                "inspectHarness",
-                cause._tag === "TimeoutError"
-                  ? new Error(`Harness inspection timed out after ${timeoutMs}ms`)
-                  : cause
-              )
-            )
-          )
-        let configOptions = created.metadata.configOptions
-        const selections = Object.entries(configSelections ?? {}).toSorted(([left], [right]) => {
-          if (left === "model") return -1
-          if (right === "model") return 1
-          return left.localeCompare(right)
-        })
-        const unapplied: Record<string, string> = {}
-        const reconcile = provider.reconcileConfigValue
-        for (const [configId, value] of selections) {
-          const option = configOptions.find((candidate) => candidate.id === configId)
-          const target =
-            option === undefined ? undefined : placeConfigValue(option, value, reconcile)
-          if (target === undefined) {
-            unapplied[configId] = value
-            continue
-          }
-          if (option?.currentValue === target) continue
-          configOptions = yield* created.handle.setConfigOption(configId, target).pipe(
-            Effect.catchCause((cause) => {
-              console.error(
-                `[agent-runtime] inspectHarness(${harnessId}) could not apply ${configId}=${target}: ${Cause.pretty(cause)}`
-              )
-              unapplied[configId] = value
-              return Effect.succeed(configOptions)
-            })
-          )
-        }
-        void Effect.runPromise(created.handle.close).catch(() => undefined)
-        return {
-          ...withSteeringSupport(created.metadata, created.handle),
-          configOptions,
-          ...(Object.keys(unapplied).length === 0 ? {} : { unappliedConfigSelections: unapplied })
-        }
-      }),
+      definitionFor(harnessId).pipe(
+        Effect.flatMap(({ definition, provider }) =>
+          inspectHarnessSession({ harnessId, definition, provider, cwd, account, configSelections })
+        )
+      ),
     loadedAgentSessionIds: () => [...sessions.keys()],
     loadedAgentSessions: () =>
       [...sessions].map(([sessionId, session]) => ({

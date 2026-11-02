@@ -1,6 +1,8 @@
 import type { ToolGatewayConfig } from "@codevisor/agent-runtime"
+import { Effect, Fiber } from "effect"
 import { describe, expect, it } from "vitest"
 
+import type { CodexClient } from "./client.js"
 import { makeCodexProvider } from "./provider.js"
 import { definition, environment, FakeCodexClient, recordOf, run, setup } from "./test-support.js"
 
@@ -20,6 +22,23 @@ const expectedNativeCodexSkills = {
     { name: "template-creator:template-creator", enabled: false },
     { name: "visualize:visualize", enabled: false }
   ]
+}
+
+class CloseSignalingClient extends FakeCodexClient {
+  private readonly closing = Promise.withResolvers<void>()
+  readonly whenClosed = this.closing.promise
+
+  override close(): void {
+    super.close()
+    this.closing.resolve()
+  }
+}
+
+class HandshakeFailingClient extends FakeCodexClient {
+  protected override async reply(method: string, params?: unknown): Promise<unknown> {
+    if (method === "initialize") throw new Error("initialize failed")
+    return super.reply(method, params)
+  }
 }
 
 describe("CodexProvider", () => {
@@ -173,6 +192,44 @@ describe("CodexProvider", () => {
     expect(client.requests.map((request) => request.method)).toContain("thread/resume")
 
     await expect(setup({ failResume: true, resume: "not-a-thread" })).rejects.toThrow()
+  })
+
+  it("stops the app-server when the thread it was started for cannot be opened", async () => {
+    const client = new FakeCodexClient()
+    client.failResume = true
+    const provider = makeCodexProvider(environment, { connector: async () => client })
+
+    await expect(
+      run(provider.loadSession(definition, "missing-thread", "/tmp/project", async () => {}))
+    ).rejects.toThrow("thread not found")
+    expect(client.closed).toBe(true)
+  })
+
+  it("stops the app-server of a session that finishes starting after its caller gave up", async () => {
+    const client = new CloseSignalingClient()
+    const spawned = Promise.withResolvers<CodexClient>()
+    const provider = makeCodexProvider(environment, { connector: () => spawned.promise })
+
+    const starting = Effect.runFork(
+      provider.createSession(definition, "/tmp/project", async () => {})
+    )
+    await Effect.runPromise(Fiber.interrupt(starting))
+    expect(client.closed).toBe(false)
+
+    spawned.resolve(client)
+    await client.whenClosed
+
+    expect(client.requests.map((request) => request.method)).toContain("thread/start")
+  })
+
+  it("stops the app-server when its handshake fails", async () => {
+    const client = new HandshakeFailingClient()
+    const provider = makeCodexProvider(environment, { connector: async () => client })
+
+    await expect(
+      run(provider.createSession(definition, "/tmp/project", async () => {}))
+    ).rejects.toThrow("initialize failed")
+    expect(client.closed).toBe(true)
   })
 
   it("cancels the pending prompt and reports the error when the app-server exits", async () => {

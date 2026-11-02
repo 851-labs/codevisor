@@ -59,33 +59,63 @@ export const makeStartSession = ({
       toolGateway,
       disabledFeaturesFor(sessionOptions)
     )
-    const config = codexThreadConfig({ environment, readConfigFile, account, toolGateway })
-    const opened = { resumeThreadId, forkFrom: sessionOptions?.forkFrom }
-    const response: unknown = await openThread(client, cwd, opened, config)
-
-    const threadId = threadIdFrom(response)
-    if (threadId === undefined) {
-      client.close()
-      throw new Error("codex app-server did not return a thread id")
-    }
-
-    const session = newCodexSession({ client, cwd, emit, resumeThreadId, response, threadId })
     try {
-      const modelList = await client.request("model/list", {})
-      session.models = codexModelsFrom(modelList)
-      adoptDefaultEffort(session)
-    } catch {
-      session.models = []
+      return await openSession(
+        client,
+        { environment, readConfigFile },
+        {
+          account,
+          cwd,
+          emit,
+          resumeThreadId,
+          sessionOptions,
+          toolGateway
+        }
+      )
+    } catch (error) {
+      client.close()
+      throw error
     }
-    await refreshCodexSkills(session, false)
-
-    attachToClient(session, resumeThreadId !== undefined || opened.forkFrom !== undefined)
-    if (resumeThreadId !== undefined && sessionOptions?.resumeInterruptedTurn !== undefined) {
-      resumeInterruptedTurn(session, sessionOptions.resumeInterruptedTurn)
-    }
-    return session
   }
   return startSession
+}
+
+interface SessionRequest {
+  readonly account: HarnessAccountContext | undefined
+  readonly cwd: string
+  readonly emit: RuntimeEmit
+  readonly resumeThreadId: string | undefined
+  readonly sessionOptions: CreateSessionOptions | undefined
+  readonly toolGateway: ToolGatewayConfig | undefined
+}
+
+const openSession = async (
+  client: CodexClient,
+  { environment, readConfigFile }: Omit<CodexStartSessionDeps, "connect">,
+  { account, cwd, emit, resumeThreadId, sessionOptions, toolGateway }: SessionRequest
+): Promise<CodexSession> => {
+  const config = codexThreadConfig({ environment, readConfigFile, account, toolGateway })
+  const opened = { resumeThreadId, forkFrom: sessionOptions?.forkFrom }
+  const response: unknown = await openThread(client, cwd, opened, config)
+
+  const threadId = threadIdFrom(response)
+  if (threadId === undefined) throw new Error("codex app-server did not return a thread id")
+
+  const session = newCodexSession({ client, cwd, emit, resumeThreadId, response, threadId })
+  try {
+    const modelList = await client.request("model/list", {})
+    session.models = codexModelsFrom(modelList)
+    adoptDefaultEffort(session)
+  } catch {
+    session.models = []
+  }
+  await refreshCodexSkills(session, false)
+
+  attachToClient(session, resumeThreadId !== undefined || opened.forkFrom !== undefined)
+  if (resumeThreadId !== undefined && sessionOptions?.resumeInterruptedTurn !== undefined) {
+    resumeInterruptedTurn(session, sessionOptions.resumeInterruptedTurn)
+  }
+  return session
 }
 
 const resumeInterruptedTurn = (session: CodexSession, resume: InterruptedTurnResume): void => {

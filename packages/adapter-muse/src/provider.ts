@@ -2,6 +2,7 @@ import { realpath } from "node:fs/promises"
 
 import {
   adapterPromise,
+  adapterSession,
   clampFailureDetail,
   locateHarnessBinary,
   TRUSTED_LAUNCH,
@@ -151,11 +152,11 @@ export const makeMuseProvider = (
         ? { detail: "CLI not found on PATH", state: "unavailable" }
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>
-      adapterPromise("createSession", async () =>
+      adapterSession("createSession", async () =>
         createdSession(await start(definition, cwd, emit, account, toolGateway))
       ),
     loadSession: (definition, agentSessionId, cwd, emit, account, toolGateway) =>
-      adapterPromise("loadSession", async () => {
+      adapterSession("loadSession", async () => {
         const chat = await start(definition, cwd, emit, account, toolGateway, agentSessionId)
         return { ...createdSession(chat), sessionId: chat.key }
       }),

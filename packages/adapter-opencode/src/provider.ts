@@ -5,6 +5,7 @@ import {
 } from "@codevisor/adapter-acp"
 import {
   adapterPromise,
+  adapterSession,
   OPENCODE_INSTALL_PATH,
   withoutEnv,
   type AgentProvider,
@@ -111,7 +112,7 @@ export const makeOpenCodeProvider = (
         (command) =>
           command === undefined
             ? fallback.createSession(definition, cwd, emit, account, toolGateway, sessionOptions)
-            : adapterPromise("createSession", async () =>
+            : adapterSession("createSession", async () =>
                 sessions.create(await launch(command, definition, cwd, emit, account, toolGateway))
               )
       ),
@@ -129,7 +130,7 @@ export const makeOpenCodeProvider = (
                 toolGateway,
                 sessionOptions
               )
-            : adapterPromise("loadSession", async () => {
+            : adapterSession("loadSession", async () => {
                 const loaded = await sessions.load(
                   await launch(command, definition, cwd, emit, account, toolGateway),
                   agentSessionId

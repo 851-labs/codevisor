@@ -276,6 +276,28 @@ export const adapterPromise = <A>(
     catch: (cause) => runtimeError(operation, cause)
   })
 
+export const adapterSession = <A extends { readonly handle: AgentSessionHandle }>(
+  operation: string,
+  run: () => Promise<A>
+): Effect.Effect<A, AgentRuntimeError> =>
+  Effect.tryPromise({
+    try: (signal) => closeIfAbandoned(run(), signal),
+    catch: (cause) => runtimeError(operation, cause)
+  })
+
+const closeIfAbandoned = <A extends { readonly handle: AgentSessionHandle }>(
+  starting: Promise<A>,
+  signal: AbortSignal
+): Promise<A> => {
+  void starting.then(
+    (started) => {
+      if (signal.aborted) void Effect.runPromise(started.handle.close).catch(() => undefined)
+    },
+    () => undefined
+  )
+  return starting
+}
+
 const requiresSignIn = (cause: unknown): boolean =>
   isRecord(cause) &&
   (cause.authRequired === true ||
