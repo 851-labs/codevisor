@@ -14,6 +14,7 @@ struct BotEditorSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var editor: BotEditorModel
   @State private var showingNewProject = false
+  @State private var editsMascot = false
   private let environment: AppEnvironment
   private let store: SessionStore?
   let onSaved: (Bot) -> Void
@@ -33,6 +34,9 @@ struct BotEditorSheet: View {
       Section { header }
       Section {
         TextField("Name", text: $editor.name, prompt: Text("Bot name"))
+        if let mascot = editor.mascot, editor.mascotOptions != nil {
+          BotMascotRow(mascot: mascot, serverId: editor.serverId) { editsMascot = true }
+        }
         Picker("Machine", selection: $editor.serverId) {
           ForEach(editor.machines) { machine in
             Label(machine.name, systemImage: machine.icon.systemImage).tag(machine.id)
@@ -41,7 +45,6 @@ struct BotEditorSheet: View {
         .pickerStyle(.menu)
         .disabled(editor.editedBot != nil)
       }
-      BotMascotSection(editor: editor)
       projectsSection
       if let bot = editor.editedBot {
         editedBotModelSection(bot)
@@ -81,6 +84,7 @@ struct BotEditorSheet: View {
       }
       .environment(environment)
     }
+    .sheet(isPresented: $editsMascot) { mascotEditor }
     .frame(width: 460)
     .frame(maxHeight: 640)
     .presentationSizing(.form.fitted(horizontal: false, vertical: true))
@@ -93,6 +97,13 @@ struct BotEditorSheet: View {
     ) {
       BotAvatar(
         mascot: editor.mascot, serverId: editor.serverId, symbolName: editor.symbolName, size: Self.avatarSize)
+    }
+  }
+
+  @ViewBuilder
+  private var mascotEditor: some View {
+    if let mascot = editor.mascot, let options = editor.mascotOptions {
+      BotMascotEditorSheet(mascot: mascot, options: options, serverId: editor.serverId) { editor.mascot = $0 }
     }
   }
 

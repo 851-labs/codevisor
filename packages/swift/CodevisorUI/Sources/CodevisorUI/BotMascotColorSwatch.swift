@@ -3,10 +3,10 @@ import CodevisorTheming
 import SwiftUI
 
 struct BotMascotColorSwatch: View {
-  private static let side: CGFloat = 20
-  private static let dotSide: CGFloat = 7
+  private static let ringWidth: CGFloat = 2.5
 
   let color: ServerBotMascotOptions.ColorChoice
+  let side: CGFloat
   let isSelected: Bool
   let select: () -> Void
 
@@ -14,19 +14,23 @@ struct BotMascotColorSwatch: View {
     Button(action: select) {
       Circle()
         .fill(fill)
-        .overlay { Circle().strokeBorder(.black.opacity(0.12), lineWidth: 0.5) }
+        .padding(ringGap)
         .overlay {
           if isSelected {
-            Circle().fill(.white).frame(width: Self.dotSide, height: Self.dotSide)
+            Circle().strokeBorder(.secondary, lineWidth: Self.ringWidth)
           }
         }
-        .frame(width: Self.side, height: Self.side)
+        .frame(width: side + ringGap * 2, height: side + ringGap * 2)
         .contentShape(.circle)
     }
     .buttonStyle(.plain)
     .help(color.title)
     .accessibilityLabel(color.title)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+
+  private var ringGap: CGFloat {
+    side / 5
   }
 
   private var fill: LinearGradient {

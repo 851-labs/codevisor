@@ -14,6 +14,7 @@ struct BotEditorView: View {
   @State private var editor: BotEditorModel
   @State private var confirmsDelete = false
   @State private var showingNewProject = false
+  @State private var editsMascot = false
   @FocusState private var isNameFocused: Bool
   @ScaledMetric(relativeTo: .largeTitle) private var iconSize: CGFloat = 88
   let onCreated: (Bot) -> Void
@@ -39,7 +40,6 @@ struct BotEditorView: View {
     NavigationStack {
       Form {
         identitySection
-        BotMascotSection(editor: editor, showsPreview: false)
         if isCreating {
           machineSection
         }
@@ -95,7 +95,15 @@ struct BotEditorView: View {
           Task { await editor.addNewProject(project) }
         }
       }
+      .fullScreenCover(isPresented: $editsMascot) { mascotEditor }
       .onAppear { if isCreating { isNameFocused = true } }
+    }
+  }
+
+  @ViewBuilder
+  private var mascotEditor: some View {
+    if let mascot = editor.mascot, let options = editor.mascotOptions {
+      BotMascotEditorScreen(mascot: mascot, options: options, serverId: editor.serverId) { editor.mascot = $0 }
     }
   }
 
@@ -129,8 +137,7 @@ struct BotEditorView: View {
   private var identitySection: some View {
     Section {
       VStack(spacing: 16) {
-        BotAvatar(
-          mascot: editor.mascot, serverId: editor.serverId, symbolName: editor.symbolName, size: iconSize)
+        BotIdentityAvatar(editor: editor, size: iconSize) { editsMascot = true }
         TextField("Bot Name", text: $editor.name)
           .font(.title2.weight(.semibold))
           .multilineTextAlignment(.center)
