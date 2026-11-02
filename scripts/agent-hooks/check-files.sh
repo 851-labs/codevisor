@@ -24,11 +24,12 @@ for file in "${files[@]}"; do
   case "$file" in
     *.ts | *.tsx | *.mts | *.cts | *.js | *.jsx | *.mjs | *.cjs)
       node_modules/.bin/oxfmt -c .oxfmtrc.json --disable-nested-config --write "$file" >/dev/null 2>&1
-      output=$(node_modules/.bin/oxlint -c .oxlintrc.json --disable-nested-config --deny-warnings \
+      output=$(node_modules/.bin/oxlint -c .oxlintrc.json --disable-nested-config --type-aware --deny-warnings \
         --report-unused-disable-directives-severity=error --no-error-on-unmatched-pattern \
         "$file" 2>&1) || report "$output"
       ;;
     *.swift)
+      [ -n "$(printf '%s\n' "$file" | scripts/swift-format.sh scope)" ] || continue
       swift format format --in-place "$file" >/dev/null 2>&1
       report "$(swift format lint --strict "$file" 2>&1)"
       ;;

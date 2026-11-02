@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Monitor|monitor",
         "hooks": [
           {
             "type": "command",

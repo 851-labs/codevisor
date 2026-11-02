@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -102,4 +102,16 @@ test("Antigravity gets a deny decision on stdout", () => {
 test("a payload the hook can't read lets the command run", () => {
   const result = spawnSync(process.execPath, [guard], { input: "not json", encoding: "utf8" })
   assert.deepEqual([result.status, result.stderr], [0, ""])
+})
+
+test("Claude and Grok send every tool that runs a shell command through the guard", () => {
+  const settings = JSON.parse(
+    readFileSync(new URL("../.claude/settings.json", import.meta.url), "utf8")
+  )
+  const guarded = new Set(
+    settings.hooks.PreToolUse.filter((entry) =>
+      entry.hooks.some((hook) => hook.command.includes("kill-guard.mjs"))
+    ).flatMap((entry) => entry.matcher.split("|"))
+  )
+  for (const tool of ["Bash", "Monitor", "monitor"]) assert.ok(guarded.has(tool), tool)
 })
