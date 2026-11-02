@@ -1,0 +1,7 @@
+name: codevisor-bot-mascot
+logs:
+  file: build/rive.log
+  problems: build/problems.log
+push:
+  projectId: 2030264
+  fileId: 2675462
