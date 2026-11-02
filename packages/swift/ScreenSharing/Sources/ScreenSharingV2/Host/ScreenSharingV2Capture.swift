@@ -4,9 +4,11 @@ struct ScreenSharingV2Capture: Sendable {
   let frame: ScreenSharingVideoFrame
   let capturedNs: Int64
 
-  func request(refreshes: [Int: ScreenSharingTileRefresh]) -> ScreenSharingTileEncodeRequest {
+  func request(
+    update: ScreenSharingTileUpdate, refreshes: [Int: ScreenSharingTileRefresh]
+  ) -> ScreenSharingTileEncodeRequest {
     ScreenSharingTileEncodeRequest(
-      pixelBuffer: frame.pixelBuffer, sourceTimestampNs: frame.timestampNs, capturedNs: capturedNs,
+      pixelBuffer: frame.pixelBuffer, sourceTimestampNs: frame.timestampNs, capturedNs: capturedNs, update: update,
       refreshes: refreshes)
   }
 }

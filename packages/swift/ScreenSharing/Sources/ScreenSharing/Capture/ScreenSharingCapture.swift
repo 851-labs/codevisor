@@ -307,7 +307,10 @@
       metrics.observe(
         "captureDeliveryAge", milliseconds: CMTimeGetSeconds(hostTime - sampleBuffer.presentationTimeStamp) * 1000)
       ScreenSharingCaptureColorTags.tagStandardTransfer(pixel)
-      sink.push(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: time.value))
+      let dirtyRects = (attachments?.first?[.dirtyRects] as? [NSDictionary])?.compactMap {
+        CGRect(dictionaryRepresentation: $0)
+      }
+      sink.push(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: time.value, dirtyRects: dirtyRects))
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {

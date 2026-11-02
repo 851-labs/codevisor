@@ -1,3 +1,4 @@
+import CoreGraphics
 import CodevisorTestSupport
 import Testing
 import VideoToolbox
@@ -13,9 +14,7 @@ struct ScreenSharingV2EngineTests {
   func aDroppedFrameIsRepairedByALongTermReferenceRefreshWithoutAKeyframe() async throws {
     let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
     let metrics = ScreenSharingMetrics()
-    let encoder = try ScreenSharingVideoToolboxTileEncoder(
-      configuration: try ScreenSharingV2Profile.captureConfiguration(width: 640, height: 360), metrics: metrics)
-    let host = ScreenSharingV2Host(transport: hostSide, encoder: encoder, metrics: metrics)
+    let host = try Self.host(transport: hostSide, metrics: metrics, tiles: 1)
     let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
     let decoded = DecodedFrames(viewer.frames)
     host.start()
@@ -34,6 +33,59 @@ struct ScreenSharingV2EngineTests {
     #expect(hostSide.sent.last?.refresh == .longTermReference)
     #expect(hostSide.sent.last?.isKeyFrame == false)
     #expect(metrics.counter("encodedKeyFrames") == 1)
+  }
+
+  @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
+  func tilesAreComposedIntoOneSeamlessPictureAndOnlyDirtyTilesAreSent() async throws {
+    let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
+    let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)
+    let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
+    let decoded = DecodedFrames(viewer.frames)
+    host.start()
+    viewer.start()
+    defer { host.stop(); viewer.stop() }
+
+    host.push(try TestPixels.frame(shades: [40, 90, 140, 190], timestampNs: 1_000))
+    await decoded.arrivals.wait(for: 1)
+    host.push(
+      try TestPixels.frame(
+        shades: [40, 90, 230, 190], timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 180, width: 640, height: 90)]))
+    await decoded.arrivals.wait(for: 2)
+    await hostSide.sends.wait(for: 6)
+
+    #expect(Set(hostSide.sent.prefix(4).map(\.tile)) == [0, 1, 2, 3])
+    #expect(hostSide.sent.dropFirst(4).map(\.tile).sorted() == [1, 2])
+    let pictures = decoded.frames.map(\.pixelBuffer)
+    #expect(pictures.map { CVPixelBufferGetHeight($0) } == [360, 360])
+    #expect(Self.tileShades(pictures[0]).allSatisfy { abs($0.0 - $0.1) <= 3 }, "\(Self.tileShades(pictures[0]))")
+    #expect(abs(Int(Self.lumaRow(pictures[0], row: 89)) - 40) <= 3)
+    #expect(abs(Int(Self.lumaRow(pictures[0], row: 90)) - 90) <= 3)
+    let second = Self.tileShades(pictures[1], expected: [40, 90, 230, 190])
+    #expect(second.allSatisfy { abs($0.0 - $0.1) <= 3 }, "\(second)")
+  }
+
+  private static func host(
+    transport: LoopbackMediaTransport, metrics: ScreenSharingMetrics, tiles: Int
+  ) throws -> ScreenSharingV2Host {
+    let configuration = try ScreenSharingV2Profile.captureConfiguration(width: 640, height: 360)
+    let encoder = try ScreenSharingVideoToolboxTileEncoder(
+      configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: tiles),
+      metrics: metrics)
+    return ScreenSharingV2Host(
+      transport: transport, encoder: encoder, metrics: metrics, initialBitrate: ScreenSharingV2Profile.bitrateCeiling,
+      scheduler: ManualScheduler())
+  }
+
+  private static func tileShades(
+    _ picture: CVPixelBuffer, expected: [Int] = [40, 90, 140, 190]
+  ) -> [(Int, Int)] {
+    expected.enumerated().map { tile, shade in
+      (Int(TestPixels.luma(of: picture, row: tile * 90 + 45, column: 320)), shade)
+    }
+  }
+
+  private static func lumaRow(_ picture: CVPixelBuffer, row: Int) -> UInt8 {
+    TestPixels.luma(of: picture, row: row, column: 320)
   }
 
   private func streamUntilAReferenceIsAcknowledged(

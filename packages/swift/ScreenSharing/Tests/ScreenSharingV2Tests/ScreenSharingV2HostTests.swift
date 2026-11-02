@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 
 @testable import ScreenSharing
@@ -5,17 +6,129 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingV2HostTests {
-  private let transport = LoopbackMediaTransport()
-  private let encoder = RecordingTileEncoder()
+  private static let tiled = ScreenSharingV2TileLayout(width: 640, height: 360, count: 4)
 
-  private func startedHost() -> ScreenSharingV2Host {
-    let host = ScreenSharingV2Host(transport: transport, encoder: encoder, metrics: ScreenSharingMetrics())
+  private let transport = LoopbackMediaTransport()
+  private let scheduler = ManualScheduler()
+
+  private func startedHost(_ encoder: RecordingTileEncoder) -> ScreenSharingV2Host {
+    let host = ScreenSharingV2Host(
+      transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
+      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler)
     host.start()
     return host
   }
 
+  @Test func theFirstCaptureEncodesEveryTileAndLaterOnesOnlyTheTilesTheirDirtyRectsTouch() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(
+      try TestPixels.frame(shade: 10, timestampNs: 1_000, dirtyRects: [CGRect(x: 0, y: 0, width: 4, height: 4)]))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    host.push(
+      try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 30, y: 100, width: 8, height: 100)]))
+    await encoder.encodes.wait(for: 2)
+
+    #expect(encoder.requests.map(\.update.tiles) == [[0, 1, 2, 3], [1, 2]])
+    #expect(encoder.requests.map(\.update.isRefinement) == [false, false])
+  }
+
+  @Test func capturesReplacedWhileEncodingKeepEveryTileTheyDirtied() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    host.push(
+      try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
+    host.push(
+      try TestPixels.frame(shade: 30, timestampNs: 3_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
+    encoder.emitTiles(of: encoder.requests[0])
+    await encoder.encodes.wait(for: 2)
+
+    #expect(encoder.requests.last?.sourceTimestampNs == 3_000)
+    #expect(encoder.requests.last?.update.tiles == [0, 3])
+  }
+
+  @Test func idleTilesAreRefinedOneAtATimeForEachPassAndThenLeftAlone() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    var encoded = 1
+    for pass in 1...ScreenSharingV2Profile.refinementPasses {
+      await scheduler.scheduled.wait(for: pass)
+      scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+      for _ in Self.tiled.tiles {
+        await encoder.encodes.wait(for: encoded + 1)
+        encoder.emitTiles(of: encoder.requests[encoded])
+        encoded += 1
+      }
+    }
+    host.stop()
+
+    let refinements = encoder.requests.dropFirst()
+    #expect(refinements.allSatisfy { $0.update.isRefinement && $0.update.tiles.count == 1 })
+    #expect(refinements.allSatisfy { $0.sourceTimestampNs == 1_000 })
+    let passes = Dictionary(grouping: refinements.flatMap(\.update.tiles), by: { $0 }).mapValues(\.count)
+    #expect(passes == [0: 4, 1: 4, 2: 4, 3: 4])
+    #expect(scheduler.scheduled.value == ScreenSharingV2Profile.refinementPasses)
+  }
+
+  @Test func aTileThatChangesAgainStartsItsRefinementPassesOver() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs / 2)
+    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
+    await encoder.encodes.wait(for: 2)
+    encoder.emitTiles(of: encoder.requests[1])
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs - ScreenSharingV2Profile.refinementGapNs / 2)
+    for index in 2...4 {
+      await encoder.encodes.wait(for: index + 1)
+      encoder.emitTiles(of: encoder.requests[index])
+    }
+    await scheduler.scheduled.wait(for: 2)
+
+    #expect(encoder.requests[1].update.tiles == [0])
+    #expect(encoder.requests[2...4].map(\.update.tiles) == [[1], [2], [3]])
+    #expect(encoder.requests[2...4].allSatisfy { $0.update.isRefinement && $0.sourceTimestampNs == 2_000 })
+  }
+
+  @Test func aChangeStartsWhileAnotherTileIsStillBeingRefined() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+    await encoder.encodes.wait(for: 2)
+    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
+    await encoder.encodes.wait(for: 3)
+
+    #expect(encoder.requests[1].update.tiles == [0])
+    #expect(encoder.requests[2].update.tiles == [3])
+    #expect(encoder.requests[2].update.isRefinement == false)
+  }
+
+  private let encoder = RecordingTileEncoder()
+
   @Test func aCaptureWaitsForAdmissionInsteadOfQueueingBehindTheSendBacklog() async throws {
-    let host = startedHost()
+    let host = startedHost(encoder)
     defer { host.stop() }
     transport.setAdmits(false)
 
@@ -24,12 +137,14 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.encodes.value == 0)
 
     transport.setAdmits(true)
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2AdmissionRetry.delayNs(after: transport.admission()))
     await encoder.encodes.wait(for: 1)
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000])
   }
 
   @Test func aLossBeforeAnyAcknowledgedReferenceReencodesTheLastCaptureAsAKeyframe() async throws {
-    let host = startedHost()
+    let host = startedHost(encoder)
     defer { host.stop() }
 
     try await sendFirstFrame(through: host, keyframe: true, token: nil)
@@ -41,7 +156,7 @@ struct ScreenSharingV2HostTests {
   }
 
   @Test func aLossAfterAnAcknowledgedReferenceAsksForALongTermReferenceRefresh() async throws {
-    let host = startedHost()
+    let host = startedHost(encoder)
     defer { host.stop() }
 
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
@@ -54,7 +169,7 @@ struct ScreenSharingV2HostTests {
   }
 
   @Test func anAcknowledgedReferenceFromBeforeTheLatestKeyframeNoLongerCounts() async throws {
-    let host = startedHost()
+    let host = startedHost(encoder)
     defer { host.stop() }
 
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
@@ -72,7 +187,7 @@ struct ScreenSharingV2HostTests {
 
   @Test(arguments: [ScreenSharingTileRefresh.keyframe, nil])
   func aFrameTheEncoderDroppedIsEncodedAgainFromTheLastCapture(refresh: ScreenSharingTileRefresh?) async throws {
-    let host = startedHost()
+    let host = startedHost(encoder)
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))

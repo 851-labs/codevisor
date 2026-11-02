@@ -4,16 +4,17 @@ import Synchronization
 
 final class DecodedFrames: Sendable {
   let arrivals = TestSignal()
-  private let timestamps = Mutex<[Int64]>([])
+  private let received = Mutex<[ScreenSharingVideoFrame]>([])
 
   init(_ mailbox: ScreenSharingFrameMailbox) {
     mailbox.onFrameAvailable { [self] in
       guard let frame = mailbox.take() else { return }
 
-      timestamps.withLock { $0.append(frame.sourceTimestampNs ?? -1) }
+      received.withLock { $0.append(frame) }
       arrivals.signal()
     }
   }
 
-  var sourceTimestamps: [Int64] { timestamps.withLock { $0 } }
+  var frames: [ScreenSharingVideoFrame] { received.withLock { $0 } }
+  var sourceTimestamps: [Int64] { frames.map { $0.sourceTimestampNs ?? -1 } }
 }

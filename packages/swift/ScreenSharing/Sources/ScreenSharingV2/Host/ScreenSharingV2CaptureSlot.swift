@@ -1,27 +1,36 @@
 struct ScreenSharingV2CaptureSlot {
   private(set) var waiting: ScreenSharingV2Capture?
+  private(set) var waitingTiles: Set<Int>
   private(set) var lastEncoded: ScreenSharingV2Capture?
 
-  mutating func offer(_ capture: ScreenSharingV2Capture) -> Bool {
-    defer { waiting = capture }
-    return waiting != nil
+  init(tiles: Set<Int>) {
+    waitingTiles = tiles
   }
 
-  func next(refreshing: Bool) -> ScreenSharingV2Capture? {
-    waiting ?? (refreshing ? lastEncoded : nil)
+  mutating func offer(_ capture: ScreenSharingV2Capture, tiles: Set<Int>) -> Bool {
+    defer {
+      waiting = capture
+      waitingTiles.formUnion(tiles)
+    }
+    return waiting != nil
   }
 
   mutating func encoding(_ capture: ScreenSharingV2Capture) {
     waiting = nil
+    waitingTiles = []
     lastEncoded = capture
   }
 
-  mutating func requeueLastEncoded() {
-    waiting = waiting ?? lastEncoded
+  mutating func requeue(tiles: Set<Int>) {
+    guard let capture = waiting ?? lastEncoded else { return }
+
+    waiting = capture
+    waitingTiles.formUnion(tiles)
   }
 
   mutating func clear() {
     waiting = nil
+    waitingTiles = []
     lastEncoded = nil
   }
 }

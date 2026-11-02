@@ -45,16 +45,18 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
   public let rtpTimestamp: UInt32
   public let receivedAtSeconds: Double?
   public let sourceTimestampNs: Int64?
+  public let dirtyRects: [CGRect]?
 
   public init(
     pixelBuffer: CVPixelBuffer, timestampNs: Int64, rtpTimestamp: UInt32 = 0,
-    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil
+    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil, dirtyRects: [CGRect]? = nil
   ) {
     self.pixelBuffer = pixelBuffer
     self.timestampNs = timestampNs
     self.rtpTimestamp = rtpTimestamp
     self.receivedAtSeconds = receivedAtSeconds
     self.sourceTimestampNs = sourceTimestampNs
+    self.dirtyRects = dirtyRects
   }
 }
 
