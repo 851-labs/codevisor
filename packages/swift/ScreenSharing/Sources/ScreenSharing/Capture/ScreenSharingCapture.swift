@@ -306,6 +306,7 @@
       let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
       metrics.observe(
         "captureDeliveryAge", milliseconds: CMTimeGetSeconds(hostTime - sampleBuffer.presentationTimeStamp) * 1000)
+      ScreenSharingCaptureColorTags.tagStandardTransfer(pixel)
       sink.push(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: time.value))
     }
 

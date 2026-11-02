@@ -287,13 +287,29 @@
       #expect(fixture.metrics.snapshot().counters["captureCallbacksComplete"] == 1)
     }
 
-    private static func screenSample(presentationNs: Int64) throws -> CMSampleBuffer {
+    @Test func standardRangeYCbCrFramesCarryTheSRGBTransferTheyWereCapturedIn() async throws {
+      let fixture = CaptureFixture()
+      try await fixture.start()
+      let output = try #require(fixture.target.output)
+      let sample = try Self.screenSample(
+        presentationNs: 1, pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+        transfer: kCVImageBufferTransferFunction_ITU_R_709_2)
+      output.deliver(sample, of: .screen)
+      let pixel = try #require(fixture.sink.pixelBuffers.first)
+      let transfer = CVBufferCopyAttachment(pixel, kCVImageBufferTransferFunctionKey, nil) as? String
+      #expect(transfer == kCVImageBufferTransferFunction_sRGB as String)
+    }
+
+    private static func screenSample(
+      presentationNs: Int64, pixelFormat: OSType = kCVPixelFormatType_32BGRA, transfer: CFString? = nil
+    ) throws -> CMSampleBuffer {
       var pixel: CVPixelBuffer?
       #expect(
         CVPixelBufferCreate(
-          nil, 16, 16, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixel)
+          nil, 16, 16, pixelFormat, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixel)
           == kCVReturnSuccess)
       let buffer = try #require(pixel)
+      if let transfer { CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, transfer, .shouldPropagate) }
       var format: CMFormatDescription?
       #expect(
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &format)
@@ -467,8 +483,9 @@
 
   private final class RecordingFrameSink: ScreenSharingFrameSink, @unchecked Sendable {
     private let lock = NSLock()
-    private var pushed: [Int64] = []
-    var frames: [Int64] { lock.withLock { pushed } }
-    func push(_ frame: ScreenSharingVideoFrame) { lock.withLock { pushed.append(frame.timestampNs) } }
+    private var pushed: [ScreenSharingVideoFrame] = []
+    var frames: [Int64] { lock.withLock { pushed.map(\.timestampNs) } }
+    var pixelBuffers: [CVPixelBuffer] { lock.withLock { pushed.map(\.pixelBuffer) } }
+    func push(_ frame: ScreenSharingVideoFrame) { lock.withLock { pushed.append(frame) } }
   }
 #endif

@@ -18,6 +18,8 @@ A native media library and a native macOS workspace pane with authenticated sign
 
 The working path is ScreenCaptureKit → native WebRTC video source → custom VideoToolbox encoder → encrypted WebRTC media → custom VideoToolbox decoder → CVPixelBuffer-backed Metal textures. The custom codec factories are used by WebRTC itself; frames are not encoded twice. Peers prefer HEVC Main 4:4:4, then HEVC Main, then H.264, and each offers only the codecs its Mac decodes in hardware (H.264 always).
 
+**Capture colour.** Standard dynamic range capture asks ScreenCaptureKit for sRGB. Its `420v` and `420f` frames hold sRGB-encoded values but are tagged with the BT.709 transfer function, and a VideoToolbox session tagged sRGB (both engines' encoders) converts a frame whose tags differ from its own, which brightened every colour (T8 run 41501773369: host (89,25,128) arrived as (101,28,136)). Capture therefore retags those frames with the sRGB transfer before they reach a sink. BGRA frames carry an sRGB `CGColorSpace` and need no retag.
+
 ## Native workspace pane
 
 Run `bun run dev:macos`. In a workspace hosted by a Mac, open New Tab → Screen Sharing and select a display from the searchable chooser to connect. The host must run this version of the native app and allow Screen Recording. The native toolbar shows the machine name and resolution, View/Control, clipboard and connection details. The video always scales to fit the pane. Closing the tab ends the session.
