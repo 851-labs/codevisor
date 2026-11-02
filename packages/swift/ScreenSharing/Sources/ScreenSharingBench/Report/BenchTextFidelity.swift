@@ -8,6 +8,7 @@ public struct BenchTextFidelity: Codable, Sendable, Equatable {
   public var deltaE00Mean: Double?
   public var deltaE00P95: Double?
   public var oneToOne: Bool?
+  public var streamSize: String?
 
   public init(
     psnrY: Double? = nil, psnrYText: Double? = nil, ssimY: Double? = nil, psnrCbcr: Double? = nil,

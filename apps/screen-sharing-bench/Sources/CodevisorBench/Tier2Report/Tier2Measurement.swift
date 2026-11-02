@@ -66,6 +66,10 @@ struct Tier2Measurement {
 
   static var hpVirtualDisplay: Regex<(Substring, Substring, Substring)> { /^1920x1080@(60|0) 2x(\s|$)/ }
 
+  var streamSize: String? {
+    files.meta.isCodevisor ? files.share?["capture_size"]?.string : nil
+  }
+
   var encodedPixels: String? {
     switch files.meta.system {
     case .codevisor, .codevisorV2: files.share?["capture_size"]?.string

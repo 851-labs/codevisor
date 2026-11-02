@@ -26,6 +26,7 @@ enum Tier2Result {
     result.unreadableFraction = analysis.viewerUnreadableFraction
     result.i2pMs = measurement.inputToPhoton?.answered
     result.text = measurement.textFidelity?.fidelity
+    result.text?.streamSize = measurement.streamSize
     if measurement.files.meta.isCodevisor {
       let files = measurement.files
       result.stagesMs = Tier2V2Readings.stages(
