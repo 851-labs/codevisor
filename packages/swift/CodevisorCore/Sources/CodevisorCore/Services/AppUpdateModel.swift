@@ -26,6 +26,7 @@ public final class AppUpdateModel {
   public private(set) var phase: Phase = .idle
   public private(set) var progress: Double?
   public private(set) var statusMessage: String?
+  public private(set) var stage: AppUpdateStage?
   public let currentVersion: String
   public let currentBuildNumber: Int?
   public private(set) var allowsAlphaUpdates: Bool
@@ -135,9 +136,15 @@ public final class AppUpdateModel {
     )
   }
 
-  public func reportProgress(_ message: String?, fraction: Double? = nil) {
+  public func reportProgress(_ message: String?, fraction: Double? = nil, stage: AppUpdateStage? = nil) {
     statusMessage = message
     progress = fraction.map { min(1, max(0, $0)) }
+    self.stage = stage
+  }
+
+  public var activity: AppUpdateActivity? {
+    guard isUpdating else { return nil }
+    return AppUpdateActivity(stage: stage ?? .downloading, statusMessage: statusMessage, progress: progress)
   }
 
   public func reportFailure(_ message: String) {

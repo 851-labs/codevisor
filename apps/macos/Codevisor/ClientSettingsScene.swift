@@ -24,7 +24,7 @@ struct ClientSettingsScene: Scene {
           }
         )
       } else {
-        ClientDataStartupView()
+        FirstLaunchStartingView()
           .task { await runtime.startIfNeeded() }
       }
     }

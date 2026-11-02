@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 
 struct FirstLaunchMorph {
@@ -6,7 +7,7 @@ struct FirstLaunchMorph {
   let composerFrame: CGRect?
   let composerCornerRadius: CGFloat
 
-  static let cardCornerRadius: CGFloat = 22
+  static let cardCornerRadius = ProgressStepCard.cornerRadius
   static let contentFade = Animation.easeOut(duration: 0.15)
 
   var contentOpacity: Double {

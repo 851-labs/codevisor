@@ -3,9 +3,11 @@ import SwiftUI
 struct FirstLaunchSetupTitle: View {
   let isFinished: Bool
 
+  static let settingUp = "Getting things set up"
+
   var body: some View {
     ZStack {
-      Text("Getting things set up")
+      Text(Self.settingUp)
         .opacity(isFinished ? 0 : 1)
       Text("You're all set")
         .opacity(isFinished ? 1 : 0)

@@ -7,7 +7,8 @@ public struct ServerAvailabilityView: View {
   private let machineName: String
   private let isLocal: Bool
   private let startupProgress: LocalServerStartupProgress?
-  private let appUpdateInProgress: Bool
+  private let appUpdate: AppUpdateActivity?
+  private let serverUpdate: ServerUpdateActivity?
   private let useLocalMachine: (() -> Void)?
   private let restart: (() -> Void)?
 
@@ -21,7 +22,8 @@ public struct ServerAvailabilityView: View {
     machineName: String,
     isLocal: Bool,
     startupProgress: LocalServerStartupProgress? = nil,
-    appUpdateInProgress: Bool = false,
+    appUpdate: AppUpdateActivity? = nil,
+    serverUpdate: ServerUpdateActivity? = nil,
     useLocalMachine: (() -> Void)? = nil,
     restart: (() -> Void)? = nil
   ) {
@@ -30,69 +32,21 @@ public struct ServerAvailabilityView: View {
     self.machineName = machineName
     self.isLocal = isLocal
     self.startupProgress = startupProgress
-    self.appUpdateInProgress = appUpdateInProgress
+    self.appUpdate = appUpdate
+    self.serverUpdate = serverUpdate
     self.useLocalMachine = useLocalMachine
     self.restart = restart
   }
 
   public var body: some View {
     DelayedServerStatus(revealAfterDelay: isActivelyWaiting) {
-      VStack(spacing: 18) {
-        if isFailed {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .font(.system(size: 38, weight: .medium))
-            .foregroundStyle(.orange)
-        } else if !showsStartupProgress {
-          ProgressView()
-            .controlSize(.large)
-        }
-
-        VStack(spacing: 7) {
-          Text(title)
-            .font(.title2.weight(.semibold))
-            .multilineTextAlignment(.center)
-
-          Text(message)
-            .font(.body)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: 440)
-        }
-
-        if showsStartupProgress {
-          VStack(spacing: 8) {
-            ProgressView(value: startupProgress?.fractionCompleted ?? 0)
-              .progressViewStyle(.linear)
-              .accessibilityLabel("Server startup")
-            Text("\(startupProgress?.completed ?? 0) of 7 steps complete")
-              .font(.caption.monospacedDigit())
-              .foregroundStyle(.secondary)
-            if let work = startupProgress?.work, work.total > 0 {
-              ProgressView(value: Double(work.completed), total: Double(work.total))
-              Text("\(work.name) · \(work.completed) of \(work.total)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-          .frame(maxWidth: 360)
-        }
-
-        if (isFailed && isLocal && restart != nil) || offersLocalMachine || offersSlowStartRestart {
-          HStack(spacing: 10) {
-            if isFailed, let restart, isLocal {
-              Button("Restart", action: restart)
-                .buttonStyle(.borderedProminent)
-            } else if offersSlowStartRestart, let restart {
-              Button("Restart", action: restart)
-                .buttonStyle(.bordered)
-            }
-            if offersLocalMachine, let useLocalMachine {
-              Button("Use This Mac Instead", action: useLocalMachine)
-                .buttonStyle(.bordered)
-                .accessibilityHint("Start new chats on this Mac instead of \(machineName)")
-            }
-          }
-        }
+      ProgressStepScreen(title: title, steps: steps, note: note) {
+        ServerAvailabilityActions(
+          machineName: machineName,
+          restart: offeredRestart,
+          restartIsProminent: isFailed,
+          useLocalMachine: offersLocalMachine ? useLocalMachine : nil
+        )
       }
     }
     .task(id: "\(isLocalStartWait):\(startupProgress?.progressKey ?? "")") {
@@ -103,18 +57,26 @@ public struct ServerAvailabilityView: View {
       startIsSlow = true
     }
     .id(ServerStatusPresentationID(machineId: machineId, isWaiting: isActivelyWaiting))
-    .padding(32)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.background)
-    .accessibilityElement(children: .contain)
   }
 
-  private var showsStartupProgress: Bool {
-    guard isLocal, !appUpdateInProgress, !isFailed else { return false }
-    if case let .waiting(reason) = availability {
-      return reason == .starting || reason == .restarting
-    }
-    return false
+  private var steps: [ProgressStep] {
+    ServerAvailabilitySteps(
+      availability: availability,
+      machineName: machineName,
+      isLocal: isLocal,
+      startupProgress: startupProgress,
+      appUpdate: appUpdate,
+      serverUpdate: serverUpdate
+    ).steps
+  }
+
+  private var offeredRestart: (() -> Void)? {
+    offersRestart ? restart : nil
+  }
+
+  private var offersRestart: Bool {
+    (isFailed && isLocal) || offersSlowStartRestart
   }
 
   private var offersLocalMachine: Bool {
@@ -122,12 +84,12 @@ public struct ServerAvailabilityView: View {
       && ServerAvailabilityFallbackPolicy.offersLocalMachine(
         isLocal: isLocal,
         availability: availability,
-        appUpdateInProgress: appUpdateInProgress
+        appUpdateInProgress: appUpdate != nil
       )
   }
 
   private var isLocalStartWait: Bool {
-    guard isLocal, !appUpdateInProgress else { return false }
+    guard isLocal, appUpdate == nil else { return false }
     if case .waiting(.starting) = availability { return true }
     return false
   }
@@ -137,19 +99,19 @@ public struct ServerAvailabilityView: View {
   }
 
   private var isFailed: Bool {
-    if appUpdateInProgress { return false }
+    if appUpdate != nil { return false }
     if case .failed = availability { return true }
     return false
   }
 
   private var isActivelyWaiting: Bool {
-    if appUpdateInProgress { return true }
+    if appUpdate != nil { return true }
     if case .waiting = availability { return true }
     return false
   }
 
   private var title: String {
-    if appUpdateInProgress { return "Updating Codevisor" }
+    if appUpdate != nil { return "Updating Codevisor" }
     return switch availability {
     case let .waiting(reason):
       switch reason {
@@ -165,32 +127,15 @@ public struct ServerAvailabilityView: View {
     }
   }
 
-  private var message: String {
-    if appUpdateInProgress {
-      return "Codevisor is installing an update and will reopen automatically."
+  private var note: String? {
+    if isFailed, case let .failed(message) = availability {
+      return isLocal ? message : "\(message) Codevisor will reconnect automatically once it's reachable."
     }
-    if showsStartupProgress, let startupProgress {
-      return startupProgress.label + (startIsSlow ? "\nThis step is taking longer than expected." : "")
-    }
-    return switch availability {
-    case let .waiting(reason):
-      switch reason {
-      case .starting:
-        offersSlowStartRestart
-          ? "This is taking longer than expected. Restarting Codevisor starts the server again; the server log has the details."
-          : "Your cached workspaces are still available. This page will open when the server is ready."
-      case .connecting:
-        "Waiting for the server to become available. This page will open automatically."
-      case .updating:
-        "The server is installing an update. Codevisor will reconnect automatically."
-      case .restarting:
-        "The server is restarting. Codevisor will reconnect automatically."
-      }
-    case .ready:
-      "Codevisor is ready."
-    case let .failed(message):
-      isLocal ? message : "\(message) Codevisor will reconnect automatically once it's reachable."
-    }
+    guard isLocalStartWait, startIsSlow else { return nil }
+
+    return offersSlowStartRestart
+      ? "This is taking longer than expected. Restarting Codevisor starts the server again; the server log has the details."
+      : "This step is taking longer than expected."
   }
 }
 
@@ -227,26 +172,5 @@ private struct DelayedServerStatus<Content: View>: View {
       }
       hasPassedDelay = true
     }
-  }
-}
-
-public struct ClientDataStartupView: View {
-  public init() {}
-
-  public var body: some View {
-    VStack(spacing: 18) {
-      ProgressView()
-        .controlSize(.large)
-      VStack(spacing: 7) {
-        Text("Preparing Codevisor")
-          .font(.title2.weight(.semibold))
-        Text("Checking and updating this device's local data…")
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-      }
-    }
-    .padding(32)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.background)
   }
 }

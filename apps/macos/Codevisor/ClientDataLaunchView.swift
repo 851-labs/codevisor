@@ -18,7 +18,7 @@ struct ClientDataLaunchView: View {
       } else if let startupError = runtime.startupError {
         ClientDataStartupFailureView(message: startupError, retry: runtime.retry, showDataFolder: Self.showDataFolder)
       } else {
-        ClientDataStartupView()
+        FirstLaunchStartingView()
       }
     }
     .task { await runtime.startIfNeeded() }

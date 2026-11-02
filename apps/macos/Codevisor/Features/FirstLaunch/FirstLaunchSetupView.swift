@@ -1,5 +1,5 @@
-import AppKit
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct FirstLaunchSetupView<Footer: View>: View {
@@ -18,11 +18,7 @@ struct FirstLaunchSetupView<Footer: View>: View {
       composerCornerRadius: composerCornerRadius
     )
     VStack(spacing: 22) {
-      Image(nsImage: NSApp.applicationIconImage)
-        .resizable()
-        .frame(width: 72, height: 72)
-        .shadow(color: .black.opacity(0.18), radius: 9, y: 5)
-        .accessibilityHidden(true)
+      CodevisorAppIconView(size: 72)
         .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
       FirstLaunchSetupTitle(isFinished: setup.isComplete)
         .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
@@ -33,24 +29,32 @@ struct FirstLaunchSetupView<Footer: View>: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .ignoresSafeArea()
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Getting things set up")
+    .accessibilityLabel(FirstLaunchSetupTitle.settingUp)
   }
 
   private func card(_ morph: FirstLaunchMorph) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      ForEach(FirstLaunchStep.allCases) { step in
-        FirstLaunchStepRow(
-          step: step,
-          outcome: setup.revealed(step),
-          details: setup.detailCandidates(for: step)
-        )
-      }
+    ProgressStepList(steps: FirstLaunchStep.allCases.map(progressStep))
+      .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
+      .background { FirstLaunchCardGlass(shape: morph.glass) }
+      .modifier(FirstLaunchMeasurement(isFrozen: phase.isLeaving) { cardFrame = $0 })
+  }
+
+  private func progressStep(_ step: FirstLaunchStep) -> ProgressStep {
+    ProgressStep(
+      id: "\(step)",
+      title: step.title,
+      state: Self.state(for: setup.revealed(step)),
+      details: setup.detailCandidates(for: step)
+    )
+  }
+
+  private static func state(for outcome: FirstLaunchStepOutcome) -> ProgressStepState {
+    switch outcome {
+    case .pending: .pending
+    case .running: .running
+    case .done: .done
+    case .skipped: .skipped
+    case .failed: .failed
     }
-    .animation(FirstLaunchMorph.contentFade) { $0.opacity(morph.contentOpacity) }
-    .padding(.horizontal, 20)
-    .padding(.vertical, 16)
-    .frame(width: 440)
-    .background { FirstLaunchCardGlass(shape: morph.glass) }
-    .modifier(FirstLaunchMeasurement(isFrozen: phase.isLeaving) { cardFrame = $0 })
   }
 }

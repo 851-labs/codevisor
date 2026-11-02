@@ -102,6 +102,7 @@ final class ServerUpdateRun {
   private func clearActivity() {
     connection.updateStatusMessage = nil
     connection.updateProgress = nil
+    connection.serverUpdate.stages = nil
   }
 
   private func finishDeclined(_ applied: ServerUpdateApplied) async {
@@ -134,6 +135,7 @@ final class ServerUpdateRun {
   private func waitForUpdatedServer(_ applied: ServerUpdateApplied) async {
     let initialApplyAt = connection.updateInfo?.lastApply?.at
     if applied.draining == true {
+      connection.serverUpdate.advance(to: .pausingChats)
       connection.updateStatusMessage = Self.drainingStatusMessage
     }
     var wait = ServerUpdateWait(
@@ -186,6 +188,7 @@ final class ServerUpdateRun {
   }
 
   private func showDraining(_ report: ServerUpdateApplyState, wait: inout ServerUpdateWait) {
+    connection.serverUpdate.advance(to: .pausingChats)
     connection.updateProgress = nil
     connection.updateStatusMessage = report.message ?? Self.drainingStatusMessage
     wait.extendDeadline()
@@ -193,6 +196,7 @@ final class ServerUpdateRun {
 
   private func showInstalling(_ report: ServerUpdateApplyState, wait: inout ServerUpdateWait) {
     holdRequests()
+    connection.serverUpdate.advance(to: .installing)
     let progress = Self.installProgress(report.progress)
     let message = report.message ?? "Installing…"
     wait.noteInstall(progress: progress, message: message)
@@ -205,6 +209,7 @@ final class ServerUpdateRun {
     guard let health = await machine.probeDataUpgrade() else { return .proceed }
 
     holdRequests()
+    connection.serverUpdate.advance(to: .updatingData)
     let migration = connection.dataUpgradeProgress
     if health.database == "failed" {
       failDataUpgrade(migration)
@@ -228,14 +233,22 @@ final class ServerUpdateRun {
       showRestarting()
       return .retry
     }
+    noteReconnecting()
     guard await hasConverged(info, wait: wait) else { return .retry }
 
     await finishConverged()
     return .finished
   }
 
+  private func noteReconnecting() {
+    guard connection.serverUpdate.stages?.current == .restarting else { return }
+
+    connection.serverUpdate.advance(to: .reconnecting)
+  }
+
   private func showRestarting() {
     holdRequests()
+    connection.serverUpdate.advance(to: .restarting)
     connection.updateProgress = nil
     connection.updateStatusMessage = "Restarting…"
   }

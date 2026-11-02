@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct FirstLaunchStepDetail: View {
+struct ProgressStepDetail: View {
   let candidates: [String]
 
   var body: some View {

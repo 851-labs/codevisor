@@ -42,6 +42,10 @@ final class MachineConnections {
     byId[machineId]?.availability ?? .waiting(.connecting)
   }
 
+  func updateActivity(for machineId: String) -> ServerUpdateActivity? {
+    byId[machineId]?.updateActivity
+  }
+
   func updatePauseSubject(machineId: String, sessionId: UUID?, harnessId: String?) -> ServerUpdatePauseSubject? {
     byId[machineId]?.restartDrain?.pauseSubject(sessionId: sessionId, harnessId: harnessId)
   }

@@ -193,7 +193,8 @@ struct WorkspaceScreen: View {
           machineId: machine.id,
           availability: screenAvailability,
           machineName: machine.name,
-          isLocal: false
+          isLocal: false,
+          serverUpdate: machines.updateActivity(for: resolvedServerId)
         )
       } else if missing {
         ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")

@@ -1,5 +1,6 @@
 import CodevisorClient
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct ServerDataUpgradePresentation: ViewModifier {
@@ -12,6 +13,7 @@ struct ServerDataUpgradePresentation: ViewModifier {
         if let presentation {
           ServerDataUpgradeSheet(
             progress: presentation.progress,
+            startupProgress: environment.localServer?.startupProgress,
             failureMessage: presentation.failureMessage,
             restart: { AppRelauncher.relaunch() },
             checkForUpdates: {
@@ -58,6 +60,7 @@ struct ServerDataUpgradePresentationState: Equatable {
 
 struct ServerDataUpgradeSheet: View {
   let progress: LocalDataUpgradeProgress
+  let startupProgress: LocalServerStartupProgress?
   let failureMessage: String?
   let restart: () -> Void
   var checkForUpdates: (() -> Void)? = nil
@@ -65,65 +68,38 @@ struct ServerDataUpgradeSheet: View {
   private var isFailed: Bool { failureMessage != nil }
 
   var body: some View {
-    VStack(spacing: 18) {
+    ProgressStepScreen(
+      title: isFailed ? "Server Data Update Failed" : "Updating Server Data",
+      steps: LocalServerStartupSteps.steps(for: startupProgress, isFailed: isFailed, currentDetails: migrationDetails),
+      note: failureMessage
+    ) {
       if isFailed {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .font(.system(size: 38, weight: .medium))
-          .foregroundStyle(.orange)
-      } else if progress.total > 0 {
-        ProgressView(value: progress.fractionCompleted ?? 0)
-          .progressViewStyle(.circular)
-          .controlSize(.large)
-      } else {
-        ProgressView()
-          .controlSize(.large)
-      }
-
-      VStack(spacing: 7) {
-        Text(isFailed ? "Server Data Update Failed" : "Updating Server Data")
-          .font(.title2.weight(.semibold))
-          .multilineTextAlignment(.center)
-        Text(message)
-          .font(.body)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .frame(maxWidth: 400)
-      }
-
-      if !isFailed, progress.total > 0 {
-        VStack(spacing: 6) {
-          ProgressView(value: Double(progress.completed), total: Double(progress.total))
-            .accessibilityLabel(progress.name)
-          Text("\(progress.completed) of \(progress.total)")
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: 320)
-      }
-
-      if isFailed {
-        HStack(spacing: 10) {
-          Button("Restart", action: restart)
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-          if let checkForUpdates {
-            Button("Check for Updates…", action: checkForUpdates)
-              .buttonStyle(.bordered)
-              .help("Opens Settings › Updates. A newer Codevisor may fix this.")
-          }
-        }
+        ServerDataUpgradeFailureActions(restart: restart, checkForUpdates: checkForUpdates)
       }
     }
-    .padding(32)
-    .frame(width: 480)
-    .accessibilityElement(children: .contain)
+    .frame(width: 520)
   }
 
-  private var message: String {
-    if let failureMessage { return failureMessage }
-    return progress.name.isEmpty
-      ? "Your cached workspaces are safe. Codevisor will continue when the update finishes."
-      : "\(progress.name)\nYour cached workspaces are safe. Codevisor will continue automatically."
+  private var migrationDetails: [String] {
+    ProgressStepDetailText.count(name: progress.name, completed: progress.completed, total: progress.total)
+  }
+}
+
+private struct ServerDataUpgradeFailureActions: View {
+  let restart: () -> Void
+  let checkForUpdates: (() -> Void)?
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Button("Restart", action: restart)
+        .buttonStyle(.borderedProminent)
+        .keyboardShortcut(.defaultAction)
+      if let checkForUpdates {
+        Button("Check for Updates…", action: checkForUpdates)
+          .buttonStyle(.bordered)
+          .help("Opens Settings › Updates. A newer Codevisor may fix this.")
+      }
+    }
   }
 }
 
@@ -132,6 +108,7 @@ struct ServerDataUpgradeSheet: View {
     progress: LocalDataUpgradeProgress(
       state: "running", id: "canonical-session-chat-v1", name: "Updating chat history",
       completed: 40, total: 100),
+    startupProgress: LocalServerStartupProgress(stage: "openingDatabase", completed: 3),
     failureMessage: nil,
     restart: {}
   )
@@ -142,6 +119,7 @@ struct ServerDataUpgradeSheet: View {
     progress: LocalDataUpgradeProgress(
       state: "failed", id: "database-startup", name: "Applying update", completed: 0, total: 0,
       error: "SQLITE_FULL: database or disk is full"),
+    startupProgress: LocalServerStartupProgress(stage: "openingDatabase", completed: 3),
     failureMessage: "SQLITE_FULL: database or disk is full",
     restart: {},
     checkForUpdates: {}

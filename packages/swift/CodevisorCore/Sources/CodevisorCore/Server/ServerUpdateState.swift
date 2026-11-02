@@ -17,6 +17,27 @@ final class ServerUpdateState {
   var statusMessage: String?
   var progress: Double?
   var dataUpgradeProgress: ServerMigrationProgress?
+  var stages: ServerUpdateStages?
+
+  var activity: ServerUpdateActivity? {
+    guard let stages else { return nil }
+
+    return ServerUpdateActivity(
+      stages: stages,
+      statusMessage: statusMessage,
+      progress: progress,
+      migration: dataUpgradeProgress
+    )
+  }
+
+  func advance(to stage: ServerUpdateStage) {
+    guard stages != nil else {
+      stages = ServerUpdateStages(stage)
+      return
+    }
+
+    stages?.advance(to: stage)
+  }
 
   func loadRestartDrain(from client: any CodevisorServerClienting) async {
     guard let drain = try? await client.restartDrainState(), !Task.isCancelled else { return }

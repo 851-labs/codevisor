@@ -143,6 +143,9 @@ public final class MachineController {
   public var availabilityByMachineId: [String: ServerAvailability] { connections.availabilityById }
   public var navigationSyncStateByMachineId: [String: NavigationSyncState] { connections.navigationSyncStateById }
   public func availability(for machineId: String) -> ServerAvailability { connections.availability(for: machineId) }
+  public func updateActivity(for machineId: String) -> ServerUpdateActivity? {
+    connections.updateActivity(for: machineId)
+  }
 
   public func updatePauseSubject(
     machineId: String, sessionId: UUID?, harnessId: String?

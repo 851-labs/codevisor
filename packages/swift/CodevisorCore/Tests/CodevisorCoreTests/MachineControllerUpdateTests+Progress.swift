@@ -31,12 +31,17 @@ extension MachineControllerUpdateTests {
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0"))
     await controller.refreshStatus(for: remote.id)
     var rows: [UpdateComponent] = []
+    var stages: [ServerUpdateStage] = []
     clock.onSleep = {
       if let row = center.components.first(where: { $0.kind == .server }) { rows.append(row) }
+      if let stage = controller.updateActivity(for: remote.id)?.stages.current, stages.last != stage {
+        stages.append(stage)
+      }
     }
 
     await controller.updateServer(machineId: remote.id)
 
+    #expect(controller.updateActivity(for: remote.id) == nil)
     if stalls {
       #expect(clock.requestedIntervals.count == 5)
       #expect(controller.serverUpdatePhase(for: remote.id) != .idle)
@@ -48,6 +53,7 @@ extension MachineControllerUpdateTests {
     #expect(rows.contains { $0.progress == 0.75 && $0.statusMessage == "Preparing…" })
     #expect(rows.contains { $0.progress == nil && $0.statusMessage == "Installing…" })
     #expect(rows.contains { $0.progress == nil && $0.statusMessage == "Restarting…" })
+    #expect(stages == [.installing, .restarting])
     #expect(controller.connectionsById[remote.id]?.updateProgress == nil)
     #expect(controller.serverUpdatePhase(for: remote.id) == .idle)
   }
@@ -94,12 +100,18 @@ extension MachineControllerUpdateTests {
     defer { controller.stopEventSync() }
     await controller.refreshStatus(for: remote.id)
     var rows: [UpdateComponent] = []
+    var activities: [ServerUpdateActivity] = []
     clock.onSleep = {
       if let row = center.components.first(where: { $0.kind == .server }) { rows.append(row) }
+      if let activity = controller.updateActivity(for: remote.id) { activities.append(activity) }
     }
 
     await controller.updateServer(machineId: remote.id)
 
+    #expect(
+      activities.contains {
+        $0.stages.current == .updatingData && $0.stages.wasSkipped(.installing) && $0.migration?.completed == 50
+      })
     #expect(rows.contains { $0.progress == 0.1 && $0.detailText == "Updating chat history 10%" })
     #expect(rows.contains { $0.progress == 0.5 && $0.statusMessage == "Updating chat history" })
     #expect(controller.serverUpdatePhase(for: remote.id) == .idle)

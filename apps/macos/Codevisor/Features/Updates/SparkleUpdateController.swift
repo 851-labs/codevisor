@@ -73,7 +73,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     installSessionActive = true
     serverPreparedForUpdate = false
     installTargetBuild = nil
-    reportProgress("Checking for the update…")
+    reportProgress("Checking for the update…", stage: .downloading)
     driver.armInstall()
     Task { @MainActor [weak self] in
       for _ in 0..<50 {
@@ -87,18 +87,18 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
   }
 
-  private func reportProgress(_ message: String?, fraction: Double? = nil) {
+  private func reportProgress(_ message: String?, fraction: Double? = nil, stage: AppUpdateStage? = nil) {
     progressThrottle.reset()
-    publishProgress(message, fraction: fraction)
+    publishProgress(message, fraction: fraction, stage: stage)
   }
 
-  private func reportThrottledProgress(_ message: String, fraction: Double?) {
+  private func reportThrottledProgress(_ message: String, fraction: Double?, stage: AppUpdateStage) {
     guard progressThrottle.shouldReport(message: message, fraction: fraction, at: .now) else { return }
-    publishProgress(message, fraction: fraction)
+    publishProgress(message, fraction: fraction, stage: stage)
   }
 
-  private func publishProgress(_ message: String?, fraction: Double?) {
-    model.reportProgress(message, fraction: fraction)
+  private func publishProgress(_ message: String?, fraction: Double?, stage: AppUpdateStage?) {
+    model.reportProgress(message, fraction: fraction, stage: stage)
     guard installSessionActive else { return }
     AppUpdateHandoff.enqueueStatus(
       state: "installing",
@@ -112,11 +112,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   private func report(_ progress: HeadlessUserDriver.Progress) {
     switch progress {
     case let .downloading(fraction):
-      reportThrottledProgress("Downloading…", fraction: fraction)
+      reportThrottledProgress("Downloading…", fraction: fraction, stage: .downloading)
     case let .extracting(fraction):
-      reportThrottledProgress("Preparing…", fraction: fraction)
+      reportThrottledProgress("Preparing…", fraction: fraction, stage: .preparing)
     case .installing:
-      reportProgress("Installing…")
+      reportProgress("Installing…", stage: .restarting)
     }
   }
 
@@ -175,7 +175,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     if installSessionActive {
       installTargetBuild = Int(item.versionString)
       model.reportInstalling(version: version, releasePageURL: releasePageURL)
-      reportProgress("Downloading…")
+      reportProgress("Downloading…", stage: .downloading)
     }
   }
 
@@ -238,10 +238,10 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return
       }
       self.serverPreparedForUpdate = true
-      self.reportProgress("Waiting for the server…")
+      self.reportProgress("Waiting for the server…", stage: .stoppingServer)
       let prepared = await self.serverAgent.prepareForAppUpdate(localServer: self.localServer) {
         [weak self] status in
-        self?.reportProgress(status)
+        self?.reportProgress(status, stage: .stoppingServer)
       }
       guard prepared else {
         self.failInstall(
@@ -268,7 +268,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         )
         return
       }
-      self.reportProgress("Restarting…")
+      self.reportProgress("Restarting…", stage: .restarting)
       await AppUpdateHandoff.flushWrites()
       Log.updates.log("install: server prepared; handing over to Sparkle for the relaunch")
       ServerLifecycleLog.default.note("update: server prepared, Sparkle relaunching the app")

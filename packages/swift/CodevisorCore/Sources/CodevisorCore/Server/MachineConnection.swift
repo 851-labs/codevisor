@@ -60,6 +60,10 @@ public final class MachineConnection {
     set { serverUpdate.dataUpgradeProgress = newValue }
   }
 
+  public var updateActivity: ServerUpdateActivity? {
+    serverUpdate.activity
+  }
+
   var isIdle: Bool {
     navigationSync.eventStreamTask == nil
       && preparation.task == nil

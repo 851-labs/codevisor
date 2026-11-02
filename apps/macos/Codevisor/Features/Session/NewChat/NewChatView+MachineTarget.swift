@@ -57,7 +57,8 @@ extension NewChatView {
         machineName: composerMachine.name,
         isLocal: composerMachine.isLocal,
         startupProgress: composerMachine.isLocal ? environment.localServer?.startupProgress : nil,
-        appUpdateInProgress: environment.appUpdate.isUpdating,
+        appUpdate: environment.appUpdate.activity,
+        serverUpdate: environment.machines.updateActivity(for: composerServerId),
         restart: composerMachine.isLocal ? { AppRelauncher.relaunch() } : nil
       )
     } else if paneDraftId == nil {
@@ -103,7 +104,15 @@ extension NewChatView {
   }
 
   private var blocksComposerServerContent: Bool {
-    environment.appUpdate.isUpdating
+    environment.appUpdate.isUpdating || remoteComposerServerIsRestarting
+  }
+
+  private var remoteComposerServerIsRestarting: Bool {
+    guard !composerMachine.isLocal else { return false }
+    switch composerServerAvailability {
+    case .waiting(.updating), .waiting(.restarting): return true
+    case .waiting(.starting), .waiting(.connecting), .ready, .failed: return false
+    }
   }
 
   func relocateWhenSandboxIsReady(_ controller: SessionController) {
