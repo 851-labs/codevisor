@@ -13,6 +13,18 @@ extension ChatScreen {
     Task { await revealToolCall(request.toolCallId) }
   }
 
+  func revealRequestedQuote() {
+    guard let request = controller.quoteRevealRequest else { return }
+
+    controller.quoteRevealRequest = nil
+    let revealer = TranscriptQuoteRevealer(
+      controller: controller,
+      target: presentationSurface.ensureScrollView(),
+      presentsBotConversation: presentsBotConversation
+    )
+    Task { await revealer.reveal(request.quote) }
+  }
+
   private func revealToolCall(_ toolCallId: String) async {
     guard let location = await controller.workedItemLocation(ofToolCall: toolCallId) else { return }
 
@@ -22,7 +34,8 @@ extension ChatScreen {
 
   var transcriptImageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
-      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
+      quoteActions: TranscriptQuoteActions(controller: controller))
   }
 
   var transcriptSurface: some View {

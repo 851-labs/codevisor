@@ -15,6 +15,10 @@
         MarkdownImageLoadingIndicator.track(preparing, in: textView, characterIndex: textItem.range.location)
       }
     ]
+    if let addToChat = images.addToChat {
+      actions.insert(
+        UIAction(title: "Add to Chat", image: UIImage(systemName: "text.bubble")) { _ in addToChat(url) }, at: 0)
+    }
     if let openInNewTab = images.openInNewTab {
       actions.append(
         UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.rectangle.on.rectangle")) { _ in

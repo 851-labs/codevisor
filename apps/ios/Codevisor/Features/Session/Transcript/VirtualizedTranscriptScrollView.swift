@@ -41,6 +41,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var activeRowsVersion: TranscriptRowSetRevision?
 
   var mountedHosts: [String: TranscriptRowHost] = [:]
+  let quotes = TranscriptQuoteState()
   let parkedHosts = TranscriptParkedHosts()
   let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
   var windowPlanner: TranscriptWindowPlanner {

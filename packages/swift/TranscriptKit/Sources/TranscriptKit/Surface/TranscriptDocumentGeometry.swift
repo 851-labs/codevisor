@@ -61,13 +61,15 @@ public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
     initialPositionApplied: Bool,
     gatePinsBottom: Bool,
     bottomSpacerWillChange: Bool,
+    holdsViewportOnSpacerChange: Bool = false,
     atBottomThreshold: CGFloat,
     measurements: TranscriptMeasurementLedger
   ) {
     let pinsBottomSpacerChange =
       previousDistanceFromBottom.map { $0 <= atBottomThreshold } == true
       && bottomSpacerWillChange
-    let pinsBottom = gatePinsBottom || pinsBottomSpacerChange || followsLatest
+    let holdsViewport = holdsViewportOnSpacerChange && bottomSpacerWillChange
+    let pinsBottom = gatePinsBottom || (!holdsViewport && (pinsBottomSpacerChange || followsLatest))
     self.pinsBottom = pinsBottom
 
     if !pinsBottom,

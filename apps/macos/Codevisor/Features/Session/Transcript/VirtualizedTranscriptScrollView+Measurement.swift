@@ -92,21 +92,9 @@ extension VirtualizedTranscriptScrollView {
     topInsetAnchor = nil
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
-    let plan = TranscriptGeometryRebuildPlan(
-      previousLayout: previousLayout,
-      previousDistanceFromBottom: previousDistance,
-      viewportHeight: contentView.bounds.height,
-      followsLatest: followsLatest,
-      lockedRestoreDistance: lockedRestoreDistance,
-      initialPositionApplied: initialPositionApplied,
-      gatePinsBottom: bottomJumpGate.isActive || initialBottomPin.isActive,
-      bottomSpacerWillChange: TranscriptDocumentGeometry.bottomSpacerGeometryWillChange(
-        from: previousLayout,
-        spacerRow: rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey],
-        measurements: measurements
-      ),
-      atBottomThreshold: Self.atBottomThreshold,
-      measurements: measurements
+    let bottomSpacerWillChange = bottomSpacerWillChange(from: previousLayout)
+    let plan = geometryRebuildPlan(
+      previousLayout: previousLayout, previousDistance: previousDistance, bottomSpacerWillChange: bottomSpacerWillChange
     )
     var initialRestoreRange: Range<Int>?
     applyPositionTransaction {
@@ -158,12 +146,39 @@ extension VirtualizedTranscriptScrollView {
       animatePendingDisclosureCollapse()
       lastDistanceFromBottom = currentDistanceFromBottom()
     }
+    if bottomSpacerWillChange, holdsViewportForComposerChange { releaseFollowIfOffBottom() }
     if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
       updateMountedRows(rangeOverride: initialRestoreRange)
     }
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     updateCollapsibleEarlierHistory()
+  }
+
+  private func bottomSpacerWillChange(from previousLayout: VirtualTranscriptLayout) -> Bool {
+    TranscriptDocumentGeometry.bottomSpacerGeometryWillChange(
+      from: previousLayout,
+      spacerRow: rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey],
+      measurements: measurements
+    )
+  }
+
+  private func geometryRebuildPlan(
+    previousLayout: VirtualTranscriptLayout, previousDistance: CGFloat?, bottomSpacerWillChange: Bool
+  ) -> TranscriptGeometryRebuildPlan {
+    TranscriptGeometryRebuildPlan(
+      previousLayout: previousLayout,
+      previousDistanceFromBottom: previousDistance,
+      viewportHeight: contentView.bounds.height,
+      followsLatest: followsLatest,
+      lockedRestoreDistance: lockedRestoreDistance,
+      initialPositionApplied: initialPositionApplied,
+      gatePinsBottom: bottomJumpGate.isActive || initialBottomPin.isActive,
+      bottomSpacerWillChange: bottomSpacerWillChange,
+      holdsViewportOnSpacerChange: holdsViewportForComposerChange,
+      atBottomThreshold: Self.atBottomThreshold,
+      measurements: measurements
+    )
   }
 
   func mountedCoverageNeedsUpdate() -> Bool {

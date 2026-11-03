@@ -151,6 +151,10 @@ struct SessionTranscriptView: View {
         IOSNavigationDiagnostics.record(
           "transcript.settledCount", "\(old)->\(new) session=\(diagnosticSessionID)")
       }
+      .onChange(of: controller.quoteRevealRequest, initial: true) { _, _ in revealRequestedQuote() }
+      .onChange(of: controller.transcriptPickSignal) { _, _ in
+        presentationSurface.ensureController().holdViewportForComposerChange()
+      }
       .onChange(of: scenePhase, initial: true) { _, phase in
         if phase == .active {
           textAnimationRegistry.resumePlayback()
@@ -376,7 +380,7 @@ struct SessionTranscriptView: View {
 
 extension SessionTranscriptView {
   var flyingAttachmentIDs: [String] {
-    controller.composerAttachments.map(\.sentFileID)
+    controller.composerQuoteSendFlightIDs + controller.composerAttachments.map(\.sentFileID)
   }
 
   var composerMaxHeight: CGFloat {

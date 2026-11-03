@@ -119,7 +119,7 @@ extension ComposerBar {
   }
 
   var compactAttachmentCount: some View {
-    let count = controller.composerAttachments.count
+    let count = controller.composerAttachments.count + controller.composerQuotes.count
     return Button(action: focusEditorFromPreview) {
       AttachmentCountBadge(count: count)
         .expandedHitTarget(base: ComposerCardStyle.actionDiameter)

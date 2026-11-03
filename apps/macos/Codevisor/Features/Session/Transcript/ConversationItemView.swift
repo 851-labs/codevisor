@@ -40,6 +40,7 @@ struct UserMessageView: View {
       side: .trailing,
       text: message.text,
       attachments: message.attachments,
+      quotes: message.quotes,
       fill: style.fill
     ) {
       SelectableTextView(
@@ -114,6 +115,7 @@ struct MessageBubbleView<Content: View>: View {
   let side: Side
   let text: String
   let attachments: [Attachment]
+  var quotes: [TranscriptQuote] = []
   var fill = Color.bubbleBackground
   var insets = TranscriptSendFlightGeometry.bubbleTextInsets
   @ViewBuilder let content: () -> Content
@@ -130,6 +132,9 @@ struct MessageBubbleView<Content: View>: View {
       VStack(
         alignment: alignment, spacing: TranscriptSendFlightGeometry.attachmentSpacing
       ) {
+        if !quotes.isEmpty {
+          TranscriptQuoteChipRow(quotes: quotes)
+        }
         TranscriptInlineFileStack(files: attachments.map(PreviewFile.init(attachment:)), alignment: alignment) {
           AttachmentThumbnailView(file: $0)
         }

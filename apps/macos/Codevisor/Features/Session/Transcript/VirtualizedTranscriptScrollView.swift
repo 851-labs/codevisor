@@ -52,6 +52,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var mountedHosts: [String: TranscriptMountedRowHost] = [:]
   let textSelection = TranscriptSelectionState()
   let find = TranscriptFindState()
+  let quotes = TranscriptQuoteState()
   let hostPool = TranscriptHostPool()
   var disclosureCollapsePresentations: [UUID: DisclosureCollapsePresentation] = [:]
   var disclosureExitTasks: [UUID: Task<Void, Never>] = [:]
@@ -80,7 +81,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     images: MarkdownImageActions(
       open: { [weak self] url in self?.markdownImageActions?.open(url) },
       openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
-      copy: { [weak self] url in self?.markdownImageActions?.copy?(url) }),
+      copy: { [weak self] url in self?.markdownImageActions?.copy?(url) },
+      addToChat: { [weak self] url in self?.markdownImageActions?.addToChat?(url) }),
     webLinks: MarkdownWebLinkActions(
       open: { [weak self] url, destination in self?.markdownWebLinkActions?.open(url, destination) ?? false }))
   var markdownRowStyle = TranscriptMarkdownRowStyle(markdown: .default)

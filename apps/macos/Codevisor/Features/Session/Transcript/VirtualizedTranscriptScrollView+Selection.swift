@@ -66,6 +66,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     if let span = resolvedSelectionSpan, span.isEmpty {
       clearTranscriptSelection()
     }
+    showAddToChatButtonIfNeeded()
   }
 
   func clearTranscriptSelection() {
@@ -75,9 +76,11 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     textSelection.anchorRange = nil
     textSelection.endpointTexts = [:]
     applySelectionHighlights()
+    hideAddToChatButton()
   }
 
   private func startSelectionGesture(at point: TranscriptSelectionPoint, event: NSEvent) {
+    hideAddToChatButton()
     takeFocusForSelection()
     let granularity: TranscriptSelectionState.Granularity =
       switch event.clickCount {
@@ -289,6 +292,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       textSelection.selection = nil
       textSelection.anchorRange = nil
       textSelection.endpointTexts = [:]
+      hideAddToChatButton()
     }
     if span?.isEmpty == true, !textSelection.isDragging { span = nil }
 
@@ -481,5 +485,6 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
 
   private func keepsSelection(whenPressing hit: NSView) -> Bool {
     hit is any TranscriptTextSurface || hit is NSScroller || hit === transcriptDocumentView || hit === titlebarRegion
+      || isAddToChatButton(hit)
   }
 }

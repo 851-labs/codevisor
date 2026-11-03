@@ -17,6 +17,7 @@ struct AssistantTurnBody: View {
   private var invalidateRowMeasurement
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.quickLook) private var quickLook
+  @Environment(\.transcriptQuoteActions) private var quoteActions
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
   @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
   @State private var hasAutoCollapsed: Bool
@@ -239,7 +240,8 @@ struct AssistantTurnBody: View {
 
   private var imageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
-      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
+      quoteActions: quoteActions)
   }
 
   private func openMarkdownLink(_ url: URL) -> Bool {

@@ -42,7 +42,7 @@ extension ComposerBar {
 
   private var botField: some View {
     VStack(alignment: .leading, spacing: 8) {
-      if !controller.composerAttachments.isEmpty {
+      if controller.hasComposerChips {
         ComposerAttachmentStrip(controller: controller)
       }
       HStack(alignment: .bottom, spacing: 6) {

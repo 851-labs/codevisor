@@ -7,7 +7,7 @@ extension SessionController {
 
   public func beginEditingQueuedPrompt(_ item: ServerPromptQueueItem) {
     stashDraftForQueueEdit(of: item.id)
-    composerText = item.text
+    restoreComposerPrompt(item.text)
     attachments.restore((item.attachments ?? []).map(ComposerAttachment.init(queued:)))
   }
 
@@ -30,7 +30,7 @@ extension SessionController {
     guard var edit = queuedPromptEdit else {
       queuedPromptEdit = QueuedPromptEdit(
         queueItemID: queueItemID,
-        stashedText: composerText,
+        stashedText: composerPromptText,
         stashedAttachments: attachments.items
       )
       return
@@ -43,18 +43,18 @@ extension SessionController {
     guard queuedPrompts.contains(where: { $0.id == edit.queueItemID }) else {
       return await requeueEditedPrompt(attachments: attachments)
     }
-    return await updateQueuedPrompt(id: edit.queueItemID, text: composerText, attachments: attachments)
+    return await updateQueuedPrompt(id: edit.queueItemID, text: composerPromptText, attachments: attachments)
   }
 
   private func requeueEditedPrompt(attachments: [Attachment]) async -> Bool {
     guard let model else { return false }
-    await model.send(UserMessage(text: composerText, attachments: attachments), delivery: .queue)
+    await model.send(UserMessage(text: composerPromptText, attachments: attachments), delivery: .queue)
     return true
   }
 
   private func restoreStashedDraft(_ edit: QueuedPromptEdit) {
     queuedPromptEdit = nil
-    composerText = edit.stashedText
+    restoreComposerPrompt(edit.stashedText)
     attachments.restoreDraft(edit.stashedAttachments)
   }
 }

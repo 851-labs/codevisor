@@ -9,12 +9,14 @@ import UIKit
 extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSurfaceAdapter {
   @discardableResult
   func applyRows(_ rows: [TranscriptVirtualRow], layoutFingerprintChanged: Bool) -> Bool {
-    surfaceController.applyRows(rows, layoutChanged: layoutFingerprintChanged, adapter: self)
+    defer { revealPendingQuoteIfPossible() }
+    return surfaceController.applyRows(rows, layoutChanged: layoutFingerprintChanged, adapter: self)
   }
 
   @discardableResult
   func applyActiveRows(_ rows: [TranscriptVirtualRow]) -> Bool {
-    surfaceController.applyActiveRows(rows, adapter: self)
+    defer { revealPendingQuoteIfPossible() }
+    return surfaceController.applyActiveRows(rows, adapter: self)
   }
 
   func reconcileRetainedHosts(

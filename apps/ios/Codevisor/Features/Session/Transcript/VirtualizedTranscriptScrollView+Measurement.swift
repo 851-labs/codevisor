@@ -111,21 +111,9 @@ extension VirtualizedTranscriptScrollView {
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
     let previousOffsetY = viewportGeometry.boundedOffsetY(contentOffset.y)
-    let plan = TranscriptGeometryRebuildPlan(
-      previousLayout: previousLayout,
-      previousDistanceFromBottom: previousDistance,
-      viewportHeight: viewportHeight,
-      followsLatest: followsLatest,
-      lockedRestoreDistance: lockedRestoreDistance,
-      initialPositionApplied: initialPositionApplied,
-      gatePinsBottom: bottomJumpGate.isActive || initialBottomPin.isActive,
-      bottomSpacerWillChange: TranscriptDocumentGeometry.bottomSpacerGeometryWillChange(
-        from: previousLayout,
-        spacerRow: rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey],
-        measurements: measurements
-      ),
-      atBottomThreshold: Self.atBottomThreshold,
-      measurements: measurements
+    let bottomSpacerWillChange = bottomSpacerWillChange(from: previousLayout)
+    let plan = geometryRebuildPlan(
+      previousLayout: previousLayout, previousDistance: previousDistance, bottomSpacerWillChange: bottomSpacerWillChange
     )
     var initialRestoreRange: Range<Int>?
     applyPositionTransaction {
@@ -179,9 +167,36 @@ extension VirtualizedTranscriptScrollView {
       }
       lastDistanceFromBottom = currentDistanceFromBottom()
     }
+    if bottomSpacerWillChange, holdsViewportForComposerChange { releaseFollowIfOffBottom() }
     updateMountedRows(rangeOverride: initialRestoreRange)
     updateInitialPresentationReadiness()
     updateCollapsibleEarlierHistory()
+  }
+
+  private func bottomSpacerWillChange(from previousLayout: VirtualTranscriptLayout) -> Bool {
+    TranscriptDocumentGeometry.bottomSpacerGeometryWillChange(
+      from: previousLayout,
+      spacerRow: rowByKey[TranscriptVirtualRow.ID.bottomSpacer.layoutKey],
+      measurements: measurements
+    )
+  }
+
+  private func geometryRebuildPlan(
+    previousLayout: VirtualTranscriptLayout, previousDistance: CGFloat?, bottomSpacerWillChange: Bool
+  ) -> TranscriptGeometryRebuildPlan {
+    TranscriptGeometryRebuildPlan(
+      previousLayout: previousLayout,
+      previousDistanceFromBottom: previousDistance,
+      viewportHeight: viewportHeight,
+      followsLatest: followsLatest,
+      lockedRestoreDistance: lockedRestoreDistance,
+      initialPositionApplied: initialPositionApplied,
+      gatePinsBottom: bottomJumpGate.isActive || initialBottomPin.isActive,
+      bottomSpacerWillChange: bottomSpacerWillChange,
+      holdsViewportOnSpacerChange: holdsViewportForComposerChange,
+      atBottomThreshold: Self.atBottomThreshold,
+      measurements: measurements
+    )
   }
 
   func runwayAdjustedLayout(_ layout: VirtualTranscriptLayout) -> VirtualTranscriptLayout {
@@ -213,7 +228,8 @@ extension VirtualizedTranscriptScrollView {
           MarkdownImageActions(
             open: { [weak self] url in self?.markdownImageActions?.open(url) },
             openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
-            copy: { [weak self] url in self?.markdownImageActions?.copy?(url) })
+            copy: { [weak self] url in self?.markdownImageActions?.copy?(url) },
+            addToChat: { [weak self] url in self?.markdownImageActions?.addToChat?(url) })
         )
         .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
         .environment(\.streamMarkdownTextLayoutWidth, effectiveRowWidth)

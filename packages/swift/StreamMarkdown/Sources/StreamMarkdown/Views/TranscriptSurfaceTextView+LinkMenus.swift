@@ -13,6 +13,10 @@
           let url = markdownLinkURL(link)
         else { continue }
         let menu = NSMenu()
+        if let addToChat = images.addToChat {
+          menu.addItem(MarkdownMenuItem("Add to Chat", systemImage: "text.bubble") { addToChat(url) })
+          menu.addItem(.separator())
+        }
         menu.addItem(
           MarkdownMenuItem("Quick Look", systemImage: "eye") { [weak self] in
             guard let preparing = images.open(url), let self else { return }

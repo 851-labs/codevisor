@@ -23,9 +23,9 @@ extension SessionController {
   static let modelSelectionReason = "Choose a model for this chat, then try again."
 
   func sendToBot() {
-    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || !composerAttachments.isEmpty else { return }
+    guard hasComposerDraft else { return }
 
+    let text = takeComposerPromptText()
     let sent = attachments.detachForSend()
     let message = UserMessage(text: text, attachments: sent.map(\.sentAttachment))
     rememberSentPreviews(of: sent)
@@ -41,8 +41,7 @@ extension SessionController {
   }
 
   public var canSend: Bool {
-    let hasDraft = !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !composerAttachments.isEmpty
-    return hasDraft && acceptsSends
+    hasComposerDraft && acceptsSends
   }
 
   public var acceptsSends: Bool {
@@ -147,7 +146,7 @@ extension SessionController {
   }
 
   private func returnToDraft(_ message: UserMessage) {
-    composerText = message.text
+    restoreComposerPrompt(message.text)
     cancelUserSendAnimation(for: message.id)
   }
 

@@ -14,7 +14,7 @@ struct ConversationItemRow: View {
     case let .user(message) where message.isEvent:
       EmptyView()
     case let .user(message):
-      UserBubbleRow(text: message.text, attachments: message.attachments)
+      UserBubbleRow(message: message)
     case let .assistant(message):
       AssistantTurnBody(
         turn: message.turn,

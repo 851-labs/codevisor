@@ -114,7 +114,7 @@ enum TranscriptBotRowAssembly {
     for message: TranscriptBotMessage, isGroupTail: Bool, spacingAfter spacing: CGFloat
   ) -> TranscriptPresentationRow {
     if message.sender == .user, let id = UUID(uuidString: message.id) {
-      let user = UserMessage(id: id, text: message.text, attachments: message.attachments)
+      let user = UserMessage(id: id, text: message.text, attachments: message.attachments).presentingQuotes
       return .init(
         id: .message(id),
         content: .message(.user(user), waitingOnBackgroundTask: nil),
@@ -143,7 +143,7 @@ enum TranscriptBotRowAssembly {
     rows.append(
       .init(
         id: .message(pending.id),
-        content: .optimistic(pending),
+        content: .optimistic(pending.presentingQuotes),
         estimatedHeight: 44,
         measurementRevision: TranscriptMessageRowMetrics.optimisticMeasurementRevision(for: pending),
         spacingAfter: groupTailSpacing

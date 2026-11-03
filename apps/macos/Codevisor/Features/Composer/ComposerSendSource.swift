@@ -26,7 +26,7 @@ final class ComposerSendSource {
   }
 
   private static func flyingAttachmentIDs(_ controller: SessionController) -> [String] {
-    controller.composerAttachments.map(\.sentFileID)
+    controller.composerQuoteSendFlightIDs + controller.composerAttachments.map(\.sentFileID)
   }
 }
 

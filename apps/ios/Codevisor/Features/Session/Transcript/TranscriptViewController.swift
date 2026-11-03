@@ -46,6 +46,15 @@ final class TranscriptViewController: UIViewController {
     transcriptScrollView.prepareForPresentationAttachment()
   }
 
+  func holdViewportForComposerChange() {
+    transcriptScrollView.holdViewportForComposerChange()
+  }
+
+  var quoteRevealTarget: any TranscriptQuoteRevealTarget {
+    loadViewIfNeeded()
+    return transcriptScrollView
+  }
+
   override func didReceiveMemoryWarning() {
     super.didReceiveMemoryWarning()
     transcriptScrollView.parkedHosts.removeAll()

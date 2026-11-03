@@ -97,6 +97,12 @@ struct ChatScreen: View {
       .onChange(of: controller.transcriptRevealRequest, initial: true) { _, _ in
         revealRequestedToolCall()
       }
+      .onChange(of: controller.quoteRevealRequest, initial: true) { _, _ in
+        revealRequestedQuote()
+      }
+      .onChange(of: controller.transcriptPickSignal) { _, _ in
+        presentationSurface.ensureScrollView().holdViewportForComposerChange()
+      }
       .overlay { initialLoadingOverlay }
       .overlay(alignment: .bottom) { bottomChromeOverlay }
       .overlay(alignment: .topTrailing) { findBarOverlay }

@@ -189,6 +189,14 @@ struct ComposerAttachmentStrip: View {
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 8) {
+        ForEach(Array(controller.composerQuotes.enumerated()), id: \.element.id) { index, quote in
+          ComposerQuoteChip(
+            quote: quote,
+            flightID: TranscriptQuote.sendFlightID(at: index),
+            onOpen: { controller.revealQuote(quote) },
+            onRemove: { controller.removeQuote(id: quote.id) }
+          )
+        }
         ForEach(controller.composerAttachments) { attachment in
           ComposerAttachmentChip(
             attachment: attachment,
@@ -394,19 +402,9 @@ private struct ComposerAttachmentChip: View {
   }
 
   private var removeButton: some View {
-    Button(action: onRemove) {
-      Image(systemName: "xmark")
-        .font(.system(size: 11, weight: .bold))
-        .foregroundStyle(.black)
-        .frame(width: 26, height: 26)
-        .background(Circle().fill(.white))
-        .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-    }
-    .buttonStyle(.plain)
-    .pointerHighlight(Circle())
-    .padding(attachment.hasVisualPreview ? 6 : 0)
-    .offset(attachment.hasVisualPreview ? .zero : CGSize(width: 5, height: -5))
-    .accessibilityLabel("Remove \(attachment.name)")
+    ComposerChipRemoveButton(accessibilityLabel: "Remove \(attachment.name)", action: onRemove)
+      .padding(attachment.hasVisualPreview ? 6 : 0)
+      .offset(attachment.hasVisualPreview ? .zero : CGSize(width: 5, height: -5))
   }
 }
 

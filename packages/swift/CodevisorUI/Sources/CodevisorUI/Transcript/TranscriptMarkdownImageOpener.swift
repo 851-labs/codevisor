@@ -8,7 +8,8 @@ public enum TranscriptMarkdownImageOpener {
   public static func actions(
     quickLook: QuickLookController?,
     attachmentImages: AttachmentImageStore?,
-    openDocument: OpenFileDocumentAction?
+    openDocument: OpenFileDocumentAction?,
+    quoteActions: TranscriptQuoteActions? = nil
   ) -> MarkdownImageActions {
     MarkdownImageActions(
       open: { url in
@@ -20,7 +21,13 @@ public enum TranscriptMarkdownImageOpener {
       copy: { url in
         guard let file = previewFile(url), let attachmentImages else { return }
         Task { _ = await AttachmentClipboard.copy(file, using: attachmentImages) }
-      })
+      },
+      addToChat: addToChat(quoteActions))
+  }
+
+  private static func addToChat(_ actions: TranscriptQuoteActions?) -> (@MainActor (URL) -> Void)? {
+    guard let actions else { return nil }
+    return { url in actions.addImage(at: url) }
   }
 
   public static func previewFile(_ url: URL) -> PreviewFile? {

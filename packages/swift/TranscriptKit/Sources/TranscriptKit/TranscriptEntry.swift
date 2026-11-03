@@ -24,6 +24,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public let id: UUID
   public var text: String
   public var attachments: [Attachment]
+  public var quotes: [TranscriptQuote]
   public var textResource: ToolDetailResource?
   public var isEvent: Bool
   public var isForkMarker: Bool
@@ -33,6 +34,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     id: UUID = UUID(),
     text: String,
     attachments: [Attachment] = [],
+    quotes: [TranscriptQuote] = [],
     textResource: ToolDetailResource? = nil,
     isEvent: Bool = false,
     isForkMarker: Bool = false,
@@ -42,6 +44,7 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
     self.text = text
     self.textResource = textResource
     self.attachments = attachments
+    self.quotes = quotes
     self.isEvent = isEvent
     self.isForkMarker = isForkMarker
     self.attribution = attribution

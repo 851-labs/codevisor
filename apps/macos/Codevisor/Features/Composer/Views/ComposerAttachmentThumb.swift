@@ -18,7 +18,7 @@ struct ComposerAttachmentThumb: View {
       Group {
         if attachment.hasVisualPreview {
           ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: cornerRadius)
               .fill(Color.bubbleBackground)
             if let image = thumbnail {
               Image(nsImage: image)
@@ -29,10 +29,10 @@ struct ComposerAttachmentThumb: View {
                 .foregroundStyle(.tertiary)
             }
           }
-          .frame(width: 56, height: 56)
-          .clipShape(RoundedRectangle(cornerRadius: 8))
+          .frame(width: ComposerChipMetrics.side, height: ComposerChipMetrics.side)
+          .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
           .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: cornerRadius)
               .strokeBorder(.separator, lineWidth: 1)
           )
           .overlay(alignment: .bottomLeading) {
@@ -45,7 +45,7 @@ struct ComposerAttachmentThumb: View {
               VideoPlayBadge()
             }
           }
-          .contentShape(RoundedRectangle(cornerRadius: 8))
+          .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
           .onTapGesture { preview() }
           .help(attachment.name)
         } else {
@@ -62,7 +62,7 @@ struct ComposerAttachmentThumb: View {
         .allowsHitTesting(isHovered)
     }
     .transcriptSendAttachmentSource(
-      id: attachment.sentFileID, image: thumbnail, cornerRadius: 8, sentSize: sentSize
+      id: attachment.sentFileID, image: thumbnail, cornerRadius: cornerRadius, sentSize: sentSize
     )
     .onHover { hovering in
       guard hovering != isHovered else { return }
@@ -123,12 +123,12 @@ struct ComposerAttachmentThumb: View {
   private var stateBadge: some View {
     switch attachment.state {
     case .loading:
-      RoundedRectangle(cornerRadius: 8)
+      RoundedRectangle(cornerRadius: cornerRadius)
         .fill(.black.opacity(0.25))
         .overlay(ProgressView().controlSize(.small))
         .allowsHitTesting(false)
     case .uploading:
-      RoundedRectangle(cornerRadius: 8)
+      RoundedRectangle(cornerRadius: cornerRadius)
         .fill(.black.opacity(0.25))
         .overlay(ProgressView().controlSize(.small))
         .allowsHitTesting(false)
@@ -136,7 +136,7 @@ struct ComposerAttachmentThumb: View {
       Button {
         onRetry()
       } label: {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: cornerRadius)
           .fill(.black.opacity(0.35))
           .overlay(
             VStack(spacing: 2) {
@@ -147,7 +147,7 @@ struct ComposerAttachmentThumb: View {
                 .foregroundStyle(.white)
             }
           )
-          .contentShape(RoundedRectangle(cornerRadius: 8))
+          .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
       }
       .buttonStyle(.plain)
       .help("Upload failed: \(reason). Click to retry.")
@@ -157,19 +157,13 @@ struct ComposerAttachmentThumb: View {
   }
 
   private var removeButton: some View {
-    Button {
-      onRemove()
-    } label: {
-      Image(systemName: "xmark")
-        .font(.system(size: Typography.IconSize.compact, weight: .bold))
-        .foregroundStyle(.white)
-        .frame(width: 18, height: 18)
-        .background(Circle().fill(.black.opacity(0.78)))
-        .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1))
-        .contentShape(Circle())
-    }
-    .buttonStyle(.plain)
-    .help("Remove attachment")
-    .accessibilityLabel("Remove \(attachment.name)")
+    ComposerChipRemoveButton(
+      help: "Remove attachment", accessibilityLabel: "Remove \(attachment.name)", action: onRemove)
   }
+
+  private var cornerRadius: CGFloat {
+    attachment.hasVisualPreview ? ComposerChipMetrics.cornerRadius : Self.fileCornerRadius
+  }
+
+  private static let fileCornerRadius: CGFloat = 8
 }

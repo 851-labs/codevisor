@@ -273,7 +273,7 @@ enum TranscriptRowAssembly {
     rows.append(
       .init(
         id: .message(message.id),
-        content: .optimistic(message),
+        content: .optimistic(message.presentingQuotes),
         estimatedHeight: 90,
         measurementRevision: TranscriptMessageRowMetrics.optimisticMeasurementRevision(
           for: message

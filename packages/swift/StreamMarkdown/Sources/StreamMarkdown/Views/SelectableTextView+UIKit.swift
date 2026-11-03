@@ -8,6 +8,7 @@
     private let fillsWidth: Bool
     private let streamingAnimation: StreamingTextAnimationContext?
     @Environment(\.markdownLinkAction) private var linkAction
+    @Environment(\.textQuoteAction) private var quoteAction
     @Environment(\.textSelectionSession) private var selectionSession
     @Environment(\.streamingTextAnimationFrameClock) private var animationFrameClock
     @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
@@ -36,6 +37,7 @@
       let view = SelectableTextKitView()
       view.animationFrameClock = animationFrameClock
       context.coordinator.linkAction = linkAction
+      context.coordinator.quoteAction = quoteAction
       view.delegate = context.coordinator
       view.selectionSession = selectionSession
       let prepared = context.coordinator.preparedText(
@@ -54,6 +56,7 @@
     public func updateUIView(_ textView: SelectableTextKitView, context: Context) {
       textView.animationFrameClock = animationFrameClock
       context.coordinator.linkAction = linkAction
+      context.coordinator.quoteAction = quoteAction
       textView.selectionSession = selectionSession
       let prepared = context.coordinator.preparedText(
         for: attributedText,
@@ -126,6 +129,7 @@
     public final class Coordinator: NSObject, UITextViewDelegate {
       fileprivate lazy var measurer = UIKitTextKitTextMeasurer()
       var linkAction: MarkdownLinkAction?
+      var quoteAction: TextQuoteAction?
       private let animationState = StreamingTextAnimationState()
       private var attributedInput: NSAttributedString?
       private var stableAttributedText: NSAttributedString?
@@ -194,6 +198,12 @@
           return defaultAction
         }
         return linkAction.activate(url, in: textView, at: textItem.range.location) ? UIAction { _ in } : defaultAction
+      }
+
+      public func textView(
+        _ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]
+      ) -> UIMenu? {
+        textQuoteEditMenu(in: textView, range: range, suggestedActions: suggestedActions, action: quoteAction)
       }
 
       public func textView(

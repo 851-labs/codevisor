@@ -6,6 +6,7 @@ enum TranscriptMessageRowMetrics {
     var hasher = Hasher()
     hasher.combine(3)
     hasher.combine(message.text.utf8.count)
+    hasher.combine(message.quotes.count)
     hasher.combine(message.attachments.count)
     for attachment in message.attachments {
       hasher.combine(attachment.id)
@@ -41,6 +42,7 @@ enum TranscriptMessageRowMetrics {
     case let .user(message):
       hasher.combine(0)
       hasher.combine(message.text.utf8.count)
+      hasher.combine(message.quotes.count)
       hasher.combine(message.attachments.count)
       for attachment in message.attachments {
         hasher.combine(attachment.id)

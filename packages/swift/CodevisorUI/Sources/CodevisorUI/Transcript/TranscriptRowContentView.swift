@@ -91,6 +91,12 @@ public struct TranscriptRowContentView: View {
   public var body: some View {
     rowContent
       .environment(\.transcriptAttachmentThumbnail, TranscriptAttachmentThumbnail(leaves.attachmentThumbnail))
+      .environment(\.transcriptQuoteActions, quoteActions)
+      .environment(\.textQuoteAction, quoteActions.addText.map(TextQuoteAction.init(add:)))
+  }
+
+  private var quoteActions: TranscriptQuoteActions {
+    TranscriptQuoteActions(controller: controller, row: row)
   }
 
   @ViewBuilder
@@ -165,7 +171,7 @@ public struct TranscriptRowContentView: View {
     case let .setup(phases):
       leaves.setup(phases)
     case let .optimistic(message):
-      if !message.text.isEmpty || !message.attachments.isEmpty {
+      if !message.text.isEmpty || !message.attachments.isEmpty || !message.quotes.isEmpty {
         leaves.userMessage(message)
       }
     case .startingAgent:

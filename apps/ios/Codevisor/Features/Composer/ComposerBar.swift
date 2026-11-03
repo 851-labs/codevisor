@@ -64,7 +64,7 @@ struct ComposerBar: View {
   }
 
   var hasDraft: Bool {
-    !trimmed.isEmpty || !controller.composerAttachments.isEmpty
+    !trimmed.isEmpty || controller.hasComposerChips
   }
 
   var canSend: Bool {
@@ -109,7 +109,7 @@ struct ComposerBar: View {
     let pickersOverhead = showsRunPickerRow ? runPickersHeight + Self.runPickerSpacing : 0
     let noticeOverhead = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
     let attachmentOverhead =
-      controller.composerAttachments.isEmpty ? 0 : attachmentStripHeight + Self.contentSpacing
+      controller.hasComposerChips ? attachmentStripHeight + Self.contentSpacing : 0
     return max(
       Self.collapsedMaxEditorHeight,
       maxHeight - cardChromeHeight - pickersOverhead - noticeOverhead - attachmentOverhead
@@ -350,7 +350,7 @@ extension ComposerBar {
 
   private var composerContent: some View {
     VStack(alignment: .leading, spacing: isCompact ? 0 : Self.contentSpacing) {
-      if !isCompact, !controller.composerAttachments.isEmpty {
+      if !isCompact, controller.hasComposerChips {
         ComposerAttachmentStrip(controller: controller)
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -437,7 +437,7 @@ extension ComposerBar {
         if isCompact {
           compactPreviewLine
             .transition(compactPreviewTransition)
-          if !controller.composerAttachments.isEmpty {
+          if controller.hasComposerChips {
             compactAttachmentCount
               .transition(compactChipsTransition)
           }

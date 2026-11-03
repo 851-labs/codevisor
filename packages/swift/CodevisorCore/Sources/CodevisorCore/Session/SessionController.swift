@@ -35,6 +35,7 @@ final public class SessionController {
 
   public var composerText: String = "" { didSet { draftDidChange() } }
   public var composerAttachments: [ComposerAttachment] { attachments.items }
+  public internal(set) var composerQuotes: [TranscriptQuote] = []
   @ObservationIgnored public private(set) lazy var attachments = ComposerAttachments(
     files: attachmentFiles,
     client: { [weak self] in self?.serverClient },
@@ -127,7 +128,9 @@ final public class SessionController {
   @ObservationIgnored var onPendingSendsChange: (() -> Void)?
   @ObservationIgnored public let disclosure = TranscriptDisclosureStore()
   public internal(set) var userSendSignal = 0
+  public internal(set) var transcriptPickSignal = 0
   public var transcriptRevealRequest: TranscriptRevealRequest?
+  public var quoteRevealRequest: TranscriptQuoteRevealRequest?
   public internal(set) var userSendAnimationRequest: UserSendAnimationRequest?
   @ObservationIgnored var userSendAnimationCoordinator = UserSendAnimationCoordinator()
   @ObservationIgnored public var onQueuedPromptWillFly: ((UUID) -> Void)?

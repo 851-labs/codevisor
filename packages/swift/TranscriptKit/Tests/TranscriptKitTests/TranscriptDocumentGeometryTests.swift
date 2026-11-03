@@ -79,6 +79,7 @@ struct TranscriptDocumentGeometryTests {
     applied: Bool = true,
     gate: Bool = false,
     spacerChange: Bool = false,
+    holdsViewport: Bool = false,
     measured: [String: CGFloat] = [:]
   ) -> TranscriptGeometryRebuildPlan {
     var ledger = TranscriptMeasurementLedger()
@@ -92,6 +93,7 @@ struct TranscriptDocumentGeometryTests {
       initialPositionApplied: applied,
       gatePinsBottom: gate,
       bottomSpacerWillChange: spacerChange,
+      holdsViewportOnSpacerChange: holdsViewport,
       atBottomThreshold: 2,
       measurements: ledger
     )
@@ -132,6 +134,23 @@ struct TranscriptDocumentGeometryTests {
     let reading = plan(previous: previous, distance: 120, follows: false, measured: [first.layoutKey: 100])
     #expect(!reading.pinsBottom)
     #expect(reading.visibleAnchorKey == first.layoutKey)
+  }
+
+  @Test func heldViewportKeepsVisibleRowsWhenComposerGrowsUnderAFollowingReader() {
+    let first = row(height: 100)
+    let second = row(height: 100)
+    let measured = [first.layoutKey: CGFloat(100), second.layoutKey: 100]
+    let previous = layout([first, second, spacer(40)], measured: measured)
+    let grownSpacer = layout([first, second, spacer(146)], measured: measured)
+
+    let held = plan(
+      previous: previous, distance: 0, follows: true, spacerChange: true, holdsViewport: true, measured: measured)
+    #expect(!held.pinsBottom)
+    #expect(held.resolvedDistanceFromBottom(newLayout: grownSpacer, previousLayout: previous) == 106)
+
+    let unrelated = plan(previous: previous, distance: 0, follows: true, holdsViewport: true, measured: measured)
+    #expect(unrelated.pinsBottom)
+    #expect(plan(previous: previous, distance: 0, gate: true, spacerChange: true, holdsViewport: true).pinsBottom)
   }
 
   @Test func lockedRestoreDistanceWinsOverEverything() {

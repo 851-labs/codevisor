@@ -59,15 +59,18 @@ public struct MarkdownImageActions: @unchecked Sendable {
   public var open: @MainActor (URL) -> Task<Void, Never>?
   public var openInNewTab: (@MainActor (URL) -> Void)?
   public var copy: (@MainActor (URL) -> Void)?
+  public var addToChat: (@MainActor (URL) -> Void)?
 
   public init(
     open: @escaping @MainActor (URL) -> Task<Void, Never>?,
     openInNewTab: (@MainActor (URL) -> Void)? = nil,
-    copy: (@MainActor (URL) -> Void)? = nil
+    copy: (@MainActor (URL) -> Void)? = nil,
+    addToChat: (@MainActor (URL) -> Void)? = nil
   ) {
     self.open = open
     self.openInNewTab = openInNewTab
     self.copy = copy
+    self.addToChat = addToChat
   }
 }
 

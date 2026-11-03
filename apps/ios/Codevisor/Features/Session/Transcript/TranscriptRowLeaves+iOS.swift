@@ -37,7 +37,7 @@ extension TranscriptRowLeaves {
           ))
       },
       userMessage: { message in
-        AnyView(AttributedUserMessage(message) { UserBubbleRow(text: message.text, attachments: message.attachments) })
+        AnyView(AttributedUserMessage(message) { UserBubbleRow(message: message) })
       },
       botMessage: { message, content in
         AnyView(BotBubbleRow(message: message, content: content))

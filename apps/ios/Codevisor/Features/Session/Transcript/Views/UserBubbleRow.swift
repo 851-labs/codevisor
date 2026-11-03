@@ -6,14 +6,15 @@ import UIKit
 
 struct UserBubbleRow: View {
   @Environment(\.userBubbleStyle) private var style
-  let text: String
-  let attachments: [Attachment]
+  let message: UserMessage
 
   var body: some View {
-    MessageBubbleView(side: .trailing, text: text, attachments: attachments, fill: style.fill) {
+    MessageBubbleView(
+      side: .trailing, text: message.text, attachments: message.attachments, quotes: message.quotes, fill: style.fill
+    ) {
       SelectableTextView(
         attributedText: NSAttributedString(
-          string: text,
+          string: message.text,
           attributes: [
             .font: UIFont.preferredFont(forTextStyle: .body),
             .foregroundColor: UIColor(style.text),
@@ -87,6 +88,7 @@ struct MessageBubbleView<Content: View>: View {
   let side: Side
   let text: String
   let attachments: [Attachment]
+  var quotes: [TranscriptQuote] = []
   var fill = Color.bubbleBackground
   var insets = TranscriptSendFlightGeometry.bubbleTextInsets
   @ViewBuilder let content: () -> Content
@@ -99,6 +101,9 @@ struct MessageBubbleView<Content: View>: View {
       VStack(
         alignment: alignment, spacing: TranscriptSendFlightGeometry.attachmentSpacing
       ) {
+        if !quotes.isEmpty {
+          TranscriptQuoteChipRow(quotes: quotes)
+        }
         TranscriptInlineFileStack(files: attachments.map(PreviewFile.init(attachment:)), alignment: alignment) {
           AttachmentThumbnailView(file: $0)
         }

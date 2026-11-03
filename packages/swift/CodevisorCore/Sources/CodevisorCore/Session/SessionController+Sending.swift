@@ -28,7 +28,7 @@ extension SessionController {
   private func sendToAgent(delivery: ServerPromptDelivery, landsInQueue: Bool) {
     guard canSend else { return }
 
-    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = takeComposerPromptText()
     let sent = attachments.detachForSend()
     let message = UserMessage(text: text, attachments: sent.map(\.sentAttachment))
     rememberSentPreviews(of: sent)

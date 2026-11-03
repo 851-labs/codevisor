@@ -8,7 +8,20 @@ import UIKit
 extension SessionTranscriptView {
   var transcriptImageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
-      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
+      quoteActions: TranscriptQuoteActions(controller: controller))
+  }
+
+  func revealRequestedQuote() {
+    guard let request = controller.quoteRevealRequest else { return }
+
+    controller.quoteRevealRequest = nil
+    let revealer = TranscriptQuoteRevealer(
+      controller: controller,
+      target: presentationSurface.ensureController().quoteRevealTarget,
+      presentsBotConversation: controller.presentsBotConversation
+    )
+    Task { await revealer.reveal(request.quote) }
   }
 
   func openMarkdownLink(_ url: URL) -> Bool {

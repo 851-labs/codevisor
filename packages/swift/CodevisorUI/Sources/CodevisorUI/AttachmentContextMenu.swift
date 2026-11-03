@@ -70,6 +70,7 @@ public func attachmentContentType(name: String, mimeType: String) -> UTType {
 private struct AttachmentContextMenu: ViewModifier {
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.markdownBlockChrome) private var chrome
+  @Environment(\.transcriptQuoteActions) private var quoteActions
   let file: PreviewFile
   let image: OSImage?
   let openInNewTab: (@MainActor () -> Void)?
@@ -87,6 +88,10 @@ private struct AttachmentContextMenu: ViewModifier {
   func body(content: Content) -> some View {
     content
       .contextMenu {
+        if let quoteActions, kind == .image, !file.isPendingCapture {
+          Button("Add to Chat", systemImage: "text.bubble") { quoteActions.addImage(file) }
+          Divider()
+        }
         if chrome == .bubble, let quickLook, !file.isPendingCapture {
           Button("Quick Look", systemImage: "eye", action: quickLook)
         }

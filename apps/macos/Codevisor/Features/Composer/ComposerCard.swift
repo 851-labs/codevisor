@@ -165,7 +165,7 @@ private extension ComposerCard {
       if controller.isGoalEditing {
         ComposerModeLabel(systemImage: "target", title: "Edit goal")
       }
-      if !controller.composerAttachments.isEmpty {
+      if controller.hasComposerChips {
         ComposerAttachmentRow(controller: controller)
       }
 
@@ -250,7 +250,7 @@ private extension ComposerCard {
   }
 
   private var editorTopBleed: CGFloat {
-    controller.isGoalEditing || !controller.composerAttachments.isEmpty || isSlimLayout
+    controller.isGoalEditing || controller.hasComposerChips || isSlimLayout
       ? 0
       : ComposerCardStyle.contentPadding
   }
@@ -292,8 +292,7 @@ private extension ComposerCard {
   }
 
   private var hasComposerDraft: Bool {
-    !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || !controller.composerAttachments.isEmpty
+    controller.hasComposerDraft
   }
 
   private func handlePastedAttachments(_ pasted: [PastedAttachment]) -> Bool {

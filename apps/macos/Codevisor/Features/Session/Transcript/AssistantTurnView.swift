@@ -20,6 +20,7 @@ struct AssistantTurnView: View {
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
   @Environment(\.openSettings) private var openSettings
   @Environment(\.quickLook) private var quickLook
+  @Environment(\.transcriptQuoteActions) private var quoteActions
   @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
@@ -134,7 +135,8 @@ struct AssistantTurnView: View {
     .markdownLinkHandler(openMarkdownLink)
     .markdownImageActions(
       TranscriptMarkdownImageOpener.actions(
-        quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+        quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument,
+        quoteActions: quoteActions)
     )
     .frame(maxWidth: .infinity, alignment: .leading)
     .onChange(of: turn.isGenerating) { _, generating in

@@ -51,6 +51,10 @@ public struct TranscriptBotImagePart: View {
 
   @ViewBuilder private var menu: some View {
     if let url, let images = linkAction?.images {
+      if let addToChat = images.addToChat {
+        Button("Add to Chat", systemImage: "text.bubble") { addToChat(url) }
+        Divider()
+      }
       Button("Quick Look", systemImage: "eye") { _ = images.open(url) }
       if let openInNewTab = images.openInNewTab {
         Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") { openInNewTab(url) }
