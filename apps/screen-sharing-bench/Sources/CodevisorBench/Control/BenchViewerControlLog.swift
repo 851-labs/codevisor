@@ -10,10 +10,10 @@ struct BenchViewerControlLog {
     grantedAfterMs != nil || denial != nil
   }
 
-  func summary(capturesSystemShortcuts: Bool, clickProbe: BenchClickProbe.Summary) -> BenchViewerControlSummary {
+  func summary(capturesSystemShortcuts: Bool) -> BenchViewerControlSummary {
     BenchViewerControlSummary(
       granted: grantedAfterMs != nil, grantedAfterMs: grantedAfterMs, denial: denial, losses: losses,
       forwardedEvents: forwardedEvents, inputReleases: inputReleases, capturesSystemShortcuts: capturesSystemShortcuts,
-      forwarded: forwarded, clickProbe: clickProbe)
+      forwarded: forwarded)
   }
 }

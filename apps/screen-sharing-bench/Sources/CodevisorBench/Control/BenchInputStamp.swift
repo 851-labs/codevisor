@@ -10,7 +10,6 @@ struct BenchInputStamp: Encodable {
   let down: Bool?
   let ns: Int64
   let eventAgeMs: Double?
-  var mouseCoalescing: Bool?
 
   init(_ event: ScreenSharingInputEvent, ns: Int64, source: NSEvent?) {
     let (kind, down): (Kind, Bool?) =

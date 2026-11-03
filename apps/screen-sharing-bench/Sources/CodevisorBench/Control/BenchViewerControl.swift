@@ -14,8 +14,6 @@ final class BenchViewerControl {
   private let requestedNs = BenchMachClock.nowNs()
   private var log = BenchViewerControlLog()
   private var heartbeat: Task<Void, Never>?
-  private let clickProbe = BenchClickProbe()
-  private var clickProbeInstalled = false
 
   static func acquire(
     over channel: any ScreenSharingMessageChannel<ScreenSharingControlMessage>, surface: ScreenSharingVideoSurface,
@@ -44,15 +42,12 @@ final class BenchViewerControl {
   }
 
   var summary: BenchViewerControlSummary {
-    log.summary(
-      capturesSystemShortcuts: surface.capturesSystemShortcuts,
-      clickProbe: clickProbe.summary(installed: clickProbeInstalled))
+    log.summary(capturesSystemShortcuts: surface.capturesSystemShortcuts)
   }
 
   func stop() {
     channel.onMessage = nil
     heartbeat?.cancel()
-    clickProbe.stop()
     surface.endInput()
     if let lease = forwarder.lease { channel.send(.release(lease: lease)) }
     forwarder.end()
@@ -72,7 +67,6 @@ final class BenchViewerControl {
     forwarder.begin(lease: lease)
     surface.window?.makeFirstResponder(surface)
     if !surface.beginInput() { log.losses.append(surface.inputFailureMessage ?? "input did not begin") }
-    clickProbeInstalled = clickProbe.start()
     heartbeat = Task { [weak self] in await self?.beat(lease) }
   }
 
@@ -85,12 +79,7 @@ final class BenchViewerControl {
 
   private func forward(_ event: ScreenSharingInputEvent) {
     log.forwardedEvents += 1
-    var stamp = BenchInputStamp(event, ns: BenchMachClock.nowNs(), source: NSApp.currentEvent)
-    if stamp.kind == .click {
-      stamp.mouseCoalescing = NSEvent.isMouseCoalescingEnabled
-      if stamp.down == false { NSEvent.isMouseCoalescingEnabled.toggle() }
-    }
-    log.forwarded.append(stamp)
+    log.forwarded.append(BenchInputStamp(event, ns: BenchMachClock.nowNs(), source: NSApp.currentEvent))
     forwarder.forward(event)
   }
 

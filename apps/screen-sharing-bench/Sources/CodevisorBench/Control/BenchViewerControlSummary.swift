@@ -7,5 +7,4 @@ struct BenchViewerControlSummary: Encodable {
   let inputReleases: Int
   let capturesSystemShortcuts: Bool
   let forwarded: [BenchInputStamp]
-  let clickProbe: BenchClickProbe.Summary
 }

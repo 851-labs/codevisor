@@ -328,11 +328,7 @@ host's picture splits into stages: the viewer's `control.forwarded` in `system.j
 event to the forwarder, on the viewer's clock, with `event_age_ms`, how long after the window server stamped the
 event), the host's `control.injected` in `share.json` (just before `ScreenSharingInputInjector` posted it, on the host's
 clock) and the host player's `inputs` in `player.json` (when its window received each key or mouse down, with
-`eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`. The viewer's `control.click_probe`
-holds when a listen-only session event tap saw each left mouse down (`tapped_ns`) and when the main queue ran right
-after it (`tap_main_ns`), whether the tap installed, and the viewer's Accessibility, listen-event and post-event access.
-The viewer also flips `NSEvent.isMouseCoalescingEnabled` after every click (each click's `mouse_coalescing`), so
-one run compares clicks with and without coalescing.
+`eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`.
 
 **Warm-up.** Apple HP's first run after the floor was slow every time in T7 (I2P 149 ms against about 98, image age 75
 against 25), so when Apple HP is among the systems each dispatch first runs one unmeasured Apple HP warm-up
