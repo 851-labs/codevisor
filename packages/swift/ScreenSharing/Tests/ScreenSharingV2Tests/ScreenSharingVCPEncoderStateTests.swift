@@ -6,14 +6,15 @@ import VideoToolbox
 @testable import ScreenSharingV2
 
 struct ScreenSharingVCPEncoderStateTests {
-  @Test func aNewPictureSkippedAgainAndAgainIsRetriedThenLeftUnchanged() throws {
+  private static let repeatedSkips = 5
+
+  @Test func aSkippedPictureTheSessionNeverEncodedIsAlwaysADrop() throws {
     var state = ScreenSharingVCPEncoderState()
     let request = try Self.request()
-    let attempts = ScreenSharingVCPEncoderState.retriesOfANewCapture + 1
 
-    let skips = try (0..<attempts).map { _ in try Self.skip(request, in: &state).map(Self.describe) }
+    let skips = try (0..<Self.repeatedSkips).map { _ in try Self.skip(request, in: &state).map(Self.describe) }
 
-    #expect(skips == Array(repeating: "dropped", count: attempts - 1) + ["unchanged"])
+    #expect(skips == Array(repeating: "dropped", count: Self.repeatedSkips))
   }
 
   @Test func aSkippedRepeatOfTheLastEncodedPictureIsUnchanged() throws {

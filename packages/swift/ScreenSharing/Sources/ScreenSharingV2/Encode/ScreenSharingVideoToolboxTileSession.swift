@@ -164,13 +164,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   }
 
   private func deliver(_ encoded: ScreenSharingEncodedTile) {
-    metrics.increment("encodedFrames")
-    metrics.increment("encodedBytes", by: encoded.accessUnit.count)
-    if encoded.isKeyFrame { metrics.increment("encodedKeyFrames") }
-    if encoded.refresh == .longTermReference { metrics.increment("encodedLTRRefreshes") }
-    if encoded.ltrToken != nil { metrics.increment("encodedLTRFrames") }
-    if encoded.update.isRefinement { metrics.increment("encodedRefinements") }
-    metrics.observe("encode", milliseconds: Double(encoded.encodedNs - encoded.submittedNs) / 1_000_000)
+    ScreenSharingTileMetrics(metrics).record(encoded)
     relay.emit(.tile(encoded))
   }
 

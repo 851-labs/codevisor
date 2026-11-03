@@ -8,13 +8,20 @@ enum ScreenSharingVCPSelfTest {
   static let tiles = 4
   static let timeout = Duration.seconds(2)
 
-  private static let passed = Mutex(false)
+  private static let outcome = Mutex<Result<Void, ScreenSharingError>?>(nil)
 
   static func pass() async throws {
-    guard !passed.withLock({ $0 }) else { return }
+    if let known = outcome.withLock({ $0 }) { return try known.get() }
 
-    try await run()
-    passed.withLock { $0 = true }
+    let result: Result<Void, ScreenSharingError>
+    do {
+      try await run()
+      result = .success(())
+    } catch {
+      result = .failure(.unavailable("VCP self-test failed: \(error.localizedDescription)"))
+    }
+    outcome.withLock { $0 = result }
+    try result.get()
   }
 
   private static func run() async throws {

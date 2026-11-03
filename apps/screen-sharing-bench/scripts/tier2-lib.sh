@@ -185,7 +185,10 @@ tier2_check_inputs() {
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
   [[ "$TIER2_NETWORK" =~ ^N[03]$ ]] || { echo "network must be N0 or N3, not $TIER2_NETWORK" >&2; return 1; }
   [[ "$TIER2_ENGINE" =~ ^v[12]$ ]] || { echo "engine must be v1 or v2, not $TIER2_ENGINE" >&2; return 1; }
-  [[ "$TIER2_VCP_FAIL_AFTER" =~ ^[0-9]+$ ]] || { echo "vcp-fail-after must be whole seconds" >&2; return 1; }
+  [[ "$TIER2_VCP_FAIL_AFTER" =~ ^(0|[1-9][0-9]*)$ ]] && ((TIER2_VCP_FAIL_AFTER < TIER2_DURATION)) || {
+    echo "vcp-fail-after must be whole seconds below the run's duration" >&2
+    return 1
+  }
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
   tier2_check_input_scene || return 1
   [[ "$TIER2_VIEWER_DISPLAY" =~ ^(main|R1x2)$ ]] || { echo "viewer display must be main or R1x2" >&2; return 1; }

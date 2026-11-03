@@ -1,4 +1,5 @@
 import CoreMedia
+import Foundation
 import ScreenSharing
 import Synchronization
 import VideoToolbox
@@ -11,6 +12,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   private let metrics: ScreenSharingMetrics
   private let relay: ScreenSharingTileOutputRelay
   private let state = Mutex(ScreenSharingVCPEncoderState())
+  private let sessionLock = NSLock()
 
   init(
     tile: Int, factory: ScreenSharingVCPSessionFactory, metrics: ScreenSharingMetrics,
@@ -26,6 +28,10 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   }
 
   func encode(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
+    try sessionLock.withLock { try submit(pixels, request: request) }
+  }
+
+  private func submit(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
     let submission = try state.withLock {
       try $0.begin(request, refresh: request.refreshes[tile], atNs: ScreenSharingMetrics.nowNs)
     }
@@ -54,16 +60,21 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   }
 
   func close() {
+    let wasRunning = sessionLock.withLock { closeSession() }
+    guard wasRunning else { return }
+
+    for submission in state.withLock({ $0.unfinished() }) {
+      relay.emit(.failed(tile: tile, refresh: submission.refresh, message: "VCP stopped"))
+    }
+  }
+
+  private func closeSession() -> Bool {
     let wasRunning = state.withLock { state in
       defer { state.stopped = true }
       return !state.stopped
     }
-    guard wasRunning else { return }
-
-    session.close()
-    for submission in state.withLock({ $0.unfinished() }) {
-      relay.emit(.failed(tile: tile, refresh: submission.refresh, message: "VCP stopped"))
-    }
+    if wasRunning { session.close() }
+    return wasRunning
   }
 
   private func options(refresh: ScreenSharingTileRefresh?) -> ScreenSharingVCPFrameOptions {

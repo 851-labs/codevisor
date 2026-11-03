@@ -2,16 +2,12 @@ import CoreMedia
 import ScreenSharing
 
 struct ScreenSharingVCPEncoderState {
-  static let retriesOfANewCapture = 3
-
   var acknowledged: [UInt64] = []
   var feedback: ScreenSharingVCPNetworkFeedback?
   var failure: String?
   var stopped = false
   private var inFlight: [UInt64: ScreenSharingVCPSubmission] = [:]
   private var lastEncodedCapture: Int64?
-  private var lastDroppedCapture: Int64?
-  private var dropsOfLastCapture = 0
   private var nextSubmission: UInt64 = 0
   private var lastPresentationNs: Int64 = 0
 
@@ -50,10 +46,7 @@ struct ScreenSharingVCPEncoderState {
       lastEncodedCapture = capture
       return .encoded(submission)
     }
-    dropsOfLastCapture = lastDroppedCapture == capture ? dropsOfLastCapture + 1 : 1
-    lastDroppedCapture = capture
-    let unchanged = lastEncodedCapture == capture || dropsOfLastCapture > Self.retriesOfANewCapture
-    return .skipped(submission, unchanged: unchanged)
+    return .skipped(submission, unchanged: lastEncodedCapture == capture)
   }
 
   mutating func unfinished() -> [ScreenSharingVCPSubmission] {
