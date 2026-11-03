@@ -9,13 +9,13 @@ struct BotConversationChrome: ViewModifier {
     content
       .environment(\.transcriptTopChromeHeight, BotConversationHeader.height)
       .toolbar(removing: .title)
-      .overlay(alignment: .top) { header }
+      .overlay(alignment: .top) {
+        BotConversationTopBar(bot: bot, onOpenDetails: openDetails)
+      }
   }
 
-  private var header: some View {
-    BotConversationHeader(
-      bot: bot, onOpenDetails: bot.isArchived ? nil : actions.map { actions in { actions.editBot(bot) } }
-    )
-    .ignoresSafeArea(edges: .top)
+  private var openDetails: (() -> Void)? {
+    guard !bot.isArchived, let actions else { return nil }
+    return { actions.editBot(bot) }
   }
 }
