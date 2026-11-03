@@ -79,8 +79,12 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   public func setBitrate(_ bitsPerSecond: Int) throws {
-    for session in sessions { try session.setBitrate(bitsPerSecond) }
+    var failure: (any Error)?
+    for session in sessions {
+      do { try session.setBitrate(bitsPerSecond) } catch { failure = failure ?? error }
+    }
     metrics.label("encoderBitrate", String(bitsPerSecond))
+    if let failure { throw failure }
   }
 
   public func stop() {

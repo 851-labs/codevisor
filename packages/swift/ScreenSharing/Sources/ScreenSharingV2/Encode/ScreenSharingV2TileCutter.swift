@@ -42,29 +42,11 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
       CVPixelBufferLockBaseAddress(target, [])
       defer { CVPixelBufferUnlockBaseAddress(target, []) }
       for plane in ScreenSharingV2PixelPlane.planes(of: source) {
-        copy(plane, rows: layout.rows(of: tile), from: source, to: target)
+        let first = plane.rows(layout.rows(of: tile), of: source, height: layout.height).lowerBound
+        plane.copyRows(plane.height(of: target), from: source, at: first, to: target, at: 0)
       }
     }
     return targets
-  }
-
-  private func copy(
-    _ plane: ScreenSharingV2PixelPlane, rows: Range<Int>, from source: CVPixelBuffer, to target: CVPixelBuffer
-  ) {
-    guard let sourceBase = plane.base(of: source), let targetBase = plane.base(of: target) else { return }
-
-    let first = rows.lowerBound * plane.height(of: source) / layout.height
-    let count = plane.height(of: target)
-    let sourceStride = plane.bytesPerRow(of: source)
-    let targetStride = plane.bytesPerRow(of: target)
-    if sourceStride == targetStride {
-      memcpy(targetBase, sourceBase + first * sourceStride, count * sourceStride)
-      return
-    }
-    let length = min(sourceStride, targetStride)
-    for row in 0..<count {
-      memcpy(targetBase + row * targetStride, sourceBase + (first + row) * sourceStride, length)
-    }
   }
 
   private func make(_ pixelFormat: OSType, height: Int) throws -> CVPixelBuffer {

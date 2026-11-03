@@ -307,8 +307,9 @@
       metrics.observe(
         "captureDeliveryAge", milliseconds: CMTimeGetSeconds(hostTime - sampleBuffer.presentationTimeStamp) * 1000)
       ScreenSharingCaptureColorTags.tagStandardTransfer(pixel)
-      let dirtyRects = (attachments?.first?[.dirtyRects] as? [NSDictionary])?.compactMap {
-        CGRect(dictionaryRepresentation: $0)
+      let nativeScale = (attachments?.first?[.contentScale] as? Double).map { $0 == 1 } ?? false
+      let dirtyRects = (attachments?.first?[.dirtyRects] as? [NSDictionary]).flatMap { rects in
+        nativeScale ? rects.compactMap { CGRect(dictionaryRepresentation: $0) } : nil
       }
       sink.push(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: time.value, dirtyRects: dirtyRects))
     }

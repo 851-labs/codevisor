@@ -50,7 +50,9 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
     blit.endEncoding()
     buffer.commit()
     buffer.waitUntilCompleted()
-    return withExtendedLifetime(retained) { buffer.status == .completed }
+    let completed = withExtendedLifetime(retained) { buffer.status == .completed }
+    CVMetalTextureCacheFlush(cache, 0)
+    return completed
   }
 
   private func encode(_ copy: Copy, from: any MTLTexture, to: any MTLTexture, into blit: any MTLBlitCommandEncoder) {

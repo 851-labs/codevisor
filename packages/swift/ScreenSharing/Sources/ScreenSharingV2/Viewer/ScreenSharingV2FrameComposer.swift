@@ -62,16 +62,8 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
     CVPixelBufferLockBaseAddress(image, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(image, .readOnly) }
     for plane in ScreenSharingV2PixelPlane.planes(of: target) {
-      guard let source = plane.base(of: image), let destination = plane.base(of: target) else { continue }
-
       let span = plane.rows(rows, of: target, height: height)
-      let count = min(span.count, plane.height(of: image))
-      let sourceStride = plane.bytesPerRow(of: image)
-      let targetStride = plane.bytesPerRow(of: target)
-      let length = min(sourceStride, targetStride)
-      for row in 0..<count {
-        memcpy(destination + (span.lowerBound + row) * targetStride, source + row * sourceStride, length)
-      }
+      plane.copyRows(span.count, from: image, at: 0, to: target, at: span.lowerBound)
     }
   }
 

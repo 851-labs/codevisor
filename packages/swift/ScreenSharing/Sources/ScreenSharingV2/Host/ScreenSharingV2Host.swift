@@ -79,8 +79,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
 
     let reported = layout.tiles(touching: capture.frame.dirtyRects)
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
-    let tiles = ScreenSharingV2TileComparer.changed(reported, of: layout, from: previous, to: capture.frame.pixelBuffer)
-    metrics.increment("tilesUnchangedByPixels", by: reported.count - tiles.count)
+    let candidates = reported.subtracting(slot.waitingTiles)
+    let tiles = ScreenSharingV2TileComparer.changed(
+      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer)
+    metrics.increment("tilesUnchangedByPixels", by: candidates.count - tiles.count)
     if slot.offer(capture, tiles: tiles) { metrics.increment("captureReplacedBeforeEncode") }
     pump()
   }
@@ -103,7 +105,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     if encoder.encodesWholeFrames { return inFlight.isEmpty }
     if plan.isRefinement { return busyTiles.isDisjoint(with: plan.tiles) }
 
-    return plan.tiles.allSatisfy { inFlight[$0, default: 0] < Self.pipelinedChanges }
+    let depth = layout.count > 1 ? Self.pipelinedChanges : 1
+    return plan.tiles.allSatisfy { inFlight[$0, default: 0] < depth }
   }
 
   private func release(_ tile: Int) {
