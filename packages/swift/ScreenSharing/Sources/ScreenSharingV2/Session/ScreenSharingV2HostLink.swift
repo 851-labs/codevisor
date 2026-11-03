@@ -52,8 +52,12 @@ public final class ScreenSharingV2HostLink {
     let feed = ScreenSharingV2MediaFeed(transport: await connection.openMedia()) { kind, payload in
       Task { @MainActor in channels.receiveDatagram(kind, payload) }
     }
+    guard !closed else {
+      feed.close()
+      throw CancellationError()
+    }
+
     feedBox.set(feed)
-    guard !closed else { throw CancellationError() }
 
     try await rebuild()
     metrics.label("engine", "v2")
@@ -74,7 +78,15 @@ public final class ScreenSharingV2HostLink {
     metrics.label("captureSize", "\(configuration.width) × \(configuration.height)")
     guard feedBox.current != nil else { return }
 
-    Task { try? await rebuild() }
+    Task { [weak self] in
+      do {
+        try await self?.rebuild()
+      } catch {
+        guard let self, !self.closed else { return }
+
+        self.metrics.label("encoderError", "The host Mac couldn't encode the new display size.")
+      }
+    }
   }
 
   public func statistics() async -> [String: String] {

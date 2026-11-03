@@ -1,11 +1,9 @@
 import { Schema } from "effect"
 
-export const ScreenSharingMediaAddress = Schema.Struct({
-  endpointId: Schema.String,
-  relayUrl: Schema.optional(Schema.String),
-  directAddrs: Schema.Array(Schema.String)
-})
-export type ScreenSharingMediaAddress = typeof ScreenSharingMediaAddress.Type
+import { CloudTunnelInfo } from "./cloud-tunnel-protocol.js"
+
+export const ScreenSharingMediaAddress = CloudTunnelInfo
+export type ScreenSharingMediaAddress = CloudTunnelInfo
 
 export const ScreenSharingRequest = Schema.Struct({
   version: Schema.Literal(1),

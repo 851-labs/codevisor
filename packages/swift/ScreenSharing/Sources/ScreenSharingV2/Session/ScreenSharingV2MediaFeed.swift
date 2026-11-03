@@ -31,8 +31,9 @@ public final class ScreenSharingV2MediaFeed: Sendable {
   public func attach() -> any ScreenSharingMediaTransport {
     let next = Tap(transport: transport)
     tap.withLock { tap in
+      let replay = tap.current == nil ? tap.pending : []
       tap.current?.finish()
-      for event in tap.pending { next.deliver(event) }
+      for event in replay { next.deliver(event) }
       tap = (next, [])
     }
     return next

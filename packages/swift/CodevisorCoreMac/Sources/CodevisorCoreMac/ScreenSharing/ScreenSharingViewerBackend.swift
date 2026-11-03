@@ -122,6 +122,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private let tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider?
   private let v2: ScreenSharingV2Connector?
   private var v2Failed = false
+  private var startsFresh = false
   private let sound: Bool
 
   init(
@@ -216,6 +217,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
 
   private func run(display: String, emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void) async {
     let viewerId = UUID()
+    v2Failed = false
+    startsFresh = false
     var restarts = 0
     var started = false
     var message: String?
@@ -234,6 +237,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         break attempts
       case .fallback:
         v2Failed = true
+        startsFresh = true
       }
     }
     if let message { emit(.ended(message)) }
@@ -285,7 +289,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         let offer = try await session.offer()
         try Task.checkCancellation()
         attempt.started = true
-        var start = request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
+        var start = request(
+          takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
         let media = await tunnelMedia?()
         attempt.tunnelMedia = media
         if let media { start.tunnelMedia = .init(endpointId: media.endpointId, flowId: media.flowId) }
@@ -320,6 +325,11 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   }
 
   private static let missingVideoTimeout: Duration = .seconds(24)
+
+  private func takeFreshStart() -> Bool {
+    defer { startsFresh = false }
+    return startsFresh
+  }
 
   private func heartbeats(
     viewerId: UUID, attempt: Attempt, session: any ScreenSharingViewingSession, notice: String?,
@@ -357,7 +367,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   ) async throws -> Outcome {
     guard let address = await v2.address() else { return .fallback }
     try Task.checkCancellation()
-    var start = request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display)
+    var start = request(takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display)
     start.engine = ScreenSharingEngine.v2.rawValue
     start.media = address
     attempt.started = true

@@ -32,6 +32,9 @@ struct ScreenSharingV2Connector {
       },
       connect: { grant in
         guard let ready = handle.value else { throw ScreenSharingError.unavailable("No screen-sharing endpoint.") }
+        guard grant.endpointId != ready.endpointId() else {
+          throw ScreenSharingError.unavailable("Engine v2 can't connect a Mac to itself.")
+        }
         let cancel = NetCancelToken()
         let timeout = Task {
           try await Task.sleep(for: connectTimeout)

@@ -75,10 +75,10 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingViewingSession {
   public func statistics() async -> [String: String] {
     guard !closed else { return [:] }
 
-    route()
     var statistics = connection.mediaStatistics()
     statistics["v2.engine"] = "v2"
     if let route = connection.route {
+      metrics.label("route", route.isRelay ? "relay" : "direct")
       statistics["v2.route"] = route.isRelay ? "relay" : "direct"
       statistics["v2.roundTripMs"] = String(route.roundTripMs)
     }

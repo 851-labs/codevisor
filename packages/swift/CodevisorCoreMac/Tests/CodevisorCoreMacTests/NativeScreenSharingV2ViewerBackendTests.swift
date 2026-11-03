@@ -61,4 +61,20 @@ struct NativeScreenSharingV2ViewerBackendTests {
     #expect(harness.sessions.count == 1 && harness.sessions[0].answers == ["fixture answer"])
     #expect(!harness.log.events.contains { if case .ended = $0 { true } else { false } })
   }
+
+  @Test func aV2ReconnectThatFailsOnTheHostStartsAFreshWebRTCSessionInsteadOfRestarting() async throws {
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(engines: ["v2"], v2RestartStatus: "failed"), v2: NativeBackendHarness.V2())
+    harness.connect()
+    await awaitObserved { harness.log.events.contains(.ready) }
+    harness.sessions[0].onConnectionChanged?("failed")
+    await awaitObserved { harness.log.events.filter { $0 == .ready }.count == 2 }
+    await harness.cancelConsumers()
+    await harness.transport.stopped.wait()
+    let starts = await harness.transport.requests.filter { [.start, .restart].contains($0.operation) }
+
+    expectNoDifference(starts.map(\.operation), [.start, .restart, .start])
+    #expect(starts.map(\.engine) == ["v2", "v2", nil])
+    #expect(starts[2].offer == "fixture offer")
+  }
 }

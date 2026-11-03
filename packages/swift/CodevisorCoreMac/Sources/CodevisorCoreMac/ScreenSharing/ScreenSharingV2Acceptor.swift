@@ -4,31 +4,54 @@ import ScreenSharing
 
 @MainActor
 final class ScreenSharingV2Acceptor {
+  struct Expectation: Equatable {
+    let endpointId: String
+    let id: UUID
+  }
+
+  private enum Slot {
+    case waiting(CheckedContinuation<NetConnectionHandle, any Error>?)
+    case arrived(NetConnectionHandle)
+  }
+
   static let shared = ScreenSharingV2Acceptor()
 
   private var endpoint: NetEndpointHandle?
   private var loop: Task<Void, Never>?
-  private var waiting: [String: (id: UUID, continuation: CheckedContinuation<NetConnectionHandle, any Error>)] = [:]
+  private var slots: [String: (id: UUID, slot: Slot)] = [:]
 
-  func connection(
-    from endpointId: String, on endpoint: NetEndpointHandle, timeout: Duration
-  ) async throws
-    -> NetConnectionHandle
-  {
+  func expect(_ endpointId: String, on endpoint: NetEndpointHandle) -> Expectation {
     listen(on: endpoint)
-    let id = UUID()
+    let expectation = Expectation(endpointId: endpointId, id: UUID())
+    if case .waiting(let continuation)? = slots[endpointId]?.slot {
+      continuation?.resume(throwing: CancellationError())
+    }
+    slots[endpointId] = (expectation.id, .waiting(nil))
+    return expectation
+  }
+
+  func connection(_ expectation: Expectation, timeout: Duration) async throws -> NetConnectionHandle {
     let expiry = Task { [weak self] in
       try? await Task.sleep(for: timeout)
-      self?.fail(endpointId, id: id, ScreenSharingError.unavailable("The viewer didn't connect over engine v2."))
+      self?.fail(expectation, ScreenSharingError.unavailable("The viewer didn't connect over engine v2."))
     }
     defer { expiry.cancel() }
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
-        waiting.removeValue(forKey: endpointId)?.continuation.resume(throwing: CancellationError())
-        waiting[endpointId] = (id, continuation)
+        guard let entry = slots[expectation.endpointId], entry.id == expectation.id else {
+          return continuation.resume(throwing: CancellationError())
+        }
+
+        switch entry.slot {
+        case .arrived(let connection):
+          slots.removeValue(forKey: expectation.endpointId)
+          continuation.resume(returning: connection)
+        case .waiting:
+          slots[expectation.endpointId] = (entry.id, .waiting(continuation))
+        }
       }
     } onCancel: {
-      Task { @MainActor [weak self] in self?.fail(endpointId, id: id, CancellationError()) }
+      Task { @MainActor [weak self] in self?.fail(expectation, CancellationError()) }
     }
   }
 
@@ -57,17 +80,28 @@ final class ScreenSharingV2Acceptor {
   }
 
   private func deliver(_ connection: NetConnectionHandle) {
-    guard let waiter = waiting.removeValue(forKey: connection.remoteId()) else {
+    let endpointId = connection.remoteId()
+    guard let entry = slots[endpointId], case .waiting(let continuation) = entry.slot else {
       connection.close(code: 1, reason: "no screen-sharing session expects this viewer")
       return
     }
 
-    waiter.continuation.resume(returning: connection)
+    guard let continuation else {
+      slots[endpointId] = (entry.id, .arrived(connection))
+      return
+    }
+
+    slots.removeValue(forKey: endpointId)
+    continuation.resume(returning: connection)
   }
 
-  private func fail(_ endpointId: String, id: UUID, _ error: any Error) {
-    guard waiting[endpointId]?.id == id else { return }
+  private func fail(_ expectation: Expectation, _ error: any Error) {
+    guard let entry = slots[expectation.endpointId], entry.id == expectation.id else { return }
 
-    waiting.removeValue(forKey: endpointId)?.continuation.resume(throwing: error)
+    slots.removeValue(forKey: expectation.endpointId)
+    switch entry.slot {
+    case .waiting(let continuation): continuation?.resume(throwing: error)
+    case .arrived(let connection): connection.close(code: 1, reason: "the screen-sharing session ended")
+    }
   }
 }

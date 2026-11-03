@@ -143,14 +143,17 @@ actor SharingTransport: ServerRequestTransport {
   private let startNotice: String?
   private let engines: [String]?
   private let v2StartStatus: String
+  private let v2RestartStatus: String
   private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var stopWasCancelled = false
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
     restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = [],
-    startNotice: String? = nil, engines: [String]? = nil, v2StartStatus: String = "connecting"
+    startNotice: String? = nil, engines: [String]? = nil, v2StartStatus: String = "connecting",
+    v2RestartStatus: String = "connecting"
   ) {
+    self.v2RestartStatus = v2RestartStatus
     self.engines = engines
     self.v2StartStatus = v2StartStatus
     self.heartbeatReplies = heartbeatReplies
@@ -176,11 +179,12 @@ actor SharingTransport: ServerRequestTransport {
       let first = requests.filter { $0.operation == .start }.count == 1
       started.signal()
       if first, blockFirstStart { await releaseFirstStart.wait() }
+      let v2Status = payload.operation == .restart ? v2RestartStatus : v2StartStatus
       var started = ServerScreenSharingReply(
-        status: payload.engine == "v2" ? v2StartStatus : payload.operation == .restart ? restartStatus : "connecting",
+        status: payload.engine == "v2" ? v2Status : payload.operation == .restart ? restartStatus : "connecting",
         message: startNotice,
         answer: payload.engine == nil ? "fixture answer" : nil)
-      if payload.engine == "v2", v2StartStatus == "connecting" { started.media = ScreenSharingViewerFixtures.mediaGrant }
+      if payload.engine == "v2", v2Status == "connecting" { started.media = ScreenSharingViewerFixtures.mediaGrant }
       reply = started
     case .heartbeat:
       reply = heartbeatReplies.isEmpty ? .init(status: heartbeatStatus) : heartbeatReplies.removeFirst()
