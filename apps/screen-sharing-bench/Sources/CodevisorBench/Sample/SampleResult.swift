@@ -22,15 +22,17 @@ struct SampleResult: Encodable {
   let receivedMbps: BenchDistribution?
   let sentMbps: BenchDistribution?
   let processes: [Process]
+  let allProcesses: ProcessTotals?
 
   init(
     interface: String, counters: [BenchInterfaceCounters], groups: [ProcessGroup],
-    snapshots: [[[pid_t: ProcessReading]]]
+    snapshots: [[[pid_t: ProcessReading]]], allProcesses: ProcessTotals?
   ) {
     let rates = zip(counters, counters.dropFirst()).compactMap(BenchInterfaceRate.init(from:to:))
     self.interface = interface
     receivedMbps = BenchDistribution(rates.map(\.receivedMbps))
     sentMbps = BenchDistribution(rates.map(\.sentMbps))
     processes = zip(groups, snapshots).map { Process(name: $0.name, snapshots: $1) }
+    self.allProcesses = allProcesses
   }
 }

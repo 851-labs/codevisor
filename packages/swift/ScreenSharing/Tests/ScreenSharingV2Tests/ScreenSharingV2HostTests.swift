@@ -11,10 +11,12 @@ struct ScreenSharingV2HostTests {
   private let transport = LoopbackMediaTransport()
   private let scheduler = ManualScheduler()
 
-  private func startedHost(_ encoder: RecordingTileEncoder) -> ScreenSharingV2Host {
+  private func startedHost(
+    _ encoder: RecordingTileEncoder, refinement: ScreenSharingV2RefinementPolicy = .standard
+  ) -> ScreenSharingV2Host {
     let host = ScreenSharingV2Host(
       transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
-      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler)
+      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler, refinement: refinement)
     host.start()
     return host
   }
@@ -145,6 +147,25 @@ struct ScreenSharingV2HostTests {
     host.stop()
 
     #expect(encoder.requests.count == 2)
+    #expect(scheduler.scheduled.value == 1)
+  }
+
+  @Test func aRefinementPassThatEncodesToAlmostNothingEndsTheTilesRefinement() async throws {
+    let encoder = RecordingTileEncoder()
+    let host = startedHost(encoder, refinement: ScreenSharingV2RefinementPolicy(passes: 4, convergedBelowBytes: 64))
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+    await encoder.encodes.wait(for: 2)
+    encoder.emitTiles(of: encoder.requests[1])
+    await transport.sends.wait(for: 2)
+    scheduler.advance(byNs: 4 * ScreenSharingV2Profile.refinementGapNs)
+    host.stop()
+
+    #expect(encoder.requests.map(\.update.isRefinement) == [false, true])
     #expect(scheduler.scheduled.value == 1)
   }
 

@@ -7,6 +7,7 @@ struct ScreenSharingVideoToolboxSessionFactory {
   let height: Int
   let framesPerSecond: Int
   let bitrate: Int
+  var longTermReferences = true
 
   func make() throws -> VTCompressionSession {
     let session = try create()
@@ -49,7 +50,7 @@ struct ScreenSharingVideoToolboxSessionFactory {
     try set(session, kVTCompressionPropertyKey_AverageBitRate, bitrate as CFNumber)
     try set(session, kVTCompressionPropertyKey_MaxKeyFrameInterval, 0 as CFNumber)
     try set(session, kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 0 as CFNumber)
-    try set(session, kVTCompressionPropertyKey_EnableLTR, kCFBooleanTrue)
+    if longTermReferences { try set(session, kVTCompressionPropertyKey_EnableLTR, kCFBooleanTrue) }
     try set(session, kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
     try set(session, kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_sRGB)
     try set(session, kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2)

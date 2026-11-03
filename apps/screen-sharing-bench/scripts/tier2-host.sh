@@ -7,7 +7,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/tier2-lib.sh"
 mkdir -p "$results"
 work="$(mktemp -d /tmp/codevisor-tier2.XXXXXX)"
 rendezvous_port=47595
-host_processes=screensharingd,ScreensharingAgent,CodevisorBench:share,VTEncoderXPCService,replayd,WindowServer
+host_processes=screensharingd,ScreensharingAgent,avconferenced,CodevisorBench:share,VTEncoderXPCService,replayd,WindowServer
+profiled_processes=(avconferenced ScreensharingAgent VTEncoderXPCService replayd)
+profile_lead_s=20
+profile_s=10
 background=()
 stop_background() {
   for pid in ${background[@]+"${background[@]}"}; do kill "$pid" 2>/dev/null || true; done
@@ -35,6 +38,22 @@ start_share() {
   }
 }
 
+profile() {
+  local system=$1 dir=$2 name pid targets=() target
+  sleep "$profile_lead_s"
+  for name in "${profiled_processes[@]}"; do
+    for pid in $(pgrep -x "$name"); do targets+=("$name-$pid:$pid"); done
+  done
+  if [[ "$system" == codevisor* ]]; then
+    for pid in $(pgrep -U "$(id -u)" -f "CodevisorBench.app/Contents/MacOS/CodevisorBench share"); do
+      targets+=("share-$pid:$pid")
+    done
+  fi
+  for target in ${targets[@]+"${targets[@]}"}; do
+    sample "${target#*:}" "$profile_s" -mayDie -file "$dir/profile-${target%%:*}.txt" >/dev/null 2>>"$dir/profile.err" &
+  done
+  wait
+}
 
 measure() {
   local scene=$1 system=$2 dir=$3 observed=$4
@@ -61,6 +80,10 @@ measure() {
   if sudo -n -l /usr/bin/powermetrics >/dev/null 2>&1; then
     { sudo -n /usr/bin/powermetrics --samplers cpu_power,gpu_power -i 1000 -n "$((TIER2_DURATION + 8))" \
       >"$dir/host-power.txt" 2>"$dir/host-power.err" || true; } &
+    pids+=($!)
+  fi
+  if ((TIER2_PROFILE)); then
+    profile "$system" "$dir" &
     pids+=($!)
   fi
   sleep 3

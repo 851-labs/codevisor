@@ -323,9 +323,9 @@ observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s w
 5 s after both observers first read a barcode and ends 2 s before either stops. Versions the host showed and
 the viewer never did are skipped versions. Updates/s, gaps and freezes (typing, scroll, window drag and video
 only) come from the viewer's versions in the window; judder is the viewer's gap p95 minus the host's. CPU is
-the per-second sum of the system's processes (Apple HP: `screensharingd`, `ScreensharingAgent` and
+the per-second sum of the system's processes (Apple HP: `screensharingd`, `ScreensharingAgent`, `avconferenced` and
 `Screen Sharing`; Codevisor: the `share` and `view` processes; both: `VTEncoderXPCService` and
-`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. The host's usage lines also record `WindowServer` and `replayd`, which neither system's figure counts. When `sudo -n` may run `/usr/bin/powermetrics`, each host run also writes `host-power.txt`, a second-by-second `powermetrics --samplers cpu_power,gpu_power` log of the whole package, as a cross-check that doesn't depend on which processes a system uses. A run is invalid when it didn't come
+`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. The host's usage lines also record `WindowServer` and `replayd`, which neither system's figure counts. When `sudo -n` may run `/usr/bin/powermetrics`, each host run also writes `host-power.txt`, a second-by-second `powermetrics --samplers cpu_power,gpu_power` log of the whole package, as a cross-check that doesn't depend on which processes a system uses. `host-sample.json` also has `all_processes`: the CPU each process still running at the end used from the first to the last second of the run (a process that exits during the run isn't in it), totalled and as the 25 largest by name (bench processes as `CodevisorBench:<subcommand>`), so work in a process the list doesn't name still shows. That is how run 41620109016 found that Apple HP captures, encodes and sends in `avconferenced` (AVConference's VideoTransmitter and VCP encoder, and on the viewer its receiver), which the lists missed before 851-3966. Dispatching with `profile: true` also runs `sample` for 10 s, 20 s into each run, on the host's `avconferenced`, `ScreensharingAgent`, `VTEncoderXPCService`, `replayd` and the Codevisor share process, and writes `profile-<process>-<pid>.txt` call trees (and `profile.err` for processes it can't read). Sampling slows the sampled process, so a profiled run's numbers only point at where the time goes. A run is invalid when it didn't come
 from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual over 0.2 ms), another CI job ran,
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
@@ -514,6 +514,26 @@ runs only the `lab` job. It builds and installs the bench on the named mini (`ta
 command's output goes to the job summary and the `lab` artifact. The job has its own concurrency group
 (`screen-sharing-lab-*`), so check `gh run list` and agree on the mini first. The first lab run (41267527233) showed
 that croissant's M6 brings a 1920×1080 @2x virtual display (3840 px of backing) online.
+
+## Host lab (851-3966)
+
+`host-lab` measures the engine v2 host's CPU on one Mac, without a viewer, for several variants in one run:
+
+```sh
+CodevisorBench host-lab --scenes scroll,typing --seconds 30 --settle 5 --virtual-display R1x2 \
+  --variants base/queue=6/cursor=0/refine=1/tiles=1/ltr=0
+```
+
+- It creates the virtual display, then for each scene starts `player` on it and, for each variant, a `host-run`
+  child: ScreenSharingCapture → ScreenSharingV2Host → the VideoToolbox tile encoder → a null transport that drops
+  the tiles and acknowledges every LTR token at once. After `--settle` seconds it samples CPU for `--seconds`.
+- A variant is `base` or comma-separated settings: `queue` (ScreenCaptureKit queue depth), `cursor`, `fps` (capture
+  and encoder rate), `refine` (refinement passes), `converge` (a refinement pass under this many bytes ends the tile's refinement; 0 is off), `tiles` (1 or 4) and `ltr`.
+- The table gives the whole system (`all_processes`), the `host-run` child, `VTEncoderXPCService`, `WindowServer`,
+  `replayd` and the player, plus captures, tile encodes and refinements per second and the encode p50. The network
+  send path isn't in it; `media-transport` measures that.
+- **CI.** `-f lab='tamale host-lab --scenes scroll,typing --variants base/cursor=0'` runs it in the lab job; the table
+  is in the job summary.
 
 ## Signing and permissions
 

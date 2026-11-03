@@ -2,7 +2,7 @@ import Foundation
 import ScreenSharingBench
 
 struct ProcessListing {
-  private struct Entry {
+  struct Entry: Equatable {
     let pid: pid_t
     let name: String
     let cpuNs: Int64
@@ -12,14 +12,18 @@ struct ProcessListing {
   private static let secondsPerUnit = [1.0, 60, 3_600]
 
   let sampledNs: Int64
-  private let entries: [Entry]
+  let entries: [Entry]
+
+  init(sampledNs: Int64, psOutput: String) {
+    self.sampledNs = sampledNs
+    entries = psOutput.split(separator: "\n").compactMap(Self.entry)
+  }
 
   static func capture() throws -> ProcessListing {
     let startNs = BenchMachClock.nowNs()
     let output = try ps()
     let endNs = BenchMachClock.nowNs()
-    return ProcessListing(
-      sampledNs: startNs + (endNs - startNs) / 2, entries: output.split(separator: "\n").compactMap(entry))
+    return ProcessListing(sampledNs: startNs + (endNs - startNs) / 2, psOutput: output)
   }
 
   func pids(named name: String) -> [pid_t] {

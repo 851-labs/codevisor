@@ -19,6 +19,8 @@ enum BenchCommands {
     EncodeLabCommand.self,
     MediaTransportCommand.self,
     InjectCommand.self,
+    HostLabCommand.self,
+    HostRunCommand.self,
   ]
 
   static func named(_ name: String) -> (any BenchCommand.Type)? {
