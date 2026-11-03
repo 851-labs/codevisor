@@ -16,7 +16,8 @@ struct LoopbackV2Cell {
     let relay = try LoopbackRelay(conditions: conditions, seed: settings.seed, originNs: relayOriginNs)
     defer { relay.close() }
 
-    let peers = try await LoopbackV2Peers.connect(through: relay, configuration: configuration)
+    let peers = try await LoopbackV2Peers.connect(
+      through: relay, configuration: configuration, encoder: settings.encoder)
     let recording: LoopbackV2Recording
     do {
       recording = try await record(peers, through: relay)
@@ -42,7 +43,7 @@ struct LoopbackV2Cell {
   private func record(_ peers: LoopbackV2Peers, through relay: LoopbackRelay) async throws -> LoopbackV2Recording {
     let source = try await LoopbackEnds.source(
       scene, settings: settings, sink: peers.host, metrics: peers.hostMetrics,
-      pixelFormat: ScreenSharingV2Profile.capturePixelFormat)
+      pixelFormat: peers.sourcePixelFormat)
     try await source.adapt(to: configuration)
     let mailbox = peers.viewer.frames
     let viewer = try LoopbackEnds.viewer(settings: settings, mailbox: mailbox, metrics: peers.viewerMetrics)
@@ -65,7 +66,8 @@ struct LoopbackV2Cell {
     }
     let readings = stop()
     return LoopbackV2Recording(
-      startNs: startNs, produced: await source.produced, records: readings.records, barcodes: readings.barcodes,
+      system: settings.system, startNs: startNs, produced: await source.produced, records: readings.records,
+      barcodes: readings.barcodes,
       hostCounters: peers.hostMetrics.counters(), viewerCounters: peers.viewerMetrics.counters(),
       hostLabels: peers.hostMetrics.snapshot().labels, viewerLabels: peers.viewerMetrics.snapshot().labels,
       hostMedia: V2MediaStatistics.dictionary(peers.hostTap.session.stats()),

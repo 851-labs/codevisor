@@ -1,4 +1,5 @@
 import CodevisorNet
+import CoreVideo
 import ScreenSharing
 import ScreenSharingBench
 import ScreenSharingV2
@@ -15,11 +16,12 @@ final class LoopbackV2Peers {
   let viewer: ScreenSharingV2Viewer
   let hostTap: V2MediaTap
   let viewerTap: V2MediaTap
+  let sourcePixelFormat: OSType
   private let endpoints: [NetEndpointHandle]
   private let connections: [NetConnectionHandle]
 
   static func connect(
-    through relay: LoopbackRelay, configuration: ScreenSharingVideoConfiguration
+    through relay: LoopbackRelay, configuration: ScreenSharingVideoConfiguration, encoder: ScreenSharingV2EncoderKind
   ) async throws -> LoopbackV2Peers {
     let hostEndpoint = try await V2Endpoint.bind(pathPolicy: pinnedPolicy)
     let viewerEndpoint: NetEndpointHandle
@@ -30,7 +32,8 @@ final class LoopbackV2Peers {
       throw error
     }
     do {
-      return try await connect(host: hostEndpoint, viewer: viewerEndpoint, relay: relay, configuration: configuration)
+      return try await connect(
+        host: hostEndpoint, viewer: viewerEndpoint, relay: relay, configuration: configuration, encoder: encoder)
     } catch {
       await hostEndpoint.close()
       await viewerEndpoint.close()
@@ -40,14 +43,14 @@ final class LoopbackV2Peers {
 
   private static func connect(
     host hostEndpoint: NetEndpointHandle, viewer viewerEndpoint: NetEndpointHandle, relay: LoopbackRelay,
-    configuration: ScreenSharingVideoConfiguration
+    configuration: ScreenSharingVideoConfiguration, encoder kind: ScreenSharingV2EncoderKind
   ) async throws -> LoopbackV2Peers {
     relay.connect(
       host: try loopbackAddress(of: hostEndpoint.addr()), viewer: try loopbackAddress(of: viewerEndpoint.addr()))
     let relayAddress = "\(loopbackHost):\(relay.hostFacing.port)"
     let target = NetTunnelAddr(endpointId: hostEndpoint.addr().endpointId, relayUrl: nil, directAddrs: [relayAddress])
     let hostMetrics = ScreenSharingMetrics()
-    let encoder = try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: hostMetrics)
+    let encoder = try await V2EncoderChoice.make(kind, configuration: configuration, metrics: hostMetrics)
     let deadline = ContinuousClock.now + connectTimeout
     async let accepted = V2Accept.connection(on: hostEndpoint, until: deadline)
     let viewerConnection: NetConnectionHandle
@@ -73,12 +76,12 @@ final class LoopbackV2Peers {
       host: ScreenSharingV2Host(transport: hostTap, encoder: encoder, metrics: hostMetrics),
       viewer: ScreenSharingV2Viewer(transport: viewerTap, metrics: ScreenSharingMetrics()), taps: (hostTap, viewerTap),
       endpoints: [hostEndpoint, viewerEndpoint],
-      connections: [hostConnection, viewerConnection])
+      connections: [hostConnection, viewerConnection], sourcePixelFormat: encoder.sourcePixelFormat)
   }
 
   private init(
     host: ScreenSharingV2Host, viewer: ScreenSharingV2Viewer, taps: (host: V2MediaTap, viewer: V2MediaTap),
-    endpoints: [NetEndpointHandle], connections: [NetConnectionHandle]
+    endpoints: [NetEndpointHandle], connections: [NetConnectionHandle], sourcePixelFormat: OSType
   ) {
     self.host = host
     self.viewer = viewer
@@ -86,6 +89,7 @@ final class LoopbackV2Peers {
     viewerMetrics = viewer.metrics
     hostTap = taps.host
     viewerTap = taps.viewer
+    self.sourcePixelFormat = sourcePixelFormat
     self.endpoints = endpoints
     self.connections = connections
   }

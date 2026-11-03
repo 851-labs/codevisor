@@ -11,13 +11,15 @@ final class ShareV2Host {
   private let configuration: ScreenSharingVideoConfiguration
   private let endpoint: NetEndpointHandle
   private let control: BenchHostControl
+  private let encoderChoice: V2EncoderChoice
   private var connection: NetConnectionHandle?
   private var transport: ScreenSharingIrohMediaTransport?
   private var host: ScreenSharingV2Host?
   private var captureError: (any Error)?
 
-  init(displayID: CGDirectDisplayID, control channel: SignalingControlChannel) async throws {
+  init(displayID: CGDirectDisplayID, control channel: SignalingControlChannel, encoder: V2EncoderChoice) async throws {
     self.displayID = displayID
+    encoderChoice = encoder
     let mode = CGDisplayCopyDisplayMode(displayID)
     configuration = try ScreenSharingV2Profile.captureConfiguration(
       width: mode?.pixelWidth ?? CGDisplayPixelsWide(displayID),
@@ -36,7 +38,7 @@ final class ShareV2Host {
     self.connection = connection
     let transport = ScreenSharingIrohMediaTransport(
       session: await connection.openMediaSession(config: ScreenSharingIrohMediaTransport.sessionConfig))
-    let encoder = try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, metrics: metrics)
+    let encoder = try await encoderChoice.make(configuration: configuration, metrics: metrics)
     let host = ScreenSharingV2Host(transport: transport, encoder: encoder, metrics: metrics)
     self.transport = transport
     self.host = host
@@ -53,7 +55,8 @@ final class ShareV2Host {
     connection?.close(code: 0, reason: "done")
     await endpoint.close()
     return ShareV2Result(
-      viewer: viewer, display: ShareDisplay(displayID), configuration: configuration, captureError: captureError,
+      viewer: viewer, display: ShareDisplay(displayID), configuration: configuration, encoder: encoderChoice.kind,
+      captureError: captureError,
       metrics: metrics.snapshot(), media: statistics, control: control.summary)
   }
 

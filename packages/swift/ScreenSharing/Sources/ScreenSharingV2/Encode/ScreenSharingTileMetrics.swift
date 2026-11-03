@@ -1,0 +1,19 @@
+import ScreenSharing
+
+struct ScreenSharingTileMetrics {
+  private let metrics: ScreenSharingMetrics
+
+  init(_ metrics: ScreenSharingMetrics) {
+    self.metrics = metrics
+  }
+
+  func record(_ tile: ScreenSharingEncodedTile) {
+    metrics.increment("encodedFrames")
+    metrics.increment("encodedBytes", by: tile.accessUnit.count)
+    if tile.isKeyFrame { metrics.increment("encodedKeyFrames") }
+    if tile.refresh == .longTermReference { metrics.increment("encodedLTRRefreshes") }
+    if tile.ltrToken != nil { metrics.increment("encodedLTRFrames") }
+    if tile.update.isRefinement { metrics.increment("encodedRefinements") }
+    metrics.observe("encode", milliseconds: Double(tile.encodedNs - tile.submittedNs) / 1_000_000)
+  }
+}

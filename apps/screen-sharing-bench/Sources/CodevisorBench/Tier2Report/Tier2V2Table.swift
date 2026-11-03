@@ -1,10 +1,12 @@
 import ScreenSharingBench
 
 struct Tier2V2Table {
+  private static let columns = 19
+
   private let results: [BenchResult]
 
   init(_ results: [BenchResult]) {
-    self.results = results.filter { $0.system == .codevisorV2 && $0.valid }
+    self.results = results.filter { $0.system.isEngineV2 && $0.valid }
   }
 
   var text: String? {
@@ -12,16 +14,25 @@ struct Tier2V2Table {
 
     let header = [
       "### Engine v2 stages and counters (median of valid repetitions, whole session)", "",
-      "| Scene | Resolution | Network | Encode p50 ms | Send queue p50 | Send p50 | Assemble p50 | Decode p50 "
-        + "| Render queue p50 | Present p50 | Frames lost | NACK repairs | FEC repairs | LTR refreshes | Keyframes "
+      "| System | Scene | Resolution | Network | Encode p50 ms | Encode p95 ms | Send queue p50 | Send p50 "
+        + "| Assemble p50 | Decode p50 | Render queue p50 | Present p50 | Frames lost | NACK repairs | FEC repairs "
+        + "| LTR refreshes | Keyframes "
         + "| Dropped before encode | Capacity Mbit/s |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "|" + String(repeating: " --- |", count: Self.columns),
     ]
-    return (header + Tier2Group.all(results).map(row)).joined(separator: "\n")
+    return (header + rows).joined(separator: "\n")
   }
 
-  private func row(_ group: Tier2Group) -> String {
-    let runs = results.filter(group.contains)
+  private var rows: [String] {
+    BenchSystem.engineV2Systems.flatMap { system in
+      Tier2Group.all(results).compactMap { group in
+        let runs = results.filter { $0.system == system && group.contains($0) }
+        return runs.isEmpty ? nil : row(system, group, runs: runs)
+      }
+    }
+  }
+
+  private func row(_ system: BenchSystem, _ group: Tier2Group, runs: [BenchResult]) -> String {
     let stages: [(BenchStageTimings) -> BenchDistribution?] = [
       \.encode, { $0.media?.queue }, { $0.media?.send }, { $0.media?.assemble }, \.decode, \.renderQueue, \.present,
     ]
@@ -30,8 +41,9 @@ struct Tier2V2Table {
       { Double($0.keyframes) }, { Double($0.droppedBeforeEncode) }, { $0.capacityKbps.map { Double($0) / 1000 } },
     ]
     let cells =
-      [group.scene, group.resolution, group.network]
-      + stages.map { stage in median(runs.compactMap { $0.stagesMs.flatMap(stage)?.p50 }) }
+      [system.rawValue, group.scene, group.resolution, group.network]
+      + [median(runs.compactMap { $0.stagesMs?.encode?.p50 }), median(runs.compactMap { $0.stagesMs?.encode?.p95 })]
+      + stages.dropFirst().map { stage in median(runs.compactMap { $0.stagesMs.flatMap(stage)?.p50 }) }
       + counters.map { counter in median(runs.compactMap { $0.media.flatMap(counter) }) }
     return "| " + cells.joined(separator: " | ") + " |"
   }

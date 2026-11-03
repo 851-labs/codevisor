@@ -5,6 +5,7 @@ struct Tier2RunMeta: Decodable {
     case appleHP = "apple-hp"
     case codevisor
     case codevisorV2 = "codevisor-v2"
+    case codevisorV2VCP = "codevisor-v2-vcp"
     case floor
   }
 
@@ -39,12 +40,13 @@ struct Tier2RunMeta: Decodable {
     case .appleHP: .appleHP
     case .codevisor: engine == Self.engineV2 ? .codevisorV2 : .codevisor
     case .codevisorV2: .codevisorV2
+    case .codevisorV2VCP: .codevisorV2VCP
     case .floor: nil
     }
   }
 
   var isCodevisor: Bool {
-    system == .codevisor || system == .codevisorV2
+    system == .codevisor || system == .codevisorV2 || system == .codevisorV2VCP
   }
 
   var isInput: Bool {

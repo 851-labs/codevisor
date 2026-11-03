@@ -4,6 +4,7 @@ import VideoToolbox
 struct EncodeLabVCPSessionFactory {
   static let tilesKey = "NumberOfTiles"
   static let realTimeKey = "RealTime"
+  static let disableDirtyDetectionKey = "DisableDirtyDetection"
   static let callback: VTCompressionOutputCallback = { refcon, frameRefcon, _, _, sample in
     guard let refcon else { return }
 
@@ -46,11 +47,13 @@ struct EncodeLabVCPSessionFactory {
   }
 
   private var specification: [CFString: Any] {
-    [
+    var specification: [CFString: Any] = [
       kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true,
       api.usageKey: EncodeLabVideoProcessing.usage,
       Self.realTimeKey as CFString: true, Self.tilesKey as CFString: config.tiles,
       kVTCompressionPropertyKey_ProfileLevel: EncodeLabVCPPropertyTarget.main444,
     ]
+    if config.disablesDirtyDetection { specification[Self.disableDirtyDetectionKey as CFString] = true }
+    return specification
   }
 }

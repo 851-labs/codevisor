@@ -193,7 +193,8 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals, NACKs,
   retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate and
   round trip at the end. `--source own-window` and `--onscreen` work as for v1. No quality loop runs: engine v2
-  follows the transport's encoder ceiling itself.
+  follows the transport's encoder ceiling itself. `--encoder vcp` uses the VCP encoder (851-3819) and records the results as
+  `codevisor-v2-vcp`, so a cell's baseline never mixes the two encoders.
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -263,7 +264,11 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   (`apple-hp,codevisor-r1x2,codevisor`) inputs pick them; with `engine: v2` the Codevisor rows are engine v2, and
   `meta.json` records `engine` and `presentation`. The system `codevisor-v2` is always engine v2 on the same R1x2
   virtual display as `codevisor-r1x2`, whatever `engine` says, so `systems: apple-hp,codevisor-r1x2,codevisor-v2`
-  compares Apple HP, v1 and v2 in one dispatch, alternating within each repetition. The report counts a run as the
+  compares Apple HP, v1 and v2 in one dispatch, alternating within each repetition. The system `codevisor-v2-vcp` is
+  engine v2 on the same display with the VCP encoder (`share --engine v2 --encoder vcp`, 851-3819), so
+  `systems: apple-hp,codevisor-v2,codevisor-v2-vcp` compares Apple HP with v2's public and private encoders; the
+  `vcp-fail-after` input (seconds, 0 by default) forces a VCP failure that far into each of its runs
+  (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The v2 table has a row per v2 system and encode p95. The report counts a run as the
   system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`.
 - `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
   product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
@@ -486,7 +491,9 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   tiles whose pixels changed), `ltr`, `yuv`, `speed`, `mfd` (`MaxFrameDelayCount`), `qpmax`, `qpmin`, `drl` (`<mbps>@<seconds>`),
   `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27), `aq`, `ackms` (the
   simulated round trip before a reference token is acknowledged, 33 ms by default), `refine` (after each change,
-  resubmit the unchanged frame up to N times, every other tick, so the encoder can sharpen it) and `vcpin`.
+  resubmit the unchanged frame up to N times, every other tick, so the encoder can sharpen it), `vcpin` and `nodirty`
+  (VCP only: `DisableDirtyDetection` in the encoder specification, as AVConference passes it; no effect on tamale,
+  run 41557954805).
 - **`engine=vcp`** opens Apple's real-time encoder, VideoProcessing's private `VCPCompressionSession` with
   `Usage = 42` (851-3766), loaded with `dlopen`. It takes whole frames in `vcpin` (`444f` by default, Apple's capture
   format; it picks Main 4:4:4 only when the source attributes are 4:4:4 and not lossless-compressed), splits them into

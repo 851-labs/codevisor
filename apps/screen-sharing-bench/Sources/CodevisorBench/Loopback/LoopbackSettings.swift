@@ -1,8 +1,10 @@
 import ScreenSharingBench
 import ScreenSharingBenchScenes
+import ScreenSharingV2
 
 struct LoopbackSettings: Sendable {
   let engine: BenchEngine
+  let encoder: ScreenSharingV2EncoderKind
   let durationSeconds: Int
   let warmUpSeconds: Int
   let seed: UInt64
@@ -16,7 +18,7 @@ struct LoopbackSettings: Sendable {
   var system: BenchSystem {
     switch engine {
     case .v1: .codevisor
-    case .v2: .codevisorV2
+    case .v2: encoder == .videoProcessing ? .codevisorV2VCP : .codevisorV2
     }
   }
 }

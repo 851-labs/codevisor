@@ -44,7 +44,7 @@ on:
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor-v2-vcp, codevisor)
         required: false
         default: apple-hp,codevisor-r1x2,codevisor
         type: string
@@ -58,6 +58,11 @@ on:
         required: false
         default: false
         type: boolean
+      vcp-fail-after:
+        description: Seconds into each codevisor-v2-vcp run to force a VCP failure (0 never), to test the VideoToolbox fallback
+        required: false
+        default: "0"
+        type: string
   workflow_call:
     inputs:
       scenes:
@@ -101,7 +106,7 @@ on:
         default: arrival
         type: string
       systems:
-        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor)
+        description: Comma-separated systems to run besides the floor (apple-hp, codevisor-r1x2, codevisor-v2, codevisor-v2-vcp, codevisor)
         required: false
         default: apple-hp,codevisor-r1x2,codevisor
         type: string
@@ -115,6 +120,11 @@ on:
         required: false
         default: false
         type: boolean
+      vcp-fail-after:
+        description: Seconds into each codevisor-v2-vcp run to force a VCP failure (0 never), to test the VideoToolbox fallback
+        required: false
+        default: "0"
+        type: string
 
 permissions:
   contents: read
@@ -137,6 +147,7 @@ env:
   TIER2_SYSTEMS: ${{ inputs.systems }}
   TIER2_VIEWER_DISPLAY: ${{ inputs.viewer-display }}
   TIER2_PROFILE: ${{ inputs.profile && '1' || '0' }}
+  TIER2_VCP_FAIL_AFTER: ${{ inputs.vcp-fail-after }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:

@@ -24,7 +24,7 @@ start_system() {
   case "$system" in
     apple-hp) bench apple-hp --host "$TIER2_APPLE_HOST" ${control[@]+"${control[@]}"} "${signals[@]}" \
       >"$dir/system.json" 2>"$dir/system.err" & ;;
-    codevisor | codevisor-r1x2 | codevisor-v2) bench_window view --source codevisor --host "$TIER2_HOST_IP" $(tier2_engine_options "$system") \
+    codevisor | codevisor-r1x2 | codevisor-v2 | codevisor-v2-vcp) bench_window view --source codevisor --host "$TIER2_HOST_IP" $(tier2_engine_options "$system") \
       --present "$TIER2_PRESENT" ${control[@]+"${control[@]}"} "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
     floor) bench_window view --source null --port "$TIER2_FLOOR_PORT" "${signals[@]}" >"$dir/system.json" 2>"$dir/system.err" & ;;
   esac

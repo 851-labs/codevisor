@@ -30,8 +30,8 @@ enum Tier2Result {
     if measurement.files.meta.isCodevisor {
       let files = measurement.files
       result.stagesMs = Tier2V2Readings.stages(
-        viewer: files.system, host: files.share, engineV2: system == .codevisorV2)
-      result.media = system == .codevisorV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
+        viewer: files.system, host: files.share, engineV2: system.isEngineV2)
+      result.media = system.isEngineV2 ? Tier2V2Readings.counters(viewer: files.system, host: files.share) : nil
     }
     result.valid = measurement.invalidReason == nil
     result.invalidReason = measurement.invalidReason
