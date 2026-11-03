@@ -50,15 +50,26 @@ enum TranscriptBotRowAssembly {
     if let stoppedTurn {
       TranscriptAssistantRowProjection.appendStopDetail(stoppedTurn, to: &rows)
     }
-    if conversation.isWorking {
-      rows.append(.init(id: .botTyping, content: .botTyping, estimatedHeight: 38))
-    }
+    if conversation.isWorking { appendTyping(to: &rows) }
     TranscriptRowAssembly.appendActivityAndErrors(input, to: &rows)
     if let requestedHeight = options.bottomSpacerHeight {
       let height = max(1, requestedHeight)
       rows.append(.init(id: .bottomSpacer, content: .bottomSpacer(height), estimatedHeight: height))
     }
     return rows
+  }
+
+  private static func appendTyping(to rows: inout [TranscriptPresentationRow]) {
+    let afterReply: Bool
+    if case let .botMessage(message, _, _)? = rows.last?.content {
+      afterReply = message.sender == .bot
+    } else {
+      afterReply = false
+    }
+    rows.append(
+      .init(
+        id: .botTyping, content: .botTyping(afterReply: afterReply), estimatedHeight: afterReply ? 1 : 38,
+        measurementRevision: afterReply ? 1 : 0))
   }
 
   private static func stoppedLatestTurn(in input: TranscriptProjectionInput) -> AssistantMessage? {

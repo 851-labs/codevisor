@@ -144,6 +144,7 @@ public struct TranscriptRowContentView: View {
         TranscriptBotNoticeRow(text: message.text)
       } else {
         leaves.botMessage(message, content)
+          .modifier(BotReplyEntrance(messageID: message.id, owner: controller))
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)
@@ -153,8 +154,8 @@ public struct TranscriptRowContentView: View {
         retry: { Task { await controller.retryUnsentMessage(id: id) } },
         delete: { controller.deleteUnsentMessage(id: id) }
       )
-    case .botTyping:
-      TranscriptBotTypingRow()
+    case let .botTyping(afterReply):
+      TranscriptBotTypingRow(controller: controller, afterReply: afterReply)
     case let .setupRequest(request, inBotConversation):
       leaves.setupRequest(request, inBotConversation, controller)
     case let .interaction(interaction, inBotConversation):

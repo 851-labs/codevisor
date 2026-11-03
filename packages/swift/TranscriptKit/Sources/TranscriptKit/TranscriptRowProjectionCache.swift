@@ -268,7 +268,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case botMessage(TranscriptBotMessage, TranscriptBotMessageContent, isGroupTail: Bool)
     case botTimestamp(Date)
     case delivery(UUID, TranscriptDelivery)
-    case botTyping
+    case botTyping(afterReply: Bool)
     case setupRequest(TranscriptSetupRequest, inBotConversation: Bool)
     case interaction(TranscriptInteraction, inBotConversation: Bool)
     case setup([SessionSetupPhase])
