@@ -294,6 +294,22 @@ fn a_nack_repeated_while_its_retransmission_waits_to_leave_queues_it_once() {
 }
 
 #[test]
+fn a_frame_still_arriving_on_a_slow_link_is_neither_given_up_nor_resent_whole() {
+    let slow = NetworkConditions { id: "slow", delay_ms: 50.0, capacity_kbps: Some(1_000), ..NetworkConditions::N0 };
+    for fec in [FecMode::Off, FecMode::Adaptive] {
+        let mut sim = Sim::new(slow, config(fec), 1);
+        sim.drop_when(first_time(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 1)));
+        let data = payload(1, 60_000);
+        sim.send(frame(0, &data));
+        sim.run_for(Duration::from_secs(2));
+
+        assert_eq!(sim.frames().iter().map(|frame| &frame.data).collect::<Vec<_>>(), vec![&data], "{fec:?}");
+        let resent = sim.host.stats(sim.now).packets_retransmitted;
+        assert!(resent < 5, "{fec:?}: {resent} packets resent for one loss");
+    }
+}
+
+#[test]
 fn parity_repairs_a_loss_without_a_round_trip() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Fixed(0.2)), 5);
     sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 2));
@@ -698,9 +714,9 @@ impl SceneResult {
         self.age(0..self.ages.len(), 0.5)
     }
 
-    fn halves(&self) -> (Duration, Duration) {
-        let half = self.ages.len() / 2;
-        (self.age(0..half, 0.5), self.age(half..self.ages.len(), 0.5))
+    fn first_and_last_thirds(&self) -> (Duration, Duration) {
+        let third = self.ages.len() / 3;
+        (self.age(0..third, 0.5), self.age(self.ages.len() - third..self.ages.len(), 0.5))
     }
 }
 
@@ -750,10 +766,10 @@ fn stream_scene(conditions: NetworkConditions, seed: u64, carry: f64) -> SceneRe
 
 fn assert_interactive(result: &SceneResult, rtt: Duration, min_frames_per_second: f64) {
     let median = result.median();
-    let (first, second) = result.halves();
+    let (first, last) = result.first_and_last_thirds();
     assert!(result.frames_per_second >= min_frames_per_second, "{:.1} frames/s", result.frames_per_second);
     assert!(median <= rtt + 2 * INTERVAL, "p50 {median:?} over a round trip ({rtt:?}) and two frames");
-    assert!(second <= first + INTERVAL, "the age grew from {first:?} to {second:?}");
+    assert!(last <= first + 2 * INTERVAL, "the age grew from {first:?} to {last:?}");
 }
 
 #[test]

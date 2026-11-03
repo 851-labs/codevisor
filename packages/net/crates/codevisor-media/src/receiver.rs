@@ -33,6 +33,8 @@ struct Assembly {
     end_seen: bool,
     highest_index: Option<u16>,
     tail_at: Option<Instant>,
+    tail_limit: Option<usize>,
+    originals: usize,
     next_nack: Option<Instant>,
     give_up_at: Option<Instant>,
     used_fec: bool,
@@ -67,6 +69,8 @@ impl Assembly {
             end_seen: true,
             highest_index: None,
             tail_at: None,
+            tail_limit: None,
+            originals: 0,
             next_nack: None,
             give_up_at: None,
             used_fec: false,
@@ -91,11 +95,11 @@ impl Assembly {
         let limit = if self.end_seen {
             shape.layout.data_count
         } else {
-            usize::from(self.highest_index.unwrap_or(0)).min(shape.layout.data_count)
+            usize::from(self.highest_index.unwrap_or(0)).max(self.tail_limit.unwrap_or(0)).min(shape.layout.data_count)
         };
         let missing = (0..limit).filter(|index| self.data[*index].is_none());
         if shape.parity_count > 0 {
-            if !self.end_seen {
+            if !self.end_seen && self.tail_limit.is_none() {
                 return Vec::new();
             }
             let short = shape.layout.data_count.saturating_sub(self.received);
@@ -103,6 +107,18 @@ impl Assembly {
         } else {
             missing.map(|index| index as u16).collect()
         }
+    }
+
+    fn arrived_by(&self, now: Instant) -> Option<usize> {
+        let shape = self.shape?;
+        let next = usize::from(self.highest_index?) + 1;
+        let (first, last) = (self.first_rx?, self.last_original_rx?);
+        let pace =
+            (self.originals > 1).then(|| (last - first) / (self.originals - 1) as u32).filter(|pace| !pace.is_zero());
+        let more =
+            pace.map_or(1.0, |pace| now.saturating_duration_since(last).as_secs_f64() / pace.as_secs_f64()) as usize;
+        let limit = next + more.max(1);
+        (limit < shape.layout.data_count + shape.parity_count).then_some(limit)
     }
 
     fn due(&self, now: Instant, retry: Duration) -> Vec<u16> {
@@ -199,6 +215,7 @@ impl Receiver {
         stats.packets_received += 1;
         stats.bytes_received += shard.len() as u64 + crate::wire::HEADER_BYTES as u64;
         let tail_wait = self.tail_wait();
+        let give_up = self.give_up_after();
         let stream = self.streams.entry(header.stream).or_default();
         if header.frame < stream.next_due {
             stats.duplicate_packets += 1;
@@ -277,9 +294,13 @@ impl Receiver {
                 self.gap_peak = self.gap_peak.max(now.saturating_duration_since(last));
             }
             assembly.last_original_rx = Some(now);
+            assembly.originals += 1;
         }
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
+        if let Some(at) = assembly.give_up_at {
+            assembly.give_up_at = Some(at.max(now + give_up));
+        }
         let last_index = shape.layout.data_count + shape.parity_count - 1;
         if usize::from(header.index) == last_index {
             assembly.end_seen = true;
@@ -346,6 +367,7 @@ impl Receiver {
 
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
         self.send_refresh_requests(now, stats);
+        let tail_wait = self.tail_wait();
         let give_up = self.give_up_after();
         let retry = self.retry_after();
         let mut resolved = Vec::new();
@@ -360,7 +382,13 @@ impl Receiver {
                     continue;
                 }
                 if assembly.tail_at.is_some_and(|at| now >= at) && !assembly.end_seen {
-                    assembly.end_seen = true;
+                    match assembly.arrived_by(now) {
+                        Some(limit) => {
+                            assembly.tail_limit = Some(limit);
+                            assembly.tail_at = Some(now + tail_wait);
+                        }
+                        None => assembly.end_seen = true,
+                    }
                     assembly.next_nack = Some(now);
                 }
                 if assembly.next_nack.is_some_and(|at| now >= at) {

@@ -157,7 +157,9 @@ impl Estimator {
     fn back_off(&mut self, now: Instant) {
         let estimate = self.estimate_bps();
         let receive = self.receive_bps().unwrap_or(estimate);
-        let target = (receive * BACKOFF).clamp(estimate * MAX_BACKOFF, estimate * BACKOFF).max(MIN_RATE_BPS);
+        let filling = receive >= estimate * MAX_BACKOFF;
+        let from = if filling { receive.min(estimate) } else { estimate };
+        let target = (from * BACKOFF).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, bps: target });
         self.bursts.clear();
         self.overuse = 0;
@@ -247,6 +249,18 @@ mod tests {
         assert_eq!(estimates[25], 85e6);
         assert_eq!(estimates[29], 85e6, "still inside the hold-off");
         assert_eq!(estimates[30], 85e6 * 0.85);
+    }
+
+    #[test]
+    fn a_back_off_while_sending_little_only_takes_fifteen_percent() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 1e9);
+        estimator.on_delivery(start, burst(125_000, 10 * MS));
+        for index in 0..=10 {
+            estimator.on_acked(start + 20 * MS * index, 25_000);
+        }
+        let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain((1..=10).map(|step| step * 2_000)));
+        assert_eq!(estimates.last(), Some(&85e6), "a 10 Mbit/s receive rate is the sender's choice, not the link's");
     }
 
     #[test]
