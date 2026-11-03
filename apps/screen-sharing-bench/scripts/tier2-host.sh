@@ -58,6 +58,11 @@ measure() {
   bench sample --duration "$((TIER2_DURATION + 10))" --interface en0 --processes "$host_processes" \
     --output "$dir/host-usage.jsonl" >"$dir/host-sample.json" 2>"$dir/host-sample.err" &
   pids+=($!)
+  if sudo -n -l /usr/bin/powermetrics >/dev/null 2>&1; then
+    sudo -n /usr/bin/powermetrics --samplers cpu_power,gpu_power -i 1000 -n "$((TIER2_DURATION + 8))" \
+      >"$dir/host-power.txt" 2>"$dir/host-power.err" &
+    pids+=($!)
+  fi
   sleep 3
   bench_window player --scene "$scene" --seed "$TIER2_SEED" --duration "$((TIER2_DURATION + 6))" \
     ${player_display[@]+"${player_display[@]}"} \

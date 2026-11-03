@@ -325,7 +325,7 @@ the viewer never did are skipped versions. Updates/s, gaps and freezes (typing, 
 only) come from the viewer's versions in the window; judder is the viewer's gap p95 minus the host's. CPU is
 the per-second sum of the system's processes (Apple HP: `screensharingd`, `ScreensharingAgent` and
 `Screen Sharing`; Codevisor: the `share` and `view` processes; both: `VTEncoderXPCService` and
-`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. A run is invalid when it didn't come
+`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. The host's usage lines also record `WindowServer` and `replayd`, which neither system's figure counts. When `sudo -n` may run `/usr/bin/powermetrics`, each host run also writes `host-power.txt`, a second-by-second `powermetrics --samplers cpu_power,gpu_power` log of the whole package, as a cross-check that doesn't depend on which processes a system uses. A run is invalid when it didn't come
 from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual over 0.2 ms), another CI job ran,
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
