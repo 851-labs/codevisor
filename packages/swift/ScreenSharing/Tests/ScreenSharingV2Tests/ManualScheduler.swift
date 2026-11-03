@@ -14,17 +14,20 @@ final class ManualScheduler: ScreenSharingV2Scheduler {
     var nowNs: Int64 = 1_000_000_000
     var queue: DispatchQueue?
     var works: [Work] = []
+    var dueTimesNs: [Int64] = []
   }
 
   let scheduled = TestSignal()
   private let state = Mutex(State())
 
   var nowNs: Int64 { state.withLock { $0.nowNs } }
+  var dueTimesNs: [Int64] { state.withLock { $0.dueTimesNs } }
 
   func run(afterNs delayNs: Int64, on queue: DispatchQueue, _ work: @escaping @Sendable () -> Void) {
     state.withLock { state in
       state.queue = queue
       state.works.append(Work(dueNs: state.nowNs + delayNs, run: work))
+      state.dueTimesNs.append(state.nowNs + delayNs)
     }
     scheduled.signal()
   }
