@@ -9,7 +9,7 @@ extension ScreenSharingHostService {
   }
 
   func configureVideoFormat(_ session: ScreenSharingHostSession) {
-    session.peer.videoFormatChannel.onMessage = { [weak self, weak session] message in
+    session.peer.channels.videoFormat.onMessage = { [weak self, weak session] message in
       guard let self, let session, !session.stopping, case .viewer(let supported) = message else { return }
       session.hdr.viewerSupports = supported
       self.applyDynamicRange(session)
@@ -36,7 +36,7 @@ extension ScreenSharingHostService {
         session.hdr.reported = sent
         Self.logger.notice(
           "Sending \(sent.range.rawValue, privacy: .public)\(sent.reason.map { " (\($0))" } ?? "", privacy: .public)")
-        session.peer.videoFormatChannel.send(.sending(sent.range, reason: sent.reason))
+        session.peer.channels.videoFormat.send(.sending(sent.range, reason: sent.reason))
       }
     }
     session.hdr.task = task

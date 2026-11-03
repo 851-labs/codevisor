@@ -19,6 +19,8 @@ pub enum Kind {
     Feedback = 2,
     Nack = 3,
     Refresh = 4,
+    Audio = 5,
+    Cursor = 6,
 }
 
 impl Kind {
@@ -29,6 +31,8 @@ impl Kind {
             2 => Some(Self::Feedback),
             3 => Some(Self::Nack),
             4 => Some(Self::Refresh),
+            5 => Some(Self::Audio),
+            6 => Some(Self::Cursor),
             _ => None,
         }
     }
@@ -36,6 +40,40 @@ impl Kind {
 
 fn first_byte(kind: Kind) -> u8 {
     VERSION << 4 | kind as u8
+}
+
+pub const APP_HEADER_BYTES: usize = 2;
+
+pub fn encode_app(kind: DatagramKind, payload: &[u8]) -> Bytes {
+    let mut out = BytesMut::with_capacity(APP_HEADER_BYTES + payload.len());
+    out.put_u8(first_byte(kind.into()));
+    out.put_u8(0);
+    out.put_slice(payload);
+    out.freeze()
+}
+
+pub fn decode_app(datagram: Bytes) -> Option<(DatagramKind, Bytes)> {
+    let kind = match kind_of(&datagram)? {
+        Kind::Audio => DatagramKind::Audio,
+        Kind::Cursor => DatagramKind::Cursor,
+        _ => return None,
+    };
+    (datagram.len() >= APP_HEADER_BYTES).then(|| (kind, datagram.slice(APP_HEADER_BYTES..)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatagramKind {
+    Audio,
+    Cursor,
+}
+
+impl From<DatagramKind> for Kind {
+    fn from(kind: DatagramKind) -> Self {
+        match kind {
+            DatagramKind::Audio => Self::Audio,
+            DatagramKind::Cursor => Self::Cursor,
+        }
+    }
 }
 
 pub fn kind_of(datagram: &[u8]) -> Option<Kind> {

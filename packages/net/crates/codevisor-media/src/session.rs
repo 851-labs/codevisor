@@ -13,7 +13,7 @@ use tokio::{
 use crate::{
     core::Core,
     transport::{DatagramTransport, QuicTransport, SendOutcome},
-    types::{Admission, Event, MediaConfig, OutgoingFrame, SendError, Stats},
+    types::{Admission, DatagramKind, Event, MediaConfig, OutgoingFrame, SendError, Stats},
 };
 
 const RTT_REFRESH: Duration = Duration::from_millis(50);
@@ -72,6 +72,15 @@ impl<T: DatagramTransport> MediaSession<T> {
     pub fn ack_ltr(&self, stream: u8, token: u64) {
         self.shared.state.lock().unwrap().core.ack_ltr(stream, token);
         self.shared.wake.notify_one();
+    }
+
+    pub fn send_datagram(&self, kind: DatagramKind, payload: &[u8]) -> bool {
+        let fits = self
+            .shared
+            .transport
+            .max_datagram_size()
+            .is_some_and(|size| payload.len() + crate::wire::APP_HEADER_BYTES <= size);
+        fits && self.shared.transport.send(crate::wire::encode_app(kind, payload)) == SendOutcome::Sent
     }
 
     pub fn request_refresh(&self, stream: u8, keyframe: bool) {

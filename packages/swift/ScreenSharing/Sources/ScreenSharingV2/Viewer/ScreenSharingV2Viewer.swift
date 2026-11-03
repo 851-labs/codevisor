@@ -20,7 +20,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
   private static let transportPollInterval = Duration.seconds(1)
 
-  public let frames = ScreenSharingFrameMailbox()
+  public let frames: ScreenSharingFrameMailbox
   public let metrics: ScreenSharingMetrics
   private let transport: any ScreenSharingMediaTransport
   private let decoders: ScreenSharingV2Decoders
@@ -30,8 +30,12 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private let stopped = Atomic(false)
   private var tasks: [Task<Void, Never>] = []
 
-  public init(transport: any ScreenSharingMediaTransport, metrics: ScreenSharingMetrics) {
+  public init(
+    transport: any ScreenSharingMediaTransport, metrics: ScreenSharingMetrics,
+    frames: ScreenSharingFrameMailbox = ScreenSharingFrameMailbox()
+  ) {
     self.transport = transport
+    self.frames = frames
     self.metrics = metrics
     decoders = ScreenSharingV2Decoders(metrics: metrics)
   }
@@ -57,7 +61,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     switch event {
     case .frame(let frame): receive(frame, receivedNs: receivedNs)
     case .frameSkipped(let stream, _): skipped(stream, atNs: receivedNs)
-    case .frameAcked, .frameLost, .ltrAcked, .refreshRequested: break
+    case .frameAcked, .frameLost, .ltrAcked, .refreshRequested, .datagram: break
     }
   }
 

@@ -73,6 +73,10 @@ impl Core {
                 Some(nack) => self.sender.on_nack(now, &nack, &mut self.stats),
                 None => self.stats.invalid_datagrams += 1,
             },
+            Some(Kind::Audio | Kind::Cursor) => match wire::decode_app(datagram) {
+                Some((kind, payload)) => self.events.push_back(Event::Datagram { kind, payload }),
+                None => self.stats.invalid_datagrams += 1,
+            },
             Some(Kind::Refresh) => match RefreshRequest::decode(&datagram) {
                 Some(request) => self.sender.on_refresh_request(&request, &mut self.events, &mut self.stats),
                 None => self.stats.invalid_datagrams += 1,

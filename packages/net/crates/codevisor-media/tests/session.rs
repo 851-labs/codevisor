@@ -8,7 +8,7 @@ use std::{
 
 use bytes::Bytes;
 use codevisor_media::{
-    ALPN_SCREEN, DatagramTransport, Event, FecMode, MediaConfig, MediaSession, OutgoingFrame, QuicTransport, Recovery,
+    ALPN_SCREEN, DatagramKind, DatagramTransport, Event, FecMode, MediaConfig, MediaSession, OutgoingFrame, QuicTransport, Recovery,
     SendOutcome, netsim::SplitMix64, wire::PacketHeader,
 };
 use codevisor_net::{NetConfig, NetEndpoint, PathPolicy, generate_secret_key};
@@ -122,6 +122,30 @@ async fn a_full_transport_holds_datagrams_until_it_has_room() {
     room.store(usize::MAX, Ordering::SeqCst);
     assert_eq!(next_frame(&viewer).await.data, data);
     assert_eq!(host.stats().transport_rejected, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn audio_and_cursor_datagrams_bypass_the_pacer_and_arrive_unframed() {
+    let (host_end, viewer_end) = MemoryTransport::pair();
+    let room = host_end.room.clone();
+    let host = MediaSession::new(host_end, config());
+    let viewer = MediaSession::new(viewer_end, config());
+    assert!(host.send_datagram(DatagramKind::Cursor, b"pointer"));
+    assert!(host.send_datagram(DatagramKind::Audio, b"opus"));
+    assert!(!host.send_datagram(DatagramKind::Audio, &[0; 1199]), "over the path's datagram size");
+    room.store(0, Ordering::SeqCst);
+    assert!(!host.send_datagram(DatagramKind::Cursor, b"dropped, not queued"));
+
+    assert_eq!(
+        viewer.next_event().await,
+        Some(Event::Datagram { kind: DatagramKind::Cursor, payload: Bytes::from_static(b"pointer") })
+    );
+    assert_eq!(
+        viewer.next_event().await,
+        Some(Event::Datagram { kind: DatagramKind::Audio, payload: Bytes::from_static(b"opus") })
+    );
+    assert!(viewer.try_next_event().is_none());
+    assert_eq!(viewer.stats().invalid_datagrams, 0);
 }
 
 #[tokio::test(start_paused = true)]

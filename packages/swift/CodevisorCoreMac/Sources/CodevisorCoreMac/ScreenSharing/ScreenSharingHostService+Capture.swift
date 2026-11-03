@@ -34,9 +34,10 @@ extension ScreenSharingHostService {
   func startCapture(_ session: ScreenSharingHostSession) async throws {
     session.capturing = (session.captureDisplayID, session.configuration)
     if session.hdr.viewerSupports { await applyDynamicRange(session).value }
+    if let format = session.peer.capturePixelFormat { session.capture.pixelFormat = format }
     try await session.capture.start(
       displayID: session.captureDisplayID, configuration: session.configuration,
-      sink: session.peer.frameSender, metrics: session.metrics)
+      sink: session.peer.frameSink, metrics: session.metrics)
   }
 
   func reconcileCapture(_ session: ScreenSharingHostSession) async throws {

@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 
-pub use crate::wire::Recovery;
+pub use crate::wire::{DatagramKind, Recovery};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MediaConfig {
@@ -69,6 +69,7 @@ pub enum Event {
     FrameLost { stream: u8, frame: u32 },
     LtrAcked { stream: u8, token: u64 },
     RefreshRequested { stream: u8, keyframe: bool },
+    Datagram { kind: DatagramKind, payload: Bytes },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

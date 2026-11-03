@@ -1,6 +1,8 @@
 import AppKit
+import CodevisorNet
 import CodevisorCore
 import ScreenSharing
+import ScreenSharingV2
 import ScreenSharingWebRTC
 import Foundation
 import OSLog
@@ -22,6 +24,7 @@ final class ScreenSharingHostService {
   private let enumerateDisplays: () async throws -> [Display]
   private let notificationCenter: NotificationCenter
   private let workspaceNotificationCenter: NotificationCenter
+  private let mediaEndpoint: ScreenSharingMediaEndpoint
 
   convenience init() {
     self.init(
@@ -32,8 +35,10 @@ final class ScreenSharingHostService {
 
   init(
     captureAccess: @escaping () -> Bool, notificationCenter: NotificationCenter,
-    workspaceNotificationCenter: NotificationCenter, enumerateDisplays: @escaping () async throws -> [Display]
+    workspaceNotificationCenter: NotificationCenter, enumerateDisplays: @escaping () async throws -> [Display],
+    mediaEndpoint: ScreenSharingMediaEndpoint = .shared
   ) {
+    self.mediaEndpoint = mediaEndpoint
     self.captureAccess = captureAccess
     self.enumerateDisplays = enumerateDisplays
     self.notificationCenter = notificationCenter
@@ -82,9 +87,11 @@ final class ScreenSharingHostService {
     case .capabilities:
       guard captureAccess() else { return permissionRequired() }
       do {
-        return .init(
+        var reply = ServerScreenSharingReply(
           status: current == nil ? "available" : "busy", displays: try await enumerateDisplays().map(\.description),
           connectivity: try connectivity.make(viewerId: request.viewerId))
+        if mediaEndpoint.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
+        return reply
       } catch { return .init(status: "unavailable", message: error.localizedDescription) }
     case .start, .restart:
       var replacement: ScreenSharingHostLease.ReplacementPermit?
@@ -111,8 +118,10 @@ final class ScreenSharingHostService {
         return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
       }
       guard captureAccess() else { return permissionRequired() }
-      guard let offer = request.offer, offer.utf8.count <= 256 * 1024,
-        offer.contains("a=fingerprint:sha-256 "), let displayId = request.displayId
+      let viewerMedia = request.engine == ScreenSharingEngine.v2.rawValue ? request.media : nil
+      let offer = request.offer.flatMap { $0.utf8.count <= 256 * 1024 && $0.contains("a=fingerprint:sha-256 ") ? $0 : nil }
+      guard let displayId = request.displayId, viewerMedia != nil || offer != nil,
+        viewerMedia == nil || mediaEndpoint.isAvailable
       else {
         return .init(status: "failed", message: "Invalid Screen Sharing request.")
       }
@@ -131,7 +140,8 @@ final class ScreenSharingHostService {
         }
         let session = try await ScreenSharingHostSession(
           request: request, display: display.description, displayID: display.id,
-          connectivity: connectivity.make(viewerId: request.viewerId))
+          engine: try viewerMedia.map { .v2(viewerEndpointId: $0.endpointId) }
+            ?? .webRTC(connectivity.make(viewerId: request.viewerId)))
         if Task.isCancelled {
           session.peer.close()
           throw CancellationError()
@@ -151,9 +161,14 @@ final class ScreenSharingHostService {
         current = session
         lastEnd = nil
         configure(session)
+        if let v2 = session.v2 { return await startV2(session, token: v2.token) }
+        guard let peer = session.peer as? ScreenSharingSender, let offer else {
+          await end(session)
+          return .init(status: "failed", message: "Invalid Screen Sharing request.")
+        }
         do {
-          try await session.peer.accept(.init(kind: "offer", sdp: offer))
-          let answer = try await session.peer.makeDescription(offer: false)
+          try await peer.accept(.init(kind: "offer", sdp: offer))
+          let answer = try await peer.makeDescription(offer: false)
           if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
             session.capture.pixelFormat = codec.capturePixelFormat
             session.codec = codec
@@ -165,6 +180,10 @@ final class ScreenSharingHostService {
         } catch { await end(session); throw error }
       } catch { return .init(status: "failed", message: error.localizedDescription) }
     }
+  }
+
+  func mediaEndpointHandle() async -> NetEndpointHandle? {
+    await mediaEndpoint.ready()
   }
 
   func shutdown() async {
@@ -180,14 +199,19 @@ final class ScreenSharingHostService {
   }
 
   private func configure(_ session: ScreenSharingHostSession) {
-    session.qualityTask = Task { [weak self, weak session] in
+    if let peer = session.peer as? ScreenSharingSender { configureQuality(session, peer: peer) }
+    configureChannels(session)
+  }
+
+  private func configureQuality(_ session: ScreenSharingHostSession, peer: ScreenSharingSender) {
+    session.qualityTask = Task { [weak self, weak session, weak peer] in
       await ScreenSharingQualityLoop.run(
         base: { session.flatMap { $0.stopping ? nil : $0.configuration } },
         isViewing: { session?.state == "viewing" },
-        statistics: { await session?.peer.statistics() ?? [:] },
+        statistics: { await peer?.statistics() ?? [:] },
         apply: { configuration, level in
-          guard let session else { return false }
-          session.peer.updateVideoConfiguration(configuration)
+          guard let session, let peer else { return false }
+          peer.updateVideoConfiguration(configuration)
           do {
             try await session.capture.update(configuration: configuration)
           } catch {
@@ -201,13 +225,16 @@ final class ScreenSharingHostService {
           return true
         })
     }
+  }
+
+  private func configureChannels(_ session: ScreenSharingHostSession) {
     let clipboard = ScreenSharingHostClipboard(
-      channel: session.peer.clipboardChannel,
+      channel: session.peer.channels.clipboard,
       canReceiveUnsolicited: { [weak session] in session?.state == "viewing" && session?.stopping == false })
     session.clipboard = clipboard
-    session.peer.clipboardSharingChannel.onMessage = { [weak clipboard, weak session] message in
+    session.peer.channels.clipboardSharing.onMessage = { [weak clipboard, weak session] message in
       guard let reply = clipboard?.receive(message) else { return }
-      session?.peer.clipboardSharingChannel.send(reply)
+      session?.peer.channels.clipboardSharing.send(reply)
     }
     session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(
@@ -224,10 +251,10 @@ final class ScreenSharingHostService {
       },
       inject: { [weak session] in
         session?.metrics.increment("controlInputEvents"); session?.injector?.post($0)
-      }, send: { [weak session] in session?.peer.controlChannel.send($0) ?? false })
+      }, send: { [weak session] in session?.peer.channels.control.send($0) ?? false })
     session.control = control
-    session.peer.controlChannel.onMessage = { [weak control] in control?.receive($0) }
-    session.peer.controlChannel.onAvailabilityChanged = { [weak control] available in
+    session.peer.channels.control.onMessage = { [weak control] in control?.receive($0) }
+    session.peer.channels.control.onAvailabilityChanged = { [weak control] available in
       if !available { control?.revoke("The control channel closed.") }
     }
     control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }
@@ -296,7 +323,7 @@ final class ScreenSharingHostService {
 
   static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
 
-  private func end(_ session: ScreenSharingHostSession, reason: String? = nil) async {
+  func end(_ session: ScreenSharingHostSession, reason: String? = nil) async {
     guard current === session else { return }
     if let ending = session.ending { return await ending.value }
     if let reason { lastEnd = (session.owner, reason) }
@@ -309,6 +336,7 @@ final class ScreenSharingHostService {
     )
     session.watchdog?.cancel()
     session.qualityTask?.cancel()
+    session.mediaAccept?.cancel()
     session.stopMediaPublishing()
     session.pendingResize?.cancel()
     session.resizing?.cancel()

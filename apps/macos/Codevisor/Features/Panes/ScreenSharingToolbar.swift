@@ -103,6 +103,7 @@ private struct ScreenSharingDetailsButton: View {
     if let diagnostics = store.endpoint?.diagnostics {
       VStack(alignment: .leading, spacing: 10) {
         Text("Connection Details").font(.headline)
+        if let engine = diagnostics.engine { LabeledContent("Engine", value: engine) }
         LabeledContent("Route", value: diagnostics.route)
         LabeledContent("Video", value: diagnostics.resolution)
         if let fps = diagnostics.framesPerSecond { LabeledContent("Presented", value: String(format: "%.1f fps", fps)) }
@@ -125,6 +126,7 @@ private struct ScreenSharingDetailsButton: View {
         if let decode = diagnostics.decodeMilliseconds {
           LabeledContent("Decode p95", value: String(format: "%.2f ms", decode))
         }
+        if let recovery = diagnostics.recovery { LabeledContent("Recovery", value: recovery) }
         if let streams = diagnostics.streams { LabeledContent("Streams", value: streams) }
         Text(diagnostics.decoder).font(.caption).foregroundStyle(.secondary)
       }

@@ -9,4 +9,9 @@ public protocol ScreenSharingMediaTransport: AnyObject, Sendable {
   var roundTripUs: UInt64 { get }
   var lossRate: Double { get }
   func close()
+  func sendDatagram(_ kind: ScreenSharingDatagramKind, _ payload: Data) -> Bool
+}
+
+extension ScreenSharingMediaTransport {
+  public func sendDatagram(_ kind: ScreenSharingDatagramKind, _ payload: Data) -> Bool { false }
 }
