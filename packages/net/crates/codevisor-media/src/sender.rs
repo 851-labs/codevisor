@@ -13,6 +13,7 @@ use crate::{
     types::{
         Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, SendError, Stats, give_up_after,
     },
+    windowed::{Keep, Windowed},
     wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader, RefreshRequest},
 };
 
@@ -121,7 +122,7 @@ pub struct Sender {
     ack_delay: Option<AckDelay>,
     tail_backoff: u32,
     in_flight_bytes: usize,
-    min_rtt: VecDeque<(Instant, Duration)>,
+    min_rtt: Windowed<Duration>,
     fec_ratio: f64,
 }
 
@@ -139,7 +140,7 @@ impl Sender {
             ack_delay: None,
             tail_backoff: 0,
             in_flight_bytes: 0,
-            min_rtt: VecDeque::new(),
+            min_rtt: Windowed::new(MIN_RTT_WINDOW, Keep::Smallest),
             fec_ratio: 0.0,
         }
     }
@@ -149,16 +150,9 @@ impl Sender {
     }
 
     fn note_rtt(&mut self, now: Instant) {
-        if self.rtt.is_zero() {
-            return;
+        if !self.rtt.is_zero() {
+            self.min_rtt.push(now, self.rtt);
         }
-        while self.min_rtt.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > MIN_RTT_WINDOW) {
-            self.min_rtt.pop_front();
-        }
-        while self.min_rtt.back().is_some_and(|(_, rtt)| *rtt >= self.rtt) {
-            self.min_rtt.pop_back();
-        }
-        self.min_rtt.push_back((now, self.rtt));
     }
 
     pub fn send_frame(
@@ -290,11 +284,9 @@ impl Sender {
         let estimate = self.estimator.estimate_bps();
         let spread = self.config.frame_interval.as_secs_f64() / 2.0;
         let drain = self.pacer.backlog_bytes() as f64 * 8.0 / spread;
-        let (gain, max_gain) = if estimate < CONSTRAINED_BPS {
-            (CONSTRAINED_PACING_GAIN, CONSTRAINED_PACING_GAIN)
-        } else {
-            (PACING_GAIN, MAX_PACING_GAIN)
-        };
+        let headroom = ((estimate - CONSTRAINED_BPS) / CONSTRAINED_BPS).clamp(0.0, 1.0);
+        let gain = CONSTRAINED_PACING_GAIN + (PACING_GAIN - CONSTRAINED_PACING_GAIN) * headroom;
+        let max_gain = CONSTRAINED_PACING_GAIN + (MAX_PACING_GAIN - CONSTRAINED_PACING_GAIN) * headroom;
         self.pacer.set_rate(now, drain.clamp(estimate * gain, estimate * max_gain));
     }
 
@@ -369,6 +361,7 @@ impl Sender {
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
         self.note_rtt(now);
+        self.fec_ratio = self.fec_ratio(now);
         let Some(stream) = self.streams.get_mut(&feedback.stream) else {
             return;
         };
@@ -432,6 +425,7 @@ impl Sender {
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {
                 stats.frames_acked += 1;
+                self.estimator.on_acked(now, frame.bytes_out);
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
             }
         }
@@ -529,7 +523,7 @@ impl Sender {
         let estimate_bps = self.estimator.estimate_bps();
         let budget_bytes = (estimate_bps / 8.0 * self.config.frame_interval.as_secs_f64()) as usize;
         let path_bytes = if self.estimator.measured() {
-            let min_rtt = self.min_rtt.front().map_or(self.rtt, |(_, rtt)| *rtt);
+            let min_rtt = self.min_rtt.best().unwrap_or(self.rtt);
             let in_flight_time = min_rtt + self.config.frame_interval * IN_FLIGHT_INTERVALS;
             (estimate_bps / 8.0 * in_flight_time.as_secs_f64()) as usize
         } else {

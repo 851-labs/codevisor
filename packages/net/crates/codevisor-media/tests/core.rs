@@ -667,7 +667,7 @@ impl EncoderModel {
     fn frame_len(&mut self, now: Instant, wanted_bps: f64) -> usize {
         if self.checked.is_none_or(|at| now - at >= 250 * MS) {
             self.checked = Some(now);
-            let target = wanted_bps.clamp(250e3, 45e6);
+            let target = wanted_bps.clamp(200e3, 45e6);
             if (target - self.ceiling_bps).abs() > self.ceiling_bps * 0.1 {
                 self.ceiling_bps = target;
             }
@@ -684,6 +684,7 @@ struct SceneResult {
     frames_per_second: f64,
     ages: Vec<Duration>,
     rtt: Duration,
+    estimate_bps: f64,
 }
 
 impl SceneResult {
@@ -743,6 +744,7 @@ fn stream_scene(conditions: NetworkConditions, seed: u64, carry: f64) -> SceneRe
         frames_per_second: ages.len() as f64 / MEASURED.as_secs_f64(),
         ages: ages.into_iter().map(|(_, age)| age).collect(),
         rtt: sim.host.stats(sim.now).rtt,
+        estimate_bps: sim.host.admission().estimate_bps,
     }
 }
 
@@ -760,6 +762,7 @@ fn a_slow_link_with_a_short_queue_keeps_the_frame_rate_and_the_age_flat() {
         let result = stream_scene(NetworkConditions::N5, 1, carry);
         assert_interactive(&result, 20 * MS, 55.0);
         assert!(result.age(0..result.ages.len(), 0.95) <= result.rtt + 2 * INTERVAL, "carry {carry}");
+        assert!((25e6..33e6).contains(&result.estimate_bps), "{:.1} Mbit/s", result.estimate_bps / 1e6);
     }
 }
 

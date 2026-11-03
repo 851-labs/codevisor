@@ -9,6 +9,7 @@ mod sender;
 mod session;
 mod transport;
 mod types;
+mod windowed;
 pub mod wire;
 
 pub use crate::{

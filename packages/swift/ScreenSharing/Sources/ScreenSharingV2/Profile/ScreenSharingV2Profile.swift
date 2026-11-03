@@ -8,7 +8,7 @@ public enum ScreenSharingV2Profile {
   public static let captureBox = (width: 3840.0, height: 2160.0)
   public static let framesPerSecond = 60
   public static let bitrateCeiling = 45_000_000
-  public static let minimumBitrate = 250_000
+  public static let minimumBitrate = 200_000
   public static let tileCount = 4
   public static let tiledAboveHeight = 1440
   public static let refinementPasses = 4

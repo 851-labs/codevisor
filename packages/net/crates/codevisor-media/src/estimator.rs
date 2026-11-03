@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::windowed::{Keep, Windowed};
+
 const BURST_WINDOW: Duration = Duration::from_secs(10);
 const RECEIVE_WINDOW: Duration = Duration::from_millis(500);
 const DELAY_WINDOW: Duration = Duration::from_secs(10);
@@ -16,7 +18,7 @@ const MAX_BACKOFF: f64 = 0.5;
 const CAP_GROWTH_PER_SECOND: f64 = 0.25;
 const MIN_SPAN: Duration = Duration::from_micros(100);
 const MIN_SAMPLE_BYTES: usize = 2400;
-const MIN_RATE_BPS: f64 = 100e3;
+const MIN_RATE_BPS: f64 = 300e3;
 const RECENT_DELAYS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,15 +28,22 @@ pub struct Delivery {
     pub send_span: Duration,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Cap {
+    from_bps: f64,
+    since: Instant,
+    bps: f64,
+}
+
 #[derive(Debug)]
 pub struct Estimator {
     initial_bps: f64,
     max_bps: f64,
-    bursts: VecDeque<(Instant, f64)>,
+    bursts: Windowed<f64>,
     acked: VecDeque<(Instant, usize)>,
     acked_bytes: usize,
-    delay_cap: Option<(f64, Instant)>,
-    min_delay: VecDeque<(Instant, i64)>,
+    cap: Option<Cap>,
+    base_delay: Windowed<i64>,
     recent_delays: VecDeque<i64>,
     last_delay: Option<i64>,
     delay_before: Option<i64>,
@@ -49,11 +58,11 @@ impl Estimator {
         Self {
             initial_bps: initial_bps.clamp(MIN_RATE_BPS, max_bps),
             max_bps,
-            bursts: VecDeque::new(),
+            bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
             acked: VecDeque::new(),
             acked_bytes: 0,
-            delay_cap: None,
-            min_delay: VecDeque::new(),
+            cap: None,
+            base_delay: Windowed::new(DELAY_WINDOW, Keep::Smallest),
             recent_delays: VecDeque::new(),
             last_delay: None,
             delay_before: None,
@@ -65,13 +74,12 @@ impl Estimator {
     }
 
     pub fn estimate_bps(&self) -> f64 {
-        let burst = match (self.burst_bps(), self.receive_bps()) {
-            (Some(burst), receive) => burst.max(receive.unwrap_or(0.0)),
-            (None, Some(receive)) if self.delay_cap.is_none() => receive.max(self.initial_bps),
-            (None, receive) => receive.unwrap_or(self.initial_bps),
+        let estimate = match (self.cap, self.bursts.best(), self.receive_bps()) {
+            (Some(cap), ..) => cap.bps,
+            (None, Some(burst), receive) => burst.max(receive.unwrap_or(0.0)),
+            (None, None, receive) => receive.unwrap_or(0.0).max(self.initial_bps),
         };
-        let capped = self.delay_cap.map_or(burst, |(cap, _)| burst.min(cap));
-        capped.clamp(MIN_RATE_BPS, self.max_bps)
+        estimate.clamp(MIN_RATE_BPS, self.max_bps)
     }
 
     pub fn measured(&self) -> bool {
@@ -92,12 +100,12 @@ impl Estimator {
         Some((self.acked_bytes - oldest_bytes) as f64 * 8.0 / span.as_secs_f64())
     }
 
-    fn burst_bps(&self) -> Option<f64> {
-        self.bursts.iter().map(|(_, rate)| *rate).reduce(f64::max)
-    }
-
     fn queue_threshold_us(&self) -> f64 {
         QUEUE_THRESHOLD.as_micros() as f64 + JITTER_THRESHOLD_GAIN * self.jitter_us
+    }
+
+    fn queued(&self) -> bool {
+        self.overuse > 0 || (self.queue_delay_us as f64) >= self.queue_threshold_us()
     }
 
     pub fn on_acked(&mut self, now: Instant, bytes: usize) {
@@ -110,21 +118,15 @@ impl Estimator {
     }
 
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
-        self.grow_cap(now);
         let trusted = Duration::from_secs_f64(TRUSTED_SPAN_JITTERS * self.jitter_us / 1e6).max(MIN_SPAN);
-        if delivery.receive_span < trusted || delivery.bytes < MIN_SAMPLE_BYTES {
-            return;
+        if delivery.receive_span >= trusted && delivery.bytes >= MIN_SAMPLE_BYTES {
+            let span = delivery.receive_span.max(delivery.send_span);
+            self.bursts.push(now, delivery.bytes as f64 * 8.0 / span.as_secs_f64());
         }
-        let span = delivery.receive_span.max(delivery.send_span);
-        let rate = delivery.bytes as f64 * 8.0 / span.as_secs_f64();
-        while self.bursts.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > BURST_WINDOW) {
-            self.bursts.pop_front();
-        }
-        self.bursts.push_back((now, rate));
+        self.grow_cap(now);
     }
 
     pub fn on_delay(&mut self, now: Instant, one_way_us: i64, hold_off: Duration) {
-        self.grow_cap(now);
         if let (Some(last), Some(before)) = (self.last_delay, self.delay_before) {
             let curvature = (one_way_us - 2 * last + before).abs() as f64 / 2.0;
             self.jitter_us += JITTER_GAIN * (curvature - self.jitter_us);
@@ -136,54 +138,45 @@ impl Estimator {
         }
         self.recent_delays.push_back(one_way_us);
         let recent = self.recent_delays.iter().min().copied().unwrap_or(one_way_us);
-        while self.min_delay.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > DELAY_WINDOW) {
-            self.min_delay.pop_front();
-        }
-        while self.min_delay.back().is_some_and(|(_, delay)| *delay >= recent) {
-            self.min_delay.pop_back();
-        }
-        self.min_delay.push_back((now, recent));
-        let base = self.min_delay.front().map_or(recent, |(_, delay)| *delay);
-        let queue = recent - base;
+        self.base_delay.push(now, recent);
+        let queue = recent - self.base_delay.best().unwrap_or(recent);
         let growing = queue > self.queue_delay_us;
         self.queue_delay_us = queue;
         if (queue as f64) < self.queue_threshold_us() {
             self.overuse = 0;
-            return;
-        }
-        if growing {
+        } else if growing {
             self.overuse += 1;
         }
         let rested = self.last_backoff.is_none_or(|at| now.saturating_duration_since(at) >= hold_off);
         if self.overuse >= OVERUSE_SAMPLES && rested {
             self.back_off(now);
         }
+        self.grow_cap(now);
     }
 
     fn back_off(&mut self, now: Instant) {
         let estimate = self.estimate_bps();
         let receive = self.receive_bps().unwrap_or(estimate);
         let target = (receive * BACKOFF).clamp(estimate * MAX_BACKOFF, estimate * BACKOFF).max(MIN_RATE_BPS);
-        self.delay_cap = Some((target, now));
+        self.cap = Some(Cap { from_bps: target, since: now, bps: target });
         self.bursts.clear();
         self.overuse = 0;
         self.last_backoff = Some(now);
     }
 
     fn grow_cap(&mut self, now: Instant) {
-        let Some((cap, since)) = self.delay_cap else {
+        let queued = self.queued();
+        let Some(cap) = self.cap.as_mut() else {
             return;
         };
-        if self.overuse > 0 || (self.queue_delay_us as f64) >= self.queue_threshold_us() {
-            self.delay_cap = Some((cap, now));
+        if queued {
+            *cap = Cap { from_bps: cap.bps, since: now, bps: cap.bps };
             return;
         }
-        let elapsed = now.saturating_duration_since(since).as_secs_f64();
-        let grown = cap * (1.0 + CAP_GROWTH_PER_SECOND * elapsed);
-        if self.burst_bps().is_some_and(|burst| grown >= burst) || grown >= self.max_bps {
-            self.delay_cap = None;
-        } else {
-            self.delay_cap = Some((grown, now));
+        let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
+        cap.bps = cap.from_bps * (1.0 + CAP_GROWTH_PER_SECOND * elapsed);
+        if self.bursts.best().is_some_and(|burst| cap.bps >= burst) || cap.bps >= self.max_bps {
+            self.cap = None;
         }
     }
 }
@@ -286,11 +279,9 @@ mod tests {
         }
         estimator.on_delivery(later + Duration::from_secs(2), burst(125_000, 5 * MS));
         let grown = estimator.estimate_bps();
-        assert!(
-            (60e6 * 0.85 * 1.45..60e6 * 0.85 * 1.55).contains(&grown),
-            "the cap grows by a quarter a second: {grown}"
-        );
-        estimator.on_delivery(later + Duration::from_secs(9), burst(125_000, 5 * MS));
+        let expected = 60e6 * 0.85 * (1.0 + 0.25 * 2.8);
+        assert!((grown - expected).abs() < 1e3, "a quarter a second since the queue cleared at 0.2 s: {grown}");
+        estimator.on_delivery(later + Duration::from_secs(13), burst(125_000, 5 * MS));
         assert_eq!(estimator.estimate_bps(), 200e6, "and lets go once it passes the bursts");
     }
 }
