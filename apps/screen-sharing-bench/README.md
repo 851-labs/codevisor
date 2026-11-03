@@ -284,7 +284,7 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   run invalid), reports whether its full-screen window was on screen and the checked menu items, and quits Screen Sharing.app at the end. Tier 2
   launches every windowless command with `open -g` (`CODEVISOR_BENCH_BACKGROUND=1`) so none takes focus.
 - `inject --output <events.jsonl> [--keys 200] [--clicks 200] [--seed 7] [--start-delay <s>] [--duration <s>]
-  [--display <id>]` posts space presses and left clicks (at the centre of the main display, or of `--display`, which
+[--display <id>]` posts space presses and left clicks (at the centre of the main display, or of `--display`, which
   Tier 2 sets to the viewer's display with `viewer-display: R1x2`) with `CGEventPost`, in a seeded order, 150–350 ms
   apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
   before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
