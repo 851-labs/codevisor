@@ -72,6 +72,7 @@ struct ScreenSharingVCPSessionFactory {
     try session.set(kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse)
     try session.set(kVTCompressionPropertyKey_ExpectedFrameRate, framesPerSecond as CFNumber)
     try session.set(kVTCompressionPropertyKey_MaxKeyFrameInterval, 0 as CFNumber)
+    try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, ScreenSharingVCPRate.highestFrameQP as CFNumber)
     try session.setBitrate(rate.tileBitsPerSecond, windowBitsPerSecond: rate.tileWindowBitsPerSecond)
     try session.set(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
     try session.set(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_sRGB)
