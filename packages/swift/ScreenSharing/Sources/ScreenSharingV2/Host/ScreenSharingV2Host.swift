@@ -16,7 +16,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private let queue = DispatchQueue(label: "codevisor.screen-sharing.v2.host", qos: .userInteractive)
   private var slot: ScreenSharingV2CaptureSlot
   private var recovery = ScreenSharingV2Recovery()
-  private var refinement = ScreenSharingV2Refinement()
+  private var refinement: ScreenSharingV2Refinement
   private var bitrate: ScreenSharingV2BitrateGovernor
   private var nextUpdate: UInt32 = 0
   private var retryScheduled = false
@@ -30,16 +30,18 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
 
   public convenience init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
-    initialBitrate: Int = ScreenSharingV2Profile.bitrateCeiling
+    initialBitrate: Int = ScreenSharingV2Profile.bitrateCeiling,
+    refinementPasses: Int = ScreenSharingV2Profile.refinementPasses
   ) {
     self.init(
       transport: transport, encoder: encoder, metrics: metrics, initialBitrate: initialBitrate,
-      scheduler: ScreenSharingV2SystemScheduler())
+      scheduler: ScreenSharingV2SystemScheduler(), refinementPasses: refinementPasses)
   }
 
   init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
-    initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler
+    initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler,
+    refinementPasses: Int = ScreenSharingV2Profile.refinementPasses
   ) {
     self.transport = transport
     self.encoder = encoder
@@ -48,6 +50,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     layout = encoder.layout
     slot = ScreenSharingV2CaptureSlot(tiles: encoder.layout.tiles)
     bitrate = ScreenSharingV2BitrateGovernor(initial: initialBitrate)
+    refinement = ScreenSharingV2Refinement(passes: refinementPasses)
   }
 
   public func start() {

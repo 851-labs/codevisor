@@ -19,7 +19,8 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   public init(
-    configuration: ScreenSharingVideoConfiguration, layout: ScreenSharingV2TileLayout, metrics: ScreenSharingMetrics
+    configuration: ScreenSharingVideoConfiguration, layout: ScreenSharingV2TileLayout, metrics: ScreenSharingMetrics,
+    longTermReferences: Bool = true
   ) throws {
     self.layout = layout
     self.metrics = metrics
@@ -28,7 +29,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     sessions = try layout.tiles.sorted().map { [relay] tile in
       let factory = ScreenSharingVideoToolboxSessionFactory(
         width: layout.width, height: layout.rows(of: tile).count, framesPerSecond: configuration.framesPerSecond,
-        bitrate: configuration.bitrate)
+        bitrate: configuration.bitrate, longTermReferences: longTermReferences)
       return try ScreenSharingVideoToolboxTileSession(tile: tile, factory: factory, metrics: metrics, relay: relay)
     }
     metrics.label("encoder", "VideoToolbox HEVC Main, low-latency rate control, LTR, no periodic keyframe")
