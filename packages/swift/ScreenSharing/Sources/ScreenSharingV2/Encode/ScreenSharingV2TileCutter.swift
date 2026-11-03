@@ -9,6 +9,7 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
   }
 
   let layout: ScreenSharingV2TileLayout
+  private let blitter = ScreenSharingV2TileBlitter()
   private let lock = NSLock()
   private var pools: [PoolKey: CVPixelBufferPool] = [:]
 
@@ -24,6 +25,9 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
 
     let rows = layout.rows(of: tile)
     let target = try make(CVPixelBufferGetPixelFormatType(source), height: rows.count)
+    CVBufferPropagateAttachments(source, target)
+    if blitter?.copy(rows: rows, of: layout.height, from: source, to: target) == true { return target }
+
     CVPixelBufferLockBaseAddress(source, .readOnly)
     CVPixelBufferLockBaseAddress(target, [])
     defer {
@@ -33,7 +37,6 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
     for plane in ScreenSharingV2PixelPlane.planes(of: source) {
       copy(plane, rows: rows, from: source, to: target)
     }
-    CVBufferPropagateAttachments(source, target)
     return target
   }
 
