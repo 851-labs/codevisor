@@ -5,7 +5,7 @@ import Testing
 @testable import ScreenSharing
 
 struct ScreenSharingMouseTapFilterTests {
-  @Test func onlyTheUsersMouseEventsOverTheVideosWindowAreDelivered() throws {
+  @Test func theUsersMouseEventsOverTheVideosWindowAndAPressDraggedOutOfItAreDelivered() throws {
     let delivered = Mutex<[CGEventType]>([])
     let filter = ScreenSharingMouseTapFilter(window: 42) { type, _ in delivered.withLock { $0.append(type) } }
     func event(_ type: CGEventType, window: Int64, injected: Bool = false) throws -> CGEvent {
@@ -16,14 +16,18 @@ struct ScreenSharingMouseTapFilterTests {
       return event
     }
 
-    filter.observe(.leftMouseDown, try event(.leftMouseDown, window: 42))
     filter.observe(.leftMouseDown, try event(.leftMouseDown, window: 7))
     filter.observe(.leftMouseDown, try event(.leftMouseDown, window: 42, injected: true))
-    filter.observe(.leftMouseDragged, try event(.leftMouseDragged, window: 42))
     filter.observe(.scrollWheel, try event(.leftMouseDown, window: 42))
+    filter.observe(.leftMouseDown, try event(.leftMouseDown, window: 42))
+    filter.observe(.leftMouseDragged, try event(.leftMouseDragged, window: 7))
+    filter.observe(.leftMouseUp, try event(.leftMouseUp, window: 7))
+    filter.observe(.mouseMoved, try event(.mouseMoved, window: 7))
+    filter.set(acceptsInjected: true)
+    filter.observe(.mouseMoved, try event(.mouseMoved, window: 42, injected: true))
     filter.set(window: nil)
-    filter.observe(.leftMouseUp, try event(.leftMouseUp, window: 42))
+    filter.observe(.mouseMoved, try event(.mouseMoved, window: 42))
 
-    #expect(delivered.withLock { $0 } == [.leftMouseDown, .leftMouseDragged])
+    #expect(delivered.withLock { $0 } == [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved])
   }
 }

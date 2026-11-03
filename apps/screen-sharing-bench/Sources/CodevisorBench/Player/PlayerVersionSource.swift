@@ -7,7 +7,6 @@ final class PlayerVersionSource {
   private static let versionCount = BenchBarcode.versions.upperBound + 1
 
   private let timeline: BenchSceneTimeline
-  private(set) var inputEvents = 0
   private(set) var inputs: [BenchInputStamp] = []
   private var shownInputs = 0
 
@@ -21,12 +20,11 @@ final class PlayerVersionSource {
   }
 
   private func nextInputVersion() -> Int {
-    shownInputs = min(shownInputs + 1, inputEvents)
+    shownInputs = min(shownInputs + 1, inputs.count)
     return shownInputs
   }
 
   func recordInput(_ event: NSEvent) {
     if let stamp = BenchInputStamp(event, ns: BenchMachClock.nowNs()) { inputs.append(stamp) }
-    inputEvents += 1
   }
 }

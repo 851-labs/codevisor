@@ -325,8 +325,7 @@ one-dispatch S7 that fits 30 minutes is `scenes: input, duration: 115, systems: 
 
 Each input run also records when every event passed each stage (851-3951), so the time from the viewer's post to the
 host's picture splits into stages: the viewer's `control.forwarded` in `system.json` (when the surface handed each
-event to the forwarder, on the viewer's clock, with `event_age_ms`, how long after the window server stamped the
-event), the host's `control.injected` in `share.json` (just before `ScreenSharingInputInjector` posted it, on the host's
+event to the forwarder, on the viewer's clock), the host's `control.injected` in `share.json` (just before `ScreenSharingInputInjector` posted it, on the host's
 clock) and the host player's `inputs` in `player.json` (when its window received each key or mouse down, with
 `eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`.
 

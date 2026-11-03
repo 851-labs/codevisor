@@ -11,8 +11,8 @@ struct BenchInputStamp: Encodable {
   let ns: Int64
   let eventAgeMs: Double?
 
-  init(_ event: ScreenSharingInputEvent, ns: Int64, source: NSEvent?) {
-    let (kind, down): (Kind, Bool?) =
+  init(_ event: ScreenSharingInputEvent, ns: Int64) {
+    (kind, down) =
       switch event {
       case .key(_, let down, _, _): (.key, down)
       case .button(_, _, let down, _, _): (.click, down)
@@ -20,34 +20,18 @@ struct BenchInputStamp: Encodable {
       case .scroll: (.scroll, nil)
       case .text: (.text, nil)
       }
-    self.kind = kind
-    self.down = down
     self.ns = ns
-    eventAgeMs = source.flatMap { Self.ageMs(of: $0, matching: kind) }
+    eventAgeMs = nil
   }
 
   init?(_ event: NSEvent, ns: Int64) {
-    let kind: Kind
     switch event.type {
     case .keyDown: kind = .key
     case .leftMouseDown: kind = .click
     default: return nil
     }
-    self.kind = kind
     down = true
     self.ns = ns
-    eventAgeMs = Self.ageMs(of: event, matching: kind)
-  }
-
-  private static func ageMs(of event: NSEvent, matching kind: Kind) -> Double? {
-    let matches =
-      switch kind {
-      case .key: [.keyDown, .keyUp].contains(event.type)
-      case .click: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(event.type)
-      default: false
-      }
-    guard matches else { return nil }
-
-    return (ProcessInfo.processInfo.systemUptime - event.timestamp) * 1000
+    eventAgeMs = (ProcessInfo.processInfo.systemUptime - event.timestamp) * 1000
   }
 }

@@ -19,7 +19,7 @@ final class BenchHostControl {
         let injectedNs = BenchMachClock.nowNs()
         injector.post(event)
         log.injectedEvents += 1
-        log.injected.append(BenchInputStamp(event, ns: injectedNs, source: nil))
+        log.injected.append(BenchInputStamp(event, ns: injectedNs))
       },
       send: { [log] message in
         log.record(sent: message)

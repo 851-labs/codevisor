@@ -38,9 +38,12 @@
     private(set) var capturesSystemShortcuts = false
     private var mouseTapRunning = false
     private var tapCarriesMouse = false
-    private var forwardedClicks: [(ns: Int64, down: Bool)] = []
+    private var forwardedClicks: [(timestamp: UInt64, down: Bool)] = []
     var dropsInjectedInput = true {
-      didSet { keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput) }
+      didSet {
+        keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput)
+        mouseCapture.setAcceptsInjected(!dropsInjectedInput)
+      }
     }
 
     init(
@@ -266,10 +269,11 @@
     }
 
     private func routeTapMouse(_ type: CGEventType, event: CGEvent) {
-      guard tapCarriesMouse, let view, let window = view.window else { return }
+      guard tapCarriesMouse, ownsKeyboard, let view, let window = view.window else { return }
 
       let location = window.convertPoint(
         fromScreen: NSPoint(x: event.location.x, y: CGDisplayBounds(CGMainDisplayID()).height - event.location.y))
+      if ScreenSharingMouseTypes.downs.contains(type), window.contentView?.hitTest(location) !== view { return }
       guard let point = view.pointer(atWindowLocation: location, clamp: !buttons.isEmpty) else { return }
 
       lastPointer = point
@@ -282,18 +286,18 @@
       guard (0...2).contains(button) else { return }
 
       let down = ScreenSharingMouseTypes.downs.contains(type)
-      guard firstCopy(atNs: Int64(clamping: event.timestamp), down: down) else { return }
+      guard firstCopy(at: event.timestamp, down: down) else { return }
 
       let clicks = event.getIntegerValueField(.mouseEventClickState)
       press(UInt8(button), down: down, at: point, clicks: UInt8(min(3, max(1, clicks))), modifiers: modifiers)
     }
 
-    private func firstCopy(atNs timestampNs: Int64, down: Bool) -> Bool {
-      if let copy = forwardedClicks.firstIndex(where: { $0.down == down && abs($0.ns - timestampNs) <= 50_000 }) {
+    private func firstCopy(at timestamp: UInt64, down: Bool) -> Bool {
+      if let copy = forwardedClicks.firstIndex(where: { $0 == (timestamp, down) }) {
         forwardedClicks.remove(at: copy)
         return false
       }
-      forwardedClicks.append((timestampNs, down))
+      forwardedClicks.append((timestamp, down))
       if forwardedClicks.count > 16 { forwardedClicks.removeFirst() }
       return true
     }
@@ -317,7 +321,8 @@
       case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
         guard !tapCarriesMouse else { return }
       case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp:
-        guard !tapCarriesMouse || firstCopy(atNs: Int64(event.timestamp * 1e9), down: Self.isDown(event.type)) else {
+        guard (0...2).contains(event.buttonNumber) else { return }
+        guard !tapCarriesMouse || firstCopy(at: event.cgEvent?.timestamp ?? 0, down: Self.isDown(event.type)) else {
           return
         }
       default: break
@@ -327,7 +332,6 @@
       case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
         pendingMotion = .move(point, modifiers: flags)
       case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp:
-        guard (0...2).contains(event.buttonNumber) else { return }
         press(
           UInt8(event.buttonNumber), down: Self.isDown(event.type), at: point,
           clicks: UInt8(min(3, max(1, event.clickCount))), modifiers: event.modifierFlags)

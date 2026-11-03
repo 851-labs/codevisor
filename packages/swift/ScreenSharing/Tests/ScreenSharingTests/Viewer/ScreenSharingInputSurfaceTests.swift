@@ -454,9 +454,11 @@ private final class InputSurfaceFixture {
   }
 
   func tapMouse(_ type: CGEventType) throws -> CGEvent {
+    let inView = CGPoint(x: 10, y: CGDisplayBounds(CGMainDisplayID()).height - 10)
     let event = try #require(
-      CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: .zero, mouseButton: .left))
-    event.timestamp = 1_000_000_000
+      CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: inView, mouseButton: .left))
+    event.timestamp = try #require(self.mouse(type == .leftMouseUp ? .leftMouseUp : .leftMouseDown, at: .zero).cgEvent)
+      .timestamp
     event.setIntegerValueField(.mouseEventClickState, value: 1)
     event.flags = []
     return event
