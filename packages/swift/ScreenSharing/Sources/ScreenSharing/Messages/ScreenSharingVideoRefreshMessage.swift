@@ -153,7 +153,10 @@ package final class ScreenSharingRefreshRequester {
     guard !closed, event.revision > revision else { return }
     revision = event.revision
     needed = event.needed
-    guard needed else { task?.cancel(); task = nil; return }
+    guard needed else {
+      task?.cancel(); task = nil; lastSentNs = nil
+      return
+    }
     wake()
     guard task == nil else { return }
     let sleep = sleep
