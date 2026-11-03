@@ -11,7 +11,6 @@ struct PluginAppInlineView: View {
   var body: some View {
     let restriction = self.restriction
     PluginAppInlineContent(model: model, restriction: restriction)
-      .environment(host.environment)
       .task { await prepare() }
       .task(id: model.subject) { model.page.contextActions = contextActions }
       .modifier(
@@ -21,17 +20,14 @@ struct PluginAppInlineView: View {
       .onChange(of: model.page.height) { _, _ in invalidateRowMeasurement?() }
       .onChange(of: model.page.phase) { _, _ in invalidateRowMeasurement?() }
       .onChange(of: model.mode) { _, _ in invalidateRowMeasurement?() }
+      .environment(host.environment)
   }
 
   private var access: PluginAccessController { host.environment.pluginAccess }
 
   private var contextActions: [PluginAppContextAction] {
-    guard let subject = model.subject else { return [] }
-    return [
-      PluginAppContextAction(title: "Block \(subject.publisher)…", systemImage: "hand.raised") {
-        confirmingBlock = true
-      }
-    ]
+    guard let title = model.subject.flatMap(PluginAppContextAction.blockTitle(for:)) else { return [] }
+    return [PluginAppContextAction(title: title, systemImage: "hand.raised") { confirmingBlock = true }]
   }
 
   private var restriction: String? {
@@ -44,7 +40,7 @@ struct PluginAppInlineView: View {
       display: PluginAppDisplay(
         isDark: colorScheme == .dark, platform: PluginAppDisplay.currentPlatform,
         locale: PluginAppDisplay.currentLocale),
-      showsElsewhere: model.mode == .fullscreen)
+      showsElsewhere: model.showsInPane)
   }
 
   private func prepare() async {
@@ -57,7 +53,7 @@ struct PluginAppInlineView: View {
   private func apply(_ request: PluginAppLoadRequest) {
     guard request.hasSubject else { return }
     guard request.showsPage else {
-      model.page.suspend()
+      model.page.suspend(reason: "The app moved out of the chat.")
       return
     }
 

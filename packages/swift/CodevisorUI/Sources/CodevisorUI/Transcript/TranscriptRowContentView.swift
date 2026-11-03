@@ -142,6 +142,8 @@ public struct TranscriptRowContentView: View {
     case let .botMessage(message, content, _):
       if message.sender == .notice {
         TranscriptBotNoticeRow(text: message.text)
+      } else if let app = message.app {
+        PluginAppBotBubble(app: app)
       } else {
         leaves.botMessage(message, content)
           .modifier(BotReplyEntrance(messageID: message.id, owner: controller))

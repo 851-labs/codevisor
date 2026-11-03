@@ -44,8 +44,8 @@ const openedPage = (html: string, documentUrl: URL) => {
       search: documentUrl.search
     },
     setTimeout: () => 0,
-    addEventListener: (_type: string, handler: (event: unknown) => void) => {
-      listener = handler
+    addEventListener: (type: string, handler: (event: unknown) => void) => {
+      if (type === "message") listener = handler
     },
     fetch: (url: string, init: RequestInit) => {
       fetched.push(url)
@@ -92,8 +92,8 @@ const openedApp = (shellHtml: string, appHtml: string, documentUrl: URL) => {
         search: documentUrl.search
       },
       setTimeout: () => 0,
-      addEventListener: (_type: string, handler: (event: unknown) => void) => {
-        shellListener = handler
+      addEventListener: (type: string, handler: (event: unknown) => void) => {
+        if (type === "message") shellListener = handler
       },
       fetch: (url: string, init: RequestInit) => fetch(new URL(url, documentUrl), init),
       open: () => undefined

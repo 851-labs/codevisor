@@ -5,7 +5,7 @@ import SwiftUI
 extension WorkspaceScreen {
   var pluginAppPresenter: PluginAppPresenter {
     PluginAppPresenter(
-      open: { resource, chatSessionId in openPluginApp(resource, chatSessionId: chatSessionId) },
+      open: { resource, chatSessionId, _ in openPluginApp(resource, chatSessionId: chatSessionId) ? .tab : nil },
       close: { paneId in closePluginApp(paneId) }
     )
   }

@@ -19,8 +19,9 @@ struct PluginAppInlinePlaceholder: View {
     }
     .font(.callout)
     .foregroundStyle(.secondary)
-    .padding(12)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+    .pluginAppCard()
   }
 }

@@ -90,7 +90,10 @@ extension SessionTranscriptView {
               .environment(\.transcriptController, controller)
               .environment(
                 \.pluginAppHost,
-                PluginAppHost(environment: environment, session: controller, presenter: pluginAppPresenter)
+                PluginAppHost(
+                  environment: environment, session: controller,
+                  presenter: controller.presentsBotConversation || controller.presentsBubbleTranscript
+                    ? nil : pluginAppPresenter)
               )
               .environment(\.userBubbleStyle, userBubbleStyle)
               .environment(

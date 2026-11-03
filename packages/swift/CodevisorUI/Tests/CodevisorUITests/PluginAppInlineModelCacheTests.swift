@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TranscriptKit
 
@@ -34,5 +35,28 @@ struct PluginAppInlineModelCacheTests {
 
     #expect(cache.model(for: app("v1"), chatMachineId: "local") === first)
     #expect(cache.model(for: app("v2"), chatMachineId: "local") !== second)
+  }
+
+  @Test("An app in picture in picture keeps its page however many apps follow it in the chat")
+  func keepsPresentedApp() async {
+    let registry = PluginAppDisplayRegistry()
+    let cache = PluginAppInlineModelCache(capacity: 1, registry: registry)
+    let shown = cache.model(for: app("v1"), chatMachineId: "local")
+    shown.attach(FakeAppConnection(fullscreen: .tab), chatSessionId: UUID())
+    shown.request(.pip)
+    shown.show(
+      display: PluginAppDisplay(
+        isDark: false, platform: PluginAppDisplay.currentPlatform, locale: PluginAppDisplay.currentLocale))
+    for _ in 0..<20 where [.loading, .idle].contains(shown.page.phase) {
+      await Task.yield()
+    }
+    let failed = shown.page.phase
+
+    _ = cache.model(for: app("v2"), chatMachineId: "local")
+    _ = cache.model(for: app("v3"), chatMachineId: "local")
+
+    #expect(failed != .idle)
+    #expect(shown.page.phase == failed)
+    #expect(cache.model(for: app("v1"), chatMachineId: "local") === shown)
   }
 }

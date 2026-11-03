@@ -33,12 +33,14 @@ interface Waiter {
 
 export const openAiGlobals = (
   hostContext: Readonly<Record<string, unknown>>,
-  view: PluginAppView | undefined
+  view: PluginAppView | undefined,
+  maxHeight?: number
 ): Record<string, unknown> => ({
   theme: hostContext.theme,
   displayMode: hostContext.displayMode,
   locale: hostContext.locale ?? "en-US",
-  userAgent: "Codevisor",
+  userAgent: hostContext.userAgent ?? "Codevisor",
+  maxHeight: maxHeight ?? null,
   safeArea: { insets: { top: 0, right: 0, bottom: 0, left: 0 } },
   toolInput: view?.toolInput ?? {},
   toolOutput: view?.toolResult.structuredContent ?? null,
@@ -125,6 +127,11 @@ export const installOpenAiShim = (env: ShimEnv): void => {
 
   const contextKeys = new Set(["theme", "displayMode", "locale"])
 
+  const containerMaxHeight = (dimensions: unknown): Params => {
+    const maxHeight = recordOf(dimensions).maxHeight
+    return typeof maxHeight === "number" ? { maxHeight } : {}
+  }
+
   const updates = new Map<string, (params: Params) => Params>([
     ["ui/notifications/tool-input", (params) => ({ toolInput: recordOf(params.arguments) })],
     [
@@ -136,7 +143,10 @@ export const installOpenAiShim = (env: ShimEnv): void => {
     ],
     [
       "ui/notifications/host-context-changed",
-      (params) => Object.fromEntries(Object.entries(params).filter(([key]) => contextKeys.has(key)))
+      (params) => ({
+        ...Object.fromEntries(Object.entries(params).filter(([key]) => contextKeys.has(key))),
+        ...containerMaxHeight(params.containerDimensions)
+      })
     ]
   ])
 

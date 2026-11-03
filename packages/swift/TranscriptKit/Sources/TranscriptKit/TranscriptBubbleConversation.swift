@@ -41,6 +41,26 @@ enum TranscriptBubbleConversation {
   }
 
   private static func assistantMessages(_ message: AssistantMessage) -> [TranscriptBotMessage] {
+    textMessages(message) + appMessages(message)
+  }
+
+  static func appMessages(in input: TranscriptProjectionInput) -> [TranscriptBotMessage] {
+    (input.settledConversation + [input.activeItem].compactMap(\.self)).flatMap { item -> [TranscriptBotMessage] in
+      guard case let .assistant(message) = item else { return [] }
+      return appMessages(message)
+    }
+  }
+
+  private static func appMessages(_ message: AssistantMessage) -> [TranscriptBotMessage] {
+    let turn = message.turn
+    return TranscriptPluginApps.apps(of: turn).map { app in
+      TranscriptBotMessage(
+        id: "\(message.id.uuidString.lowercased()):app:\(app.viewId)", sender: .bot, text: "", attachments: [],
+        sentAt: turn.endedAt ?? turn.startedAt, delivery: nil, files: [], isTranscriptMarkdown: true, app: app)
+    }
+  }
+
+  private static func textMessages(_ message: AssistantMessage) -> [TranscriptBotMessage] {
     let turn = message.turn
     guard let (_, markdown) = TranscriptAssistantRowProjection.responseText(turn) else { return [] }
     let sentAt = turn.endedAt ?? turn.startedAt

@@ -43,6 +43,29 @@ struct TranscriptBotRowAssemblyTests {
     #expect(!rows.contains { $0.id.isActiveRow || $0.id == .startingAgent })
   }
 
+  @Test func placesAPluginAppFromTheBotsWorkBetweenTheMessagesAroundIt() throws {
+    let app = CodevisorExecutionApp(
+      viewId: "view-1", serverId: "grafana", serverName: "Grafana", toolName: "show", resourceUri: "ui://g")
+    let replyID = UUID(uuidString: "6A1D2E8C-0000-4000-8000-000000000003")!
+    var turn = AssistantTurn(entries: [.text(id: "work", markdown: "Pulling the panel")])
+    turn.endedAt = start.addingTimeInterval(10)
+    turn.pluginApps = [app]
+    let conversation = TranscriptBotConversation(
+      messages: [message("b1", .bot, "Checking.", at: 5), message("b2", .bot, "Here it is.", at: 12)],
+      isWorking: false
+    )
+
+    let rows = try TranscriptRowProjectionCache.project(
+      input(settled: [.assistant(AssistantMessage(id: replyID, turn: turn))], conversation),
+      options: .init(includesConnectingRow: false, presentsBotConversation: true)
+    )
+
+    #expect(
+      rows.map(\.id).filter { if case .botMessage = $0 { true } else { false } } == [
+        .botMessage("b1"), .botMessage("\(replyID.uuidString.lowercased()):app:view-1"), .botMessage("b2"),
+      ])
+  }
+
   @Test func showsTheLatestTurnsSetupRequestAsItsOwnBubbleBeforeTyping() throws {
     var turn = AssistantTurn()
     turn.setupRequests = [TranscriptSetupRequest(id: "cu", kind: .computerUse, state: .pending)]

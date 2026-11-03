@@ -13,6 +13,8 @@ import { gatewayTransport } from "../../routes/gateway-test-support.js"
 import { jsonRequest, run, start, tempDirs } from "../../test-support.js"
 import { grafanaPlugin, startAppPlugin } from "./plugin-app-test-support.js"
 
+export const APP_HOST_TEST_VERSION = "9.8.7"
+
 export const Launch = Schema.Struct({ url: Schema.String, expiresAt: Schema.String })
 
 const ExecutionApps = Schema.Struct({
@@ -22,6 +24,8 @@ const ExecutionApps = Schema.Struct({
 })
 
 export const Boot = Schema.Struct({
+  hostInfo: Schema.Struct({ name: Schema.String, version: Schema.String }),
+  prefersBorder: Schema.optional(Schema.Boolean),
   html: Schema.String,
   allow: Schema.String,
   hostContext: Schema.Record(Schema.String, Schema.Unknown),
@@ -29,19 +33,23 @@ export const Boot = Schema.Struct({
   toolInput: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   toolResult: Schema.optional(Schema.Unknown),
   framePath: Schema.String,
+  maxHeight: Schema.optional(Schema.Number),
   endpoints: Schema.Struct({
     toolsCall: Schema.String,
+    toolsList: Schema.String,
     resourcesRead: Schema.String,
-    modelContext: Schema.String
+    modelContext: Schema.String,
+    log: Schema.String
   })
 })
 
 export const secured = async (definition = grafanaPlugin, name = "Grafana") => {
   const plugin = await startAppPlugin(definition)
-  const { agents, server, services } = await start({
-    allowLocalhostWithoutAuth: false,
-    requireBearerToken: true
-  })
+  const { agents, server, services } = await start(
+    { allowLocalhostWithoutAuth: false, requireBearerToken: true },
+    {},
+    { version: APP_HOST_TEST_VERSION }
+  )
   const token = await run(services.db.getOrCreateConnectionToken)
   const authorized = { authorization: `Bearer ${token}` }
   const created = await jsonRequest(server, "/v1/mcps", {

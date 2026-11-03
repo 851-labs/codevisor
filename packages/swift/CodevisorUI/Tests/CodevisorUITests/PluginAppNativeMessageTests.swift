@@ -37,6 +37,14 @@ struct PluginAppNativeMessageTests {
     #expect(PluginAppNativeMessage(body: "size") == nil)
   }
 
+  @Test("The app's border preference must be a real boolean; a teardown request carries nothing")
+  func presentation() {
+    #expect(PluginAppNativeMessage(body: ["type": "prefersBorder", "value": false]) == .prefersBorder(false))
+    #expect(PluginAppNativeMessage(body: ["type": "prefersBorder", "value": true]) == .prefersBorder(true))
+    #expect(PluginAppNativeMessage(body: ["type": "prefersBorder", "value": 0]) == nil)
+    #expect(PluginAppNativeMessage(body: ["type": "requestTeardown"]) == .requestTeardown)
+  }
+
   @Test("Display mode requests carry the shell's request id, and declared app modes ignore unknown names")
   func displayModes() {
     #expect(

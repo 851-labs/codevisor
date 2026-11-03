@@ -12,15 +12,11 @@ public struct PluginAppPaneView: View {
 
   public var body: some View {
     let restriction = self.restriction
-    VStack(spacing: 0) {
-      PluginAppPaneHeader(model: model, isRestricted: restriction != nil, onBack: back)
-      Divider()
-      content(restriction: restriction)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    .environment(model.environment)
-    .task { await prepare() }
-    .onChange(of: loadRequest(restriction: restriction), initial: true) { _, request in apply(request) }
+    content(restriction: restriction)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .environment(model.environment)
+      .task { await prepare() }
+      .onChange(of: loadRequest(restriction: restriction), initial: true) { _, request in apply(request) }
   }
 
   @ViewBuilder
@@ -64,9 +60,5 @@ public struct PluginAppPaneView: View {
     }
 
     model.show(display: request.display)
-  }
-
-  private func back() {
-    model.onBack?()
   }
 }

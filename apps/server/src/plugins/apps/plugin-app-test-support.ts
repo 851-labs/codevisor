@@ -96,7 +96,16 @@ export interface AppPluginDefinition {
   readonly tools: ReadonlyArray<Record<string, unknown>>
   readonly resources: Readonly<Record<string, Record<string, unknown>>>
   readonly results: Readonly<Record<string, Record<string, unknown>>>
+  readonly listedMeta?: Readonly<Record<string, Record<string, unknown>>>
+  readonly failing?: ReadonlyArray<string>
 }
+
+const listedResources = (definition: AppPluginDefinition) =>
+  Object.keys(definition.resources).map((uri) => ({
+    uri,
+    name: uri,
+    ...(definition.listedMeta?.[uri] === undefined ? {} : { _meta: definition.listedMeta[uri] })
+  }))
 
 export const grafanaPlugin: AppPluginDefinition = { capabilities, tools, resources, results: {} }
 
@@ -117,7 +126,9 @@ export const startAppPlugin = async (definition: AppPluginDefinition = grafanaPl
 
   const answer = (method: string, params: Record<string, unknown>) => {
     requests.push({ method, params })
+    if (definition.failing?.includes(method) === true) throw new Error(`${method} failed`)
     if (method === "tools/list") return { tools: definition.tools }
+    if (method === "resources/list") return { resources: listedResources(definition) }
     if (method === "tools/call") {
       return (
         definition.results[String(params.name)] ?? {

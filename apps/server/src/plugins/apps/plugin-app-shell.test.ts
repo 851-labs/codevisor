@@ -14,7 +14,13 @@ const boot: BridgeBoot = {
   allow: "clipboard-write",
   token: "session-token",
   framePath: "/frame",
-  endpoints: { toolsCall: "/call", resourcesRead: "/read", modelContext: "/context" }
+  endpoints: {
+    toolsCall: "/call",
+    toolsList: "/tools",
+    resourcesRead: "/read",
+    modelContext: "/context",
+    log: "/log"
+  }
 }
 
 const shellScript = (html: string): string => {
@@ -23,14 +29,19 @@ const shellScript = (html: string): string => {
   return match[1]!
 }
 
-const shellReply = async (navigator: unknown, method: string, params: unknown) => {
+const shellReply = async (
+  navigator: unknown,
+  method: string,
+  params: unknown,
+  page: Record<string, unknown> = {}
+) => {
   const replied = Promise.withResolvers<unknown>()
   const posted: Array<unknown> = []
   const contentWindow = { postMessage: (message: unknown) => replied.resolve(message) }
   let handler: ((event: unknown) => void) | undefined
   const window = {
-    addEventListener: (_type: string, listener: (event: unknown) => void) => {
-      handler = listener
+    addEventListener: (type: string, listener: (event: unknown) => void) => {
+      if (type === "message") handler = listener
     },
     location: {
       pathname: "/v1/plugins/apps/view-1",
@@ -38,6 +49,7 @@ const shellReply = async (navigator: unknown, method: string, params: unknown) =
     },
     setTimeout: () => 0,
     navigator,
+    ...page,
     webkit: {
       messageHandlers: {
         codevisorApp: { postMessage: (message: unknown) => posted.push(message) }
@@ -100,8 +112,8 @@ describe("plugin app shell", () => {
     const opened: Array<unknown> = []
     let handler: ((event: unknown) => void) | undefined
     const window = {
-      addEventListener: (_type: string, listener: (event: unknown) => void) => {
-        handler = listener
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        if (type === "message") handler = listener
       },
       location: {
         pathname: "/v1/plugins/apps/view-1",
@@ -145,6 +157,20 @@ describe("plugin app shell", () => {
     }
     expect(tapped.reply).toEqual({ jsonrpc: "2.0", id: 1, result: {} })
     expect(tapped.posted).toEqual([{ type: "message", text: "Tour it", viewId: "view-1" }])
+  })
+
+  it("reads the container size and time zone from the page", async () => {
+    const page = {
+      innerWidth: 612.4,
+      innerHeight: 300,
+      Intl: { DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone: "Europe/Paris" }) }) }
+    }
+
+    const { reply } = await shellReply(undefined, "ui/initialize", {}, page)
+
+    expect(reply).toMatchObject({
+      result: { hostContext: { timeZone: "Europe/Paris", containerDimensions: { width: 612 } } }
+    })
   })
 
   it("tells the native host which display modes the app supports", async () => {

@@ -45,7 +45,14 @@ export const routePluginApps = async (route: RouteContext): Promise<boolean> => 
   return true
 }
 
-type AppAction = "shell" | "frame" | "tools/call" | "resources/read" | "model-context"
+type AppAction =
+  | "shell"
+  | "frame"
+  | "tools/call"
+  | "tools/list"
+  | "resources/read"
+  | "model-context"
+  | "log"
 
 interface ScopedRequest {
   readonly action: AppAction
@@ -60,6 +67,8 @@ const actionRoutes: ReadonlyArray<{
   { suffix: "", method: "GET", action: "shell" },
   { suffix: "/frame", method: "GET", action: "frame" },
   { suffix: "/tools/call", method: "POST", action: "tools/call" },
+  { suffix: "/tools/list", method: "POST", action: "tools/list" },
+  { suffix: "/log", method: "POST", action: "log" },
   { suffix: "/resources/read", method: "POST", action: "resources/read" },
   { suffix: "/model-context", method: "POST", action: "model-context" }
 ]
@@ -82,11 +91,13 @@ const ModelContextBody = Schema.Struct({
 
 const appsByManager = new WeakMap<McpManager, PluginApps>()
 
-const appsFor = ({ services }: RouteContext): PluginApps => {
+const LogBody = Schema.Record(Schema.String, Schema.Unknown)
+
+const appsFor = ({ services, config }: RouteContext): PluginApps => {
   if (services.mcp === undefined) throw new HttpFailure(501, "Plugins unavailable")
   let apps = appsByManager.get(services.mcp)
   if (apps === undefined) {
-    apps = makePluginApps(services.mcp, services.db)
+    apps = makePluginApps(services.mcp, services.db, { version: config.version })
     appsByManager.set(services.mcp, apps)
   }
   return apps
@@ -137,6 +148,13 @@ const appActions: Readonly<
     const body = await readSchema(route.request, ToolCallBody)
     writeJson(route.response, 200, await appsFor(route).callTool(scope, body))
   },
+  "tools/list": async (route, scope) => {
+    writeJson(route.response, 200, await appsFor(route).listTools(scope))
+  },
+  log: async (route, scope) => {
+    await appsFor(route).log(scope, await readSchema(route.request, LogBody))
+    writeJson(route.response, 200, {})
+  },
   "resources/read": async (route, scope) => {
     const body = await readSchema(route.request, ResourceReadBody)
     writeJson(route.response, 200, await appsFor(route).readResource(scope, body.uri))
@@ -169,15 +187,25 @@ const displayModeOf = (value: string | null): AppDisplayMode | undefined =>
 const hostModes = (value: string | null): ReadonlyArray<AppDisplayMode> =>
   (value ?? "").split(",").flatMap((mode) => displayModeOf(mode.trim()) ?? [])
 
+const maxHeightLimit = 4096
+
+const maxHeightOf = (value: string | null): number | undefined => {
+  const height = Number(value ?? Number.NaN)
+  if (!Number.isInteger(height) || height <= 0 || height > maxHeightLimit) return undefined
+  return height
+}
+
 const display = (url: URL): AppDisplay => {
   const query = url.searchParams
   const displayMode = displayModeOf(query.get("displayMode"))
   const locale = query.get("locale")
+  const maxHeight = maxHeightOf(query.get("maxHeight"))
   return {
     theme: query.get("theme") === "dark" ? "dark" : "light",
     platform: query.get("platform") === "mobile" ? "mobile" : "desktop",
     modes: hostModes(query.get("modes")),
     ...(displayMode === undefined ? {} : { displayMode }),
-    ...(locale !== null && localePattern.test(locale) ? { locale } : {})
+    ...(locale !== null && localePattern.test(locale) ? { locale } : {}),
+    ...(maxHeight === undefined ? {} : { maxHeight })
   }
 }

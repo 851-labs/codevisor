@@ -98,6 +98,26 @@ struct TranscriptBubbleConversationTests {
       ])
   }
 
+  @Test func showsEachPluginAppAsItsOwnPartAfterTheReply() throws {
+    let app = CodevisorExecutionApp(
+      viewId: "view-1", serverId: "grafana", serverName: "Grafana", toolName: "show", resourceUri: "ui://g")
+    var turn = AssistantTurn(entries: [.text(id: "f1", markdown: "Here's the panel.")])
+    turn.textPhases = ["f1": .final]
+    turn.pluginApps = [app]
+    var silent = AssistantTurn(entries: [])
+    silent.pluginApps = [app]
+
+    let rows = try project(settled: [.assistant(AssistantMessage(id: replyID, turn: turn))])
+    let quiet = try project(settled: [.assistant(AssistantMessage(id: queuedID, turn: silent))])
+
+    #expect(bubbles(rows).map(\.message.text) == ["Here's the panel.", ""])
+    #expect(bubbles(rows).map(\.message.app) == [nil, app])
+    #expect(bubbles(rows).last?.message.id == "\(replyID.uuidString.lowercased()):app:view-1")
+    #expect(
+      rows.first { $0.id == .botMessage("\(replyID.uuidString.lowercased()):app:view-1") }?.estimatedHeight == 252)
+    #expect(bubbles(quiet).map(\.message.app) == [app])
+  }
+
   private func generating(entries: [TranscriptEntry]) -> ConversationItem {
     .assistant(AssistantMessage(id: replyID, turn: AssistantTurn(entries: entries, isGenerating: true)))
   }

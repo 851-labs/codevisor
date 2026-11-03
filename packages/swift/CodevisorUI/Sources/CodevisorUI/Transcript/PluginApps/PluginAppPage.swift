@@ -11,6 +11,7 @@ public final class PluginAppPage {
     case idle
     case loading
     case ready
+    case closed
     case failed(String)
   }
 
@@ -19,6 +20,7 @@ public final class PluginAppPage {
   public let app: CodevisorExecutionApp
   public private(set) var phase: Phase = .idle
   public private(set) var height: CGFloat
+  public private(set) var prefersBorder: Bool?
 
   @ObservationIgnored var onMessage: ((PluginAppNativeMessage) -> Void)?
   @ObservationIgnored var contextActions: [PluginAppContextAction] = [] {
@@ -47,6 +49,7 @@ public final class PluginAppPage {
     self.connection = connection
     let previous = self.display
     self.display = display
+    guard phase != .closed else { return }
     guard controller != nil, phase != .idle else {
       reload()
       return
@@ -56,10 +59,16 @@ public final class PluginAppPage {
     applyTheme(display.theme)
   }
 
-  func suspend() {
+  func suspend(reason: String) {
     task?.cancel()
+    if let controller, phase == .ready { Task { await controller.tearDown(reason: reason) } }
     controller = nil
     phase = .idle
+  }
+
+  func close(reason: String) {
+    suspend(reason: reason)
+    phase = .closed
   }
 
   func retry() {
@@ -158,7 +167,9 @@ public final class PluginAppPage {
       PluginAppWebController.openExternally(url)
     case .frameFailed:
       phase = .failed("The app couldn’t load.")
-    case .message, .displayMode, .appModes:
+    case let .prefersBorder(value):
+      prefersBorder = value
+    case .message, .displayMode, .appModes, .requestTeardown:
       onMessage?(message)
     }
   }

@@ -26,6 +26,7 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
   public let delivery: TranscriptDelivery?
   public let files: [PreviewFile]
   public let isTranscriptMarkdown: Bool
+  public let app: CodevisorExecutionApp?
 
   public init(
     id: String, sender: Sender, text: String, attachments: [Attachment] = [], sentAt: Date? = nil,
@@ -38,7 +39,7 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
 
   init(
     id: String, sender: Sender, text: String, attachments: [Attachment], sentAt: Date?,
-    delivery: TranscriptDelivery?, files: [PreviewFile], isTranscriptMarkdown: Bool
+    delivery: TranscriptDelivery?, files: [PreviewFile], isTranscriptMarkdown: Bool, app: CodevisorExecutionApp? = nil
   ) {
     self.id = id
     self.sender = sender
@@ -48,6 +49,7 @@ public struct TranscriptBotMessage: Identifiable, Equatable, Sendable {
     self.delivery = delivery
     self.files = files
     self.isTranscriptMarkdown = isTranscriptMarkdown
+    self.app = app
   }
 }
 
@@ -58,5 +60,21 @@ public struct TranscriptBotConversation: Equatable, Sendable {
   public init(messages: [TranscriptBotMessage], isWorking: Bool) {
     self.messages = messages
     self.isWorking = isWorking
+  }
+
+  func merging(_ parts: [TranscriptBotMessage]) -> TranscriptBotConversation {
+    guard !parts.isEmpty else { return self }
+
+    var merged = messages
+    for part in parts {
+      let index = merged.firstIndex { Self.isAfter($0, part) } ?? merged.endIndex
+      merged.insert(part, at: index)
+    }
+    return TranscriptBotConversation(messages: merged, isWorking: isWorking)
+  }
+
+  private static func isAfter(_ message: TranscriptBotMessage, _ part: TranscriptBotMessage) -> Bool {
+    guard let sent = message.sentAt, let partSent = part.sentAt else { return false }
+    return sent > partSent
   }
 }

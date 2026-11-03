@@ -26,6 +26,7 @@ struct PluginAppViewURLTests {
         URLQueryItem(name: "modes", value: "inline,fullscreen,pip"),
         URLQueryItem(name: "platform", value: "mobile"),
         URLQueryItem(name: "locale", value: "de-CH"),
+        URLQueryItem(name: "maxHeight", value: "720"),
       ])
   }
 
@@ -39,7 +40,7 @@ struct PluginAppViewURLTests {
 
     #expect(
       url?.absoluteString
-        == "http://localhost:3050/v1/plugins/apps/v1?token=t&theme=light&displayMode=inline&modes=inline&platform=desktop&locale=en-US"
+        == "http://localhost:3050/v1/plugins/apps/v1?token=t&theme=light&displayMode=inline&modes=inline&platform=desktop&locale=en-US&maxHeight=720"
     )
   }
 

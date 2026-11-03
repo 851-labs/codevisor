@@ -102,7 +102,6 @@ struct ChatScreen: View {
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)
       .overlay { livePreviewPiPOverlay }
-      .overlay { PluginAppPipOverlay(chatSessionId: controller.serverSession?.id) }
       .sheet(item: $controller.presentedSetupRequest) { request in
         SetupRequestSheet(request: request, controller: controller)
       }

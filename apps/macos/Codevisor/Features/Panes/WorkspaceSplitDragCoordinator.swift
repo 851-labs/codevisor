@@ -44,6 +44,11 @@ final class WorkspaceSplitDragCoordinator {
     refreshResolution()
   }
 
+  func canSplitLeaf(_ leafId: UUID, on edge: SplitEdge) -> Bool {
+    guard let frame = leafFrames[leafId]?.frame, frame.width > 0 else { return false }
+    return targetCanSplit(frame, on: edge)
+  }
+
   func unregisterLeaf(owner: UUID, leafId: UUID) {
     guard leafFrames[leafId]?.owner == owner else { return }
     leafFrames[leafId] = nil

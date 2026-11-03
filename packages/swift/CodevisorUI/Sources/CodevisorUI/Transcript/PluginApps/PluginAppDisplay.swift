@@ -43,6 +43,7 @@ public struct PluginAppDisplay: Equatable, Sendable {
       URLQueryItem(name: "modes", value: hostModes.map(\.rawValue).joined(separator: ",")),
       URLQueryItem(name: "platform", value: platform.rawValue),
       URLQueryItem(name: "locale", value: locale),
+      URLQueryItem(name: "maxHeight", value: String(Int(PluginAppNativeMessage.heightRange.upperBound))),
     ]
   }
 }

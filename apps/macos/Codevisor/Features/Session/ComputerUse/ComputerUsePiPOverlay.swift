@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorCoreMac
+import CodevisorUI
 import SwiftUI
 
 struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
@@ -52,6 +53,13 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
             .accessibilityHidden(!model.isVisible)
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
             .transition(.opacity)
+        } else if let app = model.app {
+          PluginAppPiPCard(
+            app: app, corner: $model.corner, width: $model.appWidth, container: geometry.size, insets: insets,
+            coordinateSpace: Self.coordinateSpace
+          )
+          .id(app.key)
+          .transition(.opacity.combined(with: .scale(scale: 0.92)))
         }
       }
       .coordinateSpace(name: Self.coordinateSpace)
@@ -233,24 +241,9 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
   }
 
   private var closeControl: some View {
-    closeButton
-      .padding(8)
-      .opacity(isHovering ? 1 : 0)
-      .scaleEffect(isHovering ? 1 : 0.9)
-  }
-
-  private var closeButton: some View {
-    Button {
-      model.dismiss()
-    } label: {
-      Image(systemName: "xmark")
-        .font(.system(size: 12, weight: .semibold))
-        .frame(width: 28, height: 28)
-    }
-    .buttonStyle(.plain)
-    .glassEffect(.regular.interactive(), in: .circle)
-    .help("Close live view")
-    .accessibilityLabel("Close live view of \(model.title)")
+    LivePreviewPiPCloseButton(
+      help: "Close live view", label: "Close live view of \(model.title)", isHovering: isHovering
+    ) { model.dismiss() }
   }
 }
 
@@ -266,7 +259,7 @@ private struct ComputerUsePiPSurface: NSViewRepresentable {
 }
 
 extension ComputerUseLivePreviewCorner {
-  fileprivate var title: String {
+  var title: String {
     switch self {
     case .topLeading: "Top Left"
     case .topTrailing: "Top Right"

@@ -164,3 +164,9 @@
 [submodule ".repos/pippin"]
 	path = .repos/pippin
 	url = https://github.com/rubas/pippin.git
+[submodule ".repos/ext-apps"]
+	path = .repos/ext-apps
+	url = https://github.com/modelcontextprotocol/ext-apps.git
+[submodule ".repos/mcp-ui"]
+	path = .repos/mcp-ui
+	url = https://github.com/MCP-UI-Org/mcp-ui.git

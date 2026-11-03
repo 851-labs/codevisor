@@ -83,11 +83,12 @@ const policy = (
   const withResources = (directive: string): string => [directive, ...csp.resourceDomains].join(" ")
   return [
     "default-src 'none'",
-    withResources("script-src 'unsafe-inline'"),
-    withResources("style-src 'unsafe-inline'"),
+    withResources("script-src 'unsafe-inline' 'unsafe-eval' blob: data:"),
+    withResources("style-src 'unsafe-inline' blob: data:"),
     withResources("img-src data: blob:"),
-    withResources("font-src data:"),
+    withResources("font-src data: blob:"),
     withResources("media-src data: blob:"),
+    withResources("worker-src blob:"),
     `connect-src ${sources(connect)}`,
     `frame-src ${sources(frames)}`,
     `base-uri ${sources(csp.baseUriDomains)}`,

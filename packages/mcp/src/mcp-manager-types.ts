@@ -18,7 +18,7 @@ import type {
   BrowserUseProvider
 } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult, ReadResourceResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 import type { WebSocket } from "ws"
 
 import type { AutomationTool } from "./mcp-automation-use.js"
@@ -192,6 +192,13 @@ export interface McpManager {
     accountId?: string
   ) => Promise<ReadResourceResult>
   readonly appView: (viewId: string) => Promise<PluginAppView | undefined>
+  readonly appTool: (serverId: string, toolName: string) => Promise<Tool | undefined>
+  readonly listAppTools: (serverId: string) => Promise<ReadonlyArray<Tool>>
+  readonly listedResourceMeta: (
+    serverId: string,
+    uri: string,
+    accountId?: string
+  ) => Promise<Readonly<Record<string, unknown>> | undefined>
   readonly callAppTool: (
     serverId: string,
     toolName: string,

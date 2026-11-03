@@ -79,6 +79,22 @@ public final class PluginAppWebController: NSObject {
     _ = await callHost("window.codevisorHost.displayModeChanged(mode, requestId)", arguments: arguments)
   }
 
+  func tearDown(reason: String) async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      let finish = PluginAppTeardownFinish(continuation)
+      Task {
+        _ = await callHost("await window.codevisorHost.teardown(reason)", arguments: ["reason": reason])
+        finish.resume()
+      }
+      Task {
+        try? await Task.sleep(for: Self.teardownLimit)
+        finish.resume()
+      }
+    }
+  }
+
+  private static let teardownLimit: Duration = .milliseconds(1_500)
+
   private func callHost(_ body: String, arguments: [String: Any]) async -> Bool {
     do {
       _ = try await webView.callAsyncJavaScript(body, arguments: arguments, contentWorld: .page)

@@ -80,6 +80,30 @@ export const readPluginResource = async (
   return connection.client.readResource({ uri, ...(meta === undefined ? {} : { _meta: meta }) })
 }
 
+export const listedResourceMeta = async (
+  connection: UpstreamConnection,
+  accounts: PluginAccountSource | undefined,
+  serverId: string,
+  uri: string,
+  accountId?: string
+): Promise<Readonly<Record<string, unknown>> | undefined> => {
+  const meta = await accountMeta(accounts, serverId, accountId)
+  let cursor: string | undefined
+  for (let page = 0; page < maxResourcePages; page += 1) {
+    const listed = await connection.client.listResources({
+      ...(cursor === undefined ? {} : { cursor }),
+      ...(meta === undefined ? {} : { _meta: meta })
+    })
+    const found = listed.resources.find((resource) => resource.uri === uri)
+    if (found !== undefined) return found._meta
+    cursor = listed.nextCursor
+    if (cursor === undefined) return undefined
+  }
+  return undefined
+}
+
+const maxResourcePages = 10
+
 const longestTimerMs = 2_147_483_647
 
 const ResultSchema = z.looseObject({})

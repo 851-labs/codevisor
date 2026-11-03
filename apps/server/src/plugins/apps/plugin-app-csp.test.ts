@@ -33,11 +33,12 @@ describe("plugin app sandbox", () => {
     expect(appPolicy(sandbox.csp)).toBe(
       [
         "default-src 'none'",
-        "script-src 'unsafe-inline' https://*.cdn.example",
-        "style-src 'unsafe-inline' https://*.cdn.example",
+        "script-src 'unsafe-inline' 'unsafe-eval' blob: data: https://*.cdn.example",
+        "style-src 'unsafe-inline' blob: data: https://*.cdn.example",
         "img-src data: blob: https://*.cdn.example",
-        "font-src data: https://*.cdn.example",
+        "font-src data: blob: https://*.cdn.example",
         "media-src data: blob: https://*.cdn.example",
+        "worker-src blob: https://*.cdn.example",
         "connect-src https://api.example wss://live.example:8443",
         "frame-src https://player.example",
         "base-uri 'none'",
@@ -55,7 +56,9 @@ describe("plugin app sandbox", () => {
       const sandbox = appSandbox(meta)
       expect(sandbox.permissions).toEqual({})
       expect(frameAllow(sandbox.permissions)).toBe("")
-      expect(appPolicy(sandbox.csp)).toContain("script-src 'unsafe-inline'; ")
+      expect(appPolicy(sandbox.csp)).toContain(
+        "script-src 'unsafe-inline' 'unsafe-eval' blob: data:; "
+      )
       expect(appPolicy(sandbox.csp)).toContain("connect-src 'none'; frame-src 'none'")
     }
   })

@@ -7,6 +7,8 @@ public enum PluginAppNativeMessage: Equatable, Sendable {
   case message(String, viewId: String)
   case displayMode(PluginAppDisplayMode, requestId: String?)
   case appModes(Set<PluginAppDisplayMode>)
+  case prefersBorder(Bool)
+  case requestTeardown
   case frameFailed
 
   public static let heightRange: ClosedRange<CGFloat> = 80...720
@@ -22,6 +24,8 @@ public enum PluginAppNativeMessage: Equatable, Sendable {
     case "message": self.init(text: payload["text"], viewId: payload["viewId"])
     case "displayMode": self.init(mode: payload["mode"], requestId: payload["requestId"])
     case "appModes": self.init(modes: payload["modes"])
+    case "prefersBorder": self.init(prefersBorder: payload["value"])
+    case "requestTeardown": self = .requestTeardown
     case "frameFailed": self = .frameFailed
     default: return nil
     }
@@ -57,6 +61,11 @@ public enum PluginAppNativeMessage: Equatable, Sendable {
   private init?(mode value: Any?, requestId: Any?) {
     guard let mode = PluginAppDisplayMode.parse(value) else { return nil }
     self = .displayMode(mode, requestId: requestId as? String)
+  }
+
+  private init?(prefersBorder value: Any?) {
+    guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+    self = .prefersBorder(number.boolValue)
   }
 
   private init?(modes value: Any?) {

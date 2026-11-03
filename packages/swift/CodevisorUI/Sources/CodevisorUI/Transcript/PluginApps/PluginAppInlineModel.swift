@@ -13,6 +13,8 @@ public final class PluginAppInlineModel {
   public let lookup = PluginAppSubjectLookup()
   public private(set) var appModes: Set<PluginAppDisplayMode>?
   public private(set) var chatSessionId: UUID?
+  public private(set) var fullscreen: PluginAppFullscreen = .unavailable
+  public private(set) var panePlacement: PluginAppPanePlacement?
 
   @ObservationIgnored private(set) var connection: (any PluginAppConnecting)?
   @ObservationIgnored private let registry: PluginAppDisplayRegistry
@@ -32,19 +34,27 @@ public final class PluginAppInlineModel {
 
   public var subject: PluginModerationSubject? { lookup.subject }
 
-  public func canPresent(_ mode: PluginAppDisplayMode) -> Bool {
-    guard appModes?.contains(mode) ?? true else { return false }
-    guard mode == .fullscreen else { return true }
+  public var showsInPane: Bool { mode == .fullscreen && fullscreen.defaultPlacement != nil }
 
-    return connection?.canOpenFullscreen == true
+  public func canPresent(_ mode: PluginAppDisplayMode) -> Bool {
+    hostModes.contains(mode) && appModes?.contains(mode) ?? true
   }
 
   var hostModes: [PluginAppDisplayMode] {
-    PluginAppDisplayMode.allCases.filter { $0 != .fullscreen || connection?.canOpenFullscreen == true }
+    PluginAppDisplayMode.allCases.filter { mode in
+      switch mode {
+      case .inline: true
+      case .pip: PluginAppDisplayMode.hostShowsPip
+      case .fullscreen: fullscreen != .unavailable
+      }
+    }
   }
 
   func attach(_ connection: any PluginAppConnecting, chatSessionId: UUID?) {
-    if prefers(connection) { self.connection = connection }
+    if prefers(connection) {
+      self.connection = connection
+      fullscreen = connection.fullscreen
+    }
     if let chatSessionId { self.chatSessionId = chatSessionId }
     lookup.resolve(app, connection: connection)
   }
@@ -55,16 +65,17 @@ public final class PluginAppInlineModel {
       return
     }
 
+    leave()
     switch mode {
-    case .inline: registry.endPip(self)
+    case .inline: break
     case .pip: registry.startPip(self)
-    case .fullscreen: openFullscreen()
+    case .fullscreen: enterFullscreen()
     }
     page.notifyDisplayMode(self.mode, requestId: requestId)
   }
 
   public func revealFullscreen() {
-    _ = connection?.openFullscreen(app)
+    _ = connection?.openFullscreen(app, in: panePlacement ?? .tab)
   }
 
   public func retry() {
@@ -77,7 +88,7 @@ public final class PluginAppInlineModel {
     page.retry()
   }
 
-  func show(display: PluginAppDisplay) {
+  public func show(display: PluginAppDisplay) {
     guard let connection else { return }
 
     var display = display
@@ -90,10 +101,26 @@ public final class PluginAppInlineModel {
     candidate.canOpenFullscreen || connection?.canOpenFullscreen != true
   }
 
-  private func openFullscreen() {
-    guard connection?.openFullscreen(app) == true else { return }
+  private func leave() {
+    registry.endPip(self)
+  }
 
+  private func enterFullscreen() {
+    guard let placement = fullscreen.defaultPlacement,
+      let opened = connection?.openFullscreen(app, in: placement)
+    else { return }
+
+    panePlacement = opened
     registry.beginFullscreen(key)
+  }
+
+  private func closeOnRequest() {
+    guard mode == .inline else {
+      request(.inline)
+      return
+    }
+
+    page.close(reason: "The app asked to close.")
   }
 
   private func receive(_ message: PluginAppNativeMessage) {
@@ -104,7 +131,9 @@ public final class PluginAppInlineModel {
       appModes = modes
     case let .message(text, viewId) where viewId == app.viewId:
       connection?.sendMessage(text, from: app)
-    case .message, .size, .openLink, .frameFailed:
+    case .requestTeardown:
+      closeOnRequest()
+    case .message, .size, .openLink, .frameFailed, .prefersBorder:
       break
     }
   }

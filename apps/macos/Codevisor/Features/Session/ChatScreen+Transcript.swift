@@ -102,7 +102,9 @@ extension ChatScreen {
                     .environment(\.transcriptController, controller)
                     .environment(
                       \.pluginAppHost,
-                      PluginAppHost(environment: environment, session: controller, presenter: pluginAppPresenter)
+                      PluginAppHost(
+                        environment: environment, session: controller,
+                        presenter: botMode == nil ? pluginAppPresenter : nil)
                     )
                     .environment(
                       \.streamingTextAnimationVisibility,

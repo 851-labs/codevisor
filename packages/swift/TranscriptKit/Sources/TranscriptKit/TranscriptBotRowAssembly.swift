@@ -128,7 +128,8 @@ enum TranscriptBotRowAssembly {
       content: .botMessage(
         message, TranscriptBotMessageContentCache.shared.content(for: message), isGroupTail: isGroupTail),
       estimatedHeight: estimatedHeight(for: message),
-      measurementRevision: message.text.hashValue ^ message.attachments.count ^ message.files.map(\.id).hashValue,
+      measurementRevision: message.text.hashValue ^ message.attachments.count ^ message.files.map(\.id).hashValue
+        ^ (message.app?.viewId.hashValue ?? 0),
       spacingAfter: spacing
     )
   }
@@ -171,6 +172,7 @@ enum TranscriptBotRowAssembly {
   }
 
   private static func estimatedHeight(for message: TranscriptBotMessage) -> CGFloat {
+    if message.app != nil { return TranscriptPluginAppRowProjection.appEstimatedHeight }
     let lines = max(1, message.text.count / 70 + message.text.filter { $0 == "\n" }.count + 1)
     let attachments: CGFloat = message.attachments.isEmpty && message.files.isEmpty ? 0 : 140
     return CGFloat(lines) * 20 + 20 + attachments

@@ -7,8 +7,9 @@ enum TranscriptRowAssembly {
     options: TranscriptProjectionOptions
   ) throws -> [TranscriptPresentationRow] {
     if options.presentsBotConversation {
+      let conversation = input.botConversation ?? TranscriptBotConversation(messages: [], isWorking: false)
       return try TranscriptBotRowAssembly.assemble(
-        input.botConversation ?? TranscriptBotConversation(messages: [], isWorking: false),
+        conversation.merging(TranscriptBubbleConversation.appMessages(in: input)),
         input: input,
         options: options
       )

@@ -71,14 +71,19 @@ describe("window.openai shim", () => {
       displayMode: "inline",
       locale: "en-US",
       userAgent: "Codevisor",
+      maxHeight: null,
       safeArea: { insets: { top: 0, right: 0, bottom: 0, left: 0 } },
       toolInput: { request: { displayLimit: 2 } },
       toolOutput: { results: [], resultCounts: { totalMatchingCount: 2 } },
       toolResponseMetadata: { "zillow.com/data": { widget: "search" } },
       widgetState: null
     })
-    expect(openAiGlobals({ locale: "fr-FR" }, undefined)).toMatchObject({
+    expect(
+      openAiGlobals({ locale: "fr-FR", userAgent: "Codevisor/2.1" }, undefined, 720)
+    ).toMatchObject({
       locale: "fr-FR",
+      userAgent: "Codevisor/2.1",
+      maxHeight: 720,
       toolInput: {},
       toolOutput: null,
       toolResponseMetadata: null
@@ -166,6 +171,11 @@ describe("window.openai shim", () => {
       method: "ui/notifications/host-context-changed",
       params: { theme: "light", platform: "mobile" }
     })
+    fromHost({
+      jsonrpc: "2.0",
+      method: "ui/notifications/host-context-changed",
+      params: { containerDimensions: { width: 360, maxHeight: 420 } }
+    })
 
     expect(openai).toMatchObject({ toolInput: { q: 1 }, toolOutput: null, theme: "light" })
     expect(events).toEqual([
@@ -174,7 +184,8 @@ describe("window.openai shim", () => {
         changes: { toolOutput: { results: [1] }, toolResponseMetadata: { "zillow.com/data": {} } }
       },
       { changes: { toolOutput: null, toolResponseMetadata: null } },
-      { changes: { theme: "light" } }
+      { changes: { theme: "light" } },
+      { changes: { maxHeight: 420 } }
     ])
   })
 

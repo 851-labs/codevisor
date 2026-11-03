@@ -34,9 +34,10 @@ extension ChatScreen {
     let serverId = controller.project.serverId
     let supportsBrowser = environment.machines.statusByMachineId[serverId]?.supportsLivePreview == true
     let computerSource = computerUsePiPSource
-    if let chatSessionID = controller.serverSession?.id, computerSource != nil || supportsBrowser {
+    if let chatSessionID = controller.serverSession?.id {
       ComputerUsePiPOverlay(
         model: AgentLivePreviewPiPModel(
+          chatSessionID: chatSessionID,
           computer: computerSource.map { ComputerUsePiPModel(chatSessionID: chatSessionID, source: $0) },
           browser: supportsBrowser
             ? BrowserUsePiPModel(chatSessionID: chatSessionID, client: environment.machines.client(for: serverId))

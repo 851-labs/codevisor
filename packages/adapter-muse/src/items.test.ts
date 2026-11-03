@@ -326,6 +326,13 @@ describe("Muse item mapping", () => {
     expect(call("t6", "monitor", "not json")).toMatchObject({ kind: "execute", rawInput: {} })
     expect(call("t7", "cron_create", "[1]")).toMatchObject({ kind: "other", title: "cron_create" })
     expect(call("t8", undefined)).toMatchObject({ kind: "other", title: "tool" })
+    expect(
+      call("t9", "mcp__codevisor__execute", '{"code":"async () => 1","description":"Show a map"}')
+    ).toMatchObject({
+      kind: "other",
+      title: "mcp__codevisor__execute",
+      rawInput: { code: "async () => 1", description: "Show a map" }
+    })
   })
 
   it("hides plumbing tools and drops their output", () => {

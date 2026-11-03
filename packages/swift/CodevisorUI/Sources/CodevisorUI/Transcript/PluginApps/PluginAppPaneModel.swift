@@ -39,28 +39,28 @@ public final class PluginAppPaneModel {
     self.registry = .shared
     self.inlineModels = .shared
     page.onMessage = { [weak self] message in self?.receive(message) }
-    registry.beginFullscreen(key)
   }
 
   public var subject: PluginModerationSubject? { lookup.subject }
 
   public func canEnterPip() -> Bool {
-    appModes?.contains(.pip) ?? true
+    PluginAppDisplayMode.hostShowsPip && appModes?.contains(.pip) ?? true
   }
 
   public func appear() {
+    registry.beginFullscreen(key)
     lookup.resolve(app, connection: connection)
   }
 
   public func show(display: PluginAppDisplay) {
     var display = display
     display.mode = .fullscreen
-    display.hostModes = PluginAppDisplayMode.allCases
+    display.hostModes = PluginAppDisplayMode.allCases.filter { $0 != .pip || PluginAppDisplayMode.hostShowsPip }
     page.show(display: display, connection: connection)
   }
 
   public func suspend() {
-    page.suspend()
+    page.suspend(reason: "The tab was hidden.")
   }
 
   public func retry() {
@@ -73,7 +73,7 @@ public final class PluginAppPaneModel {
 
   public func close() {
     registry.endFullscreen(key)
-    page.suspend()
+    page.suspend(reason: "The tab was closed.")
   }
 
   public func enterPip() {
@@ -98,7 +98,9 @@ public final class PluginAppPaneModel {
       appModes = modes
     case let .message(text, viewId) where viewId == app.viewId:
       connection.sendMessage(text, from: app)
-    case .message, .size, .openLink, .frameFailed:
+    case .requestTeardown:
+      onBack?()
+    case .message, .size, .openLink, .frameFailed, .prefersBorder:
       break
     }
   }

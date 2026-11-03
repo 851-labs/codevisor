@@ -1,4 +1,5 @@
 import CodevisorCoreMac
+import CodevisorUI
 import Observation
 import SwiftUI
 
@@ -22,6 +23,8 @@ protocol LivePreviewPiPModel: AnyObject, Observable {
   var canActivateTarget: Bool { get }
   var canReload: Bool { get }
   var hasCustomSize: Bool { get }
+  var app: PluginAppInlineModel? { get }
+  var appWidth: CGFloat? { get set }
 
   func appeared(isTurnRunning: Bool)
   func sync()
@@ -31,6 +34,15 @@ protocol LivePreviewPiPModel: AnyObject, Observable {
   func activateTarget()
   func reload()
   func resetSize()
+}
+
+extension LivePreviewPiPModel {
+  var app: PluginAppInlineModel? { nil }
+
+  var appWidth: CGFloat? {
+    get { nil }
+    set {}
+  }
 }
 
 extension ComputerUsePiPModel: LivePreviewPiPModel {

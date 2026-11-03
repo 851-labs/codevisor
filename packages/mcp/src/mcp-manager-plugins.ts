@@ -4,12 +4,23 @@ import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import { accountMeta } from "./mcp-plugin-accounts.js"
 import { toolVisibleTo } from "./mcp-plugin-apps.js"
-import { makePluginConnection, readPluginResource } from "./mcp-plugin-connection.js"
+import {
+  listedResourceMeta,
+  makePluginConnection,
+  readPluginResource
+} from "./mcp-plugin-connection.js"
 import type { ConnectUpstream } from "./mcp-upstream.js"
 
 export type McpPluginOperations = Pick<
   McpManager,
-  "appView" | "callAppTool" | "pluginConnection" | "readResource" | "subscribeConnections"
+  | "appTool"
+  | "appView"
+  | "callAppTool"
+  | "listAppTools"
+  | "listedResourceMeta"
+  | "pluginConnection"
+  | "readResource"
+  | "subscribeConnections"
 >
 
 export const makeMcpPluginOperations = (
@@ -30,6 +41,18 @@ export const makeMcpPluginOperations = (
       return () => connectionListeners.delete(listener)
     },
     appView: (viewId) => appViews.get(viewId),
+    appTool: async (serverId, toolName) =>
+      (await connectUpstream(serverId)).tools.find((tool) => tool.name === toolName),
+    listAppTools: async (serverId) =>
+      (await connectUpstream(serverId)).tools.filter((tool) => toolVisibleTo(tool, "app")),
+    listedResourceMeta: async (serverId, uri, accountId) =>
+      listedResourceMeta(
+        await connectUpstream(serverId),
+        config.accounts,
+        serverId,
+        uri,
+        accountId
+      ),
     callAppTool: async (serverId, toolName, args, accountId) => {
       const connection = await connectUpstream(serverId)
       const tool = connection.tools.find((candidate) => candidate.name === toolName)

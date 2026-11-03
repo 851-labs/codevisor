@@ -1,10 +1,15 @@
 import SwiftUI
 
-struct PluginAppPageView: View {
+public struct PluginAppPageView: View {
   let page: PluginAppPage
   let onRetry: () -> Void
 
-  var body: some View {
+  public init(page: PluginAppPage, onRetry: @escaping () -> Void) {
+    self.page = page
+    self.onRetry = onRetry
+  }
+
+  public var body: some View {
     if case let .failed(message) = page.phase {
       PluginAppInlinePlaceholder(systemImage: "exclamationmark.triangle", message: message, action: onRetry)
     } else {

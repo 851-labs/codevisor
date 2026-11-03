@@ -35,7 +35,10 @@ export const museToolKind = (tool: string): string => {
 const hiddenTool = (tool: string): boolean =>
   tool === "write_todos" || tool === "request_user_input" || tool.startsWith("subagent_")
 
+const isGatewayTool = (tool: string): boolean => tool.startsWith("mcp__codevisor__")
+
 export const museToolTitle = (tool: string, args: Record<string, unknown>): string =>
+  (isGatewayTool(tool) ? tool : undefined) ??
   text(args.description) ??
   text(args.command) ??
   text(args.path) ??

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import {
+  APP_HOST_TEST_VERSION,
   appTools,
   capturedView,
   launch,
@@ -9,7 +10,13 @@ import {
   shell
 } from "../plugins/apps/plugin-app-route-support.js"
 import { contentSizeScript } from "../plugins/apps/plugin-app-size.js"
-import { alertsHtml, boardHtml, zillowPlugin } from "../plugins/apps/plugin-app-test-support.js"
+import { appHostStyles } from "../plugins/apps/plugin-app-styles.js"
+import {
+  alertsHtml,
+  boardHtml,
+  grafanaPlugin,
+  zillowPlugin
+} from "../plugins/apps/plugin-app-test-support.js"
 import { jsonRequest, start, startWithApp } from "../test-support.js"
 
 describe("plugin app views", () => {
@@ -66,7 +73,7 @@ describe("plugin app views", () => {
       toolResult: { content: [{ type: "text", text: "done" }] }
     })
     expect(loaded.boot?.html).toContain(
-      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.example;`
+      `<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob: data: https://cdn.example;`
     )
     expect(loaded.boot?.html).toContain(alertsHtml.slice(alertsHtml.indexOf("<title>")))
     expect(loaded.boot?.html).toContain(contentSizeScript())
@@ -96,7 +103,8 @@ describe("plugin app views", () => {
     const url = await launch(setup, `/v1/plugins/apps/${viewId}/token`)
     const token = new URL(url, setup.server.url).searchParams.get("token")!
 
-    const defaults = await shell(setup, `${url}&displayMode=fullscreen&locale=x`)
+    const defaults = await shell(setup, `${url}&displayMode=fullscreen&locale=x&maxHeight=9000`)
+    const capped = await shell(setup, `${url}&maxHeight=720`)
     const other = await shell(
       setup,
       `/v1/plugins/apps/0b9a8f8e-5d1c-4f43-9f53-3e1c2c7f2a10?token=${token}`
@@ -107,8 +115,16 @@ describe("plugin app views", () => {
       theme: "light",
       displayMode: "fullscreen",
       availableDisplayModes: ["fullscreen"],
-      platform: "desktop"
+      platform: "desktop",
+      userAgent: `Codevisor/${APP_HOST_TEST_VERSION}`,
+      toolInfo: { tool: expect.objectContaining({ name: "show_alerts" }) },
+      deviceCapabilities: { touch: false, hover: true },
+      safeAreaInsets: { top: 0, right: 0, bottom: 0, left: 0 },
+      styles: appHostStyles("desktop")
     })
+    expect(defaults.boot?.hostInfo).toEqual({ name: "Codevisor", version: APP_HOST_TEST_VERSION })
+    expect(defaults.boot?.maxHeight).toBeUndefined()
+    expect(capped.boot?.maxHeight).toBe(720)
     expect(other.status).toBe(401)
     expect(bare.status).toBe(401)
   })
@@ -142,6 +158,81 @@ describe("plugin app views", () => {
     expect(malformed.status).toBe(400)
     expect(unknown.status).toBe(500)
   })
+
+  it("lists the tools the app may call and keeps the app's logs and CSP in the server log", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    onTestFinished(() => logged.mockRestore())
+    const setup = await secured()
+    const viewId = await capturedView(setup)
+    const url = await launch(setup, `/v1/plugins/apps/${viewId}/token`)
+    const { boot } = await shell(setup, url)
+    await shell(setup, url)
+
+    const listed = await post(setup, boot!.endpoints.toolsList, {})
+    const kept = await post(setup, boot!.endpoints.log, { level: "error", data: { failed: 1 } })
+    const lines = logged.mock.calls.map(([line]) => JSON.parse(String(line)))
+
+    expect(listed.body).toMatchObject({ tools: [{ name: "show_alerts" }, { name: "refresh" }] })
+    expect(kept).toEqual({ status: 200, body: {} })
+    expect(lines.filter(({ event }) => event === "plugin_app_csp")).toEqual([
+      {
+        event: "plugin_app_csp",
+        serverId: setup.serverId,
+        resourceUri: "ui://grafana/alerts.html",
+        viewId,
+        policy: expect.stringContaining("connect-src https://grafana.example")
+      }
+    ])
+    expect(lines.filter(({ event }) => event === "plugin_app_log")).toEqual([
+      {
+        event: "plugin_app_log",
+        serverId: setup.serverId,
+        resourceUri: "ui://grafana/alerts.html",
+        viewId,
+        level: "error",
+        data: '{"failed":1}'
+      }
+    ])
+  })
+
+  it("still opens an app when its plugin can't list resources", async () => {
+    const { _meta: _contentMeta, ...alerts } = grafanaPlugin.resources["ui://grafana/alerts.html"]!
+    const setup = await secured({
+      ...grafanaPlugin,
+      resources: { ...grafanaPlugin.resources, "ui://grafana/alerts.html": alerts },
+      failing: ["resources/list"]
+    })
+    const viewId = await capturedView(setup)
+
+    const { boot, status } = await shell(
+      setup,
+      await launch(setup, `/v1/plugins/apps/${viewId}/token`)
+    )
+
+    expect(status).toBe(200)
+    expect(boot?.hostCapabilities).toMatchObject({ sandbox: { csp: { connectDomains: [] } } })
+  })
+
+  it("falls back to the resource listing's _meta.ui when the content has none", async () => {
+    const { _meta: _contentMeta, ...alerts } = grafanaPlugin.resources["ui://grafana/alerts.html"]!
+    const setup = await secured({
+      ...grafanaPlugin,
+      resources: { ...grafanaPlugin.resources, "ui://grafana/alerts.html": alerts },
+      listedMeta: {
+        "ui://grafana/alerts.html": {
+          ui: { prefersBorder: false, csp: { connectDomains: ["https://listed.example"] } }
+        }
+      }
+    })
+    const viewId = await capturedView(setup)
+
+    const { boot } = await shell(setup, await launch(setup, `/v1/plugins/apps/${viewId}/token`))
+
+    expect(boot?.prefersBorder).toBe(false)
+    expect(boot?.hostCapabilities).toMatchObject({
+      sandbox: { csp: { connectDomains: ["https://listed.example"] } }
+    })
+  })
 })
 
 describe("Zillow's recorded app", () => {
@@ -164,7 +255,9 @@ describe("Zillow's recorded app", () => {
     expect(loaded.policy).toContain(
       "connect-src 'self' https://www.zillow.com https://mcp.zillow.com"
     )
-    expect(loaded.policy).toContain("script-src 'unsafe-inline' https://www.zillowstatic.com")
+    expect(loaded.policy).toContain(
+      "script-src 'unsafe-inline' 'unsafe-eval' blob: data: https://www.zillowstatic.com"
+    )
     expect(loaded.boot?.html).toMatch(/^<meta http-equiv="Content-Security-Policy"/)
     expect(loaded.boot?.html).toContain('<div id="zillow-sub-app-root"></div>')
     expect(loaded.boot?.toolResult).toMatchObject({

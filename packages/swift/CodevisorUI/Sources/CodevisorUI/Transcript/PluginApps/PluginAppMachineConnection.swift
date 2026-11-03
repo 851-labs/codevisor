@@ -18,7 +18,7 @@ public struct PluginAppMachineConnection: PluginAppConnecting {
     self.chatMachineId = chatMachineId ?? owner
   }
 
-  public var canOpenFullscreen: Bool { false }
+  public var fullscreen: PluginAppFullscreen { .unavailable }
 
   public func launch(_ app: CodevisorExecutionApp) async throws -> PluginAppLaunch {
     let response = try await client.issuePluginAppViewToken(viewId: app.viewId)
@@ -34,7 +34,11 @@ public struct PluginAppMachineConnection: PluginAppConnecting {
     return servers.first { $0.id == app.serverId }.map(PluginModerationSubject.init(server:))
   }
 
-  public func openFullscreen(_ app: CodevisorExecutionApp) -> Bool { false }
+  public func openFullscreen(
+    _ app: CodevisorExecutionApp, in placement: PluginAppPanePlacement
+  ) -> PluginAppPanePlacement? {
+    nil
+  }
 
   public func sendMessage(_ text: String, from app: CodevisorExecutionApp) {
     PluginAppChatMessage.send(

@@ -53,7 +53,10 @@ const bootScript = (boot: BridgeBoot): string =>
     "post: (message) => { if (native === undefined) return false; native.postMessage(message); return true },",
     'open: (url) => { window.open(url, "_blank", "noopener") },',
     "hasUserActivation: () => window.navigator?.userActivation?.isActive === true,",
-    "schedule: (callback, delayMs) => { window.setTimeout(callback, delayMs) }",
+    "schedule: (callback, delayMs) => { window.setTimeout(callback, delayMs) },",
+    "viewport: () => ({ width: Math.round(window.innerWidth), height: Math.round(window.innerHeight) }),",
+    'onResize: (changed) => window.addEventListener("resize", changed),',
+    "timeZone: () => window.Intl?.DateTimeFormat().resolvedOptions().timeZone",
     "};",
     `const frameOrigin = (${appFrameOrigin.toString()})(window.location.href);`,
     `window.codevisorHost = (${installAppBridge.toString()})({ boot, frame, host, pathname: window.location.pathname, search: window.location.search, frameOrigin });`

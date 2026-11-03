@@ -12,7 +12,13 @@ const boot: BridgeBoot = {
   allow: "",
   token: "session-token",
   framePath: "/v1/plugins/apps/view-1/frame?token=session-token",
-  endpoints: { toolsCall: "/call", resourcesRead: "/read", modelContext: "/context" }
+  endpoints: {
+    toolsCall: "/call",
+    toolsList: "/tools",
+    resourcesRead: "/read",
+    modelContext: "/context",
+    log: "/log"
+  }
 }
 
 const mounted = (frameOrigin: string | undefined, framePath = boot.framePath) => {
@@ -44,7 +50,10 @@ const mounted = (frameOrigin: string | undefined, framePath = boot.framePath) =>
       hasUserActivation: () => false,
       schedule: (callback) => {
         timers.push(callback)
-      }
+      },
+      viewport: () => ({ width: 600, height: 240 }),
+      onResize: () => undefined,
+      timeZone: () => undefined
     }
   })
   const tick = () => timers.splice(0).forEach((callback) => callback())

@@ -10,16 +10,21 @@ export interface BridgeBoot {
   readonly toolInput?: Readonly<Record<string, unknown>>
   readonly toolResult?: Readonly<Record<string, unknown>>
   readonly framePath: string
+  readonly maxHeight?: number
+  readonly prefersBorder?: boolean
   readonly endpoints: {
     readonly toolsCall: string
+    readonly toolsList: string
     readonly resourcesRead: string
     readonly modelContext: string
+    readonly log: string
   }
 }
 
 export interface CodevisorHostApi {
   readonly displayModeChanged: (mode: unknown, requestId?: unknown) => void
   readonly setTheme: (theme: unknown) => void
+  readonly teardown: (reason: unknown) => Promise<void>
 }
 
 export interface BridgeWindow {
@@ -56,6 +61,14 @@ export interface BridgeHost {
   readonly open: (url: string) => void
   readonly hasUserActivation: () => boolean
   readonly schedule: (callback: () => void, delayMs: number) => void
+  readonly viewport: () => BridgeViewport
+  readonly onResize: (changed: () => void) => void
+  readonly timeZone: () => string | undefined
+}
+
+export interface BridgeViewport {
+  readonly width: number
+  readonly height: number
 }
 
 export interface BridgeEnv {
@@ -82,12 +95,26 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
   let appModes: ReadonlyArray<unknown> | undefined
   let nextModeRequest = 0
   let initialized = false
+  const layoutSettleMs = 250
+  const resizeSettleMs = 120
+  const teardownWaitMs = 1_000
 
   // oxlint-disable-next-line unicorn/consistent-function-scoping
   const isRecord = (value: unknown): value is Params =>
     typeof value === "object" && value !== null && !Array.isArray(value)
 
   const recordOf = (value: unknown): Params => (isRecord(value) ? value : {})
+
+  const containerDimensions = (mode: unknown): Params => {
+    const { width, height } = host.viewport()
+    if (mode === "fullscreen") return { width, height }
+    if (boot.maxHeight === undefined) return { width }
+    return { width, maxHeight: boot.maxHeight }
+  }
+
+  const timeZone = host.timeZone()
+  if (timeZone !== undefined) context.timeZone = timeZone
+  context.containerDimensions = containerDimensions(context.displayMode)
 
   const send = (message: Params): void => {
     frame.contentWindow?.postMessage({ jsonrpc: "2.0", ...message }, "*")
@@ -113,12 +140,19 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
     return {}
   }
 
+  const messageText = (content: unknown): string =>
+    (Array.isArray(content) ? content : [content])
+      .map((block) => recordOf(block).text)
+      .filter((text): text is string => typeof text === "string" && text.trim() !== "")
+      .join("\n\n")
+
   const sendMessage = (params: Params): Params => {
     if (!host.hasUserActivation()) throw new Error("A user gesture is required")
-    const text = recordOf(params.content).text
+    const text = messageText(params.content)
+    if (text === "") throw new Error("Invalid message format")
     host.post({
       type: "message",
-      text: typeof text === "string" ? text : "",
+      text,
       ...(boot.viewId === undefined ? {} : { viewId: boot.viewId })
     })
     return {}
@@ -155,6 +189,7 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
   const requests = new Map<string, (params: Params) => unknown>([
     ["ui/initialize", initialize],
     ["tools/call", (params) => forward(boot.endpoints.toolsCall, params)],
+    ["tools/list", (params) => forward(boot.endpoints.toolsList, params)],
     ["resources/read", (params) => forward(boot.endpoints.resourcesRead, params)],
     ["ui/open-link", openLink],
     ["ui/message", sendMessage],
@@ -189,6 +224,8 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
   const notifications = new Map<string, (params: Params) => void>([
     ["ui/notifications/initialized", deliverToolData],
     ["ui/notifications/size-changed", reportSize],
+    ["ui/notifications/request-teardown", () => host.post({ type: "requestTeardown" })],
+    ["notifications/message", (params) => void forward(boot.endpoints.log, params).catch(() => {})],
     ["codevisor/notifications/content-size", reportMeasuredSize]
   ])
 
@@ -213,7 +250,10 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
     if (event.source !== frame.contentWindow) return
     frameAlive = true
     const message = recordOf(event.data)
-    if (typeof message.method !== "string") return
+    if (typeof message.method !== "string") {
+      settleTeardown(message.id)
+      return
+    }
     const params = recordOf(message.params)
     if (message.id === undefined) {
       notifications.get(message.method)?.(params)
@@ -227,14 +267,54 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
     if (initialized) send({ method: "ui/notifications/host-context-changed", params: changes })
   }
 
+  const reportDimensions = (): void => {
+    if (host.viewport().width <= 0) return
+    const dimensions = containerDimensions(context.displayMode)
+    if (JSON.stringify(dimensions) === JSON.stringify(context.containerDimensions)) return
+    changeContext({ containerDimensions: dimensions })
+  }
+
   const displayModeChanged = (mode: unknown, requestId?: unknown): void => {
     if (hostModes.includes(mode) && mode !== context.displayMode) {
       changeContext({ displayMode: mode })
+      host.schedule(reportDimensions, layoutSettleMs)
     }
     const key = typeof requestId === "string" ? requestId : ""
     const settle = modeRequests.get(key)
     modeRequests.delete(key)
     settle?.(context.displayMode)
+  }
+
+  let resizePending = false
+
+  const resizeSettled = (): void => {
+    resizePending = false
+    reportDimensions()
+  }
+
+  host.onResize(() => {
+    if (resizePending) return
+    resizePending = true
+    host.schedule(resizeSettled, resizeSettleMs)
+  })
+
+  const teardowns = new Map<string, () => void>()
+  let nextTeardown = 0
+
+  const settleTeardown = (id: unknown): void => {
+    const key = typeof id === "string" ? id : ""
+    teardowns.get(key)?.()
+    teardowns.delete(key)
+  }
+
+  const teardown = (reason: unknown): Promise<void> => {
+    if (!initialized) return Promise.resolve()
+    nextTeardown += 1
+    const id = `teardown-${nextTeardown}`
+    const finished = new Promise<void>((resolve) => teardowns.set(id, resolve))
+    send({ id, method: "ui/resource-teardown", params: { reason: String(reason) } })
+    host.schedule(() => settleTeardown(id), teardownWaitMs)
+    return finished
   }
 
   const setTheme = (theme: unknown): void => {
@@ -269,6 +349,8 @@ export const installAppBridge = (env: BridgeEnv): CodevisorHostApi => {
   }
 
   if (boot.allow !== "") frame.setAttribute("allow", boot.allow)
+  if (boot.prefersBorder !== undefined)
+    host.post({ type: "prefersBorder", value: boot.prefersBorder })
   mountFrame()
-  return { displayModeChanged, setTheme }
+  return { displayModeChanged, setTheme, teardown }
 }

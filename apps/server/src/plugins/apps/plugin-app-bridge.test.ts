@@ -1,109 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  installAppBridge,
-  type BridgeBoot,
-  type BridgeEvent,
-  type BridgeRequestInit,
-  type BridgeResponse
-} from "./plugin-app-bridge.js"
-
-const boot: BridgeBoot = {
-  protocolVersion: "2026-01-26",
-  hostInfo: { name: "Codevisor", version: "1.0.0" },
-  hostCapabilities: { openLinks: {} },
-  hostContext: {
-    theme: "dark",
-    displayMode: "inline",
-    availableDisplayModes: ["inline", "fullscreen"]
-  },
-  html: "<p>app</p>",
-  allow: "",
-  token: "session-token",
-  framePath: "/v1/plugins/apps/view-1/frame?token=session-token",
-  viewId: "view-1",
-  toolInput: { range: "1h" },
-  toolResult: { content: [{ type: "text", text: "2 alerts" }] },
-  endpoints: { toolsCall: "/call", resourcesRead: "/read", modelContext: "/context" }
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null
-
-const json = (status: number, body: unknown): BridgeResponse => ({
-  ok: status < 400,
-  status,
-  json: async () => body
-})
-
-const bridged = (
-  options: {
-    readonly boot?: BridgeBoot
-    readonly native?: boolean
-    readonly pathname?: string
-    readonly gesture?: boolean
-    readonly respond?: (url: string, init: BridgeRequestInit) => Promise<BridgeResponse>
-  } = {}
-) => {
-  const toApp: Array<Record<string, unknown>> = []
-  const toNative: Array<unknown> = []
-  const opened: Array<string> = []
-  const fetched: Array<{ readonly url: string; readonly init: BridgeRequestInit }> = []
-  const attributes: Record<string, string> = {}
-  const replies = new Map<unknown, PromiseWithResolvers<Record<string, unknown>>>()
-  let listener: ((event: BridgeEvent) => void) | undefined
-  const contentWindow = {
-    postMessage: (message: unknown) => {
-      const record = isRecord(message) ? message : {}
-      toApp.push(record)
-      replies.get(record.id)?.resolve(record)
-    }
-  }
-  const frame = {
-    contentWindow,
-    srcdoc: "",
-    setAttribute: (name: string, value: string) => {
-      attributes[name] = value
-    }
-  }
-
-  const api = installAppBridge({
-    pathname: options.pathname ?? "/v1/plugins/apps/view-1",
-    search: "?token=launch&theme=dark",
-    frameOrigin: undefined,
-    boot: options.boot ?? boot,
-    frame,
-    host: {
-      listen: (handler) => {
-        listener = handler
-      },
-      fetch: (url, init) => {
-        fetched.push({ url, init })
-        return (options.respond ?? (async () => json(200, { ok: true })))(url, init)
-      },
-      post: (message) => {
-        if (options.native === false) return false
-        toNative.push(message)
-        return true
-      },
-      open: (url) => opened.push(url),
-      hasUserActivation: () => options.gesture ?? true,
-      schedule: (_callback, delayMs) => {
-        expect(delayMs).toBe(10_000)
-      }
-    }
-  })
-
-  const fromApp = (data: unknown, source: unknown = contentWindow) => listener?.({ source, data })
-  const request = (id: number, method: string, params?: unknown) => {
-    const reply = Promise.withResolvers<Record<string, unknown>>()
-    replies.set(id, reply)
-    fromApp({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) })
-    return reply.promise
-  }
-
-  return { api, attributes, fetched, frame, fromApp, opened, request, toApp, toNative }
-}
+import { boot, bridged, initialized, json } from "./plugin-app-bridge-test-support.js"
 
 describe("plugin app bridge", () => {
   it("loads the app and answers ui/initialize with the host context", async () => {
@@ -121,10 +18,44 @@ describe("plugin app bridge", () => {
         hostContext: {
           theme: "dark",
           displayMode: "inline",
-          availableDisplayModes: ["inline", "fullscreen"]
+          availableDisplayModes: ["inline", "fullscreen"],
+          containerDimensions: { width: 600 }
         }
       }
     })
+  })
+
+  it("tells the app its time zone and how far it may grow inside the host's container", async () => {
+    const { request } = bridged({ boot: { ...boot, maxHeight: 720 }, timeZone: "America/New_York" })
+
+    expect((await request(1, "ui/initialize", {})).result).toMatchObject({
+      hostContext: {
+        timeZone: "America/New_York",
+        containerDimensions: { width: 600, maxHeight: 720 }
+      }
+    })
+  })
+
+  it("reports settled container width changes, not an inline app's own height or a hidden view", () => {
+    const { elapse, fromApp, resize, toApp } = bridged({ boot: { ...boot, maxHeight: 720 } })
+    fromApp({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
+    toApp.splice(0)
+
+    resize(600, 480)
+    elapse(120)
+    resize(0, 0)
+    elapse(120)
+    resize(380, 480)
+    resize(420, 480)
+    elapse(120)
+
+    expect(toApp).toEqual([
+      {
+        jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed",
+        params: { containerDimensions: { width: 420, maxHeight: 720 } }
+      }
+    ])
   })
 
   it("sends the tool input and result each time the app initializes, so a reloaded app gets them too", () => {
@@ -234,15 +165,30 @@ describe("plugin app bridge", () => {
     const { fromApp, request, toNative } = bridged()
 
     await request(9, "ui/message", { role: "user", content: { type: "text", text: "Ack it" } })
-    await request(10, "ui/message", { role: "user" })
+    await request(10, "ui/message", {
+      role: "user",
+      content: [
+        { type: "text", text: "Compare these" },
+        { type: "image", data: "", mimeType: "image/png" },
+        { type: "text", text: "two hosts" }
+      ]
+    })
+    const blank = await request(11, "ui/message", {
+      role: "user",
+      content: [{ type: "text", text: " " }]
+    })
+    const missing = await request(12, "ui/message", { role: "user" })
     fromApp({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: 240 } })
     fromApp({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width: 10 } })
 
     expect(toNative).toEqual([
       { type: "message", text: "Ack it", viewId: "view-1" },
-      { type: "message", text: "", viewId: "view-1" },
+      { type: "message", text: "Compare these\n\ntwo hosts", viewId: "view-1" },
       { type: "size", height: 240 }
     ])
+    for (const refused of [blank, missing]) {
+      expect(refused.error).toEqual({ code: -32000, message: "Invalid message format" })
+    }
   })
 
   it("sizes the app to its measured content until the app reports a size itself", () => {
@@ -297,6 +243,71 @@ describe("plugin app bridge", () => {
     })
   })
 
+  it("lists the app's tools and keeps its log messages through the host endpoints", async () => {
+    const { fetched, fromApp, request } = bridged({
+      respond: async () => {
+        throw new Error("offline")
+      }
+    })
+
+    const listed = await request(4, "tools/list", {})
+    fromApp({
+      jsonrpc: "2.0",
+      method: "notifications/message",
+      params: { level: "warning", data: "slow" }
+    })
+    await Promise.resolve()
+
+    expect(listed.error).toEqual({ code: -32000, message: "offline" })
+    expect(fetched.map(({ url, init }) => [url, init.body])).toEqual([
+      ["/tools", "{}"],
+      ["/log", '{"level":"warning","data":"slow"}']
+    ])
+  })
+
+  it("tells the native host the app's border preference and when the app asks to close", () => {
+    const framed = bridged({ boot: { ...boot, prefersBorder: false } })
+    const plain = bridged()
+
+    framed.fromApp({ jsonrpc: "2.0", method: "ui/notifications/request-teardown", params: {} })
+
+    expect(framed.toNative).toEqual([
+      { type: "prefersBorder", value: false },
+      { type: "requestTeardown" }
+    ])
+    expect(plain.toNative).toEqual([])
+  })
+
+  it("warns the app before teardown and waits for its reply or a second at most", async () => {
+    const early = bridged()
+    const { api, elapse, fromApp, toApp } = initialized()
+
+    await early.api.teardown("closed")
+    const replied = api.teardown("closed")
+    const silent = api.teardown("evicted")
+    fromApp({ jsonrpc: "2.0", id: "teardown-1", result: {} })
+    fromApp({ jsonrpc: "2.0", id: 99, result: {} })
+    await replied
+    elapse(1_000)
+    await silent
+
+    expect(early.toApp).toEqual([])
+    expect(toApp.filter(({ method }) => method === "ui/resource-teardown")).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: "teardown-1",
+        method: "ui/resource-teardown",
+        params: { reason: "closed" }
+      },
+      {
+        jsonrpc: "2.0",
+        id: "teardown-2",
+        method: "ui/resource-teardown",
+        params: { reason: "evicted" }
+      }
+    ])
+  })
+
   it("ignores messages from anywhere but the app frame", async () => {
     const { fromApp, request, toApp, toNative } = bridged()
 
@@ -308,99 +319,5 @@ describe("plugin app bridge", () => {
 
     expect(toApp.map((message) => message.id)).toEqual([3])
     expect(toNative).toEqual([])
-  })
-})
-
-const initialized = (options: Parameters<typeof bridged>[0] = {}, appModes?: unknown) => {
-  const opened = bridged(options)
-  const init = opened.request(1, "ui/initialize", {
-    appCapabilities: appModes === undefined ? {} : { availableDisplayModes: appModes }
-  })
-  opened.fromApp({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
-  opened.toApp.splice(0)
-  opened.toNative.splice(0)
-  return { ...opened, init }
-}
-
-describe("plugin app display modes", () => {
-  it("asks the native host to switch and answers with the mode it chose", async () => {
-    const { api, request, toApp, toNative } = initialized()
-
-    const switched = request(2, "ui/request-display-mode", { mode: "fullscreen" })
-    api.displayModeChanged("fullscreen", "display-mode-1")
-
-    expect(toNative).toEqual([
-      { type: "displayMode", mode: "fullscreen", requestId: "display-mode-1" }
-    ])
-    expect((await switched).result).toEqual({ mode: "fullscreen" })
-    expect(toApp[0]).toEqual({
-      jsonrpc: "2.0",
-      method: "ui/notifications/host-context-changed",
-      params: { displayMode: "fullscreen" }
-    })
-  })
-
-  it("answers with the current mode when the native host declines", async () => {
-    const { api, request, toApp } = initialized()
-
-    const declined = request(2, "ui/request-display-mode", { mode: "fullscreen" })
-    api.displayModeChanged("inline", "display-mode-1")
-
-    expect((await declined).result).toEqual({ mode: "inline" })
-    expect(toApp.filter((message) => message.method !== undefined)).toEqual([])
-  })
-
-  it("never offers a mode outside the host's or the app's list", async () => {
-    const host = initialized()
-    const app = initialized({}, ["inline"])
-    const appless = initialized({}, "everything")
-    const headless = initialized({ native: false })
-    const listless = initialized({
-      boot: { ...boot, hostContext: { theme: "dark", displayMode: "inline" } }
-    })
-
-    const answers = await Promise.all([
-      host.request(2, "ui/request-display-mode", { mode: "pip" }),
-      host.request(3, "ui/request-display-mode", { mode: "inline" }),
-      app.request(2, "ui/request-display-mode", { mode: "fullscreen" }),
-      headless.request(2, "ui/request-display-mode", { mode: "fullscreen" }),
-      listless.request(2, "ui/request-display-mode", { mode: "fullscreen" })
-    ])
-    const switched = appless.request(2, "ui/request-display-mode", { mode: "fullscreen" })
-    appless.api.displayModeChanged("fullscreen", "display-mode-1")
-
-    expect(answers.map(({ result }) => result)).toEqual(
-      Array.from({ length: 5 }, () => ({ mode: "inline" }))
-    )
-    expect((await switched).result).toEqual({ mode: "fullscreen" })
-    expect([...host.toNative, ...app.toNative]).toEqual([])
-  })
-
-  it("tells the app about unsolicited mode and theme changes", () => {
-    const { api, toApp } = initialized()
-
-    api.displayModeChanged("fullscreen")
-    api.displayModeChanged("pip")
-    api.setTheme("light")
-    api.setTheme("light")
-    api.setTheme("sepia")
-    api.displayModeChanged("fullscreen", 7)
-
-    expect(toApp.map(({ params }) => params)).toEqual([
-      { displayMode: "fullscreen" },
-      { theme: "light" }
-    ])
-  })
-
-  it("holds context changes until the app is initialized, then reports them on initialize", async () => {
-    const { api, request, toApp } = bridged()
-
-    api.setTheme("light")
-    api.displayModeChanged("fullscreen")
-
-    expect(toApp).toEqual([])
-    expect((await request(1, "ui/initialize", {})).result).toMatchObject({
-      hostContext: { theme: "light", displayMode: "fullscreen" }
-    })
   })
 })

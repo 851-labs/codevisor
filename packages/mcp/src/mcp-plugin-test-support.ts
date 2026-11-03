@@ -25,6 +25,7 @@ export interface FakeResource {
   readonly text?: string
   readonly blob?: string
   readonly mimeType?: string
+  readonly listedMeta?: Readonly<Record<string, unknown>>
 }
 
 export interface FakePluginOptions {
@@ -190,6 +191,8 @@ export const startFakePlugin = async (options: FakePluginOptions = {}): Promise<
           return { content: [{ type: "text", text: JSON.stringify(params) }] }
         case "resources/read":
           return readResource(resources, String(params.uri))
+        case "resources/list":
+          return listResources(resources, params.cursor)
         case "events/list":
           return eventPages[typeof params.cursor === "string" ? params.cursor : "first"] ?? {}
         case "skills/list":
@@ -273,6 +276,20 @@ const announcement = (params: Record<string, unknown>) => {
 const resourceBytes = (resource: FakeResource): Buffer => {
   if (resource.text !== undefined) return Buffer.from(resource.text, "utf8")
   return Buffer.from(resource.blob ?? "", "base64")
+}
+
+const listResources = (resources: Map<string, FakeResource>, cursor: unknown) => {
+  const page = typeof cursor === "string" ? Number(cursor) : 0
+  const entries = [...resources.entries()].slice(page, page + 1)
+  const next = page + 1 < resources.size ? { nextCursor: String(page + 1) } : {}
+  return {
+    resources: entries.map(([uri, resource]) => ({
+      uri,
+      name: uri,
+      ...(resource.listedMeta === undefined ? {} : { _meta: resource.listedMeta })
+    })),
+    ...next
+  }
 }
 
 const readResource = (resources: Map<string, FakeResource>, uri: string) => {

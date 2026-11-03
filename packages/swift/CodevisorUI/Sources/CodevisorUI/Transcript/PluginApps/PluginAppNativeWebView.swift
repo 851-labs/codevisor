@@ -46,10 +46,20 @@
 
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
       super.willOpenMenu(menu, with: event)
-      guard !contextActions.isEmpty else { return }
-      if !menu.items.isEmpty { menu.addItem(.separator()) }
+      let copy = menu.items.filter { $0.identifier == Self.copyItem }
+      menu.removeAllItems()
+      for item in copy { menu.addItem(item) }
+      if !copy.isEmpty, !contextActions.isEmpty { menu.addItem(.separator()) }
       for action in contextActions { menu.addItem(PluginAppMenuItem(action)) }
     }
+
+    override func validRequestor(
+      forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+      nil
+    }
+
+    private static let copyItem = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierCopy")
   }
 
   @MainActor

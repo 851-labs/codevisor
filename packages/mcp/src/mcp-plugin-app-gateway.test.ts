@@ -166,6 +166,46 @@ describe("plugin app views", () => {
     await client.close()
   })
 
+  it("gives an app its own tool and the tools it may call", async () => {
+    const { client, manager, server } = await pluginGatewaySession(appPlugin)
+
+    expect((await manager.appTool(server.id, "summarize"))?.name).toBe("summarize")
+    expect(await manager.appTool(server.id, "missing")).toBeUndefined()
+    expect((await manager.listAppTools(server.id)).map((tool) => tool.name)).toEqual([
+      "show_alerts",
+      "refresh_alerts"
+    ])
+    await client.close()
+  })
+
+  it("finds a UI resource's listed metadata across pages, with the view's account", async () => {
+    const listed = { ui: { prefersBorder: false } }
+    const { client, manager, plugin, server } = await pluginGatewaySession(
+      {
+        ...appPlugin,
+        resources: {
+          "ui://grafana/board.html": { text: "<p>board</p>" },
+          "ui://grafana/alerts.html": { text: "<p>alerts</p>", listedMeta: listed },
+          "ui://grafana/bare.html": { text: "<p>bare</p>" }
+        }
+      },
+      accountSource(["work"])
+    )
+
+    const found = await manager.listedResourceMeta(server.id, "ui://grafana/alerts.html", "id-work")
+    const bare = await manager.listedResourceMeta(server.id, "ui://grafana/bare.html")
+    const missing = await manager.listedResourceMeta(server.id, "ui://grafana/missing.html")
+
+    expect(found).toEqual(listed)
+    expect(bare).toBeUndefined()
+    expect(missing).toBeUndefined()
+    expect(plugin.requests.filter(({ method }) => method === "resources/list")[1]?.params).toEqual({
+      cursor: "1",
+      _meta: { "dev.codevisor/account": { id: "id-work" } }
+    })
+    await client.close()
+  })
+
   it("calls app tools without account context when the plugin has no accounts", async () => {
     const { client, manager, plugin, server } = await pluginGatewaySession(appPlugin)
 

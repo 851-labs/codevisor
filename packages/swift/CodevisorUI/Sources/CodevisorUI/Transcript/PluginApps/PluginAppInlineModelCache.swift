@@ -22,7 +22,7 @@ public final class PluginAppInlineModelCache {
   func model(for app: CodevisorExecutionApp, chatMachineId: String) -> PluginAppInlineModel {
     let key = Self.key(app, chatMachineId: chatMachineId)
     touch(key)
-    if let model = models[key] ?? registry.pipModel(for: key) {
+    if let model = models[key] ?? registry.presentedModel(for: key) {
       models[key] = model
       return model
     }
@@ -44,9 +44,13 @@ public final class PluginAppInlineModelCache {
   }
 
   private func evictOverflow() {
-    while recency.count > capacity {
-      let key = recency.removeFirst()
-      evictedHeights[key] = models.removeValue(forKey: key)?.page.height
+    var overflow = recency.count - capacity
+    for key in recency where overflow > 0 && registry.presentedModel(for: key) == nil {
+      overflow -= 1
+      recency.removeAll { $0 == key }
+      let evicted = models.removeValue(forKey: key)
+      evicted?.page.suspend(reason: "The chat no longer shows this app.")
+      evictedHeights[key] = evicted?.page.height
     }
   }
 }

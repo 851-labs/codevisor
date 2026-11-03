@@ -16,6 +16,10 @@ struct PluginAppInlineContent: View {
         PluginAppInlinePlaceholder(
           systemImage: "pip", message: "Showing in picture in picture.", actionTitle: "Show Here",
           action: { model.request(.inline) })
+      case .fullscreen where model.panePlacement == .split:
+        PluginAppInlinePlaceholder(
+          systemImage: "rectangle.split.2x1", message: "Open beside the chat.",
+          actionTitle: "Show", action: model.revealFullscreen)
       case .fullscreen:
         PluginAppInlinePlaceholder(
           systemImage: "macwindow", message: "Open in its own tab.", actionTitle: "Show Tab",
@@ -24,11 +28,17 @@ struct PluginAppInlineContent: View {
     }
   }
 
+  @ViewBuilder
   private var page: some View {
-    PluginAppPageView(page: model.page, onRetry: model.retry)
-      .frame(maxWidth: .infinity)
-      .frame(height: model.page.height)
-      .clipShape(RoundedRectangle(cornerRadius: 10))
-      .animation(reduceMotion ? nil : .snappy, value: model.page.height)
+    if model.page.phase == .closed {
+      PluginAppInlinePlaceholder(
+        systemImage: "xmark.circle", message: "App closed.", actionTitle: "Reopen", action: model.retry)
+    } else {
+      PluginAppPageView(page: model.page, onRetry: model.retry)
+        .frame(maxWidth: .infinity)
+        .frame(height: model.page.height)
+        .pluginAppCard(filled: model.page.prefersBorder != false)
+        .animation(reduceMotion ? nil : .snappy, value: model.page.height)
+    }
   }
 }
