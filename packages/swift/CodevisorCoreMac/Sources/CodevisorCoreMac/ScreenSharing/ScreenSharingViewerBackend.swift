@@ -267,25 +267,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
             v2, attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
         }
         let session = try await makeSession(capabilities.connectivity)
-        if Task.isCancelled {
-          session.close()
-          throw CancellationError()
-        }
-        let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session), sound: sound)
-        endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
-        attempt.endpoint = endpoint
-        endpoint.onReady = {
-          attempt.ready = true; emit(.ready)
-        }
-        session.onConnectionChanged = { transport in
-          guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
-          attempt.transportEnded = true
-          attempt.outcome =
-            attempt.ready && restarts < 3 && transport != "closed"
-            ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
-          attempt.body?.cancel()
-        }
-        emit(.opened(endpoint))
+        try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
         let offer = try await session.offer()
         try Task.checkCancellation()
         attempt.started = true
@@ -325,6 +307,35 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   }
 
   private static let missingVideoTimeout: Duration = .seconds(24)
+
+  private func open(
+    _ session: any ScreenSharingViewingSession, attempt: Attempt, display: String, restarts: Int,
+    emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void
+  ) throws {
+    let surface: any ScreenSharingViewerSurface
+    do {
+      try Task.checkCancellation()
+      surface = try makeSurface(session)
+    } catch {
+      session.close()
+      throw error
+    }
+    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
+    endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
+    attempt.endpoint = endpoint
+    endpoint.onReady = {
+      attempt.ready = true; emit(.ready)
+    }
+    session.onConnectionChanged = { transport in
+      guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
+      attempt.transportEnded = true
+      attempt.outcome =
+        attempt.ready && restarts < 3 && transport != "closed"
+        ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
+      attempt.body?.cancel()
+    }
+    emit(.opened(endpoint))
+  }
 
   private func takeFreshStart() -> Bool {
     defer { startsFresh = false }
@@ -386,32 +397,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     } catch {
       return Task.isCancelled ? .cancelled : .fallback
     }
-    if Task.isCancelled {
-      session.close()
-      throw CancellationError()
-    }
-    let surface: any ScreenSharingViewerSurface
-    do {
-      surface = try makeSurface(session)
-    } catch {
-      session.close()
-      throw error
-    }
-    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
-    endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
-    attempt.endpoint = endpoint
-    endpoint.onReady = {
-      attempt.ready = true; emit(.ready)
-    }
-    session.onConnectionChanged = { transport in
-      guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
-      attempt.transportEnded = true
-      attempt.outcome =
-        attempt.ready && restarts < 3 && transport != "closed"
-        ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
-      attempt.body?.cancel()
-    }
-    emit(.opened(endpoint))
+    try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
     do {
       try await session.start(token: grant.token)
     } catch {
