@@ -123,6 +123,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     }
     guard let last = slot.lastEncoded else { return nil }
     guard refreshing.isEmpty else { return Plan(capture: last, tiles: refreshing, isRefinement: false) }
+    if encoder.encodesWholeFrames {
+      let due = refinement.due(atNs: scheduler.nowNs, excluding: busyTiles)
+      return due.isEmpty ? nil : Plan(capture: last, tiles: due, isRefinement: true)
+    }
     guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles) else { return nil }
 
     return Plan(capture: last, tiles: [tile], isRefinement: true)

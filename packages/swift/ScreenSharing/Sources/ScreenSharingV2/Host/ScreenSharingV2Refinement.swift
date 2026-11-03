@@ -28,6 +28,10 @@ struct ScreenSharingV2Refinement {
     remaining[tile] = nil
   }
 
+  func due(atNs nowNs: Int64, excluding busy: Set<Int>) -> Set<Int> {
+    Set(remaining.keys.filter { !busy.contains($0) && nowNs - (encodedNs[$0] ?? 0) >= gapNs })
+  }
+
   func next(atNs nowNs: Int64, excluding busy: Set<Int>) -> Int? {
     remaining.keys.filter { !busy.contains($0) && nowNs - (encodedNs[$0] ?? 0) >= gapNs }
       .min { (encodedNs[$0] ?? 0, $0) < (encodedNs[$1] ?? 0, $1) }

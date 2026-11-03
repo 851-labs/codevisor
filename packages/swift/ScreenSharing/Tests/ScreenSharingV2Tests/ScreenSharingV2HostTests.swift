@@ -165,7 +165,7 @@ struct ScreenSharingV2HostTests {
     host.stop()
 
     #expect(encoder.requests.count == 2)
-    #expect(encoder.requests[1].update.isRefinement)
+    #expect(encoder.requests[1].update == ScreenSharingTileUpdate(id: 2, tiles: [0, 1, 2, 3], isRefinement: true))
   }
 
   @Test func anUnchangedTileIsNotEncodedAgainAndEndsItsRefinement() async throws {
