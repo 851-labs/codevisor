@@ -87,6 +87,19 @@ describe("bots service", () => {
     expect(projects.find((project) => project.id === api.id)?.isBot).toBeUndefined()
   })
 
+  it("returns the options picked for the bot's chat", async () => {
+    useWorktreesRoot()
+    const db = await openDatabase()
+    const { bot } = await seedBot(db)
+
+    expect(bot.configSelections).toBeUndefined()
+    await run(db.replaceSessionConfigSelections("chat-helper", { model: "gpt-5", effort: "high" }))
+
+    const picked = { model: "gpt-5", effort: "high" }
+    expect((await run(db.getBot("bot-helper")))?.configSelections).toEqual(picked)
+    expect((await run(db.listBots)).map((listed) => listed.configSelections)).toEqual([picked])
+  })
+
   it("finds the bot that owns a project, workspace, or chat", async () => {
     useWorktreesRoot()
     const db = await openDatabase()

@@ -53,7 +53,7 @@ const UpdateBotBody = Schema.Struct({
 export const codevisorBotApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "bots.list",
-    "List this machine's Codevisor bots, archived ones included: botId, name, mascot, harnessId, mode, isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status or agents.message).",
+    "List this machine's Codevisor bots, archived ones included: botId, name, mascot, harnessId, configSelections (the options picked for its chat, such as its model; absent while it uses the harness defaults), mode, isArchived, projects (each checked-out repository), rootPath (the bot's folder) and agentId (the bot's own chat, for agents.status or agents.message).",
     "GET",
     "/v1/bots"
   ),

@@ -48,6 +48,7 @@ export const Bot = Schema.Struct({
   symbolName: Schema.String,
   mascot: BotMascot,
   harnessId: Schema.String,
+  configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   projectId: Schema.String,
   sessionId: Schema.String,
   workspaceId: Schema.String,

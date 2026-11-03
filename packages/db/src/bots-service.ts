@@ -9,6 +9,7 @@ import {
   type BotsService
 } from "./bot-rows.js"
 import { attempt } from "./errors.js"
+import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { botPath } from "./paths.js"
 import { workspaceFromRow } from "./row-mappers.js"
@@ -18,7 +19,8 @@ import type { WorkspaceRow } from "./workspace-rows.js"
 import type { BotLink, RemoteBotLink } from "./workspace-service-types.js"
 
 const botSelect = `
-  select bots.*, sessions.harness_id as harness_id
+  select bots.*, sessions.harness_id as harness_id,
+    sessions.config_selections as config_selections
   from bots join sessions on sessions.id = bots.session_id
 `
 
@@ -29,6 +31,7 @@ export const makeBotsService = (
 
   const botFromRow = (row: BotRow): Bot => {
     const rootPath = botPath(row.slug)
+    const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
     return {
       id: row.id,
       serverId: row.server_id,
@@ -36,6 +39,7 @@ export const makeBotsService = (
       symbolName: row.symbol_name,
       mascot: { color: row.mascot_color, hat: row.mascot_hat, eyewear: row.mascot_eyewear },
       harnessId: row.harness_id,
+      ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
       projectId: row.project_id,
       sessionId: row.session_id,
       workspaceId: row.workspace_id,

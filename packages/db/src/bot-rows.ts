@@ -26,6 +26,7 @@ export interface BotRow {
   readonly session_id: string
   readonly workspace_id: string
   readonly harness_id: string
+  readonly config_selections: string
   readonly conversational: number
   readonly mode: BotMode
   readonly archived_at: string | null
@@ -54,6 +55,7 @@ export const botRows = rowReader<BotRow>({
   session_id: text,
   workspace_id: text,
   harness_id: text,
+  config_selections: text,
   conversational: integer,
   mode: literal("transcript", "bubbles", "conversation"),
   archived_at: nullable(text),

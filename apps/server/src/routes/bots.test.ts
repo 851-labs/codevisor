@@ -7,7 +7,7 @@ import { worktreeTrashQueue } from "@codevisor/worktrees"
 import { Effect, Schema } from "effect"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { jsonRequest, listEvents, run, waitFor } from "../test-support.js"
+import { jsonRequest, listEvents, waitFor } from "../test-support.js"
 import { field } from "../unknown-values.js"
 import { createBot, decodeBot, git, listBots, listProjects, setUp } from "./bot-test-support.js"
 
@@ -29,6 +29,7 @@ describe("bot routes", () => {
       name: "Release Helper",
       symbolName: "sparkles",
       harnessId: "codex",
+      configSelections: { model: "gpt-5", effort: "high" },
       rootPath: root,
       projects: [
         { projectId: "web-project", folderName: "web", branch: "codevisor/bot-release-helper" },
@@ -276,18 +277,21 @@ describe("bot routes", () => {
         method: "PATCH"
       })
     const selections = async () =>
-      (await run(running.services.db.getSessionSummary(bot.sessionId))).configSelections
+      decodeBot((await jsonRequest(running.server, `/v1/bots/${bot.id}`)).body).configSelections
 
     const read = await jsonRequest(running.server, `/v1/bots/${bot.id}`)
 
     expect(read.status).toBe(200)
     expect(decodeBot(read.body)).toEqual(bot)
+    expect(bot.configSelections).toEqual({ model: "a" })
     expect((await jsonRequest(running.server, "/v1/bots/missing")).status).toBe(404)
 
     const changed = await update({ configSelections: { model: "b", effort: "high" } })
 
     expect(changed.status).toBe(200)
-    expect(await selections()).toMatchObject({ model: "b", effort: "high" })
+    expect(decodeBot(changed.body).configSelections).toEqual({ model: "b", effort: "high" })
+    expect(await selections()).toEqual({ model: "b", effort: "high" })
+    expect((await listBots(running))[0]?.configSelections).toEqual({ model: "b", effort: "high" })
 
     const refused = await update({ name: "Planner", configSelections: { mode: "plan" } })
 
