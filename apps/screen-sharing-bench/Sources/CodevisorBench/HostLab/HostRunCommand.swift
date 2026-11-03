@@ -34,8 +34,9 @@ struct HostRunCommand: BenchCommand {
     let encoder = try ScreenSharingVideoToolboxTileEncoder(
       configuration: configuration, layout: layout ?? ScreenSharingV2Profile.tileLayout(for: configuration),
       metrics: metrics, longTermReferences: variant.longTermReferences)
+    let transport = HostLabNullTransport()
     let host = ScreenSharingV2Host(
-      transport: HostLabNullTransport(), encoder: encoder, metrics: metrics,
+      transport: transport, encoder: encoder, metrics: metrics,
       refinementPasses: variant.refinementPasses)
     let capture = ScreenSharingCapture(pixelFormat: encoder.sourcePixelFormat)
     capture.queueDepth = variant.queueDepth
@@ -50,7 +51,8 @@ struct HostRunCommand: BenchCommand {
     }
     try? await capture.stop()
     host.stop()
-    let result = HostRunResult(variant: variant.name, captureError: captureError, metrics: metrics.snapshot())
+    let result = HostRunResult(
+      variant: variant.name, captureError: captureError, metrics: metrics.snapshot(), passes: transport.passes)
     try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: output))
   }
 
@@ -71,11 +73,15 @@ struct HostRunResult: Codable {
   let captureError: String?
   let counters: [String: Int]
   let timings: [String: ScreenSharingMetrics.Timing]
+  let passes: [HostLabTileSizes.Pass]
 
-  init(variant: String, captureError: String?, metrics: ScreenSharingMetrics.Snapshot) {
+  init(
+    variant: String, captureError: String?, metrics: ScreenSharingMetrics.Snapshot, passes: [HostLabTileSizes.Pass]
+  ) {
     self.variant = variant
     self.captureError = captureError
     counters = metrics.counters
     timings = metrics.timings
+    self.passes = passes
   }
 }

@@ -30,12 +30,19 @@ struct HostLabReport: Encodable {
       return "| \(result.scene) | \(result.variant) | "
         + (cells + rates + [encode]).map(Self.number).joined(separator: " | ") + " |"
     }
-    return
-      ([
-        "## Host lab at \(resolution), \(seconds) s per variant", "",
-        "Counts are per second. Captures, tiles and refinements come from the variant's host metrics.", "", header,
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-      ] + rows).joined(separator: "\n") + "\n"
+    let passes = results.map { result in
+      let sizes = (result.run?.passes ?? []).map {
+        "pass \($0.pass): \($0.count) × \($0.meanBytes) B (p50 \($0.p50Bytes))"
+      }
+      return "- \(result.scene) \(result.variant): " + (sizes.isEmpty ? "no tiles" : sizes.joined(separator: ", "))
+    }
+    let title = [
+      "## Host lab at \(resolution), \(seconds) s per variant", "",
+      "Counts are per second. Captures, tiles and refinements come from the variant's host metrics.", "", header,
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    let sizes = ["", "Encoded tile sizes by refinement pass (0 is the change):", ""] + passes
+    return (title + rows + sizes).joined(separator: "\n") + "\n"
   }
 
   private static func number(_ value: Double?) -> String {
