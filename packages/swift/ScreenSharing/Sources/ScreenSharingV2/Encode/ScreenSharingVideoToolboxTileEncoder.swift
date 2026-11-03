@@ -47,9 +47,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
 
     let tiles = request.update.tiles.sorted()
     let cutNs = ScreenSharingMetrics.nowNs
-    let pixels: [Int: CVPixelBuffer]
+    let pixels: ScreenSharingV2TilePixels
     do {
-      pixels = try cutter.cut(request.pixelBuffer, tiles: tiles.filter(sessions.indices.contains))
+      pixels = ScreenSharingV2TilePixels(
+        buffers: try cutter.cut(request.pixelBuffer, tiles: tiles.filter(sessions.indices.contains)))
     } catch {
       return tiles.forEach { fail($0, request, error) }
     }
@@ -61,7 +62,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     DispatchQueue.concurrentPerform(iterations: tiles.count) { index in
       let tile = tiles[index]
       do {
-        guard let tilePixels = pixels[tile] else { throw ScreenSharingError.invalid("No tile \(tile).") }
+        guard let tilePixels = pixels.buffers[tile] else { throw ScreenSharingError.invalid("No tile \(tile).") }
 
         share(bitrateShare, with: sessions[tile])
         try sessions[tile].encode(tilePixels, request: request)
