@@ -46,7 +46,7 @@ struct Tier2V2ReadingsTests {
         == BenchMediaCounters(
           framesSent: 547, framesLost: 1, tilesSkipped: 2, droppedBeforeEncode: 5, admissionDeferrals: 2, nacksSent: 4,
           packetsRetransmitted: 6, parityPackets: 7, fecRepairs: 1, nackRepairs: 3, ltrRefreshes: 3, keyframes: 1,
-          capacityKbps: 352_000, roundTripMs: 0.79))
+          capacityKbps: 352_000, roundTripMs: 0.79, requestedRefreshes: 0, requestedKeyframes: 0, stalledTiles: 0))
   }
 
   private static func object(_ json: String) throws -> [String: JSONValue] {
