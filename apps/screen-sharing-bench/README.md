@@ -322,6 +322,18 @@ verdicts, and an "Input to photon" table: events, answered, p50/p95/max, key and
 and p50 above Apple HP's on the same network against M3's target (at most 8 ms). Apple HP is always R1x2, so a
 one-dispatch S7 that fits 30 minutes is `scenes: input, duration: 115, systems: apple-hp,codevisor,codevisor-v2`.
 
+Each input run also records when every event passed each stage (851-3951), so the time from the viewer's post to the
+host's picture splits into stages: the viewer's `control.forwarded` in `system.json` (when the surface handed each
+event to the forwarder, on the viewer's clock, with `event_age_ms`, how long after the window server stamped the
+event), the host's `control.injected` in `share.json` (just before `ScreenSharingInputInjector` posted it, on the host's
+clock) and the host player's `inputs` in `player.json` (when its window received each key or mouse down, with
+`eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`.
+
+**Warm-up.** Apple HP's first run after the floor was slow every time in T7 (I2P 149 ms against about 98, image age 75
+against 25), so when Apple HP is among the systems each dispatch first runs one unmeasured Apple HP warm-up
+(`NN-<scene>-apple-hp-warm-up`) after the first scene's floor: `TIER2_WARM_UP_S` seconds (30 by default; 0 turns it
+off), with as many input events as fit. The viewer writes no `meta.json` for it, so the report leaves it out.
+
 Image age is `BenchSharingAnalysis`: the viewer observer's first PTS of each version minus the host
 observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). Apple HP runs count only when `apple-hp` selected High Performance in Screen Sharing's
 "Select Screen Sharing Type:" sheet, read the selection back and clicked Continue (`chose_high_performance`). The window starts

@@ -16,13 +16,15 @@ struct PlayerReport: Encodable {
   let missedRefreshes: Int
   let presentedOnGlass: Int
   let inputEvents: Int
+  let inputs: [BenchInputStamp]
   let cpuPercentOfOneCore: Double
   let hashing: Bool
   let unhashedVersions: Int?
 
   @MainActor
   init(
-    _ configuration: PlayerConfiguration, target: PlayerScreenTarget, measurement: PlayerMeasurement, inputEvents: Int,
+    _ configuration: PlayerConfiguration, target: PlayerScreenTarget, measurement: PlayerMeasurement,
+    inputs: [BenchInputStamp],
     unhashedVersions: Int?
   ) {
     let stats = measurement.stats
@@ -39,7 +41,8 @@ struct PlayerReport: Encodable {
     versionsPerSecond = stats.seconds > 0 ? Double(stats.versions - 1) / stats.seconds : 0
     missedRefreshes = stats.missedRefreshes
     presentedOnGlass = stats.presentedOnGlass
-    self.inputEvents = inputEvents
+    inputEvents = inputs.count
+    self.inputs = inputs
     cpuPercentOfOneCore = measurement.cpuPercentOfOneCore
     hashing = configuration.hashLog != nil
     self.unhashedVersions = unhashedVersions

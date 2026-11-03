@@ -1,3 +1,4 @@
+import AppKit
 import ScreenSharingBench
 import ScreenSharingBenchScenes
 
@@ -7,6 +8,7 @@ final class PlayerVersionSource {
 
   private let timeline: BenchSceneTimeline
   private(set) var inputEvents = 0
+  private(set) var inputs: [BenchInputStamp] = []
   private var shownInputs = 0
 
   init(timeline: BenchSceneTimeline) {
@@ -23,7 +25,8 @@ final class PlayerVersionSource {
     return shownInputs
   }
 
-  func recordInput() {
+  func recordInput(_ event: NSEvent) {
+    if let stamp = BenchInputStamp(event, ns: BenchMachClock.nowNs()) { inputs.append(stamp) }
     inputEvents += 1
   }
 }

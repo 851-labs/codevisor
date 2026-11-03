@@ -124,6 +124,7 @@ stop_share() {
 run_one() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5
   local name dir status=ok
+  tier2_is_warm_up "$rep" && local TIER2_DURATION=$TIER2_WARM_UP_S
   name=$(tier2_name "$@")
   dir="$results/$name"
   mkdir -p "$dir"

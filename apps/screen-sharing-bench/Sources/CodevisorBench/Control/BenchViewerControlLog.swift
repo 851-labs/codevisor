@@ -4,6 +4,7 @@ struct BenchViewerControlLog {
   var losses: [String] = []
   var forwardedEvents = 0
   var inputReleases = 0
+  var forwarded: [BenchInputStamp] = []
 
   var answered: Bool {
     grantedAfterMs != nil || denial != nil
@@ -12,6 +13,7 @@ struct BenchViewerControlLog {
   func summary(capturesSystemShortcuts: Bool) -> BenchViewerControlSummary {
     BenchViewerControlSummary(
       granted: grantedAfterMs != nil, grantedAfterMs: grantedAfterMs, denial: denial, losses: losses,
-      forwardedEvents: forwardedEvents, inputReleases: inputReleases, capturesSystemShortcuts: capturesSystemShortcuts)
+      forwardedEvents: forwardedEvents, inputReleases: inputReleases, capturesSystemShortcuts: capturesSystemShortcuts,
+      forwarded: forwarded)
   }
 }

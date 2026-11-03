@@ -92,6 +92,11 @@ JSON
 run_one() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5
   local name dir started_at status=ok
+  if tier2_is_warm_up "$rep"; then
+    local TIER2_DURATION=$TIER2_WARM_UP_S
+    local TIER2_INPUT_EVENTS
+    TIER2_INPUT_EVENTS=$(tier2_warm_up_input_events)
+  fi
   name=$(tier2_name "$@")
   dir="$results/$name"
   mkdir -p "$dir"
@@ -109,6 +114,7 @@ run_one() {
   meet viewer "$name-done" || true
   stop_system
   preflight "$dir/viewer-after-preflight.json" || true
+  tier2_is_warm_up "$rep" && return 0
   write_meta "$dir" "$index" "$scene" "$system" "$rep" "$observed" "$started_at"
 }
 

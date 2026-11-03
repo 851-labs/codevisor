@@ -30,7 +30,7 @@ struct PlayerSession {
     try writeHashes(hashes, setup: setup)
     return withExtendedLifetime(target) {
       PlayerReport(
-        configuration, target: target, measurement: measurement, inputEvents: versions.inputEvents,
+        configuration, target: target, measurement: measurement, inputs: versions.inputs,
         unhashedVersions: hashes?.skippedVersions)
     }
   }
