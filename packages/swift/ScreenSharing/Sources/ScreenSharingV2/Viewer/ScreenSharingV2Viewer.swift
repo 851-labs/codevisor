@@ -80,7 +80,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
         self?.decoded($0, admission: admission)
       }
     } catch ScreenSharingV2DecoderError.sessionLost {
-      lostSession(frame.stream, atNs: receivedNs)
+      lostSession(frame.stream, admission: admission, atNs: receivedNs)
       resolve(meta, tile: Int(frame.stream), .missing)
     } catch {
       metrics.label("lastDecodeError", error.localizedDescription)
@@ -136,10 +136,15 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     request(refresh, stream: stream)
   }
 
-  private func lostSession(_ stream: UInt8, atNs nowNs: Int64) {
+  private func lostSession(_ stream: UInt8, admission: ScreenSharingV2RecoveryGate.Admission, atNs nowNs: Int64) {
     metrics.increment("decoderSessionsLost")
+    guard let refresh = state.withLock({ $0.gate.lostSession(stream: stream, admission, atNs: nowNs) }) else {
+      metrics.increment("staleDecodeErrors")
+      return
+    }
+
     decoders.reset(stream: stream)
-    request(state.withLock { $0.gate.lostSession(stream: stream, atNs: nowNs) }, stream: stream)
+    request(refresh, stream: stream)
   }
 
   private func decoded(_ result: ScreenSharingV2DecodeResult, admission: ScreenSharingV2RecoveryGate.Admission) {
@@ -149,7 +154,7 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     case .failed(let context, let status):
       metrics.label("lastDecodeError", "VideoToolbox status \(status)")
       if status == kVTInvalidSessionErr {
-        lostSession(context.frame.stream, atNs: ScreenSharingMetrics.nowNs)
+        lostSession(context.frame.stream, admission: admission, atNs: ScreenSharingMetrics.nowNs)
       } else {
         failed(context.frame.stream, admission: admission, atNs: ScreenSharingMetrics.nowNs)
       }

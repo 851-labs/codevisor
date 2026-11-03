@@ -48,8 +48,10 @@ struct ScreenSharingV2RecoveryGate {
     return ask(admission.recovers ? .keyframe : .longTermReference, stream: stream, atNs: nowNs)
   }
 
-  mutating func lostSession(stream: UInt8, atNs nowNs: Int64) -> ScreenSharingTileRefresh {
-    ask(.keyframe, stream: stream, atNs: nowNs)
+  mutating func lostSession(stream: UInt8, _ admission: Admission, atNs nowNs: Int64) -> ScreenSharingTileRefresh? {
+    guard let entry = streams[stream], entry.state == .decoding, entry.epoch == admission.epoch else { return nil }
+
+    return ask(.keyframe, stream: stream, atNs: nowNs)
   }
 
   mutating func skipped(stream: UInt8, atNs nowNs: Int64) {

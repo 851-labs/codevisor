@@ -281,6 +281,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func handle(_ event: ScreenSharingMediaEvent) {
+    if let stream = event.stream, !layout.tiles.contains(Int(stream)) {
+      metrics.increment("eventsForUnknownTiles")
+      return
+    }
     switch event {
     case .frameAcked(let ack): observe(ack)
     case .frameLost(let stream, let frame): queue.async { [self] in lost(frame: frame, tile: Int(stream)) }

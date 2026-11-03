@@ -45,18 +45,21 @@ struct StreamTx {
     unresolved: BTreeMap<u32, SentFrame>,
     ltr_token: Option<u64>,
     last_recovery: Option<u32>,
+    last_keyframe: Option<u32>,
     refresh: Option<AnsweredRequest>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct AnsweredRequest {
     request: u16,
+    keyframe: bool,
     answers_from: u32,
 }
 
 impl StreamTx {
     fn answer_to(&self, request: AnsweredRequest) -> Option<u32> {
-        self.last_recovery.filter(|frame| *frame >= request.answers_from)
+        let answer = if request.keyframe { self.last_keyframe } else { self.last_recovery };
+        answer.filter(|frame| *frame >= request.answers_from)
     }
 }
 
@@ -153,6 +156,9 @@ impl Sender {
         stream.next_frame = stream.next_frame.wrapping_add(1);
         if frame.keyframe || frame.refresh {
             stream.last_recovery = Some(number);
+        }
+        if frame.keyframe {
+            stream.last_keyframe = Some(number);
         }
         let header = |kind, index: usize| PacketHeader {
             kind,
@@ -316,7 +322,6 @@ impl Sender {
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
                 if let Some(last_tx) = frame.last_tx
                     && !feedback.lost
-                    && frame.probes == 0
                     && receipt.recovery == crate::Recovery::None
                 {
                     self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
@@ -350,15 +355,21 @@ impl Sender {
 
     pub fn on_refresh_request(&mut self, request: &RefreshRequest, events: &mut VecDeque<Event>, stats: &mut Stats) {
         let stream = self.streams.entry(request.stream).or_default();
-        if let Some(answered) = stream.refresh
-            && answered.request == request.request
-        {
+        if let Some(answered) = stream.refresh {
+            let age = request.request.wrapping_sub(answered.request) as i16;
+            if age < 0 {
+                return;
+            }
             let failed = stream.answer_to(answered).is_some_and(|frame| frame < request.resolved_below);
-            if !failed {
+            if age == 0 && !failed {
                 return;
             }
         }
-        stream.refresh = Some(AnsweredRequest { request: request.request, answers_from: stream.next_frame });
+        stream.refresh = Some(AnsweredRequest {
+            request: request.request,
+            keyframe: request.keyframe,
+            answers_from: stream.next_frame,
+        });
         stats.refreshes_requested += 1;
         events.push_back(Event::RefreshRequested { stream: request.stream, keyframe: request.keyframe });
     }

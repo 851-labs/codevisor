@@ -158,9 +158,10 @@ CodevisorBench media-transport --role host --peer-secret HEX --peer IP:47310 --u
 CodevisorBench media-transport --role ffi-cost
 ```
 
-Rows 6 and 7 send one small frame (1 and 4 packets) every 100 ms, as typing does, and the "acks later than RTT+2 ms
-over the floor" column counts frames whose ack came more than RTT + 2 ms after the fastest clean round trip: at idle
-that is a loss, or a lost ack, that took longer than a tail-loss probe to repair.
+Rows 6 and 7 send one small frame (1 and 4 packets) every 100 ms, as typing does. For them the "acks later than
+RTT+2 ms over the floor" column counts frames whose ack came more than RTT + 2 ms later than the fastest clean round
+trip, timed from the frame's last packet out: at idle that is a loss, or a lost ack, that took longer than a
+tail-loss probe to repair. It is 0 for the other rows.
 
 Two-Mac runs go through the signed `CodevisorBench.app`, which calls `bench::run` in-process (`media_bench_run`),
 because macOS Local Network privacy drops LAN UDP from unsigned binaries run by the CI runner.

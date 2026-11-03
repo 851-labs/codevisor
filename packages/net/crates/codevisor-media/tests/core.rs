@@ -8,7 +8,7 @@ use bytes::Bytes;
 use codevisor_media::{
     Core, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, ReceivedFrame, Recovery, fec,
     netsim::{Fate, NetworkConditions, NetworkModel, SplitMix64},
-    wire::{self, Kind, PacketHeader},
+    wire::{self, Kind, PacketHeader, RefreshRequest},
 };
 
 const MS: Duration = Duration::from_millis(1);
@@ -489,6 +489,37 @@ fn a_keyframe_request_replaces_a_refresh_request_and_only_a_keyframe_settles_it(
     let after_keyframe = sim.viewer.stats(sim.now).refresh_requests_sent;
     sim.run_for(100 * MS);
     assert_eq!(sim.viewer.stats(sim.now).refresh_requests_sent, after_keyframe);
+}
+
+#[test]
+fn an_ltr_refresh_sent_after_a_keyframe_request_is_not_taken_as_its_answer() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 23);
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+    sim.viewer.request_refresh(sim.now, 0, true);
+    sim.run_for(5 * MS);
+    sim.send(OutgoingFrame { refresh: true, ..frame(0, &payload(2, 2000)) });
+    sim.run_for(100 * MS);
+    assert_eq!(refresh_requests(&sim.host_events), vec![true], "the keyframe is still on its way");
+
+    sim.send(OutgoingFrame { keyframe: true, ..frame(0, &payload(3, 2000)) });
+    sim.run_for(100 * MS);
+    assert_eq!(refresh_requests(&sim.host_events), vec![true]);
+}
+
+#[test]
+fn a_late_repeat_of_an_older_request_is_ignored() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 24);
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+    let request = |number| RefreshRequest { stream: 0, request: number, keyframe: false, resolved_below: 1 };
+    for number in [2, 1, u16::MAX] {
+        sim.host.handle_datagram(sim.now, request(number).encode());
+    }
+    sim.host.handle_datagram(sim.now, request(3).encode());
+    sim.pump();
+
+    assert_eq!(refresh_requests(&sim.host_events), vec![false, false]);
 }
 
 #[test]

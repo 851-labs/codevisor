@@ -335,6 +335,7 @@ async fn send_cost(options: &Options) -> Result<String> {
 struct Measured {
     round_trips_ms: Vec<f64>,
     sending_ms: Vec<f64>,
+    after_sending_ms: Vec<f64>,
     recoveries_ms: Vec<f64>,
     within: u64,
     timed: u64,
@@ -398,8 +399,11 @@ async fn measure(
             result.rtt_floor_ms = *floor;
             let bound = *floor + 2.0;
             result.within = result.recoveries_ms.iter().filter(|recovery| **recovery <= bound).count() as u64;
-            result.over_idle_bound =
-                result.round_trips_ms.iter().filter(|round_trip| **round_trip > *floor + bound).count() as u64;
+            result.over_idle_bound = if row.every > 1 {
+                result.after_sending_ms.iter().filter(|round_trip| **round_trip > *floor + bound).count() as u64
+            } else {
+                0
+            };
         }
         for path in connection.paths().iter().filter(|path| path.selected) {
             writeln!(
@@ -506,6 +510,9 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
             measured.acked += 1;
             measured.round_trips_ms.push(sent.elapsed().as_secs_f64() * 1000.0);
             measured.sending_ms.push(ack.sending.as_secs_f64() * 1000.0);
+            measured
+                .after_sending_ms
+                .push(sent.elapsed().saturating_sub(ack.queued + ack.sending).as_secs_f64() * 1000.0);
             match ack.receipt {
                 Some(receipt) if receipt.recovery != crate::Recovery::None => {
                     measured.timed += 1;

@@ -6,6 +6,7 @@ struct ScreenSharingV2Recovery {
   private var pending: [Int: ScreenSharingTileRefresh] = [:]
   private var refreshFrames: [Int: UInt32] = [:]
   private var failedRefreshes: [Int: Int] = [:]
+  private var lastDelivered: [Int: UInt32] = [:]
 
   var pendingTiles: Set<Int> { Set(pending.keys) }
 
@@ -16,7 +17,11 @@ struct ScreenSharingV2Recovery {
       refreshFrames[tile.tile] = nil
       failedRefreshes[tile.tile] = nil
     } else if tile.refresh == .longTermReference {
-      refreshFrames[tile.tile] = frame
+      if lastDelivered[tile.tile] == frame {
+        failedRefreshes[tile.tile] = nil
+      } else {
+        refreshFrames[tile.tile] = frame
+      }
     }
     if let token = tile.ltrToken { issuedTokens[tile.tile, default: []].insert(token) }
   }
@@ -29,6 +34,7 @@ struct ScreenSharingV2Recovery {
   }
 
   mutating func delivered(frame: UInt32, tile: Int) {
+    lastDelivered[tile] = frame
     guard refreshFrames[tile] == frame else { return }
 
     refreshFrames[tile] = nil

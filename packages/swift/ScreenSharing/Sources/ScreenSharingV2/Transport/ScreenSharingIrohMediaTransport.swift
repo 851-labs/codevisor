@@ -18,7 +18,7 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
   public func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws -> UInt32 {
     try tile.accessUnit.withUnsafeBytes { bytes in
       try session.sendFrame(
-        stream: UInt8(tile.tile), keyframe: tile.isKeyFrame, refresh: tile.refresh != nil, ltrToken: tile.ltrToken,
+        stream: UInt8(tile.tile), keyframe: tile.isKeyFrame, refresh: tile.recovers, ltrToken: tile.ltrToken,
         meta: meta, data: bytes)
     }
   }

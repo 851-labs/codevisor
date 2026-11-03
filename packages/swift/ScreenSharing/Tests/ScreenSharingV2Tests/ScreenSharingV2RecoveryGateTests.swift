@@ -76,12 +76,23 @@ struct ScreenSharingV2RecoveryGateTests {
     #expect(gate.decoded(stream: 0, refresh, atNs: 3 * Self.stallNs) == 3 * Self.stallNs - 1_000)
   }
 
-  @Test func aLostDecoderSessionWaitsForAKeyframeAndAsksForOneWhenItStalls() {
+  @Test func aLostDecoderSessionWaitsForAKeyframeAndAsksForOneWhenItStalls() throws {
     var gate = ScreenSharingV2RecoveryGate()
-    _ = gate.admits(stream: 0, isKeyFrame: true, isRefresh: true)
+    let keyframe = try Self.admit(&gate, keyframe: true, refresh: true)
 
-    #expect(gate.lostSession(stream: 0, atNs: 0) == .keyframe)
+    #expect(gate.lostSession(stream: 0, keyframe, atNs: 0) == .keyframe)
     #expect(gate.admits(stream: 0, isKeyFrame: false, isRefresh: true) == nil)
     #expect(gate.rejected(stream: 0, atNs: Self.stallNs) == .keyframe)
+  }
+
+  @Test func aLostSessionReportedForAFrameFromBeforeTheLatestRecoveryIsIgnored() throws {
+    var gate = ScreenSharingV2RecoveryGate()
+    let first = try Self.admit(&gate, keyframe: true, refresh: true)
+    let second = try Self.admit(&gate, keyframe: false, refresh: false)
+    _ = gate.lostSession(stream: 0, first, atNs: 0)
+    _ = try Self.admit(&gate, keyframe: true, refresh: true)
+
+    #expect(gate.lostSession(stream: 0, second, atNs: 1) == nil)
+    #expect(gate.state(of: 0) == .decoding)
   }
 }
