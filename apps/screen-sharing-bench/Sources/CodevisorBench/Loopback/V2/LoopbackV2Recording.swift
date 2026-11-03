@@ -2,7 +2,7 @@ import ScreenSharing
 import ScreenSharingBench
 
 struct LoopbackV2Recording: LoopbackRecorded {
-  let system = BenchSystem.codevisorV2
+  let system: BenchSystem
   let startNs: Int64
   let produced: [BenchVersionEvent]
   let records: [ScreenSharingFrameRecord]

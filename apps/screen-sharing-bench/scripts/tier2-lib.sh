@@ -15,6 +15,7 @@
 : "${TIER2_PRESENT:=arrival}"
 : "${TIER2_SYSTEMS:=apple-hp,codevisor-r1x2,codevisor}"
 : "${TIER2_VIEWER_DISPLAY:=main}"
+: "${TIER2_VCP_FAIL_AFTER:=0}"
 
 tier2_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tier2_run_overhead_s=100
@@ -52,14 +53,14 @@ tier2_plan() {
       index=$((index + 1)); echo "$index $scene floor $rep 1"
     done
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
-      for system in apple-hp codevisor-r1x2 codevisor-v2 codevisor; do
+      for system in apple-hp codevisor-r1x2 codevisor-v2 codevisor-v2-vcp codevisor; do
         tier2_runs_system "$system" || continue
         index=$((index + 1)); echo "$index $scene $system $rep 1"
       done
     done
   done
   if ((TIER2_C4)) && [[ ",$TIER2_SCENES," == *,video,* ]]; then
-    for system in apple-hp codevisor-r1x2 codevisor-v2; do
+    for system in apple-hp codevisor-r1x2 codevisor-v2 codevisor-v2-vcp; do
       tier2_runs_system "$system" || continue
       index=$((index + 1)); echo "$index video $system 1 0"
     done
@@ -72,7 +73,7 @@ tier2_runs_system() {
 
 tier2_engine() {
   case "$1" in
-    codevisor-v2) echo v2 ;;
+    codevisor-v2 | codevisor-v2-vcp) echo v2 ;;
     *) echo "$TIER2_ENGINE" ;;
   esac
 }
@@ -81,8 +82,15 @@ tier2_engine_options() {
   echo --engine "$(tier2_engine "$1")"
 }
 
+tier2_encoder_options() {
+  [[ "$1" == codevisor-v2-vcp ]] || return 0
+  echo --encoder vcp
+  ((TIER2_VCP_FAIL_AFTER > 0)) && echo --vcp-fail-after "$TIER2_VCP_FAIL_AFTER"
+  return 0
+}
+
 tier2_on_virtual_display() {
-  [[ "$1" == codevisor-r1x2 || "$1" == codevisor-v2 ]]
+  [[ "$1" == codevisor-r1x2 || "$1" == codevisor-v2 || "$1" == codevisor-v2-vcp ]]
 }
 
 tier2_meta_system() {
@@ -102,7 +110,7 @@ tier2_name() {
 
 tier2_resolution() {
   case "$1" in
-    apple-hp | codevisor-r1x2 | codevisor-v2) echo R1x2 ;;
+    apple-hp | codevisor-r1x2 | codevisor-v2 | codevisor-v2-vcp) echo R1x2 ;;
     *) echo R1 ;;
   esac
 }
@@ -177,11 +185,15 @@ tier2_check_inputs() {
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
   [[ "$TIER2_NETWORK" =~ ^N[03]$ ]] || { echo "network must be N0 or N3, not $TIER2_NETWORK" >&2; return 1; }
   [[ "$TIER2_ENGINE" =~ ^v[12]$ ]] || { echo "engine must be v1 or v2, not $TIER2_ENGINE" >&2; return 1; }
+  [[ "$TIER2_VCP_FAIL_AFTER" =~ ^(0|[1-9][0-9]*)$ ]] && ((TIER2_VCP_FAIL_AFTER < TIER2_DURATION)) || {
+    echo "vcp-fail-after must be whole seconds below the run's duration" >&2
+    return 1
+  }
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
   tier2_check_input_scene || return 1
   [[ "$TIER2_VIEWER_DISPLAY" =~ ^(main|R1x2)$ ]] || { echo "viewer display must be main or R1x2" >&2; return 1; }
   [[ "$TIER2_PROFILE" =~ ^[01]$ ]] || { echo "profile must be 0 or 1, not $TIER2_PROFILE" >&2; return 1; }
-  local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2|codevisor)"
+  local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2-vcp|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   if [[ "$TIER2_ENGINE" == v2 ]] && tier2_runs_system codevisor-r1x2 && tier2_runs_system codevisor-v2; then
     echo "engine v2 makes codevisor-r1x2 the same system as codevisor-v2; pick one, or engine v1" >&2
@@ -209,7 +221,7 @@ tier2_check_input_scene() {
     echo "input events must be 1 to 400 of each kind, not $TIER2_INPUT_EVENTS" >&2
     return 1
   fi
-  if [[ "$TIER2_PRESENT" != arrival ]] && { [[ "$TIER2_ENGINE" == v2 ]] || tier2_runs_system codevisor-v2; }; then
+  if [[ "$TIER2_PRESENT" != arrival ]] && { [[ "$TIER2_ENGINE" == v2 ]] || tier2_runs_system codevisor-v2 || tier2_runs_system codevisor-v2-vcp; }; then
     echo "the input scene needs the arrival presentation for engine v2" >&2
     return 1
   fi

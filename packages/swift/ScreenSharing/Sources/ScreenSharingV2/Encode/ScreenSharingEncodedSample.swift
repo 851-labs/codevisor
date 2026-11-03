@@ -10,14 +10,14 @@ struct ScreenSharingEncodedSample {
   let ltrToken: UInt64?
   let accessUnit: ScreenSharingAccessUnit
 
-  init(_ sample: CMSampleBuffer) throws {
+  init(_ sample: CMSampleBuffer, tokenKey: CFString = kVTSampleAttachmentKey_RequireLTRAcknowledgementToken) throws {
     guard let block = sample.dataBuffer, let format = sample.formatDescription else {
       throw ScreenSharingError.invalid("The encoded frame has no data.")
     }
 
     let attachments = Self.attachments(of: sample)
     isKeyFrame = attachments?[kCMSampleAttachmentKey_NotSync] as? Bool != true
-    ltrToken = (attachments?[kVTSampleAttachmentKey_RequireLTRAcknowledgementToken] as? NSNumber)?.uint64Value
+    ltrToken = (attachments?[tokenKey] as? NSNumber)?.uint64Value
     if isKeyFrame {
       accessUnit = ScreenSharingAccessUnit(try Self.parameterSets(of: format) + Self.copy(block))
     } else {

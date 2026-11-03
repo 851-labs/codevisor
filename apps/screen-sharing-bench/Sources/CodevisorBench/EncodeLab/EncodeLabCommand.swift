@@ -10,6 +10,7 @@ struct EncodeLabCommand: BenchCommand {
       [--duration 8] [--warm-up 2] [--quality-samples 24] [--seed 1] [--output <file.json>] [--markdown <file.md>]
     config keys: name engine(vt|vcp) codec(hevc444|hevc|h264) rc(standard|ll) mbps(<n>|none) size(<w>x<h>) tiles
       skip ltr yuv speed mfd qpmax qpmin drl(<mbps>@<s>) preset(vc|speed|balanced|quality) cq(0–1) aq ackms refine vcpin
+      nodirty
     """
 
   let presentsWindows = false

@@ -24,6 +24,7 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
   var ackMilliseconds = 33
   var vcpInput = "444f"
   var refinements = 0
+  var disablesDirtyDetection = false
 
   var tileHeight: Int { height / tiles }
   var sessionBitsPerSecond: Int? { megabitsPerSecond.map { Int($0 * 1_000_000) / sessionTiles } }

@@ -51,6 +51,7 @@ enum EncodeLabConfigParser {
     case "ltr": config.longTermReferences = try bool(value, spec: spec)
     case "yuv": config.feedsYCbCr = try bool(value, spec: spec)
     case "speed": config.prioritizeSpeed = try bool(value, spec: spec)
+    case "nodirty": config.disablesDirtyDetection = try bool(value, spec: spec)
     default: return false
     }
     return true
