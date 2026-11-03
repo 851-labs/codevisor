@@ -73,7 +73,8 @@ with the skill's name. They are not in the harness's own skill list.
 
 - [run-dev](../run-dev/SKILL.md) owns development startup and runner lifecycle.
   Use `bun run dev` for both native apps, `bun run dev:macos` or
-  `bun run dev:ios` for one platform, and `bun run dev:web` for the website.
+  `bun run dev:ios` for one platform, `bun run dev:web` for the website, and
+  `bun run dev:mascot-playground` for the bot mascot package.
   Before either iOS-capable runner, start `bun run ios-simulator` as a
   separate persistent background task and wait for `Simulator ready`.
   Keep it running across rebuilds; stopping it deletes its worktree device.

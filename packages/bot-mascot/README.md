@@ -47,6 +47,13 @@ thinking, working, calling) and `renderBotMascotFrame` draws any pose. The arm r
 Working and Calling with his arms. `hatRider` and `dangle` are the springs behind a hat and a dangling hem.
 `docs/arm-rig.md`, `docs/arm-spec.md` and `docs/shading.md` explain the arm rig and the one light.
 
+## Playground
+
+`bun run dev:mascot-playground` opens `apps/mascot-playground`, which draws this package from `src/` with
+hot reload: every outfit, every animation (play, pause, scrub, speed, loop), the arm rig's pose with debug
+overlays, the app's sidebar figure and circle avatar at 1×, 2× and 3×, and PNG and SVG export. Its URL holds
+the whole state, so a link opens the same look, animation and frame.
+
 ## Layout
 
 ```

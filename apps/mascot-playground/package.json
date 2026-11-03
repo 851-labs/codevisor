@@ -1,0 +1,25 @@
+{
+  "name": "@codevisor/mascot-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run src",
+    "test:coverage": "vitest run src"
+  },
+  "dependencies": {
+    "@codevisor/bot-mascot": "workspace:*",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "6.0.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.6"
+  }
+}

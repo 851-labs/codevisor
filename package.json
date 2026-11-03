@@ -39,6 +39,7 @@
     "check": "node scripts/check.mjs",
     "check:all": "node scripts/check.mjs --all",
     "dev:web": "bun run --cwd apps/www dev",
+    "dev:mascot-playground": "bun run --cwd apps/mascot-playground dev",
     "release:server": "scripts/release/build-server-archive.sh",
     "release:browser-extension": "node scripts/release/build-browser-extension.mjs",
     "release:browser-extension:publish": "node scripts/release/publish-browser-extension.mjs",

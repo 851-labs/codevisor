@@ -40,6 +40,22 @@
         "wrangler": "4.120.0",
       },
     },
+    "apps/mascot-playground": {
+      "name": "@codevisor/mascot-playground",
+      "dependencies": {
+        "@codevisor/bot-mascot": "workspace:*",
+        "react": "19.2.7",
+        "react-dom": "19.2.7",
+      },
+      "devDependencies": {
+        "@types/react": "19.2.17",
+        "@types/react-dom": "19.2.3",
+        "@vitejs/plugin-react": "5.2.0",
+        "typescript": "6.0.2",
+        "vite": "7.3.6",
+        "vitest": "4.1.6",
+      },
+    },
     "apps/server": {
       "name": "@codevisor/server",
       "bin": {
@@ -724,6 +740,8 @@
     "@codevisor/git-hosts": ["@codevisor/git-hosts@workspace:packages/git-hosts"],
 
     "@codevisor/harness-manager": ["@codevisor/harness-manager@workspace:packages/harness-manager"],
+
+    "@codevisor/mascot-playground": ["@codevisor/mascot-playground@workspace:apps/mascot-playground"],
 
     "@codevisor/mcp": ["@codevisor/mcp@workspace:packages/mcp"],
 

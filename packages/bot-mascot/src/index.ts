@@ -1,6 +1,7 @@
 export { renderBotMascotSvg, CALLING_STILL, type StaticRenderOptions } from "./render-static.js"
 export {
   defaultBotMascotConfig,
+  dressed,
   portraitViewBox,
   randomBotMascotConfig,
   resolveConfig,

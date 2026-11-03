@@ -1,0 +1,267 @@
+:root {
+  color-scheme: light;
+  font:
+    13px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    system-ui,
+    sans-serif;
+  color: #1d1d1f;
+  background: #ececef;
+  --panel: #ffffff;
+  --line: #d9d9de;
+  --accent: #0a84ff;
+  --light-stage: #f5f5f7;
+  --dark-stage: #1c1c1e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1,
+h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+h2 {
+  font-size: 13px;
+}
+
+button,
+select {
+  font: inherit;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+button[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.top h1 {
+  margin-right: auto;
+}
+
+.exports {
+  display: flex;
+  gap: 6px;
+}
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+}
+
+.stage-column,
+aside {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stage {
+  aspect-ratio: 1;
+  width: min(100%, 560px);
+  margin: 0 auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+.stage.rigging {
+  cursor: crosshair;
+}
+
+.stage > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.light {
+  background: var(--light-stage);
+  color: #1d1d1f;
+}
+
+.dark {
+  background: var(--dark-stage);
+  color: #f5f5f7;
+}
+
+.transport,
+.panel,
+.previews {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel > header,
+.previews > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel > header h2,
+.previews > header h2 {
+  margin-right: auto;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.counter {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.scrub {
+  width: 100%;
+}
+
+.choice,
+.slider,
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 70px 1fr 44px;
+}
+
+.slider output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.chip.color {
+  width: 28px;
+  height: 28px;
+  border-width: 2px;
+}
+
+.chip.auto {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.makeup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: #6e6e73;
+}
+
+.arm {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.preview {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview figcaption {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.preview canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.figure-box {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.slot {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  translate: -50% 0;
+  border: 1px dashed currentColor;
+  opacity: 0.35;
+  pointer-events: none;
+}
