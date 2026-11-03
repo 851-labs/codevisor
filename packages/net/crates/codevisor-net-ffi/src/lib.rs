@@ -186,7 +186,12 @@ impl NetConnectionHandle {
         self.inner
             .paths()
             .into_iter()
-            .map(|path| NetPath { is_relay: path.is_relay, remote: path.remote, selected: path.selected, rtt_ms: path.rtt_ms })
+            .map(|path| NetPath {
+                is_relay: path.is_relay,
+                remote: path.remote,
+                selected: path.selected,
+                rtt_ms: path.rtt_ms,
+            })
             .collect()
     }
 
@@ -309,13 +314,17 @@ pub enum MediaEvent {
         stream: u8,
         frame: u32,
         keyframe: bool,
+        refresh: bool,
         ltr_token: Option<u64>,
         meta: Vec<u8>,
         data: Arc<MediaBytes>,
         assembling_us: u64,
         recovery: MediaRecovery,
     },
-    FrameSkipped { stream: u8, frame: u32 },
+    FrameSkipped {
+        stream: u8,
+        frame: u32,
+    },
     FrameAcked {
         stream: u8,
         frame: u32,
@@ -324,8 +333,18 @@ pub enum MediaEvent {
         acked_after_us: u64,
         assembling_us: Option<u64>,
     },
-    FrameLost { stream: u8, frame: u32 },
-    LtrAcked { stream: u8, token: u64 },
+    FrameLost {
+        stream: u8,
+        frame: u32,
+    },
+    LtrAcked {
+        stream: u8,
+        token: u64,
+    },
+    RefreshRequested {
+        stream: u8,
+        keyframe: bool,
+    },
 }
 
 fn micros(duration: Duration) -> u64 {
@@ -339,6 +358,7 @@ impl From<media::Event> for MediaEvent {
                 stream: frame.stream,
                 frame: frame.frame,
                 keyframe: frame.keyframe,
+                refresh: frame.refresh,
                 ltr_token: frame.ltr_token,
                 meta: frame.meta,
                 data: Arc::new(MediaBytes { bytes: frame.data }),
@@ -356,6 +376,7 @@ impl From<media::Event> for MediaEvent {
             },
             media::Event::FrameLost { stream, frame } => Self::FrameLost { stream, frame },
             media::Event::LtrAcked { stream, token } => Self::LtrAcked { stream, token },
+            media::Event::RefreshRequested { stream, keyframe } => Self::RefreshRequested { stream, keyframe },
         }
     }
 }
@@ -385,6 +406,8 @@ pub struct MediaSessionStats {
     pub bytes_received: u64,
     pub fec_recoveries: u64,
     pub nacks_sent: u64,
+    pub refresh_requests_sent: u64,
+    pub refreshes_requested: u64,
     pub rtt_us: u64,
     pub estimate_kbps: u64,
     pub queue_delay_us: i64,
@@ -401,6 +424,10 @@ pub struct MediaSessionHandle {
 impl MediaSessionHandle {
     pub fn ack_ltr(&self, stream: u8, token: u64) {
         self.inner.ack_ltr(stream, token);
+    }
+
+    pub fn request_refresh(&self, stream: u8, keyframe: bool) {
+        self.inner.request_refresh(stream, keyframe);
     }
 
     pub fn admission(&self) -> MediaAdmission {
@@ -431,6 +458,8 @@ impl MediaSessionHandle {
             bytes_received: stats.bytes_received,
             fec_recoveries: stats.fec_recoveries,
             nacks_sent: stats.nacks_sent,
+            refresh_requests_sent: stats.refresh_requests_sent,
+            refreshes_requested: stats.refreshes_requested,
             rtt_us: micros(stats.rtt),
             estimate_kbps: (stats.estimate_bps / 1000.0) as u64,
             queue_delay_us: stats.queue_delay_us,
@@ -449,11 +478,7 @@ impl MediaSessionHandle {
 }
 
 fn borrowed<'a>(pointer: *const std::ffi::c_void, len: usize) -> &'a [u8] {
-    if len == 0 || pointer.is_null() {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(pointer.cast(), len) }
-    }
+    if len == 0 || pointer.is_null() { &[] } else { unsafe { std::slice::from_raw_parts(pointer.cast(), len) } }
 }
 
 const SEND_PANICKED: i64 = -5;
@@ -464,6 +489,7 @@ pub unsafe extern "C" fn codevisor_media_send_frame(
     session: u64,
     stream: u8,
     keyframe: bool,
+    refresh: bool,
     has_ltr_token: bool,
     ltr_token: u64,
     meta: *const std::ffi::c_void,
@@ -475,6 +501,7 @@ pub unsafe extern "C" fn codevisor_media_send_frame(
     let frame = media::OutgoingFrame {
         stream,
         keyframe,
+        refresh,
         ltr_token: has_ltr_token.then_some(ltr_token),
         meta: borrowed(meta, meta_len),
         data: borrowed(data, data_len),

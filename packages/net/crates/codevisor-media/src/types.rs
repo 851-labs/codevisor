@@ -34,6 +34,7 @@ pub enum FecMode {
 pub struct OutgoingFrame<'a> {
     pub stream: u8,
     pub keyframe: bool,
+    pub refresh: bool,
     pub ltr_token: Option<u64>,
     pub meta: &'a [u8],
     pub data: &'a [u8],
@@ -67,6 +68,7 @@ pub enum Event {
     FrameAcked(FrameAck),
     FrameLost { stream: u8, frame: u32 },
     LtrAcked { stream: u8, token: u64 },
+    RefreshRequested { stream: u8, keyframe: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +76,7 @@ pub struct ReceivedFrame {
     pub stream: u8,
     pub frame: u32,
     pub keyframe: bool,
+    pub refresh: bool,
     pub ltr_token: Option<u64>,
     pub meta: Vec<u8>,
     pub data: Bytes,
@@ -120,6 +123,7 @@ pub struct Stats {
     pub probes_sent: u64,
     pub nacks_received: u64,
     pub transport_rejected: u64,
+    pub refreshes_requested: u64,
 
     pub frames_received: u64,
     pub frames_skipped: u64,
@@ -129,6 +133,7 @@ pub struct Stats {
     pub invalid_datagrams: u64,
     pub fec_recoveries: u64,
     pub nacks_sent: u64,
+    pub refresh_requests_sent: u64,
 
     pub rtt: Duration,
     pub estimate_bps: f64,

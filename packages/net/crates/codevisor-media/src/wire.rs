@@ -7,6 +7,10 @@ pub const NO_FRAME: u32 = u32::MAX;
 const FEEDBACK_BYTES: usize = 36;
 const LTR_BYTES: usize = 8;
 const MAX_NACK_RANGES: usize = 64;
+const REFRESH_BYTES: usize = 9;
+const FIELD_KEYFRAME: u8 = 1;
+const FIELD_LTR: u8 = 2;
+const FIELD_REFRESH: u8 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -14,6 +18,7 @@ pub enum Kind {
     Parity = 1,
     Feedback = 2,
     Nack = 3,
+    Refresh = 4,
 }
 
 impl Kind {
@@ -23,6 +28,7 @@ impl Kind {
             1 => Some(Self::Parity),
             2 => Some(Self::Feedback),
             3 => Some(Self::Nack),
+            4 => Some(Self::Refresh),
             _ => None,
         }
     }
@@ -258,9 +264,42 @@ impl Nack {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefreshRequest {
+    pub stream: u8,
+    pub request: u16,
+    pub keyframe: bool,
+    pub resolved_below: u32,
+}
+
+impl RefreshRequest {
+    pub fn encode(&self) -> Bytes {
+        let mut out = BytesMut::with_capacity(REFRESH_BYTES);
+        out.put_u8(first_byte(Kind::Refresh));
+        out.put_u8(self.stream);
+        out.put_u16(self.request);
+        out.put_u8(u8::from(self.keyframe));
+        out.put_u32(self.resolved_below);
+        out.freeze()
+    }
+
+    pub fn decode(datagram: &[u8]) -> Option<Self> {
+        if kind_of(datagram)? != Kind::Refresh || datagram.len() < REFRESH_BYTES {
+            return None;
+        }
+        Some(Self {
+            stream: datagram[1],
+            request: u16::from_be_bytes([datagram[2], datagram[3]]),
+            keyframe: datagram[4] & 1 != 0,
+            resolved_below: u32::from_be_bytes(datagram[5..9].try_into().unwrap()),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FrameFields {
     pub keyframe: bool,
+    pub refresh: bool,
     pub ltr_token: Option<u64>,
     pub meta: Vec<u8>,
 }
@@ -274,7 +313,17 @@ impl FrameFields {
 
     pub fn payload(&self, data: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.prefix_len() + data.len());
-        out.push(u8::from(self.keyframe) | if self.ltr_token.is_some() { 2 } else { 0 });
+        let mut flags = 0;
+        if self.keyframe {
+            flags |= FIELD_KEYFRAME;
+        }
+        if self.refresh {
+            flags |= FIELD_REFRESH;
+        }
+        if self.ltr_token.is_some() {
+            flags |= FIELD_LTR;
+        }
+        out.push(flags);
         if let Some(token) = self.ltr_token {
             out.extend_from_slice(&token.to_be_bytes());
         }
@@ -287,7 +336,7 @@ impl FrameFields {
     pub fn parse(mut payload: Bytes) -> Option<(Self, Bytes)> {
         let flags = *payload.first()?;
         let mut at = 1;
-        let ltr_token = if flags & 2 != 0 {
+        let ltr_token = if flags & FIELD_LTR != 0 {
             let token = u64::from_be_bytes(payload.get(at..at + 8)?.try_into().ok()?);
             at += 8;
             Some(token)
@@ -298,7 +347,10 @@ impl FrameFields {
         at += 2;
         let meta = payload.get(at..at + meta_len)?.to_vec();
         let data = payload.split_off(at + meta_len);
-        Some((Self { keyframe: flags & 1 != 0, ltr_token, meta }, data))
+        Some((
+            Self { keyframe: flags & FIELD_KEYFRAME != 0, refresh: flags & FIELD_REFRESH != 0, ltr_token, meta },
+            data,
+        ))
     }
 }
 
@@ -382,8 +434,18 @@ mod tests {
     }
 
     #[test]
+    fn refresh_requests_round_trip_and_reject_short_datagrams() {
+        let request = RefreshRequest { stream: 3, request: 0xABCD, keyframe: true, resolved_below: 77 };
+        let encoded = request.encode();
+        assert_eq!(encoded.len(), REFRESH_BYTES);
+        assert_eq!(kind_of(&encoded), Some(Kind::Refresh));
+        assert_eq!(RefreshRequest::decode(&encoded), Some(request));
+        assert_eq!(RefreshRequest::decode(&encoded[..REFRESH_BYTES - 1]), None);
+    }
+
+    #[test]
     fn frame_fields_round_trip_in_front_of_the_access_unit() {
-        let fields = FrameFields { keyframe: true, ltr_token: Some(9), meta: b"timing".to_vec() };
+        let fields = FrameFields { keyframe: true, refresh: true, ltr_token: Some(9), meta: b"timing".to_vec() };
         let payload = fields.payload(b"access unit");
         assert_eq!(payload.len(), fields.prefix_len() + 11);
         let (parsed, data) = FrameFields::parse(Bytes::from(payload)).unwrap();

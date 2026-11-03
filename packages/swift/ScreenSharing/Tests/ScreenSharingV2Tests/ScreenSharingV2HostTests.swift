@@ -283,6 +283,89 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.last?.refreshes == refresh.map { [0: $0] } ?? [:])
   }
 
+  @Test func aRefreshRequestGetsALongTermReferenceRefreshAndAKeyframeRequestAKeyframe() async throws {
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    try await sendFirstFrame(through: host, keyframe: true, token: 9)
+    transport.emit(.ltrAcked(stream: 0, token: 9))
+    transport.emit(.refreshRequested(stream: 0, keyframe: false))
+    await encoder.encodes.wait(for: 2)
+    encoder.emitTile(of: encoder.requests[1], keyframe: false, token: nil, refresh: .longTermReference)
+    transport.emit(.refreshRequested(stream: 0, keyframe: true))
+    await encoder.encodes.wait(for: 3)
+
+    #expect(encoder.requests.map(\.refreshes) == [[:], [0: .longTermReference], [0: .keyframe]])
+  }
+
+  @Test func twoLostRefreshesInARowFallBackToAKeyframeOnThatTileOnly() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    for tile in 0..<4 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: true, token: UInt64(tile)) }
+    for tile in 0..<4 { transport.emit(.ltrAcked(stream: UInt8(tile), token: UInt64(tile))) }
+    transport.emit(.frameLost(stream: 2, frame: 2))
+    for (index, frame) in [UInt32(4), 5].enumerated() {
+      await encoder.encodes.wait(for: index + 2)
+      encoder.emitTile(
+        of: encoder.requests[index + 1], tile: 2, keyframe: false, token: nil, refresh: .longTermReference)
+      transport.emit(.frameLost(stream: 2, frame: frame))
+    }
+    await encoder.encodes.wait(for: 4)
+    transport.emit(.frameLost(stream: 1, frame: 1))
+    encoder.emitTile(of: encoder.requests[3], tile: 2, keyframe: true, token: nil, refresh: .keyframe)
+    await encoder.encodes.wait(for: 5)
+
+    #expect(
+      encoder.requests.dropFirst().map(\.refreshes) == [
+        [2: .longTermReference], [2: .longTermReference], [2: .keyframe], [1: .longTermReference],
+      ])
+  }
+
+  @Test func aDeliveredRefreshStartsTheCountOfFailedRefreshesOver() async throws {
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    try await sendFirstFrame(through: host, keyframe: true, token: 9)
+    transport.emit(.ltrAcked(stream: 0, token: 9))
+    let afterRefresh: [ScreenSharingMediaEvent] = [
+      .frameLost(stream: 0, frame: 1),
+      .frameAcked(ScreenSharingFrameAck(stream: 0, frame: 2, queuedUs: 0, sendingUs: 0, ackedAfterUs: 0)),
+      .frameLost(stream: 0, frame: 3),
+    ]
+    transport.emit(.frameLost(stream: 0, frame: 0))
+    for (index, event) in afterRefresh.enumerated() {
+      await encoder.encodes.wait(for: index + 2)
+      encoder.emitTile(of: encoder.requests[index + 1], keyframe: false, token: nil, refresh: .longTermReference)
+      transport.emit(event)
+      if index == 1 { transport.emit(.frameLost(stream: 0, frame: 0)) }
+    }
+    await encoder.encodes.wait(for: 5)
+
+    #expect(encoder.requests.dropFirst().map(\.refreshes) == Array(repeating: [0: .longTermReference], count: 4))
+  }
+
+  @Test func theEncoderHearsTheNetworkWithItsFirstEncodeAndThenEvery250ms() async throws {
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    for index in 0..<2 {
+      host.push(try TestPixels.frame(shade: UInt8(10 + index), timestampNs: Int64(index + 1) * 1_000))
+      await encoder.encodes.wait(for: index + 1)
+      encoder.emitTiles(of: encoder.requests[index])
+    }
+    let early = encoder.networkFeedback.count
+    scheduler.advance(byNs: 250_000_000)
+    await encoder.encodes.wait(for: 3)
+
+    #expect(early == 1)
+    #expect(encoder.networkFeedback.count == 2)
+    #expect(encoder.networkFeedback.first?.transmissionBitsPerSecond == 100_000_000)
+  }
+
   private func sendFirstFrame(through host: ScreenSharingV2Host, keyframe: Bool, token: UInt64?) async throws {
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
     await encoder.encodes.wait(for: 1)

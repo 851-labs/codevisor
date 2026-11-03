@@ -18,6 +18,10 @@ final class ScreenSharingV2Decoders: @unchecked Sendable {
     try decoder(for: frame.stream).decode(frame, meta: meta, receivedNs: receivedNs, output: output)
   }
 
+  func reset(stream: UInt8) {
+    lock.withLock { decoders[stream] }?.discardSession()
+  }
+
   func stop() {
     let all = lock.withLock {
       stopped = true

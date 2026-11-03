@@ -4,4 +4,5 @@ public enum ScreenSharingMediaEvent: Sendable {
   case frameAcked(ScreenSharingFrameAck)
   case frameLost(stream: UInt8, frame: UInt32)
   case ltrAcked(stream: UInt8, token: UInt64)
+  case refreshRequested(stream: UInt8, keyframe: Bool)
 }

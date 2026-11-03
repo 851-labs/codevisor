@@ -13,7 +13,7 @@ use crate::{
     types::{
         Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, SendError, Stats, give_up_after,
     },
-    wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader},
+    wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader, RefreshRequest},
 };
 
 const MAX_PROBES: u32 = 6;
@@ -24,6 +24,9 @@ const MIN_FEC: f64 = 0.05;
 const MAX_FEC: f64 = 0.25;
 const PACING_GAIN: f64 = 2.0;
 const MAX_PACING_GAIN: f64 = 4.0;
+const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
+const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
+const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
 
 #[derive(Debug)]
 struct SentFrame {
@@ -41,6 +44,42 @@ struct StreamTx {
     next_frame: u32,
     unresolved: BTreeMap<u32, SentFrame>,
     ltr_token: Option<u64>,
+    last_recovery: Option<u32>,
+    refresh: Option<AnsweredRequest>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnsweredRequest {
+    request: u16,
+    answers_from: u32,
+}
+
+impl StreamTx {
+    fn answer_to(&self, request: AnsweredRequest) -> Option<u32> {
+        self.last_recovery.filter(|frame| *frame >= request.answers_from)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AckDelay {
+    smoothed: f64,
+    variation: f64,
+}
+
+impl AckDelay {
+    fn update(previous: Option<Self>, sample: Duration) -> Self {
+        let sample = sample.as_secs_f64();
+        let Some(previous) = previous else { return Self { smoothed: sample, variation: sample / 2.0 } };
+        let deviation = (sample - previous.smoothed).abs();
+        Self {
+            smoothed: previous.smoothed + ACK_DELAY_GAIN * (sample - previous.smoothed),
+            variation: previous.variation + ACK_VARIATION_GAIN * (deviation - previous.variation),
+        }
+    }
+
+    fn tail_probe_after(&self) -> Duration {
+        Duration::from_secs_f64(self.smoothed) + Duration::from_secs_f64(2.0 * self.variation).max(TAIL_PROBE_MARGIN)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -61,6 +100,7 @@ pub struct Sender {
     loss: LossWindow,
     last_loss: Option<Instant>,
     rtt: Duration,
+    ack_delay: Option<AckDelay>,
 }
 
 impl Sender {
@@ -74,6 +114,7 @@ impl Sender {
             loss: LossWindow::default(),
             last_loss: None,
             rtt: Duration::ZERO,
+            ack_delay: None,
         }
     }
 
@@ -94,7 +135,12 @@ impl Sender {
         }
         let max_shard =
             max_datagram.checked_sub(wire::HEADER_BYTES).filter(|shard| *shard >= 2).ok_or(SendError::PathTooSmall)?;
-        let fields = FrameFields { keyframe: frame.keyframe, ltr_token: frame.ltr_token, meta: frame.meta.to_vec() };
+        let fields = FrameFields {
+            keyframe: frame.keyframe,
+            refresh: frame.refresh,
+            ltr_token: frame.ltr_token,
+            meta: frame.meta.to_vec(),
+        };
         let payload = fields.payload(frame.data);
         let frame_len =
             u32::try_from(payload.len()).ok().filter(|len| *len < u32::MAX).ok_or(SendError::FrameTooLarge)?;
@@ -105,6 +151,9 @@ impl Sender {
         let stream = self.streams.entry(frame.stream).or_default();
         let number = stream.next_frame;
         stream.next_frame = stream.next_frame.wrapping_add(1);
+        if frame.keyframe || frame.refresh {
+            stream.last_recovery = Some(number);
+        }
         let header = |kind, index: usize| PacketHeader {
             kind,
             stream: frame.stream,
@@ -265,6 +314,13 @@ impl Sender {
                 events.push_back(Event::FrameAcked(ack));
             }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
+                if let Some(last_tx) = frame.last_tx
+                    && !feedback.lost
+                    && frame.probes == 0
+                    && receipt.recovery == crate::Recovery::None
+                {
+                    self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
+                }
                 if !feedback.lost && receipt.recovery == crate::Recovery::None {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
                     let hold_off = self.rtt + self.config.frame_interval;
@@ -292,16 +348,33 @@ impl Sender {
         }
     }
 
+    pub fn on_refresh_request(&mut self, request: &RefreshRequest, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        let stream = self.streams.entry(request.stream).or_default();
+        if let Some(answered) = stream.refresh
+            && answered.request == request.request
+        {
+            let failed = stream.answer_to(answered).is_some_and(|frame| frame < request.resolved_below);
+            if !failed {
+                return;
+            }
+        }
+        stream.refresh = Some(AnsweredRequest { request: request.request, answers_from: stream.next_frame });
+        stats.refreshes_requested += 1;
+        events.push_back(Event::RefreshRequested { stream: request.stream, keyframe: request.keyframe });
+    }
+
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        let tail_probe = self.tail_probe_after();
         let timeout = self.ack_timeout();
         let mut probed = false;
         for (&stream_id, stream) in &mut self.streams {
             let mut expired = Vec::new();
+            let newest = stream.next_frame.wrapping_sub(1);
             for (&number, frame) in &mut stream.unresolved {
-                let Some(last_tx) = frame.last_tx else {
+                let Some(due) = probe_due(frame, number == newest, tail_probe, timeout) else {
                     continue;
                 };
-                if now < last_tx + timeout * (frame.probes + 1) {
+                if now < due {
                     continue;
                 }
                 if frame.probes == MAX_PROBES {
@@ -325,17 +398,25 @@ impl Sender {
         }
     }
 
+    fn tail_probe_after(&self) -> Duration {
+        self.ack_delay.map_or(self.rtt + TAIL_PROBE_MARGIN, |delay| delay.tail_probe_after())
+    }
+
     fn ack_timeout(&self) -> Duration {
         give_up_after(self.rtt, self.config.frame_interval) + self.rtt + Duration::from_millis(1)
     }
 
     pub fn poll_timeout(&self, now: Instant) -> Option<Instant> {
+        let tail_probe = self.tail_probe_after();
         let timeout = self.ack_timeout();
         let probe = self
             .streams
             .values()
-            .flat_map(|stream| stream.unresolved.values())
-            .filter_map(|frame| Some(frame.last_tx? + timeout * (frame.probes + 1)))
+            .flat_map(|stream| {
+                let newest = stream.next_frame.wrapping_sub(1);
+                stream.unresolved.iter().map(move |(number, frame)| (*number == newest, frame))
+            })
+            .filter_map(|(newest, frame)| probe_due(frame, newest, tail_probe, timeout))
             .min();
         [self.pacer.next_send(now), probe].into_iter().flatten().min()
     }
@@ -359,6 +440,11 @@ impl Sender {
         stats.fec_ratio = self.fec_ratio(now);
         stats.loss_rate = self.loss.rate;
     }
+}
+
+fn probe_due(frame: &SentFrame, newest: bool, tail_probe: Duration, timeout: Duration) -> Option<Instant> {
+    let first = if newest { tail_probe } else { timeout };
+    Some(frame.last_tx? + first + timeout * frame.probes)
 }
 
 fn receipt(receipt: wire::FrameReceipt) -> Receipt {

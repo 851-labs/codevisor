@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 use crate::{
     fec::{self, Layout},
     types::{Event, ReceivedFrame, Stats, give_up_after},
-    wire::{self, Feedback, FrameFields, FrameReceipt, Kind, Nack, PacketHeader, Recovery},
+    wire::{self, Feedback, FrameFields, FrameReceipt, Kind, Nack, PacketHeader, Recovery, RefreshRequest},
 };
 
 const MAX_AHEAD: u32 = 64;
@@ -117,6 +117,13 @@ struct Outcome {
     receipt: Option<FrameReceipt>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PendingRefresh {
+    request: u16,
+    keyframe: bool,
+    next_send: Instant,
+}
+
 #[derive(Debug, Default)]
 struct StreamRx {
     next_due: u32,
@@ -125,6 +132,16 @@ struct StreamRx {
     outcomes: BTreeMap<u32, Outcome>,
     ltr_token: Option<u64>,
     answered: Option<(u32, Instant)>,
+    refresh: Option<PendingRefresh>,
+    requests: u16,
+}
+
+impl StreamRx {
+    fn settle_refresh(&mut self, keyframe: bool, refresh: bool) {
+        if self.refresh.is_some_and(|pending| keyframe || refresh && !pending.keyframe) {
+            self.refresh = None;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -289,7 +306,39 @@ impl Receiver {
         self.outbox.push_back(report.encode());
     }
 
+    pub fn request_refresh(&mut self, now: Instant, stream_id: u8, keyframe: bool) {
+        let stream = self.streams.entry(stream_id).or_default();
+        if stream.refresh.is_some_and(|pending| pending.keyframe || !keyframe) {
+            return;
+        }
+        stream.requests = stream.requests.wrapping_add(1);
+        stream.refresh = Some(PendingRefresh { request: stream.requests, keyframe, next_send: now });
+    }
+
+    fn refresh_retry(&self) -> Duration {
+        self.give_up_after() + self.rtt
+    }
+
+    fn send_refresh_requests(&mut self, now: Instant, stats: &mut Stats) {
+        let retry = self.refresh_retry();
+        for (&stream_id, stream) in &mut self.streams {
+            let Some(pending) = stream.refresh.as_mut().filter(|pending| now >= pending.next_send) else {
+                continue;
+            };
+            pending.next_send = now + retry;
+            let request = RefreshRequest {
+                stream: stream_id,
+                request: pending.request,
+                keyframe: pending.keyframe,
+                resolved_below: stream.next_due,
+            };
+            stats.refresh_requests_sent += 1;
+            self.outbox.push_back(request.encode());
+        }
+    }
+
     pub fn handle_timeout(&mut self, now: Instant, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        self.send_refresh_requests(now, stats);
         let give_up = self.give_up_after();
         let retry = self.retry_after();
         let mut resolved = Vec::new();
@@ -334,7 +383,8 @@ impl Receiver {
     }
 
     pub fn poll_timeout(&self) -> Option<Instant> {
-        self.streams
+        let assembling = self
+            .streams
             .values()
             .flat_map(|stream| stream.frames.values())
             .filter(|assembly| matches!(assembly.state, State::Assembling))
@@ -342,8 +392,9 @@ impl Receiver {
                 let tail = assembly.tail_at.filter(|_| !assembly.end_seen);
                 [tail, assembly.next_nack, assembly.give_up_at]
             })
-            .flatten()
-            .min()
+            .flatten();
+        let refreshes = self.streams.values().filter_map(|stream| Some(stream.refresh?.next_send));
+        assembling.chain(refreshes).min()
     }
 
     fn on_resolved(&mut self, resolved: &[(u8, u32)], events: &mut VecDeque<Event>, stats: &mut Stats) {
@@ -391,7 +442,13 @@ impl Receiver {
                 break;
             }
             let (frame, assembly) = entry.remove_entry();
-            let lost = deliver(stream_id, frame, assembly, events);
+            let lost = match deliver(stream_id, frame, assembly, events) {
+                Some((keyframe, refresh)) => {
+                    stream.settle_refresh(keyframe, refresh);
+                    false
+                }
+                None => true,
+            };
             if lost {
                 stats.frames_skipped += 1;
                 stream.outcomes.insert(frame, Outcome { lost: true, receipt: None });
@@ -488,10 +545,11 @@ fn skip_to(stream_id: u8, stream: &mut StreamRx, keep_from: u32, events: &mut Ve
         if matches!(assembly.state, State::Assembling) {
             assembly.state = State::GivenUp;
         }
-        if deliver(stream_id, frame, assembly, events) {
-            stats.frames_skipped += 1;
-        } else {
+        if let Some((keyframe, refresh)) = deliver(stream_id, frame, assembly, events) {
+            stream.settle_refresh(keyframe, refresh);
             stats.frames_received += 1;
+        } else {
+            stats.frames_skipped += 1;
         }
         last_reported = Some(frame);
     }
@@ -502,7 +560,9 @@ fn skip_to(stream_id: u8, stream: &mut StreamRx, keep_from: u32, events: &mut Ve
     let (old_due, old_bitmap) = (stream.next_due, stream.lost_bitmap);
     let mut bitmap = 0;
     for age in 0..32 {
-        let Some(frame) = keep_from.checked_sub(1 + age) else { break };
+        let Some(frame) = keep_from.checked_sub(1 + age) else {
+            break;
+        };
         let lost = if frame < old_due {
             let old_age = old_due - 1 - frame;
             old_age < 32 && old_bitmap & (1 << old_age) != 0
@@ -515,15 +575,17 @@ fn skip_to(stream_id: u8, stream: &mut StreamRx, keep_from: u32, events: &mut Ve
     stream.lost_bitmap = bitmap;
 }
 
-fn deliver(stream: u8, frame: u32, assembly: Assembly, events: &mut VecDeque<Event>) -> bool {
+fn deliver(stream: u8, frame: u32, assembly: Assembly, events: &mut VecDeque<Event>) -> Option<(bool, bool)> {
     let recovery = assembly.recovery();
     match assembly.state {
         State::Complete { payload, at } => match FrameFields::parse(payload) {
             Some((fields, data)) => {
+                let recovers = (fields.keyframe, fields.refresh);
                 events.push_back(Event::Frame(ReceivedFrame {
                     stream,
                     frame,
                     keyframe: fields.keyframe,
+                    refresh: fields.refresh,
                     ltr_token: fields.ltr_token,
                     meta: fields.meta,
                     data,
@@ -531,16 +593,16 @@ fn deliver(stream: u8, frame: u32, assembly: Assembly, events: &mut VecDeque<Eve
                     completed_at: at,
                     recovery,
                 }));
-                false
+                Some(recovers)
             }
             None => {
                 events.push_back(Event::FrameSkipped { stream, frame });
-                true
+                None
             }
         },
         State::GivenUp => {
             events.push_back(Event::FrameSkipped { stream, frame });
-            true
+            None
         }
         State::Assembling => unreachable!("only resolved frames are delivered"),
     }

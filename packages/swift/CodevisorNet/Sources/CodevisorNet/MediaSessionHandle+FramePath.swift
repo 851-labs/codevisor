@@ -25,11 +25,12 @@ public enum MediaSendError: Error, Equatable {
 extension MediaSessionHandle {
   @discardableResult
   public func sendFrame(
-    stream: UInt8, keyframe: Bool, ltrToken: UInt64?, meta: Data = Data(), data: UnsafeRawBufferPointer
+    stream: UInt8, keyframe: Bool, refresh: Bool = false, ltrToken: UInt64?, meta: Data = Data(),
+    data: UnsafeRawBufferPointer
   ) throws -> UInt32 {
     let number = meta.withUnsafeBytes { meta in
       codevisor_media_send_frame(
-        uniffiCloneHandle(), stream, keyframe, ltrToken != nil, ltrToken ?? 0,
+        uniffiCloneHandle(), stream, keyframe, refresh, ltrToken != nil, ltrToken ?? 0,
         meta.baseAddress, meta.count, data.baseAddress, data.count)
     }
     guard number >= 0 else { throw MediaSendError(code: number) }
@@ -38,12 +39,12 @@ extension MediaSessionHandle {
 
   @discardableResult
   public func sendFrame(
-    stream: UInt8, keyframe: Bool, ltrToken: UInt64?, meta: Data = Data(), data: Data
+    stream: UInt8, keyframe: Bool, refresh: Bool = false, ltrToken: UInt64?, meta: Data = Data(), data: Data
   ) throws
     -> UInt32
   {
     try data.withUnsafeBytes {
-      try sendFrame(stream: stream, keyframe: keyframe, ltrToken: ltrToken, meta: meta, data: $0)
+      try sendFrame(stream: stream, keyframe: keyframe, refresh: refresh, ltrToken: ltrToken, meta: meta, data: $0)
     }
   }
 }

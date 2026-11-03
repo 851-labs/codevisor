@@ -32,15 +32,24 @@ struct Row {
     frame_bytes: usize,
     streams: u8,
     keyframe: Option<(u32, usize)>,
+    every: u32,
 }
 
-const ROWS: [Row; 6] = [
-    Row { name: "8 Mbit/s", frame_bytes: 16_667, streams: 1, keyframe: None },
-    Row { name: "45 Mbit/s", frame_bytes: 93_750, streams: 1, keyframe: None },
-    Row { name: "150 Mbit/s", frame_bytes: 312_500, streams: 1, keyframe: None },
-    Row { name: "300 Mbit/s", frame_bytes: 625_000, streams: 1, keyframe: None },
-    Row { name: "150 Mbit/s in 4 tiles", frame_bytes: 78_125, streams: 4, keyframe: None },
-    Row { name: "8 Mbit/s + 1 MiB keyframe/s", frame_bytes: 16_667, streams: 1, keyframe: Some((60, 1 << 20)) },
+const ROWS: [Row; 8] = [
+    Row { name: "8 Mbit/s", frame_bytes: 16_667, streams: 1, keyframe: None, every: 1 },
+    Row { name: "45 Mbit/s", frame_bytes: 93_750, streams: 1, keyframe: None, every: 1 },
+    Row { name: "150 Mbit/s", frame_bytes: 312_500, streams: 1, keyframe: None, every: 1 },
+    Row { name: "300 Mbit/s", frame_bytes: 625_000, streams: 1, keyframe: None, every: 1 },
+    Row { name: "150 Mbit/s in 4 tiles", frame_bytes: 78_125, streams: 4, keyframe: None, every: 1 },
+    Row {
+        name: "8 Mbit/s + 1 MiB keyframe/s",
+        frame_bytes: 16_667,
+        streams: 1,
+        keyframe: Some((60, 1 << 20)),
+        every: 1,
+    },
+    Row { name: "idle, 1 packet per 100 ms", frame_bytes: 1_000, streams: 1, keyframe: None, every: 6 },
+    Row { name: "idle, 4 packets per 100 ms", frame_bytes: 4_800, streams: 1, keyframe: None, every: 6 },
 ];
 
 pub async fn run(args: Vec<String>) -> Result<String> {
@@ -330,6 +339,7 @@ struct Measured {
     within: u64,
     timed: u64,
     rtt_floor_ms: f64,
+    over_idle_bound: u64,
     acked: u64,
     lost: u64,
     sent: u64,
@@ -374,8 +384,9 @@ async fn measure(
     )?;
     table.push_str(
         "| Row | Transport | Frames acked / lost | Round trip p50 / p95 / p99 ms | Added vs UDP p50 / p95 ms | Pacing p50 ms \
-         | Frames within RTT+2 ms (lossy ones), RTT from acks | Recovery p50 / p95 ms | Retransmits / FEC parity / probes |\n\
-         | -- | -- | -- | -- | -- | -- | -- | -- | -- |\n",
+         | Frames within RTT+2 ms (lossy ones), RTT from acks | Recovery p50 / p95 ms | Acks later than RTT+2 ms \
+         over the floor | Retransmits / FEC parity / probes |\n\
+         | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |\n",
     );
     let (mut udp_floor, mut quic_floor) = (f64::INFINITY, f64::INFINITY);
     for (index, row) in rows {
@@ -387,6 +398,8 @@ async fn measure(
             result.rtt_floor_ms = *floor;
             let bound = *floor + 2.0;
             result.within = result.recoveries_ms.iter().filter(|recovery| **recovery <= bound).count() as u64;
+            result.over_idle_bound =
+                result.round_trips_ms.iter().filter(|round_trip| **round_trip > *floor + bound).count() as u64;
         }
         for path in connection.paths().iter().filter(|path| path.selected) {
             writeln!(
@@ -418,7 +431,7 @@ async fn measure(
             };
             writeln!(
                 table,
-                "| {} | {label} | {} / {} | {:.2} / {:.2} / {:.2} | {added} | {:.2} | {} | {:.2} / {:.2} | {} / {} / {} |",
+                "| {} | {label} | {} / {} | {:.2} / {:.2} / {:.2} | {added} | {:.2} | {} | {:.2} / {:.2} | {} | {} / {} / {} |",
                 row.name,
                 result.acked,
                 result.lost,
@@ -439,6 +452,7 @@ async fn measure(
                 },
                 percentile(&result.recoveries_ms, 0.5),
                 percentile(&result.recoveries_ms, 0.95),
+                result.over_idle_bound,
                 result.stats.packets_retransmitted,
                 result.stats.parity_packets_sent,
                 result.stats.probes_sent,
@@ -446,7 +460,7 @@ async fn measure(
             json.push(format!(
                 "{{\"row\":\"{}\",\"transport\":\"{label}\",\"network\":\"{}\",\"sent\":{},\"acked\":{},\"lost\":{},\
                  \"rtt_p50_ms\":{:.3},\"rtt_p95_ms\":{:.3},\"rtt_p99_ms\":{:.3},\"pacing_p50_ms\":{:.3},\
-                 \"lossy_frames\":{},\"lossy_within_rtt_2ms\":{},\"rtt_floor_ms\":{:.3},\"recovery_p95_ms\":{:.3},\"retransmits\":{},\
+                 \"lossy_frames\":{},\"lossy_within_rtt_2ms\":{},\"rtt_floor_ms\":{:.3},\"recovery_p95_ms\":{:.3},\"over_idle_bound\":{},\"retransmits\":{},\
                  \"parity\":{},\"probes\":{},\"estimate_mbps\":{:.1}}}",
                 row.name,
                 network.id,
@@ -461,6 +475,7 @@ async fn measure(
                 result.within,
                 result.rtt_floor_ms,
                 percentile(&result.recoveries_ms, 0.95),
+                result.over_idle_bound,
                 result.stats.packets_retransmitted,
                 result.stats.parity_packets_sent,
                 result.stats.probes_sent,
@@ -521,6 +536,10 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
             }
             _ = ticker.tick() => {}
         }
+        index += 1;
+        if (index - 1) % row.every != 0 {
+            continue;
+        }
         for stream in 0..row.streams {
             let len = match row.keyframe {
                 Some((every, len)) if index % every == every - 1 && stream == 0 => len,
@@ -539,7 +558,6 @@ async fn run_row<T: DatagramTransport>(session: &MediaSession<T>, row: Row, stre
                 measured.sent += 1;
             }
         }
-        index += 1;
     }
     let deadline = tokio::time::Instant::now() + DRAIN;
     while let Ok(Some(event)) = tokio::time::timeout_at(deadline, session.next_event()).await {

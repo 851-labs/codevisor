@@ -207,7 +207,14 @@ fn frames_arrive_byte_identical_in_order_with_their_fields() {
         })
         .collect();
     for (stream, keyframe, ltr_token, meta, data) in &sent {
-        sim.send(OutgoingFrame { stream: *stream, keyframe: *keyframe, ltr_token: *ltr_token, meta, data });
+        sim.send(OutgoingFrame {
+            stream: *stream,
+            keyframe: *keyframe,
+            refresh: false,
+            ltr_token: *ltr_token,
+            meta,
+            data,
+        });
         sim.run_for(INTERVAL);
     }
     sim.run_for(50 * MS);
@@ -303,9 +310,9 @@ fn a_frame_lost_whole_before_idle_is_probed_and_delivered() {
     let frames = sim.frames();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[1].data, last);
-    let probe_at = sim.epoch + INTERVAL + 25 * MS + rtt + MS;
+    let probe_at = sim.epoch + INTERVAL + rtt + MS;
     assert!(frames[1].first_packet_at >= probe_at, "{:?}", frames[1].first_packet_at - probe_at);
-    assert!(frames[1].completed_at < probe_at + 5 * MS);
+    assert!(frames[1].completed_at < probe_at + rtt + 2 * MS, "{:?}", frames[1].completed_at - probe_at);
     assert_eq!(probes, 1);
 }
 
@@ -375,7 +382,7 @@ fn a_lost_ack_is_settled_by_the_next_report() {
         drop
     });
     sim.send(frame(0, &payload(1, 2000)));
-    sim.run_for(INTERVAL);
+    sim.run_for(MS / 2);
     sim.send(frame(0, &payload(2, 2000)));
     sim.run_for(INTERVAL);
 
@@ -385,6 +392,103 @@ fn a_lost_ack_is_settled_by_the_next_report() {
         vec![(1, true), (0, false)]
     );
     assert_eq!(sim.host.stats(sim.now).probes_sent, 0);
+}
+
+#[test]
+fn a_lost_ack_at_idle_is_repaired_by_the_tail_probe_one_round_trip_later() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 10);
+    let mut first = true;
+    sim.drop_when(move |direction, datagram| {
+        let drop = direction == Direction::ToHost && is_kind(datagram, Kind::Feedback) && first;
+        first &= !drop;
+        drop
+    });
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+
+    let rtt = sim.host.stats(sim.now).rtt;
+    let acks = sim.acks();
+    assert_eq!(acks.iter().map(|ack| ack.frame).collect::<Vec<_>>(), vec![0]);
+    assert!(acks[0].acked_after < 2 * rtt + 3 * MS, "{:?}", acks[0].acked_after);
+    assert_eq!(sim.host.stats(sim.now).probes_sent, 1);
+}
+
+fn refresh_requests(events: &[Event]) -> Vec<bool> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::RefreshRequested { keyframe, .. } => Some(*keyframe),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_refresh_request_is_repeated_until_a_refresh_arrives_and_reaches_the_host_once() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 20);
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+    let mut first = true;
+    sim.drop_when(move |direction, datagram| {
+        let drop = direction == Direction::ToHost && is_kind(datagram, Kind::Refresh) && first;
+        first &= !drop;
+        drop
+    });
+    sim.viewer.request_refresh(sim.now, 0, false);
+    sim.run_for(40 * MS);
+    assert_eq!(refresh_requests(&sim.host_events), vec![false]);
+
+    sim.run_for(100 * MS);
+    assert_eq!(refresh_requests(&sim.host_events), vec![false], "repeats before the answer are not new requests");
+    sim.send(OutgoingFrame { refresh: true, ..frame(0, &payload(2, 2000)) });
+    sim.run_for(INTERVAL);
+    let sent = sim.viewer.stats(sim.now).refresh_requests_sent;
+    sim.run_for(200 * MS);
+
+    assert!(sim.frames().last().is_some_and(|frame| frame.refresh));
+    assert_eq!(sim.viewer.stats(sim.now).refresh_requests_sent, sent);
+    assert_eq!(refresh_requests(&sim.host_events), vec![false]);
+}
+
+#[test]
+fn a_request_still_open_after_its_answer_was_lost_reaches_the_host_again() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 21);
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+    sim.viewer.request_refresh(sim.now, 0, false);
+    sim.run_for(5 * MS);
+    sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 1, 0));
+    sim.send(OutgoingFrame { refresh: true, ..frame(0, &payload(2, 2000)) });
+    sim.run_for(INTERVAL);
+    sim.send(frame(0, &payload(3, 2000)));
+    sim.run_for(150 * MS);
+
+    assert!(sim.host_events.contains(&Event::FrameLost { stream: 0, frame: 1 }));
+    assert_eq!(refresh_requests(&sim.host_events), vec![false, false]);
+}
+
+#[test]
+fn a_keyframe_request_replaces_a_refresh_request_and_only_a_keyframe_settles_it() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 22);
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+    sim.viewer.request_refresh(sim.now, 0, false);
+    sim.viewer.request_refresh(sim.now, 0, true);
+    sim.viewer.request_refresh(sim.now, 0, false);
+    sim.run_for(5 * MS);
+    assert_eq!(refresh_requests(&sim.host_events), vec![true]);
+
+    sim.send(OutgoingFrame { refresh: true, ..frame(0, &payload(2, 2000)) });
+    sim.run_for(INTERVAL);
+    let after_refresh = sim.viewer.stats(sim.now).refresh_requests_sent;
+    sim.run_for(100 * MS);
+    assert!(sim.viewer.stats(sim.now).refresh_requests_sent > after_refresh);
+
+    sim.send(OutgoingFrame { keyframe: true, ..frame(0, &payload(3, 2000)) });
+    sim.run_for(INTERVAL);
+    let after_keyframe = sim.viewer.stats(sim.now).refresh_requests_sent;
+    sim.run_for(100 * MS);
+    assert_eq!(sim.viewer.stats(sim.now).refresh_requests_sent, after_keyframe);
 }
 
 #[test]
