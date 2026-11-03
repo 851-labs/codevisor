@@ -12,6 +12,13 @@ final class BenchClickProbe: @unchecked Sendable {
     let tapMainNs: [Int64]
   }
 
+  private static let callback: CGEventTapCallBack = { _, type, event, context in
+    if type == .leftMouseDown, let context {
+      Unmanaged<BenchClickProbe>.fromOpaque(context).takeUnretainedValue().saw()
+    }
+    return Unmanaged.passUnretained(event)
+  }
+
   private let tapped = Mutex<[Int64]>([])
   private var tapMain: [Int64] = []
   private var port: CFMachPort?
@@ -23,12 +30,7 @@ final class BenchClickProbe: @unchecked Sendable {
     guard
       let port = CGEvent.tapCreate(
         tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly, eventsOfInterest: mask,
-        callback: { _, type, event, context in
-          if type == .leftMouseDown, let context {
-            Unmanaged<BenchClickProbe>.fromOpaque(context).takeUnretainedValue().saw()
-          }
-          return Unmanaged.passUnretained(event)
-        }, userInfo: Unmanaged.passUnretained(self).toOpaque()),
+        callback: Self.callback, userInfo: Unmanaged.passUnretained(self).toOpaque()),
       let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
     else { return false }
 
