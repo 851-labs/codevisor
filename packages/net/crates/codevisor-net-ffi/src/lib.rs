@@ -182,6 +182,15 @@ impl NetConnectionHandle {
         Ok(Arc::new(NetMessageStreamHandle { inner: Arc::new(stream) }))
     }
 
+    pub async fn accept_message_stream(&self) -> Result<Arc<NetMessageStreamHandle>, NetError> {
+        let stream = self.inner.accept_message_stream().await.map_err(failure)?;
+        Ok(Arc::new(NetMessageStreamHandle { inner: Arc::new(stream) }))
+    }
+
+    pub async fn closed(&self) -> String {
+        self.inner.closed().await
+    }
+
     pub fn paths(&self) -> Vec<NetPath> {
         self.inner
             .paths()
@@ -345,6 +354,34 @@ pub enum MediaEvent {
         stream: u8,
         keyframe: bool,
     },
+    Datagram {
+        kind: MediaDatagramKind,
+        payload: Vec<u8>,
+    },
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaDatagramKind {
+    Audio,
+    Cursor,
+}
+
+impl From<MediaDatagramKind> for media::DatagramKind {
+    fn from(kind: MediaDatagramKind) -> Self {
+        match kind {
+            MediaDatagramKind::Audio => Self::Audio,
+            MediaDatagramKind::Cursor => Self::Cursor,
+        }
+    }
+}
+
+impl From<media::DatagramKind> for MediaDatagramKind {
+    fn from(kind: media::DatagramKind) -> Self {
+        match kind {
+            media::DatagramKind::Audio => Self::Audio,
+            media::DatagramKind::Cursor => Self::Cursor,
+        }
+    }
 }
 
 fn micros(duration: Duration) -> u64 {
@@ -377,6 +414,7 @@ impl From<media::Event> for MediaEvent {
             media::Event::FrameLost { stream, frame } => Self::FrameLost { stream, frame },
             media::Event::LtrAcked { stream, token } => Self::LtrAcked { stream, token },
             media::Event::RefreshRequested { stream, keyframe } => Self::RefreshRequested { stream, keyframe },
+            media::Event::Datagram { kind, payload } => Self::Datagram { kind: kind.into(), payload: payload.to_vec() },
         }
     }
 }
@@ -428,6 +466,10 @@ impl MediaSessionHandle {
 
     pub fn request_refresh(&self, stream: u8, keyframe: bool) {
         self.inner.request_refresh(stream, keyframe);
+    }
+
+    pub fn send_datagram(&self, kind: MediaDatagramKind, payload: Vec<u8>) -> bool {
+        self.inner.send_datagram(kind.into(), &payload)
     }
 
     pub fn admission(&self) -> MediaAdmission {

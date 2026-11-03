@@ -108,6 +108,9 @@ final class ScreenSharingPane: Pane {
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
+    if ScreenSharingEngine.isChoosable {
+      settings.engine = ScreenSharingEngine.selected(machineId: machineId)
+    }
     if store?.endpoint?.supportsHighDynamicRange != false {
       settings.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: machineId)
       settings.highDynamicRangeNote = store?.endpoint?.highDynamicRangeNote
@@ -135,6 +138,10 @@ final class ScreenSharingPane: Pane {
     if let sound = changes.sound {
       ScreenSharingMachinePreferences().setSound(enabled: sound.enabled, volume: sound.volume, machineId: machineId)
       store.endpoint?.audio?.apply(sound)
+    }
+    if let engine = changes.engine {
+      ScreenSharingMachinePreferences().setEngine(engine, machineId: machineId)
+      if changes.preferredDisplayId == nil { store.send(.retryButtonTapped) }
     }
     if let display = changes.preferredDisplayId { store.send(.displaySelected(display)) }
   }

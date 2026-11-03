@@ -17,6 +17,8 @@ public final class ScreenSharingViewerDiagnostics {
   public private(set) var updatesPerSecond: Double?
   public private(set) var bytesPerUpdate: Double?
   public private(set) var updateLatencyMilliseconds: Double?
+  public private(set) var engine: String?
+  public private(set) var recovery: String?
   @ObservationIgnored private var previous: (time: TimeInterval, frames: Int, bytes: Double, updates: Int)?
 
   static func streams(_ labels: [String: String]) -> String? {
@@ -34,15 +36,35 @@ public final class ScreenSharingViewerDiagnostics {
     return path + (transport.isEmpty ? "" : " · " + transport)
   }
 
+  static func v2Recovery(_ statistics: [String: String]) -> String? {
+    guard let loss = statistics["v2.lossPercent"].flatMap(Double.init) else { return nil }
+
+    let nacks = statistics["v2.nacksSent"] ?? "0"
+    let repaired = statistics["v2.recoveredByFEC"] ?? "0"
+    let skipped = statistics["v2.framesSkipped"] ?? "0"
+    return String(format: "%.1f%% loss", loss) + " · \(nacks) NACK · \(repaired) FEC · \(skipped) skipped"
+  }
+
+  private func updateV2(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String]) {
+    engine = "v2 · QUIC"
+    route = statistics["v2.route"] == "relay" ? "Relay" : statistics["v2.route"] == nil ? "Connecting" : "Direct"
+    roundTripMilliseconds = statistics["v2.roundTripMs"].flatMap(Double.init)
+    decodeMilliseconds = metrics.timings["decode"]?.p95Ms
+    recovery = Self.v2Recovery(statistics)
+  }
+
   func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
     let vncTransport = statistics["vnc.transport"]
+    let v2 = statistics["v2.engine"] != nil
     let frames = metrics.counters["presentedFrames", default: 0]
     let updates = metrics.counters["vncUpdatesPublished", default: 0]
     let bytes =
       vncTransport != nil
       ? Double(metrics.counters["vncBytesReceived", default: 0])
-      : statistics.filter { $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".bytesReceived") }
-        .values.compactMap(Double.init).reduce(0, +)
+      : v2
+        ? statistics["v2.bytesReceived"].flatMap(Double.init) ?? 0
+        : statistics.filter { $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".bytesReceived") }
+          .values.compactMap(Double.init).reduce(0, +)
     if let previous, now > previous.time {
       let elapsed = now - previous.time
       framesPerSecond = Double(max(0, frames - previous.frames)) / elapsed
@@ -58,6 +80,7 @@ public final class ScreenSharingViewerDiagnostics {
     decoder = metrics.labels["decoder"] ?? decoder
     droppedFrames = metrics.counters["renderDrops", default: 0]
     streams = Self.streams(metrics.labels)
+    if v2 { return updateV2(metrics: metrics, statistics: statistics) }
     if let vncTransport {
       let pushed = metrics.labels["vncUpdateMode"] == "continuous"
       route =

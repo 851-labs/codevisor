@@ -1,5 +1,10 @@
 import { Schema } from "effect"
 
+import { CloudTunnelInfo } from "./cloud-tunnel-protocol.js"
+
+export const ScreenSharingMediaAddress = CloudTunnelInfo
+export type ScreenSharingMediaAddress = CloudTunnelInfo
+
 export const ScreenSharingRequest = Schema.Struct({
   version: Schema.Literal(1),
   operation: Schema.Literals(["capabilities", "start", "restart", "heartbeat", "stop", "setScale"]),
@@ -9,7 +14,9 @@ export const ScreenSharingRequest = Schema.Struct({
   displayId: Schema.optional(Schema.String),
   offer: Schema.optional(Schema.String),
   scale: Schema.optional(Schema.Literals([1, 2])),
-  tunnelMedia: Schema.optional(Schema.Struct({ endpointId: Schema.String, flowId: Schema.Number }))
+  tunnelMedia: Schema.optional(Schema.Struct({ endpointId: Schema.String, flowId: Schema.Number })),
+  engine: Schema.optional(Schema.Literal("v2")),
+  media: Schema.optional(ScreenSharingMediaAddress)
 })
 export type ScreenSharingRequest = typeof ScreenSharingRequest.Type
 
@@ -46,6 +53,8 @@ export const ScreenSharingReply = Schema.Struct({
   ),
   tunnelMedia: Schema.optional(
     Schema.Struct({ flowId: Schema.Number, maxPayload: Schema.optional(Schema.Number) })
-  )
+  ),
+  engines: Schema.optional(Schema.Array(Schema.String)),
+  media: Schema.optional(Schema.Struct({ ...ScreenSharingMediaAddress.fields, token: Schema.String }))
 })
 export type ScreenSharingReply = typeof ScreenSharingReply.Type

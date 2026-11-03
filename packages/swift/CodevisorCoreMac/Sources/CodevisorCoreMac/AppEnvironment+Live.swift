@@ -31,7 +31,7 @@ extension AppEnvironment {
       launchSnapshot: launchSnapshot
     )
     composerDrafts.removeUnreferencedAttachmentFiles()
-    return AppEnvironment(
+    let environment = AppEnvironment(
       navigationPersistence: store,
       launchSnapshot: launchSnapshot,
       transcriptCache: .shared,
@@ -49,5 +49,7 @@ extension AppEnvironment {
         allowsAlphaUpdates: settings.alphaUpdatesEnabled
       )
     )
+    ScreenSharingMediaEndpoint.shared.configure(.live(environment: environment))
+    return environment
   }
 }

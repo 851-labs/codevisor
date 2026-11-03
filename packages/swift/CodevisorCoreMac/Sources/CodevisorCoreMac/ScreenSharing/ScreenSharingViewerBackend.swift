@@ -1,4 +1,5 @@
 import CodevisorClient
+import CodevisorCore
 import ScreenSharing
 import ScreenSharingWebRTC
 import ComposableArchitecture
@@ -50,11 +51,13 @@ extension ScreenSharingViewerBackend {
   @MainActor
   public static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
-    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil
+    role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
+    engine: ScreenSharingEngine? = nil
   ) -> Self {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
       tunnelMedia: tunnelMedia,
+      v2: .live(enabled: { (engine ?? ScreenSharingEngine.selected(machineId: machineId)) == .v2 }),
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
@@ -72,6 +75,7 @@ extension ScreenSharingViewerBackend {
   static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
     role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
+    v2: ScreenSharingV2Connector? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession:
       @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
@@ -83,7 +87,7 @@ extension ScreenSharingViewerBackend {
     let sharesStream = machineId != nil
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
-      makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia,
+      makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia, v2: v2,
       heartbeatInterval: heartbeatInterval, sound: !sharesStream)
     guard let machineId else {
       return Self(
@@ -116,6 +120,9 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private let target: String?
   private let heartbeatInterval: Duration
   private let tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider?
+  private let v2: ScreenSharingV2Connector?
+  private var v2Failed = false
+  private var startsFresh = false
   private let sound: Bool
 
   init(
@@ -127,10 +134,12 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
     tunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil,
+    v2: ScreenSharingV2Connector? = nil,
     heartbeatInterval: Duration = .seconds(8),
     sound: Bool = true
   ) {
     self.sound = sound
+    self.v2 = v2
     self.target = target
     self.heartbeatInterval = heartbeatInterval
     self.tunnelMedia = tunnelMedia
@@ -193,7 +202,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     return runner
   }
 
-  private enum Outcome { case lost, ended(String), cancelled }
+  private enum Outcome { case lost, ended(String), cancelled, fallback }
 
   @MainActor
   private final class Attempt {
@@ -208,6 +217,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
 
   private func run(display: String, emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void) async {
     let viewerId = UUID()
+    v2Failed = false
+    startsFresh = false
     var restarts = 0
     var started = false
     var message: String?
@@ -224,6 +235,9 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         break attempts
       case .cancelled:
         break attempts
+      case .fallback:
+        v2Failed = true
+        startsFresh = true
       }
     }
     if let message { emit(.ended(message)) }
@@ -248,30 +262,17 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
         }
+        if let v2, v2.enabled(), !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
+          return try await attemptV2(
+            v2, attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
+        }
         let session = try await makeSession(capabilities.connectivity)
-        if Task.isCancelled {
-          session.close()
-          throw CancellationError()
-        }
-        let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session), sound: sound)
-        endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
-        attempt.endpoint = endpoint
-        endpoint.onReady = {
-          attempt.ready = true; emit(.ready)
-        }
-        session.onConnectionChanged = { transport in
-          guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
-          attempt.transportEnded = true
-          attempt.outcome =
-            attempt.ready && restarts < 3 && transport != "closed"
-            ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
-          attempt.body?.cancel()
-        }
-        emit(.opened(endpoint))
+        try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
         let offer = try await session.offer()
         try Task.checkCancellation()
         attempt.started = true
-        var start = request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
+        var start = request(
+          takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
         let media = await tunnelMedia?()
         attempt.tunnelMedia = media
         if let media { start.tunnelMedia = .init(endpointId: media.endpointId, flowId: media.flowId) }
@@ -283,30 +284,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
           return .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
         }
         try await session.accept(Self.remoteAnswer(answer, offer: offer, media: media, bridge: reply.tunnelMedia))
-        var waitedForVideo = Duration.zero
-        var notice = reply.message
-        if notice != nil { emit(.hostNotice(notice)) }
-        while true {
-          try await sleep(heartbeatInterval)
-          try Task.checkCancellation()
-          let reply = try await client.screenSharing(request(.heartbeat, viewerId: viewerId))
-          try Task.checkCancellation()
-          guard reply.version == 1, ["connecting", "viewing"].contains(reply.status) else {
-            return .ended(reply.message ?? "Screen sharing ended on the host Mac.")
-          }
-          if let failure = session.failure { return .ended(failure) }
-          if reply.message != notice {
-            notice = reply.message
-            emit(.hostNotice(notice))
-          }
-          if !attempt.ready, notice == nil {
-            waitedForVideo += heartbeatInterval
-            guard waitedForVideo < Self.missingVideoTimeout else {
-              return .ended(
-                "No video arrived. Check the connection between these Macs or the configured relay, then retry.")
-            }
-          }
-        }
+        return try await heartbeats(
+          viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
       } catch {
         return isTaskCancellation(error) ? .cancelled : .ended(serverErrorMessage(error))
       }
@@ -328,6 +307,105 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   }
 
   private static let missingVideoTimeout: Duration = .seconds(24)
+
+  private func open(
+    _ session: any ScreenSharingViewingSession, attempt: Attempt, display: String, restarts: Int,
+    emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void
+  ) throws {
+    let surface: any ScreenSharingViewerSurface
+    do {
+      try Task.checkCancellation()
+      surface = try makeSurface(session)
+    } catch {
+      session.close()
+      throw error
+    }
+    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
+    endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
+    attempt.endpoint = endpoint
+    endpoint.onReady = {
+      attempt.ready = true; emit(.ready)
+    }
+    session.onConnectionChanged = { transport in
+      guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
+      attempt.transportEnded = true
+      attempt.outcome =
+        attempt.ready && restarts < 3 && transport != "closed"
+        ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
+      attempt.body?.cancel()
+    }
+    emit(.opened(endpoint))
+  }
+
+  private func takeFreshStart() -> Bool {
+    defer { startsFresh = false }
+    return startsFresh
+  }
+
+  private func heartbeats(
+    viewerId: UUID, attempt: Attempt, session: any ScreenSharingViewingSession, notice: String?,
+    emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void
+  ) async throws -> Outcome {
+    var waitedForVideo = Duration.zero
+    var notice = notice
+    if notice != nil { emit(.hostNotice(notice)) }
+    while true {
+      try await sleep(heartbeatInterval)
+      try Task.checkCancellation()
+      let reply = try await client.screenSharing(request(.heartbeat, viewerId: viewerId))
+      try Task.checkCancellation()
+      guard reply.version == 1, ["connecting", "viewing"].contains(reply.status) else {
+        return .ended(reply.message ?? "Screen sharing ended on the host Mac.")
+      }
+      if let failure = session.failure { return .ended(failure) }
+      if reply.message != notice {
+        notice = reply.message
+        emit(.hostNotice(notice))
+      }
+      if !attempt.ready, notice == nil {
+        waitedForVideo += heartbeatInterval
+        guard waitedForVideo < Self.missingVideoTimeout else {
+          return .ended(
+            "No video arrived. Check the connection between these Macs or the configured relay, then retry.")
+        }
+      }
+    }
+  }
+
+  private func attemptV2(
+    _ v2: ScreenSharingV2Connector, attempt: Attempt, viewerId: UUID, display: String, restarts: Int,
+    emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void
+  ) async throws -> Outcome {
+    guard let address = await v2.address() else { return .fallback }
+    try Task.checkCancellation()
+    var start = request(takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display)
+    start.engine = ScreenSharingEngine.v2.rawValue
+    start.media = address
+    attempt.started = true
+    let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client, start] in
+      try await client.screenSharing(start)
+    }
+    try Task.checkCancellation()
+    guard reply.version == 1, reply.status == "connecting", let grant = reply.media else {
+      return reply.status == "failed" || reply.status == "connecting"
+        ? .fallback : .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
+    }
+
+    let session: any NativeScreenSharingV2Session
+    do {
+      session = try await v2.connect(grant)
+    } catch {
+      return Task.isCancelled ? .cancelled : .fallback
+    }
+    try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
+    do {
+      try await session.start(token: grant.token)
+    } catch {
+      return Task.isCancelled ? .cancelled : .fallback
+    }
+    return try await heartbeats(
+      viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
+  }
 
   private func hostEndReason(viewerId: UUID) async -> String? {
     let heartbeat = request(.heartbeat, viewerId: viewerId)

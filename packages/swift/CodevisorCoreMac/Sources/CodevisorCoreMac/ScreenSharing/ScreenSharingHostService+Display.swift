@@ -4,7 +4,7 @@ import ScreenSharingWebRTC
 
 extension ScreenSharingHostService {
   func configureDisplay(_ session: ScreenSharingHostSession) {
-    let channel = session.peer.displayChannel
+    let channel = session.peer.channels.display
     channel.onAvailabilityChanged = { [weak channel] available in
       guard available, let channel else { return }
       channel.send(
@@ -49,15 +49,14 @@ extension ScreenSharingHostService {
   }
 
   private func resize(_ session: ScreenSharingHostSession, to size: (width: Int, height: Int)?) async {
-    let channel = session.peer.displayChannel
+    let channel = session.peer.channels.display
     session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5
     followDisplay(session)
     let movesDisplay: Bool
     do {
       if let size {
         let points = ScreenSharingHostVirtualDisplay.clamp(width: size.width, height: size.height)
-        let configuration = try ScreenSharingVideoConfiguration(
-          width: points.width * 2, height: points.height * 2, bitrate: ScreenSharingProductProfile.bitrateCeiling)
+        let configuration = try session.peer.captureConfiguration(width: points.width * 2, height: points.height * 2)
         if let display = session.virtualDisplay {
           try display.resize(width: points.width, height: points.height)
           try await display.selectHiDPIMode()

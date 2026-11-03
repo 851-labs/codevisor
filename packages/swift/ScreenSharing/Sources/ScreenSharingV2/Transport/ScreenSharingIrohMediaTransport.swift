@@ -52,6 +52,10 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
     session.close()
   }
 
+  public func sendDatagram(_ kind: ScreenSharingDatagramKind, _ payload: Data) -> Bool {
+    session.sendDatagram(kind: kind == .audio ? .audio : .cursor, payload: payload)
+  }
+
   private static func event(_ event: MediaEvent) -> ScreenSharingMediaEvent {
     switch event {
     case .frame(
@@ -68,6 +72,7 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
     case .frameLost(let stream, let frame): .frameLost(stream: stream, frame: frame)
     case .ltrAcked(let stream, let token): .ltrAcked(stream: stream, token: token)
     case .refreshRequested(let stream, let keyframe): .refreshRequested(stream: stream, keyframe: keyframe)
+    case .datagram(let kind, let payload): .datagram(kind == .audio ? .audio : .cursor, payload)
     }
   }
 

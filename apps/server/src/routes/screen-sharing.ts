@@ -1,6 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { ScreenSharingReply, ScreenSharingRequest, type WorkspacePane } from "@codevisor/api"
+import {
+  ScreenSharingReply,
+  ScreenSharingRequest,
+  type ScreenSharingMediaAddress,
+  type WorkspacePane
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 import {
@@ -48,6 +53,21 @@ const isKnownTarget = (displayId: string): boolean =>
   computerUseSessionId(displayId) !== undefined ||
   isSimulatorTarget(displayId)
 
+const isOffer = (offer: string | undefined): boolean =>
+  offer !== undefined &&
+  Buffer.byteLength(offer) <= 256 * 1024 &&
+  offer.includes("a=fingerprint:sha-256 ")
+
+const endpointId = /^[0-9a-f]{64}$/i
+const maxMediaAddrs = 32
+
+const isMediaAddress = (media: ScreenSharingMediaAddress | undefined): boolean =>
+  media !== undefined &&
+  endpointId.test(media.endpointId) &&
+  (media.relayUrl === undefined || media.relayUrl.length <= 512) &&
+  media.directAddrs.length <= maxMediaAddrs &&
+  media.directAddrs.every((addr) => addr.length <= 64)
+
 export const routeScreenSharing = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -73,9 +93,7 @@ export const routeScreenSharing = async (
     throw new HttpFailure(400, "Invalid Screen Sharing identity")
   if (
     (payload.operation === "start" || payload.operation === "restart") &&
-    (payload.offer === undefined ||
-      Buffer.byteLength(payload.offer) > 256 * 1024 ||
-      !payload.offer.includes("a=fingerprint:sha-256 ") ||
+    (!(payload.engine === "v2" ? isMediaAddress(payload.media) : isOffer(payload.offer)) ||
       payload.displayId === undefined ||
       !isKnownTarget(payload.displayId))
   )

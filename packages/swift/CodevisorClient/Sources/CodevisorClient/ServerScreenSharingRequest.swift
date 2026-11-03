@@ -28,6 +28,8 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public var offer: String?
   public var scale: Int?
   public var tunnelMedia: ServerScreenSharingTunnelMedia?
+  public var engine: String?
+  public var media: ServerScreenSharingMediaAddress?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
@@ -49,6 +51,8 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var provider: String?
   public var controlLease: Bool?
   public var tunnelMedia: ServerScreenSharingTunnelMediaBridge?
+  public var engines: [String]?
+  public var media: ServerScreenSharingMediaGrant?
 
   public init(
     status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], answer: String? = nil,
@@ -73,6 +77,29 @@ public struct ServerScreenSharingTunnelMediaBridge: Codable, Sendable, Equatable
   public let maxPayload: Int?
   public init(flowId: Int, maxPayload: Int? = nil) {
     self.flowId = flowId; self.maxPayload = maxPayload
+  }
+}
+
+public struct ServerScreenSharingMediaAddress: Codable, Sendable, Equatable {
+  public let endpointId: String
+  public let relayUrl: String?
+  public let directAddrs: [String]
+  public init(endpointId: String, relayUrl: String?, directAddrs: [String]) {
+    self.endpointId = endpointId; self.relayUrl = relayUrl; self.directAddrs = directAddrs
+  }
+}
+
+public struct ServerScreenSharingMediaGrant: Codable, Sendable, Equatable {
+  public let endpointId: String
+  public let relayUrl: String?
+  public let directAddrs: [String]
+  public let token: String
+  public init(endpointId: String, relayUrl: String?, directAddrs: [String], token: String) {
+    self.endpointId = endpointId; self.relayUrl = relayUrl; self.directAddrs = directAddrs; self.token = token
+  }
+
+  public var address: ServerScreenSharingMediaAddress {
+    .init(endpointId: endpointId, relayUrl: relayUrl, directAddrs: directAddrs)
   }
 }
 

@@ -9,6 +9,11 @@ import Observation
 enum ScreenSharingViewerFixtures {
   static let display = ServerScreenSharingDisplay(id: "display", name: "Display", width: 1920, height: 1080)
   static let second = ServerScreenSharingDisplay(id: "second", name: "Second", width: 1280, height: 720)
+  static let viewerMedia = ServerScreenSharingMediaAddress(
+    endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: ["192.168.1.2:4433"])
+  static let mediaGrant = ServerScreenSharingMediaGrant(
+    endpointId: String(repeating: "b", count: 64), relayUrl: "https://relay.example.test",
+    directAddrs: ["192.168.1.3:4433"], token: "fixture token")
 }
 
 @MainActor
@@ -63,6 +68,7 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
   weak var surface: FakeSurface?
   private(set) var offers = 0
+  private(set) var tokens: [String] = []
   private(set) var answers: [String] = []
   private(set) var closed = false
 
@@ -74,6 +80,11 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   }
   func accept(_ answer: String) async throws {
     answers.append(answer)
+    controlChannel.isAvailable = true
+    if deliversVideo { surface?.present() }
+  }
+  func start(token: String) async throws {
+    tokens.append(token)
     controlChannel.isAvailable = true
     if deliversVideo { surface?.present() }
   }
@@ -130,14 +141,21 @@ actor SharingTransport: ServerRequestTransport {
   private let restartStatus: String
   private let provider: String?
   private let startNotice: String?
+  private let engines: [String]?
+  private let v2StartStatus: String
+  private let v2RestartStatus: String
   private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var stopWasCancelled = false
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
     restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = [],
-    startNotice: String? = nil
+    startNotice: String? = nil, engines: [String]? = nil, v2StartStatus: String = "connecting",
+    v2RestartStatus: String = "connecting"
   ) {
+    self.v2RestartStatus = v2RestartStatus
+    self.engines = engines
+    self.v2StartStatus = v2StartStatus
     self.heartbeatReplies = heartbeatReplies
     self.startNotice = startNotice
     self.blockFirstStart = blockFirstStart
@@ -153,14 +171,21 @@ actor SharingTransport: ServerRequestTransport {
     let reply: ServerScreenSharingReply
     switch payload.operation {
     case .capabilities:
-      reply = .init(status: capabilitiesStatus, displays: [ScreenSharingViewerFixtures.display], provider: provider)
+      var capabilities = ServerScreenSharingReply(
+        status: capabilitiesStatus, displays: [ScreenSharingViewerFixtures.display], provider: provider)
+      capabilities.engines = engines
+      reply = capabilities
     case .start, .restart:
       let first = requests.filter { $0.operation == .start }.count == 1
       started.signal()
       if first, blockFirstStart { await releaseFirstStart.wait() }
-      reply = .init(
-        status: payload.operation == .restart ? restartStatus : "connecting", message: startNotice,
-        answer: "fixture answer")
+      let v2Status = payload.operation == .restart ? v2RestartStatus : v2StartStatus
+      var started = ServerScreenSharingReply(
+        status: payload.engine == "v2" ? v2Status : payload.operation == .restart ? restartStatus : "connecting",
+        message: startNotice,
+        answer: payload.engine == nil ? "fixture answer" : nil)
+      if payload.engine == "v2", v2Status == "connecting" { started.media = ScreenSharingViewerFixtures.mediaGrant }
+      reply = started
     case .heartbeat:
       reply = heartbeatReplies.isEmpty ? .init(status: heartbeatStatus) : heartbeatReplies.removeFirst()
     case .setScale: reply = .init(status: "unsupported")
@@ -205,19 +230,24 @@ final class NativeBackendHarness {
       throw RFBError.transport("No VNC display in this test.")
     },
     target: String? = nil,
-    heartbeatInterval: Duration = .seconds(8)
+    heartbeatInterval: Duration = .seconds(8),
+    v2: V2? = nil
   ) {
     self.transport = transport
     let client = CodevisorServerClient(config: .init(requestTransport: transport))
     let clock = clock
+    let connector = v2.map { v2 in
+      ScreenSharingV2Connector(
+        enabled: { v2.enabled }, address: { ScreenSharingViewerFixtures.viewerMedia },
+        connect: { [unowned self] grant in
+          v2.grants.append(grant)
+          if v2.failsConnect { throw RFBError.transport("No route to the host in this test.") }
+          return makeSession()
+        })
+    }
     backend = .native(
-      client: client, workspaceId: UUID(), paneId: UUID(), sleep: { try await clock.sleep(for: $0) },
-      makeSession: { [unowned self] _ in
-        let session = FakeMediaSession()
-        configureSession(session)
-        sessions.append(session)
-        return session
-      },
+      client: client, workspaceId: UUID(), paneId: UUID(), v2: connector, sleep: { try await clock.sleep(for: $0) },
+      makeSession: { [unowned self] _ in makeSession() },
       makeSurface: { [unowned self] session in
         let surface = FakeSurface()
         (session as? FakeMediaSession)?.surface = surface
@@ -225,6 +255,20 @@ final class NativeBackendHarness {
         return surface
       },
       vncOpen: vncOpen, target: target, heartbeatInterval: heartbeatInterval)
+  }
+
+  private func makeSession() -> FakeMediaSession {
+    let session = FakeMediaSession()
+    configureSession(session)
+    sessions.append(session)
+    return session
+  }
+
+  @MainActor
+  final class V2 {
+    var enabled = true
+    var failsConnect = false
+    var grants: [ServerScreenSharingMediaGrant] = []
   }
 
   @discardableResult
@@ -242,3 +286,5 @@ final class NativeBackendHarness {
     for consumer in consumers { await consumer.value }
   }
 }
+
+extension FakeMediaSession: NativeScreenSharingV2Session {}

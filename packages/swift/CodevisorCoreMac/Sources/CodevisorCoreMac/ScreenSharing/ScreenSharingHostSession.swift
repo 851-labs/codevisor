@@ -2,12 +2,15 @@ import AppKit
 import CodevisorCore
 import Foundation
 import ScreenSharing
+import ScreenSharingV2
 import ScreenSharingWebRTC
 
 @MainActor
 final class ScreenSharingHostSession {
   let owner: ScreenSharingHostLease.Owner
-  let peer: ScreenSharingSender
+  let peer: any ScreenSharingHostPeer
+  let v2: V2?
+  var mediaAccept: Task<Void, Never>?
   let capture: ScreenSharingCapture
   let metrics: ScreenSharingMetrics
   let display: ServerScreenSharingDisplay
@@ -38,34 +41,55 @@ final class ScreenSharingHostSession {
   var captureTask: Task<Void, Never>?
   var qualityTask: Task<Void, Never>?
 
+  struct V2 {
+    let token: String
+    let viewerEndpointId: String
+  }
+
+  enum Engine {
+    case webRTC(ServerScreenSharingConnectivity)
+    case v2(viewerEndpointId: String)
+  }
+
   init(
-    request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
-    connectivity: ServerScreenSharingConnectivity
+    request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32, engine: Engine
   ) async throws {
     owner = .init(request)
     self.display = display; self.displayID = displayID
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
     capture = ScreenSharingCapture()
-    configuration = try ScreenSharingProductProfile.captureConfiguration(width: display.width, height: display.height)
-    physicalConfiguration = configuration
     metrics = ScreenSharingMetrics()
-    peer = try await ScreenSharingSender(
-      configuration: configuration, metrics: metrics, connectivity: connectivity.native())
+    switch engine {
+    case .webRTC(let connectivity):
+      configuration = try ScreenSharingProductProfile.captureConfiguration(
+        width: display.width, height: display.height)
+      peer = try await ScreenSharingSender(
+        configuration: configuration, metrics: metrics, connectivity: connectivity.native())
+      v2 = nil
+    case .v2(let viewerEndpointId):
+      configuration = try ScreenSharingV2Profile.captureConfiguration(width: display.width, height: display.height)
+      peer = ScreenSharingV2HostLink(configuration: configuration, metrics: metrics)
+      v2 = V2(token: Self.makeToken(), viewerEndpointId: viewerEndpointId)
+    }
+    physicalConfiguration = configuration
+  }
+
+  static func makeToken() -> String {
+    (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }.joined()
   }
 
   var hasSentVideo: Bool { metrics.counter("capturedFrames") > 0 }
 
   func configureMediaSubscriptions() {
     self.cursorStream = ScreenSharingHostCursorStream(
-      channel: self.peer.cursorChannel, displayID: self.displayID, metrics: self.metrics,
+      channel: self.peer.channels.cursor, displayID: self.displayID, metrics: self.metrics,
       isStopping: { [weak self] in self?.stopping ?? true },
       setShowsCursor: { [weak self] showsCursor in
         guard let self else { return }
         Task { try? await self.capture.setShowsCursor(showsCursor) }
       })
     self.audioStream = ScreenSharingHostAudioStream(
-      channel: self.peer.audioChannel,
-      sendPacket: { [weak audioChannel = self.peer.audioChannel] in audioChannel?.send($0) ?? false },
+      channel: self.peer.channels.audio, sendPacket: self.peer.sendAudioPacket,
       tap: self.capture.audio, metrics: self.metrics,
       isStopping: { [weak self] in self?.stopping ?? true },
       setCapturesAudio: { [weak self] capturesAudio in

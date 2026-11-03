@@ -291,7 +291,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     case .ltrAcked(let stream, let token): queue.async { [self] in acknowledged(token, tile: Int(stream)) }
     case .refreshRequested(let stream, let keyframe):
       queue.async { [self] in requested(keyframe: keyframe, tile: Int(stream)) }
-    case .frame, .frameSkipped: break
+    case .frame, .frameSkipped, .datagram: break
     }
   }
 

@@ -1,4 +1,6 @@
+import CodevisorClient
 import CodevisorCore
+import CoreGraphics
 import CodevisorTestSupport
 import Foundation
 import Testing
@@ -131,12 +133,61 @@ struct ScreenSharingHostRequestTests {
     await host.shutdown()
   }
 
+  @Test func onlyAHostWithAMediaEndpointAdvertisesEngineV2() async {
+    let plain = makeHost { [] }
+    let capable = makeHost(mediaEndpoint: unboundEndpoint()) { [] }
+    #expect(await plain.handle(capabilities()).engines == nil)
+    #expect(await capable.handle(capabilities()).engines == ["v2"])
+    await plain.shutdown()
+    await capable.shutdown()
+  }
+
+  @Test func aV2StartIsRefusedByAHostWithoutAMediaEndpoint() async {
+    let host = makeHost { [self.display] }
+    let reply = await host.handle(v2Request())
+    #expect(reply.status == "failed" && reply.media == nil)
+    #expect(await host.handle(capabilities()).status == "available")
+    await host.shutdown()
+  }
+
+  @Test func aV2StartWhoseEndpointCantBindFailsAndLeavesTheHostFree() async {
+    let host = makeHost(mediaEndpoint: unboundEndpoint()) { [self.display] }
+    let reply = await host.handle(v2Request())
+    #expect(reply.status == "failed")
+    #expect(reply.message == "This Mac's screen-sharing endpoint isn't available.")
+    #expect(await host.handle(capabilities()).status == "available")
+    await host.shutdown()
+  }
+
+  private var display: ScreenSharingHostService.Display {
+    (CGMainDisplayID(), ServerScreenSharingDisplay(id: "display", name: "Display", width: 1280, height: 720))
+  }
+
+  private func unboundEndpoint() -> ScreenSharingMediaEndpoint {
+    let endpoint = ScreenSharingMediaEndpoint()
+    endpoint.configure(.init(endpoint: { nil }, requestDirectPaths: {}))
+    return endpoint
+  }
+
+  private func capabilities() -> ServerScreenSharingRequest {
+    .init(operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+  }
+
+  private func v2Request() -> ServerScreenSharingRequest {
+    var request = ServerScreenSharingRequest(
+      operation: .start, workspaceId: UUID(), paneId: UUID(), viewerId: UUID(), displayId: "display")
+    request.engine = "v2"
+    request.media = .init(endpointId: String(repeating: "a", count: 64), relayUrl: nil, directAddrs: [])
+    return request
+  }
+
   private func makeHost(
+    mediaEndpoint: ScreenSharingMediaEndpoint = ScreenSharingMediaEndpoint(),
     enumerate: @escaping () async throws -> [ScreenSharingHostService.Display]
   ) -> ScreenSharingHostService {
     ScreenSharingHostService(
       captureAccess: { true }, notificationCenter: NotificationCenter(),
-      workspaceNotificationCenter: NotificationCenter(), enumerateDisplays: enumerate)
+      workspaceNotificationCenter: NotificationCenter(), enumerateDisplays: enumerate, mediaEndpoint: mediaEndpoint)
   }
 
   private func request() -> ServerScreenSharingRequest {

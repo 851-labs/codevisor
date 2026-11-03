@@ -122,7 +122,10 @@ inside `codevisor_media_send_frame` are caught and returned as -5.
 ## Wire format
 
 Every datagram starts with a version/kind byte (version in the high nibble, 1) and a stream byte. Integers are big
-endian. Kinds 5 and up are reserved for audio and cursor.
+endian. Kind 5 is audio and kind 6 is cursor: an app datagram is the first byte, a stream byte (0), then the payload,
+which the session neither paces nor repairs (`MediaSession::send_datagram` sends it straight to the transport and
+drops it when the transport is full or the path's datagram is too small; the receiver hands it up as
+`Event::Datagram`). The product sends Opus packets and cursor positions this way (851-3823).
 
 Media packet (kind 0 data, kind 1 parity), 16 bytes before the shard:
 
@@ -181,5 +184,5 @@ because macOS Local Network privacy drops LAN UDP from unsigned binaries run by 
 
 ## Not yet
 
-Audio and cursor datagrams, the control-plane streams, the media connection's own QUIC transport config (E2), and
-tuning the estimator and FEC on constrained links (E7).
+Tuning the estimator and FEC on constrained links (E7). The control plane rides reliable QUIC streams on the same
+connection, outside this crate (see `ScreenSharingV2`'s `Session/` in `packages/swift/ScreenSharing`).

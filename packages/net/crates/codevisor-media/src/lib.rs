@@ -16,7 +16,7 @@ pub use crate::{
     session::MediaSession,
     transport::{DatagramTransport, ImpairedTransport, QuicTransport, RttSource, SendOutcome, UdpTransport},
     types::{
-        Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, ReceivedFrame, Recovery, SendError,
+        Admission, DatagramKind, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, ReceivedFrame, Recovery, SendError,
         Stats, give_up_after,
     },
 };

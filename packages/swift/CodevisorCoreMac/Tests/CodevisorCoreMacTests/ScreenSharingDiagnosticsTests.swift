@@ -15,6 +15,25 @@ struct ScreenSharingDiagnosticsTests {
       ], now: 10)
     #expect(diagnostics.route == "Relay · TLS")
   }
+  @Test func engineV2ReportsItsRouteRoundTripBitrateAndRecovery() {
+    let metrics = ScreenSharingMetrics()
+    let diagnostics = ScreenSharingViewerDiagnostics()
+    var statistics = [
+      "v2.engine": "v2", "v2.route": "direct", "v2.roundTripMs": "1.5", "v2.bytesReceived": "1000000",
+      "v2.lossPercent": "0.25", "v2.nacksSent": "3", "v2.recoveredByFEC": "1", "v2.framesSkipped": "0",
+    ]
+    diagnostics.update(metrics: metrics.snapshot(), statistics: statistics, now: 10)
+    #expect(diagnostics.engine == "v2 · QUIC")
+    #expect(diagnostics.route == "Direct")
+    #expect(diagnostics.roundTripMilliseconds == 1.5)
+    #expect(diagnostics.recovery == "0.2% loss · 3 NACK · 1 FEC · 0 skipped")
+    statistics["v2.bytesReceived"] = "3500000"
+    statistics["v2.route"] = "relay"
+    diagnostics.update(metrics: metrics.snapshot(), statistics: statistics, now: 12)
+    #expect(diagnostics.megabitsPerSecond == 10)
+    #expect(diagnostics.route == "Relay")
+  }
+
   @Test func vncSessionsReportUpdateRateBandwidthSizeAndLatency() {
     let metrics = ScreenSharingMetrics()
     let diagnostics = ScreenSharingViewerDiagnostics()

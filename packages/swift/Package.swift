@@ -386,8 +386,8 @@ let package = Package(
     .target(
       name: "CodevisorCoreMac",
       dependencies: [
-        "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC", "CGVirtualDisplayPrivate",
-        .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+        "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC", "ScreenSharingV2", "CodevisorNet",
+        "CGVirtualDisplayPrivate", .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
       swiftSettings: strictSwiftSettings
