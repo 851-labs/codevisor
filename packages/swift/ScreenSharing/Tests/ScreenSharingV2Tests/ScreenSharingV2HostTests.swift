@@ -140,7 +140,7 @@ struct ScreenSharingV2HostTests {
     await scheduler.scheduled.wait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
     await encoder.encodes.wait(for: 2)
-    encoder.emit(.unchanged(tile: 0))
+    encoder.emit(.unchanged(tile: 0, update: 2))
     scheduler.advance(byNs: 4 * ScreenSharingV2Profile.refinementGapNs)
     host.stop()
 
@@ -162,6 +162,30 @@ struct ScreenSharingV2HostTests {
     await encoder.encodes.wait(for: 2)
 
     #expect(encoder.requests[1].update.tiles == [1, 2])
+  }
+
+  @Test func anUnchangedAnswerOlderThanTheTilesLatestChangeLeavesItsRefinementAlone() async throws {
+    let encoder = RecordingTileEncoder()
+    let host = startedHost(encoder)
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+    await encoder.encodes.wait(for: 2)
+    encoder.emit(.unchanged(tile: 0, update: 2))
+    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
+    await encoder.encodes.wait(for: 3)
+    encoder.emitTiles(of: encoder.requests[2])
+    encoder.emit(.unchanged(tile: 0, update: 2))
+    await scheduler.scheduled.wait(for: 2)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+    host.stop()
+
+    #expect(encoder.requests.count == 4)
+    #expect(encoder.requests.last?.update.isRefinement == true)
+    #expect(encoder.requests.last?.sourceTimestampNs == 2_000)
   }
 
   private let encoder = RecordingTileEncoder()

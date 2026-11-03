@@ -157,7 +157,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
       refinement.refined(update.tiles, atNs: nowNs)
     } else {
       metrics.increment("tilesSkipped", by: layout.count - update.tiles.count)
-      refinement.changed(update.tiles, atNs: nowNs)
+      refinement.changed(update.tiles, by: update.id, atNs: nowNs)
     }
   }
 
@@ -204,10 +204,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
         retry(refresh, tile: tile)
         finished(tile: tile)
       }
-    case .unchanged(let tile):
+    case .unchanged(let tile, let update):
       metrics.increment("encoderUnchangedTiles")
       queue.async { [self] in
-        refinement.settled(tile)
+        refinement.settled(tile, by: update)
         finished(tile: tile)
       }
     case .failed(let tile, let refresh, let message):

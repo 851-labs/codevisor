@@ -134,9 +134,11 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     let composite = state.withLock { state in
       guard state.canvas?.layout == context.meta.layout else { return Composite?.none }
 
-      state.canvas?.place(image, tile: tile)
-      let current = state.assembly.resolve(update: context.meta.update.id, tile: tile, .decoded(context))
-      if !current { metrics.increment("lateTiles") }
+      let current = state.assembly.resolve(update: context.meta.update.id, tile: tile, .decoded(context, image))
+      if !current {
+        metrics.increment("lateTiles")
+        state.canvas?.place(image, tile: tile)
+      }
       return compose(&state, presentingLate: !current)
     }
     present(composite)
@@ -155,6 +157,9 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
   private func compose(_ state: inout State, presentingLate: Bool = false) -> Composite? {
     let ready = state.assembly.ready()
+    for released in ready {
+      for (tile, image) in released.images { state.canvas?.place(image, tile: tile) }
+    }
     let group = ready.last { !$0.decoded.isEmpty }
     guard group != nil || presentingLate, let snapshot = state.canvas?.snapshot else { return nil }
 

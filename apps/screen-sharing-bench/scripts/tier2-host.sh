@@ -59,8 +59,8 @@ measure() {
     --output "$dir/host-usage.jsonl" >"$dir/host-sample.json" 2>"$dir/host-sample.err" &
   pids+=($!)
   if sudo -n -l /usr/bin/powermetrics >/dev/null 2>&1; then
-    sudo -n /usr/bin/powermetrics --samplers cpu_power,gpu_power -i 1000 -n "$((TIER2_DURATION + 8))" \
-      >"$dir/host-power.txt" 2>"$dir/host-power.err" &
+    { sudo -n /usr/bin/powermetrics --samplers cpu_power,gpu_power -i 1000 -n "$((TIER2_DURATION + 8))" \
+      >"$dir/host-power.txt" 2>"$dir/host-power.err" || true; } &
     pids+=($!)
   fi
   sleep 3

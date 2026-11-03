@@ -1,13 +1,16 @@
+import CoreVideo
+
 struct ScreenSharingV2UpdateAssembly {
   struct Group {
     let update: ScreenSharingTileUpdate
     var waiting: Set<Int>
     var arrived: Set<Int> = []
     var decoded: [ScreenSharingV2DecodeContext] = []
+    var images: [Int: CVPixelBuffer] = [:]
   }
 
-  enum Outcome {
-    case decoded(ScreenSharingV2DecodeContext)
+  enum Outcome: @unchecked Sendable {
+    case decoded(ScreenSharingV2DecodeContext, CVPixelBuffer)
     case missing
   }
 
@@ -37,7 +40,10 @@ struct ScreenSharingV2UpdateAssembly {
     guard let index = pending.firstIndex(where: { $0.update.id == id }) else { return false }
 
     pending[index].waiting.remove(tile)
-    if case .decoded(let context) = outcome { pending[index].decoded.append(context) }
+    if case .decoded(let context, let image) = outcome {
+      pending[index].decoded.append(context)
+      pending[index].images[tile] = image
+    }
     return true
   }
 
