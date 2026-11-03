@@ -96,7 +96,7 @@ extension HomeView {
     case let .bot(serverId, botId):
       BotConversationScreen(
         serverId: serverId, botId: botId, showsHeader: false,
-        onOpenDetails: { botEditor = .edit($0) }, onNewTab: openNewTab(forBot:))
+        onOpenDetails: { botEditor = .edit($0) })
     }
   }
 }

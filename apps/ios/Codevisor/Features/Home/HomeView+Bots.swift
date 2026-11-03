@@ -13,11 +13,6 @@ extension HomeView {
     }
   }
 
-  func openNewTab(forBot bot: Bot) {
-    addSidebarTab(
-      in: HomeSidebarWorkspaceRef(id: bot.workspaceId, serverId: bot.serverId, anchorSessionId: bot.sessionId))
-  }
-
   func setBotArchived(_ bot: Bot, _ isArchived: Bool) {
     if isArchived { closeBot(bot) }
     Task {

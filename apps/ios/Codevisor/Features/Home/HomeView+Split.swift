@@ -74,8 +74,7 @@ extension HomeView {
   func detailScreen(for route: HomeRoute) -> some View {
     if case let .bot(serverId, botId) = route {
       BotConversationScreen(
-        serverId: serverId, botId: botId, onOpenDetails: { botEditor = .edit($0) },
-        onNewTab: openNewTab(forBot:))
+        serverId: serverId, botId: botId, onOpenDetails: { botEditor = .edit($0) })
     } else {
       workspaceDetailScreen(for: route)
     }

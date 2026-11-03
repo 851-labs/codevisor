@@ -10,7 +10,6 @@ struct BotConversationScreen: View {
   let botId: UUID
   var showsHeader = true
   let onOpenDetails: (Bot) -> Void
-  let onNewTab: (Bot) -> Void
   @State private var controller: SessionController?
   @State private var headerWindowBottom: CGFloat = 0
 
@@ -25,22 +24,13 @@ struct BotConversationScreen: View {
       .navigationTitle(showsHeader ? bot?.name ?? "Bot" : "")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        if let bot {
-          if showsHeader {
-            ToolbarItem(placement: .principal) {
-              BotConversationHeader(bot: bot) { if !bot.isArchived { onOpenDetails(bot) } }
-                .background {
-                  WindowFrameProbe { headerWindowBottom = $0.maxY }
-                }
-                .frame(height: BotConversationHeader.barHeight, alignment: .top)
-            }
-          }
-          ToolbarItem(placement: .topBarTrailing) {
-            Button {
-              onNewTab(bot)
-            } label: {
-              Label("New tab", systemImage: "plus.square.on.square")
-            }
+        if let bot, showsHeader {
+          ToolbarItem(placement: .principal) {
+            BotConversationHeader(bot: bot) { if !bot.isArchived { onOpenDetails(bot) } }
+              .background {
+                WindowFrameProbe { headerWindowBottom = $0.maxY }
+              }
+              .frame(height: BotConversationHeader.barHeight, alignment: .top)
           }
         }
       }
