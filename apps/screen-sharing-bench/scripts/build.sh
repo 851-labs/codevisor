@@ -17,6 +17,15 @@ signing_identity() {
     awk -v team="($team_id)\"" '!found && /"Developer ID Application: / && index($0, team) { print $2; found = 1 }'
 }
 
+rebuild_when_net_artifact_changes() {
+  local stamp
+  stamp="$(node scripts/net-artifact.mjs stamp)"
+  [[ "$(cat "$1/net-artifact-stamp" 2>/dev/null)" == "$stamp" ]] && return
+  rm -rf "$1/out"
+  mkdir -p "$1"
+  echo "$stamp" >"$1/net-artifact-stamp"
+}
+
 source_commit() {
   local commit
   local changes
@@ -40,6 +49,7 @@ cd "$repo_root"
 node scripts/net-artifact.mjs ensure-swift >&2
 build_options=(-c release --package-path "$package_path")
 [[ -z "$scratch" ]] || build_options+=(--scratch-path "$scratch/swift")
+[[ -z "$scratch" ]] || rebuild_when_net_artifact_changes "$scratch/swift"
 swift build "${build_options[@]}" --product CodevisorBench >&2
 products="$(swift build "${build_options[@]}" --show-bin-path)"
 
