@@ -147,6 +147,42 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests[1].update.tiles == [0])
   }
 
+  @Test func aWholeFrameEncoderStartsNoRefinementUntilEveryTileOfTheLastEncodeIsOut() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled, encodesWholeFrames: true)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    for tile in 0..<2 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: false, token: nil) }
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+    for tile in 2..<4 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: false, token: nil) }
+    await encoder.encodes.wait(for: 2)
+    host.stop()
+
+    #expect(encoder.requests.count == 2)
+    #expect(encoder.requests[1].update.isRefinement)
+  }
+
+  @Test func anUnchangedTileIsNotEncodedAgainAndEndsItsRefinement() async throws {
+    let encoder = RecordingTileEncoder()
+    let host = startedHost(encoder)
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+    await encoder.encodes.wait(for: 2)
+    encoder.emit(.unchanged(tile: 0))
+    scheduler.advance(byNs: 4 * ScreenSharingV2Profile.refinementGapNs)
+    host.stop()
+
+    #expect(encoder.requests.count == 2)
+    #expect(scheduler.scheduled.value == 1)
+  }
+
   private let encoder = RecordingTileEncoder()
 
   @Test func aCaptureWaitsForAdmissionInsteadOfQueueingBehindTheSendBacklog() async throws {

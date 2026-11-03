@@ -84,7 +84,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func pump() {
     guard !stopped else { return }
     guard let plan = nextPlan() else { return scheduleRefinement() }
-    guard busyTiles.isDisjoint(with: plan.tiles) else { return }
+    guard encoder.encodesWholeFrames ? busyTiles.isEmpty : busyTiles.isDisjoint(with: plan.tiles) else { return }
 
     let admission = transport.admission()
     guard admission.admit else { return deferEncode(admission) }
@@ -182,6 +182,12 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     case .dropped(let tile, let refresh):
       queue.async { [self] in
         retry(refresh, tile: tile)
+        finished(tile: tile)
+      }
+    case .unchanged(let tile):
+      metrics.increment("encoderUnchangedTiles")
+      queue.async { [self] in
+        refinement.settled(tile)
         finished(tile: tile)
       }
     case .failed(let tile, let refresh, let message):
