@@ -102,7 +102,6 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var busyTiles: Set<Int> { Set(inFlight.keys) }
 
   private func admits(_ plan: Plan) -> Bool {
-    if encoder.encodesWholeFrames { return inFlight.isEmpty }
     if plan.isRefinement { return busyTiles.isDisjoint(with: plan.tiles) }
 
     let depth = layout.count > 1 ? Self.pipelinedChanges : 1
@@ -126,10 +125,6 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     }
     guard let last = slot.lastEncoded else { return nil }
     guard refreshing.isEmpty else { return Plan(capture: last, tiles: refreshing, isRefinement: false) }
-    if encoder.encodesWholeFrames {
-      let due = refinement.due(atNs: scheduler.nowNs, excluding: busyTiles)
-      return due.isEmpty ? nil : Plan(capture: last, tiles: due, isRefinement: true)
-    }
     guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles) else { return nil }
 
     return Plan(capture: last, tiles: [tile], isRefinement: true)
@@ -142,14 +137,13 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
     let refreshes = recovery.takeRefreshes()
     note(update)
-    let occupied = encoder.encodesWholeFrames ? layout.tiles : plan.tiles
-    for tile in occupied { inFlight[tile, default: 0] += 1 }
+    for tile in plan.tiles { inFlight[tile, default: 0] += 1 }
     do {
       try encoder.encode(plan.capture.request(update: update, refreshes: refreshes))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
-      for tile in occupied { release(tile) }
+      for tile in plan.tiles { release(tile) }
       recovery.restore(refreshes)
       slot.requeue(tiles: plan.tiles)
     }

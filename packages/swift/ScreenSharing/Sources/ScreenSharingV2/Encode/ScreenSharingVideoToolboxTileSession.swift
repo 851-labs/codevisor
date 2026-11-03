@@ -11,6 +11,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     var lastPresentationNs: Int64 = 0
     var sessionFailed = false
     var closed = false
+    var bitrate: Int
   }
 
   private struct Submission: Sendable {
@@ -32,7 +33,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   private var session: VTCompressionSession
   private let metrics: ScreenSharingMetrics
   private let relay: ScreenSharingTileOutputRelay
-  private let state = Mutex(State())
+  private let state: Mutex<State>
 
   init(
     tile: Int, factory: ScreenSharingVideoToolboxSessionFactory, metrics: ScreenSharingMetrics,
@@ -42,7 +43,17 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     self.factory = factory
     self.metrics = metrics
     self.relay = relay
+    state = Mutex(State(bitrate: factory.bitrate))
     session = try factory.make()
+  }
+
+  var bitrate: Int { state.withLock { $0.bitrate } }
+
+  func share(_ bitsPerSecond: Int) throws {
+    let applied = bitrate
+    guard abs(Double(bitsPerSecond - applied)) > Double(applied) * 0.1 else { return }
+
+    try setBitrate(bitsPerSecond)
   }
 
   func encode(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
@@ -73,6 +84,8 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     let status = VTSessionSetProperty(
       currentSession, key: kVTCompressionPropertyKey_AverageBitRate, value: bitsPerSecond as CFNumber)
     guard status == noErr else { throw ScreenSharingError.codec("Set encoder bitrate", status) }
+
+    state.withLock { $0.bitrate = bitsPerSecond }
   }
 
   func close() {
@@ -96,7 +109,7 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
     }
     close(failed)
     state.withLock {
-      $0.sessionFailed = false; $0.acknowledged = []
+      $0.sessionFailed = false; $0.acknowledged = []; $0.bitrate = factory.bitrate
     }
     metrics.increment("encoderSessionReopens")
   }

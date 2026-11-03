@@ -64,6 +64,27 @@ struct ScreenSharingV2EngineTests {
     #expect(second.allSatisfy { abs($0.0 - $0.1) <= 3 }, "\(second)")
   }
 
+  @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
+  func anUpdateSharesTheBitrateBetweenItsTiles() throws {
+    let configuration = try ScreenSharingVideoConfiguration(width: 640, height: 360, bitrate: 40_000_000)
+    let encoder = try ScreenSharingVideoToolboxTileEncoder(
+      configuration: configuration, layout: ScreenSharingV2TileLayout(width: 640, height: 360, count: 4),
+      metrics: ScreenSharingMetrics())
+    defer { encoder.stop() }
+    let pixels = try TestPixels.frame(shade: 80, timestampNs: 1).pixelBuffer
+
+    try encoder.encode(
+      ScreenSharingTileEncodeRequest(
+        pixelBuffer: pixels, sourceTimestampNs: 1, capturedNs: 1,
+        update: ScreenSharingTileUpdate(id: 1, tiles: [0, 1, 2, 3])))
+    #expect(encoder.sessions.map(\.bitrate) == Array(repeating: 10_000_000, count: 4))
+
+    try encoder.encode(
+      ScreenSharingTileEncodeRequest(
+        pixelBuffer: pixels, sourceTimestampNs: 2, capturedNs: 2, update: ScreenSharingTileUpdate(id: 2, tiles: [2])))
+    #expect(encoder.sessions.map(\.bitrate) == [10_000_000, 10_000_000, 40_000_000, 10_000_000])
+  }
+
   private static func host(
     transport: LoopbackMediaTransport, metrics: ScreenSharingMetrics, tiles: Int
   ) throws -> ScreenSharingV2Host {

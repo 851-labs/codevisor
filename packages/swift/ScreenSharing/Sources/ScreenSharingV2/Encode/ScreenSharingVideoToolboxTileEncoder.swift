@@ -6,7 +6,8 @@ import Synchronization
 public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat = ScreenSharingV2Profile.capturePixelFormat
-  private let sessions: [ScreenSharingVideoToolboxTileSession]
+  let sessions: [ScreenSharingVideoToolboxTileSession]
+  private let totalBitrate: Atomic<Int>
   private let cutter: ScreenSharingV2TileCutter
   private let metrics: ScreenSharingMetrics
   private let relay = ScreenSharingTileOutputRelay()
@@ -22,6 +23,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   ) throws {
     self.layout = layout
     self.metrics = metrics
+    totalBitrate = Atomic(configuration.bitrate)
     cutter = ScreenSharingV2TileCutter(layout: layout)
     sessions = try layout.tiles.sorted().map { [relay] tile in
       let factory = ScreenSharingVideoToolboxSessionFactory(
@@ -55,16 +57,22 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     defer {
       metrics.observe("updateSubmit", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6)
     }
+    let bitrateShare = totalBitrate.load(ordering: .relaxed) / max(1, tiles.count)
     DispatchQueue.concurrentPerform(iterations: tiles.count) { index in
       let tile = tiles[index]
       do {
         guard let tilePixels = pixels[tile] else { throw ScreenSharingError.invalid("No tile \(tile).") }
 
+        share(bitrateShare, with: sessions[tile])
         try sessions[tile].encode(tilePixels, request: request)
       } catch {
         fail(tile, request, error)
       }
     }
+  }
+
+  private func share(_ bitsPerSecond: Int, with session: ScreenSharingVideoToolboxTileSession) {
+    do { try session.share(bitsPerSecond) } catch { metrics.label("lastBitrateError", error.localizedDescription) }
   }
 
   private func fail(_ tile: Int, _ request: ScreenSharingTileEncodeRequest, _ error: any Error) {
@@ -79,12 +87,8 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   public func setBitrate(_ bitsPerSecond: Int) throws {
-    var failure: (any Error)?
-    for session in sessions {
-      do { try session.setBitrate(bitsPerSecond) } catch { failure = failure ?? error }
-    }
+    totalBitrate.store(bitsPerSecond, ordering: .relaxed)
     metrics.label("encoderBitrate", String(bitsPerSecond))
-    if let failure { throw failure }
   }
 
   public func stop() {
