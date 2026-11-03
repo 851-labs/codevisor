@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/tier2-lib.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/tier2-network.sh"
 mkdir -p "$results"
 work="$(mktemp -d /tmp/codevisor-tier2.XXXXXX)"
-viewer_processes="Screen Sharing,CodevisorBench:view,VTDecoderXPCService"
+viewer_processes="Screen Sharing,avconferenced,CodevisorBench:view,VTDecoderXPCService"
 trap 'network_reset; rm -rf "$work"' EXIT
 
 start_system() {

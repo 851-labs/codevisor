@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/tier2-lib.sh"
 mkdir -p "$results"
 work="$(mktemp -d /tmp/codevisor-tier2.XXXXXX)"
 rendezvous_port=47595
-host_processes=screensharingd,ScreensharingAgent,CodevisorBench:share,VTEncoderXPCService,replayd,WindowServer
+host_processes=screensharingd,ScreensharingAgent,avconferenced,CodevisorBench:share,VTEncoderXPCService,replayd,WindowServer
 profiled_processes=(avconferenced ScreensharingAgent VTEncoderXPCService replayd)
 profile_lead_s=20
 profile_s=10
