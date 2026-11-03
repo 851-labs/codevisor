@@ -29,7 +29,7 @@ struct BotConversationHeader: View {
     .buttonStyle(.plain)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(bot.name)
-    .accessibilityHint("Shows bot details")
+    .accessibilityHint("Edit bot")
     .accessibilityAddTraits(.isButton)
     .accessibilityIdentifier("bot.header")
   }
