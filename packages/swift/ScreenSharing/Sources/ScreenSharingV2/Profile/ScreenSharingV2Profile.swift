@@ -10,6 +10,7 @@ public enum ScreenSharingV2Profile {
   public static let bitrateCeiling = 45_000_000
   public static let minimumBitrate = 1_000_000
   public static let tileCount = 4
+  public static let tiledAboveHeight = 1440
   public static let refinementPasses = 4
   public static let refinementGapFrames = 2
   public static let initialEstimateKbps: UInt32 = 100_000
@@ -18,7 +19,9 @@ public enum ScreenSharingV2Profile {
   public static var refinementGapNs: Int64 { Int64(refinementGapFrames) * 1_000_000_000 / Int64(framesPerSecond) }
 
   public static func tileLayout(for configuration: ScreenSharingVideoConfiguration) -> ScreenSharingV2TileLayout {
-    ScreenSharingV2TileLayout(width: configuration.width, height: configuration.height, count: tileCount)
+    ScreenSharingV2TileLayout(
+      width: configuration.width, height: configuration.height,
+      count: configuration.height > tiledAboveHeight ? tileCount : 1)
   }
 
   public static func captureConfiguration(width: Int, height: Int) throws -> ScreenSharingVideoConfiguration {

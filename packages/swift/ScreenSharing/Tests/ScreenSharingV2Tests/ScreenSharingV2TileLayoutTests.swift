@@ -1,6 +1,7 @@
 import CoreGraphics
 import Testing
 
+@testable import ScreenSharing
 @testable import ScreenSharingV2
 
 struct ScreenSharingV2TileLayoutTests {
@@ -35,5 +36,12 @@ struct ScreenSharingV2TileLayoutTests {
     let layout = ScreenSharingV2TileLayout(width: 3840, height: 2160, count: 4)
 
     #expect(layout.tiles(touching: [CGRect(x: 0, y: 2000, width: 9000, height: 900)]) == [0, 1, 2, 3])
+  }
+
+  @Test(arguments: [(3840, 2160, 4), (2560, 1440, 1), (1920, 1080, 1)])
+  func theProfileTilesOnlyCapturesTallerThan1440Rows(width: Int, height: Int, tiles: Int) throws {
+    let configuration = try ScreenSharingVideoConfiguration(width: width, height: height)
+
+    #expect(ScreenSharingV2Profile.tileLayout(for: configuration).count == tiles)
   }
 }

@@ -375,11 +375,11 @@ Apple HP always gives tamale a 1920×1080 pt @2x display (3840×2160 px), so on 
 shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` makes `view` and `apple-hp`
 (`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
 full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
-it: 16 px for a 3840 px host). Engine v1 and v2 both stream R1x2 at 2560×1440 for now, and the viewer scales that back up to the 3840×2160 viewer
-display, so their R1x2 stills register 1:1 to the host's pixels and get numbers. Those numbers include the
-down-and-up scale. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
+it: 16 px for a 3840 px host). Engine v1 streams R1x2 at 2560×1440, and the viewer scales that back up to the 3840×2160 viewer
+display, so its R1x2 stills register 1:1 to the host's pixels and get numbers that include the down-and-up scale.
+Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows measure the codec alone. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
 absent for Apple HP, whose encoded size isn't visible), and the table marks a stream smaller than the host's display
-"(scaled)". When E5 streams native 3840×2160, the same rows measure the codec alone.
+"(scaled)".
 
 ```sh
 gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \
