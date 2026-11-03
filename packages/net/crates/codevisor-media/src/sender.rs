@@ -7,7 +7,7 @@ use bytes::Bytes;
 use reed_solomon_simd::ReedSolomonEncoder;
 
 use crate::{
-    estimator::Estimator,
+    estimator::{Delivery, Estimator},
     fec::{self, Layout},
     pacer::{Pacer, PacketTag},
     types::{
@@ -24,10 +24,15 @@ const MIN_FEC: f64 = 0.05;
 const MAX_FEC: f64 = 0.25;
 const PACING_GAIN: f64 = 2.0;
 const MAX_PACING_GAIN: f64 = 4.0;
+const CONSTRAINED_PACING_GAIN: f64 = 1.25;
+const CONSTRAINED_BPS: f64 = 100e6;
 const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
 const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
 const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
 const MAX_TAIL_BACKOFF: u32 = 4;
+const MIN_RTT_WINDOW: Duration = Duration::from_secs(10);
+const ENCODER_SHARE: f64 = 0.85;
+const IN_FLIGHT_INTERVALS: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Resend {
@@ -45,6 +50,7 @@ struct SentFrame {
     first_tx: Option<Instant>,
     last_tx: Option<Instant>,
     originals_out: usize,
+    bytes_out: usize,
     probes: u32,
 }
 
@@ -114,6 +120,9 @@ pub struct Sender {
     rtt: Duration,
     ack_delay: Option<AckDelay>,
     tail_backoff: u32,
+    in_flight_bytes: usize,
+    min_rtt: VecDeque<(Instant, Duration)>,
+    fec_ratio: f64,
 }
 
 impl Sender {
@@ -129,11 +138,27 @@ impl Sender {
             rtt: Duration::ZERO,
             ack_delay: None,
             tail_backoff: 0,
+            in_flight_bytes: 0,
+            min_rtt: VecDeque::new(),
+            fec_ratio: 0.0,
         }
     }
 
     pub fn set_rtt(&mut self, rtt: Duration) {
         self.rtt = rtt;
+    }
+
+    fn note_rtt(&mut self, now: Instant) {
+        if self.rtt.is_zero() {
+            return;
+        }
+        while self.min_rtt.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > MIN_RTT_WINDOW) {
+            self.min_rtt.pop_front();
+        }
+        while self.min_rtt.back().is_some_and(|(_, rtt)| *rtt >= self.rtt) {
+            self.min_rtt.pop_back();
+        }
+        self.min_rtt.push_back((now, self.rtt));
     }
 
     pub fn send_frame(
@@ -206,11 +231,13 @@ impl Sender {
                 first_tx: None,
                 last_tx: None,
                 originals_out: 0,
+                bytes_out: 0,
                 probes: 0,
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
-            let (oldest, _) = stream.unresolved.pop_first().expect("over the limit");
+            let (oldest, dropped) = stream.unresolved.pop_first().expect("over the limit");
+            self.in_flight_bytes -= dropped.bytes_out;
             stats.frames_lost += 1;
             events.push_back(Event::FrameLost { stream: frame.stream, frame: oldest });
         }
@@ -220,6 +247,7 @@ impl Sender {
 
     fn parity_count(&mut self, now: Instant, data_count: usize) -> usize {
         let ratio = self.fec_ratio(now);
+        self.fec_ratio = ratio;
         if ratio <= 0.0 {
             return 0;
         }
@@ -262,7 +290,12 @@ impl Sender {
         let estimate = self.estimator.estimate_bps();
         let spread = self.config.frame_interval.as_secs_f64() / 2.0;
         let drain = self.pacer.backlog_bytes() as f64 * 8.0 / spread;
-        self.pacer.set_rate(now, drain.clamp(estimate * PACING_GAIN, estimate * MAX_PACING_GAIN));
+        let (gain, max_gain) = if estimate < CONSTRAINED_BPS {
+            (CONSTRAINED_PACING_GAIN, CONSTRAINED_PACING_GAIN)
+        } else {
+            (PACING_GAIN, MAX_PACING_GAIN)
+        };
+        self.pacer.set_rate(now, drain.clamp(estimate * gain, estimate * max_gain));
     }
 
     pub fn poll_transmit(&mut self, now: Instant, stats: &mut Stats) -> Option<Bytes> {
@@ -282,6 +315,8 @@ impl Sender {
         {
             frame.first_tx.get_or_insert(now);
             frame.originals_out += 1;
+            frame.bytes_out += packet.len();
+            self.in_flight_bytes += packet.len();
             if frame.originals_out == frame.packets.len() {
                 frame.last_tx = Some(now);
             }
@@ -333,6 +368,7 @@ impl Sender {
     }
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        self.note_rtt(now);
         let Some(stream) = self.streams.get_mut(&feedback.stream) else {
             return;
         };
@@ -343,6 +379,7 @@ impl Sender {
             events.push_back(Event::LtrAcked { stream: feedback.stream, token });
         }
         if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
+            self.in_flight_bytes -= frame.bytes_out;
             if feedback.lost {
                 self.last_loss = Some(now);
                 stats.frames_lost += 1;
@@ -361,13 +398,24 @@ impl Sender {
                     self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
                     self.tail_backoff = 0;
                 }
-                if !feedback.lost && frame.probes == 0 && receipt.recovery == crate::Recovery::None {
+                if !feedback.lost && frame.probes == 0 {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
                     let hold_off = self.rtt + self.config.frame_interval;
                     self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
                 }
-                let span = Duration::from_micros(receipt.last_rx_offset_us.into());
-                self.estimator.on_delivery(now, receipt.original_bytes as usize, span);
+                if !feedback.lost {
+                    self.estimator.on_acked(now, frame.bytes_out);
+                }
+                let send_span =
+                    frame.last_tx.map_or(Duration::ZERO, |last_tx| last_tx.saturating_duration_since(first_tx));
+                self.estimator.on_delivery(
+                    now,
+                    Delivery {
+                        bytes: receipt.original_bytes as usize,
+                        receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
+                        send_span,
+                    },
+                );
             }
         }
         let stream = self.streams.get_mut(&feedback.stream).expect("looked up above");
@@ -377,6 +425,7 @@ impl Sender {
                 break;
             }
             let frame = entry.remove();
+            self.in_flight_bytes -= frame.bytes_out;
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
                 stats.frames_lost += 1;
@@ -440,7 +489,9 @@ impl Sender {
                 probed = true;
             }
             for number in expired {
-                stream.unresolved.remove(&number);
+                if let Some(frame) = stream.unresolved.remove(&number) {
+                    self.in_flight_bytes -= frame.bytes_out;
+                }
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: stream_id, frame: number });
             }
@@ -477,13 +528,20 @@ impl Sender {
     pub fn admission(&self) -> Admission {
         let estimate_bps = self.estimator.estimate_bps();
         let budget_bytes = (estimate_bps / 8.0 * self.config.frame_interval.as_secs_f64()) as usize;
-        let backlog_bytes = self.pacer.backlog_bytes();
+        let path_bytes = if self.estimator.measured() {
+            let min_rtt = self.min_rtt.front().map_or(self.rtt, |(_, rtt)| *rtt);
+            let in_flight_time = min_rtt + self.config.frame_interval * IN_FLIGHT_INTERVALS;
+            (estimate_bps / 8.0 * in_flight_time.as_secs_f64()) as usize
+        } else {
+            0
+        };
+        let backlog_bytes = self.pacer.backlog_bytes() + self.in_flight_bytes.saturating_sub(path_bytes);
         Admission {
             admit: backlog_bytes <= budget_bytes,
             backlog_bytes,
             budget_bytes,
             estimate_bps,
-            encoder_ceiling_bps: estimate_bps * 0.85,
+            encoder_ceiling_bps: estimate_bps * ENCODER_SHARE / (1.0 + self.fec_ratio),
         }
     }
 

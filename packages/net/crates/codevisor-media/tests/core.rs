@@ -551,31 +551,6 @@ fn a_late_repeat_of_an_older_request_is_ignored() {
 }
 
 #[test]
-fn admission_and_the_estimate_keep_a_slow_link_from_queueing() {
-    let mut sim = Sim::new(NetworkConditions::N5, config(FecMode::Off), 11);
-    let mut sent = 0;
-    for index in 0..300 {
-        let admission = sim.host.admission();
-        if admission.admit {
-            let ceiling = (admission.encoder_ceiling_bps / 8.0 * INTERVAL.as_secs_f64()) as usize;
-            sim.send(frame(0, &payload(index, ceiling.min(250_000))));
-            sent += 1;
-        }
-        sim.run_for(INTERVAL);
-    }
-    sim.run_for(500 * MS);
-
-    let estimate = sim.host.admission().estimate_bps;
-    assert!((25e6..33e6).contains(&estimate), "{estimate}");
-    let settled: Vec<&FrameAck> = sim.acks().into_iter().filter(|ack| ack.frame >= 60).collect();
-    let frames_after = sim.frames().iter().filter(|frame| frame.frame >= 60).count();
-    assert_eq!(settled.len(), frames_after);
-    assert!(frames_after * 100 >= (sent - 60) * 95, "{frames_after} of {} frames", sent - 60);
-    let slowest = settled.iter().map(|ack| ack.queued + ack.acked_after).max().unwrap();
-    assert!(slowest < 4 * INTERVAL, "{slowest:?}");
-}
-
-#[test]
 fn jitter_without_a_queue_doesnt_pull_the_estimate_down() {
     let conditions = NetworkConditions { delay_sd_ms: 1.0, ..NetworkConditions::N3 };
     let mut sim = Sim::new(conditions, config(FecMode::Adaptive), 2);
@@ -674,4 +649,132 @@ fn a_frame_whose_fields_dont_parse_is_reported_lost_not_delivered() {
         .find_map(|datagram| wire::Feedback::decode(&datagram))
         .expect("the viewer reports the frame");
     assert_eq!((report.frame, report.lost), (0, true));
+}
+
+struct EncoderModel {
+    ceiling_bps: f64,
+    checked: Option<Instant>,
+    last_encode: Option<Instant>,
+    carry: f64,
+    sizes: SplitMix64,
+}
+
+impl EncoderModel {
+    fn new(carry: f64, seed: u64) -> Self {
+        Self { ceiling_bps: 45e6, checked: None, last_encode: None, carry, sizes: SplitMix64::new(seed) }
+    }
+
+    fn frame_len(&mut self, now: Instant, wanted_bps: f64) -> usize {
+        if self.checked.is_none_or(|at| now - at >= 250 * MS) {
+            self.checked = Some(now);
+            let target = wanted_bps.clamp(250e3, 45e6);
+            if (target - self.ceiling_bps).abs() > self.ceiling_bps * 0.1 {
+                self.ceiling_bps = target;
+            }
+        }
+        let intervals = self.last_encode.map_or(1.0, |at| (now - at).as_secs_f64() / INTERVAL.as_secs_f64());
+        self.last_encode = Some(now);
+        let noise = 0.6 + 0.8 * self.sizes.next_unit();
+        let len = self.ceiling_bps * INTERVAL.as_secs_f64() / 8.0 * intervals.min(self.carry) * noise;
+        (len as usize).max(300)
+    }
+}
+
+struct SceneResult {
+    frames_per_second: f64,
+    ages: Vec<Duration>,
+    rtt: Duration,
+}
+
+impl SceneResult {
+    fn age(&self, range: std::ops::Range<usize>, share: f64) -> Duration {
+        let mut sorted = self.ages[range].to_vec();
+        sorted.sort();
+        sorted[((sorted.len() - 1) as f64 * share) as usize]
+    }
+
+    fn median(&self) -> Duration {
+        self.age(0..self.ages.len(), 0.5)
+    }
+
+    fn halves(&self) -> (Duration, Duration) {
+        let half = self.ages.len() / 2;
+        (self.age(0..half, 0.5), self.age(half..self.ages.len(), 0.5))
+    }
+}
+
+fn stream_scene(conditions: NetworkConditions, seed: u64, carry: f64) -> SceneResult {
+    const WARM_UP: Duration = Duration::from_secs(5);
+    const MEASURED: Duration = Duration::from_secs(30);
+    let mut sim = Sim::new(conditions, config(FecMode::Adaptive), seed);
+    let mut encoder = EncoderModel::new(carry, seed);
+    let mut captured_at = std::collections::HashMap::new();
+    let mut waiting: Option<Instant> = None;
+    let mut next_capture = sim.now;
+    let end = sim.now + WARM_UP + MEASURED;
+    let mut index = 0u64;
+    while sim.now < end {
+        if sim.now >= next_capture {
+            waiting = Some(next_capture);
+            next_capture += INTERVAL;
+        }
+        let admission = sim.host.admission();
+        if let Some(captured) = waiting.filter(|_| admission.admit) {
+            let mut len = encoder.frame_len(sim.now, admission.encoder_ceiling_bps);
+            if index.is_multiple_of(300) {
+                len *= 3;
+            }
+            captured_at.insert(sim.send(frame(0, &payload(index, len))), captured);
+            index += 1;
+            waiting = None;
+        }
+        sim.run_until((sim.now + MS).min(next_capture).max(sim.now + Duration::from_micros(1)));
+    }
+    sim.run_for(Duration::from_secs(1));
+    let measured_from = sim.epoch + WARM_UP;
+    let mut ages: Vec<(Instant, Duration)> = sim
+        .frames()
+        .iter()
+        .filter_map(|frame| captured_at.get(&frame.frame).map(|captured| (*captured, frame.completed_at - *captured)))
+        .filter(|(captured, _)| *captured >= measured_from)
+        .collect();
+    ages.sort();
+    SceneResult {
+        frames_per_second: ages.len() as f64 / MEASURED.as_secs_f64(),
+        ages: ages.into_iter().map(|(_, age)| age).collect(),
+        rtt: sim.host.stats(sim.now).rtt,
+    }
+}
+
+fn assert_interactive(result: &SceneResult, rtt: Duration, min_frames_per_second: f64) {
+    let median = result.median();
+    let (first, second) = result.halves();
+    assert!(result.frames_per_second >= min_frames_per_second, "{:.1} frames/s", result.frames_per_second);
+    assert!(median <= rtt + 2 * INTERVAL, "p50 {median:?} over a round trip ({rtt:?}) and two frames");
+    assert!(second <= first + INTERVAL, "the age grew from {first:?} to {second:?}");
+}
+
+#[test]
+fn a_slow_link_with_a_short_queue_keeps_the_frame_rate_and_the_age_flat() {
+    for carry in [1.0, 8.0] {
+        let result = stream_scene(NetworkConditions::N5, 1, carry);
+        assert_interactive(&result, 20 * MS, 55.0);
+        assert!(result.age(0..result.ages.len(), 0.95) <= result.rtt + 2 * INTERVAL, "carry {carry}");
+    }
+}
+
+#[test]
+fn a_long_jittery_path_keeps_the_frame_rate_and_the_age_flat() {
+    for carry in [1.0, 8.0] {
+        assert_interactive(&stream_scene(NetworkConditions::N6, 2, carry), 50 * MS, 45.0);
+    }
+}
+
+#[test]
+fn a_one_megabit_lossy_link_keeps_the_age_flat() {
+    for carry in [1.0, 8.0] {
+        let result = stream_scene(NetworkConditions::N7, 3, carry);
+        assert_interactive(&result, 100 * MS, 30.0);
+        assert!(result.age(0..result.ages.len(), 0.95) < 200 * MS, "carry {carry}");
+    }
 }
