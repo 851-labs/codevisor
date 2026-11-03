@@ -19,14 +19,16 @@ final class HostLabNullTransport: ScreenSharingMediaTransport, @unchecked Sendab
 
   var passes: [HostLabTileSizes.Pass] { sizes.withLock { $0.passes } }
 
-  func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws {
+  @discardableResult
+  func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws -> UInt32 {
     sizes.withLock {
       $0.record(tile: tile.tile, isRefinement: tile.update.isRefinement, bytes: tile.accessUnit.count)
     }
-    guard let token = tile.ltrToken else { return }
+    guard let token = tile.ltrToken else { return 0 }
 
     let event = ScreenSharingMediaEvent.ltrAcked(stream: UInt8(tile.tile), token: token)
     DispatchQueue.global().asyncAfter(deadline: .now() + Self.ackDelay) { [continuation] in continuation.yield(event) }
+    return 0
   }
 
   func admission() -> ScreenSharingMediaAdmission { admitted }
@@ -37,7 +39,11 @@ final class HostLabNullTransport: ScreenSharingMediaTransport, @unchecked Sendab
 
   func acknowledge(ltrToken: UInt64, stream: UInt8) {}
 
+  func requestRefresh(stream: UInt8, keyframe: Bool) {}
+
   var roundTripUs: UInt64 { 0 }
+
+  var lossRate: Double { 0 }
 
   func close() { continuation.finish() }
 }

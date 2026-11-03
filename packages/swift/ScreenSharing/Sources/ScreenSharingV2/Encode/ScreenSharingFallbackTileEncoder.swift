@@ -66,6 +66,10 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     fallback.acknowledge(tokens.filter(issued.contains), tile: tile)
   }
 
+  public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {
+    active.observeNetwork(feedback)
+  }
+
   public func setBitrate(_ bitsPerSecond: Int) throws {
     state.withLock { $0.bitrate = bitsPerSecond }
     try active.setBitrate(bitsPerSecond)

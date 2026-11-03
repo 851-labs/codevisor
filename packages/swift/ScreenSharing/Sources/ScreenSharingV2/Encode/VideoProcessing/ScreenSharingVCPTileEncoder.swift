@@ -90,7 +90,7 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
     metrics.label("encoderBitrate", String(rate.tileBitsPerSecond * layout.count))
   }
 
-  public func setNetworkFeedback(_ feedback: ScreenSharingVCPNetworkFeedback) {
+  public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {
     for session in sessions { session.setNetworkFeedback(feedback) }
   }
 

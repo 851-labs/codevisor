@@ -3,7 +3,7 @@ import ScreenSharing
 
 struct ScreenSharingVCPEncoderState {
   var acknowledged: [UInt64] = []
-  var feedback: ScreenSharingVCPNetworkFeedback?
+  var feedback: ScreenSharingTileNetworkFeedback?
   var failure: String?
   var stopped = false
   private var inFlight: [UInt64: ScreenSharingVCPSubmission] = [:]
