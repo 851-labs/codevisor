@@ -19,7 +19,8 @@ final class TestMouseCapture: ScreenSharingMouseCapture {
 
   func setWindow(_ windowNumber: Int?) { window = windowNumber }
 
-  func setAcceptsInjected(_ accepts: Bool) {}
+  private(set) var acceptsInjected = false
+  func setAcceptsInjected(_ accepts: Bool) { acceptsInjected = accepts }
 
   func stop() { stops += 1; handle = nil }
 

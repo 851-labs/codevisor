@@ -62,8 +62,29 @@ struct ScreenSharingInputSurfaceTests {
         .button(center, button: 0, down: true, clicks: 1, modifiers: 0),
         .button(center, button: 0, down: false, clicks: 1, modifiers: 0),
       ])
+    fixture.input.dropsInjectedInput = false
+    #expect(fixture.mouse.acceptsInjected)
     fixture.input.suspend()
     #expect(fixture.mouse.window == nil)
+    fixture.input.end()
+    #expect(fixture.mouse.stops == 1)
+  }
+
+  @Test func aClickThatFocusedTheVideoThroughAppKitKeepsItsDragsWhileTheTapCarriesTheMouse() throws {
+    let fixture = try InputSurfaceFixture(mouseTap: true)
+    defer { fixture.close() }
+
+    fixture.input.mouse(try fixture.mouse(.leftMouseDown, at: .init(x: 10, y: 10)))
+    fixture.input.mouse(try fixture.mouse(.leftMouseDragged, at: .init(x: 20, y: 20)))
+    fixture.input.mouse(try fixture.mouse(.leftMouseUp, at: .init(x: 20, y: 20)))
+
+    let center = ScreenSharingPointer(x: 0.5, y: 0.5)
+    #expect(
+      fixture.events == [
+        .button(center, button: 0, down: true, clicks: 1, modifiers: 0),
+        .move(center, modifiers: 0),
+        .button(center, button: 0, down: false, clicks: 1, modifiers: 0),
+      ])
   }
 
   @Test func withoutTheTapAppKitCarriesTheMouse() throws {

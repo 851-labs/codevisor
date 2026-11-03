@@ -23,7 +23,7 @@
     private let lock = NSLock()
     private var window: Int?
     private var acceptsInjected: Bool
-    private var pressed = false
+    private var pressed = Set<Int64>()
     private var port: CFMachPort?
     private let deliver: @Sendable (CGEventType, CGEvent) -> Void
 
@@ -36,14 +36,14 @@
     func set(window: Int?) {
       lock.withLock {
         self.window = window
-        if window == nil { pressed = false }
+        if window == nil { pressed = [] }
       }
     }
     func set(acceptsInjected: Bool) { lock.withLock { self.acceptsInjected = acceptsInjected } }
     func set(port: CFMachPort?) { lock.withLock { self.port = port } }
 
     func observe(_ type: CGEventType, _ event: CGEvent) {
-      if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+      if type == .tapDisabledByTimeout {
         if let port = lock.withLock({ port }) { CGEvent.tapEnable(tap: port, enable: true) }
         return
       }
@@ -55,11 +55,12 @@
     private func claims(_ type: CGEventType, _ event: CGEvent) -> Bool {
       let injected = event.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
       let under = Int(event.getIntegerValueField(.mouseEventWindowUnderMousePointer))
+      let button = event.getIntegerValueField(.mouseEventButtonNumber)
       return lock.withLock {
-        guard let window, acceptsInjected || !injected, pressed || under == window else { return false }
+        guard let window, acceptsInjected || !injected, !pressed.isEmpty || under == window else { return false }
 
-        if ScreenSharingMouseTypes.downs.contains(type) { pressed = true }
-        if ScreenSharingMouseTypes.ups.contains(type) { pressed = false }
+        if ScreenSharingMouseTypes.downs.contains(type) { pressed.insert(button) }
+        if ScreenSharingMouseTypes.ups.contains(type) { pressed.remove(button) }
         return true
       }
     }
@@ -104,20 +105,24 @@
       guard
         let port = CGEvent.tapCreate(
           tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .defaultTap,
-          eventsOfInterest: mask, callback: Self.callback, userInfo: Unmanaged.passUnretained(filter).toOpaque()),
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
+          eventsOfInterest: mask, callback: Self.callback, userInfo: Unmanaged.passUnretained(filter).toOpaque())
       else { return false }
+      guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0) else {
+        CFMachPortInvalidate(port)
+        return false
+      }
 
       filter.set(port: port)
       self.filter = filter
       self.port = port
-      runLoop = Self.run(port: port, source: source, retaining: filter)
+      runLoop = Self.run(port: port, source: source, retaining: filter, enabled: window != nil)
       return true
     }
 
     func setWindow(_ windowNumber: Int?) {
       window = windowNumber
       filter?.set(window: windowNumber)
+      if let port { CGEvent.tapEnable(tap: port, enable: windowNumber != nil) }
     }
 
     func setAcceptsInjected(_ accepts: Bool) {
@@ -137,17 +142,15 @@
     isolated deinit { stop() }
 
     private static func run(
-      port: CFMachPort, source: CFRunLoopSource, retaining filter: ScreenSharingMouseTapFilter
-    )
-      -> CFRunLoop?
-    {
+      port: CFMachPort, source: CFRunLoopSource, retaining filter: ScreenSharingMouseTapFilter, enabled: Bool
+    ) -> CFRunLoop? {
       nonisolated(unsafe) let tap = (port: port, source: source)
       nonisolated(unsafe) var loop: CFRunLoop?
       let ready = DispatchSemaphore(value: 0)
       let thread = Thread {
         loop = CFRunLoopGetCurrent()
         CFRunLoopAddSource(loop, tap.source, .commonModes)
-        CGEvent.tapEnable(tap: tap.port, enable: true)
+        CGEvent.tapEnable(tap: tap.port, enable: enabled)
         ready.signal()
         CFRunLoopRun()
         CFRunLoopRemoveSource(CFRunLoopGetCurrent(), tap.source, .commonModes)

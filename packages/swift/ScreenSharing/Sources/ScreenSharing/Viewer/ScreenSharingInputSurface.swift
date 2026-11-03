@@ -39,6 +39,7 @@
     private var mouseTapRunning = false
     private var tapCarriesMouse = false
     private var forwardedClicks: [(timestamp: UInt64, down: Bool)] = []
+    private var appKitButtons = Set<UInt8>()
     var dropsInjectedInput = true {
       didSet {
         keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput)
@@ -135,6 +136,7 @@
         },
       ]
       if window.isKeyWindow, applicationIsActive(), window.firstResponder === view { resume() } else { suspend() }
+      updateKeyClaim()
     }
 
     func end() {
@@ -148,7 +150,7 @@
       for observer in observers + windowObservers { notificationCenter.removeObserver(observer) }
       observers = []; windowObservers = []; motionTask?.cancel(); motionTask = nil
       pendingMotion = nil; buttons = []; keys = []; textKeys = []; modifiers = 0; scroll = .init(); lastPointer = nil
-      forwardedClicks = []; tapCarriesMouse = false
+      forwardedClicks = []; appKitButtons = []; tapCarriesMouse = false
       if mouseTapRunning { mouseCapture.stop() }
       mouseTapRunning = false
     }
@@ -319,12 +321,16 @@
       let flags = Self.flags(event.modifierFlags)
       switch event.type {
       case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-        guard !tapCarriesMouse else { return }
+        guard !tapCarriesMouse || !appKitButtons.isEmpty else { return }
       case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp:
         guard (0...2).contains(event.buttonNumber) else { return }
-        guard !tapCarriesMouse || firstCopy(at: event.cgEvent?.timestamp ?? 0, down: Self.isDown(event.type)) else {
+        if tapCarriesMouse, let timestamp = event.cgEvent?.timestamp,
+          !firstCopy(at: timestamp, down: Self.isDown(event.type))
+        {
           return
         }
+        let button = UInt8(event.buttonNumber)
+        if Self.isDown(event.type) { appKitButtons.insert(button) } else { appKitButtons.remove(button) }
       default: break
       }
       lastPointer = point

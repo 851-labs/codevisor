@@ -224,9 +224,9 @@ tier2_check_inputs() {
   local runs planned_s
   runs=$(($(tier2_plan | wc -l)))
   planned_s=$((runs * (TIER2_DURATION + tier2_run_overhead_s)))
-  tier2_plan | grep -q '^[0-9]* [a-z-]* [a-z0-9-]* 0 ' && planned_s=$((planned_s + TIER2_WARM_UP_S - TIER2_DURATION))
+  ((TIER2_WARM_UP_S > 0)) && tier2_runs_system apple-hp && planned_s=$((planned_s + TIER2_WARM_UP_S - TIER2_DURATION))
   ((planned_s <= tier2_plan_budget_s)) || {
-    echo "$runs runs of ${TIER2_DURATION}s don't fit the ${tier2_plan_budget_s}s budget" >&2
+    echo "$runs runs (${planned_s}s with overhead) don't fit the ${tier2_plan_budget_s}s budget" >&2
     return 1
   }
 }
