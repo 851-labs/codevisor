@@ -21,7 +21,7 @@ rebuild_when_net_artifact_changes() {
   local stamp
   stamp="$(node scripts/net-artifact.mjs stamp)"
   [[ "$(cat "$1/net-artifact-stamp" 2>/dev/null)" == "$stamp" ]] && return
-  rm -rf "$1/out"
+  rm -rf "$1"
   mkdir -p "$1"
   echo "$stamp" >"$1/net-artifact-stamp"
 }
