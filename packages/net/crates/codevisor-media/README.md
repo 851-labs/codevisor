@@ -45,7 +45,14 @@ no jitter buffer and no queue deeper than one frame.
   293 of 300 idle frames (the emulation adds delay QUIC doesn't see); timing it from the acks probed 46.
 - **Capacity estimate.** A 1 s maximum filter over per-frame delivery rates (bytes that arrived the first time, over
   their arrival spread). It backs off by 15% when frames' first packets keep finding a growing standing queue (2 ms
-  over the 10 s minimum one-way delay).
+  over the 10 s minimum one-way delay), at most once per round trip + frame interval. The queue is the smallest of
+  the last 8 one-way delays, not the latest one: jitter raises some samples, and a standing queue raises all of them.
+  Taking the latest sample let 1–2 ms of one-way jitter alone (no queue, N3 in the deterministic sim, and the Tier 1
+  relay, Tier 1 run 41610616589) ratchet the estimate down to 3–15 Mbit/s, and admission then dropped most captures;
+  with the minimum it stays at 36–90 Mbit/s, and N5's real queue still backs off. The cost is reaction time: a new
+  queue has to show in 8 frames' first packets before the first back-off, about 133 ms on one stream at 60 frames a
+  second (less with more tiles), against 2 before. Constrained-link tuning (E7, 851-3822) should revisit that. In the
+  sim, N7 (1 Mbit/s, 50 ms, 5% loss) loses most frames with either detector, on main too; that is E7's.
 - **Admission.** Encode the next capture only while the bytes waiting to be sent fit one frame interval at the
   estimate. The encoder ceiling is 85% of the estimate.
 

@@ -548,6 +548,24 @@ fn admission_and_the_estimate_keep_a_slow_link_from_queueing() {
 }
 
 #[test]
+fn jitter_without_a_queue_doesnt_pull_the_estimate_down() {
+    let conditions = NetworkConditions { delay_sd_ms: 1.0, ..NetworkConditions::N3 };
+    let mut sim = Sim::new(conditions, config(FecMode::Adaptive), 2);
+    let mut lowest = f64::MAX;
+    for index in 0..1800u64 {
+        let admission = sim.host.admission();
+        if index >= 120 {
+            lowest = lowest.min(admission.estimate_bps);
+        }
+        assert!(admission.admit, "frame {index} was refused at {:.1} Mbit/s", admission.estimate_bps / 1e6);
+        sim.send(frame(0, &payload(index, 6000)));
+        sim.run_for(INTERVAL);
+    }
+
+    assert!(lowest > 30e6, "{:.1} Mbit/s", lowest / 1e6);
+}
+
+#[test]
 fn n3_loss_costs_at_most_a_round_trip_plus_two_ms_for_999_in_1000_frames() {
     let mut sim = Sim::new(NetworkConditions::N3, config(FecMode::Adaptive), 12);
     let mut sizes = SplitMix64::new(99);

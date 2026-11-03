@@ -10,6 +10,7 @@ const OVERUSE_SAMPLES: u32 = 2;
 const BACKOFF: f64 = 0.85;
 const MIN_SPAN: Duration = Duration::from_micros(100);
 const MIN_RATE_BPS: f64 = 500e3;
+const RECENT_DELAYS: usize = 8;
 
 #[derive(Debug)]
 pub struct Estimator {
@@ -17,6 +18,7 @@ pub struct Estimator {
     max_bps: f64,
     samples: VecDeque<(Instant, f64)>,
     min_delay: VecDeque<(Instant, i64)>,
+    recent_delays: VecDeque<i64>,
     queue_delay_us: i64,
     overuse: u32,
     last_backoff: Option<Instant>,
@@ -29,6 +31,7 @@ impl Estimator {
             max_bps,
             samples: VecDeque::new(),
             min_delay: VecDeque::new(),
+            recent_delays: VecDeque::new(),
             queue_delay_us: 0,
             overuse: 0,
             last_backoff: None,
@@ -64,8 +67,12 @@ impl Estimator {
             self.min_delay.pop_back();
         }
         self.min_delay.push_back((now, one_way_us));
+        if self.recent_delays.len() == RECENT_DELAYS {
+            self.recent_delays.pop_front();
+        }
+        self.recent_delays.push_back(one_way_us);
         let base = self.min_delay.front().map_or(one_way_us, |(_, delay)| *delay);
-        let queue = one_way_us - base;
+        let queue = self.recent_delays.iter().min().copied().unwrap_or(one_way_us) - base;
         let growing = queue > self.queue_delay_us;
         self.queue_delay_us = queue;
         if queue < QUEUE_THRESHOLD.as_micros() as i64 {
@@ -105,22 +112,22 @@ mod tests {
     }
 
     #[test]
-    fn a_growing_standing_queue_backs_off_once_per_hold_off() {
+    fn only_a_queue_every_recent_sample_sees_backs_off_once_per_hold_off() {
         let start = Instant::now();
         let mut estimator = Estimator::new(100e6, 1e9);
         let offset = 5_000_000;
-        estimator.on_delay(start, offset, 20 * MS);
-        estimator.on_delay(start + 16 * MS, offset + 1_000, 20 * MS);
-        assert_eq!(estimator.estimate_bps(), 100e6, "under the threshold");
-        estimator.on_delay(start + 32 * MS, offset + 3_000, 20 * MS);
-        assert_eq!(estimator.estimate_bps(), 100e6, "one sample over it");
-        estimator.on_delay(start + 48 * MS, offset + 5_000, 20 * MS);
-        assert_eq!(estimator.estimate_bps(), 85e6);
-        estimator.on_delay(start + 52 * MS, offset + 7_000, 20 * MS);
-        estimator.on_delay(start + 56 * MS, offset + 9_000, 20 * MS);
-        assert_eq!(estimator.estimate_bps(), 85e6, "still inside the hold-off");
-        estimator.on_delay(start + 70 * MS, offset + 11_000, 20 * MS);
-        assert_eq!(estimator.estimate_bps(), 85e6 * 0.85);
-        assert_eq!(estimator.queue_delay_us(), 11_000);
+        let delays =
+            (0..16).map(|index| if index % 2 == 0 { 0 } else { 5_000 }).chain((1..=14).map(|step| 2_000 + step * 500));
+        let mut estimates = Vec::new();
+        for (index, delay) in delays.enumerate() {
+            estimator.on_delay(start + 4 * MS * index as u32, offset + delay, 20 * MS);
+            estimates.push(estimator.estimate_bps());
+        }
+
+        assert_eq!(estimates[15], 100e6, "jitter alone");
+        assert_eq!(estimates[23], 100e6, "the queue isn't in every recent sample yet");
+        assert_eq!(estimates[24], 85e6);
+        assert_eq!(estimates[28], 85e6, "still inside the hold-off");
+        assert_eq!(estimates[29], 85e6 * 0.85);
     }
 }
