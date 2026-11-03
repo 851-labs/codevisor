@@ -12,8 +12,14 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   private let acknowledged = Mutex<[UInt64]>([])
   private let output = Mutex<(@Sendable (ScreenSharingTileEncoderOutput) -> Void)?>(nil)
 
-  init(layout: ScreenSharingV2TileLayout = ScreenSharingV2TileLayout(width: 640, height: 360, count: 1)) {
+  let encodesWholeFrames: Bool
+
+  init(
+    layout: ScreenSharingV2TileLayout = ScreenSharingV2TileLayout(width: 640, height: 360, count: 1),
+    encodesWholeFrames: Bool = false
+  ) {
     self.layout = layout
+    self.encodesWholeFrames = encodesWholeFrames
   }
 
   var requests: [ScreenSharingTileEncodeRequest] { recorded.withLock { $0 } }

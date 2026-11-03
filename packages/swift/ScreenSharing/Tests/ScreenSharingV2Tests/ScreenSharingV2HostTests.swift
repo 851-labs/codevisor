@@ -127,6 +127,26 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests[2].update.isRefinement == false)
   }
 
+  @Test func aWholeFrameEncoderHoldsTheNextUpdateUntilEveryTileOfTheLastOneIsOut() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled, encodesWholeFrames: true)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    host.push(
+      try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
+    await encoder.encodes.wait(for: 2)
+    for tile in 0..<3 { encoder.emitTile(of: encoder.requests[1], tile: tile, keyframe: false, token: nil) }
+    host.push(
+      try TestPixels.frame(shade: 30, timestampNs: 3_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
+    host.stop()
+
+    #expect(encoder.requests.count == 2)
+    #expect(encoder.requests[1].update.tiles == [0])
+  }
+
   private let encoder = RecordingTileEncoder()
 
   @Test func aCaptureWaitsForAdmissionInsteadOfQueueingBehindTheSendBacklog() async throws {

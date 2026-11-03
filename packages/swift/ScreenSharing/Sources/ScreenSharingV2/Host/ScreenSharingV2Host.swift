@@ -116,13 +116,14 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
     let refreshes = recovery.takeRefreshes()
     note(update)
-    busyTiles.formUnion(plan.tiles)
+    let occupied = encoder.encodesWholeFrames ? layout.tiles : plan.tiles
+    busyTiles.formUnion(occupied)
     do {
       try encoder.encode(plan.capture.request(update: update, refreshes: refreshes))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
-      busyTiles.subtract(plan.tiles)
+      busyTiles.subtract(occupied)
       recovery.restore(refreshes)
       slot.requeue(tiles: plan.tiles)
     }
