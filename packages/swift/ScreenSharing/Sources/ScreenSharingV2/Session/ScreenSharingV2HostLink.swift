@@ -15,7 +15,7 @@ public final class ScreenSharingV2HostLink {
   public var onConnectionChanged: ((String) -> Void)?
   public private(set) var sourcePixelFormat: OSType = ScreenSharingV2Profile.capturePixelFormat
   private let makeEncoder: MakeEncoder
-  private let feedBox: Mutex<ScreenSharingV2MediaFeed?>
+  private let feedBox: ScreenSharingV2FeedSlot
   private var connection: (any ScreenSharingV2Connection)?
   private var configuration: ScreenSharingVideoConfiguration
   private var engine: ScreenSharingV2Host?
@@ -32,10 +32,10 @@ public final class ScreenSharingV2HostLink {
     self.configuration = configuration
     self.metrics = metrics
     self.makeEncoder = makeEncoder
-    let feedBox = Mutex<ScreenSharingV2MediaFeed?>(nil)
+    let feedBox = ScreenSharingV2FeedSlot()
     self.feedBox = feedBox
     let sendDatagram: ScreenSharingV2Channels.SendDatagram = { kind, payload in
-      feedBox.withLock { $0 }?.sendDatagram(kind, payload) ?? false
+      feedBox.sendDatagram(kind, payload)
     }
     self.sendDatagram = sendDatagram
     linkChannels = ScreenSharingV2Channels(sendDatagram: sendDatagram)
@@ -52,7 +52,7 @@ public final class ScreenSharingV2HostLink {
     let feed = ScreenSharingV2MediaFeed(transport: await connection.openMedia()) { kind, payload in
       Task { @MainActor in channels.receiveDatagram(kind, payload) }
     }
-    feedBox.withLock { $0 = feed }
+    feedBox.set(feed)
     guard !closed else { throw CancellationError() }
 
     try await rebuild()
@@ -95,10 +95,7 @@ public final class ScreenSharingV2HostLink {
     frameRouter.route(to: nil)
     engine?.stop()
     engine = nil
-    feedBox.withLock { feed in
-      feed?.close()
-      feed = nil
-    }
+    feedBox.close()
     connection?.close("host closed")
   }
 
@@ -115,7 +112,7 @@ public final class ScreenSharingV2HostLink {
   }
 
   private func replaceEngine() async throws {
-    guard !closed, let feed = feedBox.withLock({ $0 }) else { throw CancellationError() }
+    guard !closed, let feed = feedBox.current else { throw CancellationError() }
 
     let configuration = configuration
     frameRouter.route(to: nil)

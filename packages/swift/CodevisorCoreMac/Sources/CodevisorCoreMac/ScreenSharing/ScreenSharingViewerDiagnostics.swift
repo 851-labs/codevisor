@@ -45,6 +45,14 @@ public final class ScreenSharingViewerDiagnostics {
     return String(format: "%.1f%% loss", loss) + " · \(nacks) NACK · \(repaired) FEC · \(skipped) skipped"
   }
 
+  private func updateV2(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String]) {
+    engine = "v2 · QUIC"
+    route = statistics["v2.route"] == "relay" ? "Relay" : statistics["v2.route"] == nil ? "Connecting" : "Direct"
+    roundTripMilliseconds = statistics["v2.roundTripMs"].flatMap(Double.init)
+    decodeMilliseconds = metrics.timings["decode"]?.p95Ms
+    recovery = Self.v2Recovery(statistics)
+  }
+
   func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
     let vncTransport = statistics["vnc.transport"]
     let v2 = statistics["v2.engine"] != nil
@@ -53,9 +61,10 @@ public final class ScreenSharingViewerDiagnostics {
     let bytes =
       vncTransport != nil
       ? Double(metrics.counters["vncBytesReceived", default: 0])
-      : v2 ? statistics["v2.bytesReceived"].flatMap(Double.init) ?? 0
-      : statistics.filter { $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".bytesReceived") }
-        .values.compactMap(Double.init).reduce(0, +)
+      : v2
+        ? statistics["v2.bytesReceived"].flatMap(Double.init) ?? 0
+        : statistics.filter { $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".bytesReceived") }
+          .values.compactMap(Double.init).reduce(0, +)
     if let previous, now > previous.time {
       let elapsed = now - previous.time
       framesPerSecond = Double(max(0, frames - previous.frames)) / elapsed
@@ -71,14 +80,7 @@ public final class ScreenSharingViewerDiagnostics {
     decoder = metrics.labels["decoder"] ?? decoder
     droppedFrames = metrics.counters["renderDrops", default: 0]
     streams = Self.streams(metrics.labels)
-    if v2 {
-      engine = "v2 · QUIC"
-      route = statistics["v2.route"] == "relay" ? "Relay" : statistics["v2.route"] == nil ? "Connecting" : "Direct"
-      roundTripMilliseconds = statistics["v2.roundTripMs"].flatMap(Double.init)
-      decodeMilliseconds = metrics.timings["decode"]?.p95Ms
-      recovery = Self.v2Recovery(statistics)
-      return
-    }
+    if v2 { return updateV2(metrics: metrics, statistics: statistics) }
     if let vncTransport {
       let pushed = metrics.labels["vncUpdateMode"] == "continuous"
       route =

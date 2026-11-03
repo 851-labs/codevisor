@@ -1,3 +1,4 @@
+import CodevisorCore
 import SwiftUI
 
 public struct ScreenSharingMachineSettings: Equatable, Sendable {
@@ -24,6 +25,7 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var preferredDisplayId: String?
   public var lastConnected: Date?
   public var sound: Sound?
+  public var engine: ScreenSharingEngine?
 
   public init(
     name: String, connection: String, address: String? = nil, dynamicResolution: Bool? = nil,
@@ -41,6 +43,7 @@ public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   public var highDynamicRange: Bool?
   public var preferredDisplayId: String?
   public var sound: ScreenSharingMachineSettings.Sound?
+  public var engine: ScreenSharingEngine?
 
   public init(
     dynamicResolution: Bool? = nil, highDynamicRange: Bool? = nil, preferredDisplayId: String? = nil,
@@ -52,7 +55,7 @@ public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   }
 
   public var isEmpty: Bool { self == Self() }
-  public var reconnects: Bool { preferredDisplayId != nil }
+  public var reconnects: Bool { preferredDisplayId != nil || engine != nil }
 }
 
 public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
@@ -74,6 +77,7 @@ public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
       changes.preferredDisplayId = display
     }
     if let sound = settings.sound, sound != original.sound { changes.sound = sound }
+    if let engine = settings.engine, engine != original.engine { changes.engine = engine }
     return changes
   }
 }
@@ -104,6 +108,7 @@ public struct ScreenSharingMachineSettingsSheet: View {
         }
         display
         if draft.settings.sound != nil { sound }
+        if draft.settings.engine != nil { engine }
       }
       .formStyle(.grouped)
       footer
@@ -131,6 +136,17 @@ public struct ScreenSharingMachineSettingsSheet: View {
         .labelsHidden()
       }
       .disabled(draft.settings.sound?.enabled != true)
+    }
+  }
+
+  private var engine: some View {
+    Section("Developer") {
+      Picker("Screen sharing engine", selection: $draft.settings.engine) {
+        Text("Standard (WebRTC)").tag(Optional(ScreenSharingEngine.webRTC))
+        Text("Engine v2 (QUIC)").tag(Optional(ScreenSharingEngine.v2))
+      }
+      Text("Engine v2 is used only when this machine supports it; otherwise the standard engine connects.")
+        .font(.callout).foregroundStyle(.secondary)
     }
   }
 

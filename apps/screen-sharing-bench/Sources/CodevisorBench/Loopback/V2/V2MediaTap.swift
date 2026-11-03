@@ -51,7 +51,7 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
     switch event {
     case .frameAcked(let ack): acked(ack)
     case .frame(let frame): received(frame)
-    case .frameSkipped, .frameLost, .ltrAcked, .refreshRequested, nil: break
+    case .frameSkipped, .frameLost, .ltrAcked, .refreshRequested, .datagram, nil: break
     }
     return event
   }

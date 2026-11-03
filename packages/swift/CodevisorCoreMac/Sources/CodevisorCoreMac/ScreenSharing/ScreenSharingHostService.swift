@@ -118,11 +118,7 @@ final class ScreenSharingHostService {
         return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
       }
       guard captureAccess() else { return permissionRequired() }
-      let viewerMedia = request.engine == ScreenSharingEngine.v2.rawValue ? request.media : nil
-      let offer = request.offer.flatMap { $0.utf8.count <= 256 * 1024 && $0.contains("a=fingerprint:sha-256 ") ? $0 : nil }
-      guard let displayId = request.displayId, viewerMedia != nil || offer != nil,
-        viewerMedia == nil || mediaEndpoint.isAvailable
-      else {
+      guard let (displayId, offer, viewerMedia) = startMedia(request) else {
         return .init(status: "failed", message: "Invalid Screen Sharing request.")
       }
       do {
@@ -162,23 +158,46 @@ final class ScreenSharingHostService {
         lastEnd = nil
         configure(session)
         if let v2 = session.v2 { return await startV2(session, token: v2.token) }
-        guard let peer = session.peer as? ScreenSharingSender, let offer else {
-          await end(session)
-          return .init(status: "failed", message: "Invalid Screen Sharing request.")
-        }
-        do {
-          try await peer.accept(.init(kind: "offer", sdp: offer))
-          let answer = try await peer.makeDescription(offer: false)
-          if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
-            session.capture.pixelFormat = codec.capturePixelFormat
-            session.codec = codec
-            session.metrics.label("negotiatedCodec", codec.rawValue)
-          }
-          try Task.checkCancellation()
-          guard current === session, !session.stopping else { throw CancellationError() }
-          return .init(status: "connecting", answer: answer.sdp)
-        } catch { await end(session); throw error }
+        return try await answer(offer, for: session)
       } catch { return .init(status: "failed", message: error.localizedDescription) }
+    }
+  }
+
+  private func startMedia(
+    _ request: ServerScreenSharingRequest
+  ) -> (displayId: String, offer: String?, viewerMedia: ServerScreenSharingMediaAddress?)? {
+    let viewerMedia = request.engine == ScreenSharingEngine.v2.rawValue ? request.media : nil
+    let offer = request.offer.flatMap {
+      $0.utf8.count <= 256 * 1024 && $0.contains("a=fingerprint:sha-256 ") ? $0 : nil
+    }
+    guard let displayId = request.displayId, viewerMedia != nil || offer != nil,
+      viewerMedia == nil || mediaEndpoint.isAvailable
+    else { return nil }
+
+    return (displayId, offer, viewerMedia)
+  }
+
+  private func answer(_ offer: String?, for session: ScreenSharingHostSession) async throws
+    -> ServerScreenSharingReply
+  {
+    guard let peer = session.peer as? ScreenSharingSender, let offer else {
+      await end(session)
+      return .init(status: "failed", message: "Invalid Screen Sharing request.")
+    }
+    do {
+      try await peer.accept(.init(kind: "offer", sdp: offer))
+      let answer = try await peer.makeDescription(offer: false)
+      if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
+        session.capture.pixelFormat = codec.capturePixelFormat
+        session.codec = codec
+        session.metrics.label("negotiatedCodec", codec.rawValue)
+      }
+      try Task.checkCancellation()
+      guard current === session, !session.stopping else { throw CancellationError() }
+      return .init(status: "connecting", answer: answer.sdp)
+    } catch {
+      await end(session)
+      throw error
     }
   }
 

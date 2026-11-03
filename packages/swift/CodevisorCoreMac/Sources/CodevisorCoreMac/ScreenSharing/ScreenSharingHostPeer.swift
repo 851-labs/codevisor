@@ -44,7 +44,8 @@ extension ScreenSharingSender: ScreenSharingHostPeer {
   var capturePixelFormat: OSType? { nil }
 
   func captureConfiguration(width: Int, height: Int) throws -> ScreenSharingVideoConfiguration {
-    try ScreenSharingVideoConfiguration(width: width, height: height, bitrate: ScreenSharingProductProfile.bitrateCeiling)
+    try ScreenSharingVideoConfiguration(
+      width: width, height: height, bitrate: ScreenSharingProductProfile.bitrateCeiling)
   }
 }
 

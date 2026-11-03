@@ -10,7 +10,9 @@ final class ScreenSharingV2Acceptor {
   private var loop: Task<Void, Never>?
   private var waiting: [String: (id: UUID, continuation: CheckedContinuation<NetConnectionHandle, any Error>)] = [:]
 
-  func connection(from endpointId: String, on endpoint: NetEndpointHandle, timeout: Duration) async throws
+  func connection(
+    from endpointId: String, on endpoint: NetEndpointHandle, timeout: Duration
+  ) async throws
     -> NetConnectionHandle
   {
     listen(on: endpoint)

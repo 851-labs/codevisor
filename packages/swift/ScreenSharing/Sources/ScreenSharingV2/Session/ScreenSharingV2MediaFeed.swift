@@ -10,18 +10,17 @@ public final class ScreenSharingV2MediaFeed: Sendable {
 
   public init(transport: any ScreenSharingMediaTransport, datagrams: @escaping Datagrams) {
     self.transport = transport
-    pump.withLock {
-      $0 = Task { [tap] in
-        while let event = await transport.nextEvent() {
-          if case .datagram(let kind, let payload) = event {
-            datagrams(kind, payload)
-          } else {
-            tap.withLock { $0 }?.deliver(event)
-          }
+    let task = Task { [weak self] in
+      while let event = await transport.nextEvent() {
+        if case .datagram(let kind, let payload) = event {
+          datagrams(kind, payload)
+        } else {
+          self?.tap.withLock { $0 }?.deliver(event)
         }
-        tap.withLock { $0 }?.finish()
       }
+      self?.tap.withLock { $0 }?.finish()
     }
+    pump.withLock { $0 = task }
   }
 
   public func sendDatagram(_ kind: ScreenSharingDatagramKind, _ payload: Data) -> Bool {

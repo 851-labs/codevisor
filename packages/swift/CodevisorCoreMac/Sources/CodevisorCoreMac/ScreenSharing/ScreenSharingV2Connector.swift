@@ -12,15 +12,19 @@ protocol NativeScreenSharingV2Session: ScreenSharingViewingSession {
 extension ScreenSharingV2ViewingSession: NativeScreenSharingV2Session {}
 
 struct ScreenSharingV2Connector {
+  var enabled: @MainActor () -> Bool = { true }
   var address: @MainActor () async -> ServerScreenSharingMediaAddress?
   var connect: @MainActor (ServerScreenSharingMediaGrant) async throws -> any NativeScreenSharingV2Session
 
   static let connectTimeout: Duration = .seconds(15)
 
   @MainActor
-  static func live(endpoint: ScreenSharingMediaEndpoint = .shared) -> Self {
+  static func live(
+    endpoint: ScreenSharingMediaEndpoint = .shared, enabled: @escaping @MainActor () -> Bool
+  ) -> Self {
     let handle = HandleBox()
     return Self(
+      enabled: enabled,
       address: {
         guard let ready = await endpoint.ready() else { return nil }
         handle.value = ready

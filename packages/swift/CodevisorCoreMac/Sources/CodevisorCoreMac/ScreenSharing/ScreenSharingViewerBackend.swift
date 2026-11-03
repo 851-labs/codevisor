@@ -54,10 +54,10 @@ extension ScreenSharingViewerBackend {
     role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
     engine: ScreenSharingEngine? = nil
   ) -> Self {
-    let engine = engine ?? ScreenSharingEngine.selected(machineId: machineId)
-    return native(
+    native(
       client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
-      tunnelMedia: tunnelMedia, v2: engine == .v2 ? .live() : nil,
+      tunnelMedia: tunnelMedia,
+      v2: .live(enabled: { (engine ?? ScreenSharingEngine.selected(machineId: machineId)) == .v2 }),
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
@@ -258,7 +258,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
         }
-        if let v2, !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
+        if let v2, v2.enabled(), !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
           return try await attemptV2(
             v2, attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
         }
@@ -297,7 +297,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
           return .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
         }
         try await session.accept(Self.remoteAnswer(answer, offer: offer, media: media, bridge: reply.tunnelMedia))
-        return try await heartbeats(viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
+        return try await heartbeats(
+          viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
       } catch {
         return isTaskCancellation(error) ? .cancelled : .ended(serverErrorMessage(error))
       }
@@ -399,7 +400,8 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     } catch {
       return Task.isCancelled ? .cancelled : .fallback
     }
-    return try await heartbeats(viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
+    return try await heartbeats(
+      viewerId: viewerId, attempt: attempt, session: session, notice: reply.message, emit: emit)
   }
 
   private func hostEndReason(viewerId: UUID) async -> String? {

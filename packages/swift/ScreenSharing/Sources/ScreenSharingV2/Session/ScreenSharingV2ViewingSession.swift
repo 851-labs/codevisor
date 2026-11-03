@@ -25,9 +25,9 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingViewingSession {
   public init(connection: any ScreenSharingV2Connection, metrics: ScreenSharingMetrics = ScreenSharingMetrics()) {
     self.connection = connection
     self.metrics = metrics
-    let feedBox = Mutex<ScreenSharingV2MediaFeed?>(nil)
+    let feedBox = ScreenSharingV2FeedSlot()
     channels = ScreenSharingV2Channels { kind, payload in
-      feedBox.withLock { $0 }?.sendDatagram(kind, payload) ?? false
+      feedBox.sendDatagram(kind, payload)
     }
     frames = ScreenSharingFrameMailbox()
     audio = ScreenSharingV2ViewerAudio(channel: channels.audio, metrics: metrics)
@@ -35,7 +35,7 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingViewingSession {
     wireChannels()
   }
 
-  private let feedBox: Mutex<ScreenSharingV2MediaFeed?>
+  private let feedBox: ScreenSharingV2FeedSlot
 
   public func start(token: String) async throws {
     try await channels.open(on: connection, token: token)
@@ -56,7 +56,7 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingViewingSession {
       throw CancellationError()
     }
 
-    feedBox.withLock { $0 = feed }
+    feedBox.set(feed)
     let viewer = ScreenSharingV2Viewer(transport: feed.attach(), metrics: metrics, frames: frames)
     self.viewer = viewer
     viewer.start()
@@ -93,10 +93,7 @@ public final class ScreenSharingV2ViewingSession: ScreenSharingViewingSession {
     audio.stop()
     channels.close()
     viewer?.stop()
-    feedBox.withLock { feed in
-      feed?.close()
-      feed = nil
-    }
+    feedBox.close()
     connection.close("viewer closed")
     frames.clear()
   }

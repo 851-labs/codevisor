@@ -39,7 +39,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     let (outbox, continuation) = AsyncStream<Data>.makeStream()
     self.outbox = continuation
     tasks = [
-      Task { [weak self, queuedBytes] in
+      Task { [weak self] in
         for await data in outbox {
           do {
             try await stream.send(data)
@@ -47,7 +47,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
             self?.fail()
             return
           }
-          queuedBytes.subtract(data.count, ordering: .relaxed)
+          self?.queuedBytes.subtract(data.count, ordering: .relaxed)
         }
         await stream.finish()
       },
@@ -103,4 +103,3 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     changed?(false)
   }
 }
-
