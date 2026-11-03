@@ -109,6 +109,41 @@ describe("Screen Sharing media over the tunnel", () => {
   })
 })
 
+describe("Screen Sharing engine v2 signaling", () => {
+  const media = { endpointId: "a".repeat(64), directAddrs: ["192.168.1.2:4433"] }
+  const grant = { endpointId: "b".repeat(64), directAddrs: ["192.168.1.3:4433"], token: "t".repeat(64) }
+
+  it("starts v2 without an SDP offer and returns the host's media grant", async () => {
+    const helper = vi.fn(async (request: ScreenSharingRequest) => ({
+      ...reply,
+      status: "connecting",
+      engines: ["v2"],
+      ...(request.engine === "v2" ? { media: grant } : {})
+    }))
+    const { request, post } = await fixture(helper)
+    const { offer: _, ...v2 } = { ...request, engine: "v2", media }
+    for (const operation of ["start", "restart"])
+      expect((await post({ ...v2, operation })).body).toMatchObject({ engines: ["v2"], media: grant })
+    expect(helper).toHaveBeenCalledWith(expect.objectContaining({ engine: "v2", media }))
+  })
+
+  it("rejects a v2 start without a valid viewer address before invoking the helper", async () => {
+    const helper = vi.fn(async () => reply)
+    const { request, post } = await fixture(helper)
+    const { offer: _, ...v2 } = { ...request, engine: "v2" }
+    for (const change of [
+      { media: undefined },
+      { media: { ...media, endpointId: "not-hex" } },
+      { media: { ...media, directAddrs: Array.from({ length: 33 }, () => "10.0.0.1:1") } },
+      { media: { ...media, directAddrs: ["x".repeat(65)] } },
+      { media: { ...media, relayUrl: `https://${"r".repeat(512)}` } },
+      { engine: "v3", media }
+    ])
+      expect((await post({ ...v2, ...change })).status).toBe(400)
+    expect(helper).not.toHaveBeenCalled()
+  })
+})
+
 describe("native Screen Sharing signaling", () => {
   it("requires machine authentication and rejects browser-originated requests", async () => {
     const helper = vi.fn(async () => reply)
