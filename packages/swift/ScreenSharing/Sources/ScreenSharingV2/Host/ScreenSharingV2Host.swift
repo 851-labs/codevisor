@@ -19,6 +19,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var refinement: ScreenSharingV2Refinement
   private let refinementPolicy: ScreenSharingV2RefinementPolicy
   private var bitrate: ScreenSharingV2BitrateGovernor
+  private var networkFeedbackNs: Int64?
   private var nextUpdate: UInt32 = 0
   private var retryScheduled = false
   private var failureRetryScheduled = false
@@ -26,6 +27,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var deferredCapture = false
   private var inFlight: [Int: Int] = [:]
   private static let pipelinedChanges = 2
+  private static let networkFeedbackIntervalNs: Int64 = 250_000_000
   private var stopped = false
   private var events: Task<Void, Never>?
 
@@ -101,6 +103,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     guard admission.admit else { return deferEncode(admission) }
 
     adjustBitrate(admission)
+    observeNetwork(admission)
     encode(plan)
   }
 
@@ -199,6 +202,17 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     do { try encoder.setBitrate(target) } catch { metrics.label("lastBitrateError", error.localizedDescription) }
   }
 
+  private func observeNetwork(_ admission: ScreenSharingMediaAdmission) {
+    let nowNs = scheduler.nowNs
+    if let networkFeedbackNs, nowNs - networkFeedbackNs < Self.networkFeedbackIntervalNs { return }
+
+    networkFeedbackNs = nowNs
+    encoder.observeNetwork(
+      ScreenSharingTileNetworkFeedback(
+        packetErrorRate: transport.lossRate, roundTripDelayMs: Double(transport.roundTripUs) / 1000,
+        transmissionBitsPerSecond: Int(clamping: admission.estimateKbps * 1000)))
+  }
+
   private func encoderOutput(_ output: ScreenSharingTileEncoderOutput) {
     switch output {
     case .tile(let tile):
@@ -267,10 +281,16 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func handle(_ event: ScreenSharingMediaEvent) {
+    if let stream = event.stream, !layout.tiles.contains(Int(stream)) {
+      metrics.increment("eventsForUnknownTiles")
+      return
+    }
     switch event {
     case .frameAcked(let ack): observe(ack)
     case .frameLost(let stream, _): queue.async { [self] in lost(tile: Int(stream)) }
     case .ltrAcked(let stream, let token): queue.async { [self] in acknowledged(token, tile: Int(stream)) }
+    case .refreshRequested(let stream, let keyframe):
+      queue.async { [self] in requested(keyframe: keyframe, tile: Int(stream)) }
     case .frame, .frameSkipped: break
     }
   }
@@ -286,6 +306,12 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func lost(tile: Int) {
     metrics.increment("lostFrames")
     recovery.lost(tile: tile)
+    pump()
+  }
+
+  private func requested(keyframe: Bool, tile: Int) {
+    metrics.increment(keyframe ? "requestedKeyframes" : "requestedRefreshes")
+    recovery.requested(keyframe: keyframe, tile: tile)
     pump()
   }
 

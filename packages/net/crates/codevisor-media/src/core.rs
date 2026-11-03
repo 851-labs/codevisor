@@ -9,7 +9,7 @@ use crate::{
     receiver::Receiver,
     sender::Sender,
     types::{Admission, Event, MediaConfig, OutgoingFrame, SendError, Stats},
-    wire::{self, Feedback, Kind, Nack, PacketHeader},
+    wire::{self, Feedback, Kind, Nack, PacketHeader, RefreshRequest},
 };
 
 #[derive(Debug)]
@@ -53,6 +53,10 @@ impl Core {
         self.receiver.ack_ltr(stream, token);
     }
 
+    pub fn request_refresh(&mut self, now: Instant, stream: u8, keyframe: bool) {
+        self.receiver.request_refresh(now, stream, keyframe);
+    }
+
     pub fn handle_datagram(&mut self, now: Instant, datagram: Bytes) {
         match wire::kind_of(&datagram) {
             Some(Kind::Data | Kind::Parity) => match PacketHeader::decode(datagram) {
@@ -67,6 +71,10 @@ impl Core {
             },
             Some(Kind::Nack) => match Nack::decode(&datagram) {
                 Some(nack) => self.sender.on_nack(now, &nack, &mut self.stats),
+                None => self.stats.invalid_datagrams += 1,
+            },
+            Some(Kind::Refresh) => match RefreshRequest::decode(&datagram) {
+                Some(request) => self.sender.on_refresh_request(&request, &mut self.events, &mut self.stats),
                 None => self.stats.invalid_datagrams += 1,
             },
             None => self.stats.invalid_datagrams += 1,

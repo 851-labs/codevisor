@@ -74,6 +74,11 @@ impl<T: DatagramTransport> MediaSession<T> {
         self.shared.wake.notify_one();
     }
 
+    pub fn request_refresh(&self, stream: u8, keyframe: bool) {
+        self.shared.state.lock().unwrap().core.request_refresh(now(), stream, keyframe);
+        self.shared.wake.notify_one();
+    }
+
     pub fn admission(&self) -> Admission {
         self.shared.state.lock().unwrap().core.admission()
     }

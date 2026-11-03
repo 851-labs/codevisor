@@ -5,7 +5,7 @@ struct ScreenSharingVCPFrameOptions {
   let keys: ScreenSharingVCPKeys
   let refresh: ScreenSharingTileRefresh?
   let acknowledged: [UInt64]
-  let feedback: ScreenSharingVCPNetworkFeedback?
+  let feedback: ScreenSharingTileNetworkFeedback?
 
   var dictionary: CFDictionary? {
     var options: [CFString: Any] = [:]
@@ -23,7 +23,7 @@ struct ScreenSharingVCPFrameOptions {
     }
   }
 
-  private func add(_ feedback: ScreenSharingVCPNetworkFeedback, to options: inout [CFString: Any]) {
+  private func add(_ feedback: ScreenSharingTileNetworkFeedback, to options: inout [CFString: Any]) {
     if let key = keys.packetErrorRate { options[key] = feedback.packetErrorRate }
     if let key = keys.roundTripDelay { options[key] = feedback.roundTripDelayMs }
     if let key = keys.transmissionBitRate { options[key] = feedback.transmissionBitsPerSecond }

@@ -14,22 +14,51 @@ no jitter buffer and no queue deeper than one frame.
   link's queue. The pacer is a token bucket holding 1 ms of sending, because tokio's timers fire at 1 ms resolution.
 - **Loss recovery, cheapest first.**
   1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
-     packets, at least 1 ms).
+     packets, at least 1 ms). The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
+     retransmission is still queued or left less than half a round trip ago (a NACK that crossed it). Without that, at a low estimate, each
+     repeat queued a large frame's packets again, and the backlog held admission shut: in the sim (N4, a 150 KB
+     frame every 2 s from a 1 Mbit/s start) for 168 frames after each one, against 34–40 now, and in Tier 1 run
+     41617646973 (scroll N4) for 8.5 s, with 2,707 packets resent for 43 NACKs.
   2. Reed–Solomon parity, one block per frame over GF(2^16) (`reed-solomon-simd`). With `FecMode::Adaptive` it's
      on while loss was seen in the last 10 s or the round trip is over a quarter of a frame interval: 5–25% of each
      frame's data packets (more as loss rises), at least one parity packet.
   3. Give up `max(RTT + 2 ms, 1.5 frame intervals)` after the first NACK, and tell the host (`Event::FrameLost`):
      its next encode of that stream should be an LTR refresh.
+  4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
+     that. The viewer calls `request_refresh(stream, keyframe)`, and the host gets `Event::RefreshRequested` once
+     per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that
+     stream: a frame sent with `refresh` or `keyframe` settles a refresh request, and only a keyframe settles a
+     keyframe request. A keyframe request replaces an open refresh request; another refresh request while one is
+     open changes nothing. A request stops after 50 sends, and the host ignores requests for streams it never sent. The host ignores repeats while its answer is on the way, and raises the event again
+     only when a repeat says the viewer has resolved the answer (`resolved_below` past the answer's frame) and
+     still asks: the answer was lost or didn't help.
 - **In-order delivery per stream, without waiting across streams.** A complete frame is delivered at once unless its
   predecessor in the same stream is still being repaired.
 - **Per-frame feedback.** The viewer reports every frame it resolves, with its receive times, the stream's recent
   losses, and the newest LTR token its decoder acknowledged. The host turns these into events, a capacity estimate
   and the encoder's admission signal.
 - **Delivery at idle.** The host keeps each frame until it hears about it and re-sends its last data packet when an
-  ack is overdue (at most 6 times), so a lost last frame before idle is repaired instead of never.
+  ack is overdue, so a lost last frame before idle is repaired instead of never. The newest frame of each stream gets
+  a tail-loss probe first, as soon as its ack is late: the viewer reports a complete frame at once, so the probe waits
+  for the smoothed delay from a frame's last packet to its ack plus twice that delay's variation, at least 1 ms (the
+  round trip + 1 ms until there are acks to measure; tokio's timers can add another 1 ms). Only acks of frames that
+  weren't probed are measured, and each probe doubles the wait (up to 16×, never past the next probe's time) until an
+  unprobed frame's ack arrives, so a path whose delay grows stops being probed spuriously within a few frames. Older frames don't need it:
+  the next frame's arrival already shows the viewer a gap. After that, every give-up time + RTT + 1 ms, at most 6
+  times in all, before the frame counts as lost. A frame lost whole at idle (one packet, as typing and small tile
+  changes are) or a lost ack is then repaired about RTT + 1–2 ms after it would have arrived, instead of about
+  1.5 frame intervals + RTT. On loopback with emulated N3, timing the probe from QUIC's round trip alone probed
+  293 of 300 idle frames (the emulation adds delay QUIC doesn't see); timing it from the acks probed 46.
 - **Capacity estimate.** A 1 s maximum filter over per-frame delivery rates (bytes that arrived the first time, over
   their arrival spread). It backs off by 15% when frames' first packets keep finding a growing standing queue (2 ms
-  over the 10 s minimum one-way delay).
+  over the 10 s minimum one-way delay), at most once per round trip + frame interval. The queue is the smallest of
+  the last 8 one-way delays, not the latest one: jitter raises some samples, and a standing queue raises all of them.
+  Taking the latest sample let 1–2 ms of one-way jitter alone (no queue, N3 in the deterministic sim, and the Tier 1
+  relay, Tier 1 run 41610616589) ratchet the estimate down to 3–15 Mbit/s, and admission then dropped most captures;
+  with the minimum it stays at 36–90 Mbit/s, and N5's real queue still backs off. The cost is reaction time: a new
+  queue has to show in 8 frames' first packets before the first back-off, about 133 ms on one stream at 60 frames a
+  second (less with more tiles), against 2 before. Constrained-link tuning (E7, 851-3822) should revisit that. In the
+  sim, N7 (1 Mbit/s, 50 ms, 5% loss) loses most frames with either detector, on main too; that is E7's.
 - **Admission.** Encode the next capture only while the bytes waiting to be sent fit one frame interval at the
   estimate. The encoder ceiling is 85% of the estimate.
 
@@ -42,8 +71,10 @@ no jitter buffer and no queue deeper than one frame.
   session's task sends, receives and runs the timers.
 - The viewer takes `Event::Frame`s from `next_event`, decodes them, and calls `ack_ltr` for frames that carried an LTR
   token.
-- The host gets `Event::FrameAcked`, `Event::FrameLost` and `Event::LtrAcked` from the same `next_event`. The viewer
-  also gets `Event::FrameSkipped` when the transport gave up on a frame.
+- The host gets `Event::FrameAcked`, `Event::FrameLost`, `Event::LtrAcked` and `Event::RefreshRequested` from the
+  same `next_event`. The viewer also gets `Event::FrameSkipped` when the transport gave up on a frame, and calls
+  `request_refresh` when a delivered frame doesn't decode.
+- `OutgoingFrame::refresh` marks a frame that answers a loss (an LTR refresh); keyframes answer one too.
 - `close()` stops the session and ends `next_event`. The connection stays open.
 
 Transports implement `DatagramTransport`:
@@ -65,12 +96,15 @@ let connection = try await endpoint.connect(addr: viewer, alpn: mediaAlpn(), can
 let session = await connection.openMediaSession(
   config: MediaSessionConfig(frameIntervalUs: 16_667, fecPercent: nil, initialRateKbps: 100_000))
 if session.admission().admit {
-  try session.sendFrame(stream: tile, keyframe: false, ltrToken: token, meta: timings, data: accessUnit)
+  try session.sendFrame(stream: tile, keyframe: false, refresh: false, ltrToken: token, meta: timings, data: accessUnit)
 }
 while let event = await session.nextEvent() {
-  if case .frame(let stream, _, _, let ltrToken, _, let bytes, _, _) = event {
-    bytes.withUnsafeBytes { decode($0) }
-    if let ltrToken { session.ackLtr(stream: stream, token: ltrToken) }
+  if case .frame(let stream, _, _, _, let ltrToken, _, let bytes, _, _) = event {
+    if bytes.withUnsafeBytes({ decode($0) }) {
+      if let ltrToken { session.ackLtr(stream: stream, token: ltrToken) }
+    } else {
+      session.requestRefresh(stream: stream, keyframe: false)
+    }
   }
 }
 ```
@@ -88,7 +122,7 @@ inside `codevisor_media_send_frame` are caught and returned as -5.
 ## Wire format
 
 Every datagram starts with a version/kind byte (version in the high nibble, 1) and a stream byte. Integers are big
-endian. Kinds 4 and up are reserved for audio and cursor.
+endian. Kinds 5 and up are reserved for audio and cursor.
 
 Media packet (kind 0 data, kind 1 parity), 16 bytes before the shard:
 
@@ -103,8 +137,8 @@ Media packet (kind 0 data, kind 1 parity), 16 bytes before the shard:
 | 12..16 | the frame payload's length                                 |
 
 The payload is split into `k` shards of `ceil(len / k)` rounded up to even bytes (the last one shorter); parity shards
-are that long. The payload itself is a flags byte (1 keyframe, 2 LTR token present), the optional LTR token (u64), the
-metadata length (u16) and metadata, then the access unit.
+are that long. The payload itself is a flags byte (1 keyframe, 2 LTR token present, 4 refresh), the optional LTR token
+(u64), the metadata length (u16) and metadata, then the access unit.
 
 Feedback (kind 2, viewer to host), one per resolved frame and per LTR acknowledgement:
 
@@ -121,6 +155,9 @@ Feedback (kind 2, viewer to host), one per resolved frame and per LTR acknowledg
 NACK (kind 3): the frame (u32), a range count (u16, at most 64), then `(first index, count)` pairs of u16. A count of
 `0xFFFF` asks for every data packet of a frame the viewer never saw.
 
+Refresh request (kind 4, viewer to host), 9 bytes: the request number (u16, per stream, the same in every repeat of
+one request), a flags byte (1 keyframe) and `resolved_below` (u32), as in feedback.
+
 ## Bench
 
 `bench::run` measures `send_frame` → ack round trips over iroh and over raw UDP with the same framing, the share of
@@ -133,6 +170,11 @@ CodevisorBench media-transport --role viewer --bind 0.0.0.0:47310 --udp-bind 0.0
 CodevisorBench media-transport --role host --peer-secret HEX --peer IP:47310 --udp-peer IP:47311
 CodevisorBench media-transport --role ffi-cost
 ```
+
+Rows 6 and 7 send one small frame (1 and 4 packets) every 100 ms, as typing does. For them the "acks later than
+RTT+2 ms over the floor" column counts frames whose ack came more than RTT + 2 ms later than the fastest clean round
+trip, timed from the frame's last packet out: at idle that is a loss, or a lost ack, that took longer than a
+tail-loss probe to repair. It is 0 for the other rows.
 
 Two-Mac runs go through the signed `CodevisorBench.app`, which calls `bench::run` in-process (`media_bench_run`),
 because macOS Local Network privacy drops LAN UDP from unsigned binaries run by the CI runner.

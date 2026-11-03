@@ -2,6 +2,7 @@ import CoreVideo
 import QuartzCore
 import ScreenSharing
 import Synchronization
+import VideoToolbox
 
 public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private struct State {
@@ -55,8 +56,8 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
   private func handle(_ event: ScreenSharingMediaEvent, receivedNs: Int64) {
     switch event {
     case .frame(let frame): receive(frame, receivedNs: receivedNs)
-    case .frameSkipped(let stream, _): skipped(stream)
-    case .frameAcked, .frameLost, .ltrAcked: break
+    case .frameSkipped(let stream, _): skipped(stream, atNs: receivedNs)
+    case .frameAcked, .frameLost, .ltrAcked, .refreshRequested: break
     }
   }
 
@@ -65,73 +66,116 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     metrics.observe("assemble", milliseconds: Double(frame.assemblingUs) / 1000)
     if frame.recovery != .none { metrics.increment("recovered.\(frame.recovery.rawValue)") }
     guard let meta = try? ScreenSharingV2FrameMeta(frame.meta), Int(frame.stream) < meta.layout.count else {
-      return rejected("unreadableMeta")
+      metrics.increment("unreadableMeta")
+      return
     }
-    guard admits(frame, meta: meta) else {
+    guard let admission = admits(frame, meta: meta, receivedNs: receivedNs) else {
       resolve(meta, tile: Int(frame.stream), .missing)
-      return rejected("framesDroppedAwaitingRecovery")
+      metrics.increment("framesDroppedAwaitingRecovery")
+      return
     }
 
     do {
-      try decoders.decode(frame, meta: meta, receivedNs: receivedNs) { [weak self] in self?.decoded($0) }
+      try decoders.decode(frame, meta: meta, receivedNs: receivedNs) { [weak self] in
+        self?.decoded($0, admission: admission)
+      }
     } catch ScreenSharingV2DecoderError.sessionLost {
-      metrics.increment("decoderSessionsLost")
-      state.withLock { $0.gate.needKeyframe(stream: frame.stream) }
+      lostSession(frame.stream, admission: admission, atNs: receivedNs)
       resolve(meta, tile: Int(frame.stream), .missing)
     } catch {
       metrics.label("lastDecodeError", error.localizedDescription)
-      broke(frame.stream)
+      failed(frame.stream, admission: admission, atNs: receivedNs)
       resolve(meta, tile: Int(frame.stream), .missing)
     }
   }
 
-  private func admits(_ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta) -> Bool {
-    state.withLock { state in
+  private func admits(
+    _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64
+  ) -> ScreenSharingV2RecoveryGate.Admission? {
+    let (admission, stalled) = state.withLock { state in
       if state.canvas?.layout != meta.layout {
         state.canvas = ScreenSharingV2TileCanvas(layout: meta.layout)
         state.assembly.clear()
       }
       state.assembly.received(meta.update, tile: Int(frame.stream))
-      return state.gate.admits(stream: frame.stream, isKeyFrame: frame.isKeyFrame, isRefresh: meta.isRefresh)
+      let admission = state.gate.admits(stream: frame.stream, isKeyFrame: frame.isKeyFrame, isRefresh: meta.isRefresh)
+      guard admission == nil else { return (admission, ScreenSharingTileRefresh?.none) }
+
+      return (nil, state.gate.rejected(stream: frame.stream, atNs: receivedNs))
     }
+    if let stalled {
+      metrics.increment("stalledTiles")
+      request(stalled, stream: frame.stream)
+    }
+    return admission
   }
 
-  private func rejected(_ counter: String) {
-    metrics.increment(counter)
+  private func request(_ refresh: ScreenSharingTileRefresh, stream: UInt8) {
+    metrics.increment(refresh == .keyframe ? "keyframeRequests" : "refreshRequests")
+    transport.requestRefresh(stream: stream, keyframe: refresh == .keyframe)
   }
 
-  private func skipped(_ stream: UInt8) {
+  private func skipped(_ stream: UInt8, atNs nowNs: Int64) {
     metrics.increment("skippedFrames")
     let composite = state.withLock { state in
-      state.gate.broke(stream: stream)
+      state.gate.skipped(stream: stream, atNs: nowNs)
       state.assembly.skipped(tile: Int(stream))
       return compose(&state)
     }
     present(composite)
   }
 
-  private func broke(_ stream: UInt8) {
+  private func failed(_ stream: UInt8, admission: ScreenSharingV2RecoveryGate.Admission, atNs nowNs: Int64) {
     metrics.increment("decodeErrors")
-    state.withLock { $0.gate.broke(stream: stream) }
+    let refresh = state.withLock { $0.gate.failed(stream: stream, admission, atNs: nowNs) }
+    guard let refresh else {
+      metrics.increment("staleDecodeErrors")
+      return
+    }
+
+    request(refresh, stream: stream)
   }
 
-  private func decoded(_ result: ScreenSharingV2DecodeResult) {
+  private func lostSession(_ stream: UInt8, admission: ScreenSharingV2RecoveryGate.Admission, atNs nowNs: Int64) {
+    metrics.increment("decoderSessionsLost")
+    guard let refresh = state.withLock({ $0.gate.lostSession(stream: stream, admission, atNs: nowNs) }) else {
+      metrics.increment("staleDecodeErrors")
+      return
+    }
+
+    decoders.reset(stream: stream)
+    request(refresh, stream: stream)
+  }
+
+  private func decoded(_ result: ScreenSharingV2DecodeResult, admission: ScreenSharingV2RecoveryGate.Admission) {
     switch result {
-    case .decoded(let context, let image, let decodedNs): place(image, context: context, decodedNs: decodedNs)
+    case .decoded(let context, let image, let decodedNs):
+      place(image, context: context, admission: admission, decodedNs: decodedNs)
     case .failed(let context, let status):
       metrics.label("lastDecodeError", "VideoToolbox status \(status)")
-      broke(context.frame.stream)
+      if status == kVTInvalidSessionErr {
+        lostSession(context.frame.stream, admission: admission, atNs: ScreenSharingMetrics.nowNs)
+      } else {
+        failed(context.frame.stream, admission: admission, atNs: ScreenSharingMetrics.nowNs)
+      }
       resolve(context.meta, tile: Int(context.frame.stream), .missing)
     }
   }
 
-  private func place(_ image: CVPixelBuffer, context: ScreenSharingV2DecodeContext, decodedNs: Int64) {
+  private func place(
+    _ image: CVPixelBuffer, context: ScreenSharingV2DecodeContext, admission: ScreenSharingV2RecoveryGate.Admission,
+    decodedNs: Int64
+  ) {
     guard !stopped.load(ordering: .relaxed) else { return }
 
     metrics.increment("decodedFrames")
     metrics.observe("decode", milliseconds: Double(decodedNs - context.submittedNs) / 1_000_000)
     let tile = Int(context.frame.stream)
     let composite = state.withLock { state in
+      if let stallNs = state.gate.decoded(stream: context.frame.stream, admission, atNs: decodedNs) {
+        metrics.increment("recoveredTiles")
+        metrics.observe("tileRecovery", milliseconds: Double(stallNs) / 1_000_000)
+      }
       guard state.canvas?.layout == context.meta.layout else { return Composite?.none }
 
       let current = state.assembly.resolve(update: context.meta.update.id, tile: tile, .decoded(context, image))

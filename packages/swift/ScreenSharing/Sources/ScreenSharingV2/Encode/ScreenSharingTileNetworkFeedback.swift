@@ -1,4 +1,4 @@
-public struct ScreenSharingVCPNetworkFeedback: Sendable, Equatable {
+public struct ScreenSharingTileNetworkFeedback: Sendable, Equatable {
   public let packetErrorRate: Double
   public let roundTripDelayMs: Double
   public let transmissionBitsPerSecond: Int

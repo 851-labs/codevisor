@@ -181,7 +181,14 @@ async fn frames_cross_a_real_iroh_connection_unchanged_and_ltr_acks_come_back() 
         let mut received: Vec<Sent> = Vec::new();
         let mut ltr = None;
         for (stream, keyframe, ltr_token, meta, data) in &sent {
-            let frame = OutgoingFrame { stream: *stream, keyframe: *keyframe, ltr_token: *ltr_token, meta, data };
+            let frame = OutgoingFrame {
+                stream: *stream,
+                keyframe: *keyframe,
+                refresh: false,
+                ltr_token: *ltr_token,
+                meta,
+                data,
+            };
             host.send_frame(frame).unwrap();
             let frame = next_frame(&viewer).await;
             if let Some(token) = frame.ltr_token {

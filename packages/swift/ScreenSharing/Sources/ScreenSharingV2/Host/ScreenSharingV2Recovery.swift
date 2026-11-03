@@ -29,6 +29,11 @@ struct ScreenSharingV2Recovery {
     retry(acknowledgedTiles.contains(tile) ? .longTermReference : .keyframe, tile: tile)
   }
 
+  mutating func requested(keyframe: Bool, tile: Int) {
+    if keyframe { acknowledgedTiles.remove(tile) }
+    lost(tile: tile)
+  }
+
   mutating func retry(_ refresh: ScreenSharingTileRefresh, tile: Int) {
     if pending[tile] != .keyframe { pending[tile] = refresh }
   }

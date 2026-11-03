@@ -1,10 +1,12 @@
 import Foundation
 
 public protocol ScreenSharingMediaTransport: AnyObject, Sendable {
-  func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws
+  @discardableResult func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws -> UInt32
   func admission() -> ScreenSharingMediaAdmission
   func nextEvent() async -> ScreenSharingMediaEvent?
   func acknowledge(ltrToken: UInt64, stream: UInt8)
+  func requestRefresh(stream: UInt8, keyframe: Bool)
   var roundTripUs: UInt64 { get }
+  var lossRate: Double { get }
   func close()
 }

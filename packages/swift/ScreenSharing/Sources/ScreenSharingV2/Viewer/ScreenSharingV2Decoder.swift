@@ -1,6 +1,7 @@
 import CoreMedia
 import Foundation
 import ScreenSharing
+import Synchronization
 import VideoToolbox
 
 final class ScreenSharingV2Decoder: @unchecked Sendable {
@@ -9,6 +10,7 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
   private var parameterSets: [Data] = []
   private let metrics: ScreenSharingMetrics
   private let lock = NSLock()
+  private let discarded = Atomic(false)
   private var stopped = false
 
   init(metrics: ScreenSharingMetrics) {
@@ -28,6 +30,10 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     }
   }
 
+  func discardSession() {
+    discarded.store(true, ordering: .relaxed)
+  }
+
   func stop() {
     lock.withLock {
       stopped = true
@@ -39,14 +45,26 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     _ frame: ScreenSharingReceivedFrame, meta: ScreenSharingV2FrameMeta, receivedNs: Int64,
     output: @escaping @Sendable (ScreenSharingV2DecodeResult) -> Void
   ) throws {
-    let sample = try frame.payload.withUnsafeBytes { bytes in
-      let layout = try ScreenSharingV2AccessUnitLayout(bytes)
-      try configure(layout.parameterSets)
-      return try self.sample(UnsafeRawBufferPointer(rebasing: bytes[layout.sliceOffset...]))
-    }
+    if discarded.exchange(false, ordering: .relaxed) { closeSession() }
+    let (sample, hasParameterSets) = try prepare(frame)
     let context = ScreenSharingV2DecodeContext(
       frame: frame, meta: meta, receivedNs: receivedNs, submittedNs: ScreenSharingMetrics.nowNs, output: output)
-    try submit(sample, context: context)
+    do {
+      try submit(sample, context: context)
+    } catch ScreenSharingV2DecoderError.sessionLost where hasParameterSets {
+      metrics.increment("decoderSessionsReopened")
+      try submit(try prepare(frame).sample, context: context)
+    }
+  }
+
+  private func prepare(_ frame: ScreenSharingReceivedFrame) throws -> (sample: CMSampleBuffer, hasParameterSets: Bool) {
+    try frame.payload.withUnsafeBytes { bytes in
+      let layout = try ScreenSharingV2AccessUnitLayout(bytes)
+      try configure(layout.parameterSets)
+      return (
+        try self.sample(UnsafeRawBufferPointer(rebasing: bytes[layout.sliceOffset...])), !layout.parameterSets.isEmpty
+      )
+    }
   }
 
   private func closeSession() {

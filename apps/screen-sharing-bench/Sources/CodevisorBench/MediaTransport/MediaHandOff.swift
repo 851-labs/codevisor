@@ -26,7 +26,7 @@ enum MediaHandOff {
         sends.append(try milliseconds { try host.sendFrame(stream: 0, keyframe: false, ltrToken: nil, data: data) })
         try await Task.sleep(for: settle)
         let started = ContinuousClock.now
-        guard case .frame(_, _, _, _, _, let bytes, _, _) = await viewer.nextEvent(), bytes.data.count == size else {
+        guard case .frame(_, _, _, _, _, _, let bytes, _, _) = await viewer.nextEvent(), bytes.data.count == size else {
           throw MediaHandOffError.frameMissing
         }
         receives.append(milliseconds(ContinuousClock.now - started))

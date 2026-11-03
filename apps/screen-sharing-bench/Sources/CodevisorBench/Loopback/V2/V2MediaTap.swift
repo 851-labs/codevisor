@@ -34,14 +34,12 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
 
   var session: MediaSessionHandle { inner.session }
 
-  func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws {
-    let stream = UInt8(tile.tile)
+  @discardableResult
+  func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws -> UInt32 {
     let sendNs = ScreenSharingMetrics.nowNs
-    let number = try tile.accessUnit.withUnsafeBytes { bytes in
-      try inner.session.sendFrame(
-        stream: stream, keyframe: tile.isKeyFrame, ltrToken: tile.ltrToken, meta: meta, data: bytes)
-    }
-    sendTimes.withLock { $0[Key(stream: stream, frame: number)] = sendNs }
+    let number = try inner.send(tile, meta: meta)
+    sendTimes.withLock { $0[Key(stream: UInt8(tile.tile), frame: number)] = sendNs }
+    return number
   }
 
   func admission() -> ScreenSharingMediaAdmission {
@@ -53,7 +51,7 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
     switch event {
     case .frameAcked(let ack): acked(ack)
     case .frame(let frame): received(frame)
-    case .frameSkipped, .frameLost, .ltrAcked, nil: break
+    case .frameSkipped, .frameLost, .ltrAcked, .refreshRequested, nil: break
     }
     return event
   }
@@ -62,7 +60,13 @@ final class V2MediaTap: ScreenSharingMediaTransport, @unchecked Sendable {
     inner.acknowledge(ltrToken: ltrToken, stream: stream)
   }
 
+  func requestRefresh(stream: UInt8, keyframe: Bool) {
+    inner.requestRefresh(stream: stream, keyframe: keyframe)
+  }
+
   var roundTripUs: UInt64 { inner.roundTripUs }
+
+  var lossRate: Double { inner.lossRate }
 
   func close() {
     inner.close()

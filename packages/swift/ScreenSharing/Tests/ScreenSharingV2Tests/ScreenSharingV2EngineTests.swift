@@ -36,6 +36,28 @@ struct ScreenSharingV2EngineTests {
   }
 
   @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
+  func aFrameTheViewerCannotDecodeIsRepairedThroughARefreshRequestWithoutAKeyframe() async throws {
+    let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
+    let metrics = ScreenSharingMetrics()
+    let host = try Self.host(transport: hostSide, metrics: metrics, tiles: 1)
+    let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
+    let decoded = DecodedFrames(viewer.frames)
+    host.start()
+    viewer.start()
+    defer { host.stop(); viewer.stop() }
+
+    let delivered = try await streamUntilAReferenceIsAcknowledged(host, decoded: decoded, viewer: viewerSide)
+    hostSide.corruptNextFrame()
+    host.push(try TestPixels.frame(shade: 250, timestampNs: 99_000))
+    await decoded.arrivals.wait(for: delivered + 1)
+
+    #expect(decoded.sourceTimestamps.last == 99_000)
+    #expect(viewerSide.requestedRefreshes.map(\.keyframe) == [false])
+    #expect(hostSide.sent.last?.refresh == .longTermReference)
+    #expect(metrics.counter("encodedKeyFrames") == 1)
+  }
+
+  @Test(.enabled(if: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC), "No hardware HEVC on this machine."))
   func tilesAreComposedIntoOneSeamlessPictureAndOnlyDirtyTilesAreSent() async throws {
     let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
     let host = try Self.host(transport: hostSide, metrics: ScreenSharingMetrics(), tiles: 4)

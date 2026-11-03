@@ -6,6 +6,11 @@ public protocol ScreenSharingTileEncoder: AnyObject, Sendable {
   func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void)
   func encode(_ request: ScreenSharingTileEncodeRequest) throws
   func acknowledge(_ tokens: [UInt64], tile: Int)
+  func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback)
   func setBitrate(_ bitsPerSecond: Int) throws
   func stop()
+}
+
+extension ScreenSharingTileEncoder {
+  public func observeNetwork(_ feedback: ScreenSharingTileNetworkFeedback) {}
 }

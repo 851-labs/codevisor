@@ -14,7 +14,9 @@ enum V2MediaCounters {
       fecRepairs: viewer["recovered.forwardErrorCorrection", default: 0],
       nackRepairs: viewer["recovered.retransmission", default: 0],
       ltrRefreshes: host["encodedLTRRefreshes", default: 0], keyframes: host["encodedKeyFrames", default: 0],
-      capacityKbps: hostMedia["estimate_kbps"].map { Int($0) }, roundTripMs: hostMedia["rtt_ms"])
+      capacityKbps: hostMedia["estimate_kbps"].map { Int($0) }, roundTripMs: hostMedia["rtt_ms"],
+      requestedRefreshes: host["requestedRefreshes", default: 0],
+      requestedKeyframes: host["requestedKeyframes", default: 0], stalledTiles: viewer["stalledTiles", default: 0])
   }
 
   private static func count(_ value: Double?) -> Int {

@@ -14,10 +14,12 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
       initialRateKbps: ScreenSharingV2Profile.initialEstimateKbps)
   }
 
-  public func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws {
+  @discardableResult
+  public func send(_ tile: ScreenSharingEncodedTile, meta: Data) throws -> UInt32 {
     try tile.accessUnit.withUnsafeBytes { bytes in
-      _ = try session.sendFrame(
-        stream: UInt8(tile.tile), keyframe: tile.isKeyFrame, ltrToken: tile.ltrToken, meta: meta, data: bytes)
+      try session.sendFrame(
+        stream: UInt8(tile.tile), keyframe: tile.isKeyFrame, refresh: tile.recovers, ltrToken: tile.ltrToken,
+        meta: meta, data: bytes)
     }
   }
 
@@ -38,7 +40,13 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
     session.ackLtr(stream: stream, token: ltrToken)
   }
 
+  public func requestRefresh(stream: UInt8, keyframe: Bool) {
+    session.requestRefresh(stream: stream, keyframe: keyframe)
+  }
+
   public var roundTripUs: UInt64 { session.stats().rttUs }
+
+  public var lossRate: Double { session.stats().lossPercent / 100 }
 
   public func close() {
     session.close()
@@ -46,7 +54,8 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
 
   private static func event(_ event: MediaEvent) -> ScreenSharingMediaEvent {
     switch event {
-    case .frame(let stream, let frame, let keyframe, let ltrToken, let meta, let data, let assemblingUs, let recovery):
+    case .frame(
+      let stream, let frame, let keyframe, _, let ltrToken, let meta, let data, let assemblingUs, let recovery):
       .frame(
         ScreenSharingReceivedFrame(
           stream: stream, frame: frame, isKeyFrame: keyframe, ltrToken: ltrToken, meta: meta,
@@ -58,6 +67,7 @@ public final class ScreenSharingIrohMediaTransport: ScreenSharingMediaTransport,
           stream: stream, frame: frame, queuedUs: queuedUs, sendingUs: sendingUs, ackedAfterUs: ackedAfterUs))
     case .frameLost(let stream, let frame): .frameLost(stream: stream, frame: frame)
     case .ltrAcked(let stream, let token): .ltrAcked(stream: stream, token: token)
+    case .refreshRequested(let stream, let keyframe): .refreshRequested(stream: stream, keyframe: keyframe)
     }
   }
 

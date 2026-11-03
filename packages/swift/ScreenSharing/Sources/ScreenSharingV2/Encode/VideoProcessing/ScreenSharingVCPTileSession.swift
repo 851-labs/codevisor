@@ -55,7 +55,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     try session.setBitrate(bitsPerSecond, windowBitsPerSecond: windowBitsPerSecond)
   }
 
-  func setNetworkFeedback(_ feedback: ScreenSharingVCPNetworkFeedback) {
+  func setNetworkFeedback(_ feedback: ScreenSharingTileNetworkFeedback) {
     state.withLock { $0.feedback = feedback }
   }
 
