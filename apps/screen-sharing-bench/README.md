@@ -283,8 +283,9 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   the barcode, which then never changes. It keeps Screen Sharing frontmost (counting `focus_losses`; any makes the
   run invalid), reports whether its full-screen window was on screen and the checked menu items, and quits Screen Sharing.app at the end. Tier 2
   launches every windowless command with `open -g` (`CODEVISOR_BENCH_BACKGROUND=1`) so none takes focus.
-- `inject --output <events.jsonl> [--keys 200] [--clicks 200] [--seed 7] [--start-delay <s>] [--duration <s>]` posts
-  space presses and left clicks (at the centre of the main display) with `CGEventPost`, in a seeded order, 150–350 ms
+- `inject --output <events.jsonl> [--keys 200] [--clicks 200] [--seed 7] [--start-delay <s>] [--duration <s>]
+  [--display <id>]` posts space presses and left clicks (at the centre of the main display, or of `--display`, which
+  Tier 2 sets to the viewer's display with `viewer-display: R1x2`) with `CGEventPost`, in a seeded order, 150–350 ms
   apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
   before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
   many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
@@ -327,7 +328,11 @@ host's picture splits into stages: the viewer's `control.forwarded` in `system.j
 event to the forwarder, on the viewer's clock, with `event_age_ms`, how long after the window server stamped the
 event), the host's `control.injected` in `share.json` (just before `ScreenSharingInputInjector` posted it, on the host's
 clock) and the host player's `inputs` in `player.json` (when its window received each key or mouse down, with
-`eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`.
+`eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`. The viewer's `control.click_probe`
+holds when a listen-only session event tap saw each left mouse down (`tapped_ns`) and when the main queue ran right
+after it (`tap_main_ns`), whether the tap installed, and the viewer's Accessibility, listen-event and post-event access.
+The viewer also flips `NSEvent.isMouseCoalescingEnabled` after every click (each click's `mouse_coalescing`), so
+one run compares clicks with and without coalescing.
 
 **Warm-up.** Apple HP's first run after the floor was slow every time in T7 (I2P 149 ms against about 98, image age 75
 against 25), so when Apple HP is among the systems each dispatch first runs one unmeasured Apple HP warm-up

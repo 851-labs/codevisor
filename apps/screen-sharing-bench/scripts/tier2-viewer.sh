@@ -51,7 +51,7 @@ start_input() {
   fi
   bench inject --keys "$TIER2_INPUT_EVENTS" --clicks "$TIER2_INPUT_EVENTS" --seed "$TIER2_SEED" \
     --start-delay "$tier2_input_lead_s" --duration "$(tier2_input_window_s)" --output "$dir/input-events.jsonl" \
-    >"$dir/inject.json" 2>"$dir/inject.err" &
+    ${display[@]+"${display[@]}"} >"$dir/inject.json" 2>"$dir/inject.err" &
   pids+=($!)
 }
 
