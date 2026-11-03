@@ -26,7 +26,9 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
     let rows = layout.rows(of: tile)
     let target = try make(CVPixelBufferGetPixelFormatType(source), height: rows.count)
     CVBufferPropagateAttachments(source, target)
-    if blitter?.copy(rows: rows, of: layout.height, from: source, to: target) == true { return target }
+    let region = ScreenSharingV2TileBlitter.Copy(
+      source: source, sourceRow: rows.lowerBound, targetRow: 0, rows: rows.count)
+    if blitter?.copy([region], into: target) == true { return target }
 
     CVPixelBufferLockBaseAddress(source, .readOnly)
     CVPixelBufferLockBaseAddress(target, [])

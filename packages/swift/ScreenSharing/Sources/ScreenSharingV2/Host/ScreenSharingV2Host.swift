@@ -76,7 +76,10 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func offer(_ capture: ScreenSharingV2Capture) {
     guard !stopped else { return }
 
-    let tiles = layout.tiles(touching: capture.frame.dirtyRects)
+    let reported = layout.tiles(touching: capture.frame.dirtyRects)
+    let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
+    let tiles = ScreenSharingV2TileComparer.changed(reported, of: layout, from: previous, to: capture.frame.pixelBuffer)
+    metrics.increment("tilesUnchangedByPixels", by: reported.count - tiles.count)
     if slot.offer(capture, tiles: tiles) { metrics.increment("captureReplacedBeforeEncode") }
     pump()
   }

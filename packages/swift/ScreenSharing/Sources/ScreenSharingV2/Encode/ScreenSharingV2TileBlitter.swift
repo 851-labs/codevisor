@@ -3,6 +3,13 @@ import Foundation
 @preconcurrency import Metal
 
 final class ScreenSharingV2TileBlitter: @unchecked Sendable {
+  struct Copy {
+    let source: CVPixelBuffer
+    let sourceRow: Int
+    let targetRow: Int
+    let rows: Int
+  }
+
   private let queue: any MTLCommandQueue
   private let cache: CVMetalTextureCache
 
@@ -16,32 +23,49 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
     self.cache = cache
   }
 
-  func copy(rows: Range<Int>, of height: Int, from source: CVPixelBuffer, to target: CVPixelBuffer) -> Bool {
-    guard let formats = Self.planeFormats[CVPixelBufferGetPixelFormatType(source)],
+  func copy(_ copies: [Copy], into target: CVPixelBuffer) -> Bool {
+    let format = CVPixelBufferGetPixelFormatType(target)
+    guard let formats = Self.planeFormats[format],
+      copies.allSatisfy({ CVPixelBufferGetPixelFormatType($0.source) == format }),
       let buffer = queue.makeCommandBuffer(), let blit = buffer.makeBlitCommandEncoder()
     else { return false }
 
     var retained: [CVMetalTexture] = []
-    for (index, format) in formats.enumerated() {
-      let plane = ScreenSharingV2PixelPlane(index: CVPixelBufferIsPlanar(source) ? index : nil)
-      guard let from = texture(source, plane: index, format: format, retaining: &retained),
-        let to = texture(target, plane: index, format: format, retaining: &retained)
-      else {
+    for (index, pixelFormat) in formats.enumerated() {
+      guard let to = texture(target, plane: index, format: pixelFormat, retaining: &retained) else {
         blit.endEncoding()
         return false
       }
 
-      let span = plane.rows(rows, of: source, height: height)
-      let count = min(span.count, to.height)
-      blit.copy(
-        from: from, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: span.lowerBound, z: 0),
-        sourceSize: MTLSize(width: min(from.width, to.width), height: count, depth: 1), to: to, destinationSlice: 0,
-        destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+      for copy in copies {
+        guard let from = texture(copy.source, plane: index, format: pixelFormat, retaining: &retained) else {
+          blit.endEncoding()
+          return false
+        }
+
+        encode(copy, plane: index, from: from, to: to, target: target, into: blit)
+      }
     }
     blit.endEncoding()
     buffer.commit()
     buffer.waitUntilCompleted()
     return withExtendedLifetime(retained) { buffer.status == .completed }
+  }
+
+  private func encode(
+    _ copy: Copy, plane index: Int, from: any MTLTexture, to: any MTLTexture, target: CVPixelBuffer,
+    into blit: any MTLBlitCommandEncoder
+  ) {
+    let sourceRow = copy.sourceRow * from.height / CVPixelBufferGetHeight(copy.source)
+    let targetRow = copy.targetRow * to.height / CVPixelBufferGetHeight(target)
+    let rows = min(
+      copy.rows * from.height / CVPixelBufferGetHeight(copy.source), from.height - sourceRow, to.height - targetRow)
+    guard rows > 0 else { return }
+
+    blit.copy(
+      from: from, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: sourceRow, z: 0),
+      sourceSize: MTLSize(width: min(from.width, to.width), height: rows, depth: 1), to: to, destinationSlice: 0,
+      destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: targetRow, z: 0))
   }
 
   private func texture(
@@ -62,6 +86,8 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
   private static let planeFormats: [OSType: [MTLPixelFormat]] = [
     kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange: [.r8Unorm, .rg8Unorm],
     kCVPixelFormatType_420YpCbCr8BiPlanarFullRange: [.r8Unorm, .rg8Unorm],
+    kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange: [.r8Unorm, .rg8Unorm],
+    kCVPixelFormatType_444YpCbCr8BiPlanarFullRange: [.r8Unorm, .rg8Unorm],
     kCVPixelFormatType_32BGRA: [.bgra8Unorm],
   ]
 }

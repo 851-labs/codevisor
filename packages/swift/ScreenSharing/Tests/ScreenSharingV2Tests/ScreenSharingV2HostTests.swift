@@ -183,6 +183,22 @@ struct ScreenSharingV2HostTests {
     #expect(scheduler.scheduled.value == 1)
   }
 
+  @Test func aReportedDirtyTileWhosePixelsDidNotChangeIsSkipped() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shades: [10, 20, 30, 40], timestampNs: 1_000))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    host.push(
+      try TestPixels.frame(
+        shades: [10, 20, 99, 40], timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 640, height: 360)]))
+    await encoder.encodes.wait(for: 2)
+
+    #expect(encoder.requests[1].update.tiles == [1, 2])
+  }
+
   private let encoder = RecordingTileEncoder()
 
   @Test func aCaptureWaitsForAdmissionInsteadOfQueueingBehindTheSendBacklog() async throws {

@@ -11,6 +11,7 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
   }
 
   private let lock = NSLock()
+  private let blitter = ScreenSharingV2TileBlitter()
   private var pool: (key: PoolKey, pool: CVPixelBufferPool)?
   private var transfer: VTPixelTransferSession?
 
@@ -27,18 +28,34 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
       let sources = try layout.tiles.sorted().map { tile in
         try snapshot.images[tile].map { try converted($0, to: snapshot.pixelFormat) }
       }
-      CVPixelBufferLockBaseAddress(target, [])
-      defer { CVPixelBufferUnlockBaseAddress(target, []) }
-      for (tile, image) in zip(layout.tiles.sorted(), sources) {
-        if let image {
-          copy(image, into: target, rows: layout.rows(of: tile), height: layout.height)
-        } else {
-          blank(target, rows: layout.rows(of: tile), height: layout.height)
+      let placed = Array(zip(layout.tiles.sorted(), sources))
+      if placed.contains(where: { $0.1 == nil }) || !blit(placed, into: target, layout: layout) {
+        CVPixelBufferLockBaseAddress(target, [])
+        defer { CVPixelBufferUnlockBaseAddress(target, []) }
+        for (tile, image) in placed {
+          if let image {
+            copy(image, into: target, rows: layout.rows(of: tile), height: layout.height)
+          } else {
+            blank(target, rows: layout.rows(of: tile), height: layout.height)
+          }
         }
       }
       if let first = sources.compactMap({ $0 }).first { CVBufferPropagateAttachments(first, target) }
       return target
     }
+  }
+
+  private func blit(
+    _ placed: [(Int, CVPixelBuffer?)], into target: CVPixelBuffer, layout: ScreenSharingV2TileLayout
+  ) -> Bool {
+    let regions = placed.compactMap { tile, image in
+      image.map { image in
+        ScreenSharingV2TileBlitter.Copy(
+          source: image, sourceRow: 0, targetRow: layout.rows(of: tile).lowerBound,
+          rows: min(layout.rows(of: tile).count, CVPixelBufferGetHeight(image)))
+      }
+    }
+    return blitter?.copy(regions, into: target) == true
   }
 
   private func copy(_ image: CVPixelBuffer, into target: CVPixelBuffer, rows: Range<Int>, height: Int) {
