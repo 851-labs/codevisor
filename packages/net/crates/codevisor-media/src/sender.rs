@@ -382,6 +382,10 @@ impl Sender {
                 stats.frames_acked += 1;
                 events.push_back(Event::FrameAcked(ack));
             }
+            if feedback.receipt.is_some_and(|receipt| receipt.recovery == crate::Recovery::Fec) {
+                self.loss.nacked += 1;
+                self.last_loss = Some(now);
+            }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
                 if let Some(last_tx) = frame.last_tx
                     && !feedback.lost

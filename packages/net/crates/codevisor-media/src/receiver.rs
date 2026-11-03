@@ -15,7 +15,7 @@ const MAX_AHEAD: u32 = 64;
 const OUTCOME_MEMORY: usize = 64;
 const MIN_TAIL_WAIT: Duration = Duration::from_millis(1);
 const TAIL_GAPS: f64 = 1.5;
-const GAP_DECAY: f64 = 15.0 / 16.0;
+const GAP_DECAY: f64 = 63.0 / 64.0;
 const RETRY_MARGIN: Duration = Duration::from_millis(1);
 const MAX_REFRESH_SENDS: u32 = 50;
 

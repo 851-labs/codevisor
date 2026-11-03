@@ -18,14 +18,19 @@ no jitter buffer and no queue deeper than one frame.
   because tokio's timers fire at 1 ms resolution.
 - **Loss recovery, cheapest first.**
   1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
-     packets, at least 1 ms). The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
+     packets, at least 1 ms; the longest gap fades by 1/64 per resolved frame, about 0.7 s at 60 frames a second).
+     At 1/16 per frame (851-3822) it forgot N6's 5 ms jitter within 11 frames and NACKed the next delayed packet as
+     lost: in the sim 6% of N6's packets were resent, against 0.9% now, and those NACKs pinned FEC at 13–25%. The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
      retransmission is still queued or left less than half a round trip ago (a NACK that crossed it). Without that, at a low estimate, each
      repeat queued a large frame's packets again, and the backlog held admission shut: in the sim (N4, a 150 KB
      frame every 2 s from a 1 Mbit/s start) for 168 frames after each one, against 34–40 now, and in Tier 1 run
      41617646973 (scroll N4) for 8.5 s, with 2,707 packets resent for 43 NACKs.
   2. Reed–Solomon parity, one block per frame over GF(2^16) (`reed-solomon-simd`). With `FecMode::Adaptive` it's
      on while loss was seen in the last 10 s or the round trip is over a quarter of a frame interval: 5–25% of each
-     frame's data packets (more as loss rises), at least one parity packet.
+     frame's data packets (5% + twice the loss rate), at least one parity packet. The loss rate counts NACKed packets
+     and one packet per frame that parity repaired, so FEC doesn't hide the loss that keeps it on: counting NACKs only,
+     N7's 5% loss read as 0.5% once parity repaired most of it, and the next NACK round trips (100 ms) halved its frame
+     rate in the sim.
   3. Give up `max(RTT + 2 ms, 1.5 frame intervals)` after the first NACK, and tell the host (`Event::FrameLost`):
      its next encode of that stream should be an LTR refresh.
   4. **Refresh requests.** A frame the transport delivered can still fail to decode, and the transport can't see
@@ -81,10 +86,10 @@ no jitter buffer and no queue deeper than one frame.
 - **Constrained links in the sim** (`tests/core.rs`: a 60 Hz scene whose encoder follows the ceiling every 250 ms,
   with frames sized for one interval or for all the time since the last encode, 30 s after 5 s of warm-up, seeds
   1–3): N5 keeps 56–60 frames a second at a p50 of 23–24 ms and p95 under 31 ms (RTT 20 ms), with the estimate at
-  30 Mbit/s; N6 keeps 54–60 at 44–45 ms, p95 69–85 ms (RTT 50 ms); N7 keeps 55–57 at about 70 ms with one-interval
-  frames, and 38–44 at 73–89 ms when every frame carries the time since the last encode (RTT 100 ms, encoder at its
-  200 kbit/s minimum). Over 90 s that last case wanders between 71 and 122 ms per 15 s without growing. N0 and N3
-  are unchanged. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
+  30 Mbit/s; N6 keeps 59–60 at 46–48 ms, p95 63–72 ms (RTT 50 ms); N7 keeps 56–57 at 66–69 ms with one-interval
+  frames, and 40–46 at 74–78 ms when every frame carries the time since the last encode (RTT 100 ms, encoder at its
+  200 kbit/s minimum). Over 90 s that last case wanders by up to 50 ms per 15 s without growing. N0 and N3 are
+  unchanged. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
   almost nothing.
 
 ## Using it
