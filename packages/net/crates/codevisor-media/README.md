@@ -11,7 +11,10 @@ no jitter buffer and no queue deeper than one frame.
   packets that fit the path's current datagram size, each with a 16-byte header.
 - **Frame-spread pacing.** A frame's packets leave at twice the capacity estimate. When that wouldn't finish within
   half a frame interval they go faster, but never past four times the estimate, which would only overflow a slow
-  link's queue. The pacer is a token bucket holding 1 ms of sending, because tokio's timers fire at 1 ms resolution.
+  link's queue. Under 100 Mbit/s they leave at 1.25 times the estimate and never faster: a link that slow can have a
+  queue shorter than one frame (N5's 30 packets), and twice the estimate overflowed it on every large frame, so in
+  the sim half of N5's frames were given up after NACK storms. The pacer is a token bucket holding 1 ms of sending,
+  because tokio's timers fire at 1 ms resolution.
 - **Loss recovery, cheapest first.**
   1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
      packets, at least 1 ms). The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
@@ -49,18 +52,33 @@ no jitter buffer and no queue deeper than one frame.
   changes are) or a lost ack is then repaired about RTT + 1–2 ms after it would have arrived, instead of about
   1.5 frame intervals + RTT. On loopback with emulated N3, timing the probe from QUIC's round trip alone probed
   293 of 300 idle frames (the emulation adds delay QUIC doesn't see); timing it from the acks probed 46.
-- **Capacity estimate.** A 1 s maximum filter over per-frame delivery rates (bytes that arrived the first time, over
-  their arrival spread). It backs off by 15% when frames' first packets keep finding a growing standing queue (2 ms
-  over the 10 s minimum one-way delay), at most once per round trip + frame interval. The queue is the smallest of
-  the last 8 one-way delays, not the latest one: jitter raises some samples, and a standing queue raises all of them.
-  Taking the latest sample let 1–2 ms of one-way jitter alone (no queue, N3 in the deterministic sim, and the Tier 1
-  relay, Tier 1 run 41610616589) ratchet the estimate down to 3–15 Mbit/s, and admission then dropped most captures;
-  with the minimum it stays at 36–90 Mbit/s, and N5's real queue still backs off. The cost is reaction time: a new
-  queue has to show in 8 frames' first packets before the first back-off, about 133 ms on one stream at 60 frames a
-  second (less with more tiles), against 2 before. Constrained-link tuning (E7, 851-3822) should revisit that. In the
-  sim, N7 (1 Mbit/s, 50 ms, 5% loss) loses most frames with either detector, on main too; that is E7's.
-- **Admission.** Encode the next capture only while the bytes waiting to be sent fit one frame interval at the
-  estimate. The encoder ceiling is 85% of the estimate.
+- **Capacity estimate** (851-3822). The larger of two rates, capped after a back-off:
+  - **bursts:** a 10 s maximum filter over per-frame delivery rates (bytes that arrived the first time, over their
+    arrival spread, or over their send spread if that was longer, since a frame can't arrive faster than it left).
+    A sample needs 2.4 KB and an arrival spread of at least two jitters, so frames bunched by jitter don't count.
+  - **receive rate:** the bytes the viewer acknowledged over the last 0.5 s. It's a floor: the link carried that much.
+  - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
+    frame interval, the estimate is capped at 85% of the receive rate (between half and 85% of the estimate) and the
+    burst samples are cleared. The cap grows by a quarter a second while the queue stays under the threshold, and
+    goes once it passes the bursts again. Without the cap, the next jitter-compressed burst undid every back-off:
+    in the sim N6's estimate ran to 100–1,000 Mbit/s on a 50 Mbit/s link, with seconds of queue.
+  - **queue:** the smallest of the last 8 one-way delays, over the 10 s minimum: jitter raises some samples, and a
+    standing queue raises all of them (taking the latest sample let 1–2 ms of jitter ratchet the estimate down to
+    3–15 Mbit/s in Tier 1 run 41610616589). It counts as a queue above 2 ms + 4 jitters, where the jitter is the
+    smoothed size of the delays' second difference, so a steadily growing queue doesn't raise its own threshold. A
+    minimum of 8 samples sits about 1.5 standard deviations above a 10 s minimum without any queue, which a fixed 2 ms
+    took for a queue on N6 (5 ms of jitter) and backed off until the estimate was gone.
+- **Admission.** Encode the next capture only while the bytes waiting fit one frame interval at the estimate. Waiting
+  bytes are the pacer's backlog plus the bytes in flight beyond what the path holds at the estimate for the smallest
+  round trip of the last 10 s plus two frame intervals; before the first delivery is measured, every byte in flight
+  waits. So the queue in the network counts too: before this, N7 (1 Mbit/s) took a whole 45 Mbit/s second into its
+  unlimited queue before the first ack, and every frame after that arrived too late to repair. The encoder ceiling is
+  85% of the estimate over 1 + the FEC ratio, since parity shares the link.
+- **Constrained links in the sim** (`tests/core.rs`, a 60 Hz scene whose encoder follows the ceiling every 250 ms, 30 s
+  after 5 s of warm-up): N5 keeps about 59 frames a second at a p50 of about 24 ms (RTT 20 ms); N6 keeps 48–59 at
+  about 45 ms (RTT 50 ms); N7 keeps 45–56 at about 72 ms (RTT 100 ms, encoder at 250 kbit/s minimum), and no age
+  grows between the halves of a run. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
+  almost nothing.
 
 ## Using it
 
@@ -184,5 +202,5 @@ because macOS Local Network privacy drops LAN UDP from unsigned binaries run by 
 
 ## Not yet
 
-Tuning the estimator and FEC on constrained links (E7). The control plane rides reliable QUIC streams on the same
-connection, outside this crate (see `ScreenSharingV2`'s `Session/` in `packages/swift/ScreenSharing`).
+The control plane rides reliable QUIC streams on the same connection, outside this crate (see `ScreenSharingV2`'s
+`Session/` in `packages/swift/ScreenSharing`).

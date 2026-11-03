@@ -16,14 +16,16 @@ network_apply() {
   case "$network" in
     N0) return 0 ;;
     N3) network_shape 1 0.01 ;;
+    N6) network_shape 25 0.001 bw 50Mbit/s queue 500Kbytes ;;
     *) say "unknown network $network"; return 1 ;;
   esac
 }
 
 network_shape() {
   local delay_ms=$1 loss=$2
-  sudo -n dnctl pipe 1 config delay "$delay_ms" plr "$loss" >/dev/null || return 1
-  sudo -n dnctl pipe 2 config delay "$delay_ms" plr "$loss" >/dev/null || return 1
+  shift 2
+  sudo -n dnctl pipe 1 config delay "$delay_ms" plr "$loss" "$@" >/dev/null || return 1
+  sudo -n dnctl pipe 2 config delay "$delay_ms" plr "$loss" "$@" >/dev/null || return 1
   printf '%s\n' \
     "dummynet in quick on en0 proto { tcp udp } from { $TIER2_HOST_IP $TIER2_APPLE_HOST } port != $TIER2_CLOCK_PORT to any pipe 1" \
     "dummynet out quick on en0 proto { tcp udp } from any to { $TIER2_HOST_IP $TIER2_APPLE_HOST } port != $TIER2_CLOCK_PORT pipe 2" |
