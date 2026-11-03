@@ -326,7 +326,7 @@ impl Sender {
                 {
                     self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
                 }
-                if !feedback.lost && receipt.recovery == crate::Recovery::None {
+                if !feedback.lost && frame.probes == 0 && receipt.recovery == crate::Recovery::None {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
                     let hold_off = self.rtt + self.config.frame_interval;
                     self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
