@@ -113,21 +113,26 @@ describe("mascot segments", () => {
     expect(sequence.at(sequence.seconds - 1).leftCallAt).toBeUndefined()
   })
 
-  it("plays Idle → Working → Idle exactly as before", () => {
-    const { in: start, out, end } = IDLE_WORKING_TIMES
-    const sequence = botMascotSequence([
-      { segment: "idle", seconds: start },
-      { segment: "startWorking" },
-      { segment: "working", seconds: out - start - botMascotSegments.startWorking.seconds },
-      { segment: "stopWorking" },
-      { segment: "idle", seconds: end - out - botMascotSegments.stopWorking.seconds }
-    ])
-    expect(sequence.seconds).toBeCloseTo(end, 10)
-    for (const t of [1, 2.2, 4.3, 9, 11.5, 12.2]) {
-      const frame = renderBotMascotSegmentFrame({ frame: sequence.at(t), viewBox, uid: "w" })
+  const { in: start, out, end } = IDLE_WORKING_TIMES
+  const idleWorking = botMascotSequence([
+    { segment: "idle", seconds: start },
+    { segment: "startWorking" },
+    { segment: "working", seconds: out - start - botMascotSegments.startWorking.seconds },
+    { segment: "stopWorking" },
+    { segment: "idle", seconds: end - out - botMascotSegments.stopWorking.seconds }
+  ])
+
+  it("plays Idle → Working → Idle for as long as before", () => {
+    expect(idleWorking.seconds).toBeCloseTo(end, 10)
+  })
+
+  it.each([1, 2.2, 4.3, 9, 11.5, 12.2])(
+    "plays Idle → Working → Idle at %ss exactly as before",
+    (t) => {
+      const frame = renderBotMascotSegmentFrame({ frame: idleWorking.at(t), viewBox, uid: "w" })
       expect(frame).toBe(
         renderIdleWorking(renderContext({ idPrefix: "w" }), "sunny", t, viewBox, "w")
       )
     }
-  })
+  )
 })
