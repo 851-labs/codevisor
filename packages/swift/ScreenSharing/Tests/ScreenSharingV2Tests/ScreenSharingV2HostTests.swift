@@ -298,7 +298,7 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.map(\.refreshes) == [[:], [0: .longTermReference], [0: .keyframe]])
   }
 
-  @Test func twoLostRefreshesInARowFallBackToAKeyframeOnThatTileOnly() async throws {
+  @Test func lostRefreshesStayLongTermReferenceRefreshesOfThatTileOnly() async throws {
     let encoder = RecordingTileEncoder(layout: Self.tiled)
     let host = startedHost(encoder)
     defer { host.stop() }
@@ -308,44 +308,15 @@ struct ScreenSharingV2HostTests {
     for tile in 0..<4 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: true, token: UInt64(tile)) }
     for tile in 0..<4 { transport.emit(.ltrAcked(stream: UInt8(tile), token: UInt64(tile))) }
     transport.emit(.frameLost(stream: 2, frame: 2))
-    for (index, frame) in [UInt32(4), 5].enumerated() {
+    for (index, frame) in [UInt32(4), 5, 6].enumerated() {
       await encoder.encodes.wait(for: index + 2)
       encoder.emitTile(
         of: encoder.requests[index + 1], tile: 2, keyframe: false, token: nil, refresh: .longTermReference)
       transport.emit(.frameLost(stream: 2, frame: frame))
     }
-    await encoder.encodes.wait(for: 4)
-    transport.emit(.frameLost(stream: 1, frame: 1))
-    encoder.emitTile(of: encoder.requests[3], tile: 2, keyframe: true, token: nil, refresh: .keyframe)
     await encoder.encodes.wait(for: 5)
 
-    #expect(
-      encoder.requests.dropFirst().map(\.refreshes) == [
-        [2: .longTermReference], [2: .longTermReference], [2: .keyframe], [1: .longTermReference],
-      ])
-  }
-
-  @Test func aDeliveredRefreshStartsTheCountOfFailedRefreshesOver() async throws {
-    let host = startedHost(encoder)
-    defer { host.stop() }
-
-    try await sendFirstFrame(through: host, keyframe: true, token: 9)
-    transport.emit(.ltrAcked(stream: 0, token: 9))
-    let afterRefresh: [ScreenSharingMediaEvent] = [
-      .frameLost(stream: 0, frame: 1),
-      .frameAcked(ScreenSharingFrameAck(stream: 0, frame: 2, queuedUs: 0, sendingUs: 0, ackedAfterUs: 0)),
-      .frameLost(stream: 0, frame: 3),
-    ]
-    transport.emit(.frameLost(stream: 0, frame: 0))
-    for (index, event) in afterRefresh.enumerated() {
-      await encoder.encodes.wait(for: index + 2)
-      encoder.emitTile(of: encoder.requests[index + 1], keyframe: false, token: nil, refresh: .longTermReference)
-      transport.emit(event)
-      if index == 1 { transport.emit(.frameLost(stream: 0, frame: 0)) }
-    }
-    await encoder.encodes.wait(for: 5)
-
-    #expect(encoder.requests.dropFirst().map(\.refreshes) == Array(repeating: [0: .longTermReference], count: 4))
+    #expect(encoder.requests.dropFirst().map(\.refreshes) == Array(repeating: [2: .longTermReference], count: 4))
   }
 
   @Test func theEncoderHearsTheNetworkWithItsFirstEncodeAndThenEvery250ms() async throws {

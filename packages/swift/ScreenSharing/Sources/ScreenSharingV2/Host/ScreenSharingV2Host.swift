@@ -270,9 +270,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func send(_ tile: ScreenSharingEncodedTile) {
     let meta = ScreenSharingV2HostTiming.meta(for: tile, layout: layout, sendingNs: ScreenSharingMetrics.nowNs)
     do {
-      let frame = try transport.send(tile, meta: meta.data)
+      try transport.send(tile, meta: meta.data)
       metrics.increment("sentFrames")
-      queue.async { [self] in recovery.sent(tile, frame: frame) }
+      queue.async { [self] in recovery.sent(tile) }
     } catch {
       metrics.increment("sendErrors")
       metrics.label("lastSendError", "\(error)")
@@ -287,7 +287,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     }
     switch event {
     case .frameAcked(let ack): observe(ack)
-    case .frameLost(let stream, let frame): queue.async { [self] in lost(frame: frame, tile: Int(stream)) }
+    case .frameLost(let stream, _): queue.async { [self] in lost(tile: Int(stream)) }
     case .ltrAcked(let stream, let token): queue.async { [self] in acknowledged(token, tile: Int(stream)) }
     case .refreshRequested(let stream, let keyframe):
       queue.async { [self] in requested(keyframe: keyframe, tile: Int(stream)) }
@@ -300,15 +300,12 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     metrics.observe("sendQueue", milliseconds: Double(ack.queuedUs) / 1000)
     metrics.observe("send", milliseconds: Double(ack.sendingUs) / 1000)
     metrics.observe("ackRoundTrip", milliseconds: Double(ack.ackedAfterUs) / 1000)
-    queue.async { [self] in
-      recovery.delivered(frame: ack.frame, tile: Int(ack.stream))
-      pump()
-    }
+    queue.async { [self] in pump() }
   }
 
-  private func lost(frame: UInt32, tile: Int) {
+  private func lost(tile: Int) {
     metrics.increment("lostFrames")
-    recovery.lost(frame: frame, tile: tile)
+    recovery.lost(tile: tile)
     pump()
   }
 

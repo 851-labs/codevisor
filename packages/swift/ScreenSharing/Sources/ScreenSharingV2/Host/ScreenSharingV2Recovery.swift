@@ -1,27 +1,14 @@
 struct ScreenSharingV2Recovery {
-  static let failedRefreshesBeforeKeyframe = 2
-
   private var issuedTokens: [Int: Set<UInt64>] = [:]
   private var acknowledgedTiles: Set<Int> = []
   private var pending: [Int: ScreenSharingTileRefresh] = [:]
-  private var refreshFrames: [Int: UInt32] = [:]
-  private var failedRefreshes: [Int: Int] = [:]
-  private var lastDelivered: [Int: UInt32] = [:]
 
   var pendingTiles: Set<Int> { Set(pending.keys) }
 
-  mutating func sent(_ tile: ScreenSharingEncodedTile, frame: UInt32) {
+  mutating func sent(_ tile: ScreenSharingEncodedTile) {
     if tile.isKeyFrame {
       issuedTokens[tile.tile] = []
       acknowledgedTiles.remove(tile.tile)
-      refreshFrames[tile.tile] = nil
-      failedRefreshes[tile.tile] = nil
-    } else if tile.refresh == .longTermReference {
-      if lastDelivered[tile.tile] == frame {
-        failedRefreshes[tile.tile] = nil
-      } else {
-        refreshFrames[tile.tile] = frame
-      }
     }
     if let token = tile.ltrToken { issuedTokens[tile.tile, default: []].insert(token) }
   }
@@ -33,30 +20,18 @@ struct ScreenSharingV2Recovery {
     return true
   }
 
-  mutating func delivered(frame: UInt32, tile: Int) {
-    lastDelivered[tile] = frame
-    guard refreshFrames[tile] == frame else { return }
-
-    refreshFrames[tile] = nil
-    failedRefreshes[tile] = nil
-  }
-
   mutating func unsent(_ tile: ScreenSharingEncodedTile) {
     if tile.isKeyFrame { acknowledgedTiles.remove(tile.tile) }
-    retry(refresh(for: tile.tile), tile: tile.tile)
+    lost(tile: tile.tile)
   }
 
-  mutating func lost(frame: UInt32, tile: Int) {
-    if refreshFrames[tile] == frame {
-      refreshFrames[tile] = nil
-      failedRefreshes[tile, default: 0] += 1
-    }
-    retry(refresh(for: tile), tile: tile)
+  mutating func lost(tile: Int) {
+    retry(acknowledgedTiles.contains(tile) ? .longTermReference : .keyframe, tile: tile)
   }
 
   mutating func requested(keyframe: Bool, tile: Int) {
     if keyframe { acknowledgedTiles.remove(tile) }
-    retry(refresh(for: tile), tile: tile)
+    lost(tile: tile)
   }
 
   mutating func retry(_ refresh: ScreenSharingTileRefresh, tile: Int) {
@@ -70,10 +45,5 @@ struct ScreenSharingV2Recovery {
   mutating func takeRefreshes() -> [Int: ScreenSharingTileRefresh] {
     defer { pending = [:] }
     return pending
-  }
-
-  private func refresh(for tile: Int) -> ScreenSharingTileRefresh {
-    let exhausted = failedRefreshes[tile, default: 0] >= Self.failedRefreshesBeforeKeyframe
-    return acknowledgedTiles.contains(tile) && !exhausted ? .longTermReference : .keyframe
   }
 }
