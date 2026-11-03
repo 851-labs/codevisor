@@ -25,7 +25,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     sessions = try layout.tiles.sorted().map { [relay] tile in
       let factory = ScreenSharingVideoToolboxSessionFactory(
         width: layout.width, height: layout.rows(of: tile).count, framesPerSecond: configuration.framesPerSecond,
-        bitrate: configuration.bitrate / layout.count)
+        bitrate: configuration.bitrate)
       return try ScreenSharingVideoToolboxTileSession(tile: tile, factory: factory, metrics: metrics, relay: relay)
     }
     metrics.label("encoder", "VideoToolbox HEVC Main, low-latency rate control, LTR, no periodic keyframe")
@@ -59,7 +59,7 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   }
 
   public func setBitrate(_ bitsPerSecond: Int) throws {
-    for session in sessions { try session.setBitrate(bitsPerSecond / layout.count) }
+    for session in sessions { try session.setBitrate(bitsPerSecond) }
     metrics.label("encoderBitrate", String(bitsPerSecond))
   }
 
