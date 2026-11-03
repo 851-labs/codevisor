@@ -4,6 +4,7 @@ import ScreenSharing
 final class BenchHostControlLog {
   var requests = 0
   var injectedEvents = 0
+  var injected: [BenchInputStamp] = []
   private var grants = 0
   private var denials: [String] = []
   private var revocations: [String] = []
@@ -19,6 +20,7 @@ final class BenchHostControlLog {
 
   var summary: BenchHostControlSummary {
     BenchHostControlSummary(
-      requests: requests, grants: grants, denials: denials, revocations: revocations, injectedEvents: injectedEvents)
+      requests: requests, grants: grants, denials: denials, revocations: revocations, injectedEvents: injectedEvents,
+      injected: injected)
   }
 }

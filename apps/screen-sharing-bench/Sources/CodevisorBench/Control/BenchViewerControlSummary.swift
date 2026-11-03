@@ -6,4 +6,5 @@ struct BenchViewerControlSummary: Encodable {
   let forwardedEvents: Int
   let inputReleases: Int
   let capturesSystemShortcuts: Bool
+  let forwarded: [BenchInputStamp]
 }

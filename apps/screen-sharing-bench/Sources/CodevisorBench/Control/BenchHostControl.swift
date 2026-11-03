@@ -1,6 +1,7 @@
 import ApplicationServices
 import CoreGraphics
 import ScreenSharing
+import ScreenSharingBench
 
 @MainActor
 final class BenchHostControl {
@@ -15,8 +16,10 @@ final class BenchHostControl {
     control = ScreenSharingHostControl(
       availability: { Self.unavailableReason(injector) },
       inject: { [log] event in
-        log.injectedEvents += 1
+        let injectedNs = BenchMachClock.nowNs()
         injector.post(event)
+        log.injectedEvents += 1
+        log.injected.append(BenchInputStamp(event, ns: injectedNs))
       },
       send: { [log] message in
         log.record(sent: message)

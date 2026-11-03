@@ -283,8 +283,9 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   the barcode, which then never changes. It keeps Screen Sharing frontmost (counting `focus_losses`; any makes the
   run invalid), reports whether its full-screen window was on screen and the checked menu items, and quits Screen Sharing.app at the end. Tier 2
   launches every windowless command with `open -g` (`CODEVISOR_BENCH_BACKGROUND=1`) so none takes focus.
-- `inject --output <events.jsonl> [--keys 200] [--clicks 200] [--seed 7] [--start-delay <s>] [--duration <s>]` posts
-  space presses and left clicks (at the centre of the main display) with `CGEventPost`, in a seeded order, 150–350 ms
+- `inject --output <events.jsonl> [--keys 200] [--clicks 200] [--seed 7] [--start-delay <s>] [--duration <s>]
+  [--display <id>]` posts space presses and left clicks (at the centre of the main display, or of `--display`, which
+  Tier 2 sets to the viewer's display with `viewer-display: R1x2`) with `CGEventPost`, in a seeded order, 150–350 ms
   apart (seeded, as C6), to whatever app is frontmost, and logs each event's kind and the mach continuous time just
   before it was posted (`BenchInputEvent`). It prints how many of each it posted and which app was frontmost for how
   many events. It refuses a schedule longer than `--duration`, and needs **Accessibility**.
@@ -321,6 +322,17 @@ adds `i2p_ms` to each result, `local_i2p_ms` (the pooled floor) to the calibrati
 verdicts, and an "Input to photon" table: events, answered, p50/p95/max, key and click p50, p50 and p95 above the floor,
 and p50 above Apple HP's on the same network against M3's target (at most 8 ms). Apple HP is always R1x2, so a
 one-dispatch S7 that fits 30 minutes is `scenes: input, duration: 115, systems: apple-hp,codevisor,codevisor-v2`.
+
+Each input run also records when every event passed each stage (851-3951), so the time from the viewer's post to the
+host's picture splits into stages: the viewer's `control.forwarded` in `system.json` (when the surface handed each
+event to the forwarder, on the viewer's clock), the host's `control.injected` in `share.json` (just before `ScreenSharingInputInjector` posted it, on the host's
+clock) and the host player's `inputs` in `player.json` (when its window received each key or mouse down, with
+`eventAgeMs`). Map the host's times to the viewer's with the run's `clock.jsonl`.
+
+**Warm-up.** Apple HP's first run after the floor was slow every time in T7 (I2P 149 ms against about 98, image age 75
+against 25), so when Apple HP is among the systems each dispatch first runs one unmeasured Apple HP warm-up
+(`NN-<scene>-apple-hp-warm-up`) after the first scene's floor: `TIER2_WARM_UP_S` seconds (30 by default; 0 turns it
+off), with as many input events as fit. The viewer writes no `meta.json` for it, so the report leaves it out.
 
 Image age is `BenchSharingAnalysis`: the viewer observer's first PTS of each version minus the host
 observer's first PTS mapped to the viewer's clock by `BenchClockTrack` (±30 s windows). Apple HP runs count only when `apple-hp` selected High Performance in Screen Sharing's

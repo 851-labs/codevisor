@@ -4,7 +4,7 @@ import ScreenSharingBenchScenes
 
 final class PlayerWindow: NSWindow {
   let metalLayer = CAMetalLayer()
-  var onInput: (() -> Void)?
+  var onInput: ((NSEvent) -> Void)?
 
   init(screen: NSScreen, device: any MTLDevice, readable: Bool) {
     super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -24,11 +24,11 @@ final class PlayerWindow: NSWindow {
   override func keyDown(with event: NSEvent) {
     guard !event.isARepeat else { return }
 
-    onInput?()
+    onInput?(event)
   }
 
   override func mouseDown(with event: NSEvent) {
-    onInput?()
+    onInput?(event)
   }
 
   private func configure(_ layer: CAMetalLayer, device: any MTLDevice, screen: NSScreen, readable: Bool) {

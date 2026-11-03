@@ -79,6 +79,7 @@ final class BenchViewerControl {
 
   private func forward(_ event: ScreenSharingInputEvent) {
     log.forwardedEvents += 1
+    log.forwarded.append(BenchInputStamp(event, ns: BenchMachClock.nowNs()))
     forwarder.forward(event)
   }
 

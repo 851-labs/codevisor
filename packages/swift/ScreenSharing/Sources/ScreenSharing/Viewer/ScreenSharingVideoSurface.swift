@@ -264,7 +264,10 @@
       if input.active { input.mouse(event) } else { super.scrollWheel(with: event) }
     }
     func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? {
-      let point = metal.convertToBacking(metal.convert(event.locationInWindow, from: nil))
+      pointer(atWindowLocation: event.locationInWindow, clamp: clamp)
+    }
+    func pointer(atWindowLocation location: NSPoint, clamp: Bool) -> ScreenSharingPointer? {
+      let point = metal.convertToBacking(metal.convert(location, from: nil))
       let size = metal.convertToBacking(metal.bounds).size
       return ScreenSharingVideoGeometry.pointer(
         x: point.x, y: metal.isFlipped ? point.y : size.height - point.y,

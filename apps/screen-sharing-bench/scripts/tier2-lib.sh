@@ -30,6 +30,7 @@ tier2_last_still_version=11
 : "${TIER2_SEED:=1}"
 : "${TIER2_INPUT_EVENTS:=200}"
 : "${TIER2_PROFILE:=0}"
+: "${TIER2_WARM_UP_S:=30}"
 tier2_input_lead_s=8
 tier2_input_budget_ms_per_event=263
 
@@ -46,12 +47,17 @@ say() {
 }
 
 tier2_plan() {
-  local index=0 scene rep scenes
+  local index=0 scene rep scenes warm_up=0
   IFS=, read -r -a scenes <<<"$TIER2_SCENES"
+  ((TIER2_WARM_UP_S > 0)) && tier2_runs_system apple-hp && warm_up=1
   for scene in "${scenes[@]}"; do
     for ((rep = 1; rep <= TIER2_FLOOR_REPS; rep++)); do
       index=$((index + 1)); echo "$index $scene floor $rep 1"
     done
+    if ((warm_up)); then
+      index=$((index + 1)); echo "$index $scene apple-hp 0 0"
+      warm_up=0
+    fi
     for ((rep = 1; rep <= TIER2_REPS; rep++)); do
       for system in apple-hp codevisor-r1x2 codevisor-v2 codevisor-v2-vcp codevisor; do
         tier2_runs_system "$system" || continue
@@ -100,9 +106,21 @@ tier2_meta_system() {
   esac
 }
 
+tier2_is_warm_up() {
+  (($1 == 0))
+}
+
+tier2_warm_up_input_events() {
+  echo $(((TIER2_WARM_UP_S - tier2_input_lead_s) * 1000 / (2 * tier2_input_budget_ms_per_event)))
+}
+
 tier2_name() {
   local index=$1 scene=$2 system=$3 rep=$4 observed=$5
   local name
+  if tier2_is_warm_up "$rep"; then
+    printf '%02d-%s-%s-warm-up\n' "$index" "$scene" "$system"
+    return
+  fi
   name=$(printf '%02d-%s-%s-%d' "$index" "$scene" "$system" "$rep")
   ((observed)) || name="$name-unobserved"
   echo "$name"
@@ -193,16 +211,22 @@ tier2_check_inputs() {
   tier2_check_input_scene || return 1
   [[ "$TIER2_VIEWER_DISPLAY" =~ ^(main|R1x2)$ ]] || { echo "viewer display must be main or R1x2" >&2; return 1; }
   [[ "$TIER2_PROFILE" =~ ^[01]$ ]] || { echo "profile must be 0 or 1, not $TIER2_PROFILE" >&2; return 1; }
+  [[ "$TIER2_WARM_UP_S" =~ ^[0-9]+$ ]] && ((TIER2_WARM_UP_S == 0 || (TIER2_WARM_UP_S >= 20 && TIER2_WARM_UP_S <= 120))) || {
+    echo "warm-up must be 0 (none) or 20 to 120 seconds, not $TIER2_WARM_UP_S" >&2
+    return 1
+  }
   local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2-vcp|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   if [[ "$TIER2_ENGINE" == v2 ]] && tier2_runs_system codevisor-r1x2 && tier2_runs_system codevisor-v2; then
     echo "engine v2 makes codevisor-r1x2 the same system as codevisor-v2; pick one, or engine v1" >&2
     return 1
   fi
-  local runs
+  local runs planned_s
   runs=$(($(tier2_plan | wc -l)))
-  ((runs * (TIER2_DURATION + tier2_run_overhead_s) <= tier2_plan_budget_s)) || {
-    echo "$runs runs of ${TIER2_DURATION}s don't fit the ${tier2_plan_budget_s}s budget" >&2
+  planned_s=$((runs * (TIER2_DURATION + tier2_run_overhead_s)))
+  ((TIER2_WARM_UP_S > 0)) && tier2_runs_system apple-hp && planned_s=$((planned_s + TIER2_WARM_UP_S - TIER2_DURATION))
+  ((planned_s <= tier2_plan_budget_s)) || {
+    echo "$runs runs (${planned_s}s with overhead) don't fit the ${tier2_plan_budget_s}s budget" >&2
     return 1
   }
 }

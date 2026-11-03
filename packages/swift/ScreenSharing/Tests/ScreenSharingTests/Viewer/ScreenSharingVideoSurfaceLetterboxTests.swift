@@ -186,7 +186,7 @@ private final class GeometryFixture {
     surface = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: ScreenSharingMetrics())
     surface.input = ScreenSharingInputSurface(
       view: surface, notificationCenter: NotificationCenter(), keyboardCapture: keyboard,
-      applicationIsActive: { true }, clock: TestClock())
+      mouseCapture: TestMouseCapture(starts: false), applicationIsActive: { true }, clock: TestClock())
     surface.frame = .init(origin: .zero, size: size)
     window.contentView?.addSubview(surface)
     layOut()

@@ -4,4 +4,5 @@ struct BenchHostControlSummary: Encodable {
   let denials: [String]
   let revocations: [String]
   let injectedEvents: Int
+  let injected: [BenchInputStamp]
 }

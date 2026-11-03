@@ -45,6 +45,59 @@ struct ScreenSharingInputSurfaceTests {
       ])
   }
 
+  @Test func theTapCarriesTheMouseOverTheLiveVideoAndAppKitsCopiesAreNotSentTwice() throws {
+    let fixture = try InputSurfaceFixture(mouseTap: true)
+    defer { fixture.close() }
+    #expect(fixture.mouse.window == fixture.window.windowNumber)
+
+    fixture.mouse.send(try fixture.tapMouse(.leftMouseDown))
+    fixture.input.mouse(try fixture.mouse(.leftMouseDown, at: .init(x: 10, y: 10)))
+    fixture.input.mouse(try fixture.mouse(.leftMouseDragged, at: .init(x: 20, y: 20)))
+    fixture.mouse.send(try fixture.tapMouse(.leftMouseUp))
+    fixture.input.mouse(try fixture.mouse(.leftMouseUp, at: .init(x: 20, y: 20)))
+
+    let center = ScreenSharingPointer(x: 0.5, y: 0.5)
+    #expect(
+      fixture.events == [
+        .button(center, button: 0, down: true, clicks: 1, modifiers: 0),
+        .button(center, button: 0, down: false, clicks: 1, modifiers: 0),
+      ])
+    fixture.input.dropsInjectedInput = false
+    #expect(fixture.mouse.acceptsInjected)
+    fixture.input.suspend()
+    #expect(fixture.mouse.window == nil)
+    fixture.input.end()
+    #expect(fixture.mouse.stops == 1)
+  }
+
+  @Test func aClickThatFocusedTheVideoThroughAppKitKeepsItsDragsWhileTheTapCarriesTheMouse() throws {
+    let fixture = try InputSurfaceFixture(mouseTap: true)
+    defer { fixture.close() }
+
+    fixture.input.mouse(try fixture.mouse(.leftMouseDown, at: .init(x: 10, y: 10)))
+    fixture.input.mouse(try fixture.mouse(.leftMouseDragged, at: .init(x: 20, y: 20)))
+    fixture.input.mouse(try fixture.mouse(.leftMouseUp, at: .init(x: 20, y: 20)))
+
+    let center = ScreenSharingPointer(x: 0.5, y: 0.5)
+    #expect(
+      fixture.events == [
+        .button(center, button: 0, down: true, clicks: 1, modifiers: 0),
+        .move(center, modifiers: 0),
+        .button(center, button: 0, down: false, clicks: 1, modifiers: 0),
+      ])
+  }
+
+  @Test func withoutTheTapAppKitCarriesTheMouse() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    #expect(fixture.mouse.window == nil)
+
+    fixture.input.mouse(try fixture.mouse(.leftMouseDown, at: .init(x: 10, y: 10)))
+    fixture.input.mouse(try fixture.mouse(.leftMouseUp, at: .init(x: 10, y: 10)))
+
+    #expect(fixture.events.count == 2)
+  }
+
   @Test func controlAndCommandKeepKeyCodeZeroPhysical() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -349,6 +402,7 @@ private final class InputSurfaceFixture {
   let input: ScreenSharingInputSurface
   let notifications = NotificationCenter()
   let keyboard = InputTestKeyboardCapture()
+  let mouse: TestMouseCapture
   let application = InputTestApplication()
   let sidebar = NSTextView(frame: .init(x: 0, y: 490, width: 100, height: 30))
   var messages: [ScreenSharingControlMessage] = []
@@ -369,7 +423,10 @@ private final class InputSurfaceFixture {
     input.end()
   }
 
-  init(keyboardStarts: Bool = true, windowIsKey: Bool = true, videoFocused: Bool = true, inWindow: Bool = true) throws {
+  init(
+    keyboardStarts: Bool = true, mouseTap: Bool = false, windowIsKey: Bool = true, videoFocused: Bool = true,
+    inWindow: Bool = true
+  ) throws {
     _ = NSApplication.shared
     window = InputTestWindow(
       contentRect: .init(x: 0, y: 0, width: 640, height: 540), styleMask: .borderless, backing: .buffered, defer: false)
@@ -379,8 +436,9 @@ private final class InputSurfaceFixture {
     window.contentView?.addSubview(sidebar)
     #expect(window.makeFirstResponder(videoFocused && inWindow ? view : sidebar))
     keyboard.starts = keyboardStarts
+    mouse = TestMouseCapture(starts: mouseTap)
     input = ScreenSharingInputSurface(
-      view: view, notificationCenter: notifications, keyboardCapture: keyboard,
+      view: view, notificationCenter: notifications, keyboardCapture: keyboard, mouseCapture: mouse,
       applicationIsActive: { [application] in application.active },
       layout: { code, carbon in code == 0 ? (carbon & UInt32(Carbon.shiftKey >> 8) != 0 ? "A" : "a") : "x" })
     input.onInput = { [unowned self] in
@@ -414,6 +472,17 @@ private final class InputSurfaceFixture {
         with: type, location: .zero, modifierFlags: flags, timestamp: 1,
         windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
         isARepeat: false, keyCode: code))
+  }
+
+  func tapMouse(_ type: CGEventType) throws -> CGEvent {
+    let inView = CGPoint(x: 10, y: CGDisplayBounds(CGMainDisplayID()).height - 10)
+    let event = try #require(
+      CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: inView, mouseButton: .left))
+    event.timestamp = try #require(self.mouse(type == .leftMouseUp ? .leftMouseUp : .leftMouseDown, at: .zero).cgEvent)
+      .timestamp
+    event.setIntegerValueField(.mouseEventClickState, value: 1)
+    event.flags = []
+    return event
   }
 
   func mouse(_ type: NSEvent.EventType, at point: NSPoint, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
@@ -463,5 +532,6 @@ private final class InputTestView: NSView, ScreenSharingInputTarget {
   override var acceptsFirstResponder: Bool { true }
   private(set) var cursorChanges = 0
   func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? { .init(x: 0.5, y: 0.5) }
+  func pointer(atWindowLocation location: NSPoint, clamp: Bool) -> ScreenSharingPointer? { .init(x: 0.5, y: 0.5) }
   func controlCursorChanged() { cursorChanges += 1 }
 }

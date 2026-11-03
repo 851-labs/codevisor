@@ -4,6 +4,7 @@
   @MainActor
   protocol ScreenSharingInputTarget: NSView {
     func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer?
+    func pointer(atWindowLocation location: NSPoint, clamp: Bool) -> ScreenSharingPointer?
     func controlCursorChanged()
   }
 
@@ -12,6 +13,7 @@
     private weak var view: (any ScreenSharingInputTarget)?
     private let notificationCenter: NotificationCenter
     private let keyboardCapture: any ScreenSharingKeyboardCapture
+    private let mouseCapture: any ScreenSharingMouseCapture
     private let applicationIsActive: () -> Bool
     private let clock: any Clock<Duration>
     var onInput: ((ScreenSharingInputEvent) -> Void)?
@@ -34,13 +36,21 @@
     var isLive: Bool { active && inputFocused }
     private(set) var failureMessage: String?
     private(set) var capturesSystemShortcuts = false
+    private var mouseTapRunning = false
+    private var tapCarriesMouse = false
+    private var forwardedClicks: [(timestamp: UInt64, down: Bool)] = []
+    private var appKitButtons = Set<UInt8>()
     var dropsInjectedInput = true {
-      didSet { keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput) }
+      didSet {
+        keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput)
+        mouseCapture.setAcceptsInjected(!dropsInjectedInput)
+      }
     }
 
     init(
       view: any ScreenSharingInputTarget, notificationCenter: NotificationCenter = .default,
       keyboardCapture: any ScreenSharingKeyboardCapture = ScreenSharingSystemKeyboardCapture(),
+      mouseCapture: any ScreenSharingMouseCapture = ScreenSharingSystemMouseCapture(),
       applicationIsActive: @escaping () -> Bool = { NSApp.isActive },
       clock: any Clock<Duration> = ContinuousClock(),
       layout: @escaping VNCKeyTranslator.Layout = VNCKeyTranslator.currentLayout
@@ -49,6 +59,7 @@
       self.view = view
       self.notificationCenter = notificationCenter
       self.keyboardCapture = keyboardCapture
+      self.mouseCapture = mouseCapture
       self.applicationIsActive = applicationIsActive
       self.clock = clock
     }
@@ -69,6 +80,7 @@
           self.onRelease?()
         }
       )
+      mouseTapRunning = mouseCapture.start { [weak self] type, event in self?.routeTapMouse(type, event: event) }
       active = true
       attachWindow()
       view.controlCursorChanged()
@@ -124,6 +136,7 @@
         },
       ]
       if window.isKeyWindow, applicationIsActive(), window.firstResponder === view { resume() } else { suspend() }
+      updateKeyClaim()
     }
 
     func end() {
@@ -137,6 +150,9 @@
       for observer in observers + windowObservers { notificationCenter.removeObserver(observer) }
       observers = []; windowObservers = []; motionTask?.cancel(); motionTask = nil
       pendingMotion = nil; buttons = []; keys = []; textKeys = []; modifiers = 0; scroll = .init(); lastPointer = nil
+      forwardedClicks = []; appKitButtons = []; tapCarriesMouse = false
+      if mouseTapRunning { mouseCapture.stop() }
+      mouseTapRunning = false
     }
 
     private func returnKeyboard() {
@@ -204,7 +220,12 @@
       return true
     }
 
-    private func updateKeyClaim() { keyboardCapture.setClaimsKeys(ownsKeyboard) }
+    private func updateKeyClaim() {
+      let owns = ownsKeyboard
+      keyboardCapture.setClaimsKeys(owns)
+      tapCarriesMouse = owns && mouseTapRunning
+      mouseCapture.setWindow(tapCarriesMouse ? view?.window?.windowNumber : nil)
+    }
 
     private func isDroppedInjection(_ event: CGEvent?) -> Bool {
       dropsInjectedInput && event?.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
@@ -249,25 +270,77 @@
       return characters == physical ? nil : characters
     }
 
+    private func routeTapMouse(_ type: CGEventType, event: CGEvent) {
+      guard tapCarriesMouse, ownsKeyboard, let view, let window = view.window else { return }
+
+      let location = window.convertPoint(
+        fromScreen: NSPoint(x: event.location.x, y: CGDisplayBounds(CGMainDisplayID()).height - event.location.y))
+      if ScreenSharingMouseTypes.downs.contains(type), window.contentView?.hitTest(location) !== view { return }
+      guard let point = view.pointer(atWindowLocation: location, clamp: !buttons.isEmpty) else { return }
+
+      lastPointer = point
+      let modifiers = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+      guard ScreenSharingMouseTypes.buttons.contains(type) else {
+        pendingMotion = .move(point, modifiers: Self.flags(modifiers))
+        return
+      }
+      let button = event.getIntegerValueField(.mouseEventButtonNumber)
+      guard (0...2).contains(button) else { return }
+
+      let down = ScreenSharingMouseTypes.downs.contains(type)
+      guard firstCopy(at: event.timestamp, down: down) else { return }
+
+      let clicks = event.getIntegerValueField(.mouseEventClickState)
+      press(UInt8(button), down: down, at: point, clicks: UInt8(min(3, max(1, clicks))), modifiers: modifiers)
+    }
+
+    private func firstCopy(at timestamp: UInt64, down: Bool) -> Bool {
+      if let copy = forwardedClicks.firstIndex(where: { $0 == (timestamp, down) }) {
+        forwardedClicks.remove(at: copy)
+        return false
+      }
+      forwardedClicks.append((timestamp, down))
+      if forwardedClicks.count > 16 { forwardedClicks.removeFirst() }
+      return true
+    }
+
+    private func press(
+      _ button: UInt8, down: Bool, at point: ScreenSharingPointer, clicks: UInt8, modifiers: NSEvent.ModifierFlags
+    ) {
+      flushMotion(); syncModifiers(modifiers)
+      if down { buttons.insert(button) } else { buttons.remove(button) }
+      onInput?(.button(point, button: button, down: down, clicks: clicks, modifiers: Self.flags(modifiers)))
+    }
+
     func mouse(_ event: NSEvent) {
       guard active, inputFocused, let view, let window = view.window, window.isKeyWindow, event.window === window,
         window.firstResponder === view,
         !isDroppedInjection(event.cgEvent),
         let point = view.pointer(event, clamp: !buttons.isEmpty)
       else { return }
-      lastPointer = point
       let flags = Self.flags(event.modifierFlags)
+      switch event.type {
+      case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+        guard !tapCarriesMouse || !appKitButtons.isEmpty else { return }
+      case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp:
+        guard (0...2).contains(event.buttonNumber) else { return }
+        if tapCarriesMouse, let timestamp = event.cgEvent?.timestamp,
+          !firstCopy(at: timestamp, down: Self.isDown(event.type))
+        {
+          return
+        }
+        let button = UInt8(event.buttonNumber)
+        if Self.isDown(event.type) { appKitButtons.insert(button) } else { appKitButtons.remove(button) }
+      default: break
+      }
+      lastPointer = point
       switch event.type {
       case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
         pendingMotion = .move(point, modifiers: flags)
       case .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp:
-        guard (0...2).contains(event.buttonNumber) else { return }
-        flushMotion(); syncModifiers(event.modifierFlags)
-        let button = UInt8(event.buttonNumber)
-        let down = [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type)
-        if down { buttons.insert(button) } else { buttons.remove(button) }
-        onInput?(
-          .button(point, button: button, down: down, clicks: UInt8(min(3, max(1, event.clickCount))), modifiers: flags))
+        press(
+          UInt8(event.buttonNumber), down: Self.isDown(event.type), at: point,
+          clicks: UInt8(min(3, max(1, event.clickCount))), modifiers: event.modifierFlags)
       case .scrollWheel:
         flushMotion(); syncModifiers(event.modifierFlags)
         let scale = event.hasPreciseScrollingDeltas ? 1.0 : 12.0
@@ -292,6 +365,10 @@
         onInput?(.key(code: code, down: down, repeatKey: false, modifiers: modifiers))
       }
       modifiers = next
+    }
+
+    private static func isDown(_ type: NSEvent.EventType) -> Bool {
+      [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type)
     }
 
     private static func flags(_ flags: NSEvent.ModifierFlags) -> UInt8 {

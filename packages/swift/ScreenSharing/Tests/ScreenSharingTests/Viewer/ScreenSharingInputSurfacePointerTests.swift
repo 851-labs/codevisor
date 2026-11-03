@@ -202,8 +202,8 @@ private final class PointerFixture {
     window.contentView?.layoutSubtreeIfNeeded()
     #expect(window.makeFirstResponder(view))
     input = ScreenSharingInputSurface(
-      view: view, notificationCenter: notifications, keyboardCapture: keyboard, applicationIsActive: { true },
-      clock: clock)
+      view: view, notificationCenter: notifications, keyboardCapture: keyboard,
+      mouseCapture: TestMouseCapture(starts: false), applicationIsActive: { true }, clock: clock)
     input.onInput = { [unowned self] event in
       events.append(event)
       received.signal()
@@ -260,9 +260,13 @@ private final class PointerTestView: NSView, ScreenSharingInputTarget {
   override var acceptsFirstResponder: Bool { true }
 
   func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? {
+    pointer(atWindowLocation: event.locationInWindow, clamp: clamp)
+  }
+
+  func pointer(atWindowLocation location: NSPoint, clamp: Bool) -> ScreenSharingPointer? {
     clamps.append(clamp)
     guard mapsPointer else { return nil }
-    let point = convert(event.locationInWindow, from: nil)
+    let point = convert(location, from: nil)
     let x = point.x / bounds.width
     let y = (bounds.height - point.y) / bounds.height
     let mapped = ScreenSharingPointer(
