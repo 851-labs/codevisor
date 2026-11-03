@@ -5,11 +5,16 @@ import Synchronization
 @testable import ScreenSharingV2
 
 final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
-  let tileCount = 1
+  let layout: ScreenSharingV2TileLayout
+  let sourcePixelFormat = ScreenSharingV2Profile.capturePixelFormat
   let encodes = TestSignal()
   private let recorded = Mutex<[ScreenSharingTileEncodeRequest]>([])
   private let acknowledged = Mutex<[UInt64]>([])
   private let output = Mutex<(@Sendable (ScreenSharingTileEncoderOutput) -> Void)?>(nil)
+
+  init(layout: ScreenSharingV2TileLayout = ScreenSharingV2TileLayout(width: 640, height: 360, count: 1)) {
+    self.layout = layout
+  }
 
   var requests: [ScreenSharingTileEncodeRequest] { recorded.withLock { $0 } }
   var acknowledgedTokens: [UInt64] { acknowledged.withLock { $0 } }
@@ -22,11 +27,16 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
     output.withLock { $0 }?(result)
   }
 
-  func emitTile(of request: ScreenSharingTileEncodeRequest, keyframe: Bool, token: UInt64?) {
+  func emitTiles(of request: ScreenSharingTileEncodeRequest) {
+    for tile in request.update.tiles.sorted() { emitTile(of: request, tile: tile, keyframe: false, token: nil) }
+  }
+
+  func emitTile(of request: ScreenSharingTileEncodeRequest, tile: Int = 0, keyframe: Bool, token: UInt64?) {
     emit(
       .tile(
         ScreenSharingEncodedTile(
-          tile: 0, sourceTimestampNs: request.sourceTimestampNs, capturedNs: request.capturedNs,
+          tile: tile, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
+          capturedNs: request.capturedNs,
           submittedNs: request.capturedNs, encodedNs: request.capturedNs, isKeyFrame: keyframe, refresh: nil,
           ltrToken: token, accessUnit: ScreenSharingAccessUnit(Data([0, 0, 0, 2, 2, 1])))))
   }

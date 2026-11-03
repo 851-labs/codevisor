@@ -1,5 +1,6 @@
 public struct ScreenSharingEncodedTile: Sendable {
   public let tile: Int
+  public let update: ScreenSharingTileUpdate
   public let sourceTimestampNs: Int64
   public let capturedNs: Int64
   public let submittedNs: Int64
@@ -10,10 +11,12 @@ public struct ScreenSharingEncodedTile: Sendable {
   public let accessUnit: ScreenSharingAccessUnit
 
   public init(
-    tile: Int, sourceTimestampNs: Int64, capturedNs: Int64, submittedNs: Int64, encodedNs: Int64, isKeyFrame: Bool,
-    refresh: ScreenSharingTileRefresh?, ltrToken: UInt64?, accessUnit: ScreenSharingAccessUnit
+    tile: Int, update: ScreenSharingTileUpdate, sourceTimestampNs: Int64, capturedNs: Int64, submittedNs: Int64,
+    encodedNs: Int64, isKeyFrame: Bool, refresh: ScreenSharingTileRefresh?, ltrToken: UInt64?,
+    accessUnit: ScreenSharingAccessUnit
   ) {
     self.tile = tile
+    self.update = update
     self.sourceTimestampNs = sourceTimestampNs
     self.capturedNs = capturedNs
     self.submittedNs = submittedNs

@@ -65,9 +65,9 @@ public enum ScreenSharingDynamicRange: String, Codable, Sendable, Equatable {
   public init(pixelFormat: OSType) { self = Self.highPixelFormats.contains(pixelFormat) ? .high : .standard }
 }
 
-struct ScreenSharingHEVCFormat: Equatable {
+package struct ScreenSharingHEVCFormat: Equatable {
   let profile: Int
-  let chroma: Int
+  package let chroma: Int
   let lumaDepth: Int
   let chromaDepth: Int
 
@@ -104,7 +104,7 @@ struct ScreenSharingHEVCFormat: Equatable {
     }
   }
 
-  static func read(_ description: CMFormatDescription) throws -> Self {
+  package static func read(_ description: CMFormatDescription) throws -> Self {
     let atoms =
       CMFormatDescriptionGetExtension(
         description, extensionKey: kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms) as? [String: Any]

@@ -14,7 +14,8 @@ enum ScreenSharingV2DecompressionSessionFactory {
     var created: VTDecompressionSession?
     let status = VTDecompressionSessionCreate(
       allocator: kCFAllocatorDefault, formatDescription: format, decoderSpecification: specification,
-      imageBufferAttributes: attributes, outputCallback: &callback, decompressionSessionOut: &created)
+      imageBufferAttributes: attributes(pixelFormat: decodedPixelFormat(format)), outputCallback: &callback,
+      decompressionSessionOut: &created)
     guard status == noErr, let created else { throw ScreenSharingError.codec("Create hardware decoder", status) }
 
     VTSessionSetProperty(created, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
@@ -29,9 +30,14 @@ enum ScreenSharingV2DecompressionSessionFactory {
     #endif
   }
 
-  private static var attributes: CFDictionary {
+  static func decodedPixelFormat(_ format: CMVideoFormatDescription) -> OSType {
+    let chroma = (try? ScreenSharingHEVCFormat.read(format))?.chroma
+    return chroma == 3 ? kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange : ScreenSharingV2Profile.decodedPixelFormat
+  }
+
+  private static func attributes(pixelFormat: OSType) -> CFDictionary {
     [
-      kCVPixelBufferPixelFormatTypeKey: ScreenSharingV2Profile.decodedPixelFormat,
+      kCVPixelBufferPixelFormatTypeKey: pixelFormat,
       kCVPixelBufferMetalCompatibilityKey: true,
       kCVPixelBufferIOSurfacePropertiesKey: [:] as [String: Any],
     ] as CFDictionary

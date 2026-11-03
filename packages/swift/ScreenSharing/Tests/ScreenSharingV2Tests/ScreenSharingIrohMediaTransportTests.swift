@@ -14,7 +14,9 @@ struct ScreenSharingIrohMediaTransportTests {
     let metrics = ScreenSharingMetrics()
     let encoder = try ScreenSharingVideoToolboxTileEncoder(
       configuration: try ScreenSharingV2Profile.captureConfiguration(width: 640, height: 360), metrics: metrics)
-    let host = ScreenSharingV2Host(transport: link.host, encoder: encoder, metrics: metrics)
+    let host = ScreenSharingV2Host(
+      transport: link.host, encoder: encoder, metrics: metrics, initialBitrate: ScreenSharingV2Profile.bitrateCeiling,
+      scheduler: ManualScheduler())
     let viewer = ScreenSharingV2Viewer(transport: link.viewer, metrics: ScreenSharingMetrics())
     let decoded = DecodedFrames(viewer.frames)
     host.start()

@@ -314,9 +314,20 @@
       #expect(transfer == delivered)
     }
 
+    @Test(arguments: [(1.0, true), (0.5, false)])
+    func dirtyRectsReachTheSinkOnlyAtNativeScale(contentScale: Double, delivered: Bool) async throws {
+      let fixture = CaptureFixture()
+      try await fixture.start()
+      let output = try #require(fixture.target.output)
+      let rect = CGRect(x: 2, y: 4, width: 6, height: 8)
+      let sample = try Self.screenSample(presentationNs: 1, contentScale: contentScale, dirtyRects: [rect])
+      output.deliver(sample, of: .screen)
+      #expect(fixture.sink.lastDirtyRects == (delivered ? [rect] : nil))
+    }
+
     private static func screenSample(
       presentationNs: Int64, pixelFormat: OSType = kCVPixelFormatType_32BGRA, space: CFString? = nil,
-      transfer: CFString? = nil
+      transfer: CFString? = nil, contentScale: Double? = nil, dirtyRects: [CGRect]? = nil
     ) throws -> CMSampleBuffer {
       var pixel: CVPixelBuffer?
       #expect(
@@ -343,7 +354,12 @@
       let ready = try #require(sample)
       let attachments =
         CMSampleBufferGetSampleAttachmentsArray(ready, createIfNecessary: true) as? [NSMutableDictionary]
-      try #require(attachments?.first)[SCStreamFrameInfo.status.rawValue] = SCFrameStatus.complete.rawValue
+      let first = try #require(attachments?.first)
+      first[SCStreamFrameInfo.status.rawValue] = SCFrameStatus.complete.rawValue
+      if let contentScale { first[SCStreamFrameInfo.contentScale.rawValue] = contentScale }
+      if let dirtyRects {
+        first[SCStreamFrameInfo.dirtyRects.rawValue] = dirtyRects.map { $0.dictionaryRepresentation }
+      }
       return ready
     }
   }
@@ -502,13 +518,14 @@
   private final class RecordingFrameSink: ScreenSharingFrameSink, @unchecked Sendable {
     private let lock = NSLock()
     private var pushed: [Int64] = []
-    private var last: CVPixelBuffer?
+    private var last: ScreenSharingVideoFrame?
     var frames: [Int64] { lock.withLock { pushed } }
-    var lastPixelBuffer: CVPixelBuffer? { lock.withLock { last } }
+    var lastPixelBuffer: CVPixelBuffer? { lock.withLock { last?.pixelBuffer } }
+    var lastDirtyRects: [CGRect]? { lock.withLock { last?.dirtyRects } }
     func push(_ frame: ScreenSharingVideoFrame) {
       lock.withLock {
         pushed.append(frame.timestampNs)
-        last = frame.pixelBuffer
+        last = frame
       }
     }
   }

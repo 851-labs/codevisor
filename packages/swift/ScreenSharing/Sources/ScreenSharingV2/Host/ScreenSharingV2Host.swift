@@ -2,26 +2,51 @@ import Dispatch
 import ScreenSharing
 
 public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Sendable {
+  private struct Plan {
+    let capture: ScreenSharingV2Capture
+    let tiles: Set<Int>
+    let isRefinement: Bool
+  }
+
   public let metrics: ScreenSharingMetrics
   private let transport: any ScreenSharingMediaTransport
   private let encoder: any ScreenSharingTileEncoder
+  private let layout: ScreenSharingV2TileLayout
+  private let scheduler: any ScreenSharingV2Scheduler
   private let queue = DispatchQueue(label: "codevisor.screen-sharing.v2.host", qos: .userInteractive)
-  private var slot = ScreenSharingV2CaptureSlot()
+  private var slot: ScreenSharingV2CaptureSlot
   private var recovery = ScreenSharingV2Recovery()
+  private var refinement = ScreenSharingV2Refinement()
   private var bitrate: ScreenSharingV2BitrateGovernor
+  private var nextUpdate: UInt32 = 0
   private var retryScheduled = false
+  private var failureRetryScheduled = false
+  private var refinementWakeNs: Int64?
   private var deferredCapture = false
-  private var encoding = false
+  private var inFlight: [Int: Int] = [:]
+  private static let pipelinedChanges = 2
   private var stopped = false
   private var events: Task<Void, Never>?
 
-  public init(
+  public convenience init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int = ScreenSharingV2Profile.bitrateCeiling
+  ) {
+    self.init(
+      transport: transport, encoder: encoder, metrics: metrics, initialBitrate: initialBitrate,
+      scheduler: ScreenSharingV2SystemScheduler())
+  }
+
+  init(
+    transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
+    initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler
   ) {
     self.transport = transport
     self.encoder = encoder
     self.metrics = metrics
+    self.scheduler = scheduler
+    layout = encoder.layout
+    slot = ScreenSharingV2CaptureSlot(tiles: encoder.layout.tiles)
     bitrate = ScreenSharingV2BitrateGovernor(initial: initialBitrate)
   }
 
@@ -42,6 +67,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     queue.sync {
       stopped = true
       slot.clear()
+      refinement.clear()
     }
     encoder.stop()
     transport.close()
@@ -51,34 +77,101 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func offer(_ capture: ScreenSharingV2Capture) {
     guard !stopped else { return }
 
-    if slot.offer(capture) { metrics.increment("captureReplacedBeforeEncode") }
+    let reported = layout.tiles(touching: capture.frame.dirtyRects)
+    let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
+    let candidates = reported.subtracting(slot.waitingTiles)
+    let tiles = ScreenSharingV2TileComparer.changed(
+      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer)
+    metrics.increment("tilesUnchangedByPixels", by: candidates.count - tiles.count)
+    if slot.offer(capture, tiles: tiles) { metrics.increment("captureReplacedBeforeEncode") }
     pump()
   }
 
   private func pump() {
-    guard !stopped, !encoding else { return }
-    guard let capture = slot.next(refreshing: recovery.isPending) else { return }
+    guard !stopped else { return }
+    guard let plan = nextPlan() else { return scheduleRefinement() }
+    guard admits(plan) else { return }
 
     let admission = transport.admission()
     guard admission.admit else { return deferEncode(admission) }
 
     adjustBitrate(admission)
-    encode(capture)
+    encode(plan)
   }
 
-  private func encode(_ capture: ScreenSharingV2Capture) {
-    slot.encoding(capture)
+  private var busyTiles: Set<Int> { Set(inFlight.keys) }
+
+  private func admits(_ plan: Plan) -> Bool {
+    if plan.isRefinement { return busyTiles.isDisjoint(with: plan.tiles) }
+
+    let depth = layout.count > 1 ? Self.pipelinedChanges : 1
+    return plan.tiles.allSatisfy { inFlight[$0, default: 0] < depth }
+  }
+
+  private func release(_ tile: Int) {
+    guard let count = inFlight[tile] else { return }
+
+    inFlight[tile] = count > 1 ? count - 1 : nil
+  }
+
+  private func nextPlan() -> Plan? {
+    let refreshing = recovery.pendingTiles
+    if let waiting = slot.waiting {
+      let tiles = slot.waitingTiles.union(refreshing)
+      if !tiles.isEmpty { return Plan(capture: waiting, tiles: tiles, isRefinement: false) }
+
+      metrics.increment("captureUnchanged")
+      slot.encoding(waiting)
+    }
+    guard let last = slot.lastEncoded else { return nil }
+    guard refreshing.isEmpty else { return Plan(capture: last, tiles: refreshing, isRefinement: false) }
+    guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles) else { return nil }
+
+    return Plan(capture: last, tiles: [tile], isRefinement: true)
+  }
+
+  private func encode(_ plan: Plan) {
+    slot.encoding(plan.capture)
     deferredCapture = false
-    encoding = true
+    nextUpdate &+= 1
+    let update = ScreenSharingTileUpdate(id: nextUpdate, tiles: plan.tiles, isRefinement: plan.isRefinement)
     let refreshes = recovery.takeRefreshes()
+    note(update)
+    for tile in plan.tiles { inFlight[tile, default: 0] += 1 }
     do {
-      try encoder.encode(capture.request(refreshes: refreshes))
+      try encoder.encode(plan.capture.request(update: update, refreshes: refreshes))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
-      encoding = false
+      for tile in plan.tiles { release(tile) }
       recovery.restore(refreshes)
-      slot.requeueLastEncoded()
+      slot.requeue(tiles: plan.tiles)
+    }
+  }
+
+  private func note(_ update: ScreenSharingTileUpdate) {
+    let nowNs = scheduler.nowNs
+    metrics.increment("tilesEncoded", by: update.tiles.count)
+    if update.isRefinement {
+      metrics.increment("refinementUpdates")
+      refinement.refined(update.tiles, atNs: nowNs)
+    } else {
+      metrics.increment("tilesSkipped", by: layout.count - update.tiles.count)
+      refinement.changed(update.tiles, by: update.id, atNs: nowNs)
+    }
+  }
+
+  private func scheduleRefinement() {
+    guard let dueNs = refinement.nextDueNs(excluding: busyTiles), refinementWakeNs.map({ dueNs < $0 }) ?? true else {
+      return
+    }
+
+    refinementWakeNs = dueNs
+    scheduler.run(afterNs: dueNs - scheduler.nowNs, on: queue) { [self] in
+      guard refinementWakeNs == dueNs else { return }
+
+      refinementWakeNs = nil
+      pump()
     }
   }
 
@@ -88,7 +181,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     guard !retryScheduled else { return }
 
     retryScheduled = true
-    queue.asyncAfter(deadline: .now() + ScreenSharingV2AdmissionRetry.delay(after: admission)) { [self] in
+    scheduler.run(afterNs: ScreenSharingV2AdmissionRetry.delayNs(after: admission), on: queue) { [self] in
       retryScheduled = false
       pump()
     }
@@ -103,27 +196,54 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
 
   private func encoderOutput(_ output: ScreenSharingTileEncoderOutput) {
     switch output {
-    case .tile(let tile): send(tile)
-    case .dropped(let tile, let refresh): queue.async { [self] in retry(refresh, tile: tile) }
+    case .tile(let tile):
+      send(tile)
+      queue.async { [self] in finished(tile: tile.tile) }
+    case .dropped(let tile, let refresh):
+      queue.async { [self] in
+        retry(refresh, tile: tile)
+        finished(tile: tile)
+      }
+    case .unchanged(let tile, let update):
+      metrics.increment("encoderUnchangedTiles")
+      queue.async { [self] in
+        refinement.settled(tile, by: update)
+        finished(tile: tile)
+      }
     case .failed(let tile, let refresh, let message):
       metrics.label("lastEncodeError", message)
-      queue.async { [self] in retry(refresh, tile: tile) }
+      queue.async { [self] in
+        retry(refresh, tile: tile)
+        release(tile)
+        retryAfterFailure()
+      }
     }
-    queue.async { [self] in
-      encoding = false
+  }
+
+  private func finished(tile: Int) {
+    release(tile)
+    pump()
+  }
+
+  private func retryAfterFailure() {
+    guard !failureRetryScheduled else { return }
+
+    failureRetryScheduled = true
+    scheduler.run(afterNs: Int64(ScreenSharingV2Profile.frameIntervalUs) * 1_000, on: queue) { [self] in
+      failureRetryScheduled = false
       pump()
     }
   }
 
   private func retry(_ refresh: ScreenSharingTileRefresh?, tile: Int) {
-    slot.requeueLastEncoded()
+    slot.requeue(tiles: [tile])
     guard let refresh else { return }
 
     recovery.retry(refresh, tile: tile)
   }
 
   private func send(_ tile: ScreenSharingEncodedTile) {
-    let meta = ScreenSharingV2HostTiming.meta(for: tile, sendingNs: ScreenSharingMetrics.nowNs)
+    let meta = ScreenSharingV2HostTiming.meta(for: tile, layout: layout, sendingNs: ScreenSharingMetrics.nowNs)
     do {
       try transport.send(tile, meta: meta.data)
       metrics.increment("sentFrames")

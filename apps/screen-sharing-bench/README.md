@@ -325,7 +325,7 @@ the viewer never did are skipped versions. Updates/s, gaps and freezes (typing, 
 only) come from the viewer's versions in the window; judder is the viewer's gap p95 minus the host's. CPU is
 the per-second sum of the system's processes (Apple HP: `screensharingd`, `ScreensharingAgent` and
 `Screen Sharing`; Codevisor: the `share` and `view` processes; both: `VTEncoderXPCService` and
-`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. A run is invalid when it didn't come
+`VTDecoderXPCService`), and bitrate is croissant's en0 receive rate. The host's usage lines also record `WindowServer` and `replayd`, which neither system's figure counts. When `sudo -n` may run `/usr/bin/powermetrics`, each host run also writes `host-power.txt`, a second-by-second `powermetrics --samplers cpu_power,gpu_power` log of the whole package, as a cross-check that doesn't depend on which processes a system uses. A run is invalid when it didn't come
 from the workflow (no `github_run_id`), C2 fails (ε over 0.5 ms or residual over 0.2 ms), another CI job ran,
 a preflight found a problem, or over 1% of the viewer's frames were unreadable (except video). `BenchSystemComparison` compares the medians of the valid repetitions. It is a difference when the medians differ by
 more than the noise band, the wider of the two systems' min–max spreads, or when each system has at least 3 valid
@@ -375,11 +375,11 @@ Apple HP always gives tamale a 1920×1080 pt @2x display (3840×2160 px), so on 
 shown at half size and is never 1:1. The Tier 2 input `viewer-display: R1x2` makes `view` and `apple-hp`
 (`--virtual-display R1x2`) create a 1920×1080 @2x virtual display on croissant for each run, show their window
 full screen on it, and name it in their ready file, so the viewer observer captures it (barcode blocks scale with
-it: 16 px for a 3840 px host). Engine v1 and v2 both stream R1x2 at 2560×1440 for now, and the viewer scales that back up to the 3840×2160 viewer
-display, so their R1x2 stills register 1:1 to the host's pixels and get numbers. Those numbers include the
-down-and-up scale. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
+it: 16 px for a 3840 px host). Engine v1 streams R1x2 at 2560×1440, and the viewer scales that back up to the 3840×2160 viewer
+display, so its R1x2 stills register 1:1 to the host's pixels and get numbers that include the down-and-up scale.
+Engine v2 streams R1x2 natively at 3840×2160 in four tiles (E5), so its rows measure the codec alone. `text.stream_size` records the Codevisor stream's encoded size (`capture_size` from `share.json`;
 absent for Apple HP, whose encoded size isn't visible), and the table marks a stream smaller than the host's display
-"(scaled)". When E5 streams native 3840×2160, the same rows measure the codec alone.
+"(scaled)".
 
 ```sh
 gh workflow run screen-sharing-bench-tier2.yml --ref <branch> -f scenes=test-cards -f duration=45 \

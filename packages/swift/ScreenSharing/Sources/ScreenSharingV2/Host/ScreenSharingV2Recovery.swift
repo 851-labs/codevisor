@@ -3,7 +3,7 @@ struct ScreenSharingV2Recovery {
   private var acknowledgedTiles: Set<Int> = []
   private var pending: [Int: ScreenSharingTileRefresh] = [:]
 
-  var isPending: Bool { !pending.isEmpty }
+  var pendingTiles: Set<Int> { Set(pending.keys) }
 
   mutating func sent(_ tile: ScreenSharingEncodedTile) {
     if tile.isKeyFrame {
