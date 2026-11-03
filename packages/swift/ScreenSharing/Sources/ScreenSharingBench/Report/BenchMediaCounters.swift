@@ -13,11 +13,15 @@ public struct BenchMediaCounters: Codable, Sendable, Equatable {
   public var keyframes: Int
   public var capacityKbps: Int?
   public var roundTripMs: Double?
+  public var requestedRefreshes: Int?
+  public var requestedKeyframes: Int?
+  public var stalledTiles: Int?
 
   public init(
     framesSent: Int, framesLost: Int, tilesSkipped: Int, droppedBeforeEncode: Int, admissionDeferrals: Int,
     nacksSent: Int, packetsRetransmitted: Int, parityPackets: Int, fecRepairs: Int, nackRepairs: Int,
-    ltrRefreshes: Int, keyframes: Int, capacityKbps: Int?, roundTripMs: Double?
+    ltrRefreshes: Int, keyframes: Int, capacityKbps: Int?, roundTripMs: Double?, requestedRefreshes: Int? = nil,
+    requestedKeyframes: Int? = nil, stalledTiles: Int? = nil
   ) {
     self.framesSent = framesSent
     self.framesLost = framesLost
@@ -33,5 +37,8 @@ public struct BenchMediaCounters: Codable, Sendable, Equatable {
     self.keyframes = keyframes
     self.capacityKbps = capacityKbps
     self.roundTripMs = roundTripMs
+    self.requestedRefreshes = requestedRefreshes
+    self.requestedKeyframes = requestedKeyframes
+    self.stalledTiles = stalledTiles
   }
 }
