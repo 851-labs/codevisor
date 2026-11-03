@@ -278,6 +278,22 @@ fn a_lost_last_packet_is_nacked_after_the_tail_wait() {
 }
 
 #[test]
+fn a_nack_repeated_while_its_retransmission_waits_to_leave_queues_it_once() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 25);
+    sim.send(frame(0, &payload(1, 5000)));
+    let nack = wire::Nack::whole_frame(0, 0).encode();
+    sim.host.handle_datagram(sim.now, nack.clone());
+    sim.host.handle_datagram(sim.now, nack.clone());
+    let queued = sim.host.stats(sim.now).packets_retransmitted;
+    sim.run_for(MS / 4);
+    sim.host.handle_datagram(sim.now, nack);
+
+    assert_eq!(queued, 5);
+    assert_eq!(sim.host.stats(sim.now).packets_retransmitted, 5, "sent less than a round trip ago");
+    assert_eq!(sim.host.stats(sim.now).retransmissions_skipped, 10);
+}
+
+#[test]
 fn parity_repairs_a_loss_without_a_round_trip() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Fixed(0.2)), 5);
     sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 2));

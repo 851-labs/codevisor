@@ -9,6 +9,7 @@ use bytes::Bytes;
 pub struct PacketTag {
     pub stream: u8,
     pub frame: u32,
+    pub index: u16,
     pub original: bool,
 }
 
@@ -104,7 +105,7 @@ mod tests {
     use super::*;
 
     fn tag(original: bool) -> PacketTag {
-        PacketTag { stream: 0, frame: 0, original }
+        PacketTag { stream: 0, frame: 0, index: 0, original }
     }
 
     #[test]

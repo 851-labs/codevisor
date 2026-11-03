@@ -28,9 +28,17 @@ const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
 const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
 const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Resend {
+    Never,
+    Queued,
+    Sent(Instant),
+}
+
 #[derive(Debug)]
 struct SentFrame {
     packets: Vec<Bytes>,
+    resends: Vec<Resend>,
     data_count: usize,
     submitted: Instant,
     first_tx: Option<Instant>,
@@ -176,9 +184,11 @@ impl Sender {
         for (offset, shard) in parity.iter().enumerate() {
             packets.push(header(Kind::Parity, layout.data_count + offset).encode(shard));
         }
-        let tag = PacketTag { stream: frame.stream, frame: number, original: true };
-        for packet in &packets {
-            self.pacer.push(packet.clone(), tag);
+        for (index, packet) in packets.iter().enumerate() {
+            self.pacer.push(
+                packet.clone(),
+                PacketTag { stream: frame.stream, frame: number, index: index as u16, original: true },
+            );
         }
         stats.frames_sent += 1;
         stats.parity_packets_sent += parity_count as u64;
@@ -187,6 +197,7 @@ impl Sender {
             number,
             SentFrame {
                 packets,
+                resends: vec![Resend::Never; layout.data_count],
                 data_count: layout.data_count,
                 submitted: now,
                 first_tx: None,
@@ -255,6 +266,13 @@ impl Sender {
         let (packet, tag) = self.pacer.poll(now)?;
         stats.packets_sent += 1;
         stats.bytes_sent += packet.len() as u64;
+        if !tag.original
+            && let Some(frame) =
+                self.streams.get_mut(&tag.stream).and_then(|stream| stream.unresolved.get_mut(&tag.frame))
+            && let Some(resend) = frame.resends.get_mut(usize::from(tag.index))
+        {
+            *resend = Resend::Sent(now);
+        }
         if tag.original
             && let Some(frame) =
                 self.streams.get_mut(&tag.stream).and_then(|stream| stream.unresolved.get_mut(&tag.frame))
@@ -277,8 +295,8 @@ impl Sender {
         else {
             return;
         };
-        let tag = PacketTag { stream: nack.stream, frame: nack.frame, original: false };
         let mut requested = 0;
+        let mut repeated = 0;
         for &(start, count) in &nack.ranges {
             let range = if count == wire::WHOLE_FRAME {
                 0..frame.data_count
@@ -287,10 +305,22 @@ impl Sender {
                     ..(usize::from(start) + usize::from(count)).min(frame.data_count)
             };
             for index in range {
+                let recent = match frame.resends[index] {
+                    Resend::Never => false,
+                    Resend::Queued => true,
+                    Resend::Sent(at) => now < at + self.rtt,
+                };
+                if recent {
+                    repeated += 1;
+                    continue;
+                }
+                frame.resends[index] = Resend::Queued;
+                let tag = PacketTag { stream: nack.stream, frame: nack.frame, index: index as u16, original: false };
                 self.pacer.push(frame.packets[index].clone(), tag);
                 requested += 1;
             }
         }
+        stats.retransmissions_skipped += repeated;
         if requested > 0 {
             stats.packets_retransmitted += requested;
             self.loss.nacked += requested;
@@ -394,8 +424,9 @@ impl Sender {
                 }
                 frame.probes += 1;
                 stats.probes_sent += 1;
-                let tag = PacketTag { stream: stream_id, frame: number, original: false };
-                self.pacer.push(frame.packets[frame.data_count - 1].clone(), tag);
+                let index = frame.data_count - 1;
+                let tag = PacketTag { stream: stream_id, frame: number, index: index as u16, original: false };
+                self.pacer.push(frame.packets[index].clone(), tag);
                 probed = true;
             }
             for number in expired {

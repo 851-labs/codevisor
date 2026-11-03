@@ -14,7 +14,11 @@ no jitter buffer and no queue deeper than one frame.
   link's queue. The pacer is a token bucket holding 1 ms of sending, because tokio's timers fire at 1 ms resolution.
 - **Loss recovery, cheapest first.**
   1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
-     packets, at least 1 ms).
+     packets, at least 1 ms). The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
+     retransmission is still queued or left less than a round trip ago. Without that, at a low estimate, each
+     repeat queued a large frame's packets again, and the backlog held admission shut: in the sim (N4, a 150 KB
+     frame every 2 s from a 1 Mbit/s start) for 168 frames after each one, against 34–40 now, and in Tier 1 run
+     41617646973 (scroll N4) for 8.5 s, with 2,707 packets resent for 43 NACKs.
   2. Reed–Solomon parity, one block per frame over GF(2^16) (`reed-solomon-simd`). With `FecMode::Adaptive` it's
      on while loss was seen in the last 10 s or the round trip is over a quarter of a frame interval: 5–25% of each
      frame's data packets (more as loss rises), at least one parity packet.

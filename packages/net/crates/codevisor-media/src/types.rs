@@ -120,6 +120,7 @@ pub struct Stats {
     pub bytes_sent: u64,
     pub parity_packets_sent: u64,
     pub packets_retransmitted: u64,
+    pub retransmissions_skipped: u64,
     pub probes_sent: u64,
     pub nacks_received: u64,
     pub transport_rejected: u64,
