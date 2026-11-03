@@ -27,16 +27,23 @@ struct SampleCommand: BenchCommand {
     let groups = processNames.map(ProcessGroup.init(name:))
     var counters: [BenchInterfaceCounters] = []
     var snapshots = [[[pid_t: ProcessReading]]](repeating: [], count: groups.count)
+    var first: ProcessListing?
+    var last: ProcessListing?
     let clock = ContinuousClock()
     var next = clock.now
     for _ in 0...duration {
       counters.append(try BenchInterfaceCounters.sample(interface: interface))
       let listing = try ProcessListing.capture()
+      first = first ?? listing
+      last = listing
       for (index, group) in groups.enumerated() { snapshots[index].append(group.sample(listing)) }
       next += Self.interval
       try await clock.sleep(until: next)
     }
     if let output { try UsageSeconds.write(counters: counters, groups: groups, snapshots: snapshots, to: output) }
-    try BenchOutput.print(SampleResult(interface: interface, counters: counters, groups: groups, snapshots: snapshots))
+    let everything = first.flatMap { first in last.flatMap { ProcessTotals(from: first, to: $0) } }
+    try BenchOutput.print(
+      SampleResult(
+        interface: interface, counters: counters, groups: groups, snapshots: snapshots, allProcesses: everything))
   }
 }

@@ -53,6 +53,11 @@ on:
         required: false
         default: main
         type: string
+      profile:
+        description: Also sample call trees of the host's sharing processes for 10 s in each run (perturbs that run's numbers)
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       scenes:
@@ -105,6 +110,11 @@ on:
         required: false
         default: main
         type: string
+      profile:
+        description: Also sample call trees of the host's sharing processes for 10 s in each run (perturbs that run's numbers)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -126,6 +136,7 @@ env:
   TIER2_PRESENT: ${{ inputs.present }}
   TIER2_SYSTEMS: ${{ inputs.systems }}
   TIER2_VIEWER_DISPLAY: ${{ inputs.viewer-display }}
+  TIER2_PROFILE: ${{ inputs.profile && '1' || '0' }}
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:

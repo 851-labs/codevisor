@@ -28,6 +28,7 @@ tier2_last_still_version=11
 : "${TIER2_NETWORK_CHECK_PORT:=47596}"
 : "${TIER2_SEED:=1}"
 : "${TIER2_INPUT_EVENTS:=200}"
+: "${TIER2_PROFILE:=0}"
 tier2_input_lead_s=8
 tier2_input_budget_ms_per_event=263
 
@@ -179,6 +180,7 @@ tier2_check_inputs() {
   [[ "$TIER2_PRESENT" =~ ^(display-link|arrival)$ ]] || { echo "unknown presentation $TIER2_PRESENT" >&2; return 1; }
   tier2_check_input_scene || return 1
   [[ "$TIER2_VIEWER_DISPLAY" =~ ^(main|R1x2)$ ]] || { echo "viewer display must be main or R1x2" >&2; return 1; }
+  [[ "$TIER2_PROFILE" =~ ^[01]$ ]] || { echo "profile must be 0 or 1, not $TIER2_PROFILE" >&2; return 1; }
   local system_pattern="(apple-hp|codevisor-r1x2|codevisor-v2|codevisor)"
   [[ "$TIER2_SYSTEMS" =~ ^$system_pattern(,$system_pattern)*$ ]] || { echo "unknown system in $TIER2_SYSTEMS" >&2; return 1; }
   if [[ "$TIER2_ENGINE" == v2 ]] && tier2_runs_system codevisor-r1x2 && tier2_runs_system codevisor-v2; then
