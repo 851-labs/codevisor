@@ -434,13 +434,12 @@ mod tests {
     }
 
     #[test]
-    fn refresh_requests_round_trip_and_reject_short_datagrams() {
+    fn refresh_request_layout_is_the_documented_nine_bytes() {
         let request = RefreshRequest { stream: 3, request: 0xABCD, keyframe: true, resolved_below: 77 };
         let encoded = request.encode();
-        assert_eq!(encoded.len(), REFRESH_BYTES);
-        assert_eq!(kind_of(&encoded), Some(Kind::Refresh));
+        assert_eq!(&encoded[..], &[0x14, 3, 0xAB, 0xCD, 1, 0, 0, 0, 77]);
         assert_eq!(RefreshRequest::decode(&encoded), Some(request));
-        assert_eq!(RefreshRequest::decode(&encoded[..REFRESH_BYTES - 1]), None);
+        assert_eq!(RefreshRequest::decode(&encoded[..8]), None);
     }
 
     #[test]
