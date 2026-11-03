@@ -177,7 +177,9 @@ final class ScreenSharingHostService {
     return (displayId, offer, viewerMedia)
   }
 
-  private func answer(_ offer: String?, for session: ScreenSharingHostSession) async throws
+  private func answer(
+    _ offer: String?, for session: ScreenSharingHostSession
+  ) async throws
     -> ServerScreenSharingReply
   {
     guard let peer = session.peer as? ScreenSharingSender, let offer else {
