@@ -11,13 +11,11 @@ public struct ServerBotMascot: Codable, Hashable, Sendable {
     self.eyewear = eyewear
   }
 
-  var imagePath: String {
-    var query = URLComponents()
-    query.queryItems = [
+  var queryItems: [URLQueryItem] {
+    [
       URLQueryItem(name: "color", value: color),
       URLQueryItem(name: "hat", value: hat),
       URLQueryItem(name: "eyewear", value: eyewear),
     ]
-    return "/v1/bot-mascots/image?\(query.percentEncodedQuery ?? "")"
   }
 }

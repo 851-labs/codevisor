@@ -2,21 +2,21 @@ import CodevisorCore
 import SwiftUI
 
 public struct BotMascotImage: View {
-  let mascot: ServerBotMascot
+  let art: ServerBotMascotArt
   let serverId: String
 
   @Environment(AppEnvironment.self) private var environment
   @State private var previous: CGImage?
   private let images = BotMascotImages.shared
 
-  public init(mascot: ServerBotMascot, serverId: String) {
-    self.mascot = mascot
+  public init(mascot: ServerBotMascot, serverId: String, kind: ServerBotMascotArt.Kind = .portrait) {
+    self.art = ServerBotMascotArt(mascot, kind)
     self.serverId = serverId
   }
 
   public var body: some View {
     Group {
-      if let image = images.image(for: mascot) ?? previous {
+      if let image = images.image(for: art) ?? previous {
         Image(decorative: image, scale: 1)
           .resizable()
           .interpolation(.high)
@@ -25,12 +25,12 @@ public struct BotMascotImage: View {
         Color.clear
       }
     }
-    .task(id: mascot) { await load() }
+    .task(id: art) { await load() }
     .accessibilityHidden(true)
   }
 
   private func load() async {
-    await images.load(mascot, from: environment.machines.client(for: serverId))
-    previous = images.image(for: mascot) ?? previous
+    await images.load(art, from: environment.machines.client(for: serverId))
+    previous = images.image(for: art) ?? previous
   }
 }

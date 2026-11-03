@@ -17,8 +17,8 @@ extension CodevisorServerClient {
     try await get("/v1/bot-mascots")
   }
 
-  public func botMascotImage(_ mascot: ServerBotMascot) async throws -> Data {
-    try await performRaw(mascot.imagePath, method: "GET", body: nil, contentType: nil)
+  public func botMascotArt(_ art: ServerBotMascotArt) async throws -> Data {
+    try await performRaw(art.path, method: "GET", body: nil, contentType: nil)
   }
 
   public func addBotProject(botId: String, projectId: String) async throws -> ServerBot {

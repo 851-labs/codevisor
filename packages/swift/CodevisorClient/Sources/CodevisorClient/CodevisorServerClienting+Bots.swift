@@ -17,7 +17,7 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func botMascotImage(_ mascot: ServerBotMascot) async throws -> Data {
+  func botMascotArt(_ art: ServerBotMascotArt) async throws -> Data {
     throw CodevisorServerClientError.invalidResponse
   }
 

@@ -335,9 +335,11 @@ struct HomeSidebarList: View {
 
   @ViewBuilder
   private func botRow(_ bot: HomeSidebarBot, sections: [CustomSection]? = nil) -> some View {
-    let row = HomeSidebarBotRowView(bot: bot, actions: actions, isSelectionRow: isSelectable, sections: sections)
-      .equatable()
-      .tag(bot.id)
+    let row = HomeSidebarBotRowView(
+      bot: bot, actions: actions, isSelectionRow: isSelectable, isOpen: selected == .bot(bot.id), sections: sections
+    )
+    .equatable()
+    .tag(bot.id)
     if !bot.hasNestedRows {
       row
     } else {

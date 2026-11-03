@@ -2,7 +2,7 @@ import CodevisorCore
 import SwiftUI
 
 public struct BotMascotAvatar: View {
-  private static let scale = 1.1
+  private static let scale = 1.32
   private static let drop = 0.12
   private static let fill = LinearGradient(
     colors: [Color(white: 0.97), Color(white: 0.88)],

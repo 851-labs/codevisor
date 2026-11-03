@@ -63,9 +63,27 @@ describe("bot mascot routes", () => {
     expect(image.headers.get("content-type")).toBe("image/png")
     expect(await sharp(Buffer.from(await image.arrayBuffer())).metadata()).toMatchObject({
       format: "png",
-      width: 256,
-      height: 256
+      width: 384,
+      height: 384
     })
     expect(missing.status).toBe(400)
+  })
+
+  it("draws a mascot's idle loop as an animated WebP and refuses an unknown loop", async () => {
+    const running = await setUp()
+    const query = "color=mint&hat=wizard&eyewear=goggles"
+
+    const idle = await fetch(`${running.server.url}/v1/bot-mascots/animation?${query}&loop=idle`)
+    const unknown = await fetch(
+      `${running.server.url}/v1/bot-mascots/animation?${query}&loop=dance`
+    )
+
+    expect(idle.headers.get("content-type")).toBe("image/webp")
+    expect(await sharp(Buffer.from(await idle.arrayBuffer())).metadata()).toMatchObject({
+      format: "webp",
+      pages: 120,
+      loop: 0
+    })
+    expect(unknown.status).toBe(400)
   })
 })

@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct BotConversationRow: View {
@@ -13,7 +14,7 @@ struct BotConversationRow: View {
     HoverableRow(isSelected: isSelected, isHoverForced: isDropTarget) { _ in
       HStack(spacing: 6) {
         BotUnreadDot(isVisible: conversation.isUnread && !isSelected)
-        BotAvatar(bot: conversation.bot, size: Self.avatarSize)
+        avatar
         VStack(alignment: .leading, spacing: 2) {
           BotConversationTitleLine(name: conversation.bot.name, timestamp: timestamp)
           BotConversationPreview(conversation: conversation)
@@ -26,6 +27,26 @@ struct BotConversationRow: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+  }
+
+  @ViewBuilder
+  private var avatar: some View {
+    let bot = conversation.bot
+    if let mascot = bot.mascot {
+      BotMascotFigure(mascot: mascot, serverId: bot.serverId, slot: Self.avatarSize, motion: motion)
+    } else {
+      BotSymbolAvatar(symbolName: bot.symbolName, size: Self.avatarSize)
+    }
+  }
+
+  private var motion: BotMascotMotion {
+    if conversation.activity == .working {
+      .working
+    } else if isSelected {
+      .idle
+    } else {
+      .still
+    }
   }
 
   private var timestamp: String? {

@@ -10,16 +10,22 @@ import {
   botMascotColors,
   botMascotEyewear,
   botMascotHats,
-  renderBotMascotSvg,
   type BotMascotConfig,
   type ColorOption,
   type ItemOption
 } from "@codevisor/bot-mascot"
-import sharp from "sharp"
 
 import { HttpFailure, run, writeJson, type CodevisorServerServices } from "../server-context.js"
+import {
+  mascotFramings,
+  mascotLoops,
+  renderMascotLoop,
+  renderMascotStill,
+  type MascotArt
+} from "./bot-mascot-art.js"
 
-const imagePixels = 256
+type ArtRenderer = (config: BotMascotConfig, query: URLSearchParams) => Promise<MascotArt>
+
 const none: BotMascotChoice = { id: "none", title: "None" }
 
 export const routeBotMascots = async (
@@ -33,19 +39,14 @@ export const routeBotMascots = async (
     writeJson(response, 200, await mascotOptions(services))
     return true
   }
-  if (url.pathname !== "/v1/bot-mascots/image") return false
+  const render = artRenderers[url.pathname]
+  if (render === undefined) return false
 
   const mascot = mascotFromQuery(url.searchParams)
   const config = mascotConfig(mascot)
   if (config === undefined) throw unknownMascot(400, mascot)
 
-  const png = await renderPng(config)
-  response.writeHead(200, {
-    "Cache-Control": "private, max-age=31536000, immutable",
-    "Content-Length": String(png.byteLength),
-    "Content-Type": "image/png"
-  })
-  response.end(png)
+  writeArt(response, await render(config, url.searchParams))
   return true
 }
 
@@ -109,7 +110,29 @@ const mascotFromQuery = (query: URLSearchParams): BotMascot => ({
 const unknownMascot = (status: number, mascot: BotMascot): HttpFailure =>
   new HttpFailure(status, `Unknown bot mascot: ${JSON.stringify(mascot)}`)
 
-const renderPng = async (config: BotMascotConfig): Promise<Buffer> => {
-  const svg = renderBotMascotSvg({ ...config, size: imagePixels })
-  return sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toBuffer()
+const artRenderers: Readonly<Record<string, ArtRenderer>> = {
+  "/v1/bot-mascots/image": (config, query) =>
+    renderMascotStill(config, queryChoice(query, "framing", mascotFramings)),
+  "/v1/bot-mascots/animation": (config, query) =>
+    renderMascotLoop(config, queryChoice(query, "loop", mascotLoops))
+}
+
+const queryChoice = <Choice extends string>(
+  query: URLSearchParams,
+  name: string,
+  choices: ReadonlyArray<Choice>
+): Choice => {
+  const value = query.get(name) ?? choices[0]!
+  const found = choices.find((option) => option === value)
+  if (found === undefined) throw new HttpFailure(400, `Unknown ${name}: ${value}`)
+  return found
+}
+
+const writeArt = (response: ServerResponse, art: MascotArt): void => {
+  response.writeHead(200, {
+    "Cache-Control": "private, max-age=31536000, immutable",
+    "Content-Length": String(art.bytes.byteLength),
+    "Content-Type": art.contentType
+  })
+  response.end(art.bytes)
 }

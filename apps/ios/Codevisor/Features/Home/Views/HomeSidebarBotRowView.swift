@@ -9,11 +9,12 @@ struct HomeSidebarBotRowView: View, Equatable {
   let bot: HomeSidebarBot
   let actions: HomeSidebarActionHandler
   var isSelectionRow = false
+  var isOpen = false
   var sections: [CustomSection]?
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.bot == rhs.bot && lhs.actions === rhs.actions && lhs.isSelectionRow == rhs.isSelectionRow
-      && lhs.sections == rhs.sections
+      && lhs.isOpen == rhs.isOpen && lhs.sections == rhs.sections
   }
 
   private func onOpen() { actions.actions.openBot(bot.bot) }
@@ -139,15 +140,33 @@ struct HomeSidebarBotRowView: View, Equatable {
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
         .frame(maxWidth: .infinity, alignment: .leading)
     } icon: {
-      if bot.status != .idle {
+      if showsStatus {
         HomeStatusIndicator(status: bot.status)
       } else if let mascot = bot.bot.mascot {
-        BotMascotAvatar(mascot: mascot, serverId: bot.bot.serverId, size: mascotSize)
+        BotMascotFigure(mascot: mascot, serverId: bot.bot.serverId, slot: mascotSize, motion: motion)
       } else {
         HomeSidebarSymbol(name: bot.bot.symbolName)
       }
     }
     .contentShape(Rectangle())
+  }
+
+  private var showsStatus: Bool {
+    switch bot.status {
+    case .idle: false
+    case .inProgress: bot.bot.mascot == nil
+    case .error, .actionRequired, .unread: true
+    }
+  }
+
+  private var motion: BotMascotMotion {
+    if bot.status == .inProgress {
+      .working
+    } else if isOpen {
+      .idle
+    } else {
+      .still
+    }
   }
 
   private var accessibilityLabel: String {

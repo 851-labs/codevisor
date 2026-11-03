@@ -30,6 +30,14 @@ export {
   type MoodOption,
   type SwatchOption
 } from "./options.js"
+export {
+  botMascotLoops,
+  FIGURE_VIEW_BOX,
+  renderBotMascotLoopFrame,
+  type BotMascotLoop,
+  type LoopFrameOptions,
+  type LoopTiming
+} from "./render-loop.js"
 export { BotMascotPlayer, type BotMascotPlayerOptions } from "./player.js"
 
 export type * from "./pose.js"
