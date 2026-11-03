@@ -17,6 +17,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var slot: ScreenSharingV2CaptureSlot
   private var recovery = ScreenSharingV2Recovery()
   private var refinement: ScreenSharingV2Refinement
+  private let refinementPolicy: ScreenSharingV2RefinementPolicy
   private var bitrate: ScreenSharingV2BitrateGovernor
   private var nextUpdate: UInt32 = 0
   private var retryScheduled = false
@@ -31,17 +32,17 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   public convenience init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int = ScreenSharingV2Profile.bitrateCeiling,
-    refinementPasses: Int = ScreenSharingV2Profile.refinementPasses
+    refinement: ScreenSharingV2RefinementPolicy = .standard
   ) {
     self.init(
       transport: transport, encoder: encoder, metrics: metrics, initialBitrate: initialBitrate,
-      scheduler: ScreenSharingV2SystemScheduler(), refinementPasses: refinementPasses)
+      scheduler: ScreenSharingV2SystemScheduler(), refinement: refinement)
   }
 
   init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler,
-    refinementPasses: Int = ScreenSharingV2Profile.refinementPasses
+    refinement policy: ScreenSharingV2RefinementPolicy = .standard
   ) {
     self.transport = transport
     self.encoder = encoder
@@ -50,7 +51,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     layout = encoder.layout
     slot = ScreenSharingV2CaptureSlot(tiles: encoder.layout.tiles)
     bitrate = ScreenSharingV2BitrateGovernor(initial: initialBitrate)
-    refinement = ScreenSharingV2Refinement(passes: refinementPasses)
+    refinementPolicy = policy
+    refinement = ScreenSharingV2Refinement(passes: policy.passes)
   }
 
   public func start() {
@@ -201,7 +203,13 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     switch output {
     case .tile(let tile):
       send(tile)
-      queue.async { [self] in finished(tile: tile.tile) }
+      queue.async { [self] in
+        if refinementPolicy.converged(tile) {
+          metrics.increment("refinementsConverged")
+          refinement.settled(tile.tile, by: tile.update.id)
+        }
+        finished(tile: tile.tile)
+      }
     case .dropped(let tile, let refresh):
       queue.async { [self] in
         retry(refresh, tile: tile)

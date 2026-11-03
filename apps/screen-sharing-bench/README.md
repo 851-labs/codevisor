@@ -528,7 +528,7 @@ CodevisorBench host-lab --scenes scroll,typing --seconds 30 --settle 5 --virtual
   child: ScreenSharingCapture → ScreenSharingV2Host → the VideoToolbox tile encoder → a null transport that drops
   the tiles and acknowledges every LTR token at once. After `--settle` seconds it samples CPU for `--seconds`.
 - A variant is `base` or comma-separated settings: `queue` (ScreenCaptureKit queue depth), `cursor`, `fps` (capture
-  and encoder rate), `refine` (refinement passes), `tiles` (1 or 4) and `ltr`.
+  and encoder rate), `refine` (refinement passes), `converge` (a refinement pass under this many bytes ends the tile's refinement; 0 is off), `tiles` (1 or 4) and `ltr`.
 - The table gives the whole system (`all_processes`), the `host-run` child, `VTEncoderXPCService`, `WindowServer`,
   `replayd` and the player, plus captures, tile encodes and refinements per second and the encode p50. The network
   send path isn't in it; `media-transport` measures that.

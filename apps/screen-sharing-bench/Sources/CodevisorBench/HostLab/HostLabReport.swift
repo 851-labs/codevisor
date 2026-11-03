@@ -22,10 +22,12 @@ struct HostLabReport: Encodable {
   var markdown: String {
     let header =
       "| Scene | Variant | All % | host-run % | VTEncoder % | WindowServer % | replayd % | player % | Captures | Tiles | "
-      + "Refinements | Encode p50 ms |"
+      + "Refinements | Converged | Encode p50 ms |"
     let rows = results.map { result in
       let cells = [result.allProcesses?.cpuPct] + HostLabCommand.groups.map { result.cpuPct[$0] }
-      let rates = ["captureFrames", "tilesEncoded", "refinementUpdates"].map { result.perSecond($0) }
+      let rates = ["captureFrames", "tilesEncoded", "refinementUpdates", "refinementsConverged"].map {
+        result.perSecond($0)
+      }
       let encode = result.run?.timings["encode"]?.p50Ms
       return "| \(result.scene) | \(result.variant) | "
         + (cells + rates + [encode]).map(Self.number).joined(separator: " | ") + " |"
@@ -39,7 +41,7 @@ struct HostLabReport: Encodable {
     let title = [
       "## Host lab at \(resolution), \(seconds) s per variant", "",
       "Counts are per second. Captures, tiles and refinements come from the variant's host metrics.", "", header,
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let sizes = ["", "Encoded tile sizes by refinement pass (0 is the change):", ""] + passes
     return (title + rows + sizes).joined(separator: "\n") + "\n"
