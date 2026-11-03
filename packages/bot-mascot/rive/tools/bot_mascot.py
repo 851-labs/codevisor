@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rml import Ids, el, solid, linear, fill, stroke, logo_path, open_path, ellipse, rect, shape, node
+from rml import Ids, el, solid, linear, fill, stroke, logo_path, ellipse, rect, shape, node
 import face_shapes as D
 from face_shapes import arch
 from rive_motion import keyframes, blink, cycle, smooth, pack, enum_cond, trigger_cond, bool_cond
@@ -74,15 +74,12 @@ EYES, MOUTHS = {}, {}
 
 
 def build_face():
-    eye, solo, open_, happy, closed, glints = ids(), ids(), ids(), ids(), ids(), ids()
-    EYES.update(open=open_, happy=happy, closed=closed)
+    eye, solo, open_, happy, glints = ids(), ids(), ids(), ids(), ids()
+    EYES.update(open=open_, happy=happy)
     reg("eye.x", eye, "x", EYE_X)
-    reg("eye.y", eye, "y", EYE_Y)
     reg("eye.state", solo, "activeComponentId", open_, "id")
-    reg("eye.sx", open_, "scaleX", 1)
     reg("eye.sy", open_, "scaleY", 1)
     reg("glints.x", glints, "x", 0)
-    reg("glints.y", glints, "y", 0)
     s = EYE_S
     eye_xml = node("Eye", [el("Solo", [
         node("Open", [
@@ -93,69 +90,23 @@ def build_face():
             shape("Hole", [logo_path("hole", sx=s, sy=s, ox=-218 * s, oy=-134 * s), fill(solid(P["eye"]))]),
         ], id=open_),
         node("Happy", [D.arc_eye("Arc", 0, -2, 62, 28, 13, ink=P["eye"])], id=happy),
-        node("Closed", [D.arc_eye("Arc", 0, 6, 56, 20, 12, ink=P["eye"], up=False)], id=closed),
     ], activeComponentId=open_, name="Eye State", id=solo)], x=EYE_X, y=EYE_Y, id=eye)
 
-    brow = ids()
-    reg("brow.opacity", brow, "opacity", 0)
-    reg("brow.rot", brow, "rotation", 0)
-    reg("brow.y", brow, "y", EYE_Y - 42)
-    brow_xml = shape("Brow", [open_path([("s", -24, 2), ("c", 0, -4, 0, 12), ("s", 24, 2)]),
-                              stroke(solid(P["eye"]), 8)], x=EYE_X, y=EYE_Y - 42, opacity=0, id=brow)
-
     msolo = ids()
-    m = {k: ids() for k in ("none", "smile", "oh")}
+    m = {k: ids() for k in ("none", "smile")}
     MOUTHS.update(m)
     reg("mouth.state", msolo, "activeComponentId", m["none"], "id")
     mouth = el("Solo", [
         node("None", [], id=m["none"]),
         node("Smile", [D.smile("Line", 298, 316, 24, 10, 8, ink=P["eye"])], id=m["smile"]),
-        node("Oh", [shape("Shape", [ellipse(14, 18), fill(solid(P["eye"]))], x=290, y=334)], id=m["oh"]),
     ], activeComponentId=m["none"], name="Mouth State", id=msolo)
 
     cheek = ids()
-    reg("cheek.opacity", cheek, "opacity", 1)
     reg("cheek.sx", cheek, "scaleX", 1)
     cheek_xml = shape("Cheek", [ellipse(40, 18), fill(solid(P["cheek"]), feather=dict(strength=6))],
                       x=226, y=304, id=cheek)
 
-    tear = ids()
-    reg("tear.y", tear, "y", 296)
-    reg("tear.opacity", tear, "opacity", 0)
-    reg("tear.sy", tear, "scaleY", 1)
-    tear_xml = D.tear("Tear", 258, 296, 12).replace('<Shape name="Tear"', f'<Shape name="Tear" id="{tear}" opacity="0"', 1)
-    return [tear_xml, brow_xml, eye_xml, mouth, cheek_xml]
-
-
-def outlined(path, t=4, ink_t=None):
-    return [path, stroke(solid(P["outline"]), ink_t or t + 5), stroke(solid(P["fx"]), t)]
-
-
-def build_fx():
-    kids = []
-
-    def add(key, name, kids_, x, y, rest_scale=1.0, extra=()):
-        oid = ids()
-        reg(f"{key}.opacity", oid, "opacity", 0)
-        reg(f"{key}.sx", oid, "scaleX", rest_scale)
-        reg(f"{key}.sy", oid, "scaleY", rest_scale)
-        for p, rest in extra:
-            reg(f"{key}.{p}", oid, p, rest)
-        kids.append(shape(name, kids_, x=x, y=y, opacity=0, scaleX=rest_scale, scaleY=rest_scale, id=oid))
-
-    for i, (x, y, sz) in enumerate([(128, 196, 34), (370, 150, 24), (392, 226, 18)]):
-        add(f"sparkle{i}", f"Sparkle {i + 1}",
-            [el("Star", width=sz, height=sz, points=4, innerRadius=0.36, name="Path"),
-             stroke(solid(P["outline"]), 4), fill(solid(P["fx"]))], x, y)
-    for i, (x, y, d) in enumerate([(216, 160, 14), (192, 132, 20), (156, 100, 28)]):
-        add(f"dot{i}", f"Thought {i + 1}", [ellipse(d, d), stroke(solid(P["outline"]), 4), fill(solid(P["fx"]))], x, y)
-    for i in range(3):
-        h = 13
-        add(f"z{i}", f"Z {i + 1}", outlined(open_path([("s", -h, -h), ("s", h, -h), ("s", -h, h), ("s", h, h)]), 4),
-            330, 190, 0.6, extra=(("x", 330), ("y", 190)))
-    for i, (x, y, dx, dy) in enumerate([(352, 170, 8, -20), (370, 196, 22, -8)]):
-        add(f"pop{i}", f"Pop {i + 1}", [open_path([("s", 0, 0), ("s", dx, dy)]), stroke(solid(P["eye"]), 7)], x, y)
-    return node("FX", kids)
+    return [eye_xml, mouth, cheek_xml]
 
 
 def build_character():
@@ -181,8 +132,6 @@ def build_character():
 
 def build_shadow():
     toggle, inner = ids(), ids()
-    reg("shadow.sx", inner, "scaleX", 1)
-    reg("shadow.opacity", inner, "opacity", 1)
     SHADOW[0] = toggle
     return node("Ground Shadow", [
         shape("Shadow", [ellipse(196, 22), fill(solid(P["shadow"]), feather=dict(strength=9))], id=inner),
@@ -207,14 +156,8 @@ def animation(name, duration, tracks, loop="loop", fill_rest=True):
     return aid, el("LinearAnimation", objs, loopValue=loop, fps=60, duration=duration, name=name, id=aid)
 
 
-def both(key, keys):
-    return {f"{key}.sx": keys, f"{key}.sy": keys}
-
-
 def moods():
-    Y = FEET_Y
     A = {}
-
     A["idle"] = animation("Idle", 300, {
         "base.sx": cycle([0, 75, 150, 225, 300], [1, 1.03, 1, 1.03, 1]),
         "base.sy": cycle([0, 75, 150, 225, 300], [1, 0.985, 1, 0.985, 1]),
@@ -223,94 +166,6 @@ def moods():
         "eye.x": [(0, EYE_X, "hold"), (160, EYE_X, "o"), (170, EYE_X - 7), (214, EYE_X - 7, "o"), (226, EYE_X), (300, EYE_X, "hold")],
         "glints.x": [(0, 0, "hold"), (160, 0, "o"), (170, -6), (214, -6, "o"), (226, 0), (300, 0, "hold")],
     })
-
-    A["thinking"] = animation("Thinking", 240, {
-        "top.rot": cycle([0, 120, 240], [-0.06, -0.075, -0.06]),
-        "base.sx": cycle([0, 120, 240], [1.01, 1.025, 1.01]),
-        "eye.y": [(0, EYE_Y - 5, "hold")],
-        "eye.x": cycle([0, 100, 120, 220, 240], [EYE_X + 2, EYE_X + 2, EYE_X - 3, EYE_X - 3, EYE_X + 2]),
-        "glints.x": cycle([0, 100, 120, 220, 240], [3, 3, -5, -5, 3]),
-        "glints.y": [(0, -5, "hold")],
-        "eye.sy": [(0, 0.82, "hold"), (196, 0.82), (201, 0.08, "o"), (206, 0.82), (240, 0.82, "hold")],
-        "brow.opacity": [(0, 1, "hold")],
-        "brow.rot": [(0, -0.16, "hold")],
-        "brow.y": cycle([0, 120, 240], [EYE_Y - 46, EYE_Y - 50, EYE_Y - 46]),
-        "cheek.opacity": [(0, 0.5, "hold")],
-        **{k: v for i in range(3) for k, v in {
-            f"dot{i}.opacity": [(0, 0, "hold"), (20 + i * 30, 0), (30 + i * 30, 1), (190, 1), (215, 0), (240, 0, "hold")],
-            **both(f"dot{i}", [(0, 0.3, "hold"), (20 + i * 30, 0.3, "o"), (34 + i * 30, 1.15), (42 + i * 30, 1), (240, 1, "hold")]),
-        }.items()},
-    })
-
-    hop = 60
-    A["happy"] = animation("Happy", hop, {
-        "char.y": [(0, Y, "o"), (8, Y - 8, "o"), (28, Y - 40, "i"), (46, Y - 4, "linear"), (50, Y, "o"), (hop, Y)],
-        "base.sx": [(0, 0.88, "o"), (8, 1.1, "io"), (28, 1.02, "i"), (46, 1.08, "linear"), (50, 0.86, "o"), (hop, 0.88)],
-        "base.sy": [(0, 1.1, "o"), (8, 0.94, "io"), (28, 0.99, "i"), (46, 0.95, "linear"), (50, 1.12, "o"), (hop, 1.1)],
-        "top.rot": [(0, 0.04), (14, -0.05), (34, 0.03), (50, 0.06), (hop, 0.04)],
-        "shadow.sx": [(0, 1.06, "o"), (8, 0.95, "io"), (28, 0.7, "i"), (46, 0.97, "linear"), (50, 1.08), (hop, 1.06)],
-        "shadow.opacity": [(0, 1), (28, 0.45, "i"), (50, 1), (hop, 1)],
-        "eye.state": [(0, EYES["happy"])],
-        "mouth.state": [(0, MOUTHS["smile"])],
-        "cheek.sx": [(0, 1.15, "hold")],
-        **{f"sparkle{i}.opacity": [(0, 1, "hold")] for i in range(3)},
-        **{k: v for i, (a, b) in enumerate([(1, 0.55), (0.5, 1.1), (0.8, 0.45)])
-           for k, v in both(f"sparkle{i}", [(0, a), (30, b), (60, a)]).items()},
-    })
-
-    A["sad"] = animation("Sad", 240, {
-        "top.rot": cycle([0, 120, 240], [0.09, 0.12, 0.09]),
-        "base.sx": cycle([0, 120, 240], [0.93, 0.95, 0.93]),
-        "base.sy": [(0, 1.05, "hold")],
-        "eye.y": [(0, EYE_Y + 8, "hold")],
-        "eye.sy": [(0, 0.7, "hold"), (200, 0.7), (206, 0.08, "o"), (212, 0.7), (240, 0.7, "hold")],
-        "glints.y": [(0, 4, "hold")],
-        "brow.opacity": [(0, 1, "hold")],
-        "brow.rot": [(0, -0.32, "hold")],
-        "brow.y": [(0, EYE_Y - 26, "hold")],
-        "cheek.opacity": [(0, 0.35, "hold")],
-        "tear.opacity": [(0, 0, "hold"), (30, 0), (45, 1), (135, 1), (165, 0), (240, 0, "hold")],
-        "tear.y": [(0, 292, "hold"), (30, 292, "i"), (175, 336), (240, 336, "hold")],
-        "tear.sy": [(0, 0.6, "hold"), (30, 0.6), (60, 1.1), (240, 1.1, "hold")],
-    })
-
-    zs = {}
-    for i in range(3):
-        keys = {"opacity": [], "x": [], "y": [], "sx": [], "sy": []}
-        for c in (0, 180):
-            t = c + i * 60
-            keys["opacity"] += [(t, 0), (t + 20, 1), (t + 90, 0.9), (t + 120, 0)]
-            keys["x"] += [(t, 322, "linear"), (t + 120, 382, "hold")]
-            keys["y"] += [(t, 196, "o"), (t + 120, 96, "hold")]
-            keys["sx"] += [(t, 0.55, "o"), (t + 120, 1.15, "hold")]
-            keys["sy"] += [(t, 0.55, "o"), (t + 120, 1.15, "hold")]
-        for p, ks in keys.items():
-            if ks[0][0] != 0:
-                ks.insert(0, (0, REG[f"z{i}.{p}"][3], "hold"))
-            zs[f"z{i}.{p}"] = ks
-    A["sleeping"] = animation("Sleeping", 360, {
-        "base.sx": cycle([0, 90, 180, 270, 360], [0.95, 1.02, 0.95, 1.02, 0.95]),
-        "base.sy": cycle([0, 90, 180, 270, 360], [1.03, 0.99, 1.03, 0.99, 1.03]),
-        "top.rot": cycle([0, 90, 180, 270, 360], [0.08, 0.05, 0.08, 0.05, 0.08]),
-        "shadow.sx": cycle([0, 90, 180, 270, 360], [1.04, 0.98, 1.04, 0.98, 1.04]),
-        "eye.state": [(0, EYES["closed"])],
-        "cheek.opacity": [(0, 0.75, "hold")],
-        **zs,
-    })
-
-    A["surprised"] = animation("Surprised", 90, {
-        "char.y": [(0, Y, "o"), (8, Y - 22, "i"), (18, Y, "o"), (26, Y), (90, Y, "hold")],
-        "base.sx": [(0, 0.86, "o"), (8, 1.12, "io"), (18, 0.94, "o"), (28, 1.06), (40, 1.04), (90, 1.04, "hold")],
-        "base.sy": [(0, 1.1, "o"), (8, 0.92, "io"), (18, 1.05, "o"), (28, 0.96), (40, 0.97), (90, 0.97, "hold")],
-        "top.rot": [(0, 0), (8, -0.08), (22, -0.03), (26, -0.06), (30, -0.035), (34, -0.055), (40, -0.045), (90, -0.045, "hold")],
-        "eye.sx": [(0, 1, "o"), (8, 1.28), (18, 1.18), (90, 1.18, "hold")],
-        "eye.sy": [(0, 1, "o"), (8, 1.32), (18, 1.2), (90, 1.2, "hold")],
-        "glints.x": [(0, 0, "hold")],
-        "mouth.state": [(0, MOUTHS["oh"])],
-        "cheek.opacity": [(0, 0.6, "hold")],
-        **{f"pop{i}.opacity": [(0, 0, "hold"), (6, 0), (10, 1), (90, 1, "hold")] for i in range(2)},
-        **{k: v for i in range(2) for k, v in both(f"pop{i}", [(0, 0.4, "hold"), (6, 0.4, "o"), (14, 1.15), (20, 1), (90, 1, "hold")]).items()},
-    }, loop="oneShot")
     return A
 
 
@@ -330,13 +185,12 @@ def wave_anim():
     }, loop="oneShot", fill_rest=False)
 
 
-MOODS = ["idle", "thinking", "happy", "sad", "sleeping", "surprised"]
+MOODS = ["idle"]
 
 
 def main(out, backdrop=None, palette="classic"):
     P.clear()
     P.update(PALETTES[palette])
-    fx = build_fx()
     character = build_character()
     shadow = build_shadow()
     hit = ids()
@@ -367,13 +221,12 @@ def main(out, backdrop=None, palette="classic"):
     ]
 
     sids = {m: ids() for m in MOODS}
-    pos = {"idle": (300, 0), "thinking": (560, -240), "happy": (840, -80), "sad": (840, 160),
-           "sleeping": (300, 300), "surprised": (560, 360)}
+    pos = {"idle": (300, 0)}
     states = []
     for m in MOODS:
         trans = [el("StateTransition", [enum_cond(vm, p_mood, vals[o])], stateToId=sids[o], duration=300)
                  for o in MOODS if o != m]
-        states.append(el("AnimationState", trans, animationId=anims[m][0], reset=m == "surprised",
+        states.append(el("AnimationState", trans, animationId=anims[m][0],
                          x=pos[m][0], y=pos[m][1], id=sids[m]))
     mood_layer = el("StateMachineLayer", [
         el("AnyState", x=60, y=-240), el("ExitState", x=1100, y=0),
@@ -409,7 +262,7 @@ def main(out, backdrop=None, palette="classic"):
 
     sm, style = ids(), ids()
     machine = el("StateMachine", [tap, mood_layer, wave_layer, shadow_layer], name="Bot Mascot", id=sm)
-    kids = [el("LayoutComponentStyle", name="Artboard Style", id=style), machine, fx, character, shadow, hit_area,
+    kids = [el("LayoutComponentStyle", name="Artboard Style", id=style), machine, character, shadow, hit_area,
             *[a[1] for a in anims.values()], wave_xml, rest_xml, on_xml, off_xml]
     if backdrop:
         kids.append(fill(solid(backdrop), name="Preview Backdrop"))

@@ -16,6 +16,9 @@ const hatOffset = (svg: string): number =>
 const opacity = (svg: string): number =>
   Number(/data-r="wear" [^>]*opacity="([\d.]+)"/.exec(svg)?.[1])
 
+const flyingPhone = (svg: string): boolean =>
+  /<\/g><g transform="matrix\([^)]+\)">[^]*<\/g><\/svg>$/.test(svg)
+
 const tip = (svg: string): string => /<g id="[^"]*dt0"><path d="([^"]+)"/.exec(svg)?.[1] ?? ""
 
 describe("BotMascotPlayer", () => {
@@ -36,13 +39,32 @@ describe("BotMascotPlayer", () => {
     expect(player.frame(3000)).not.toContain('data-r="outline"')
   })
 
-  it("picks up the phone on a call and lets go when the call ends", () => {
+  it("picks up the phone on a call and hangs up calmly when the call ends", () => {
     const player = new BotMascotPlayer({ now: 0, config: { mood: "calling" } })
     player.frame(0)
     expect(player.frame(2000)).toContain('data-r="hand"')
     player.update({ mood: "idle" }, 2000)
     player.frame(2050)
-    expect(player.frame(2700)).not.toContain('data-r="hand"')
+    expect(player.frame(2700)).toContain('data-r="hand"')
+    expect(player.frame(4400)).not.toContain('data-r="hand"')
+  })
+
+  it("throws the phone when asked to hang up angrily", () => {
+    const player = new BotMascotPlayer({ now: 0 })
+    player.request("calling", 0)
+    player.frame(0)
+    expect(player.frame(3000)).toContain('data-r="hand"')
+    player.request("angryHangUp", 3000)
+    player.frame(3000 + FRAME_MS)
+    expect(flyingPhone(player.frame(8600))).toBe(true)
+    expect(player.frame(11000)).not.toContain('data-r="hand"')
+    expect(player.current.mood).toBe("idle")
+  })
+
+  it("ignores a hang-up when there's no call", () => {
+    const player = new BotMascotPlayer({ now: 0, config: { mood: "working" } })
+    player.request("angryHangUp", 100)
+    expect(player.current.mood).toBe("working")
   })
 
   it("drops a new hat onto his head, where it settles", () => {

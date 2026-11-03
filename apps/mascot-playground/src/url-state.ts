@@ -68,6 +68,7 @@ const sharedState = (read: UrlReader): PlaygroundState => {
     animation: read.choice("animation", ids(animations), d.animation),
     speed: read.numberFrom("speed", speeds, d.speed),
     loop: read.flag("loop", d.loop),
+    showGaze: read.flag("showGaze", d.showGaze),
     fps: read.numberFrom("fps", frameRates, d.fps),
     backdrop: read.choice("backdrop", backdrops, d.backdrop),
     rig: rigFrom(read, d.rig)

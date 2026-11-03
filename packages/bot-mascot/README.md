@@ -37,12 +37,50 @@ way the original builder's Randomize did.
 
 `BotMascotPlayer` is the builder's live stage without the DOM. Call `frame(nowMs)` every frame and put the
 SVG on screen; `update(config, nowMs)` changes his look or mood. It plays Idle, Working and Calling and the
-transitions between them (arms growing out and tucking away, the phone popping away), drops a new hat on his
+transitions between them (arms growing out and tucking away, picking up and calmly hanging up), drops a new hat on his
 head, fades new clothes in and swings a tie or skirt on its pendulums. Pass `reducedMotion: true` for still
-frames. `mountBotMascot(element)` writes frames into an element, rewriting only what changed.
+frames. `request(request, nowMs)` takes the same requests as `botMascotRoute` below, so
+`request("angryHangUp", nowMs)` ends a call by throwing the phone; changing the mood away from calling hangs up
+normally. `mountBotMascot(element)` writes frames into an element, rewriting only what changed.
 
-Lower down, `botMascotMoods` gives every mood's pose over time (idle, happy, sad, sleepy, surprised,
-thinking, working, calling) and `renderBotMascotFrame` draws any pose. The arm rig (`poseArm`, `drawRig`,
+### Segments
+
+Idle is the hub: every animation starts from idle and returns to it. `botMascotSegments` names each part
+and the state it goes from and to:
+
+| Segment        | From → to         | What he does                                           |
+| -------------- | ----------------- | ------------------------------------------------------ |
+| `idle`         | idle → idle       | the resting loop                                       |
+| `pickUp`       | idle → calling    | the phone pops in, he grabs it and lifts it to his ear |
+| `calling`      | calling → calling | talks on the phone; loops cleanly                      |
+| `hangUp`       | calling → idle    | says bye, lowers the phone, puts it away and settles   |
+| `angryHangUp`  | calling → idle    | gets annoyed, yells, throws the phone and huffs it off |
+| `startWorking` | idle → working    | grows his arms and pops out the clipboard              |
+| `working`      | working → working | reads the clipboard and flips its page                 |
+| `stopWorking`  | working → idle    | tucks the clipboard and his arms away                  |
+
+`botMascotRoute(state, request)` gives the chain for a request (`"idle"`, `"calling"`, `"working"`,
+`"hangUp"`, `"angryHangUp"`): from calling, `"working"` is `["hangUp", "startWorking", "working"]`.
+`canFollow(a, b)` says whether one segment may follow another. `botMascotSequence(steps)` lays a chain out in
+time (a loop step takes a `seconds`) and `at(t)` gives the `SegmentFrame` to pass to
+`renderBotMascotSegmentFrame`. The frame's `clock` drives the idle underneath, so a chain stays continuous;
+`soloFrame(segment, t)` plays one segment on its own. A call step that stops mid-cycle sets the next frame's
+`leftCallAt`, and the hang-up eases out of that moment of the call over its first 0.35 s. Segments that leave idle start on the idle frame, and
+segments that return to it end on it.
+
+### Looking at a point
+
+Idle can look at a target in the mascot's own coordinates (the 500 × 500 scene his `viewBox` frames). Pass
+`gaze: { x, y, weight? }` to `renderBotMascotSegmentFrame`, or call `player.lookAt([x, y])` and
+`player.lookAt(null)`. His eye, and any eyewear, turn toward the target, his head tilts and twists a little,
+and he keeps breathing and blinking; working and calling ignore it, but the idle they leave from and return
+to looks too, so the seams hold. `GAZE_RANGE` limits how far he looks (a turn of 0.8, up 0.55, down 0.45,
+easing out over about 170 px across and 150 px up and down). `gazeFollower()` springs a raw pointer into a
+gaze (`GAZE_EASING`): it follows at 2.4 Hz and engages over about half a second, and once the target is
+gone, or hasn't moved for 2.5 s, it drifts back to centre and hands back to idle over about two seconds. With
+no gaze, idle draws exactly as it always has.
+
+Lower down, `botMascotMoods` gives every mood's pose over time (idle, working, calling) and `renderBotMascotFrame` draws any pose. The arm rig (`poseArm`, `drawRig`,
 `composeArms`, `phoneProp`) puts an arm's tip on any target; `renderIdleWorking` and `renderCallingSwap` are
 Working and Calling with his arms. `hatRider` and `dangle` are the springs behind a hat and a dangling hem.
 `docs/arm-rig.md`, `docs/arm-spec.md` and `docs/shading.md` explain the arm rig and the one light.
@@ -50,7 +88,7 @@ Working and Calling with his arms. `hatRider` and `dangle` are the springs behin
 ## Playground
 
 `bun run dev:mascot-playground` opens `apps/mascot-playground`, which draws this package from `src/` with
-hot reload: every outfit, every animation (play, pause, scrub, speed, loop), the arm rig's pose with debug
+hot reload: every outfit, every animation segment (play, pause, scrub, speed, loop), the arm rig's pose with debug
 overlays, the app's sidebar figure and circle avatar at 1×, 2× and 3×, and PNG and SVG export. Its URL holds
 the whole state, so a link opens the same look, animation and frame.
 
@@ -65,7 +103,7 @@ src/
   hats/          hats and the hat's spring
   outfits/       clothes clipped to his body
   drapes/        ties and skirts that hang off him, and how they give way to an arm
-  effects/       floating hands, sparkles, tears, the clipboard, the phone and the thought cloud
+  effects/       floating hands, the clipboard and the phone
   moods/         every mood's timeline and blending between moods
   arms/          the arm rig: reach, drawing, the union with his body, props; and the flipper study
   animations/    Working and Calling with his arms
@@ -78,8 +116,8 @@ docs/            the arm rig, its rules and the shading
 
 ## The Rive character
 
-`rive/bot-mascot/scene.rml` is generated. Its view model `BotMascot` has `mood` (enum `BotMascotMood`:
-idle, thinking, happy, sad, sleeping, surprised), `wave` (a trigger: a lean-and-hop hello, also fired by a
+`rive/bot-mascot/scene.rml` is generated. Its view model `BotMascot` has `mood` (enum `BotMascotMood`,
+which only has idle), `wave` (a trigger: a lean-and-hop hello, also fired by a
 tap) and `shadow` (the ground shadow). The scripts need only Python 3:
 
 ```bash
@@ -87,7 +125,9 @@ python3 packages/bot-mascot/rive/tools/bot_mascot.py
 rive packages/bot-mascot/rive/bot-mascot --verify
 ```
 
-`bot_mascot.py` takes `--palette=<color>` and `--backdrop[=ARGB]` (preview captures only).
+`bot_mascot.py` takes `--palette=<color>` and `--backdrop[=ARGB]` (preview captures only). The current
+`scene.rml` was regenerated without `rive --verify` (the CLI wasn't installed), so run it before pushing the
+file to Rive.
 
 `src/data/bot-mascot-data.json` comes from the same vertices, so the SVG and the Rive file match:
 

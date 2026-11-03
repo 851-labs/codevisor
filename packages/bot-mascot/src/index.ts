@@ -40,6 +40,31 @@ export {
   type LoopTiming
 } from "./render-loop.js"
 export { BotMascotPlayer, type BotMascotPlayerOptions } from "./player.js"
+export {
+  botMascotRoute,
+  botMascotSegmentIds,
+  botMascotSegments,
+  botMascotSequence,
+  canFollow,
+  loopOf,
+  soloFrame,
+  type BotMascotRequest,
+  type BotMascotSegment,
+  type BotMascotSequence,
+  type BotMascotState,
+  type SegmentFrame,
+  type SegmentInfo,
+  type SequenceStep
+} from "./segments.js"
+export { renderBotMascotSegmentFrame, type SegmentFrameOptions } from "./render-segment.js"
+export {
+  GAZE_RANGE,
+  gazeOrigin,
+  lookingAt,
+  type BotMascotGaze,
+  type GazeRange
+} from "./gaze/gaze.js"
+export { GAZE_EASING, gazeFollower, GazeFollower, type GazeEasing } from "./gaze/gaze-follower.js"
 
 export type * from "./pose.js"
 export { palette, type Palette } from "./color/palette.js"

@@ -5,20 +5,23 @@ import { Choice } from "./controls/choice.js"
 import { drawAvatar, drawFigure, type PreviewDrawer } from "./preview-canvas.js"
 import { renderScene } from "./scene.js"
 import { backdrops, type Backdrop, type PlaygroundState } from "./state.js"
+import type { LiveGaze } from "./use-gaze.js"
 import { useThrottled } from "./use-throttled.js"
 
 export interface PreviewsProps {
   readonly state: PlaygroundState
+  readonly live: LiveGaze
 }
 
 const appFramesPerSecond = 12
 const magnifications = [1, 2, 4].map((zoom) => ({ id: String(zoom), title: `Zoom ${zoom}×` }))
 
-export function Previews({ state }: PreviewsProps) {
-  const shown = useThrottled(state, 1000 / appFramesPerSecond)
+export function Previews({ state, live }: PreviewsProps) {
+  const latest = useMemo(() => ({ state, live }), [state, live])
+  const shown = useThrottled(latest, 1000 / appFramesPerSecond)
   const [zoom, setZoom] = useState("2")
-  const figure = useMemo(() => renderScene(shown, "figure", "pf"), [shown])
-  const portrait = useMemo(() => renderScene(shown, "portrait", "pp"), [shown])
+  const figure = useMemo(() => renderScene(shown.state, "figure", "pf", shown.live), [shown])
+  const portrait = useMemo(() => renderScene(shown.state, "portrait", "pp", shown.live), [shown])
   return (
     <section className="previews">
       <header>

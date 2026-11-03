@@ -18,50 +18,23 @@ import type { FaceState } from "./face-state.js"
 export function eyeSvg(P: Palette, f: FaceState, uid: string): string {
   const turn = f.turn || 0
   const v = f.up || 0
-  const mode = f.mode || "open"
   const th = eyeTheta(turn)
-  const k = Math.cos(th)
   const x = 250 + FACE_RADIUS * Math.sin(th)
   const y = EYE_Y + v * 6
-  if (mode === "happy")
-    return closedEye(P, f, x, y - 2, EYE_WIDTH * 0.95 * k, EYE_WIDTH * 0.43, 13, true)
-  if (mode === "sleepy")
-    return closedEye(P, f, x, y + 6, EYE_WIDTH * 0.9 * k, EYE_WIDTH * 0.3, 12, false)
-  if (mode === "squeeze") return squeezedEye(P, x, y)
+  if (f.mode === "squeeze") return squeezedEye(P, x, y)
   return openEye(P, f, uid, x, y)
 }
 
-export function arcEye(
-  P: Palette,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  t: number,
-  up = true
-): string {
-  const e = up ? h / 2 : -h / 2
+export function arcEye(P: Palette, x: number, y: number, w: number, h: number, t: number): string {
+  const e = h / 2
   return (
     `<path d="M${-w / 2} ${e}C${-w / 2} ${e} ${-0.3 * w} ${-e} 0 ${-e}C${0.3 * w} ${-e} ${w / 2} ${e} ${w / 2} ${e}" ` +
     `transform="translate(${f2(x)} ${f2(y)})" fill="none" stroke="${P.eye}" stroke-width="${t}" stroke-linecap="round" stroke-linejoin="round"/>`
   )
 }
 
-function closedEye(
-  P: Palette,
-  f: FaceState,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  t: number,
-  up: boolean
-): string {
-  return arcEye(P, x, y, w, h, t, up) + (f.lashes ? arcLashes(P, x, y, w, h, up) : "")
-}
-
 function squeezedEye(P: Palette, x: number, y: number): string {
-  let out = arcEye(P, x, y + 4, EYE_WIDTH * 0.9, EYE_WIDTH * 0.2, 13, true)
+  let out = arcEye(P, x, y + 4, EYE_WIDTH * 0.9, EYE_WIDTH * 0.2, 13)
   for (const dx of [-22, 0, 22]) {
     out += `<path d="M${f2(x + dx)} ${f2(EYE_Y - BROW)}L${f2(x + dx * 1.35)} ${f2(EYE_Y - BROW - 18)}" stroke="${P.eye}" stroke-width="6" stroke-linecap="round"/>`
   }
@@ -79,7 +52,7 @@ function openEye(P: Palette, f: FaceState, uid: string, x0: number, y0: number):
   const wide = f.wide || 1
   const eye = eyeBall(P, f, uid, { x, y, k: k * wide, b: blink * wide, r }, blink)
   if (f.mode === "mad") return madEye(P, x, eye)
-  return brows(P, f, x, turn, v) + eye
+  return brow(P, f, x) + eye
 }
 
 function eyeBall(P: Palette, f: FaceState, uid: string, frame: EyeFrame, blink: number): string {
@@ -97,21 +70,9 @@ function madEye(P: Palette, x: number, eye: string): string {
   )
 }
 
-function brows(P: Palette, f: FaceState, x: number, turn: number, v: number): string {
-  if (f.eyewear === "goggles") return ""
-  let out = ""
-  if (f.thinkBrow !== undefined) out += thinkingBrow(P, f.thinkBrow, x, turn, v)
-  if (f.brow) {
-    out += `<path d="M${f2(x - BROW * 0.8)} ${f2(EYE_Y - BROW + 6)}L${f2(x + BROW * 0.8)} ${f2(EYE_Y - BROW - 6)}" fill="none" stroke="${P.eye}" stroke-width="8" stroke-linecap="round" transform="rotate(${f.brow} ${f2(x)} ${f2(EYE_Y - BROW)})"/>`
-  }
-  return out
-}
-
-function thinkingBrow(P: Palette, amt: number, x: number, turn: number, v: number): string {
-  const sg = turn < 0 ? -1 : 1
-  const by = EYE_Y - BROW + 8 - 10 * amt - 4 * Math.max(0, -v)
-  const d = `M${f2(x - 27)} ${f2(by + 4 + sg * 6 * amt)}Q${f2(x)} ${f2(by - 10 * amt)} ${f2(x + 27)} ${f2(by + 4 - sg * 6 * amt)}`
-  return `<path d="${d}" fill="none" stroke="${P.eye}" stroke-width="10" stroke-linecap="round"/>`
+function brow(P: Palette, f: FaceState, x: number): string {
+  if (f.eyewear === "goggles" || !f.brow) return ""
+  return `<path d="M${f2(x - BROW * 0.8)} ${f2(EYE_Y - BROW + 6)}L${f2(x + BROW * 0.8)} ${f2(EYE_Y - BROW - 6)}" fill="none" stroke="${P.eye}" stroke-width="8" stroke-linecap="round" transform="rotate(${f.brow} ${f2(x)} ${f2(EYE_Y - BROW)})"/>`
 }
 
 function glints(P: Palette, frame: EyeFrame, uid: string, intensity: number): string {
@@ -144,13 +105,4 @@ function lashes(P: Palette, { r, x, y, k: sx, b: sy }: EyeFrame): string {
     out += `<path d="M${f2(px)} ${f2(py)}l${f2((dx / n) * 10)} ${f2((dy / n) * 10)}" stroke="${P.eye}" stroke-width="4.5" stroke-linecap="round"/>`
   }
   return out
-}
-
-function arcLashes(P: Palette, x: number, y: number, w: number, h: number, up: boolean): string {
-  const line = (x0: number, y0: number, dx: number, dy: number): string =>
-    `<path d="M${f2(x0)} ${f2(y0)}l${dx} ${dy}" stroke="${P.eye}" stroke-width="4.5" stroke-linecap="round"/>`
-  if (up) return line(x - w / 2, y + h / 2, -8, -4) + line(x + w / 2, y + h / 2, 8, -4)
-  return [-0.3, 0, 0.3]
-    .map((u) => line(x + u * w, y + h / 2 - 1 + Math.abs(u) * -4, u * 10, 9))
-    .join("")
 }

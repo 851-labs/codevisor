@@ -46,10 +46,14 @@ interface Board {
 const BOARD_CLIP = /(<rect x="238" y="[^"]*"[^>]*fill="#AEB4C0"[^>]*\/>)/
 const workingPose = botMascotMoods.working.pose
 
-export function armsFrameState(t: number, at: WorkingTimes = IDLE_WORKING_TIMES): ArmsFrameState {
+export function armsFrameState(
+  t: number,
+  at: WorkingTimes = IDLE_WORKING_TIMES,
+  idle: (t: number) => BotMascotPose = idleAt
+): ArmsFrameState {
   const swing = at.swing ?? 0.65
   const tw = t - at.in
-  const I = idleAt(t)
+  const I = idle(t)
   if (t < at.in) return { pose: I, w: 0, tw: null }
 
   const W = workingPose(Math.max(0, tw))

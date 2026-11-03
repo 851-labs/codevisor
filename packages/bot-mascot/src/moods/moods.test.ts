@@ -19,45 +19,12 @@ const draw = (mood: BotMascotMood, t: number): string =>
 const effects = (svg: string): string => svg.slice(svg.indexOf('<g data-r="fx">'))
 
 describe("moods", () => {
-  it.each(["idle", "happy", "sad", "sleepy", "surprised", "calling"] as const)(
-    "%s loops seamlessly",
-    (mood) => {
-      const m = botMascotMoods[mood]
-      const a = m.pose(0.37)
-      const b = m.pose(0.37 + (m.loop ?? 0))
-      expect(b.tilt).toBeCloseTo(a.tilt ?? 0, 2)
-      expect(b.face?.turn ?? 0).toBeCloseTo(a.face?.turn ?? 0, 2)
-    }
-  )
-
-  it("sparkles at the top of a happy hop", () => {
-    expect(effects(draw("happy", 0.2))).not.toContain("<path")
-    expect(effects(draw("happy", 1.1))).toContain("<path")
-  })
-
-  it("lets one tear fall when sad", () => {
-    expect(effects(draw("sad", 1))).not.toContain("#9DCBFF")
-    expect(effects(draw("sad", 3.4))).toContain("#9DCBFF")
-  })
-
-  it("dozes with z's, then wakes with a jolt", () => {
-    expect(effects(draw("sleepy", 1))).toContain("<g opacity")
-    expect(effects(draw("sleepy", 4.4))).not.toContain("<g opacity")
-  })
-
-  it("shows shock marks when surprised", () => {
-    expect(effects(draw("surprised", 0.5))).toContain('stroke-width="7"')
-    expect(effects(draw("surprised", 3))).not.toContain('stroke-width="7"')
-  })
-
-  it("thinks with a cloud, icons and an idea", () => {
-    expect(effects(draw("thinking", 0.2))).toContain("<circle")
-    expect(effects(draw("thinking", 1.3))).toContain("#FFC93C")
-    expect(effects(draw("thinking", 3.0))).toContain("#E5484D")
-    expect(effects(draw("thinking", 4.7))).toContain("#4F7BFF")
-    expect(effects(draw("thinking", 6.1))).toContain(
-      'stroke-width="5" stroke-linecap="round" opacity'
-    )
+  it.each(["idle", "calling"] as const)("%s loops seamlessly", (mood) => {
+    const m = botMascotMoods[mood]
+    const a = m.pose(0.37)
+    const b = m.pose(0.37 + (m.loop ?? 0))
+    expect(b.tilt).toBeCloseTo(a.tilt ?? 0, 2)
+    expect(b.face?.turn ?? 0).toBeCloseTo(a.face?.turn ?? 0, 2)
   })
 
   it("reads a clipboard and flips its page", () => {
@@ -68,12 +35,13 @@ describe("moods", () => {
   })
 
   it("blinks through a change of eye", () => {
-    const happy = botMascotMoods.happy.pose(1.2)
+    const mad = botMascotMoods.calling.pose(6)
     const idle = botMascotMoods.idle.pose(0)
-    const mid = blendPoses(idle, happy, 0.5)
+    const mid = blendPoses(idle, mad, 0.5)
+    expect(mad.face?.mode).toBe("mad")
     expect(mid.face?.blink).toBeLessThan(0.2)
-    expect(blendPoses(idle, happy, 0).tilt).toBeCloseTo(idle.tilt ?? 0, 10)
-    expect(blendPoses(idle, happy, 1).y).toBeCloseTo(happy.y ?? 0, 10)
+    expect(blendPoses(idle, mad, 0).tilt).toBeCloseTo(idle.tilt ?? 0, 10)
+    expect(blendPoses(idle, mad, 1).tilt).toBeCloseTo(mad.tilt ?? 0, 10)
     expect(mid.fx?.every((f) => f.op <= 0.5)).toBe(true)
   })
 

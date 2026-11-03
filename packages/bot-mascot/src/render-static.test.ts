@@ -49,12 +49,7 @@ const referenceRenders: ReadonlyArray<readonly [StaticRenderOptions, string]> = 
   [
     { color: "bubblegum", hat: "party", eyewear: "monocle", outfit: "tutu", blushColor: "purple" },
     "929962880a863876"
-  ],
-  [{ color: "sunny", hat: "antennae", mood: "happy" }, "b990a95b905e2ff4"],
-  [{ color: "mint", hat: "pumpkin", mood: "thinking" }, "b1736a3012895a36"],
-  [{ color: "tomato", hat: "duck", mood: "sleepy", makeup: { blush: false } }, "3ada4b064fc78b55"],
-  [{ color: "sky", mood: "sad", eyewear: "specs" }, "311936d1eb4644a7"],
-  [{ color: "electric", mood: "surprised", outfit: "overalls" }, "104bc6caf0b4834c"]
+  ]
 ]
 
 describe("renderBotMascotSvg", () => {
@@ -70,8 +65,8 @@ describe("renderBotMascotSvg", () => {
   })
 
   it("keeps two mascots on one page from sharing ids", () => {
-    const a = elementIds(renderBotMascotSvg({ mood: "thinking", uid: "a" }))
-    const b = new Set(elementIds(renderBotMascotSvg({ mood: "thinking", uid: "b" })))
+    const a = elementIds(renderBotMascotSvg({ mood: "working", uid: "a" }))
+    const b = new Set(elementIds(renderBotMascotSvg({ mood: "working", uid: "b" })))
     expect(a.filter((id) => b.has(id))).toEqual([])
   })
 

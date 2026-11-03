@@ -1,12 +1,19 @@
 import { CALLING_EXIT } from "./animations/calling-exit.js"
-import { CALLING_SWAP_LOOP, callingSwapPose, renderCallingSwap } from "./animations/calling-swap.js"
+import {
+  callSeconds,
+  callShot,
+  type CallEnding,
+  type CallShot
+} from "./animations/calling-segments.js"
+import { callingSwapPose, renderCallingSwap } from "./animations/calling-swap.js"
+import { PICK_UP, TALK_LOOP } from "./animations/calling-talk.js"
 import {
   armsFrameState,
   renderIdleWorking,
   type ArmsFrameState,
   type WorkingTimes
 } from "./animations/idle-working.js"
-import type { BodyZones } from "./body/zones.js"
+import { bodyOf, officialBodyZones, type BodyZones } from "./body/zones.js"
 import {
   hatOf,
   portraitViewBox,
@@ -17,14 +24,17 @@ import {
 } from "./config.js"
 import { dangle, type DanglingEnd } from "./drapes/dangle.js"
 import { DrapeSwings } from "./drapes/redrape.js"
-import { s01 } from "./geometry/math.js"
+import { gazeFollower, type GazeFollower } from "./gaze/gaze-follower.js"
+import { gazeOrigin, lookingAt, type BotMascotGaze } from "./gaze/gaze.js"
+import { s01, type Point } from "./geometry/math.js"
 import { hatRider } from "./hats/hat-rider.js"
 import { hatItem } from "./hats/hats.js"
-import { blendPoses, botMascotMoods } from "./moods/moods.js"
+import { blendPoses, botMascotMoods, idleAt } from "./moods/moods.js"
 import { outfitItem } from "./outfits/outfits.js"
 import type { BotMascotPose } from "./pose.js"
 import { CALLING_STILL } from "./render-static.js"
 import { renderContext, type RenderContext } from "./render/context.js"
+import type { BotMascotRequest } from "./segments.js"
 
 export interface BotMascotPlayerOptions {
   readonly config?: BotMascotConfig
@@ -34,20 +44,16 @@ export interface BotMascotPlayerOptions {
   readonly uid?: string
 }
 
-interface CallingFrame {
-  readonly tc: number
-  readonly pose: BotMascotPose
-  readonly exit?: number
-}
-
 interface CallState {
   start: number | null
   out: number | null
   tc: number
   from: BotMascotPose | null
+  ending: CallEnding
 }
 
 const NO_WORK: WorkingTimes = { in: Infinity, out: Infinity }
+const CALL_BLEND = 0.35
 const HAT_DROP_ON_CHANGE = 190
 
 export class BotMascotPlayer {
@@ -61,8 +67,13 @@ export class BotMascotPlayer {
   private last = 0
   private armsMood: string | null = null
   private armsAt: WorkingTimes | null = null
-  private readonly call: CallState = { start: null, out: null, tc: 0, from: null }
+  private readonly call: CallState = { start: null, out: null, tc: 0, from: null, ending: "hangUp" }
+  private nextEnding: CallEnding = "hangUp"
   private shown: BotMascotPose | null = null
+  private readonly origin: Point
+  private readonly follower: GazeFollower
+  private target: Point | null = null
+  private gaze: BotMascotGaze | null = null
   private eyewearAt = 0
   private clothesAt = 0
   private dangles: { readonly kind: string; readonly ends: ReadonlyArray<DanglingEnd> } | null =
@@ -74,6 +85,14 @@ export class BotMascotPlayer {
     this.zones = options.zones
     this.uid = options.uid ?? "live"
     this.clock0 = options.now ?? 0
+    this.origin = gazeOrigin(
+      bodyOf(options.zones === undefined ? officialBodyZones : options.zones)
+    )
+    this.follower = gazeFollower(this.origin)
+  }
+
+  lookAt(target: Point | null): void {
+    this.target = target
   }
 
   get current(): ResolvedBotMascotConfig {
@@ -92,9 +111,15 @@ export class BotMascotPlayer {
     this.config = next
   }
 
+  request(request: BotMascotRequest, now: number): void {
+    if (request === "hangUp" || request === "angryHangUp") return this.endCall(request, now)
+    this.update({ mood: request }, now)
+  }
+
   frame(now: number, viewBox = portraitViewBox(this.config.hat)): string {
     const dt = this.last ? Math.max(0, now - this.last) / 1000 : 0
     this.last = now
+    this.gaze = this.reducedMotion ? null : this.follower.step(this.target, dt)
     const ctx = renderContext({ zones: this.zones, swings: this.swings, now, idPrefix: this.uid })
     const { t, st } = this.armsState(now)
     const c = this.callingAt(t, st.pose)
@@ -106,7 +131,7 @@ export class BotMascotPlayer {
     this.shown = pose
     const pal = this.config.color
     if (c)
-      return renderCallingSwap(ctx, pal, c.tc, {
+      return renderCallingSwap(ctx, pal, c.t0, {
         viewBox,
         uid: this.uid,
         pose,
@@ -114,6 +139,15 @@ export class BotMascotPlayer {
       })
     return renderIdleWorking(ctx, pal, t, viewBox, this.uid, { state: { ...st, pose } })
   }
+
+  private endCall(ending: CallEnding, now: number): void {
+    if (this.config.mood !== "calling") return
+    this.nextEnding = ending
+    this.update({ mood: "idle" }, now)
+  }
+
+  private readonly idlePose = (t: number): BotMascotPose =>
+    lookingAt(idleAt(t), this.gaze, this.origin)
 
   private dropHat(on: boolean): void {
     this.hat.reset()
@@ -131,13 +165,13 @@ export class BotMascotPlayer {
         this.armsAt = {
           in: first
             ? t - 2
-            : Math.max(t, this.call.out !== null ? this.call.out + CALLING_EXIT : t),
+            : Math.max(t, this.call.out !== null ? this.call.out + this.callEnding() : t),
           out: Infinity
         }
       else if (this.armsAt) this.armsAt = { ...this.armsAt, out: Math.min(this.armsAt.out, t) }
     }
     if (this.armsAt && this.armsAt.out !== Infinity && t > this.armsAt.out + 1) this.armsAt = null
-    return { t, st: armsFrameState(t, this.armsAt ?? NO_WORK) }
+    return { t, st: armsFrameState(t, this.armsAt ?? NO_WORK, this.idlePose) }
   }
 
   private stillArms(t: number): { t: number; st: ArmsFrameState } {
@@ -147,31 +181,32 @@ export class BotMascotPlayer {
     return { t: 0, st: { pose: botMascotMoods.idle.pose(0), w: 0, tw: null } }
   }
 
-  private callingAt(t: number, base: BotMascotPose): CallingFrame | null {
+  private callingAt(t: number, base: BotMascotPose): CallShot | null {
     if (this.reducedMotion)
       return this.config.mood === "calling"
-        ? { tc: CALLING_STILL, pose: callingSwapPose(CALLING_STILL) }
+        ? { t0: CALLING_STILL, pose: callingSwapPose(CALLING_STILL) }
         : null
     if (this.config.mood === "calling") return this.onCall(t, base)
     return this.hangingUp(t, base)
   }
 
-  private onCall(t: number, base: BotMascotPose): CallingFrame | null {
+  private onCall(t: number, base: BotMascotPose): CallShot | null {
     const call = this.call
+    if (this.stillEnding(t)) return this.hangingUp(t, base)
     if (call.start === null || call.out !== null) {
       call.start = this.armsAt ? this.armsAt.out + 0.9 : t
       call.out = null
       call.from = null
     }
     if (t < call.start) return null
-    const tc = (t - call.start) % CALLING_SWAP_LOOP
-    const P = callingSwapPose(tc)
+    const tc = t - call.start
+    const shot =
+      tc < PICK_UP ? callShot("pickUp", tc, base) : callShot("calling", tc - PICK_UP, base)
     call.from ??= this.shown || base
-    const u = s01((t - call.start) / 0.35)
-    return { tc, pose: u < 1 ? { ...blendPoses(call.from, P, u), fx: P.fx ?? [] } : P }
+    return { ...shot, pose: easedIn(call.from, shot.pose, tc) }
   }
 
-  private hangingUp(t: number, base: BotMascotPose): CallingFrame | null {
+  private hangingUp(t: number, base: BotMascotPose): CallShot | null {
     const call = this.call
     if (call.start === null) return null
     if (call.out === null) {
@@ -180,20 +215,35 @@ export class BotMascotPlayer {
         return null
       }
       call.out = t
-      call.tc = (t - call.start) % CALLING_SWAP_LOOP
+      call.tc = t - call.start
+      call.ending = this.nextEnding
+      this.nextEnding = "hangUp"
     }
     const u = t - call.out
-    if (u >= CALLING_EXIT) {
+    if (u >= this.callEnding()) {
       call.start = null
       call.out = null
       return null
     }
-    const P = callingSwapPose(call.tc)
+    if (call.tc < PICK_UP) return this.droppingCall(u, base)
+    return callShot(call.ending, u, base, (call.tc - PICK_UP) % TALK_LOOP)
+  }
+
+  private droppingCall(u: number, base: BotMascotPose): CallShot {
+    const P = callingSwapPose(this.call.tc)
     return {
-      tc: call.tc,
+      t0: this.call.tc,
       exit: u,
       pose: { ...blendPoses(P, base, s01(u / CALLING_EXIT)), fx: P.fx ?? [] }
     }
+  }
+
+  private callEnding(): number {
+    return this.call.tc < PICK_UP ? CALLING_EXIT : callSeconds[this.call.ending]
+  }
+
+  private stillEnding(t: number): boolean {
+    return this.call.out !== null && t < this.call.out + this.callEnding()
   }
 
   private hatted(ctx: RenderContext, pose: BotMascotPose, dt: number): BotMascotPose {
@@ -239,4 +289,9 @@ export class BotMascotPlayer {
   private fadeIn(at: number, now: number, ms: number): number {
     return this.reducedMotion || !at ? 1 : s01((now - at) / ms)
   }
+}
+
+function easedIn(from: BotMascotPose, to: BotMascotPose, t: number): BotMascotPose {
+  const u = s01(t / CALL_BLEND)
+  return u < 1 ? { ...blendPoses(from, to, u), fx: to.fx ?? [] } : to
 }

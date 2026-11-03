@@ -4,7 +4,7 @@ import type { BodyZones } from "./body/zones.js"
 import { dressed, portraitViewBox, resolveConfig, type BotMascotConfig } from "./config.js"
 import { botMascotMoods } from "./moods/moods.js"
 import { renderContext } from "./render/context.js"
-import { renderFrame, type Backdrop } from "./render/frame.js"
+import type { Backdrop } from "./render/frame.js"
 
 export interface StaticRenderOptions extends BotMascotConfig {
   readonly size?: number
@@ -28,19 +28,15 @@ export function renderBotMascotSvg(options: StaticRenderOptions = {}): string {
     ...(options.backdrop ? { backdrop: options.backdrop } : {})
   }
   const edit = dressed(config)
-  const mood = botMascotMoods[config.mood]
   if (config.mood === "calling") {
     return renderCallingSwap(ctx, config.color, CALLING_STILL, {
       ...frame,
       pose: edit(callingSwapPose(CALLING_STILL))
     })
   }
-  if (config.mood === "idle" || config.mood === "working") {
-    return renderIdleWorking(ctx, config.color, mood.still, viewBox, uid, {
-      ...frame,
-      mode: config.mood,
-      edit
-    })
-  }
-  return renderFrame(ctx, config.color, edit(mood.pose(mood.still)), frame)
+  return renderIdleWorking(ctx, config.color, botMascotMoods[config.mood].still, viewBox, uid, {
+    ...frame,
+    mode: config.mood,
+    edit
+  })
 }

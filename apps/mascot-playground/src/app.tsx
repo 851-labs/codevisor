@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react"
 
+import { animationById } from "./animations.js"
 import { ArmPanel } from "./arm-panel.js"
 import { Choice, titled } from "./controls/choice.js"
 import { ExportButtons } from "./export-buttons.js"
@@ -11,6 +12,7 @@ import { backdrops, type PlaygroundState } from "./state.js"
 import { Transport } from "./transport.js"
 import { stateFromSearch } from "./url-state.js"
 import { useAnimationFrames } from "./use-animation-frames.js"
+import { useGaze } from "./use-gaze.js"
 import { useKeyboard } from "./use-keyboard.js"
 import { useUrlSync } from "./use-url-sync.js"
 
@@ -21,6 +23,7 @@ export function App() {
   const change = useCallback((next: Change) => setState(next), [])
   const set = (patch: Partial<PlaygroundState>) => change((s) => ({ ...s, ...patch }))
   useAnimationFrames(state.playing, (elapsed) => change((s) => advanced(s, elapsed)))
+  const { live, point } = useGaze(animationById(state.animation).gazes)
   useUrlSync(state)
   useKeyboard(change)
 
@@ -34,14 +37,14 @@ export function App() {
           options={titled(backdrops)}
           onChange={(backdrop) => set({ backdrop })}
         />
-        <ExportButtons state={state} />
+        <ExportButtons state={state} live={live} />
         <button onClick={() => void navigator.clipboard.writeText(location.href)}>Copy link</button>
       </header>
       <main>
         <section className="stage-column">
-          <Stage state={state} onRig={(rig) => set({ rig })} />
+          <Stage state={state} live={live} onRig={(rig) => set({ rig })} onPointer={point} />
           <Transport state={state} change={change} />
-          <Previews state={state} />
+          <Previews state={state} live={live} />
         </section>
         <aside>
           <LookPanel look={state.look} onChange={(look) => set({ look })} />

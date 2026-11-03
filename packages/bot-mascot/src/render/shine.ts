@@ -39,21 +39,3 @@ export const arcD = (
   }
   return d
 }
-
-export const star4 = (
-  x: number,
-  y: number,
-  r: number,
-  fill: string,
-  edge: string,
-  op: number,
-  rot = 0
-): string => {
-  const pts: Array<string> = []
-  for (let i = 0; i < 8; i++) {
-    const a = (i * Math.PI) / 4 - Math.PI / 2 + (rot * Math.PI) / 180
-    const rr = i % 2 ? r * 0.38 : r
-    pts.push(`${f2(x + Math.cos(a) * rr)} ${f2(y + Math.sin(a) * rr)}`)
-  }
-  return `<path d="M${pts.join("L")}Z" fill="${fill}" stroke="${edge}" stroke-width="4" stroke-linejoin="round" opacity="${f2(op)}"/>`
-}

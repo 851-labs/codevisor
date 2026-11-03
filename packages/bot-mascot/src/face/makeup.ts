@@ -39,7 +39,7 @@ export function makeupSvg(P: Palette, f: FaceState, uid: string): string {
 
 function blush(P: Palette, f: FaceState, uid: string, cx: number, k: number): string {
   const c = cyclops.cheek
-  return `<ellipse cx="${f2(cx)}" cy="${c.y}" rx="${f2(c.rx * k * (f.cheeks || 1))}" ry="${c.ry}" fill="${f.blushColor || P.cheek}" fill-opacity="${f.blushColor ? 0.7 : 1}" filter="url(#${uid}b4)" opacity="${f2(Math.min(1, k * 1.3) * (f.cheekOp ?? 1))}"/>`
+  return `<ellipse cx="${f2(cx)}" cy="${c.y}" rx="${f2(c.rx * k)}" ry="${c.ry}" fill="${f.blushColor || P.cheek}" fill-opacity="${f.blushColor ? 0.7 : 1}" filter="url(#${uid}b4)" opacity="${f2(Math.min(1, k * 1.3))}"/>`
 }
 
 function freckles(P: Palette, cx: number, k: number): string {

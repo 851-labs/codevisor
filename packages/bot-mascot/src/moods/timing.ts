@@ -40,11 +40,6 @@ export function bake(target: Curve, hz: number, z: number, loop: number): Curve 
   }
 }
 
-export const arcHeight = (t: number, a: number, b: number, h: number): number => {
-  const u = (t - a) / (b - a)
-  return u > 0 && u < 1 ? h * 4 * u * (1 - u) : 0
-}
-
 export const lidAt = (t: number, dur: number, ...times: ReadonlyArray<number>): number => {
   let b = 1
   for (const a of times) {
@@ -56,26 +51,3 @@ export const lidAt = (t: number, dur: number, ...times: ReadonlyArray<number>): 
 
 export const blinkAt = (t: number, ...times: ReadonlyArray<number>): number =>
   lidAt(t, 0.14, ...times)
-
-export const accent = (
-  t: number,
-  a: number,
-  b: number,
-  mode: "happy" | "open" | "sleepy",
-  close = 0.08,
-  open = 0.1
-): { readonly mode: "happy" | "open" | "sleepy"; readonly blink: number } => {
-  if (t >= a && t < b) return { mode, blink: 1 }
-  const lid = t < a ? 0.08 + 0.92 * s01((a - t) / close) : 0.08 + 0.92 * s01((t - b) / open)
-  return { mode: "open", blink: lid }
-}
-
-export const decay = (t: number, a: number, rate: number, hz: number): number =>
-  t > a ? Math.exp(-(t - a) * rate) * Math.cos(TAU * hz * (t - a)) : 0
-
-export const popIn = (t: number, a: number, d = 0.3, o = 0.2): number => {
-  const u = (t - a) / d
-  if (u <= 0) return 0
-  if (u >= 1) return 1
-  return s01(u / 0.7) * (1 + o) - o * s01((u - 0.7) / 0.3)
-}

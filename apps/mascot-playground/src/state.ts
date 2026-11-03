@@ -42,6 +42,7 @@ export interface PlaygroundState {
   readonly playing: boolean
   readonly speed: number
   readonly loop: boolean
+  readonly showGaze: boolean
   readonly fps: number
   readonly backdrop: Backdrop
   readonly rig: RigControls
@@ -84,6 +85,7 @@ export const defaultState: PlaygroundState = {
   playing: true,
   speed: 1,
   loop: true,
+  showGaze: false,
   fps: 60,
   backdrop: "light",
   rig: {

@@ -1,6 +1,6 @@
 import type { Point } from "./geometry/math.js"
 
-export type EyeMode = "open" | "happy" | "sleepy" | "squeeze" | "mad"
+export type EyeMode = "open" | "squeeze" | "mad"
 
 export interface LegPose {
   readonly rot?: number
@@ -16,11 +16,8 @@ export interface FacePose {
   readonly blink?: number
   readonly mode?: EyeMode
   readonly wide?: number
-  readonly cheeks?: number
-  readonly cheekOp?: number
   readonly glint?: number
   readonly brow?: number | undefined
-  readonly thinkBrow?: number
 }
 
 export interface HatPose {
@@ -52,43 +49,11 @@ export interface WearPose {
   readonly tips?: ReadonlyArray<Point>
 }
 
-export interface SparkleEffect {
-  readonly kind: "sparkle"
-  readonly x: number
-  readonly y: number
-  readonly r: number
-  readonly op: number
-}
-
-export interface SleepEffect {
-  readonly kind: "z"
-  readonly x: number
-  readonly y: number
-  readonly s: number
-  readonly op: number
-}
-
-export interface TearEffect {
-  readonly kind: "tear"
-  readonly x: number
-  readonly y: number
-  readonly op: number
-}
-
 export interface DotEffect {
   readonly kind: "dot" | "puff"
   readonly x: number
   readonly y: number
   readonly r: number
-  readonly op: number
-}
-
-export interface PopEffect {
-  readonly kind: "pop"
-  readonly x: number
-  readonly y: number
-  readonly dx: number
-  readonly dy: number
   readonly op: number
 }
 
@@ -106,22 +71,7 @@ export interface CallingEffect {
   readonly op: number
 }
 
-export interface ThinkEffect {
-  readonly kind: "think"
-  readonly tt: number
-  readonly pop: number
-  readonly op: number
-}
-
-export type Effect =
-  | SparkleEffect
-  | SleepEffect
-  | TearEffect
-  | DotEffect
-  | PopEffect
-  | ClipboardEffect
-  | CallingEffect
-  | ThinkEffect
+export type Effect = DotEffect | ClipboardEffect | CallingEffect
 
 export interface BotMascotPose {
   readonly y?: number

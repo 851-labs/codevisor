@@ -1,4 +1,4 @@
-import { animations } from "./animations.js"
+import { animationById, animations } from "./animations.js"
 import { Choice } from "./controls/choice.js"
 import { Toggle } from "./controls/toggle.js"
 import { atFrame, frameCount, steppedFrames, toggledPlaying } from "./playback.js"
@@ -40,7 +40,8 @@ export function Transport({ state, change }: TransportProps) {
           ▶︎
         </button>
         <output className="counter">
-          frame {frameOf(state)} / {frames} · {state.time.toFixed(2)}s
+          frame {frameOf(state)} / {frames} · {state.time.toFixed(2)}s ·{" "}
+          {animationById(state.animation).title}
         </output>
       </div>
       <input
@@ -68,6 +69,11 @@ export function Transport({ state, change }: TransportProps) {
           onChange={(fps) => set({ fps: Number(fps) })}
         />
         <Toggle label="Loop" checked={state.loop} onChange={(loop) => set({ loop })} />
+        <Toggle
+          label="Show gaze target"
+          checked={state.showGaze}
+          onChange={(showGaze) => set({ showGaze })}
+        />
       </div>
     </section>
   )

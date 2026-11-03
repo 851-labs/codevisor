@@ -50,16 +50,7 @@ describe("bot mascot options", () => {
     expect(ids(botMascotEyewear)).toEqual(["specs", "monocle", "goggles"])
     expect(ids(botMascotOutfits)).toEqual(["tie", "tutu", "dress", "robe", "suit", "overalls"])
     expect(ids(botMascotMakeup)).toEqual(["blush", "freckles", "lashes"])
-    expect(ids(botMascotMoodOptions)).toEqual([
-      "idle",
-      "happy",
-      "sad",
-      "sleepy",
-      "surprised",
-      "thinking",
-      "working",
-      "calling"
-    ])
+    expect(ids(botMascotMoodOptions)).toEqual(["idle", "working", "calling"])
   })
 
   it("titles every choice for a picker", () => {

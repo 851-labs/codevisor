@@ -1,11 +1,14 @@
-import { useMemo, useRef, type PointerEvent } from "react"
+import { useEffect, useMemo, useRef, type PointerEvent } from "react"
 
 import { renderScene } from "./scene.js"
 import { withArm, type ArmSide, type PlaygroundState, type RigControls } from "./state.js"
+import type { LiveGaze, Point } from "./use-gaze.js"
 
 export interface StageProps {
   readonly state: PlaygroundState
+  readonly live: LiveGaze
   readonly onRig: (rig: RigControls) => void
+  readonly onPointer: (pointer: Point | null) => void
 }
 
 interface Drag {
@@ -14,10 +17,11 @@ interface Drag {
 
 const bodyCenterX = 250
 
-export function Stage({ state, onRig }: StageProps) {
+export function Stage({ state, live, onRig, onPointer }: StageProps) {
   const host = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
-  const svg = useMemo(() => renderScene(state, "stage", "st"), [state])
+  const svg = useMemo(() => renderScene(state, "stage", "st", live), [state, live])
+  useEffect(() => forgetPointerOutside(host.current, onPointer), [onPointer])
 
   const aim = (event: PointerEvent<HTMLDivElement>, side: ArmSide) => {
     const target = bodyPoint(host.current, event)
@@ -36,6 +40,7 @@ export function Stage({ state, onRig }: StageProps) {
   }
 
   const move = (event: PointerEvent<HTMLDivElement>) => {
+    onPointer(scenePoint(host.current, event))
     if (drag.current) aim(event, drag.current.side)
   }
 
@@ -54,6 +59,33 @@ export function Stage({ state, onRig }: StageProps) {
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   )
+}
+
+function forgetPointerOutside(
+  host: HTMLDivElement | null,
+  onPointer: (pointer: Point | null) => void
+): () => void {
+  const away = (event: Event) => {
+    if (!(event.target instanceof Node) || !host?.contains(event.target)) onPointer(null)
+  }
+  const gone = () => onPointer(null)
+  window.addEventListener("pointermove", away)
+  document.documentElement.addEventListener("pointerleave", gone)
+  return () => {
+    window.removeEventListener("pointermove", away)
+    document.documentElement.removeEventListener("pointerleave", gone)
+  }
+}
+
+function scenePoint(
+  host: HTMLDivElement | null,
+  event: PointerEvent<HTMLDivElement>
+): Point | null {
+  const matrix = host?.querySelector("svg")?.getScreenCTM()?.inverse()
+  if (!matrix) return null
+
+  const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix)
+  return [p.x, p.y]
 }
 
 function bodyPoint(
