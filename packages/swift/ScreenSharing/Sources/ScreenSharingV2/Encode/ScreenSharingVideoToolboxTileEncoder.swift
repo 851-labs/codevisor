@@ -1,3 +1,4 @@
+import Dispatch
 import CoreVideo
 import ScreenSharing
 import Synchronization
@@ -51,7 +52,11 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
       return tiles.forEach { fail($0, request, error) }
     }
     if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6) }
-    for tile in tiles {
+    defer {
+      metrics.observe("updateSubmit", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6)
+    }
+    DispatchQueue.concurrentPerform(iterations: tiles.count) { index in
+      let tile = tiles[index]
       do {
         guard let tilePixels = pixels[tile] else { throw ScreenSharingError.invalid("No tile \(tile).") }
 

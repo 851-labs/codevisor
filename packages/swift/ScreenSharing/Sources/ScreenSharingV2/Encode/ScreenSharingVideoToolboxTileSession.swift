@@ -15,7 +15,9 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
 
   private struct Submission: Sendable {
     let id: UInt64
-    let request: ScreenSharingTileEncodeRequest
+    let update: ScreenSharingTileUpdate
+    let sourceTimestampNs: Int64
+    let capturedNs: Int64
     let refresh: ScreenSharingTileRefresh?
     let submittedNs: Int64
   }
@@ -46,6 +48,9 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   func encode(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
     try reopenFailedSession()
     let (submission, acknowledged, presentationNs) = try begin(request)
+    defer {
+      metrics.observe("encodeCall", milliseconds: Double(ScreenSharingMetrics.nowNs - submission.submittedNs) / 1e6)
+    }
     let status = VTCompressionSessionEncodeFrame(
       currentSession, imageBuffer: pixels,
       presentationTimeStamp: CMTime(value: presentationNs, timescale: 1_000_000_000), duration: .invalid,
@@ -118,7 +123,8 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
       state.inFlight.insert(state.nextSubmission)
       state.lastPresentationNs = max(state.lastPresentationNs + 1, submittedNs)
       let submission = Submission(
-        id: state.nextSubmission, request: request, refresh: request.refreshes[tile], submittedNs: submittedNs)
+        id: state.nextSubmission, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
+        capturedNs: request.capturedNs, refresh: request.refreshes[tile], submittedNs: submittedNs)
       return (submission, acknowledged, state.lastPresentationNs)
     }
   }
@@ -137,10 +143,9 @@ final class ScreenSharingVideoToolboxTileSession: @unchecked Sendable {
   }
 
   private func encodedTile(_ submission: Submission, sample: ScreenSharingEncodedSample) -> ScreenSharingEncodedTile {
-    let request = submission.request
-    return ScreenSharingEncodedTile(
-      tile: tile, update: request.update, sourceTimestampNs: request.sourceTimestampNs,
-      capturedNs: request.capturedNs, submittedNs: submission.submittedNs, encodedNs: ScreenSharingMetrics.nowNs,
+    ScreenSharingEncodedTile(
+      tile: tile, update: submission.update, sourceTimestampNs: submission.sourceTimestampNs,
+      capturedNs: submission.capturedNs, submittedNs: submission.submittedNs, encodedNs: ScreenSharingMetrics.nowNs,
       isKeyFrame: sample.isKeyFrame, refresh: sample.isKeyFrame ? .keyframe : submission.refresh,
       ltrToken: sample.ltrToken, accessUnit: sample.accessUnit)
   }
