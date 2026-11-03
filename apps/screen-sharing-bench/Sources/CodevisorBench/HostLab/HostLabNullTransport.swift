@@ -6,6 +6,7 @@ final class HostLabNullTransport: ScreenSharingMediaTransport, @unchecked Sendab
   private var events: AsyncStream<ScreenSharingMediaEvent>.Iterator
   private let continuation: AsyncStream<ScreenSharingMediaEvent>.Continuation
   private let sizes = Mutex(HostLabTileSizes())
+  private static let ackDelay = DispatchTimeInterval.milliseconds(1)
   private let admitted = ScreenSharingMediaAdmission(
     admit: true, backlogBytes: 0, estimateKbps: UInt64(ScreenSharingV2Profile.bitrateCeiling / 1000),
     encoderCeilingKbps: UInt64(ScreenSharingV2Profile.bitrateCeiling / 1000))
@@ -24,7 +25,8 @@ final class HostLabNullTransport: ScreenSharingMediaTransport, @unchecked Sendab
     }
     guard let token = tile.ltrToken else { return }
 
-    continuation.yield(.ltrAcked(stream: UInt8(tile.tile), token: token))
+    let event = ScreenSharingMediaEvent.ltrAcked(stream: UInt8(tile.tile), token: token)
+    DispatchQueue.global().asyncAfter(deadline: .now() + Self.ackDelay) { [continuation] in continuation.yield(event) }
   }
 
   func admission() -> ScreenSharingMediaAdmission { admitted }

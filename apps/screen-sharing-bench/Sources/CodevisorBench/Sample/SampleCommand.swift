@@ -41,7 +41,8 @@ struct SampleCommand: BenchCommand {
       try await clock.sleep(until: next)
     }
     if let output { try UsageSeconds.write(counters: counters, groups: groups, snapshots: snapshots, to: output) }
-    let everything = first.flatMap { first in last.flatMap { ProcessTotals(from: first, to: $0) } }
+    var everything: ProcessTotals?
+    if let first, let last { everything = ProcessTotals(from: first, to: last) }
     try BenchOutput.print(
       SampleResult(
         interface: interface, counters: counters, groups: groups, snapshots: snapshots, allProcesses: everything))

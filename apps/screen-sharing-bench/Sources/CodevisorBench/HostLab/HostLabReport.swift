@@ -10,7 +10,9 @@ struct HostLabResult: Encodable {
   let seconds: Int
 
   func perSecond(_ counter: String) -> Double? {
-    run?.counters[counter].map { Double($0) / Double(seconds) }
+    guard let run, run.capturedSeconds > 0 else { return nil }
+
+    return run.counters[counter].map { Double($0) / run.capturedSeconds }
   }
 }
 
@@ -40,7 +42,8 @@ struct HostLabReport: Encodable {
     }
     let title = [
       "## Host lab at \(resolution), \(seconds) s per variant", "",
-      "Counts are per second. Captures, tiles and refinements come from the variant's host metrics.", "", header,
+      "Counts are per second of the variant's capture. Captures, tiles and refinements come from its host metrics.", "",
+      header,
       "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     let sizes = ["", "Encoded tile sizes by refinement pass (0 is the change):", ""] + passes

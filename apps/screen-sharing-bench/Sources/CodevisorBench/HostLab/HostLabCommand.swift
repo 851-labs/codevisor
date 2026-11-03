@@ -18,6 +18,7 @@ struct HostLabCommand: BenchCommand {
   private static let settles = 1...30
   private static let playerLeadSeconds = 5
   private static let childSlackSeconds = 3
+  private static let variantStartupSeconds = 15
 
   let presentsWindows = false
   private let scenes: [BenchScene]
@@ -48,6 +49,7 @@ struct HostLabCommand: BenchCommand {
 
   func run() async throws {
     let display = try await SharedDisplay.make(resolution)
+    defer { withExtendedLifetime(display) {} }
     var results: [HostLabResult] = []
     for scene in scenes {
       results += try await measure(scene, on: display.id)
@@ -60,7 +62,7 @@ struct HostLabCommand: BenchCommand {
   }
 
   private func measure(_ scene: BenchScene, on displayID: CGDirectDisplayID) async throws -> [HostLabResult] {
-    let perVariant = seconds + settle + Self.childSlackSeconds + 2
+    let perVariant = seconds + settle + Self.childSlackSeconds + Self.variantStartupSeconds
     let player = try HostLabChild.launch([
       "player", "--scene", scene.rawValue, "--display-id", "\(displayID)", "--duration",
       "\(Self.playerLeadSeconds + perVariant * variants.count + 5)",
@@ -84,6 +86,8 @@ struct HostLabCommand: BenchCommand {
         "host-run", "--display-id", "\(displayID)", "--seconds", "\(settle + seconds + Self.childSlackSeconds)",
         "--output", file.path,
       ] + variant.arguments)
+    defer { child.stop() }
+    child.stop(after: .seconds(settle + seconds + Self.childSlackSeconds + Self.variantStartupSeconds))
     try await Task.sleep(for: .seconds(settle))
     let groups = Self.groups.map(ProcessGroup.init(name:))
     let start = try ProcessListing.capture()

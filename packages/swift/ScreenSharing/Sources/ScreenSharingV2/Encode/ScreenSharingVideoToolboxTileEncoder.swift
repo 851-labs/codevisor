@@ -32,7 +32,10 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
         bitrate: configuration.bitrate, longTermReferences: longTermReferences)
       return try ScreenSharingVideoToolboxTileSession(tile: tile, factory: factory, metrics: metrics, relay: relay)
     }
-    metrics.label("encoder", "VideoToolbox HEVC Main, low-latency rate control, LTR, no periodic keyframe")
+    metrics.label(
+      "encoder",
+      "VideoToolbox HEVC Main, low-latency rate control, \(longTermReferences ? "LTR" : "no LTR"), no periodic keyframe"
+    )
     metrics.label("encoderSize", "\(layout.width)x\(layout.height)")
     metrics.label("encoderTiles", "\(layout.count) of \(layout.width)x\(layout.tileHeight)")
   }

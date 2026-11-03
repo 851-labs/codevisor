@@ -32,6 +32,10 @@ final class HostLabChild: @unchecked Sendable {
     }
   }
 
+  func stop(after delay: Duration) {
+    DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(Int(delay.components.seconds))) { [self] in stop() }
+  }
+
   func stop() {
     guard process.isRunning else { return }
 

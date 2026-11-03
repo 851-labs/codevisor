@@ -19,7 +19,12 @@ struct HostRunCommand: BenchCommand {
   private let variant: HostLabVariant
 
   init(options: BenchOptions) throws {
-    displayID = CGDirectDisplayID(try options.integer("display-id", default: 0, in: 1...Int(UInt32.max)))
+    let display = try options.requiredString("display-id")
+    guard let displayID = CGDirectDisplayID(display), displayID > 0 else {
+      throw BenchUsageError(message: "--display-id takes a display number, not \(display)")
+    }
+
+    self.displayID = displayID
     seconds = try options.integer("seconds", default: 30, in: Self.durations)
     output = try options.requiredString("output")
     variant = try HostLabVariant(options: options)
@@ -43,17 +48,26 @@ struct HostRunCommand: BenchCommand {
     try await capture.setShowsCursor(variant.showsCursor)
     host.start()
     var captureError: String?
+    let clock = ContinuousClock()
+    var started = clock.now
     do {
       try await capture.start(displayID: displayID, configuration: configuration, sink: host, metrics: metrics)
+      started = clock.now
       try await Task.sleep(for: .seconds(seconds))
     } catch {
       captureError = "\(error)"
     }
     try? await capture.stop()
+    let captured = clock.now - started
     host.stop()
     let result = HostRunResult(
-      variant: variant.name, captureError: captureError, metrics: metrics.snapshot(), passes: transport.passes)
+      variant: variant.name, captureError: captureError, capturedSeconds: Self.inSeconds(captured),
+      metrics: metrics.snapshot(), passes: transport.passes)
     try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: output))
+  }
+
+  private static func inSeconds(_ duration: Duration) -> Double {
+    Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
   }
 
   private static func configuration(
@@ -71,13 +85,16 @@ struct HostRunCommand: BenchCommand {
 struct HostRunResult: Codable {
   let variant: String
   let captureError: String?
+  let capturedSeconds: Double
   let counters: [String: Int]
   let timings: [String: ScreenSharingMetrics.Timing]
   let passes: [HostLabTileSizes.Pass]
 
   init(
-    variant: String, captureError: String?, metrics: ScreenSharingMetrics.Snapshot, passes: [HostLabTileSizes.Pass]
+    variant: String, captureError: String?, capturedSeconds: Double, metrics: ScreenSharingMetrics.Snapshot,
+    passes: [HostLabTileSizes.Pass]
   ) {
+    self.capturedSeconds = capturedSeconds
     self.variant = variant
     self.captureError = captureError
     counters = metrics.counters
