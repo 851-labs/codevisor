@@ -112,6 +112,78 @@ struct ScreenSharingVideoRefreshTests {
     #expect(sends == 3)
   }
 
+  @Test @MainActor func aRequestIsRepeatedAfterATickWithoutVideoOrOnceASecondWhileVideoArrives() async {
+    let clock = TestClock()
+    let origin = clock.now
+    var sends = 0
+    let received = ReceivedVideoBytes()
+    received.count = 1_000
+    let requester = ScreenSharingRefreshRequester(
+      available: { true },
+      send: {
+        sends += 1; return true
+      },
+      receivedMediaBytes: { received.count },
+      nowNs: {
+        let parts = origin.duration(to: clock.now).components
+        return parts.seconds * 1_000_000_000 + parts.attoseconds / 1_000_000_000
+      }, sleep: { try await clock.sleep(for: $0) })
+    requester.update(.init(revision: 1, needed: true))
+    #expect(sends == 1)
+    for tick in 1...3 {
+      await clock.waitForSleep(.milliseconds(100), count: tick)
+      received.count += 500_000
+      clock.advance(by: .milliseconds(100))
+    }
+    await clock.waitForSleep(.milliseconds(100), count: 4)
+    #expect(sends == 1)
+    clock.advance(by: .milliseconds(100))
+    await clock.waitForSleep(.milliseconds(100), count: 5)
+    #expect(sends == 2)
+    for tick in 5...13 {
+      received.count += 500_000
+      clock.advance(by: .milliseconds(100))
+      await clock.waitForSleep(.milliseconds(100), count: tick + 1)
+    }
+    #expect(sends == 2)
+    received.count += 500_000
+    clock.advance(by: .milliseconds(100))
+    await clock.waitForSleep(.milliseconds(100), count: 15)
+    #expect(sends == 3, "video arriving for a whole second doesn't hold the request back any longer")
+    await requester.close()?.value
+  }
+
+  @Test @MainActor func aNewRefreshDoesNotWaitOnThePreviousRefreshsRepeatInterval() async {
+    let clock = TestClock()
+    let origin = clock.now
+    var sends = 0
+    let received = ReceivedVideoBytes()
+    let requester = ScreenSharingRefreshRequester(
+      available: { true },
+      send: {
+        sends += 1; return true
+      },
+      receivedMediaBytes: { received.count },
+      nowNs: {
+        let parts = origin.duration(to: clock.now).components
+        return parts.seconds * 1_000_000_000 + parts.attoseconds / 1_000_000_000
+      }, sleep: { try await clock.sleep(for: $0) })
+    requester.update(.init(revision: 1, needed: true))
+    #expect(sends == 1)
+    await clock.waitForSleep(.milliseconds(100))
+    clock.advance(by: .milliseconds(50))
+    requester.update(.init(revision: 2, needed: false))
+    clock.advance(by: .milliseconds(30))
+    requester.update(.init(revision: 3, needed: true))
+    #expect(sends == 1, "the rate limit holds the immediate request")
+    await clock.waitForSleep(.milliseconds(100), count: 2)
+    received.count += 500_000
+    clock.advance(by: .milliseconds(100))
+    await clock.waitForSleep(.milliseconds(100), count: 3)
+    #expect(sends == 2, "video arriving doesn't hold back the first request of a new refresh")
+    await requester.close()?.value
+  }
+
   @Test func cachedRefreshUsesLatestBufferAndStrictlyIncreasingTimestamps() throws {
     var pixel: CVPixelBuffer?
     #expect(CVPixelBufferCreate(nil, 16, 16, kCVPixelFormatType_32BGRA, nil, &pixel) == kCVReturnSuccess)

@@ -14,11 +14,11 @@ final class ScreenSharingReceiverRecovery {
     videoRefresh: any ScreenSharingMessageChannel<ScreenSharingVideoRefreshMessage>,
     grace: Duration = ScreenSharingDeliveryVerifier.defaultGrace,
     graceExtensions: Int = ScreenSharingDeliveryVerifier.defaultGraceExtensions,
+    receivedMediaBytes: @escaping ScreenSharingReceivedMediaBytes = { nil },
     nowNs: @escaping @Sendable () -> Int64 = { ScreenSharingMetrics.nowNs },
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
-    self.metrics = metrics
-    self.codecFactory = codecFactory
+    self.metrics = metrics; self.codecFactory = codecFactory
     let requestSendMeasurement = requestSendMeasurement
     refreshRequester = ScreenSharingRefreshRequester(
       available: { [weak videoRefresh] in videoRefresh?.isAvailable == true },
@@ -30,9 +30,10 @@ final class ScreenSharingReceiverRecovery {
         }
         return true
       },
-      nowNs: nowNs, sleep: sleep)
+      receivedMediaBytes: receivedMediaBytes, nowNs: nowNs, sleep: sleep)
     deliveryVerifier = ScreenSharingDeliveryVerifier(
       audit: codecFactory.deliveryAudit, grace: grace, graceExtensions: graceExtensions,
+      receivedMediaBytes: receivedMediaBytes,
       refresh: { [refreshSignal = codecFactory.refreshSignal] in
         let now = String(ScreenSharingMetrics.nowNs)
         if refreshSignal.requestUnlessPending() {
