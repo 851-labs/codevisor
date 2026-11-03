@@ -17,29 +17,35 @@ final class ScreenSharingV2TileCutter: @unchecked Sendable {
     self.layout = layout
   }
 
-  func cut(_ source: CVPixelBuffer, tile: Int) throws -> CVPixelBuffer {
-    guard layout.count > 1 else { return source }
+  func cut(_ source: CVPixelBuffer, tiles: [Int]) throws -> [Int: CVPixelBuffer] {
+    guard layout.count > 1 else { return Dictionary(uniqueKeysWithValues: tiles.map { ($0, source) }) }
     guard CVPixelBufferGetWidth(source) == layout.width, CVPixelBufferGetHeight(source) == layout.height else {
       throw ScreenSharingError.invalid("The capture doesn't match the tile layout.")
     }
 
-    let rows = layout.rows(of: tile)
-    let target = try make(CVPixelBufferGetPixelFormatType(source), height: rows.count)
-    CVBufferPropagateAttachments(source, target)
-    let region = ScreenSharingV2TileBlitter.Copy(
-      source: source, sourceRow: rows.lowerBound, targetRow: 0, rows: rows.count)
-    if blitter?.copy([region], into: target) == true { return target }
+    let targets = try Dictionary(
+      uniqueKeysWithValues: tiles.map { tile in
+        let target = try make(CVPixelBufferGetPixelFormatType(source), height: layout.rows(of: tile).count)
+        CVBufferPropagateAttachments(source, target)
+        return (tile, target)
+      })
+    let regions = targets.map { tile, target in
+      let rows = layout.rows(of: tile)
+      return ScreenSharingV2TileBlitter.Copy(
+        source: source, target: target, sourceRow: rows.lowerBound, targetRow: 0, rows: rows.count)
+    }
+    if blitter?.copy(regions) == true { return targets }
 
     CVPixelBufferLockBaseAddress(source, .readOnly)
-    CVPixelBufferLockBaseAddress(target, [])
-    defer {
-      CVPixelBufferUnlockBaseAddress(target, [])
-      CVPixelBufferUnlockBaseAddress(source, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(source, .readOnly) }
+    for (tile, target) in targets {
+      CVPixelBufferLockBaseAddress(target, [])
+      defer { CVPixelBufferUnlockBaseAddress(target, []) }
+      for plane in ScreenSharingV2PixelPlane.planes(of: source) {
+        copy(plane, rows: layout.rows(of: tile), from: source, to: target)
+      }
     }
-    for plane in ScreenSharingV2PixelPlane.planes(of: source) {
-      copy(plane, rows: rows, from: source, to: target)
-    }
-    return target
+    return targets
   }
 
   private func copy(

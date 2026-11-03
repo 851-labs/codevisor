@@ -5,6 +5,7 @@ import Foundation
 final class ScreenSharingV2TileBlitter: @unchecked Sendable {
   struct Copy {
     let source: CVPixelBuffer
+    let target: CVPixelBuffer
     let sourceRow: Int
     let targetRow: Int
     let rows: Int
@@ -23,27 +24,27 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
     self.cache = cache
   }
 
-  func copy(_ copies: [Copy], into target: CVPixelBuffer) -> Bool {
-    let format = CVPixelBufferGetPixelFormatType(target)
-    guard let formats = Self.planeFormats[format],
-      copies.allSatisfy({ CVPixelBufferGetPixelFormatType($0.source) == format }),
+  func copy(_ copies: [Copy]) -> Bool {
+    guard !copies.isEmpty,
+      let format = copies.first.map({ CVPixelBufferGetPixelFormatType($0.source) }),
+      let formats = Self.planeFormats[format],
+      copies.allSatisfy({
+        CVPixelBufferGetPixelFormatType($0.source) == format && CVPixelBufferGetPixelFormatType($0.target) == format
+      }),
       let buffer = queue.makeCommandBuffer(), let blit = buffer.makeBlitCommandEncoder()
     else { return false }
 
     var retained: [CVMetalTexture] = []
-    for (index, pixelFormat) in formats.enumerated() {
-      guard let to = texture(target, plane: index, format: pixelFormat, retaining: &retained) else {
-        blit.endEncoding()
-        return false
-      }
-
-      for copy in copies {
-        guard let from = texture(copy.source, plane: index, format: pixelFormat, retaining: &retained) else {
+    for copy in copies {
+      for (index, pixelFormat) in formats.enumerated() {
+        guard let from = texture(copy.source, plane: index, format: pixelFormat, retaining: &retained),
+          let to = texture(copy.target, plane: index, format: pixelFormat, retaining: &retained)
+        else {
           blit.endEncoding()
           return false
         }
 
-        encode(copy, plane: index, from: from, to: to, target: target, into: blit)
+        encode(copy, from: from, to: to, into: blit)
       }
     }
     blit.endEncoding()
@@ -52,10 +53,8 @@ final class ScreenSharingV2TileBlitter: @unchecked Sendable {
     return withExtendedLifetime(retained) { buffer.status == .completed }
   }
 
-  private func encode(
-    _ copy: Copy, plane index: Int, from: any MTLTexture, to: any MTLTexture, target: CVPixelBuffer,
-    into blit: any MTLBlitCommandEncoder
-  ) {
+  private func encode(_ copy: Copy, from: any MTLTexture, to: any MTLTexture, into blit: any MTLBlitCommandEncoder) {
+    let target = copy.target
     let sourceRow = copy.sourceRow * from.height / CVPixelBufferGetHeight(copy.source)
     let targetRow = copy.targetRow * to.height / CVPixelBufferGetHeight(target)
     let rows = min(

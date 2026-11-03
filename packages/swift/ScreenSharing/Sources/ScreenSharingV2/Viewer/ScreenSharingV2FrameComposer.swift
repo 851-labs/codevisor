@@ -51,11 +51,11 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
     let regions = placed.compactMap { tile, image in
       image.map { image in
         ScreenSharingV2TileBlitter.Copy(
-          source: image, sourceRow: 0, targetRow: layout.rows(of: tile).lowerBound,
+          source: image, target: target, sourceRow: 0, targetRow: layout.rows(of: tile).lowerBound,
           rows: min(layout.rows(of: tile).count, CVPixelBufferGetHeight(image)))
       }
     }
-    return blitter?.copy(regions, into: target) == true
+    return blitter?.copy(regions) == true
   }
 
   private func copy(_ image: CVPixelBuffer, into target: CVPixelBuffer, rows: Range<Int>, height: Int) {

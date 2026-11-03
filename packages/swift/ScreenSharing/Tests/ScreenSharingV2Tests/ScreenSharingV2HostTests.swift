@@ -36,21 +36,24 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests.map(\.update.isRefinement) == [false, false])
   }
 
-  @Test func capturesReplacedWhileEncodingKeepEveryTileTheyDirtied() async throws {
+  @Test func aChangeStartsWhileOneIsEncodingAndCapturesBeyondThatWaitWithEveryTileTheyDirtied() async throws {
     let encoder = RecordingTileEncoder(layout: Self.tiled)
     let host = startedHost(encoder)
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
     await encoder.encodes.wait(for: 1)
-    host.push(
-      try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
-    host.push(
-      try TestPixels.frame(shade: 30, timestampNs: 3_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
-    encoder.emitTiles(of: encoder.requests[0])
+    host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
     await encoder.encodes.wait(for: 2)
+    host.push(
+      try TestPixels.frame(shade: 30, timestampNs: 3_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
+    host.push(
+      try TestPixels.frame(shade: 40, timestampNs: 4_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
+    encoder.emitTiles(of: encoder.requests[0])
+    await encoder.encodes.wait(for: 3)
+    host.stop()
 
-    #expect(encoder.requests.last?.sourceTimestampNs == 3_000)
+    #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 2_000, 4_000])
     #expect(encoder.requests.last?.update.tiles == [0, 3])
   }
 

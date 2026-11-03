@@ -23,7 +23,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var failureRetryScheduled = false
   private var refinementWakeNs: Int64?
   private var deferredCapture = false
-  private var busyTiles: Set<Int> = []
+  private var inFlight: [Int: Int] = [:]
+  private static let pipelinedChanges = 2
   private var stopped = false
   private var events: Task<Void, Never>?
 
@@ -87,13 +88,28 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func pump() {
     guard !stopped else { return }
     guard let plan = nextPlan() else { return scheduleRefinement() }
-    guard encoder.encodesWholeFrames ? busyTiles.isEmpty : busyTiles.isDisjoint(with: plan.tiles) else { return }
+    guard admits(plan) else { return }
 
     let admission = transport.admission()
     guard admission.admit else { return deferEncode(admission) }
 
     adjustBitrate(admission)
     encode(plan)
+  }
+
+  private var busyTiles: Set<Int> { Set(inFlight.keys) }
+
+  private func admits(_ plan: Plan) -> Bool {
+    if encoder.encodesWholeFrames { return inFlight.isEmpty }
+    if plan.isRefinement { return busyTiles.isDisjoint(with: plan.tiles) }
+
+    return plan.tiles.allSatisfy { inFlight[$0, default: 0] < Self.pipelinedChanges }
+  }
+
+  private func release(_ tile: Int) {
+    guard let count = inFlight[tile] else { return }
+
+    inFlight[tile] = count > 1 ? count - 1 : nil
   }
 
   private func nextPlan() -> Plan? {
@@ -120,13 +136,13 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let refreshes = recovery.takeRefreshes()
     note(update)
     let occupied = encoder.encodesWholeFrames ? layout.tiles : plan.tiles
-    busyTiles.formUnion(occupied)
+    for tile in occupied { inFlight[tile, default: 0] += 1 }
     do {
       try encoder.encode(plan.capture.request(update: update, refreshes: refreshes))
     } catch {
       metrics.increment("encodeErrors")
       metrics.label("lastEncodeError", error.localizedDescription)
-      busyTiles.subtract(occupied)
+      for tile in occupied { release(tile) }
       recovery.restore(refreshes)
       slot.requeue(tiles: plan.tiles)
     }
@@ -197,14 +213,14 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
       metrics.label("lastEncodeError", message)
       queue.async { [self] in
         retry(refresh, tile: tile)
-        busyTiles.remove(tile)
+        release(tile)
         retryAfterFailure()
       }
     }
   }
 
   private func finished(tile: Int) {
-    busyTiles.remove(tile)
+    release(tile)
     pump()
   }
 

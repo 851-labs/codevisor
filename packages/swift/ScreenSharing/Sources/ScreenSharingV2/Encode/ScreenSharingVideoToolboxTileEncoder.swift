@@ -42,14 +42,29 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
   public func encode(_ request: ScreenSharingTileEncodeRequest) throws {
     guard !stopped.load(ordering: .relaxed) else { throw ScreenSharingError.unavailable("Encoder stopped.") }
 
-    for tile in request.update.tiles.sorted() {
+    let tiles = request.update.tiles.sorted()
+    let cutNs = ScreenSharingMetrics.nowNs
+    let pixels: [Int: CVPixelBuffer]
+    do {
+      pixels = try cutter.cut(request.pixelBuffer, tiles: tiles.filter(sessions.indices.contains))
+    } catch {
+      return tiles.forEach { fail($0, request, error) }
+    }
+    if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6) }
+    for tile in tiles {
       do {
-        try encode(tile: tile, request)
+        guard let tilePixels = pixels[tile] else { throw ScreenSharingError.invalid("No tile \(tile).") }
+
+        try sessions[tile].encode(tilePixels, request: request)
       } catch {
-        metrics.increment("encodeErrors")
-        relay.emit(.failed(tile: tile, refresh: request.refreshes[tile], message: error.localizedDescription))
+        fail(tile, request, error)
       }
     }
+  }
+
+  private func fail(_ tile: Int, _ request: ScreenSharingTileEncodeRequest, _ error: any Error) {
+    metrics.increment("encodeErrors")
+    relay.emit(.failed(tile: tile, refresh: request.refreshes[tile], message: error.localizedDescription))
   }
 
   public func acknowledge(_ tokens: [UInt64], tile: Int) {
@@ -70,12 +85,4 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
     for session in sessions { session.close() }
   }
 
-  private func encode(tile: Int, _ request: ScreenSharingTileEncodeRequest) throws {
-    guard sessions.indices.contains(tile) else { throw ScreenSharingError.invalid("No tile \(tile).") }
-
-    let cutNs = ScreenSharingMetrics.nowNs
-    let pixels = try cutter.cut(request.pixelBuffer, tile: tile)
-    if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6) }
-    try sessions[tile].encode(pixels, request: request)
-  }
 }
