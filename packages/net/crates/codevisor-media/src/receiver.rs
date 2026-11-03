@@ -17,6 +17,7 @@ const MIN_TAIL_WAIT: Duration = Duration::from_millis(1);
 const TAIL_GAPS: f64 = 1.5;
 const GAP_DECAY: f64 = 15.0 / 16.0;
 const RETRY_MARGIN: Duration = Duration::from_millis(1);
+const MAX_REFRESH_SENDS: u32 = 50;
 
 #[derive(Debug)]
 struct Assembly {
@@ -122,6 +123,7 @@ struct PendingRefresh {
     request: u16,
     keyframe: bool,
     next_send: Instant,
+    sends: u32,
 }
 
 #[derive(Debug, Default)]
@@ -312,7 +314,7 @@ impl Receiver {
             return;
         }
         stream.requests = stream.requests.wrapping_add(1);
-        stream.refresh = Some(PendingRefresh { request: stream.requests, keyframe, next_send: now });
+        stream.refresh = Some(PendingRefresh { request: stream.requests, keyframe, next_send: now, sends: 0 });
     }
 
     fn refresh_retry(&self) -> Duration {
@@ -325,6 +327,11 @@ impl Receiver {
             let Some(pending) = stream.refresh.as_mut().filter(|pending| now >= pending.next_send) else {
                 continue;
             };
+            if pending.sends == MAX_REFRESH_SENDS {
+                stream.refresh = None;
+                continue;
+            }
+            pending.sends += 1;
             pending.next_send = now + retry;
             let request = RefreshRequest {
                 stream: stream_id,

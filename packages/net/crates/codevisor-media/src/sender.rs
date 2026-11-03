@@ -27,6 +27,7 @@ const MAX_PACING_GAIN: f64 = 4.0;
 const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
 const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
 const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
+const MAX_TAIL_BACKOFF: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Resend {
@@ -112,6 +113,7 @@ pub struct Sender {
     last_loss: Option<Instant>,
     rtt: Duration,
     ack_delay: Option<AckDelay>,
+    tail_backoff: u32,
 }
 
 impl Sender {
@@ -126,6 +128,7 @@ impl Sender {
             last_loss: None,
             rtt: Duration::ZERO,
             ack_delay: None,
+            tail_backoff: 0,
         }
     }
 
@@ -308,7 +311,7 @@ impl Sender {
                 let recent = match frame.resends[index] {
                     Resend::Never => false,
                     Resend::Queued => true,
-                    Resend::Sent(at) => now < at + self.rtt,
+                    Resend::Sent(at) => now < at + self.rtt / 2,
                 };
                 if recent {
                     repeated += 1;
@@ -352,9 +355,11 @@ impl Sender {
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
                 if let Some(last_tx) = frame.last_tx
                     && !feedback.lost
+                    && frame.probes == 0
                     && receipt.recovery == crate::Recovery::None
                 {
                     self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
+                    self.tail_backoff = 0;
                 }
                 if !feedback.lost && frame.probes == 0 && receipt.recovery == crate::Recovery::None {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
@@ -384,7 +389,9 @@ impl Sender {
     }
 
     pub fn on_refresh_request(&mut self, request: &RefreshRequest, events: &mut VecDeque<Event>, stats: &mut Stats) {
-        let stream = self.streams.entry(request.stream).or_default();
+        let Some(stream) = self.streams.get_mut(&request.stream) else {
+            return;
+        };
         if let Some(answered) = stream.refresh {
             let age = request.request.wrapping_sub(answered.request) as i16;
             if age < 0 {
@@ -422,6 +429,9 @@ impl Sender {
                     expired.push(number);
                     continue;
                 }
+                if frame.probes == 0 && number == newest {
+                    self.tail_backoff = (self.tail_backoff + 1).min(MAX_TAIL_BACKOFF);
+                }
                 frame.probes += 1;
                 stats.probes_sent += 1;
                 let index = frame.data_count - 1;
@@ -441,7 +451,8 @@ impl Sender {
     }
 
     fn tail_probe_after(&self) -> Duration {
-        self.ack_delay.map_or(self.rtt + TAIL_PROBE_MARGIN, |delay| delay.tail_probe_after())
+        let base = self.ack_delay.map_or(self.rtt + TAIL_PROBE_MARGIN, |delay| delay.tail_probe_after());
+        (base * (1 << self.tail_backoff)).min(self.ack_timeout())
     }
 
     fn ack_timeout(&self) -> Duration {

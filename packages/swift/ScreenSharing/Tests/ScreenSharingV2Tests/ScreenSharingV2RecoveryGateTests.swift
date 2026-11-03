@@ -62,27 +62,52 @@ struct ScreenSharingV2RecoveryGateTests {
     #expect(gate.state(of: 0) == .decoding)
   }
 
-  @Test func aStalledTileAsksAgainOncePerStallBoundAndReportsHowLongItWasBroken() throws {
+  @Test func aStalledTileAsksOnceAfterTheStallBoundAndReportsHowLongItWasBroken() throws {
     var gate = ScreenSharingV2RecoveryGate()
     _ = gate.admits(stream: 0, isKeyFrame: true, isRefresh: true)
     gate.skipped(stream: 0, atNs: 1_000)
 
-    let asks = [Self.stallNs, Self.stallNs + 1_000, 2 * Self.stallNs + 999, 2 * Self.stallNs + 1_000].map {
-      gate.rejected(stream: 0, atNs: $0)
-    }
+    let asks = [Self.stallNs, Self.stallNs + 1_000, 3 * Self.stallNs].map { gate.rejected(stream: 0, atNs: $0) }
     let refresh = try Self.admit(&gate, keyframe: false, refresh: true)
 
-    #expect(asks == [nil, .longTermReference, nil, .longTermReference])
-    #expect(gate.decoded(stream: 0, refresh, atNs: 3 * Self.stallNs) == 3 * Self.stallNs - 1_000)
+    #expect(asks == [nil, .longTermReference, nil])
+    #expect(gate.decoded(stream: 0, refresh, atNs: 4 * Self.stallNs) == 4 * Self.stallNs - 1_000)
   }
 
-  @Test func aLostDecoderSessionWaitsForAKeyframeAndAsksForOneWhenItStalls() throws {
+  @Test func aKeyframeAdmittedWhileDecodingFencesOffFailuresOfEarlierFrames() throws {
+    var gate = ScreenSharingV2RecoveryGate()
+    _ = gate.admits(stream: 0, isKeyFrame: true, isRefresh: true)
+    let earlier = try Self.admit(&gate, keyframe: false, refresh: false)
+    _ = try Self.admit(&gate, keyframe: true, refresh: true)
+
+    #expect(gate.failed(stream: 0, earlier, atNs: 0) == nil)
+    #expect(gate.lostSession(stream: 0, earlier, atNs: 0) == nil)
+    #expect(gate.state(of: 0) == .decoding)
+  }
+
+  @Test func waitingForTheFirstKeyframeIsNotARecovery() throws {
+    var gate = ScreenSharingV2RecoveryGate()
+    _ = gate.rejected(stream: 0, atNs: 0)
+    let keyframe = try Self.admit(&gate, keyframe: true, refresh: true)
+
+    #expect(gate.decoded(stream: 0, keyframe, atNs: Self.stallNs) == nil)
+  }
+
+  @Test func aLostDecoderSessionAsksForAKeyframeOnceAndWaitsForIt() throws {
     var gate = ScreenSharingV2RecoveryGate()
     let keyframe = try Self.admit(&gate, keyframe: true, refresh: true)
 
     #expect(gate.lostSession(stream: 0, keyframe, atNs: 0) == .keyframe)
     #expect(gate.admits(stream: 0, isKeyFrame: false, isRefresh: true) == nil)
-    #expect(gate.rejected(stream: 0, atNs: Self.stallNs) == .keyframe)
+    #expect(gate.rejected(stream: 0, atNs: Self.stallNs) == nil)
+  }
+
+  @Test func aTileThatNeverGetsItsFirstKeyframeAsksForOneAfterTheStallBound() {
+    var gate = ScreenSharingV2RecoveryGate()
+
+    let asks = [0, Self.stallNs].map { gate.rejected(stream: 0, atNs: $0) }
+
+    #expect(asks == [nil, .keyframe])
   }
 
   @Test func aLostSessionReportedForAFrameFromBeforeTheLatestRecoveryIsIgnored() throws {

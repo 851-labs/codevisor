@@ -467,6 +467,18 @@ fn a_refresh_request_is_repeated_until_a_refresh_arrives_and_reaches_the_host_on
 }
 
 #[test]
+fn an_unanswered_refresh_request_stops_repeating_after_fifty_sends() {
+    let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 26);
+    sim.send(frame(0, &payload(1, 2000)));
+    sim.run_for(INTERVAL);
+    sim.viewer.request_refresh(sim.now, 0, false);
+    sim.run_for(5_000 * MS);
+
+    assert_eq!(sim.viewer.stats(sim.now).refresh_requests_sent, 50);
+    assert_eq!(refresh_requests(&sim.host_events), vec![false]);
+}
+
+#[test]
 fn a_request_still_open_after_its_answer_was_lost_reaches_the_host_again() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Off), 21);
     sim.send(frame(0, &payload(1, 2000)));

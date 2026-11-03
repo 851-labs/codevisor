@@ -15,7 +15,7 @@ no jitter buffer and no queue deeper than one frame.
 - **Loss recovery, cheapest first.**
   1. NACK as soon as a gap shows, or once the tail wait passes (1.5 × the longest recent gap between a frame's
      packets, at least 1 ms). The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
-     retransmission is still queued or left less than a round trip ago. Without that, at a low estimate, each
+     retransmission is still queued or left less than half a round trip ago (a NACK that crossed it). Without that, at a low estimate, each
      repeat queued a large frame's packets again, and the backlog held admission shut: in the sim (N4, a 150 KB
      frame every 2 s from a 1 Mbit/s start) for 168 frames after each one, against 34–40 now, and in Tier 1 run
      41617646973 (scroll N4) for 8.5 s, with 2,707 packets resent for 43 NACKs.
@@ -29,7 +29,7 @@ no jitter buffer and no queue deeper than one frame.
      per request. The viewer repeats the request every give-up time + RTT until a recovery frame arrives on that
      stream: a frame sent with `refresh` or `keyframe` settles a refresh request, and only a keyframe settles a
      keyframe request. A keyframe request replaces an open refresh request; another refresh request while one is
-     open changes nothing. The host ignores repeats while its answer is on the way, and raises the event again
+     open changes nothing. A request stops after 50 sends, and the host ignores requests for streams it never sent. The host ignores repeats while its answer is on the way, and raises the event again
      only when a repeat says the viewer has resolved the answer (`resolved_below` past the answer's frame) and
      still asks: the answer was lost or didn't help.
 - **In-order delivery per stream, without waiting across streams.** A complete frame is delivered at once unless its
@@ -41,7 +41,9 @@ no jitter buffer and no queue deeper than one frame.
   ack is overdue, so a lost last frame before idle is repaired instead of never. The newest frame of each stream gets
   a tail-loss probe first, as soon as its ack is late: the viewer reports a complete frame at once, so the probe waits
   for the smoothed delay from a frame's last packet to its ack plus twice that delay's variation, at least 1 ms (the
-  round trip + 1 ms until there are acks to measure; tokio's timers can add another 1 ms). Older frames don't need it:
+  round trip + 1 ms until there are acks to measure; tokio's timers can add another 1 ms). Only acks of frames that
+  weren't probed are measured, and each probe doubles the wait (up to 16×, never past the next probe's time) until an
+  unprobed frame's ack arrives, so a path whose delay grows stops being probed spuriously within a few frames. Older frames don't need it:
   the next frame's arrival already shows the viewer a gap. After that, every give-up time + RTT + 1 ms, at most 6
   times in all, before the frame counts as lost. A frame lost whole at idle (one packet, as typing and small tile
   changes are) or a lost ack is then repaired about RTT + 1–2 ms after it would have arrived, instead of about

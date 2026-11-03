@@ -24,11 +24,12 @@ struct ScreenSharingV2RecoveryGate {
     defer { streams[stream] = entry }
     guard Self.isDecodable(entry.state, isKeyFrame: isKeyFrame, isRefresh: isRefresh) else { return nil }
 
-    if entry.state != .decoding {
+    let recovers = isKeyFrame || isRefresh
+    if entry.state != .decoding || recovers {
       entry.epoch += 1
       entry.state = .decoding
     }
-    return Admission(epoch: entry.epoch, recovers: isKeyFrame || isRefresh)
+    return Admission(epoch: entry.epoch, recovers: recovers)
   }
 
   mutating func decoded(stream: UInt8, _ admission: Admission, atNs nowNs: Int64) -> Int64? {
@@ -39,7 +40,7 @@ struct ScreenSharingV2RecoveryGate {
     entry.brokenNs = nil
     entry.askedNs = nil
     streams[stream] = entry
-    return nowNs - brokenNs
+    return admission.epoch > 1 ? nowNs - brokenNs : nil
   }
 
   mutating func failed(stream: UInt8, _ admission: Admission, atNs nowNs: Int64) -> ScreenSharingTileRefresh? {
@@ -69,7 +70,7 @@ struct ScreenSharingV2RecoveryGate {
       entry.brokenNs = nowNs
       return nil
     }
-    guard nowNs - (entry.askedNs ?? brokenNs) >= Self.stallNs else { return nil }
+    guard entry.askedNs == nil, nowNs - brokenNs >= Self.stallNs else { return nil }
 
     entry.askedNs = nowNs
     return entry.state == .needsKeyframe ? .keyframe : .longTermReference
