@@ -8,6 +8,7 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   let layout: ScreenSharingV2TileLayout
   let sourcePixelFormat = ScreenSharingV2Profile.capturePixelFormat
   let encodes = TestSignal()
+  let attached = TestSignal()
   private let recorded = Mutex<[ScreenSharingTileEncodeRequest]>([])
   private let acknowledged = Mutex<[UInt64]>([])
   private let network = Mutex<[ScreenSharingTileNetworkFeedback]>([])
@@ -23,6 +24,7 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
 
   func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     output.withLock { $0 = handler }
+    attached.signal()
   }
 
   func emit(_ result: ScreenSharingTileEncoderOutput) {

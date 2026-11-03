@@ -33,7 +33,8 @@ public final class ScreenSharingV2Channels {
       codec: .init(encode: { try $0.encoded() }, decode: ScreenSharingCursorMessage.decode),
       bufferedBytes: 256 * 1024,
       datagrams: .init(
-        carries: { if case .position = $0 { true } else { false } }, send: { sendDatagram(.cursor, $0) }))
+        carries: { if case .position = $0 { true } else { false } }, send: { sendDatagram(.cursor, $0) },
+        settleAfter: .milliseconds(100)))
     audio = .init(
       codec: .init(encode: { $0.encoded() }, decode: ScreenSharingAudioMessage.decode), bufferedBytes: 16 * 1024,
       datagrams: .init(

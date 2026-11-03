@@ -365,10 +365,10 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       try await client.screenSharing(start)
     }
     try Task.checkCancellation()
-    guard reply.version == 1, reply.status == "connecting" else {
-      return .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
+    guard reply.version == 1, reply.status == "connecting", let grant = reply.media else {
+      return reply.status == "failed" || reply.status == "connecting"
+        ? .fallback : .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
     }
-    guard let grant = reply.media else { return .fallback }
 
     let session: any NativeScreenSharingV2Session
     do {
@@ -380,7 +380,14 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       session.close()
       throw CancellationError()
     }
-    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session), sound: sound)
+    let surface: any ScreenSharingViewerSurface
+    do {
+      surface = try makeSurface(session)
+    } catch {
+      session.close()
+      throw error
+    }
+    let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface, sound: sound)
     endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
     attempt.endpoint = endpoint
     endpoint.onReady = {

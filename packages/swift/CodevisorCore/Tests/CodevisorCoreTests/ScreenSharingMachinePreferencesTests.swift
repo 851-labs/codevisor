@@ -70,14 +70,18 @@ struct ScreenSharingMachinePreferencesTests {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let preferences = ScreenSharingMachinePreferences(defaults: defaults)
-    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: [:]) == .webRTC)
+    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: [:], choosable: true) == .webRTC)
     preferences.setEngine(.v2, machineId: "studio")
-    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: [:]) == .v2)
-    #expect(ScreenSharingEngine.selected(machineId: "laptop", preferences: preferences, environment: [:]) == .webRTC)
+    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: [:], choosable: true) == .v2)
+    #expect(ScreenSharingEngine.selected(machineId: "laptop", preferences: preferences, environment: [:], choosable: true) == .webRTC)
     let forced = [ScreenSharingEngine.environmentKey: "v2"]
-    #expect(ScreenSharingEngine.selected(machineId: "laptop", preferences: preferences, environment: forced) == .v2)
+    #expect(ScreenSharingEngine.selected(machineId: "laptop", preferences: preferences, environment: forced, choosable: true) == .v2)
     let off = [ScreenSharingEngine.environmentKey: "v1"]
-    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: off) == .webRTC)
+    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: off, choosable: true) == .webRTC)
+    #expect(
+      ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: [:], choosable: false)
+        == .webRTC, "a Stable build ignores the Developer choice")
+    #expect(ScreenSharingEngine.selected(machineId: "studio", preferences: preferences, environment: forced, choosable: false) == .v2)
     preferences.setEngine(nil, machineId: "studio")
     #expect(preferences.engine(machineId: "studio") == nil)
   }

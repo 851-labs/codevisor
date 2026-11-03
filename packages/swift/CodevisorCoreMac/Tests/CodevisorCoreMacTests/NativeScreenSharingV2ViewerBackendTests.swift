@@ -44,10 +44,15 @@ struct NativeScreenSharingV2ViewerBackendTests {
     #expect(v2.grants.isEmpty)
   }
 
-  @Test func aV2ConnectionThatFailsFallsBackToWebRTCForTheRestOfThePane() async throws {
+  enum V2Failure: CaseIterable, Sendable { case connect, hostEndpoint }
+
+  @Test(arguments: V2Failure.allCases)
+  func aFailedV2StartFallsBackToWebRTCForTheRestOfThePane(_ failure: V2Failure) async throws {
     let v2 = NativeBackendHarness.V2()
-    v2.failsConnect = true
-    let harness = NativeBackendHarness(transport: SharingTransport(engines: ["v2"]), v2: v2)
+    v2.failsConnect = failure == .connect
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(engines: ["v2"], v2StartStatus: failure == .hostEndpoint ? "failed" : "connecting"),
+      v2: v2)
     let requests = await run(harness)
 
     expectNoDifference(requests.map(\.operation), [.capabilities, .start, .capabilities, .start, .stop])

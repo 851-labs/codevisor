@@ -1,6 +1,5 @@
 import AppKit
 import CodevisorClient
-import CodevisorCloud
 import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
@@ -109,7 +108,7 @@ final class ScreenSharingPane: Pane {
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
-    if Self.showsEngineChoice {
+    if ScreenSharingEngine.isChoosable {
       settings.engine = ScreenSharingEngine.selected(machineId: machineId)
     }
     if store?.endpoint?.supportsHighDynamicRange != false {
@@ -118,8 +117,6 @@ final class ScreenSharingPane: Pane {
     }
     return settings
   }
-
-  static var showsEngineChoice: Bool { CodevisorAppVariant.isDevelopment || CloudReleaseChannel.shared.isAlpha }
 
   static func dynamicResolutionNote(_ endpoint: ScreenSharingViewerEndpoint?) -> String? {
     guard let endpoint else { return nil }

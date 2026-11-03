@@ -142,15 +142,17 @@ actor SharingTransport: ServerRequestTransport {
   private let provider: String?
   private let startNotice: String?
   private let engines: [String]?
+  private let v2StartStatus: String
   private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var stopWasCancelled = false
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
     restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = [],
-    startNotice: String? = nil, engines: [String]? = nil
+    startNotice: String? = nil, engines: [String]? = nil, v2StartStatus: String = "connecting"
   ) {
     self.engines = engines
+    self.v2StartStatus = v2StartStatus
     self.heartbeatReplies = heartbeatReplies
     self.startNotice = startNotice
     self.blockFirstStart = blockFirstStart
@@ -175,9 +177,10 @@ actor SharingTransport: ServerRequestTransport {
       started.signal()
       if first, blockFirstStart { await releaseFirstStart.wait() }
       var started = ServerScreenSharingReply(
-        status: payload.operation == .restart ? restartStatus : "connecting", message: startNotice,
+        status: payload.engine == "v2" ? v2StartStatus : payload.operation == .restart ? restartStatus : "connecting",
+        message: startNotice,
         answer: payload.engine == nil ? "fixture answer" : nil)
-      if payload.engine == "v2" { started.media = ScreenSharingViewerFixtures.mediaGrant }
+      if payload.engine == "v2", v2StartStatus == "connecting" { started.media = ScreenSharingViewerFixtures.mediaGrant }
       reply = started
     case .heartbeat:
       reply = heartbeatReplies.isEmpty ? .init(status: heartbeatStatus) : heartbeatReplies.removeFirst()

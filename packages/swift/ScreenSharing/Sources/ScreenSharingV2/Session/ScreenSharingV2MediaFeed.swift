@@ -5,7 +5,8 @@ public final class ScreenSharingV2MediaFeed: Sendable {
   public typealias Datagrams = @Sendable (ScreenSharingDatagramKind, Data) -> Void
 
   private let transport: any ScreenSharingMediaTransport
-  private let tap = Mutex<Tap?>(nil)
+  private static let pendingLimit = 256
+  private let tap = Mutex<(current: Tap?, pending: [ScreenSharingMediaEvent])>((nil, []))
   private let pump = Mutex<Task<Void, Never>?>(nil)
 
   public init(transport: any ScreenSharingMediaTransport, datagrams: @escaping Datagrams) {
@@ -15,10 +16,10 @@ public final class ScreenSharingV2MediaFeed: Sendable {
         if case .datagram(let kind, let payload) = event {
           datagrams(kind, payload)
         } else {
-          self?.tap.withLock { $0 }?.deliver(event)
+          self?.deliver(event)
         }
       }
-      self?.tap.withLock { $0 }?.finish()
+      self?.tap.withLock { $0.current }?.finish()
     }
     pump.withLock { $0 = task }
   }
@@ -29,17 +30,28 @@ public final class ScreenSharingV2MediaFeed: Sendable {
 
   public func attach() -> any ScreenSharingMediaTransport {
     let next = Tap(transport: transport)
-    tap.withLock { current in
-      current?.finish()
-      current = next
+    tap.withLock { tap in
+      tap.current?.finish()
+      for event in tap.pending { next.deliver(event) }
+      tap = (next, [])
     }
     return next
   }
 
   public func close() {
     pump.withLock { $0?.cancel() }
-    tap.withLock { $0?.finish() }
+    tap.withLock { $0.current?.finish() }
     transport.close()
+  }
+
+  private func deliver(_ event: ScreenSharingMediaEvent) {
+    tap.withLock { tap in
+      if let current = tap.current, current.isOpen {
+        current.deliver(event)
+      } else if tap.pending.count < Self.pendingLimit {
+        tap.pending.append(event)
+      }
+    }
   }
 }
 
@@ -59,6 +71,8 @@ private final class Tap: ScreenSharingMediaTransport, @unchecked Sendable {
   func deliver(_ event: ScreenSharingMediaEvent) {
     continuation.yield(event)
   }
+
+  var isOpen: Bool { !closed.load(ordering: .relaxed) }
 
   func finish() {
     closed.store(true, ordering: .relaxed)

@@ -110,11 +110,37 @@ struct ScreenSharingV2SessionTests {
     host.updateVideoConfiguration(larger)
     await encoders.built.wait(for: 2)
     let second = try #require(encoders.all.last)
+    await second.attached.wait()
     host.frameRouter.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
     host.frameRouter.push(try TestPixels.frame(width: 1280, height: 720, shade: 30, timestampNs: 3_000))
     await second.encodes.wait()
 
     #expect(first.requests.count == 1)
     #expect(second.requests.map(\.sourceTimestampNs) == [3_000])
+  }
+
+  @Test func backToBackResizesEndWithAnEngineForTheLastSize() async throws {
+    let pair = try await IrohConnectionPair.connect()
+    defer { pair.close() }
+    let encoders = Encoders()
+    let host = try link(encoders)
+    let session = ScreenSharingV2ViewingSession(connection: pair.viewer)
+    defer {
+      session.close()
+      host.close()
+    }
+    async let viewer: Void = session.start(token: "t")
+    try await host.accept(pair.host) { _ in nil }
+    try await viewer
+
+    host.updateVideoConfiguration(try ScreenSharingV2Profile.captureConfiguration(width: 1280, height: 720))
+    host.updateVideoConfiguration(try ScreenSharingV2Profile.captureConfiguration(width: 1920, height: 1080))
+    await encoders.built.wait(for: 3)
+    let last = try #require(encoders.all.last)
+    await last.attached.wait()
+    #expect(last.layout.width == 1920)
+    host.frameRouter.push(try TestPixels.frame(width: 1920, height: 1080, shade: 40, timestampNs: 4_000))
+    await last.encodes.wait()
+    #expect(last.requests.map(\.sourceTimestampNs) == [4_000])
   }
 }

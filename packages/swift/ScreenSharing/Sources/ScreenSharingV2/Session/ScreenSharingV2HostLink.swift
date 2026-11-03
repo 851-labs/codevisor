@@ -72,7 +72,7 @@ public final class ScreenSharingV2HostLink {
 
     self.configuration = configuration
     metrics.label("captureSize", "\(configuration.width) × \(configuration.height)")
-    guard engine != nil else { return }
+    guard feedBox.current != nil else { return }
 
     Task { try? await rebuild() }
   }

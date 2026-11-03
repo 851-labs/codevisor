@@ -56,7 +56,7 @@ extension ScreenSharingMediaEndpoint.Provider {
     return Self(
       endpoint: { await tunnel.screenSharingEndpoint() },
       requestDirectPaths: { [weak environment] in
-        guard let environment, environment.localNetworkAccess != .requested else { return }
+        guard let environment, environment.localNetworkAccess == .unasked else { return }
 
         environment.setLocalNetworkAccess(.requested)
         await tunnel.setAllowsDirectPaths(true)

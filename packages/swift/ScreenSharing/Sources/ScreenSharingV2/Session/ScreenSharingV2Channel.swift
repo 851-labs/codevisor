@@ -12,6 +12,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
   public struct Datagrams: Sendable {
     let carries: @Sendable (Message) -> Bool
     let send: @Sendable (Data) -> Bool
+    var settleAfter: Duration?
   }
 
   public var onMessage: ((Message) -> Void)?
@@ -24,6 +25,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
   private var stream: (any ScreenSharingV2MessageStream)?
   private var outbox: AsyncStream<Data>.Continuation?
   private var tasks: [Task<Void, Never>] = []
+  private var settling: Task<Void, Never>?
   private var closed = false
 
   init(codec: Codec, bufferedBytes: Int, datagrams: Datagrams? = nil) {
@@ -68,8 +70,25 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
   @discardableResult
   public func send(_ message: Message) -> Bool {
     guard isAvailable, let data = try? codec.encode(message) else { return false }
-    if let datagrams, datagrams.carries(message) { return datagrams.send(data) }
+    if let datagrams, datagrams.carries(message) {
+      if let settleAfter = datagrams.settleAfter { settle(data, after: settleAfter) }
+      return datagrams.send(data)
+    }
 
+    return enqueue(data)
+  }
+
+  private func settle(_ data: Data, after delay: Duration) {
+    settling?.cancel()
+    settling = Task { [weak self] in
+      guard (try? await Task.sleep(for: delay)) != nil, let self, self.isAvailable else { return }
+
+      self.enqueue(data)
+    }
+  }
+
+  @discardableResult
+  private func enqueue(_ data: Data) -> Bool {
     let queued = queuedBytes.add(data.count, ordering: .relaxed).newValue
     guard queued <= bufferedBytes else {
       fail()
@@ -96,6 +115,7 @@ public final class ScreenSharingV2Channel<Message: Sendable>: ScreenSharingMessa
     closed = true
     outbox?.finish()
     outbox = nil
+    settling?.cancel()
     tasks.last?.cancel()
     let changed = onAvailabilityChanged
     onAvailabilityChanged = nil

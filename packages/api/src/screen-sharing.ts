@@ -57,13 +57,6 @@ export const ScreenSharingReply = Schema.Struct({
     Schema.Struct({ flowId: Schema.Number, maxPayload: Schema.optional(Schema.Number) })
   ),
   engines: Schema.optional(Schema.Array(Schema.String)),
-  media: Schema.optional(
-    Schema.Struct({
-      endpointId: Schema.String,
-      relayUrl: Schema.optional(Schema.String),
-      directAddrs: Schema.Array(Schema.String),
-      token: Schema.String
-    })
-  )
+  media: Schema.optional(Schema.Struct({ ...ScreenSharingMediaAddress.fields, token: Schema.String }))
 })
 export type ScreenSharingReply = typeof ScreenSharingReply.Type
