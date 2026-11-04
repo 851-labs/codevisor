@@ -24,6 +24,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var retryScheduled = false
   private var failureRetryScheduled = false
   private var refinementWakeNs: Int64?
+  private var refreshPhase: ScreenSharingV2RefreshPhase
   private var deferredCapture = false
   private var inFlight: [Int: Int] = [:]
   private static let pipelinedChanges = 2
@@ -44,7 +45,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler,
-    refinement policy: ScreenSharingV2RefinementPolicy = .standard
+    refinement policy: ScreenSharingV2RefinementPolicy = .standard,
+    refreshPhase: ScreenSharingV2RefreshPhase = ScreenSharingV2RefreshPhase()
   ) {
     self.transport = transport
     self.encoder = encoder
@@ -55,6 +57,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     bitrate = ScreenSharingV2BitrateGovernor(initial: initialBitrate)
     refinementPolicy = policy
     refinement = ScreenSharingV2Refinement(passes: policy.passes)
+    self.refreshPhase = refreshPhase
   }
 
   public func start() {
@@ -85,6 +88,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     guard !stopped else { return }
 
     metrics.observe("captureQueueWait", milliseconds: Double(ScreenSharingMetrics.nowNs - capture.capturedNs) / 1e6)
+    refreshPhase.observe(frameAtNs: capture.frame.timestampNs)
     let reported = layout.tiles(touching: capture.frame.dirtyRects)
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
     let candidates = reported.subtracting(slot.waitingTiles)
@@ -176,9 +180,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func scheduleRefinement() {
-    guard let dueNs = refinement.nextDueNs(excluding: busyTiles), refinementWakeNs.map({ dueNs < $0 }) ?? true else {
-      return
-    }
+    guard let dueNs = refinement.nextDueNs(excluding: busyTiles).map(refreshPhase.aligned),
+      refinementWakeNs.map({ dueNs < $0 }) ?? true
+    else { return }
 
     refinementWakeNs = dueNs
     scheduler.run(afterNs: dueNs - scheduler.nowNs, on: queue) { [self] in
