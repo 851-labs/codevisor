@@ -337,7 +337,7 @@ describe("gateway machines and execution annotations", () => {
         expect.objectContaining({
           machine: "mbp",
           path: "browser.finalizeTabs",
-          args: { native: true },
+          args: { native: true, turnEnded: true },
           origin: expect.objectContaining({ sessionId: session.id })
         })
       ])

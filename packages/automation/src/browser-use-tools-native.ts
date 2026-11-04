@@ -31,7 +31,7 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "tabs",
-    "List, create, close, or select a browser tab. Use action new to open a URL that is not already open; use openTabs and claimTab only to take over a specifically matched existing tab. scope session lists only tabs this session created, claimed, or kept at an earlier finalize, with their origin.",
+    "List, create, close, or select a browser tab. Use action new to open a URL that is not already open, and action close on each tab you opened once you're done with it; use openTabs and claimTab only to take over a specifically matched existing tab. scope session lists only tabs this session created, claimed, or kept at an earlier finalize, with their origin.",
     objectSchema(
       {
         action: { type: "string", enum: ["list", "new", "close", "select"] },
@@ -59,7 +59,7 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "finalizeTabs",
-    "Release this session's claimed tab. Existing user tabs remain open unless close is true.",
+    "Close every tab this session opened except those listed in keepIds or marked with markTab; claimed user tabs are released without closing. The last handoff tab comes to the front of the user's browser.",
     objectSchema({
       close: { type: "boolean" },
       native: { type: "boolean" },
@@ -68,7 +68,7 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "markTab",
-    "Mark a tab as a user-facing deliverable or a handoff that should remain open.",
+    "Mark a tab you leave for the user. Use handoff for a tab the user must review, sign in on, or submit (a filled-in form, a sign-in page): when the turn ends it comes to the front of the user's browser. Use deliverable for a finished result. Nothing closes at turn end, so close tabs you're done with.",
     objectSchema(
       {
         id: { type: "string" },

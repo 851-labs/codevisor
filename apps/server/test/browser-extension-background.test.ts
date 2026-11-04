@@ -25,6 +25,8 @@ class FakeWebSocket {
   static readonly instances: FakeWebSocket[] = []
 
   readonly listeners = new Map<string, Set<Listener>>()
+  readonly sent: unknown[] = []
+  private sendWaiters: Array<() => void> = []
   readyState = FakeWebSocket.CONNECTING
   onmessage?: Listener
   onclose?: Listener
@@ -40,7 +42,21 @@ class FakeWebSocket {
     this.listeners.set(type, listeners)
   }
 
-  send() {}
+  send(data: string) {
+    const parsed: unknown = JSON.parse(data)
+    this.sent.push(parsed)
+    for (const resolve of this.sendWaiters.splice(0)) resolve()
+  }
+
+  nextSend(): Promise<void> {
+    return new Promise((resolve) => this.sendWaiters.push(resolve))
+  }
+
+  message(data: Record<string, unknown>) {
+    for (const listener of this.listeners.get("message") ?? []) {
+      listener({ data: JSON.stringify(data) })
+    }
+  }
 
   open() {
     this.readyState = FakeWebSocket.OPEN
@@ -96,6 +112,18 @@ const startBackground = async (relay: string) => {
   const downloadCreated = event()
   const downloadChanged = event()
   const retryScheduled = Promise.withResolvers<void>()
+  const tabsQueried = Promise.withResolvers<void>()
+  const tabs = {
+    create: vi.fn(async ({ url }: { url: string }) => ({ id: 7, windowId: 3, url })),
+    query: vi.fn(async () => {
+      tabsQueried.resolve()
+      return []
+    }),
+    update: vi.fn(async (id: number) => ({ id, windowId: 3 })),
+    onCreated: tabCreated,
+    onRemoved: tabRemoved
+  }
+  const windows = { update: vi.fn(async () => ({})) }
   const alarms = {
     clear: vi.fn(async () => true),
     create: vi.fn(async () => {
@@ -133,11 +161,8 @@ const startBackground = async (relay: string) => {
         onMessage: runtimeMessage,
         sendMessage: vi.fn(async () => ({ ok: true }))
       },
-      tabs: {
-        query: vi.fn(async () => []),
-        onCreated: tabCreated,
-        onRemoved: tabRemoved
-      }
+      tabs,
+      windows
     },
     clearInterval: vi.fn(),
     clearTimeout: (timer: number) => scheduledTimers.delete(timer),
@@ -154,8 +179,85 @@ const startBackground = async (relay: string) => {
   })
   runInContext(await extensionScript("relay-candidates.js"), context)
   runInContext(await extensionScript("background.js"), context)
-  return { alarm, alarms, importScripts, retryScheduled, runtimeMessage }
+  return {
+    alarm,
+    alarms,
+    tabs,
+    importScripts,
+    retryScheduled,
+    runtimeMessage,
+    tabCreated,
+    tabsQueried,
+    windows
+  }
 }
+
+const isTargetCreated = (sent: unknown): boolean =>
+  typeof sent === "object" &&
+  sent !== null &&
+  "method" in sent &&
+  sent.method === "Target.targetCreated"
+
+const connectedBackground = async () => {
+  const background = await startBackground("ws://127.0.0.1:51000/relay")
+  const socket = FakeWebSocket.instances[0]!
+  await socket.open()
+  await background.tabsQueried.promise
+  await Promise.resolve()
+  const command = async (id: number, method: string, params: Record<string, unknown>) => {
+    const replied = socket.nextSend()
+    socket.message({ id, method, params })
+    await replied
+    return socket.sent.at(-1)
+  }
+  return { ...background, command, socket }
+}
+
+describe("browser extension background tabs", () => {
+  it("adopts popups from a Codevisor tab but not new tabs the user opens from it", async () => {
+    const { command, socket, tabCreated } = await connectedBackground()
+    expect(await command(1, "Target.createTarget", { url: "https://form.test/" })).toEqual({
+      id: 1,
+      result: { targetId: "7" }
+    })
+
+    tabCreated.emit({ id: 8, openerTabId: 7, url: "", pendingUrl: "chrome://newtab/" })
+    tabCreated.emit({ id: 9, openerTabId: 7, pendingUrl: "https://popup.test/" })
+
+    expect(socket.sent.filter((sent) => isTargetCreated(sent))).toEqual([
+      {
+        method: "Target.targetCreated",
+        params: {
+          targetInfo: {
+            targetId: "9",
+            type: "page",
+            title: "",
+            url: "https://popup.test/",
+            openerId: "7"
+          }
+        }
+      }
+    ])
+  })
+
+  it("brings a shared tab to the front in a focused window", async () => {
+    const { command, tabs, windows } = await connectedBackground()
+    await command(1, "Target.createTarget", { url: "https://form.test/" })
+
+    expect(await command(2, "Target.activateTarget", { targetId: "7" })).toEqual({
+      id: 2,
+      result: {}
+    })
+    expect(tabs.update).toHaveBeenCalledWith(7, { active: true })
+    expect(windows.update).toHaveBeenCalledWith(3, { focused: true })
+
+    expect(await command(3, "Target.activateTarget", { targetId: "8" })).toEqual({
+      id: 3,
+      error: { message: "That tab is not shared with Codevisor" }
+    })
+    expect(tabs.update).toHaveBeenCalledOnce()
+  })
+})
 
 describe("browser extension background connection", () => {
   it("keeps one socket active, schedules durable retries, and supports manual reconnect", async () => {

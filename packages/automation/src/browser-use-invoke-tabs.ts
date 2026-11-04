@@ -10,12 +10,20 @@ import {
 } from "./browser-cdp-engine.js"
 import type { BrowserRuntime, TargetInfo } from "./browser-cdp-engine.js"
 import { waitForTargetsClosed } from "./browser-runtime-lifecycle.js"
+import {
+  bringTabToFront,
+  forgetTabHandoff,
+  tabHandoff,
+  type TabHandoff
+} from "./browser-tab-handoff.js"
 import type { BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import type { BrowserBackend } from "./browser-use-provider-types.js"
 import { isStringArray } from "./unknown-values.js"
 
 export interface BrowserTabInvocation {
   readonly active: BrowserRuntime
   readonly args: Readonly<Record<string, unknown>>
+  readonly backend: BrowserBackend
   readonly sessionKey: string
   readonly state: BrowserToolSessionState
   readonly toolName: string
@@ -65,10 +73,14 @@ const finalizeTabs = (tab: BrowserTabInvocation): Promise<CallToolResult> => {
 
 const finalizeNativeTabs = async (tab: BrowserTabInvocation): Promise<CallToolResult> => {
   const { active, sessionKey, state } = tab
-  const keepIds = keptTargetIds(tab)
+  const owned = state.sessionTargets.get(sessionKey) ?? new Map<string, TabOrigin>()
+  const handoff = handoffFor(tab)
+  if (handoff.frontId !== undefined && owned.has(handoff.frontId))
+    await bringTabToFront(active, handoff.frontId)
+
   const finalized: FinalizedTabs = { kept: [], closed: [], released: [], failed: [] }
-  for (const [targetId, origin] of state.sessionTargets.get(sessionKey) ?? new Map()) {
-    if (closesOnFinalize(origin, targetId, keepIds)) {
+  for (const [targetId, origin] of owned) {
+    if (closesOnFinalize(origin, targetId, handoff)) {
       try {
         await closeTarget(active, targetId)
         finalized.closed.push(targetId)
@@ -85,8 +97,8 @@ const finalizeNativeTabs = async (tab: BrowserTabInvocation): Promise<CallToolRe
   }
   await waitForTargetsClosed(active, finalized.closed)
 
-  rememberKeptTargets(tab, finalized.kept)
-  state.sessionDispositions.delete(sessionKey)
+  rememberKeptTargets(tab, finalized.kept, (id) => rememberedOrigin(owned.get(id), id, handoff))
+  forgetTabHandoff(state, sessionKey)
   forgetSelection(tab)
   const { kept, closed, released, failed } = finalized
   return jsonResult({
@@ -98,26 +110,42 @@ const finalizeNativeTabs = async (tab: BrowserTabInvocation): Promise<CallToolRe
   })
 }
 
-const keptTargetIds = ({ args, sessionKey, state }: BrowserTabInvocation): Set<string> => {
+const handoffFor = ({ args, backend, sessionKey, state }: BrowserTabInvocation) => {
   const requestedKeepIds = args.keepIds === undefined ? [] : args.keepIds
   if (!isStringArray(requestedKeepIds)) throw new Error("keepIds must be an array of tab ids")
-  return new Set([
-    ...requestedKeepIds,
-    ...(state.sessionDispositions.get(sessionKey)?.keys() ?? [])
-  ])
+  return tabHandoff({
+    backend,
+    requestedKeepIds,
+    sessionKey,
+    state,
+    turnEnded: args.turnEnded === true
+  })
 }
 
-const closesOnFinalize = (origin: TabOrigin, targetId: string, keepIds: Set<string>): boolean =>
-  origin === "created" && !keepIds.has(targetId)
+const closesOnFinalize = (origin: TabOrigin, targetId: string, handoff: TabHandoff): boolean =>
+  origin === "created" && !handoff.keepsAll && !handoff.keepIds.has(targetId)
 
 const recordUnclosed = (finalized: FinalizedTabs, targetId: string, origin: TabOrigin): void => {
   if (origin === "claimed") finalized.released.push(targetId)
   else finalized.kept.push(targetId)
 }
 
-const rememberKeptTargets = ({ sessionKey, state }: BrowserTabInvocation, kept: string[]): void => {
+const rememberKeptTargets = (
+  { sessionKey, state }: BrowserTabInvocation,
+  kept: string[],
+  originOf: (targetId: string) => TabOrigin
+): void => {
   if (kept.length === 0) state.sessionTargets.delete(sessionKey)
-  else state.sessionTargets.set(sessionKey, new Map(kept.map((id) => [id, "kept"])))
+  else state.sessionTargets.set(sessionKey, new Map(kept.map((id) => [id, originOf(id)])))
+}
+
+const rememberedOrigin = (
+  origin: TabOrigin | undefined,
+  targetId: string,
+  handoff: TabHandoff
+): TabOrigin => {
+  if (origin === "created" && !handoff.keepIds.has(targetId)) return "created"
+  return "kept"
 }
 
 const finalizeSelectedTab = async (tab: BrowserTabInvocation): Promise<CallToolResult> => {

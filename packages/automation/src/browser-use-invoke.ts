@@ -42,7 +42,6 @@ interface BrowserInvokerMemory {
 }
 
 interface BrowserSessionInvocation extends BrowserTabInvocation {
-  readonly backend: BrowserBackend
   readonly memory: BrowserInvokerMemory
 }
 

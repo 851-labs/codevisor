@@ -21,7 +21,9 @@ Browser Use calls execute immediately. Do not add a separate approval or confirm
 | Take over a user's tab         | `browser.user.openTabs()`, then `browser.user.claimTab(tab)`                        |
 | Act on the page                | `tab.playwright.getByRole(…).click()` and other Playwright locators                 |
 | Screenshot or export           | `tab.screenshot()`, `tab.content.export({ format: "markdown" \| "html" \| "pdf" })` |
-| End the turn's browser work    | `browser.tabs.finalize({ keep })`                                                   |
+| Close a tab you're done with   | `await tab.close()`                                                                 |
+| Hand a tab to the user         | `await tab.markHandoff()`                                                           |
+| Close all but the tabs to keep | `browser.tabs.finalize({ keep })`                                                   |
 | Every method and its signature | `await browser.documentation()`                                                     |
 
 `browser` is `machines.current.tools.browser` in an execute script, and is already defined inside `browser.js` cells.
@@ -148,12 +150,29 @@ return { path: shot.artifacts[0].path }
 
 `await tab.content.export({ format: "markdown" })` exports visible text with the title and source; `html` and `pdf` also work. The result includes a real local file and the same `artifacts` list. These are page exports, not Google Workspace native formats. Read the `attaching-files` skill (through the `skills` tool) to share either with the user.
 
+## Close the tabs you're done with
+
+Every tab you open stays open until you or the user closes it, in every browser. Nothing closes when your turn ends. Close each tab you opened as soon as you no longer need it, such as docs you read or a page you checked, and leave open only the tabs the user should see or act on:
+
+```js
+const docs = await browser.tabs.new()
+await docs.goto("https://example.com/docs")
+const notes = await docs.playwright.locator("main").innerText()
+await docs.close()
+```
+
+`await browser.tabs.finalize({ keep })` closes every tab you opened except the ones you keep, in one call.
+
+## Hand a tab to the user
+
+When you leave a tab for the user to act on (a filled-in form to review and submit, a page to sign in on, a page they asked to see), call `await tab.markHandoff()`. When your turn ends, the last tab you marked comes to the front of the user's browser, in a focused window. Tell the user which browser and tab it is. `tab.markDeliverable()` marks a finished result without bringing it forward.
+
 ## Finish with finalize
 
-Finish with `await browser.tabs.finalize({ keep })`. Temporary agent-created tabs also close automatically when a turn completes.
+`await browser.tabs.finalize({ keep })` closes every tab you opened except the ones in `keep`.
 
 - `keep` is an array whose entries are a tab, a tab id, or `{ tab, status }` with `status` set to `"deliverable"` or `"handoff"`; it rejects anything else rather than guessing. `tab.markDeliverable()` and `tab.markHandoff()` mark a tab the same way ahead of time.
-- Agent-created tabs omitted from `keep` close; claimed user tabs release without closing. Keep only tabs that are deliverables or need user handoff.
+- Agent-created tabs omitted from `keep` and not marked close; claimed user tabs release without closing.
 - A tab the user asked to open, show, or look at is a handoff: keep it with `keep: [{ tab, status: "handoff" }]`. Close scratch tabs you opened for your own inspection with `keep: []`.
 - `finalize` resolves to `{ kept, closed, released }` tab ids. Report what it says; do not assume a tab stayed open or closed.
 
@@ -193,4 +212,6 @@ For an inspection that leaves nothing behind, use `try/finally` so the tab is al
 - Using `managed` for a page the user wants to see. It's headless; use `builtin` or `extension`.
 - Opening a duplicate tab after a failed script. Check `tabs.list({ scope: "session" })` first.
 - Reusing a ref after another snapshot or navigation.
+- Leaving tabs open after you're done with them. Close them with `tab.close()`.
+- Leaving a filled-in form for the user without `tab.markHandoff()`, so it doesn't come to the front.
 - Assuming a tab stayed open. Read `finalize`'s `{ kept, closed, released }`.

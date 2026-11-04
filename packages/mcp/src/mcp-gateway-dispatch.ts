@@ -387,7 +387,9 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     const invoke = config.remoteInvoker
     await Promise.all(
       [...machines].map(([machine, origin]) =>
-        invoke(machine, "browser.finalizeTabs", { native: true }, origin).catch(() => undefined)
+        invoke(machine, "browser.finalizeTabs", { native: true, turnEnded: true }, origin).catch(
+          () => undefined
+        )
       )
     )
   }

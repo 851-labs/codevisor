@@ -142,7 +142,7 @@ describe("Browser live preview across tabs", () => {
 })
 
 describe("Browser tab cleanup", () => {
-  it("starts with no page and leaves no agent tab or popup after the turn", async () => {
+  it("starts with no page and keeps the agent's tab and popup open until it closes them", async () => {
     const context = { sessionId: "cleanup", projectId: "cleanup" }
     const cdp = observeCdp()
     onTestFinished(() => {
@@ -176,6 +176,9 @@ describe("Browser tab cleanup", () => {
     expect(await tabs()).toHaveLength(2)
 
     await provider.finishTurn?.("cleanup")
+    expect(await tabs()).toHaveLength(2)
+
+    value(await provider.invoke(context, "finalizeTabs", { native: true }))
     expect(await tabs()).toEqual([])
   })
 })

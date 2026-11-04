@@ -7,9 +7,10 @@ import {
   fakeCdpConnection
 } from "./browser-runtime-test-support.js"
 import { makeBrowserToolInvoker } from "./browser-use-invoke.js"
+import type { BrowserBackend } from "./browser-use-provider-types.js"
 import { expectArray, expectBoolean, expectRecord, expectString } from "./unknown-values.js"
 
-const harness = () => {
+const harness = (backend: BrowserBackend = "managed") => {
   const context = { projectId: "project", sessionId: "session" }
   const targets: Array<{ targetId: string; type: string; title: string; url: string }> = []
   const sent: Array<{
@@ -19,6 +20,7 @@ const harness = () => {
   }> = []
   const failClose = new Set<string>()
   let failCreate = false
+  let failActivate = false
   let created = 0
   const send = async (
     method: string,
@@ -39,6 +41,9 @@ const harness = () => {
         if (index >= 0) targets.splice(index, 1)
         return { success: true }
       }
+      case "Target.activateTarget":
+        if (failActivate) throw new Error("Unsupported browser command: Target.activateTarget")
+        return {}
       case "Target.getTargets":
         return { targetInfos: [...targets] }
       case "Target.attachToTarget":
@@ -53,7 +58,7 @@ const harness = () => {
     }
   }
   const state = browserToolSessionState({
-    sessionBackends: new Map([[context.sessionId, "managed"]])
+    sessionBackends: new Map([[context.sessionId, backend]])
   })
   const runtime = fakeBrowserRuntime({
     connection: fakeCdpConnection({ send, sendOnce: send }).connection
@@ -75,16 +80,24 @@ const harness = () => {
     sent
       .filter(({ method }) => method === "Target.closeTarget")
       .map(({ params }) => params.targetId)
+  const raised = () =>
+    sent
+      .filter(({ method }) => method === "Target.activateTarget" || method === "Page.bringToFront")
+      .map(({ method, params, sessionId }) => ({ method, target: params.targetId ?? sessionId }))
   return {
     call,
     newTab,
     closed,
+    raised,
     sent,
     state,
     targets,
     failClose,
     failCreate: () => {
       failCreate = true
+    },
+    failActivate: () => {
+      failActivate = true
     }
   }
 }
@@ -105,6 +118,88 @@ describe("Browser tab lifecycle", () => {
     })
     expect(closed()).toEqual([scratch])
     expect(targets.map((target) => target.targetId)).toEqual([kept, deliverable])
+  })
+
+  it.each(["builtin", "extension", "managed"] as const)(
+    "leaves every agent tab open at turn end in the %s browser until the agent closes it",
+    async (backend) => {
+      const { call, newTab, closed, raised } = harness(backend)
+      const form = await newTab()
+      const scratch = await newTab()
+      await call("markTab", { id: form, status: "deliverable" })
+
+      expect(await call("finalizeTabs", { native: true, turnEnded: true })).toEqual({
+        finalized: true,
+        kept: [form, scratch],
+        closed: [],
+        released: []
+      })
+      expect(closed()).toEqual([])
+      expect(raised()).toEqual([])
+      expect(await call("tabs", { action: "list", scope: "session" })).toMatchObject({
+        tabs: [
+          { id: form, origin: "kept" },
+          { id: scratch, origin: "created" }
+        ]
+      })
+
+      expect(await call("finalizeTabs", { native: true })).toMatchObject({
+        kept: [form],
+        closed: [scratch]
+      })
+    }
+  )
+
+  it("closes the tabs an explicit finalize doesn't keep", async () => {
+    const { call, newTab, raised } = harness("extension")
+    const shown = await newTab()
+    const scratch = await newTab()
+
+    expect(await call("finalizeTabs", { native: true, keepIds: [shown] })).toMatchObject({
+      kept: [shown],
+      closed: [scratch]
+    })
+    expect(raised()).toEqual([])
+  })
+
+  it("doesn't bring a handoff forward in the headless browser", async () => {
+    const { call, newTab, raised } = harness("managed")
+    const headless = await newTab()
+    await call("markTab", { id: headless, status: "handoff" })
+
+    expect(await call("finalizeTabs", { native: true, turnEnded: true })).toMatchObject({
+      kept: [headless],
+      closed: []
+    })
+    expect(raised()).toEqual([])
+  })
+
+  it("brings the last handoff to the front at turn end, once", async () => {
+    const { call, newTab, raised } = harness("extension")
+    const deliverable = await newTab()
+    const signIn = await newTab()
+    const review = await newTab()
+    await call("markTab", { id: deliverable, status: "deliverable" })
+    await call("markTab", { id: signIn, status: "handoff" })
+    await call("markTab", { id: review, status: "handoff" })
+
+    await call("finalizeTabs", { native: true, turnEnded: true })
+    await call("finalizeTabs", { native: true, turnEnded: true })
+    expect(raised()).toEqual([{ method: "Target.activateTarget", target: review }])
+  })
+
+  it("falls back to bringing the page forward when the browser can't activate tabs", async () => {
+    const { call, newTab, raised, failActivate } = harness("extension")
+    const form = await newTab()
+    await call("tab_info", { tabId: form })
+    await call("markTab", { id: form, status: "handoff" })
+    failActivate()
+
+    await call("finalizeTabs", { native: true, turnEnded: true })
+    expect(raised()).toEqual([
+      { method: "Target.activateTarget", target: form },
+      { method: "Page.bringToFront", target: `cdp:${form}` }
+    ])
   })
 
   it("creates a navigation tab before a concurrent claim of a user tab", async () => {

@@ -53,7 +53,7 @@ export const finishSessionTabs = async (
     const active = await runtimes.get(key)?.catch(() => undefined)
     if (active === undefined || active.connection.closed) continue
     await serializedBrowserOperation(active, () =>
-      finalize(context, active, "finalizeTabs", { native: true }, backend)
+      finalize(context, active, "finalizeTabs", { native: true, turnEnded: true }, backend)
     ).catch((cause: unknown) => {
       failure ??= cause
     })

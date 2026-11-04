@@ -8,9 +8,11 @@ Tab lifecycle:
 - browser.tabs.get(id), browser.tabs.selected(): obtain a controlled tab.
 - browser.user.openTabs(): list user tabs; browser.user.claimTab(observedTab): validates the observed id/title/url before claiming.
 - browser.nameSession(name): names the session and groups its newly created Chrome tabs.
-- tab.markDeliverable(), tab.markHandoff(): keep the tab after cleanup.
-- browser.tabs.finalize({keep?: Array<Tab|string|{tab,status?:'deliverable'|'handoff'}>}): returns {kept,closed,released}.
-Temporary agent-created tabs close automatically at turn completion. User tabs are released without closing. Kept output tabs remain remembered across turns. Closed or unowned targets fail explicitly.
+- tab.close(): close a tab you opened as soon as you're done with it.
+- tab.markHandoff(): mark a tab you leave for the user to review, sign in on, or submit, such as a filled-in form. When the turn ends, the last one marked comes to the front of the user's browser in a focused window.
+- tab.markDeliverable(): marks a finished result without bringing it forward.
+- browser.tabs.finalize({keep?: Array<Tab|string|{tab,status?:'deliverable'|'handoff'}>}): closes every tab you opened except the kept ones; returns {kept,closed,released}.
+Every tab you open stays open until you or the user closes it; nothing closes when the turn ends. Close each tab with tab.close() as soon as you no longer need it, and leave open only tabs the user should see. User tabs are released without closing. Tabs left open remain remembered across turns. Closed or unowned targets fail explicitly.
 
 Each operation carries its tab ID. Independent operations on different tabs may use Promise.all. Keep dependent actions ordered. Inspect state after an action before deciding the next action.
 

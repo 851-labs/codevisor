@@ -74,7 +74,7 @@ describe("turn-end cleanup", () => {
         runtimes,
         async (_context, _active, _tool, args, backend) => {
           finalized.push(backend)
-          expect(args).toEqual({ native: true })
+          expect(args).toEqual({ native: true, turnEnded: true })
           if (backend === "builtin") throw failure
           return { content: [] }
         }

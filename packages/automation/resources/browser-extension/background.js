@@ -22,6 +22,8 @@ let lastCommandErrorAt
 let relayTransport = "native"
 
 const tabUrl = (tab) => tab.url || tab.pendingUrl || "about:blank"
+const shareableTab = (tab) =>
+  Number.isInteger(tab.id) && (/^(https?|file):/.test(tabUrl(tab)) || tabUrl(tab) === "about:blank")
 const fileName = (path) =>
   String(path || "")
     .split(/[\\/]/)
@@ -72,7 +74,7 @@ class CodevisorConnection {
       this.send({ method: "Target.detachedFromTarget", params: { sessionId, reason } })
     }
     this.onTabCreated = (tab) => {
-      if (tab.id === undefined || tab.openerTabId === undefined) return
+      if (tab.openerTabId === undefined || !shareableTab(tab)) return
       if (!this.allowedTabs.has(tab.openerTabId)) return
       this.allowedTabs.add(tab.id)
       this.send({
@@ -160,11 +162,7 @@ class CodevisorConnection {
       case "Target.setDiscoverTargets":
         return {}
       case "Target.getTargets": {
-        const tabs = (await chrome.tabs.query({})).filter(
-          (tab) =>
-            Number.isInteger(tab.id) &&
-            (/^(https?|file):/.test(tabUrl(tab)) || tabUrl(tab) === "about:blank")
-        )
+        const tabs = (await chrome.tabs.query({})).filter(shareableTab)
         for (const tab of tabs) this.allowedTabs.add(tab.id)
         return { targetInfos: tabs.map(tabTarget) }
       }
@@ -175,6 +173,13 @@ class CodevisorConnection {
         })
         this.allowedTabs.add(tab.id)
         return { targetId: String(tab.id) }
+      }
+      case "Target.activateTarget": {
+        const tabId = Number(message.params?.targetId)
+        if (!this.allowedTabs.has(tabId)) throw new Error("That tab is not shared with Codevisor")
+        const tab = await chrome.tabs.update(tabId, { active: true })
+        await chrome.windows.update(tab.windowId, { focused: true })
+        return {}
       }
       case "Target.closeTarget": {
         const tabId = Number(message.params?.targetId)
