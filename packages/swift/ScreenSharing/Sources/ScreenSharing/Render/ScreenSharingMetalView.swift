@@ -21,7 +21,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     private var offMainWorker: ScreenSharingMetalPreparer?
   #endif
   private let renderOnArrival: Bool
-  private static let maximumDrawableCount = 3
+  private static let maximumDrawableCount = 2
 
   public init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool = false,

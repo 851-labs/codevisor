@@ -9,7 +9,7 @@ import Testing
     var labels = product.snapshot().labels
     #expect(labels["renderPreparation"] == "off-main serial worker")
     #expect(labels["drawableAcquisitionPath"] == "CAMetalLayer.nextDrawable on render worker, default timeout")
-    #expect(labels["maximumDrawableCount"] == "3")
+    #expect(labels["maximumDrawableCount"] == "2")
     #expect(labels["frameSelection"] == "before drawable acquisition")
     pane.stop()
     #expect(product.snapshot().labels["rendererStopped"] == "true")
@@ -20,7 +20,7 @@ import Testing
     labels = plain.snapshot().labels
     #expect(labels["renderPreparation"] == "main actor (MTKView)")
     #expect(labels["drawableAcquisitionPath"] == "MTKView.currentDrawable on main actor")
-    #expect(labels["maximumDrawableCount"] == "3")
+    #expect(labels["maximumDrawableCount"] == "2")
     standard.stop()
   }
 }
