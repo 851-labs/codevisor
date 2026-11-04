@@ -21,6 +21,7 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
 
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat: OSType
+  public let refinementPolicy: ScreenSharingV2RefinementPolicy
   private let primary: any ScreenSharingTileEncoder
   private let fallback: any ScreenSharingTileEncoder
   private let metrics: ScreenSharingMetrics
@@ -35,6 +36,7 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
 
     layout = primary.layout
     sourcePixelFormat = primary.sourcePixelFormat
+    refinementPolicy = primary.refinementPolicy
     self.primary = primary
     self.fallback = fallback
     self.metrics = metrics

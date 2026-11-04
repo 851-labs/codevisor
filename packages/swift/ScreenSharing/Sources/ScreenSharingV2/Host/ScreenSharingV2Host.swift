@@ -34,7 +34,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   public convenience init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int = ScreenSharingV2Profile.bitrateCeiling,
-    refinement: ScreenSharingV2RefinementPolicy = .standard
+    refinement: ScreenSharingV2RefinementPolicy? = nil
   ) {
     self.init(
       transport: transport, encoder: encoder, metrics: metrics, initialBitrate: initialBitrate,
@@ -44,7 +44,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler,
-    refinement policy: ScreenSharingV2RefinementPolicy = .standard
+    refinement policy: ScreenSharingV2RefinementPolicy? = nil
   ) {
     self.transport = transport
     self.encoder = encoder
@@ -53,8 +53,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     layout = encoder.layout
     slot = ScreenSharingV2CaptureSlot(tiles: encoder.layout.tiles)
     bitrate = ScreenSharingV2BitrateGovernor(initial: initialBitrate)
-    refinementPolicy = policy
-    refinement = ScreenSharingV2Refinement(passes: policy.passes)
+    refinementPolicy = policy ?? encoder.refinementPolicy
+    refinement = ScreenSharingV2Refinement(passes: refinementPolicy.passes)
   }
 
   public func start() {

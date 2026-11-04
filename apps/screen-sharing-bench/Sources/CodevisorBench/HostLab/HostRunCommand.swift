@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import ScreenSharing
 import ScreenSharingV2
@@ -8,7 +9,7 @@ struct HostRunCommand: BenchCommand {
   static let summary = "Run the engine v2 host pipeline on a display into a null transport (one host-lab variant)"
   static let usage =
     "--display-id <id> --output <file.json> [--seconds <n>] [--variant <name>] [--queue n] [--cursor 0|1] "
-    + "[--fps n] [--refine n] [--converge bytes] [--tiles 1|4] [--ltr 0|1]"
+    + "[--fps n] [--refine n] [--converge bytes] [--tiles 1|4] [--ltr 0|1] [--vcp 0|1] [--bgra 0|1]"
 
   private static let durations = 1...600
 
@@ -36,14 +37,15 @@ struct HostRunCommand: BenchCommand {
     let layout = variant.tiles.map {
       ScreenSharingV2TileLayout(width: configuration.width, height: configuration.height, count: $0)
     }
-    let encoder = try ScreenSharingVideoToolboxTileEncoder(
-      configuration: configuration, layout: layout ?? ScreenSharingV2Profile.tileLayout(for: configuration),
-      metrics: metrics, longTermReferences: variant.longTermReferences)
+    let encoder = try Self.encoder(
+      variant, configuration: configuration,
+      layout: layout ?? ScreenSharingV2Profile.tileLayout(for: configuration), metrics: metrics)
     let transport = HostLabNullTransport()
     let host = ScreenSharingV2Host(
       transport: transport, encoder: encoder, metrics: metrics,
       refinement: variant.refinement)
-    let capture = ScreenSharingCapture(pixelFormat: encoder.sourcePixelFormat)
+    let capture = ScreenSharingCapture(
+      pixelFormat: variant.capturesBGRA ? kCVPixelFormatType_32BGRA : encoder.sourcePixelFormat)
     capture.queueDepth = variant.queueDepth
     try await capture.setShowsCursor(variant.showsCursor)
     host.start()
@@ -64,6 +66,19 @@ struct HostRunCommand: BenchCommand {
       variant: variant.name, captureError: captureError, capturedSeconds: Self.inSeconds(captured),
       metrics: metrics.snapshot(), passes: transport.passes)
     try JSONEncoder().encode(result).write(to: URL(fileURLWithPath: output))
+  }
+
+  private static func encoder(
+    _ variant: HostLabVariant, configuration: ScreenSharingVideoConfiguration, layout: ScreenSharingV2TileLayout,
+    metrics: ScreenSharingMetrics
+  ) throws -> any ScreenSharingTileEncoder {
+    guard variant.encoder == .videoProcessing else {
+      return try ScreenSharingVideoToolboxTileEncoder(
+        configuration: configuration, layout: layout, metrics: metrics,
+        longTermReferences: variant.longTermReferences)
+    }
+
+    return try ScreenSharingVCPTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
   }
 
   private static func inSeconds(_ duration: Duration) -> Double {

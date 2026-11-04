@@ -6,4 +6,6 @@ struct EncodeLabQualitySample: Sendable, Codable {
   let ssimY: Double
   let native: EncodeLabNativeQuality?
   let refresh: Bool
+  let strided: Bool
+  let settled: Bool
 }

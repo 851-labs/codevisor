@@ -8,9 +8,20 @@ struct EncodeLabQualitySummary: Codable, Sendable {
   let refreshPsnrY: Double?
   let nativePsnrYMean: Double?
   let nativeSsimYMean: Double?
+  let settledSamples: Int
+  let settledPsnrYMean: Double?
+  let settledPsnrYMin: Double?
+  let settledPsnrCbCrMean: Double?
 
-  init?(_ samples: [EncodeLabQualitySample], atNativeSize: Bool) {
+  init?(_ all: [EncodeLabQualitySample], atNativeSize: Bool) {
+    let samples = all.filter(\.strided)
     guard !samples.isEmpty else { return nil }
+
+    let settled = all.filter(\.settled)
+    settledSamples = settled.count
+    settledPsnrYMean = settled.isEmpty ? nil : Self.mean(settled.map(\.psnrY))
+    settledPsnrYMin = settled.map(\.psnrY).min()
+    settledPsnrCbCrMean = settled.isEmpty ? nil : Self.mean(settled.map(\.psnrCbCr))
 
     self.samples = samples.count
     psnrYMean = Self.mean(samples.map(\.psnrY))

@@ -54,6 +54,23 @@ struct EncodeLabConfigParserTests {
     #expect(config.sessionRateLimitBytes == 362_500)
   }
 
+  @Test func splitsVideoProcessingIntoOneSessionPerTileWithAShareOfTheBudget() throws {
+    let config = try EncodeLabConfigParser.parse(
+      spec: "name=v,engine=vcp,size=3840x2160,tiles=4,split=1,skip=1,mbps=48,drl=48@0.05")
+
+    #expect(config.sessionTiles == 4)
+    #expect(config.encodedTiles(dirty: [2], forced: [1]) == [1, 2])
+    #expect((config.tileSession.height, config.tileSession.tiles) == (540, 1))
+    #expect(config.tileSession.sessionBitsPerSecond == 12_000_000)
+    #expect(config.tileSession.sessionRateLimitBytes == 75_000)
+  }
+
+  @Test func refusesToSplitVideoToolboxSessions() {
+    #expect(throws: BenchUsageError(message: "--configs entry \"split=1\": split=1 needs engine=vcp")) {
+      try EncodeLabConfigParser.parse(spec: "split=1")
+    }
+  }
+
   @Test func defaultsOtherCodecsToTheProductFallbackRateControl() throws {
     let config = try EncodeLabConfigParser.parse(spec: "name=f,codec=hevc")
 

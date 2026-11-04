@@ -7,6 +7,6 @@ public enum ScreenSharingV2EncoderKind: String, Sendable, CaseIterable {
   public static let environmentKey = "CODEVISOR_SCREEN_SHARING_V2_ENCODER"
 
   public static func configured(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> Self {
-    environment[environmentKey].flatMap(Self.init(rawValue:)) ?? .videoToolbox
+    environment[environmentKey].flatMap(Self.init(rawValue:)) ?? .videoProcessing
   }
 }

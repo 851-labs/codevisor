@@ -6,6 +6,7 @@ struct CodevisorV2ViewResult: Encodable {
   let host: String
   let presentation: String
   let timeline: ScreenSharingFrameTimelineSummary?
+  let frames: [ScreenSharingFrameRecord]
   let counters: [String: Int]
   let labels: [String: String]
   let timings: [String: ScreenSharingMetrics.Timing]
@@ -23,6 +24,7 @@ struct CodevisorV2ViewResult: Encodable {
     self.host = host
     self.presentation = presentation.rawValue
     timeline = metrics.timeline.summary()
+    frames = metrics.timeline.records(after: 0)
     counters = snapshot.counters
     labels = snapshot.labels
     timings = snapshot.timings

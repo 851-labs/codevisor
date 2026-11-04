@@ -23,16 +23,21 @@ struct EncodeLabQualityPass {
     var screen = EncodeLabDecodedScreen(config: trace.config)
     var samples: [EncodeLabQualitySample] = []
     var decodeMs: [Double] = []
+    let settled = EncodeLabSettledFrames.select(trace.events, endTick: trace.ticks, from: trace.warmUpTicks)
     for event in trace.events {
       let started = ScreenSharingMetrics.nowNs
       try screen.decode(trace.outputs(ofFrame: event.frame))
       decodeMs.append(Double(ScreenSharingMetrics.nowNs - started) / 1e6)
-      guard sampled(event) else { continue }
+      let strided = sampled(event)
+      guard strided || settled.contains(event.frame) else { continue }
 
       let native = try await source.nativePicture(forVersion: event.version)
       let original = try reference.transfer(try source.scaled(native))
       let nativeQuality = try screen.singleImage.flatMap { try comparer?.compare(native: native, shown: $0) }
-      samples.append(try screen.compare(with: original, event: event, native: nativeQuality))
+      samples.append(
+        try screen.compare(
+          with: original, event: event, native: nativeQuality, strided: strided,
+          settled: settled.contains(event.frame)))
     }
     return Result(samples: samples, decodeMs: decodeMs, atNativeSize: comparer == nil)
   }

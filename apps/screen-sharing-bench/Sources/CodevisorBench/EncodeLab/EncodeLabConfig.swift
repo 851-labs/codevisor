@@ -16,6 +16,8 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
   var maxFrameDelay: Int?
   var maxQP: Int?
   var minQP: Int?
+  var refineQP: Int?
+  var splitsVCP = false
   var rateLimit: EncodeLabRateLimit?
   var preset: String?
   var constantQuality: Double?
@@ -31,7 +33,7 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
   var sessionRateLimitBytes: Int? { rateLimit.map { $0.bytesPerWindow / sessionTiles } }
 
   func encodedTiles(dirty: Set<Int>, forced: Set<Int>) -> Set<Int> {
-    guard engine == .videoToolbox, skipCleanTiles else { return Set(0..<sessionTiles) }
+    guard sessionPerTile, skipCleanTiles else { return Set(0..<sessionTiles) }
 
     return dirty.union(forced)
   }
@@ -53,7 +55,18 @@ struct EncodeLabConfig: Sendable, Codable, Equatable {
 
   var vcpInputFormat: OSType { vcpInput.utf8.reduce(0) { $0 << 8 | OSType($1) } }
   var ackRoundTripNs: Int64 { Int64(ackMilliseconds) * 1_000_000 }
-  var sessionTiles: Int { engine == .videoToolbox ? tiles : 1 }
+  var sessionPerTile: Bool { engine == .videoToolbox || splitsVCP }
+  var sessionTiles: Int { sessionPerTile ? tiles : 1 }
+  var tileSession: EncodeLabConfig {
+    var session = self
+    session.height = tileHeight
+    session.tiles = 1
+    session.megabitsPerSecond = megabitsPerSecond.map { $0 / Double(tiles) }
+    session.rateLimit = rateLimit.map {
+      EncodeLabRateLimit(megabitsPerSecond: $0.megabitsPerSecond / Double(tiles), windowSeconds: $0.windowSeconds)
+    }
+    return session
+  }
   var refreshKind: EncodeLabRefresh {
     longTermReferences || engine == .videoProcessing ? .longTermReference : .keyframe
   }

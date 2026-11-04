@@ -8,15 +8,19 @@ final class EncodeLabVCPEncoder: EncodeLabFrameEncoder, @unchecked Sendable {
     var outputs: [EncodeLabTileOutput] = []
     var acks: EncodeLabTokenAcks
     var submits: [Int: EncodeLabVCPSubmit] = [:]
+    var cap: EncodeLabRefinementCap
   }
 
   private let api: EncodeLabVideoProcessing
   private let state: Mutex<State>
+  private let tile: Int?
   private var session: AnyObject?
 
-  init(config: EncodeLabConfig) throws {
+  init(config: EncodeLabConfig, tile: Int? = nil) throws {
     api = try EncodeLabVideoProcessing()
-    state = Mutex(State(acks: EncodeLabTokenAcks(roundTripNs: config.ackRoundTripNs)))
+    self.tile = tile
+    state = Mutex(
+      State(acks: EncodeLabTokenAcks(roundTripNs: config.ackRoundTripNs), cap: EncodeLabRefinementCap(config: config)))
     let session = try EncodeLabVCPSessionFactory(api: api, config: config).make(refcon: Unmanaged.passUnretained(self))
     self.session = session
   }
@@ -27,9 +31,15 @@ final class EncodeLabVCPEncoder: EncodeLabFrameEncoder, @unchecked Sendable {
 
   var outputs: [EncodeLabTileOutput] { state.withLock { $0.outputs } }
 
-  func encode(_ inputs: [Int: CVPixelBuffer], frame: Int, tick: Int, refresh: EncodeLabRefresh?) throws {
-    guard let session, let pixels = inputs[0] else { return }
+  func encode(
+    _ inputs: [Int: CVPixelBuffer], frame: Int, tick: Int, refresh: EncodeLabRefresh?, repeats: Bool
+  ) throws {
+    guard let session, let pixels = inputs[tile ?? 0] else { return }
 
+    if let qp = state.withLock({ $0.cap.change(repeats: repeats) }) {
+      let status = api.setProperty(session, kVTCompressionPropertyKey_MaxAllowedFrameQP, qp as CFNumber)
+      guard status == noErr else { throw EncodeLabError.property("MaxAllowedFrameQP", status) }
+    }
     let submitNs = ScreenSharingMetrics.nowNs
     let options = frameOptions(
       refresh: refresh, submit: EncodeLabVCPSubmit(submitNs: submitNs, refresh: refresh != nil), frame: frame)
@@ -53,7 +63,7 @@ final class EncodeLabVCPEncoder: EncodeLabFrameEncoder, @unchecked Sendable {
       guard let submit = state.submits[frame] else { return }
 
       let info = EncodeLabSampleInfo(frame: frame, submitNs: submit.submitNs, refresh: submit.refresh, sample: sample)
-      state.outputs.append(info.output(tile: attachments.tile, outputNs: outputNs))
+      state.outputs.append(info.output(tile: tile ?? attachments.tile, outputNs: outputNs))
       if let token = attachments.token { state.acks.received(token: token, atNs: outputNs) }
     }
   }

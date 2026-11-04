@@ -7,6 +7,7 @@ import ScreenSharingV2
 final class ShareV2Host {
   private let displayID: CGDirectDisplayID
   private let metrics = ScreenSharingMetrics()
+  private var captureLog: V2CaptureLog?
   private let capture = ScreenSharingCapture(pixelFormat: ScreenSharingV2Profile.capturePixelFormat)
   private let configuration: ScreenSharingVideoConfiguration
   private let endpoint: NetEndpointHandle
@@ -57,12 +58,15 @@ final class ShareV2Host {
     return ShareV2Result(
       viewer: viewer, display: ShareDisplay(displayID), configuration: configuration, encoder: encoderChoice.kind,
       captureError: captureError,
-      metrics: metrics.snapshot(), media: statistics, control: control.summary)
+      metrics: metrics.snapshot(), media: statistics, control: control.summary, captures: captureLog?.recorded ?? [])
   }
 
   private func startCapture(into host: ScreenSharingV2Host) async {
     do {
-      try await capture.start(displayID: displayID, configuration: configuration, sink: host, metrics: metrics)
+      try await capture.setShowsCursor(false)
+      let log = V2CaptureLog(forwardingTo: host)
+      captureLog = log
+      try await capture.start(displayID: displayID, configuration: configuration, sink: log, metrics: metrics)
     } catch {
       captureError = error
     }

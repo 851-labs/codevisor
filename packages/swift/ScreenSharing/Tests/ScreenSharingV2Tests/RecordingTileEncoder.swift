@@ -7,6 +7,7 @@ import Synchronization
 final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   let layout: ScreenSharingV2TileLayout
   let sourcePixelFormat = ScreenSharingV2Profile.capturePixelFormat
+  let refinementPolicy: ScreenSharingV2RefinementPolicy
   let encodes = TestSignal()
   let attached = TestSignal()
   private let recorded = Mutex<[ScreenSharingTileEncodeRequest]>([])
@@ -14,8 +15,12 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   private let network = Mutex<[ScreenSharingTileNetworkFeedback]>([])
   private let output = Mutex<(@Sendable (ScreenSharingTileEncoderOutput) -> Void)?>(nil)
 
-  init(layout: ScreenSharingV2TileLayout = ScreenSharingV2TileLayout(width: 640, height: 360, count: 1)) {
+  init(
+    layout: ScreenSharingV2TileLayout = ScreenSharingV2TileLayout(width: 640, height: 360, count: 1),
+    refinementPolicy: ScreenSharingV2RefinementPolicy = .standard
+  ) {
     self.layout = layout
+    self.refinementPolicy = refinementPolicy
   }
 
   var requests: [ScreenSharingTileEncodeRequest] { recorded.withLock { $0 } }

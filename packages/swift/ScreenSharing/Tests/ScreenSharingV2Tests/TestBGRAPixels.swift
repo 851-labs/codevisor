@@ -11,8 +11,30 @@ enum TestBGRAPixels {
       pixelBuffer: try buffer(width: width, height: height, shades: shades), timestampNs: timestampNs)
   }
 
-  static func videoRangeLuma(of shade: UInt8) -> Int {
-    16 + Int(shade) * 219 / 255
+  static func noise(width: Int = 640, height: Int = 360, timestampNs: Int64) throws -> ScreenSharingVideoFrame {
+    let buffer = try buffer(width: width, height: height, shades: [0])
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    let base = CVPixelBufferGetBaseAddress(buffer)!
+    let stride = CVPixelBufferGetBytesPerRow(buffer)
+    for row in 0..<height {
+      let bytes = (base + row * stride).assumingMemoryBound(to: UInt8.self)
+      for column in 0..<width {
+        let shade = noiseShade(row: row, column: column)
+        bytes[column * 4] = shade
+        bytes[column * 4 + 1] = shade
+        bytes[column * 4 + 2] = shade
+      }
+    }
+    return ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: timestampNs)
+  }
+
+  static func noiseShade(row: Int, column: Int) -> UInt8 {
+    var hash = UInt32(truncatingIfNeeded: column) &* 0x9E37_79B1 ^ UInt32(truncatingIfNeeded: row) &* 0x85EB_CA77
+    hash ^= hash >> 15
+    hash &*= 0x2C1B_3C6D
+    hash ^= hash >> 12
+    return UInt8(truncatingIfNeeded: hash)
   }
 
   private static func buffer(width: Int, height: Int, shades: [UInt8]) throws -> CVPixelBuffer {

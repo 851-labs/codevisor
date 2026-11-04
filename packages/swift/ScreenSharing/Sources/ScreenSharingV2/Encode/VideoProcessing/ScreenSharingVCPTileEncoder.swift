@@ -5,6 +5,8 @@ import Synchronization
 public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat = kCVPixelFormatType_32BGRA
+  public let refinementPolicy = ScreenSharingV2RefinementPolicy(
+    convergedBelowBytes: ScreenSharingVCPRate.convergedRefinementBytes)
   private let converter: ScreenSharingVCPPixelConverter
   private let cutter: ScreenSharingV2TileCutter
   private let sessions: [ScreenSharingVCPTileSession]
@@ -40,9 +42,15 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
     guard !stopped.load(ordering: .relaxed) else { throw ScreenSharingError.unavailable("Encoder stopped.") }
 
     let tiles = request.update.tiles.sorted().filter(sessions.indices.contains)
-    let pixels = try cutter.cut(
-      try converter.convert(request.pixelBuffer, capture: request.sourceTimestampNs), tiles: tiles)
+    let startNs = ScreenSharingMetrics.nowNs
+    let converted = try converter.convert(request.pixelBuffer, capture: request.sourceTimestampNs)
+    let convertedNs = ScreenSharingMetrics.nowNs
+    let pixels = try cutter.cut(converted, tiles: tiles)
+    let cutNs = ScreenSharingMetrics.nowNs
+    metrics.observe("vcpConvert", milliseconds: Double(convertedNs - startNs) / 1e6)
+    if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(cutNs - convertedNs) / 1e6) }
     for tile in tiles { encode(tile, pixels: pixels[tile], request: request) }
+    metrics.observe("updateSubmit", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
   }
 
   private func encode(_ tile: Int, pixels: CVPixelBuffer?, request: ScreenSharingTileEncodeRequest) {
@@ -85,7 +93,7 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
   public func setBitrate(_ bitsPerSecond: Int) throws {
     let rate = ScreenSharingVCPRate(bitsPerSecond: bitsPerSecond, tiles: layout.count)
     for session in sessions {
-      try session.setBitrate(rate.tileBitsPerSecond, windowBitsPerSecond: rate.tileWindowBitsPerSecond)
+      try session.setRate(rate)
     }
     metrics.label("encoderBitrate", String(rate.tileBitsPerSecond * layout.count))
   }

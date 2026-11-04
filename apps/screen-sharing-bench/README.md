@@ -193,8 +193,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals, NACKs,
   retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate and
   round trip at the end. `--source own-window` and `--onscreen` work as for v1. No quality loop runs: engine v2
-  follows the transport's encoder ceiling itself. `--encoder vcp` uses the VCP encoder (851-3819) and records the results as
-  `codevisor-v2-vcp`, so a cell's baseline never mixes the two encoders.
+  follows the transport's encoder ceiling itself. The v2 viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer decode, render and on-glass times, and stages); `share.json` also lists every capture's display time, callback time, dirty-rect count and whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error). VCP (851-3819) is the default encoder since 851-3975 and records its results as `codevisor-v2-vcp`;
+  `--encoder vt` uses the public VideoToolbox encoder and records `codevisor-v2`, so a cell's baseline never mixes the
+  two encoders.
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -295,7 +296,9 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   `systems: apple-hp,codevisor-v2,codevisor-v2-vcp` compares Apple HP with v2's public and private encoders; the
   `vcp-fail-after` input (seconds, 0 by default) forces a VCP failure that far into each of its runs
   (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The v2 table has a row per v2 system and encode p95. The report counts a run as the
-  system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`.
+  system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`. VCP has been engine
+  v2's default since 851-3975, so every v2 system other than `codevisor-v2-vcp` passes `--encoder vt` and stays the
+  public encoder's series.
 - `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
   product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
   the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
@@ -529,9 +532,11 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   tiles whose pixels changed), `ltr`, `yuv`, `speed`, `mfd` (`MaxFrameDelayCount`), `qpmax`, `qpmin`, `drl` (`<mbps>@<seconds>`),
   `preset` (`vc`, `speed`, `balanced`, `quality`), `cq` (`ConstantQualityFactor`, macOS 27), `aq`, `ackms` (the
   simulated round trip before a reference token is acknowledged, 33 ms by default), `refine` (after each change,
-  resubmit the unchanged frame up to N times, every other tick, so the encoder can sharpen it), `vcpin` and `nodirty`
-  (VCP only: `DisableDirtyDetection` in the encoder specification, as AVConference passes it; no effect on tamale,
-  run 41557954805).
+  resubmit the unchanged frame up to N times, every other tick, so the encoder can sharpen it), `refineqp`
+  (`MaxAllowedFrameQP` for those resubmissions only; the next change goes back to `qpmax`, or to no cap), `vcpin` and
+  `nodirty` (VCP only: `DisableDirtyDetection` in the encoder specification, as AVConference passes it; no effect on
+  tamale, run 41557954805), and `split` (VCP only: one session per tile, as engine v2 runs it, each with its share of
+  `mbps` and `drl`).
 - **`engine=vcp`** opens Apple's real-time encoder, VideoProcessing's private `VCPCompressionSession` with
   `Usage = 42` (851-3766), loaded with `dlopen`. It takes whole frames in `vcpin` (`444f` by default, Apple's capture
   format; it picks Main 4:4:4 only when the source attributes are 4:4:4 and not lossless-compressed), splits them into
@@ -547,7 +552,9 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   source converted to 4:4:4 (BT.709, video range): PSNR of Y and of Cb/Cr (4:2:0 chroma upsampled by nearest
   neighbour) and SSIM of Y (Wang 2004, 11×11 Gaussian, σ 1.5). A single-tile config smaller than the canvas is also
   upscaled back and compared with the native frame (`native`), so downscaling counts against it; tiled configs get
-  no native score. `engine=vcp` with `444f` input is compared in full range, the range it encodes.
+  no native score. `engine=vcp` with `444f` input is compared in full range, the range it encodes. **Settled** scores
+  the last pass of every version held for at least 0.5 s, after its refinements: the still a viewer keeps looking at,
+  which is what T8 measures on test cards (851-3975).
 - **CI.** Dispatch `Screen Sharing Bench` with `encode_lab` set to the configs (and `encode_lab_options` for the
   rest); that runs only the `encode-lab` job on tamale and puts the table in the job summary.
 
@@ -573,7 +580,8 @@ CodevisorBench host-lab --scenes scroll,typing --seconds 30 --settle 5 --virtual
   child: ScreenSharingCapture → ScreenSharingV2Host → the VideoToolbox tile encoder → a null transport that drops
   the tiles and acknowledges every LTR token at once. After `--settle` seconds it samples CPU for `--seconds`.
 - A variant is `base` or comma-separated settings: `queue` (ScreenCaptureKit queue depth), `cursor`, `fps` (capture
-  and encoder rate), `refine` (refinement passes), `converge` (a refinement pass under this many bytes ends the tile's refinement; 0 is off), `tiles` (1 or 4) and `ltr`.
+  and encoder rate), `refine` (refinement passes), `converge` (a refinement pass under this many bytes ends the tile's refinement; 0 is off); without either, the run uses the encoder's own policy, as the product does, `tiles` (1 or 4), `ltr`, `vcp` (1 runs the VCP tile encoder instead of VideoToolbox, on its BGRA capture) and
+  `bgra` (1 captures BGRA for VideoToolbox too, so the capture format's cost shows apart from VCP's, 851-3975).
 - The table gives the whole system (`all_processes`), the `host-run` child, `VTEncoderXPCService`, `WindowServer`,
   `replayd` and the player, plus captures, tile encodes and refinements per second and the encode p50. The network
   send path isn't in it; `media-transport` measures that.

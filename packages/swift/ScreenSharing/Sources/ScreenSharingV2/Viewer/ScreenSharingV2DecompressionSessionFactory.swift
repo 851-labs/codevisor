@@ -32,7 +32,14 @@ enum ScreenSharingV2DecompressionSessionFactory {
 
   static func decodedPixelFormat(_ format: CMVideoFormatDescription) -> OSType {
     let chroma = (try? ScreenSharingHEVCFormat.read(format))?.chroma
-    return chroma == 3 ? kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange : ScreenSharingV2Profile.decodedPixelFormat
+    guard chroma == 3 else { return ScreenSharingV2Profile.decodedPixelFormat }
+
+    return signalsFullRange(format)
+      ? kCVPixelFormatType_444YpCbCr8BiPlanarFullRange : kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
+  }
+
+  private static func signalsFullRange(_ format: CMVideoFormatDescription) -> Bool {
+    CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_FullRangeVideo) as? Bool == true
   }
 
   private static func attributes(pixelFormat: OSType) -> CFDictionary {
