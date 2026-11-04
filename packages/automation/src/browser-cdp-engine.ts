@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process"
 
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { delay, evaluatedValue, type CdpConnection } from "./browser-cdp.js"
 import { assertReadOnlyFunction } from "./browser-evaluate-guard.js"

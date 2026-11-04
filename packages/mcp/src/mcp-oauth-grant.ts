@@ -1,18 +1,16 @@
-import { refreshAuthorization } from "@modelcontextprotocol/sdk/client/auth.js"
-import {
-  OAuthError,
-  ServerError,
-  TemporarilyUnavailableError,
-  TooManyRequestsError
-} from "@modelcontextprotocol/sdk/server/auth/errors.js"
 import {
   type OAuthClientInformationMixed,
+  OAuthError,
+  OAuthErrorCode,
+  type OAuthTokens,
+  refreshAuthorization
+} from "@modelcontextprotocol/client"
+import {
   OAuthClientInformationFullSchema,
   OAuthClientInformationSchema,
   OAuthMetadataSchema,
-  type OAuthTokens,
   OpenIdProviderDiscoveryMetadataSchema
-} from "@modelcontextprotocol/sdk/shared/auth.js"
+} from "@modelcontextprotocol/core"
 import { z } from "zod"
 
 import { isRecord } from "./mcp-guards.js"
@@ -109,15 +107,17 @@ const connectionFailureCode = (cause: unknown): string | undefined => {
   return typeof code === "string" && UNSENT_CONNECTION_FAILURES.has(code) ? code : undefined
 }
 
+const TRANSIENT_OAUTH_ERRORS: ReadonlySet<string> = new Set([
+  OAuthErrorCode.ServerError,
+  OAuthErrorCode.TemporarilyUnavailable,
+  OAuthErrorCode.TooManyRequests
+])
+
 const classified = (cause: unknown): unknown => {
-  if (
-    cause instanceof ServerError ||
-    cause instanceof TemporarilyUnavailableError ||
-    cause instanceof TooManyRequestsError
-  ) {
-    return new McpRefreshUnavailable(cause.errorCode)
+  if (cause instanceof OAuthError && TRANSIENT_OAUTH_ERRORS.has(cause.code)) {
+    return new McpRefreshUnavailable(cause.code)
   }
-  if (cause instanceof OAuthError) return new McpRefreshRejected(cause.errorCode)
+  if (cause instanceof OAuthError) return new McpRefreshRejected(cause.code)
   const unsent = connectionFailureCode(cause)
   return unsent === undefined ? cause : new McpRefreshUnavailable(unsent)
 }

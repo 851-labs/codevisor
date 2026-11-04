@@ -55,7 +55,6 @@ describe("test-events events", () => {
 
     const listed = await client.request({ method: "events/list", params: {} }, anyResult)
 
-    expect(listed.resultType).toBe("complete")
     expect(listed.events).toMatchObject([
       {
         name: "test.ping",
@@ -82,7 +81,6 @@ describe("test-events events", () => {
     })
 
     expect(bootstrap).toMatchObject({
-      resultType: "complete",
       events: [],
       truncated: false,
       hasMore: false
@@ -139,7 +137,7 @@ describe("test-events events", () => {
     const connected = await connect()
     const notFound = {
       code: -32023,
-      message: "MCP error -32023: Unknown event type: test.missing",
+      message: "Unknown event type: test.missing",
       data: { kind: "event" }
     }
 

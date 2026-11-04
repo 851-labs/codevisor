@@ -11,8 +11,8 @@ import {
   TranscriptPage
 } from "@codevisor/api"
 import type { ExecutionTimers } from "@codevisor/mcp"
-import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client as McpClient } from "@modelcontextprotocol/client"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { jsonRequest, observableFixture, start, tempDirs, waitFor } from "../test-support.js"

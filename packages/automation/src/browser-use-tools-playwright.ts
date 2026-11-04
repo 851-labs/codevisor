@@ -1,4 +1,4 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/server"
 
 import { objectSchema, locatorProperty, locatorSchema, tool } from "./browser-use-tool-schema.js"
 

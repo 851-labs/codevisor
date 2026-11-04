@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
-import { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
+import { streamableHttpTransport } from "./mcp-http-transport.js"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -12,6 +12,11 @@ const SentMessageSchema = z.object({ id: z.number().optional() })
 
 const ping = { jsonrpc: "2.0" as const, id: 1, method: "ping" }
 
+const pong = () =>
+  new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
+    headers: { "content-type": "application/json" }
+  })
+
 const serve = (accepted: string) => {
   const presented: Array<string | null> = []
   vi.stubGlobal(
@@ -20,114 +25,44 @@ const serve = (accepted: string) => {
       const authorization = new Headers(init.headers).get("authorization")
       presented.push(authorization)
       if (authorization !== `Bearer ${accepted}`) return new Response("expired", { status: 401 })
-      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), {
-        headers: { "content-type": "application/json" }
-      })
+      return pong()
     })
   )
   return presented
 }
 
-const splitSse = (event: string, at: number) =>
-  new Response(
-    new ReadableStream({
-      start: (controller) => {
-        controller.enqueue(new TextEncoder().encode(event.slice(0, at)))
-        controller.enqueue(new TextEncoder().encode(event.slice(at)))
-        controller.close()
-      }
-    }),
-    { headers: { "content-type": "text/event-stream" } }
-  )
-
-describe("Streamable HTTP responses", () => {
-  it("handles each response shape and keeps the session, protocol and custom headers", async () => {
-    const responses = [
-      new Response(
-        JSON.stringify([
-          { jsonrpc: "2.0", id: 1, result: {} },
-          { jsonrpc: "2.0", method: "notifications/tools/list_changed" }
-        ]),
-        {
-          headers: { "content-type": "application/json", "mcp-session-id": "session-1" }
-        }
-      ),
-      new Response(null, { status: 202 }),
-      new Response("upstream failed", { status: 500, statusText: "Failure" }),
-      new Response("unexpected", { headers: { "content-type": "text/plain" } }),
-      new Response("missing content type"),
-      splitSse(
-        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: 5, result: {} })}\n\n`,
-        24
-      ),
-      new Response(
-        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })}\n\n`,
-        { headers: { "content-type": "text/event-stream" } }
-      ),
-      new Response(
-        `event: message\ndata: ${JSON.stringify([{ jsonrpc: "2.0", id: 8, result: {} }])}\n\n`,
-        { headers: { "content-type": "text/event-stream" } }
-      ),
-      new Response("event: message\ndata: not-json\n\n", {
-        headers: { "content-type": "text/event-stream" }
-      }),
-      new Response(null, { headers: { "content-type": "text/event-stream" } })
-    ]
-    const fetchMock = vi.fn<typeof fetch>(async () => responses.shift()!)
+describe("Streamable HTTP headers", () => {
+  it("sends the access token, protocol version and custom headers with every request", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => pong())
     vi.stubGlobal("fetch", fetchMock)
-    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    const transport = new NodeStreamableHttpTransport(
-      new URL("https://example.test/mcp"),
-      "access-token",
-      { "X-Workspace": "emojis" }
-    )
-    const messages: unknown[] = []
-    let closed = false
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener
-    transport.onmessage = (message) => messages.push(message)
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener
-    transport.onclose = () => {
-      closed = true
-    }
+    const transport = streamableHttpTransport(new URL("https://example.test/mcp"), "access-token", {
+      "X-Workspace": "emojis"
+    })
+    const received = vi.fn()
+    Object.assign(transport, { onmessage: received })
     transport.setProtocolVersion("2025-11-25")
     await transport.start()
-    await expect(transport.start()).rejects.toThrow("already started")
-    await transport.send({ jsonrpc: "2.0", id: 1, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", method: "notifications/initialized" })
-    await expect(transport.send({ jsonrpc: "2.0", id: 3, method: "ping" })).rejects.toThrow(
-      "Streamable HTTP error 500: upstream failed"
-    )
-    await expect(transport.send({ jsonrpc: "2.0", id: 4, method: "ping" })).rejects.toThrow(
-      "Unexpected MCP response content type"
-    )
-    await expect(transport.send({ jsonrpc: "2.0", id: 4.5, method: "ping" })).rejects.toThrow(
-      "Unexpected MCP response content type"
-    )
-    await transport.send({ jsonrpc: "2.0", id: 5, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", method: "notifications/initialized" })
-    await transport.send({ jsonrpc: "2.0", id: 8, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", id: 9, method: "ping" })
-    await transport.send({ jsonrpc: "2.0", id: 10, method: "ping" })
 
-    expect(messages).toEqual([
-      { jsonrpc: "2.0", id: 1, result: {} },
-      { jsonrpc: "2.0", method: "notifications/tools/list_changed" },
-      { jsonrpc: "2.0", id: 5, result: {} },
-      { jsonrpc: "2.0", method: "notifications/tools/list_changed" },
-      { jsonrpc: "2.0", id: 8, result: {} }
+    await transport.send(ping)
+    await transport.send(ping)
+
+    const sent = fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers))
+    expect(sent.map((headers) => headers.get("authorization"))).toEqual([
+      "Bearer access-token",
+      "Bearer access-token"
     ])
-    expect(errors).toHaveBeenCalledWith(expect.stringContaining("Unable to decode MCP SSE event"))
-    const firstHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
-    expect(firstHeaders.get("authorization")).toBe("Bearer access-token")
-    expect(firstHeaders.get("mcp-protocol-version")).toBe("2025-11-25")
-    expect(
-      fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("x-workspace"))
-    ).toEqual(fetchMock.mock.calls.map(() => "emojis"))
-    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("mcp-session-id")).toBe(
-      "session-1"
-    )
+    expect(sent.map((headers) => headers.get("x-workspace"))).toEqual(["emojis", "emojis"])
+    expect(sent[0]?.get("mcp-protocol-version")).toBe("2025-11-25")
+    expect(received).toHaveBeenCalledTimes(2)
     await transport.close()
-    expect(closed).toBe(true)
+  })
+
+  it("reports what the server said when it rejects a static access token", async () => {
+    serve("fresh")
+    const transport = streamableHttpTransport(new URL("https://mcp.example/mcp"), "stale")
+    await transport.start()
+
+    await expect(transport.send(ping)).rejects.toThrow("Streamable HTTP error 401: expired")
   })
 })
 
@@ -139,7 +74,7 @@ describe("Streamable HTTP authorization", () => {
       current = "fresh"
       return { retry: true } as const
     })
-    const transport = new NodeStreamableHttpTransport(new URL("https://mcp.example/mcp"), {
+    const transport = streamableHttpTransport(new URL("https://mcp.example/mcp"), {
       accessToken: async () => current,
       recoverUnauthorized
     })
@@ -156,7 +91,7 @@ describe("Streamable HTTP authorization", () => {
 
   it("reports why a rejected token could not be renewed", async () => {
     const presented = serve("fresh")
-    const transport = new NodeStreamableHttpTransport(new URL("https://mcp.example/mcp"), {
+    const transport = streamableHttpTransport(new URL("https://mcp.example/mcp"), {
       accessToken: async () => "stale",
       recoverUnauthorized: async () => ({ retry: false, reason: "Tracker needs authorization" })
     })
@@ -186,7 +121,7 @@ describe("Streamable HTTP cancellation", () => {
         })
       })
     )
-    const transport = new NodeStreamableHttpTransport(new URL("https://mcp.example/mcp"))
+    const transport = streamableHttpTransport(new URL("https://mcp.example/mcp"))
     await transport.start()
     const cancel = (params?: Record<string, unknown>) =>
       transport.send({

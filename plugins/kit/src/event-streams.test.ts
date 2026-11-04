@@ -1,4 +1,4 @@
-import type { Notification } from "@modelcontextprotocol/sdk/types.js"
+import type { Notification } from "@modelcontextprotocol/server"
 import { describe, expect, it, vi } from "vitest"
 
 import { createEventStreams, type StreamExtra } from "./event-streams.js"
@@ -15,14 +15,10 @@ const extraFor = (
   signal: AbortSignal,
   sendNotification: (notification: Notification) => Promise<void>
 ): StreamExtra => ({
-  requestId: 7,
-  signal,
-  sendNotification,
-  sendRequest: () => Promise.reject(new Error("unused"))
+  mcpReq: { id: 7, signal, notify: sendNotification }
 })
 
 const closedResult = {
-  resultType: "complete",
   _meta: { "io.modelcontextprotocol/subscriptionId": 7 }
 }
 

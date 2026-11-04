@@ -1,12 +1,6 @@
 import type { McpServerRecord } from "@codevisor/db"
-import {
-  discoverOAuthServerInfo,
-  selectResourceURL
-} from "@modelcontextprotocol/sdk/client/auth.js"
-import type {
-  OAuthClientInformationMixed,
-  OAuthTokens
-} from "@modelcontextprotocol/sdk/shared/auth.js"
+import { discoverOAuthServerInfo, selectResourceURL } from "@modelcontextprotocol/client"
+import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprotocol/client"
 
 import type { StreamableHttpAuthorization } from "./mcp-http-transport.js"
 import type { McpOAuthClock } from "./mcp-oauth-clock.js"

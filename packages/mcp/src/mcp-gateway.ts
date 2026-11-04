@@ -9,11 +9,9 @@ import type {
 } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
 import { makeAttachmentStore } from "@codevisor/db"
-import {
-  McpServer as McpSdkServer,
-  type RegisteredTool
-} from "@modelcontextprotocol/sdk/server/mcp.js"
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node"
+import { McpServer as McpSdkServer } from "@modelcontextprotocol/server"
+import type { RegisteredTool } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
@@ -35,11 +33,11 @@ import type { McpManagerConfig } from "./mcp-manager-types.js"
 import type { PluginAppViewStore } from "./mcp-plugin-app-views.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import type { SandboxArtifactPersistence } from "./mcp-sandbox-results.js"
-import { run, sdkTransport, type UpstreamConnection } from "./mcp-support.js"
+import { run, type UpstreamConnection } from "./mcp-support.js"
 
 export interface GatewayConnection {
   readonly server: McpSdkServer
-  readonly transport: StreamableHTTPServerTransport
+  readonly transport: NodeStreamableHTTPServerTransport
   readonly executeTool: RegisteredTool
   readonly skillsTool: RegisteredTool
 }
@@ -279,7 +277,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       "execute",
       {
         description: executeToolDescription(inventory),
-        inputSchema: {
+        inputSchema: z.object({
           description: z.string().min(1).describe(DESCRIPTION_GUIDANCE),
           code: z.string().min(1),
           timeout_ms: z
@@ -291,7 +289,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
             .describe(
               `How long to wait for the result, in milliseconds; default ${EXECUTE_DEFAULT_TIMEOUT_MS}. Work still running then keeps going in the background and the call returns a job handle instead of failing.`
             )
-        }
+        })
       },
       executeHandler(runtime)
     )
@@ -300,7 +298,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       {
         description: runtime.skillsDescription,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-        inputSchema: {
+        inputSchema: z.object({
           name: z
             .string()
             .optional()
@@ -313,7 +311,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
             .describe(
               "A supporting file of a plugin skill, by the path its instructions list, e.g. references/checklist.md. Needs name."
             )
-        }
+        })
       },
       async ({ name, file }) => {
         const result = await skillsToolResult(await sessionSkills(projectId, sessionId), name, file)
@@ -327,7 +325,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         }
       }
     )
-    const transport = new StreamableHTTPServerTransport({
+    const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       onsessioninitialized: (mcpSessionId) => {
         runtime.connections.set(mcpSessionId, connection)
@@ -344,7 +342,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       executeTool,
       skillsTool
     }
-    await sdkServer.connect(sdkTransport(transport))
+    await sdkServer.connect(transport)
     return connection
   }
 

@@ -1,4 +1,4 @@
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"

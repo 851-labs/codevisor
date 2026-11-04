@@ -1,27 +1,12 @@
-import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js"
 import {
+  type AuthProvider,
+  type FetchLike,
   isJSONRPCNotification,
   isJSONRPCRequest,
   type JSONRPCMessage,
-  JSONRPCMessageSchema,
-  type RequestId
-} from "@modelcontextprotocol/sdk/types.js"
-
-import { isRecord } from "./mcp-guards.js"
-
-const messageFromSseBlock = (block: string): unknown => {
-  const data = block
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice(5).trimStart())
-    .join("\n")
-  if (data.length === 0) return undefined
-  try {
-    return JSON.parse(data) as unknown
-  } catch {
-    return undefined
-  }
-}
+  type RequestId,
+  StreamableHTTPClientTransport
+} from "@modelcontextprotocol/client"
 
 export interface StreamableHttpAuthorization {
   readonly accessToken: () => Promise<string | undefined>
@@ -30,165 +15,115 @@ export interface StreamableHttpAuthorization {
   ) => Promise<{ readonly retry: true } | { readonly retry: false; readonly reason: string }>
 }
 
-export class NodeStreamableHttpTransport implements Transport {
-  onclose?: () => void
-  onerror?: (error: Error) => void
-  onmessage?: (message: JSONRPCMessage) => void
-  sessionId?: string
+export const streamableHttpTransport = (
+  url: URL,
+  authorization?: string | StreamableHttpAuthorization,
+  customHeaders: Readonly<Record<string, string>> = {}
+): StreamableHTTPClientTransport =>
+  new StreamableHTTPClientTransport(url, {
+    requestInit: { headers: { ...customHeaders } },
+    fetch: cancellableFetch(),
+    ...authProviderOption(authorization)
+  })
 
-  private controller: AbortController | undefined
-  private protocolVersion: string | undefined
-  private readonly inFlight = new Map<RequestId, AbortController>()
+const authProviderOption = (
+  authorization: string | StreamableHttpAuthorization | undefined
+): { readonly authProvider?: AuthProvider } => {
+  if (authorization === undefined) return {}
+  if (typeof authorization === "string") return { authProvider: staticAuthProvider(authorization) }
+  return { authProvider: renewingAuthProvider(authorization) }
+}
 
-  constructor(
-    private readonly url: URL,
-    private readonly authorization?: string | StreamableHttpAuthorization,
-    private readonly customHeaders: Readonly<Record<string, string>> = {}
-  ) {}
-
-  setProtocolVersion(version: string): void {
-    this.protocolVersion = version
+const staticAuthProvider = (accessToken: string): AuthProvider => ({
+  token: async () => accessToken,
+  onUnauthorized: async ({ response }) => {
+    throw unauthorized(await response.text().catch(() => response.statusText))
   }
+})
 
-  async start(): Promise<void> {
-    if (this.controller !== undefined) throw new Error("MCP HTTP transport is already started")
-    this.controller = new AbortController()
-  }
-
-  async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
-    if (!isJSONRPCRequest(message)) {
-      await this.deliver(message, this.controller?.signal)
-      const cancelled = cancelledRequestId(message)
-      if (cancelled !== undefined) this.inFlight.get(cancelled)?.abort()
-      return
-    }
-    const request = new AbortController()
-    this.inFlight.set(message.id, request)
-    try {
-      await this.deliver(message, this.requestSignal(request))
-    } finally {
-      this.inFlight.delete(message.id)
-    }
-  }
-
-  private requestSignal(request: AbortController): AbortSignal {
-    if (this.controller === undefined) return request.signal
-    return AbortSignal.any([this.controller.signal, request.signal])
-  }
-
-  private async deliver(message: JSONRPCMessage, signal: AbortSignal | undefined): Promise<void> {
-    const response = await this.post(message, signal)
-    const sessionId = response.headers.get("mcp-session-id")
-    if (sessionId !== null) this.sessionId = sessionId
-    if (!response.ok) {
-      /* v8 ignore next */
-      const detail = await response.text().catch(() => response.statusText)
-      throw new Error(`Streamable HTTP error ${response.status}: ${detail}`)
-    }
-    if (response.status === 202) {
-      await response.body?.cancel()
-      return
-    }
-    /* v8 ignore next */
-    const contentType = response.headers.get("content-type") ?? ""
-    if (contentType.includes("application/json")) {
-      this.dispatch(await response.json())
-      return
-    }
-    if (contentType.includes("text/event-stream")) {
-      const requestId = "id" in message ? message.id : undefined
-      await this.consumeSse(response, requestId)
-      return
-    }
-    await response.body?.cancel()
-    throw new Error(`Unexpected MCP response content type: ${contentType}`)
-  }
-
-  async close(): Promise<void> {
-    this.controller?.abort()
-    this.controller = undefined
-    this.onclose?.()
-  }
-
-  private async post(message: JSONRPCMessage, signal: AbortSignal | undefined): Promise<Response> {
-    const authorization = this.authorization
-    const attempt = async (accessToken: string | undefined): Promise<Response> =>
-      fetch(this.url, {
-        method: "POST",
-        headers: this.headers("application/json, text/event-stream", accessToken),
-        body: JSON.stringify(message),
-        signal: signal ?? null
-      })
-    if (typeof authorization !== "object") return attempt(authorization)
-    const accessToken = await authorization.accessToken()
-    const response = await attempt(accessToken)
-    if (response.status !== 401) return response
-    await response.body?.cancel()
-    const recovery = await authorization.recoverUnauthorized(accessToken)
-    if (!recovery.retry) throw new Error(`Streamable HTTP error 401: ${recovery.reason}`)
-    return attempt(await authorization.accessToken())
-  }
-
-  private headers(accept: string, accessToken: string | undefined): Headers {
-    const headers = new Headers(this.customHeaders)
-    headers.set("accept", accept)
-    headers.set("content-type", "application/json")
-    if (accessToken !== undefined) {
-      headers.set("authorization", `Bearer ${accessToken}`)
-    }
-    if (this.sessionId !== undefined) headers.set("mcp-session-id", this.sessionId)
-    if (this.protocolVersion !== undefined) {
-      headers.set("mcp-protocol-version", this.protocolVersion)
-    }
-    return headers
-  }
-
-  private dispatch(decoded: unknown): void {
-    const messages = Array.isArray(decoded) ? decoded : [decoded]
-    for (const message of messages) {
-      this.onmessage?.(JSONRPCMessageSchema.parse(message))
-    }
-  }
-
-  private async consumeSse(response: Response, stopAfterId?: string | number): Promise<void> {
-    if (response.body === null) return
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let pending = ""
-    while (true) {
-      const chunk = await reader.read()
-      pending += decoder.decode(chunk.value, { stream: !chunk.done })
-      const blocks = pending.split(/\r?\n\r?\n/)
-      /* v8 ignore next */
-      if (chunk.done) pending = ""
-      else pending = blocks.pop() ?? ""
-      for (const block of blocks) {
-        const decoded = messageFromSseBlock(block)
-        if (decoded === undefined) {
-          console.error(`Unable to decode MCP SSE event (${block.length} characters)`)
-          continue
-        }
-        this.dispatch(decoded)
-        /* v8 ignore next */
-        const messages = Array.isArray(decoded) ? decoded : [decoded]
-        if (
-          stopAfterId !== undefined &&
-          messages.some((message) => isRecord(message) && message.id === stopAfterId)
-        ) {
-          /* v8 ignore next */
-          await reader.cancel().catch(() => undefined)
-          return
-        }
-      }
-      if (chunk.done) return
+const renewingAuthProvider = (authorization: StreamableHttpAuthorization): AuthProvider => {
+  let presented: string | undefined
+  return {
+    token: async () => {
+      presented = await authorization.accessToken()
+      return presented
+    },
+    onUnauthorized: async () => {
+      const recovery = await authorization.recoverUnauthorized(presented)
+      if (!recovery.retry) throw unauthorized(recovery.reason)
     }
   }
 }
 
-const cancelledRequestId = (message: JSONRPCMessage): RequestId | undefined => {
-  if (!isJSONRPCNotification(message) || message.method !== "notifications/cancelled") {
+const unauthorized = (reason: string): Error => new Error(`Streamable HTTP error 401: ${reason}`)
+
+const cancellableFetch = (): FetchLike => {
+  const inFlight = new Map<RequestId, AbortController>()
+
+  return async (url, init) => {
+    const message = sentMessage(init?.body)
+    const cancelled = cancelledRequestId(message)
+    if (cancelled !== undefined) return fetchThenAbort(url, init, inFlight.get(cancelled))
+    if (message === undefined || !isJSONRPCRequest(message)) return fetch(url, init)
+
+    const request = new AbortController()
+    inFlight.set(message.id, request)
+    const settle = () => inFlight.delete(message.id)
+    try {
+      return settleWithBody(await fetch(url, withSignal(init, request.signal)), settle)
+    } catch (cause) {
+      settle()
+      throw cause
+    }
+  }
+}
+
+const fetchThenAbort = async (
+  url: string | URL,
+  init: RequestInit | undefined,
+  request: AbortController | undefined
+): Promise<Response> => {
+  try {
+    return await fetch(url, init)
+  } finally {
+    request?.abort()
+  }
+}
+
+const withSignal = (init: RequestInit | undefined, signal: AbortSignal): RequestInit => {
+  const transportSignal = init?.signal ?? undefined
+  if (transportSignal === undefined) return { ...init, signal }
+  return { ...init, signal: AbortSignal.any([transportSignal, signal]) }
+}
+
+const settleWithBody = (response: Response, settle: () => void): Response => {
+  if (response.body === null) {
+    settle()
+    return response
+  }
+  const body = response.body.pipeThrough(new TransformStream({ flush: settle }))
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers
+  })
+}
+
+const sentMessage = (body: RequestInit["body"]): JSONRPCMessage | undefined => {
+  if (typeof body !== "string") return undefined
+  try {
+    const decoded: unknown = JSON.parse(body)
+    if (isJSONRPCRequest(decoded) || isJSONRPCNotification(decoded)) return decoded
+    return undefined
+  } catch {
     return undefined
   }
+}
+
+const cancelledRequestId = (message: JSONRPCMessage | undefined): RequestId | undefined => {
+  if (message === undefined || !isJSONRPCNotification(message)) return undefined
+  if (message.method !== "notifications/cancelled") return undefined
+
   const requestId: unknown = message.params?.requestId
   if (typeof requestId === "string" || typeof requestId === "number") return requestId
   return undefined

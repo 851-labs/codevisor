@@ -2,8 +2,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client as McpClient } from "@modelcontextprotocol/client"
 import { describe, expect, it } from "vitest"
 
 import { start, tempDirs } from "../test-support.js"
@@ -34,7 +33,7 @@ describe("mcp routes", () => {
     )
     const toolsChanged = Promise.withResolvers<void>()
     let toolListChanges = 0
-    client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+    client.setNotificationHandler("notifications/tools/list_changed", () => {
       toolListChanges += 1
       toolsChanged.resolve()
     })

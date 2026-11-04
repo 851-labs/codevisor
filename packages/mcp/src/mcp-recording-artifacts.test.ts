@@ -6,8 +6,7 @@ import { join } from "node:path"
 import type { FileMetadata } from "@codevisor/api"
 import { computerUseTools, textToolResult } from "@codevisor/automation"
 import { makeAttachmentStore } from "@codevisor/db"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { afterEach, describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -19,7 +18,6 @@ import {
   testManager
 } from "./mcp-manager-test-support.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -59,11 +57,9 @@ describe("recording attachment persistence", () => {
     const client = new Client({ name: "recording-test", version: "1" })
     try {
       await client.connect(
-        sdkTransport(
-          new StreamableHTTPClientTransport(new URL(issued.url), {
-            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-          })
-        )
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        })
       )
       const result = await client.callTool({
         name: "execute",

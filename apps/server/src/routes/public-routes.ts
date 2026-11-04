@@ -39,11 +39,13 @@ interface DiscoveredMachine {
 interface OAuthCallbackQuery {
   readonly state: string | null
   readonly code: string | null
+  readonly issuer: string | null
 }
 
 interface OAuthCallback {
   readonly state: string
   readonly code: string
+  readonly issuer: string | null
 }
 
 const accountGatewayUnavailable = "Account gateway unavailable"
@@ -126,14 +128,17 @@ const finishMcpOAuth = ({ services, response, url }: RouteContext): Promise<void
   const callback = oauthCallbackQuery(url)
   if (!hasCallbackData(callback)) throw new HttpFailure(400, "Missing OAuth callback data")
 
-  return respondAfter(response, services.mcp.finishOAuth(callback.state, callback.code), () =>
-    writeHtml(response, oauthAuthorizedPage)
+  return respondAfter(
+    response,
+    services.mcp.finishOAuth(callback.state, callback.code, callback.issuer ?? undefined),
+    () => writeHtml(response, oauthAuthorizedPage)
   )
 }
 
 const oauthCallbackQuery = (url: URL): OAuthCallbackQuery => ({
   state: url.searchParams.get("state"),
-  code: url.searchParams.get("code")
+  code: url.searchParams.get("code"),
+  issuer: url.searchParams.get("iss")
 })
 
 const hasCallbackData = (callback: OAuthCallbackQuery): callback is OAuthCallback =>

@@ -1,10 +1,10 @@
 import { jsonSchema } from "@codevisor/api"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/server"
 import type { Schema } from "effect"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
 import type { CodevisorApi } from "./codevisor-api-client.js"
-import { schemaProperties } from "./codevisor-tool-schema.js"
+import { jsonProperties, schemaProperties } from "./codevisor-tool-schema.js"
 
 export interface AgentToolContext {
   readonly api: CodevisorApi
@@ -28,7 +28,7 @@ const objectInputSchema = (input: Schema.Constraint): Tool["inputSchema"] => {
   const required = Array.isArray(schema.required) ? schema.required : []
   return {
     type: "object",
-    properties: schemaProperties(schema),
+    properties: jsonProperties(schemaProperties(schema)),
     ...(required.length === 0 ? {} : { required }),
     additionalProperties: false
   }

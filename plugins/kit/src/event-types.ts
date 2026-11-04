@@ -1,4 +1,4 @@
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import type { Server } from "@modelcontextprotocol/server"
 
 import { unknownEventError } from "./plugin-protocol.js"
 import { eventsListRequest } from "./plugin-requests.js"
@@ -15,7 +15,7 @@ export interface EventType {
 }
 
 export const registerEventTypes = (server: Server, types: ReadonlyArray<EventType>): void => {
-  server.setRequestHandler(eventsListRequest, () => ({ resultType: "complete", events: types }))
+  server.setRequestHandler(eventsListRequest.method, eventsListRequest, () => ({ events: types }))
 }
 
 export const eventTypeNamed = (types: ReadonlyArray<EventType>, name: string): EventType => {

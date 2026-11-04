@@ -1,5 +1,4 @@
-import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js"
-import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js"
+import type { RequestOptions, ReadResourceResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import {

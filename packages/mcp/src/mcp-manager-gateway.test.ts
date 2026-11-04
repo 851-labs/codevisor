@@ -1,8 +1,6 @@
 import { createServer } from "node:http"
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
@@ -12,7 +10,6 @@ import {
   testManager,
   workingUpstream
 } from "./mcp-manager-test-support.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -41,7 +38,7 @@ describe("MCP manager gateway", () => {
         requestInit: { headers: authorization }
       })
       const client = new Client({ name: "redial-test", version: "1" })
-      await client.connect(sdkTransport(transport))
+      await client.connect(transport)
       return { client, transport }
     }
 
@@ -190,11 +187,9 @@ describe("MCP manager gateway", () => {
     const issued = await manager.issueGateway(session.id, project.id)
     const client = new Client({ name: "skills-test", version: "1" })
     await client.connect(
-      sdkTransport(
-        new StreamableHTTPClientTransport(new URL(issued.url), {
-          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-        })
-      )
+      new StreamableHTTPClientTransport(new URL(issued.url), {
+        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+      })
     )
     try {
       const tools = (await client.listTools()).tools
@@ -207,7 +202,7 @@ describe("MCP manager gateway", () => {
       expect(read.content).toEqual([{ type: "text", text: "Run deploy.sh" }])
 
       const builtinChanged = Promise.withResolvers<void>()
-      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      client.setNotificationHandler("notifications/tools/list_changed", () => {
         builtinChanged.resolve()
       })
       await manager.update("browser", { enabled: false })
@@ -219,7 +214,7 @@ describe("MCP manager gateway", () => {
       ).toBe(true)
 
       const storeChanged = Promise.withResolvers<void>()
-      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      client.setNotificationHandler("notifications/tools/list_changed", () => {
         storeChanged.resolve()
       })
       saved = [...saved, { description: "Reviews code", directoryName: "review", name: "Review" }]

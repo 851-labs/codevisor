@@ -3,7 +3,7 @@ import { symlink, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/server"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { APP_VIEW_RETENTION_MS, makePluginAppViewStore } from "./mcp-plugin-app-views.js"

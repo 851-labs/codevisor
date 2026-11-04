@@ -5,8 +5,7 @@ import { join } from "node:path"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { makeBrowserUseProvider } from "@codevisor/automation"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { afterEach, expect, it } from "vitest"
 
 import { isRecord } from "./mcp-guards.js"
@@ -18,7 +17,6 @@ import {
   run,
   testManager
 } from "./mcp-manager-test-support.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -47,11 +45,9 @@ it("blocks the model's install request on the composer card and returns the user
   })
   const client = new Client({ name: "install-prompt-test", version: "1" })
   await client.connect(
-    sdkTransport(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      })
-    )
+    new StreamableHTTPClientTransport(new URL(issued.url), {
+      requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+    })
   )
   try {
     const executed = client.callTool({

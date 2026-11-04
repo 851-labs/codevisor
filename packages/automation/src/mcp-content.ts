@@ -1,4 +1,5 @@
-import { ContentBlockSchema, type ContentBlock } from "@modelcontextprotocol/sdk/types.js"
+import { ContentBlockSchema } from "@modelcontextprotocol/core"
+import type { ContentBlock } from "@modelcontextprotocol/server"
 
 import { recordOrEmpty } from "./unknown-values.js"
 

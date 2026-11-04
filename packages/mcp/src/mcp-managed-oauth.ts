@@ -1,5 +1,5 @@
 import type { McpServerRecord } from "@codevisor/db"
-import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js"
+import type { FetchLike } from "@modelcontextprotocol/server"
 
 import type { McpCatalogResolver } from "./mcp-manager-types.js"
 

@@ -7,13 +7,13 @@ import type {
   PluginToolDigest,
   PluginToolEffects
 } from "@codevisor/api"
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import type {
+  Client,
   ClientCapabilities,
   ServerCapabilities,
   Tool,
   ToolAnnotations
-} from "@modelcontextprotocol/sdk/types.js"
+} from "@modelcontextprotocol/client"
 import { z } from "zod"
 
 import { appResourceUri } from "./mcp-plugin-apps.js"

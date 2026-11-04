@@ -1,8 +1,4 @@
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import {
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema
-} from "@modelcontextprotocol/sdk/types.js"
+import type { Server } from "@modelcontextprotocol/server"
 
 import { resourceNotFoundError } from "./plugin-protocol.js"
 
@@ -17,11 +13,10 @@ export const registerResources = (
   server: Server,
   resources: ReadonlyArray<ServedResource>
 ): void => {
-  server.setRequestHandler(ListResourcesRequestSchema, () => ({
+  server.setRequestHandler("resources/list", () => ({
     resources: resources.map(listing)
   }))
-  server.setRequestHandler(ReadResourceRequestSchema, (request) => ({
-    resultType: "complete",
+  server.setRequestHandler("resources/read", (request) => ({
     contents: [contents(resourceAt(resources, request.params.uri))]
   }))
 }

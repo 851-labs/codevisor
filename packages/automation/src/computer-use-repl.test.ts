@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { makeComputerUseRepls } from "./computer-use-repl.js"

@@ -2,8 +2,8 @@ import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import type { McpManager } from "@codevisor/mcp"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client } from "@modelcontextprotocol/client"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { gatewayTransport } from "../routes/gateway-test-support.js"
@@ -121,8 +121,8 @@ const signIn = async (on: Machine, fake: FakeOAuthMcpServer): Promise<void> => {
     transport: "http",
     url: fake.url
   })
-  const { code, state } = fake.approve(await on.manager.beginOAuth(created.id))
-  await on.manager.finishOAuth(state, code)
+  const { code, state, issuer } = fake.approve(await on.manager.beginOAuth(created.id))
+  await on.manager.finishOAuth(state, code, issuer)
   await settles(on.manager, created.id, "connected")
 }
 
@@ -220,8 +220,8 @@ describe("MCP OAuth through the shared credential vault", () => {
     expect(await b.manager.oauthCredential(await b.trackerId())).toBeNull()
 
     const trackerOnB = await b.trackerId()
-    const { code, state } = env.fake.approve(await b.manager.beginOAuth(trackerOnB))
-    await b.manager.finishOAuth(state, code)
+    const { code, state, issuer } = env.fake.approve(await b.manager.beginOAuth(trackerOnB))
+    await b.manager.finishOAuth(state, code, issuer)
     await settles(b.manager, trackerOnB, "connected")
     await gossip(b, a)
     expect(await fromA()).toContain(env.fake.grants()[1]?.id)

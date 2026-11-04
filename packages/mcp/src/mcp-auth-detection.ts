@@ -1,5 +1,5 @@
 import type { McpAuthDetection } from "@codevisor/api"
-import { discoverOAuthProtectedResourceMetadata } from "@modelcontextprotocol/sdk/client/auth.js"
+import { discoverOAuthProtectedResourceMetadata } from "@modelcontextprotocol/client"
 
 import { requireHttpUrl, suggestedMcpName } from "./mcp-support.js"
 

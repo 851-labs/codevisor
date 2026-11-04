@@ -1,5 +1,5 @@
 import { errorResult } from "@codevisor/plugin-kit"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import { GmailApiError } from "./gmail-api.js"

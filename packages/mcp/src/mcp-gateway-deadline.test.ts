@@ -5,15 +5,13 @@ import {
   textToolResult,
   type AutomationProviderContext
 } from "@codevisor/automation"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
 import type { ExecutionTimers } from "./mcp-gateway-execution.js"
 import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -69,11 +67,9 @@ const deadlineGateway = async (timers: ExecutionTimers) => {
   const issued = await manager.issueGateway(session.id, project.id, () => {})
   const client = new Client({ name: "deadline-test", version: "1" })
   await client.connect(
-    sdkTransport(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      })
-    )
+    new StreamableHTTPClientTransport(new URL(issued.url), {
+      requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+    })
   )
   const invoked = new Promise<void>((resolve) => (onInvoked = resolve))
   return { client, contexts, invoked, manager, release: (text: string) => release?.(text) }

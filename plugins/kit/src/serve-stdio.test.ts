@@ -1,7 +1,7 @@
 import { once } from "node:events"
 import { PassThrough } from "node:stream"
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { Server } from "@modelcontextprotocol/server"
 import { expect, it } from "vitest"
 import { z } from "zod"
 

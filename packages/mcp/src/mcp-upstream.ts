@@ -1,12 +1,8 @@
 import type { McpServerRecord } from "@codevisor/db"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import { Client, type ClientOptions, type Tool } from "@modelcontextprotocol/client"
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 
-import {
-  NodeStreamableHttpTransport,
-  type StreamableHttpAuthorization
-} from "./mcp-http-transport.js"
+import { streamableHttpTransport, type StreamableHttpAuthorization } from "./mcp-http-transport.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import { CATALOG_STDIO_COMMAND, type CatalogLaunch } from "./mcp-manager-types.js"
 import { discoverPlugin, PLUGIN_CLIENT_CAPABILITIES } from "./mcp-plugin-capabilities.js"
@@ -51,15 +47,12 @@ const storedLaunch = (server: McpServerRecord): CatalogLaunch => {
   return { transport: "http", url: requireHttpUrl(server.url) }
 }
 
-const listAllUpstreamTools = async (client: Client): Promise<ReadonlyArray<Tool>> => {
-  const tools: Tool[] = []
-  let cursor: string | undefined
-  do {
-    const page = await client.listTools(cursor === undefined ? undefined : { cursor })
-    tools.push(...page.tools)
-    cursor = page.nextCursor
-  } while (cursor !== undefined)
-  return tools
+const listAllUpstreamTools = async (client: Client): Promise<ReadonlyArray<Tool>> =>
+  (await client.listTools()).tools
+
+const upstreamClientOptions = (launch: CatalogLaunch): ClientOptions => {
+  if (launch.transport === "stdio") return { capabilities: PLUGIN_CLIENT_CAPABILITIES }
+  return { capabilities: PLUGIN_CLIENT_CAPABILITIES, versionNegotiation: { mode: "auto" } }
 }
 
 export const makeConnectUpstream = (
@@ -117,11 +110,11 @@ export const makeConnectUpstream = (
         await saveRecord(server, { connectionState: "connecting", detail: undefined })
       }
       checkOwner()
+      const launch = serverLaunch(core, server)
       const client = new Client(
         { name: "Codevisor", version: "0.1.0" },
-        { capabilities: PLUGIN_CLIENT_CAPABILITIES }
+        upstreamClientOptions(launch)
       )
-      const launch = serverLaunch(core, server)
       const transport =
         launch.transport === "stdio"
           ? new StdioClientTransport({
@@ -130,7 +123,7 @@ export const makeConnectUpstream = (
               env: definedEnvironment({ ...process.env, ...stored.env }),
               stderr: "pipe"
             })
-          : new NodeStreamableHttpTransport(
+          : streamableHttpTransport(
               new URL(requireHttpUrl(launch.url)),
               bearer === undefined && server.authType === "oauth" ? oauthAuthorization(id) : bearer,
               stored.headers

@@ -2,24 +2,21 @@ import { createHash, randomUUID } from "node:crypto"
 import { createServer } from "node:http"
 
 import type { RuntimeEventSink } from "@codevisor/agent-runtime"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
-import {
-  CallToolResultSchema,
-  type ClientCapabilities,
-  ErrorCode,
-  McpError,
-  type RequestId,
-  type ServerCapabilities,
-  type Tool
-} from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node"
+import { Server, ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server"
+import type {
+  ClientCapabilities,
+  RequestId,
+  ServerCapabilities,
+  Tool
+} from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import { listen, run, testManager } from "./mcp-manager-test-support.js"
 import type { PluginAccountSource } from "./mcp-plugin-accounts.js"
-import { readJsonBody, sdkTransport } from "./mcp-support.js"
+import { readJsonBody } from "./mcp-support.js"
 
 export interface FakeResource {
   readonly text?: string
@@ -176,14 +173,14 @@ export const startFakePlugin = async (options: FakePluginOptions = {}): Promise<
     sdkServer.fallbackNotificationHandler = async (notification) => {
       notifications.push({ method: notification.method, params: notification.params ?? {} })
     }
-    sdkServer.fallbackRequestHandler = async (request, extra) => {
+    sdkServer.fallbackRequestHandler = async (request, ctx) => {
       const params = request.params ?? {}
       requests.push({ method: request.method, params })
       if (options.failing?.has(request.method) === true) {
-        throw new McpError(ErrorCode.InternalError, `${request.method} failed`)
+        throw new ProtocolError(ProtocolErrorCode.InternalError, `${request.method} failed`)
       }
       const send = (method: string, values: Record<string, unknown>) =>
-        extra.sendNotification({ method, params: values })
+        ctx.mcpReq.notify({ method, params: values })
       switch (request.method) {
         case "tools/list":
           return { tools: [...(options.tools ?? [])] }
@@ -200,12 +197,15 @@ export const startFakePlugin = async (options: FakePluginOptions = {}): Promise<
         case "skills/get":
           return { skill: options.freshSkills?.[String(params.uri)] }
         case "events/stream":
-          return openStream(request.id, params, extra.signal, send)
+          return openStream(request.id, params, ctx.mcpReq.signal, send)
         case "test/announce":
-          await extra.sendNotification(announcement(params))
+          await ctx.mcpReq.notify(announcement(params))
           return {}
         default:
-          throw new McpError(ErrorCode.MethodNotFound, `Unknown method ${request.method}`)
+          throw new ProtocolError(
+            ProtocolErrorCode.MethodNotFound,
+            `Unknown method ${request.method}`
+          )
       }
     }
 
@@ -213,21 +213,25 @@ export const startFakePlugin = async (options: FakePluginOptions = {}): Promise<
     return sdkServer
   }
 
-  const sessions = new Map<string, StreamableHTTPServerTransport>()
+  const sessions = new Map<string, NodeStreamableHTTPServerTransport>()
   const sessionFor = async (header: string | string[] | undefined) => {
     const existing = typeof header === "string" ? sessions.get(header) : undefined
     if (existing !== undefined) return existing
-    const transport = new StreamableHTTPServerTransport({
+    const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       onsessioninitialized: (id) => {
         sessions.set(id, transport)
       }
     })
-    await makeSdkServer().connect(sdkTransport(transport))
+    await makeSdkServer().connect(transport)
     return transport
   }
 
   const httpServer = createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      await (await sessionFor(request.headers["mcp-session-id"])).handleRequest(request, response)
+      return
+    }
     const body = await readJsonBody(request)
     const message = MessageSchema.safeParse(body).data ?? {}
     if (message.method === "events/stream" && message.id !== undefined) {
@@ -294,7 +298,8 @@ const listResources = (resources: Map<string, FakeResource>, cursor: unknown) =>
 
 const readResource = (resources: Map<string, FakeResource>, uri: string) => {
   const resource = resources.get(uri)
-  if (resource === undefined) throw new McpError(ErrorCode.InvalidParams, `Unknown ${uri}`)
+  if (resource === undefined)
+    throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown ${uri}`)
   return {
     contents: [
       {
@@ -328,11 +333,9 @@ export const pluginGatewaySession = async (
   const issued = await manager.issueGateway(session.id, project.id, sink)
   const client = new Client({ name: "plugin-gateway-test", version: "1" })
   await client.connect(
-    sdkTransport(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      })
-    )
+    new StreamableHTTPClientTransport(new URL(issued.url), {
+      requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+    })
   )
   const call = async (name: string, args: Record<string, unknown>) => {
     const result = CallToolResultSchema.parse(await client.callTool({ name, arguments: args }))

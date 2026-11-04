@@ -1,7 +1,7 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { JSONObject, Tool } from "@modelcontextprotocol/server"
 
 const objectSchema = (
-  properties: Record<string, object> = {},
+  properties: Record<string, JSONObject> = {},
   required: string[] = []
 ): Tool["inputSchema"] => ({
   type: "object",
@@ -12,7 +12,7 @@ const objectSchema = (
 const tool = (
   name: string,
   description: string,
-  properties: Record<string, object> = {},
+  properties: Record<string, JSONObject> = {},
   required: string[] = []
 ): Tool => ({
   name,

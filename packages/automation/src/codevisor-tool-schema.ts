@@ -1,8 +1,8 @@
 import { jsonSchema } from "@codevisor/api"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { JSONObject, Tool } from "@modelcontextprotocol/server"
 
 import type { CodevisorApiToolSpec, JsonSchema } from "./codevisor-api-tools.js"
-import { isRecord, isStringArray, recordOrEmpty, type UnknownRecord } from "./unknown-values.js"
+import { isRecord, isStringArray, recordOrEmpty } from "./unknown-values.js"
 
 export const pathParameterNames = (path: string): ReadonlyArray<string> =>
   [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!)
@@ -49,15 +49,19 @@ const callerDefaultDescriptions = {
   none: undefined
 } as const
 
-export const schemaProperties = (schema: JsonSchema): Record<string, object> =>
+export const schemaProperties = (schema: JsonSchema): Record<string, JsonSchema> =>
   Object.fromEntries(
     Object.entries(recordOrEmpty(schema.properties)).filter(
-      (entry): entry is [string, UnknownRecord] => isRecord(entry[1])
+      (entry): entry is [string, JsonSchema] => isRecord(entry[1])
     )
   )
 
+export const jsonProperties = (
+  properties: Record<string, JsonSchema>
+): Record<string, JSONObject> => JSON.parse(JSON.stringify(properties))
+
 export const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"] => {
-  const properties: Record<string, object> = {}
+  const properties: Record<string, JsonSchema> = {}
   const required = new Set<string>()
   let definitions: unknown
 
@@ -108,7 +112,7 @@ export const toolInputSchema = (spec: CodevisorApiToolSpec): Tool["inputSchema"]
 
   return {
     type: "object",
-    properties,
+    properties: jsonProperties(properties),
     ...(required.size === 0 ? {} : { required: [...required] }),
     additionalProperties: false,
     ...(definitions === undefined ? {} : { $defs: definitions })

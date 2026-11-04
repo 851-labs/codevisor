@@ -14,10 +14,11 @@
   },
   "dependencies": {
     "@codevisor/plugin-kit": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "vitest": "4.1.6"
   }
 }

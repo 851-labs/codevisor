@@ -1,10 +1,10 @@
 import type { McpServerRecord } from "@codevisor/db"
-import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type {
+  OAuthClientProvider,
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens
-} from "@modelcontextprotocol/sdk/shared/auth.js"
+} from "@modelcontextprotocol/client"
 
 import type { StoredOAuth, StoredSecrets } from "./mcp-secret-store.js"
 

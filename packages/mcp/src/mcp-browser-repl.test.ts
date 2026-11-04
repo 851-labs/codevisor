@@ -4,8 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { makeBrowserUseProvider } from "@codevisor/automation"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { afterEach, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -17,7 +16,6 @@ import {
   run,
   testManager
 } from "./mcp-manager-test-support.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -68,11 +66,9 @@ it("preserves browser cells and applies gateway upload validation and attachment
   const client = new Client({ name: "browser-repl-test", version: "1" })
   try {
     await client.connect(
-      sdkTransport(
-        new StreamableHTTPClientTransport(new URL(gateway.url), {
-          requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
-        })
-      )
+      new StreamableHTTPClientTransport(new URL(gateway.url), {
+        requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+      })
     )
     const execute = (code: string) =>
       client.callTool({

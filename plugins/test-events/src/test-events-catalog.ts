@@ -1,5 +1,5 @@
 import { emptyArguments, type EventType } from "@codevisor/plugin-kit"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/server"
 
 export const eventsPageUri = "ui://test-events/events.html"
 

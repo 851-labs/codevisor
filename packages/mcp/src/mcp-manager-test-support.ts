@@ -7,7 +7,7 @@ import { join } from "node:path"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { makeDatabase } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { Effect } from "effect"
 import { vi } from "vitest"
 import { z } from "zod"
@@ -107,6 +107,11 @@ export const workingUpstream = async () => {
   }> = []
   const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = []
   const server = createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(405)
+      response.end()
+      return
+    }
     const message = UpstreamRequestSchema.parse(await readJsonBody(request))
     requests.push({ headers: request.headers, method: message.method })
     if (message.method === "notifications/initialized") {

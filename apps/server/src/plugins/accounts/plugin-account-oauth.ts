@@ -2,8 +2,8 @@ import { randomBytes } from "node:crypto"
 
 import type { PluginOAuthSpec } from "@codevisor/api"
 import type { SharedTokenBundle } from "@codevisor/harness-manager"
-import { exchangeAuthorization, startAuthorization } from "@modelcontextprotocol/sdk/client/auth.js"
-import type { OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js"
+import { exchangeAuthorization, startAuthorization } from "@modelcontextprotocol/client"
+import type { OAuthTokens } from "@modelcontextprotocol/client"
 
 import { field } from "../../unknown-values.js"
 

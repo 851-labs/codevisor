@@ -1,4 +1,4 @@
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult, Tool } from "@modelcontextprotocol/server"
 
 import { recordOrEmpty, recordOrUndefined, type UnknownRecord } from "./unknown-values.js"
 

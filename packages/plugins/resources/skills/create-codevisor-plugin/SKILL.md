@@ -22,7 +22,7 @@ through the `execute` gateway, and reads the extensions it declares in
 
 ## Workflow (your own or a third-party plugin)
 
-1. **Scaffold** a single-file server with `@modelcontextprotocol/sdk` and `zod`
+1. **Scaffold** a single-file server with `@modelcontextprotocol/server` and `zod`
    (template below). Start with tools; add extensions only when needed.
 2. **Check it** with the MCP Inspector: `npx @modelcontextprotocol/inspector node server.ts`.
 3. **Add it in Codevisor** from Settings › Plugins › **Add MCP…**. The
@@ -77,8 +77,8 @@ plugins/
 ## Minimal server (tools + a poll event)
 
 ```ts
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { McpServer } from "@modelcontextprotocol/server"
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio"
 import { z } from "zod"
 
 const notes: Array<{ id: string; text: string; at: number }> = []
@@ -92,7 +92,7 @@ server.registerTool(
   "add_note",
   {
     description: "Save a note",
-    inputSchema: { text: z.string() },
+    inputSchema: z.object({ text: z.string() }),
     annotations: { readOnlyHint: false, openWorldHint: false }
   },
   async ({ text }) => {
@@ -101,35 +101,28 @@ server.registerTool(
   }
 )
 
-server.server.setRequestHandler(
-  z.object({ method: z.literal("events/list"), params: z.object({}).loose().optional() }),
-  () => ({
-    resultType: "complete",
-    events: [
-      {
-        name: "note.added",
-        description: "A note was saved",
-        delivery: ["poll"],
-        inputSchema: { type: "object", properties: {} },
-        payloadSchema: {
-          type: "object",
-          properties: { id: { type: "string" }, text: { type: "string" } },
-          required: ["id", "text"]
-        }
+server.server.setRequestHandler("events/list", { params: z.object({}).loose() }, () => ({
+  events: [
+    {
+      name: "note.added",
+      description: "A note was saved",
+      delivery: ["poll"],
+      inputSchema: { type: "object", properties: {} },
+      payloadSchema: {
+        type: "object",
+        properties: { id: { type: "string" }, text: { type: "string" } },
+        required: ["id", "text"]
       }
-    ]
-  })
-)
+    }
+  ]
+}))
 
 server.server.setRequestHandler(
-  z.object({
-    method: z.literal("events/poll"),
-    params: z.object({ name: z.string(), cursor: z.string().nullish() }).loose()
-  }),
-  ({ params }) => {
+  "events/poll",
+  { params: z.object({ name: z.string(), cursor: z.string().nullish() }).loose() },
+  (params) => {
     const after = Number(params.cursor ?? notes.length)
     return {
-      resultType: "complete",
       events: notes.slice(after).map((note) => ({
         eventId: note.id,
         name: "note.added",
@@ -148,7 +141,8 @@ await server.connect(new StdioServerTransport())
 ```
 
 Custom extension methods are plain JSON-RPC: register them on `server.server`
-(the low-level `Server`) with a zod schema whose `method` is a literal.
+(the low-level `Server`) with the method name and a zod schema for its params.
+The handler receives the parsed params; the SDK adds the protocol's `resultType`.
 
 ## Extensions
 
@@ -165,8 +159,8 @@ Custom extension methods are plain JSON-RPC: register them on `server.server`
 Declare `resources: {}` and `extensions["io.modelcontextprotocol/skills"]: {}`.
 Then implement:
 
-- `skills/list` → `{ resultType: "complete", ttlMs, cacheScope: "public", skills: [entry] }`
-- `skills/get { uri }` → `{ resultType, ttlMs, cacheScope, skill: entry }`; unknown URI → `-32602`
+- `skills/list` → `{ ttlMs, cacheScope: "public", skills: [entry] }`
+- `skills/get { uri }` → `{ ttlMs, cacheScope, skill: entry }`; unknown URI → `-32602`
 - `resources/read` for every file in the manifest
 
 An entry is `{ uri: "skill://<name>/SKILL.md", frontmatter: { name, description },
@@ -201,14 +195,14 @@ pane can be open on several devices at once.
 
 ### Events (`io.modelcontextprotocol/events`, SEP-3415)
 
-- `events/list` → `{ resultType: "complete", events: [{ name, description, delivery, inputSchema, payloadSchema }] }`.
+- `events/list` → `{ events: [{ name, description, delivery, inputSchema, payloadSchema }] }`.
   `delivery` is any of `"poll"`, `"push"`.
 - **`payloadSchema` must be fully typed.** Agents filter with CEL expressions
   that are type-checked against it, such as `from.email.endsWith("@acme.com")`
   or `labels.severity == "critical"`. Give nested objects `properties`, give
   string maps `additionalProperties: { type: "string" }`, and give arrays `items`.
 - **Poll**: `events/poll { name, arguments, cursor, maxEvents?, maxAgeMs? }` →
-  `{ resultType: "complete", events: [{ eventId, name, timestamp, data }], cursor, truncated, hasMore, nextPollMs }`.
+  `{ events: [{ eventId, name, timestamp, data }], cursor, truncated, hasMore, nextPollMs }`.
   A `null` cursor means "start now": return no events and a fresh cursor.
   Return `truncated: true` with a fresh cursor when the old one expired.
   Set `hasMore: true` when another page is waiting.
@@ -217,7 +211,7 @@ pane can be open on several devices at once.
   - Then send `notifications/events/event { eventId, name, timestamp, data, cursor }`
     as events happen, and `notifications/events/heartbeat { cursor }` at least every 30 s.
   - Every notification carries `_meta["io.modelcontextprotocol/subscriptionId"]` = the request id.
-  - Stop when `notifications/cancelled` arrives (the SDK aborts the handler's `signal`).
+  - Stop when `notifications/cancelled` arrives (the SDK aborts the handler's `ctx.mcpReq.signal`).
   - Use `cursor: null` throughout if you cannot replay.
 - **`eventId` must be the stable upstream id** (message id, alert fingerprint
   plus start time). Codevisor dedupes on it across machines and reconnects.
@@ -253,7 +247,7 @@ fresh token and its saved cursor, which is the place to renew upstream watches.
 Every host → plugin request (`tools/call`, `events/*`, `codevisor/webhook`)
 for a plugin with accounts carries
 `params._meta["dev.codevisor/account"] = { id, label?, identity?, accessToken?, fields }`.
-In the SDK it is `extra._meta`.
+In the SDK it is `ctx.mcpReq._meta`.
 
 - Treat it as per-request. Never persist or cache tokens.
 - Codevisor refreshes OAuth tokens. Plugins only ever see access tokens, never refresh tokens.

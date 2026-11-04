@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 
 import { parseFrontmatter } from "@codevisor/skills"
-import type { ReadResourceResult } from "@modelcontextprotocol/sdk/types.js"
+import type { ReadResourceResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 export const SKILL_DOCUMENT = "SKILL.md"

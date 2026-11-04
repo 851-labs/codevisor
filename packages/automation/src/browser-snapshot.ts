@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { pageInformation, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 

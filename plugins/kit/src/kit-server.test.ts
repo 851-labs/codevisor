@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Server } from "@modelcontextprotocol/server"
 import { afterEach, describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -79,19 +78,19 @@ const demoServer = (): DemoServer => {
   registerEventTypes(server, eventTypes)
   registerSkills(server, skills)
   registerResources(server, skills.resources)
-  server.setRequestHandler(eventsPollRequest, (request) => {
-    eventTypeNamed(eventTypes, request.params.name)
+  server.setRequestHandler(eventsPollRequest.method, eventsPollRequest, (params) => {
+    eventTypeNamed(eventTypes, params.name)
     throw unsupportedDeliveryError("poll")
   })
-  server.setRequestHandler(eventsStreamRequest, (request, extra) => {
-    eventTypeNamed(eventTypes, request.params.name)
-    const account = accountFromMeta(extra._meta)
+  server.setRequestHandler(eventsStreamRequest.method, eventsStreamRequest, (params, ctx) => {
+    eventTypeNamed(eventTypes, params.name)
+    const account = accountFromMeta(ctx.mcpReq._meta)
     if (account === undefined) throw forbiddenError("account required")
 
     const backlog = [
       {
         eventId: "e0",
-        name: request.params.name,
+        name: params.name,
         timestamp: "t0",
         data: { value: 0 },
         cursor: "c0"
@@ -99,15 +98,15 @@ const demoServer = (): DemoServer => {
     ]
     return streams.open(
       {
-        name: request.params.name,
+        name: params.name,
         accountId: account.id,
         position: { cursor: "c0", truncated: false },
         backlog
       },
-      extra
+      ctx
     )
   })
-  server.setRequestHandler(CallToolRequestSchema, (request) => {
+  server.setRequestHandler("tools/call", (request) => {
     if (request.params.name === "json") return jsonResult([1, 2])
     if (request.params.name === "structured") return structuredResult({ ok: true })
     if (request.params.name === "invalid") throw invalidParamsError("bad input")
@@ -143,7 +142,7 @@ describe("plugin kit", () => {
 
     const listed = await client.request({ method: "events/list" }, anyResult)
 
-    expect(listed).toEqual({ resultType: "complete", events: eventTypes })
+    expect(listed).toEqual({ events: eventTypes })
     await expect(
       client.request({ method: "events/poll", params: { name: "demo.other" } }, anyResult)
     ).rejects.toMatchObject({ code: -32023, data: { kind: "event" } })
@@ -231,7 +230,7 @@ describe("plugin kit", () => {
     const markdown = await client.readResource({ uri: "skill://demo/SKILL.md" })
     const text = toolText({ content: markdown.contents })
 
-    expect(listed).toMatchObject({ resultType: "complete", ttlMs: 300_000, cacheScope: "public" })
+    expect(listed).toMatchObject({ ttlMs: 300_000, cacheScope: "public" })
     expect(got["skill"]).toEqual(z.array(z.unknown()).parse(listed["skills"])[0])
     expect(text).toBe(
       '---\nname: "demo"\ndescription: "Demo: a skill with a reference file"\n---\n\n# Demo\n\nRead `references/notes.md`.\n'
@@ -266,7 +265,7 @@ describe("plugin kit", () => {
       }
     ])
     await expect(client.readResource({ uri: "skill://demo/missing.md" })).rejects.toMatchObject({
-      code: -32002,
+      code: -32602,
       data: { uri: "skill://demo/missing.md" }
     })
   })

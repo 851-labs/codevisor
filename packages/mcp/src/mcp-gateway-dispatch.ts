@@ -15,7 +15,8 @@ import {
   codevisorToolName
 } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
-import { type CallToolResult, CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import type { makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import { isRecord } from "./mcp-guards.js"
@@ -349,7 +350,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         arguments: call.arguments,
         ...(call.meta === undefined ? {} : { _meta: call.meta })
       },
-      undefined,
       options.signal === undefined ? undefined : { signal: options.signal }
     )
     const parsed = CallToolResultSchema.parse(result)

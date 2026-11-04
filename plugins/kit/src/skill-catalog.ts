@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import type { Server } from "@modelcontextprotocol/server"
 
 import { invalidParamsError } from "./plugin-protocol.js"
 import { skillsGetRequest, skillsListRequest } from "./plugin-requests.js"
@@ -47,10 +47,13 @@ export const skillCatalog = (skills: ReadonlyArray<SkillDefinition>): SkillCatal
 }
 
 export const registerSkills = (server: Server, catalog: SkillCatalog): void => {
-  server.setRequestHandler(skillsListRequest, () => ({ ...cached(), skills: catalog.entries }))
-  server.setRequestHandler(skillsGetRequest, (request) => ({
+  server.setRequestHandler(skillsListRequest.method, skillsListRequest, () => ({
     ...cached(),
-    skill: skillAt(catalog, request.params.uri)
+    skills: catalog.entries
+  }))
+  server.setRequestHandler(skillsGetRequest.method, skillsGetRequest, (params) => ({
+    ...cached(),
+    skill: skillAt(catalog, params.uri)
   }))
 }
 
@@ -105,4 +108,4 @@ const skillAt = (catalog: SkillCatalog, uri: string): SkillEntry => {
   return entry
 }
 
-const cached = () => ({ resultType: "complete", ttlMs: skillCacheTtlMs, cacheScope: "public" })
+const cached = () => ({ ttlMs: skillCacheTtlMs, cacheScope: "public" })

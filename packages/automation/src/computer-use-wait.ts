@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { MIN_CLAMPED_WAIT_MS, remainingBudgetMs } from "./codevisor-wait-budget.js"
 import { isPlainRecord, type UnknownRecord } from "./unknown-values.js"

@@ -3,7 +3,7 @@ import { createServer, type ServerResponse } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 import { afterAll, beforeAll, describe, expect, it as baseIt, vi } from "vitest"
 
 import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"

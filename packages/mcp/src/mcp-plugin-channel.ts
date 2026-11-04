@@ -1,6 +1,5 @@
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { isJSONRPCRequest, type RequestId } from "@modelcontextprotocol/sdk/types.js"
+import { isJSONRPCRequest } from "@modelcontextprotocol/client"
+import type { Client, Transport, RequestId } from "@modelcontextprotocol/client"
 
 import { isNonArrayRecord } from "./mcp-guards.js"
 

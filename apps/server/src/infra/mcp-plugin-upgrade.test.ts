@@ -104,8 +104,8 @@ describe("upgrading user-added MCP servers to plugins", () => {
       transport: "http",
       url: fake.url
     })
-    const { code, state } = fake.approve(await before.mcp.beginOAuth(tracker.id))
-    await before.mcp.finishOAuth(state, code)
+    const { code, state, issuer } = fake.approve(await before.mcp.beginOAuth(tracker.id))
+    await before.mcp.finishOAuth(state, code, issuer)
     await before.mcp.create({
       name: "Docs",
       transport: "http",

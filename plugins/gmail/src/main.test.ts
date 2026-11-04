@@ -1,9 +1,8 @@
 import assert from "node:assert/strict"
 
 import { serveStdio } from "@codevisor/plugin-kit"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { Client } from "@modelcontextprotocol/client"
+import { InMemoryTransport, Server } from "@modelcontextprotocol/server"
 import { expect, it, vi } from "vitest"
 
 vi.mock("@codevisor/plugin-kit", async (importOriginal) => ({

@@ -1,6 +1,6 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { McpManager } from "@codevisor/mcp"
-import type { ReadResourceResult, Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { ReadResourceResult, Tool } from "@modelcontextprotocol/client"
 
 import { HttpFailure, run } from "../../server-context.js"
 import { makeAppAudit, type AppAudit, type AppLogSource } from "./plugin-app-audit.js"

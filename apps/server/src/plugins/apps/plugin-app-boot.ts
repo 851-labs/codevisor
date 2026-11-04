@@ -1,5 +1,5 @@
 import type { PluginAppView } from "@codevisor/mcp"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/client"
 
 import type { BridgeBoot } from "./plugin-app-bridge.js"
 import { appPolicy, frameAllow, type AppSandbox } from "./plugin-app-csp.js"

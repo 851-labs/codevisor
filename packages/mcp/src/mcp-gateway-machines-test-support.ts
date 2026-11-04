@@ -6,13 +6,11 @@ import {
   textToolResult,
   type AutomationProviderContext
 } from "@codevisor/automation"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
 import { listen, testManager } from "./mcp-manager-test-support.js"
 import type { GatewayOrigin, McpManager } from "./mcp-manager-types.js"
-import { sdkTransport } from "./mcp-support.js"
 
 const machineRoster = {
   machines: [
@@ -80,11 +78,9 @@ export const studioGateway = async () => {
 export const connectClient = async (issued: { url: string; bearerToken: string }) => {
   const client = new Client({ name: "machines-test", version: "1" })
   await client.connect(
-    sdkTransport(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      })
-    )
+    new StreamableHTTPClientTransport(new URL(issued.url), {
+      requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+    })
   )
   return client
 }

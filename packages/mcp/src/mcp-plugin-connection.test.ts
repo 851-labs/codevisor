@@ -256,14 +256,11 @@ describe("plugin event streams", () => {
       method: "notifications/events/event",
       values: { n: 5, _meta: { [SUBSCRIPTION_ID]: { id: firstStream.id } } }
     })
-    firstStream.end({ resultType: "complete", _meta: { [SUBSCRIPTION_ID]: firstStream.id } })
-    secondStream.end({ resultType: "complete" })
+    firstStream.end({ _meta: { [SUBSCRIPTION_ID]: firstStream.id } })
+    secondStream.end({})
 
-    expect(await first).toEqual({
-      resultType: "complete",
-      _meta: { [SUBSCRIPTION_ID]: firstStream.id }
-    })
-    expect(await second).toEqual({ resultType: "complete" })
+    expect(await first).toEqual({ _meta: { [SUBSCRIPTION_ID]: firstStream.id } })
+    expect(await second).toEqual({})
     expect(firstSeen).toEqual(["notifications/events/active:1", "notifications/events/heartbeat:3"])
     expect(secondSeen).toEqual(["notifications/events/event:2"])
     expect(firstStream.params).toEqual({

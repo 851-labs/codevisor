@@ -3,9 +3,8 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { afterEach, describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -19,7 +18,6 @@ import {
   workingUpstream
 } from "./mcp-manager-test-support.js"
 import { automationSkillPath } from "./mcp-manager.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -146,11 +144,9 @@ describe("MCP manager", () => {
       ).toBe(401)
       const client = new Client({ name: "manager-test", version: "1" })
       await client.connect(
-        sdkTransport(
-          new StreamableHTTPClientTransport(new URL(issued.url), {
-            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-          })
-        )
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        })
       )
       try {
         expect(client.getInstructions()).toBeUndefined()

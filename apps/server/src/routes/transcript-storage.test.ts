@@ -1,8 +1,7 @@
 import { decode } from "@codevisor/api"
 import { makeCodevisorProvider } from "@codevisor/automation"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
-import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation"
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv"
+import type { JsonSchemaType, Tool } from "@modelcontextprotocol/client"
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/client/validators/ajv"
 import { Schema } from "effect"
 import { expect, it } from "vitest"
 
@@ -21,11 +20,8 @@ const SearchToolPage = Schema.Struct({
   next: Schema.optional(Schema.String)
 })
 
-const jsonSchemaOf = ({ properties, required, ...rest }: Tool["inputSchema"]): JsonSchemaType => ({
-  ...rest,
-  ...(properties === undefined ? {} : { properties }),
-  ...(required === undefined ? {} : { required })
-})
+const jsonSchemaOf = (schema: Tool["inputSchema"]): JsonSchemaType =>
+  JSON.parse(JSON.stringify(schema))
 
 it("serves a navigation snapshot and validates bidirectional transcript and body cursors", async () => {
   const { server, services, workspace } = await setUpWorkspace()

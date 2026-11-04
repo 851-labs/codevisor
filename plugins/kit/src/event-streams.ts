@@ -1,5 +1,4 @@
-import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js"
-import type { Notification, Request, RequestId } from "@modelcontextprotocol/sdk/types.js"
+import type { Notification, RequestId, ServerContext } from "@modelcontextprotocol/server"
 
 import type { Clock } from "./clock.js"
 import { subscriptionIdMeta } from "./plugin-protocol.js"
@@ -30,11 +29,12 @@ export interface StreamOpening extends StreamSubscription {
 
 export interface StreamClosed {
   [key: string]: unknown
-  resultType: "complete"
   _meta: Record<string, RequestId>
 }
 
-export type StreamExtra = RequestHandlerExtra<Request, Notification>
+export interface StreamExtra {
+  mcpReq: Pick<ServerContext["mcpReq"], "id" | "signal" | "notify">
+}
 
 export interface EventStreams {
   open(opening: StreamOpening, extra: StreamExtra): Promise<StreamClosed>
@@ -71,8 +71,8 @@ const openStream = (
   extra: StreamExtra
 ): Promise<StreamClosed> =>
   new Promise((resolve) => {
-    const closed = streamClosed(extra.requestId)
-    if (extra.signal.aborted) {
+    const closed = streamClosed(extra.mcpReq.id)
+    if (extra.mcpReq.signal.aborted) {
       resolve(closed)
       return
     }
@@ -82,7 +82,7 @@ const openStream = (
       resolve(closed)
     })
     live.add(stream)
-    extra.signal.addEventListener("abort", () => stream.close(), { once: true })
+    extra.mcpReq.signal.addEventListener("abort", () => stream.close(), { once: true })
     deliverOpening(stream, opening)
   })
 
@@ -97,7 +97,7 @@ const liveStream = (
     name: opening.name,
     accountId: opening.accountId,
     send: (method, params) => {
-      extra.sendNotification(tagged(method, params, extra.requestId)).catch(() => stream.close())
+      extra.mcpReq.notify(tagged(method, params, extra.mcpReq.id)).catch(() => stream.close())
     },
     close: () => {
       for (const stop of timers.splice(0)) stop()
@@ -140,6 +140,5 @@ const tagged = (
 })
 
 const streamClosed = (requestId: RequestId): StreamClosed => ({
-  resultType: "complete",
   _meta: { [subscriptionIdMeta]: requestId }
 })

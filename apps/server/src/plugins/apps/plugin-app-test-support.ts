@@ -143,6 +143,10 @@ export const startAppPlugin = async (definition: AppPluginDefinition = grafanaPl
   }
 
   const httpServer = createServer(async (request, response) => {
+    if (request.method !== "POST") {
+      response.writeHead(405).end()
+      return
+    }
     const message = Schema.decodeUnknownSync(RpcMessage)(await readJson(request))
     if (message.id === undefined) {
       response.writeHead(202).end()

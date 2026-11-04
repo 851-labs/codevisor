@@ -7,7 +7,7 @@ import type {
   CodeToolInvoker
 } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { withCallerDefaults } from "./mcp-gateway-agent-start.js"
 import { gatewayToolError, type makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
@@ -69,13 +69,16 @@ export const stillRunningText = (job: ExecutionJob): string =>
 export const makeExecuteHandler =
   (deps: ExecuteToolDeps) =>
   (runtime: GatewayRuntime) =>
-  async (args: ExecuteArgs, extra: { readonly signal: AbortSignal }): Promise<CallToolResult> => {
+  async (
+    args: ExecuteArgs,
+    ctx: { readonly mcpReq: { readonly signal: AbortSignal } }
+  ): Promise<CallToolResult> => {
     const recorder = executionRecorder(runtime, args)
     const execution = deps.jobs.begin({
       sessionId: runtime.sessionId,
       description: args.description,
       timeoutMs: args.timeout_ms ?? EXECUTE_DEFAULT_TIMEOUT_MS,
-      requestSignal: extra.signal
+      requestSignal: ctx.mcpReq.signal
     })
     const call = makeExecuteCall(deps, runtime, recorder, execution)
     const outcome = await execution.outcome(call.start(args.code))

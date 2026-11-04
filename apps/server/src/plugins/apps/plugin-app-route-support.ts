@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { buffer } from "node:stream/consumers"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
+import { Client as McpClient } from "@modelcontextprotocol/client"
 import { Schema } from "effect"
 import { expect, onTestFinished } from "vitest"
 

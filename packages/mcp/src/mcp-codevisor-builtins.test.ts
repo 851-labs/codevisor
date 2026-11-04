@@ -1,8 +1,6 @@
 import { createServer } from "node:http"
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
@@ -19,7 +17,6 @@ import {
   TEST_BASE_URL
 } from "./mcp-manager-test-support.js"
 import { makeMcpManager } from "./mcp-manager.js"
-import { sdkTransport } from "./mcp-support.js"
 
 afterEach(cleanupMcpManagerTests)
 
@@ -65,11 +62,9 @@ describe("Codevisor built-in tools", () => {
       const issued = await manager.issueGateway(sessionId, project.id)
       const client = new Client({ name: "bot-tools-test", version: "1" })
       await client.connect(
-        sdkTransport(
-          new StreamableHTTPClientTransport(new URL(issued.url), {
-            requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-          })
-        )
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        })
       )
       const describes = async (path: string) =>
         (
@@ -109,11 +104,9 @@ describe("Codevisor built-in tools", () => {
     const issued = await manager.issueGateway(agent.id, project.id)
     const client = new Client({ name: "legacy-names-test", version: "1" })
     await client.connect(
-      sdkTransport(
-        new StreamableHTTPClientTransport(new URL(issued.url), {
-          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-        })
-      )
+      new StreamableHTTPClientTransport(new URL(issued.url), {
+        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+      })
     )
     const describedName = async (path: string) =>
       executeResultValue(
@@ -188,11 +181,9 @@ describe("Codevisor built-in tools", () => {
     const client = new Client({ name: "codevisor-search-test", version: "1" })
     try {
       await client.connect(
-        sdkTransport(
-          new StreamableHTTPClientTransport(new URL(gateway.url), {
-            requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
-          })
-        )
+        new StreamableHTTPClientTransport(new URL(gateway.url), {
+          requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+        })
       )
       const searched = await client.callTool({
         name: "execute",
@@ -227,11 +218,9 @@ describe("Codevisor built-in tools", () => {
       const client = new Client({ name: "codevisor-toggle-test", version: "1" })
       try {
         await client.connect(
-          sdkTransport(
-            new StreamableHTTPClientTransport(new URL(gateway.url), {
-              requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
-            })
-          )
+          new StreamableHTTPClientTransport(new URL(gateway.url), {
+            requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+          })
         )
         const execute = (code: string) =>
           client.callTool({ name: "execute", arguments: { description: "Run test code", code } })
@@ -246,7 +235,7 @@ describe("Codevisor built-in tools", () => {
         const inventory = async () => (await client.listTools()).tools[0]?.description
         const setEnabled = async (enabled: boolean) => {
           const changed = Promise.withResolvers<void>()
-          client.setNotificationHandler(ToolListChangedNotificationSchema, () => changed.resolve())
+          client.setNotificationHandler("notifications/tools/list_changed", () => changed.resolve())
           switch (scope) {
             case "global":
               await manager.update("codevisor", { enabled })

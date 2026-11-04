@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { z } from "zod"
 
 import type { PluginAppView } from "./mcp-plugin-apps.js"

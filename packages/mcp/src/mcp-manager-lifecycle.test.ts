@@ -1,4 +1,4 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { Client } from "@modelcontextprotocol/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {

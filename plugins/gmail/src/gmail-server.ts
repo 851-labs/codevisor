@@ -6,7 +6,6 @@ import {
   registerEventTypes,
   eventsExtension,
   forbiddenError,
-  PluginProtocolError,
   skillsExtension,
   unsupportedDeliveryError,
   eventsPollRequest,
@@ -19,8 +18,7 @@ import {
   webhookRequest,
   webhooksExtension
 } from "@codevisor/plugin-kit"
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { ProtocolError, Server } from "@modelcontextprotocol/server"
 
 import { gmailAccount, missingGmailAccount } from "./gmail-account.js"
 import { type Fetch, gmailApi, GmailApiError, rejectedSignIn } from "./gmail-api.js"
@@ -63,9 +61,9 @@ export const createGmailServer = (options: GmailServerOptions = {}): Server => {
 }
 
 const registerTools = (server: Server, fetcher: Fetch): void => {
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [...gmailTools] }))
-  server.setRequestHandler(CallToolRequestSchema, (request, extra) => {
-    const account = gmailAccount(extra._meta)
+  server.setRequestHandler("tools/list", () => ({ tools: [...gmailTools] }))
+  server.setRequestHandler("tools/call", (request, ctx) => {
+    const account = gmailAccount(ctx.mcpReq._meta)
     if (account === undefined) return errorResult(missingGmailAccount)
 
     return runGmailTool(request.params.name, request.params.arguments ?? {}, {
@@ -77,28 +75,31 @@ const registerTools = (server: Server, fetcher: Fetch): void => {
 
 const registerEvents = (server: Server, push: GmailPush): void => {
   registerEventTypes(server, gmailEventTypes)
-  server.setRequestHandler(eventsPollRequest, (request) => {
-    eventTypeNamed(gmailEventTypes, request.params.name)
+  server.setRequestHandler(eventsPollRequest.method, eventsPollRequest, (params) => {
+    eventTypeNamed(gmailEventTypes, params.name)
     throw unsupportedDeliveryError("poll")
   })
-  server.setRequestHandler(eventsStreamRequest, (request, extra) => {
-    eventTypeNamed(gmailEventTypes, request.params.name)
-    const account = requireAccount(extra._meta)
-    const topic = pushTopicOf(extra._meta)
+  server.setRequestHandler(eventsStreamRequest.method, eventsStreamRequest, (params, ctx) => {
+    eventTypeNamed(gmailEventTypes, params.name)
+    const account = requireAccount(ctx.mcpReq._meta)
+    const topic = pushTopicOf(ctx.mcpReq._meta)
     if (topic === undefined) throw pushUnavailableError()
-
-    return push.open(request.params, account, topic, extra).catch(rethrowAsProtocolError)
+    return push.open(params, account, topic, ctx).catch(rethrowAsProtocolError)
   })
 }
 
 const registerAccountHooks = (server: Server, push: GmailPush): void => {
-  server.setRequestHandler(webhookRequest, (request, extra) =>
-    push.receive(request.params, requireAccount(extra._meta))
+  server.setRequestHandler(webhookRequest.method, webhookRequest, (params, ctx) =>
+    push.receive(params, requireAccount(ctx.mcpReq._meta))
   )
-  server.setRequestHandler(accountRemoveRequest, async (_request, extra) => {
-    await push.remove(requireAccount(extra._meta))
-    return {}
-  })
+  server.setRequestHandler(
+    accountRemoveRequest.method,
+    accountRemoveRequest,
+    async (_params, ctx) => {
+      await push.remove(requireAccount(ctx.mcpReq._meta))
+      return {}
+    }
+  )
 }
 
 const requireAccount = (meta: Record<string, unknown> | undefined) => {
@@ -108,21 +109,17 @@ const requireAccount = (meta: Record<string, unknown> | undefined) => {
   return account
 }
 
-const pushUnavailableError = (): PluginProtocolError =>
-  new PluginProtocolError(
-    eventErrorCode.unsupported,
-    "Gmail push isn't set up on this Codevisor Cloud",
-    {
-      feature: "deliveryMode",
-      value: "push"
-    }
-  )
+const pushUnavailableError = (): ProtocolError =>
+  new ProtocolError(eventErrorCode.unsupported, "Gmail push isn't set up on this Codevisor Cloud", {
+    feature: "deliveryMode",
+    value: "push"
+  })
 
 const rethrowAsProtocolError = (error: unknown): never => {
   if (!(error instanceof GmailApiError)) throw error
   if (rejectedToken(error.status)) throw forbiddenError(rejectedSignIn)
 
-  throw new PluginProtocolError(upstreamErrorCode, "UpstreamError", {
+  throw new ProtocolError(upstreamErrorCode, "UpstreamError", {
     status: error.status,
     reason: error.message
   })

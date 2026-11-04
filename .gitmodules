@@ -170,3 +170,6 @@
 [submodule ".repos/mcp-ui"]
 	path = .repos/mcp-ui
 	url = https://github.com/MCP-UI-Org/mcp-ui.git
+[submodule ".repos/mcp-typescript-sdk"]
+	path = .repos/mcp-typescript-sdk
+	url = https://github.com/modelcontextprotocol/typescript-sdk.git

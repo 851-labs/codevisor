@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type { McpServerRecord } from "@codevisor/db"
-import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
+import { auth } from "@modelcontextprotocol/client"
 
 import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-managed-oauth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
@@ -94,7 +94,7 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     return provider.authorizationUrl.toString()
   }
 
-  const finishOAuth: McpManager["finishOAuth"] = async (oauthState, code) => {
+  const finishOAuth: McpManager["finishOAuth"] = async (oauthState, code, issuer) => {
     const id = oauthState.split(".", 1)[0]
     if (id === undefined || id.length === 0) throw new Error("Invalid OAuth state")
     const server = await record(id)
@@ -104,6 +104,7 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     const result = await auth(oauthProvider(id, secrets(server).oauth?.redirectUrl), {
       serverUrl: requireHttpUrl(server.url),
       authorizationCode: code,
+      ...(issuer === undefined ? {} : { iss: issuer }),
       ...(managed === undefined ? {} : { fetchFn: managedTokenFetch(managed, fetch) }),
       ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
     })

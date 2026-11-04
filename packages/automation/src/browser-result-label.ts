@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { jsonResult } from "./browser-cdp-engine.js"
 import type { BrowserLabel } from "./browser-use-status.js"

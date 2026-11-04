@@ -6,7 +6,7 @@ import {
   openStream,
   toolText
 } from "@codevisor/plugin-kit/test-support"
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import type { Client } from "@modelcontextprotocol/client"
 import { afterEach, describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -153,6 +153,6 @@ describe("test-events skills and resources", () => {
     })
     await expect(
       client.readResource({ uri: "ui://test-events/missing.html" })
-    ).rejects.toMatchObject({ code: -32002 })
+    ).rejects.toMatchObject({ code: -32602 })
   })
 })

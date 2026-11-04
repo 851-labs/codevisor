@@ -294,7 +294,8 @@ export const fakeOAuthMcpServer = async (
           response_types_supported: ["code"],
           grant_types_supported: ["authorization_code", "refresh_token"],
           code_challenge_methods_supported: ["S256"],
-          token_endpoint_auth_methods_supported: ["none"]
+          token_endpoint_auth_methods_supported: ["none"],
+          authorization_response_iss_parameter_supported: true
         })
       } else if (path === "/register") {
         const registered = registration(await readBody(request))
@@ -334,7 +335,9 @@ export const fakeOAuthMcpServer = async (
       grants.push(grant)
       return { clientId, tokens: issue(grant) }
     },
-    approve: (authorizationUrl: string): { readonly code: string; readonly state: string } => {
+    approve: (
+      authorizationUrl: string
+    ): { readonly code: string; readonly state: string; readonly issuer: string } => {
       const url = new URL(authorizationUrl)
       const clientId = url.searchParams.get("client_id") ?? ""
       const redirectUri = url.searchParams.get("redirect_uri") ?? ""
@@ -347,7 +350,7 @@ export const fakeOAuthMcpServer = async (
         redirectUri,
         challenge: url.searchParams.get("code_challenge") ?? ""
       })
-      return { code, state: url.searchParams.get("state") ?? "" }
+      return { code, state: url.searchParams.get("state") ?? "", issuer: base }
     },
     invalidateAccessTokens: (): void => {
       accessTokens.clear()

@@ -4,7 +4,8 @@ import { existsSync, readFileSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
 import { join } from "node:path"
 
-import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import type { AutomationToolProvider } from "./automation-provider.js"
 import { computerResultApp, textToolResult } from "./automation-provider.js"

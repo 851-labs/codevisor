@@ -1,6 +1,6 @@
 import { accountMeta } from "@codevisor/plugin-kit"
 import { anyResult, connectClient, manualClock } from "@codevisor/plugin-kit/test-support"
-import type { Notification } from "@modelcontextprotocol/sdk/types.js"
+import type { Notification } from "@modelcontextprotocol/server"
 import { describe, expect, it, onTestFinished } from "vitest"
 
 import { gmailStreamLifetimeMs } from "./gmail-push.js"

@@ -1,7 +1,6 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import type { Notification } from "@modelcontextprotocol/sdk/types.js"
+import { Client } from "@modelcontextprotocol/client"
+import { InMemoryTransport } from "@modelcontextprotocol/server"
+import type { Server, Notification } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import type { Clock } from "./clock.js"

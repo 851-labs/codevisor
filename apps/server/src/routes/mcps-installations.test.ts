@@ -259,11 +259,11 @@ describe("mcp installation routes", () => {
     expect((await jsonRequest(server, "/v1/mcps", { method: "PUT" })).status).toBe(404)
     expect((await jsonRequest(server, `/v1/mcps/${localId}`)).status).toBe(404)
     expect(
-      await fetch(`${server.url}/v1/mcps/oauth/callback?state=state-1&code=code-1`).then(
-        (response) => response.status
-      )
+      await fetch(
+        `${server.url}/v1/mcps/oauth/callback?state=state-1&code=code-1&iss=https%3A%2F%2Fauth.example`
+      ).then((response) => response.status)
     ).toBe(200)
-    expect(finishOAuth).toHaveBeenCalledWith("state-1", "code-1")
+    expect(finishOAuth).toHaveBeenCalledWith("state-1", "code-1", "https://auth.example")
     expect(
       await fetch(`${server.url}/v1/mcps/oauth/callback?state=state-1`).then(
         (response) => response.status

@@ -23,9 +23,7 @@ import {
   errorResult,
   structuredResult
 } from "@codevisor/plugin-kit"
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { type CallToolResult, Server } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 import { createEventBuffer, type EventBuffer, type Replay } from "./event-buffer.js"
@@ -132,16 +130,16 @@ const registerEvents = (
   streams: EventStreams
 ): void => {
   registerEventTypes(server, testEventTypes)
-  server.setRequestHandler(eventsPollRequest, (request) => {
-    eventTypeNamed(testEventTypes, request.params.name)
-    const maxEvents = Math.min(request.params.maxEvents ?? maxPollEvents, maxPollEvents)
-    const replay = buffer.replay({ ...request.params, maxEvents }, clock.now())
-    return { resultType: "complete", ...pollResult(replay) }
+  server.setRequestHandler(eventsPollRequest.method, eventsPollRequest, (params) => {
+    eventTypeNamed(testEventTypes, params.name)
+    const maxEvents = Math.min(params.maxEvents ?? maxPollEvents, maxPollEvents)
+    const replay = buffer.replay({ ...params, maxEvents }, clock.now())
+    return pollResult(replay)
   })
-  server.setRequestHandler(eventsStreamRequest, (request, extra) => {
-    eventTypeNamed(testEventTypes, request.params.name)
-    const replay = buffer.replay({ ...request.params, maxEvents: Infinity }, clock.now())
-    return streams.open(streamOpening(request.params.name, replay), extra)
+  server.setRequestHandler(eventsStreamRequest.method, eventsStreamRequest, (params, ctx) => {
+    eventTypeNamed(testEventTypes, params.name)
+    const replay = buffer.replay({ ...params, maxEvents: Infinity }, clock.now())
+    return streams.open(streamOpening(params.name, replay), ctx)
   })
 }
 
@@ -163,8 +161,8 @@ const pollResult = (replay: Replay) => ({
 })
 
 const registerTools = (server: Server, publisher: EventPublisher, buffer: EventBuffer): void => {
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [...testEventTools] }))
-  server.setRequestHandler(CallToolRequestSchema, (request) =>
+  server.setRequestHandler("tools/list", () => ({ tools: [...testEventTools] }))
+  server.setRequestHandler("tools/call", (request) =>
     runTool(request.params.name, request.params.arguments ?? {}, publisher, buffer)
   )
 }

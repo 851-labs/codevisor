@@ -2,11 +2,11 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js"
 import type {
+  OAuthDiscoveryState,
   OAuthClientInformationMixed,
   OAuthTokens
-} from "@modelcontextprotocol/sdk/shared/auth.js"
+} from "@modelcontextprotocol/client"
 
 import type { McpCredentialReference } from "./mcp-oauth-grant.js"
 

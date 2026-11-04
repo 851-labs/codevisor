@@ -1,5 +1,5 @@
 import { REMOTE_PARENT_HEADER, remoteSessionKey } from "@codevisor/api"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { AutomationProviderContext } from "./automation-provider.js"

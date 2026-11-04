@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto"
 
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
+import { isInitializeRequest } from "@modelcontextprotocol/server"
 
 import type { ExecutionJobs } from "./mcp-gateway-jobs.js"
 import type { makeMcpGateway } from "./mcp-gateway.js"

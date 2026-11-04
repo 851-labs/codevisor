@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto"
 
 import type { AttachmentRef } from "@codevisor/api"
-import { type CallToolResult, ContentBlockSchema } from "@modelcontextprotocol/sdk/types.js"
+import { ContentBlockSchema } from "@modelcontextprotocol/core"
+import type { CallToolResult } from "@modelcontextprotocol/server"
 
 import { isRecord } from "./mcp-guards.js"
 

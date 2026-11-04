@@ -1,5 +1,5 @@
-import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation"
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv"
+import type { JsonSchemaType } from "@modelcontextprotocol/server"
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv"
 
 import { evaluate, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 import {

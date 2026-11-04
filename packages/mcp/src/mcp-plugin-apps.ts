@@ -1,5 +1,5 @@
 import type { CodevisorExecutionApp } from "@codevisor/api"
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult, Tool } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 export const APP_RESULT_MAX_BYTES = 1024 * 1024

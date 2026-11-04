@@ -18,7 +18,7 @@ import type {
   BrowserUseProvider
 } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { CallToolResult, ReadResourceResult, Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { CallToolResult, ReadResourceResult, Tool } from "@modelcontextprotocol/server"
 import type { WebSocket } from "ws"
 
 import type { AutomationTool } from "./mcp-automation-use.js"
@@ -116,7 +116,7 @@ export interface McpManager {
   readonly connect: (id: string) => Promise<McpServer>
   readonly setLocalSuppression: (names: ReadonlySet<string>) => Promise<void>
   readonly beginOAuth: (id: string, redirectBaseUrl?: string) => Promise<string>
-  readonly finishOAuth: (state: string, code: string) => Promise<McpServer>
+  readonly finishOAuth: (state: string, code: string, issuer?: string) => Promise<McpServer>
   readonly disconnectOAuth: (id: string) => Promise<McpServer>
   readonly resolved: (projectId?: string, sessionId?: string) => Promise<ReadonlyArray<McpServer>>
   readonly composerSkills: (

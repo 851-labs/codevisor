@@ -4,13 +4,13 @@ const subscriptionArguments = z.record(z.string(), z.unknown()).optional()
 const resumeCursor = z.string().nullish()
 const maxAgeMs = z.number().int().nonnegative().optional()
 
-export const eventsListRequest = z.object({
-  method: z.literal("events/list"),
-  params: z.object({ cursor: z.string().optional() }).optional()
-})
+export const eventsListRequest = {
+  method: "events/list",
+  params: z.object({ cursor: z.string().optional() })
+}
 
-export const eventsPollRequest = z.object({
-  method: z.literal("events/poll"),
+export const eventsPollRequest = {
+  method: "events/poll",
   params: z.object({
     name: z.string(),
     arguments: subscriptionArguments,
@@ -18,20 +18,20 @@ export const eventsPollRequest = z.object({
     maxAgeMs,
     maxEvents: z.number().int().positive().optional()
   })
-})
+}
 
-export const eventsStreamRequest = z.object({
-  method: z.literal("events/stream"),
+export const eventsStreamRequest = {
+  method: "events/stream",
   params: z.object({
     name: z.string(),
     arguments: subscriptionArguments,
     cursor: resumeCursor,
     maxAgeMs
   })
-})
+}
 
-export const webhookRequest = z.object({
-  method: z.literal("codevisor/webhook"),
+export const webhookRequest = {
+  method: "codevisor/webhook",
   params: z.object({
     ingress: z.string(),
     request: z.object({
@@ -41,23 +41,23 @@ export const webhookRequest = z.object({
       receivedAt: z.string()
     })
   })
-})
+}
 
-export const accountRemoveRequest = z.object({
-  method: z.literal("codevisor/account/remove"),
-  params: z.object({}).loose().optional()
-})
+export const accountRemoveRequest = {
+  method: "codevisor/account/remove",
+  params: z.object({}).loose()
+}
 
-export const skillsListRequest = z.object({
-  method: z.literal("skills/list"),
-  params: z.object({ cursor: z.string().optional() }).optional()
-})
+export const skillsListRequest = {
+  method: "skills/list",
+  params: z.object({ cursor: z.string().optional() })
+}
 
-export const skillsGetRequest = z.object({
-  method: z.literal("skills/get"),
+export const skillsGetRequest = {
+  method: "skills/get",
   params: z.object({ uri: z.string() })
-})
+}
 
-export type EventsPollParams = z.infer<typeof eventsPollRequest>["params"]
-export type EventsStreamParams = z.infer<typeof eventsStreamRequest>["params"]
-export type WebhookParams = z.infer<typeof webhookRequest>["params"]
+export type EventsPollParams = z.infer<typeof eventsPollRequest.params>
+export type EventsStreamParams = z.infer<typeof eventsStreamRequest.params>
+export type WebhookParams = z.infer<typeof webhookRequest.params>

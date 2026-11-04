@@ -1,8 +1,8 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { JSONObject, Tool } from "@modelcontextprotocol/server"
 
-type SchemaProperties = Readonly<Record<string, object>>
+type SchemaProperties = Readonly<Record<string, JSONObject>>
 
-interface ObjectSchema {
+type ObjectSchema = {
   readonly type: "object"
   readonly properties: SchemaProperties
   readonly required?: string[]

@@ -44,7 +44,7 @@
     "@codevisor/updater": "workspace:*",
     "@codevisor/worktrees": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.92",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/client": "2.4.0",
     "@napi-rs/canvas": "1.0.9",
     "effect": "4.0.0-beta.92",
     "ffmpeg-static": "5.3.0",
@@ -57,6 +57,7 @@
   "devDependencies": {
     "@codevisor/cloud-crypto": "workspace:*",
     "@codevisor/plugin-test-events": "workspace:*",
+    "@modelcontextprotocol/core": "2.4.0",
     "@types/better-sqlite3": "7.6.13",
     "@types/proper-lockfile": "4.1.4",
     "@types/qrcode-terminal": "0.12.2",

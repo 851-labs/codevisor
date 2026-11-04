@@ -1,4 +1,8 @@
-import { ErrorCode } from "@modelcontextprotocol/sdk/types.js"
+import {
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceNotFoundError
+} from "@modelcontextprotocol/server"
 
 export const eventsExtension = "io.modelcontextprotocol/events"
 export const skillsExtension = "io.modelcontextprotocol/skills"
@@ -18,32 +22,19 @@ export const eventErrorCode = {
   unsupported: -32026
 } as const
 
-export const resourceNotFoundCode = -32002
+export const unknownEventError = (name: string): ProtocolError =>
+  new ProtocolError(eventErrorCode.notFound, `Unknown event type: ${name}`, { kind: "event" })
 
-export class PluginProtocolError extends Error {
-  constructor(
-    readonly code: number,
-    message: string,
-    readonly data?: Record<string, unknown>
-  ) {
-    super(message)
-  }
-}
+export const forbiddenError = (reason: string): ProtocolError =>
+  new ProtocolError(eventErrorCode.forbidden, "Forbidden", { reason })
 
-export const unknownEventError = (name: string): PluginProtocolError =>
-  new PluginProtocolError(eventErrorCode.notFound, `Unknown event type: ${name}`, { kind: "event" })
-
-export const forbiddenError = (reason: string): PluginProtocolError =>
-  new PluginProtocolError(eventErrorCode.forbidden, "Forbidden", { reason })
-
-export const unsupportedDeliveryError = (mode: string): PluginProtocolError =>
-  new PluginProtocolError(eventErrorCode.unsupported, "Unsupported", {
+export const unsupportedDeliveryError = (mode: string): ProtocolError =>
+  new ProtocolError(eventErrorCode.unsupported, "Unsupported", {
     feature: "deliveryMode",
     value: mode
   })
 
-export const invalidParamsError = (message: string): PluginProtocolError =>
-  new PluginProtocolError(ErrorCode.InvalidParams, message)
+export const invalidParamsError = (message: string): ProtocolError =>
+  new ProtocolError(ProtocolErrorCode.InvalidParams, message)
 
-export const resourceNotFoundError = (uri: string): PluginProtocolError =>
-  new PluginProtocolError(resourceNotFoundCode, `Resource not found: ${uri}`, { uri })
+export const resourceNotFoundError = (uri: string): ProtocolError => new ResourceNotFoundError(uri)

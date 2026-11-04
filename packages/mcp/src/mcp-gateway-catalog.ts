@@ -5,7 +5,7 @@ import {
   SANDBOX_GLOBALS,
   type AutomationToolProvider
 } from "@codevisor/automation"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool } from "@modelcontextprotocol/server"
 
 import { automationSkills } from "./mcp-automation-builtins.js"
 import {

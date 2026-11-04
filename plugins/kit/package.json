@@ -19,7 +19,8 @@
     "test:coverage": "vitest run src --coverage"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
