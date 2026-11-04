@@ -28,6 +28,7 @@ const MAX_PACING_GAIN: f64 = 4.0;
 const CONSTRAINED_PACING_GAIN: f64 = 1.25;
 const CONSTRAINED_BPS: f64 = 100e6;
 const HEAVY_LOSS: f64 = 0.1;
+const MIN_LOSS_SAMPLE: u64 = 30;
 const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
 const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
 const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
@@ -124,7 +125,7 @@ pub struct Sender {
     tail_backoff: u32,
     in_flight_bytes: usize,
     min_rtt: Windowed<Duration>,
-    fec_ratio: f64,
+    ceiling_fec_ratio: f64,
 }
 
 impl Sender {
@@ -142,7 +143,7 @@ impl Sender {
             tail_backoff: 0,
             in_flight_bytes: 0,
             min_rtt: Windowed::new(MIN_RTT_WINDOW, Keep::Smallest),
-            fec_ratio: 0.0,
+            ceiling_fec_ratio: 0.0,
         }
     }
 
@@ -242,7 +243,7 @@ impl Sender {
 
     fn parity_count(&mut self, now: Instant, data_count: usize) -> usize {
         let ratio = self.fec_ratio(now);
-        self.fec_ratio = ratio;
+        self.ceiling_fec_ratio = ratio;
         if ratio <= 0.0 {
             return 0;
         }
@@ -277,7 +278,7 @@ impl Sender {
             return;
         }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
-        if current > HEAVY_LOSS {
+        if self.loss.sent >= MIN_LOSS_SAMPLE && current > HEAVY_LOSS {
             self.estimator.on_heavy_loss(now, current.min(1.0));
         }
         self.loss.rate = current.max(self.loss.rate / 2.0).min(1.0);
@@ -372,7 +373,7 @@ impl Sender {
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
         self.note_rtt(now);
-        self.fec_ratio = self.fec_ratio(now);
+        self.ceiling_fec_ratio = self.fec_ratio(now);
         let Some(stream) = self.streams.get_mut(&feedback.stream) else {
             return;
         };
@@ -406,7 +407,8 @@ impl Sender {
                     self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
                     self.tail_backoff = 0;
                 }
-                if !feedback.lost && frame.probes == 0 {
+                let first_may_be_resent = receipt.recovery == crate::Recovery::Nack && frame.data_count <= 2;
+                if !feedback.lost && frame.probes == 0 && !first_may_be_resent {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
                     let hold_off =
                         self.rtt.min(self.min_rtt.best().unwrap_or(self.rtt) * 2) + self.config.frame_interval;
@@ -553,7 +555,7 @@ impl Sender {
             backlog_bytes,
             budget_bytes,
             estimate_bps,
-            encoder_ceiling_bps: estimate_bps * ENCODER_SHARE / (1.0 + self.fec_ratio),
+            encoder_ceiling_bps: estimate_bps * ENCODER_SHARE / (1.0 + self.ceiling_fec_ratio),
         }
     }
 

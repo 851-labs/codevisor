@@ -70,7 +70,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   }
 
   func setRate(_ rate: ScreenSharingVCPRate) throws {
-    try session.setBitrate(rate.tileBitsPerSecond, windowBitsPerSecond: rate.tileWindowBitsPerSecond)
+    try session.setBitrate(rate.tileBitsPerSecond)
     state.withLock { $0.rate = rate }
   }
 

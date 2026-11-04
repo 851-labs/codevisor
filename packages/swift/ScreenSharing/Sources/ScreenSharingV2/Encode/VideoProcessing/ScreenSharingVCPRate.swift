@@ -19,9 +19,6 @@ struct ScreenSharingVCPRate {
   }
 
   var tileBitsPerSecond: Int { min(Self.highestBitsPerSecond, bitsPerSecond) / tiles }
-  var tileWindowBitsPerSecond: Int {
-    min(Self.highestBitsPerSecond, max(ScreenSharingV2Profile.minimumBitrate, bitsPerSecond)) / tiles
-  }
 
   static func limits(bitsPerSecond: Int) -> CFArray {
     [Int(Double(bitsPerSecond) * windowSeconds / 8) as CFNumber, windowSeconds as CFNumber] as CFArray

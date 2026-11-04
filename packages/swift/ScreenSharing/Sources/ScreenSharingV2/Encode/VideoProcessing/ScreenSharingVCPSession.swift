@@ -35,9 +35,9 @@ final class ScreenSharingVCPSession: @unchecked Sendable {
     guard status == noErr else { throw ScreenSharingError.codec("Set VCP \(key)", status) }
   }
 
-  func setBitrate(_ bitsPerSecond: Int, windowBitsPerSecond: Int) throws {
+  func setBitrate(_ bitsPerSecond: Int) throws {
     try set(kVTCompressionPropertyKey_AverageBitRate, bitsPerSecond as CFNumber)
-    try set(kVTCompressionPropertyKey_DataRateLimits, ScreenSharingVCPRate.limits(bitsPerSecond: windowBitsPerSecond))
+    try set(kVTCompressionPropertyKey_DataRateLimits, ScreenSharingVCPRate.limits(bitsPerSecond: bitsPerSecond))
   }
 
   func close() {

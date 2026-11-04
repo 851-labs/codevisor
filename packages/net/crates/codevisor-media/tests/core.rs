@@ -310,6 +310,23 @@ fn a_frame_still_arriving_on_a_slow_link_is_neither_given_up_nor_resent_whole() 
 }
 
 #[test]
+fn a_lost_tail_on_a_fast_link_is_asked_for_in_one_round() {
+    let mut sim = Sim::new(NetworkConditions::N0, config(FecMode::Off), 1);
+    sim.send(frame(0, &payload(1, 12_000)));
+    sim.run_for(INTERVAL);
+    sim.drop_when(first_time(|direction, datagram| {
+        direction == Direction::ToViewer && (1..10).any(|index| is_packet(datagram, 1, index))
+    }));
+    let sent_at = sim.now;
+    sim.send(frame(0, &payload(2, 12_000)));
+    sim.run_for(INTERVAL);
+
+    let repaired = sim.frames().into_iter().find(|frame| frame.frame == 1).expect("frame 1 arrived");
+    assert!(repaired.completed_at - sent_at < 3 * MS, "{:?}", repaired.completed_at - sent_at);
+    assert_eq!(sim.viewer.stats(sim.now).nacks_sent, 1, "one NACK for the whole tail");
+}
+
+#[test]
 fn parity_repairs_a_loss_without_a_round_trip() {
     let mut sim = Sim::new(NetworkConditions::N1, config(FecMode::Fixed(0.2)), 5);
     sim.drop_when(|direction, datagram| direction == Direction::ToViewer && is_packet(datagram, 0, 2));

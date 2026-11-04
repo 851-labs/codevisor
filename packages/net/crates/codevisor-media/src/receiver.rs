@@ -34,7 +34,6 @@ struct Assembly {
     highest_index: Option<u16>,
     tail_at: Option<Instant>,
     tail_limit: Option<usize>,
-    originals: usize,
     next_nack: Option<Instant>,
     give_up_at: Option<Instant>,
     used_fec: bool,
@@ -70,7 +69,6 @@ impl Assembly {
             highest_index: None,
             tail_at: None,
             tail_limit: None,
-            originals: 0,
             next_nack: None,
             give_up_at: None,
             used_fec: false,
@@ -109,14 +107,16 @@ impl Assembly {
         }
     }
 
-    fn arrived_by(&self, now: Instant) -> Option<usize> {
+    fn arrived_by(&self, now: Instant, gap_hint: Duration) -> Option<usize> {
         let shape = self.shape?;
         let next = usize::from(self.highest_index?) + 1;
-        let (first, last) = (self.first_rx?, self.last_original_rx?);
-        let pace =
-            (self.originals > 1).then(|| (last - first) / (self.originals - 1) as u32).filter(|pace| !pace.is_zero());
+        let (first, last) = (self.first_rx?, self.last_rx?);
+        let pace = (self.received > 1)
+            .then(|| (last - first) / (self.received - 1) as u32)
+            .filter(|pace| !pace.is_zero())
+            .or(Some(gap_hint).filter(|gap| !gap.is_zero()));
         let more =
-            pace.map_or(1.0, |pace| now.saturating_duration_since(last).as_secs_f64() / pace.as_secs_f64()) as usize;
+            pace.map_or(1, |pace| (now.saturating_duration_since(last).as_secs_f64() / pace.as_secs_f64()) as usize);
         let limit = next + more.max(1);
         (limit < shape.layout.data_count + shape.parity_count).then_some(limit)
     }
@@ -294,7 +294,6 @@ impl Receiver {
                 self.gap_peak = self.gap_peak.max(now.saturating_duration_since(last));
             }
             assembly.last_original_rx = Some(now);
-            assembly.originals += 1;
         }
         assembly.first_rx.get_or_insert(now);
         assembly.last_rx = Some(now);
@@ -382,7 +381,7 @@ impl Receiver {
                     continue;
                 }
                 if assembly.tail_at.is_some_and(|at| now >= at) && !assembly.end_seen {
-                    match assembly.arrived_by(now) {
+                    match assembly.arrived_by(now, self.gap_peak) {
                         Some(limit) => {
                             assembly.tail_limit = Some(limit);
                             assembly.tail_at = Some(now + tail_wait);

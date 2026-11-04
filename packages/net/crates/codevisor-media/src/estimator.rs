@@ -14,7 +14,8 @@ const JITTER_GAIN: f64 = 1.0 / 16.0;
 const TRUSTED_SPAN_JITTERS: f64 = 2.0;
 const OVERUSE_SAMPLES: u32 = 2;
 const BACKOFF: f64 = 0.85;
-const MAX_BACKOFF: f64 = 0.5;
+const FILLING_SHARE: f64 = 0.5;
+const CAP_IDLE: Duration = Duration::from_millis(250);
 const CAP_DOUBLING: Duration = Duration::from_secs(1);
 const LINK_LIMITED: f64 = 0.75;
 const MIN_SPAN: Duration = Duration::from_micros(100);
@@ -33,6 +34,7 @@ pub struct Delivery {
 struct Cap {
     from_bps: f64,
     since: Instant,
+    grown_at: Instant,
     bps: f64,
 }
 
@@ -165,21 +167,21 @@ impl Estimator {
 
     pub fn on_heavy_loss(&mut self, now: Instant, loss: f64) {
         let estimate = self.estimate_bps();
-        let carried = self.receive_bps().map_or(0.0, |receive| receive * BACKOFF);
+        let carried = self.acked.bps_until(now).map_or(0.0, |receive| receive * BACKOFF);
         let target = (estimate * (1.0 - loss / 2.0)).max(carried).min(estimate).max(MIN_RATE_BPS);
-        self.cap = Some(Cap { from_bps: target, since: now, bps: target });
+        self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.bursts.clear();
         self.last_backoff = Some(now);
     }
 
     fn back_off(&mut self, now: Instant) {
         let estimate = self.estimate_bps();
-        let receive = self.receive_bps().unwrap_or(estimate);
-        let filling = receive >= estimate * MAX_BACKOFF;
+        let receive = self.acked.bps_until(now).or_else(|| self.acked.bps()).unwrap_or(estimate);
+        let filling = receive >= estimate * FILLING_SHARE;
         let link_limited = self.link_limited(receive);
         let from = if filling || link_limited { receive.min(estimate) } else { estimate };
         let target = (from * BACKOFF).max(MIN_RATE_BPS);
-        self.cap = Some(Cap { from_bps: target, since: now, bps: target });
+        self.cap = Some(Cap { from_bps: target, since: now, grown_at: now, bps: target });
         self.standing_us = self.queue_delay_us;
         self.bursts.clear();
         self.overuse = 0;
@@ -192,9 +194,12 @@ impl Estimator {
             return;
         };
         if queued {
-            *cap = Cap { from_bps: cap.bps, since: now, bps: cap.bps };
+            *cap = Cap { from_bps: cap.bps, since: now, grown_at: now, bps: cap.bps };
             return;
         }
+        let quiet = now.saturating_duration_since(cap.grown_at).saturating_sub(CAP_IDLE);
+        cap.since += quiet;
+        cap.grown_at = now;
         let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
         cap.bps = cap.from_bps * 2f64.powf(elapsed / CAP_DOUBLING.as_secs_f64());
         if self.bursts.best().is_some_and(|burst| cap.bps >= burst) || cap.bps >= self.max_bps {
@@ -224,6 +229,18 @@ impl Throughput {
         let span = self.entries.back()?.0.saturating_duration_since(oldest);
         (span >= RECEIVE_WINDOW / 4).then(|| (self.bytes - oldest_bytes) as f64 * 8.0 / span.as_secs_f64())
     }
+
+    fn bps_until(&self, now: Instant) -> Option<f64> {
+        let mut recent = self
+            .entries
+            .iter()
+            .filter(|(at, _)| *at <= now && now.saturating_duration_since(*at) <= RECEIVE_WINDOW)
+            .peekable();
+        let oldest = recent.peek()?.0;
+        let bytes: usize = recent.skip(1).map(|(_, bytes)| bytes).sum();
+        let span = now.saturating_duration_since(oldest);
+        (span >= RECEIVE_WINDOW / 4).then(|| bytes as f64 * 8.0 / span.as_secs_f64())
+    }
 }
 
 #[cfg(test)]
@@ -236,6 +253,26 @@ mod tests {
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
         Delivery { bytes, receive_span: span, send_span: Duration::ZERO }
+    }
+
+    fn feed_traffic(
+        estimator: &mut Estimator,
+        start: Instant,
+        delays: impl IntoIterator<Item = i64>,
+        acked: usize,
+        sent: usize,
+    ) -> Vec<f64> {
+        delays
+            .into_iter()
+            .enumerate()
+            .map(|(index, delay)| {
+                let at = start + 4 * MS * index as u32;
+                estimator.on_acked(at, acked);
+                estimator.on_sent(at, sent);
+                estimator.on_delay(at, OFFSET + delay, 20 * MS);
+                estimator.estimate_bps()
+            })
+            .collect()
     }
 
     fn feed_delays(estimator: &mut Estimator, start: Instant, delays: impl IntoIterator<Item = i64>) -> Vec<f64> {
@@ -324,11 +361,8 @@ mod tests {
         let start = Instant::now();
         let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(125_000, 10 * MS));
-        for index in 0..=10 {
-            estimator.on_acked(start + 20 * MS * index, 25_000);
-            estimator.on_sent(start + 20 * MS * index, 100_000);
-        }
-        let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain((1..=10).map(|step| step * 2_000)));
+        let delays = (0..40).map(|_| 0).chain((1..=10).map(|step| step * 2_000));
+        let estimates = feed_traffic(&mut estimator, start, delays, 5_000, 20_000);
         assert_eq!(estimates.last(), Some(&(10e6 * 0.85)), "the link carried 10 of the 40 Mbit/s sent");
     }
 
@@ -361,27 +395,23 @@ mod tests {
         let start = Instant::now();
         let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(125_000, 10 * MS));
-        for index in 0..=10 {
-            estimator.on_acked(start + 20 * MS * index, 150_000);
-        }
-        let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain((1..=10).map(|step| step * 2_000)));
-        assert_eq!(estimates.last(), Some(&(60e6 * 0.85)));
+        let delays = (0..40).map(|_| 0).chain((1..=10).map(|step| step * 2_000));
+        let estimates = feed_traffic(&mut estimator, start, delays, 30_000, 30_000);
+        let backed_off = estimates.iter().position(|estimate| *estimate < 100e6).expect("a back-off");
+        assert_eq!(estimates[backed_off], 60e6 * 0.85, "85% of the 60 Mbit/s that arrived");
 
-        estimator.on_delivery(start + 200 * MS, burst(125_000, 5 * MS));
-        let capped = estimator.estimate_bps();
-        assert!(
-            (capped / (60e6 * 0.85 * 2f64.powf(0.1)) - 1.0).abs() < 1e-3,
-            "a fast burst doesn't lift the cap: {capped}"
-        );
-        let cleared = (0..8).map(|_| 0);
-        let later = start + Duration::from_secs(1);
-        for (index, delay) in cleared.enumerate() {
-            estimator.on_delay(later + 4 * MS * index as u32, OFFSET + delay, 20 * MS);
+        let after = start + 4 * MS * backed_off as u32;
+        estimator.on_delivery(after + 50 * MS, burst(125_000, 5 * MS));
+        assert!(estimator.estimate_bps() < 60e6 * 0.85 * 1.1, "a fast burst doesn't lift the cap");
+
+        let quiet = after + Duration::from_secs(5);
+        estimator.on_delivery(quiet, burst(125_000, 5 * MS));
+        let woken = estimator.estimate_bps();
+        assert!(woken < 60e6 * 0.85 * 2f64.powf(0.5), "a quiet 5 s counts as a quarter second: {woken}");
+
+        for step in 1..=40 {
+            estimator.on_delivery(quiet + 100 * MS * step, burst(125_000, 5 * MS));
         }
-        let grown = estimator.estimate_bps();
-        let expected = 60e6 * 0.85 * 2f64.powf(0.928);
-        assert!((grown / expected - 1.0).abs() < 1e-3, "doubling every second since the back-off at 0.1 s: {grown}");
-        estimator.on_delivery(later + Duration::from_secs(2), burst(125_000, 5 * MS));
-        assert_eq!(estimator.estimate_bps(), 200e6, "and lets go once it passes the bursts");
+        assert_eq!(estimator.estimate_bps(), 200e6, "steady feedback lets the cap grow past the bursts and go");
     }
 }

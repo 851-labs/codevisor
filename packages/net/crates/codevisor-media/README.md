@@ -23,7 +23,8 @@ no jitter buffer and no queue deeper than one frame.
      At 1/16 per frame (851-3822) it forgot N6's 5 ms jitter within 11 frames and NACKed the next delayed packet as
      lost: in the sim 6% of N6's packets were resent, against 0.9% now, and those NACKs pinned FEC at 13–25%. When
      the tail wait passes, the viewer asks only for the packets that should have arrived by then at the frame's own
-     pace (at least the next one) and waits again, so a slow link's frame isn't requested whole while it's still
+     pace (from every packet of it that arrived), or at the receiver's recent longest gap before the frame has a
+     pace, or just the next packet before any gap is known (at least the next one), and waits again, so a slow link's frame isn't requested whole while it's still
      arriving: on N7 the first 800 KB keyframe used to be resent whole 1 ms after its first packet (675 packets, 13 s
      of queue at 1 Mbit/s), against 38 packets now. The viewer repeats a NACK every RTT + 1 ms; the host skips a packet whose
      retransmission is still queued or left less than half a round trip ago (a NACK that crossed it). Without that, at a low estimate, each
@@ -76,8 +77,8 @@ no jitter buffer and no queue deeper than one frame.
     repaired give no burst sample: the viewer doesn't count an original that arrived after it was requested, so their
     bytes are too few for their spread. A flooded first keyframe on N5 read as 0.68 Mbit/s and paced the next one at
     0.55 Mbit/s for 15 s (local Tier 1, video N5).
-  - **heavy loss:** when more than 10% of a second's data packets are lost (each packet counted at its first NACK,
-    plus one per frame parity repaired), the estimate becomes `estimate × (1 − loss / 2)` (GCC's rule), but not under
+  - **heavy loss:** when more than 10% of a second's data packets are lost (at least 30 sent; each packet counted at
+    its first NACK, plus one per frame parity repaired), the estimate becomes `estimate × (1 − loss / 2)` (GCC's rule), but not under
     85% of the receive rate. A short queue like N5's (30 packets, under 10 ms) turns overuse into loss rather than
     delay, and the Tier 1 relay's batched deliveries let burst samples read 35–44 Mbit/s on its 30 Mbit/s link: with
     only the delay detector, local Tier 1 video N5 stalled in 3 of 4 runs, against 0 of 4 with this.
@@ -94,8 +95,9 @@ no jitter buffer and no queue deeper than one frame.
     holds the first packet's one-way delay about 3.7 ms over its minimum for seconds at a time (PR gate 41758951189,
     scroll N3). That's a standing offset, not a growing queue, but its microsecond creep counted as growth. Backing off
     every hold-off took the estimate to 1–9 Mbit/s on a 1 Gbit/s link in 4 of 6 runs. While capped, the estimate is the cap: an app-limited receive rate doesn't pull it lower. The
-    cap doubles every second while the queue stays within a threshold of where it stood at the back-off, and goes once
-    it passes the bursts. Growing it by a
+    cap doubles every second while the queue stays within a threshold of where it stood at the back-off and feedback
+    keeps coming (a quiet spell counts for at most 250 ms, so a pause doesn't hand the next burst a rate nobody
+    measured), and goes once it passes the bursts. Growing it by a
     quarter of its starting value per second (PR gate 41735956891) left Tier 1's scroll at N3 near 1 Mbit/s on a
     1 Gbit/s link after the one-Mac relay's own delay spikes, for minutes: 4 of 6 runs froze 6–9 times. In the sim a
     link that narrows to 20 Mbit/s for 2 s is followed down within about 0.6 s and is back at 40 Mbit/s or more within
@@ -106,8 +108,9 @@ no jitter buffer and no queue deeper than one frame.
     3–15 Mbit/s in Tier 1 run 41610616589). It counts as a queue above 2 ms + 4 jitters, where the jitter is the
     smoothed size of the delays' second difference, so a steadily growing queue doesn't raise its own threshold. A
     minimum of 8 samples sits about 1.5 standard deviations above a 10 s minimum without any queue, which a fixed 2 ms
-    took for a queue on N6 (5 ms of jitter) and backed off until the estimate was gone. Frames repaired by NACK or FEC
-    count too (a lost first packet makes a sample a little late, which the minimum of 8 absorbs); without them N5,
+    took for a queue on N6 (5 ms of jitter) and backed off until the estimate was gone. Back-offs read the receive
+    rate up to now, so a stall doesn't keep an old rate as their floor. Frames repaired by NACK or FEC count too,
+    except NACK-repaired frames of one or two packets, whose first arrival may be the resend (a lost first packet makes a sample a little late, which the minimum of 8 absorbs); without them N5,
     where most frames lose a packet to the short queue, had no samples at all. Probed frames don't count.
   - The estimate never goes under 300 kbit/s.
 - **Admission.** Encode the next capture only while the bytes waiting fit one frame interval at the estimate.
