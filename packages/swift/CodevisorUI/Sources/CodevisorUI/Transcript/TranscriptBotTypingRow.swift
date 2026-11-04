@@ -49,11 +49,9 @@ public struct TranscriptBotTypingRow: View {
         Color.clear.frame(height: 0)
       }
     }
-    .onChange(of: isShown, initial: true) { _, shown in
-      BotReplyHandoff.shared.note(shown: shown, for: controller)
+    .onChange(of: isShown, initial: true) { _, _ in
       invalidateRowMeasurement?()
     }
-    .onDisappear { BotReplyHandoff.shared.note(shown: false, for: controller) }
   }
 
   private var bot: Bot? {

@@ -152,7 +152,6 @@ public struct TranscriptRowContentView: View {
         PluginAppBotBubble(app: app)
       } else {
         leaves.botMessage(message, content)
-          .modifier(BotReplyEntrance(messageID: message.id, owner: controller))
       }
     case let .botTimestamp(date):
       TranscriptBotTimestampRow(date: date)
