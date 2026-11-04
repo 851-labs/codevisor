@@ -132,6 +132,14 @@ struct HomeView: View {
     return hasRemoteMachines && launch != .loading
   }
 
+  var showsNewChatToolbarButton: Bool {
+    showsNewChatButton && sidebarMode.wrappedValue == .code
+  }
+
+  var showsNewBotToolbarButton: Bool {
+    showsNewChatButton && sidebarMode.wrappedValue == .chat && !environment.bots.botMachines.isEmpty
+  }
+
   var body: some View {
     hoistedPresentations(
       Group {

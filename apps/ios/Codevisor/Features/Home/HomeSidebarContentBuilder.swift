@@ -56,28 +56,49 @@ struct HomeSidebarContentBuilder {
         heading: placement.heading)
     }
     content.canCreateBots = !environment.bots.botMachines.isEmpty
-    let membership = environment.botSections.membership
-    let bots = botEntries.map { entry in
-      HomeSidebarBot(
-        bot: entry.bot,
-        status: environment.projectList.session(entry.bot.sessionId, serverId: entry.bot.serverId)
-          .map(status(for:)) ?? .idle,
-        machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: entry.bot.serverId) : nil,
-        home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == entry.bot.workspaceId }
-          .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
-        children: entry.children.compactMap { child in
-          HomeSidebarContent.nesting(child, children: children) {
-            botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
-          }
-        },
-        canArchive: environment.bots.supportsArchive(on: entry.bot.serverId),
-        sectionID: membership[entry.bot.id]
-      )
-    }
+    let bots =
+      botEntries
+      .map { sidebarBot($0, children: children, preferences: preferences, projectGroups: projectGroups) }
+      .sorted(by: HomeSidebarBot.byRecency)
     content.bots = bots.filter { !$0.bot.isArchived }
     content.archivedBots = bots.filter(\.bot.isArchived)
     content.botSections = environment.botSections.sections
     return content
+  }
+
+  private func sidebarBot(
+    _ entry: BotSidebarEntry, children: [UUID: [WorkspaceSidebarItem]], preferences: HomeSidebarPreferences,
+    projectGroups: [ProjectGroup]
+  ) -> HomeSidebarBot {
+    let bot = entry.bot
+    let session = environment.projectList.session(bot.sessionId, serverId: bot.serverId)
+    return HomeSidebarBot(
+      conversation: conversation(bot, session: session),
+      status: session.map(status(for:)) ?? .idle,
+      machine: preferences.rowDetails.contains(.machine) ? rowMachine(serverId: bot.serverId) : nil,
+      home: environment.navigationStore.workspaceEntries.sidebar.first { $0.id == bot.workspaceId }
+        .flatMap { botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups) },
+      children: entry.children.compactMap { child in
+        HomeSidebarContent.nesting(child, children: children) {
+          botSidebarWorkspace($0, preferences: preferences, projectGroups: projectGroups)
+        }
+      },
+      canArchive: environment.bots.supportsArchive(on: bot.serverId),
+      sectionID: environment.botSections.membership[bot.id]
+    )
+  }
+
+  private func conversation(_ bot: Bot, session: ChatSession?) -> BotConversation {
+    let isUnread = session.map { $0.unreadCount > 0 || $0.hasUnreadError } ?? false
+    return BotConversation(
+      bot: bot, session: session, activity: session.map(activity(of:)) ?? .idle, isUnread: isUnread)
+  }
+
+  private func activity(of session: ChatSession) -> BotConversation.Activity {
+    if session.hasUnreadError { return .failed }
+    if session.actionRequired || session.pendingPlanApproval { return .waitingOnUser }
+    if ChatControllerCache.shared.isInProgress(session) { return .working }
+    return .idle
   }
 
   private func botSidebarWorkspace(

@@ -26,7 +26,7 @@ extension HomeView {
       return
     }
     newChatSheetPath = NavigationPath()
-    let flow = NewChatFlow(zoomsFromComposeButton: path.isEmpty && showsNewChatButton)
+    let flow = NewChatFlow(zoomsFromComposeButton: path.isEmpty && showsNewChatToolbarButton)
     flow.requestedServerId = serverId
     newChatFlow = flow
     presentedNewChatFlow = flow

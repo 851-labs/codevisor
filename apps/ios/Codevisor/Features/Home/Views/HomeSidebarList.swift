@@ -80,7 +80,7 @@ struct HomeSidebarList: View {
   var body: some View {
     let content = makeContent(preferences)
     list(content)
-      .listStyle(.sidebar)
+      .modifier(HomeSidebarListStyle(isConversation: isConversation))
       .animation(Motion.listReflow(reduceMotion: reduceMotion), value: content.layout)
       .onAppear { followSelection(from: nil, to: selected, in: content) }
       .onChange(of: selected) { previous, next in
@@ -112,6 +112,8 @@ struct HomeSidebarList: View {
   }
 
   private var showsChat: Bool { mode?.wrappedValue != .code }
+
+  private var isConversation: Bool { mode?.wrappedValue == .chat }
 
   private var showsCode: Bool { mode?.wrappedValue != .chat }
 
@@ -234,16 +236,16 @@ struct HomeSidebarList: View {
           botRow(bot, sections: content.botSections)
         }
       }
+      .listSectionSeparator(.hidden, edges: .top)
     }
     ForEach(content.botSectionGroups) { group in
-      Section(group.section.name, isExpanded: groupExpansion(group.collapseID)) {
+      HomeSidebarCollapsibleSection(
+        title: group.section.name, isExpanded: groupExpansion(group.collapseID), isConversation: isConversation
+      ) {
         ForEach(group.bots) { bot in
           botRow(bot, sections: content.botSections)
         }
       }
-    }
-    if content.canCreateBots {
-      Section { newBotButton }
     }
   }
 
@@ -268,7 +270,9 @@ struct HomeSidebarList: View {
     let bots = showsChat ? content.archivedBots : []
     let showsWorkspaces = showsCode && content.archivedCount > 0
     if showsWorkspaces || !bots.isEmpty {
-      Section("Archived", isExpanded: animated($archivedExpanded)) {
+      HomeSidebarCollapsibleSection(
+        title: "Archived", isExpanded: animated($archivedExpanded), isConversation: isConversation
+      ) {
         archivedRows(content, bots: bots, showsWorkspaces: showsWorkspaces)
       }
     }
@@ -336,7 +340,8 @@ struct HomeSidebarList: View {
   @ViewBuilder
   private func botRow(_ bot: HomeSidebarBot, sections: [CustomSection]? = nil) -> some View {
     let row = HomeSidebarBotRowView(
-      bot: bot, actions: actions, isSelectionRow: isSelectable, isOpen: selected == .bot(bot.id), sections: sections
+      bot: bot, actions: actions, isSelectionRow: isSelectable, isOpen: selected == .bot(bot.id), sections: sections,
+      isConversation: isConversation
     )
     .equatable()
     .tag(bot.id)

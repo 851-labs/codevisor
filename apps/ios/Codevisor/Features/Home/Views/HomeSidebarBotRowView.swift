@@ -11,10 +11,11 @@ struct HomeSidebarBotRowView: View, Equatable {
   var isSelectionRow = false
   var isOpen = false
   var sections: [CustomSection]?
+  var isConversation = false
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.bot == rhs.bot && lhs.actions === rhs.actions && lhs.isSelectionRow == rhs.isSelectionRow
-      && lhs.isOpen == rhs.isOpen && lhs.sections == rhs.sections
+      && lhs.isOpen == rhs.isOpen && lhs.sections == rhs.sections && lhs.isConversation == rhs.isConversation
   }
 
   private func onOpen() { actions.actions.openBot(bot.bot) }
@@ -26,13 +27,29 @@ struct HomeSidebarBotRowView: View, Equatable {
   private var isArchived: Bool { bot.bot.isArchived }
 
   var body: some View {
+    content
+      .opacity(isArchived ? 0.6 : 1)
+      .swipeActions(edge: .trailing) { swipeButtons }
+      .contextMenu { menu }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(accessibilityLabel)
+      .accessibilityValue(isArchived ? "Archived" : "")
+      .accessibilityActions { accessibilityButtons }
+      .accessibilityIdentifier("sidebar.bot.\(bot.bot.name)")
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    if isConversation {
+      openable(HomeSidebarBotConversationLabel(bot: bot, isOpen: isOpen, showsChevron: !bot.hasNestedRows))
+    } else {
+      compactContent
+    }
+  }
+
+  private var compactContent: some View {
     HStack(spacing: 10) {
-      if isSelectionRow {
-        label
-      } else {
-        Button(action: onOpen) { label }
-          .buttonStyle(.plain)
-      }
+      openable(label)
       if let machine = bot.machine {
         HomeSidebarSymbol(name: machine.systemImage)
           .imageScale(.small)
@@ -44,14 +61,16 @@ struct HomeSidebarBotRowView: View, Equatable {
           .accessibilityHidden(true)
       }
     }
-    .opacity(isArchived ? 0.6 : 1)
-    .swipeActions(edge: .trailing) { swipeButtons }
-    .contextMenu { menu }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(accessibilityLabel)
-    .accessibilityValue(isArchived ? "Archived" : "")
-    .accessibilityActions { accessibilityButtons }
-    .accessibilityIdentifier("sidebar.bot.\(bot.bot.name)")
+  }
+
+  @ViewBuilder
+  private func openable(_ label: some View) -> some View {
+    if isSelectionRow {
+      label
+    } else {
+      Button(action: onOpen) { label }
+        .buttonStyle(.plain)
+    }
   }
 
   private var offersArchive: Bool { bot.canArchive && !isArchived }
@@ -171,6 +190,8 @@ struct HomeSidebarBotRowView: View, Equatable {
 
   private var accessibilityLabel: String {
     let status = bot.status == .idle ? nil : bot.status.caption.lowercased()
-    return [bot.bot.name, "bot", status, bot.machine.map { "on \($0.name)" }].compactMap { $0 }.joined(separator: ", ")
+    let preview = isConversation ? bot.conversation.preview : nil
+    return [bot.bot.name, "bot", status, bot.machine.map { "on \($0.name)" }, preview].compactMap { $0 }
+      .joined(separator: ", ")
   }
 }

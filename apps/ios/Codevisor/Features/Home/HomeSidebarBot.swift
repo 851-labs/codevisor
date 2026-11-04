@@ -2,7 +2,7 @@ import CodevisorCore
 import Foundation
 
 struct HomeSidebarBot: Identifiable, Equatable {
-  let bot: Bot
+  let conversation: BotConversation
   let status: HomeSessionStatus
   let machine: HomeSidebarRowMachine?
   let home: HomeSidebarWorkspace?
@@ -12,9 +12,15 @@ struct HomeSidebarBot: Identifiable, Equatable {
 
   var id: UUID { bot.id }
 
+  var bot: Bot { conversation.bot }
+
   var tabs: [HomeSidebarTabRow] {
     home?.rows.filter { $0.chatSessionId != bot.sessionId } ?? []
   }
 
   var hasNestedRows: Bool { !tabs.isEmpty || !children.isEmpty }
+
+  static func byRecency(_ lhs: Self, _ rhs: Self) -> Bool {
+    BotConversation.byRecency(lhs.conversation, rhs.conversation)
+  }
 }

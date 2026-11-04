@@ -57,40 +57,40 @@ extension HomeView {
 
   @ToolbarContentBuilder
   var newChatToolbarItems: some ToolbarContent {
-    if showsNewChatButton {
+    if showsNewChatToolbarButton {
       if barsAreVertical {
         newChatItem(placement: .topBarTrailing)
       } else {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         newChatItem(placement: .bottomBar)
       }
+    } else if showsNewBotToolbarButton {
+      if barsAreVertical {
+        ToolbarItem(placement: .topBarTrailing) { newBotButton }
+      } else {
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) { newBotButton }
+      }
     }
   }
 
   @ToolbarContentBuilder
   var sidebarNewChatToolbarItems: some ToolbarContent {
-    if #available(iOS 27.0, *), showsNewChatButton {
+    if #available(iOS 27.0, *), showsNewChatToolbarButton {
       ToolbarSpacer(.flexible, placement: .bottomBar)
       ToolbarItem(placement: .bottomBar) { newChatButton }
+    } else if #available(iOS 27.0, *), showsNewBotToolbarButton {
+      ToolbarSpacer(.flexible, placement: .bottomBar)
+      ToolbarItem(placement: .bottomBar) { newBotButton }
     }
   }
 
   @ViewBuilder
   var sidebarNewChatOverlay: some View {
-    if #unavailable(iOS 27.0), showsNewChatButton {
-      Button {
-        presentNewChat()
-      } label: {
-        Image(systemName: "square.and.pencil")
-          .font(.title3)
-          .foregroundStyle(.white)
-          .padding(13)
-          .background(Circle().fill(Color.accentColor))
-          .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("New chat")
-      .padding([.trailing, .bottom], 16)
+    if #unavailable(iOS 27.0), showsNewChatToolbarButton {
+      HomeComposeOverlayButton(systemImage: "square.and.pencil", label: "New chat") { presentNewChat() }
+    } else if #unavailable(iOS 27.0), showsNewBotToolbarButton {
+      HomeComposeOverlayButton(systemImage: "plus", label: "New Bot") { botEditor = .create }
     }
   }
 
@@ -114,5 +114,16 @@ extension HomeView {
     }
     .buttonStyle(.glassProminent)
     .tint(.accentColor)
+  }
+
+  var newBotButton: some View {
+    Button {
+      botEditor = .create
+    } label: {
+      Label("New Bot", systemImage: "plus")
+    }
+    .buttonStyle(.glassProminent)
+    .tint(.accentColor)
+    .accessibilityIdentifier("sidebar.newBot")
   }
 }
