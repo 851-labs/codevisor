@@ -9,6 +9,7 @@ import { errnoCode, recordOrEmpty } from "./json-values.js"
 import { museAuthPath, parseMuseAuth } from "./muse-credentials.js"
 import {
   OAuthRefreshRejected,
+  OAuthRefreshUnavailable,
   SharedCredentialError,
   type SharedOAuthHarness,
   type SharedTokenBundle
@@ -26,10 +27,13 @@ const claims = (token: string): Record<string, unknown> => {
     return {}
   }
 }
-const refreshRejection = async (response: Response): Promise<OAuthRefreshRejected> => {
+const refreshRejection = async (response: Response): Promise<SharedCredentialError> => {
+  if (isServerTrouble(response.status))
+    return new OAuthRefreshUnavailable(`HTTP ${response.status}`)
   const body = recordOrEmpty(await response.json().catch(() => undefined))
   return new OAuthRefreshRejected(response.status, string(body.error))
 }
+const isServerTrouble = (status: number): boolean => status === 429 || status >= 500
 const jsonFile = async (path: string): Promise<Record<string, unknown> | undefined> => {
   try {
     return recordOrEmpty(JSON.parse(await readFile(path, "utf8")))

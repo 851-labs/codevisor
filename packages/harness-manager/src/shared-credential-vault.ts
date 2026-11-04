@@ -4,7 +4,6 @@ import type { CoordinatedCredential, CredentialCoordinationResult } from "@codev
 
 import { refreshFailedLine, refreshSucceededLine } from "./shared-credential-refresh-log.js"
 import {
-  OAuthRefreshUnavailable,
   SharedCredentialError,
   isSharedTokenBundle,
   type CredentialCoordinator,
@@ -115,6 +114,9 @@ const throwIfLeaseLost = (state: CredentialCoordinationResult): void => {
   if (state.status === "revoked") throw new SharedCredentialError("revoked")
 }
 
+const isTransient = (cause: unknown): boolean =>
+  cause instanceof SharedCredentialError && cause.reason === "offline"
+
 const commitFailure = (committed: CredentialCoordinationResult): SharedCredentialError["reason"] =>
   committed.status === "revoked" ? "revoked" : "reauthenticate"
 
@@ -170,9 +172,36 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       return next
     } catch (cause) {
       log(refreshFailedLine(reference, bundle, cause))
-      throw cause instanceof SharedCredentialError
-        ? cause
-        : new SharedCredentialError("reauthenticate")
+      throw cause instanceof SharedCredentialError ? cause : new SharedCredentialError("offline")
+    }
+  }
+  const publish = async (
+    reference: SharedCredentialReference,
+    operationId: string,
+    bundle: SharedTokenBundle
+  ): Promise<SharedTokenBundle> => {
+    const sealed = sealSharedCredential(reference, bundle)
+    await writeReceipt(reference.id, { operationId, sealed })
+    const committed = await config.coordinate(reference.id, {
+      action: "commit",
+      operationId,
+      sealed
+    })
+    if (committed.status !== "ready") throw new SharedCredentialError(commitFailure(committed))
+
+    await removeReceipt(reference.id)
+    return remember(reference, committed.credential)
+  }
+  const exchange = async (
+    reference: SharedCredentialReference,
+    operationId: string,
+    bundle: SharedTokenBundle
+  ): Promise<SharedTokenBundle> => {
+    try {
+      return await rotate(reference, bundle)
+    } catch (cause) {
+      if (isTransient(cause)) await publish(reference, operationId, bundle).catch(() => {})
+      throw cause
     }
   }
   const commitUnderLease = async (
@@ -231,11 +260,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
     acquire: (generation: number, operationId: string) =>
       config.coordinate(reference.id, { action: "acquire", generation, operationId }),
     start: (operationId: string) =>
-      config.coordinate(reference.id, { action: "start", operationId }),
-    release: (operationId: string) =>
-      config.coordinate(reference.id, { action: "release", operationId }),
-    commit: (operationId: string, sealed: string) =>
-      config.coordinate(reference.id, { action: "commit", operationId, sealed })
+      config.coordinate(reference.id, { action: "start", operationId })
   })
   const outlastsOutage = (token: SharedTokenBundle, rejectedAccessToken: string | undefined) =>
     token.expiresAt > now() + OFFLINE_VALIDITY_MS && token.accessToken !== rejectedAccessToken
@@ -293,24 +318,12 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       const started = await coordinator.start(operationId)
       if (started.status !== "acquired") throw new SharedCredentialError("reauthenticate")
 
-      let rotated: SharedTokenBundle
-      try {
-        rotated = await rotate(reference, bundle)
-      } catch (cause) {
-        if (cause instanceof OAuthRefreshUnavailable) await coordinator.release(operationId)
-        throw cause
-      }
+      const rotated = await exchange(reference, operationId, bundle)
       if (hasDifferentCredentialAccount(rotated, bundle)) {
         throw new SharedCredentialError("reauthenticate")
       }
 
-      const sealed = sealSharedCredential(reference, rotated)
-      await writeReceipt(reference.id, { operationId, sealed })
-      const committed = await coordinator.commit(operationId, sealed)
-      if (committed.status !== "ready") throw new SharedCredentialError(commitFailure(committed))
-
-      await removeReceipt(reference.id)
-      return remember(reference, committed.credential)
+      return publish(reference, operationId, rotated)
     }
   }
   const forgetUnusable = (reference: SharedCredentialReference) => (cause: unknown) => {

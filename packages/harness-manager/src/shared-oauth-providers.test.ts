@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import type { HarnessAuthExec } from "./harness-auth-types.js"
-import { OAuthRefreshRejected } from "./shared-credential-types.js"
+import { OAuthRefreshRejected, OAuthRefreshUnavailable } from "./shared-credential-types.js"
 import {
   parseClaudeOAuth,
   parseCodexOAuth,
@@ -290,5 +290,15 @@ describe("shared OAuth provider adapters", () => {
 
     expect(failure).toBeInstanceOf(OAuthRefreshRejected)
     expect(failure).toMatchObject({ reason: "reauthenticate", status: 400, code: "invalid_grant" })
+  })
+
+  it.each([429, 503])("treats HTTP %i from the token endpoint as unavailable", async (status) => {
+    const bundle = parseClaudeOAuth(claude, settings, "managed")!
+    const busy = Response.json({ error: "invalid_grant" }, { status })
+
+    const failure = await refreshSharedOAuth(bundle, async () => busy).catch((cause) => cause)
+
+    expect(failure).toBeInstanceOf(OAuthRefreshUnavailable)
+    expect(failure).toMatchObject({ reason: "offline", detail: `HTTP ${status}` })
   })
 })

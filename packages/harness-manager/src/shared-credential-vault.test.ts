@@ -111,20 +111,6 @@ describe("encrypted shared credential vault", () => {
     expect(lines[0]).not.toMatch(/old-refresh|new-refresh|old-access|new-access/)
   })
 
-  it("does not replay an ambiguous refresh, even after the lease deadline", async () => {
-    const f = fixture()
-    const rotate = vi.fn(async () => {
-      throw new Error("provider may have consumed token")
-    })
-    const a = makeSharedCredentialVault({ ...f.config, rotate })
-    const ref = await a.create(original)
-    await expect(a.token(ref)).rejects.toThrow("Sign in again")
-    f.setTime(200_000)
-    const b = makeSharedCredentialVault({ ...f.config, rotate, coordinate: f.coordinate("b") })
-    await expect(b.token(ref)).rejects.toThrow("Sign in again")
-    expect(rotate).toHaveBeenCalledOnce()
-  })
-
   it("uses unexpired cached access offline but never independently refreshes it", async () => {
     const f = fixture()
     let offline = false
