@@ -22,16 +22,16 @@ const prompt = (running: Running, sessionId: string, text: string, messageId?: s
     method: "POST"
   })
 
-const readsSteersAtNextStep = ({ agents }: Running): ReadonlyArray<[string, string]> => {
-  const interrupted: Array<[string, string]> = []
+const readsSteersAtNextStep = ({ agents }: Running): ReadonlyArray<string> => {
+  const interrupted: Array<string> = []
   const load = agents.loadAgentSession.bind(agents)
   vi.spyOn(agents, "loadAgentSession").mockImplementation((...args) =>
     Effect.map(load(...args), (metadata) => ({ ...metadata, steersAtNextStep: true }))
   )
   Object.assign(agents, {
-    interruptStep: (id: string, timing: string) =>
+    interruptStep: (id: string) =>
       Effect.sync(() => {
-        interrupted.push([id, timing])
+        interrupted.push(id)
         return true
       })
   })
@@ -180,7 +180,7 @@ describe("bot conversations", () => {
     expect(await transcript(running, bot.sessionId)).toHaveLength(2)
   })
 
-  it("asks the harness to interrupt a long-running step so the bot reads a message sent mid-turn soon", async () => {
+  it("interrupts the running step at once so the bot reads a message sent mid-turn straight away", async () => {
     const { running, bot } = await startBot()
     const interrupted = readsSteersAtNextStep(running)
 
@@ -189,7 +189,7 @@ describe("bot conversations", () => {
     await prompt(running, bot.sessionId, "also do this")
 
     await waitFor(() => interrupted.length === 1)
-    expect(interrupted).toEqual([[running.agents.prompts[0]![0], "onceToolRunsLong"]])
+    expect(interrupted).toEqual([running.agents.prompts[0]![0]])
     expect(running.agents.cancellations).toEqual([])
     expect(await run(running.services.db.listVisiblePromptQueue(bot.sessionId))).toEqual([])
     expect(await transcript(running, bot.sessionId)).toEqual([

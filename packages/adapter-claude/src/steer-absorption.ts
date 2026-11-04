@@ -1,9 +1,17 @@
 import { steerSettlementEvent, type SteerOutcome } from "@codevisor/agent-runtime"
 
-import type { ClaudeSession, PendingSteer } from "./session.js"
+import type { ClaudeSession, PendingSteer, SteerMessage } from "./session.js"
 
-export const trackSteer = (session: ClaudeSession, steerId: string): void => {
-  session.pendingSteers.push({ id: steerId, startsToSkip: session.requestInFlight ? 1 : 0 })
+export const trackSteer = (
+  session: ClaudeSession,
+  steerId: string,
+  message: SteerMessage
+): void => {
+  session.pendingSteers.push({
+    id: steerId,
+    message,
+    startsToSkip: session.requestInFlight ? 1 : 0
+  })
 }
 
 export const absorbPendingSteers = (session: ClaudeSession): boolean => {

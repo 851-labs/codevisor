@@ -23,7 +23,7 @@ import { Effect } from "effect"
 
 import { metadataFor, resolveClaudeModel } from "./models.js"
 import { claudeSessionHandle } from "./session-handle.js"
-import type { ClaudeQueryFn } from "./session.js"
+import type { ClaudeQuery, ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
 import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
 import { claudeUsageLimitsFrom, claudeUsageUnavailable, readClaudeOAuthUsage } from "./usage.js"
@@ -46,7 +46,7 @@ export const makeClaudeProvider = (
   environment: ProviderEnvironment,
   config: ClaudeProviderConfig = {}
 ): AgentProvider => {
-  const queryFn = config.queryFn ?? ((input) => sdkQuery(input))
+  const queryFn = config.queryFn ?? ((input) => withQueuedMessageCancel(sdkQuery(input)))
   const getSessionInfo = config.getSessionInfo ?? sdkGetSessionInfo
   const listSdkSessions = config.listSdkSessions ?? sdkListSessions
   const scanAgentSessions = config.scanAgentSessions ?? (() => listClaudeAgentSessions())
@@ -225,6 +225,10 @@ export const makeClaudeProvider = (
 }
 
 /* v8 ignore start */
+const withQueuedMessageCancel = (q: ReturnType<typeof sdkQuery>): ClaudeQuery =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  q as ReturnType<typeof sdkQuery> & Pick<ClaudeQuery, "cancelAsyncMessage">
+
 const runClaudeVersion = (claudePath: string): Promise<string> =>
   new Promise((resolvePromise, rejectPromise) => {
     execFile(claudePath, ["--version"], { timeout: 5000 }, (error, stdout) => {

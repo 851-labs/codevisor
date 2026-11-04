@@ -1,3 +1,5 @@
+import type { UUID } from "node:crypto"
+
 import type {
   getSessionInfo as sdkGetSessionInfo,
   Options as ClaudeOptions,
@@ -13,13 +15,20 @@ import type {
 } from "@codevisor/agent-runtime"
 import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
+import type { ClaudeContentBlock } from "./attachments.js"
 import type { Deferred } from "./internal.js"
 import type { ClaudeSkillCall } from "./skill-tool.js"
 import type { ClaudeSkills, ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
+export interface SteerMessage extends SDKUserMessage {
+  readonly message: { readonly content: Array<ClaudeContentBlock>; readonly role: "user" }
+  readonly uuid: UUID
+}
+
 export interface PendingSteer {
   readonly id: string
+  message: SteerMessage
   startsToSkip: number
 }
 
@@ -67,6 +76,7 @@ export type ClaudeQuery = AsyncIterable<SDKMessage> &
     | "supportedModels"
     | "usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET"
   > & {
+    readonly cancelAsyncMessage: (messageUuid: string) => Promise<boolean>
     readonly supportedCommands: () => Promise<ReadonlyArray<ClaudeSlashCommand>>
   }
 
@@ -198,6 +208,7 @@ export interface ClaudeSession {
   pendingUserCommands: number
   interruptRequested: boolean
   stepInterrupted: boolean
+  stepInterrupt: Promise<boolean> | undefined
   truncationCount: number
   transientRetries: number
   streamRecoveries: number
@@ -222,7 +233,6 @@ export interface ClaudeSession {
   readonly skills: ClaudeSkills
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
-  toolsOpenedAt: number
   readonly finishedToolTitles: Map<string, string>
   readonly taskToolUses: Map<string, ClaudeTaskToolUse>
   readonly skillCalls: Map<string, ClaudeSkillCall>

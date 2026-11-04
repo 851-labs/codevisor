@@ -204,6 +204,7 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
   input: seed.input,
   interruptRequested: false,
   stepInterrupted: false,
+  stepInterrupt: undefined,
   key: seed.key,
   lastHarnessTitle: undefined,
   models: [],
@@ -214,7 +215,6 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
     snapshot: undefined
   },
   openToolCalls: new Set(),
-  toolsOpenedAt: 0,
   finishedToolTitles: new Map(),
   taskToolUses: new Map(),
   skillCalls: new Map(),

@@ -55,11 +55,11 @@ describe("messages steered into a harness that reads them at its next step", () 
 
   it("interrupts only the running step when the harness can, instead of cancelling the turn", async () => {
     const { agents, server, sessionId, agentSessionId } = await nextStepSession()
-    const interrupted: Array<[string, string]> = []
+    const interrupted: Array<string> = []
     Object.assign(agents, {
-      interruptStep: (id: string, timing: string) =>
+      interruptStep: (id: string) =>
         Effect.sync(() => {
-          interrupted.push([id, timing])
+          interrupted.push(id)
           return true
         })
     })
@@ -69,7 +69,7 @@ describe("messages steered into a harness that reads them at its next step", () 
       method: "POST"
     })
 
-    expect(interrupted).toEqual([[agentSessionId, "now"]])
+    expect(interrupted).toEqual([agentSessionId])
     expect(agents.cancellations).toEqual([])
   })
 

@@ -29,7 +29,7 @@ import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
 import { dropPendingSteers, trackSteer } from "./steer-absorption.js"
-import { interruptStepForSteer } from "./step-interrupts.js"
+import { interruptStepForSteer, steerMessage } from "./step-interrupts.js"
 import {
   ensureObservedTurnStarted,
   ensureTurnStarted,
@@ -185,8 +185,7 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       return pending.promise
     }),
   steersAtNextStep: true,
-  interruptStep: (timing) =>
-    adapterPromise("interruptStep", () => interruptStepForSteer(session, timing)),
+  interruptStep: adapterPromise("interruptStep", () => interruptStepForSteer(session)),
   steer: (input, steerId) =>
     adapterPromise("steer", async () => {
       if (
@@ -198,14 +197,9 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       ) {
         return false
       }
-      session.input.push({
-        message: { content: claudeContent(normalizePromptInput(input)), role: "user" },
-        parent_tool_use_id: null,
-        priority: "next",
-        session_id: session.sdkSessionId,
-        type: "user"
-      })
-      if (steerId !== undefined) trackSteer(session, steerId)
+      const message = steerMessage(session, claudeContent(normalizePromptInput(input)))
+      session.input.push(message)
+      if (steerId !== undefined) trackSteer(session, steerId, message)
       return true
     }),
   setConfigOption: (configId, value) =>

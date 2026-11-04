@@ -78,11 +78,8 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
         return steer === undefined ? Effect.succeed(false) : steer(input, steerId)
       }),
     cancel: (sessionId) => stopTurn(sessionId, "cancel", (handle) => handle.cancel),
-    interruptStep: (sessionId, timing) =>
-      Effect.suspend(() => {
-        const interruptStep = sessions.get(sessionId)?.handle.interruptStep
-        return interruptStep === undefined ? Effect.succeed(false) : interruptStep(timing)
-      }),
+    interruptStep: (sessionId) =>
+      Effect.suspend(() => sessions.get(sessionId)?.handle.interruptStep ?? Effect.succeed(false)),
     pauseForRestart: (sessionId) =>
       stopTurn(sessionId, "pauseForRestart", (handle) => handle.pauseForRestart ?? handle.cancel),
     closeAgentSession: (sessionId) =>

@@ -158,7 +158,7 @@ const interruptForSteer = async (
 const interruptStep = async (route: RouteContext, sessionId: string): Promise<boolean> => {
   const { services, fanout, config } = route
   const agentSession = await ensureAgentSessionFor(services, fanout, config.id, sessionId)
-  return interruptRunningStep(services, agentSession.sessionId, "now")
+  return interruptRunningStep(services, agentSession.sessionId)
 }
 
 const writeNoContent = (response: ServerResponse): void => {

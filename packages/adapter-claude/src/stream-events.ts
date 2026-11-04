@@ -5,7 +5,6 @@ import { isRecord, recordOf } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
 import { absorbPendingSteers } from "./steer-absorption.js"
-import { openToolCall } from "./step-interrupts.js"
 import { toolKind } from "./tool-presentation.js"
 import { ensureObservedTurnStarted, ensureTurnStarted } from "./turn-lifecycle.js"
 
@@ -125,7 +124,7 @@ const announceStreamTool = (
   parentId: string | undefined
 ): void => {
   if (HIDDEN_TOOLS.has(toolName)) return
-  openToolCall(session, toolUseId)
+  session.openToolCalls.add(toolUseId)
   void session.emit({
     kind: "session.output",
     payload: {

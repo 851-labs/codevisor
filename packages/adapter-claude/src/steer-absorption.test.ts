@@ -1,7 +1,7 @@
 import { STEER_SETTLED_UPDATE, type RuntimeEvent } from "@codevisor/agent-runtime"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import { INTERRUPTED_STEP_NOTE, LONG_TOOL_MS } from "./step-interrupts.js"
+import { INTERRUPTED_STEP_PREFIX } from "./step-interrupts.js"
 import {
   payloadOf,
   resultMessage,
@@ -52,16 +52,12 @@ const interruptStepOf = (created: Awaited<ReturnType<typeof startTestSession>>["
   return interruptStep
 }
 
-const sentTexts = (fake: FakeQuery) =>
-  fake.userMessages.map(({ message }) =>
+const receivedTexts = (fake: FakeQuery) =>
+  fake.receivedMessages.map(({ message }) =>
     typeof message.content === "string"
       ? message.content
       : message.content.map((block) => (block.type === "text" ? block.text : block.type)).join("")
   )
-
-afterEach(() => {
-  vi.useRealTimers()
-})
 
 describe("Claude steer absorption", () => {
   it("reports a steer as absorbed only once the response after the running tool starts", async () => {
@@ -136,9 +132,8 @@ describe("Claude steer absorption", () => {
     await runningTool(fake, "tool-checks")
     await run(steerOf(created)("do this instead", "queue-5"))
 
-    await expect(run(interruptStepOf(created)("now"))).resolves.toBe(true)
+    await expect(run(interruptStepOf(created))).resolves.toBe(true)
     expect(fake.interrupts).toHaveLength(1)
-    expect(sentTexts(fake)).toEqual(["run the checks", "do this instead", INTERRUPTED_STEP_NOTE])
     fake.push(resultMessage("error_during_execution"))
     fake.push(messageStart("msg-steer"))
     await fake.drain()
@@ -156,51 +151,45 @@ describe("Claude steer absorption", () => {
     await expect(promptPromise).resolves.toMatchObject({ stopReason: "end_turn" })
   })
 
+  it("prefixes the interrupted steer with a note only Claude reads", async () => {
+    const { fake, events, created } = await startTestSession()
+    void run(created.handle.prompt("run the checks"))
+    await fake.nextPrompt()
+    await runningTool(fake, "tool-checks")
+    await run(steerOf(created)("do this instead", "queue-6"))
+    await run(steerOf(created)("and then this", "queue-7"))
+
+    await run(interruptStepOf(created))
+
+    expect(receivedTexts(fake)).toEqual([
+      "run the checks",
+      `${INTERRUPTED_STEP_PREFIX}do this instead`,
+      "and then this"
+    ])
+    expect(JSON.stringify(events)).not.toContain(INTERRUPTED_STEP_PREFIX)
+  })
+
+  it("leaves a steer Claude has already taken in to reach it without an interrupt", async () => {
+    const { fake, created } = await startTestSession()
+    void run(created.handle.prompt("run the checks"))
+    await fake.nextPrompt()
+    await runningTool(fake, "tool-checks")
+    await run(steerOf(created)("do this instead", "queue-8"))
+    fake.takeQueuedMessages()
+
+    await expect(run(interruptStepOf(created))).resolves.toBe(true)
+
+    expect(fake.interrupts).toEqual([])
+    expect(receivedTexts(fake)).toEqual(["run the checks", "do this instead"])
+  })
+
   it("declines to interrupt a step when no steer is waiting", async () => {
     const { fake, created } = await startTestSession()
     void run(created.handle.prompt("run the checks"))
     await fake.nextPrompt()
 
-    await expect(run(interruptStepOf(created)("now"))).resolves.toBe(false)
+    await expect(run(interruptStepOf(created))).resolves.toBe(false)
     expect(fake.interrupts).toEqual([])
-  })
-
-  it("interrupts a steered tool only once it has run long, telling Claude nothing was rejected", async () => {
-    vi.useFakeTimers()
-    const { fake, created } = await startTestSession()
-    void run(created.handle.prompt("run the checks"))
-    await fake.nextPrompt()
-    await runningTool(fake, "tool-checks")
-    await vi.advanceTimersByTimeAsync(4_000)
-    await run(steerOf(created)("do this instead", "queue-6"))
-
-    await expect(run(interruptStepOf(created)("onceToolRunsLong"))).resolves.toBe(true)
-    await vi.advanceTimersByTimeAsync(LONG_TOOL_MS - 4_001)
-    expect(fake.interrupts).toEqual([])
-    expect(sentTexts(fake)).toEqual(["run the checks", "do this instead"])
-
-    await vi.advanceTimersByTimeAsync(1)
-    await fake.waitFor(() => fake.interrupts.length === 1)
-    expect(sentTexts(fake)).toEqual(["run the checks", "do this instead", INTERRUPTED_STEP_NOTE])
-  })
-
-  it("leaves a steered tool that finishes quickly to hand Claude the steer at the next step", async () => {
-    vi.useFakeTimers()
-    const { fake, events, created } = await startTestSession()
-    void run(created.handle.prompt("run the checks"))
-    await fake.nextPrompt()
-    await runningTool(fake, "tool-checks")
-    await run(steerOf(created)("do this instead", "queue-7"))
-    await run(interruptStepOf(created)("onceToolRunsLong"))
-
-    fake.push(toolResult("tool-checks"))
-    fake.push(messageStart("msg-after-tool"))
-    await fake.drain()
-    await vi.advanceTimersByTimeAsync(LONG_TOOL_MS)
-
-    expect(fake.interrupts).toEqual([])
-    expect(sentTexts(fake)).toEqual(["run the checks", "do this instead"])
-    expect(settlements(events).map((payload) => payload.steerId)).toEqual(["queue-7"])
   })
 
   it("reports pending steers as dropped when the session closes", async () => {

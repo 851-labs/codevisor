@@ -127,6 +127,26 @@ export class FakeQuery {
     return undefined
   }
 
+  private readonly takenMessages = new Set<string>()
+  readonly cancelledMessages = new Set<string>()
+
+  get receivedMessages(): ReadonlyArray<SDKUserMessage> {
+    return this.userMessages.filter(
+      ({ uuid }) => uuid === undefined || !this.cancelledMessages.has(uuid)
+    )
+  }
+
+  takeQueuedMessages(): void {
+    for (const { uuid } of this.userMessages) if (uuid !== undefined) this.takenMessages.add(uuid)
+  }
+
+  async cancelAsyncMessage(messageUuid: string): Promise<boolean> {
+    this.changed()
+    if (this.takenMessages.has(messageUuid) || this.cancelledMessages.has(messageUuid)) return false
+    this.cancelledMessages.add(messageUuid)
+    return true
+  }
+
   async request(request: Record<string, unknown>): Promise<undefined> {
     this.controlRequests.push(request)
     this.changed()
