@@ -40,6 +40,7 @@ export const insertSessionRow = (
       request.updatedAt ?? null,
       request.updatedAt ?? request.createdAt ?? now,
       request.parentSessionId == null ? null : canonicalUuid(request.parentSessionId),
+      request.createdBy ?? null,
       serializeLabels(request.labels),
       JSON.stringify(request.configSelections ?? {})
     )
@@ -174,9 +175,9 @@ const sessionSql = {
   insert: `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
             title, origin, worktree_name, workspace_id, created_at, updated_at,
-            sidebar_state, sidebar_state_changed_at, parent_session_id, labels,
+            sidebar_state, sidebar_state_changed_at, parent_session_id, created_by, labels,
             config_selections
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?)`,
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?, ?)`,
   pendingQuestion: "select pending_question from sessions where id = ?",
   update: `update sessions set
               title = case

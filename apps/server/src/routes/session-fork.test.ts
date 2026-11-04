@@ -126,6 +126,7 @@ describe("POST /v1/sessions/:id/fork", () => {
     const original = await run(running.services.db.getSessionSummary(chat.sessionId))
     expect(forked).toMatchObject({
       parentSessionId: chat.sessionId,
+      createdBy: "user",
       projectId: original.projectId,
       harnessAccountId: account.id,
       title: "First chat (fork)",

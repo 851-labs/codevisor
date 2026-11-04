@@ -205,6 +205,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var pendingPlanApproval: Bool? = nil
   public var latestBotMessage: BotMessagePreview? = nil
   public var parentSessionId: String? = nil
+  public var createdBy: SessionCreator? = nil
 
   public func chatSession(serverId scopedServerId: String) throws -> ChatSession {
     guard let uuid = UUID(uuidString: id) else {
@@ -243,7 +244,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
       actionRequiredKind: actionRequiredKind,
       pendingPlanApproval: pendingPlanApproval ?? false,
       latestBotMessage: latestBotMessage,
-      parentSessionId: parentSessionId
+      parentSessionId: parentSessionId,
+      createdBy: createdBy
     )
   }
 
@@ -274,7 +276,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool? = nil,
     latestBotMessage: BotMessagePreview? = nil,
-    parentSessionId: String? = nil
+    parentSessionId: String? = nil,
+    createdBy: SessionCreator? = nil
   ) {
     self.id = id
     self.projectId = projectId
@@ -303,6 +306,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.pendingPlanApproval = pendingPlanApproval
     self.latestBotMessage = latestBotMessage
     self.parentSessionId = parentSessionId
+    self.createdBy = createdBy
   }
 }
 

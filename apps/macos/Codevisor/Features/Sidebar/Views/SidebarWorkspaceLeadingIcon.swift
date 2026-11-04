@@ -10,10 +10,10 @@ struct SidebarWorkspaceLeadingIcon: View {
 
   var body: some View {
     switch icon {
-    case let .chat(session):
+    case let .chat(session, isQuiet):
       ChatSessionLeadingIcon(
         session: session, store: store, activityColor: color, statusColor: statusColor,
-        iconSize: SidebarRowIcon.size
+        iconSize: SidebarRowIcon.size, isQuiet: isQuiet
       )
       .foregroundStyle(color)
     case .workingTerminal:

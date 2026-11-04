@@ -401,13 +401,25 @@ struct HomeSidebarList: View {
 
   private func workspaceExpansion(_ workspace: HomeSidebarWorkspace) -> Binding<Bool> {
     guard !workspace.children.isEmpty else { return tabExpansion(workspace.id) }
-    return groupExpansion(SidebarRows.childrenGroupID(workspace.id))
+    return childrenExpansion(workspace)
+  }
+
+  private func childrenExpansion(_ workspace: HomeSidebarWorkspace) -> Binding<Bool> {
+    animated(
+      Binding(
+        get: { childrenExpanded(workspace) },
+        set: { SidebarChildDisclosure.choose($0, for: workspace.id) }
+      ))
+  }
+
+  private func childrenExpanded(_ workspace: HomeSidebarWorkspace) -> Bool {
+    SidebarChildDisclosure.current().isExpanded(workspace.id, startsCollapsed: workspace.childrenStartCollapsed)
   }
 
   private func isExpanded(_ workspace: HomeSidebarWorkspace) -> Bool {
     workspace.children.isEmpty
       ? expandedWorkspaceIDs.contains(workspace.id.uuidString)
-      : !collapsedGroupIDs.contains(SidebarRows.childrenGroupID(workspace.id))
+      : childrenExpanded(workspace)
   }
 
   private func tabExpansion(_ id: UUID) -> Binding<Bool> {

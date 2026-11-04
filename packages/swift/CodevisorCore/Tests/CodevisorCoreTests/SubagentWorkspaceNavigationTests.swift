@@ -38,6 +38,28 @@ struct SubagentWorkspaceNavigationTests {
     #expect(parents == [parent.id: nil, child.id: parent.id, fromRemote.id: nil, fromGone.id: nil])
   }
 
+  @Test("A child's link records whether an agent made it; forks and records without a creator count as the user's")
+  func parentLinkRecordsAgentChildren() async {
+    let lead = ChatSession(projectId: project.id, serverId: "m", title: "Lead")
+    func child(_ title: String, createdBy: SessionCreator?) -> ChatSession {
+      ChatSession(
+        projectId: project.id, serverId: "m", title: title, parentSessionId: lead.id.uuidString, createdBy: createdBy)
+    }
+    let spawned = child("Spawned", createdBy: .agent)
+    let forked = child("Fork", createdBy: .user)
+    let legacy = child("Old", createdBy: nil)
+    let workspaces = [workspace(lead), workspace(spawned), workspace(forked), workspace(legacy)]
+    let fixture = NavigationFixture()
+
+    await fixture.install(
+      machineId: "m", projects: [project], sessions: [lead, spawned, forked, legacy], workspaces: workspaces)
+
+    let agentMade = Dictionary(
+      uniqueKeysWithValues: fixture.store.workspaceEntries.sidebar.map { ($0.id, $0.parent?.isAgentMade) })
+    #expect(agentMade.count == 4)
+    #expect(workspaces.map { agentMade[$0.id] ?? nil } == [nil, true, false, false])
+  }
+
   @Test("A parent link that arrives later nests the workspace without any workspace change")
   func lateParentLinkNests() async {
     let lead = ChatSession(projectId: project.id, serverId: "m", title: "Lead")
@@ -65,5 +87,8 @@ struct SubagentWorkspaceNavigationTests {
 
     #expect(try decode("{\(base)}").parentSessionId == nil)
     #expect(try decode(#"{\#(base),"parentSessionId":"abc"}"#).parentSessionId == "abc")
+    #expect(try decode("{\(base)}").createdBy == nil)
+    #expect(try decode(#"{\#(base),"createdBy":"agent"}"#).createdBy == .agent)
+    #expect(try decode(#"{\#(base),"createdBy":"automation"}"#).createdBy == .user)
   }
 }

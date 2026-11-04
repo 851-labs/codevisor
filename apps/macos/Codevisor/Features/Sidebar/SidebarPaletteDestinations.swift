@@ -4,6 +4,7 @@ import CodevisorUI
 struct SidebarPaletteDestinations {
   let groups: [SidebarWorkspaceGroup]
   let rowContent: SidebarRowContent
+  let quiet: QuietChildren
   let activate: @MainActor (SidebarWorkspaceListItem) -> Void
 
   var items: [CommandPaletteItem] {
@@ -25,7 +26,7 @@ struct SidebarPaletteDestinations {
     return CommandPaletteItem(
       id: "workspace:\(workspace.id)", title: title,
       subtitle: details.isEmpty ? nil : details.joined(separator: " · "),
-      icon: .workspace(rowContent.icon(for: item)), searchTerms: details
+      icon: .workspace(rowContent.icon(for: item, isQuiet: quiet.contains(workspace.id))), searchTerms: details
     ) { activate(item) }
   }
 
