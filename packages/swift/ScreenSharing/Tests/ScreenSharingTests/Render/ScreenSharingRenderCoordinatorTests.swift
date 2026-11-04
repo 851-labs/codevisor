@@ -48,6 +48,9 @@ struct ScreenSharingRenderCoordinatorTests {
     private let lock = NSLock()
     private var items: [@Sendable @MainActor () -> Void] = []
     var hop: ScreenSharingRenderCoordinator.Hop { { [self] work in self.lock.withLock { self.items.append(work) } } }
+    var later: ScreenSharingRenderCoordinator.Later {
+      { [self] _, work in self.lock.withLock { self.items.append(work) } }
+    }
     var pending: Int { lock.withLock { items.count } }
     @MainActor func drain() -> Int {
       let work = lock.withLock {
@@ -70,9 +73,11 @@ struct ScreenSharingRenderCoordinatorTests {
     let coordinator: ScreenSharingRenderCoordinator
     let draws = Counter()
     @MainActor final class Counter { var value = 0 }
-    init(renderOnArrival: Bool) {
+    init(renderOnArrival: Bool, holdsUntilLater: Bool = true) {
+      let later: ScreenSharingRenderCoordinator.Later
+      if holdsUntilLater { later = { _, _ in } } else { later = queue.later }
       coordinator = ScreenSharingRenderCoordinator(
-        mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, hop: queue.hop)
+        mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, hop: queue.hop, later: later)
       let draws = draws
       coordinator.bind { draws.value += 1 }
     }
@@ -87,6 +92,42 @@ struct ScreenSharingRenderCoordinatorTests {
 
   private func frame(_ buffer: CVPixelBuffer, rtp: UInt32 = 7, receivedAt: Double? = 1.0) -> ScreenSharingVideoFrame {
     .init(pixelBuffer: buffer, timestampNs: Int64(rtp), rtpTimestamp: rtp, receivedAtSeconds: receivedAt)
+  }
+
+  @Test func aFrameThatPresentsFirstHoldsTheNextUntilItIsOnGlass() throws {
+    let f = Fixture(renderOnArrival: true)
+    let first = ScreenSharingVideoFrame(
+      pixelBuffer: try makeBuffer(), timestampNs: 1, rtpTimestamp: 1, presentsBeforeNext: true)
+    f.mailbox.put(first)
+    let selected = try #require(f.coordinator.select())
+    let submission = ControlledSubmission()
+    f.coordinator.commit(
+      submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 2)
+    f.mailbox.put(frame(try makeBuffer(), rtp: 2))
+    submission.complete()
+    _ = f.queue.drain()
+
+    #expect(f.coordinator.select() == nil, "the next frame waits for the first to reach the glass")
+    submission.present(at: 3)
+    _ = f.queue.drain()
+    #expect(f.coordinator.select()?.frame.rtpTimestamp == 2)
+  }
+
+  @Test func aPresentationThatNeverReportsReleasesTheHoldAfterARefresh() throws {
+    let f = Fixture(renderOnArrival: true, holdsUntilLater: false)
+    let first = ScreenSharingVideoFrame(
+      pixelBuffer: try makeBuffer(), timestampNs: 1, rtpTimestamp: 1, presentsBeforeNext: true)
+    f.mailbox.put(first)
+    let selected = try #require(f.coordinator.select())
+    let submission = ControlledSubmission()
+    f.coordinator.commit(
+      submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 2)
+    f.mailbox.put(frame(try makeBuffer(), rtp: 2))
+    submission.complete()
+    _ = f.queue.drain()
+
+    #expect(f.coordinator.select()?.frame.rtpTimestamp == 2)
+    #expect(f.counter("presentationHoldTimeouts") == 1)
   }
 
   @Test func selectionOrderAndCachingAreUnchanged() throws {

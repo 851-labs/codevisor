@@ -44,6 +44,8 @@ package protocol ScreenSharingRenderPreparer: Sendable {
 @MainActor
 package final class ScreenSharingRenderCoordinator {
   package typealias Hop = @Sendable (_ work: @escaping @Sendable @MainActor () -> Void) -> Void
+  package typealias Later = @Sendable (_ delay: Duration, _ work: @escaping @Sendable @MainActor () -> Void) -> Void
+  package static let presentationHold = Duration.milliseconds(20)
 
   package let mailbox: ScreenSharingFrameMailbox
   package let metrics: ScreenSharingMetrics
@@ -65,12 +67,14 @@ package final class ScreenSharingRenderCoordinator {
     let receivedAt: Double?
     let sourceTimestampNs: Int64?
     let isNewFrame: Bool
+    let presentsBeforeNext: Bool
 
     init(_ frame: ScreenSharingVideoFrame, isNewFrame: Bool) {
       rtpTimestamp = frame.rtpTimestamp
       receivedAt = frame.receivedAtSeconds
       sourceTimestampNs = frame.sourceTimestampNs
       self.isNewFrame = isNewFrame
+      presentsBeforeNext = isNewFrame && frame.presentsBeforeNext
     }
   }
   private var pending: PendingPreparation?
@@ -84,18 +88,27 @@ package final class ScreenSharingRenderCoordinator {
   private var reportedSize = CGSize.zero
   private var requestDraw: @MainActor () -> Void = {}
   private let hop: Hop
+  private let later: Later
   private var occupancy = 0
+  private var presentationHold: Int?
 
   package init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool,
     redrawsOnDemand: Bool = false,
-    hop: @escaping Hop = { work in Task { @MainActor in work() } }
+    hop: @escaping Hop = { work in Task { @MainActor in work() } },
+    later: @escaping Later = { delay, work in
+      Task { @MainActor in
+        try? await Task.sleep(for: delay)
+        work()
+      }
+    }
   ) {
     self.mailbox = mailbox
     self.metrics = metrics
     self.renderOnArrival = renderOnArrival
     self.redrawsOnDemand = redrawsOnDemand
     self.hop = hop
+    self.later = later
   }
 
   package func bind(requestDraw: @escaping @MainActor () -> Void) {
@@ -127,7 +140,7 @@ package final class ScreenSharingRenderCoordinator {
   }
 
   package func select() -> (frame: ScreenSharingVideoFrame, isNewFrame: Bool)? {
-    guard !stopped, !inFlight else { return nil }
+    guard !stopped, !inFlight, presentationHold == nil else { return nil }
     let incoming = mailbox.take()
     guard let frame = incoming ?? (needsRedraw ? lastFrame : nil) else { return nil }
     lastFrame = frame
@@ -212,6 +225,7 @@ package final class ScreenSharingRenderCoordinator {
     let renderOnArrival = renderOnArrival
     let mine = occupancy
     let startedNs = ScreenSharingMetrics.nowNs
+    let hold = frame.presentsBeforeNext ? holdUntilPresented(mine) : nil
     if isNewFrame, let receivedAt = frame.receivedAt {
       metrics.observe("receiverCallbackToSubmission", milliseconds: (submittedAt - receivedAt) * 1000)
     }
@@ -238,10 +252,28 @@ package final class ScreenSharingRenderCoordinator {
       guard isNewFrame else { return }
       hop {
         guard let self, !self.stopped else { return }
+        if let hold { self.releasePresentationHold(hold) }
         self.onPresented?(frame.rtpTimestamp)
       }
     }
     submission.commit()
+  }
+
+  private func holdUntilPresented(_ hold: Int) -> Int {
+    presentationHold = hold
+    later(Self.presentationHold) { [weak self] in
+      guard let self, self.presentationHold == hold else { return }
+      self.metrics.increment("presentationHoldTimeouts")
+      self.releasePresentationHold(hold)
+    }
+    return hold
+  }
+
+  private func releasePresentationHold(_ hold: Int) {
+    guard presentationHold == hold else { return }
+    presentationHold = nil
+    guard !stopped, renderOnArrival else { return }
+    requestDraw()
   }
 
   private func releaseSlot(occupancy mine: Int) {
