@@ -193,9 +193,8 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals, NACKs,
   retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate and
   round trip at the end. `--source own-window` and `--onscreen` work as for v1. No quality loop runs: engine v2
-  follows the transport's encoder ceiling itself. The v2 viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer decode, render and on-glass times, and stages); `share.json` also lists every capture's display time, callback time, dirty-rect count and whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error). VCP (851-3819) is the default encoder since 851-3975 and records its results as `codevisor-v2-vcp`;
-  `--encoder vt` uses the public VideoToolbox encoder and records `codevisor-v2`, so a cell's baseline never mixes the
-  two encoders.
+  follows the transport's encoder ceiling itself. The v2 viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer decode, render and on-glass times, and stages); `share.json` also lists every capture's display time, callback time, dirty-rect count and whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error). `--encoder vcp` uses the VCP encoder (851-3819) and records its results as `codevisor-v2-vcp`; `--encoder vt`
+  (the default) records `codevisor-v2`, so a cell's baseline never mixes the two encoders.
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -296,9 +295,8 @@ runs `tier2-report`, which writes `report.json` and `summary.md` (also the job s
   `systems: apple-hp,codevisor-v2,codevisor-v2-vcp` compares Apple HP with v2's public and private encoders; the
   `vcp-fail-after` input (seconds, 0 by default) forces a VCP failure that far into each of its runs
   (`--vcp-fail-after`), so the run shows the VideoToolbox fallback. The v2 table has a row per v2 system and encode p95. The report counts a run as the
-  system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`. VCP has been engine
-  v2's default since 851-3975, so every v2 system other than `codevisor-v2-vcp` passes `--encoder vt` and stays the
-  public encoder's series.
+  system its engine ran: `codevisor-v2` for that system and for `codevisor` rows with `engine: v2`. Every v2 system other
+  than `codevisor-v2-vcp` passes `--encoder vt`, so it stays the public encoder's series whatever the default is.
 - `view --source codevisor --host <ipv4>` is the Codevisor viewer: a `ScreenSharingReceiver` with the
   product's `ScreenSharingVideoSurface` in a full-screen window. It reports the frame timeline summary and
   the selected candidate pair. `view --source null [--port 47594]` is the floor (C3): it draws the barcode of
