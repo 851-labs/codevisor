@@ -1,3 +1,5 @@
+import { skipHardwareCodecTests } from "./test-swift.mjs"
+
 const toolingInputs = [
   "package.json",
   "bun.lock",
@@ -17,6 +19,18 @@ const nativeInputs = [
   "scripts/net-build.lock.json",
   "scripts/build-net-swift.sh"
 ]
+
+const hardwareCodecInputs = [
+  "packages/swift/Package.swift",
+  "packages/swift/Package.resolved",
+  "packages/swift/ScreenSharing/**",
+  "packages/swift/CodevisorNet/**",
+  "packages/swift/TestSupport/**",
+  ...nativeInputs
+]
+
+const swiftTestArgs = (files) =>
+  files.some((file) => matchesAny(file, hardwareCodecInputs)) ? [] : [skipHardwareCodecTests]
 
 const alwaysStep = (name) => ({
   name,
@@ -48,10 +62,10 @@ const turboStep = (name) => ({
   }
 })
 
-const pathStep = (name, lane, patterns, command = ["bun", "run", name]) => ({
+const pathStep = (name, lane, patterns) => ({
   name,
   lane,
-  command: () => command,
+  command: () => ["bun", "run", name],
   select: ({ files, context }) => {
     const inputs = files.filter((file) =>
       matchesAny(file, typeof patterns === "function" ? patterns(context) : patterns)
@@ -93,12 +107,20 @@ const checkSteps = [
     ".swiftlint-baseline.json",
     "scripts/swift-lint.mjs"
   ]),
-  pathStep(
-    "swift:test",
-    "swift",
-    (context) => ["packages/swift/**", ...nativeInputs, ...swiftTestScript(context)],
-    ["node", "scripts/test-swift.mjs"]
-  )
+  {
+    name: "swift:test",
+    lane: "swift",
+    command: (args) => ["node", "scripts/test-swift.mjs", ...args],
+    toolingArgs: swiftTestArgs,
+    select: ({ files, context }) => {
+      const inputs = files.filter((file) =>
+        matchesAny(file, ["packages/swift/**", ...nativeInputs, ...swiftTestScript(context)])
+      )
+      return inputs.length === 0
+        ? undefined
+        : { inputs, args: swiftTestArgs(inputs), reason: inputs[0] }
+    }
+  }
 ]
 
 export function planChecks({ files: changed, all = false, context }) {
@@ -112,7 +134,8 @@ export function planChecks({ files: changed, all = false, context }) {
   return checkSteps.map((step) => {
     if (step.always) return { step, run: true, args: [], inputs: files, reason: "always" }
     if (all || tooling !== undefined) {
-      return { step, run: true, args: [], inputs: files, reason: all ? "--all" : tooling }
+      const args = all ? [] : (step.toolingArgs?.(files) ?? [])
+      return { step, run: true, args, inputs: files, reason: all ? "--all" : tooling }
     }
     const selection = step.select({ files, context })
     if (selection === undefined) {

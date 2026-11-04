@@ -4,7 +4,14 @@ import { basename, join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { mainSerialExecutorFilter, mainSerialExecutorSuites, runSwiftTests } from "./test-swift.mjs"
+import {
+  hardwareCodecFilter,
+  hardwareCodecSuites,
+  mainSerialExecutorFilter,
+  mainSerialExecutorSuites,
+  runSwiftTests,
+  skipHardwareCodecTests
+} from "./test-swift.mjs"
 
 const testRoots = ["../packages/swift", "../apps/macos/Tests/Transcript"].map((path) =>
   fileURLToPath(new URL(path, import.meta.url))
@@ -30,6 +37,15 @@ test("every Swift suite that changes the global executor is isolated", () => {
     suites.toSorted((a, b) => a.localeCompare(b)),
     [...mainSerialExecutorSuites].toSorted((a, b) => a.localeCompare(b))
   )
+})
+
+test("every Swift suite that takes the hardware codec lock can be skipped", () => {
+  const lockedSuites = testRoots
+    .flatMap(testSources)
+    .filter((path) => /@Suite\([^)]*\.hardwareCodecLock/.test(readFileSync(path, "utf8")))
+    .map((path) => basename(path, ".swift"))
+  assert.ok(lockedSuites.length > 0)
+  for (const suite of lockedSuites) assert.ok(hardwareCodecSuites.includes(suite), suite)
 })
 
 test("Swift tests use Swift Testing, because swift:test runs them without XCTest", () => {
@@ -75,6 +91,34 @@ test("test selections are complementary and unrelated suites cannot enter the is
   for (const arg of ["--filter", "--filter=OtherTests", "--skip", "--package-path", "-s"]) {
     await assert.rejects(runSwiftTests([arg], recorder(1)), /cannot forward/)
   }
+})
+
+test("skipping the hardware codec tests removes them from both test runs and nothing else", async () => {
+  const { calls, run, runBundles } = recorder()
+  assert.equal(await runSwiftTests([skipHardwareCodecTests, "--parallel"], { run, runBundles }), 0)
+  const [build, bundles, isolated] = calls
+  assert.ok(!build.includes(skipHardwareCodecTests) && !build.includes("--skip"))
+  for (const selection of [bundles, isolated]) {
+    assert.ok(!selection.includes(skipHardwareCodecTests))
+    assert.ok(selection.includes("--parallel"))
+    assert.equal(selection[selection.lastIndexOf("--skip") + 1], hardwareCodecFilter)
+  }
+  assert.equal(bundles[bundles.indexOf("--skip") + 1], mainSerialExecutorFilter)
+  assert.equal(isolated[isolated.indexOf("--filter") + 1], mainSerialExecutorFilter)
+  const pattern = new RegExp(hardwareCodecFilter)
+  for (const id of [
+    "ScreenSharingTests.HardwareCodecTests/ScreenSharingCodecRoundTripTests/hevcRoundTrips()",
+    "ScreenSharingV2Tests.HardwareCodecTests/ScreenSharingV2EngineTests/streams()",
+    "ScreenSharingWebRTCTests.ScreenSharingPeerLoopbackTests/negotiationConnects()"
+  ]) {
+    assert.ok(pattern.test(id), id)
+  }
+  assert.ok(!pattern.test("ScreenSharingTests.RFBTightTests/decodesTight()"))
+  assert.ok(!pattern.test("ScreenSharingWebRTCTests.ScreenSharingCodecFactoryTests/adapters()"))
+
+  const full = recorder()
+  await runSwiftTests([], full)
+  assert.ok(full.calls.every((call) => !call.includes(hardwareCodecFilter)))
 })
 
 test("a failure in any step stops the command and preserves its exit status", async () => {

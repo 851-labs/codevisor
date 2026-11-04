@@ -16,6 +16,17 @@ export const mainSerialExecutorSuites = JSON.parse(
 
 export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})/`
 
+export const hardwareCodecSuites = [
+  "HardwareCodecTests",
+  "ScreenSharingPeerLoopbackTests",
+  "ScreenSharingHDRLoopbackTests",
+  "ScreenSharingProductProfileTests"
+]
+
+export const hardwareCodecFilter = `(${hardwareCodecSuites.join("|")})/`
+
+export const skipHardwareCodecTests = "--skip-hardware-codec-tests"
+
 export const swiftTestingOnly = ["--disable-xctest"]
 
 const swiftPackagePath = "packages/swift"
@@ -23,9 +34,11 @@ const swiftPackagePath = "packages/swift"
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 
 export async function runSwiftTests(
-  args = [],
+  options = [],
   { run = spawnSync, runBundles = runTestBundles } = {}
 ) {
+  const args = options.filter((arg) => arg !== skipHardwareCodecTests)
+  const hardwareCodecSelection = args.length < options.length ? ["--skip", hardwareCodecFilter] : []
   for (const arg of args) {
     if (/^--(?:filter|skip|package-path|specifier)(?:=|$)/.test(arg) || arg === "-s") {
       throw new Error(`Test selection is managed by swift:test; cannot forward ${arg}`)
@@ -33,10 +46,13 @@ export async function runSwiftTests(
   }
   const steps = [
     { swift: ["build", "--build-tests", "--package-path", swiftPackagePath] },
-    { bundles: swiftPackagePath, selection: ["--skip", mainSerialExecutorFilter] },
+    {
+      bundles: swiftPackagePath,
+      selection: ["--skip", mainSerialExecutorFilter, ...hardwareCodecSelection]
+    },
     {
       swift: ["test", "--package-path", swiftPackagePath, "--skip-build"],
-      selection: ["--filter", mainSerialExecutorFilter]
+      selection: ["--filter", mainSerialExecutorFilter, ...hardwareCodecSelection]
     }
   ]
   for (const step of steps) {

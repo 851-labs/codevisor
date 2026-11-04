@@ -83,6 +83,46 @@ test("Swift changes run the Swift style checks and tests, and never build iOS", 
   }
 })
 
+const swiftTestArgs = (files, options) => planned(files, options)["swift:test"]
+
+test("Swift tests skip the hardware codec suites unless screen sharing or what it builds on changed, even for tooling changes", () => {
+  for (const file of [
+    "packages/swift/UI/Button.swift",
+    "packages/swift/main-serial-executor-suites.json",
+    "packages/swift/ScreenSharingPane/Sources/Pane.swift",
+    "apps/macos/Transcript/Row.swift",
+    "scripts/swift-artifacts.mjs",
+    "scripts/test-swift.mjs",
+    "scripts/check-plan.mjs",
+    "lefthook.yml"
+  ]) {
+    assert.deepEqual(swiftTestArgs([file]), ["--skip-hardware-codec-tests"], file)
+  }
+  for (const file of [
+    "packages/swift/ScreenSharing/Sources/ScreenSharing/Encoder.swift",
+    "packages/swift/ScreenSharing/Tests/ScreenSharingWebRTCTests/LoopbackTests.swift",
+    "packages/swift/CodevisorNet/Sources/CodevisorNet/Session.swift",
+    "packages/swift/TestSupport/HardwareCodecLock.swift",
+    "packages/swift/Package.swift",
+    "packages/swift/Package.resolved",
+    "packages/net/src/lib.rs"
+  ]) {
+    assert.deepEqual(swiftTestArgs([file]), [], file)
+  }
+  assert.deepEqual(
+    swiftTestArgs([
+      "packages/swift/UI/Button.swift",
+      "packages/swift/ScreenSharing/Sources/A.swift"
+    ]),
+    []
+  )
+  assert.deepEqual(
+    swiftTestArgs(["scripts/check.mjs", "packages/swift/ScreenSharing/Sources/A.swift"]),
+    []
+  )
+  assert.deepEqual(swiftTestArgs([], { all: true }), [])
+})
+
 test("tooling changes and --all run every check", () => {
   const everything = planChecks({ files: [], context }).map(({ step }) => step.name)
   for (const options of [
