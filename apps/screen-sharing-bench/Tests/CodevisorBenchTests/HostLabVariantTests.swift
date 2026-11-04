@@ -17,7 +17,9 @@ struct HostLabVariantTests {
 
   @Test func leavesTheRefinementPolicyToTheEncoderUnlessAVariantSetsIt() throws {
     #expect(!(try HostLabVariant(parsing: "vcp=1").arguments.contains("--converge")))
-    #expect(try HostLabVariant(parsing: "converge=200").refinement == ScreenSharingV2RefinementPolicy(convergedBelowBytes: 200))
+    #expect(
+      try HostLabVariant(parsing: "converge=200").refinement
+        == ScreenSharingV2RefinementPolicy(convergedBelowBytes: 200))
   }
 
   @Test(arguments: ["queue=9", "tiles=2", "speed=1", "cursor", "vcp=2"])

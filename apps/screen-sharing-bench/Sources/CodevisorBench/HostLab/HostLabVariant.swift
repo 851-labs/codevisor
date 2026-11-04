@@ -51,7 +51,8 @@ struct HostLabVariant: Equatable, Sendable {
   var arguments: [String] {
     var arguments = [
       "--variant", name, "--queue", "\(queueDepth)", "--cursor", showsCursor ? "1" : "0", "--fps",
-      "\(framesPerSecond)", "--ltr", longTermReferences ? "1" : "0", "--vcp", encoder == .videoProcessing ? "1" : "0", "--bgra",
+      "\(framesPerSecond)", "--ltr", longTermReferences ? "1" : "0", "--vcp", encoder == .videoProcessing ? "1" : "0",
+      "--bgra",
       capturesBGRA ? "1" : "0",
     ]
     if let refinement {
