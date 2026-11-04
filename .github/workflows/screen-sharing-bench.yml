@@ -285,6 +285,9 @@ jobs:
     needs: [plan, tier1, calibration]
     if: ${{ !cancelled() && needs.plan.outputs.run == 'true' && needs.plan.outputs.tier2 == 'true' }}
     uses: ./.github/workflows/screen-sharing-bench-tier2.yml
+    permissions:
+      actions: read
+      contents: read
     secrets: inherit
 
   encode-lab:

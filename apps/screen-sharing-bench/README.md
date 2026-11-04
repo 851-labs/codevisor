@@ -212,7 +212,7 @@ Recording and Accessibility to the same build run from elsewhere, and the grants
 (see Signing and permissions). The build stays
 installed after the run, so the installed app is that of the last Tier 2 (or own-window Tier 1) dispatch. So `gh workflow run
 screen-sharing-bench-tier2.yml --ref <branch>` needs no deploy. Keep a dispatch under about 30 minutes, since the
-minis are the only ARM64 CI runners: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
+minis are the only ARM64 CI runners for this repository and lil.tech: run one scene per dispatch (`scenes` defaults to `scroll`; about 25 minutes with the floor
 and 3 repetitions of the three systems, after the build and the C5 wait for a quiet machine, up to 10 minutes). C4 runs only when
 video is among the scenes. A plan longer than 45 minutes of runs fails at once. `network` picks N0 (no shaping) or N3: the viewer job
 loads dummynet rules into the `com.apple/codevisor-bench` pf anchor (croissant's sudoers allows `dnctl` and `pfctl`),
@@ -223,6 +223,32 @@ probes (UDP 47592), which keep C2 a clean clock reference. Before each run it pr
 47596, shaped) for 5 s and records the round trip and loss that took effect (`network-check.json`, the runs table's
 "Network check"). The anchor and pipes are flushed at the start and on exit. Runs over ssh are for
 development only.
+
+The minis are organization runners shared by this repository's CI and 851-labs/lil.tech's (`check` jobs),
+on `codevisor-macos-arm64`. On a busy day they are about 90% busy and CI jobs wait 40 to 78 minutes for one. So the
+two Tier 2 jobs queue at once like any CI job, keep their place in the queue, and pair up when they start
+(`scripts/tier2-pair.sh`, which reads the run's job states through the GitHub API with the `actions: read` token).
+Each job first checks out the repository and waits for its peer job to be in progress before it builds
+anything. Seeing the peer in progress on polls 60 s apart counts as paired: a peer that has just given up its
+runner has finished by then. A job whose peer is still queued after 10 minutes skips its other steps and gives
+up its runner, and its `host-retry` or `viewer-retry` job joins the queue again at once. The other job then pairs
+with that retry. A retry waits up to an hour for its peer and then fails instead of giving up again. A job also
+fails at once if its peer ended without running the bench. `report` merges whichever jobs ran the bench (a retry
+uploads `tier2-tamale-retry` or `tier2-croissant-retry`), and runs only when both sides did. The hello rendezvous below starts only once both
+jobs are paired.
+
+Why this rule: replaying the minis' jobs from both repositories over 3 November 2026, 16:00 to 02:00 UTC, for a
+dispatch every 5 minutes:
+
+| Rule                                                            | Starved over 3 h | Time to pair, median / p90 | Mini held idle, median / p90 |
+| --------------------------------------------------------------- | ---------------- | -------------------------- | ---------------------------- |
+| Wait until both minis are idle and no CI is queued              | 75%              | 11 / 24 min                | 0 / 0 min                    |
+| Wait until no CI is queued                                      | 61%              | 16 / 43 min                | 0 / 17 min                   |
+| Wait until no CI queued before the dispatch is still waiting    | 0%               | 40 / 77 min                | 4 / 19 min                   |
+| Queue at once, hold 10 min, rejoin once, then hold up to 60 min | 0%               | 19 / 41 min                | 5 / 17 min                   |
+
+The last rule rejoins the queue in 29% of dispatches. The replay assumes the runners serve queued jobs in order,
+and it doesn't model the delay a held mini adds to CI.
 
 The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
 walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition

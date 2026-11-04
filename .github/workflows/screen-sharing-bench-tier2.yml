@@ -127,6 +127,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -153,54 +154,107 @@ env:
 jobs:
   host:
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 75
-    steps:
+    timeout-minutes: 90
+    env: &first-attempt
+      TIER2_ARTIFACT_SUFFIX: ""
+      TIER2_PAIR_HOLD_S: 600
+      TIER2_UNPAIRED: yield
+    outputs:
+      paired: ${{ steps.pair.outputs.paired }}
+    steps: &host-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
-      - uses: ./.github/actions/build-screen-sharing-bench
+      - name: Wait for the viewer job to start on croissant
+        id: pair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apps/screen-sharing-bench/scripts/tier2-pair.sh viewer "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
+      - if: steps.pair.outputs.paired == 'true'
+        uses: ./.github/actions/build-screen-sharing-bench
         with:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
       - name: Install the build where the permission grants are
+        if: steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/install-granted.sh
       - name: Host the Tier 2 runs on tamale
+        if: steps.pair.outputs.paired == 'true'
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-host.sh "$RUNNER_TEMP/results"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
+        if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-tamale
+          name: tier2-tamale${{ env.TIER2_ARTIFACT_SUFFIX }}
           path: ${{ runner.temp }}/results
 
   viewer:
     runs-on: [self-hosted, macOS, ARM64, croissant]
-    timeout-minutes: 75
-    steps:
+    timeout-minutes: 90
+    env: *first-attempt
+    outputs:
+      paired: ${{ steps.pair.outputs.paired }}
+    steps: &viewer-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           set-safe-directory: false
-      - uses: ./.github/actions/build-screen-sharing-bench
+      - name: Wait for the host job to start on tamale
+        id: pair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apps/screen-sharing-bench/scripts/tier2-pair.sh host "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
+      - if: steps.pair.outputs.paired == 'true'
+        uses: ./.github/actions/build-screen-sharing-bench
         with:
           certificate: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
       - name: Install the build where the permission grants are
+        if: steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/install-granted.sh
       - name: View the Tier 2 runs on croissant
+        if: steps.pair.outputs.paired == 'true'
         run: caffeinate -d -i -s apps/screen-sharing-bench/scripts/tier2-viewer.sh "$RUNNER_TEMP/results"
       - name: Remove any network shaping
-        if: always()
+        if: always() && steps.pair.outputs.paired == 'true'
         run: apps/screen-sharing-bench/scripts/tier2-network-reset.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
+        if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-croissant
+          name: tier2-croissant${{ env.TIER2_ARTIFACT_SUFFIX }}
           path: ${{ runner.temp }}/results
 
+  host-retry:
+    needs: host
+    if: ${{ !cancelled() && needs.host.outputs.paired == 'false' }}
+    runs-on: [self-hosted, macOS, ARM64, tamale]
+    timeout-minutes: 135
+    env: &retry
+      TIER2_ARTIFACT_SUFFIX: -retry
+      TIER2_PAIR_HOLD_S: 3600
+      TIER2_UNPAIRED: fail
+    outputs:
+      paired: ${{ steps.pair.outputs.paired }}
+    steps: *host-steps
+
+  viewer-retry:
+    needs: viewer
+    if: ${{ !cancelled() && needs.viewer.outputs.paired == 'false' }}
+    runs-on: [self-hosted, macOS, ARM64, croissant]
+    timeout-minutes: 135
+    env: *retry
+    outputs:
+      paired: ${{ steps.pair.outputs.paired }}
+    steps: *viewer-steps
+
   report:
-    needs: [host, viewer]
-    if: ${{ !cancelled() }}
+    needs: [host, viewer, host-retry, viewer-retry]
+    if: >-
+      ${{ !cancelled()
+      && (needs.host.outputs.paired == 'true' || needs.host-retry.outputs.paired == 'true')
+      && (needs.viewer.outputs.paired == 'true' || needs.viewer-retry.outputs.paired == 'true') }}
     runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 30
     steps:
