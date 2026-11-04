@@ -6,7 +6,11 @@ struct ComposerSlimBar<Field: View>: View {
     RoundedRectangle(cornerRadius: ComposerSlimAttachMenu.diameter / 2)
   }
 
+  private static var horizontalPadding: CGFloat { 14 }
+  private static var verticalPadding: CGFloat { 4 }
+
   let field: Field
+  let hasChips: Bool
   let glassNamespace: Namespace.ID?
   let onAttachPhotos: () -> Void
   let onAttachFiles: () -> Void
@@ -15,8 +19,9 @@ struct ComposerSlimBar<Field: View>: View {
     HStack(alignment: .bottom, spacing: 10) {
       ComposerSlimAttachMenu(onPhotos: onAttachPhotos, onFiles: onAttachFiles)
       field
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.top, hasChips ? Self.horizontalPadding : Self.verticalPadding)
+        .padding(.bottom, Self.verticalPadding)
         .composerGlassSurface(shape: Self.fieldShape, id: .composer, in: glassNamespace)
     }
   }

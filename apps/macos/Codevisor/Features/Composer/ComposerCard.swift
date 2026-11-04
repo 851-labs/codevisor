@@ -146,7 +146,12 @@ private extension ComposerCard {
 
   private var slimContent: some View {
     ComposerSlimBar(
-      field: editorStack, glassNamespace: glassNamespace, onAttachPhotos: pickPhotos, onAttachFiles: pickFiles)
+      field: editorStack,
+      hasChips: controller.hasComposerChips,
+      glassNamespace: glassNamespace,
+      onAttachPhotos: pickPhotos,
+      onAttachFiles: pickFiles
+    )
   }
 
   private var standardContent: some View {
