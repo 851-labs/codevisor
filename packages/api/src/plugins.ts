@@ -86,7 +86,8 @@ export const PluginInstallSpec = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("remote"),
     url: Schema.String,
-    fields: Schema.Array(ConfigField)
+    fields: Schema.Array(ConfigField),
+    authType: Schema.optional(Schema.Literal("oauth"))
   })
 ])
 export type PluginInstallSpec = typeof PluginInstallSpec.Type

@@ -87,6 +87,7 @@ export const creationFor = (
       ...base,
       transport: "http",
       url: install.url,
+      ...(install.authType === undefined ? {} : { authType: install.authType }),
       ...nonEmpty("headers", prefixed(filled, "header:"))
     }
   }

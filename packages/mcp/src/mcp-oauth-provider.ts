@@ -1,11 +1,13 @@
 import type { McpServerRecord } from "@codevisor/db"
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type {
+  AuthorizationServerMetadata,
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js"
 
+import { clientMetadataUrlFor } from "./mcp-oauth-client-metadata.js"
 import type { StoredOAuth, StoredSecrets } from "./mcp-secret-store.js"
 
 export const configuredClient = (
@@ -41,11 +43,14 @@ export const makeOAuthProvider =
   (deps: OAuthProviderDeps) =>
   (
     serverId: string,
-    savedRedirectUrl?: string
+    savedRedirectUrl?: string,
+    authorizationServer?: AuthorizationServerMetadata
   ): OAuthClientProvider & { authorizationUrl?: URL } => {
     const redirectUrl = savedRedirectUrl ?? deps.callbackUrl()
+    const clientMetadataUrl = clientMetadataUrlFor(redirectUrl, authorizationServer)
     const provider: OAuthClientProvider & { authorizationUrl?: URL } = {
       redirectUrl,
+      ...(clientMetadataUrl === undefined ? {} : { clientMetadataUrl }),
       get clientMetadata(): OAuthClientMetadata {
         return {
           client_name: "Codevisor",

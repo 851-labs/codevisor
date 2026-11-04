@@ -5,5 +5,6 @@ enum SyncedPreferences {
     ModelConfigMenu.favoriteModelsKey,
     NewChatView.favoriteProjectsKey,
     FeatureFlag.gmailPlugin.preferenceKey,
+    FeatureFlag.shopifyPlugin.preferenceKey,
   ])
 }

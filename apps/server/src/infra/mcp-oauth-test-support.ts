@@ -124,14 +124,32 @@ const registration = (body: string): Record<string, unknown> & { redirect_uris: 
   return { ...parsed, redirect_uris: parsed.redirect_uris.map(String) }
 }
 
+export interface ClientMetadataDocument {
+  readonly client_id: string
+  readonly redirect_uris: ReadonlyArray<string>
+}
+
+export interface FakeOAuthMcpOptions {
+  readonly accessTokenLifetimeSeconds?: number
+  readonly clientMetadataDocuments?: ReadonlyArray<ClientMetadataDocument>
+  readonly dynamicRegistration?: boolean
+}
+
 export const fakeOAuthMcpServer = async (
   clock: McpOAuthClock,
-  accessTokenLifetimeSeconds = 3600
+  {
+    accessTokenLifetimeSeconds = 3600,
+    clientMetadataDocuments,
+    dynamicRegistration = true
+  }: FakeOAuthMcpOptions = {}
 ) => {
   let sequence = 0
   const next = (prefix: string): string => `${prefix}-${++sequence}`
   const grants: Array<Grant> = []
   const clients = new Map<string, ReadonlyArray<string>>()
+  for (const document of clientMetadataDocuments ?? []) {
+    clients.set(document.client_id, document.redirect_uris)
+  }
   const codes = new Map<
     string,
     { readonly clientId: string; readonly redirectUri: string; readonly challenge: string }
@@ -290,7 +308,10 @@ export const fakeOAuthMcpServer = async (
           issuer: base,
           authorization_endpoint: `${base}/authorize`,
           token_endpoint: `${base}/token`,
-          registration_endpoint: `${base}/register`,
+          ...(dynamicRegistration ? { registration_endpoint: `${base}/register` } : {}),
+          ...(clientMetadataDocuments === undefined
+            ? {}
+            : { client_id_metadata_document_supported: true }),
           response_types_supported: ["code"],
           grant_types_supported: ["authorization_code", "refresh_token"],
           code_challenge_methods_supported: ["S256"],
@@ -338,7 +359,7 @@ export const fakeOAuthMcpServer = async (
       const url = new URL(authorizationUrl)
       const clientId = url.searchParams.get("client_id") ?? ""
       const redirectUri = url.searchParams.get("redirect_uri") ?? ""
-      if (!(clients.get(clientId) ?? []).includes(redirectUri)) {
+      if (!(clients.get(clientId) ?? []).some((allowed) => redirectMatches(allowed, redirectUri))) {
         throw new Error(`Unregistered redirect URI ${redirectUri} for ${clientId}`)
       }
       const code = next("code")
@@ -370,6 +391,15 @@ export const fakeOAuthMcpServer = async (
 }
 
 export type FakeOAuthMcpServer = Awaited<ReturnType<typeof fakeOAuthMcpServer>>
+
+const redirectMatches = (allowed: string, presented: string): boolean =>
+  withoutLoopbackPort(allowed) === withoutLoopbackPort(presented)
+
+const withoutLoopbackPort = (redirect: string): string => {
+  const url = new URL(redirect)
+  if (url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)) url.port = ""
+  return url.toString()
+}
 
 export const sharedCoordinator = (clock: McpOAuthClock) => {
   const records = new Map<string, CredentialRecord>()

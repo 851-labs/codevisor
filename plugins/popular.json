@@ -124,6 +124,33 @@
           }
         }
       }
+    },
+    {
+      "server": {
+        "name": "com.shopify/mcp",
+        "title": "Shopify",
+        "description": "Manage your Shopify store: products, inventory, collections, discounts, orders, customers and analytics.",
+        "version": "1.0.0",
+        "websiteUrl": "https://help.shopify.com/en/manual/ai-powered-tools/connecting-ai-tools",
+        "icons": [
+          {
+            "src": "https://setup.shopify.com/icons/shopify.png"
+          }
+        ],
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://setup.shopify.com/mcp"
+          }
+        ],
+        "_meta": {
+          "dev.codevisor/plugin": {
+            "ageRating": 4,
+            "authType": "oauth",
+            "featureFlag": "shopifyPlugin"
+          }
+        }
+      }
     }
   ]
 }

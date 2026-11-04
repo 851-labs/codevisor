@@ -5,6 +5,7 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
   case bots
   case developerMode
   case gmailPlugin
+  case shopifyPlugin
 
   var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
     case .bots: "Bots"
     case .developerMode: "Developer Mode"
     case .gmailPlugin: "Gmail Plugin"
+    case .shopifyPlugin: "Shopify Plugin"
     }
   }
 
@@ -24,6 +26,8 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
     case .developerMode: "Adds a Developer section to the command palette with tools such as the debug overlay."
     case .gmailPlugin:
       "Shows Gmail in Browse Plugins on all your devices. In testing: only @851.sh Google accounts can sign in."
+    case .shopifyPlugin:
+      "Shows Shopify in Browse Plugins on all your devices, so store owners can manage their store from a chat."
     }
   }
 
