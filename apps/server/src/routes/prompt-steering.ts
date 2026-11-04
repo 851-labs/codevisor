@@ -1,7 +1,8 @@
 import {
   isCompactPrompt,
   type AgentSessionMetadata,
-  type SteerSettlement
+  type SteerSettlement,
+  type StepInterruptTiming
 } from "@codevisor/agent-runtime"
 import type { PromptQueueItem } from "@codevisor/api"
 
@@ -37,17 +38,20 @@ export const steerClaimedPrompt = async (
   if (steer.timing === "nextStep") return holdUntilAbsorbed(services, fanout, sessionId, item)
   await recordUserPrompt(services, fanout, serverId, sessionId, steeredPrompt(item))
   await run(services.db.completePromptQueueItem(sessionId, item.id))
-  if (steer.timing === "interruptsStep") await interruptRunningStep(services, steer.agentSessionId)
+  if (steer.timing === "interruptsStep") {
+    await interruptRunningStep(services, steer.agentSessionId, "onceToolRunsLong")
+  }
   return true
 }
 
 export const interruptRunningStep = (
   services: CodevisorServerServices,
-  agentSessionId: string
+  agentSessionId: string,
+  timing: StepInterruptTiming
 ): Promise<boolean> => {
   const interrupt = services.agents.interruptStep
   if (interrupt === undefined) return Promise.resolve(false)
-  return run(interrupt(agentSessionId))
+  return run(interrupt(agentSessionId, timing))
 }
 
 export const settleSteeredPrompt = (

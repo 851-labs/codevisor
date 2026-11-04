@@ -29,6 +29,7 @@ import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
 import { dropPendingSteers, trackSteer } from "./steer-absorption.js"
+import { interruptStepForSteer } from "./step-interrupts.js"
 import {
   ensureObservedTurnStarted,
   ensureTurnStarted,
@@ -184,12 +185,8 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
       return pending.promise
     }),
   steersAtNextStep: true,
-  interruptStep: adapterPromise("interruptStep", async () => {
-    if (!interruptsStepForSteer(session)) return false
-    session.stepInterrupted = true
-    await session.q.interrupt()
-    return true
-  }),
+  interruptStep: (timing) =>
+    adapterPromise("interruptStep", () => interruptStepForSteer(session, timing)),
   steer: (input, steerId) =>
     adapterPromise("steer", async () => {
       if (
@@ -321,14 +318,6 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
     claudeSessionContextFrom(await session.q.getContextUsage())
   )
 })
-
-const interruptsStepForSteer = (session: ClaudeSession): boolean =>
-  session.turnActive &&
-  session.pendingSteers.length > 0 &&
-  !session.retired &&
-  !session.streamEnded &&
-  !session.interruptRequested &&
-  session.cancelInFlight === undefined
 
 const followModelDefaultEffort = async (session: ClaudeSession): Promise<void> => {
   const effort = session.effortDefaults.get(session.currentModel) ?? "default"

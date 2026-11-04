@@ -222,6 +222,7 @@ export interface ClaudeSession {
   readonly skills: ClaudeSkills
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
+  toolsOpenedAt: number
   readonly finishedToolTitles: Map<string, string>
   readonly taskToolUses: Map<string, ClaudeTaskToolUse>
   readonly skillCalls: Map<string, ClaudeSkillCall>

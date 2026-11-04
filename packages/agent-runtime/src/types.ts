@@ -46,6 +46,8 @@ export interface CancelResult {
   readonly resumesInterruptedTurn?: boolean
 }
 
+export type StepInterruptTiming = "now" | "onceToolRunsLong"
+
 export interface InterruptedTurnResume {
   readonly notice: string
   readonly stoppedTasks: ReadonlyArray<string>
@@ -174,7 +176,9 @@ export interface AgentSessionHandle {
   ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly steersAtNextStep?: boolean
   readonly cancel: Effect.Effect<CancelResult, AgentRuntimeError>
-  readonly interruptStep?: Effect.Effect<boolean, AgentRuntimeError>
+  readonly interruptStep?: (
+    timing: StepInterruptTiming
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly pauseForRestart?: Effect.Effect<CancelResult, AgentRuntimeError>
   readonly setMode: (modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (

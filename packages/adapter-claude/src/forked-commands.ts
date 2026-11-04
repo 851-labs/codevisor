@@ -2,6 +2,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { isRecord } from "./internal.js"
 import type { ClaudeSession, ForkedCommand } from "./session.js"
+import { openToolCall } from "./step-interrupts.js"
 import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
 
 const FORKED_COMMAND_PREFIX = "forked-command-"
@@ -125,7 +126,7 @@ export const settleForkedCommands = (session: ClaudeSession, report?: string): b
 
 const openRow = (session: ClaudeSession, parentId: string, command: ForkedCommand): void => {
   session.forkedCommands.set(parentId, command)
-  session.openToolCalls.add(parentId)
+  openToolCall(session, parentId)
   void ensureObservedTurnStarted(session)
   void session.emit({
     kind: "session.output",

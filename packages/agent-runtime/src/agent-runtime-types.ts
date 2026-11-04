@@ -22,7 +22,8 @@ import type {
   ProviderId,
   QuestionAnswer,
   RuntimeEventSink,
-  SetGoalUpdate
+  SetGoalUpdate,
+  StepInterruptTiming
 } from "./types.js"
 
 export type ProviderFactory = (environment: ProviderEnvironment) => AgentProvider
@@ -99,7 +100,10 @@ export interface AgentRuntimeService {
     steerId?: string
   ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
-  readonly interruptStep?: (sessionId: string) => Effect.Effect<boolean, AgentRuntimeError>
+  readonly interruptStep?: (
+    sessionId: string,
+    timing: StepInterruptTiming
+  ) => Effect.Effect<boolean, AgentRuntimeError>
   readonly pauseForRestart?: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
   readonly loadedAgentSessionIds: () => ReadonlyArray<string>
   readonly loadedAgentSessions: () => ReadonlyArray<LoadedAgentSessionInfo>

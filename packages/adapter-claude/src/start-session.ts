@@ -214,6 +214,7 @@ const newClaudeSession = (seed: ClaudeSessionSeed): ClaudeSession => ({
     snapshot: undefined
   },
   openToolCalls: new Set(),
+  toolsOpenedAt: 0,
   finishedToolTitles: new Map(),
   taskToolUses: new Map(),
   skillCalls: new Map(),
