@@ -72,11 +72,18 @@ no jitter buffer and no queue deeper than one frame.
   - **receive rate:** the bytes the viewer acknowledged over the last 0.5 s. It's a floor: the link carried that much.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are
-    cleared. When the receive rate is under half the estimate, the sender isn't filling the link, so the queue isn't
-    its average rate's doing and the back-off takes 15% of the estimate instead: in Tier 1 run 41701359340 scroll at
-    N5 needs 2–3 Mbit/s, and back-offs to 85% of that took a 30 Mbit/s estimate down to 2.4, after which admission
-    refused a third to half of the captures. While capped, the estimate is the cap: an app-limited receive rate doesn't pull it lower. The
-    cap grows by a quarter of itself per second since the queue last cleared, and goes once it passes the bursts. Without the cap, the next jitter-compressed burst undid every back-off:
+    cleared. When the receive rate is under half the estimate and the viewer received at least 75% of what was sent
+    over the same 0.5 s, the sender isn't filling the link, so the queue isn't its average rate's doing and the
+    back-off takes 15% of the estimate instead: in Tier 1 run 41701359340 scroll at N5 needs 2–3 Mbit/s, and
+    back-offs to 85% of that took a 30 Mbit/s estimate down to 2.4, after which admission refused a third to half of
+    the captures. Sending more than arrives is a narrower link, not a quiet sender, and goes to 85% of what arrived.
+    Back-offs are at least min(RTT, 2 × the smallest RTT) + a frame interval apart, so a long queue's inflated RTT
+    doesn't hold the next one off for seconds. While capped, the estimate is the cap: an app-limited receive rate doesn't pull it lower. The
+    cap doubles every second since the queue last cleared, and goes once it passes the bursts. Growing it by a
+    quarter of its starting value per second (PR gate 41735956891) left Tier 1's scroll at N3 near 1 Mbit/s on a
+    1 Gbit/s link after the one-Mac relay's own delay spikes, for minutes: 4 of 6 runs froze 6–9 times. In the sim a
+    link that narrows to 20 Mbit/s for 2 s is followed down within about 0.6 s and is back at 1 Gbit/s about 20
+    frames after it recovers. Without the cap, the next jitter-compressed burst undid every back-off:
     in the sim N6's estimate ran to 100–1,000 Mbit/s on a 50 Mbit/s link, with seconds of queue.
   - **queue:** the smallest of the last 8 one-way delays, over the 10 s minimum: jitter raises some samples, and a
     standing queue raises all of them (taking the latest sample let 1–2 ms of jitter ratchet the estimate down to
@@ -96,10 +103,11 @@ no jitter buffer and no queue deeper than one frame.
 - **Constrained links in the sim** (`tests/core.rs`: a 60 Hz scene whose encoder follows the ceiling every 250 ms,
   with frames sized for one interval or for all the time since the last encode, 30 s after 5 s of warm-up, seeds
   1–3): N5 keeps 56–60 frames a second at a p50 of 23–24 ms and p95 under 31 ms (RTT 20 ms), with the estimate at
-  30 Mbit/s; N6 keeps 59–60 at 46–48 ms, p95 63–72 ms (RTT 50 ms); N7 keeps 56–57 at 66–69 ms with one-interval
-  frames, and 40–46 at 74–78 ms when every frame carries the time since the last encode (RTT 100 ms, encoder at its
-  200 kbit/s minimum). Over 90 s that last case wanders by up to 50 ms per 15 s without growing. N0 and N3 are
-  unchanged. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
+  30 Mbit/s; N6 keeps 58–60 at 49–50 ms, p95 63–72 ms (RTT 50 ms); N7 keeps 55–56 at 76–78 ms, p95 120–179 ms, with
+  one-interval frames (RTT 100 ms, encoder at its 200 kbit/s minimum). When every frame carries the time since the
+  last encode, N7 drops to 31–37 frames a second at 101–118 ms, p95 under 180 ms, wandering by about 50 ms over a run
+  without a trend; the cap's quick regrowth, which real links need after a drop, probes a 1 Mbit/s link harder.
+  N0 and N3 are unchanged. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
   almost nothing.
 
 ## Using it

@@ -309,6 +309,7 @@ impl Sender {
             frame.originals_out += 1;
             frame.bytes_out += packet.len();
             self.in_flight_bytes += packet.len();
+            self.estimator.on_sent(now, packet.len());
             if frame.originals_out == frame.packets.len() {
                 frame.last_tx = Some(now);
             }
@@ -397,7 +398,8 @@ impl Sender {
                 }
                 if !feedback.lost && frame.probes == 0 {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
-                    let hold_off = self.rtt + self.config.frame_interval;
+                    let hold_off =
+                        self.rtt.min(self.min_rtt.best().unwrap_or(self.rtt) * 2) + self.config.frame_interval;
                     self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
                 }
                 if !feedback.lost {

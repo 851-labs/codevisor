@@ -15,7 +15,8 @@ const TRUSTED_SPAN_JITTERS: f64 = 2.0;
 const OVERUSE_SAMPLES: u32 = 2;
 const BACKOFF: f64 = 0.85;
 const MAX_BACKOFF: f64 = 0.5;
-const CAP_GROWTH_PER_SECOND: f64 = 0.25;
+const CAP_DOUBLING: Duration = Duration::from_secs(1);
+const LINK_LIMITED: f64 = 0.75;
 const MIN_SPAN: Duration = Duration::from_micros(100);
 const MIN_SAMPLE_BYTES: usize = 2400;
 const MIN_RATE_BPS: f64 = 300e3;
@@ -40,8 +41,8 @@ pub struct Estimator {
     initial_bps: f64,
     max_bps: f64,
     bursts: Windowed<f64>,
-    acked: VecDeque<(Instant, usize)>,
-    acked_bytes: usize,
+    acked: Throughput,
+    sent: Throughput,
     cap: Option<Cap>,
     base_delay: Windowed<i64>,
     recent_delays: VecDeque<i64>,
@@ -59,8 +60,8 @@ impl Estimator {
             initial_bps: initial_bps.clamp(MIN_RATE_BPS, max_bps),
             max_bps,
             bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
-            acked: VecDeque::new(),
-            acked_bytes: 0,
+            acked: Throughput::default(),
+            sent: Throughput::default(),
             cap: None,
             base_delay: Windowed::new(DELAY_WINDOW, Keep::Smallest),
             recent_delays: VecDeque::new(),
@@ -91,13 +92,7 @@ impl Estimator {
     }
 
     pub fn receive_bps(&self) -> Option<f64> {
-        let (oldest, oldest_bytes) = *self.acked.front()?;
-        let newest = self.acked.back()?.0;
-        let span = newest.saturating_duration_since(oldest);
-        if span < RECEIVE_WINDOW / 4 {
-            return None;
-        }
-        Some((self.acked_bytes - oldest_bytes) as f64 * 8.0 / span.as_secs_f64())
+        self.acked.bps()
     }
 
     fn queue_threshold_us(&self) -> f64 {
@@ -109,12 +104,11 @@ impl Estimator {
     }
 
     pub fn on_acked(&mut self, now: Instant, bytes: usize) {
-        while self.acked.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > RECEIVE_WINDOW) {
-            let (_, old) = self.acked.pop_front().expect("checked above");
-            self.acked_bytes -= old;
-        }
-        self.acked.push_back((now, bytes));
-        self.acked_bytes += bytes;
+        self.acked.push(now, bytes);
+    }
+
+    pub fn on_sent(&mut self, now: Instant, bytes: usize) {
+        self.sent.push(now, bytes);
     }
 
     pub fn on_delivery(&mut self, now: Instant, delivery: Delivery) {
@@ -158,7 +152,8 @@ impl Estimator {
         let estimate = self.estimate_bps();
         let receive = self.receive_bps().unwrap_or(estimate);
         let filling = receive >= estimate * MAX_BACKOFF;
-        let from = if filling { receive.min(estimate) } else { estimate };
+        let link_limited = self.sent.bps().is_some_and(|sent| receive < sent * LINK_LIMITED);
+        let from = if filling || link_limited { receive.min(estimate) } else { estimate };
         let target = (from * BACKOFF).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, bps: target });
         self.bursts.clear();
@@ -176,10 +171,33 @@ impl Estimator {
             return;
         }
         let elapsed = now.saturating_duration_since(cap.since).as_secs_f64();
-        cap.bps = cap.from_bps * (1.0 + CAP_GROWTH_PER_SECOND * elapsed);
+        cap.bps = cap.from_bps * 2f64.powf(elapsed / CAP_DOUBLING.as_secs_f64());
         if self.bursts.best().is_some_and(|burst| cap.bps >= burst) || cap.bps >= self.max_bps {
             self.cap = None;
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Throughput {
+    entries: VecDeque<(Instant, usize)>,
+    bytes: usize,
+}
+
+impl Throughput {
+    fn push(&mut self, now: Instant, bytes: usize) {
+        while self.entries.front().is_some_and(|(at, _)| now.saturating_duration_since(*at) > RECEIVE_WINDOW) {
+            let (_, old) = self.entries.pop_front().expect("checked above");
+            self.bytes -= old;
+        }
+        self.entries.push_back((now, bytes));
+        self.bytes += bytes;
+    }
+
+    fn bps(&self) -> Option<f64> {
+        let (oldest, oldest_bytes) = *self.entries.front()?;
+        let span = self.entries.back()?.0.saturating_duration_since(oldest);
+        (span >= RECEIVE_WINDOW / 4).then(|| (self.bytes - oldest_bytes) as f64 * 8.0 / span.as_secs_f64())
     }
 }
 
@@ -264,6 +282,19 @@ mod tests {
     }
 
     #[test]
+    fn a_back_off_while_sending_more_than_arrives_goes_under_what_arrived() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 1e9);
+        estimator.on_delivery(start, burst(125_000, 10 * MS));
+        for index in 0..=10 {
+            estimator.on_acked(start + 20 * MS * index, 25_000);
+            estimator.on_sent(start + 20 * MS * index, 100_000);
+        }
+        let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain((1..=10).map(|step| step * 2_000)));
+        assert_eq!(estimates.last(), Some(&(10e6 * 0.85)), "the link carried 10 of the 40 Mbit/s sent");
+    }
+
+    #[test]
     fn jitter_raises_the_queue_a_back_off_needs() {
         let start = Instant::now();
         let mut estimator = Estimator::new(100e6, 1e9);
@@ -291,11 +322,13 @@ mod tests {
         for (index, delay) in cleared.enumerate() {
             estimator.on_delay(later + 4 * MS * index as u32, OFFSET + delay, 20 * MS);
         }
-        estimator.on_delivery(later + Duration::from_secs(2), burst(125_000, 5 * MS));
         let grown = estimator.estimate_bps();
-        let expected = 60e6 * 0.85 * (1.0 + 0.25 * 2.8);
-        assert!((grown - expected).abs() < 1e3, "a quarter a second since the queue cleared at 0.2 s: {grown}");
-        estimator.on_delivery(later + Duration::from_secs(13), burst(125_000, 5 * MS));
+        let expected = 60e6 * 0.85 * 2f64.powf(0.828);
+        assert!(
+            (grown / expected - 1.0).abs() < 1e-3,
+            "doubling every second since the queue cleared at 0.2 s: {grown}"
+        );
+        estimator.on_delivery(later + Duration::from_secs(2), burst(125_000, 5 * MS));
         assert_eq!(estimator.estimate_bps(), 200e6, "and lets go once it passes the bursts");
     }
 }
