@@ -1,5 +1,6 @@
 const FOOTER_LINKS = [
   { href: "/docs", label: "Docs" },
+  { href: "/docs/gmail", label: "Gmail" },
   { href: "/support", label: "Support" },
   { href: "/terms", label: "Terms" },
   { href: "/privacy", label: "Privacy" },
