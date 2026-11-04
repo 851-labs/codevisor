@@ -43,7 +43,7 @@ enum NavigationOverlay {
     case let .expectSession(session):
       if !records.sessions.contains(where: { $0.id == session.id }) { records.sessions.append(session) }
     case let .renameSession(session):
-      updateSession(session.id, in: &records) { $0.title = session.title }
+      SharedName.renameChat(session.id, to: session.title, in: &records)
     case let .deleteSession(sessionId):
       records.sessions.removeAll { $0.id == sessionId }
       records.assignments.removeValue(forKey: sessionId)
@@ -58,10 +58,7 @@ enum NavigationOverlay {
         if session.sidebarState == .idle { session.sidebarState = .unread }
       }
     case let .renameWorkspace(workspaceId, name, hasCustomName):
-      updateWorkspace(workspaceId, in: &records) {
-        $0.name = name
-        $0.hasCustomName = hasCustomName
-      }
+      SharedName.renameWorkspace(workspaceId, to: name, byHand: hasCustomName, in: &records)
     case let .setWorkspaceArchived(workspaceId, isArchived):
       updateWorkspace(workspaceId, in: &records) {
         $0.isArchived = isArchived

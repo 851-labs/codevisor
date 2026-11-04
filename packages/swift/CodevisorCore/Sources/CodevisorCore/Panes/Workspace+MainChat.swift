@@ -14,4 +14,12 @@ extension Workspace {
     guard let mainSessionId else { return panes }
     return [mainSessionId] + panes.filter { $0 != mainSessionId }
   }
+
+  public func title(ofChat session: ChatSession) -> String {
+    sharesName(with: session) ? name : session.title
+  }
+
+  private func sharesName(with session: ChatSession) -> Bool {
+    botId == nil && session.id == mainSessionId
+  }
 }

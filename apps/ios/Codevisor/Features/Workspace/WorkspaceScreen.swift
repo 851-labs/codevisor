@@ -103,6 +103,11 @@ struct WorkspaceScreen: View {
 
   var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
 
+  func chatTitle(for id: UUID) -> String? {
+    guard let chat = session(for: id) else { return nil }
+    return resolvedWorkspace?.title(ofChat: chat) ?? chat.title
+  }
+
   var draftProjectCandidate: Project? {
     guard let remembered = environment.composerDefaults.lastProjectId(forServer: resolvedServerId)
     else { return nil }
@@ -149,9 +154,7 @@ struct WorkspaceScreen: View {
   func title(for pane: PaneDescriptorState) -> String {
     switch pane.kind {
     case .chat:
-      let title =
-        (pane.chatSessionId ?? activeSessionId)
-        .flatMap(session(for:))?.title ?? pane.name
+      let title = (pane.chatSessionId ?? activeSessionId).flatMap(chatTitle(for:)) ?? pane.name
       return title.isEmpty ? "New Chat" : title
     case .newTab:
       return "New Tab"

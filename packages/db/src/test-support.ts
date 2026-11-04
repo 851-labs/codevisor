@@ -276,10 +276,17 @@ export const rewindBotModesSql = `
   delete from schema_migrations where id = 87;
 `
 
+export const rewindOneNameSql = `
+  drop trigger workspace_name_follows_main_chat;
+  drop trigger main_chat_follows_workspace_rename;
+  drop trigger workspace_name_stays_with_main_chat;
+  drop trigger workspace_name_main_chat_changed;
+  delete from schema_migrations where id = 92;
+`
+
 export const rewindWorkspaceNamesSql = `
+  ${rewindOneNameSql}
   drop index workspaces_main_session_id;
-  drop trigger workspace_name_main_session;
-  drop trigger workspace_name_main_session_title;
   delete from schema_migrations where id = 86;
 `
 

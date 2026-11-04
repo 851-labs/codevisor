@@ -75,7 +75,7 @@ struct ArchivedWorkspaceRouteView: View {
   private func tabItem(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneTabStripItem {
     let pane = selectedPane(of: tab)
     let chatTitle = pane?.chatSessionId.flatMap {
-      environment.projectList.session($0, serverId: workspace.serverId)?.title
+      environment.projectList.session($0, serverId: workspace.serverId).map(workspace.title(ofChat:))
     }
     let title = tab.displayTitle(for: pane, chatTitle: chatTitle)
     return PaneTabStripItem(

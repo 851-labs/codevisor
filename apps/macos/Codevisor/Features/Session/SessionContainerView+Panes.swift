@@ -183,7 +183,8 @@ extension SessionContainerView {
 
   func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {
     guard let id = descriptor.chatSessionId else { return descriptor.name }
-    return environment.projectList.session(id, serverId: selectedWorkspace.serverId)?.title ?? descriptor.name
+    let chat = environment.projectList.session(id, serverId: selectedWorkspace.serverId)
+    return chat.map(selectedWorkspace.title(ofChat:)) ?? descriptor.name
   }
 }
 

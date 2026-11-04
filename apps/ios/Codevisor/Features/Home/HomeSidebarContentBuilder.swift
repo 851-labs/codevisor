@@ -186,7 +186,8 @@ struct HomeSidebarContentBuilder {
       rows.append(
         HomeSidebarTabRow(
           id: pane.id,
-          title: tab?.displayTitle(for: pane, chatTitle: chat?.title) ?? paneTitle(pane, chat: chat),
+          title: tab?.displayTitle(for: pane, chatTitle: chat.map(workspace.title(ofChat:)))
+            ?? paneTitle(pane, chat: chat, in: workspace),
           icon: paneIcon(pane, chat: chat),
           status: chat.map(status(for:)) ?? status(forTerminal: pane),
           chatSessionId: chat?.id,
@@ -208,10 +209,10 @@ struct HomeSidebarContentBuilder {
     return rows
   }
 
-  private func paneTitle(_ pane: PaneDescriptorState, chat: ChatSession?) -> String {
+  private func paneTitle(_ pane: PaneDescriptorState, chat: ChatSession?, in workspace: Workspace) -> String {
     switch pane.kind {
     case .chat:
-      let title = chat?.title ?? pane.name
+      let title = chat.map(workspace.title(ofChat:)) ?? pane.name
       return title.isEmpty ? "New Chat" : title
     case .newTab:
       return "New Tab"
