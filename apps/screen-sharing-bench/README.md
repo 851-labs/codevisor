@@ -229,12 +229,12 @@ on `codevisor-macos-arm64`. On a busy day they are about 90% busy and CI jobs wa
 two Tier 2 jobs queue at once like any CI job, keep their place in the queue, and pair up when they start
 (`scripts/tier2-pair.sh`, which reads the run's job states through the GitHub API with the `actions: read` token).
 Each job first checks out the repository and waits for its peer job to be in progress before it builds
-anything. Seeing the peer in progress on polls 45 s apart counts as paired: a peer that has just given up its
+anything. Seeing the peer in progress on polls 60 s apart counts as paired: a peer that has just given up its
 runner has finished by then. A job whose peer is still queued after 10 minutes skips its other steps and gives
 up its runner, and its `host-retry` or `viewer-retry` job joins the queue again at once. The other job then pairs
 with that retry. A retry waits up to an hour for its peer and then fails instead of giving up again. A job also
 fails at once if its peer ended without running the bench. `report` merges whichever jobs ran the bench (a retry
-uploads `tier2-tamale-retry` or `tier2-croissant-retry`). The hello rendezvous below starts only once both
+uploads `tier2-tamale-retry` or `tier2-croissant-retry`), and runs only when both sides did. The hello rendezvous below starts only once both
 jobs are paired.
 
 Why this rule: replaying the minis' jobs from both repositories over 3 November 2026, 16:00 to 02:00 UTC, for a

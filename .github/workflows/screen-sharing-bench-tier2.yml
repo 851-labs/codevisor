@@ -170,7 +170,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apps/screen-sharing-bench/scripts/tier2-pair.sh pair viewer "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
+          apps/screen-sharing-bench/scripts/tier2-pair.sh viewer "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
       - if: steps.pair.outputs.paired == 'true'
         uses: ./.github/actions/build-screen-sharing-bench
         with:
@@ -204,7 +204,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apps/screen-sharing-bench/scripts/tier2-pair.sh pair host "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
+          apps/screen-sharing-bench/scripts/tier2-pair.sh host "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
       - if: steps.pair.outputs.paired == 'true'
         uses: ./.github/actions/build-screen-sharing-bench
         with:
@@ -251,7 +251,10 @@ jobs:
 
   report:
     needs: [host, viewer, host-retry, viewer-retry]
-    if: ${{ !cancelled() }}
+    if: >-
+      ${{ !cancelled()
+      && (needs.host.outputs.paired == 'true' || needs.host-retry.outputs.paired == 'true')
+      && (needs.viewer.outputs.paired == 'true' || needs.viewer-retry.outputs.paired == 'true') }}
     runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 30
     steps:
