@@ -24,6 +24,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private var retryScheduled = false
   private var failureRetryScheduled = false
   private var refinementWakeNs: Int64?
+  private var refreshPhase: ScreenSharingV2RefreshPhase
   private var deferredCapture = false
   private var inFlight: [Int: Int] = [:]
   private static let pipelinedChanges = 2
@@ -44,7 +45,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   init(
     transport: any ScreenSharingMediaTransport, encoder: any ScreenSharingTileEncoder, metrics: ScreenSharingMetrics,
     initialBitrate: Int, scheduler: any ScreenSharingV2Scheduler,
-    refinement policy: ScreenSharingV2RefinementPolicy? = nil
+    refinement policy: ScreenSharingV2RefinementPolicy? = nil,
+    refreshPhase: ScreenSharingV2RefreshPhase = ScreenSharingV2RefreshPhase()
   ) {
     self.transport = transport
     self.encoder = encoder
@@ -55,6 +57,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     bitrate = ScreenSharingV2BitrateGovernor(initial: initialBitrate)
     policyOverride = policy
     refinement = ScreenSharingV2Refinement(passes: (policy ?? encoder.refinementPolicy).passes)
+    self.refreshPhase = refreshPhase
   }
 
   public func start() {
@@ -84,11 +87,16 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private func offer(_ capture: ScreenSharingV2Capture) {
     guard !stopped else { return }
 
+    metrics.observe("captureQueueWait", milliseconds: Double(ScreenSharingMetrics.nowNs - capture.capturedNs) / 1e6)
+    refreshPhase.observe(frameAtNs: capture.frame.timestampNs)
+    refinementWakeNs = nil
     let reported = layout.tiles(touching: capture.frame.dirtyRects)
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
     let candidates = reported.subtracting(slot.waitingTiles)
+    let comparedNs = ScreenSharingMetrics.nowNs
     let tiles = ScreenSharingV2TileComparer.changed(
       candidates, of: layout, from: previous, to: capture.frame.pixelBuffer)
+    metrics.observe("tileCompare", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
     metrics.increment("tilesUnchangedByPixels", by: candidates.count - tiles.count)
     if slot.offer(capture, tiles: tiles) { metrics.increment("captureReplacedBeforeEncode") }
     pump()
@@ -133,7 +141,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     }
     guard let last = slot.lastEncoded else { return nil }
     guard refreshing.isEmpty else { return Plan(capture: last, tiles: refreshing, isRefinement: false) }
-    guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles) else { return nil }
+    guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles, aligned: refreshPhase.aligned)
+    else { return nil }
 
     return Plan(capture: last, tiles: [tile], isRefinement: true)
   }
@@ -170,9 +179,9 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func scheduleRefinement() {
-    guard let dueNs = refinement.nextDueNs(excluding: busyTiles), refinementWakeNs.map({ dueNs < $0 }) ?? true else {
-      return
-    }
+    guard let dueNs = refinement.nextDueNs(excluding: busyTiles, aligned: refreshPhase.aligned),
+      refinementWakeNs.map({ dueNs < $0 }) ?? true
+    else { return }
 
     refinementWakeNs = dueNs
     scheduler.run(afterNs: dueNs - scheduler.nowNs, on: queue) { [self] in

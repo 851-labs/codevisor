@@ -32,13 +32,13 @@ struct ScreenSharingV2Refinement {
     remaining[tile] = nil
   }
 
-  func next(atNs nowNs: Int64, excluding busy: Set<Int>) -> Int? {
-    remaining.keys.filter { !busy.contains($0) && nowNs - (encodedNs[$0] ?? 0) >= gapNs }
+  func next(atNs nowNs: Int64, excluding busy: Set<Int>, aligned: (Int64) -> Int64 = { $0 }) -> Int? {
+    remaining.keys.filter { !busy.contains($0) && nowNs >= aligned((encodedNs[$0] ?? 0) + gapNs) }
       .min { (encodedNs[$0] ?? 0, $0) < (encodedNs[$1] ?? 0, $1) }
   }
 
-  func nextDueNs(excluding busy: Set<Int>) -> Int64? {
-    remaining.keys.filter { !busy.contains($0) }.compactMap { encodedNs[$0].map { $0 + gapNs } }.min()
+  func nextDueNs(excluding busy: Set<Int>, aligned: (Int64) -> Int64 = { $0 }) -> Int64? {
+    remaining.keys.filter { !busy.contains($0) }.compactMap { encodedNs[$0].map { aligned($0 + gapNs) } }.min()
   }
 
   mutating func clear() {
