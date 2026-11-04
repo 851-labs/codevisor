@@ -32,6 +32,7 @@ struct ScreenSharingFrameMailboxTests {
     #expect(mailbox.take()?.rtpTimestamp == 3)
     #expect(mailbox.take() == nil)
     #expect(mailbox.droppedFrames == 2)
+    #expect(mailbox.supersededPresentFirstFrames == 1)
   }
 
   @Test func ordinaryFramesStillReplaceEachOther() throws {

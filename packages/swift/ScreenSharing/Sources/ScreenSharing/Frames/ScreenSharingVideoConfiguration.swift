@@ -93,6 +93,7 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   private var latest: ScreenSharingVideoFrame?
   private var taps: [UUID: ScreenSharingFrameMailbox] = [:]
   private var replacements = 0
+  private var supersededFirst = 0
   private var onAvailable: (@Sendable () -> Void)?
   private var keepsLatest = false
 
@@ -118,6 +119,7 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
       }
       let previous = frame
       if previous != nil { replacements += 1 }
+      if previous?.presentsBeforeNext == true, value.presentsBeforeNext { supersededFirst += 1 }
       if next != nil { replacements += 1 }
       frame = value
       next = nil
@@ -166,5 +168,6 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
     }
   }
   public var droppedFrames: Int { lock.withLock { replacements } }
+  public var supersededPresentFirstFrames: Int { lock.withLock { supersededFirst } }
   public var isHolding: Bool { lock.withLock { frame != nil } }
 }

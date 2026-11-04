@@ -77,6 +77,7 @@ final class CodevisorV2Viewer {
   private func result(host: String, presentation: V2Presentation) -> CodevisorV2ViewResult {
     CodevisorV2ViewResult(
       host: host, presentation: presentation, metrics: viewer.metrics, droppedFrames: viewer.frames.droppedFrames,
+      supersededChanges: viewer.frames.supersededPresentFirstFrames,
       media: V2MediaStatistics.dictionary(transport.session.stats()),
       paths: connection.paths().map { "\($0.isRelay ? "relay" : "direct") \($0.remote) \($0.rttMs) ms" },
       control: control?.summary)

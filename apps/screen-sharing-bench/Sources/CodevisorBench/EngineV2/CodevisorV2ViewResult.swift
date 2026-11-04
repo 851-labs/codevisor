@@ -10,6 +10,7 @@ struct CodevisorV2ViewResult: Encodable {
   let labels: [String: String]
   let timings: [String: ScreenSharingMetrics.Timing]
   let mailboxDroppedFrames: Int
+  let mailboxSupersededChanges: Int
   let media: [String: Double]
   let paths: [String]
   let selectedCandidates: [String: String]
@@ -17,7 +18,7 @@ struct CodevisorV2ViewResult: Encodable {
 
   init(
     host: String, presentation: V2Presentation, metrics: ScreenSharingMetrics, droppedFrames: Int,
-    media: [String: Double], paths: [String], control: BenchViewerControlSummary?
+    supersededChanges: Int, media: [String: Double], paths: [String], control: BenchViewerControlSummary?
   ) {
     let snapshot = metrics.snapshot()
     self.host = host
@@ -27,6 +28,7 @@ struct CodevisorV2ViewResult: Encodable {
     labels = snapshot.labels
     timings = snapshot.timings
     mailboxDroppedFrames = droppedFrames
+    mailboxSupersededChanges = supersededChanges
     self.media = media
     self.paths = paths
     selectedCandidates = ["media.currentRoundTripTime": String((media["rtt_ms"] ?? 0) / 1000)]
