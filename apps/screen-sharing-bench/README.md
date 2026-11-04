@@ -588,6 +588,17 @@ CodevisorBench host-lab --scenes scroll,typing --seconds 30 --settle 5 --virtual
 - **CI.** `-f lab='tamale host-lab --scenes scroll,typing --variants base/cursor=0'` runs it in the lab job; the table
   is in the job summary.
 
+## Encoder release (851-4009)
+
+`encoder-release` checks whether the VCP tile encoder gives the Mac's hardware HEVC encoders back when it stops. In one
+process it opens and stops a `ScreenSharingVCPTileEncoder` (`--rounds`, 3 by default, at `--width` × `--height`,
+3840×2160 by default), encoding one frame each time. Before, while the first one is open, and after each round
+(`--settle` seconds later, 2 by default), it starts a second copy of itself (`--count-vt <limit>`) that opens low-latency
+VideoToolbox HEVC sessions (1920×544, one frame each) until one fails, and reports how many worked and the status that
+stopped it. A leak shows as a count that stays below `before` after a round. On an M1 Pro (macOS 27.2) the count is 32
+before, 24 while a 4-tile VCP encoder is open and 32 after every round. In CI:
+`-f lab='tamale encoder-release --rounds 3'`.
+
 ## Signing and permissions
 
 A bundle signed with a Developer ID Application identity has a designated requirement of the bundle ID plus that
