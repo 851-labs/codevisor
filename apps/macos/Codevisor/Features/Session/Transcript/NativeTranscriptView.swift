@@ -11,6 +11,7 @@ struct NativeTranscriptView: NSViewRepresentable {
   let callbacks: TranscriptSurfaceCallbacks
   let markdownRowStyle: TranscriptMarkdownRowStyle
   var topChromeHeight: CGFloat = 0
+  var addToChatShortcut: TranscriptAddToChatShortcut?
   var onInitialPresentationReady: (@MainActor () -> Void)? = nil
   var onScrollViewReady: (@MainActor (NSView) -> Void)? = nil
 
@@ -89,6 +90,7 @@ struct NativeTranscriptView: NSViewRepresentable {
     view.onInitialPresentationReady = reportInitialPresentationReady
     view.markdownRowStyle = markdownRowStyle
     view.topChromeHeight = topChromeHeight
+    view.addToChatShortcut = addToChatShortcut
     view.configureWhenOnScreen(input, callbacks: callbacks)
     if view.isInitialPresentationReady {
       reportInitialPresentationReady()
