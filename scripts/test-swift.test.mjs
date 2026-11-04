@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { readFileSync, readdirSync } from "node:fs"
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
@@ -9,6 +10,7 @@ import {
   hardwareCodecSuites,
   mainSerialExecutorFilter,
   mainSerialExecutorSuites,
+  runBundle,
   runSwiftTests,
   skipHardwareCodecTests
 } from "./test-swift.mjs"
@@ -129,4 +131,17 @@ test("a failure in any step stops the command and preserves its exit status", as
   }
   const killed = { run: () => ({ status: null, signal: "SIGTERM" }), runBundles: async () => 0 }
   assert.equal(await runSwiftTests([], killed), 1)
+})
+
+test("a test bundle that runs past its time limit is stopped and reported", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "test-swift-"))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const helper = join(directory, "stuck-helper")
+  writeFileSync(helper, "#!/bin/sh\nexec sleep 60\n")
+  chmodSync(helper, 0o755)
+
+  const result = await runBundle(helper, "Stuck.xctest", [], process.env, 100)
+
+  assert.equal(result.timedOut, true)
+  assert.equal(result.signal, "SIGKILL")
 })

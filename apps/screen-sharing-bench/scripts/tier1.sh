@@ -41,6 +41,11 @@ scenes() {
   [[ -z "$TIER1_SCENES" ]] || echo --scenes "$TIER1_SCENES"
 }
 
+engine_options() {
+  echo --engine "$1"
+  [[ "$1" != v2 ]] || echo --encoder vt
+}
+
 nightly() {
   local status=0 plan
   for plan in core gate matrix core-v2 gate-v2; do
@@ -59,7 +64,7 @@ matrix() {
 }
 
 core_v2() {
-  loopback core-v2 core-v2 "$TIER1_REPETITIONS" --networks "$core_networks" --engine v2
+  loopback core-v2 core-v2 "$TIER1_REPETITIONS" --networks "$core_networks" $(engine_options v2)
 }
 
 custom() {
@@ -72,7 +77,7 @@ gate() {
 }
 
 gate_v2() {
-  loopback gate-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}" --engine v2
+  loopback gate-v2 gate-v2 "$TIER1_REPETITIONS" "${gate_options[@]}" $(engine_options v2)
 }
 
 pr_gate() {
@@ -80,8 +85,8 @@ pr_gate() {
   for engine in ${TIER1_GATE_ENGINES//,/ }; do
     suffix="" plan=gate
     [[ "$engine" == v2 ]] && suffix=-v2 plan=gate-v2
-    loopback "first$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" --engine "$engine" &&
-      loopback "second$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" --engine "$engine" || status=1
+    loopback "first$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" $(engine_options "$engine") &&
+      loopback "second$suffix" "$plan" "$TIER1_REPETITIONS" "${gate_options[@]}" $(engine_options "$engine") || status=1
   done
   return "$status"
 }

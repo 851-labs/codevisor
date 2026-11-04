@@ -31,6 +31,8 @@ export const swiftTestingOnly = ["--disable-xctest"]
 
 const swiftPackagePath = "packages/swift"
 
+export const bundleTimeLimitMs = 10 * 60_000
+
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 
 export async function runSwiftTests(
@@ -134,6 +136,11 @@ export async function runTestBundles(packagePath, selection, run = spawnSync) {
         environment
       )
       process.stdout.write(result.output)
+      if (result.timedOut) {
+        console.error(
+          `swift:test: ${bundle} ran past ${bundleTimeLimitMs / 60_000} min and was stopped`
+        )
+      }
       if (result.code !== 0 || !/Test run with \d+ tests?/.test(result.output)) {
         console.error(
           `swift:test: ${bundle} failed or did not run (exit ${result.code}${result.signal ? `, signal ${result.signal}` : ""})`
@@ -148,14 +155,25 @@ export async function runTestBundles(packagePath, selection, run = spawnSync) {
   return status
 }
 
-function runBundle(helper, bundle, args, env) {
+export function runBundle(helper, bundle, args, env, timeLimitMs = bundleTimeLimitMs) {
   return new Promise((resolveBundle) => {
     let output = ""
+    let timedOut = false
     const child = spawn(helper, ["--test-bundle-path", bundle, ...args], { cwd: repoRoot, env })
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill("SIGKILL")
+    }, timeLimitMs)
     child.stdout.on("data", (chunk) => (output += chunk))
     child.stderr.on("data", (chunk) => (output += chunk))
-    child.once("error", (error) => resolveBundle({ code: 1, output: `${error.message}\n` }))
-    child.once("close", (code, signal) => resolveBundle({ code, output, signal }))
+    child.once("error", (error) => {
+      clearTimeout(timer)
+      resolveBundle({ code: 1, output: `${error.message}\n` })
+    })
+    child.once("close", (code, signal) => {
+      clearTimeout(timer)
+      resolveBundle({ code, output, signal, timedOut })
+    })
   })
 }
 
