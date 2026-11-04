@@ -76,6 +76,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var openMarkdownLink: (@MainActor (URL) -> Bool)?
   var markdownImageActions: MarkdownImageActions?
   var markdownWebLinkActions: MarkdownWebLinkActions?
+  var addToChatShortcut: TranscriptAddToChatShortcut?
   lazy var markdownLinkAction = MarkdownLinkAction(
     { [weak self] url in self?.openMarkdownLink?(url) ?? false },
     images: MarkdownImageActions(
@@ -371,6 +372,11 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
     isHandlingUserInput = false
     markRecentUserInput()
+  }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if window?.firstResponder === self, quotes.addButton?.performShortcut(event) == true { return true }
+    return super.performKeyEquivalent(with: event)
   }
 
   override func keyDown(with event: NSEvent) {

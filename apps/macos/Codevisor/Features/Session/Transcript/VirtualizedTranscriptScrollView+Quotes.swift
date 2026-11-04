@@ -98,7 +98,9 @@ extension VirtualizedTranscriptScrollView {
   }
 
   private func installedAddToChatButton() -> TranscriptAddToChatButton {
-    let button = quotes.addButton ?? TranscriptAddToChatButton { [weak self] in self?.addSelectionToChat() }
+    let button =
+      quotes.addButton
+      ?? TranscriptAddToChatButton(shortcut: addToChatShortcut) { [weak self] in self?.addSelectionToChat() }
     quotes.addButton = button
     transcriptDocumentView.addSubview(button, positioned: .above, relativeTo: nil)
     return button

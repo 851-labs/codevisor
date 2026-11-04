@@ -34,6 +34,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case browserZoomOut
   case browserResetZoom
 
+  case addSelectionToChat
+
   case composerSend
   case composerQueue
   case composerNewline
@@ -53,6 +55,7 @@ enum ShortcutCategory: String, CaseIterable, Identifiable, Sendable {
   case tabsAndSplits = "Tabs & Splits"
   case view = "View"
   case browser = "Browser"
+  case transcript = "Transcript"
   case composer = "Composer"
   case questionPicker = "Question Picker"
 
@@ -110,6 +113,10 @@ enum ShortcutCatalog {
       viewDefinition(for: id)
     case .browserZoomIn, .browserZoomOut, .browserResetZoom:
       browserDefinition(for: id)
+    case .addSelectionToChat:
+      ShortcutDefinition(
+        .addSelectionToChat, "Add Selection to Chat", ShortcutCombo("l", .command), category: .transcript,
+        context: "While the Add to Chat button shows for selected text")
     case .composerSend, .composerQueue, .composerNewline, .composerDismissSuggestions:
       composerDefinition(for: id)
     case .questionPickerMove, .questionPickerSelectByNumber, .questionPickerToggle, .questionPickerSubmit,
@@ -128,6 +135,10 @@ enum ShortcutCatalog {
 
   static func display(for id: ShortcutID) -> String {
     definition(for: id).displayString ?? ""
+  }
+
+  static var addToChatShortcut: TranscriptAddToChatShortcut? {
+    combo(for: .addSelectionToChat).map { TranscriptAddToChatShortcut(hint: $0.displayString, matches: $0.matches) }
   }
 
   static var all: [ShortcutDefinition] {

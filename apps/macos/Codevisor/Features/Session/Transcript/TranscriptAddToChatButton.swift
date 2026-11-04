@@ -3,8 +3,11 @@ import SwiftUI
 
 @MainActor
 final class TranscriptAddToChatButton: NSHostingView<TranscriptAddToChatButtonLabel> {
-  init(action: @escaping () -> Void) {
-    super.init(rootView: TranscriptAddToChatButtonLabel(action: action))
+  private let shortcut: TranscriptAddToChatShortcut?
+
+  init(shortcut: TranscriptAddToChatShortcut?, action: @escaping () -> Void) {
+    self.shortcut = shortcut
+    super.init(rootView: TranscriptAddToChatButtonLabel(shortcutHint: shortcut?.hint, action: action))
     isHidden = true
   }
 
@@ -27,22 +30,42 @@ final class TranscriptAddToChatButton: NSHostingView<TranscriptAddToChatButtonLa
   func hide() {
     isHidden = true
   }
+
+  func performShortcut(_ event: NSEvent) -> Bool {
+    guard !isHidden, shortcut?.matches(event) == true else { return false }
+
+    rootView.action()
+    return true
+  }
 }
 
 struct TranscriptAddToChatButtonLabel: View {
+  let shortcutHint: String?
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      Label("Add to Chat", systemImage: "text.quote")
-        .font(.callout.weight(.medium))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .contentShape(.capsule)
+      HStack(spacing: 6) {
+        Label("Add to Chat", systemImage: "text.quote")
+          .font(.callout.weight(.medium))
+        if let shortcutHint {
+          Text(shortcutHint)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
+      .contentShape(.capsule)
     }
     .buttonStyle(.plain)
     .glassEffect(.regular.interactive(), in: .capsule)
     .padding(4)
-    .help("Quote the selected text in your next message")
+    .help(helpText)
+  }
+
+  private var helpText: String {
+    guard let shortcutHint else { return "Quote the selected text in your next message" }
+    return "Quote the selected text in your next message (\(shortcutHint))"
   }
 }

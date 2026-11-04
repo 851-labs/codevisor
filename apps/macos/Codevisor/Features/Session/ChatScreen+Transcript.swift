@@ -166,6 +166,7 @@ extension ChatScreen {
             ),
             markdownRowStyle: transcriptMarkdownRowStyle,
             topChromeHeight: transcriptTopChromeHeight,
+            addToChatShortcut: ShortcutCatalog.addToChatShortcut,
             onInitialPresentationReady: {
               isInitialTranscriptReady = true
             },
