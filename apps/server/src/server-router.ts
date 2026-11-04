@@ -133,7 +133,8 @@ const resourceRouteFamilies: ReadonlyArray<RouteFamily> = [
   ({ services, config, request, response, url }) =>
     routeRoles(services, config, request, response, url),
   ({ services, request, response, url }) => routeFirstRun(services, request, response, url),
-  ({ services, request, response, url }) => routeMcps(services, request, response, url),
+  ({ services, routeState, request, response, url }) =>
+    routeMcps(services, request, response, url, routeState.oauthReturns),
   ({ services, request, response, url }) => routePluginCatalog(services, request, response, url),
   routePluginApps,
   ({ services, request, response, url }) => routeMcpScopes(services, request, response, url),

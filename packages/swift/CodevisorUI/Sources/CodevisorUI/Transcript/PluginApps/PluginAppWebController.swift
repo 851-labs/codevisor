@@ -109,14 +109,6 @@ public final class PluginAppWebController: NSObject {
     onMessage?(message)
   }
 
-  static func openExternally(_ url: URL) {
-    #if canImport(AppKit)
-      NSWorkspace.shared.open(url)
-    #else
-      UIApplication.shared.open(url)
-    #endif
-  }
-
   private func makeTransparent() {
     #if canImport(AppKit)
       webView.setValue(false, forKey: "drawsBackground")
@@ -136,7 +128,7 @@ public final class PluginAppWebController: NSObject {
     guard action.targetFrame?.isMainFrame != false else { return subframePolicy(for: url) }
     if let allowedOrigin, PluginAppOrigin(url: url) == allowedOrigin { return .allow }
 
-    if let external = PluginAppNativeMessage.externalURL(url) { Self.openExternally(external) }
+    if let external = PluginAppNativeMessage.externalURL(url) { DefaultBrowser.open(external) }
     return .cancel
   }
 
@@ -212,7 +204,7 @@ extension PluginAppWebController: WKUIDelegate {
     windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
     if let url = navigationAction.request.url, let external = PluginAppNativeMessage.externalURL(url) {
-      Self.openExternally(external)
+      DefaultBrowser.open(external)
     }
     return nil
   }

@@ -3,6 +3,7 @@ import { Schema } from "effect"
 
 import type { PluginAccounts } from "../plugins/accounts/plugin-accounts.js"
 import { HttpFailure, matchRouteParams, readSchema, writeJson } from "../server-context.js"
+import { appSchemeParameter } from "./oauth-returns.js"
 import type { RouteContext } from "./route-context.js"
 
 export const routePluginAccounts = async (route: RouteContext): Promise<boolean> => {
@@ -27,7 +28,18 @@ const routeOAuthStart = async (route: RouteContext, serverId: string): Promise<b
   if (route.request.method !== "POST") return false
   const accounts = requireAccounts(route)
   const body = await readSchema(route.request, OAuthStartBody)
-  return respond(route, await accounts.startOAuth(serverId, oauthStart(body)))
+  const started = await accounts.startOAuth(serverId, oauthStart(body))
+  rememberReturnApp(route, started.authorizationUrl)
+  return respond(route, started)
+}
+
+const rememberReturnApp = (route: RouteContext, authorizationUrl: string | undefined): void => {
+  if (authorizationUrl === undefined) return
+
+  route.routeState.oauthReturns.remember(
+    authorizationUrl,
+    route.url.searchParams.get(appSchemeParameter) ?? undefined
+  )
 }
 
 const routeIngress = async (

@@ -1,3 +1,4 @@
+import DefaultBrowser
 import Foundation
 import MarkdownCore
 import SwiftUI
@@ -212,7 +213,8 @@ public extension View {
     .environment(
       \.openURL,
       OpenURLAction { url in
-        action(url) ? .handled : .systemAction
+        if action(url) { return .handled }
+        return DefaultBrowser.open(url) ? .handled : .discarded
       }
     )
   }

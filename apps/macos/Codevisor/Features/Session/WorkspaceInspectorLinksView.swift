@@ -130,7 +130,7 @@ private struct WorkspaceInspectorLinkRow: View {
         NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
       }
       Button("Open in Default Browser") {
-        NSWorkspace.shared.open(link.url)
+        DefaultBrowser.open(link.url)
       }
     }
     .task(id: link.url) {

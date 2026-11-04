@@ -1,5 +1,6 @@
 #if canImport(AppKit)
   import AppKit
+  import DefaultBrowser
 
   extension TranscriptSurfaceTextView {
     func markdownImageMenu(at point: NSPoint) -> NSMenu? {
@@ -39,7 +40,7 @@
       let menu = NSMenu()
       if let webLinks = linkAction?.webLinks {
         let open: @MainActor (MarkdownWebLinkActions.Destination) -> Void = { destination in
-          if !webLinks.open(url, destination) { NSWorkspace.shared.open(url) }
+          if !webLinks.open(url, destination) { DefaultBrowser.open(url) }
         }
         menu.addItem(MarkdownMenuItem("Open Link in New Tab", systemImage: "plus.square.on.square") { open(.newTab) })
         menu.addItem(
@@ -52,7 +53,7 @@
         browser.map { "Open Link in \($0.deletingPathExtension().lastPathComponent)" }
           ?? "Open Link in Default Browser",
         systemImage: "safari"
-      ) { NSWorkspace.shared.open(url) }
+      ) { DefaultBrowser.open(url) }
       if let browser {
         let icon = NSWorkspace.shared.icon(forFile: browser.path)
         icon.size = NSSize(width: 16, height: 16)

@@ -13,6 +13,7 @@ struct HomeExternalRouting: ViewModifier {
   func body(content: Content) -> some View {
     content
       .onOpenURL { url in
+        if BrowserSignIn.shared.receive(url) { return }
         if openDeviceApproval(url) { return }
         if openPluginLink(url) { return }
         #if DEBUG || NAVIGATION_DIAGNOSTICS

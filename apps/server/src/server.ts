@@ -36,6 +36,7 @@ import { upgradeAllBotInstructions } from "./routes/bot-instructions.js"
 import { makeUsageHoldReleaseListener } from "./routes/bot-usage-release.js"
 import { handleUpgrade } from "./routes/events.js"
 import { fleetTurnSender } from "./routes/fleet-turns.js"
+import { makeOAuthReturns } from "./routes/oauth-returns.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import { makeSessionEventOutbox } from "./routes/session-event-outbox.js"
 import { makeSessionEventRouter } from "./routes/session-event-router.js"
@@ -142,6 +143,7 @@ export const makeCodevisorServerApp = (
     pendingSessionCreates: new Map(),
     turnHeldSessions: new Set(),
     updateSignature: {},
+    oauthReturns: makeOAuthReturns(),
     restart,
     updateRun,
     updateResume

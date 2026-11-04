@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import GhosttyKit
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 import os
 
@@ -210,7 +211,7 @@ extension CodevisorGhosttyApp {
     case GHOSTTY_ACTION_OPEN_URL:
       let payload = Ghostty.Action.OpenURL(c: action.action.open_url)
       guard payload.kind == .text, let url = URL(string: payload.url) else { return false }
-      onMain { NSWorkspace.shared.open(url) }
+      onMain { DefaultBrowser.open(url) }
 
     default:
       return false

@@ -203,9 +203,10 @@ let package = Package(
       path: "MarkdownCore/Sources/MarkdownCore",
       swiftSettings: strictSwiftSettings
     ),
+    .target(name: "DefaultBrowser", path: "DefaultBrowser/Sources/DefaultBrowser", swiftSettings: strictSwiftSettings),
     .target(
       name: "StreamMarkdown",
-      dependencies: ["MarkdownCore"],
+      dependencies: ["MarkdownCore", "DefaultBrowser"],
       path: "StreamMarkdown/Sources/StreamMarkdown",
       swiftSettings: strictSwiftSettings
     ),
@@ -427,11 +428,7 @@ let package = Package(
     .target(
       name: "CodevisorUI",
       dependencies: [
-        "CodevisorCore",
-        "CodevisorTheming",
-        "StreamMarkdown",
-        "CodeHighlighter",
-        "TranscriptKit",
+        "CodevisorCore", "CodevisorTheming", "StreamMarkdown", "DefaultBrowser", "CodeHighlighter", "TranscriptKit",
         "Autocomplete",
       ],
       path: "CodevisorUI/Sources/CodevisorUI",

@@ -4,6 +4,7 @@ import { hostname } from "node:os"
 import { HttpFailure, run, writeJson } from "../server-context.js"
 import type { CodevisorServerConfig } from "../server-context.js"
 import { liveCloudDeviceId } from "./cloud.js"
+import { appScheme, appSchemeParameter, oauthFinishedPage } from "./oauth-returns.js"
 import { isMethodRoute, respondAfter } from "./route-context.js"
 import type { RouteContext, RouteHandler } from "./route-context.js"
 
@@ -52,16 +53,20 @@ const accountGatewayUnavailable = "Account gateway unavailable"
 
 const mcpGatewayUnavailable = "MCP gateway unavailable"
 
-const oauthAuthorizedPage =
-  "<!doctype html><title>Codevisor</title><p>Authorization complete. Codevisor is connecting to the MCP server. You can close this window.</p>"
+const oauthAuthorizedMessage =
+  "Authorization complete. Codevisor is connecting to the MCP server. You can close this window."
 
-const oauthReconnectingPage =
-  "<!doctype html><title>Codevisor</title><p>Codevisor is reconnecting to the MCP server. You can close this window.</p>"
+const oauthReconnectingMessage =
+  "Codevisor is reconnecting to the MCP server. You can close this window."
 
-const pluginSignedInPage =
-  "<!doctype html><title>Codevisor</title><p>Signed in. You can return to Codevisor.</p>"
+const pluginSignedInMessage = "Signed in. You can return to Codevisor."
 
-const finishPluginOAuth = ({ services, response, url }: RouteContext): Promise<void> => {
+const finishPluginOAuth = ({
+  services,
+  routeState,
+  response,
+  url
+}: RouteContext): Promise<void> => {
   const platform = services.pluginPlatform
   if (platform === undefined) throw new HttpFailure(501, "Plugins unavailable")
   const state = url.searchParams.get("state") ?? ""
@@ -71,7 +76,10 @@ const finishPluginOAuth = ({ services, response, url }: RouteContext): Promise<v
     code,
     url.searchParams.get("error") ?? undefined
   )
-  return respondAfter(response, completing, () => writeHtml(response, pluginSignedInPage))
+  const app = routeState.oauthReturns.take(state)
+  return respondAfter(response, completing, () =>
+    writeHtml(response, oauthFinishedPage(pluginSignedInMessage, app))
+  )
 }
 
 const forwardProviderToken = ({ services, request, response }: RouteContext): Promise<void> => {
@@ -123,15 +131,16 @@ const forwardMcpGateway = ({ services, request, response }: RouteContext): Promi
   return respondAfter(response, services.mcp.handleGatewayRequest(request, response))
 }
 
-const finishMcpOAuth = ({ services, response, url }: RouteContext): Promise<void> => {
+const finishMcpOAuth = ({ services, routeState, response, url }: RouteContext): Promise<void> => {
   if (services.mcp === undefined) throw new HttpFailure(501, mcpGatewayUnavailable)
   const callback = oauthCallbackQuery(url)
   if (!hasCallbackData(callback)) throw new HttpFailure(400, "Missing OAuth callback data")
 
+  const app = routeState.oauthReturns.take(callback.state)
   return respondAfter(
     response,
     services.mcp.finishOAuth(callback.state, callback.code, callback.issuer ?? undefined),
-    () => writeHtml(response, oauthAuthorizedPage)
+    () => writeHtml(response, oauthFinishedPage(oauthAuthorizedMessage, app))
   )
 }
 
@@ -144,8 +153,11 @@ const oauthCallbackQuery = (url: URL): OAuthCallbackQuery => ({
 const hasCallbackData = (callback: OAuthCallbackQuery): callback is OAuthCallback =>
   !(callback.state === null || callback.code === null)
 
-const writeOAuthReconnecting = ({ response }: RouteContext): void =>
-  writeHtml(response, oauthReconnectingPage)
+const writeOAuthReconnecting = ({ response, url }: RouteContext): void =>
+  writeHtml(
+    response,
+    oauthFinishedPage(oauthReconnectingMessage, appScheme(url.searchParams.get(appSchemeParameter)))
+  )
 
 const writeHtml = (response: ServerResponse, page: string): void => {
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" })

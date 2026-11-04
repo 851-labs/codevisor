@@ -164,7 +164,7 @@ public final class PluginAppPage {
     case let .size(height):
       self.height = height
     case let .openLink(url):
-      PluginAppWebController.openExternally(url)
+      DefaultBrowser.open(url)
     case .frameFailed:
       phase = .failed("The app couldn’t load.")
     case let .prefersBorder(value):

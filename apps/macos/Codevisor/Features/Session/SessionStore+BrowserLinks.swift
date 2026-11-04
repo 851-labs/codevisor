@@ -44,6 +44,6 @@ extension SessionStore {
   private func openExternally(_ url: String) -> Bool {
     guard let target = BrowserLocation.navigationURL(url) else { return false }
 
-    return NSWorkspace.shared.open(target)
+    return DefaultBrowser.open(target)
   }
 }

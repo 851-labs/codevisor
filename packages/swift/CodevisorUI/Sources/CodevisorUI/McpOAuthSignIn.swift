@@ -18,7 +18,7 @@ final class McpOAuthSignIn {
   func run(_ url: URL, serverId: String, on machineId: String) async {
     let target = Awaited(serverId: serverId, machineId: machineId)
     awaited = target
-    await presenter.run(url, callbackScheme: nil)
+    await presenter.run(url)
     if awaited == target { awaited = nil }
   }
 

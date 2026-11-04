@@ -2,17 +2,9 @@ import AuthenticationServices
 import CodevisorCore
 import Foundation
 
-#if os(iOS)
-  import UIKit
-#else
-  import AppKit
-#endif
-
 @MainActor
-public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
-  private var webSession: ASWebAuthenticationSession?
-  private var webRequestID: UUID?
-  private var webCompletion: CheckedContinuation<URL, any Error>?
+public final class CloudAuthenticationCoordinator: NSObject {
+  private let browser: BrowserSignIn
   private var active = false
   #if os(iOS)
     private var appleController: ASAuthorizationController?
@@ -20,19 +12,14 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
     private var appleCompletion: CheckedContinuation<CloudAppleCredential, any Error>?
   #endif
 
-  public static var callbackScheme: String {
-    let schemes =
-      (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
-      .flatMap { ($0["CFBundleURLSchemes"] as? [String]) ?? [] } ?? []
-    let preferred = CodevisorAppVariant.isDevelopment ? "codevisor-dev" : "codevisor"
-    if schemes.contains(preferred) { return preferred }
-    return schemes.first { $0.hasPrefix("codevisor") } ?? preferred
+  public init(browser: BrowserSignIn = .shared) {
+    self.browser = browser
   }
 
   public func signIn(provider: CloudSignInProvider, cloud: CloudAccountController, link: Bool = false) async {
     guard !active else { return }
     active = true
-    defer { active = false; webSession = nil }
+    defer { active = false }
     guard let context = try? cloud.authenticationContext(link: link) else { return }
     do {
       #if os(iOS)
@@ -43,22 +30,12 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
           return
         }
       #endif
-      let url: URL
-      if link {
-        guard let connectURL = await cloud.connectAccountURL(provider: provider, scheme: Self.callbackScheme),
-          cloud.isCurrent(context)
-        else { return }
-        url = connectURL
-      } else {
-        url = cloud.signInURL(scheme: Self.callbackScheme, provider: provider)
+      guard let url = await signInPage(provider: provider, cloud: cloud, link: link), cloud.isCurrent(context) else {
+        return
       }
-      let callback = try await authorizeWeb(url)
+      guard let callback = await browser.run(url) else { return }
       guard let handoff = CloudAuthDeeplink.parse(callback) else {
-        throw CloudAccountClientError.authenticationFailed(
-          link
-            ? "Couldn't connect this account. It may already belong to another Codevisor account. Please try again."
-            : "Sign-in didn't complete. If you already have an account, sign in with that method and connect this provider in Account settings."
-        )
+        throw CloudAccountClientError.authenticationFailed(Self.incompleteMessage(link: link))
       }
       try await cloud.completeBrowserAuthentication(ott: handoff.ott, context: context)
     } catch is CancellationError {
@@ -69,57 +46,18 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
     }
   }
 
-  private func authorizeWeb(_ url: URL) async throws -> URL {
-    let requestID = UUID()
-    return try await withTaskCancellationHandler {
-      try Task.checkCancellation()
-      return try await withCheckedThrowingContinuation { completion in
-        webRequestID = requestID
-        webCompletion = completion
-        let completionHandler = Self.webAuthenticationCompletion { [weak self] callback, error in
-          self?.finishWeb(requestID: requestID, callback: callback, error: error)
-        }
-        let session = ASWebAuthenticationSession(
-          url: url, callbackURLScheme: Self.callbackScheme, completionHandler: completionHandler)
-        session.presentationContextProvider = self
-        session.prefersEphemeralWebBrowserSession = false
-        webSession = session
-        if !session.start() {
-          finishWeb(requestID: requestID, callback: nil, error: nil)
-        }
-      }
-    } onCancel: {
-      Task { @MainActor [weak self] in
-        guard self?.webRequestID == requestID else { return }
-        self?.webSession?.cancel()
-      }
-    }
+  private func signInPage(provider: CloudSignInProvider, cloud: CloudAccountController, link: Bool) async -> URL? {
+    let scheme = CodevisorDeeplinkScheme.current
+    guard link else { return cloud.signInURL(scheme: scheme, provider: provider) }
+    return await cloud.connectAccountURL(provider: provider, scheme: scheme)
   }
 
-  nonisolated static func webAuthenticationCompletion(
-    _ completion: @escaping @MainActor @Sendable (URL?, (any Error)?) -> Void
-  ) -> ASWebAuthenticationSession.CompletionHandler {
-    { @Sendable callback, error in
-      Task { @MainActor in completion(callback, error) }
+  private static func incompleteMessage(link: Bool) -> String {
+    guard link else {
+      return
+        "Sign-in didn't complete. If you already have an account, sign in with that method and connect this provider in Account settings."
     }
-  }
-
-  private func finishWeb(requestID: UUID, callback: URL?, error: (any Error)?) {
-    guard webRequestID == requestID, let completion = webCompletion else { return }
-    webRequestID = nil
-    webCompletion = nil
-    if let callback {
-      completion.resume(returning: callback)
-    } else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
-      completion.resume(throwing: CancellationError())
-    } else {
-      completion.resume(
-        throwing: CloudAccountClientError.authenticationFailed("Couldn't open sign-in. Please try again."))
-    }
-  }
-
-  nonisolated public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-    MainActor.assumeIsolated { WebAuthenticationAnchor.current }
+    return "Couldn't connect this account. It may already belong to another Codevisor account. Please try again."
   }
 }
 

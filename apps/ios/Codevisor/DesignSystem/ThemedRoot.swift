@@ -10,5 +10,6 @@ struct ThemedRoot: ViewModifier {
     content
       .environment(\.codeHighlightTheme, highlight)
       .markdownTheme(makeMarkdownTheme(highlight: highlight.map { ($0.key, $0.json) }))
+      .opensLinksInDefaultBrowser()
   }
 }

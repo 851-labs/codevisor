@@ -24,6 +24,7 @@ import { WebSocket } from "ws"
 
 import { BrowserProxy } from "./infra/browser-proxy.js"
 import { ClientControlBroker } from "./infra/client-control.js"
+import { makeOAuthReturns } from "./routes/oauth-returns.js"
 import {
   defaultServerConfig,
   EventFanout,
@@ -49,6 +50,7 @@ export const idleRouteState = (): RouteState => ({
   pendingSessionCreates: new Map(),
   turnHeldSessions: new Set(),
   updateSignature: {},
+  oauthReturns: makeOAuthReturns(),
   restartHeldSessions: new Map(),
   restart: idleRestartCoordinator(),
   updateRun: idleUpdateRun(),

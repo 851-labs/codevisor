@@ -171,7 +171,7 @@ extension HarnessAuthenticationView {
     }
     loginStep = .flow(next)
     if next.kind != "deviceCode", let value = next.url ?? next.verificationUrl, let url = URL(string: value) {
-      NSWorkspace.shared.open(url)
+      DefaultBrowser.open(url)
     }
     pollingTask?.cancel()
     pollingTask = Task { await poll(accountId: account.id) }

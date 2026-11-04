@@ -139,7 +139,7 @@ public final class PluginSetupModel {
       let url = URL(string: start.authorizationUrl)
     else { return }
 
-    await working { await webSignIn.run(url, callbackScheme: nil) }
+    await working { await webSignIn.run(url) }
   }
 
   private func startSignIn(to server: ServerMcpServer) async throws -> ServerMcpOAuthStart {

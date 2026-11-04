@@ -33,6 +33,7 @@ import type { PluginCatalog } from "./plugins/plugin-catalog.js"
 import type { PluginPlatform } from "./plugins/plugin-platform.js"
 import type { RestartCoordinator } from "./restart-drain.js"
 import type { AutoResumeScheduler } from "./routes/auto-resume-scheduler.js"
+import type { OAuthReturns } from "./routes/oauth-returns.js"
 import type { Simulators } from "./simulators.js"
 import type { UpdateResumer } from "./update-resume.js"
 import type { UpdateRun } from "./update-run.js"
@@ -191,6 +192,7 @@ export interface RouteState {
   readonly updateRun: UpdateRun
   readonly updateResume: UpdateResumer
   readonly updateSignature: { value?: string }
+  readonly oauthReturns: OAuthReturns
   autoResume?: AutoResumeScheduler
   pluginEvents?: PluginEvents | undefined
   pluginDiscovery?: PluginDiscovery | undefined

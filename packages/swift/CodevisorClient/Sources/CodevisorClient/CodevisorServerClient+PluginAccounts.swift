@@ -41,7 +41,9 @@ extension CodevisorServerClient {
     serverId: String,
     request: ServerPluginAccountOAuthRequest
   ) async throws -> ServerPluginAccountOAuthStart {
-    try await send("\(pluginAccountsPath(serverId))/oauth/start", method: "POST", body: request)
+    try await send(
+      "\(pluginAccountsPath(serverId))/oauth/start?app=\(CodevisorDeeplinkScheme.current)", method: "POST",
+      body: request)
   }
 
   public func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL] {

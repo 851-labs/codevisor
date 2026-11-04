@@ -21,12 +21,14 @@ import {
   writeJson,
   type CodevisorServerServices
 } from "../server-context.js"
+import { appScheme, appSchemeParameter, type OAuthReturns } from "./oauth-returns.js"
 
 export const routeMcps = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
   response: ServerResponse,
-  url: URL
+  url: URL,
+  oauthReturns: OAuthReturns
 ): Promise<boolean> => {
   const manager = services.mcp
   if (!url.pathname.startsWith("/v1/mcps")) return false
@@ -34,7 +36,7 @@ export const routeMcps = async (
 
   const catalog = routeMcpCatalog(manager, request, response, url, services.pluginCatalog)
   if (catalog !== undefined) return catalog
-  const action = routeMcpAction(manager, request, response, url)
+  const action = routeMcpAction(manager, request, response, url, oauthReturns)
   if (action !== undefined) return action
   const mutation = routeMcpMutation(manager, request, response, url)
   if (mutation !== undefined) return mutation
@@ -66,7 +68,8 @@ function routeMcpAction(
   manager: McpManager,
   request: IncomingMessage,
   response: ServerResponse,
-  url: URL
+  url: URL,
+  oauthReturns: OAuthReturns
 ): Promise<boolean> | undefined {
   const action = matchRouteParams(url.pathname, "/v1/mcps/:id/:action")
   if (action !== undefined && request.method === "POST") {
@@ -74,7 +77,7 @@ function routeMcpAction(
       case "connect":
         return connectMcpServer(manager, response, action.id!)
       case "oauth-start":
-        return beginMcpAuthorization(manager, response, action.id!, url)
+        return beginMcpAuthorization(manager, response, action.id!, url, oauthReturns)
       case "oauth-disconnect":
         return disconnectMcpAuthorization(manager, response, action.id!)
       default:
@@ -171,12 +174,26 @@ async function beginMcpAuthorization(
   manager: McpManager,
   response: ServerResponse,
   id: string,
-  url: URL
+  url: URL,
+  oauthReturns: OAuthReturns
 ): Promise<boolean> {
-  writeJson(response, 201, {
-    authorizationUrl: await manager.beginOAuth(id, url.origin)
-  })
+  const app = appScheme(url.searchParams.get(appSchemeParameter))
+  const authorizationUrl = await manager.beginOAuth(id, url.origin)
+  oauthReturns.remember(authorizationUrl, app)
+  writeJson(response, 201, { authorizationUrl: withReturnApp(authorizationUrl, url, app) })
   return true
+}
+
+function withReturnApp(authorizationUrl: string, request: URL, app: string | undefined): string {
+  const target = new URL(authorizationUrl)
+  if (!isOAuthCompletePage(target, request) || app === undefined) return authorizationUrl
+
+  target.searchParams.set(appSchemeParameter, app)
+  return target.toString()
+}
+
+function isOAuthCompletePage(target: URL, request: URL): boolean {
+  return target.origin === request.origin && target.pathname === "/v1/mcps/oauth/complete"
 }
 
 function validateMcpEdit(id: string, update: UpdateMcpServerRequest): void {

@@ -215,6 +215,28 @@ describe("plugin account OAuth routes", () => {
     expect(JSON.stringify(listed.body)).not.toMatch(/access-1|refresh-1|client-secret/)
   })
 
+  it("sends the browser back to the app that started sign-in", async () => {
+    const running = await gmailApp()
+    const provider = await fakeOAuthProvider()
+    routeGoogleTo(provider.url)
+    const started = await post(
+      running,
+      `/v1/plugins/${running.gmail.id}/accounts/oauth/start?app=codevisor-dev-0123456789`,
+      { values: { clientId: "client-1", clientSecret: "client-secret" } }
+    )
+    const grant = provider.authorize(decode(PluginAccountOAuthStart)(started.body).authorizationUrl)
+
+    const page = await fetch(
+      `${running.server.url}/v1/plugins/oauth/callback?state=${encodeURIComponent(grant.state)}&code=${grant.code}`
+    ).then((response) => response.text())
+
+    expect(page).toBe(
+      "<!doctype html><title>Codevisor</title><p>Signed in. You can return to Codevisor.</p>" +
+        '<p><a href="codevisor-dev-0123456789://signed-in">Open Codevisor</a></p>' +
+        '<script>location.href = "codevisor-dev-0123456789://signed-in"</script>'
+    )
+  })
+
   it("re-authorizes an existing account with the client it already has", async () => {
     const running = await gmailApp()
     const provider = await fakeOAuthProvider()

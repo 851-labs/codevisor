@@ -173,7 +173,7 @@ public final class WebPaneController: NSObject {
     case "openUrl":
       guard let url = URL(string: value), let external = WebPaneNavigation.externalURL(url)
       else { return }
-      openExternally(external)
+      DefaultBrowser.open(external)
     case "setTitle":
       let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmed.isEmpty else { return }
@@ -261,14 +261,6 @@ public final class WebPaneController: NSObject {
     return json
   }
 
-  private func openExternally(_ url: URL) {
-    #if canImport(AppKit)
-      NSWorkspace.shared.open(url)
-    #else
-      UIApplication.shared.open(url)
-    #endif
-  }
-
   private func applyBackground() {
     guard let background = theme.background else { return }
     #if canImport(AppKit)
@@ -321,7 +313,7 @@ extension WebPaneController: WKNavigationDelegate {
     case .cancel:
       return .cancel
     case let .openExternally(url):
-      openExternally(url)
+      DefaultBrowser.open(url)
       return .cancel
     }
   }
@@ -353,7 +345,7 @@ extension WebPaneController: WKUIDelegate {
     windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
     if let url = navigationAction.request.url, let external = WebPaneNavigation.externalURL(url) {
-      openExternally(external)
+      DefaultBrowser.open(external)
     }
     return nil
   }

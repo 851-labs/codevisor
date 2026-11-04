@@ -73,7 +73,7 @@ public final class PluginAccountsModel {
     guard let url = URL(string: start.authorizationUrl) else { return }
 
     accountsBeforeSignIn = hasLoaded ? accounts : nil
-    await webSignIn.run(url, callbackScheme: start.callbackScheme)
+    await webSignIn.run(url)
     accountsBeforeSignIn = nil
     await reload()
   }

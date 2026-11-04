@@ -12,7 +12,7 @@ final class FakeWebSignIn: WebSignInPresenting {
 
   var isOpen: Bool { open != nil }
 
-  func run(_ url: URL, callbackScheme: String?) async {
+  func run(_ url: URL) async {
     urls.append(url)
     await withCheckedContinuation { continuation in
       open = continuation

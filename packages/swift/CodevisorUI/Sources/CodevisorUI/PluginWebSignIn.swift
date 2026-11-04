@@ -1,55 +1,26 @@
-import AuthenticationServices
 import Foundation
 import OSLog
 
 let pluginSignInLog = Logger(subsystem: "dev.codevisor.plugins", category: "sign-in")
 
 @MainActor
-public final class PluginWebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding, WebSignInPresenting {
-  private var session: ASWebAuthenticationSession?
-  private var completion: CheckedContinuation<Void, Never>?
+public final class PluginWebSignIn: WebSignInPresenting {
+  private let browser: BrowserSignIn
+  private var attempt: UUID?
 
-  public func run(_ url: URL, callbackScheme: String? = nil) async {
-    finish()
-    await withCheckedContinuation { continuation in
-      completion = continuation
-      let session = ASWebAuthenticationSession(
-        url: url,
-        callbackURLScheme: callbackScheme,
-        completionHandler: Self.completionHandler { [weak self] in self?.finish() }
-      )
-      session.presentationContextProvider = self
-      session.prefersEphemeralWebBrowserSession = false
-      self.session = session
-      guard session.start() else {
-        pluginSignInLog.error("The sign-in sheet didn't start; opening the sign-in page in the browser")
-        PluginAppWebController.openExternally(url)
-        finish()
-        return
-      }
-    }
+  public init(browser: BrowserSignIn = .shared) {
+    self.browser = browser
+  }
+
+  public func run(_ url: URL) async {
+    let id = UUID()
+    attempt = id
+    _ = await browser.run(url, id: id)
+    if attempt == id { attempt = nil }
   }
 
   public func cancel() {
-    session?.cancel()
-    finish()
-  }
-
-  nonisolated public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-    MainActor.assumeIsolated { WebAuthenticationAnchor.current }
-  }
-
-  private func finish() {
-    session = nil
-    completion?.resume()
-    completion = nil
-  }
-
-  private nonisolated static func completionHandler(
-    _ done: @escaping @MainActor @Sendable () -> Void
-  ) -> ASWebAuthenticationSession.CompletionHandler {
-    { @Sendable _, _ in
-      Task { @MainActor in done() }
-    }
+    guard let attempt else { return }
+    browser.cancel(attempt)
   }
 }

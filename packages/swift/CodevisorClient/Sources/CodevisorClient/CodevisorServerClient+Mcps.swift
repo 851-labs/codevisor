@@ -202,7 +202,7 @@ extension CodevisorServerClient {
 
   public func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
     try await send(
-      "/v1/mcps/\(pathComponent(id))/oauth-start",
+      "/v1/mcps/\(pathComponent(id))/oauth-start?app=\(CodevisorDeeplinkScheme.current)",
       method: "POST",
       body: Optional<EmptyBody>.none
     )

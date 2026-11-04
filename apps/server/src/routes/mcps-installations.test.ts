@@ -107,6 +107,41 @@ describe("mcp installation routes", () => {
     })
   })
 
+  it("sends the browser back to the app that started an MCP sign-in", async () => {
+    const { server, services } = await start()
+    const created = await jsonRequest(server, "/v1/mcps", {
+      method: "POST",
+      body: JSON.stringify({
+        authType: "oauth",
+        enabled: false,
+        name: "Linear",
+        transport: "http",
+        url: "https://mcp.example.test/mcp"
+      })
+    })
+    const id = idOf(created.body)
+    const publicServer = decode(McpServer)(created.body)
+    const beginOAuth = vi.spyOn(services.mcp, "beginOAuth")
+    vi.spyOn(services.mcp, "finishOAuth").mockResolvedValue(publicServer)
+    const startSignIn = (app: string) =>
+      jsonRequest(server, `/v1/mcps/${id}/oauth-start?app=${app}`, { method: "POST" })
+
+    beginOAuth.mockResolvedValueOnce(`https://auth.example.test/authorize?state=${id}.flow-1`)
+    await startSignIn("codevisor-dev-0123456789")
+    const signedIn = await fetch(
+      `${server.url}/v1/mcps/oauth/callback?state=${id}.flow-1&code=code-1`
+    ).then((response) => response.text())
+    beginOAuth.mockResolvedValueOnce(new URL("/v1/mcps/oauth/complete", server.url).toString())
+    const reconnect = await startSignIn("codevisor")
+    const { authorizationUrl } = decode(Schema.Struct({ authorizationUrl: Schema.String }))(
+      reconnect.body
+    )
+    const reconnectPage = await fetch(authorizationUrl).then((response) => response.text())
+
+    expect(signedIn).toContain('location.href = "codevisor-dev-0123456789://signed-in"')
+    expect(reconnectPage).toContain('<a href="codevisor://signed-in">Open Codevisor</a>')
+  })
+
   it("manages MCP installations without returning encrypted credentials", async () => {
     const { agents, server, services } = await start()
     const created = await jsonRequest(server, "/v1/mcps", {

@@ -93,7 +93,7 @@ struct HarnessLoginStepSheet: View {
       .disabled(isSubmitting)
       .accessibilityLabel("Cancel sign-in")
     if let browserURL {
-      Button("Open Browser") { NSWorkspace.shared.open(browserURL) }
+      Button("Open Browser") { DefaultBrowser.open(browserURL) }
         .keyboardShortcut(needsSubmit ? nil : .defaultAction)
     }
     if needsSubmit {

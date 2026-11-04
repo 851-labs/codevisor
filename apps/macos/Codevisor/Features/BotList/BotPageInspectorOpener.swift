@@ -12,7 +12,7 @@ struct BotPageInspectorOpener {
   func open(_ destination: WorkspaceInspectorView.Destination) {
     switch destination {
     case let .pullRequest(url), let .link(url):
-      NSWorkspace.shared.open(url)
+      DefaultBrowser.open(url)
     case let .file(path), let .previewFile(path):
       preview(path)
     case .botTranscript:
