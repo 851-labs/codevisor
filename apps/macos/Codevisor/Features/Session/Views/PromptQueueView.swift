@@ -48,7 +48,14 @@ struct PromptQueueView: View {
           selectionShape: selectionShape(for: item),
           onEdit: { onEditInComposer(item) }
         )
-        .modifier(PromptQueueReordering(item: item, draggingID: $draggingID, move: move))
+        .onDrag {
+          draggingID = item.id
+          return NSItemProvider(object: item.id as NSString)
+        }
+        .onDrop(
+          of: [.plainText],
+          delegate: PromptQueueDropDelegate(targetID: item.id, draggingID: $draggingID, move: move)
+        )
       }
       ForEach(controller.unsentQueuedMessages) { message in
         PromptQueueUnsentRow(
@@ -84,32 +91,10 @@ struct PromptQueueView: View {
   }
 
   private func move(_ draggedID: String, onto targetID: String) {
-    let current = controller.queuedPrompts.filter { !$0.isNextStep }.map(\.id)
+    let current = controller.queuedPrompts.map(\.id)
     let ids = QueuedPromptOrder.moving(draggedID, onto: targetID, in: current)
     guard ids != current else { return }
     Task { await controller.reorderQueuedPrompts(ids: ids) }
-  }
-}
-
-private struct PromptQueueReordering: ViewModifier {
-  let item: ServerPromptQueueItem
-  @Binding var draggingID: String?
-  let move: (String, String) -> Void
-
-  func body(content: Content) -> some View {
-    if item.isNextStep {
-      content
-    } else {
-      content
-        .onDrag {
-          draggingID = item.id
-          return NSItemProvider(object: item.id as NSString)
-        }
-        .onDrop(
-          of: [.plainText],
-          delegate: PromptQueueDropDelegate(targetID: item.id, draggingID: $draggingID, move: move)
-        )
-    }
   }
 }
 

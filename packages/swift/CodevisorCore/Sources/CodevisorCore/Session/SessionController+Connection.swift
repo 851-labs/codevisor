@@ -186,7 +186,6 @@ extension SessionController {
     modeStateByHarness = [:]
     supportsGoalsByHarness = [:]
     supportsSteeringByHarness = [:]
-    steersAtNextStepByHarness = [:]
     pendingConfiguration.restoreValues([:])
     selectedHarnessId = nil
     if seedFromCachedServerCapabilities() {
@@ -266,7 +265,6 @@ extension SessionController {
     if let supportsSteering = metadata.supportsSteering {
       supportsSteeringByHarness[harnessId] = supportsSteering
     }
-    steersAtNextStepByHarness[harnessId] = metadata.steersAtNextStep ?? false
   }
 
   private func connectServerSession(

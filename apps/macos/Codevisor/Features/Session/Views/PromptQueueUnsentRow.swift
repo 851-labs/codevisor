@@ -63,7 +63,7 @@ struct PromptQueueUnsentRow: View {
       ProgressView()
         .controlSize(.mini)
         .accessibilityLabel("Sending")
-    case nil:
+    case .awaitingStep, nil:
       Image(systemName: "clock")
         .font(.caption)
         .foregroundStyle(.tertiary)

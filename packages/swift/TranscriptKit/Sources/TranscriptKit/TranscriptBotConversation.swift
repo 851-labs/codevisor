@@ -4,6 +4,7 @@ import Foundation
 public enum TranscriptDelivery: Equatable, Sendable {
   case sending
   case failed(reason: String?)
+  case awaitingStep
 
   public var isFailed: Bool {
     if case .failed = self { return true }

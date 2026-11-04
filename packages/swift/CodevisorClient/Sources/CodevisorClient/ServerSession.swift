@@ -25,7 +25,6 @@ public struct ServerSessionRuntimeMetadata: Codable, Equatable, Sendable {
   public var configOptions: [SessionConfigOption]
   public var supportsGoals: Bool?
   public var supportsSteering: Bool?
-  public var steersAtNextStep: Bool?
 }
 
 public enum ServerPromptDelivery: String, Codable, Sendable {

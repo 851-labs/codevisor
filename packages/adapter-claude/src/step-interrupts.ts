@@ -59,6 +59,15 @@ const withdrawQueuedSteers = async (
   return steers.filter((_, index) => cancelled[index])
 }
 
+export const withdrawSteer = async (session: ClaudeSession, steerId: string): Promise<boolean> => {
+  const steer = session.pendingSteers.find((pending) => pending.id === steerId)
+  if (steer === undefined || !(await cancelQueued(session, steer))) return false
+
+  const index = session.pendingSteers.indexOf(steer)
+  if (index !== -1) session.pendingSteers.splice(index, 1)
+  return true
+}
+
 const cancelQueued = (session: ClaudeSession, steer: PendingSteer): Promise<boolean> =>
   session.q.cancelAsyncMessage(steer.message.uuid).catch(() => false)
 

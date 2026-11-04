@@ -62,7 +62,7 @@ extension SessionController {
 
   private var transcriptOutgoing: TranscriptOutgoing {
     let queued = unsentAgentSends
-    var messages = (model?.transcriptOutgoingMessages ?? []) + queued.map(\.message)
+    var messages = (model?.transcriptPendingMessages ?? []) + queued.map(\.message)
     var deliveries = model?.transcriptDeliveries ?? [:]
     for entry in sends.unsent where !entry.route.landsInPromptQueue {
       guard case .agent = entry.route, deliveries[entry.message.id] == nil else { continue }
@@ -107,7 +107,9 @@ extension SessionController {
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
-  public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts.filter { !$0.isSystem } ?? [] }
+  public var queuedPrompts: [ServerPromptQueueItem] {
+    model?.queuedPrompts.filter { !$0.isSystem && !$0.isNextStep } ?? []
+  }
   public var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
   public var availableSkills: SessionSkills? { model?.availableSkills }
   public var isConnected: Bool { model != nil }

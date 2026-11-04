@@ -4,8 +4,14 @@ import Foundation
 struct OutgoingMessage: Equatable {
   let message: UserMessage
   let delivery: ServerPromptDelivery?
+  let sentAt: Date
   var afterBotSequence: Int? = nil
   var landsInQueue = false
+}
+
+struct PendingTranscriptMessage: Equatable {
+  let message: UserMessage
+  let sentAt: Date
 }
 
 struct UnreachedSend: Equatable {
@@ -22,8 +28,14 @@ extension SessionModel {
   static let undeliveredReason = "Codevisor couldn’t deliver this message. Try again in a moment."
 
   var transcriptOutgoingMessages: [UserMessage] {
+    pendingOutgoing.map(\.message)
+  }
+
+  var pendingOutgoing: [PendingTranscriptMessage] {
     guard !presentsBotConversation else { return [] }
-    return outgoingMessages.filter { !$0.landsInQueue }.map(\.message)
+    return outgoingMessages.filter { !$0.landsInQueue }.map {
+      PendingTranscriptMessage(message: $0.message, sentAt: $0.sentAt)
+    }
   }
 
   var unsentQueuedMessages: [UnsentQueuedMessage] {
@@ -44,6 +56,7 @@ extension SessionModel {
     var deliveries: [UUID: TranscriptDelivery] = [:]
     for id in slowMessageIDs where !acceptedMessageIDs.contains(id) { deliveries[id] = .sending }
     for (id, reason) in failedMessageReasons { deliveries[id] = .failed(reason: reason) }
+    for id in awaitingStepMessageIDs where deliveries[id] == nil { deliveries[id] = .awaitingStep }
     return deliveries
   }
 
@@ -52,7 +65,8 @@ extension SessionModel {
   ) async {
     outgoingMessages.append(
       OutgoingMessage(
-        message: message, delivery: delivery, afterBotSequence: afterBotSequence, landsInQueue: landsInQueue))
+        message: message, delivery: delivery, sentAt: now(), afterBotSequence: afterBotSequence,
+        landsInQueue: landsInQueue))
     if !landsInQueue { onLocalUserMessageAppended?(message.id) }
     await startConsumer()
     await deliverOutgoing(message.id)
@@ -88,6 +102,7 @@ extension SessionModel {
   }
 
   func confirmOutgoing(_ id: UUID) {
+    rememberSteerBubble(id)
     outgoingMessages.removeAll { $0.message.id == id }
     acceptedMessageIDs.remove(id)
     slowMessageIDs.remove(id)
@@ -135,6 +150,7 @@ extension SessionModel {
       onPromptAccepted?(message.attachments.count, notSteered)
       if notSteered { onPromptNotSteered?(id) }
       settleAccepted(id)
+      refreshQueueForUnshownSteer(id, response: response)
     case let .failed(error):
       slowMessageIDs.remove(id)
       guard outgoingMessages.contains(where: { $0.message.id == id }) else { return }

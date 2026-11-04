@@ -87,6 +87,48 @@ describe("messages steered into a harness that reads them at its next step", () 
     expect(agents.cancellations).toEqual([agentSessionId])
   })
 
+  it("deletes a waiting steer by taking it back from the harness", async () => {
+    const { agents, server, sessionId, agentSessionId, queue } = await nextStepSession()
+    const withdrawn: Array<readonly [string, string]> = []
+    Object.assign(agents, {
+      withdrawSteer: (id: string, steerId: string) =>
+        Effect.sync(() => {
+          withdrawn.push([id, steerId])
+          return true
+        })
+    })
+    const steered = await prompt(server, sessionId, "skip the tests")
+
+    const deleted = await jsonRequest(
+      server,
+      `/v1/sessions/${sessionId}/queue/${steered.queueItemId}`,
+      {
+        method: "DELETE"
+      }
+    )
+
+    expect(deleted.status).toBe(204)
+    expect(withdrawn).toEqual([[agentSessionId, steered.queueItemId]])
+    expect(await queue()).toEqual([])
+  })
+
+  it("refuses to delete a steer the harness has already taken in", async () => {
+    const { agents, server, sessionId, queue } = await nextStepSession()
+    Object.assign(agents, { withdrawSteer: () => Effect.succeed(false) })
+    const steered = await prompt(server, sessionId, "skip the tests")
+
+    const deleted = await jsonRequest(
+      server,
+      `/v1/sessions/${sessionId}/queue/${steered.queueItemId}`,
+      {
+        method: "DELETE"
+      }
+    )
+
+    expect(deleted.status).toBe(409)
+    expect(await queue()).toMatchObject([{ id: steered.queueItemId, steered: true }])
+  })
+
   it("returns a steer the harness dropped to the queue as an ordinary queued message", async () => {
     const { server, sessionId, settle, queue, inTranscript } = await nextStepSession()
     const steered = await prompt(server, sessionId, "never read")

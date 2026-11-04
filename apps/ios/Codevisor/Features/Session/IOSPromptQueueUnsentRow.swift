@@ -67,7 +67,7 @@ struct IOSPromptQueueUnsentRow: View {
       ProgressView()
         .controlSize(.small)
         .accessibilityLabel("Sending")
-    case nil:
+    case .awaitingStep, nil:
       EmptyView()
     }
   }

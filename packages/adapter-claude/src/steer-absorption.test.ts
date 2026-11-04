@@ -60,6 +60,12 @@ const LEGACY_NOTE_TITLE =
 const titleUpdates = (events: ReadonlyArray<RuntimeEvent>) =>
   events.map(payloadOf).filter((payload) => payload.sessionUpdate === "session_info_update")
 
+const withdrawSteerOf = (created: Awaited<ReturnType<typeof startTestSession>>["created"]) => {
+  const withdrawSteer = created.handle.withdrawSteer
+  if (withdrawSteer === undefined) throw new Error("Claude sessions withdraw a steer")
+  return withdrawSteer
+}
+
 const receivedTexts = (fake: FakeQuery) =>
   fake.receivedMessages.map(({ message }) =>
     typeof message.content === "string"
@@ -230,6 +236,35 @@ describe("Claude steer absorption", () => {
 
     await expect(run(interruptStepOf(created))).resolves.toBe(false)
     expect(fake.interrupts).toEqual([])
+  })
+
+  it("takes a waiting steer back so Claude never reads it", async () => {
+    const { fake, events, created } = await startTestSession()
+    void run(created.handle.prompt("run the checks"))
+    await fake.nextPrompt()
+    await runningTool(fake, "tool-checks")
+    await run(steerOf(created)("skip the tests", "queue-9"))
+
+    await expect(run(withdrawSteerOf(created)("queue-9"))).resolves.toBe(true)
+    fake.push(toolResult("tool-checks"))
+    fake.push(messageStart("msg-after-tool"))
+    await fake.drain()
+
+    expect(receivedTexts(fake)).toEqual(["run the checks"])
+    expect(settlements(events)).toEqual([])
+  })
+
+  it("can't take back a steer Claude has already taken in", async () => {
+    const { fake, created } = await startTestSession()
+    void run(created.handle.prompt("run the checks"))
+    await fake.nextPrompt()
+    await runningTool(fake, "tool-checks")
+    await run(steerOf(created)("skip the tests", "queue-10"))
+    fake.takeQueuedMessages()
+
+    await expect(run(withdrawSteerOf(created)("queue-10"))).resolves.toBe(false)
+
+    expect(receivedTexts(fake)).toEqual(["run the checks", "skip the tests"])
   })
 
   it("reports pending steers as dropped when the session closes", async () => {

@@ -8,6 +8,7 @@ final class FakePromptDelivery: @unchecked Sendable {
   private var _steerOutcome: String?
   private var _sendsNow: [String] = []
   private var _sendNowFailures: [any Error] = []
+  private var _deleteConflict = false
 
   var deliveries: [ServerPromptDelivery] { lock.withLock { _deliveries } }
   var sendsNow: [String] { lock.withLock { _sendsNow } }
@@ -18,6 +19,17 @@ final class FakePromptDelivery: @unchecked Sendable {
 
   func failNextSendNow(with error: any Error = URLError(.networkConnectionLost)) {
     lock.withLock { _sendNowFailures.append(error) }
+  }
+
+  func conflictNextDelete() {
+    lock.withLock { _deleteConflict = true }
+  }
+
+  func takeDeleteConflict() -> Bool {
+    lock.withLock {
+      defer { _deleteConflict = false }
+      return _deleteConflict
+    }
   }
 
   func outcome(for delivery: ServerPromptDelivery) -> String? {

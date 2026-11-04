@@ -29,7 +29,7 @@ import { claudeSessionContextFrom } from "./session-context.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
 import { dropPendingSteers, trackSteer } from "./steer-absorption.js"
-import { interruptStepForSteer, steerMessage } from "./step-interrupts.js"
+import { interruptStepForSteer, steerMessage, withdrawSteer } from "./step-interrupts.js"
 import {
   ensureObservedTurnStarted,
   ensureTurnStarted,
@@ -186,6 +186,8 @@ export const claudeSessionHandle = (session: ClaudeSession): AgentSessionHandle 
     }),
   steersAtNextStep: true,
   interruptStep: adapterPromise("interruptStep", () => interruptStepForSteer(session)),
+  withdrawSteer: (steerId) =>
+    adapterPromise("withdrawSteer", () => withdrawSteer(session, steerId)),
   steer: (input, steerId) =>
     adapterPromise("steer", async () => {
       if (

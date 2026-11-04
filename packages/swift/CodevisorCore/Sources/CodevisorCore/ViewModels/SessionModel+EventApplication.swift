@@ -132,7 +132,8 @@ extension SessionModel {
 
   private func applyUserMessage(_ remote: RemoteUserMessage) {
     appliedUpdateCount += 1
-    let promotedFromQueue = promptQueue.consumePromotion(id: remote.id)
+    let wasSteerBubble = takeAbsorbedSteer(remote.id)
+    let promotedFromQueue = promptQueue.consumePromotion(id: remote.id) && !wasSteerBubble
     appendRemoteUserIfNeeded(remote)
 
     if let echoId = remote.echoId { confirmOutgoing(echoId) }

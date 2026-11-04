@@ -372,6 +372,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   }
 
   func deleteQueuedPrompt(sessionId _: UUID, queueItemId: String) async throws {
+    if promptDelivery.takeDeleteConflict() { throw CodevisorServerClientError.httpStatus(409, "Already delivered") }
     let shouldFail = lock.withLock {
       guard _queueMutationFailuresRemaining > 0 else {
         _queueDeletes.append(queueItemId)

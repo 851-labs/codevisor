@@ -221,7 +221,6 @@ final public class SessionController {
   var configOptionsByHarness: [String: [SessionConfigOption]] = [:]
   var supportsGoalsByHarness: [String: Bool] = [:]
   var supportsSteeringByHarness: [String: Bool] = [:]
-  var steersAtNextStepByHarness: [String: Bool] = [:]
   var queuedPromptEdit: QueuedPromptEdit?
   var harnessCapabilityRequestRevision: UInt64 = 0
   var retargetRevision: UInt64 = 0

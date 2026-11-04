@@ -112,11 +112,13 @@ const updateQueuedPrompt = async (
 }
 
 const deleteQueuedPrompt = async (
-  { services, fanout, response }: RouteContext,
+  route: RouteContext,
   params: Record<string, string>
 ): Promise<boolean> => {
+  const { services, fanout, response } = route
   const id = routeParam(params, "id")
   const queueId = routeParam(params, "queueId")
+  if (await isSteered(route, id, queueId)) await withdrawSteer(route, id, queueId)
   await run(services.db.deletePromptQueueItem(id, queueId))
   await publishPromptQueue(services.db, fanout, id)
   writeNoContent(response)
@@ -159,6 +161,18 @@ const interruptStep = async (route: RouteContext, sessionId: string): Promise<bo
   const { services, fanout, config } = route
   const agentSession = await ensureAgentSessionFor(services, fanout, config.id, sessionId)
   return interruptRunningStep(services, agentSession.sessionId)
+}
+
+const withdrawSteer = async (
+  route: RouteContext,
+  sessionId: string,
+  queueId: string
+): Promise<void> => {
+  const { services, fanout, config } = route
+  const withdraw = services.agents.withdrawSteer
+  const agentSession = await ensureAgentSessionFor(services, fanout, config.id, sessionId)
+  const withdrawn = withdraw !== undefined && (await run(withdraw(agentSession.sessionId, queueId)))
+  if (!withdrawn) throw new HttpFailure(409, "This message already reached the agent.")
 }
 
 const writeNoContent = (response: ServerResponse): void => {

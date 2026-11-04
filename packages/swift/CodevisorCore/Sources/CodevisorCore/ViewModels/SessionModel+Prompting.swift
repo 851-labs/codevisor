@@ -73,7 +73,7 @@ extension SessionModel {
       hasActiveItem = false
     }
     endTurn()
-    outgoingMessages.append(OutgoingMessage(message: message, delivery: nil))
+    outgoingMessages.append(OutgoingMessage(message: message, delivery: nil, sentAt: now()))
     failedMessageReasons[message.id] = reason
   }
 

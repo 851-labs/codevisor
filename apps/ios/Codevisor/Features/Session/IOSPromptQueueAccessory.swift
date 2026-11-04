@@ -22,7 +22,7 @@ struct IOSPromptQueueAccessory: View {
 
   private var leadingSymbol: String {
     if hasUndelivered { return "exclamationmark.circle.fill" }
-    return PromptQueueSymbol.name(steered: firstItem?.isNextStep == true)
+    return PromptQueueSymbol.queued
   }
 
   private var countText: String {

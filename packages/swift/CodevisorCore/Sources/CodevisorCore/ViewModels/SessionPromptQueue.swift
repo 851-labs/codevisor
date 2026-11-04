@@ -13,6 +13,7 @@ final class SessionPromptQueue {
   @ObservationIgnored private var pendingPromotionIDs: [String: TimeInterval] = [:]
   @ObservationIgnored var onMessageQueued: ((UUID) -> Void)?
   @ObservationIgnored var onFailure: ((any Error) -> Void)?
+  @ObservationIgnored var onItemsReplaced: ((_ previous: [ServerPromptQueueItem]) -> Void)?
 
   private let transport: ServerSessionTransport
 
@@ -22,7 +23,9 @@ final class SessionPromptQueue {
 
   func apply(_ snapshot: [ServerPromptQueueItem]) {
     rememberRemovedItems(in: snapshot)
+    let previous = items
     items = snapshot
+    onItemsReplaced?(previous)
     for item in snapshot {
       if let queued = UUID(uuidString: item.id) { onMessageQueued?(queued) }
     }
@@ -81,6 +84,18 @@ final class SessionPromptQueue {
     }
   }
 
+  func withdrawSteer(id: String) async -> Bool {
+    do {
+      try await transport.deleteQueuedPrompt(id: id)
+      return true
+    } catch CodevisorServerClientError.httpStatus(409, _) {
+      return false
+    } catch {
+      onFailure?(error)
+      return false
+    }
+  }
+
   func sendNow(id: String) async -> Bool {
     do {
       _ = try await transport.sendQueuedPromptNow(id: id)
@@ -119,7 +134,9 @@ final class SessionPromptQueue {
       let snapshot = try await transport.promptQueue()
       guard !Task.isCancelled, loadRevision == revision else { return }
       rememberRemovedItems(in: snapshot)
+      let previous = items
       items = snapshot
+      onItemsReplaced?(previous)
       revision &+= 1
     } catch {
       guard !isTaskCancellation(error) else { return }

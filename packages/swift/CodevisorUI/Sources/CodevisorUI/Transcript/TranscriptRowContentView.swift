@@ -159,7 +159,14 @@ public struct TranscriptRowContentView: View {
       TranscriptDeliveryRow(
         delivery: delivery,
         retry: { Task { await controller.retryUnsentMessage(id: id) } },
-        delete: { controller.deleteUnsentMessage(id: id) }
+        delete: {
+          if delivery == .awaitingStep {
+            Task { await controller.deleteSteer(messageID: id) }
+          } else {
+            controller.deleteUnsentMessage(id: id)
+          }
+        },
+        sendNow: { Task { await controller.sendSteerNow(messageID: id) } }
       )
     case let .botTyping(afterReply):
       TranscriptBotTypingRow(controller: controller, afterReply: afterReply)

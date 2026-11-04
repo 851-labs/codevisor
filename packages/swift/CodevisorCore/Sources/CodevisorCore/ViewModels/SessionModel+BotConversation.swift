@@ -112,7 +112,7 @@ extension SessionModel {
   }()
   private static let wholeSecondSentAtFormatter = ISO8601DateFormatter()
 
-  private static func sentAt(_ value: String) -> Date? {
+  static func sentAt(_ value: String) -> Date? {
     fractionalSentAtFormatter.date(from: value) ?? wholeSecondSentAtFormatter.date(from: value)
   }
 }

@@ -175,6 +175,7 @@ export interface AgentSessionHandle {
   readonly steersAtNextStep?: boolean
   readonly cancel: Effect.Effect<CancelResult, AgentRuntimeError>
   readonly interruptStep?: Effect.Effect<boolean, AgentRuntimeError>
+  readonly withdrawSteer?: (steerId: string) => Effect.Effect<boolean, AgentRuntimeError>
   readonly pauseForRestart?: Effect.Effect<CancelResult, AgentRuntimeError>
   readonly setMode: (modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (

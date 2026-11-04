@@ -58,6 +58,13 @@ public final class SessionModel {
       if outgoingMessages != oldValue { transcriptProjectionRevision &+= 1 }
     }
   }
+  var absorbedSteerMessages: [PendingTranscriptMessage] = [] {
+    didSet {
+      if absorbedSteerMessages != oldValue { transcriptProjectionRevision &+= 1 }
+    }
+  }
+  @ObservationIgnored var steerBubbleMessages: [UUID: PendingTranscriptMessage] = [:]
+  @ObservationIgnored var withdrawnSteerIDs: Set<String> = []
   var acceptedMessageIDs: Set<UUID> = [] {
     didSet {
       if acceptedMessageIDs != oldValue { transcriptProjectionRevision &+= 1 }
@@ -230,6 +237,9 @@ public final class SessionModel {
     }
     promptQueue.onMessageQueued = { [weak self] id in
       self?.confirmOutgoing(id)
+    }
+    promptQueue.onItemsReplaced = { [weak self] previous in
+      self?.steerQueueChanged(from: previous)
     }
     promptQueue.onFailure = { [weak self] error in
       self?.errorMessage = serverErrorMessage(error)
