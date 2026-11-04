@@ -89,6 +89,27 @@ struct ScreenSharingRenderCoordinatorTests {
     .init(pixelBuffer: buffer, timestampNs: Int64(rtp), rtpTimestamp: rtp, receivedAtSeconds: receivedAt)
   }
 
+  @Test func newFramesAreLoggedAtCommitWithTheirPresentationAndRedrawsAreNot() throws {
+    let f = Fixture(renderOnArrival: false)
+    f.mailbox.put(frame(try makeBuffer(), rtp: 4))
+    let selected = try #require(f.coordinator.select())
+    let submission = ControlledSubmission()
+    f.coordinator.commit(
+      submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 2)
+    submission.present(at: 3)
+    submission.complete()
+    _ = f.queue.drain()
+    f.coordinator.setNeedsRedraw()
+    let redraw = try #require(f.coordinator.select())
+    f.coordinator.commit(
+      ControlledSubmission(), retaining: Retained(redraw.frame), frame: redraw.frame, isNewFrame: false, submittedAt: 4)
+
+    let commits = f.metrics.commits.all()
+    #expect(commits.map(\.rtpTimestamp) == [4])
+    #expect(commits.first?.sourceTimestampNs == 4)
+    #expect(commits.first?.presentedAt == 3)
+  }
+
   @Test func selectionOrderAndCachingAreUnchanged() throws {
     let f = Fixture(renderOnArrival: false)
     #expect(f.coordinator.select() == nil)

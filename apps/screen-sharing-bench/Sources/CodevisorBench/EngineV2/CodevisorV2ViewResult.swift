@@ -1,4 +1,5 @@
 import ScreenSharing
+import ScreenSharingBench
 
 struct CodevisorV2ViewResult: Encodable {
   let role = "codevisor-viewer"
@@ -7,6 +8,8 @@ struct CodevisorV2ViewResult: Encodable {
   let presentation: String
   let timeline: ScreenSharingFrameTimelineSummary?
   let frames: [ScreenSharingFrameRecord]
+  let commits: [ScreenSharingCommitRecord]
+  let continuousMinusAbsoluteNs: Int64
   let counters: [String: Int]
   let labels: [String: String]
   let timings: [String: ScreenSharingMetrics.Timing]
@@ -25,6 +28,8 @@ struct CodevisorV2ViewResult: Encodable {
     self.presentation = presentation.rawValue
     timeline = metrics.timeline.summary()
     frames = metrics.timeline.records(after: 0)
+    commits = metrics.commits.all()
+    continuousMinusAbsoluteNs = BenchMachClock.continuousMinusAbsoluteNs()
     counters = snapshot.counters
     labels = snapshot.labels
     timings = snapshot.timings

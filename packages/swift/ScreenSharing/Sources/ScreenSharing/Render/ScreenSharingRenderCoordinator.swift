@@ -62,12 +62,14 @@ package final class ScreenSharingRenderCoordinator {
   }
   private struct SubmittedFrame {
     let rtpTimestamp: UInt32
+    let timestampNs: Int64
     let receivedAt: Double?
     let sourceTimestampNs: Int64?
     let isNewFrame: Bool
 
     init(_ frame: ScreenSharingVideoFrame, isNewFrame: Bool) {
       rtpTimestamp = frame.rtpTimestamp
+      timestampNs = frame.timestampNs
       receivedAt = frame.receivedAtSeconds
       sourceTimestampNs = frame.sourceTimestampNs
       self.isNewFrame = isNewFrame
@@ -231,7 +233,15 @@ package final class ScreenSharingRenderCoordinator {
         self.requestDraw()
       }
     }
+    let commitEntry =
+      isNewFrame
+      ? metrics.commits.record(
+        ScreenSharingCommitRecord(
+          committedNs: ScreenSharingMetrics.nowNs, rtpTimestamp: frame.rtpTimestamp,
+          sourceTimestampNs: frame.timestampNs))
+      : nil
     submission.onPresented { [weak self] presentedTime, gpuEndTime in
+      if let commitEntry { metrics.commits.presented(commitEntry, at: presentedTime) }
       metrics.recordPresentation(
         isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: frame.receivedAt,
         sourceTimestampNs: frame.sourceTimestampNs, gpuCompletedAt: gpuEndTime)
