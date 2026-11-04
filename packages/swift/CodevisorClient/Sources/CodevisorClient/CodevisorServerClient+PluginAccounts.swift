@@ -13,6 +13,10 @@ extension CodevisorServerClient {
     var subscriptions: [ServerPluginEventSubscription]
   }
 
+  private struct OAuthCompletion: Encodable {
+    var callbackUrl: String
+  }
+
   public func pluginCatalogEntry(id: String) async throws -> ServerPluginCatalogEntry {
     try await get("/v1/plugins/catalog/\(catalogPathComponent(id))")
   }
@@ -44,6 +48,11 @@ extension CodevisorServerClient {
     try await send(
       "\(pluginAccountsPath(serverId))/oauth/start?app=\(CodevisorDeeplinkScheme.current)", method: "POST",
       body: request)
+  }
+
+  public func completePluginAccountOAuth(callbackURL: URL) async throws {
+    try await sendNoResponse(
+      "/v1/plugins/oauth/complete", method: "POST", body: OAuthCompletion(callbackUrl: callbackURL.absoluteString))
   }
 
   public func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL] {

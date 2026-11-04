@@ -11,6 +11,7 @@ import { isMachineIcon, type MachineUpdate } from "./hub-registry.js"
 import { relayMap } from "./hub-tunnel.js"
 import { inboxIngress } from "./inbox-ingress.js"
 import { inboxRoutes } from "./inbox-routes.js"
+import { linearPush } from "./linear-push.js"
 import { userHub } from "./location-hint.js"
 import { machineInviteRoutes } from "./machine-invites.js"
 import { oauthClientRoutes } from "./oauth-clients.js"
@@ -20,6 +21,7 @@ import { loginPage } from "./pages/login.js"
 import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
 import { pluginCatalog } from "./plugin-catalog.js"
 import { pluginModeration } from "./plugin-moderation.js"
+import { pluginOAuthCallback } from "./plugin-oauth-callback.js"
 import { notifyPluginReports } from "./plugin-reports.js"
 import {
   forgetTunnelEndpoints,
@@ -56,6 +58,8 @@ app.route("/", machineInviteRoutes)
 app.route("/", inboxRoutes)
 app.route("/", inboxIngress)
 app.route("/", gmailPush)
+app.route("/", linearPush)
+app.route("/", pluginOAuthCallback)
 app.route("/", oauthClientRoutes)
 app.route("/", roleRoutes)
 

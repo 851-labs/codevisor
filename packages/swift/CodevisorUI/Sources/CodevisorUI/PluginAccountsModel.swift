@@ -73,9 +73,16 @@ public final class PluginAccountsModel {
     guard let url = URL(string: start.authorizationUrl) else { return }
 
     accountsBeforeSignIn = hasLoaded ? accounts : nil
-    await webSignIn.run(url)
+    let callback = await webSignIn.run(url)
     accountsBeforeSignIn = nil
+    if let callback, Self.carriesAuthorization(callback) {
+      _ = await perform { try await client.completePluginAccountOAuth(callbackURL: callback) }
+    }
     await reload()
+  }
+
+  private static func carriesAuthorization(_ callback: URL) -> Bool {
+    callback.host()?.lowercased() == BrowserSignIn.pluginOAuthHost
   }
 
   public func remove(_ account: ServerPluginAccount) async {

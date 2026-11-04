@@ -71,8 +71,10 @@ const platformIngress = (
     connections,
     inboxes: cloudInboxApi(request),
     pluginKey: pluginKeyOf,
-    identity: async (serverId, accountId) =>
-      (await platform.accounts.context(serverId, accountId))?.identity
+    routeKey: async (serverId, accountId) => {
+      const context = await platform.accounts.context(serverId, accountId)
+      return context?.routeKey ?? context?.identity
+    }
   })
   platform.inbox.onWebhook((webhook) => ingress.deliver(webhook))
   platform.onAccountRemoving((serverId, accountId) =>

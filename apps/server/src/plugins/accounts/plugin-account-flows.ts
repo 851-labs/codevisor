@@ -15,7 +15,8 @@ import type { SplitFieldValues } from "./plugin-account-fields.js"
 import {
   beginPluginOAuth,
   exchangePluginCode,
-  fetchIdentity,
+  fetchAccountIdentity,
+  type AccountIdentity,
   flowState,
   newFlowId,
   newNonce,
@@ -30,7 +31,8 @@ import type { PluginVault } from "./plugin-accounts.js"
 
 export interface OAuthRedirect {
   readonly redirectUri: string
-  readonly deviceId: string
+  readonly returnTo: string
+  readonly callbackScheme?: string
 }
 
 export interface OAuthRedirects {
@@ -39,6 +41,7 @@ export interface OAuthRedirects {
 
 export interface OAuthStartInput {
   readonly label?: string
+  readonly callbackScheme?: string
   readonly previous: PluginAccountRecord | undefined
   readonly split: SplitFieldValues
 }
@@ -75,12 +78,12 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
 
   const finish = async (flow: PendingOAuthFlow, spec: PluginOAuthSpec, code: string) => {
     const tokens = await exchangePluginCode(spec, flow, code, deps.fetch)
-    const identity =
-      (await fetchIdentity(spec, tokens.access_token, deps.fetch)) ?? flow.label ?? "Account"
+    const found = await fetchAccountIdentity(spec, tokens.access_token, deps.fetch)
+    const identity = found.identity ?? flow.label ?? "Account"
     const credential = await deps.vault.create(
       oauthBundle(spec, flow, tokens, identity, deps.now())
     )
-    await deps.save(oauthRecord(flow, identity, tokens.scope, credential))
+    await deps.save(oauthRecord(flow, { ...found, identity }, tokens.scope, credential))
   }
 
   return {
@@ -93,12 +96,12 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
       const client = await oauthClient(server, oauth, input.split, installedClients)
       const flowId = newFlowId()
       const nonce = newNonce()
-      const redirect = await deps.redirects.prepare(flowId)
+      const redirect = await redirectFor(oauth, input, flowId, deps.redirects)
       const started = await beginPluginOAuth(
         oauth,
         client,
         redirect.redirectUri,
-        flowState(flowId, redirect.deviceId, nonce)
+        flowState(flowId, redirect.returnTo, nonce)
       )
       pending.set(flowId, {
         spec: oauth,
@@ -111,7 +114,13 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
           expiresAt: deps.now() + oauthFlowLifetimeMs
         })
       })
-      return { flowId, authorizationUrl: started.authorizationUrl }
+      return {
+        flowId,
+        authorizationUrl: started.authorizationUrl,
+        ...(redirect.callbackScheme === undefined
+          ? {}
+          : { callbackScheme: redirect.callbackScheme })
+      }
     },
     complete: async (state: string, code: string | undefined, error?: string): Promise<void> => {
       const entry = takeFlow(state)
@@ -158,14 +167,15 @@ const flowLabel = (input: OAuthStartInput): { readonly label?: string } => {
 
 const oauthRecord = (
   flow: PendingOAuthFlow,
-  identity: string,
+  found: AccountIdentity & { readonly identity: string },
   scope: string | undefined,
   credential: { readonly id: string; readonly key: string }
 ): PluginAccountRecord => ({
   id: flow.accountId ?? randomUUID(),
   plugin: flow.plugin,
-  label: flow.label ?? identity,
-  identity,
+  label: flow.label ?? found.identity,
+  identity: found.identity,
+  ...(found.routeKey === undefined ? {} : { routeKey: found.routeKey }),
   method: "oauth2",
   values: flow.values,
   secretsSet: Object.keys(flow.secrets).toSorted(),
@@ -174,6 +184,26 @@ const oauthRecord = (
   createdAt: isoTimestamp(),
   credential
 })
+
+export const appCallbackSchemePattern = /^codevisor(-dev(-[0-9a-f]{10})?)?$/
+
+const redirectFor = (
+  oauth: PluginOAuthSpec,
+  input: OAuthStartInput,
+  flowId: string,
+  redirects: OAuthRedirects
+): Promise<OAuthRedirect> => {
+  if (oauth.redirectUrl === undefined) return redirects.prepare(flowId)
+
+  return Promise.resolve(appRedirect(oauth.redirectUrl, input.callbackScheme))
+}
+
+const appRedirect = (redirectUri: string, callbackScheme: string | undefined): OAuthRedirect => {
+  if (callbackScheme === undefined || !appCallbackSchemePattern.test(callbackScheme))
+    throw new HttpFailure(400, "Sign in to this plugin from the Codevisor app")
+
+  return { redirectUri, returnTo: callbackScheme, callbackScheme }
+}
 
 const requireOAuth = (spec: PluginAccountSpec, server: McpServer): PluginOAuthSpec => {
   if (spec.oauth !== undefined) return spec.oauth

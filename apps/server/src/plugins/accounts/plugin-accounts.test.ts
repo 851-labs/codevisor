@@ -46,7 +46,7 @@ const accountsFixture = async (options: { readonly revokeFails?: boolean } = {})
     server: async () => server,
     spec: () => tokenSpec,
     redirects: {
-      prepare: async () => ({ redirectUri: "http://127.0.0.1/callback", deviceId: "local" })
+      prepare: async () => ({ redirectUri: "http://127.0.0.1/callback", returnTo: "local" })
     },
     onChanged: () => undefined,
     now: clock.now

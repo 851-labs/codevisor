@@ -1,4 +1,8 @@
-import { SavePluginAccountRequest, StartPluginAccountOAuthRequest } from "@codevisor/api"
+import {
+  CompletePluginAccountOAuthRequest,
+  SavePluginAccountRequest,
+  StartPluginAccountOAuthRequest
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 import type { PluginAccounts } from "../plugins/accounts/plugin-accounts.js"
@@ -8,6 +12,8 @@ import type { RouteContext } from "./route-context.js"
 
 export const routePluginAccounts = async (route: RouteContext): Promise<boolean> => {
   const { request, url } = route
+  if (url.pathname === oauthCompletePath && request.method === "POST")
+    return routeOAuthComplete(route)
   const collection = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts")
   const member = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts/:accountId")
   const oauth = matchRouteParams(url.pathname, "/v1/plugins/:serverId/accounts/oauth/start")
@@ -28,7 +34,7 @@ const routeOAuthStart = async (route: RouteContext, serverId: string): Promise<b
   if (route.request.method !== "POST") return false
   const accounts = requireAccounts(route)
   const body = await readSchema(route.request, OAuthStartBody)
-  const started = await accounts.startOAuth(serverId, oauthStart(body))
+  const started = await accounts.startOAuth(serverId, oauthStart(body, returnApp(route)))
   rememberReturnApp(route, started.authorizationUrl)
   return respond(route, started)
 }
@@ -36,10 +42,42 @@ const routeOAuthStart = async (route: RouteContext, serverId: string): Promise<b
 const rememberReturnApp = (route: RouteContext, authorizationUrl: string | undefined): void => {
   if (authorizationUrl === undefined) return
 
-  route.routeState.oauthReturns.remember(
-    authorizationUrl,
-    route.url.searchParams.get(appSchemeParameter) ?? undefined
-  )
+  route.routeState.oauthReturns.remember(authorizationUrl, returnApp(route))
+}
+
+const returnApp = (route: RouteContext): string | undefined =>
+  route.url.searchParams.get(appSchemeParameter) ?? undefined
+
+const oauthCompletePath = "/v1/plugins/oauth/complete"
+
+const routeOAuthComplete = async (route: RouteContext): Promise<boolean> => {
+  const accounts = requireAccounts(route)
+  const body = await readSchema(route.request, CompletePluginAccountOAuthRequest)
+  const callback = callbackParams(body.callbackUrl)
+  await accounts.completeOAuth(callback.state, callback.code, callback.error)
+  return respond(route, { completed: true })
+}
+
+interface OAuthCallbackParams {
+  readonly state: string
+  readonly code?: string
+  readonly error?: string
+}
+
+const callbackParams = (callbackUrl: string): OAuthCallbackParams => {
+  const params = parsedUrl(callbackUrl).searchParams
+  const code = params.get("code")
+  const error = params.get("error")
+  return {
+    state: params.get("state") ?? "",
+    ...(code === null ? {} : { code }),
+    ...(error === null ? {} : { error })
+  }
+}
+
+const parsedUrl = (callbackUrl: string): URL => {
+  if (!URL.canParse(callbackUrl)) throw new HttpFailure(400, "That isn't a sign-in callback URL")
+  return new URL(callbackUrl)
 }
 
 const routeIngress = async (
@@ -84,10 +122,11 @@ const routeMember = async (
   return respond(route, await accounts.saveFields(serverId, body, accountId))
 }
 
-const oauthStart = (body: typeof OAuthStartBody.Type) => ({
+const oauthStart = (body: typeof OAuthStartBody.Type, app: string | undefined) => ({
   values: body.values ?? {},
   ...(body.label === undefined ? {} : { label: body.label }),
-  ...(body.accountId === undefined ? {} : { accountId: body.accountId })
+  ...(body.accountId === undefined ? {} : { accountId: body.accountId }),
+  ...(app === undefined ? {} : { callbackScheme: app })
 })
 
 const respond = (route: RouteContext, body: unknown): boolean => {

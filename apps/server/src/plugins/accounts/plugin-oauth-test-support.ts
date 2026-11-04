@@ -25,6 +25,7 @@ export const fakeOAuthProvider = async (options: ProviderOptions = {}) => {
     { readonly challenge: string; readonly clientId: string; readonly redirectUri: string }
   >()
   const tokenForms: Array<Record<string, string>> = []
+  const userinfoRequests: Array<{ readonly method: string; readonly body: string }> = []
   let issued = 0
 
   const token = async (request: IncomingMessage, response: ServerResponse) => {
@@ -38,19 +39,21 @@ export const fakeOAuthProvider = async (options: ProviderOptions = {}) => {
     json(response, 200, tokensFor(issued, options))
   }
 
-  const userinfo = (request: IncomingMessage, response: ServerResponse) => {
+  const userinfo = async (request: IncomingMessage, response: ServerResponse) => {
+    userinfoRequests.push({ method: request.method ?? "", body: await bodyOf(request) })
     if (request.headers.authorization !== `Bearer access-${issued}`) return json(response, 401, {})
     json(response, options.userinfoStatus ?? 200, options.identity ?? { email: "dana@example.com" })
   }
 
   const url = await listenOn((request, response) => {
     if (request.url === "/token") void token(request, response)
-    else userinfo(request, response)
+    else void userinfo(request, response)
   })
 
   return {
     url,
     tokenForms,
+    userinfoRequests,
     spec: (overrides: Partial<PluginOAuthSpec> = {}): PluginOAuthSpec => ({
       provider: "example",
       authorizeUrl: `${url}/authorize`,

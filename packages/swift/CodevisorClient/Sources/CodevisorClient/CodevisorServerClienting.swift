@@ -135,6 +135,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting, BrowserFaviconC
     serverId: String,
     request: ServerPluginAccountOAuthRequest
   ) async throws -> ServerPluginAccountOAuthStart
+  func completePluginAccountOAuth(callbackURL: URL) async throws
   func pluginAccountIngress(serverId: String, accountId: String) async throws -> [ServerPluginIngressURL]
   func listPluginEventSubscriptions() async throws -> [ServerPluginEventSubscription]
   func listPluginEventSubscriptions(sessionId: UUID) async throws -> [ServerPluginEventSubscription]

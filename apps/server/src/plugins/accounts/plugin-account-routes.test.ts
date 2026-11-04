@@ -237,6 +237,29 @@ describe("plugin account OAuth routes", () => {
     )
   })
 
+  it("finishes a sign-in that the app hands back from its URL scheme", async () => {
+    const running = await gmailApp()
+    const provider = await fakeOAuthProvider()
+    routeGoogleTo(provider.url)
+    const grant = provider.authorize((await running.start()).authorizationUrl)
+    const query = new URLSearchParams({ state: grant.state, code: grant.code })
+
+    const completed = await post(running, "/v1/plugins/oauth/complete", {
+      callbackUrl: `codevisor://plugin-oauth?${query}`
+    })
+    const garbled = await post(running, "/v1/plugins/oauth/complete", { callbackUrl: "not a url" })
+    const listed = await jsonRequest(running.server, `/v1/plugins/${running.gmail.id}/accounts`)
+
+    expect([completed.status, completed.body]).toEqual([200, { completed: true }])
+    expect([garbled.status, garbled.body]).toEqual([
+      400,
+      { error: "That isn't a sign-in callback URL" }
+    ])
+    expect(decode(PluginAccountsResponse)(listed.body).accounts).toMatchObject([
+      { identity: "dana@example.com", method: "oauth2" }
+    ])
+  })
+
   it("re-authorizes an existing account with the client it already has", async () => {
     const running = await gmailApp()
     const provider = await fakeOAuthProvider()

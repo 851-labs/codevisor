@@ -11,7 +11,7 @@ const official = {
     isLatest: true
   }
 }
-const ratedIds = ["io.sentry/mcp", "app.linear/linear"]
+const ratedIds = ["io.sentry/mcp", "com.stripe/mcp"]
 
 const ServerBody = z.looseObject({
   name: z.string(),
@@ -55,14 +55,14 @@ describe("plugin catalog", () => {
     const body = await readJson(response, ServerListBody)
 
     expect(response.headers.get("cache-control")).toBe("public, max-age=300")
-    expect(names(body)).toEqual(expect.arrayContaining(["app.linear/linear", "com.notion/mcp"]))
+    expect(names(body)).toEqual(expect.arrayContaining(["com.stripe/mcp", "com.notion/mcp"]))
     expect(names(body)).not.toContain("dev.codevisor/test-events")
     expect(body.metadata.count).toBe(body.servers.length)
     expect(body.servers.map((entry) => entry._meta)).toEqual(body.servers.map(() => official))
   })
 
   it("filters by name or title, ignoring case", async () => {
-    expect(names(await listServers("?search=LINEAR"))).toEqual(["app.linear/linear"])
+    expect(names(await listServers("?search=LINEAR"))).toEqual(["dev.codevisor/linear"])
     expect(names(await listServers("?search=sentry"))).toEqual(["io.sentry/mcp"])
     expect(await listServers("?search=no-such-plugin")).toEqual({
       servers: [],
@@ -74,7 +74,7 @@ describe("plugin catalog", () => {
     const sentry = "io.sentry/mcp"
     const unrated = pluginMeta(serverNamed(await listServers(), sentry))
     await rate(sentry, 16)
-    await rate("app.linear/linear", 18)
+    await rate("com.stripe/mcp", 18)
 
     const body = await listServers()
 
@@ -83,21 +83,21 @@ describe("plugin catalog", () => {
       ...unrated,
       ageRating: 16
     })
-    expect(pluginMeta(serverNamed(body, "app.linear/linear"))).toEqual({
+    expect(pluginMeta(serverNamed(body, "com.stripe/mcp"))).toEqual({
       ageRating: 18
     })
   })
 
   it("serves the latest version of one server by its encoded name", async () => {
-    await rate("app.linear/linear", 18)
+    await rate("com.stripe/mcp", 18)
 
-    const response = await SELF.fetch(`${BASE}/v0/servers/app.linear%2Flinear/versions/latest`)
+    const response = await SELF.fetch(`${BASE}/v0/servers/com.stripe%2Fmcp/versions/latest`)
     const body = await readJson(response, ServerResponseBody)
 
     expect(body._meta).toEqual(official)
     expect(body.server).toMatchObject({
-      name: "app.linear/linear",
-      title: "Linear",
+      name: "com.stripe/mcp",
+      title: "Stripe",
       _meta: { "dev.codevisor/plugin": { ageRating: 18 } }
     })
     expect((await SELF.fetch(`${BASE}/v0/servers/com.notion%2Fmcp/versions/latest`)).status).toBe(

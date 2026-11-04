@@ -30,6 +30,7 @@ describe("Codevisor native action parity", () => {
       "PUT /v1/plugins/:serverId/accounts/:accountId",
       "DELETE /v1/plugins/:serverId/accounts/:accountId",
       "POST /v1/plugins/:serverId/accounts/oauth/start",
+      "POST /v1/plugins/oauth/complete",
       "GET /v1/plugins/:serverId/accounts/:accountId/ingress",
       "POST /v1/plugins/apps/:viewId/token",
       "POST /v1/plugins/:serverId/panes/:paneType/token"

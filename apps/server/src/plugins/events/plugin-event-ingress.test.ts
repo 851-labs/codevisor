@@ -34,7 +34,7 @@ const grafanaFixture = async () => {
     connections: fixture.fake.connections,
     inboxes: cloud.inboxes,
     pluginKey: pluginKeyOf,
-    identity: async () => undefined
+    routeKey: async () => undefined
   })
   return { fixture, grafana, plain, undiscovered, cloud, ingress }
 }
@@ -60,7 +60,7 @@ const gmailFixture = async () => {
     connections: fixture.fake.connections,
     inboxes: cloud.inboxes,
     pluginKey: pluginKeyOf,
-    identity: async (_serverId, accountId) => identities[accountId]
+    routeKey: async (_serverId, accountId) => identities[accountId]
   })
   return { fixture, gmail, cloud, ingress, removed }
 }

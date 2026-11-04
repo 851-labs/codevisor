@@ -97,6 +97,17 @@ jobs:
           GMAIL_PUSH_TOPIC: ${{ secrets.GMAIL_PUSH_TOPIC }}
           GMAIL_PUSH_AUDIENCE: ${{ secrets.GMAIL_PUSH_AUDIENCE }}
           GMAIL_PUSH_SERVICE_ACCOUNT: ${{ secrets.GMAIL_PUSH_SERVICE_ACCOUNT }}
+      - name: Sync the Linear webhook secret
+        working-directory: apps/cloud
+        run: |
+          if [ -z "$LINEAR_WEBHOOK_SECRET" ]; then
+            echo "LINEAR_WEBHOOK_SECRET isn't set; Linear webhooks stay off."
+            exit 0
+          fi
+          printf '%s' "$LINEAR_WEBHOOK_SECRET" | bunx wrangler secret put LINEAR_WEBHOOK_SECRET
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
       - name: Deploy to Cloudflare
         working-directory: apps/cloud
         run: |

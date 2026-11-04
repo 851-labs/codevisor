@@ -7,11 +7,15 @@ export const PluginOAuthSpec = Schema.Struct({
   authorizeUrl: Schema.String,
   tokenUrl: Schema.String,
   scopes: Schema.Array(Schema.String),
+  scopeDelimiter: Schema.optional(Schema.String),
   client: Schema.Literals(["byo", "managed", "installed"]),
   authorizeParams: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   userinfoUrl: Schema.optional(Schema.String),
+  userinfoQuery: Schema.optional(Schema.String),
   identityField: Schema.optional(Schema.String),
-  setupUrl: Schema.optional(Schema.String)
+  routeKeyField: Schema.optional(Schema.String),
+  setupUrl: Schema.optional(Schema.String),
+  redirectUrl: Schema.optional(Schema.String)
 })
 export type PluginOAuthSpec = typeof PluginOAuthSpec.Type
 
@@ -161,6 +165,12 @@ export const PluginAccountOAuthStart = Schema.Struct({
   callbackScheme: Schema.optional(Schema.String)
 })
 export type PluginAccountOAuthStart = typeof PluginAccountOAuthStart.Type
+
+export const CompletePluginAccountOAuthRequest = Schema.Struct({ callbackUrl: Schema.String })
+export type CompletePluginAccountOAuthRequest = typeof CompletePluginAccountOAuthRequest.Type
+
+export const CompletePluginAccountOAuthResponse = Schema.Struct({ completed: Schema.Boolean })
+export type CompletePluginAccountOAuthResponse = typeof CompletePluginAccountOAuthResponse.Type
 
 export const PluginEventDelivery = Schema.Literals(["poll", "push", "webhook"])
 export type PluginEventDelivery = typeof PluginEventDelivery.Type

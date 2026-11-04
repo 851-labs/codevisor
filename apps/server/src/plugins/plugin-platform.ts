@@ -102,7 +102,10 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
       list: (serverId) => accounts.choices(serverId).catch(() => []),
       meta: async (serverId, accountId) => {
         const context = await accounts.context(serverId, accountId).catch(() => undefined)
-        return context === undefined ? undefined : { ...context }
+        if (context === undefined) return undefined
+
+        const { routeKey: _routeKey, ...meta } = context
+        return meta
       }
     }
   }
@@ -135,7 +138,7 @@ const oauthRedirects = (deps: PluginPlatformDeps): OAuthRedirects => ({
 
 const loopbackRedirect = (deps: PluginPlatformDeps) => ({
   redirectUri: new URL("/v1/plugins/oauth/callback", deps.localBaseUrl).toString(),
-  deviceId: "local"
+  returnTo: "local"
 })
 
 const requireMcp = (mcp: McpManager | undefined): McpManager => {

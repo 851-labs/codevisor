@@ -62,7 +62,7 @@ const oauthFixture = async (
       throw new HttpFailure(404, `Plugin not found: ${serverId}`)
     },
     spec: () => specFor(provider),
-    redirects: { prepare: async () => ({ redirectUri: callbackUrl, deviceId: "local" }) },
+    redirects: { prepare: async () => ({ redirectUri: callbackUrl, returnTo: "local" }) },
     ...(fixtureOptions.installedClients === undefined
       ? {}
       : { installedClients: fixtureOptions.installedClients }),
@@ -74,11 +74,13 @@ const oauthFixture = async (
       readonly label?: string
       readonly accountId?: string
       readonly values?: Record<string, unknown>
+      readonly callbackScheme?: string
     } = {}
   ) => {
     const started = await accounts.startOAuth(server.id, {
       values: request.values ?? { clientId: "client-1", clientSecret: "client-secret" },
       ...(request.label === undefined ? {} : { label: request.label }),
+      ...(request.callbackScheme === undefined ? {} : { callbackScheme: request.callbackScheme }),
       ...(request.accountId === undefined ? {} : { accountId: request.accountId })
     })
     return { started, grant: provider.authorize(started.authorizationUrl) }
@@ -93,6 +95,24 @@ const oauthFixture = async (
 const exampleSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
   label: "Example account",
   oauth: provider.spec({ authorizeParams: { access_type: "offline" } }),
+  fields: clientFields
+})
+
+const cloudRedirect = "https://cloud.example/oauth/plugins/callback"
+
+const appRedirectSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
+  ...exampleSpec(provider),
+  oauth: provider.spec({ redirectUrl: cloudRedirect })
+})
+
+const graphqlSpec = (provider: FakeOAuthProvider): PluginAccountSpec => ({
+  label: "Workspace",
+  oauth: provider.spec({
+    scopeDelimiter: ",",
+    userinfoQuery: "query Identity { viewer { email organization { id } } }",
+    identityField: "data.viewer.email",
+    routeKeyField: "data.viewer.organization.id"
+  }),
   fields: clientFields
 })
 
@@ -154,6 +174,54 @@ describe("plugin account OAuth", () => {
       fields: { clientId: "client-1", clientSecret: "client-secret" }
     })
     expect(JSON.stringify(context)).not.toContain("refresh-1")
+  })
+
+  it("sends the provider to a fixed redirect that returns to the app's URL scheme", async () => {
+    const { accounts, provider, server, signIn } = await oauthFixture(appRedirectSpec)
+
+    const { started, grant } = await signIn({ callbackScheme: "codevisor-dev-ff7f4cf1a4" })
+    await accounts.completeOAuth(grant.state, grant.code)
+
+    expect(started.callbackScheme).toBe("codevisor-dev-ff7f4cf1a4")
+    expect(new URL(started.authorizationUrl).searchParams.get("redirect_uri")).toBe(cloudRedirect)
+    expect(grant.state.split(".")[1]).toBe("codevisor-dev-ff7f4cf1a4")
+    expect(provider.tokenForms[0]).toMatchObject({ redirect_uri: cloudRedirect })
+    expect(await accounts.list(server.id)).toMatchObject([{ identity: "dana@example.com" }])
+  })
+
+  it("refuses a fixed-redirect sign-in that doesn't name a Codevisor app scheme", async () => {
+    const { signIn } = await oauthFixture(appRedirectSpec)
+
+    for (const callbackScheme of [undefined, "https", "codevisor-dev-../evil"])
+      await expect(signIn(callbackScheme === undefined ? {} : { callbackScheme })).rejects.toEqual(
+        failure(400, "Sign in to this plugin from the Codevisor app")
+      )
+  })
+
+  it("signs in to a GraphQL provider with comma-separated scopes and keeps its route key private", async () => {
+    const viewer = { data: { viewer: { email: "dana@acme.com", organization: { id: "org-1" } } } }
+    const { accounts, provider, server, changes, signIn } = await oauthFixture(graphqlSpec, {
+      identity: viewer
+    })
+
+    const { started, grant } = await signIn()
+    await accounts.completeOAuth(grant.state, grant.code)
+
+    expect(new URL(started.authorizationUrl).searchParams.get("scope")).toBe("mail.read,openid")
+    expect(provider.userinfoRequests).toEqual([
+      {
+        method: "POST",
+        body: JSON.stringify({ query: "query Identity { viewer { email organization { id } } }" })
+      }
+    ])
+    expect(await accounts.list(server.id)).toEqual([
+      expect.not.objectContaining({ routeKey: expect.anything() })
+    ])
+    expect(await accounts.context(server.id)).toMatchObject({
+      identity: "dana@acme.com",
+      routeKey: "org-1"
+    })
+    expect(JSON.stringify(changes)).toContain('"routeKey":"org-1"')
   })
 
   it("re-authorizes an account in place, keeping its label and revoking the old grant", async () => {

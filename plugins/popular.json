@@ -52,31 +52,6 @@
     },
     {
       "server": {
-        "name": "app.linear/linear",
-        "title": "Linear",
-        "description": "Find and manage issues, projects, and documents in your Linear workspace.",
-        "version": "1.0.2",
-        "websiteUrl": "https://linear.app",
-        "icons": [
-          {
-            "src": "https://static.linear.app/integrations/mcp/icon-256.png"
-          }
-        ],
-        "remotes": [
-          {
-            "type": "streamable-http",
-            "url": "https://mcp.linear.app/mcp"
-          }
-        ],
-        "_meta": {
-          "dev.codevisor/plugin": {
-            "ageRating": 4
-          }
-        }
-      }
-    },
-    {
-      "server": {
         "name": "com.stripe/mcp",
         "title": "Stripe",
         "description": "Work with Stripe customers, products, payments and more.",

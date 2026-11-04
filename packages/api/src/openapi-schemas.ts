@@ -157,6 +157,8 @@ import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
 import {
+  CompletePluginAccountOAuthRequest,
+  CompletePluginAccountOAuthResponse,
   CreatePluginEventSubscriptionRequest,
   PluginAccount,
   PluginAccountOAuthStart,
@@ -238,6 +240,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/plugins/:serverId/accounts": SavePluginAccountRequest,
   "PUT /v1/plugins/:serverId/accounts/:accountId": SavePluginAccountRequest,
   "POST /v1/plugins/:serverId/accounts/oauth/start": StartPluginAccountOAuthRequest,
+  "POST /v1/plugins/oauth/complete": CompletePluginAccountOAuthRequest,
   "POST /v1/mcps/detect-auth": DetectMcpAuthRequest,
   "PATCH /v1/mcps/:id": UpdateMcpServerRequest,
   "PATCH /v1/projects/:id/mcps/:mcpId": UpdateMcpServerRequest,
@@ -379,6 +382,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/plugins/:serverId/accounts": PluginAccount,
   "PUT /v1/plugins/:serverId/accounts/:accountId": PluginAccount,
   "POST /v1/plugins/:serverId/accounts/oauth/start": PluginAccountOAuthStart,
+  "POST /v1/plugins/oauth/complete": CompletePluginAccountOAuthResponse,
   "POST /v1/mcps/detect-auth": McpAuthDetection,
   "GET /v1/mcps/:id/tools": arrayOf(McpTool),
   "POST /v1/mcps/:id/connect": McpServer,

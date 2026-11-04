@@ -8,13 +8,14 @@ final class FakeWebSignIn: WebSignInPresenting {
   let presented = TestSignal()
   private(set) var urls: [URL] = []
   private(set) var closeCount = 0
-  private var open: CheckedContinuation<Void, Never>?
+  private var open: CheckedContinuation<URL?, Never>?
 
   var isOpen: Bool { open != nil }
 
-  func run(_ url: URL) async {
+  @discardableResult
+  func run(_ url: URL) async -> URL? {
     urls.append(url)
-    await withCheckedContinuation { continuation in
+    return await withCheckedContinuation { continuation in
       open = continuation
       presented.signal()
     }
@@ -22,7 +23,12 @@ final class FakeWebSignIn: WebSignInPresenting {
 
   func cancel() {
     closeCount += 1
-    open?.resume()
+    open?.resume(returning: nil)
+    open = nil
+  }
+
+  func complete(with callback: URL) {
+    open?.resume(returning: callback)
     open = nil
   }
 }

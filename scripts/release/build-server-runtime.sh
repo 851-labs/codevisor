@@ -29,6 +29,10 @@ Optional environment:
                                 Google installed-app client JSON for Google plugin
                                 sign-in. Written to config/google-oauth-client.json;
                                 never printed.
+  CODEVISOR_LINEAR_OAUTH_CLIENT_JSON
+                                Linear OAuth app client as {"installed":{client_id,
+                                client_secret}} for Linear plugin sign-in. Written
+                                to config/linear-oauth-client.json; never printed.
 EOF
 }
 
@@ -141,8 +145,11 @@ for plugin_dir in "$repo_root"/plugins/*/; do
   fi
 done
 
-if [[ -n "${CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON:-}" ]]; then
-  if ! printf '%s' "$CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON" | node -e '
+write_installed_oauth_client() {
+  local variable="$1" file="$2" provider="$3"
+  local client_json="${!variable:-}"
+  [[ -n "$client_json" ]] || return 0
+  if ! printf '%s' "$client_json" | node -e '
     try {
       const client = JSON.parse(require("node:fs").readFileSync(0, "utf8")).installed
       process.exit(typeof client?.client_id === "string" && client.client_id !== "" ? 0 : 1)
@@ -150,12 +157,15 @@ if [[ -n "${CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON:-}" ]]; then
       process.exit(1)
     }
   '; then
-    echo "error: CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON isn't a Google installed-app client" >&2
+    echo "error: $variable isn't a $provider installed-app client" >&2
     exit 1
   fi
   mkdir -p "$runtime_dir/config"
-  (umask 077 && printf '%s' "$CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON" > "$runtime_dir/config/google-oauth-client.json")
-fi
+  (umask 077 && printf '%s' "$client_json" > "$runtime_dir/config/$file")
+}
+
+write_installed_oauth_client CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON google-oauth-client.json Google
+write_installed_oauth_client CODEVISOR_LINEAR_OAUTH_CLIENT_JSON linear-oauth-client.json Linear
 
 node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null
 mkdir -p "$runtime_dir/packages/net/native/$target"
@@ -274,7 +284,7 @@ printf '{"version":"%s","buildNumber":%s,"sourceRevision":"%s","target":"%s"}\n'
 runtime_root="$(cd "$runtime_dir" && pwd -P)"
 (
   cd /
-  env -u CODEVISOR_GOOGLE_OAUTH_CLIENT_FILE -u CODEVISOR_DEV_INSTANCE_ID \
+  env -u CODEVISOR_GOOGLE_OAUTH_CLIENT_FILE -u CODEVISOR_LINEAR_OAUTH_CLIENT_FILE -u CODEVISOR_DEV_INSTANCE_ID \
     CODEVISOR_SMOKE_RUNTIME="$runtime_root" "$runtime_root/bin/node" --input-type=module -e '
     const { existsSync } = await import("node:fs")
     const { pathToFileURL } = await import("node:url")
@@ -297,10 +307,11 @@ runtime_root="$(cd "$runtime_dir" && pwd -P)"
     if (!computer.linuxComputerUseHelperPath()?.startsWith(runtime)) {
       throw new Error("Packaged Linux Computer Use helper is not discoverable from /")
     }
-    if (existsSync(`${runtime}/config/google-oauth-client.json`)) {
-      const boot = await import(pathToFileURL(`${runtime}/serve-boot.js`))
-      if ((await boot.bootInstalledOAuthClients()("google")) === undefined) {
-        throw new Error("Packaged server cannot find its bundled Google sign-in client")
+    const boot = await import(pathToFileURL(`${runtime}/serve-boot.js`))
+    for (const [provider, file] of [["google", "google-oauth-client.json"], ["linear", "linear-oauth-client.json"]]) {
+      if (!existsSync(`${runtime}/config/${file}`)) continue
+      if ((await boot.bootInstalledOAuthClients()(provider)) === undefined) {
+        throw new Error(`Packaged server cannot find its bundled ${provider} sign-in client`)
       }
     }
   '

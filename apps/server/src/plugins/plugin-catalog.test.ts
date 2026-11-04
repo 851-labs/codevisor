@@ -120,7 +120,7 @@ describe("plugin catalog", () => {
   it("never lists the repository's dev-only plugins outside development", () => {
     const published = ids(makePluginCatalog({ dev: false, execPath: "/opt/node" }).entries())
 
-    expect(published).toContain("app.linear/linear")
+    expect(published).toContain("dev.codevisor/linear")
     expect(published).not.toContain("dev.codevisor/test-events")
   })
 })

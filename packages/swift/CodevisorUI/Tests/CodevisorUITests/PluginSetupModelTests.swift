@@ -155,6 +155,35 @@ struct PluginSetupModelTests {
     #expect(accounts.accounts.map(\.id) == ["acc-1"])
   }
 
+  @Test("A sign-in that returns through the app's URL scheme hands the callback to the server")
+  func accountSignInThroughAppScheme() async throws {
+    let transport = SetupTransport()
+    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
+    transport.respond(
+      "POST /v1/plugins/mcp-1/accounts/oauth/start",
+      with: #"{"flowId":"flow-1","authorizationUrl":"https://linear.example/authorize"}"#)
+    transport.respond("POST /v1/plugins/oauth/complete", with: #"{"completed":true}"#)
+    let signIn = FakeWebSignIn()
+    let spec = ServerPluginAccountSpec(label: "Linear workspace", oauth: ServerPluginOAuthSpec(provider: "linear"))
+    let server = try JSONDecoder().decode(
+      ServerMcpServer.self, from: Data(Self.server(authType: "none", state: "connected").utf8))
+    let accounts = PluginAccountsModel(server: server, client: Self.client(transport), spec: spec, webSignIn: signIn)
+    await accounts.load()
+
+    let signingIn = Task { await accounts.signIn() }
+    await signIn.presented.wait()
+    let callback = try #require(URL(string: "codevisor://plugin-oauth?state=s.codevisor.n&code=c-1"))
+    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[\#(Self.account)]}"#)
+    signIn.complete(with: callback)
+    await signingIn.value
+
+    let completions = transport.bodies(sentTo: "POST /v1/plugins/oauth/complete").map {
+      try? JSONDecoder().decode(CompletionBody.self, from: Data($0.utf8)).callbackUrl
+    }
+    #expect(completions == [callback.absoluteString])
+    #expect(accounts.accounts.map(\.id) == ["acc-1"])
+  }
+
   @Test("Answering Not Now or cancelling declines; any other outcome counts as set up")
   func resolution() {
     let declined = TranscriptQuestion.Answer(
@@ -205,8 +234,17 @@ struct PluginSetupModelTests {
     """
 }
 
+private struct CompletionBody: Decodable {
+  var callbackUrl: String
+}
+
 private final class SetupTransport: ServerRequestTransport, Sendable {
   private let routes = Mutex<[String: (status: Int, body: String)]>([:])
+  private let sent = Mutex<[String: [String]]>([:])
+
+  func bodies(sentTo route: String) -> [String] {
+    sent.withLock { $0[route] ?? [] }
+  }
 
   func respond(_ route: String, with body: String, status: Int = 200) {
     routes.withLock { $0[route] = (status, body) }
@@ -215,6 +253,8 @@ private final class SetupTransport: ServerRequestTransport, Sendable {
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let url = try #require(request.url)
     let route = "\(request.httpMethod ?? "GET") \(url.path)"
+    let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+    sent.withLock { $0[route, default: []].append(body) }
     let reply = try #require(routes.withLock { $0[route] }, "Unexpected request \(route)")
     let response = try #require(
       HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil))

@@ -12,11 +12,13 @@ public final class PluginWebSignIn: WebSignInPresenting {
     self.browser = browser
   }
 
-  public func run(_ url: URL) async {
+  @discardableResult
+  public func run(_ url: URL) async -> URL? {
     let id = UUID()
     attempt = id
-    _ = await browser.run(url, id: id)
+    let callback = await browser.run(url, id: id)
     if attempt == id { attempt = nil }
+    return callback
   }
 
   public func cancel() {

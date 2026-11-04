@@ -38,8 +38,8 @@ export const newFlowId = (): string => randomBytes(24).toString("base64url")
 
 export const newNonce = (): string => randomBytes(12).toString("base64url")
 
-export const flowState = (flowId: string, deviceId: string, nonce: string): string =>
-  `${flowId}.${deviceId}.${nonce}`
+export const flowState = (flowId: string, returnTo: string, nonce: string): string =>
+  `${flowId}.${returnTo}.${nonce}`
 
 export const parseFlowState = (
   state: string
@@ -61,7 +61,7 @@ export const beginPluginOAuth = async (
     metadata: authorizationMetadata(spec),
     clientInformation: clientInformation(client),
     redirectUrl: redirectUri,
-    scope: spec.scopes.join(" "),
+    scope: spec.scopes.join(spec.scopeDelimiter ?? " "),
     state
   })
   for (const [name, value] of Object.entries(spec.authorizeParams ?? {})) {
@@ -111,24 +111,51 @@ export const oauthBundle = (
   }
 })
 
-export const fetchIdentity = async (
+export interface AccountIdentity {
+  readonly identity?: string
+  readonly routeKey?: string
+}
+
+export const fetchAccountIdentity = async (
   spec: PluginOAuthSpec,
   accessToken: string,
   fetchFn: typeof fetch = fetch
-): Promise<string | undefined> => {
-  if (spec.userinfoUrl === undefined) return undefined
-  const response = await fetchFn(spec.userinfoUrl, {
-    headers: { authorization: `Bearer ${accessToken}` },
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000)
-  })
-  if (!response.ok) return undefined
+): Promise<AccountIdentity> => {
+  if (spec.userinfoUrl === undefined) return {}
+  const response = await fetchFn(spec.userinfoUrl, userinfoRequest(spec, accessToken))
+  if (!response.ok) return {}
   const body: unknown = await response.json()
-  const value = identityValue(body, spec.identityField ?? "email")
-  return typeof value === "string" ? value : undefined
+  return {
+    ...stringAt(body, "identity", spec.identityField ?? "email"),
+    ...stringAt(body, "routeKey", spec.routeKeyField)
+  }
 }
 
-const identityValue = (body: unknown, key: string): unknown => field(body, key)
+const userinfoRequest = (spec: PluginOAuthSpec, accessToken: string): RequestInit => {
+  const request = {
+    headers: { authorization: `Bearer ${accessToken}` },
+    redirect: "error" as const,
+    signal: AbortSignal.timeout(15_000)
+  }
+  if (spec.userinfoQuery === undefined) return request
+
+  return {
+    ...request,
+    method: "POST",
+    headers: { ...request.headers, "content-type": "application/json" },
+    body: JSON.stringify({ query: spec.userinfoQuery })
+  }
+}
+
+const stringAt = (
+  body: unknown,
+  name: keyof AccountIdentity,
+  path: string | undefined
+): AccountIdentity => {
+  if (path === undefined) return {}
+  const value = path.split(".").reduce<unknown>((parent, key) => field(parent, key), body)
+  return typeof value === "string" ? { [name]: value } : {}
+}
 
 const issuerOf = (spec: PluginOAuthSpec): string => new URL(spec.authorizeUrl).origin
 

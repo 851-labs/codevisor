@@ -63,7 +63,12 @@ plugins/
   bundled plugins are not installed from npm.
 - `_meta["dev.codevisor/plugin"]` describes the plugin to Codevisor:
   `{ bundled: "<plugin>", entry: "dist/main.js", accounts?, capabilities, devOnly? }`.
-  - `accounts` is a `PluginAccountSpec`: `{ label, oauth?, fields }`.
+  - `accounts` is a `PluginAccountSpec`: `{ label, oauth?, fields }`. OAuth
+    returns to the machine's loopback callback by default. A provider that
+    needs one fixed redirect URI (Linear) sets
+    `oauth.redirectUrl: "https://cloud.codevisor.dev/oauth/plugins/callback"`:
+    Codevisor Cloud bounces the code to the app's URL scheme, and the app hands
+    it to the machine that started the sign-in.
   - `capabilities` is the digest of tools (`name`, `description`, `effects`,
     `app`), events, skills, panes and ingress. A `server-json.test.ts`
     compares it with what the server really serves.
@@ -234,9 +239,10 @@ emit them on your open `events/stream` streams for that account. Return
 `{ accepted: <events emitted>, status?: <http status> }`, for example
 `{ accepted: 0, status: 401 }` on a bad signature.
 
-An ingress with a `route` (first-party only, today `"gmail"`) isn't pasted
+An ingress with a `route` (first-party only, today `"gmail"` and `"linear"`) isn't pasted
 anywhere: Codevisor Cloud routes a provider's push notifications to it by the
-account's identity. Each `events/stream` request then carries
+account's route key: the OAuth spec's `routeKeyField` from userinfo (Linear's
+workspace id), else its identity (Gmail's address). Each `events/stream` request then carries
 `params._meta["dev.codevisor/ingress"] = { ingress: [{ name, url, route?: { name, ...settings } }] }`,
 where the route settings come from the cloud (for Gmail, the Pub/Sub `topic`).
 A stream may set a lifetime and end itself; Codevisor reopens it at once with a

@@ -41,7 +41,7 @@ export interface PluginEventIngressDeps {
   readonly connections: PluginEventConnections
   readonly inboxes: CloudInboxApi
   readonly pluginKey: (server: McpServer) => string
-  readonly identity: (serverId: string, accountId: string) => Promise<string | undefined>
+  readonly routeKey: (serverId: string, accountId: string) => Promise<string | undefined>
 }
 
 export const ingressMetaKey = "dev.codevisor/ingress"
@@ -58,10 +58,10 @@ export const makePluginEventIngress = (deps: PluginEventIngressDeps): PluginEven
   ): Promise<RouteConfig | undefined> => {
     if (ingress.route === undefined) return undefined
 
-    const identity = await deps.identity(server.id, accountId)
-    if (identity === undefined) return undefined
+    const key = await deps.routeKey(server.id, accountId)
+    if (key === undefined) return undefined
 
-    return deps.inboxes.route(inboxId, ingress.route, routeKey(identity))
+    return deps.inboxes.route(inboxId, ingress.route, hashedRouteKey(key))
   }
 
   const provision = async (
@@ -188,8 +188,8 @@ const inboxTarget = (
   ingress: PluginIngress
 ): InboxTarget => ({ plugin: deps.pluginKey(server), accountId, ingress: ingress.name })
 
-const routeKey = (identity: string): string =>
-  createHash("sha256").update(identity.trim().toLowerCase(), "utf8").digest("hex")
+const hashedRouteKey = (key: string): string =>
+  createHash("sha256").update(key.trim().toLowerCase(), "utf8").digest("hex")
 
 const pasted = (inbox: ProvisionedInbox): boolean => inbox.ingress.route === undefined
 

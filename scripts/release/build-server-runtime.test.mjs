@@ -130,18 +130,24 @@ test("dev-only plugins stay out of the packaged runtime", async (t) => {
   await assert.rejects(access(join(runtime, "plugins/test-events/dist")))
 })
 
-test("bundles the Google sign-in client from the build's secret, readable only by its owner", async (t) => {
-  const client = JSON.stringify({ installed: { client_id: "client.apps.googleusercontent.com" } })
+test("bundles the Google and Linear sign-in clients from the build's secrets, readable only by their owner", async (t) => {
+  const google = JSON.stringify({ installed: { client_id: "client.apps.googleusercontent.com" } })
+  const linear = JSON.stringify({ installed: { client_id: "linear-client", client_secret: "s" } })
   const { result, runtime } = await packageRuntime(
     t,
     {},
-    { CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: client }
+    { CODEVISOR_GOOGLE_OAUTH_CLIENT_JSON: google, CODEVISOR_LINEAR_OAUTH_CLIENT_JSON: linear }
   )
 
   assert.equal(result.status, 73, result.stderr)
-  const bundled = join(runtime, "config/google-oauth-client.json")
-  assert.equal(await readFile(bundled, "utf8"), client)
-  assert.equal((await stat(bundled)).mode & 0o777, 0o600)
+  for (const [file, client] of [
+    ["config/google-oauth-client.json", google],
+    ["config/linear-oauth-client.json", linear]
+  ]) {
+    const bundled = join(runtime, file)
+    assert.equal(await readFile(bundled, "utf8"), client)
+    assert.equal((await stat(bundled)).mode & 0o777, 0o600)
+  }
 })
 
 test("refuses a Google client secret that isn't an installed-app client, without printing it", async (t) => {

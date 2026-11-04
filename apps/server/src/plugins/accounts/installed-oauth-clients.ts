@@ -21,6 +21,14 @@ export const installedClientSources: ReadonlyMap<string, InstalledClientSource> 
       bundledFile: join("config", "google-oauth-client.json"),
       devFile: join(".codevisor-dev-secrets", "google-gmail-dev-oauth-client.json")
     }
+  ],
+  [
+    "linear",
+    {
+      envVar: "CODEVISOR_LINEAR_OAUTH_CLIENT_FILE",
+      bundledFile: join("config", "linear-oauth-client.json"),
+      devFile: join(".codevisor-dev-secrets", "linear-dev-oauth-client.json")
+    }
   ]
 ])
 

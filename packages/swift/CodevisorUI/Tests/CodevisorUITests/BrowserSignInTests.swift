@@ -25,6 +25,17 @@ struct BrowserSignInTests {
   }
 
   @Test
+  func pluginAuthorizationBouncedFromCloudFinishesTheWait() async {
+    let rig = Rig()
+    let waiting = rig.start(page)
+    await rig.opened.wait()
+    let authorized = URL(string: "codevisor-dev-0123456789://plugin-oauth?state=f.codevisor.n&code=c-1")!
+
+    #expect(rig.browser.receive(authorized))
+    #expect(await waiting.value == authorized)
+  }
+
+  @Test
   func callbackBringsBackTheWindowTheSignInStartedFrom() async {
     let rig = Rig()
     let waiting = rig.start(page)

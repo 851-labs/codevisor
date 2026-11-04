@@ -1,0 +1,497 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.codevisor/linear",
+  "title": "Linear",
+  "description": "Find and manage Linear issues, projects and comments, and wake bots on Linear events.",
+  "version": "1.0.0",
+  "websiteUrl": "https://codevisor.dev",
+  "icons": [
+    {
+      "src": "https://static.linear.app/integrations/mcp/icon-256.png"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/851-labs/codevisor",
+    "source": "github",
+    "subfolder": "plugins/linear"
+  },
+  "_meta": {
+    "dev.codevisor/plugin": {
+      "bundled": "linear",
+      "entry": "dist/main.js",
+      "ageRating": 4,
+      "accounts": {
+        "label": "Linear workspace",
+        "oauth": {
+          "provider": "linear",
+          "authorizeUrl": "https://linear.app/oauth/authorize",
+          "tokenUrl": "https://api.linear.app/oauth/token",
+          "scopes": ["read", "write"],
+          "scopeDelimiter": ",",
+          "client": "installed",
+          "authorizeParams": {
+            "prompt": "consent",
+            "actor": "user"
+          },
+          "userinfoUrl": "https://api.linear.app/graphql",
+          "userinfoQuery": "query Identity { viewer { email organization { id } } }",
+          "identityField": "data.viewer.email",
+          "routeKeyField": "data.viewer.organization.id",
+          "redirectUrl": "https://cloud.codevisor.dev/oauth/plugins/callback"
+        },
+        "fields": []
+      },
+      "capabilities": {
+        "tools": [
+          {
+            "name": "get_attachment",
+            "description": "Get attachment",
+            "effects": "read"
+          },
+          {
+            "name": "prepare_attachment_upload",
+            "description": "Prepare attachment upload",
+            "effects": "write"
+          },
+          {
+            "name": "prepare_file_upload",
+            "description": "Prepare file upload",
+            "effects": "write"
+          },
+          {
+            "name": "create_attachment_from_upload",
+            "description": "Create attachment from upload",
+            "effects": "write"
+          },
+          {
+            "name": "create_attachment",
+            "description": "Create attachment (deprecated)",
+            "effects": "write"
+          },
+          {
+            "name": "delete_attachment",
+            "description": "Delete attachment",
+            "effects": "write"
+          },
+          {
+            "name": "list_agent_skills",
+            "description": "List agent skills",
+            "effects": "read"
+          },
+          {
+            "name": "get_agent_skill",
+            "description": "Get agent skill",
+            "effects": "read"
+          },
+          {
+            "name": "list_comments",
+            "description": "List comments",
+            "effects": "read"
+          },
+          {
+            "name": "save_comment",
+            "description": "Save comment",
+            "effects": "write"
+          },
+          {
+            "name": "delete_comment",
+            "description": "Delete comment",
+            "effects": "write"
+          },
+          {
+            "name": "list_cycles",
+            "description": "List cycles",
+            "effects": "read"
+          },
+          {
+            "name": "list_custom_views",
+            "description": "List custom views",
+            "effects": "read"
+          },
+          {
+            "name": "get_document",
+            "description": "Get document",
+            "effects": "read"
+          },
+          {
+            "name": "list_documents",
+            "description": "List documents",
+            "effects": "read"
+          },
+          {
+            "name": "save_document",
+            "description": "Save document",
+            "effects": "write"
+          },
+          {
+            "name": "extract_images",
+            "description": "Extract images",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue",
+            "description": "Get issue",
+            "effects": "read"
+          },
+          {
+            "name": "list_issues",
+            "description": "List issues",
+            "effects": "read"
+          },
+          {
+            "name": "save_issue",
+            "description": "Save issue",
+            "effects": "write"
+          },
+          {
+            "name": "list_issue_statuses",
+            "description": "List issue statuses",
+            "effects": "read"
+          },
+          {
+            "name": "get_issue_status",
+            "description": "Get issue status",
+            "effects": "read"
+          },
+          {
+            "name": "list_issue_labels",
+            "description": "List issue labels",
+            "effects": "read"
+          },
+          {
+            "name": "save_issue_label",
+            "description": "Save issue label",
+            "effects": "write"
+          },
+          {
+            "name": "create_issue_label",
+            "description": "Create issue label (deprecated)",
+            "effects": "write"
+          },
+          {
+            "name": "retire_issue_label",
+            "description": "Retire issue label",
+            "effects": "write"
+          },
+          {
+            "name": "restore_issue_label",
+            "description": "Restore issue label",
+            "effects": "write"
+          },
+          {
+            "name": "list_projects",
+            "description": "List projects",
+            "effects": "read"
+          },
+          {
+            "name": "get_project",
+            "description": "Get project",
+            "effects": "read"
+          },
+          {
+            "name": "save_project",
+            "description": "Save project",
+            "effects": "write"
+          },
+          {
+            "name": "list_project_labels",
+            "description": "List project labels",
+            "effects": "read"
+          },
+          {
+            "name": "retire_project_label",
+            "description": "Retire project label",
+            "effects": "write"
+          },
+          {
+            "name": "restore_project_label",
+            "description": "Restore project label",
+            "effects": "write"
+          },
+          {
+            "name": "save_project_label",
+            "description": "Save project label",
+            "effects": "write"
+          },
+          {
+            "name": "list_release_pipelines",
+            "description": "List release pipelines",
+            "effects": "read"
+          },
+          {
+            "name": "list_releases",
+            "description": "List releases",
+            "effects": "read"
+          },
+          {
+            "name": "get_release",
+            "description": "Get release",
+            "effects": "read"
+          },
+          {
+            "name": "save_release",
+            "description": "Save release",
+            "effects": "write"
+          },
+          {
+            "name": "list_release_notes",
+            "description": "List release notes",
+            "effects": "read"
+          },
+          {
+            "name": "get_release_note",
+            "description": "Get release notes",
+            "effects": "read"
+          },
+          {
+            "name": "save_release_note",
+            "description": "Save release notes",
+            "effects": "write"
+          },
+          {
+            "name": "share_issue",
+            "description": "Share issue",
+            "effects": "write"
+          },
+          {
+            "name": "unshare_issue",
+            "description": "Unshare issue",
+            "effects": "write"
+          },
+          {
+            "name": "list_milestones",
+            "description": "List project milestones",
+            "effects": "read"
+          },
+          {
+            "name": "get_milestone",
+            "description": "Get milestone",
+            "effects": "read"
+          },
+          {
+            "name": "save_milestone",
+            "description": "Save milestone",
+            "effects": "write"
+          },
+          {
+            "name": "get_notifications",
+            "description": "Get notifications",
+            "effects": "read"
+          },
+          {
+            "name": "mark_notification",
+            "description": "Mark notification",
+            "effects": "write"
+          },
+          {
+            "name": "list_teams",
+            "description": "List teams",
+            "effects": "read"
+          },
+          {
+            "name": "get_team",
+            "description": "Get team",
+            "effects": "read"
+          },
+          {
+            "name": "get_triage_responsibility",
+            "description": "Get triage responsibility",
+            "effects": "read"
+          },
+          {
+            "name": "list_templates",
+            "description": "List templates",
+            "effects": "read"
+          },
+          {
+            "name": "get_template",
+            "description": "Get template",
+            "effects": "read"
+          },
+          {
+            "name": "list_users",
+            "description": "List users",
+            "effects": "read"
+          },
+          {
+            "name": "get_user",
+            "description": "Get user",
+            "effects": "read"
+          },
+          {
+            "name": "get_workspace",
+            "description": "Get workspace",
+            "effects": "read"
+          },
+          {
+            "name": "search_documentation",
+            "description": "Search documentation",
+            "effects": "read"
+          },
+          {
+            "name": "get_diff",
+            "description": "Get diff",
+            "effects": "read"
+          },
+          {
+            "name": "list_diffs",
+            "description": "List diffs",
+            "effects": "read"
+          },
+          {
+            "name": "get_diff_threads",
+            "description": "Get diff threads",
+            "effects": "read"
+          },
+          {
+            "name": "save_diff_comment",
+            "description": "Save diff comment",
+            "effects": "external-write"
+          },
+          {
+            "name": "resolve_diff_thread",
+            "description": "Resolve diff thread",
+            "effects": "external-write"
+          },
+          {
+            "name": "delete_diff_comment",
+            "description": "Delete diff comment",
+            "effects": "external-write"
+          },
+          {
+            "name": "submit_diff_review",
+            "description": "Submit diff review",
+            "effects": "external-write"
+          },
+          {
+            "name": "update_diff",
+            "description": "Update diff",
+            "effects": "external-write"
+          },
+          {
+            "name": "merge_diff",
+            "description": "Merge diff",
+            "effects": "external-write"
+          },
+          {
+            "name": "list_customers",
+            "description": "List customers",
+            "effects": "read"
+          },
+          {
+            "name": "save_customer",
+            "description": "Save customer",
+            "effects": "write"
+          },
+          {
+            "name": "delete_customer",
+            "description": "Delete customer",
+            "effects": "write"
+          },
+          {
+            "name": "list_customer_needs",
+            "description": "List customer needs",
+            "effects": "read"
+          },
+          {
+            "name": "save_customer_need",
+            "description": "Save customer need",
+            "effects": "write"
+          },
+          {
+            "name": "delete_customer_need",
+            "description": "Delete customer need",
+            "effects": "write"
+          },
+          {
+            "name": "list_initiatives",
+            "description": "List initiatives",
+            "effects": "read"
+          },
+          {
+            "name": "get_initiative",
+            "description": "Get initiative",
+            "effects": "read"
+          },
+          {
+            "name": "save_initiative",
+            "description": "Save initiative",
+            "effects": "write"
+          },
+          {
+            "name": "list_initiative_labels",
+            "description": "List initiative labels",
+            "effects": "read"
+          },
+          {
+            "name": "save_initiative_label",
+            "description": "Save initiative label",
+            "effects": "write"
+          },
+          {
+            "name": "create_initiative_label",
+            "description": "Create initiative label (deprecated)",
+            "effects": "write"
+          },
+          {
+            "name": "retire_initiative_label",
+            "description": "Retire initiative label",
+            "effects": "write"
+          },
+          {
+            "name": "restore_initiative_label",
+            "description": "Restore initiative label",
+            "effects": "write"
+          },
+          {
+            "name": "get_status_updates",
+            "description": "Get status updates",
+            "effects": "read"
+          },
+          {
+            "name": "save_status_update",
+            "description": "Save status update",
+            "effects": "write"
+          },
+          {
+            "name": "delete_status_update",
+            "description": "Delete status update",
+            "effects": "write"
+          }
+        ],
+        "events": [
+          {
+            "name": "issue.created",
+            "description": "A new issue was created"
+          },
+          {
+            "name": "issue.updated",
+            "description": "An issue changed status, assignee, priority or other fields"
+          },
+          {
+            "name": "comment.created",
+            "description": "Someone commented on an issue"
+          },
+          {
+            "name": "mention.created",
+            "description": "Someone mentioned you in a comment or new issue"
+          }
+        ],
+        "skills": [
+          {
+            "name": "linear",
+            "description": "Work in the user's Linear workspace: find and update issues, comment, and react to Linear events with filters."
+          }
+        ],
+        "panes": [],
+        "ingress": [
+          {
+            "name": "linear",
+            "title": "Linear webhooks",
+            "route": "linear"
+          }
+        ]
+      }
+    }
+  }
+}

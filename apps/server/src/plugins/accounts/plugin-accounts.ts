@@ -32,6 +32,7 @@ export interface AccountContext {
   readonly id: string
   readonly label?: string
   readonly identity?: string
+  readonly routeKey?: string
   readonly accessToken?: string
   readonly fields: Readonly<Record<string, string | number | boolean>>
 }
@@ -58,7 +59,10 @@ export interface PluginAccounts {
   ) => Promise<PluginAccount>
   readonly startOAuth: (
     serverId: string,
-    request: SavePluginAccountRequest & { readonly accountId?: string }
+    request: SavePluginAccountRequest & {
+      readonly accountId?: string
+      readonly callbackScheme?: string
+    }
   ) => Promise<PluginAccountOAuthStart>
   readonly completeOAuth: (state: string, code: string | undefined, error?: string) => Promise<void>
   readonly remove: (serverId: string, accountId: string) => Promise<void>
@@ -130,6 +134,7 @@ export const makePluginAccounts = (deps: PluginAccountsDeps): PluginAccounts => 
       const split = splitFieldValues(spec.fields, request.values, await existingSecrets(previous))
       return flows.start(server, spec, {
         ...(request.label === undefined ? {} : { label: request.label }),
+        ...(request.callbackScheme === undefined ? {} : { callbackScheme: request.callbackScheme }),
         previous,
         split
       })
@@ -164,6 +169,7 @@ export const accountContext = (
   id: record.id,
   ...(record.label === undefined ? {} : { label: record.label }),
   ...(record.identity === undefined ? {} : { identity: record.identity }),
+  ...(record.routeKey === undefined ? {} : { routeKey: record.routeKey }),
   ...(bundle === undefined || bundle.authMethod === "apiKey"
     ? {}
     : { accessToken: bundle.accessToken }),

@@ -12,6 +12,7 @@ public final class BrowserSignIn {
   public static let shared = BrowserSignIn()
 
   public static let returnHost = "signed-in"
+  public static let pluginOAuthHost = "plugin-oauth"
   public static let returnGrace: Duration = .seconds(2)
 
   public typealias WindowRestore = @MainActor () -> Void
@@ -23,7 +24,7 @@ public final class BrowserSignIn {
     var returning: Task<Void, Never>?
   }
 
-  private static let callbackHosts: Set<String> = ["cloud-auth", returnHost]
+  private static let callbackHosts: Set<String> = ["cloud-auth", returnHost, pluginOAuthHost]
 
   private let open: @MainActor (URL) -> Bool
   private let rememberWindow: @MainActor () -> WindowRestore?

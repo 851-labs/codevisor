@@ -512,6 +512,18 @@
         "vitest": "4.1.6",
       },
     },
+    "plugins/linear": {
+      "name": "@codevisor/plugin-linear",
+      "dependencies": {
+        "@codevisor/plugin-kit": "workspace:*",
+        "@modelcontextprotocol/client": "2.4.0",
+        "@modelcontextprotocol/server": "2.4.0",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
     "plugins/test-events": {
       "name": "@codevisor/plugin-test-events",
       "dependencies": {
@@ -758,6 +770,8 @@
     "@codevisor/plugin-gmail": ["@codevisor/plugin-gmail@workspace:plugins/gmail"],
 
     "@codevisor/plugin-kit": ["@codevisor/plugin-kit@workspace:plugins/kit"],
+
+    "@codevisor/plugin-linear": ["@codevisor/plugin-linear@workspace:plugins/linear"],
 
     "@codevisor/plugin-test-events": ["@codevisor/plugin-test-events@workspace:plugins/test-events"],
 
@@ -2918,9 +2932,6 @@
     "@google/genai/ws": ["ws@8.21.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
 
     "@mistralai/mistralai/ws": ["ws@8.21.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
-
-
-
 
     "@opentelemetry/api-logs/@opentelemetry/api": ["@opentelemetry/api@1.10.0", "", {}, "sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ=="],
 
