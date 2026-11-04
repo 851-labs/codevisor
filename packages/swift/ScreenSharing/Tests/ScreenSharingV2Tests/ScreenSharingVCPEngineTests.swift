@@ -7,15 +7,16 @@ import VideoToolbox
 @testable import ScreenSharingV2
 
 extension HardwareCodecTests {
-  @Suite(
-    .timeLimit(.minutes(1)),
-    .disabled("VCP sessions hold the Mac's hardware encoders until the process exits (851-4009)."))
+  @Suite(.timeLimit(.minutes(1)))
   struct ScreenSharingVCPEngineTests {
+    private static let tiles = 2
     private static let framesBeforeAnAcknowledgement = 30
     private static let shades: [UInt8] = [40, 90, 190, 255]
     private static let lumaTolerance = 1
     private static let deltaFrames = 6
     private static let refinedLumaError = 1.5
+    private static let refinementGapPastTheNextRefreshNs =
+      ScreenSharingV2Profile.refinementGapNs + ScreenSharingV2RefreshPhase().periodNs
 
     static var available: Bool {
       VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) && (try? ScreenSharingVideoProcessing.load()) != nil
@@ -24,7 +25,8 @@ extension HardwareCodecTests {
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
     func tileSessionsSendFourFourFourTilesThatComposeIntoOnePicture() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
-      let host = Self.host(try Self.vcp(tiles: 4, metrics: ScreenSharingMetrics()), transport: hostSide)
+      try await HardwareEncoderBudget.require(vcpTiles: Self.tiles)
+      let host = Self.host(try Self.vcp(tiles: Self.tiles, metrics: ScreenSharingMetrics()), transport: hostSide)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
       host.start()
@@ -34,18 +36,19 @@ extension HardwareCodecTests {
       host.push(try TestBGRAPixels.frame(shades: Self.shades, timestampNs: 1_000))
       await decoded.arrivals.cancellableWait(for: 1)
 
-      let first = Array(hostSide.sent.prefix(4))
-      #expect(first.map(\.tile).sorted() == [0, 1, 2, 3])
-      #expect(first.allSatisfy { $0.isKeyFrame && $0.update.tiles == [0, 1, 2, 3] })
+      let first = Array(hostSide.sent.prefix(Self.tiles))
+      #expect(first.map(\.tile).sorted() == Array(0..<Self.tiles))
+      #expect(first.allSatisfy { $0.isKeyFrame && $0.update.tiles == Set(0..<Self.tiles) })
       let picture = try #require(decoded.frames.first?.pixelBuffer)
       #expect(CVPixelBufferGetPixelFormatType(picture) == kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
-      #expect(Self.tileLumaErrors(picture).allSatisfy { $0 <= Self.lumaTolerance }, "\(Self.tileLumaErrors(picture))")
+      #expect(Self.bandLumaErrors(picture).allSatisfy { $0 <= Self.lumaTolerance }, "\(Self.bandLumaErrors(picture))")
     }
 
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
     func everyTileDecodesItsDeltaFramesOnItsOwnStream() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
-      let host = Self.host(try Self.vcp(tiles: 4, metrics: ScreenSharingMetrics()), transport: hostSide)
+      try await HardwareEncoderBudget.require(vcpTiles: Self.tiles)
+      let host = Self.host(try Self.vcp(tiles: Self.tiles, metrics: ScreenSharingMetrics()), transport: hostSide)
       let viewerMetrics = ScreenSharingMetrics()
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: viewerMetrics)
       let decoded = DecodedFrames(viewer.frames)
@@ -61,7 +64,7 @@ extension HardwareCodecTests {
 
       #expect(decoded.sourceTimestamps == (1...Self.deltaFrames).map { Int64($0) * 1_000 })
       #expect(viewerMetrics.counter("decodeErrors") == 0)
-      #expect(hostSide.sent.filter(\.isKeyFrame).count == Self.shades.count)
+      #expect(hostSide.sent.filter(\.isKeyFrame).count == Self.tiles)
     }
 
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
@@ -69,7 +72,10 @@ extension HardwareCodecTests {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let scheduler = ManualScheduler()
       let metrics = ScreenSharingMetrics()
-      let host = Self.host(try Self.vcp(tiles: 1, metrics: metrics), transport: hostSide, scheduler)
+      try await HardwareEncoderBudget.require(vcpTiles: 1)
+      let everyPass = ScreenSharingV2RefinementPolicy.standard
+      let host = Self.host(
+        try Self.vcp(tiles: 1, metrics: metrics), transport: hostSide, scheduler, refinement: everyPass)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
       host.start()
@@ -81,7 +87,7 @@ extension HardwareCodecTests {
       host.push(try TestBGRAPixels.noise(timestampNs: 2_000))
       await decoded.arrivals.cancellableWait(for: 2)
       for pass in 1...ScreenSharingV2Profile.refinementPasses {
-        scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+        scheduler.advance(byNs: Self.refinementGapPastTheNextRefreshNs)
         await decoded.arrivals.cancellableWait(for: 2 + pass)
       }
       host.push(try TestBGRAPixels.frame(shades: [60], timestampNs: 3_000))
@@ -99,6 +105,7 @@ extension HardwareCodecTests {
     func aLostFrameIsRepairedByALongTermReferenceRefreshWithoutAKeyframe() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
+      try await HardwareEncoderBudget.require(vcpTiles: 1)
       let host = Self.host(try Self.vcp(tiles: 1, metrics: metrics), transport: hostSide)
       let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
       let decoded = DecodedFrames(viewer.frames)
@@ -124,7 +131,8 @@ extension HardwareCodecTests {
     func aFailureMidSessionFallsBackToVideoToolboxWithAKeyframeOnEveryTile() async throws {
       let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
       let metrics = ScreenSharingMetrics()
-      let failing = FailingTileEncoder(try Self.vcp(tiles: 4, metrics: metrics))
+      try await HardwareEncoderBudget.require(vcpTiles: Self.tiles, videoToolboxTiles: Self.tiles)
+      let failing = FailingTileEncoder(try Self.vcp(tiles: Self.tiles, metrics: metrics))
       let fallback = try ScreenSharingVideoToolboxTileEncoder(
         configuration: try Self.configuration(), layout: failing.layout, metrics: metrics)
       let encoder = try ScreenSharingFallbackTileEncoder(primary: failing, fallback: fallback, metrics: metrics)
@@ -143,7 +151,7 @@ extension HardwareCodecTests {
       await decoded.arrivals.cancellableWait(for: 2)
 
       let afterFailure = Array(hostSide.sent.dropFirst(beforeFailure))
-      #expect(afterFailure.map(\.tile).sorted() == [0, 1, 2, 3])
+      #expect(afterFailure.map(\.tile).sorted() == Array(0..<Self.tiles))
       #expect(afterFailure.allSatisfy { $0.isKeyFrame && $0.sourceTimestampNs == 2_000 })
       #expect(decoded.sourceTimestamps == [1_000, 2_000])
       #expect(metrics.counter("encoderFallbacks") == 1)
@@ -162,13 +170,13 @@ extension HardwareCodecTests {
 
     private static func host(
       _ encoder: any ScreenSharingTileEncoder, transport: LoopbackMediaTransport,
-      _ scheduler: ManualScheduler = ManualScheduler()
+      _ scheduler: ManualScheduler = ManualScheduler(), refinement: ScreenSharingV2RefinementPolicy? = nil
     )
       -> ScreenSharingV2Host
     {
       ScreenSharingV2Host(
         transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
-        initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler)
+        initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler, refinement: refinement)
     }
 
     private static func meanNoiseLumaError(_ picture: CVPixelBuffer) -> Double {
@@ -184,9 +192,9 @@ extension HardwareCodecTests {
       return Double(total) / Double(width * height)
     }
 
-    private static func tileLumaErrors(_ picture: CVPixelBuffer) -> [Int] {
-      shades.enumerated().map { tile, shade in
-        let luma = Int(TestPixels.luma(of: picture, row: tile * 90 + 45, column: 320))
+    private static func bandLumaErrors(_ picture: CVPixelBuffer) -> [Int] {
+      shades.enumerated().map { band, shade in
+        let luma = Int(TestPixels.luma(of: picture, row: band * 90 + 45, column: 320))
         return abs(luma - Int(shade))
       }
     }

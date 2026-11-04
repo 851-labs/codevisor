@@ -193,8 +193,8 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   and given up, tiles skipped, captures replaced before encode (dropped by admission) and admission deferrals, NACKs,
   retransmissions, parity packets, FEC and NACK repairs, LTR refreshes, keyframes, and the capacity estimate and
   round trip at the end. `--source own-window` and `--onscreen` work as for v1. No quality loop runs: engine v2
-  follows the transport's encoder ceiling itself. The v2 viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer decode, render and on-glass times, and stages); `share.json` also lists every capture's display time, callback time, dirty-rect count and whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error). `--encoder vcp` uses the VCP encoder (851-3819) and records its results as `codevisor-v2-vcp`; `--encoder vt`
-  (the default) records `codevisor-v2`, so a cell's baseline never mixes the two encoders.
+  follows the transport's encoder ceiling itself. The v2 viewer's `system.json` keeps its frame records (the timeline's last 1,800) (`frames`: source timestamp, viewer decode, render and on-glass times, and stages); `share.json` also lists every capture's display time, callback time, dirty-rect count and whether it touched the barcode corner (`captures`, up to 6,000), so a run can tell whether a change reached the encoder late or left it late (851-3975). The host captures without the cursor, as the product does once the viewer subscribes to its cursor stream (851-3823) and as Apple HP's stream leaves it out; with it, T8 charged v2 alone for the cursor (Tier 2 run 41695143473: one cursor block was ~97% of VCP's remaining luma error). `--encoder vcp` (the default since 851-4048, as in the product) uses the VCP encoder (851-3819) and records its results as `codevisor-v2-vcp`; `--encoder vt`
+  records `codevisor-v2`, so a cell's baseline never mixes the two encoders. Tier 1's v2 plans (`core-v2`, `gate-v2`, and the PR gate's v2 run) pass `--encoder vt`, so their `codevisor-v2` series and baselines stay VideoToolbox.
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -477,7 +477,7 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   The gate covers engine v2 with the same rules: `scripts/gate-engines.sh` reads the pull request's changed files and
   picks v1, v2 or both. `ScreenSharingV2`, its tests, the bench's `EngineV2` and `Loopback/V2` sources and
   `packages/net` are v2; `ScreenSharingWebRTC`, its tests and the CodevisorCoreMac screen sharing sources are v1;
-  anything else in the watched paths is both. v2 measures the `gate-v2` plan (the gate's cells with `--engine v2`)
+  anything else in the watched paths is both. v2 measures the `gate-v2` plan (the gate's cells with `--engine v2 --encoder vt`)
   as `first-v2.json` and `second-v2.json` and is judged against `gate-v2` nightlies; a cell's baseline only reads
   cells of its own system. Gating both engines takes about 40 minutes.
   Closing or merging the pull request starts a `stop-gate` job on a GitHub-hosted runner in that group, which
