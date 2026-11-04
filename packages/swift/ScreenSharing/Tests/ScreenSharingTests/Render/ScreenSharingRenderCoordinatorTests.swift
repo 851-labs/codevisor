@@ -113,7 +113,23 @@ struct ScreenSharingRenderCoordinatorTests {
     #expect(f.coordinator.select()?.frame.rtpTimestamp == 2)
   }
 
-  @Test func aPresentationThatNeverReportsReleasesTheHoldAfterARefresh() throws {
+  @Test func aNewerFrameThatPresentsFirstIsNotHeldBehindTheLastOne() throws {
+    let f = Fixture(renderOnArrival: true)
+    f.mailbox.put(
+      ScreenSharingVideoFrame(pixelBuffer: try makeBuffer(), timestampNs: 1, rtpTimestamp: 1, presentsBeforeNext: true))
+    let selected = try #require(f.coordinator.select())
+    let submission = ControlledSubmission()
+    f.coordinator.commit(
+      submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 2)
+    f.mailbox.put(
+      ScreenSharingVideoFrame(pixelBuffer: try makeBuffer(), timestampNs: 2, rtpTimestamp: 2, presentsBeforeNext: true))
+    submission.complete()
+    _ = f.queue.drain()
+
+    #expect(f.coordinator.select()?.frame.rtpTimestamp == 2)
+  }
+
+  @Test func aPresentationThatNeverReportsReleasesTheHoldInTime() throws {
     let f = Fixture(renderOnArrival: true, holdsUntilLater: false)
     let first = ScreenSharingVideoFrame(
       pixelBuffer: try makeBuffer(), timestampNs: 1, rtpTimestamp: 1, presentsBeforeNext: true)

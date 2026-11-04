@@ -45,7 +45,7 @@ package protocol ScreenSharingRenderPreparer: Sendable {
 package final class ScreenSharingRenderCoordinator {
   package typealias Hop = @Sendable (_ work: @escaping @Sendable @MainActor () -> Void) -> Void
   package typealias Later = @Sendable (_ delay: Duration, _ work: @escaping @Sendable @MainActor () -> Void) -> Void
-  package static let presentationHold = Duration.milliseconds(20)
+  package static let presentationHold = Duration.milliseconds(50)
 
   package let mailbox: ScreenSharingFrameMailbox
   package let metrics: ScreenSharingMetrics
@@ -140,7 +140,7 @@ package final class ScreenSharingRenderCoordinator {
   }
 
   package func select() -> (frame: ScreenSharingVideoFrame, isNewFrame: Bool)? {
-    guard !stopped, !inFlight, presentationHold == nil else { return nil }
+    guard !stopped, !inFlight, presentationHold == nil || mailbox.holdsPresentFirst else { return nil }
     let incoming = mailbox.take()
     guard let frame = incoming ?? (needsRedraw ? lastFrame : nil) else { return nil }
     lastFrame = frame
