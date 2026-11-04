@@ -12,6 +12,7 @@ final class TranscriptSelectionState {
   typealias PointRange = (start: TranscriptSelectionPoint, end: TranscriptSelectionPoint)
 
   var selection: TranscriptTextSelection?
+  var selectionAtMouseDown: TranscriptTextSelection?
   var granularity: Granularity = .character
   var anchorRange: PointRange?
   var isDragging = false
@@ -63,10 +64,11 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     updateSelectionFocus(toWindowPoint: event.locationInWindow)
     textSelection.isDragging = false
     stopSelectionAutoScroll()
+    let draggedSelection = textSelection.selection != textSelection.selectionAtMouseDown
     if let span = resolvedSelectionSpan, span.isEmpty {
       clearTranscriptSelection()
     }
-    showAddToChatButtonIfNeeded(nearWindowPoint: event.locationInWindow)
+    showAddToChatButton(afterMouseUp: event, draggedSelection: draggedSelection)
   }
 
   func clearTranscriptSelection() {
@@ -101,6 +103,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
       replaceSelection(at: point, granularity: granularity)
     }
     textSelection.isDragging = true
+    textSelection.selectionAtMouseDown = textSelection.selection
     textSelection.lastDragLocationInWindow = event.locationInWindow
     cacheEndpointTexts()
     applySelectionHighlights()

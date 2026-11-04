@@ -7,6 +7,7 @@ import TranscriptKit
 @MainActor
 final class TranscriptQuoteState {
   var addButton: TranscriptAddToChatButton?
+  let addButtonTiming = TranscriptAddToChatShowTiming()
   let highlight = TranscriptQuoteHighlightView()
   let notFoundNotice = TranscriptQuoteNotFoundNotice()
   var pendingReveal: TranscriptQuote?
@@ -29,6 +30,13 @@ extension VirtualizedTranscriptScrollView {
     holdViewportForComposerChange()
     sessionController?.addQuote(quote)
     clearTranscriptSelection()
+  }
+
+  func showAddToChatButton(afterMouseUp event: NSEvent, draggedSelection: Bool) {
+    let pointer = event.locationInWindow
+    quotes.addButtonTiming.show(afterClickCount: event.clickCount, draggedSelection: draggedSelection) {
+      [weak self] in self?.showAddToChatButtonIfNeeded(nearWindowPoint: pointer)
+    }
   }
 
   func showAddToChatButtonIfNeeded(nearWindowPoint pointer: NSPoint? = nil) {
@@ -55,6 +63,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func hideAddToChatButton() {
+    quotes.addButtonTiming.cancel()
     quotes.addButton?.hide()
   }
 
