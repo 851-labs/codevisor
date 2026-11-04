@@ -202,31 +202,12 @@ extension WorkspaceScreen {
       "workspace.connectChat.begin",
       "session=\(Self.diagnosticID(chatId)) localController=\(controllers[chatId] != nil)"
     )
-    guard controllers[chatId] == nil else {
-      IOSNavigationDiagnostics.record(
-        "workspace.connectChat.skip",
-        "session=\(Self.diagnosticID(chatId)) reason=local-controller-present"
-      )
+    if let controller = controllers[chatId] {
+      await retryFailedConnection(of: controller, chatId: chatId)
       return
     }
-    guard let session = session(for: chatId) else {
-      IOSNavigationDiagnostics.record(
-        "workspace.connectChat.skip",
-        "session=\(Self.diagnosticID(chatId)) reason=session-missing"
-      )
-      return
-    }
-    guard
-      let project = environment.projectList.projects.first(where: {
-        $0.serverId == session.serverId && $0.id == session.projectId
-      })
-    else {
-      IOSNavigationDiagnostics.record(
-        "workspace.connectChat.skip",
-        "session=\(Self.diagnosticID(chatId)) reason=project-missing"
-      )
-      return
-    }
+    guard let target = chatSessionAndProject(for: chatId) else { return }
+    let (session, project) = target
     let controller = ChatControllerCache.shared.controller(
       for: session,
       project: project,
@@ -255,5 +236,36 @@ extension WorkspaceScreen {
       "workspace.connectChat.connect.end",
       "session=\(Self.diagnosticID(chatId)) model=\(controller.model != nil) connecting=\(controller.isConnecting) historyLoading=\(controller.isLoadingInitialHistory)"
     )
+  }
+
+  private func retryFailedConnection(of controller: SessionController, chatId: UUID) async {
+    IOSNavigationDiagnostics.record(
+      "workspace.connectChat.skip",
+      "session=\(Self.diagnosticID(chatId)) reason=local-controller-present"
+    )
+    guard controller.isServerReady, case .failed = controller.status else { return }
+    await controller.retrySessionFailure()
+  }
+
+  private func chatSessionAndProject(for chatId: UUID) -> (ChatSession, Project)? {
+    guard let session = session(for: chatId) else {
+      IOSNavigationDiagnostics.record(
+        "workspace.connectChat.skip",
+        "session=\(Self.diagnosticID(chatId)) reason=session-missing"
+      )
+      return nil
+    }
+    guard
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == session.serverId && $0.id == session.projectId
+      })
+    else {
+      IOSNavigationDiagnostics.record(
+        "workspace.connectChat.skip",
+        "session=\(Self.diagnosticID(chatId)) reason=project-missing"
+      )
+      return nil
+    }
+    return (session, project)
   }
 }

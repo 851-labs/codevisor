@@ -251,7 +251,7 @@ struct WorkspaceScreen: View {
         "workspace.prepareTask",
         "availability=\(screenAvailability) draft=\(isDraft)"
       )
-      guard isDraft || screenAvailability == .ready else { return }
+      guard isDraft || canShowServerContent else { return }
       await prepare()
     }
     .onChange(of: activePane?.id) { old, new in
@@ -298,17 +298,27 @@ struct WorkspaceScreen: View {
   private struct PreparationIdentity: Equatable {
     let serverId: String
     let availability: ServerAvailability
+    let isSandboxAsleep: Bool
   }
 
   private var preparationIdentity: PreparationIdentity {
     PreparationIdentity(
       serverId: resolvedServerId,
-      availability: screenAvailability
+      availability: screenAvailability,
+      isSandboxAsleep: isSandboxAsleep
     )
   }
 
   private var screenAvailability: ServerAvailability {
     environment.machines.availability(for: resolvedServerId)
+  }
+
+  private var isSandboxAsleep: Bool {
+    environment.machines.sandboxPower(forMachineId: resolvedServerId) != nil
+  }
+
+  private var canShowServerContent: Bool {
+    screenAvailability == .ready || isSandboxAsleep
   }
 
   var blocksServerContent: Bool {
@@ -318,10 +328,7 @@ struct WorkspaceScreen: View {
     {
       return false
     }
-    if case .ready = screenAvailability {
-      return false
-    }
-    return true
+    return !canShowServerContent
   }
 
   private var baseTitle: String {
