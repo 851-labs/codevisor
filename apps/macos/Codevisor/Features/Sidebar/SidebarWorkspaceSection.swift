@@ -94,8 +94,8 @@ struct SidebarRowContent {
     list.mainChat(of: item)
   }
 
-  func icon(for item: SidebarWorkspaceListItem) -> SidebarWorkspaceIcon {
-    if let chat = item.routingSession { return .chat(chat) }
+  func icon(for item: SidebarWorkspaceListItem, isQuiet: Bool = false) -> SidebarWorkspaceIcon {
+    if let chat = item.routingSession { return .chat(chat, isQuiet: isQuiet) }
     return item.workspace.allPanes.contains { $0.terminalAgentStatus == .working } ? .workingTerminal : .workspace
   }
 

@@ -40,6 +40,7 @@ const v73Schema = `
   alter table workspaces drop column remote_bot_machine_id;
   alter table workspaces drop column remote_bot_id;
   alter table workspaces drop column git_detached_head;
+  alter table sessions drop column created_by;
   delete from schema_migrations where id >= 74;
 `
 

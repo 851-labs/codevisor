@@ -93,6 +93,7 @@ const startPlanned = async (
       projectId: plan.projectId,
       harnessId: plan.harnessId,
       title: request.title,
+      createdBy: "agent",
       ...placement,
       ...optionalFields(request, plan)
     },

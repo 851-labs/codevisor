@@ -40,6 +40,7 @@ struct PaletteDestinationsPublisher: ViewModifier {
       rowContent: SidebarRowContent(
         environment: environment, store: store, grouping: grouping,
         rowDetails: ClientPreferences.shared.sidebarRowDetails),
+      quiet: SidebarQuietChildren.current(in: environment),
       activate: activate
     ).items
   }

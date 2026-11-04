@@ -9,6 +9,9 @@ export const SessionOrigin = Schema.Union([
 ])
 export type SessionOrigin = typeof SessionOrigin.Type
 
+export const SessionCreator = Schema.Literals(["agent", "user"])
+export type SessionCreator = typeof SessionCreator.Type
+
 export const AgentSessionSummary = Schema.Struct({
   sessionId: Schema.String,
   cwd: Schema.String,

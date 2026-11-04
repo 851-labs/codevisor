@@ -213,7 +213,7 @@ struct SidebarRowMachine: Equatable {
 }
 
 enum SidebarWorkspaceIcon: Equatable {
-  case chat(ChatSession)
+  case chat(ChatSession, isQuiet: Bool = false)
   case workingTerminal
   case workspace
 }

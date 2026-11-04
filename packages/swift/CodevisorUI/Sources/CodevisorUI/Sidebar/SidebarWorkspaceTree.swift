@@ -4,6 +4,7 @@ import Foundation
 public struct SidebarWorkspaceTree: Equatable {
   public let roots: [WorkspaceSidebarItem]
   public let children: [UUID: [WorkspaceSidebarItem]]
+  private let parents: [UUID: UUID]
 
   public init(_ items: [WorkspaceSidebarItem], pinnedIDs: [String]) {
     let pinned = Set(pinnedIDs)
@@ -27,19 +28,26 @@ public struct SidebarWorkspaceTree: Equatable {
     let cyclic = Set(parents.keys.filter(isInCycle))
     var roots: [WorkspaceSidebarItem] = []
     var children: [UUID: [WorkspaceSidebarItem]] = [:]
+    var nestedParents: [UUID: UUID] = [:]
     for item in items {
       if let parent = parents[item.id], !cyclic.contains(item.id) {
         children[parent, default: []].append(item)
+        nestedParents[item.id] = parent
       } else {
         roots.append(item)
       }
     }
     self.roots = roots
     self.children = children
+    self.parents = nestedParents
   }
 
   public func root(of id: UUID) -> UUID {
-    guard let parent = children.first(where: { $0.value.contains { $0.id == id } })?.key else { return id }
+    guard let parent = parents[id] else { return id }
     return root(of: parent)
+  }
+
+  public func parent(of id: UUID) -> UUID? {
+    parents[id]
   }
 }

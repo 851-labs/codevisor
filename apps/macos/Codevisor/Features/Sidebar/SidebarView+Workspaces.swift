@@ -143,7 +143,7 @@ extension SidebarView {
     environment.archiveWorkspace(workspace)
     pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
     environment.workspaceSections.forget(workspace.id)
-    collapsedGroupIDs.removeAll { $0 == SidebarRows.childrenGroupID(workspace.id) }
+    SidebarChildDisclosure.forget(workspace.id)
   }
 
 }

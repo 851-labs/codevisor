@@ -41,7 +41,8 @@ extension SidebarView {
   }
 
   func toggleChildren(of id: UUID) {
-    toggleGroup(SidebarRows.childrenGroupID(id))
+    let isExpanded = SidebarChildDisclosure.current().isExpanded(id, in: workspaceListing.tree)
+    SidebarChildDisclosure.choose(!isExpanded, for: id)
   }
 
   func toggleGroup(_ id: String) {

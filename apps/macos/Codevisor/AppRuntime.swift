@@ -59,6 +59,7 @@ final class AppRuntime {
     AnalyticsClient.shared.captureAppOpenedOnce()
     DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
     ChatNotificationManager.shared.attach(to: environment)
+    SidebarQuietChildren.muteAnnouncements(on: environment)
     return (environment, sparkleUpdater, isFirstLaunch)
   }
 

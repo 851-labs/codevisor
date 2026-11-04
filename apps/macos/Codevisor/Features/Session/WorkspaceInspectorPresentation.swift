@@ -191,12 +191,14 @@ struct WorkspaceInspectorPresentation: ViewModifier {
       environment: environment, botsEnabled: botsEnabled, grouping: sidebarGrouping, pinnedIDs: pinnedWorkspaceIDs,
       machineOrder: [], projectOrder: [])
     let navigator = SidebarWorkspaceNavigator(environment: environment, store: store, selection: $selection)
+    let quiet = SidebarQuietChildren.current(in: environment)
     return items.compactMap { content.listItem(for: $0) }
       .map { item in
         let workspace = item.workspace
         return WorkspaceInspectorAgent(
           id: workspace.id, name: workspace.name,
-          subtitle: content.subtitle(for: workspace, isPinned: false), icon: content.icon(for: item),
+          subtitle: content.subtitle(for: workspace, isPinned: false),
+          icon: content.icon(for: item, isQuiet: quiet.contains(workspace.id)),
           pullRequest: content.pullRequest(for: workspace),
           machine: content.machine(for: workspace, headingNamesMachine: listing.headingNamesMachine(workspace.id))
         ) {

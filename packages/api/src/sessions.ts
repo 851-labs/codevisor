@@ -3,7 +3,13 @@ import { Schema } from "effect"
 import { SessionAutoResume } from "./auto-resume.js"
 import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
-import { GoalStatus, SessionGoal, SessionOrigin, SessionSkills } from "./session-config.js"
+import {
+  GoalStatus,
+  SessionCreator,
+  SessionGoal,
+  SessionOrigin,
+  SessionSkills
+} from "./session-config.js"
 import {
   BackgroundTask,
   ContextCompactionStatus,
@@ -136,6 +142,7 @@ export const SessionSummary = Schema.Struct({
   pendingPlanApproval: Schema.optional(Schema.Boolean),
   latestBotMessage: Schema.optional(BotMessagePreview),
   parentSessionId: Schema.optional(Schema.String),
+  createdBy: Schema.optional(SessionCreator),
   labels: Schema.optional(Labels)
 })
 export type SessionSummary = typeof SessionSummary.Type
@@ -383,6 +390,7 @@ export const CreateSessionRequest = Schema.Struct({
   worktreeName: Schema.optional(Schema.String),
   workspaceId: Schema.optional(Schema.String),
   parentSessionId: Schema.optional(Schema.String),
+  createdBy: Schema.optional(SessionCreator),
   labels: Schema.optional(Labels),
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.optional(Schema.String),

@@ -77,7 +77,11 @@ describe("POST /v1/agents", () => {
     const subscriptions = await run(services.db.listSessionSubscriptions(caller))
     expect(subscriptions).toEqual([expect.objectContaining({ targetSessionId: started.agentId })])
     const child = await run(services.db.getSessionSummary(started.agentId))
-    expect(child).toMatchObject({ parentSessionId: caller, labels: { role: "worker" } })
+    expect(child).toMatchObject({
+      parentSessionId: caller,
+      createdBy: "agent",
+      labels: { role: "worker" }
+    })
     await waitFor(() => agents.prompts.some(([, text]) => text === "Fix it"))
   })
 

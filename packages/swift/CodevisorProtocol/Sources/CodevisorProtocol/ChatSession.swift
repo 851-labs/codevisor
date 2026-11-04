@@ -61,6 +61,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var pendingPlanApproval: Bool
   public var latestBotMessage: BotMessagePreview?
   public var parentSessionId: String?
+  public var createdBy: SessionCreator?
 
   public var hasAgentSession: Bool {
     agentSessionId?.isEmpty == false
@@ -91,7 +92,8 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequiredKind: String? = nil,
     pendingPlanApproval: Bool = false,
     latestBotMessage: BotMessagePreview? = nil,
-    parentSessionId: String? = nil
+    parentSessionId: String? = nil,
+    createdBy: SessionCreator? = nil
   ) {
     self.id = id
     self.projectId = projectId
@@ -118,6 +120,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.pendingPlanApproval = pendingPlanApproval
     self.latestBotMessage = latestBotMessage
     self.parentSessionId = parentSessionId
+    self.createdBy = createdBy
   }
 
   private enum Keys: String, CodingKey {
@@ -125,7 +128,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case worktreeName, cwd, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
-    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, parentSessionId
+    case actionRequired, actionRequiredKind, pendingPlanApproval, latestBotMessage, parentSessionId, createdBy
     case workspaceId
   }
 
@@ -166,6 +169,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
     latestBotMessage = try container.decodeIfPresent(BotMessagePreview.self, forKey: .latestBotMessage)
     parentSessionId = try container.decodeIfPresent(String.self, forKey: .parentSessionId)
+    createdBy = try container.decodeIfPresent(SessionCreator.self, forKey: .createdBy)
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -195,5 +199,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
     try container.encodeIfPresent(latestBotMessage, forKey: .latestBotMessage)
     try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
+    try container.encodeIfPresent(createdBy, forKey: .createdBy)
   }
 }

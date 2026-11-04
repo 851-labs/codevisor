@@ -14,7 +14,8 @@ struct SidebarRowsTests {
 
   private func item(_ project: Project, id: UUID, parent: UUID?) -> WorkspaceSidebarItem {
     WorkspaceSidebarItem(
-      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [], parentWorkspaceId: parent)
+      id: id, serverId: project.serverId, projectId: project.id, routingChatIds: [],
+      parent: parent.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isAgentMade: false) })
   }
 
   private func groups(

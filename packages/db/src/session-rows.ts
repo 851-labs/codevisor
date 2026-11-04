@@ -1,4 +1,9 @@
-import { SessionOrigin, SessionSidebarState, type SessionSummary } from "@codevisor/api"
+import {
+  SessionCreator,
+  SessionOrigin,
+  SessionSidebarState,
+  type SessionSummary
+} from "@codevisor/api"
 import { Schema } from "effect"
 
 import { integer, literal, nullable, optional, real, rowReader, text } from "./row-reader.js"
@@ -43,6 +48,7 @@ export interface SessionRow {
   readonly latest_bot_message_text?: string | null
   readonly latest_bot_message_attachments?: string | null
   readonly parent_session_id?: string | null
+  readonly created_by?: SessionCreator | null
   readonly labels?: string | null
 }
 
@@ -109,6 +115,7 @@ export const sessionRows = rowReader<SessionRow>({
   latest_bot_message_text: optional(nullable(text)),
   latest_bot_message_attachments: optional(nullable(text)),
   parent_session_id: optional(nullable(text)),
+  created_by: optional(nullable(Schema.is(SessionCreator))),
   labels: optional(nullable(text))
 })
 

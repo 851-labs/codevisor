@@ -76,6 +76,7 @@ const createForkSession = async (
       title: forkTitle(source),
       workspaceId: randomUUID(),
       parentSessionId: source.id,
+      createdBy: "user",
       deferAgentSession: true,
       ...(source.harnessAccountId === undefined
         ? {}

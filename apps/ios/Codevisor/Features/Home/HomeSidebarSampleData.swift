@@ -38,7 +38,7 @@
       var item: WorkspaceSidebarItem {
         WorkspaceSidebarItem(
           id: workspace.id, serverId: workspace.serverId, projectId: projectId, routingChatIds: [],
-          parentWorkspaceId: parentId)
+          parent: parentId.map { WorkspaceParentLink(workspaceId: $0, linkedAt: .distantPast, isAgentMade: false) })
       }
     }
 
