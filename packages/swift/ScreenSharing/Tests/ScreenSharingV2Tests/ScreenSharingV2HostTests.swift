@@ -102,6 +102,23 @@ struct ScreenSharingV2HostTests {
     #expect(scheduler.dueTimesNs == [1_042_000_000])
   }
 
+  @Test func anEventBeforeTheAlignedWakeDoesNotStartTheRefinementEarly() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(
+      encoder, refreshPhase: ScreenSharingV2RefreshPhase(periodNs: 10_000_000, offsetNs: 2_000_000))
+
+    let anchorNs = scheduler.nowNs
+    host.push(try TestPixels.frame(shade: 10, timestampNs: anchorNs))
+    await encoder.encodes.wait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    await scheduler.scheduled.wait(for: 1)
+    scheduler.advance(byNs: 36_000_000)
+    host.push(try TestPixels.frame(shade: 10, timestampNs: anchorNs + 30_000_000))
+    host.stop()
+
+    #expect(encoder.requests.map(\.update.isRefinement) == [false])
+  }
+
   @Test func aTileThatChangesAgainStartsItsRefinementPassesOver() async throws {
     let encoder = RecordingTileEncoder(layout: Self.tiled)
     let host = startedHost(encoder)

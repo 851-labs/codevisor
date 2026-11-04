@@ -4,28 +4,28 @@ import Synchronization
 
 enum ScreenSharingV2TileComparer {
   static func changed(
-    _ tiles: Set<Int>, of layout: ScreenSharingV2TileLayout, from previous: CVPixelBuffer?, to current: CVPixelBuffer,
-    locked: () -> Void = {}
+    _ tiles: Set<Int>, of layout: ScreenSharingV2TileLayout, from previous: CVPixelBuffer?, to current: CVPixelBuffer
   ) -> Set<Int> {
     guard let previous, previous !== current, comparable(previous, current, layout: layout) else { return tiles }
 
     CVPixelBufferLockBaseAddress(previous, .readOnly)
     CVPixelBufferLockBaseAddress(current, .readOnly)
-    locked()
     defer {
       CVPixelBufferUnlockBaseAddress(current, .readOnly)
       CVPixelBufferUnlockBaseAddress(previous, .readOnly)
     }
     let planes = ScreenSharingV2PixelPlane.planes(of: current)
-    let candidates = tiles.sorted()
+    let tileDiffers = { (tile: Int) in
+      planes.contains { differs($0, rows: layout.rows(of: tile), height: layout.height, previous, current) }
+    }
+    guard tiles.count > 1 else { return tiles.filter(tileDiffers) }
+
+    let candidates = Array(tiles)
     let changed = Mutex(Set<Int>())
     DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
-      let tile = candidates[index]
-      guard
-        planes.contains(where: { differs($0, rows: layout.rows(of: tile), height: layout.height, previous, current) })
-      else { return }
+      guard tileDiffers(candidates[index]) else { return }
 
-      changed.withLock { _ = $0.insert(tile) }
+      changed.withLock { _ = $0.insert(candidates[index]) }
     }
     return changed.withLock { $0 }
   }

@@ -89,15 +89,13 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
 
     metrics.observe("captureQueueWait", milliseconds: Double(ScreenSharingMetrics.nowNs - capture.capturedNs) / 1e6)
     refreshPhase.observe(frameAtNs: capture.frame.timestampNs)
+    refinementWakeNs = nil
     let reported = layout.tiles(touching: capture.frame.dirtyRects)
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
     let candidates = reported.subtracting(slot.waitingTiles)
     let comparedNs = ScreenSharingMetrics.nowNs
     let tiles = ScreenSharingV2TileComparer.changed(
-      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer
-    ) { [metrics] in
-      metrics.observe("tileCompareLock", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
-    }
+      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer)
     metrics.observe("tileCompare", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
     metrics.increment("tilesUnchangedByPixels", by: candidates.count - tiles.count)
     if slot.offer(capture, tiles: tiles) { metrics.increment("captureReplacedBeforeEncode") }
@@ -143,7 +141,8 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     }
     guard let last = slot.lastEncoded else { return nil }
     guard refreshing.isEmpty else { return Plan(capture: last, tiles: refreshing, isRefinement: false) }
-    guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles) else { return nil }
+    guard let tile = refinement.next(atNs: scheduler.nowNs, excluding: busyTiles, aligned: refreshPhase.aligned)
+    else { return nil }
 
     return Plan(capture: last, tiles: [tile], isRefinement: true)
   }
@@ -180,7 +179,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   }
 
   private func scheduleRefinement() {
-    guard let dueNs = refinement.nextDueNs(excluding: busyTiles).map(refreshPhase.aligned),
+    guard let dueNs = refinement.nextDueNs(excluding: busyTiles, aligned: refreshPhase.aligned),
       refinementWakeNs.map({ dueNs < $0 }) ?? true
     else { return }
 
