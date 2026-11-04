@@ -9,7 +9,6 @@ import {
   catalogFixture,
   flaggedServer,
   openServer,
-  storeServer,
   ticketsServer,
   weatherServer
 } from "./plugin-catalog-test-support.js"
@@ -203,15 +202,6 @@ describe("plugin catalog routes", () => {
       headerNames: []
     })
     expect(JSON.stringify(tickets)).not.toContain("Bearer token")
-  })
-
-  it("waits for sign-in on remotes that need OAuth even when they answer without it", async () => {
-    const fixture = await catalogFixture(undefined, [storeServer])
-    const running = { ...(await startPluginApp({ catalog: fixture.options })), fixture }
-
-    const store = await installed(running, "io.example/store")
-
-    expect(store).toMatchObject({ authType: "oauth", connectionState: "needsAuthorization" })
   })
 
   it("explains unknown plugins and leaves other methods to the router", async () => {

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { HostedPluginOAuthSpec } from "@codevisor/api"
+import type { PluginOAuthSpec } from "@codevisor/api"
 import { vi } from "vitest"
 
 import { listenOn } from "../../infra/mcp-oauth-test-support.js"
@@ -51,7 +51,7 @@ export const fakeOAuthProvider = async (options: ProviderOptions = {}) => {
   return {
     url,
     tokenForms,
-    spec: (overrides: Partial<HostedPluginOAuthSpec> = {}): HostedPluginOAuthSpec => ({
+    spec: (overrides: Partial<PluginOAuthSpec> = {}): PluginOAuthSpec => ({
       provider: "example",
       authorizeUrl: `${url}/authorize`,
       tokenUrl: `${url}/token`,
@@ -118,9 +118,4 @@ export const routeGoogleTo = (providerUrl: string): void => {
     const url = String(input instanceof Request ? input.url : input)
     return passThrough(google[url] ?? input, init)
   })
-}
-
-export const signInUrl = (start: { readonly authorizationUrl?: string | undefined }): string => {
-  if (start.authorizationUrl === undefined) throw new Error("The sign-in returned no link")
-  return start.authorizationUrl
 }

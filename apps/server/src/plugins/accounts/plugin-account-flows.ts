@@ -5,7 +5,6 @@ import {
   type McpServer,
   type PluginAccount,
   type PluginAccountOAuthStart,
-  type HostedPluginOAuthSpec,
   type PluginAccountSpec,
   type PluginOAuthSpec
 } from "@codevisor/api"
@@ -28,7 +27,6 @@ import {
 } from "./plugin-account-oauth.js"
 import type { PluginAccountRecord } from "./plugin-account-store.js"
 import type { PluginVault } from "./plugin-accounts.js"
-import { type PluginSignIn, startPluginRunSignIn } from "./plugin-run-sign-in.js"
 
 export interface OAuthRedirect {
   readonly redirectUri: string
@@ -51,7 +49,6 @@ export interface PluginOAuthFlowsDeps {
   readonly installedClients?: InstalledOAuthClients | undefined
   readonly now: () => number
   readonly fetch?: typeof fetch
-  readonly pluginSignIn?: PluginSignIn | undefined
   readonly save: (record: PluginAccountRecord) => Promise<PluginAccount>
 }
 
@@ -59,7 +56,7 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
   const installedClients = deps.installedClients ?? noInstalledOAuthClients
   const pending = new Map<
     string,
-    { readonly flow: PendingOAuthFlow; readonly spec: HostedPluginOAuthSpec }
+    { readonly flow: PendingOAuthFlow; readonly spec: PluginOAuthSpec }
   >()
 
   const forgetExpired = (): void => {
@@ -76,7 +73,7 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
     return entry
   }
 
-  const finish = async (flow: PendingOAuthFlow, spec: HostedPluginOAuthSpec, code: string) => {
+  const finish = async (flow: PendingOAuthFlow, spec: PluginOAuthSpec, code: string) => {
     const tokens = await exchangePluginCode(spec, flow, code, deps.fetch)
     const identity =
       (await fetchIdentity(spec, tokens.access_token, deps.fetch)) ?? flow.label ?? "Account"
@@ -93,14 +90,6 @@ export const makePluginOAuthFlows = (deps: PluginOAuthFlowsDeps) => {
       input: OAuthStartInput
     ): Promise<PluginAccountOAuthStart> => {
       const oauth = requireOAuth(spec, server)
-      if (oauth.client === "plugin") {
-        return startPluginRunSignIn(
-          { signIn: deps.pluginSignIn, save: deps.save },
-          server,
-          oauth,
-          input
-        )
-      }
       const client = await oauthClient(server, oauth, input.split, installedClients)
       const flowId = newFlowId()
       const nonce = newNonce()
@@ -193,7 +182,7 @@ const requireOAuth = (spec: PluginAccountSpec, server: McpServer): PluginOAuthSp
 
 const oauthClient = async (
   server: McpServer,
-  oauth: HostedPluginOAuthSpec,
+  oauth: PluginOAuthSpec,
   split: SplitFieldValues,
   installedClients: InstalledOAuthClients
 ): Promise<OAuthClient> => {
@@ -206,7 +195,7 @@ const oauthClient = async (
 
 const installedClient = async (
   server: McpServer,
-  oauth: HostedPluginOAuthSpec,
+  oauth: PluginOAuthSpec,
   installedClients: InstalledOAuthClients
 ): Promise<OAuthClient> => {
   const client = await installedClients(oauth.provider)

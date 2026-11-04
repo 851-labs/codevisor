@@ -91,13 +91,6 @@ export const openServer: FixtureServer = {
   remotes: [{ type: "streamable-http", url: "http://remote.invalid/open" }]
 }
 
-export const storeServer: FixtureServer = {
-  name: "io.example/store",
-  title: "Store",
-  remotes: [{ type: "streamable-http", url: "http://remote.invalid/store" }],
-  _meta: { "dev.codevisor/plugin": { authType: "oauth" } }
-}
-
 export const smuggledBundleServer: FixtureServer = {
   name: "io.example/smuggled",
   title: "Smuggled",

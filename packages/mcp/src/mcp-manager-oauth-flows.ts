@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type { McpServerRecord } from "@codevisor/db"
-import { auth, discoverOAuthServerInfo } from "@modelcontextprotocol/sdk/client/auth.js"
+import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
 
 import { type ManagedOAuth, managedOAuthOf, managedTokenFetch } from "./mcp-managed-oauth.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
@@ -53,15 +53,6 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
     }))
   }
 
-  const signInProvider = async (id: string, redirectUrl: string, serverUrl: string) => {
-    const discovery = await discoverOAuthServerInfo(serverUrl).catch((cause: unknown) => {
-      throw signInFailure(cause, serverUrl)
-    })
-    const provider = oauthProvider(id, redirectUrl, discovery.authorizationServerMetadata)
-    await provider.saveDiscoveryState?.(discovery)
-    return provider
-  }
-
   const beginOAuth: McpManager["beginOAuth"] = async (id, redirectBaseUrl) => {
     if (redirectBaseUrl !== undefined) state.oauthBaseUrl = redirectBaseUrl
     const server = await record(id)
@@ -85,8 +76,8 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       ...value,
       oauth: { ...value.oauth, redirectUrl, state: oauthState }
     }))
+    const provider = oauthProvider(id, redirectUrl)
     const serverUrl = requireHttpUrl(server.url)
-    const provider = await signInProvider(id, redirectUrl, serverUrl)
     const result = await auth(provider, {
       serverUrl,
       ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })

@@ -155,25 +155,6 @@ struct PluginSetupModelTests {
     #expect(accounts.accounts.map(\.id) == ["acc-1"])
   }
 
-  @Test("A sign-in the plugin runs itself opens no web sheet and returns once the server accepts it")
-  func pluginRunSignInOpensNoSheet() async throws {
-    let transport = SetupTransport()
-    transport.respond("GET /v1/plugins/mcp-1/accounts", with: #"{"accounts":[]}"#)
-    transport.respond("POST /v1/plugins/mcp-1/accounts/oauth/start", with: #"{"flowId":"flow-1"}"#)
-    let signIn = FakeWebSignIn()
-    let spec = ServerPluginAccountSpec(
-      label: "Shopify store", oauth: ServerPluginOAuthSpec(provider: "shopify", client: "plugin"))
-    let server = try JSONDecoder().decode(
-      ServerMcpServer.self, from: Data(Self.server(authType: "none", state: "connected").utf8))
-    let accounts = PluginAccountsModel(server: server, client: Self.client(transport), spec: spec, webSignIn: signIn)
-    await accounts.load()
-
-    await accounts.signIn(values: ["store": .string("acme-goods.myshopify.com")])
-
-    #expect(signIn.urls.isEmpty)
-    #expect(accounts.errorMessage == nil)
-  }
-
   @Test("Answering Not Now or cancelling declines; any other outcome counts as set up")
   func resolution() {
     let declined = TranscriptQuestion.Answer(

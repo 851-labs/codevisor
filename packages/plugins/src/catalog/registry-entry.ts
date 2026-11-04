@@ -24,7 +24,6 @@ export interface CodevisorPluginMeta {
   readonly devOnly?: boolean
   readonly featureFlag?: string
   readonly oauthClient?: string
-  readonly authType?: string
   readonly accounts?: PluginAccountSpec
   readonly capabilities?: PluginCapabilities
 }
@@ -88,19 +87,15 @@ const installOf = (
 ): PluginInstallSpec | undefined => {
   if (meta?.bundled !== undefined) return { kind: "bundled" }
   const remote = server.remotes?.find((candidate) => candidate.type === "streamable-http")
-  if (remote !== undefined) return remoteInstall(remote, meta)
+  if (remote !== undefined) return remoteInstall(remote)
   const runnable = server.packages?.map(packageInstall).find((install) => install !== undefined)
   return runnable
 }
 
-const remoteInstall = (
-  remote: RegistryRemote,
-  meta: CodevisorPluginMeta | undefined
-): PluginInstallSpec => ({
+const remoteInstall = (remote: RegistryRemote): PluginInstallSpec => ({
   kind: "remote",
   url: remote.url,
-  fields: (remote.headers ?? []).flatMap((header) => inputField("header", header)),
-  ...(meta?.authType === "oauth" ? { authType: "oauth" } : {})
+  fields: (remote.headers ?? []).flatMap((header) => inputField("header", header))
 })
 
 const packageInstall = (pkg: RegistryPackage): PluginInstallSpec | undefined => {

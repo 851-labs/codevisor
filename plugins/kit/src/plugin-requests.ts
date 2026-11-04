@@ -48,14 +48,6 @@ export const accountRemoveRequest = z.object({
   params: z.object({}).loose().optional()
 })
 
-export const accountSignInRequest = z.object({
-  method: z.literal("codevisor/account/signIn"),
-  params: z.object({
-    values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
-    scopes: z.array(z.string()).default([])
-  })
-})
-
 export const skillsListRequest = z.object({
   method: z.literal("skills/list"),
   params: z.object({ cursor: z.string().optional() }).optional()
@@ -69,4 +61,3 @@ export const skillsGetRequest = z.object({
 export type EventsPollParams = z.infer<typeof eventsPollRequest>["params"]
 export type EventsStreamParams = z.infer<typeof eventsStreamRequest>["params"]
 export type WebhookParams = z.infer<typeof webhookRequest>["params"]
-export type AccountSignInParams = z.infer<typeof accountSignInRequest>["params"]

@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 
+import type { McpManager } from "@codevisor/mcp"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { describe, expect, it, onTestFinished } from "vitest"
@@ -8,7 +9,6 @@ import { describe, expect, it, onTestFinished } from "vitest"
 import { gatewayTransport } from "../routes/gateway-test-support.js"
 import { makeServices, run } from "../test-support.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
-import { settles } from "./mcp-connection-state-test-support.js"
 import {
   type FakeOAuthMcpServer,
   fakeOAuthMcpServer,
@@ -95,6 +95,22 @@ const gossip = async (from: Machine, to: Machine): Promise<void> => {
     )
   )
   await reconcileMcps(to.sync)
+}
+
+const settles = async (manager: McpManager, id: string, state: string) => {
+  while (true) {
+    const changed = Promise.withResolvers<void>()
+    const unsubscribe = manager.subscribeServersChanged((changedId) => {
+      if (changedId === id) changed.resolve()
+    })
+    try {
+      const current = (await manager.list()).find((server) => server.id === id)
+      if (current?.connectionState === state) return current
+      await changed.promise
+    } finally {
+      unsubscribe()
+    }
+  }
 }
 
 const signIn = async (on: Machine, fake: FakeOAuthMcpServer): Promise<void> => {

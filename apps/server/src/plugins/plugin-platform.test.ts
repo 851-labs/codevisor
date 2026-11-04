@@ -1,11 +1,7 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
 
-import {
-  fakeOAuthProvider,
-  routeGoogleTo,
-  signInUrl
-} from "./accounts/plugin-oauth-test-support.js"
+import { fakeOAuthProvider, routeGoogleTo } from "./accounts/plugin-oauth-test-support.js"
 import { savePluginRow } from "./events/plugin-events-test-support.js"
 import { makePluginCatalog } from "./plugin-catalog.js"
 import { makePluginPlatform } from "./plugin-platform.js"
@@ -32,10 +28,10 @@ describe("plugin platform", () => {
     routeGoogleTo(provider.url)
 
     const started = await platform.startGmail()
-    const grant = provider.authorize(signInUrl(started))
+    const grant = provider.authorize(started.authorizationUrl)
     await platform.platform.accounts.completeOAuth(grant.state, grant.code)
 
-    expect(new URL(signInUrl(started)).searchParams.get("redirect_uri")).toBe(
+    expect(new URL(started.authorizationUrl).searchParams.get("redirect_uri")).toBe(
       new URL("/v1/plugins/oauth/callback", localBaseUrl).toString()
     )
     expect(platform.requests).toEqual([])

@@ -16,7 +16,7 @@ import {
   type PluginServicesOptions
 } from "../plugin-test-support.js"
 import { PLUGIN_ACCOUNTS_NAMESPACE, makePluginAccountStore } from "./plugin-account-store.js"
-import { fakeOAuthProvider, routeGoogleTo, signInUrl } from "./plugin-oauth-test-support.js"
+import { fakeOAuthProvider, routeGoogleTo } from "./plugin-oauth-test-support.js"
 
 const grafanaApp = async (options: PluginServicesOptions = {}) => {
   const running = await startPluginApp(options)
@@ -178,8 +178,8 @@ describe("plugin account OAuth routes", () => {
 
     const started = await running.start()
 
-    const params = new URL(signInUrl(started)).searchParams
-    expect(new URL(signInUrl(started)).origin).toBe("https://accounts.google.com")
+    const params = new URL(started.authorizationUrl).searchParams
+    expect(new URL(started.authorizationUrl).origin).toBe("https://accounts.google.com")
     expect(Object.fromEntries(params)).toMatchObject({
       client_id: "client-1",
       redirect_uri: `${localBaseUrl}/v1/plugins/oauth/callback`,
@@ -194,7 +194,7 @@ describe("plugin account OAuth routes", () => {
     const running = await gmailApp()
     const provider = await fakeOAuthProvider()
     routeGoogleTo(provider.url)
-    const grant = provider.authorize(signInUrl(await running.start()))
+    const grant = provider.authorize((await running.start()).authorizationUrl)
 
     const callback = await fetch(
       `${running.server.url}/v1/plugins/oauth/callback?state=${encodeURIComponent(grant.state)}&code=${grant.code}`
@@ -219,7 +219,7 @@ describe("plugin account OAuth routes", () => {
     const running = await gmailApp()
     const provider = await fakeOAuthProvider()
     routeGoogleTo(provider.url)
-    const first = provider.authorize(signInUrl(await running.start()))
+    const first = provider.authorize((await running.start()).authorizationUrl)
     await fetch(
       `${running.server.url}/v1/plugins/oauth/callback?state=${encodeURIComponent(first.state)}&code=${first.code}`
     )
@@ -239,14 +239,16 @@ describe("plugin account OAuth routes", () => {
     ])
     expect(again.status).toBe(200)
     expect(
-      new URL(signInUrl(decode(PluginAccountOAuthStart)(again.body))).searchParams.get("client_id")
+      new URL(decode(PluginAccountOAuthStart)(again.body).authorizationUrl).searchParams.get(
+        "client_id"
+      )
     ).toBe("client-1")
   })
 
   it("refuses a callback for a sign-in it didn't start or that was cancelled", async () => {
     const running = await gmailApp()
     const started = await running.start()
-    const state = new URL(signInUrl(started)).searchParams.get("state")!
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!
 
     const unknown = await jsonRequest(running.server, "/v1/plugins/oauth/callback?code=abc")
     const cancelled = await jsonRequest(
