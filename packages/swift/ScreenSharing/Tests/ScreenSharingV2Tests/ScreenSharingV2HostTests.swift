@@ -12,13 +12,11 @@ struct ScreenSharingV2HostTests {
   private let scheduler = ManualScheduler()
 
   private func startedHost(
-    _ encoder: RecordingTileEncoder, refinement: ScreenSharingV2RefinementPolicy = .standard,
-    refreshPhase: ScreenSharingV2RefreshPhase = .everyNanosecond
+    _ encoder: RecordingTileEncoder, refinement: ScreenSharingV2RefinementPolicy = .standard
   ) -> ScreenSharingV2Host {
     let host = ScreenSharingV2Host(
       transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
-      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler, refinement: refinement,
-      refreshPhase: refreshPhase)
+      initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler, refinement: refinement)
     host.start()
     return host
   }
@@ -86,20 +84,6 @@ struct ScreenSharingV2HostTests {
     let passes = Dictionary(grouping: refinements.flatMap(\.update.tiles), by: { $0 }).mapValues(\.count)
     #expect(passes == [0: 4, 1: 4, 2: 4, 3: 4])
     #expect(scheduler.scheduled.value == ScreenSharingV2Profile.refinementPasses)
-  }
-
-  @Test func aRefinementWaitsForTheOffsetAfterTheRefreshItIsDueIn() async throws {
-    let encoder = RecordingTileEncoder(layout: Self.tiled)
-    let host = startedHost(
-      encoder, refreshPhase: ScreenSharingV2RefreshPhase(periodNs: 10_000_000, offsetNs: 2_000_000))
-    defer { host.stop() }
-
-    host.push(try TestPixels.frame(shade: 10, timestampNs: scheduler.nowNs))
-    await encoder.encodes.wait(for: 1)
-    encoder.emitTiles(of: encoder.requests[0])
-    await scheduler.scheduled.wait(for: 1)
-
-    #expect(scheduler.dueTimesNs == [1_042_000_000])
   }
 
   @Test func aTileThatChangesAgainStartsItsRefinementPassesOver() async throws {

@@ -1,5 +1,6 @@
 import CoreVideo
 import Foundation
+import Synchronization
 
 enum ScreenSharingV2TileComparer {
   static func changed(
@@ -14,9 +15,16 @@ enum ScreenSharingV2TileComparer {
       CVPixelBufferUnlockBaseAddress(previous, .readOnly)
     }
     let planes = ScreenSharingV2PixelPlane.planes(of: current)
-    return tiles.filter { tile in
-      planes.contains { differs($0, rows: layout.rows(of: tile), height: layout.height, previous, current) }
+    let candidates = tiles.sorted()
+    let changed = Mutex(Set<Int>())
+    DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
+      let tile = candidates[index]
+      guard planes.contains(where: { differs($0, rows: layout.rows(of: tile), height: layout.height, previous, current) })
+      else { return }
+
+      changed.withLock { _ = $0.insert(tile) }
     }
+    return changed.withLock { $0 }
   }
 
   private static func comparable(
