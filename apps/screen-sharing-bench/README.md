@@ -224,6 +224,20 @@ probes (UDP 47592), which keep C2 a clean clock reference. Before each run it pr
 "Network check"). The anchor and pipes are flushed at the start and on exit. Runs over ssh are for
 development only.
 
+The minis are also CI runners, so the two jobs pair up before either takes its runner for long
+(`scripts/tier2-pair.sh`, which reads job states through the GitHub API with the run's `actions: read` token).
+First `wait-for-minis`, on a GitHub-hosted runner, polls every minute until no job of another run is in progress
+on tamale or croissant and no other self-hosted job is queued, so both jobs usually start at once. It gives up
+after 3 hours and lets the jobs start anyway. Then each mini job checks out the repository and waits for its
+peer job to be in progress before it builds anything. Seeing the peer in progress on polls 45 s apart counts
+as paired: a peer that has just given up its runner has finished by then. If the peer is still queued after
+5 minutes, perhaps because a CI job took its mini in the meantime, the job skips its other steps and gives up its runner,
+and the peer gives up its own as soon as it starts. Then `wait-for-minis-again` waits for both minis again
+and `host-retry` and `viewer-retry` repeat the pairing. These last jobs wait up to an hour for each other and fail
+instead of giving up their runners again. `report` merges whichever pair ran. So neither mini sits idle for
+more than about 5 minutes while the other is still queued, except in that retry, which is rare because it starts only when
+both minis look free. The hello rendezvous below starts only once both jobs are paired.
+
 The `host` job (tamale, `scripts/tier2-host.sh`) and the `viewer` job (croissant, `scripts/tier2-viewer.sh`)
 walk the same plan (`scripts/tier2-lib.sh`): for each scene the null-sharing floor, then per repetition
 (`repetitions`, default 3, `duration` seconds each) Apple HP, Codevisor on a virtual display and Codevisor on
