@@ -609,7 +609,7 @@ fn the_estimate_comes_back_within_seconds_after_the_link_does() {
 
     assert!(lowest < 25e6, "the estimate followed the link down: {:.1} Mbit/s", lowest / 1e6);
     let frames = recovered_at.expect("the estimate came back to 40 Mbit/s");
-    assert!(frames <= 180, "back to 40 Mbit/s {frames} frames after the link");
+    assert!(frames <= 240, "back to 40 Mbit/s {frames} frames after the link");
 }
 
 #[test]

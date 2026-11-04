@@ -133,7 +133,7 @@ impl Sender {
             epoch,
             streams: HashMap::new(),
             pacer: Pacer::new(config.initial_rate_bps * 2.0),
-            estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps),
+            estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps, config.frame_interval),
             loss: LossWindow::default(),
             last_loss: None,
             rtt: Duration::ZERO,

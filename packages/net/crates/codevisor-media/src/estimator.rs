@@ -50,13 +50,16 @@ pub struct Estimator {
     delay_before: Option<i64>,
     jitter_us: f64,
     queue_delay_us: i64,
+    standing_us: i64,
+    max_standing_us: f64,
     overuse: u32,
     last_backoff: Option<Instant>,
 }
 
 impl Estimator {
-    pub fn new(initial_bps: f64, max_bps: f64) -> Self {
+    pub fn new(initial_bps: f64, max_bps: f64, max_standing: Duration) -> Self {
         Self {
+            max_standing_us: max_standing.as_micros() as f64,
             initial_bps: initial_bps.clamp(MIN_RATE_BPS, max_bps),
             max_bps,
             bursts: Windowed::new(BURST_WINDOW, Keep::Largest),
@@ -69,6 +72,7 @@ impl Estimator {
             delay_before: None,
             jitter_us: 0.0,
             queue_delay_us: 0,
+            standing_us: 0,
             overuse: 0,
             last_backoff: None,
         }
@@ -100,7 +104,9 @@ impl Estimator {
     }
 
     fn queued(&self) -> bool {
-        self.overuse > 0 || (self.queue_delay_us as f64) >= self.queue_threshold_us()
+        let threshold = self.queue_threshold_us();
+        ((self.queue_delay_us - self.standing_us) as f64) >= threshold
+            || (self.queue_delay_us as f64) >= self.max_standing_us + threshold
     }
 
     pub fn on_acked(&mut self, now: Instant, bytes: usize) {
@@ -138,11 +144,15 @@ impl Estimator {
         self.queue_delay_us = queue;
         if (queue as f64) < self.queue_threshold_us() {
             self.overuse = 0;
+            self.standing_us = 0;
         } else if growing {
             self.overuse += 1;
         }
         let rested = self.last_backoff.is_none_or(|at| now.saturating_duration_since(at) >= hold_off);
-        if self.overuse >= OVERUSE_SAMPLES && rested {
+        let threshold = self.queue_threshold_us();
+        let grown = self.overuse >= OVERUSE_SAMPLES && ((queue - self.standing_us) as f64) >= threshold;
+        let standing_too_long = (queue as f64) >= self.max_standing_us + threshold;
+        if rested && (grown || standing_too_long) {
             self.back_off(now);
         }
         self.grow_cap(now);
@@ -156,6 +166,7 @@ impl Estimator {
         let from = if filling || link_limited { receive.min(estimate) } else { estimate };
         let target = (from * BACKOFF).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, bps: target });
+        self.standing_us = self.queue_delay_us;
         self.bursts.clear();
         self.overuse = 0;
         self.last_backoff = Some(now);
@@ -206,6 +217,7 @@ mod tests {
     use super::*;
 
     const MS: Duration = Duration::from_millis(1);
+    const FRAME: Duration = Duration::from_micros(16_667);
     const OFFSET: i64 = 5_000_000;
 
     fn burst(bytes: usize, span: Duration) -> Delivery {
@@ -226,7 +238,7 @@ mod tests {
     #[test]
     fn estimate_is_the_fastest_recent_delivery_and_forgets_old_ones() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(10e6, 1e9);
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(125_000, 10 * MS));
         estimator.on_delivery(start + 5_000 * MS, burst(125_000, 20 * MS));
         assert_eq!(estimator.estimate_bps(), 100e6);
@@ -240,7 +252,7 @@ mod tests {
     #[test]
     fn a_burst_counts_no_faster_than_it_was_sent() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(10e6, 1e9);
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, Delivery { bytes: 125_000, receive_span: MS, send_span: 10 * MS });
         assert_eq!(estimator.estimate_bps(), 100e6);
     }
@@ -248,7 +260,7 @@ mod tests {
     #[test]
     fn the_estimate_is_never_under_what_the_viewer_received() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(10e6, 1e9);
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(12_500, 10 * MS));
         for index in 0..=10 {
             estimator.on_acked(start + 20 * MS * index, 50_000);
@@ -259,20 +271,32 @@ mod tests {
     #[test]
     fn a_growing_queue_backs_off_once_per_hold_off() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(100e6, 1e9);
+        let mut estimator = Estimator::new(100e6, 1e9, FRAME);
         let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain((1..=15).map(|step| step * 2_000)));
 
         assert_eq!(estimates[23], 100e6, "the queue isn't in every recent sample yet");
         assert_eq!(estimates[24], 100e6, "the queue has to grow twice");
         assert_eq!(estimates[25], 85e6);
-        assert_eq!(estimates[29], 85e6, "still inside the hold-off");
-        assert_eq!(estimates[30], 85e6 * 0.85);
+        assert!((85e6..85e6 * 1.01).contains(&estimates[29]), "no second back-off inside the hold-off");
+        assert_eq!(estimates[30], estimates[29] * 0.85, "the queue grew again, so it backs off again");
+    }
+
+    #[test]
+    fn a_standing_delay_backs_off_once_and_lets_the_cap_grow() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(100e6, 1e9, FRAME);
+        let standing = (0..200).map(|index| 5_000 + (index % 50) * 10);
+        let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain(standing));
+
+        let lowest = estimates.iter().copied().fold(f64::MAX, f64::min);
+        assert_eq!(lowest, 85e6, "one back-off for a delay that stopped growing");
+        assert!(estimates.last().is_some_and(|last| *last > 85e6 * 1.5), "{:?}", estimates.last());
     }
 
     #[test]
     fn a_back_off_while_sending_little_only_takes_fifteen_percent() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(10e6, 1e9);
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(125_000, 10 * MS));
         for index in 0..=10 {
             estimator.on_acked(start + 20 * MS * index, 25_000);
@@ -284,7 +308,7 @@ mod tests {
     #[test]
     fn a_back_off_while_sending_more_than_arrives_goes_under_what_arrived() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(10e6, 1e9);
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(125_000, 10 * MS));
         for index in 0..=10 {
             estimator.on_acked(start + 20 * MS * index, 25_000);
@@ -297,7 +321,7 @@ mod tests {
     #[test]
     fn jitter_raises_the_queue_a_back_off_needs() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(100e6, 1e9);
+        let mut estimator = Estimator::new(100e6, 1e9, FRAME);
         let jitter = (0..200).map(|index| if index % 2 == 0 { 0 } else { 3_000 });
         let estimates = feed_delays(&mut estimator, start, jitter.chain((1..=10).map(|step| 3_000 + step * 1_000)));
 
@@ -307,7 +331,7 @@ mod tests {
     #[test]
     fn a_back_off_goes_under_the_receive_rate_and_holds_until_the_queue_clears() {
         let start = Instant::now();
-        let mut estimator = Estimator::new(10e6, 1e9);
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
         estimator.on_delivery(start, burst(125_000, 10 * MS));
         for index in 0..=10 {
             estimator.on_acked(start + 20 * MS * index, 150_000);
@@ -316,18 +340,19 @@ mod tests {
         assert_eq!(estimates.last(), Some(&(60e6 * 0.85)));
 
         estimator.on_delivery(start + 200 * MS, burst(125_000, 5 * MS));
-        assert_eq!(estimator.estimate_bps(), 60e6 * 0.85, "a fast burst doesn't lift the cap");
+        let capped = estimator.estimate_bps();
+        assert!(
+            (capped / (60e6 * 0.85 * 2f64.powf(0.1)) - 1.0).abs() < 1e-3,
+            "a fast burst doesn't lift the cap: {capped}"
+        );
         let cleared = (0..8).map(|_| 0);
         let later = start + Duration::from_secs(1);
         for (index, delay) in cleared.enumerate() {
             estimator.on_delay(later + 4 * MS * index as u32, OFFSET + delay, 20 * MS);
         }
         let grown = estimator.estimate_bps();
-        let expected = 60e6 * 0.85 * 2f64.powf(0.828);
-        assert!(
-            (grown / expected - 1.0).abs() < 1e-3,
-            "doubling every second since the queue cleared at 0.2 s: {grown}"
-        );
+        let expected = 60e6 * 0.85 * 2f64.powf(0.928);
+        assert!((grown / expected - 1.0).abs() < 1e-3, "doubling every second since the back-off at 0.1 s: {grown}");
         estimator.on_delivery(later + Duration::from_secs(2), burst(125_000, 5 * MS));
         assert_eq!(estimator.estimate_bps(), 200e6, "and lets go once it passes the bursts");
     }
