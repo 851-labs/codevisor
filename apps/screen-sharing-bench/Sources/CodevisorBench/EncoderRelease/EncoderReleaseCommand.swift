@@ -24,13 +24,15 @@ struct EncoderReleaseCommand: BenchCommand {
     settleSeconds = try options.integer("settle", default: 2, in: 0...60)
     let countLimit = try options.string("count-vt")
     countsOnly = countLimit != nil
-    limit = try countLimit.map { text in
-      guard let value = Int(text), (1...256).contains(value) else {
-        throw BenchUsageError(message: "--count-vt takes a session limit from 1 to 256")
-      }
+    limit = try countLimit.map(Self.sessionLimit) ?? options.integer("vt-limit", default: 48, in: 1...256)
+  }
 
-      return value
-    } ?? options.integer("vt-limit", default: 48, in: 1...256)
+  private static func sessionLimit(_ text: String) throws -> Int {
+    guard let value = Int(text), (1...256).contains(value) else {
+      throw BenchUsageError(message: "--count-vt takes a session limit from 1 to 256")
+    }
+
+    return value
   }
 
   func run() async throws {
@@ -42,7 +44,9 @@ struct EncoderReleaseCommand: BenchCommand {
         configuration: try ScreenSharingV2Profile.captureConfiguration(width: width, height: height),
         metrics: ScreenSharingMetrics())
       let encoded = try await EncoderReleaseFrame.encode(with: encoder, width: width, height: height)
-      if round == 1 { steps.append(EncoderReleaseStep(label: "open, \(encoded) tiles encoded", count: try otherProcess())) }
+      if round == 1 {
+        steps.append(EncoderReleaseStep(label: "open, \(encoded) tiles encoded", count: try otherProcess()))
+      }
       encoder.stop()
       try await Task.sleep(for: .seconds(settleSeconds))
       steps.append(EncoderReleaseStep(label: "after round \(round)", count: try otherProcess()))

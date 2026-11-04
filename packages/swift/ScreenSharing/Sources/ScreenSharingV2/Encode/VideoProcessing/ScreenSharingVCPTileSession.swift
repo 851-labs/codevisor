@@ -33,9 +33,14 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   }
 
   private func submit(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
-    try capQP(refining: request.update.isRefinement)
     let submission = try state.withLock {
       try $0.begin(request, refresh: request.refreshes[tile], atNs: ScreenSharingMetrics.nowNs)
+    }
+    do {
+      try capQP(refining: request.update.isRefinement)
+    } catch {
+      state.withLock { $0.abandon(submission) }
+      throw error
     }
     let status = session.encode(
       pixels, submission: submission.id, presentationNs: submission.presentationNs,
@@ -50,11 +55,14 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   }
 
   private func capQP(refining: Bool) throws {
-    let wanted = state.withLock { $0.rate.highestQP(refining: refining) }
-    guard state.withLock({ $0.highestQP != wanted }) else { return }
+    let change = state.withLock { state -> Int? in
+      let wanted = state.rate.highestQP(refining: refining)
+      return wanted == state.highestQP ? nil : wanted
+    }
+    guard let change else { return }
 
-    try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, wanted as CFNumber)
-    state.withLock { $0.highestQP = wanted }
+    try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, change as CFNumber)
+    state.withLock { $0.highestQP = change }
   }
 
   func acknowledge(_ tokens: [UInt64]) {

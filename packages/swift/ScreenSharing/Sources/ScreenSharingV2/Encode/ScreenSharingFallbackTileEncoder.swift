@@ -21,7 +21,6 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
 
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat: OSType
-  public let refinementPolicy: ScreenSharingV2RefinementPolicy
   private let primary: any ScreenSharingTileEncoder
   private let fallback: any ScreenSharingTileEncoder
   private let metrics: ScreenSharingMetrics
@@ -36,7 +35,6 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
 
     layout = primary.layout
     sourcePixelFormat = primary.sourcePixelFormat
-    refinementPolicy = primary.refinementPolicy
     self.primary = primary
     self.fallback = fallback
     self.metrics = metrics
@@ -87,6 +85,8 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
   }
 
   private var active: any ScreenSharingTileEncoder { hasFallenBack ? fallback : primary }
+
+  public var refinementPolicy: ScreenSharingV2RefinementPolicy { active.refinementPolicy }
 
   private func primaryOutput(_ output: ScreenSharingTileEncoderOutput) {
     guard !state.withLock({ $0.stopped }) else { return }

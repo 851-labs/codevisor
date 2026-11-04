@@ -5,8 +5,9 @@ import Synchronization
 public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable {
   public let layout: ScreenSharingV2TileLayout
   public let sourcePixelFormat = kCVPixelFormatType_32BGRA
-  public let refinementPolicy = ScreenSharingV2RefinementPolicy(
+  private static let convergingPolicy = ScreenSharingV2RefinementPolicy(
     convergedBelowBytes: ScreenSharingVCPRate.convergedRefinementBytes)
+  private let bitsPerSecond: Atomic<Int>
   private let converter: ScreenSharingVCPPixelConverter
   private let cutter: ScreenSharingV2TileCutter
   private let sessions: [ScreenSharingVCPTileSession]
@@ -24,6 +25,7 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
   ) throws {
     self.layout = layout
     self.metrics = metrics
+    bitsPerSecond = Atomic(configuration.bitrate)
     converter = try ScreenSharingVCPPixelConverter(width: layout.width, height: layout.height)
     cutter = ScreenSharingV2TileCutter(layout: layout)
     sessions = try Self.sessions(layout: layout, configuration: configuration, metrics: metrics, relay: relay)
@@ -47,7 +49,9 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
     let convertedNs = ScreenSharingMetrics.nowNs
     let pixels = try cutter.cut(converted, tiles: tiles)
     let cutNs = ScreenSharingMetrics.nowNs
-    metrics.observe("vcpConvert", milliseconds: Double(convertedNs - startNs) / 1e6)
+    if !request.update.isRefinement {
+      metrics.observe("vcpConvert", milliseconds: Double(convertedNs - startNs) / 1e6)
+    }
     if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(cutNs - convertedNs) / 1e6) }
     for tile in tiles { encode(tile, pixels: pixels[tile], request: request) }
     metrics.observe("updateSubmit", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
@@ -90,7 +94,13 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
     sessions[tile].acknowledge(tokens)
   }
 
+  public var refinementPolicy: ScreenSharingV2RefinementPolicy {
+    let rate = ScreenSharingVCPRate(bitsPerSecond: bitsPerSecond.load(ordering: .relaxed), tiles: layout.count)
+    return rate.refinesNearLossless ? Self.convergingPolicy : .standard
+  }
+
   public func setBitrate(_ bitsPerSecond: Int) throws {
+    self.bitsPerSecond.store(bitsPerSecond, ordering: .relaxed)
     let rate = ScreenSharingVCPRate(bitsPerSecond: bitsPerSecond, tiles: layout.count)
     for session in sessions {
       try session.setRate(rate)

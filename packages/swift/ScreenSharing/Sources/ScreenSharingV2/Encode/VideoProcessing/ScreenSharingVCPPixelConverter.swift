@@ -1,7 +1,9 @@
+import Foundation
 import CoreVideo
 @preconcurrency import Metal
 import ScreenSharing
 import Synchronization
+import VideoToolbox
 
 final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
   static let encodedPixelFormat = kCVPixelFormatType_444YpCbCr8BiPlanarFullRange
@@ -12,49 +14,33 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
       (kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2),
     ]
   }
-  private static let threadgroup = MTLSize(width: 16, height: 16, depth: 1)
-  private static let shader = """
-    #include <metal_stdlib>
-    using namespace metal;
-    kernel void bgraTo444(texture2d<float, access::read> source [[texture(0)]],
-                          texture2d<float, access::write> luma [[texture(1)]],
-                          texture2d<float, access::write> chroma [[texture(2)]],
-                          uint2 position [[thread_position_in_grid]]) {
-      if (position.x >= luma.get_width() || position.y >= luma.get_height()) { return; }
-      float3 rgb = source.read(position).rgb;
-      float y = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-      float cb = (rgb.b - y) / 1.8556 + 128.0 / 255.0;
-      float cr = (rgb.r - y) / 1.5748 + 128.0 / 255.0;
-      luma.write(float4(y), position);
-      chroma.write(float4(cb, cr, 0.0, 0.0), position);
-    }
-    """
-
   private struct Conversion: @unchecked Sendable {
     let capture: Int64
     let target: CVPixelBuffer
   }
 
+  private let kernel: ScreenSharingVCPConversionKernel
   private let cache: CVMetalTextureCache
-  private let queue: any MTLCommandQueue
-  private let pipeline: any MTLComputePipelineState
   private let pool: CVPixelBufferPool
+  private let size: (width: Int, height: Int)
+  private let scalerLock = NSLock()
+  private var scaler: VTPixelTransferSession?
   private let last = Mutex<Conversion?>(nil)
 
   init(width: Int, height: Int) throws {
-    guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
-      throw ScreenSharingError.unavailable("Metal is unavailable for the VCP converter.")
-    }
-
+    kernel = try ScreenSharingVCPConversionKernel.shared()
     var cache: CVMetalTextureCache?
-    guard CVMetalTextureCacheCreate(nil, nil, device, nil, &cache) == kCVReturnSuccess, let cache else {
+    guard CVMetalTextureCacheCreate(nil, nil, kernel.device, nil, &cache) == kCVReturnSuccess, let cache else {
       throw ScreenSharingError.unavailable("No Metal texture cache for the VCP converter.")
     }
 
     self.cache = cache
-    self.queue = queue
-    pipeline = try Self.pipeline(device)
+    size = (width, height)
     pool = try Self.pool(width: width, height: height)
+  }
+
+  deinit {
+    if let scaler { VTPixelTransferSessionInvalidate(scaler) }
   }
 
   func convert(_ source: CVPixelBuffer, capture: Int64) throws -> CVPixelBuffer {
@@ -77,34 +63,42 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
       throw ScreenSharingError.codec("Allocate VCP input", status)
     }
 
+    if CVPixelBufferGetWidth(source) == size.width && CVPixelBufferGetHeight(source) == size.height {
+      try convertExactly(source, into: target)
+    } else {
+      try scale(source, into: target)
+    }
+    for (key, value) in Self.colorTags { CVBufferSetAttachment(target, key, value, .shouldPropagate) }
+    return target
+  }
+
+  private func convertExactly(_ source: CVPixelBuffer, into target: CVPixelBuffer) throws {
     var retained: [CVMetalTexture] = []
-    try encode(
+    try kernel.run(
       source: try texture(source, plane: 0, format: .bgra8Unorm, retaining: &retained),
       luma: try texture(target, plane: 0, format: .r8Unorm, retaining: &retained),
       chroma: try texture(target, plane: 1, format: .rg8Unorm, retaining: &retained))
     withExtendedLifetime(retained) {}
     CVMetalTextureCacheFlush(cache, 0)
-    for (key, value) in Self.colorTags { CVBufferSetAttachment(target, key, value, .shouldPropagate) }
-    return target
   }
 
-  private func encode(source: any MTLTexture, luma: any MTLTexture, chroma: any MTLTexture) throws {
-    guard let buffer = queue.makeCommandBuffer(), let encoder = buffer.makeComputeCommandEncoder() else {
-      throw ScreenSharingError.unavailable("No Metal command buffer for the VCP converter.")
+  private func scale(_ source: CVPixelBuffer, into target: CVPixelBuffer) throws {
+    try scalerLock.withLock {
+      let session = try scaler ?? Self.scalingSession()
+      scaler = session
+      let status = VTPixelTransferSessionTransferImage(session, from: source, to: target)
+      guard status == noErr else { throw ScreenSharingError.codec("Scale VCP input", status) }
     }
+  }
 
-    encoder.setComputePipelineState(pipeline)
-    encoder.setTexture(source, index: 0)
-    encoder.setTexture(luma, index: 1)
-    encoder.setTexture(chroma, index: 2)
-    encoder.dispatchThreads(
-      MTLSize(width: luma.width, height: luma.height, depth: 1), threadsPerThreadgroup: Self.threadgroup)
-    encoder.endEncoding()
-    buffer.commit()
-    buffer.waitUntilCompleted()
-    guard buffer.status == .completed else {
-      throw ScreenSharingError.unavailable("The VCP conversion failed: \(buffer.error?.localizedDescription ?? "?")")
-    }
+  private static func scalingSession() throws -> VTPixelTransferSession {
+    var session: VTPixelTransferSession?
+    let status = VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &session)
+    guard status == noErr, let session else { throw ScreenSharingError.codec("Create VCP scaler", status) }
+
+    VTSessionSetProperty(
+      session, key: kVTPixelTransferPropertyKey_DestinationYCbCrMatrix, value: kCVImageBufferYCbCrMatrix_ITU_R_709_2)
+    return session
   }
 
   private func texture(
@@ -123,15 +117,6 @@ final class ScreenSharingVCPPixelConverter: @unchecked Sendable {
 
     retained.append(created)
     return texture
-  }
-
-  private static func pipeline(_ device: any MTLDevice) throws -> any MTLComputePipelineState {
-    let library = try device.makeLibrary(source: shader, options: nil)
-    guard let function = library.makeFunction(name: "bgraTo444") else {
-      throw ScreenSharingError.unavailable("No VCP conversion kernel.")
-    }
-
-    return try device.makeComputePipelineState(function: function)
   }
 
   private static func pool(width: Int, height: Int) throws -> CVPixelBufferPool {

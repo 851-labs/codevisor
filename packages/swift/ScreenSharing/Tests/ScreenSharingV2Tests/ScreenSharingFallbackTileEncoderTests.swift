@@ -44,6 +44,19 @@ struct ScreenSharingFallbackTileEncoderTests {
     #expect(metrics.label("encoderFallbackReason") == "broken")
   }
 
+  @Test func theRefinementPolicyFollowsTheEncoderInUse() throws {
+    let converging = RecordingTileEncoder(refinementPolicy: ScreenSharingV2RefinementPolicy(convergedBelowBytes: 200))
+    let failing = FailingTileEncoder(converging)
+    let encoder = try ScreenSharingFallbackTileEncoder(primary: failing, fallback: fallback, metrics: metrics)
+    let before = encoder.refinementPolicy
+
+    failing.fail(.throwsOnEncode)
+    try encoder.encode(try Self.request(id: 1))
+
+    #expect(before.convergedBelowBytes == 200)
+    #expect(encoder.refinementPolicy == .standard)
+  }
+
   @Test func afterTheFallbackOnlyTokensTheFallbackIssuedAreAcknowledged() throws {
     let failing = FailingTileEncoder(primary)
     let encoder = try ScreenSharingFallbackTileEncoder(primary: failing, fallback: fallback, metrics: metrics)

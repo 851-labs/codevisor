@@ -24,6 +24,16 @@ struct ScreenSharingVCPPixelConverterTests {
     #expect(zip(measured, expected).allSatisfy { abs($0.1 - $1.1) <= 1 && abs($0.2 - $1.2) <= 1 }, "\(measured)")
   }
 
+  @Test func scalesACaptureOfAnotherSizeInsteadOfReadingPastIt() throws {
+    let converter = try ScreenSharingVCPPixelConverter(width: 128, height: 16 * Self.colours.count)
+
+    let converted = try converter.convert(try Self.bands(), capture: 1)
+
+    #expect(CVPixelBufferGetWidth(converted) == 128)
+    #expect(CVPixelBufferGetHeight(converted) == 16 * Self.colours.count)
+    #expect(Self.sample(converted, row: 8).0 >= 250)
+  }
+
   private static func bt709FullRange(_ colour: (red: UInt8, green: UInt8, blue: UInt8)) -> (Int, Int, Int) {
     let (red, green, blue) = (Double(colour.red), Double(colour.green), Double(colour.blue))
     let luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue

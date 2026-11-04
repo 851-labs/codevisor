@@ -151,7 +151,8 @@ struct ScreenSharingV2HostTests {
   }
 
   @Test func aRefinementPassThatEncodesToAlmostNothingUnderTheEncodersPolicyEndsTheTilesRefinement() async throws {
-    let encoder = RecordingTileEncoder(refinementPolicy: ScreenSharingV2RefinementPolicy(passes: 4, convergedBelowBytes: 64))
+    let encoder = RecordingTileEncoder(
+      refinementPolicy: ScreenSharingV2RefinementPolicy(passes: 4, convergedBelowBytes: 64))
     let host = startedHost(encoder)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
