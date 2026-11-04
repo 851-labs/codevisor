@@ -1,0 +1,82 @@
+---
+title: Gmail
+description: Let agents search, read, draft, send, and organize your email, with mail processed on your own computer.
+icon: Mail
+---
+
+The Gmail plugin connects a Google account you choose to Codevisor, so your agents can work in that
+account's mail: find and read conversations, draft replies, send messages you approve, and keep the
+inbox organized. An agent can also wait for new mail and act when it arrives.
+
+<Callout title="Preview">
+  The Gmail plugin is in limited preview and isn't in the plugin catalog for everyone yet.
+</Callout>
+
+## What agents can do
+
+| Tool                           | What it does                                                           |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| `search_messages`              | Search messages with Gmail search syntax, such as `from:ana is:unread` |
+| `search_threads`               | Search conversations, one result per thread                            |
+| `read_message`, `read_thread`  | Read a message, or a whole conversation oldest first                   |
+| `list_labels`                  | List the account's labels                                              |
+| `create_draft`, `update_draft` | Write a new message or a reply as a draft, and change it               |
+| `send`, `reply`                | Send a message, a reply, or a draft, only after you approve it         |
+| `archive`                      | Move messages or conversations out of the inbox                        |
+| `mark_read`, `mark_unread`     | Change read state                                                      |
+| `modify_labels`                | Add or remove labels                                                   |
+
+The **message.received** event fires when a new message arrives in the inbox. An agent subscribed
+to it, optionally with a filter such as `from` or `subject`, wakes up with the new message's
+summary. See [plugin events](/docs/plugins#events).
+
+Agents draft by default. Before `send` or `reply`, an agent shows you the exact recipients, subject,
+and body and waits for your explicit approval; the tools refuse to send without it.
+
+## Connect an account
+
+1. In Codevisor, open **Settings › Plugins**, choose **Browse Plugins…**, and install **Gmail**.
+2. Choose **Sign in with Google**. Google's consent screen opens in your browser.
+3. Pick the account and review the permissions. Codevisor asks for:
+   - **Read, compose, and send emails from your Gmail account** (`gmail.modify`), for the tools
+     above.
+   - **See your primary Google Account email address** (`email`, `openid`), to label the account
+     and route its new-mail notifications.
+
+`gmail.modify` is the narrowest single Google scope that covers search, reading full messages,
+drafts, sending, and label changes such as archiving and marking read. It can't delete mail
+permanently, and the plugin has no delete tool.
+
+One sign-in works on every Mac signed in to your Codevisor account. You can connect more than one
+Google account; agents choose one per tool call.
+
+## Where your mail goes
+
+The plugin runs on your own computer and talks to Gmail directly over Google's API. Messages,
+drafts, and labels are fetched and processed there. Codevisor's servers never receive your email.
+
+- **Your AI provider.** Mail an agent reads becomes part of that chat. Your computer sends it to the
+  AI provider you chose for the agent, such as Anthropic or OpenAI, so the agent can do what you
+  asked. That provider's terms govern it.
+- **Your chat history.** Chats are stored on your computer. When you open a chat from another of
+  your devices, it travels through Codevisor Cloud end-to-end encrypted between your devices.
+- **New-mail notifications.** Gmail sends Codevisor Cloud a notice through Google Cloud Pub/Sub that
+  contains only the account's email address and a mailbox change number, never message content.
+  Cloud looks up your computers by a hash of the address, forwards the notice to them encrypted,
+  and your computers fetch the new message from Gmail themselves.
+- **Sign-in tokens.** Google's tokens are stored in Codevisor's credential vault, encrypted on your
+  computer with a key only your devices hold. Codevisor Cloud keeps an encrypted copy so your Macs
+  can share one sign-in, and it can't decrypt it.
+
+Codevisor does not sell Google user data, use it for advertising, or use it to train AI models. Its
+use of information received from Google APIs adheres to the
+[Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+including the Limited Use requirements. The [privacy policy](/privacy#google) covers Google user
+data in full.
+
+## Disconnect
+
+Choose **Sign Out** for the account in Gmail's plugin settings, or uninstall the plugin. Codevisor
+stops new-mail notifications for the account, deletes its sign-in tokens, and removes the account's
+inbox and address hash from Cloud. You can also revoke access at any time from your Google
+Account's [third-party connections](https://myaccount.google.com/connections) page.

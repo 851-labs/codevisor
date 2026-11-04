@@ -38,8 +38,9 @@ restart a local server; Codevisor rereads its tools, skills, and events when it 
 A plugin that talks to another service signs in once, and the account works on every Mac:
 
 - **OAuth.** Hosted MCP servers use standard MCP OAuth. Plugins that wrap a service declare a
-  provider and scopes, and Codevisor runs the sign-in. Google requires your own OAuth client: create
-  one in the Google Cloud console and enter its client ID and secret when you add the account.
+  provider and scopes, and Codevisor runs the sign-in. Codevisor's own [Gmail](/docs/plugins/gmail) plugin
+  signs in with Codevisor's Google client. Other Google plugins require your own OAuth client:
+  create one in the Google Cloud console and enter its client ID and secret when you add the account.
 - **Fields.** Plugins can ask for values such as a URL or an API key.
 
 Tokens and secret fields are stored in the shared credential vault and synced to every Mac. Codevisor
