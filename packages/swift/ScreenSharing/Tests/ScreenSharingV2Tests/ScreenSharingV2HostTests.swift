@@ -28,11 +28,11 @@ struct ScreenSharingV2HostTests {
 
     host.push(
       try TestPixels.frame(shade: 10, timestampNs: 1_000, dirtyRects: [CGRect(x: 0, y: 0, width: 4, height: 4)]))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
     host.push(
       try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 30, y: 100, width: 8, height: 100)]))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.requests.map(\.update.tiles) == [[0, 1, 2, 3], [1, 2]])
     #expect(encoder.requests.map(\.update.isRefinement) == [false, false])
@@ -44,15 +44,15 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     host.push(
       try TestPixels.frame(shade: 30, timestampNs: 3_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
     host.push(
       try TestPixels.frame(shade: 40, timestampNs: 4_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
     encoder.emitTiles(of: encoder.requests[0])
-    await encoder.encodes.wait(for: 3)
+    await encoder.encodes.cancellableWait(for: 3)
     host.stop()
 
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 2_000, 4_000])
@@ -64,14 +64,14 @@ struct ScreenSharingV2HostTests {
     let host = startedHost(encoder)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
     var encoded = 1
     for pass in 1...ScreenSharingV2Profile.refinementPasses {
-      await scheduler.scheduled.wait(for: pass)
+      await scheduler.scheduled.cancellableWait(for: pass)
       scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
       for _ in Self.tiled.tiles {
-        await encoder.encodes.wait(for: encoded + 1)
+        await encoder.encodes.cancellableWait(for: encoded + 1)
         encoder.emitTiles(of: encoder.requests[encoded])
         encoded += 1
       }
@@ -92,20 +92,20 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
-    await scheduler.scheduled.wait(for: 1)
+    await scheduler.scheduled.cancellableWait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs / 2)
     host.push(
       try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 8, height: 8)]))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTiles(of: encoder.requests[1])
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs - ScreenSharingV2Profile.refinementGapNs / 2)
     for index in 2...4 {
-      await encoder.encodes.wait(for: index + 1)
+      await encoder.encodes.cancellableWait(for: index + 1)
       encoder.emitTiles(of: encoder.requests[index])
     }
-    await scheduler.scheduled.wait(for: 2)
+    await scheduler.scheduled.cancellableWait(for: 2)
 
     #expect(encoder.requests[1].update.tiles == [0])
     #expect(encoder.requests[2...4].map(\.update.tiles) == [[1], [2], [3]])
@@ -118,14 +118,14 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
-    await scheduler.scheduled.wait(for: 1)
+    await scheduler.scheduled.cancellableWait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     host.push(
       try TestPixels.frame(shade: 20, timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 300, width: 8, height: 8)]))
-    await encoder.encodes.wait(for: 3)
+    await encoder.encodes.cancellableWait(for: 3)
 
     #expect(encoder.requests[1].update.tiles == [0])
     #expect(encoder.requests[2].update.tiles == [3])
@@ -137,11 +137,11 @@ struct ScreenSharingV2HostTests {
     let host = startedHost(encoder)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
-    await scheduler.scheduled.wait(for: 1)
+    await scheduler.scheduled.cancellableWait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     encoder.emit(.unchanged(tile: 0, update: 2))
     scheduler.advance(byNs: 4 * ScreenSharingV2Profile.refinementGapNs)
     host.stop()
@@ -155,13 +155,13 @@ struct ScreenSharingV2HostTests {
     let host = startedHost(encoder, refinement: ScreenSharingV2RefinementPolicy(passes: 4, convergedBelowBytes: 64))
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
-    await scheduler.scheduled.wait(for: 1)
+    await scheduler.scheduled.cancellableWait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTiles(of: encoder.requests[1])
-    await transport.sends.wait(for: 2)
+    await transport.sends.cancellableWait(for: 2)
     scheduler.advance(byNs: 4 * ScreenSharingV2Profile.refinementGapNs)
     host.stop()
 
@@ -175,12 +175,12 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shades: [10, 20, 30, 40], timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
     host.push(
       try TestPixels.frame(
         shades: [10, 20, 99, 40], timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 640, height: 360)]))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.requests[1].update.tiles == [1, 2])
   }
@@ -190,17 +190,17 @@ struct ScreenSharingV2HostTests {
     let host = startedHost(encoder)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTiles(of: encoder.requests[0])
-    await scheduler.scheduled.wait(for: 1)
+    await scheduler.scheduled.cancellableWait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     encoder.emit(.unchanged(tile: 0, update: 2))
     host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
-    await encoder.encodes.wait(for: 3)
+    await encoder.encodes.cancellableWait(for: 3)
     encoder.emitTiles(of: encoder.requests[2])
     encoder.emit(.unchanged(tile: 0, update: 2))
-    await scheduler.scheduled.wait(for: 2)
+    await scheduler.scheduled.cancellableWait(for: 2)
     scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
     host.stop()
 
@@ -217,13 +217,13 @@ struct ScreenSharingV2HostTests {
     transport.setAdmits(false)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await transport.admissionChecks.wait(for: 1)
+    await transport.admissionChecks.cancellableWait(for: 1)
     #expect(encoder.encodes.value == 0)
 
     transport.setAdmits(true)
-    await scheduler.scheduled.wait(for: 1)
+    await scheduler.scheduled.cancellableWait(for: 1)
     scheduler.advance(byNs: ScreenSharingV2AdmissionRetry.delayNs(after: transport.admission()))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000])
   }
 
@@ -233,7 +233,7 @@ struct ScreenSharingV2HostTests {
 
     try await sendFirstFrame(through: host, keyframe: true, token: nil)
     transport.emit(.frameLost(stream: 0, frame: 0))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000])
     #expect(encoder.requests.map(\.refreshes) == [[:], [0: .keyframe]])
@@ -246,7 +246,7 @@ struct ScreenSharingV2HostTests {
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
     transport.emit(.ltrAcked(stream: 0, token: 9))
     transport.emit(.frameLost(stream: 0, frame: 1))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.acknowledgedTokens == [9])
     #expect(encoder.requests.last?.refreshes == [0: .longTermReference])
@@ -258,12 +258,12 @@ struct ScreenSharingV2HostTests {
 
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
     host.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTile(of: encoder.requests[1], keyframe: true, token: nil)
-    await transport.sends.wait(for: 2)
+    await transport.sends.cancellableWait(for: 2)
     transport.emit(.ltrAcked(stream: 0, token: 9))
     transport.emit(.frameLost(stream: 0, frame: 1))
-    await encoder.encodes.wait(for: 3)
+    await encoder.encodes.cancellableWait(for: 3)
 
     #expect(encoder.acknowledgedTokens.isEmpty)
     #expect(encoder.requests.last?.refreshes == [0: .keyframe])
@@ -275,9 +275,9 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emit(.dropped(tile: 0, refresh: refresh))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
 
     #expect(encoder.requests.map(\.sourceTimestampNs) == [1_000, 1_000])
     #expect(encoder.requests.last?.refreshes == refresh.map { [0: $0] } ?? [:])
@@ -290,10 +290,10 @@ struct ScreenSharingV2HostTests {
     try await sendFirstFrame(through: host, keyframe: true, token: 9)
     transport.emit(.ltrAcked(stream: 0, token: 9))
     transport.emit(.refreshRequested(stream: 0, keyframe: false))
-    await encoder.encodes.wait(for: 2)
+    await encoder.encodes.cancellableWait(for: 2)
     encoder.emitTile(of: encoder.requests[1], keyframe: false, token: nil, refresh: .longTermReference)
     transport.emit(.refreshRequested(stream: 0, keyframe: true))
-    await encoder.encodes.wait(for: 3)
+    await encoder.encodes.cancellableWait(for: 3)
 
     #expect(encoder.requests.map(\.refreshes) == [[:], [0: .longTermReference], [0: .keyframe]])
   }
@@ -304,17 +304,17 @@ struct ScreenSharingV2HostTests {
     defer { host.stop() }
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     for tile in 0..<4 { encoder.emitTile(of: encoder.requests[0], tile: tile, keyframe: true, token: UInt64(tile)) }
     for tile in 0..<4 { transport.emit(.ltrAcked(stream: UInt8(tile), token: UInt64(tile))) }
     transport.emit(.frameLost(stream: 2, frame: 2))
     for (index, frame) in [UInt32(4), 5, 6].enumerated() {
-      await encoder.encodes.wait(for: index + 2)
+      await encoder.encodes.cancellableWait(for: index + 2)
       encoder.emitTile(
         of: encoder.requests[index + 1], tile: 2, keyframe: false, token: nil, refresh: .longTermReference)
       transport.emit(.frameLost(stream: 2, frame: frame))
     }
-    await encoder.encodes.wait(for: 5)
+    await encoder.encodes.cancellableWait(for: 5)
 
     #expect(encoder.requests.dropFirst().map(\.refreshes) == Array(repeating: [2: .longTermReference], count: 4))
   }
@@ -325,12 +325,12 @@ struct ScreenSharingV2HostTests {
 
     for index in 0..<2 {
       host.push(try TestPixels.frame(shade: UInt8(10 + index), timestampNs: Int64(index + 1) * 1_000))
-      await encoder.encodes.wait(for: index + 1)
+      await encoder.encodes.cancellableWait(for: index + 1)
       encoder.emitTiles(of: encoder.requests[index])
     }
     let early = encoder.networkFeedback.count
     scheduler.advance(byNs: 250_000_000)
-    await encoder.encodes.wait(for: 3)
+    await encoder.encodes.cancellableWait(for: 3)
 
     #expect(early == 1)
     #expect(encoder.networkFeedback.count == 2)
@@ -339,8 +339,8 @@ struct ScreenSharingV2HostTests {
 
   private func sendFirstFrame(through host: ScreenSharingV2Host, keyframe: Bool, token: UInt64?) async throws {
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await encoder.encodes.wait(for: 1)
+    await encoder.encodes.cancellableWait(for: 1)
     encoder.emitTile(of: encoder.requests[0], keyframe: keyframe, token: token)
-    await transport.sends.wait(for: 1)
+    await transport.sends.cancellableWait(for: 1)
   }
 }

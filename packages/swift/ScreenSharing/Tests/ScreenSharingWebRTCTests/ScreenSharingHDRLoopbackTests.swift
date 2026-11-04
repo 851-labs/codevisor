@@ -7,7 +7,7 @@ import Testing
 @testable import ScreenSharingWebRTC
 
 @MainActor
-@Suite(.timeLimit(.minutes(1)))
+@Suite(.timeLimit(.minutes(1)), .hardwareCodecLock)
 struct ScreenSharingHDRLoopbackTests {
   nonisolated static let hasEncoder: Bool = {
     guard let configuration = try? ScreenSharingVideoConfiguration(width: 320, height: 192),

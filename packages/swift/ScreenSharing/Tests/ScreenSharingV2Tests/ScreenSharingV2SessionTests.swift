@@ -55,7 +55,7 @@ struct ScreenSharingV2SessionTests {
 
     let request = UUID()
     #expect(session.control?.send(.request(id: request)) == true)
-    await controlArrived.wait()
+    await controlArrived.cancellableWait()
     #expect(control == [.request(id: request)])
 
     var cursor: [ScreenSharingCursorUpdate] = []
@@ -64,9 +64,9 @@ struct ScreenSharingV2SessionTests {
       cursor.append($0)
       moved.signal()
     }
-    await subscribed.wait()
+    await subscribed.cancellableWait()
     #expect(host.linkChannels.cursor.send(.position(ScreenSharingPointer(x: 0.25, y: 0.5))))
-    await moved.wait()
+    await moved.cancellableWait()
     #expect(cursor == [.normalizedPosition(ScreenSharingPointer(x: 0.25, y: 0.5))])
   }
 
@@ -104,16 +104,16 @@ struct ScreenSharingV2SessionTests {
     try await viewer
     let first = try #require(encoders.all.first)
     host.frameRouter.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
-    await first.encodes.wait()
+    await first.encodes.cancellableWait()
 
     let larger = try ScreenSharingV2Profile.captureConfiguration(width: 1280, height: 720)
     host.updateVideoConfiguration(larger)
-    await encoders.built.wait(for: 2)
+    await encoders.built.cancellableWait(for: 2)
     let second = try #require(encoders.all.last)
-    await second.attached.wait()
+    await second.attached.cancellableWait()
     host.frameRouter.push(try TestPixels.frame(shade: 20, timestampNs: 2_000))
     host.frameRouter.push(try TestPixels.frame(width: 1280, height: 720, shade: 30, timestampNs: 3_000))
-    await second.encodes.wait()
+    await second.encodes.cancellableWait()
 
     #expect(first.requests.count == 1)
     #expect(second.requests.map(\.sourceTimestampNs) == [3_000])
@@ -135,12 +135,12 @@ struct ScreenSharingV2SessionTests {
 
     host.updateVideoConfiguration(try ScreenSharingV2Profile.captureConfiguration(width: 1280, height: 720))
     host.updateVideoConfiguration(try ScreenSharingV2Profile.captureConfiguration(width: 1920, height: 1080))
-    await encoders.built.wait(for: 3)
+    await encoders.built.cancellableWait(for: 3)
     let last = try #require(encoders.all.last)
-    await last.attached.wait()
+    await last.attached.cancellableWait()
     #expect(last.layout.width == 1920)
     host.frameRouter.push(try TestPixels.frame(width: 1920, height: 1080, shade: 40, timestampNs: 4_000))
-    await last.encodes.wait()
+    await last.encodes.cancellableWait()
     #expect(last.requests.map(\.sourceTimestampNs) == [4_000])
   }
 }

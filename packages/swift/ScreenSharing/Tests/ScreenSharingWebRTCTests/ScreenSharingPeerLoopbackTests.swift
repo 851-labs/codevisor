@@ -6,7 +6,7 @@ import Testing
 @preconcurrency import WebRTC
 
 @MainActor
-@Suite(.timeLimit(.minutes(1)))
+@Suite(.timeLimit(.minutes(1)), .hardwareCodecLock)
 struct ScreenSharingPeerLoopbackTests {
   @MainActor
   final class Harness {
