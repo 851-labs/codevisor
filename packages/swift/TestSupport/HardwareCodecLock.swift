@@ -3,8 +3,7 @@ import Synchronization
 import Testing
 
 public struct HardwareCodecLock: SuiteTrait, TestTrait, TestScoping {
-  static let waitLimit = Duration.seconds(120)
-  private static let pollInterval = Duration.milliseconds(50)
+  static let waitLimitSeconds = 45
   private static let path = NSTemporaryDirectory() + "codevisor-hardware-codec.lock"
   private static let gaveUp = Atomic(false)
 
@@ -24,22 +23,37 @@ public struct HardwareCodecLock: SuiteTrait, TestTrait, TestScoping {
     if gaveUp.load(ordering: .relaxed) { try Test.cancel("Skipped: an earlier test couldn't get \(path).") }
 
     let descriptor = open(path, O_CREAT | O_RDWR, 0o644)
-    let deadline = ContinuousClock.now + waitLimit
-    while flock(descriptor, LOCK_EX | LOCK_NB) != 0, errno == EWOULDBLOCK {
-      guard ContinuousClock.now < deadline, !Task.isCancelled else { try giveUp(descriptor) }
+    try #require(descriptor >= 0, "Can't open \(path): \(String(cString: strerror(errno))).")
+    guard await locked(descriptor) else { try giveUp(descriptor) }
 
-      try? await Task.sleep(for: pollInterval)
-    }
     recordHolder(in: descriptor)
     return descriptor
   }
 
+  private static func locked(_ descriptor: Int32) async -> Bool {
+    await withCheckedContinuation { continuation in
+      let waiter = ResumeOnce(continuation)
+      Thread.detachNewThread {
+        let acquired = exclusiveLock(descriptor)
+        if !waiter.resume(with: acquired) { close(descriptor) }
+      }
+      DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(waitLimitSeconds)) {
+        waiter.resume(with: false)
+      }
+    }
+  }
+
+  private static func exclusiveLock(_ descriptor: Int32) -> Bool {
+    while flock(descriptor, LOCK_EX) != 0 {
+      guard errno == EINTR else { return false }
+    }
+    return true
+  }
+
   private static func giveUp(_ descriptor: Int32) throws -> Never {
-    let holder = holder(in: descriptor)
-    close(descriptor)
     gaveUp.store(true, ordering: .relaxed)
     try Test.cancel(
-      "Skipped: \(holder) has held the hardware codec lock (\(path)) for over \(waitLimit). A hung test process may be holding it."
+      "Skipped: couldn't get the hardware codec lock (\(path)) in \(waitLimitSeconds) s; \(holder(in: descriptor)) last held it. A hung test process may be holding it."
     )
   }
 

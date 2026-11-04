@@ -69,7 +69,7 @@ core_v2() {
 
 custom() {
   loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" \
-    $(engine_options "$TIER1_ENGINE") $(scenes)
+    --engine "$TIER1_ENGINE" $(scenes)
 }
 
 gate() {

@@ -1,7 +1,6 @@
 import CodevisorTestSupport
 import CoreMedia
 import Foundation
-import Synchronization
 import Testing
 import VideoToolbox
 
@@ -62,20 +61,5 @@ enum HardwareEncoderBudget {
     }
     VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
     return status == noErr && encoded.value == 1
-  }
-}
-
-private final class ResumeOnce: Sendable {
-  private let continuation: Mutex<CheckedContinuation<Int?, Never>?>
-
-  init(_ continuation: CheckedContinuation<Int?, Never>) {
-    self.continuation = Mutex(continuation)
-  }
-
-  func resume(with value: Int?) {
-    continuation.withLock { pending in
-      defer { pending = nil }
-      return pending
-    }?.resume(returning: value)
   }
 }
