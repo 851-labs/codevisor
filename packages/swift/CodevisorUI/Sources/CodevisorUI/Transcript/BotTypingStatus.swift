@@ -4,45 +4,32 @@ import TranscriptKit
 enum BotTypingStatus: Equatable {
   case thinking
   case typing
-  case sent
   case step(String)
 
-  init(turn: AssistantTurn?) {
-    guard let turn else {
-      self = .thinking
-      return
-    }
-    if turn.toolCalls.contains(where: { !$0.isSettled && $0.sendsBotMessage }) {
-      self = .typing
-      return
-    }
-    switch turn.workedSectionActivity {
+  init(activity: WorkedSectionActivity) {
+    switch activity {
+    case .step("Thinking"), .pending, .starting: self = .thinking
     case let .step(label): self = .step(label)
     case .answering, .writing: self = .typing
-    case .pending, .starting: self = .thinking
     }
-    if self == .step("Thinking") {
-      self = turn.toolCalls.last?.sendsBotMessage == true ? .sent : .thinking
-    }
+  }
+
+  static func activity(of turn: AssistantTurn?) -> WorkedSectionActivity {
+    guard let turn else { return .starting }
+    if turn.toolCalls.contains(where: { !$0.isSettled && $0.sendsBotMessage }) { return .writing }
+    return turn.workedSectionActivity
   }
 
   var text: String {
     switch self {
     case .thinking: "Thinking…"
-    case .typing, .sent: "Typing…"
+    case .typing: "Typing…"
     case let .step(label): label
     }
   }
 
   var motion: BotMascotMotion {
     self == .thinking ? .idle : .working
-  }
-
-  func isShown(afterReply: Bool) -> Bool {
-    switch self {
-    case .thinking, .sent: !afterReply
-    case .typing, .step: true
-    }
   }
 }
 

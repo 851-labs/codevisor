@@ -267,15 +267,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
         TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: .worked)
       }
     }
-    .onChange(of: activity, initial: true) { _, next in
-      smoother.observe(next, now: Date())
-    }
-    .task(id: smoother.deadline) {
-      guard let deadline = smoother.deadline else { return }
-      try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
-      guard !Task.isCancelled else { return }
-      smoother.tick(now: Date())
-    }
+    .modifier(WorkedActivitySmoothing(activity: activity, smoother: $smoother))
   }
 
   private func toggle() {

@@ -168,8 +168,8 @@ public struct TranscriptRowContentView: View {
         },
         sendNow: { Task { await controller.sendSteerNow(messageID: id) } }
       )
-    case let .botTyping(afterReply):
-      TranscriptBotTypingRow(controller: controller, afterReply: afterReply)
+    case .botTyping:
+      TranscriptBotTypingRow(controller: controller)
     case let .setupRequest(request, inBotConversation):
       leaves.setupRequest(request, inBotConversation, controller)
     case let .interaction(interaction, inBotConversation):

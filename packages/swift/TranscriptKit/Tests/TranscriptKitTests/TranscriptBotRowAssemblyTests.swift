@@ -174,20 +174,6 @@ struct TranscriptBotRowAssemblyTests {
     #expect(rows.map(\.id) == [.botTimestamp("b1"), .botMessage("b1"), .botTyping])
   }
 
-  @Test func marksTypingAsAfterAReplyOnlyWhenTheBotSpokeLast() throws {
-    let asked = message(userID.uuidString.lowercased(), .user, "when's the release?", at: 0)
-    func typing(_ messages: [TranscriptBotMessage]) throws -> TranscriptPresentationRow.Content? {
-      try TranscriptRowProjectionCache.project(
-        input(TranscriptBotConversation(messages: messages, isWorking: true)),
-        options: .init(includesConnectingRow: false, presentsBotConversation: true)
-      ).last?.content
-    }
-
-    #expect(try typing([asked]) == .botTyping(afterReply: false))
-    #expect(try typing([asked, message("b1", .bot, "Thursday.", at: 5)]) == .botTyping(afterReply: true))
-    #expect(try typing([asked, message("n1", .notice, "Couldn't reply", at: 5)]) == .botTyping(afterReply: false))
-  }
-
   @Test func dropsThePendingRowOnceTheServerEchoesTheSend() throws {
     let echoed = message(pendingID.uuidString.lowercased(), .user, "yes", at: 0)
 

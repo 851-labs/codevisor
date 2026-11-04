@@ -3,24 +3,19 @@ import CodevisorCore
 import SwiftUI
 
 public struct TranscriptBotTypingRow: View {
-  private static let mascotSlot: CGFloat = 26
-
   let controller: SessionController
-  let afterReply: Bool
 
   @Environment(AppEnvironment.self) private var environment: AppEnvironment?
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
 
-  public init(controller: SessionController, afterReply: Bool) {
+  public init(controller: SessionController) {
     self.controller = controller
-    self.afterReply = afterReply
   }
 
   public var body: some View {
     Group {
       if let bot, let mascot = bot.mascot {
-        mascotIndicator(mascot, serverId: bot.serverId)
+        BotTypingMascotIndicator(
+          mascot: mascot, serverId: bot.serverId, activity: BotTypingStatus.activity(of: activeTurn))
       } else {
         HStack {
           BotTypingBubble()
@@ -29,29 +24,6 @@ public struct TranscriptBotTypingRow: View {
       }
     }
     .suppressedDuringStreamingTextEntrance()
-  }
-
-  @ViewBuilder
-  private func mascotIndicator(_ mascot: ServerBotMascot, serverId: String) -> some View {
-    let status = BotTypingStatus(turn: activeTurn)
-    let isShown = status.isShown(afterReply: afterReply)
-    Group {
-      if isShown {
-        HStack(spacing: 8) {
-          BotMascotFigure(
-            mascot: mascot, serverId: serverId, slot: Self.mascotSlot, motion: status.motion)
-          ShimmeringText(text: status.text)
-          Spacer(minLength: 0)
-        }
-        .frame(height: UserBubbleBackground.cornerRadius(for: dynamicTypeSize) * 2)
-        .accessibilityElement(children: .combine)
-      } else {
-        Color.clear.frame(height: 0)
-      }
-    }
-    .onChange(of: isShown, initial: true) { _, _ in
-      invalidateRowMeasurement?()
-    }
   }
 
   private var bot: Bot? {
