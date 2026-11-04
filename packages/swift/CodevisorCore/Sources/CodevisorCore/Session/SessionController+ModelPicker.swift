@@ -62,7 +62,12 @@ extension SessionController {
   }
 
   public var requiresModelSelection: Bool {
-    modelOption != nil && selectedModelName == nil
+    modelOption != nil && selectedModelName == nil && !runsOnHarnessDefaultModel
+  }
+
+  private var runsOnHarnessDefaultModel: Bool {
+    guard !acceptsNewChatDefaults, let harnessId = activeHarnessId else { return false }
+    return existingChatSelections[modelConfigId(forHarness: harnessId)] == nil
   }
 
   public var hasModelSettings: Bool {

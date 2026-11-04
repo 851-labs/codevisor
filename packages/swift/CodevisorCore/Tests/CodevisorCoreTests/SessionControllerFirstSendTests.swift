@@ -113,6 +113,34 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
+  @Test("A new bot with no saved model sends its first message on the harness default instead of Not Delivered")
+  func botWithoutSavedModelSendsOnHarnessDefault() async throws {
+    let fixture = try Fixture()
+    let controller = fixture.controller
+    controller.onFirstSend = nil
+    controller.presentBot(as: .conversation)
+    controller.serverSession = ChatSession(
+      id: fixture.sessionID, projectId: controller.project.id, serverId: controller.project.serverId,
+      harnessId: "codex", agentSessionId: "agent-1", title: "New bot", createdAt: Date(timeIntervalSince1970: 0)
+    )
+    controller.configOptionsByHarness["codex"] = [
+      SessionConfigOption(
+        id: "model", name: "Model", category: "model", currentValue: "gpt-5.6",
+        options: [SessionConfigSelectOption(value: "gpt-5.6", name: "GPT-5.6")]
+      )
+    ]
+
+    #expect(controller.selectedModelName == nil)
+    #expect(!controller.requiresModelSelection)
+
+    await controller.send()
+    await awaitObserved { Self.hasSettled(controller.sends) }
+
+    #expect(controller.sends.unsent.isEmpty)
+    #expect(fixture.client.promptedTexts == ["Send this message"])
+    controller.model?.shutdown()
+  }
+
   @Test("A setup failure keeps the new chat open with the message Not Delivered, and Try Again sets it up again")
   func setupFailureKeepsTheChat() async throws {
     let fixture = try Fixture()
@@ -232,6 +260,10 @@ struct SessionControllerFirstSendTests {
       ])
     #expect(controller.pendingConfiguration.values(for: "codex") == nil)
     #expect(controller.pendingConfiguration.modeId == nil)
+  }
+
+  private static func hasSettled(_ sends: SendQueue) -> Bool {
+    sends.unsent.isEmpty || sends.unsent.contains { $0.delivery?.isFailed == true }
   }
 
   private func userMessages(in controller: SessionController) -> [UserMessage] {
