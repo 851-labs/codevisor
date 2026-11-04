@@ -6,7 +6,7 @@ struct BotMascotLoopPlayer: View {
   let serverId: String
   let loop: ServerBotMascotLoop
 
-  @Environment(AppEnvironment.self) private var environment
+  @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   private let images = BotMascotImages.shared
 
   var body: some View {
@@ -19,8 +19,14 @@ struct BotMascotLoopPlayer: View {
         BotMascotImage(mascot: mascot, serverId: serverId, kind: .figure)
       }
     }
-    .task(id: art) { await images.load(art, from: environment.machines.client(for: serverId)) }
+    .task(id: art) { await load() }
     .accessibilityHidden(true)
+  }
+
+  private func load() async {
+    guard let environment else { return }
+
+    await images.load(art, from: environment.machines.client(for: serverId))
   }
 
   private var art: ServerBotMascotArt {

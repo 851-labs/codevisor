@@ -94,6 +94,7 @@ extension SessionTranscriptView {
                 row: row, controller: controller, leaves: .iOS(controller: controller)
               )
               .reportsStreamingTextAnimationActivity()
+              .environment(environment)
               .environment(\.attachmentImages, attachmentImages)
               .environment(\.quickLook, quickLook)
               .environment(\.openFileDocument, openFileDocument)

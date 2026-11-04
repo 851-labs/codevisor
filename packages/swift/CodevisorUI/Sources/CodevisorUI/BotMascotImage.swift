@@ -5,7 +5,7 @@ public struct BotMascotImage: View {
   let art: ServerBotMascotArt
   let serverId: String
 
-  @Environment(AppEnvironment.self) private var environment
+  @Environment(AppEnvironment.self) private var environment: AppEnvironment?
   @State private var previous: CGImage?
   private let images = BotMascotImages.shared
 
@@ -30,6 +30,8 @@ public struct BotMascotImage: View {
   }
 
   private func load() async {
+    guard let environment else { return }
+
     await images.load(art, from: environment.machines.client(for: serverId))
     previous = images.image(for: art) ?? previous
   }

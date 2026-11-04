@@ -106,6 +106,7 @@ extension ChatScreen {
                     }
                     .markdownImageActions(transcriptImageActions)
                     .markdownWebLinkActions(transcriptWebLinkActions)
+                    .environment(environment)
                     .environment(\.attachmentImages, attachmentImages)
                     .environment(\.openFileDocument, openFileDocument)
                     .environment(\.openSubagent, openSubagent)
