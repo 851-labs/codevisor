@@ -152,25 +152,12 @@ env:
   TIER2_RENDEZVOUS_S: 1800
 
 jobs:
-  wait-for-minis:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    steps: &wait-for-minis-steps
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          sparse-checkout: apps/screen-sharing-bench/scripts
-      - name: Wait until no other job holds or awaits tamale or croissant
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: apps/screen-sharing-bench/scripts/tier2-pair.sh wait-for-minis 10800
-
   host:
-    needs: wait-for-minis
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 85
+    timeout-minutes: 90
     env: &first-attempt
-      TIER2_PEER_SUFFIX: ""
-      TIER2_PAIR_HOLD_S: 300
+      TIER2_ARTIFACT_SUFFIX: ""
+      TIER2_PAIR_HOLD_S: 600
       TIER2_UNPAIRED: yield
     outputs:
       paired: ${{ steps.pair.outputs.paired }}
@@ -183,7 +170,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apps/screen-sharing-bench/scripts/tier2-pair.sh pair "viewer$TIER2_PEER_SUFFIX" "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
+          apps/screen-sharing-bench/scripts/tier2-pair.sh pair viewer "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
       - if: steps.pair.outputs.paired == 'true'
         uses: ./.github/actions/build-screen-sharing-bench
         with:
@@ -199,13 +186,12 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-tamale${{ env.TIER2_PEER_SUFFIX }}
+          name: tier2-tamale${{ env.TIER2_ARTIFACT_SUFFIX }}
           path: ${{ runner.temp }}/results
 
   viewer:
-    needs: wait-for-minis
     runs-on: [self-hosted, macOS, ARM64, croissant]
-    timeout-minutes: 85
+    timeout-minutes: 90
     env: *first-attempt
     outputs:
       paired: ${{ steps.pair.outputs.paired }}
@@ -218,7 +204,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apps/screen-sharing-bench/scripts/tier2-pair.sh pair "host$TIER2_PEER_SUFFIX" "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
+          apps/screen-sharing-bench/scripts/tier2-pair.sh pair host "$TIER2_PAIR_HOLD_S" "$TIER2_UNPAIRED"
       - if: steps.pair.outputs.paired == 'true'
         uses: ./.github/actions/build-screen-sharing-bench
         with:
@@ -237,22 +223,16 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-croissant${{ env.TIER2_PEER_SUFFIX }}
+          name: tier2-croissant${{ env.TIER2_ARTIFACT_SUFFIX }}
           path: ${{ runner.temp }}/results
 
-  wait-for-minis-again:
-    needs: [host, viewer]
-    if: ${{ !cancelled() && (needs.host.outputs.paired == 'false' || needs.viewer.outputs.paired == 'false') }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    steps: *wait-for-minis-steps
-
   host-retry:
-    needs: wait-for-minis-again
+    needs: host
+    if: ${{ !cancelled() && needs.host.outputs.paired == 'false' }}
     runs-on: [self-hosted, macOS, ARM64, tamale]
     timeout-minutes: 135
     env: &retry
-      TIER2_PEER_SUFFIX: -retry
+      TIER2_ARTIFACT_SUFFIX: -retry
       TIER2_PAIR_HOLD_S: 3600
       TIER2_UNPAIRED: fail
     outputs:
@@ -260,7 +240,8 @@ jobs:
     steps: *host-steps
 
   viewer-retry:
-    needs: wait-for-minis-again
+    needs: viewer
+    if: ${{ !cancelled() && needs.viewer.outputs.paired == 'false' }}
     runs-on: [self-hosted, macOS, ARM64, croissant]
     timeout-minutes: 135
     env: *retry
@@ -284,7 +265,7 @@ jobs:
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          pattern: ${{ needs.host-retry.result == 'skipped' && 'tier2-*' || 'tier2-*-retry' }}
+          pattern: tier2-*
           merge-multiple: true
           path: ${{ runner.temp }}/runs
       - name: Build the report and the target table

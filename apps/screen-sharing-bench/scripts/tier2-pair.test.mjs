@@ -50,7 +50,6 @@ function runPair(t, args, routes, env = {}) {
       GITHUB_OUTPUT: join(dir, "output"),
       TIER2_PAIR_POLL_S: "15",
       TIER2_PAIR_CONFIRM_S: "30",
-      TIER2_MINIS_POLL_S: "60",
       FAKE_ROUTES: join(dir, "routes.json"),
       FAKE_COUNTS: join(dir, "counts.json"),
       FAKE_CALLS: join(dir, "calls"),
@@ -69,15 +68,13 @@ const job = (name, status, extra = {}) => ({
   html_url: `https://example.test/${name}`,
   ...extra
 })
-const peerRoute = (...statuses) => [
-  {
-    path: jobsPath,
-    responses: statuses.map((status) => jobs(job("host", "in_progress"), job("viewer", status)))
-  }
-]
+const host = job("host", "in_progress", { id: 1 })
+const route = (...responses) => [{ path: jobsPath, responses }]
+const peerRoute = (...statuses) =>
+  route(...statuses.map((status) => jobs(host, job("viewer", status, { id: 2 }))))
 
 test("pairs once the peer has been running for the confirm interval", (t) => {
-  const result = runPair(t, ["pair", "viewer", "300", "yield"], peerRoute("queued", "in_progress"))
+  const result = runPair(t, ["pair", "viewer", "600", "yield"], peerRoute("queued", "in_progress"))
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.output, ["paired=true"])
   assert.equal(result.calls.length, 4)
@@ -87,19 +84,19 @@ test("pairs once the peer has been running for the confirm interval", (t) => {
 test("finds the peer under the job names a workflow_call caller gives", (t) => {
   const result = runPair(
     t,
-    ["pair", "viewer", "300", "yield"],
-    [
-      {
-        path: jobsPath,
-        responses: [jobs(job("tier2 / host", "in_progress"), job("tier2 / viewer", "in_progress"))]
-      }
-    ]
+    ["pair", "viewer", "600", "yield"],
+    route(
+      jobs(
+        job("tier2 / host", "in_progress", { id: 1 }),
+        job("tier2 / viewer", "in_progress", { id: 2 })
+      )
+    )
   )
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.output, ["paired=true"])
 })
 
-test("releases the runner when the peer is still queued at the hold limit", (t) => {
+test("gives up the runner when the peer is still queued at the hold limit", (t) => {
   const result = runPair(t, ["pair", "viewer", "60", "yield"], peerRoute("queued"))
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.output, ["paired=false"])
@@ -107,100 +104,49 @@ test("releases the runner when the peer is still queued at the hold limit", (t) 
   assert.match(result.stderr, /still queued after 60s/)
 })
 
-test("never pairs with a peer that finished while being confirmed", (t) => {
+test("pairs with the peer's retry, confirming it afresh, when the peer gave up its runner", (t) => {
+  const yielded = job("viewer", "completed", { id: 2, conclusion: "success" })
   const result = runPair(
     t,
-    ["pair", "viewer", "300", "yield"],
-    peerRoute("in_progress", "in_progress", "completed")
+    ["pair", "viewer", "600", "yield"],
+    route(
+      jobs(host, job("viewer", "in_progress", { id: 2 })),
+      jobs(host, job("viewer", "in_progress", { id: 2 })),
+      jobs(host, yielded),
+      jobs(host, yielded, job("viewer-retry", "queued", { id: 3 })),
+      jobs(host, yielded, job("viewer-retry", "in_progress", { id: 3 }))
+    )
   )
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(result.output, ["paired=false"])
+  assert.deepEqual(result.output, ["paired=true"])
+  assert.equal(result.calls.length, 7)
 })
 
-test("the last attempt fails instead of releasing the runner", (t) => {
+test("fails at once when the peer ended and its retry was skipped", (t) => {
+  const result = runPair(
+    t,
+    ["pair", "viewer", "600", "yield"],
+    route(
+      jobs(
+        host,
+        job("viewer", "completed", { id: 2, conclusion: "failure" }),
+        job("viewer-retry", "completed", { id: 3, conclusion: "skipped" })
+      )
+    )
+  )
+  assert.equal(result.status, 1)
+  assert.deepEqual(result.output, [])
+  assert.equal(result.calls.length, 1)
+})
+
+test("the last attempt fails instead of giving up the runner", (t) => {
   const result = runPair(t, ["pair", "viewer", "30", "fail"], peerRoute("queued"))
   assert.equal(result.status, 1)
   assert.deepEqual(result.output, [])
 })
 
 test("an API failure counts as an unstarted peer", (t) => {
-  const result = runPair(
-    t,
-    ["pair", "viewer", "15", "yield"],
-    [{ path: jobsPath, responses: [null] }]
-  )
+  const result = runPair(t, ["pair", "viewer", "15", "yield"], route(null))
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.output, ["paired=false"])
-})
-
-const runsRoute = (repo, status, ...ids) => ({
-  path: `${repo}/actions/runs?status=${status}`,
-  responses: [{ workflow_runs: ids.map((id) => ({ id })) }]
-})
-
-test("waits for other runs' jobs on a mini in every repo that shares them, then starts", (t) => {
-  const result = runPair(
-    t,
-    ["wait-for-minis", "3600"],
-    [
-      runsRoute("codevisor", "in_progress", runId, 7),
-      runsRoute("codevisor", "queued"),
-      runsRoute("lil.tech", "in_progress", runId),
-      runsRoute("lil.tech", "queued", 8),
-      { path: `lil.tech/actions/runs/${runId}/jobs`, responses: [jobs()] },
-      {
-        path: "codevisor/actions/runs/7/jobs",
-        responses: [
-          jobs(
-            job("macos", "in_progress", { runner_name: "croissants-Mac-Mini-croissant" }),
-            job("lint", "in_progress", { runner_name: "GitHub Actions 12" })
-          ),
-          jobs(job("macos", "completed", { runner_name: "croissants-Mac-Mini-croissant" }))
-        ]
-      },
-      {
-        path: "lil.tech/actions/runs/8/jobs",
-        responses: [
-          jobs(
-            job("ios", "queued", { labels: ["self-hosted", "macOS", "ARM64"], runner_name: "" })
-          ),
-          jobs(job("ios", "in_progress", { runner_name: "tamales-Mac-Mini-tamale" })),
-          jobs(job("ios", "completed", { runner_name: "tamales-Mac-Mini-tamale" })),
-          jobs(
-            job("ubuntu", "queued", { labels: ["ubuntu-24.04"] }),
-            job("gpu", "queued", { labels: ["self-hosted", "Linux", "gpu"] })
-          )
-        ]
-      }
-    ]
-  )
-  assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(result.sleeps, ["60", "60"])
-  assert.ok(!result.calls.some((call) => call.includes(`codevisor/actions/runs/${runId}/`)))
-  assert.ok(result.calls.some((call) => call.includes(`lil.tech/actions/runs/${runId}/`)))
-  assert.match(result.stderr, /macos, in_progress on croissants-Mac-Mini-croissant/)
-  assert.doesNotMatch(result.stderr, /lint/)
-  assert.match(result.stderr, /ios, queued: https/)
-  assert.match(result.stderr, /tamale and croissant are free/)
-})
-
-test("starts anyway once the minis stay busy past the patience", (t) => {
-  const result = runPair(
-    t,
-    ["wait-for-minis", "120"],
-    [
-      runsRoute("codevisor", "in_progress", 7),
-      runsRoute("codevisor", "queued"),
-      runsRoute("lil.tech", "in_progress"),
-      runsRoute("lil.tech", "queued"),
-      {
-        path: "codevisor/actions/runs/7/jobs",
-        responses: [jobs(job("gate", "in_progress", { runner_name: "tamale" }))]
-      }
-    ]
-  )
-  assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(result.sleeps, ["60", "60"])
-  assert.match(result.stderr, /still busy after 120s; starting anyway/)
-  assert.match(result.stderr, /gate, in_progress on tamale/)
 })
