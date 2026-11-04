@@ -5,24 +5,35 @@ import Testing
 @Suite("Add to Chat button show timing")
 @MainActor
 struct TranscriptAddToChatShowTimingTests {
-  private static let interval = Duration.milliseconds(500)
+  struct PendingClick: Sendable {
+    let clickCount: Int
+    let doubleClickInterval: Duration
+    let wait: Duration
+  }
+
+  private static let defaultDoubleClickInterval = Duration.milliseconds(500)
+  private static let cappedWait = Duration.milliseconds(250)
 
   private let clock = TestClock()
   private let shown = TestSignal()
 
-  private func makeTiming() -> TranscriptAddToChatShowTiming {
-    TranscriptAddToChatShowTiming(clock: clock, multiClickInterval: { Self.interval })
+  private func makeTiming(doubleClickInterval: Duration = defaultDoubleClickInterval) -> TranscriptAddToChatShowTiming {
+    TranscriptAddToChatShowTiming(clock: clock, doubleClickInterval: { doubleClickInterval })
   }
 
   @Test(
-    "A click that could still become a double or triple click shows once the click window closes",
-    arguments: [1, 2])
-  func waitsForClickWindow(clickCount: Int) async {
-    let timing = makeTiming()
+    "A click that could still become a double or triple click waits for the shorter of the double-click interval and 250 ms",
+    arguments: [
+      PendingClick(clickCount: 1, doubleClickInterval: .milliseconds(500), wait: .milliseconds(250)),
+      PendingClick(clickCount: 2, doubleClickInterval: .milliseconds(500), wait: .milliseconds(250)),
+      PendingClick(clickCount: 2, doubleClickInterval: .milliseconds(200), wait: .milliseconds(200)),
+    ])
+  func waitsForClickWindow(click: PendingClick) async {
+    let timing = makeTiming(doubleClickInterval: click.doubleClickInterval)
 
-    timing.show(afterClickCount: clickCount, draggedSelection: false) { shown.signal() }
-    await clock.waitForSleep(Self.interval)
-    clock.advance(by: Self.interval - .milliseconds(1))
+    timing.show(afterClickCount: click.clickCount, draggedSelection: false) { shown.signal() }
+    await clock.waitForSleep(click.wait)
+    clock.advance(by: click.wait - .milliseconds(1))
     #expect(clock.pendingCount == 1)
     #expect(shown.value == 0)
 
@@ -37,7 +48,7 @@ struct TranscriptAddToChatShowTimingTests {
     var shownSelections: [String] = []
 
     timing.show(afterClickCount: 2, draggedSelection: false) { shownSelections.append("word") }
-    await clock.waitForSleep(Self.interval)
+    await clock.waitForSleep(Self.cappedWait)
     timing.cancel()
     timing.show(afterClickCount: 3, draggedSelection: false) { shownSelections.append("paragraph") }
 

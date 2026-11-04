@@ -3,17 +3,18 @@ import AppKit
 @MainActor
 final class TranscriptAddToChatShowTiming {
   private static let paragraphClickCount = 3
+  private static let longestWait = Duration.milliseconds(250)
 
   private let clock: any Clock<Duration>
-  private let multiClickInterval: () -> Duration
+  private let doubleClickInterval: () -> Duration
   private var pendingShow: Task<Void, Never>?
 
   init(
     clock: any Clock<Duration> = ContinuousClock(),
-    multiClickInterval: @escaping () -> Duration = { .seconds(NSEvent.doubleClickInterval) }
+    doubleClickInterval: @escaping () -> Duration = { .seconds(NSEvent.doubleClickInterval) }
   ) {
     self.clock = clock
-    self.multiClickInterval = multiClickInterval
+    self.doubleClickInterval = doubleClickInterval
   }
 
   func show(afterClickCount clickCount: Int, draggedSelection: Bool, _ show: @escaping @MainActor () -> Void) {
@@ -22,8 +23,8 @@ final class TranscriptAddToChatShowTiming {
       return show()
     }
 
-    pendingShow = Task { [clock, interval = multiClickInterval()] in
-      do { try await clock.sleep(for: interval) } catch { return }
+    pendingShow = Task { [clock, wait = multiClickWait] in
+      do { try await clock.sleep(for: wait) } catch { return }
       guard !Task.isCancelled else { return }
       show()
     }
@@ -32,6 +33,10 @@ final class TranscriptAddToChatShowTiming {
   func cancel() {
     pendingShow?.cancel()
     pendingShow = nil
+  }
+
+  private var multiClickWait: Duration {
+    min(doubleClickInterval(), Self.longestWait)
   }
 
   private static func mayBeFollowedByAnotherClick(clickCount: Int, draggedSelection: Bool) -> Bool {
