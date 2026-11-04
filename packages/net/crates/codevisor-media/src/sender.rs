@@ -27,6 +27,7 @@ const PACING_GAIN: f64 = 2.0;
 const MAX_PACING_GAIN: f64 = 4.0;
 const CONSTRAINED_PACING_GAIN: f64 = 1.25;
 const CONSTRAINED_BPS: f64 = 100e6;
+const HEAVY_LOSS: f64 = 0.1;
 const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
 const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
 const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
@@ -276,6 +277,9 @@ impl Sender {
             return;
         }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
+        if current > HEAVY_LOSS {
+            self.estimator.on_heavy_loss(now, current.min(1.0));
+        }
         self.loss.rate = current.max(self.loss.rate / 2.0).min(1.0);
         self.loss = LossWindow { started: Some(now), sent: 0, nacked: 0, rate: self.loss.rate };
     }
@@ -285,8 +289,10 @@ impl Sender {
         let spread = self.config.frame_interval.as_secs_f64() / 2.0;
         let drain = self.pacer.backlog_bytes() as f64 * 8.0 / spread;
         let headroom = ((estimate - CONSTRAINED_BPS) / CONSTRAINED_BPS).clamp(0.0, 1.0);
-        let gain = CONSTRAINED_PACING_GAIN + (PACING_GAIN - CONSTRAINED_PACING_GAIN) * headroom;
-        let max_gain = CONSTRAINED_PACING_GAIN + (MAX_PACING_GAIN - CONSTRAINED_PACING_GAIN) * headroom;
+        let large = self.pacer.backlog_bytes() as f64 * 8.0 > estimate * spread;
+        let floor_gain = if large { 1.0 } else { CONSTRAINED_PACING_GAIN };
+        let gain = floor_gain + (PACING_GAIN - floor_gain) * headroom;
+        let max_gain = floor_gain + (MAX_PACING_GAIN - floor_gain) * headroom;
         self.pacer.set_rate(now, drain.clamp(estimate * gain, estimate * max_gain));
     }
 
@@ -327,6 +333,7 @@ impl Sender {
             return;
         };
         let mut requested = 0;
+        let mut first_losses = 0;
         let mut repeated = 0;
         for &(start, count) in &nack.ranges {
             let range = if count == wire::WHOLE_FRAME {
@@ -345,6 +352,9 @@ impl Sender {
                     repeated += 1;
                     continue;
                 }
+                if frame.resends[index] == Resend::Never {
+                    first_losses += 1;
+                }
                 frame.resends[index] = Resend::Queued;
                 let tag = PacketTag { stream: nack.stream, frame: nack.frame, index: index as u16, original: false };
                 self.pacer.push(frame.packets[index].clone(), tag);
@@ -354,7 +364,7 @@ impl Sender {
         stats.retransmissions_skipped += repeated;
         if requested > 0 {
             stats.packets_retransmitted += requested;
-            self.loss.nacked += requested;
+            self.loss.nacked += first_losses;
             self.last_loss = Some(now);
             self.update_pacing_rate(now);
         }
@@ -405,16 +415,18 @@ impl Sender {
                 if !feedback.lost {
                     self.estimator.on_acked(now, frame.bytes_out);
                 }
-                let send_span =
-                    frame.last_tx.map_or(Duration::ZERO, |last_tx| last_tx.saturating_duration_since(first_tx));
-                self.estimator.on_delivery(
-                    now,
-                    Delivery {
-                        bytes: receipt.original_bytes as usize,
-                        receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
-                        send_span,
-                    },
-                );
+                if receipt.recovery != crate::Recovery::Nack {
+                    let send_span =
+                        frame.last_tx.map_or(Duration::ZERO, |last_tx| last_tx.saturating_duration_since(first_tx));
+                    self.estimator.on_delivery(
+                        now,
+                        Delivery {
+                            bytes: receipt.original_bytes as usize,
+                            receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
+                            send_span,
+                        },
+                    );
+                }
             }
         }
         let stream = self.streams.get_mut(&feedback.stream).expect("looked up above");

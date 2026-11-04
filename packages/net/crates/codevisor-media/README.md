@@ -11,8 +11,9 @@ no jitter buffer and no queue deeper than one frame.
   packets that fit the path's current datagram size, each with a 16-byte header.
 - **Frame-spread pacing.** A frame's packets leave at twice the capacity estimate. When that wouldn't finish within
   half a frame interval they go faster, but never past four times the estimate, which would only overflow a slow
-  link's queue. Under 100 Mbit/s they leave at 1.25 times the estimate and never faster, and both gains ramp linearly
-  back to 2 and 4 by 200 Mbit/s: a link that slow can have a queue shorter than one frame (N5's 30 packets), and
+  link's queue. Under 100 Mbit/s they leave at 1.25 times the estimate and never faster (once the backlog is over half
+  a frame interval's worth, at the estimate itself, so a keyframe or refresh several frames long doesn't overdrive a
+  short queue), and both gains ramp linearly back to 2 and 4 by 200 Mbit/s: a link that slow can have a queue shorter than one frame (N5's 30 packets), and
   twice the estimate overflowed it on every large frame, so in the sim half of N5's frames were given up after NACK
   storms. The pacer is a token bucket holding 1 ms of sending,
   because tokio's timers fire at 1 ms resolution.
@@ -70,6 +71,16 @@ no jitter buffer and no queue deeper than one frame.
     arrival spread, or over their send spread if that was longer, since a frame can't arrive faster than it left).
     A sample needs 2.4 KB and an arrival spread of at least two jitters, so frames bunched by jitter don't count.
   - **receive rate:** the bytes the viewer acknowledged over the last 0.5 s. It's a floor: the link carried that much.
+    With no burst samples, the estimate is the initial rate or the receive rate if higher. Once the viewer receives
+    under 75% of what was sent, the link is narrower than the sender and the receive rate wins. Frames that NACK
+    repaired give no burst sample: the viewer doesn't count an original that arrived after it was requested, so their
+    bytes are too few for their spread. A flooded first keyframe on N5 read as 0.68 Mbit/s and paced the next one at
+    0.55 Mbit/s for 15 s (local Tier 1, video N5).
+  - **heavy loss:** when more than 10% of a second's data packets are lost (each packet counted at its first NACK,
+    plus one per frame parity repaired), the estimate becomes `estimate × (1 − loss / 2)` (GCC's rule), but not under
+    85% of the receive rate. A short queue like N5's (30 packets, under 10 ms) turns overuse into loss rather than
+    delay, and the Tier 1 relay's batched deliveries let burst samples read 35–44 Mbit/s on its 30 Mbit/s link: with
+    only the delay detector, local Tier 1 video N5 stalled in 3 of 4 runs, against 0 of 4 with this.
   - **back-off:** when frames' first packets keep finding a growing standing queue, at most once per round trip +
     frame interval, the estimate becomes 85% of the receive rate (at most the estimate) and the burst samples are
     cleared. When the receive rate is under half the estimate and the viewer received at least 75% of what was sent
@@ -99,7 +110,8 @@ no jitter buffer and no queue deeper than one frame.
     count too (a lost first packet makes a sample a little late, which the minimum of 8 absorbs); without them N5,
     where most frames lose a packet to the short queue, had no samples at all. Probed frames don't count.
   - The estimate never goes under 300 kbit/s.
-- **Admission.** Encode the next capture only while the bytes waiting fit one frame interval at the estimate. Waiting
+- **Admission.** Encode the next capture only while the bytes waiting fit one frame interval at the estimate.
+  "Measured" means a burst sample or a receive rate exists; a delay sample alone isn't one. Waiting
   bytes are the pacer's backlog plus the bytes in flight beyond what the path holds at the estimate for the smallest
   round trip of the last 10 s plus two frame intervals; before the first delivery is measured, every byte in flight
   waits. So the queue in the network counts too: before this, N7 (1 Mbit/s) took a whole 45 Mbit/s second into its
@@ -107,11 +119,11 @@ no jitter buffer and no queue deeper than one frame.
   85% of the estimate over 1 + the FEC ratio, since parity shares the link.
 - **Constrained links in the sim** (`tests/core.rs`: a 60 Hz scene whose encoder follows the ceiling every 250 ms,
   with frames sized for one interval or for all the time since the last encode, 30 s after 5 s of warm-up, seeds
-  1–3): N5 keeps 56–60 frames a second at a p50 of 23–24 ms and p95 under 31 ms (RTT 20 ms), with the estimate at
-  30 Mbit/s; N6 keeps 59–60 at 49–51 ms, p95 63–73 ms (RTT 50 ms); N7 keeps 55 at 87–129 ms, p95 126–177 ms, with
+  1–3): N5 keeps 55–60 frames a second at a p50 of 23–25 ms and p95 under 32 ms (RTT 20 ms), with the estimate at
+  30 Mbit/s; N6 keeps 58–60 at 49–51 ms, p95 67–76 ms (RTT 50 ms); N7 keeps 54 at 88 ms, p95 118–131 ms, with
   one-interval frames (RTT 100 ms, encoder at its 200 kbit/s minimum). When every frame carries the time since the
-  last encode, N7 drops to 31–38 frames a second at 119–127 ms, p95 under 180 ms, wandering by about 40 ms over a run
-  without a trend. N0 and N3 are unchanged. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
+  last encode, N7 keeps 20–23 frames a second at 109–128 ms once started; its first measured seconds sit at
+  0.8–1.4 s while the estimate is still measured one frame at a time. N0 and N3 are unchanged. Before: N5 gave up 90% of its frames, N6's age grew to 6 s, and N7 delivered
   almost nothing.
 
 ## Using it

@@ -82,13 +82,14 @@ impl Estimator {
         let estimate = match (self.cap, self.bursts.best(), self.receive_bps()) {
             (Some(cap), ..) => cap.bps,
             (None, Some(burst), receive) => burst.max(receive.unwrap_or(0.0)),
+            (None, None, Some(receive)) if self.link_limited(receive) => receive,
             (None, None, receive) => receive.unwrap_or(0.0).max(self.initial_bps),
         };
         estimate.clamp(MIN_RATE_BPS, self.max_bps)
     }
 
     pub fn measured(&self) -> bool {
-        self.last_delay.is_some() || !self.bursts.is_empty()
+        !self.bursts.is_empty() || self.receive_bps().is_some()
     }
 
     pub fn queue_delay_us(&self) -> i64 {
@@ -97,6 +98,10 @@ impl Estimator {
 
     pub fn receive_bps(&self) -> Option<f64> {
         self.acked.bps()
+    }
+
+    fn link_limited(&self, receive_bps: f64) -> bool {
+        self.sent.bps().is_some_and(|sent| receive_bps < sent * LINK_LIMITED)
     }
 
     fn queue_threshold_us(&self) -> f64 {
@@ -158,11 +163,20 @@ impl Estimator {
         self.grow_cap(now);
     }
 
+    pub fn on_heavy_loss(&mut self, now: Instant, loss: f64) {
+        let estimate = self.estimate_bps();
+        let carried = self.receive_bps().map_or(0.0, |receive| receive * BACKOFF);
+        let target = (estimate * (1.0 - loss / 2.0)).max(carried).min(estimate).max(MIN_RATE_BPS);
+        self.cap = Some(Cap { from_bps: target, since: now, bps: target });
+        self.bursts.clear();
+        self.last_backoff = Some(now);
+    }
+
     fn back_off(&mut self, now: Instant) {
         let estimate = self.estimate_bps();
         let receive = self.receive_bps().unwrap_or(estimate);
         let filling = receive >= estimate * MAX_BACKOFF;
-        let link_limited = self.sent.bps().is_some_and(|sent| receive < sent * LINK_LIMITED);
+        let link_limited = self.link_limited(receive);
         let from = if filling || link_limited { receive.min(estimate) } else { estimate };
         let target = (from * BACKOFF).max(MIN_RATE_BPS);
         self.cap = Some(Cap { from_bps: target, since: now, bps: target });
@@ -316,6 +330,20 @@ mod tests {
         }
         let estimates = feed_delays(&mut estimator, start, (0..16).map(|_| 0).chain((1..=10).map(|step| step * 2_000)));
         assert_eq!(estimates.last(), Some(&(10e6 * 0.85)), "the link carried 10 of the 40 Mbit/s sent");
+    }
+
+    #[test]
+    fn heavy_loss_backs_off_by_half_the_loss_but_not_under_what_arrived() {
+        let start = Instant::now();
+        let mut estimator = Estimator::new(10e6, 1e9, FRAME);
+        estimator.on_delivery(start, burst(125_000, 10 * MS));
+        for index in 0..=10 {
+            estimator.on_acked(start + 20 * MS * index, 150_000);
+        }
+        estimator.on_heavy_loss(start + 200 * MS, 0.4);
+        assert_eq!(estimator.estimate_bps(), 80e6);
+        estimator.on_heavy_loss(start + 200 * MS, 1.0);
+        assert_eq!(estimator.estimate_bps(), 60e6 * 0.85, "the link still carried 60 Mbit/s");
     }
 
     #[test]
