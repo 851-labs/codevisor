@@ -3,11 +3,10 @@ import CodevisorUI
 import SwiftUI
 
 struct IOSPromptQueueAccessory: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Bindable var controller: SessionController
   let glassNamespace: Namespace.ID
   @Binding var isPresentingQueue: Bool
-  let sendAnimation: IOSQueueSendAnimation
+  let cardStyle = ComposerCardStyle()
 
   private var firstItem: QueuedMessagePreview? {
     controller.queuedMessagePreviews.first
@@ -58,22 +57,9 @@ struct IOSPromptQueueAccessory: View {
       .padding(.vertical, ComposerCardStyle.contentPadding)
       .frame(maxWidth: .infinity, minHeight: Typography.minimumInteractiveTargetSize, alignment: .leading)
       .contentShape(Rectangle())
-      .opacity(sendAnimation.isFormingQueue ? 0 : 1)
     }
     .buttonStyle(.plain)
-    .modifier(
-      QueueGlassSurface(
-        isFormingQueue: sendAnimation.isFormingQueue,
-        glassNamespace: glassNamespace
-      )
-    )
-    .background { IOSQueueSendTarget(animation: sendAnimation) }
-    .keyframeAnimator(initialValue: CGFloat(1), trigger: sendAnimation.arrival) { [reduceMotion] content, scale in
-      content.scaleEffect(reduceMotion ? 1 : scale)
-    } keyframes: { _ in
-      CubicKeyframe(1.025, duration: 0.12)
-      SpringKeyframe(1, duration: 0.3, spring: .smooth)
-    }
+    .composerGlassSurface(shape: cardStyle.shape, id: .queue, in: glassNamespace)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(hasUndelivered ? "Queued, \(countText), some not delivered" : "Queued, \(countText)")
     .accessibilityValue(firstItem.map { "Next: \($0.text)" } ?? "")
@@ -93,19 +79,5 @@ private struct IOSPromptQueueCountBadge: View {
       .scaledFrame(height: 22, relativeTo: .caption)
       .background(Capsule().fill(Color.primary.opacity(0.08)))
       .fixedSize()
-  }
-}
-
-private struct QueueGlassSurface: ViewModifier {
-  var cardStyle = ComposerCardStyle()
-  let isFormingQueue: Bool
-  let glassNamespace: Namespace.ID
-
-  func body(content: Content) -> some View {
-    if isFormingQueue {
-      content
-    } else {
-      content.composerGlassSurface(shape: cardStyle.shape, id: .queue, in: glassNamespace)
-    }
   }
 }

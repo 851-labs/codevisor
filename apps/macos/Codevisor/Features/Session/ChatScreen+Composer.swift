@@ -78,6 +78,17 @@ extension ChatScreen {
     !presentsBotConversation && controller.hasQueuedMessages
   }
 
+  func updatePromptQueueVisibility(_ hasQueue: Bool) {
+    let sentToQueue = queueSends.sentSinceLastCheck(in: controller)
+    if hasQueue, !sentToQueue {
+      withTransaction(\.disablesAnimations, true) { showsPromptQueue = true }
+    } else if hasQueue {
+      withAnimation(Motion.entrance(reduceMotion: reduceMotion)) { showsPromptQueue = true }
+    } else {
+      withAnimation(Motion.glassMorph(reduceMotion: reduceMotion)) { showsPromptQueue = false }
+    }
+  }
+
   @ViewBuilder
   var composerNoticeRail: some View {
     if let message = controller.configurationValidationError {
@@ -118,8 +129,7 @@ extension ChatScreen {
     return ComposerGlassElements.visible(
       hasTodos: hasTodos,
       showsGoal: controller.supportsGoals && !controller.isGoalEditing
-        && (controller.goal ?? controller.draftGoal) != nil,
-      hasQueuedPrompts: showsPromptQueue
+        && (controller.goal ?? controller.draftGoal) != nil
     )
   }
 }

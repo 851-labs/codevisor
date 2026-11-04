@@ -51,10 +51,16 @@ extension SessionTranscriptView {
     guard case let .apply(adoptionAnimates) = adoption, abs(overlap - keyboardOverlap) > 0.5 else { return }
     if !animated || !adoptionAnimates {
       withAnimation(nil) { keyboardOverlap = overlap }
+      holdsQueueEntrance = false
     } else if overlap > keyboardOverlap {
       keyboardOverlap = overlap
+      holdsQueueEntrance = false
     } else {
-      withAnimation(ChatKeyboardInset.animation) { keyboardOverlap = overlap }
+      withAnimation(ChatKeyboardInset.animation) {
+        keyboardOverlap = overlap
+      } completion: {
+        holdsQueueEntrance = false
+      }
     }
   }
 }

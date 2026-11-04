@@ -9,8 +9,11 @@ struct IOSComposerAccessoryStack: View {
   let isComposerExpanded: Bool
   let maximumTodoHeight: CGFloat
   let glassNamespace: Namespace.ID
-  let queueSendAnimation: IOSQueueSendAnimation
+  let holdsQueueEntrance: Bool
   @State private var isPresentingQueue = false
+  @State private var showsQueue = false
+  @State private var awaitsQueueEntrance = false
+  @State private var queueSends = QueueSendObserver()
 
   private var visibleGoal: SessionGoal? {
     guard controller.supportsGoals, !controller.isGoalEditing else { return nil }
@@ -25,19 +28,30 @@ struct IOSComposerAccessoryStack: View {
     guard !isComposerExpanded else { return false }
     return controller.visibleTodos != nil
       || visibleGoal != nil
-      || showsQueue
       || (controller.configurationValidationError == nil
         && controller.configurationAdjustmentMessage != nil)
       || controller.modelFallbackMessage != nil
       || controller.modelUnavailableMessage != nil
   }
 
-  private var showsQueue: Bool {
+  private var hasQueue: Bool {
     !controller.presentsBotConversation && controller.hasQueuedMessages
   }
 
-  private var hasVisibleAccessory: Bool {
+  private var presentsQueue: Bool {
+    showsQueue && hasQueue
+  }
+
+  private var showsCollapsedQueue: Bool {
+    presentsQueue && !isComposerExpanded
+  }
+
+  private var hasAccessoryOtherThanQueue: Bool {
     hasCriticalAccessory || hasInformationalAccessory
+  }
+
+  private var hasVisibleAccessory: Bool {
+    hasAccessoryOtherThanQueue || showsCollapsedQueue
   }
 
   var body: some View {
@@ -62,12 +76,11 @@ struct IOSComposerAccessoryStack: View {
           .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
 
-        if showsQueue {
+        if presentsQueue {
           IOSPromptQueueAccessory(
             controller: controller,
             glassNamespace: glassNamespace,
-            isPresentingQueue: $isPresentingQueue,
-            sendAnimation: queueSendAnimation
+            isPresentingQueue: $isPresentingQueue
           )
           .transition(.opacity)
         }
@@ -117,7 +130,7 @@ struct IOSComposerAccessoryStack: View {
 
     }
     .padding(.bottom, hasVisibleAccessory ? ComposerGlassStyle.clusterSpacing : 0)
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: hasVisibleAccessory)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: hasAccessoryOtherThanQueue)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.visibleTodos != nil)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleGoal?.objective)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: visibleGoal?.status)
@@ -135,9 +148,40 @@ struct IOSComposerAccessoryStack: View {
       Motion.quick(reduceMotion: reduceMotion),
       value: controller.configurationAdjustmentMessage
     )
+    .onChange(of: hasQueue, initial: true) { _, hasQueue in
+      updateQueueVisibility(hasQueue)
+    }
+    .onChange(of: holdsQueueEntrance) { _, holds in
+      if !holds { releaseQueueEntrance() }
+    }
     .popover(isPresented: $isPresentingQueue) {
       IOSPromptQueueSheet(controller: controller)
         .frame(idealWidth: 400, idealHeight: 480)
     }
+  }
+
+  private func updateQueueVisibility(_ hasQueue: Bool) {
+    let sentToQueue = queueSends.sentSinceLastCheck(in: controller)
+    awaitsQueueEntrance = false
+    if hasQueue, !sentToQueue {
+      withTransaction(\.disablesAnimations, true) { showsQueue = true }
+    } else if hasQueue, holdsQueueEntrance {
+      awaitsQueueEntrance = true
+    } else if hasQueue {
+      enterQueue()
+    } else {
+      showsQueue = false
+    }
+  }
+
+  private func releaseQueueEntrance() {
+    guard awaitsQueueEntrance else { return }
+
+    awaitsQueueEntrance = false
+    enterQueue()
+  }
+
+  private func enterQueue() {
+    withAnimation(Motion.entrance(reduceMotion: reduceMotion)) { showsQueue = true }
   }
 }

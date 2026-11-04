@@ -22,6 +22,7 @@ extension SessionController {
     let message = UserMessage(text: "/\(SessionSkills.compactCommand)", attachments: [])
     beginOptimisticSend()
     userSendSignal &+= 1
+    queueSendSignal &+= 1
     sends.enqueue(message, attachmentIDs: [], route: .agent(.queue, landsInQueue: true))
   }
 
@@ -34,7 +35,9 @@ extension SessionController {
     rememberSentPreviews(of: sent)
     beginOptimisticSend()
     userSendSignal &+= 1
-    if !landsInQueue {
+    if landsInQueue {
+      queueSendSignal &+= 1
+    } else {
       requestUserSendAnimation(for: message.id)
       pendingSendStartedAt = Date()
     }

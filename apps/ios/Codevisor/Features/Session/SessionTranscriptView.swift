@@ -58,6 +58,7 @@ struct SessionTranscriptView: View {
   @State var keyboardFreeChatHeight: CGFloat = 0
   @State var keyboardAvoidingChatHeight: CGFloat = 0
   @State var keyboardInset = ChatKeyboardInset()
+  @State var holdsQueueEntrance = false
   @State var composerExpanded = false
   @State var quickLook = QuickLookController()
   @State var scrollCommand = TranscriptScrollCommand()
@@ -78,7 +79,6 @@ struct SessionTranscriptView: View {
     presentationSurface.textAnimationRegistry
   }
   @State var sendAnimationSourceFrame: CGRect?
-  @State var queueSendAnimation = IOSQueueSendAnimation()
 
   private func installQueuedPromptFlight() {
     controller.onQueuedPromptWillFly = { [weak controller] messageID in
@@ -299,7 +299,7 @@ struct SessionTranscriptView: View {
         isComposerExpanded: composerExpanded,
         maximumTodoHeight: max(132, min(240, availableHeight * 0.35)),
         glassNamespace: composerGlassNamespace,
-        queueSendAnimation: queueSendAnimation
+        holdsQueueEntrance: holdsQueueEntrance
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -329,17 +329,9 @@ struct SessionTranscriptView: View {
         onWillSend: { text, delivery in
           if controller.sendLandsInQueue(delivery) {
             TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
-            if !reduceMotion {
-              queueSendAnimation.stage(
-                text: text,
-                queue: controller.queuedMessagePreviews,
-                sourceFrame: sendAnimationSourceFrame ?? .zero,
-                in: UIWindow.codevisorKeyWindow
-              )
-            }
+            holdsQueueEntrance = keyboardOverlap > 0 && !preservesComposerFocusOnSend
             return
           }
-          queueSendAnimation.cancel()
           if !reduceMotion {
             SentAttachmentThumbnails.prepare(controller.composerAttachments)
             ComposerSendStaging.stage(
@@ -355,26 +347,7 @@ struct SessionTranscriptView: View {
       )
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: composerExpanded)
-    .onChange(of: controller.queuedMessagePreviews) { _, queue in
-      queueSendAnimation.queueDidChange(queue)
-    }
-    .onChange(of: controller.errorMessage) { _, error in
-      if error != nil { queueSendAnimation.cancel() }
-    }
-    .onChange(of: ObjectIdentifier(controller)) { _, _ in
-      queueSendAnimation.cancel()
-    }
     .onChange(of: ObjectIdentifier(controller), initial: true) { installQueuedPromptFlight() }
-    .onChange(of: controller.userSendAnimationRequest) { _, _ in
-      queueSendAnimation.cancel()
-    }
-    .onChange(of: reduceMotion) { _, reduced in
-      if reduced { queueSendAnimation.cancel() }
-    }
-    .onChange(of: scenePhase) { _, phase in
-      if phase != .active { queueSendAnimation.cancel() }
-    }
-    .onDisappear { queueSendAnimation.cancel() }
   }
 }
 
