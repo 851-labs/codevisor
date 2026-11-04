@@ -21,6 +21,7 @@ import {
   type PluginAccountRecord,
   type PluginAccountStore
 } from "./plugin-account-store.js"
+import type { PluginSignIn } from "./plugin-run-sign-in.js"
 
 export interface PluginVault {
   readonly create: (bundle: SharedTokenBundle) => Promise<CredentialReference>
@@ -43,6 +44,7 @@ export interface PluginAccountsDeps {
   readonly spec: (server: McpServer) => PluginAccountSpec | undefined
   readonly redirects: OAuthRedirects
   readonly installedClients?: InstalledOAuthClients | undefined
+  readonly pluginSignIn?: PluginSignIn
   readonly beforeRemove?: (serverId: string, accountId: string) => Promise<void>
   readonly onChanged: (entries: ReadonlyArray<SyncEntryRecord>) => void
   readonly now?: () => number

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 
-import type { PluginOAuthSpec } from "@codevisor/api"
+import type { HostedPluginOAuthSpec } from "@codevisor/api"
 import type { SharedTokenBundle } from "@codevisor/harness-manager"
 import { exchangeAuthorization, startAuthorization } from "@modelcontextprotocol/sdk/client/auth.js"
 import type { OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js"
@@ -52,7 +52,7 @@ export const parseFlowState = (
 }
 
 export const beginPluginOAuth = async (
-  spec: PluginOAuthSpec,
+  spec: HostedPluginOAuthSpec,
   client: OAuthClient,
   redirectUri: string,
   state: string
@@ -74,7 +74,7 @@ export const beginPluginOAuth = async (
 }
 
 export const exchangePluginCode = (
-  spec: PluginOAuthSpec,
+  spec: HostedPluginOAuthSpec,
   flow: PendingOAuthFlow,
   code: string,
   fetchFn: typeof fetch = fetch
@@ -89,7 +89,7 @@ export const exchangePluginCode = (
   })
 
 export const oauthBundle = (
-  spec: PluginOAuthSpec,
+  spec: HostedPluginOAuthSpec,
   flow: PendingOAuthFlow,
   tokens: OAuthTokens,
   identity: string,
@@ -112,7 +112,7 @@ export const oauthBundle = (
 })
 
 export const fetchIdentity = async (
-  spec: PluginOAuthSpec,
+  spec: HostedPluginOAuthSpec,
   accessToken: string,
   fetchFn: typeof fetch = fetch
 ): Promise<string | undefined> => {
@@ -130,9 +130,9 @@ export const fetchIdentity = async (
 
 const identityValue = (body: unknown, key: string): unknown => field(body, key)
 
-const issuerOf = (spec: PluginOAuthSpec): string => new URL(spec.authorizeUrl).origin
+const issuerOf = (spec: HostedPluginOAuthSpec): string => new URL(spec.authorizeUrl).origin
 
-const authorizationMetadata = (spec: PluginOAuthSpec) => ({
+const authorizationMetadata = (spec: HostedPluginOAuthSpec) => ({
   issuer: issuerOf(spec),
   authorization_endpoint: spec.authorizeUrl,
   token_endpoint: spec.tokenUrl,

@@ -16,7 +16,8 @@ import { makePluginAccounts } from "./plugin-accounts.js"
 import {
   fakeOAuthProvider,
   type FakeOAuthProvider,
-  type ProviderOptions
+  type ProviderOptions,
+  signInUrl
 } from "./plugin-oauth-test-support.js"
 
 const callbackUrl = "http://127.0.0.1:43210/v1/plugins/oauth/callback"
@@ -81,7 +82,7 @@ const oauthFixture = async (
       ...(request.label === undefined ? {} : { label: request.label }),
       ...(request.accountId === undefined ? {} : { accountId: request.accountId })
     })
-    return { started, grant: provider.authorize(started.authorizationUrl) }
+    return { started, grant: provider.authorize(signInUrl(started)) }
   }
   const storedCredential = async (accountId: string) => {
     const record = await makePluginAccountStore(services.db, "server-a").get(accountId)
@@ -108,7 +109,7 @@ describe("plugin account OAuth", () => {
     const { started, grant } = await signIn()
     await accounts.completeOAuth(grant.state, grant.code)
 
-    const authorization = new URL(started.authorizationUrl).searchParams
+    const authorization = new URL(signInUrl(started)).searchParams
     expect(Object.fromEntries(authorization)).toMatchObject({
       response_type: "code",
       client_id: "client-1",
@@ -269,7 +270,7 @@ describe("plugin account OAuth", () => {
     const [account] = await accounts.list(server.id)
     const bundle = await vault.token(await storedCredential(account!.id))
     expect(providers).toEqual(["example"])
-    expect(new URL(started.authorizationUrl).searchParams.get("client_id")).toBe("desktop-client")
+    expect(new URL(signInUrl(started)).searchParams.get("client_id")).toBe("desktop-client")
     expect(provider.tokenForms[0]).toMatchObject({
       client_id: "desktop-client",
       client_secret: "desktop-secret"

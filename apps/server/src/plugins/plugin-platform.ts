@@ -15,6 +15,7 @@ import {
   type PluginAccounts,
   type PluginVault
 } from "./accounts/plugin-accounts.js"
+import type { PluginSignIn } from "./accounts/plugin-run-sign-in.js"
 import type { PluginCatalog } from "./plugin-catalog.js"
 
 export interface PluginPlatform {
@@ -69,6 +70,7 @@ export const makePluginPlatform = (deps: PluginPlatformDeps): PluginPlatform => 
       found.catalogId === undefined ? undefined : deps.catalog.entry(found.catalogId)?.accounts,
     redirects: oauthRedirects(deps),
     installedClients: deps.installedClients,
+    pluginSignIn: pluginSignIn(() => requireMcp(mcp)),
     beforeRemove: async (serverId, accountId) => {
       await Promise.allSettled([...removing].map((listener) => listener(serverId, accountId)))
     },
@@ -121,6 +123,30 @@ const managedOAuthClients = (deps: PluginPlatformDeps): ManagedOAuthClients => (
       form
     })
 })
+
+const pluginSignIn =
+  (manager: () => McpManager): PluginSignIn =>
+  async ({ serverId, values, scopes }) => {
+    const connection = await manager().pluginConnection(serverId)
+    const reply = await connection.request(
+      pluginSignInMethod,
+      { values, scopes },
+      { timeoutMs: pluginSignInTimeoutMs }
+    )
+    return signedInOf(reply)
+  }
+
+const signedInOf = (reply: Record<string, unknown>) => {
+  const identity = field(reply, "identity")
+  const label = field(reply, "label")
+  return {
+    ...(typeof identity === "string" ? { identity } : {}),
+    ...(typeof label === "string" ? { label } : {})
+  }
+}
+
+const pluginSignInMethod = "codevisor/account/signIn"
+const pluginSignInTimeoutMs = 10 * 60_000
 
 const requireCloudRequest = (deps: PluginPlatformDeps) => {
   const request = deps.cloud?.machineRequest

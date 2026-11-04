@@ -70,7 +70,7 @@ public final class PluginAccountsModel {
     let request = ServerPluginAccountOAuthRequest(values: values, label: label, accountId: accountId)
     guard let start = await perform({ try await client.startPluginAccountOAuth(serverId: serverId, request: request) })
     else { return }
-    guard let url = URL(string: start.authorizationUrl) else { return }
+    guard let url = start.authorizationUrl.flatMap(URL.init(string:)) else { return }
 
     accountsBeforeSignIn = hasLoaded ? accounts : nil
     await webSignIn.run(url, callbackScheme: start.callbackScheme)

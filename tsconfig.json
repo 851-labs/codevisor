@@ -77,6 +77,9 @@
       "path": "./plugins/gmail"
     },
     {
+      "path": "./plugins/shopify"
+    },
+    {
       "path": "./plugins/test-events"
     }
   ]

@@ -2,7 +2,7 @@ import { Schema } from "effect"
 
 import { ConfigField, ConfigFieldValues } from "./config-fields.js"
 
-export const PluginOAuthSpec = Schema.Struct({
+export const HostedPluginOAuthSpec = Schema.Struct({
   provider: Schema.String,
   authorizeUrl: Schema.String,
   tokenUrl: Schema.String,
@@ -13,6 +13,16 @@ export const PluginOAuthSpec = Schema.Struct({
   identityField: Schema.optional(Schema.String),
   setupUrl: Schema.optional(Schema.String)
 })
+export type HostedPluginOAuthSpec = typeof HostedPluginOAuthSpec.Type
+
+export const PluginRunOAuthSpec = Schema.Struct({
+  provider: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  client: Schema.Literal("plugin")
+})
+export type PluginRunOAuthSpec = typeof PluginRunOAuthSpec.Type
+
+export const PluginOAuthSpec = Schema.Union([HostedPluginOAuthSpec, PluginRunOAuthSpec])
 export type PluginOAuthSpec = typeof PluginOAuthSpec.Type
 
 export const PluginAccountSpec = Schema.Struct({
@@ -158,7 +168,7 @@ export type StartPluginAccountOAuthRequest = typeof StartPluginAccountOAuthReque
 
 export const PluginAccountOAuthStart = Schema.Struct({
   flowId: Schema.String,
-  authorizationUrl: Schema.String,
+  authorizationUrl: Schema.optional(Schema.String),
   callbackScheme: Schema.optional(Schema.String)
 })
 export type PluginAccountOAuthStart = typeof PluginAccountOAuthStart.Type
