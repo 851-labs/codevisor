@@ -29,6 +29,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
   private static let pipelinedChanges = 2
   private static let networkFeedbackIntervalNs: Int64 = 250_000_000
   private var stopped = false
+  private let gpuComparer = ScreenSharingV2GPUTileComparer()
   private var events: Task<Void, Never>?
 
   public convenience init(
@@ -90,7 +91,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let candidates = reported.subtracting(slot.waitingTiles)
     let comparedNs = ScreenSharingMetrics.nowNs
     let tiles = ScreenSharingV2TileComparer.changed(
-      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer
+      candidates, of: layout, from: previous, to: capture.frame.pixelBuffer, gpu: gpuComparer
     ) { [metrics] in
       metrics.observe("tileCompareLock", milliseconds: Double(ScreenSharingMetrics.nowNs - comparedNs) / 1e6)
     }

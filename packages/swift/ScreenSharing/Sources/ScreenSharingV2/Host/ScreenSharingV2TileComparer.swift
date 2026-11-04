@@ -5,9 +5,10 @@ import Synchronization
 enum ScreenSharingV2TileComparer {
   static func changed(
     _ tiles: Set<Int>, of layout: ScreenSharingV2TileLayout, from previous: CVPixelBuffer?, to current: CVPixelBuffer,
-    locked: () -> Void = {}
+    gpu: ScreenSharingV2GPUTileComparer? = nil, locked: () -> Void = {}
   ) -> Set<Int> {
     guard let previous, previous !== current, comparable(previous, current, layout: layout) else { return tiles }
+    if let gpu, let changed = gpu.changed(tiles, of: layout, from: previous, to: current) { return changed }
 
     CVPixelBufferLockBaseAddress(previous, .readOnly)
     CVPixelBufferLockBaseAddress(current, .readOnly)
