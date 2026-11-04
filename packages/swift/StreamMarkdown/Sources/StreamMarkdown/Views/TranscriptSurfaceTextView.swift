@@ -167,7 +167,7 @@
     }
 
     open func popUpTranscriptSelectionMenu(_ menu: NSMenu, with event: NSEvent) {
-      NSMenu.popUpContextMenu(menu, with: event, for: self)
+      menu.popUp(positioning: nil, at: convert(event.locationInWindow, from: nil), in: self)
     }
 
     open override func menu(for event: NSEvent) -> NSMenu? {
