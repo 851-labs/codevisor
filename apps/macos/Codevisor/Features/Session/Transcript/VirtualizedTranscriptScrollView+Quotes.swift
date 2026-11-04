@@ -15,7 +15,6 @@ final class TranscriptQuoteState {
 }
 
 extension VirtualizedTranscriptScrollView {
-  private static let addButtonGap: CGFloat = 2
   private static let viewportHoldWindow: TimeInterval = 1
 
   var addToChatMenuItem: NSMenuItem {
@@ -32,13 +31,13 @@ extension VirtualizedTranscriptScrollView {
     clearTranscriptSelection()
   }
 
-  func showAddToChatButtonIfNeeded() {
-    guard hasTranscriptSelection, sessionController != nil, let rect = selectionDocumentRects().first else {
-      return hideAddToChatButton()
-    }
+  func showAddToChatButtonIfNeeded(nearWindowPoint pointer: NSPoint? = nil) {
+    guard hasTranscriptSelection, sessionController != nil,
+      let placement = addToChatButtonPlacement(nearWindowPoint: pointer)
+    else { return hideAddToChatButton() }
 
     let button = installedAddToChatButton()
-    button.show(at: addToChatButtonOrigin(above: rect, size: button.fittingSize))
+    button.show(at: placement.origin(for: button.fittingSize))
   }
 
   func holdViewportForComposerChange() {
@@ -106,11 +105,11 @@ extension VirtualizedTranscriptScrollView {
     return button
   }
 
-  private func addToChatButtonOrigin(above rect: NSRect, size: NSSize) -> NSPoint {
-    let visible = unobstructedViewport
-    let fitsAbove = rect.minY - size.height - Self.addButtonGap >= visible.minY
-    let y = fitsAbove ? rect.minY - size.height - Self.addButtonGap : rect.maxY + Self.addButtonGap
-    let maximumX = max(visible.minX, transcriptDocumentView.bounds.maxX - size.width)
-    return NSPoint(x: min(max(visible.minX, rect.minX - 4), maximumX), y: y)
+  private func addToChatButtonPlacement(nearWindowPoint pointer: NSPoint?) -> AddToChatButtonPlacement? {
+    AddToChatButtonPlacement(
+      lineRects: selectionDocumentRects(),
+      pointer: pointer.map { transcriptDocumentView.convert($0, from: nil) },
+      bounds: unobstructedViewport
+    )
   }
 }

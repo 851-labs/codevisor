@@ -43,6 +43,7 @@ extension VirtualizedTranscriptScrollView {
       focus: .rowEnd(last)
     )
     applySelectionHighlights()
+    showAddToChatButtonIfNeeded()
   }
 
   func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {

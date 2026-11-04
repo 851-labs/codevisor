@@ -66,7 +66,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
     if let span = resolvedSelectionSpan, span.isEmpty {
       clearTranscriptSelection()
     }
-    showAddToChatButtonIfNeeded()
+    showAddToChatButtonIfNeeded(nearWindowPoint: event.locationInWindow)
   }
 
   func clearTranscriptSelection() {
