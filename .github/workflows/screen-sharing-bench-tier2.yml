@@ -29,7 +29,7 @@ on:
         default: true
         type: boolean
       network:
-        description: N0 (no shaping) or N3 (1 ms and 1% loss each way, dummynet on croissant)
+        description: N0 (no shaping), N3 (1 ms and 1% loss each way) or N6 (25 ms, 0.1% loss and 50 Mbit/s each way), dummynet on croissant
         required: false
         default: N0
         type: string
@@ -91,7 +91,7 @@ on:
         default: true
         type: boolean
       network:
-        description: N0 (no shaping) or N3 (1 ms and 1% loss each way, dummynet on croissant)
+        description: N0 (no shaping), N3 (1 ms and 1% loss each way) or N6 (25 ms, 0.1% loss and 50 Mbit/s each way), dummynet on croissant
         required: false
         default: N0
         type: string

@@ -7,12 +7,13 @@ use bytes::Bytes;
 use reed_solomon_simd::ReedSolomonEncoder;
 
 use crate::{
-    estimator::Estimator,
+    estimator::{Delivery, Estimator},
     fec::{self, Layout},
     pacer::{Pacer, PacketTag},
     types::{
         Admission, Event, FecMode, FrameAck, MediaConfig, OutgoingFrame, Receipt, SendError, Stats, give_up_after,
     },
+    windowed::{Keep, Windowed},
     wire::{self, Feedback, FrameFields, Kind, Nack, PacketHeader, RefreshRequest},
 };
 
@@ -24,10 +25,17 @@ const MIN_FEC: f64 = 0.05;
 const MAX_FEC: f64 = 0.25;
 const PACING_GAIN: f64 = 2.0;
 const MAX_PACING_GAIN: f64 = 4.0;
+const CONSTRAINED_PACING_GAIN: f64 = 1.25;
+const CONSTRAINED_BPS: f64 = 100e6;
+const HEAVY_LOSS: f64 = 0.1;
+const MIN_LOSS_SAMPLE: u64 = 30;
 const TAIL_PROBE_MARGIN: Duration = Duration::from_millis(1);
 const ACK_DELAY_GAIN: f64 = 1.0 / 8.0;
 const ACK_VARIATION_GAIN: f64 = 1.0 / 4.0;
 const MAX_TAIL_BACKOFF: u32 = 4;
+const MIN_RTT_WINDOW: Duration = Duration::from_secs(10);
+const ENCODER_SHARE: f64 = 0.85;
+const IN_FLIGHT_INTERVALS: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Resend {
@@ -45,6 +53,7 @@ struct SentFrame {
     first_tx: Option<Instant>,
     last_tx: Option<Instant>,
     originals_out: usize,
+    bytes_out: usize,
     probes: u32,
 }
 
@@ -114,6 +123,9 @@ pub struct Sender {
     rtt: Duration,
     ack_delay: Option<AckDelay>,
     tail_backoff: u32,
+    in_flight_bytes: usize,
+    min_rtt: Windowed<Duration>,
+    ceiling_fec_ratio: f64,
 }
 
 impl Sender {
@@ -123,17 +135,26 @@ impl Sender {
             epoch,
             streams: HashMap::new(),
             pacer: Pacer::new(config.initial_rate_bps * 2.0),
-            estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps),
+            estimator: Estimator::new(config.initial_rate_bps, config.max_rate_bps, config.frame_interval),
             loss: LossWindow::default(),
             last_loss: None,
             rtt: Duration::ZERO,
             ack_delay: None,
             tail_backoff: 0,
+            in_flight_bytes: 0,
+            min_rtt: Windowed::new(MIN_RTT_WINDOW, Keep::Smallest),
+            ceiling_fec_ratio: 0.0,
         }
     }
 
     pub fn set_rtt(&mut self, rtt: Duration) {
         self.rtt = rtt;
+    }
+
+    fn note_rtt(&mut self, now: Instant) {
+        if !self.rtt.is_zero() {
+            self.min_rtt.push(now, self.rtt);
+        }
     }
 
     pub fn send_frame(
@@ -206,11 +227,13 @@ impl Sender {
                 first_tx: None,
                 last_tx: None,
                 originals_out: 0,
+                bytes_out: 0,
                 probes: 0,
             },
         );
         if stream.unresolved.len() > MAX_UNRESOLVED {
-            let (oldest, _) = stream.unresolved.pop_first().expect("over the limit");
+            let (oldest, dropped) = stream.unresolved.pop_first().expect("over the limit");
+            self.in_flight_bytes -= dropped.bytes_out;
             stats.frames_lost += 1;
             events.push_back(Event::FrameLost { stream: frame.stream, frame: oldest });
         }
@@ -220,6 +243,7 @@ impl Sender {
 
     fn parity_count(&mut self, now: Instant, data_count: usize) -> usize {
         let ratio = self.fec_ratio(now);
+        self.ceiling_fec_ratio = ratio;
         if ratio <= 0.0 {
             return 0;
         }
@@ -254,6 +278,9 @@ impl Sender {
             return;
         }
         let current = if self.loss.sent == 0 { 0.0 } else { self.loss.nacked as f64 / self.loss.sent as f64 };
+        if self.loss.sent >= MIN_LOSS_SAMPLE && current > HEAVY_LOSS {
+            self.estimator.on_heavy_loss(now, current.min(1.0));
+        }
         self.loss.rate = current.max(self.loss.rate / 2.0).min(1.0);
         self.loss = LossWindow { started: Some(now), sent: 0, nacked: 0, rate: self.loss.rate };
     }
@@ -262,7 +289,12 @@ impl Sender {
         let estimate = self.estimator.estimate_bps();
         let spread = self.config.frame_interval.as_secs_f64() / 2.0;
         let drain = self.pacer.backlog_bytes() as f64 * 8.0 / spread;
-        self.pacer.set_rate(now, drain.clamp(estimate * PACING_GAIN, estimate * MAX_PACING_GAIN));
+        let headroom = ((estimate - CONSTRAINED_BPS) / CONSTRAINED_BPS).clamp(0.0, 1.0);
+        let large = self.pacer.backlog_bytes() as f64 * 8.0 > estimate * spread;
+        let floor_gain = if large { 1.0 } else { CONSTRAINED_PACING_GAIN };
+        let gain = floor_gain + (PACING_GAIN - floor_gain) * headroom;
+        let max_gain = floor_gain + (MAX_PACING_GAIN - floor_gain) * headroom;
+        self.pacer.set_rate(now, drain.clamp(estimate * gain, estimate * max_gain));
     }
 
     pub fn poll_transmit(&mut self, now: Instant, stats: &mut Stats) -> Option<Bytes> {
@@ -282,6 +314,9 @@ impl Sender {
         {
             frame.first_tx.get_or_insert(now);
             frame.originals_out += 1;
+            frame.bytes_out += packet.len();
+            self.in_flight_bytes += packet.len();
+            self.estimator.on_sent(now, packet.len());
             if frame.originals_out == frame.packets.len() {
                 frame.last_tx = Some(now);
             }
@@ -299,6 +334,7 @@ impl Sender {
             return;
         };
         let mut requested = 0;
+        let mut first_losses = 0;
         let mut repeated = 0;
         for &(start, count) in &nack.ranges {
             let range = if count == wire::WHOLE_FRAME {
@@ -317,6 +353,9 @@ impl Sender {
                     repeated += 1;
                     continue;
                 }
+                if frame.resends[index] == Resend::Never {
+                    first_losses += 1;
+                }
                 frame.resends[index] = Resend::Queued;
                 let tag = PacketTag { stream: nack.stream, frame: nack.frame, index: index as u16, original: false };
                 self.pacer.push(frame.packets[index].clone(), tag);
@@ -326,13 +365,15 @@ impl Sender {
         stats.retransmissions_skipped += repeated;
         if requested > 0 {
             stats.packets_retransmitted += requested;
-            self.loss.nacked += requested;
+            self.loss.nacked += first_losses;
             self.last_loss = Some(now);
             self.update_pacing_rate(now);
         }
     }
 
     pub fn on_feedback(&mut self, now: Instant, feedback: &Feedback, events: &mut VecDeque<Event>, stats: &mut Stats) {
+        self.note_rtt(now);
+        self.ceiling_fec_ratio = self.fec_ratio(now);
         let Some(stream) = self.streams.get_mut(&feedback.stream) else {
             return;
         };
@@ -343,6 +384,7 @@ impl Sender {
             events.push_back(Event::LtrAcked { stream: feedback.stream, token });
         }
         if let Some(frame) = stream.unresolved.remove(&feedback.frame) {
+            self.in_flight_bytes -= frame.bytes_out;
             if feedback.lost {
                 self.last_loss = Some(now);
                 stats.frames_lost += 1;
@@ -351,6 +393,10 @@ impl Sender {
                 let ack = acknowledge(feedback.stream, feedback.frame, &frame, now, feedback.receipt.map(receipt));
                 stats.frames_acked += 1;
                 events.push_back(Event::FrameAcked(ack));
+            }
+            if feedback.receipt.is_some_and(|receipt| receipt.recovery == crate::Recovery::Fec) {
+                self.loss.nacked += 1;
+                self.last_loss = Some(now);
             }
             if let (Some(first_tx), Some(receipt)) = (frame.first_tx, feedback.receipt) {
                 if let Some(last_tx) = frame.last_tx
@@ -361,13 +407,28 @@ impl Sender {
                     self.ack_delay = Some(AckDelay::update(self.ack_delay, now.saturating_duration_since(last_tx)));
                     self.tail_backoff = 0;
                 }
-                if !feedback.lost && frame.probes == 0 && receipt.recovery == crate::Recovery::None {
+                let first_may_be_resent = receipt.recovery == crate::Recovery::Nack && frame.data_count <= 2;
+                if !feedback.lost && frame.probes == 0 && !first_may_be_resent {
                     let first_tx_us = first_tx.saturating_duration_since(self.epoch).as_micros() as i64;
-                    let hold_off = self.rtt + self.config.frame_interval;
+                    let hold_off =
+                        self.rtt.min(self.min_rtt.best().unwrap_or(self.rtt) * 2) + self.config.frame_interval;
                     self.estimator.on_delay(now, receipt.first_rx_us as i64 - first_tx_us, hold_off);
                 }
-                let span = Duration::from_micros(receipt.last_rx_offset_us.into());
-                self.estimator.on_delivery(now, receipt.original_bytes as usize, span);
+                if !feedback.lost {
+                    self.estimator.on_acked(now, frame.bytes_out);
+                }
+                if receipt.recovery != crate::Recovery::Nack {
+                    let send_span =
+                        frame.last_tx.map_or(Duration::ZERO, |last_tx| last_tx.saturating_duration_since(first_tx));
+                    self.estimator.on_delivery(
+                        now,
+                        Delivery {
+                            bytes: receipt.original_bytes as usize,
+                            receive_span: Duration::from_micros(receipt.last_rx_offset_us.into()),
+                            send_span,
+                        },
+                    );
+                }
             }
         }
         let stream = self.streams.get_mut(&feedback.stream).expect("looked up above");
@@ -377,12 +438,14 @@ impl Sender {
                 break;
             }
             let frame = entry.remove();
+            self.in_flight_bytes -= frame.bytes_out;
             let age = feedback.resolved_below - 1 - number;
             if age >= 32 || feedback.lost_bitmap & (1 << age) != 0 {
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: feedback.stream, frame: number });
             } else {
                 stats.frames_acked += 1;
+                self.estimator.on_acked(now, frame.bytes_out);
                 events.push_back(Event::FrameAcked(acknowledge(feedback.stream, number, &frame, now, None)));
             }
         }
@@ -440,7 +503,9 @@ impl Sender {
                 probed = true;
             }
             for number in expired {
-                stream.unresolved.remove(&number);
+                if let Some(frame) = stream.unresolved.remove(&number) {
+                    self.in_flight_bytes -= frame.bytes_out;
+                }
                 stats.frames_lost += 1;
                 events.push_back(Event::FrameLost { stream: stream_id, frame: number });
             }
@@ -477,13 +542,20 @@ impl Sender {
     pub fn admission(&self) -> Admission {
         let estimate_bps = self.estimator.estimate_bps();
         let budget_bytes = (estimate_bps / 8.0 * self.config.frame_interval.as_secs_f64()) as usize;
-        let backlog_bytes = self.pacer.backlog_bytes();
+        let path_bytes = if self.estimator.measured() {
+            let min_rtt = self.min_rtt.best().unwrap_or(self.rtt);
+            let in_flight_time = min_rtt + self.config.frame_interval * IN_FLIGHT_INTERVALS;
+            (estimate_bps / 8.0 * in_flight_time.as_secs_f64()) as usize
+        } else {
+            0
+        };
+        let backlog_bytes = self.pacer.backlog_bytes() + self.in_flight_bytes.saturating_sub(path_bytes);
         Admission {
             admit: backlog_bytes <= budget_bytes,
             backlog_bytes,
             budget_bytes,
             estimate_bps,
-            encoder_ceiling_bps: estimate_bps * 0.85,
+            encoder_ceiling_bps: estimate_bps * ENCODER_SHARE / (1.0 + self.ceiling_fec_ratio),
         }
     }
 

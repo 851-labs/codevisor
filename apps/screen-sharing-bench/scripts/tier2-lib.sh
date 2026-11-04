@@ -204,7 +204,7 @@ tier2_check_inputs() {
   [[ "$TIER2_SCENES" =~ ^$scene_pattern(,$scene_pattern)*$ ]] || { echo "unknown scene in $TIER2_SCENES" >&2; return 1; }
   [[ "$TIER2_REPS" =~ ^[1-4]$ && "$TIER2_FLOOR_REPS" =~ ^[0-3]$ && "$TIER2_DURATION" =~ ^[0-9]+$ ]] || return 1
   ((TIER2_DURATION >= 15 && TIER2_DURATION <= 120)) || return 1
-  [[ "$TIER2_NETWORK" =~ ^N[03]$ ]] || { echo "network must be N0 or N3, not $TIER2_NETWORK" >&2; return 1; }
+  [[ "$TIER2_NETWORK" =~ ^N[036]$ ]] || { echo "network must be N0, N3 or N6, not $TIER2_NETWORK" >&2; return 1; }
   [[ "$TIER2_ENGINE" =~ ^v[12]$ ]] || { echo "engine must be v1 or v2, not $TIER2_ENGINE" >&2; return 1; }
   [[ "$TIER2_VCP_FAIL_AFTER" =~ ^(0|[1-9][0-9]*)$ ]] && ((TIER2_VCP_FAIL_AFTER < TIER2_DURATION)) || {
     echo "vcp-fail-after must be whole seconds below the run's duration" >&2
