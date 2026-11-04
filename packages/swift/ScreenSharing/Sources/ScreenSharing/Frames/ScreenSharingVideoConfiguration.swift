@@ -169,5 +169,6 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   }
   public var droppedFrames: Int { lock.withLock { replacements } }
   public var supersededPresentFirstFrames: Int { lock.withLock { supersededFirst } }
+  public var holdsPresentFirst: Bool { lock.withLock { frame?.presentsBeforeNext == true } }
   public var isHolding: Bool { lock.withLock { frame != nil } }
 }
