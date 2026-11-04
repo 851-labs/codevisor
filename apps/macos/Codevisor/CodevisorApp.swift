@@ -45,7 +45,6 @@ struct RootView: View {
   static let sidebarCollapsedKey = "sidebar.collapsed"
   @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
-  @ClientPreference(SidebarMode.preferenceKey, default: SidebarMode.code) var sidebarMode
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State var panelLayout = AdaptivePanelLayout()
@@ -112,7 +111,7 @@ struct RootView: View {
           await environment.cloud.bootstrap()
         }
       }
-      .modifier(SidebarModeSelectionMemory(selection: $selection) { panelLayout.dismissDrawer() })
+      .modifier(SidebarModeFollowsSelection(selection: $selection) { panelLayout.dismissDrawer() })
       .modifier(UpdateCenterUpkeep())
       .modifier(ChromiumBrowserHostSync())
       .modifier(ServerDataUpgradePresentation())
@@ -157,11 +156,7 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
-      .toolbar {
-        if SidebarMode.active(sidebarMode, botsEnabled: botsEnabled) == .chat {
-          ToolbarItem(placement: .navigation) { BotComposeToolbarButton() }
-        }
-      }
+      .toolbar { BotComposeToolbarItem() }
     }
     .modifier(WorkspaceInspectorPresentation(store: store, selection: $selection, revealRequest: sidebarRevealRequest))
     .overlay {
@@ -288,13 +283,8 @@ struct RootView: View {
     }
   }
 
-  @ViewBuilder
   private func newChat(_ store: SessionStore, target: NewChatTarget?) -> some View {
-    if SidebarMode.active(sidebarMode, botsEnabled: botsEnabled) == .chat {
-      BotListEmptyDetail()
-    } else {
-      newChatView(store, target: target)
-    }
+    SidebarModeBlankPage { newChatView(store, target: target) }
   }
 
   private func newChatView(_ store: SessionStore, target: NewChatTarget?) -> some View {
@@ -316,13 +306,6 @@ enum SidebarSelection: Hashable {
   case archivedWorkspace(serverId: String, id: UUID)
   case bot(serverId: String, id: UUID)
   case newChat(NewChatTarget?)
-
-  static func initial(for mode: SidebarMode) -> SidebarSelection? {
-    switch mode {
-    case .chat: nil
-    case .code: .newChat(nil)
-    }
-  }
 
   var owningMode: SidebarMode? {
     switch self {

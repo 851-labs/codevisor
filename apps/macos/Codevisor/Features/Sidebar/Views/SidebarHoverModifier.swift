@@ -4,13 +4,19 @@ import SwiftUI
 struct SidebarHoverModifier: ViewModifier {
   @Binding var isHovered: Bool
   @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
-  @Environment(\.sidebarRevealCount) private var revealCount
+  @Environment(SidebarHostBridge.self) private var hostBridge: SidebarHostBridge?
 
   func body(content: Content) -> some View {
     content
       .onHover { isHovered = $0 }
       .onChange(of: isActiveSidebarMode) { isHovered = false }
-      .onChange(of: revealCount) { isHovered = false }
+      .onChange(of: revealWhileHovered) { previous, current in
+        if previous != nil, current != nil { isHovered = false }
+      }
+  }
+
+  private var revealWhileHovered: Int? {
+    isHovered ? hostBridge?.revealCount : nil
   }
 }
 

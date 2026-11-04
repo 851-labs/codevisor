@@ -5,9 +5,13 @@ import SwiftUI
 struct SidebarVibrancyHost<Content: View>: NSViewRepresentable {
   @ViewBuilder var content: () -> Content
 
+  func makeCoordinator() -> SidebarHostBridge { SidebarHostBridge() }
+
   func makeNSView(context: Context) -> SidebarHostingView<SidebarHostedContent<Content>> {
-    let host = SidebarHostingView(rootView: SidebarHostedContent(content: content(), revealCount: 0))
+    context.coordinator.openSettings = context.environment.openSettings
+    let host = SidebarHostingView(rootView: SidebarHostedContent(content: content(), bridge: context.coordinator))
     host.sizingOptions = []
+    host.bridge = context.coordinator
     host.isHidden = !context.environment.isActiveSidebarMode
     return host
   }
@@ -16,26 +20,27 @@ struct SidebarVibrancyHost<Content: View>: NSViewRepresentable {
     let isActive = context.environment.isActiveSidebarMode
     host.isHidden = !isActive
     guard isActive else { return }
-    host.rootView = SidebarHostedContent(content: content(), revealCount: host.revealCount)
+    context.coordinator.openSettings = context.environment.openSettings
+    host.rootView = SidebarHostedContent(content: content(), bridge: context.coordinator)
   }
 }
 
 struct SidebarHostedContent<Content: View>: View {
   let content: Content
-  let revealCount: Int
+  let bridge: SidebarHostBridge
 
   var body: some View {
-    content.environment(\.sidebarRevealCount, revealCount)
+    content.environment(bridge)
   }
 }
 
 final class SidebarHostingView<Content: View>: NSHostingView<Content> {
-  private(set) var revealCount = 0
+  var bridge: SidebarHostBridge?
 
   override var isHidden: Bool {
     didSet {
       guard oldValue, !isHidden else { return }
-      revealCount += 1
+      bridge?.recordReveal()
       needsLayout = true
     }
   }

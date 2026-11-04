@@ -6,7 +6,6 @@ import os
 struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  @Environment(\.openSettings) private var openSettings
   @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
@@ -154,12 +153,10 @@ struct SidebarView: View {
   static let groupIndent: CGFloat = 8
 
   private var vibrantContent: some View {
-    let open = openSettings
-    return SidebarVibrancyHost {
+    SidebarVibrancyHost {
       sidebarContent
         .environment(environment)
         .environment(\.isActiveSidebarMode, isActiveSidebarMode)
-        .environment(\.sidebarOpenSettings, SidebarOpenSettingsAction { open() })
     }
     .ignoresSafeArea(.container, edges: .top)
   }

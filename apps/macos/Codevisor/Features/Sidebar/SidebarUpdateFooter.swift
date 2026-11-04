@@ -5,7 +5,7 @@ import SwiftUI
 struct SidebarUpdateFooter: View {
   var center: UpdateCenter
   @Environment(\.openSettings) private var openSettings
-  @Environment(\.sidebarOpenSettings) private var sidebarOpenSettings
+  @Environment(SidebarHostBridge.self) private var hostBridge: SidebarHostBridge?
   @State private var isHovered = false
 
   var body: some View {
@@ -14,7 +14,7 @@ struct SidebarUpdateFooter: View {
         Hairline(color: .separatorColor)
         Button {
           SettingsRouter.shared.showUpdates()
-          if let sidebarOpenSettings { sidebarOpenSettings() } else { openSettings() }
+          if let hostOpenSettings = hostBridge?.openSettings { hostOpenSettings() } else { openSettings() }
         } label: {
           HStack(spacing: 6) {
             if center.isUpdatingAll {
@@ -44,14 +44,4 @@ struct SidebarUpdateFooter: View {
       .transition(.move(edge: .bottom).combined(with: .opacity))
     }
   }
-}
-
-extension EnvironmentValues {
-  @Entry var sidebarOpenSettings: SidebarOpenSettingsAction? = nil
-}
-
-struct SidebarOpenSettingsAction {
-  let open: @MainActor () -> Void
-
-  @MainActor func callAsFunction() { open() }
 }
