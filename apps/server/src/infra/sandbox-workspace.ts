@@ -35,7 +35,7 @@ export const placeWorkspace = async (
     workspaceId,
     projectId: remoteProjectId,
     name: machine.name,
-    hasCustomName: true,
+    hasCustomName: false,
     labels: { [SANDBOX_WORKSPACE_LABEL]: machine.id }
   })
   return { remoteProjectId, workspaceId, workspaceOpenedAt: isoNow(deps) }
@@ -67,7 +67,7 @@ const restoreWorkspace = async (
     workspaceId,
     projectId: remoteProjectId,
     name: machine.workspaceName ?? machine.name,
-    hasCustomName: true,
+    hasCustomName: false,
     labels: { [SANDBOX_WORKSPACE_LABEL]: machine.id }
   })
   return { remoteProjectId, workspaceId, workspaceOpenedAt: isoNow(deps) }
