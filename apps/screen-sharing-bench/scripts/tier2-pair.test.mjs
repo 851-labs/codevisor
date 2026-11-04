@@ -161,7 +161,10 @@ test("waits for other runs' jobs on a mini, then starts", (t) => {
           jobs(job("ios", "queued", { labels: ["self-hosted", "macOS", "ARM64"] })),
           jobs(job("ios", "in_progress", { runner_name: "tamales-Mac-Mini-tamale" })),
           jobs(job("ios", "completed", { runner_name: "tamales-Mac-Mini-tamale" })),
-          jobs(job("ubuntu", "queued", { labels: ["ubuntu-24.04"] }))
+          jobs(
+            job("ubuntu", "queued", { labels: ["ubuntu-24.04"] }),
+            job("gpu", "queued", { labels: ["self-hosted", "Linux", "gpu"] })
+          )
         ]
       }
     ]

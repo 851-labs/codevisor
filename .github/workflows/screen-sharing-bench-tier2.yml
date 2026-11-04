@@ -154,7 +154,7 @@ env:
 jobs:
   wait-for-minis:
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 240
     steps: &wait-for-minis-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -167,7 +167,7 @@ jobs:
   host:
     needs: wait-for-minis
     runs-on: [self-hosted, macOS, ARM64, tamale]
-    timeout-minutes: 75
+    timeout-minutes: 85
     env: &first-attempt
       TIER2_PEER_SUFFIX: ""
       TIER2_PAIR_HOLD_S: 300
@@ -199,13 +199,13 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-tamale
+          name: tier2-tamale${{ env.TIER2_PEER_SUFFIX }}
           path: ${{ runner.temp }}/results
 
   viewer:
     needs: wait-for-minis
     runs-on: [self-hosted, macOS, ARM64, croissant]
-    timeout-minutes: 75
+    timeout-minutes: 85
     env: *first-attempt
     outputs:
       paired: ${{ steps.pair.outputs.paired }}
@@ -237,14 +237,14 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.pair.outputs.paired == 'true'
         with:
-          name: tier2-croissant
+          name: tier2-croissant${{ env.TIER2_PEER_SUFFIX }}
           path: ${{ runner.temp }}/results
 
   wait-for-minis-again:
     needs: [host, viewer]
     if: ${{ !cancelled() && (needs.host.outputs.paired == 'false' || needs.viewer.outputs.paired == 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 240
     steps: *wait-for-minis-steps
 
   host-retry:
@@ -284,7 +284,7 @@ jobs:
           identity: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          pattern: tier2-*
+          pattern: ${{ needs.host-retry.result == 'skipped' && 'tier2-*' || 'tier2-*-retry' }}
           merge-multiple: true
           path: ${{ runner.temp }}/runs
       - name: Build the report and the target table
