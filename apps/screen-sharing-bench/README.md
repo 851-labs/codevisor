@@ -227,7 +227,9 @@ development only.
 The minis are also CI runners, so the two jobs pair up before either takes its runner for long
 (`scripts/tier2-pair.sh`, which reads job states through the GitHub API with the run's `actions: read` token).
 First `wait-for-minis`, on a GitHub-hosted runner, polls every 2 minutes until no job of another run is in progress
-on tamale or croissant and no other job is queued that only asks for labels the minis have, so both jobs usually start at once. It gives up
+on tamale or croissant and no other job is queued that only asks for labels the minis have, so both jobs usually start at once.
+The minis are organization runners that also run 851-labs/lil.tech's CI, so it reads both repositories' runs
+(`TIER2_MINI_REPOS`; a job waiting on `needs` isn't queued yet, so the gate can't see it). It gives up
 after 3 hours and lets the jobs start anyway. Then each mini job checks out the repository and waits for its
 peer job to be in progress before it builds anything. Seeing the peer in progress on polls 45 s apart counts
 as paired: a peer that has just given up its runner has finished by then. If the peer is still queued after

@@ -6,6 +6,7 @@ set -euo pipefail
 : "${TIER2_MINI_LABELS:=self-hosted,macOS,ARM64,codevisor-macos-arm64,tamale,croissant}"
 : "${TIER2_PAIR_POLL_S:=15}"
 : "${TIER2_PAIR_CONFIRM_S:=45}"
+: "${TIER2_MINI_REPOS:=851-labs/codevisor,851-labs/lil.tech}"
 runs_api="repos/$GITHUB_REPOSITORY/actions/runs"
 output=${GITHUB_OUTPUT:-/dev/null}
 
@@ -22,10 +23,15 @@ minis_pattern() {
 }
 
 other_runs() {
-  local status
-  for status in in_progress queued; do
-    gh api "$runs_api?status=$status&per_page=100" |
-      jq -r --argjson own "$GITHUB_RUN_ID" '.workflow_runs[] | select(.id != $own) | .id' || return 1
+  local repo status own
+  for repo in ${TIER2_MINI_REPOS//,/ }; do
+    own=0
+    [[ "$repo" == "$GITHUB_REPOSITORY" ]] && own=$GITHUB_RUN_ID
+    for status in in_progress queued; do
+      gh api "repos/$repo/actions/runs?status=$status&per_page=100" |
+        jq -r --arg repo "$repo" --argjson own "$own" '.workflow_runs[] | select(.id != $own) | "repos/\($repo)/actions/runs/\(.id)"' ||
+        return 1
+    done
   done
 }
 
@@ -33,14 +39,14 @@ mini_jobs() {
   local runs run
   runs=$(other_runs) || return 1
   for run in $runs; do
-    gh api "$runs_api/$run/jobs?filter=latest&per_page=100" |
+    gh api "$run/jobs?filter=latest&per_page=100" |
       jq -r --arg minis "$(minis_pattern)" --arg labels "$TIER2_MINI_LABELS" '
       ($labels | ascii_downcase | split(",")) as $mini_labels
       | .jobs[]
       | ((.labels // []) | map(ascii_downcase)) as $wanted
       | select((.status == "in_progress" and ((.runner_name // "") | test($minis)))
         or (.status == "queued" and ($wanted | index("self-hosted")) and ($wanted - $mini_labels | length == 0)))
-      | "\(.name), \(.status)\(if .runner_name then " on \(.runner_name)" else "" end): \(.html_url)"' || return 1
+      | "\(.name), \(.status)\(if (.runner_name // "") != "" then " on \(.runner_name)" else "" end): \(.html_url)"' || return 1
   done
 }
 

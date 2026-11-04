@@ -133,20 +133,23 @@ test("an API failure counts as an unstarted peer", (t) => {
   assert.deepEqual(result.output, ["paired=false"])
 })
 
-const runsRoute = (status, ...ids) => ({
-  path: `actions/runs?status=${status}`,
+const runsRoute = (repo, status, ...ids) => ({
+  path: `${repo}/actions/runs?status=${status}`,
   responses: [{ workflow_runs: ids.map((id) => ({ id })) }]
 })
 
-test("waits for other runs' jobs on a mini, then starts", (t) => {
+test("waits for other runs' jobs on a mini in every repo that shares them, then starts", (t) => {
   const result = runPair(
     t,
     ["wait-for-minis", "3600"],
     [
-      runsRoute("in_progress", runId, 7),
-      runsRoute("queued", 8),
+      runsRoute("codevisor", "in_progress", runId, 7),
+      runsRoute("codevisor", "queued"),
+      runsRoute("lil.tech", "in_progress", runId),
+      runsRoute("lil.tech", "queued", 8),
+      { path: `lil.tech/actions/runs/${runId}/jobs`, responses: [jobs()] },
       {
-        path: "actions/runs/7/jobs",
+        path: "codevisor/actions/runs/7/jobs",
         responses: [
           jobs(
             job("macos", "in_progress", { runner_name: "croissants-Mac-Mini-croissant" }),
@@ -156,9 +159,11 @@ test("waits for other runs' jobs on a mini, then starts", (t) => {
         ]
       },
       {
-        path: "actions/runs/8/jobs",
+        path: "lil.tech/actions/runs/8/jobs",
         responses: [
-          jobs(job("ios", "queued", { labels: ["self-hosted", "macOS", "ARM64"] })),
+          jobs(
+            job("ios", "queued", { labels: ["self-hosted", "macOS", "ARM64"], runner_name: "" })
+          ),
           jobs(job("ios", "in_progress", { runner_name: "tamales-Mac-Mini-tamale" })),
           jobs(job("ios", "completed", { runner_name: "tamales-Mac-Mini-tamale" })),
           jobs(
@@ -171,9 +176,11 @@ test("waits for other runs' jobs on a mini, then starts", (t) => {
   )
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.sleeps, ["60", "60"])
-  assert.ok(!result.calls.some((call) => call.includes(`runs/${runId}/`)))
+  assert.ok(!result.calls.some((call) => call.includes(`codevisor/actions/runs/${runId}/`)))
+  assert.ok(result.calls.some((call) => call.includes(`lil.tech/actions/runs/${runId}/`)))
   assert.match(result.stderr, /macos, in_progress on croissants-Mac-Mini-croissant/)
   assert.doesNotMatch(result.stderr, /lint/)
+  assert.match(result.stderr, /ios, queued: https/)
   assert.match(result.stderr, /tamale and croissant are free/)
 })
 
@@ -182,10 +189,12 @@ test("starts anyway once the minis stay busy past the patience", (t) => {
     t,
     ["wait-for-minis", "120"],
     [
-      runsRoute("in_progress", 7),
-      runsRoute("queued"),
+      runsRoute("codevisor", "in_progress", 7),
+      runsRoute("codevisor", "queued"),
+      runsRoute("lil.tech", "in_progress"),
+      runsRoute("lil.tech", "queued"),
       {
-        path: "actions/runs/7/jobs",
+        path: "codevisor/actions/runs/7/jobs",
         responses: [jobs(job("gate", "in_progress", { runner_name: "tamale" }))]
       }
     ]
@@ -193,4 +202,5 @@ test("starts anyway once the minis stay busy past the patience", (t) => {
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.sleeps, ["60", "60"])
   assert.match(result.stderr, /still busy after 120s; starting anyway/)
+  assert.match(result.stderr, /gate, in_progress on tamale/)
 })
