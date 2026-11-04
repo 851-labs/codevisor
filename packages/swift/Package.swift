@@ -507,7 +507,7 @@ let package = Package(
     ),
     .testTarget(
       name: "TranscriptSurfaceTests",
-      dependencies: ["TranscriptSurface"],
+      dependencies: ["TranscriptSurface", "CodevisorTestSupport"],
       path: "TranscriptSurface/Tests/TranscriptSurfaceTests",
       swiftSettings: [.treatAllWarnings(as: .error)]
     ),
