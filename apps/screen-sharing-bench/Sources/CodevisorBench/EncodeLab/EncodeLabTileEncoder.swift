@@ -7,16 +7,18 @@ final class EncodeLabTileEncoder: @unchecked Sendable {
   private struct State {
     var outputs: [EncodeLabTileOutput] = []
     var acks: EncodeLabTokenAcks
+    var cap: EncodeLabRefinementCap
   }
 
   let tile: Int
   private let session: VTCompressionSession
   private let state: Mutex<State>
 
-  init(tile: Int, session: VTCompressionSession, ackRoundTripNs: Int64) {
+  init(tile: Int, session: VTCompressionSession, config: EncodeLabConfig) {
     self.tile = tile
     self.session = session
-    state = Mutex(State(acks: EncodeLabTokenAcks(roundTripNs: ackRoundTripNs)))
+    state = Mutex(
+      State(acks: EncodeLabTokenAcks(roundTripNs: config.ackRoundTripNs), cap: EncodeLabRefinementCap(config: config)))
   }
 
   deinit {
@@ -25,7 +27,12 @@ final class EncodeLabTileEncoder: @unchecked Sendable {
 
   var outputs: [EncodeLabTileOutput] { state.withLock { $0.outputs.sorted { $0.frame < $1.frame } } }
 
-  func encode(_ pixels: CVPixelBuffer, frame: Int, tick: Int, refresh: EncodeLabRefresh?) throws {
+  func encode(_ pixels: CVPixelBuffer, frame: Int, tick: Int, refresh: EncodeLabRefresh?, repeats: Bool) throws {
+    if let qp = state.withLock({ $0.cap.change(repeats: repeats) }) {
+      let status = EncodeLabVTPropertyTarget(session: session).set(
+        kVTCompressionPropertyKey_MaxAllowedFrameQP, qp as CFNumber)
+      guard status == noErr else { throw EncodeLabError.property("MaxAllowedFrameQP", status) }
+    }
     let submitNs = ScreenSharingMetrics.nowNs
     let options = frameOptions(refresh: refresh, atNs: submitNs)
     let status = VTCompressionSessionEncodeFrame(

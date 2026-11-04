@@ -23,7 +23,8 @@ struct EncodeLabTimedPass {
   private func makeEncoder() throws -> any EncodeLabFrameEncoder {
     switch config.engine {
     case .videoToolbox: try EncodeLabTileSet(config: config)
-    case .videoProcessing: try EncodeLabVCPEncoder(config: config)
+    case .videoProcessing:
+      config.splitsVCP ? try EncodeLabVCPTileSet(config: config) : try EncodeLabVCPEncoder(config: config)
     }
   }
 
@@ -46,7 +47,7 @@ struct EncodeLabTimedPass {
       let scheduledNs = startNs + Int64(step.tick) * Self.tickNs
       let frame = events.count
       let submission = try await pacer.run(atNs: scheduledNs) {
-        try Self.submit(prepared, frame: frame, tick: step.tick, refresh: refresh, to: encoder)
+        try Self.submit(prepared, frame: frame, step: step, refresh: refresh, to: encoder)
       }
       events.append(
         EncodeLabFrameEvent(
@@ -61,11 +62,11 @@ struct EncodeLabTimedPass {
   private var refreshTick: Int { warmUpTicks + (ticks - warmUpTicks) / 2 }
 
   private nonisolated static func submit(
-    _ prepared: EncodeLabPreparedFrame, frame: Int, tick: Int, refresh: EncodeLabRefresh?,
+    _ prepared: EncodeLabPreparedFrame, frame: Int, step: EncodeLabSchedule.Step, refresh: EncodeLabRefresh?,
     to encoder: any EncodeLabFrameEncoder
   ) throws -> EncodeLabSubmission {
     let submittedNs = ScreenSharingMetrics.nowNs
-    try encoder.encode(prepared.inputs, frame: frame, tick: tick, refresh: refresh)
+    try encoder.encode(prepared.inputs, frame: frame, tick: step.tick, refresh: refresh, repeats: step.repeats)
     return EncodeLabSubmission(submittedNs: submittedNs, returnedNs: ScreenSharingMetrics.nowNs)
   }
 }

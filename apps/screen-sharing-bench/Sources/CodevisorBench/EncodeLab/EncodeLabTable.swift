@@ -5,7 +5,8 @@ enum EncodeLabTable {
   static let header = [
     "Scene", "Config", "Chroma", "Encode ms p50 / p95", "First tile ms p50", "Prepare / submit ms p95", "Mbit/s",
     "Frame KB p50 / p95", "Tile pictures/frame", "First frame KB",
-    "Refresh KB (ms)", "PSNR-Y mean / min", "PSNR-CbCr", "SSIM-Y mean / min", "Native PSNR-Y / SSIM-Y", "Decode ms p50",
+    "Refresh KB (ms)", "PSNR-Y mean / min", "PSNR-CbCr", "Settled PSNR-Y mean / min (CbCr)", "SSIM-Y mean / min",
+    "Native PSNR-Y / SSIM-Y", "Decode ms p50",
     "Late / dropped",
   ]
 
@@ -28,7 +29,8 @@ enum EncodeLabTable {
       result.scene, result.config.name, result.chroma ?? "?", pair(result.encodeMs), fixed(result.firstTileMs?.p50, 1),
       "\(fixed(result.prepareMs?.p95, 1)) / \(fixed(result.submitBlockMs?.p95, 1))", fixed(result.megabitsPerSecond, 2),
       pair(result.frameKilobytes, digits: 0), fixed(result.tilesPerFrame, 1), cost(result.firstFrame),
-      cost(result.refresh), quality(result.quality), fixed(result.quality?.psnrCbCrMean, 1), similarity(result.quality),
+      cost(result.refresh), quality(result.quality), fixed(result.quality?.psnrCbCrMean, 1),
+      settled(result.quality), similarity(result.quality),
       native(result.quality),
       fixed(result.decodeMs?.p50, 1), "\(result.lateSubmits) / \(result.dropped)",
     ]
@@ -50,6 +52,13 @@ enum EncodeLabTable {
     guard let quality else { return "–" }
 
     return "\(fixed(quality.psnrYMean, 1)) / \(fixed(quality.psnrYMin, 1))"
+  }
+
+  private static func settled(_ quality: EncodeLabQualitySummary?) -> String {
+    guard let quality, let mean = quality.settledPsnrYMean else { return "–" }
+
+    let chroma = fixed(quality.settledPsnrCbCrMean, 1)
+    return "\(fixed(mean, 1)) / \(fixed(quality.settledPsnrYMin, 1)) (\(chroma))"
   }
 
   private static func similarity(_ quality: EncodeLabQualitySummary?) -> String {

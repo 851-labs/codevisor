@@ -11,7 +11,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   private let session: ScreenSharingVCPSession
   private let metrics: ScreenSharingMetrics
   private let relay: ScreenSharingTileOutputRelay
-  private let state = Mutex(ScreenSharingVCPEncoderState())
+  private let state: Mutex<ScreenSharingVCPEncoderState>
   private let sessionLock = NSLock()
 
   init(
@@ -23,6 +23,7 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     height = factory.height
     self.metrics = metrics
     self.relay = relay
+    state = Mutex(ScreenSharingVCPEncoderState(rate: factory.rate))
     session = try factory.make()
     session.sink.onOutput { [weak self] output in self?.didEncode(output) }
   }
@@ -34,6 +35,12 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
   private func submit(_ pixels: CVPixelBuffer, request: ScreenSharingTileEncodeRequest) throws {
     let submission = try state.withLock {
       try $0.begin(request, refresh: request.refreshes[tile], atNs: ScreenSharingMetrics.nowNs)
+    }
+    do {
+      try capQP(refining: request.update.isRefinement)
+    } catch {
+      state.withLock { $0.abandon(submission) }
+      throw error
     }
     let status = session.encode(
       pixels, submission: submission.id, presentationNs: submission.presentationNs,
@@ -47,12 +54,24 @@ final class ScreenSharingVCPTileSession: @unchecked Sendable {
     throw ScreenSharingError.codec("Encode VCP tile \(tile)", status)
   }
 
+  private func capQP(refining: Bool) throws {
+    let change = state.withLock { state -> Int? in
+      let wanted = state.rate.highestQP(refining: refining)
+      return wanted == state.highestQP ? nil : wanted
+    }
+    guard let change else { return }
+
+    try session.set(kVTCompressionPropertyKey_MaxAllowedFrameQP, change as CFNumber)
+    state.withLock { $0.highestQP = change }
+  }
+
   func acknowledge(_ tokens: [UInt64]) {
     state.withLock { $0.acknowledged += tokens }
   }
 
-  func setBitrate(_ bitsPerSecond: Int, windowBitsPerSecond: Int) throws {
-    try session.setBitrate(bitsPerSecond, windowBitsPerSecond: windowBitsPerSecond)
+  func setRate(_ rate: ScreenSharingVCPRate) throws {
+    try session.setBitrate(rate.tileBitsPerSecond, windowBitsPerSecond: rate.tileWindowBitsPerSecond)
+    state.withLock { $0.rate = rate }
   }
 
   func setNetworkFeedback(_ feedback: ScreenSharingTileNetworkFeedback) {

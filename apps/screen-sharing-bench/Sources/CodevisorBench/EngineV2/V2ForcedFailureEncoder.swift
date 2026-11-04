@@ -25,6 +25,7 @@ final class V2ForcedFailureEncoder: ScreenSharingTileEncoder, @unchecked Sendabl
 
   var layout: ScreenSharingV2TileLayout { inner.layout }
   var sourcePixelFormat: OSType { inner.sourcePixelFormat }
+  var refinementPolicy: ScreenSharingV2RefinementPolicy { inner.refinementPolicy }
 
   func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     output.withLock { $0.handler = handler }

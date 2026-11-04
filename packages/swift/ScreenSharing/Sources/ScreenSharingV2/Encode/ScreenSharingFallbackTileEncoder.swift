@@ -86,6 +86,8 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
 
   private var active: any ScreenSharingTileEncoder { hasFallenBack ? fallback : primary }
 
+  public var refinementPolicy: ScreenSharingV2RefinementPolicy { active.refinementPolicy }
+
   private func primaryOutput(_ output: ScreenSharingTileEncoderOutput) {
     guard !state.withLock({ $0.stopped }) else { return }
     guard !hasFallenBack else { return emit(Self.abandoned(output)) }

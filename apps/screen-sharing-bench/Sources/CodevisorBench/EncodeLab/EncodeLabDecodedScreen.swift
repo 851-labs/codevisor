@@ -21,7 +21,8 @@ struct EncodeLabDecodedScreen {
   var singleImage: CVPixelBuffer? { config.tiles == 1 ? latest[0] : nil }
 
   func compare(
-    with original: CVPixelBuffer, event: EncodeLabFrameEvent, native: EncodeLabNativeQuality?
+    with original: CVPixelBuffer, event: EncodeLabFrameEvent, native: EncodeLabNativeQuality?, strided: Bool,
+    settled: Bool
   ) throws -> EncodeLabQualitySample {
     var reference = EncodeLabPicture(width: config.width, height: config.height)
     reference.paste(original, atRow: 0)
@@ -32,11 +33,11 @@ struct EncodeLabDecodedScreen {
       psnrY: EncodeLabSimilarity.psnr(reference.luma, shown.luma),
       psnrCbCr: EncodeLabSimilarity.psnr([reference.blue, reference.red], [shown.blue, shown.red]),
       ssimY: try EncodeLabSimilarity.ssim(reference.luma, shown.luma, width: config.width, height: config.height),
-      native: native, refresh: event.refresh != nil)
+      native: native, refresh: event.refresh != nil, strided: strided, settled: settled)
   }
 
   private func decoderSlot(_ tile: Int) -> Int {
-    config.engine == .videoToolbox ? tile : 0
+    config.sessionPerTile ? tile : 0
   }
 
   private mutating func decoder(_ tile: Int, _ sample: CMSampleBuffer) throws -> EncodeLabDecoder {

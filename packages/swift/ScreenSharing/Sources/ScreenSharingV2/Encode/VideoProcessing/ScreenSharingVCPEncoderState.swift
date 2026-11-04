@@ -6,6 +6,8 @@ struct ScreenSharingVCPEncoderState {
   var feedback: ScreenSharingTileNetworkFeedback?
   var failure: String?
   var stopped = false
+  var highestQP = ScreenSharingVCPRate.highestFrameQP
+  var rate = ScreenSharingVCPRate(bitsPerSecond: ScreenSharingV2Profile.bitrateCeiling, tiles: 1)
   private var inFlight: [UInt64: ScreenSharingVCPSubmission] = [:]
   private var lastEncodedCapture: Int64?
   private var nextSubmission: UInt64 = 0

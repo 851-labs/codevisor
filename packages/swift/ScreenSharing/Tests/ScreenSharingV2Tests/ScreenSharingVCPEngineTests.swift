@@ -12,9 +12,10 @@ extension HardwareCodecTests {
     .disabled("VCP sessions hold the Mac's hardware encoders until the process exits (851-4009)."))
   struct ScreenSharingVCPEngineTests {
     private static let framesBeforeAnAcknowledgement = 30
-    private static let shades: [UInt8] = [40, 90, 140, 190]
-    private static let lumaTolerance = 4
+    private static let shades: [UInt8] = [40, 90, 190, 255]
+    private static let lumaTolerance = 1
     private static let deltaFrames = 6
+    private static let refinedLumaError = 1.5
 
     static var available: Bool {
       VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC) && (try? ScreenSharingVideoProcessing.load()) != nil
@@ -37,7 +38,7 @@ extension HardwareCodecTests {
       #expect(first.map(\.tile).sorted() == [0, 1, 2, 3])
       #expect(first.allSatisfy { $0.isKeyFrame && $0.update.tiles == [0, 1, 2, 3] })
       let picture = try #require(decoded.frames.first?.pixelBuffer)
-      #expect(CVPixelBufferGetPixelFormatType(picture) == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
+      #expect(CVPixelBufferGetPixelFormatType(picture) == kCVPixelFormatType_444YpCbCr8BiPlanarFullRange)
       #expect(Self.tileLumaErrors(picture).allSatisfy { $0 <= Self.lumaTolerance }, "\(Self.tileLumaErrors(picture))")
     }
 
@@ -61,6 +62,37 @@ extension HardwareCodecTests {
       #expect(decoded.sourceTimestamps == (1...Self.deltaFrames).map { Int64($0) * 1_000 })
       #expect(viewerMetrics.counter("decodeErrors") == 0)
       #expect(hostSide.sent.filter(\.isKeyFrame).count == Self.shades.count)
+    }
+
+    @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
+    func refinementPassesTakeTheirLowerQPCapWithoutDropsOrLosingQuality() async throws {
+      let (hostSide, viewerSide) = LoopbackMediaTransport.pair()
+      let scheduler = ManualScheduler()
+      let metrics = ScreenSharingMetrics()
+      let host = Self.host(try Self.vcp(tiles: 1, metrics: metrics), transport: hostSide, scheduler)
+      let viewer = ScreenSharingV2Viewer(transport: viewerSide, metrics: ScreenSharingMetrics())
+      let decoded = DecodedFrames(viewer.frames)
+      host.start()
+      viewer.start()
+      defer { host.stop(); viewer.stop() }
+
+      host.push(try TestBGRAPixels.frame(shades: [128], timestampNs: 1_000))
+      await decoded.arrivals.cancellableWait(for: 1)
+      host.push(try TestBGRAPixels.noise(timestampNs: 2_000))
+      await decoded.arrivals.cancellableWait(for: 2)
+      for pass in 1...ScreenSharingV2Profile.refinementPasses {
+        scheduler.advance(byNs: ScreenSharingV2Profile.refinementGapNs)
+        await decoded.arrivals.cancellableWait(for: 2 + pass)
+      }
+      host.push(try TestBGRAPixels.frame(shades: [60], timestampNs: 3_000))
+      await decoded.arrivals.cancellableWait(for: 3 + ScreenSharingV2Profile.refinementPasses)
+
+      let errors = decoded.frames.dropFirst().dropLast().map { Self.meanNoiseLumaError($0.pixelBuffer) }
+      #expect(zip(errors, errors.dropFirst()).allSatisfy { $1 <= $0 }, "\(errors)")
+      #expect(errors.last.map { $0 <= Self.refinedLumaError } == true, "\(errors)")
+      #expect(decoded.sourceTimestamps.last == 3_000)
+      #expect(metrics.counter("encoderDroppedFrames") == 0)
+      #expect(metrics.counter("encodeErrors") == 0)
     }
 
     @Test(.enabled(if: available, "No VideoProcessing encoder on this machine."))
@@ -129,19 +161,33 @@ extension HardwareCodecTests {
     }
 
     private static func host(
-      _ encoder: any ScreenSharingTileEncoder, transport: LoopbackMediaTransport
+      _ encoder: any ScreenSharingTileEncoder, transport: LoopbackMediaTransport,
+      _ scheduler: ManualScheduler = ManualScheduler()
     )
       -> ScreenSharingV2Host
     {
       ScreenSharingV2Host(
         transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
-        initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: ManualScheduler())
+        initialBitrate: ScreenSharingV2Profile.bitrateCeiling, scheduler: scheduler)
+    }
+
+    private static func meanNoiseLumaError(_ picture: CVPixelBuffer) -> Double {
+      let width = CVPixelBufferGetWidth(picture)
+      let height = CVPixelBufferGetHeight(picture)
+      var total = 0
+      for row in 0..<height {
+        for column in 0..<width {
+          let expected = Int(TestBGRAPixels.noiseShade(row: row, column: column))
+          total += abs(Int(TestPixels.luma(of: picture, row: row, column: column)) - expected)
+        }
+      }
+      return Double(total) / Double(width * height)
     }
 
     private static func tileLumaErrors(_ picture: CVPixelBuffer) -> [Int] {
       shades.enumerated().map { tile, shade in
         let luma = Int(TestPixels.luma(of: picture, row: tile * 90 + 45, column: 320))
-        return abs(luma - TestBGRAPixels.videoRangeLuma(of: shade))
+        return abs(luma - Int(shade))
       }
     }
 

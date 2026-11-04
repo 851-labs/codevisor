@@ -10,6 +10,10 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
     let pixelFormat: OSType
   }
 
+  private static let fullRangeFormats: Set<OSType> = [
+    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange,
+  ]
+
   private let lock = NSLock()
   private let blitter = ScreenSharingV2TileBlitter()
   private var pool: (key: PoolKey, pool: CVPixelBufferPool)?
@@ -73,7 +77,8 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
 
       let span = plane.rows(rows, of: target, height: height)
       let stride = plane.bytesPerRow(of: target)
-      memset(destination + span.lowerBound * stride, plane.index == 0 ? 16 : 128, span.count * stride)
+      let black: Int32 = Self.fullRangeFormats.contains(CVPixelBufferGetPixelFormatType(target)) ? 0 : 16
+      memset(destination + span.lowerBound * stride, plane.index == 0 ? black : 128, span.count * stride)
     }
   }
 

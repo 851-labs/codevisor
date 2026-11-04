@@ -52,6 +52,7 @@ enum EncodeLabConfigParser {
     case "yuv": config.feedsYCbCr = try bool(value, spec: spec)
     case "speed": config.prioritizeSpeed = try bool(value, spec: spec)
     case "nodirty": config.disablesDirtyDetection = try bool(value, spec: spec)
+    case "split": config.splitsVCP = try bool(value, spec: spec)
     default: return false
     }
     return true
@@ -66,6 +67,7 @@ enum EncodeLabConfigParser {
     case "mfd": config.maxFrameDelay = try integer(value, in: 0...16, spec: spec)
     case "qpmax": config.maxQP = try integer(value, in: 1...51, spec: spec)
     case "qpmin": config.minQP = try integer(value, in: 1...51, spec: spec)
+    case "refineqp": config.refineQP = try integer(value, in: 1...51, spec: spec)
     case "drl": config.rateLimit = try rateLimit(value, spec: spec)
     case "preset": config.preset = value
     case "cq": config.constantQuality = try fraction(value, spec: spec)
@@ -84,6 +86,9 @@ enum EncodeLabConfigParser {
     }
     guard config.engine == .videoToolbox || (config.codec == .hevc444 && config.tiles <= 4) else {
       throw invalid(spec, "engine=vcp encodes hevc444 in 1 to 4 tiles")
+    }
+    guard config.engine == .videoProcessing || !config.splitsVCP else {
+      throw invalid(spec, "split=1 needs engine=vcp")
     }
     guard config.megabitsPerSecond != nil || config.constantQuality != nil || config.preset != nil else {
       throw invalid(spec, "mbps=none needs cq or a preset")

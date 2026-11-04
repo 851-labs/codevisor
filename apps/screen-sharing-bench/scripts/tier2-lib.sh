@@ -89,9 +89,12 @@ tier2_engine_options() {
 }
 
 tier2_encoder_options() {
-  [[ "$1" == codevisor-v2-vcp ]] || return 0
-  echo --encoder vcp
-  ((TIER2_VCP_FAIL_AFTER > 0)) && echo --vcp-fail-after "$TIER2_VCP_FAIL_AFTER"
+  if [[ "$1" == codevisor-v2-vcp ]]; then
+    echo --encoder vcp
+    ((TIER2_VCP_FAIL_AFTER > 0)) && echo --vcp-fail-after "$TIER2_VCP_FAIL_AFTER"
+  elif [[ "$1" == codevisor* && "$(tier2_engine "$1")" == v2 ]]; then
+    echo --encoder vt
+  fi
   return 0
 }
 

@@ -12,7 +12,7 @@ struct ScreenSharingV2HostTests {
   private let scheduler = ManualScheduler()
 
   private func startedHost(
-    _ encoder: RecordingTileEncoder, refinement: ScreenSharingV2RefinementPolicy = .standard
+    _ encoder: RecordingTileEncoder, refinement: ScreenSharingV2RefinementPolicy? = nil
   ) -> ScreenSharingV2Host {
     let host = ScreenSharingV2Host(
       transport: transport, encoder: encoder, metrics: ScreenSharingMetrics(),
@@ -150,9 +150,10 @@ struct ScreenSharingV2HostTests {
     #expect(scheduler.scheduled.value == 1)
   }
 
-  @Test func aRefinementPassThatEncodesToAlmostNothingEndsTheTilesRefinement() async throws {
-    let encoder = RecordingTileEncoder()
-    let host = startedHost(encoder, refinement: ScreenSharingV2RefinementPolicy(passes: 4, convergedBelowBytes: 64))
+  @Test func aRefinementPassThatEncodesToAlmostNothingUnderTheEncodersPolicyEndsTheTilesRefinement() async throws {
+    let encoder = RecordingTileEncoder(
+      refinementPolicy: ScreenSharingV2RefinementPolicy(passes: 4, convergedBelowBytes: 64))
+    let host = startedHost(encoder)
 
     host.push(try TestPixels.frame(shade: 10, timestampNs: 1_000))
     await encoder.encodes.cancellableWait(for: 1)
