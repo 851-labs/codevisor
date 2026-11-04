@@ -2,6 +2,7 @@ import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeClaudeProvider } from "./provider.js"
+import { INTERRUPTED_STEP_PREFIX } from "./step-interrupts.js"
 import {
   definition,
   environment,
@@ -41,6 +42,23 @@ describe("ClaudeProvider", () => {
     await expect(provider.listAgentSessions!(definition)).resolves.toEqual([
       { cwd: "/one", sessionId: "one", title: "Renamed by Claude" },
       { cwd: "/two", sessionId: "two", title: "First prompt two" }
+    ])
+  })
+
+  it("lists a chat Claude Code titled with the interrupted-step note by its first prompt", async () => {
+    const provider = makeClaudeProvider(environment, {
+      listSdkSessions: async () => [
+        {
+          lastModified: 0,
+          sessionId: "one",
+          summary: `${INTERRUPTED_STEP_PREFIX}do this instead`
+        }
+      ],
+      scanAgentSessions: async () => [{ cwd: "/one", sessionId: "one", title: "Run the checks" }]
+    })
+
+    await expect(provider.listAgentSessions!(definition)).resolves.toEqual([
+      { cwd: "/one", sessionId: "one", title: "Run the checks" }
     ])
   })
 

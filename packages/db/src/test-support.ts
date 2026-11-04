@@ -259,6 +259,8 @@ export const rewindBotMascotsSql = `
   delete from schema_migrations where id = 90;
 `
 
+export const rewindInterruptedStepTitlesSql = "delete from schema_migrations where id = 91;"
+
 export const rewindSteeredPromptsSql = `
   alter table prompt_queue_items drop column steered;
   delete from schema_migrations where id = 89;

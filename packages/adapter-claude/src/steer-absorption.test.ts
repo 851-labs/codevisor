@@ -52,6 +52,14 @@ const interruptStepOf = (created: Awaited<ReturnType<typeof startTestSession>>["
   return interruptStep
 }
 
+const LEGACY_NOTE_TITLE =
+  "[Your previous step was interrupted because this message arrived mid-step. Any message " +
+  "above about rejecting a tool call and waiting came from the interruption, not from the " +
+  "user. Follow this message: it may ask you…"
+
+const titleUpdates = (events: ReadonlyArray<RuntimeEvent>) =>
+  events.map(payloadOf).filter((payload) => payload.sessionUpdate === "session_info_update")
+
 const receivedTexts = (fake: FakeQuery) =>
   fake.receivedMessages.map(({ message }) =>
     typeof message.content === "string"
@@ -167,6 +175,38 @@ describe("Claude steer absorption", () => {
       "and then this"
     ])
     expect(JSON.stringify(events)).not.toContain(INTERRUPTED_STEP_PREFIX)
+  })
+
+  it.each([
+    ["the note", `${INTERRUPTED_STEP_PREFIX}do this instead`],
+    ["the bracketed note older steers carry", LEGACY_NOTE_TITLE]
+  ])("keeps %s out of the chat title when Claude Code titles the chat with it", async (_, note) => {
+    const summaries = [note, "Fix the checks"]
+    const { fake, events, created } = await startTestSession(async () => ({
+      lastModified: 0,
+      sessionId: "sdk-session-1",
+      summary: summaries.shift() ?? ""
+    }))
+    const interrupted = run(created.handle.prompt("run the checks"))
+    await fake.nextPrompt()
+    await runningTool(fake, "tool-checks")
+    await run(steerOf(created)("do this instead", "queue-9"))
+    await run(interruptStepOf(created))
+    fake.push(resultMessage("error_during_execution"))
+    fake.push(messageStart("msg-steer"))
+    fake.push(resultMessage("success"))
+    await interrupted
+
+    const next = run(created.handle.prompt("keep going"))
+    await fake.nextPrompt()
+    fake.push(resultMessage("success"))
+    await next
+    await fake.waitFor(() => titleUpdates(events).length > 0)
+
+    expect(titleUpdates(events)).toEqual([
+      { sessionUpdate: "session_info_update", title: "Fix the checks" }
+    ])
+    expect(JSON.stringify(events)).not.toContain("previous step was interrupted")
   })
 
   it("leaves a steer Claude has already taken in to reach it without an interrupt", async () => {

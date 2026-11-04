@@ -395,12 +395,15 @@ export const makeProvider = (
     readFile: (path) => (path === "/tmp/existing.txt" ? "line1\nline2\nline3\n" : undefined)
   })
 
-export const startTestSession = async () => {
+export const startTestSession = async (
+  getSessionInfo?: NonNullable<ClaudeProviderConfig["getSessionInfo"]>
+) => {
   const fake = new FakeQuery()
-  const provider = makeProvider(fake)
+  const provider = makeProvider(fake, undefined, getSessionInfo)
   const events: Array<RuntimeEvent> = []
   const emit = async (event: RuntimeEvent): Promise<void> => {
     events.push(event)
+    fake.changed()
   }
   const createPromise = run(provider.createSession(definition, "/tmp", emit))
   fake.push(initMessage())

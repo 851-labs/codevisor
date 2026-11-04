@@ -23,6 +23,7 @@ import { Effect } from "effect"
 
 import { metadataFor, resolveClaudeModel } from "./models.js"
 import { claudeSessionHandle } from "./session-handle.js"
+import { claudeSessionTitle } from "./session-titles.js"
 import type { ClaudeQuery, ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
 import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
@@ -132,7 +133,7 @@ export const makeClaudeProvider = (
         return preferHarnessSessionTitles(
           fallback,
           sessions.map((session) => {
-            const title = session.customTitle ?? session.summary
+            const title = claudeSessionTitle(session)
             return { sessionId: session.sessionId, ...(title === undefined ? {} : { title }) }
           })
         )

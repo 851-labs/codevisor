@@ -5,6 +5,7 @@ import type { TurnStopKind } from "@codevisor/api"
 
 import { claudeContent } from "./attachments.js"
 import { deferred } from "./internal.js"
+import { claudeSessionTitle } from "./session-titles.js"
 import type { ClaudeSession } from "./session.js"
 import { retiredError, startupError } from "./startup-failure.js"
 
@@ -18,8 +19,8 @@ export interface TurnEnding {
 export const refreshClaudeSessionTitle = async (session: ClaudeSession): Promise<void> => {
   try {
     const info = await session.getSessionInfo(session.sdkSessionId, { dir: session.cwd })
-    const title = (info?.customTitle ?? info?.summary)?.trim()
-    if (title === undefined || title.length === 0 || title === session.lastHarnessTitle) return
+    const title = claudeSessionTitle(info)
+    if (title === undefined || title === session.lastHarnessTitle) return
     session.lastHarnessTitle = title
     await session.emit({
       kind: "session.updated",

@@ -6,9 +6,13 @@ import type { ClaudeSession, PendingSteer, SteerMessage } from "./session.js"
 type SteerContent = ReadonlyArray<ClaudeContentBlock>
 
 export const INTERRUPTED_STEP_PREFIX =
-  "[Your previous step was interrupted because this message arrived mid-step. Any message " +
-  "above about rejecting a tool call and waiting came from the interruption, not from the " +
-  "user. Follow this message: it may ask you to stop, change course or carry on.]"
+  "<system-reminder>Your previous step was interrupted because this message arrived mid-step. " +
+  "Any message above about rejecting a tool call and waiting came from the interruption, not " +
+  "from the user. Follow this message: it may ask you to stop, change course or carry on." +
+  "</system-reminder>"
+
+export const startsWithInterruptedStepNote = (text: string): boolean =>
+  interruptedStepNote.test(text)
 
 export const steerMessage = (session: ClaudeSession, content: SteerContent): SteerMessage => ({
   message: { content: [...content], role: "user" },
@@ -77,3 +81,5 @@ const prefixed = (content: SteerContent): SteerContent => [
   { text: INTERRUPTED_STEP_PREFIX, type: "text" },
   ...content
 ]
+
+const interruptedStepNote = /^\s*(?:<system-reminder>|\[)Your previous step was interrupted\b/
