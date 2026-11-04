@@ -46,10 +46,12 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
   public let receivedAtSeconds: Double?
   public let sourceTimestampNs: Int64?
   public let dirtyRects: [CGRect]?
+  public let presentsBeforeNext: Bool
 
   public init(
     pixelBuffer: CVPixelBuffer, timestampNs: Int64, rtpTimestamp: UInt32 = 0,
-    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil, dirtyRects: [CGRect]? = nil
+    receivedAtSeconds: Double? = nil, sourceTimestampNs: Int64? = nil, dirtyRects: [CGRect]? = nil,
+    presentsBeforeNext: Bool = false
   ) {
     self.pixelBuffer = pixelBuffer
     self.timestampNs = timestampNs
@@ -57,6 +59,7 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
     self.receivedAtSeconds = receivedAtSeconds
     self.sourceTimestampNs = sourceTimestampNs
     self.dirtyRects = dirtyRects
+    self.presentsBeforeNext = presentsBeforeNext
   }
 }
 
@@ -86,6 +89,7 @@ public struct ScreenSharingEncodedFrame: Sendable {
 public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   private let lock = NSLock()
   private var frame: ScreenSharingVideoFrame?
+  private var next: ScreenSharingVideoFrame?
   private var latest: ScreenSharingVideoFrame?
   private var taps: [UUID: ScreenSharingFrameMailbox] = [:]
   private var replacements = 0
@@ -106,10 +110,17 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
 
   public func put(_ value: ScreenSharingVideoFrame) {
     let (notify, copies) = lock.withLock {
+      if keepsLatest { latest = value }
+      if let held = frame, held.presentsBeforeNext, !value.presentsBeforeNext {
+        if next != nil { replacements += 1 }
+        next = value
+        return (nil as (@Sendable () -> Void)?, Array(taps.values))
+      }
       let previous = frame
       if previous != nil { replacements += 1 }
+      if next != nil { replacements += 1 }
       frame = value
-      if keepsLatest { latest = value }
+      next = nil
       return (previous == nil ? onAvailable : nil, Array(taps.values))
     }
     notify?()
@@ -139,7 +150,10 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
 
   public func take() -> ScreenSharingVideoFrame? {
     lock.withLock {
-      defer { frame = nil }
+      defer {
+        frame = next
+        next = nil
+      }
       return frame
     }
   }
@@ -147,6 +161,7 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   public func clear() {
     lock.withLock {
       frame = nil
+      next = nil
       latest = nil
     }
   }

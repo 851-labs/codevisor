@@ -243,7 +243,8 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
       ScreenSharingVideoFrame(
         pixelBuffer: image, timestampNs: sourceTimestampNs ?? decodedNs,
         rtpTimestamp: composite.group?.update.id ?? 0, receivedAtSeconds: CACurrentMediaTime(),
-        sourceTimestampNs: timing?.sourceTimestampNs))
+        sourceTimestampNs: timing?.sourceTimestampNs,
+        presentsBeforeNext: composite.group.map { !$0.update.isRefinement } ?? false))
   }
 
   private func pollTransport() async {
