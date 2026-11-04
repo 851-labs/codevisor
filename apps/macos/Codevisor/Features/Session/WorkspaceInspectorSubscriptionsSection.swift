@@ -24,7 +24,7 @@ private struct WorkspaceInspectorSubscriptionRow: View {
 
   var body: some View {
     Label {
-      Text(event.label)
+      Text(event.eventTitle)
         .lineLimit(1)
         .truncationMode(.tail)
     } icon: {
@@ -32,7 +32,7 @@ private struct WorkspaceInspectorSubscriptionRow: View {
         .foregroundStyle(.secondary)
         .frame(width: 20)
     }
-    .help(event.label)
+    .help(event.eventTitle)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(event.label)
   }
