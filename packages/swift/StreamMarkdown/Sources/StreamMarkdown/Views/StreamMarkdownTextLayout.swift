@@ -36,15 +36,13 @@ enum StreamMarkdownTextLayout {
     fillsWidth: Bool,
     naturalWidth: @autoclosure () -> CGFloat
   ) -> CGFloat? {
-    let followsDisplayedFrame = fillsWidth && rowLayoutWidth == nil
-    guard followsDisplayedFrame else {
-      return resolvedWidth(
-        proposalWidth: nil,
-        rowLayoutWidth: rowLayoutWidth,
-        fillsWidth: fillsWidth,
-        naturalWidth: naturalWidth()
-      )
-    }
-    return currentWidth > 1 ? currentWidth : nil
+    if currentWidth > 1 { return currentWidth }
+    if fillsWidth && rowLayoutWidth == nil { return nil }
+    return resolvedWidth(
+      proposalWidth: nil,
+      rowLayoutWidth: rowLayoutWidth,
+      fillsWidth: fillsWidth,
+      naturalWidth: naturalWidth()
+    )
   }
 }

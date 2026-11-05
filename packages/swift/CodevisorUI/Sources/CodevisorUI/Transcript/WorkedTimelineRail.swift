@@ -1,4 +1,5 @@
 import ACPKit
+import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
@@ -68,6 +69,9 @@ struct WorkedTimelineGutter: ViewModifier {
   func body(content: Content) -> some View {
     if let marks {
       content
+        .transformEnvironment(\.streamMarkdownTextLayoutWidth) { width in
+          width = width.map { max(1, $0 - TranscriptTimelineMarks.gutterWidth) }
+        }
         .padding(.leading, TranscriptTimelineMarks.gutterWidth)
         .padding(.top, marks.startsLine ? TranscriptTimelineMarks.linePadding : 0)
         .padding(.bottom, marks.endsLine ? TranscriptTimelineMarks.linePadding : 0)

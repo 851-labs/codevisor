@@ -149,6 +149,7 @@
     private var latestAnimationEnd: TimeInterval?
     private var activeAnimationRanges: [NSRange] = []
     private var animationDisplayLink: CADisplayLink?
+    var wrapsToFrameWidth = false
     public var animationFrameClock: StreamingTextAnimationFrameClock? {
       didSet {
         guard animationFrameClock !== oldValue else { return }
@@ -277,6 +278,15 @@
       let location = min(selection.location, text.length)
       let length = min(selection.length, text.length - location)
       setSelectedRange(NSRange(location: location, length: length))
+    }
+
+    public override func viewWillDraw() {
+      if wrapsToFrameWidth, let textContainer, bounds.width > 1,
+        abs(textContainer.containerSize.width - bounds.width) > 0.25
+      {
+        _ = contentHeight(forWidth: bounds.width)
+      }
+      super.viewWillDraw()
     }
 
     public override func viewDidMoveToWindow() {

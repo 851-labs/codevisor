@@ -53,6 +53,7 @@
 
     public func makeNSView(context: Context) -> SelectableTextKitView {
       let view = SelectableTextKitView()
+      view.wrapsToFrameWidth = true
       view.animationFrameClock = animationFrameClock
       view.linkAction = context.environment.markdownLinkAction
       let prepared = context.coordinator.preparedText(

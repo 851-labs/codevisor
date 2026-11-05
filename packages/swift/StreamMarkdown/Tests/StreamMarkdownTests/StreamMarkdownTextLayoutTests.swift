@@ -31,7 +31,7 @@ struct StreamMarkdownTextLayoutTests {
     )
   }
 
-  @Test("Updates without a row width keep the displayed width instead of unwrapping")
+  @Test("Updates keep the displayed width instead of re-wrapping at the row width")
   func updatesKeepDisplayedWidth() {
     #expect(
       StreamMarkdownTextLayout.displayedWidth(
@@ -51,11 +51,19 @@ struct StreamMarkdownTextLayoutTests {
     )
     #expect(
       StreamMarkdownTextLayout.displayedWidth(
-        currentWidth: 860,
-        rowLayoutWidth: 320,
+        currentWidth: 834,
+        rowLayoutWidth: 860,
         fillsWidth: true,
         naturalWidth: 4_000
-      ) == 320
+      ) == 834
+    )
+    #expect(
+      StreamMarkdownTextLayout.displayedWidth(
+        currentWidth: 0,
+        rowLayoutWidth: 860,
+        fillsWidth: true,
+        naturalWidth: 4_000
+      ) == 860
     )
   }
 }
