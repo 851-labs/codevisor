@@ -25,12 +25,12 @@ final class AppleSimulatorPane: Pane {
     id = descriptor.id
     model = context.workspaceId.map { workspaceId in
       let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
-      let endpoint = ScreenSharingMediaEndpoint.shared
       return SimulatorPaneModel(
         client: client, preferences: descriptor.simulator, machineId: context.machine.id, workspaceId: workspaceId,
         paneId: descriptor.id,
         v2: SimulatorStreamV2(
-          address: { await endpoint.viewerAddress() }, connect: { try await endpoint.connectViewer(to: $0) }))
+          address: { await ScreenSharingViewerMedia.address() },
+          connect: { try await ScreenSharingViewerMedia.connect(to: $0) }))
     }
   }
 

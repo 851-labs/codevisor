@@ -1,9 +1,8 @@
-import ScreenSharing
 import Testing
-@testable import CodevisorCoreMac
+@testable import ScreenSharing
 
 @MainActor
-struct ScreenSharingDiagnosticsTests {
+struct ScreenSharingViewerDiagnosticsTests {
   @Test func relayTransportDescribesTheClientConnectionRatherThanItsUDPAllocation() {
     let diagnostics = ScreenSharingViewerDiagnostics()
     diagnostics.update(

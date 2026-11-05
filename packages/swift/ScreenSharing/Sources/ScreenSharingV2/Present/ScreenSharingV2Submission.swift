@@ -10,11 +10,15 @@ struct ScreenSharingV2Submission: @unchecked Sendable {
   func commit(_ frame: ScreenSharingVideoFrame, isNew: Bool, metrics: ScreenSharingMetrics) {
     let submittedAt = CACurrentMediaTime()
     buffer.addCompletedHandler { [retained] _ in withExtendedLifetime(retained) {} }
-    drawable.addPresentedHandler { [self] presented in
-      metrics.recordPresentation(
-        isNewFrame: isNew, presentedAt: presented.presentedTime, submittedAt: submittedAt,
-        receivedAt: frame.receivedAtSeconds, sourceTimestampNs: frame.sourceTimestampNs, gpuCompletedAt: gpuEndTime)
-    }
+    #if targetEnvironment(simulator)
+      metrics.label("presentationTelemetry", "unavailable in simulator")
+    #else
+      drawable.addPresentedHandler { [self] presented in
+        metrics.recordPresentation(
+          isNewFrame: isNew, presentedAt: presented.presentedTime, submittedAt: submittedAt,
+          receivedAt: frame.receivedAtSeconds, sourceTimestampNs: frame.sourceTimestampNs, gpuCompletedAt: gpuEndTime)
+      }
+    #endif
     buffer.present(drawable)
     buffer.commit()
   }

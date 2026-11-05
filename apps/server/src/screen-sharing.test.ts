@@ -117,7 +117,7 @@ describe("Screen Sharing engine v2 signaling", () => {
     token: "t".repeat(64)
   }
 
-  it("starts v2 without an SDP offer and returns the host's media grant", async () => {
+  it("starts v2 without an SDP offer, forwards the viewer's chroma and returns the host's media grant", async () => {
     const helper = vi.fn(async (request: ScreenSharingRequest) => ({
       ...reply,
       status: "connecting",
@@ -125,13 +125,15 @@ describe("Screen Sharing engine v2 signaling", () => {
       ...(request.engine === "v2" ? { media: grant } : {})
     }))
     const { request, post } = await fixture(helper)
-    const { offer: _, ...v2 } = { ...request, engine: "v2", media }
+    const { offer: _, ...v2 } = { ...request, engine: "v2", media, chroma: "420" }
     for (const operation of ["start", "restart"])
       expect((await post({ ...v2, operation })).body).toMatchObject({
         engines: ["v2"],
         media: grant
       })
-    expect(helper).toHaveBeenCalledWith(expect.objectContaining({ engine: "v2", media }))
+    expect(helper).toHaveBeenCalledWith(
+      expect.objectContaining({ engine: "v2", media, chroma: "420" })
+    )
   })
 
   it("rejects a v2 start without a valid viewer address before invoking the helper", async () => {
@@ -144,7 +146,8 @@ describe("Screen Sharing engine v2 signaling", () => {
       { media: { ...media, directAddrs: Array.from({ length: 33 }, () => "10.0.0.1:1") } },
       { media: { ...media, directAddrs: ["x".repeat(65)] } },
       { media: { ...media, relayUrl: `https://${"r".repeat(512)}` } },
-      { engine: "v3", media }
+      { engine: "v3", media },
+      { media, chroma: "422" }
     ])
       expect((await post({ ...v2, ...change })).status).toBe(400)
     expect(helper).not.toHaveBeenCalled()

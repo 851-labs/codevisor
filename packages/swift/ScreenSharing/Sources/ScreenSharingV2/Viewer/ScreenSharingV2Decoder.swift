@@ -101,7 +101,8 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     session = try ScreenSharingV2DecompressionSessionFactory.make(format: description)
     format = description
     parameterSets = received
-    metrics.label("decoder", "VideoToolbox HEVC hardware")
+    let fullChroma = (try? ScreenSharingHEVCFormat.read(description))?.chroma == 3
+    metrics.label("decoder", "VideoToolbox HEVC \(fullChroma ? "4:4:4" : "4:2:0")")
   }
 
   private func sample(_ bytes: UnsafeRawBufferPointer) throws -> CMSampleBuffer {
@@ -120,7 +121,7 @@ final class ScreenSharingV2Decoder: @unchecked Sendable {
     return sample
   }
 
-  private static func block(copying bytes: UnsafeRawBufferPointer) throws -> CMBlockBuffer {
+  static func block(copying bytes: UnsafeRawBufferPointer) throws -> CMBlockBuffer {
     var block: CMBlockBuffer?
     try check(
       CMBlockBufferCreateWithMemoryBlock(

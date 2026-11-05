@@ -15,7 +15,7 @@ enum ScreenSharingV2TileComparer {
       CVPixelBufferUnlockBaseAddress(previous, .readOnly)
     }
     let planes = ScreenSharingV2PixelPlane.planes(of: current)
-    let tileDiffers = { (tile: Int) in
+    nonisolated(unsafe) let tileDiffers = { (tile: Int) in
       planes.contains { differs($0, rows: layout.rows(of: tile), height: layout.height, previous, current) }
     }
     guard tiles.count > 1 else { return tiles.filter(tileDiffers) }

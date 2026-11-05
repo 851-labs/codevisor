@@ -1,5 +1,6 @@
 import CodevisorCore
 import Foundation
+import ScreenSharingV2
 
 extension AppEnvironment {
   public static func live() throws -> AppEnvironment {
@@ -49,7 +50,9 @@ extension AppEnvironment {
         allowsAlphaUpdates: settings.alphaUpdatesEnabled
       )
     )
-    ScreenSharingMediaEndpoint.shared.configure(.live(environment: environment))
+    ScreenSharingMediaEndpoint.shared.configure { [weak environment] in
+      await environment?.screenSharingEndpoint(requestingLocalNetwork: true)
+    }
     return environment
   }
 }

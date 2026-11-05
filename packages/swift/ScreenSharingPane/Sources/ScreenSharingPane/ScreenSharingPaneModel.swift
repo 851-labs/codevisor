@@ -5,7 +5,7 @@ import CoreGraphics
 import Foundation
 import Observation
 import ScreenSharing
-import ScreenSharingWebRTC
+import ScreenSharingV2
 
 @MainActor
 @Observable
@@ -21,6 +21,7 @@ public final class ScreenSharingPaneModel {
   public private(set) var displays: [ServerScreenSharingDisplay] = []
   public private(set) var displayId: String?
   public var keyboardShown = false
+  public var connectionDetailsShown = false
   public private(set) var modifiers: ScreenSharingModifiers = []
   public var onPreferencesChanged: ((ScreenSharingPanePreferences) -> Void)?
 
@@ -37,14 +38,35 @@ public final class ScreenSharingPaneModel {
   @ObservationIgnored private var lingering: Task<Void, Never>?
   @ObservationIgnored private var discovery: Task<Void, Never>?
 
-  public init(
+  public convenience init(
     client: any CodevisorServerClienting, preferences: ScreenSharingPanePreferences?, workspaceId: UUID,
     paneId: UUID, openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
   ) {
-    self.client = client
-    sponsor = ScreenSharingStreamSponsor(
-      workspaceId: workspaceId, paneId: paneId, client: client, openTunnel: openTunnel)
+    self.init(
+      preferences: preferences,
+      sponsor: ScreenSharingStreamSponsor(
+        workspaceId: workspaceId, paneId: paneId, client: client, openTunnel: openTunnel,
+        v2: ScreenSharingMediaEndpoint.shared.isAvailable ? Self.engineV2() : nil))
+  }
+
+  nonisolated static let requestedChroma = ScreenSharingV2Chroma.subsampled
+
+  private static func engineV2() -> ScreenSharingV2Connector {
+    var connector = ScreenSharingV2Connector.live()
+    connector.chroma = { requestedChroma }
+    return connector
+  }
+
+  init(preferences: ScreenSharingPanePreferences?, sponsor: ScreenSharingStreamSponsor) {
+    client = sponsor.client
+    self.sponsor = sponsor
     preferredDisplayId = preferences?.preferredDisplayId
+  }
+
+  public static func enableEngineV2(environment: AppEnvironment) {
+    ScreenSharingMediaEndpoint.shared.configure { [weak environment] in
+      await environment?.screenSharingEndpoint(requestingLocalNetwork: false)
+    }
   }
 
   public var phase: Phase {
@@ -64,7 +86,9 @@ public final class ScreenSharingPaneModel {
 
   public var control: ScreenSharingControlSession? { stream?.control }
 
-  var receiver: ScreenSharingReceiver? { stream?.receiver }
+  var session: (any ScreenSharingViewingSession)? { stream?.session }
+
+  public var diagnostics: ScreenSharingViewerDiagnostics? { stream?.diagnostics }
 
   public func appeared() {
     guard !visible else { return }

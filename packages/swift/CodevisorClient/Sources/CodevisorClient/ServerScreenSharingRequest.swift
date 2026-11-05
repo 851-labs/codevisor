@@ -30,6 +30,7 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public var tunnelMedia: ServerScreenSharingTunnelMedia?
   public var engine: String?
   public var media: ServerScreenSharingMediaAddress?
+  public var chroma: String?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,

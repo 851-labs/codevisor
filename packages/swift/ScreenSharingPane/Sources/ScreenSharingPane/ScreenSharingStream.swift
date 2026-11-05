@@ -1,16 +1,23 @@
 import CodevisorClient
 import CodevisorCloud
+import CodevisorCore
 import Foundation
 import Observation
 import OSLog
 import ScreenSharing
+import ScreenSharingV2
 import ScreenSharingWebRTC
 
 struct ScreenSharingStreamSponsor {
+  typealias MakeWebRTC = @MainActor (ServerScreenSharingConnectivity?) async throws -> any ScreenSharingOfferingSession
+
   let workspaceId: UUID
   let paneId: UUID
   let client: any CodevisorServerClienting
   let openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)?
+  var v2: ScreenSharingV2Connector?
+  var makeWebRTC: MakeWebRTC = { try await ScreenSharingStream.makeReceiver(connectivity: $0) }
+  var clock: any Clock<Duration> = ContinuousClock()
 }
 
 @MainActor
@@ -24,15 +31,21 @@ final class ScreenSharingStream {
   }
 
   private(set) var phase: Phase = .connecting
-  private(set) var receiver: ScreenSharingReceiver?
+  private(set) var session: (any ScreenSharingViewingSession)?
   private(set) var control: ScreenSharingControlSession?
+  private(set) var diagnostics = ScreenSharingViewerDiagnostics()
 
   @ObservationIgnored let displayId: String
   @ObservationIgnored private let sponsor: ScreenSharingStreamSponsor
   @ObservationIgnored private let viewerId = UUID()
   @ObservationIgnored private var runner: Task<Void, Never>?
+  @ObservationIgnored private var statistics: Task<Void, Never>?
   @ObservationIgnored private var started = false
+  @ObservationIgnored private var v2Failed = false
+  @ObservationIgnored private var presented = false
   private static let log = Logger(subsystem: "com.codevisor.ScreenSharingPane", category: "Stream")
+  static let heartbeatInterval: Duration = .seconds(8)
+  static let missingVideoTimeout: Duration = .seconds(24)
 
   init(displayId: String, sponsor: ScreenSharingStreamSponsor) {
     self.displayId = displayId
@@ -48,7 +61,7 @@ final class ScreenSharingStream {
   func stop() {
     runner?.cancel()
     runner = nil
-    closeReceiver()
+    closeSession()
     guard started else { return }
     started = false
     let request = request(.stop)
@@ -57,6 +70,7 @@ final class ScreenSharingStream {
   }
 
   func presentedFirstFrame() {
+    presented = true
     guard phase != .streaming else { return }
     Self.log.info("first frame")
     phase = .streaming
@@ -64,9 +78,11 @@ final class ScreenSharingStream {
 
   private func run() async {
     var restarts = 0
+    var fresh = false
     while !Task.isCancelled {
-      let outcome = await attempt(restart: restarts > 0)
-      closeReceiver()
+      let outcome = await attempt(restart: restarts > 0 && !fresh)
+      fresh = false
+      closeSession()
       switch outcome {
       case .cancelled:
         return
@@ -74,6 +90,10 @@ final class ScreenSharingStream {
         phase = .failed(message)
         runner = nil
         return
+      case .fallback:
+        Self.log.info("engine v2 ended before video; using WebRTC")
+        v2Failed = true
+        fresh = true
       case .lost:
         guard restarts < 12 else {
           phase = .failed("The connection to the Mac keeps dropping.")
@@ -82,72 +102,126 @@ final class ScreenSharingStream {
         }
         restarts += 1
         phase = .reconnecting
-        try? await Task.sleep(for: .seconds(min(6, restarts)))
+        try? await sponsor.clock.sleep(for: .seconds(min(6, restarts)))
       }
     }
   }
 
-  private enum Outcome { case cancelled, lost, ended(String) }
+  private enum Outcome { case cancelled, lost, ended(String), fallback }
 
   private func attempt(restart: Bool) async -> Outcome {
-    var tunnel: CloudTunnelMediaRoute?
-    defer { tunnel?.close() }
+    presented = false
     do {
       let capabilities = try await sponsor.client.screenSharing(request(.capabilities))
       try Task.checkCancellation()
       guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
         return .ended(capabilities.message ?? "This Mac can't share its screen right now.")
       }
-      let receiver = try await Self.makeReceiver(connectivity: capabilities.connectivity)
-      if Task.isCancelled {
-        receiver.close()
-        return .cancelled
+      if let v2 = sponsor.v2, !v2Failed, capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true {
+        let outcome = await outcome { try await attemptV2(v2, restart: restart) }
+        switch outcome {
+        case .lost, .ended: return presented ? outcome : .fallback
+        case .cancelled, .fallback: return outcome
+        }
       }
-      install(receiver)
-      let lost = AsyncStream<Void>.makeStream()
-      receiver.onConnectionChanged = { transport in
-        Self.log.info("transport \(transport, privacy: .public)")
-        if ["failed", "disconnected", "closed"].contains(transport) { lost.continuation.yield() }
-      }
-      let offer = try await receiver.makeDescription(offer: true).sdp
-      try Task.checkCancellation()
-      var start = request(restart ? .restart : .start, offer: offer)
-      tunnel = await sponsor.openTunnel?()
-      if let tunnel { start.tunnelMedia = .init(endpointId: tunnel.endpointId, flowId: Int(tunnel.flowId)) }
-      started = true
-      let reply = try await sponsor.client.screenSharing(start)
-      try Task.checkCancellation()
-      guard reply.version == 1, reply.status == "connecting", var answer = reply.answer else {
-        return .ended(reply.message ?? "This Mac can't share its screen right now.")
-      }
-      if let tunnel, reply.tunnelMedia?.flowId == Int(tunnel.flowId),
-        let address = ScreenSharingTunnelSDP.localIPv4(inOffer: offer)
-      {
-        answer = ScreenSharingTunnelSDP.answer(answer, routedTo: address, port: tunnel.localPort)
-      }
-      try await receiver.accept(.init(kind: "answer", sdp: answer))
-      return await heartbeat(until: lost.stream)
+      return try await attemptWebRTC(connectivity: capabilities.connectivity, restart: restart)
     } catch {
-      if error is CancellationError || Task.isCancelled { return .cancelled }
-      Self.log.error("attempt failed: \(String(describing: error), privacy: .public)")
-      return .ended(Self.message(for: error))
+      return Self.outcome(of: error)
     }
   }
 
-  private func heartbeat(until lost: AsyncStream<Void>) async -> Outcome {
+  private func outcome(_ body: () async throws -> Outcome) async -> Outcome {
+    do {
+      return try await body()
+    } catch {
+      return Self.outcome(of: error)
+    }
+  }
+
+  private static func outcome(of error: any Error) -> Outcome {
+    if error is CancellationError || Task.isCancelled { return .cancelled }
+    log.error("attempt failed: \(String(describing: error), privacy: .public)")
+    return .ended(message(for: error))
+  }
+
+  private func attemptV2(_ v2: ScreenSharingV2Connector, restart: Bool) async throws -> Outcome {
+    guard let address = await v2.address() else { return .fallback }
+    try Task.checkCancellation()
+    var start = request(restart ? .restart : .start)
+    start.engine = ScreenSharingEngine.v2.rawValue
+    start.media = address
+    start.chroma = await v2.chroma().rawValue
+    started = true
+    let reply = try await sponsor.client.screenSharing(start)
+    try Task.checkCancellation()
+    guard reply.version == 1, reply.status == "connecting", let grant = reply.media else { return .fallback }
+    let session: any ScreenSharingV2StartableSession
+    do {
+      session = try await v2.connect(grant)
+    } catch {
+      return Task.isCancelled ? .cancelled : .fallback
+    }
+    let lost = install(session)
+    do {
+      try await session.start(token: grant.token)
+    } catch {
+      return Task.isCancelled ? .cancelled : .fallback
+    }
+    return await heartbeat(until: lost, missingVideo: Self.missingVideoTimeout)
+  }
+
+  private func attemptWebRTC(connectivity: ServerScreenSharingConnectivity?, restart: Bool) async throws -> Outcome {
+    var tunnel: CloudTunnelMediaRoute?
+    defer { tunnel?.close() }
+    let session = try await sponsor.makeWebRTC(connectivity)
+    if Task.isCancelled {
+      session.close()
+      return .cancelled
+    }
+    let lost = install(session)
+    let offer = try await session.offer()
+    try Task.checkCancellation()
+    var start = request(restart ? .restart : .start, offer: offer)
+    tunnel = await sponsor.openTunnel?()
+    if let tunnel { start.tunnelMedia = .init(endpointId: tunnel.endpointId, flowId: Int(tunnel.flowId)) }
+    started = true
+    let reply = try await sponsor.client.screenSharing(start)
+    try Task.checkCancellation()
+    guard reply.version == 1, reply.status == "connecting", var answer = reply.answer else {
+      return .ended(reply.message ?? "This Mac can't share its screen right now.")
+    }
+    if let tunnel, reply.tunnelMedia?.flowId == Int(tunnel.flowId),
+      let address = ScreenSharingTunnelSDP.localIPv4(inOffer: offer)
+    {
+      answer = ScreenSharingTunnelSDP.answer(answer, routedTo: address, port: tunnel.localPort)
+    }
+    try await session.accept(answer)
+    return await heartbeat(until: lost)
+  }
+
+  private func heartbeat(until lost: AsyncStream<Void>, missingVideo: Duration? = nil) async -> Outcome {
     let outcomes = AsyncStream<Outcome>.makeStream()
+    let clock = sponsor.clock
     let beats = Task { @MainActor [weak self] in
+      var waited = Duration.zero
       while !Task.isCancelled {
-        try? await Task.sleep(for: .seconds(8))
+        try? await clock.sleep(for: Self.heartbeatInterval)
         guard let self, !Task.isCancelled else { return }
+        let reply: ServerScreenSharingReply
         do {
-          let reply = try await self.sponsor.client.screenSharing(self.request(.heartbeat))
-          if !["connecting", "viewing"].contains(reply.status) {
-            outcomes.continuation.yield(.ended(reply.message ?? "The Mac stopped sharing its screen."))
-            return
-          }
+          reply = try await self.sponsor.client.screenSharing(self.request(.heartbeat))
         } catch {
           if !Task.isCancelled { outcomes.continuation.yield(.lost) }
+          return
+        }
+        guard ["connecting", "viewing"].contains(reply.status) else {
+          outcomes.continuation.yield(.ended(reply.message ?? "The Mac stopped sharing its screen."))
+          return
+        }
+        guard let missingVideo, !self.presented, reply.message == nil else { continue }
+        waited += Self.heartbeatInterval
+        if waited >= missingVideo {
+          outcomes.continuation.yield(.fallback)
           return
         }
       }
@@ -170,17 +244,37 @@ final class ScreenSharingStream {
     }
   }
 
-  private func install(_ receiver: ScreenSharingReceiver) {
-    self.receiver = receiver
-    control = receiver.control.map { ScreenSharingControlSession(channel: $0, clock: ContinuousClock()) }
+  private func install(_ session: any ScreenSharingViewingSession) -> AsyncStream<Void> {
+    self.session = session
+    diagnostics = ScreenSharingViewerDiagnostics()
+    control = session.control.map { ScreenSharingControlSession(channel: $0, clock: ContinuousClock()) }
+    let lost = AsyncStream<Void>.makeStream()
+    session.onConnectionChanged = { transport in
+      Self.log.info("transport \(transport, privacy: .public)")
+      if ["failed", "disconnected", "closed"].contains(transport) { lost.continuation.yield() }
+    }
+    let clock = sponsor.clock
+    statistics = Task { [weak self, weak session] in
+      while !Task.isCancelled {
+        guard (try? await clock.sleep(for: .seconds(1))) != nil, let self, let session else { return }
+        guard self.presented else { continue }
+        let statistics = await session.statistics()
+        guard !Task.isCancelled else { return }
+        self.diagnostics.update(
+          metrics: session.metrics.snapshot(), statistics: statistics, now: ProcessInfo.processInfo.systemUptime)
+      }
+    }
+    return lost.stream
   }
 
-  private func closeReceiver() {
+  private func closeSession() {
+    statistics?.cancel()
+    statistics = nil
     control?.close()
     control = nil
-    receiver?.onConnectionChanged = nil
-    receiver?.close()
-    receiver = nil
+    session?.onConnectionChanged = nil
+    session?.close()
+    session = nil
   }
 
   private func request(
@@ -191,11 +285,7 @@ final class ScreenSharingStream {
       displayId: displayId, offer: offer)
   }
 
-  private static func makeReceiver(
-    connectivity: ServerScreenSharingConnectivity?
-  ) async throws
-    -> ScreenSharingReceiver
-  {
+  static func makeReceiver(connectivity: ServerScreenSharingConnectivity?) async throws -> ScreenSharingReceiver {
     let ice = try connectivity.map { connectivity in
       try ScreenSharingICEConfiguration(
         servers: connectivity.servers.map {

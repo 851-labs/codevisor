@@ -3,6 +3,7 @@ import CodevisorCore
 import CoreGraphics
 import CodevisorTestSupport
 import Foundation
+import ScreenSharingV2
 import Testing
 @testable import CodevisorCoreMac
 
@@ -165,7 +166,7 @@ struct ScreenSharingHostRequestTests {
 
   private func unboundEndpoint() -> ScreenSharingMediaEndpoint {
     let endpoint = ScreenSharingMediaEndpoint()
-    endpoint.configure(.init(endpoint: { nil }, requestDirectPaths: {}))
+    endpoint.configure { nil }
     return endpoint
   }
 

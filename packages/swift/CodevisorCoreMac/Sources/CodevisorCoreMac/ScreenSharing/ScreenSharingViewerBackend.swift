@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorCore
 import ScreenSharing
+import ScreenSharingV2
 import ScreenSharingWebRTC
 import ComposableArchitecture
 import Foundation
@@ -56,7 +57,7 @@ extension ScreenSharingViewerBackend {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, role: role,
       tunnelMedia: tunnelMedia,
-      v2: .live(),
+      v2: ScreenSharingViewerMedia.connector,
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
@@ -70,7 +71,7 @@ extension ScreenSharingViewerBackend {
 
   typealias NativeVNCOpen = @Sendable (String) async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
   typealias NativeMakeSession =
-    @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession
+    @MainActor (ServerScreenSharingConnectivity?) async throws -> any ScreenSharingOfferingSession
 
   @MainActor
   static func native(
@@ -395,6 +396,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     var start = request(takeFreshStart() || restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display)
     start.engine = ScreenSharingEngine.v2.rawValue
     start.media = address
+    start.chroma = await v2.chroma().rawValue
     attempt.started = true
     attempt.triedV2 = true
     let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client, start] in
@@ -406,7 +408,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
         ? .fallback : .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
     }
 
-    let session: any NativeScreenSharingV2Session
+    let session: any ScreenSharingV2StartableSession
     do {
       session = try await v2.connect(grant)
     } catch {
