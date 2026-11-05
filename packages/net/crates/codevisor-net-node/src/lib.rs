@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use codevisor_net as net;
 use napi::bindgen_prelude::{Buffer, Result};
@@ -184,28 +184,6 @@ impl TunnelConnection {
     }
 
     #[napi]
-    pub fn max_media_payload(&self) -> Option<u32> {
-        self.inner.media().max_payload().map(|size| size as u32)
-    }
-
-    #[napi]
-    pub async fn forward_media(&self, flow_id: u32, target_addr: String) -> Result<TunnelMediaFlow> {
-        let router = self.inner.media();
-        let target: SocketAddr = target_addr
-            .parse()
-            .map_err(|_| napi::Error::from_reason(format!("invalid media target {target_addr}")))?;
-        let flow = net::MediaFlow::forward(router, flow_id, target).await.map_err(to_napi)?;
-        Ok(TunnelMediaFlow { inner: std::sync::Mutex::new(Some(flow)) })
-    }
-
-    #[napi]
-    pub async fn bind_media(&self, flow_id: u32) -> Result<TunnelMediaFlow> {
-        let router = self.inner.media();
-        let flow = net::MediaFlow::bind(router, flow_id).await.map_err(to_napi)?;
-        Ok(TunnelMediaFlow { inner: std::sync::Mutex::new(Some(flow)) })
-    }
-
-    #[napi]
     pub fn close(&self, code: u32, reason: String) {
         self.inner.close(code, &reason);
     }
@@ -242,23 +220,5 @@ impl TunnelMessageStream {
     pub async fn finish(&self) -> Result<()> {
         let inner = self.inner.clone();
         inner.finish().await.map_err(to_napi)
-    }
-}
-
-#[napi]
-pub struct TunnelMediaFlow {
-    inner: std::sync::Mutex<Option<net::MediaFlow>>,
-}
-
-#[napi]
-impl TunnelMediaFlow {
-    #[napi]
-    pub fn local_port(&self) -> u32 {
-        self.inner.lock().unwrap().as_ref().map_or(0, |flow| flow.local_port().into())
-    }
-
-    #[napi]
-    pub fn close(&self) {
-        self.inner.lock().unwrap().take();
     }
 }

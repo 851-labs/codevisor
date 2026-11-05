@@ -66,9 +66,6 @@ const connection = (
   openMessageStream: unused,
   acceptMessageStream: () => stream,
   paths: () => [],
-  maxMediaPayload: () => null,
-  forwardMedia: unused,
-  bindMedia: unused,
   close: vi.fn<TunnelConnection["close"]>(() => {
     ends?.incoming.push({ error: new Error("connection closed") })
   }),

@@ -204,18 +204,9 @@ impl NetConnectionHandle {
             .collect()
     }
 
-    pub fn max_media_payload(&self) -> Option<u32> {
-        self.inner.media().max_payload().map(|size| size as u32)
-    }
-
     pub async fn open_media_session(&self, config: MediaSessionConfig) -> Arc<MediaSessionHandle> {
         let session = media::MediaSession::new(media::QuicTransport::new(self.inner.clone()), config.into());
         Arc::new(MediaSessionHandle { inner: session })
-    }
-
-    pub async fn bind_media(&self, flow_id: u32) -> Result<Arc<NetMediaFlowHandle>, NetError> {
-        let flow = net::MediaFlow::bind(self.inner.media(), flow_id).await.map_err(failure)?;
-        Ok(Arc::new(NetMediaFlowHandle { inner: std::sync::Mutex::new(Some(flow)) }))
     }
 
     pub fn close(&self, code: u32, reason: String) {
@@ -245,21 +236,6 @@ impl NetMessageStreamHandle {
     }
 }
 
-#[derive(uniffi::Object)]
-pub struct NetMediaFlowHandle {
-    inner: std::sync::Mutex<Option<net::MediaFlow>>,
-}
-
-#[uniffi::export]
-impl NetMediaFlowHandle {
-    pub fn local_port(&self) -> u16 {
-        self.inner.lock().unwrap().as_ref().map_or(0, net::MediaFlow::local_port)
-    }
-
-    pub fn close(&self) {
-        self.inner.lock().unwrap().take();
-    }
-}
 
 use codevisor_media as media;
 
