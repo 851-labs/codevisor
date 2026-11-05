@@ -1,4 +1,5 @@
 import CoreVideo
+import Dispatch
 import ScreenSharing
 import Synchronization
 
@@ -13,6 +14,7 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
   private let sessions: [ScreenSharingVCPTileSession]
   private let metrics: ScreenSharingMetrics
   private let relay = ScreenSharingTileOutputRelay()
+  private let preparing = DispatchQueue(label: "codevisor.screen-sharing.vcp.prepare", qos: .userInteractive)
   private let stopped = Atomic(false)
 
   public convenience init(configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics) throws {
@@ -38,6 +40,19 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
 
   public func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {
     relay.set(handler)
+  }
+
+  public func prepare(_ frame: ScreenSharingVideoFrame, tiles: Set<Int>) {
+    guard !stopped.load(ordering: .relaxed), !tiles.isEmpty else { return }
+
+    preparing.async { [converter, metrics] in
+      let startNs = ScreenSharingMetrics.nowNs
+      guard
+        (try? converter.convertTiles(frame.pixelBuffer, capture: frame.timestampNs, tiles: tiles.sorted())) != nil
+      else { return }
+
+      metrics.observe("vcpPrepare", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
+    }
   }
 
   public func encode(_ request: ScreenSharingTileEncodeRequest) throws {

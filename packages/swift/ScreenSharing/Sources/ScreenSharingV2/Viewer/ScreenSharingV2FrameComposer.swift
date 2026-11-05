@@ -10,6 +10,12 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
     let pixelFormat: OSType
   }
 
+  private struct Staged {
+    let key: PoolKey
+    let target: CVPixelBuffer
+    var tiles: [Int: CVPixelBuffer] = [:]
+  }
+
   private static let fullRangeFormats: Set<OSType> = [
     kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange,
   ]
@@ -18,9 +24,23 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
   private let blitter = ScreenSharingV2TileBlitter()
   private var pool: (key: PoolKey, pool: CVPixelBufferPool)?
   private var transfer: VTPixelTransferSession?
+  private var staged: Staged?
 
   deinit {
     if let transfer { VTPixelTransferSessionInvalidate(transfer) }
+  }
+
+  func stage(_ image: CVPixelBuffer, tile: Int, layout: ScreenSharingV2TileLayout) {
+    guard layout.count > 1 else { return }
+
+    lock.withLock {
+      let key = PoolKey(
+        width: layout.width, height: layout.height, pixelFormat: CVPixelBufferGetPixelFormatType(image))
+      if staged?.key != key { staged = (try? make(key)).map { Staged(key: key, target: $0) } }
+      guard let target = staged?.target, blit([(tile, image)], into: target, layout: layout) else { return }
+
+      staged?.tiles[tile] = image
+    }
   }
 
   func compose(_ snapshot: ScreenSharingV2TileCanvas.Snapshot) throws -> CVPixelBuffer? {
@@ -28,11 +48,19 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
     if layout.count == 1 { return snapshot.images[0] }
 
     return try lock.withLock {
-      let target = try make(PoolKey(width: layout.width, height: layout.height, pixelFormat: snapshot.pixelFormat))
-      let sources = try layout.tiles.sorted().map { tile in
+      let key = PoolKey(width: layout.width, height: layout.height, pixelFormat: snapshot.pixelFormat)
+      let reused = staged.flatMap { $0.key == key ? $0 : nil }
+      staged = nil
+      let target = try reused?.target ?? make(key)
+      let pending = layout.tiles.sorted().filter { tile in
+        guard let placed = reused?.tiles[tile], let image = snapshot.images[tile] else { return true }
+
+        return placed !== image
+      }
+      let sources = try pending.map { tile in
         try snapshot.images[tile].map { try converted($0, to: snapshot.pixelFormat) }
       }
-      let placed = Array(zip(layout.tiles.sorted(), sources))
+      let placed = Array(zip(pending, sources))
       if placed.contains(where: { $0.1 == nil }) || !blit(placed, into: target, layout: layout) {
         CVPixelBufferLockBaseAddress(target, [])
         defer { CVPixelBufferUnlockBaseAddress(target, []) }
@@ -44,7 +72,9 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
           }
         }
       }
-      if let first = sources.compactMap({ $0 }).first { CVBufferPropagateAttachments(first, target) }
+      if let first = layout.tiles.sorted().lazy.compactMap({ snapshot.images[$0] }).first {
+        CVBufferPropagateAttachments(first, target)
+      }
       return target
     }
   }
@@ -52,6 +82,8 @@ final class ScreenSharingV2FrameComposer: @unchecked Sendable {
   private func blit(
     _ placed: [(Int, CVPixelBuffer?)], into target: CVPixelBuffer, layout: ScreenSharingV2TileLayout
   ) -> Bool {
+    guard !placed.isEmpty else { return true }
+
     let regions = placed.compactMap { tile, image in
       image.map { image in
         ScreenSharingV2TileBlitter.Copy(

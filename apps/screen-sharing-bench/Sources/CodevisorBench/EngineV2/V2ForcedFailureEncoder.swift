@@ -31,6 +31,8 @@ final class V2ForcedFailureEncoder: ScreenSharingTileEncoder, @unchecked Sendabl
     output.withLock { $0.handler = handler }
   }
 
+  func prepare(_ frame: ScreenSharingVideoFrame, tiles: Set<Int>) { inner.prepare(frame, tiles: tiles) }
+
   func encode(_ request: ScreenSharingTileEncodeRequest) throws { try inner.encode(request) }
 
   func acknowledge(_ tokens: [UInt64], tile: Int) { inner.acknowledge(tokens, tile: tile) }

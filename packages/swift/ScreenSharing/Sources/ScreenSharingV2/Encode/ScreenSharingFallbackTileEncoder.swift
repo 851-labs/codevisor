@@ -59,6 +59,12 @@ public final class ScreenSharingFallbackTileEncoder: ScreenSharingTileEncoder, @
     state.withLock { $0.output = handler }
   }
 
+  public func prepare(_ frame: ScreenSharingVideoFrame, tiles: Set<Int>) {
+    guard !hasFallenBack else { return }
+
+    primary.prepare(frame, tiles: tiles)
+  }
+
   public func encode(_ request: ScreenSharingTileEncodeRequest) throws {
     guard !hasFallenBack else { return try builtFallback().encode(request) }
 

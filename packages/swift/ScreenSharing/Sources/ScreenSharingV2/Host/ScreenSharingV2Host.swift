@@ -93,6 +93,7 @@ public final class ScreenSharingV2Host: ScreenSharingFrameSink, @unchecked Senda
     let reported = layout.tiles(touching: capture.frame.dirtyRects)
     let previous = (slot.waiting ?? slot.lastEncoded)?.frame.pixelBuffer
     let candidates = reported.subtracting(slot.waitingTiles)
+    if previous != nil { encoder.prepare(capture.frame, tiles: candidates) }
     let comparedNs = ScreenSharingMetrics.nowNs
     let tiles = ScreenSharingV2TileComparer.changed(
       candidates, of: layout, from: previous, to: capture.frame.pixelBuffer)

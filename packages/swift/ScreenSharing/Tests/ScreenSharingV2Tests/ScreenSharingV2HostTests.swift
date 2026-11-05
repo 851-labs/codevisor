@@ -219,6 +219,24 @@ struct ScreenSharingV2HostTests {
     #expect(encoder.requests[1].update.tiles == [1, 2])
   }
 
+  @Test func everyReportedTileIsHandedToTheEncoderToPrepareBeforeThePixelCompareDropsTheUnchangedOnes() async throws {
+    let encoder = RecordingTileEncoder(layout: Self.tiled)
+    let host = startedHost(encoder)
+    defer { host.stop() }
+
+    host.push(try TestPixels.frame(shades: [10, 20, 30, 40], timestampNs: 1_000))
+    await encoder.encodes.cancellableWait(for: 1)
+    encoder.emitTiles(of: encoder.requests[0])
+    host.push(
+      try TestPixels.frame(
+        shades: [10, 20, 30, 99], timestampNs: 2_000, dirtyRects: [CGRect(x: 0, y: 0, width: 640, height: 360)]))
+    await encoder.encodes.cancellableWait(for: 2)
+
+    #expect(encoder.prepared.map(\.timestampNs) == [2_000])
+    #expect(encoder.prepared.map(\.tiles) == [[0, 1, 2, 3]])
+    #expect(encoder.requests[1].update.tiles == [2, 3])
+  }
+
   @Test func anUnchangedAnswerOlderThanTheTilesLatestChangeLeavesItsRefinementAlone() async throws {
     let encoder = RecordingTileEncoder()
     let host = startedHost(encoder)

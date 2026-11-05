@@ -175,20 +175,22 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
     metrics.increment("decodedFrames")
     metrics.observe("decode", milliseconds: Double(decodedNs - context.submittedNs) / 1_000_000)
     let tile = Int(context.frame.stream)
-    let composite = state.withLock { state in
+    let (composite, waiting) = state.withLock { state in
       if let stallNs = state.gate.decoded(stream: context.frame.stream, admission, atNs: decodedNs) {
         metrics.increment("recoveredTiles")
         metrics.observe("tileRecovery", milliseconds: Double(stallNs) / 1_000_000)
       }
-      guard state.canvas?.layout == context.meta.layout else { return Composite?.none }
+      guard state.canvas?.layout == context.meta.layout else { return (Composite?.none, false) }
 
       let current = state.assembly.resolve(update: context.meta.update.id, tile: tile, .decoded(context, image))
       if !current {
         metrics.increment("lateTiles")
         state.canvas?.place(image, tile: tile)
       }
-      return compose(&state, presentingLate: !current)
+      let composite = compose(&state, presentingLate: !current)
+      return (composite, current && composite == nil)
     }
+    if waiting { stage(image, tile: tile, layout: context.meta.layout) }
     present(composite)
     guard let token = context.frame.ltrToken else { return }
 
@@ -213,6 +215,12 @@ public final class ScreenSharingV2Viewer: @unchecked Sendable {
 
     state.nextComposite += 1
     return Composite(sequence: state.nextComposite, snapshot: snapshot, group: group)
+  }
+
+  private func stage(_ image: CVPixelBuffer, tile: Int, layout: ScreenSharingV2TileLayout) {
+    let startNs = ScreenSharingMetrics.nowNs
+    composer.stage(image, tile: tile, layout: layout)
+    metrics.observe("composeTile", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1_000_000)
   }
 
   private func present(_ composite: Composite?) {

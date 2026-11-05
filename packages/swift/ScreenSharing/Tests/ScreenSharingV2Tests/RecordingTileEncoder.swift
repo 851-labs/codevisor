@@ -1,5 +1,6 @@
 import CodevisorTestSupport
 import Foundation
+import ScreenSharing
 import Synchronization
 
 @testable import ScreenSharingV2
@@ -11,6 +12,7 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   let encodes = TestSignal()
   let attached = TestSignal()
   private let recorded = Mutex<[ScreenSharingTileEncodeRequest]>([])
+  private let preparations = Mutex<[(timestampNs: Int64, tiles: Set<Int>)]>([])
   private let acknowledged = Mutex<[UInt64]>([])
   private let network = Mutex<[ScreenSharingTileNetworkFeedback]>([])
   private let output = Mutex<(@Sendable (ScreenSharingTileEncoderOutput) -> Void)?>(nil)
@@ -24,6 +26,7 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
   }
 
   var requests: [ScreenSharingTileEncodeRequest] { recorded.withLock { $0 } }
+  var prepared: [(timestampNs: Int64, tiles: Set<Int>)] { preparations.withLock { $0 } }
   var acknowledgedTokens: [UInt64] { acknowledged.withLock { $0 } }
   var networkFeedback: [ScreenSharingTileNetworkFeedback] { network.withLock { $0 } }
 
@@ -51,6 +54,10 @@ final class RecordingTileEncoder: ScreenSharingTileEncoder, @unchecked Sendable 
           capturedNs: request.capturedNs,
           submittedNs: request.capturedNs, encodedNs: request.capturedNs, isKeyFrame: keyframe, refresh: refresh,
           ltrToken: token, accessUnit: ScreenSharingAccessUnit(Data([0, 0, 0, 2, 2, 1])))))
+  }
+
+  func prepare(_ frame: ScreenSharingVideoFrame, tiles: Set<Int>) {
+    preparations.withLock { $0.append((frame.timestampNs, tiles)) }
   }
 
   func encode(_ request: ScreenSharingTileEncodeRequest) throws {
