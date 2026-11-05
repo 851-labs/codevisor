@@ -88,9 +88,9 @@ extension HomeView {
   @ViewBuilder
   var sidebarNewChatOverlay: some View {
     if #unavailable(iOS 27.0), showsNewChatToolbarButton {
-      HomeComposeOverlayButton(systemImage: "square.and.pencil", label: "New chat") { presentNewChat() }
+      HomeComposeOverlayButton(image: Image(systemName: "square.and.pencil"), label: "New chat") { presentNewChat() }
     } else if #unavailable(iOS 27.0), showsNewBotToolbarButton {
-      HomeComposeOverlayButton(systemImage: "plus", label: "New Bot") { botEditor = .create }
+      HomeComposeOverlayButton(image: CodevisorSymbol.mascotBadgePlus.image, label: "New Bot") { botEditor = .create }
     }
   }
 
@@ -120,7 +120,7 @@ extension HomeView {
     Button {
       botEditor = .create
     } label: {
-      Label("New Bot", systemImage: "plus")
+      Label("New Bot", symbol: .mascotBadgePlus)
     }
     .buttonStyle(.glassProminent)
     .tint(.accentColor)

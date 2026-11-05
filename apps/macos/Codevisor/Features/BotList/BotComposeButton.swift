@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 
 struct BotComposeButton: View {
@@ -5,7 +6,7 @@ struct BotComposeButton: View {
   let onNewBot: () -> Void
 
   var body: some View {
-    Button("New Bot", systemImage: "square.and.pencil", action: onNewBot)
+    Button(action: onNewBot) { Label("New Bot", symbol: .mascotBadgePlus) }
       .labelStyle(.iconOnly)
       .disabled(!canCreateBots)
       .help(canCreateBots ? "New Bot" : "Connect a machine that supports bots to create one")

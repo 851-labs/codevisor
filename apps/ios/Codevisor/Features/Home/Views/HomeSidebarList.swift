@@ -260,7 +260,7 @@ struct HomeSidebarList: View {
 
   private var newBotButton: some View {
     Button(action: actions.actions.newBot) {
-      Label("New Bot…", systemImage: "plus")
+      Label("New Bot…", symbol: .mascotBadgePlus)
     }
     .accessibilityIdentifier("sidebar.newBot")
   }

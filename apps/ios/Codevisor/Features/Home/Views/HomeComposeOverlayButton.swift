@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct HomeComposeOverlayButton: View {
-  let systemImage: String
+  let image: Image
   let label: String
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      Image(systemName: systemImage)
+      image
         .font(.title3)
         .foregroundStyle(.white)
         .padding(13)

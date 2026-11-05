@@ -1,4 +1,5 @@
 import Autocomplete
+import CodevisorUI
 import SwiftUI
 
 struct CommandPaletteItemIcon: View {
@@ -17,6 +18,8 @@ struct CommandPaletteItemIcon: View {
     switch icon {
     case let .symbol(name):
       Image(systemName: name)
+    case let .codevisorSymbol(symbol):
+      symbol.image
     case let .harness(id):
       HarnessIcon(harnessId: id ?? "", fallbackSymbolName: WorkspaceInspectorTab.harness.systemImage)
     case let .bot(bot):

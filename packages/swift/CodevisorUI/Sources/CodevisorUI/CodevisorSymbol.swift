@@ -6,7 +6,7 @@ import SwiftUI
   import AppKit
 #endif
 
-public enum CodevisorSymbol: String {
+public enum CodevisorSymbol: String, Sendable {
   case codevisorMark = "codevisor-mark"
   case gitHubMark = "github-mark"
   case gitBranch = "git-branch"
@@ -17,6 +17,10 @@ public enum CodevisorSymbol: String {
   case gitPullRequest = "git-pull-request"
   case gitPullRequestClosed = "git-pull-request-closed"
   case gitPullRequestDraft = "git-pull-request-draft"
+  case mascot = "mascot"
+  case mascotFill = "mascot.fill"
+  case mascotBadgePlus = "mascot.badge.plus"
+  case mascotFillBadgePlus = "mascot.fill.badge.plus"
 
   public static let worktreeSystemName = "arrow.trianglehead.branch"
 
@@ -54,5 +58,15 @@ public enum CodevisorSymbol: String {
     #else
       return NSImage(symbolName: name, bundle: .module, variableValue: 0) == nil ? nil : name
     #endif
+  }
+}
+
+extension Label where Title == Text, Icon == Image {
+  public init(_ titleKey: LocalizedStringKey, symbol: CodevisorSymbol) {
+    self.init {
+      Text(titleKey)
+    } icon: {
+      symbol.image
+    }
   }
 }

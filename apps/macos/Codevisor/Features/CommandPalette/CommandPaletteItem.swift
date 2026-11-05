@@ -1,9 +1,11 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct CommandPaletteItem: Identifiable {
   enum Icon {
     case symbol(String)
+    case codevisorSymbol(CodevisorSymbol)
     case harness(String?)
     case bot(Bot)
     case workspace(SidebarWorkspaceIcon)
@@ -38,10 +40,14 @@ struct CommandPaletteItem: Identifiable {
   }
 
   init(_ shortcut: ShortcutID, systemImage: String, perform: @escaping @MainActor () -> Void) {
+    self.init(shortcut, icon: .symbol(systemImage), perform: perform)
+  }
+
+  init(_ shortcut: ShortcutID, icon: Icon, perform: @escaping @MainActor () -> Void) {
     let definition = ShortcutCatalog.definition(for: shortcut)
     id = shortcut.rawValue
     title = definition.title
-    icon = .symbol(systemImage)
+    self.icon = icon
     self.shortcut = definition.combo?.keyboardShortcut
     self.perform = perform
   }

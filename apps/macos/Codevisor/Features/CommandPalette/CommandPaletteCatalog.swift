@@ -53,7 +53,7 @@ struct CommandPaletteCatalog {
   private func newBotCommands(_ root: RootSidebarActions) -> [CommandPaletteItem] {
     guard let newBot = root.newBot else { return [] }
 
-    return [CommandPaletteItem(.newBot, systemImage: "square.and.pencil", perform: newBot)]
+    return [CommandPaletteItem(.newBot, icon: .codevisorSymbol(.mascotBadgePlus), perform: newBot)]
   }
 
   private var newProjectCommands: [CommandPaletteItem] {
