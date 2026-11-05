@@ -4,47 +4,44 @@ import SwiftUI
 public struct BotMascotFigure: View {
   private static let overhang: CGFloat = 1.2
 
+  let bot: Bot
   let mascot: ServerBotMascot
-  let serverId: String
   let slot: CGFloat
-  let motion: BotMascotMotion
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var isWindowVisible = true
-  @State private var isOnScreen = false
 
-  public init(mascot: ServerBotMascot, serverId: String, slot: CGFloat, motion: BotMascotMotion = .still) {
+  public init(bot: Bot, mascot: ServerBotMascot, slot: CGFloat) {
+    self.bot = bot
     self.mascot = mascot
-    self.serverId = serverId
     self.slot = slot
-    self.motion = motion
   }
 
   public var body: some View {
     Group {
-      if let playing {
-        BotMascotRiveView(mascot: mascot, serverId: serverId, mode: playing)
+      if canAnimate {
+        BotMascotRiveView(key: key, mascot: mascot)
       } else {
-        BotMascotImage(mascot: mascot, serverId: serverId, kind: .figure)
+        BotMascotImage(mascot: mascot, serverId: bot.serverId, kind: .figure)
       }
     }
     .frame(width: figureSide, height: figureSide)
     .frame(width: slot, height: slot, alignment: .bottom)
     .background { BotMascotWindowVisibility(isVisible: $isWindowVisible) }
-    .onAppear { isOnScreen = true }
-    .onDisappear { isOnScreen = false }
+    .onChange(of: motion, initial: true) { _, motion in BotMascotStages.shared.stage(for: key).show(motion) }
+  }
+
+  private var key: BotMascotStageKey { BotMascotStageKey(bot) }
+
+  private var motion: BotMascotMotion {
+    BotMascotMotion(BotMascotActivitySource.shared.activity(of: bot), isOpen: BotMascotOpenBots.shared.isOpen(key))
   }
 
   private var figureSide: CGFloat {
     slot * Self.overhang
   }
 
-  private var playing: BotMascotRiveMode? {
-    guard canAnimate else { return nil }
-    return motion.riveMode
-  }
-
   private var canAnimate: Bool {
-    !reduceMotion && isWindowVisible && isOnScreen
+    !reduceMotion && isWindowVisible
   }
 }

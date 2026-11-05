@@ -104,9 +104,15 @@ struct SessionTranscriptView: View {
     isReadOnly || controller.hidesComposerForAnswer ? 0 : composerCardHeight + composerAccessoryHeight
   }
 
+  private var openBot: Bot? {
+    guard let session = controller.serverSession else { return nil }
+    return environment.bots.bot(forSession: session.id, serverId: session.serverId)
+  }
+
   var body: some View {
     chat
       .modifier(ProjectCloneSheetPresenter(controller: controller))
+      .botMascotOpen(openBot)
       .attachmentQuickLookPreview(
         Binding(get: { quickLook.previewURL }, set: { quickLook.updatePreviewURL($0) })
       )

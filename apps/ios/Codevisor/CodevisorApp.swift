@@ -50,6 +50,7 @@ struct CodevisorApp: App {
         .modifier(ThemedRoot())
         .environment(environment)
         .task { await bootstrap(environment: environment) }
+        .task(id: ObjectIdentifier(environment)) { BotMascotActivities(environment: environment).read() }
         .task(id: environment.machines.sandboxMachineProfilesLoadKey) {
           await environment.machines.loadSandboxMachineProfiles()
         }

@@ -4,8 +4,8 @@ import SwiftUI
 struct BotTypingMascotIndicator: View {
   private static let mascotSlot: CGFloat = 26
 
+  let bot: Bot
   let mascot: ServerBotMascot
-  let serverId: String
   let activity: WorkedSectionActivity
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -14,7 +14,7 @@ struct BotTypingMascotIndicator: View {
   var body: some View {
     let status = BotTypingStatus(activity: smoother.shown ?? WorkedActivityLabelSmoother.initial(activity))
     HStack(spacing: 8) {
-      BotMascotFigure(mascot: mascot, serverId: serverId, slot: Self.mascotSlot, motion: status.motion)
+      BotMascotFigure(bot: bot, mascot: mascot, slot: Self.mascotSlot)
       ShimmeringText(text: status.text)
       Spacer(minLength: 0)
     }

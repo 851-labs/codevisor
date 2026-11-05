@@ -33,19 +33,9 @@ struct BotConversationRow: View {
   private var avatar: some View {
     let bot = conversation.bot
     if let mascot = bot.mascot {
-      BotMascotFigure(mascot: mascot, serverId: bot.serverId, slot: Self.avatarSize, motion: motion)
+      BotMascotFigure(bot: bot, mascot: mascot, slot: Self.avatarSize)
     } else {
       BotSymbolAvatar(symbolName: bot.symbolName, size: Self.avatarSize)
-    }
-  }
-
-  private var motion: BotMascotMotion {
-    if conversation.isTalkingToAgent {
-      .calling
-    } else if conversation.activity == .working {
-      .working
-    } else {
-      .idle
     }
   }
 

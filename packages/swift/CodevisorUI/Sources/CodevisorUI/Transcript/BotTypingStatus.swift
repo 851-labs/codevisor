@@ -33,10 +33,6 @@ enum BotTypingStatus: Equatable {
     case let .step(label): label
     }
   }
-
-  var motion: BotMascotMotion {
-    self == .callingAgent ? .calling : .working
-  }
 }
 
 extension ToolCall {

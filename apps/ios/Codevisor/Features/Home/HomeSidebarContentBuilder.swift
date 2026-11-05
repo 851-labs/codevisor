@@ -91,8 +91,7 @@ struct HomeSidebarContentBuilder {
   private func conversation(_ bot: Bot, session: ChatSession?) -> BotConversation {
     let isUnread = session.map { $0.unreadCount > 0 || $0.hasUnreadError } ?? false
     return BotConversation(
-      bot: bot, session: session, activity: session.map(activity(of:)) ?? .idle, isUnread: isUnread,
-      isTalkingToAgent: session.map(isTalkingToAgent) ?? false)
+      bot: bot, session: session, activity: session.map(activity(of:)) ?? .idle, isUnread: isUnread)
   }
 
   private func activity(of session: ChatSession) -> BotConversation.Activity {
@@ -256,11 +255,6 @@ struct HomeSidebarContentBuilder {
     environment.configCache.capabilities(forServer: session.serverId)
       .first { $0.harness.id == session.harnessId }?
       .harness.symbolName ?? "cpu"
-  }
-
-  private func isTalkingToAgent(_ session: ChatSession) -> Bool {
-    ChatControllerCache.shared.isInProgress(session)
-      && environment.projectList.runningAgents(startedBy: session, isRunning: ChatControllerCache.shared.isInProgress)
   }
 
   private func status(for session: ChatSession) -> HomeSessionStatus {

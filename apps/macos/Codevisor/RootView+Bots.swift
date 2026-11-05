@@ -1,10 +1,16 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 extension RootView {
   var showsBotConversation: Bool {
     guard botsEnabled, case .bot = selection else { return false }
     return true
+  }
+
+  func readBotMascotActivity() {
+    let activities = BotMascotActivities(environment: environment, store: store)
+    BotMascotActivitySource.shared.read { activities.of($0) }
   }
 
   var showsBotConversationHeader: Bool {
@@ -22,6 +28,7 @@ extension RootView {
         onDisposition: { _ in }
       )
       .modifier(BotConversationChrome(bot: bot, showsHeader: showsBotConversationHeader))
+      .botMascotOpen(bot)
     } else {
       ContentUnavailableView(
         "Bot Unavailable",

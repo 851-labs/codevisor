@@ -1,15 +1,14 @@
-import CodevisorCore
 import Foundation
 @preconcurrency import RiveRuntime
 
 @MainActor
-final class BotMascotRiveScene {
+final class BotMascotRig {
   private static let artboardName = "Bot Mascot"
   private static let stateMachineName = "Bot Mascot"
 
   let rive: Rive
   private let instance: ViewModelInstance
-  private var mode: BotMascotRiveMode?
+  private var motion: BotMascotMotion?
   private var gaze: BotMascotGaze?
 
   private init(rive: Rive, instance: ViewModelInstance) {
@@ -17,20 +16,24 @@ final class BotMascotRiveScene {
     self.instance = instance
   }
 
-  static func make(file: File, values: BotMascotRiveValues) async throws -> BotMascotRiveScene {
+  static func make(file: File, values: BotMascotRiveValues) async throws -> BotMascotRig {
     let artboard = try await file.createArtboard(artboardName)
     let instance = try await file.createViewModelInstance(.viewModelDefault(from: .artboardDefault(artboard)))
     values.apply(to: instance)
     let machine = try await artboard.createStateMachine(stateMachineName, binding: instance)
     let rive = try await Rive(file: file, artboard: artboard, stateMachine: machine)
-    return BotMascotRiveScene(rive: rive, instance: instance)
+    return BotMascotRig(rive: rive, instance: instance)
   }
 
-  func show(_ mode: BotMascotRiveMode) {
-    guard mode != self.mode else { return }
+  func dress(_ values: BotMascotRiveValues) {
+    values.apply(to: instance)
+  }
 
-    self.mode = mode
-    instance.setValue(of: EnumProperty(path: "mode"), to: mode.rawValue)
+  func show(_ motion: BotMascotMotion) {
+    guard motion != self.motion else { return }
+
+    self.motion = motion
+    instance.setValue(of: EnumProperty(path: "mode"), to: motion.rawValue)
   }
 
   func look(_ gaze: BotMascotGaze) {
@@ -41,10 +44,18 @@ final class BotMascotRiveScene {
     instance.setValue(of: NumberProperty(path: "gazeY"), to: gaze.y)
     instance.setValue(of: NumberProperty(path: "gazeWeight"), to: gaze.weight)
   }
-}
 
-enum BotMascotRiveMode: String {
-  case idle
-  case working
-  case calling
+  func advance(by seconds: Double) {
+    rive.stateMachine.advance(by: seconds)
+  }
+
+  func settle(for seconds: Double, step: Double) {
+    for _ in 0..<Int((seconds / step).rounded()) {
+      advance(by: step)
+    }
+  }
+
+  func configuration(drawableSize: CGSize) -> RiveUIRendererConfiguration {
+    RiveUIRendererConfiguration(rive: rive, drawableSize: drawableSize)
+  }
 }

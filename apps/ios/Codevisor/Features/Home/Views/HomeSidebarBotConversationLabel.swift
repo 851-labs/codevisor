@@ -28,19 +28,9 @@ struct HomeSidebarBotConversationLabel: View {
   private var avatar: some View {
     let bot = bot.bot
     if let mascot = bot.mascot {
-      BotMascotFigure(mascot: mascot, serverId: bot.serverId, slot: avatarSize, motion: motion)
+      BotMascotFigure(bot: bot, mascot: mascot, slot: avatarSize)
     } else {
       BotSymbolAvatar(symbolName: bot.symbolName, size: avatarSize)
-    }
-  }
-
-  private var motion: BotMascotMotion {
-    if bot.conversation.activity == .working {
-      .working
-    } else if isOpen {
-      .idle
-    } else {
-      .still
     }
   }
 }

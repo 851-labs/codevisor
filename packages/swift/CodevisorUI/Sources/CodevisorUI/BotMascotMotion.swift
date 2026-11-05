@@ -1,17 +1,18 @@
-import CodevisorCore
-
-public enum BotMascotMotion: Sendable {
-  case still
+enum BotMascotMotion: String, Equatable, Sendable {
   case idle
   case working
   case calling
+  case sleeping
 
-  var riveMode: BotMascotRiveMode? {
-    switch self {
-    case .still: nil
-    case .idle: .idle
-    case .working: .working
-    case .calling: .calling
+  init(_ activity: BotMascotActivity, isOpen: Bool) {
+    if activity.isWaitingOnAgents {
+      self = .calling
+    } else if activity.isWorking {
+      self = .working
+    } else {
+      self = isOpen ? .idle : .sleeping
     }
   }
+
+  var followsPointer: Bool { self == .idle }
 }

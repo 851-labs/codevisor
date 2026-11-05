@@ -63,6 +63,7 @@ struct RootView: View {
       .background(TransparentTitlebar(isTransparent: showsBotConversation).frame(width: 0, height: 0))
       .environment(\.openChat, OpenChatAction { await openChat($0) })
       .environment(\.isAppUpdateInProgress, environment.isUpdateInProgress)
+      .task(id: store.map(ObjectIdentifier.init)) { readBotMascotActivity() }
       .overlay { ErrorBannerLayer() }
       .overlay { CommandPaletteOverlay(palette: commandPalette, store: store) }
       .focusedSceneValue(\.commandPalette, commandPalette)

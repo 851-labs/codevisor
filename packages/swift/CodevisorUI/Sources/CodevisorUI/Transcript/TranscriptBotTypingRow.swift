@@ -14,8 +14,7 @@ public struct TranscriptBotTypingRow: View {
   public var body: some View {
     Group {
       if let bot, let mascot = bot.mascot {
-        BotTypingMascotIndicator(
-          mascot: mascot, serverId: bot.serverId, activity: BotTypingStatus.activity(of: activeTurn))
+        BotTypingMascotIndicator(bot: bot, mascot: mascot, activity: BotTypingStatus.activity(of: activeTurn))
       } else {
         HStack {
           BotTypingBubble()

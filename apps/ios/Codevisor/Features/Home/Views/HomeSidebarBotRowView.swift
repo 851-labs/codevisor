@@ -163,7 +163,7 @@ struct HomeSidebarBotRowView: View, Equatable {
       if showsStatus {
         HomeStatusIndicator(status: bot.status)
       } else if let mascot = bot.bot.mascot {
-        BotMascotFigure(mascot: mascot, serverId: bot.bot.serverId, slot: mascotSize, motion: motion)
+        BotMascotFigure(bot: bot.bot, mascot: mascot, slot: mascotSize)
       } else {
         HomeSidebarSymbol(name: bot.bot.symbolName)
       }
@@ -175,16 +175,6 @@ struct HomeSidebarBotRowView: View, Equatable {
     case .idle: false
     case .inProgress: bot.bot.mascot == nil
     case .error, .actionRequired, .unread: true
-    }
-  }
-
-  private var motion: BotMascotMotion {
-    if bot.conversation.isTalkingToAgent {
-      .calling
-    } else if bot.status == .inProgress {
-      .working
-    } else {
-      .idle
     }
   }
 
