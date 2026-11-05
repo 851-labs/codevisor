@@ -39,6 +39,38 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
+  @Test("A first send shows no progress bar while its worktree is set up or its agent starts")
+  func worktreeSetupHidesTheSendProgressBar() async throws {
+    let clock = TestClock()
+    let fixture = try Fixture(sendClock: clock)
+    fixture.controller.wantsNewWorktree = true
+    let (worktreeGate, releaseWorktree) = AsyncStream.makeStream(of: Void.self)
+    let (sessionGate, releaseSession) = AsyncStream.makeStream(of: Void.self)
+    fixture.client.worktreeGate = worktreeGate
+    fixture.client.openSessionGate = sessionGate
+    defer {
+      releaseWorktree.finish()
+      releaseSession.finish()
+    }
+
+    await fixture.controller.send()
+    await fixture.client.worktreeRequests.wait()
+    let message = try #require(fixture.controller.pendingUserMessage)
+
+    #expect(fixture.controller.setupPhases.map(\.isRunning) == [true])
+    #expect(clock.requestCount(SendQueue.progressDelay) == 0)
+    #expect(fixture.controller.transcriptProjectionInput.deliveries[message.id] == nil)
+
+    releaseWorktree.finish()
+    await fixture.client.openSessionRequests.wait()
+
+    #expect(clock.requestCount(SendQueue.progressDelay) == 0)
+    #expect(fixture.controller.transcriptProjectionInput.deliveries[message.id] == nil)
+    releaseSession.finish()
+    await fixture.client.promptRequests.wait()
+    fixture.controller.model?.shutdown()
+  }
+
   @Test("A delayed acknowledgement never holds the composer or replays promotion")
   func transitionsBeforeAcknowledgement() async throws {
     let fixture = try Fixture()
@@ -292,7 +324,7 @@ struct SessionControllerFirstSendTests {
     let controller: SessionController
     var promotions = 0
 
-    init() throws {
+    init(sendClock: any Clock<Duration> = ContinuousClock()) throws {
       let project = Project.fromFolder(URL(fileURLWithPath: "/fixture/project"))
       client = FakeSessionServerClient(sessionId: sessionID)
       client.echoOnPrompt = false
@@ -311,7 +343,8 @@ struct SessionControllerFirstSendTests {
         ])
       )
       controller = SessionController(
-        project: project, configCache: ConfigOptionCache(store: InMemoryStore()), serverClient: client
+        project: project, configCache: ConfigOptionCache(store: InMemoryStore()), serverClient: client,
+        sendClock: sendClock
       )
       controller.harnesses = [
         ServerHarness(

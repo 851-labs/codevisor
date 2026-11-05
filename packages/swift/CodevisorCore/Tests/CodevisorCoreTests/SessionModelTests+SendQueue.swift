@@ -8,19 +8,17 @@ import TranscriptKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("A bot send shows at once, gets its progress bar after a second, and goes out once the bot is ready")
+  @Test("A bot send shows at once with no progress bar while it waits for the bot, and goes out once the bot is ready")
   func botSendWaitsForTheBotToBeReady() async {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
     fixture.readiness.state = .waiting("Connecting…")
     let message = UserMessage(text: "are you there?")
 
     fixture.queue.enqueue(message, attachmentIDs: [], route: .bot(afterSequence: 1))
-
-    #expect(fixture.shownDeliveries == [nil])
-    await fixture.clock.waitForSleep(SendQueue.progressDelay)
-    fixture.clock.advance(by: SendQueue.progressDelay)
-    await settleUntil { fixture.shownDeliveries == [.sending] }
     await fixture.clock.waitForSleep(SendQueue.readinessTimeout)
+
+    #expect(fixture.clock.requestCount(SendQueue.progressDelay) == 0)
+    #expect(fixture.shownDeliveries == [nil])
     #expect(fixture.client.promptedTexts.isEmpty)
 
     fixture.readiness.state = .ready
@@ -57,7 +55,8 @@ extension SessionModelTests {
     fixture.clock.advance(by: SendQueue.readinessTimeout)
     await fixture.clock.waitForSleep(SendQueue.wakeTimeout - SendQueue.readinessTimeout)
 
-    #expect(fixture.shownDeliveries == [.sending])
+    #expect(fixture.clock.requestCount(SendQueue.progressDelay) == 0)
+    #expect(fixture.shownDeliveries == [nil])
     fixture.readiness.state = .ready
     await fixture.client.promptRequests.wait()
     #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
@@ -78,7 +77,8 @@ extension SessionModelTests {
     fixture.readiness.state = .waiting("Reconnecting to the sandbox…")
     await fixture.readiness.reads.wait(for: readsBefore + 1)
 
-    #expect(fixture.shownDeliveries == [.sending])
+    #expect(fixture.clock.requestCount(SendQueue.progressDelay) == 0)
+    #expect(fixture.shownDeliveries == [nil])
     fixture.readiness.state = .ready
     await fixture.client.promptRequests.wait()
     #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
@@ -119,7 +119,7 @@ extension SessionModelTests {
     fixture.model.shutdown()
   }
 
-  @Test("A photo still uploading shows in the bubble at once and is sent with its uploaded file")
+  @Test("A photo still uploading gets a progress bar after a second and is sent with its uploaded file")
   func botSendWaitsForItsUpload() async throws {
     let fixture = await BotSendFixture.make(using: loadedBotModel)
     let photo = try fixture.uploadingPhoto()
@@ -128,6 +128,10 @@ extension SessionModelTests {
     fixture.queue.enqueue(message, attachmentIDs: [photo.id], route: .bot(afterSequence: 1))
 
     #expect(fixture.queue.unsentBotMessages.first?.message.attachments.map(\.fileId) == [photo.pendingFileID])
+    #expect(fixture.shownDeliveries == [nil])
+    await fixture.clock.waitForSleep(SendQueue.progressDelay)
+    fixture.clock.advance(by: SendQueue.progressDelay)
+    await settleUntil { fixture.shownDeliveries == [.sending] }
     let ref = ServerAttachmentRef(
       fileId: "file-1", name: photo.name, mimeType: photo.mimeType, sizeBytes: 3, kind: .image)
     fixture.attachments.setAttachmentState(photo.id, .uploaded(ref))

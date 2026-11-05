@@ -68,6 +68,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var openSessionResponse: ServerSessionOpenResponse?
   var openSessionFailure: CodevisorServerClientError?
   var openSessionGate: AsyncStream<Void>?
+  var worktreeGate: AsyncStream<Void>?
+  let worktreeRequests = TestSignal()
   let openSessionRequests = TestSignal()
   var promptFailure: CodevisorServerClientError?
   let sendAttempts = FakeSendAttempts()

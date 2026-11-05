@@ -53,6 +53,7 @@ final public class SessionController {
   @ObservationIgnored var sentAttachmentPreviews = SentAttachmentPreviews()
   @ObservationIgnored lazy var sends = SendQueue(
     attachments: attachments,
+    clock: sendClock,
     readiness: { [weak self] in self?.sendReadiness ?? .failed(Self.closedChatReason) },
     connect: { [weak self] message in await self?.connectForSend(message) ?? .failed(Self.closedChatReason) },
     deliver: { [weak self] message, route, model in await self?.deliverSend(message, route: route, to: model) },
@@ -63,6 +64,7 @@ final public class SessionController {
     }
   )
   public let attachmentFiles: ComposerAttachmentFileStore
+  @ObservationIgnored private let sendClock: any Clock<Duration>
   public internal(set) var harnesses: [ServerHarness] = []
   public internal(set) var preparationState: PreparationState = .loading
   public internal(set) var isRefreshingHarnessCapabilities = false
@@ -263,10 +265,12 @@ final public class SessionController {
     serverClient: (any CodevisorServerClienting)? = nil,
     machines: MachineController? = nil,
     notificationDelivery: (any ChatNotificationDelivering)? = nil,
-    attachmentFiles: ComposerAttachmentFileStore = .temporary()
+    attachmentFiles: ComposerAttachmentFileStore = .temporary(),
+    sendClock: any Clock<Duration> = ContinuousClock()
   ) {
     self.project = project
     self.attachmentFiles = attachmentFiles
+    self.sendClock = sendClock
     self.configCache = configCache
     self.composerDefaults = composerDefaults
     self.hostWorkspaceId = hostWorkspaceId

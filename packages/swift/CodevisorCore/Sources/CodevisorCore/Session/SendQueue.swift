@@ -93,7 +93,6 @@ final class SendQueue {
 
   func enqueue(_ message: UserMessage, attachmentIDs: [UUID], route: Route) {
     entries.append(Entry(message: message, attachmentIDs: attachmentIDs, route: route))
-    showProgress(for: message.id, after: Self.progressDelay)
     startWorker()
   }
 
@@ -111,7 +110,7 @@ final class SendQueue {
 
     for attachmentID in entries[index].attachmentIDs { attachments.retryAttachment(id: attachmentID) }
     entries[index].stage = .preparing
-    entries[index].showsProgress = true
+    entries[index].showsProgress = false
     startWorker()
   }
 
@@ -194,6 +193,8 @@ final class SendQueue {
   }
 
   private func send(_ id: UUID, through model: SessionModel) async {
+    let progress = showProgress(for: id, after: Self.progressDelay)
+    defer { progress.cancel() }
     switch await ObservedState.first({ uploadOutcome(for: id) }) {
     case let .uploaded(uploaded)?: handOff(id, attachments: uploaded, to: model)
     case let .failed(reason)?: fail(id, reason)
@@ -239,7 +240,7 @@ final class SendQueue {
     }
   }
 
-  private func showProgress(for id: UUID, after delay: Duration) {
+  private func showProgress(for id: UUID, after delay: Duration) -> Task<Void, Never> {
     Task { [weak self, clock] in
       guard (try? await clock.sleep(for: delay)) != nil else { return }
       guard let self, let index = self.index(of: id) else { return }

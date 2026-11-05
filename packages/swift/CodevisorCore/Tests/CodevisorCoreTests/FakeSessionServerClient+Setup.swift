@@ -22,6 +22,8 @@ final class FakeSetupRequests: @unchecked Sendable {
 extension FakeSessionServerClient {
   func createWorktree(projectId: UUID, id: String?, name: String?) async throws -> ServerWorktree {
     setupRequests.recordWorktree(for: projectId)
+    worktreeRequests.signal()
+    if let worktreeGate { for await _ in worktreeGate {} }
     return try JSONDecoder().decode(
       ServerWorktree.self,
       from: Data(
