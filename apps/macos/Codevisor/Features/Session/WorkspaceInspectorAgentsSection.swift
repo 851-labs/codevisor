@@ -29,7 +29,11 @@ struct WorkspaceInspectorAgentsSection: View {
   var body: some View {
     WorkspaceInspectorCard(title: title, isExpanded: $isExpanded) {
       ForEach(agents) { agent in
-        WorkspaceInspectorAgentRow(agent: agent, store: store)
+        WorkspaceInspectorAgentRow(
+          agent: agent,
+          store: store,
+          focusShape: WorkspaceInspectorCardShape.row(for: agent, in: agents)
+        )
       }
     }
   }

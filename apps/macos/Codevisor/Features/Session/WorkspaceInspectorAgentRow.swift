@@ -3,7 +3,7 @@ import SwiftUI
 struct WorkspaceInspectorAgentRow: View {
   let agent: WorkspaceInspectorAgent
   let store: SessionStore
-  @Environment(\.workspaceInspectorCardRowShape) private var rowShape
+  let focusShape: UnevenRoundedRectangle
 
   private var title: String { SidebarWorkspaceRowLabel.title(for: agent.name) }
 
@@ -16,7 +16,7 @@ struct WorkspaceInspectorAgentRow: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(WorkspaceInspectorCardShape.rowPadding)
       .contentShape(Rectangle())
-      .contentShape(.focusEffect, rowShape)
+      .contentShape(.focusEffect, focusShape)
     }
     .buttonStyle(.plain)
     .containerValue(\.fillsWorkspaceInspectorCardRow, true)

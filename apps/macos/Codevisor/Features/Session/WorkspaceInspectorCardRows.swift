@@ -16,16 +16,11 @@ struct WorkspaceInspectorCardRows<Content: View>: View {
           subview
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(padding(for: subview))
-            .environment(\.workspaceInspectorCardRowShape, shape(for: subview, in: subviews))
         }
       }
     }
     .labeledContentStyle(WorkspaceInspectorLabeledContentStyle())
     .labelStyle(WorkspaceInspectorLabelStyle())
-  }
-
-  private func shape(for subview: Subview, in subviews: SubviewsCollection) -> UnevenRoundedRectangle {
-    WorkspaceInspectorCardShape.row(isFirst: subview.id == subviews.first?.id, isLast: subview.id == subviews.last?.id)
   }
 
   private func padding(for subview: Subview) -> CGFloat {
