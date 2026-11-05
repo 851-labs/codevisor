@@ -45,16 +45,26 @@ public final class ScreenSharingVCPTileEncoder: ScreenSharingTileEncoder, @unche
 
     let tiles = request.update.tiles.sorted().filter(sessions.indices.contains)
     let startNs = ScreenSharingMetrics.nowNs
-    let converted = try converter.convert(request.pixelBuffer, capture: request.sourceTimestampNs)
-    let convertedNs = ScreenSharingMetrics.nowNs
-    let pixels = try cutter.cut(converted, tiles: tiles)
-    let cutNs = ScreenSharingMetrics.nowNs
+    let pixels = try tilePixels(request, tiles: tiles)
     if !request.update.isRefinement {
-      metrics.observe("vcpConvert", milliseconds: Double(convertedNs - startNs) / 1e6)
+      metrics.observe("vcpConvert", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
     }
-    if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(cutNs - convertedNs) / 1e6) }
     for tile in tiles { encode(tile, pixels: pixels[tile], request: request) }
     metrics.observe("updateSubmit", milliseconds: Double(ScreenSharingMetrics.nowNs - startNs) / 1e6)
+  }
+
+  private func tilePixels(_ request: ScreenSharingTileEncodeRequest, tiles: [Int]) throws -> [Int: CVPixelBuffer] {
+    if layout.count > 1,
+      let converted = try converter.convertTiles(
+        request.pixelBuffer, capture: request.sourceTimestampNs, tiles: tiles, layout: layout)
+    {
+      return converted
+    }
+    let converted = try converter.convert(request.pixelBuffer, capture: request.sourceTimestampNs)
+    let cutNs = ScreenSharingMetrics.nowNs
+    let pixels = try cutter.cut(converted, tiles: tiles)
+    if layout.count > 1 { metrics.observe("tileCut", milliseconds: Double(ScreenSharingMetrics.nowNs - cutNs) / 1e6) }
+    return pixels
   }
 
   private func encode(_ tile: Int, pixels: CVPixelBuffer?, request: ScreenSharingTileEncodeRequest) {
