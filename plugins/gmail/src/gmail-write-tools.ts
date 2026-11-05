@@ -14,6 +14,7 @@ import {
   resolveLabels,
   unreadChange
 } from "./gmail-labels.js"
+import { fromHeader, replySendAs, requestedFrom, sendAsAddresses } from "./gmail-send-as.js"
 import {
   confirmationRequired,
   createDraftArguments,
@@ -31,9 +32,10 @@ export const createDraft: ToolRunner = async (args, context) => {
 }
 
 export const updateDraft: ToolRunner = async (args, { api }) => {
-  const { draftId, ...changes } = updateDraftArguments.parse(args)
+  const { draftId, from, ...changes } = updateDraftArguments.parse(args)
   const existing = await api.draft(draftId)
-  const fields = updatedDraftFields(existing.message, changes)
+  const sender = await requestedFrom(api, from)
+  const fields = updatedDraftFields(existing.message, { ...changes, from: sender })
   return draftResult(await api.updateDraft(draftId, composeMessage(fields)), fields)
 }
 
@@ -44,12 +46,10 @@ export const send: ToolRunner = async (args, { api }) => {
   return { messageId: sent.id, threadId: sent.threadId }
 }
 
-export const reply: ToolRunner = async (args, { api, identity }) => {
+export const reply: ToolRunner = async (args, context) => {
   requireConfirmation("reply", args)
-  const { messageId, replyAll, ...input } = replyArguments.parse(args)
-  const original = await api.message(messageId, "metadata")
-  const fields = replyFields(original, input, { replyAll, identity })
-  const sent = await api.send(composeMessage(fields))
+  const fields = await replyFieldsFor(replyArguments.parse(args), context)
+  const sent = await context.api.send(composeMessage(fields))
   return { messageId: sent.id, threadId: sent.threadId, ...addressed(fields) }
 }
 
@@ -67,25 +67,54 @@ export const modifyLabels: ToolRunner = async (args, { api }) => {
   return modifyTargets(api, targets, await resolveLabels(api, { add, remove }))
 }
 
-interface DraftRequest extends NewMessage {
+interface NewMessageRequest extends NewMessage {
+  from?: string | undefined
+}
+
+interface DraftRequest extends NewMessageRequest {
   inReplyToMessageId?: string | undefined
   replyAll: boolean
 }
 
-const draftFields = async (
-  { inReplyToMessageId, replyAll, ...input }: DraftRequest,
-  { api, identity }: ToolContext
-): Promise<MessageFields> => {
-  if (inReplyToMessageId === undefined) return newMessageFields(input)
-
-  const original = await api.message(inReplyToMessageId, "metadata")
-  return replyFields(original, input, { replyAll, identity })
+interface ReplyRequest extends NewMessageRequest {
+  messageId: string
+  replyAll: boolean
 }
 
-const sendMessage = (api: GmailApi, input: { draftId: string } | NewMessage) => {
+const draftFields = async (
+  { inReplyToMessageId, ...input }: DraftRequest,
+  context: ToolContext
+): Promise<MessageFields> => {
+  if (inReplyToMessageId === undefined) return newFieldsFor(context.api, input)
+
+  return replyFieldsFor({ ...input, messageId: inReplyToMessageId }, context)
+}
+
+const newFieldsFor = async (
+  api: GmailApi,
+  { from, ...input }: NewMessageRequest
+): Promise<MessageFields> => newMessageFields(input, await requestedFrom(api, from))
+
+const replyFieldsFor = async (
+  { messageId, replyAll, from, ...input }: ReplyRequest,
+  { api }: ToolContext
+): Promise<MessageFields> => {
+  const [original, addresses] = await Promise.all([
+    api.message(messageId, "metadata"),
+    sendAsAddresses(api)
+  ])
+  const sender = replySendAs(addresses, original, from)
+  return replyFields(original, input, {
+    replyAll,
+    me: addresses.map((address) => address.email),
+    from: fromHeader(addresses, sender)
+  })
+}
+
+const sendMessage = async (api: GmailApi, input: { draftId: string } | NewMessageRequest) => {
   if ("draftId" in input) return api.sendDraft(input.draftId)
 
-  return api.send(composeMessage(newMessageFields(input)))
+  return api.send(composeMessage(await newFieldsFor(api, input)))
 }
 
 const requireConfirmation = (tool: string, args: Record<string, unknown>): void => {
@@ -102,6 +131,7 @@ const draftResult = (draft: GmailDraft, fields: MessageFields): Record<string, u
 const addressed = (fields: MessageFields): Record<string, string> =>
   Object.fromEntries(
     Object.entries({
+      from: fields.from,
       to: fields.to,
       cc: fields.cc,
       bcc: fields.bcc,

@@ -1,7 +1,6 @@
 import {
   formatAddress,
   parseAddresses,
-  sameAddress,
   withoutDuplicates,
   type MailAddress
 } from "./gmail-addresses.js"
@@ -23,10 +22,17 @@ export interface NewMessage extends Recipients {
 
 export interface ReplyOptions {
   replyAll: boolean
-  identity: string | undefined
+  me: ReadonlyArray<string>
+  from: string
 }
 
-export const newMessageFields = (input: NewMessage): MessageFields => ({
+export interface DraftChanges extends Recipients {
+  body?: string | undefined
+  from?: string | undefined
+}
+
+export const newMessageFields = (input: NewMessage, from = ""): MessageFields => ({
+  from,
   to: input.to ?? "",
   cc: input.cc ?? "",
   bcc: input.bcc ?? "",
@@ -45,6 +51,7 @@ export const replyFields = (
   const recipients = replyRecipients(original, options)
   const messageId = headerOf(original, "Message-ID")
   return {
+    from: options.from,
     to: input.to ?? addressList(recipients.to),
     cc: input.cc ?? addressList(recipients.cc),
     bcc: input.bcc ?? "",
@@ -56,10 +63,8 @@ export const replyFields = (
   }
 }
 
-export const updatedDraftFields = (
-  existing: GmailMessage,
-  input: Recipients & { body?: string | undefined }
-): MessageFields => ({
+export const updatedDraftFields = (existing: GmailMessage, input: DraftChanges): MessageFields => ({
+  from: input.from ?? headerOf(existing, "From"),
   to: input.to ?? headerOf(existing, "To"),
   cc: input.cc ?? headerOf(existing, "Cc"),
   bcc: input.bcc ?? headerOf(existing, "Bcc"),
@@ -76,32 +81,35 @@ interface ReplyRecipients {
 }
 
 const replyRecipients = (original: GmailMessage, options: ReplyOptions): ReplyRecipients => {
-  const to = primaryRecipients(original, options.identity)
+  const to = primaryRecipients(original, options.me)
   if (!options.replyAll) return { to, cc: [] }
 
   const everyone = parseAddresses(`${headerOf(original, "To")},${headerOf(original, "Cc")}`)
-  const others = everyone.filter((address) => copiedOnReply(address, to, options.identity))
+  const others = everyone.filter((address) => copiedOnReply(address, to, options.me))
   return { to, cc: withoutDuplicates(others) }
 }
 
 const copiedOnReply = (
   address: MailAddress,
   to: ReadonlyArray<MailAddress>,
-  identity: string | undefined
-): boolean => !sameAddress(address, identity) && !to.some((same) => same.email === address.email)
+  me: ReadonlyArray<string>
+): boolean => !isMine(address, me) && !to.some((same) => same.email === address.email)
 
 const primaryRecipients = (
   original: GmailMessage,
-  identity: string | undefined
+  me: ReadonlyArray<string>
 ): Array<MailAddress> => {
   const sender = senderOf(original)
-  if (sameAddress(sender, identity)) return parseAddresses(headerOf(original, "To"))
+  if (isMine(sender, me)) return parseAddresses(headerOf(original, "To"))
 
   const replyTo = parseAddresses(headerOf(original, "Reply-To"))
   if (replyTo.length > 0) return replyTo
 
   return [sender]
 }
+
+const isMine = (address: MailAddress, me: ReadonlyArray<string>): boolean =>
+  me.includes(address.email)
 
 const addressList = (addresses: ReadonlyArray<MailAddress>): string =>
   addresses.map(formatAddress).join(", ")

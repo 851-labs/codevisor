@@ -10,6 +10,7 @@ const ids = z.array(id).default([])
 const optionalText = z.string().optional()
 
 const recipients = {
+  from: optionalText,
   to: optionalText,
   cc: optionalText,
   bcc: optionalText,
@@ -53,6 +54,7 @@ export const replyArguments = z.object({
   messageId: id,
   body: z.string(),
   replyAll: z.boolean().default(false),
+  from: optionalText,
   cc: optionalText
 })
 

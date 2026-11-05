@@ -67,8 +67,7 @@ const registerTools = (server: Server, fetcher: Fetch): void => {
     if (account === undefined) return errorResult(missingGmailAccount)
 
     return runGmailTool(request.params.name, request.params.arguments ?? {}, {
-      api: gmailApi(fetcher, account.accessToken),
-      identity: account.identity
+      api: gmailApi(fetcher, account.accessToken)
     })
   })
 }

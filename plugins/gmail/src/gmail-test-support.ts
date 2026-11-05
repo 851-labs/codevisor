@@ -43,6 +43,14 @@ export interface FakeRequest {
   body: Record<string, unknown> | undefined
 }
 
+export interface FakeSendAs {
+  sendAsEmail: string
+  displayName?: string
+  isPrimary?: boolean
+  isDefault?: boolean
+  verificationStatus?: string
+}
+
 export interface FakeGmail {
   fetch: Fetch
   requests: Array<FakeRequest>
@@ -51,6 +59,7 @@ export interface FakeGmail {
   outbox: Array<OutboxEntry>
   add(input: FakeMessageInput): void
   addDraft(draftId: string, input: FakeMessageInput): void
+  addSendAs(sendAs: FakeSendAs): void
   remove(id: string): void
   labelsOf(id: string): Array<string> | undefined
   expireHistoryThrough(historyId: number): void
@@ -60,6 +69,13 @@ export interface FakeGmail {
 export const gmailAccessToken = "ya29.test-token"
 export const gmailIdentity = "me@example.com"
 export const baseTime = Date.parse("2026-10-27T12:00:00.000Z")
+
+const primarySendAs: FakeSendAs = {
+  sendAsEmail: gmailIdentity,
+  displayName: "Me",
+  isPrimary: true,
+  isDefault: true
+}
 
 export const fakeLabels = [
   { id: "INBOX", name: "INBOX", type: "system" },
@@ -146,6 +162,7 @@ export const fakeGmail = (): FakeGmail => {
   const state: FakeState = {
     messages: new Map(),
     drafts: new Map(),
+    sendAs: [primarySendAs],
     history: [],
     historyId: 1000,
     expiredThrough: 0,
@@ -172,6 +189,7 @@ export const fakeGmail = (): FakeGmail => {
     },
     add: (input) => addMessage(state, gmailMessage(input)),
     addDraft: (draftId, input) => state.drafts.set(draftId, gmailMessage(input)),
+    addSendAs: (sendAs) => state.sendAs.push(sendAs),
     remove: (id) => state.messages.delete(id),
     labelsOf: (id) => state.messages.get(id)?.labelIds,
     expireHistoryThrough: (historyId) => {
@@ -194,6 +212,7 @@ interface FakeMessage {
 interface FakeState {
   messages: Map<string, FakeMessage>
   drafts: Map<string, FakeMessage>
+  sendAs: Array<FakeSendAs>
   history: Array<{ id: string; messageId: string }>
   historyId: number
   expiredThrough: number
@@ -239,6 +258,10 @@ const routes: Readonly<Record<string, Route>> = {
     json(200, { emailAddress: gmailIdentity, historyId: String(state.historyId) }),
   history: ({ state }, request) => historyPage(state, request.url.searchParams),
   labels: () => json(200, { labels: fakeLabels }),
+  settings: ({ state }, _request, [, setting]) => {
+    if (setting === "sendAs") return json(200, { sendAs: state.sendAs })
+    return json(404, {})
+  },
   threads: ({ state }, request, [, id, action]) => {
     if (id === undefined) return threadList(state, request.url.searchParams)
     if (action === "modify") return modifiedThread(state, id, request.body)

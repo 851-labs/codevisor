@@ -6,6 +6,7 @@ import { GmailApiError } from "./gmail-api.js"
 import { GmailToolError } from "./gmail-labels.js"
 import {
   listLabels,
+  listSendAs,
   readMessage,
   readThread,
   searchMessages,
@@ -44,6 +45,7 @@ const toolRunners: Readonly<Record<string, ToolRunner>> = {
   read_message: readMessage,
   read_thread: readThread,
   list_labels: listLabels,
+  list_send_as: listSendAs,
   create_draft: createDraft,
   update_draft: updateDraft,
   send,

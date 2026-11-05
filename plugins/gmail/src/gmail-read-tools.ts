@@ -1,4 +1,5 @@
 import { messageDetail, messageSummary, threadSummary } from "./gmail-message.js"
+import { sendAsAddresses, type SendAsAddress } from "./gmail-send-as.js"
 import { messageArguments, searchArguments, threadArguments } from "./gmail-tool-arguments.js"
 import type { ToolRunner } from "./gmail-tool-runner.js"
 
@@ -36,6 +37,16 @@ export const listLabels: ToolRunner = async (_args, { api }) => ({
     name: label.name,
     type: label.type
   }))
+})
+
+export const listSendAs: ToolRunner = async (_args, { api }) => ({
+  addresses: (await sendAsAddresses(api)).map(sendAsSummary)
+})
+
+const sendAsSummary = (address: SendAsAddress): Record<string, unknown> => ({
+  email: address.email,
+  ...(address.name === "" ? {} : { name: address.name }),
+  default: address.isDefault
 })
 
 const nextPage = (token: string | undefined): { nextPageToken?: string } =>

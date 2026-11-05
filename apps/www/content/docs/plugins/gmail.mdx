@@ -20,6 +20,7 @@ inbox organized. An agent can also wait for new mail and act when it arrives.
 | `search_threads`               | Search conversations, one result per thread                            |
 | `read_message`, `read_thread`  | Read a message, or a whole conversation oldest first                   |
 | `list_labels`                  | List the account's labels                                              |
+| `list_send_as`                 | List the addresses and aliases the account can send from               |
 | `create_draft`, `update_draft` | Write a new message or a reply as a draft, and change it               |
 | `send`, `reply`                | Send a message, a reply, or a draft, only after you approve it         |
 | `archive`                      | Move messages or conversations out of the inbox                        |
@@ -30,8 +31,12 @@ The **message.received** event fires when a new message arrives in the inbox. An
 to it, optionally with a filter such as `from` or `subject`, wakes up with the new message's
 summary. See [plugin events](/docs/plugins#events).
 
-Agents draft by default. Before `send` or `reply`, an agent shows you the exact recipients, subject,
-and body and waits for your explicit approval; the tools refuse to send without it.
+Agents draft by default. Before `send` or `reply`, an agent shows you the exact sender, recipients,
+subject, and body and waits for your explicit approval; the tools refuse to send without it.
+
+Agents can send from any **Send mail as** address set up in Gmail's settings, such as an alias on
+another domain. Like Gmail, a reply goes out from the address the message was sent to, and a new
+message from the account's default address unless you ask for another one.
 
 ## Connect an account
 

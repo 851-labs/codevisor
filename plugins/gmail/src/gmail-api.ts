@@ -7,6 +7,7 @@ import {
   gmailMessage,
   gmailMessageList,
   gmailProfile,
+  gmailSendAsList,
   gmailThread,
   gmailThreadList,
   gmailWatch,
@@ -21,6 +22,7 @@ export type {
   GmailMessageList,
   GmailPart,
   GmailProfile,
+  GmailSendAs,
   GmailThread,
   GmailThreadList,
   GmailWatch
@@ -61,6 +63,7 @@ export const metadataHeaders = [
   "From",
   "To",
   "Cc",
+  "Delivered-To",
   "Reply-To",
   "Subject",
   "Date",
@@ -86,6 +89,7 @@ export const gmailApi = (fetcher: Fetch, accessToken: string) => {
     history: (startHistoryId: string, maxResults: number) =>
       call(gmailHistoryPage, `/history?${historyQuery(startHistoryId, maxResults)}`),
     labels: async () => (await call(gmailLabelList, "/labels")).labels,
+    sendAs: async () => (await call(gmailSendAsList, "/settings/sendAs")).sendAs,
     draft: (id: string) => call(gmailDraft, `/drafts/${encodeURIComponent(id)}?format=full`),
     createDraft: (outgoing: Outgoing) =>
       call(gmailDraft, "/drafts", { method: "POST", body: { message: message(outgoing) } }),
