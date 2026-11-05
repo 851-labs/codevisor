@@ -90,29 +90,6 @@ public struct ScreenSharingVideoFrame: @unchecked Sendable {
   }
 }
 
-public struct ScreenSharingEncodedFrame: Sendable {
-  public let data: Data
-  public let timestampNs: Int64
-  public let rtpTimestamp: UInt32
-  public let width: Int
-  public let height: Int
-  public let isKeyFrame: Bool
-  public var sourceTimestampNs: Int64? = nil
-
-  package init(
-    data: Data, timestampNs: Int64, rtpTimestamp: UInt32, width: Int, height: Int, isKeyFrame: Bool,
-    sourceTimestampNs: Int64? = nil
-  ) {
-    self.data = data
-    self.timestampNs = timestampNs
-    self.rtpTimestamp = rtpTimestamp
-    self.width = width
-    self.height = height
-    self.isKeyFrame = isKeyFrame
-    self.sourceTimestampNs = sourceTimestampNs
-  }
-}
-
 public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   private let lock = NSLock()
   private var frame: ScreenSharingVideoFrame?

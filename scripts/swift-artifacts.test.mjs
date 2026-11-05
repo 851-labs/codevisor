@@ -28,21 +28,21 @@ async function fixture(t) {
 async function worktree(
   root,
   name,
-  { binary = "webrtc-binary", unpackedAt = new Date("2026-01-02T03:04:05Z") } = {}
+  { binary = "sentry-binary", unpackedAt = new Date("2026-01-02T03:04:05Z") } = {}
 ) {
   const stateDirectory = join(root, name, "SourcePackages")
-  const artifact = join(stateDirectory, "artifacts/webrtc/WebRTC/WebRTC.xcframework")
+  const artifact = join(stateDirectory, "artifacts/sentry/Sentry/Sentry.xcframework")
   const local = join(root, name, "Frameworks/CodevisorNetFFI.xcframework")
   const pins = join(root, name, "Package.resolved")
   await mkdir(dirname(pins), { recursive: true })
   await writeFile(pins, "pins v1")
   const extract = async () => {
-    const framework = join(artifact, "macos-arm64/WebRTC.framework")
+    const framework = join(artifact, "macos-arm64/Sentry.framework")
     await mkdir(join(framework, "Versions/A"), { recursive: true })
     await writeFile(join(artifact, "Info.plist"), "plist")
-    await writeFile(join(framework, "Versions/A/WebRTC"), binary)
-    await symlink("Versions/A/WebRTC", join(framework, "WebRTC"))
-    await utimes(join(framework, "Versions/A/WebRTC"), unpackedAt, unpackedAt)
+    await writeFile(join(framework, "Versions/A/Sentry"), binary)
+    await symlink("Versions/A/Sentry", join(framework, "Sentry"))
+    await utimes(join(framework, "Versions/A/Sentry"), unpackedAt, unpackedAt)
     await mkdir(local, { recursive: true })
     await writeFile(
       join(stateDirectory, "workspace-state.json"),
@@ -65,7 +65,7 @@ async function worktree(
   return {
     artifact,
     unpackedAt,
-    binaryPath: join(artifact, "macos-arm64/WebRTC.framework/Versions/A/WebRTC"),
+    binaryPath: join(artifact, "macos-arm64/Sentry.framework/Versions/A/Sentry"),
     pins,
     stateDirectory,
     extract,
@@ -95,17 +95,17 @@ test(
     assert.deepEqual((await second.prepare(store)).shared, [second.artifact])
 
     for (const { binaryPath, artifact, unpackedAt } of [first, second]) {
-      assert.equal(await readFile(binaryPath, "utf8"), "webrtc-binary")
+      assert.equal(await readFile(binaryPath, "utf8"), "sentry-binary")
       assert.equal((await lstat(binaryPath)).mtime.getTime(), unpackedAt.getTime())
       assert.equal(
-        await readlink(join(artifact, "macos-arm64/WebRTC.framework/WebRTC")),
-        "Versions/A/WebRTC"
+        await readlink(join(artifact, "macos-arm64/Sentry.framework/Sentry")),
+        "Versions/A/Sentry"
       )
     }
-    const stored = join(store, `${checksum}-WebRTC.xcframework`, "WebRTC.xcframework")
+    const stored = join(store, `${checksum}-Sentry.xcframework`, "Sentry.xcframework")
     assert.equal(
-      await readFile(join(stored, "macos-arm64/WebRTC.framework/Versions/A/WebRTC"), "utf8"),
-      "webrtc-binary"
+      await readFile(join(stored, "macos-arm64/Sentry.framework/Versions/A/Sentry"), "utf8"),
+      "sentry-binary"
     )
   }
 )
@@ -141,5 +141,5 @@ test("an artifact that differs from the stored copy keeps its own files", darwin
   assert.deepEqual(result.shared, [])
   assert.equal(await readFile(corrupt.binaryPath, "utf8"), "truncated")
   assert.equal(warnings.length, 1)
-  assert.match(warnings[0], /could not share Swift artifact .*WebRTC\.xcframework.*changed/)
+  assert.match(warnings[0], /could not share Swift artifact .*Sentry\.xcframework.*changed/)
 })

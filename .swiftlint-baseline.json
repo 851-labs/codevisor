@@ -1815,21 +1815,6 @@
     }
   },
   {
-    "text": "  private func configure(parameters: [Data]) throws {",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharing/Codecs/ScreenSharingDecoder.swift",
-        "line": 183
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 76 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  public func receive(_ message: ScreenSharingClipboardMessage) {",
     "violation": {
       "location": {
@@ -1956,81 +1941,6 @@
         "character": 10,
         "file": "packages/swift/ScreenSharing/Sources/ScreenSharingTesting/RFBTightEncoder.swift",
         "line": 12
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  init(",
-    "violation": {
-      "location": {
-        "character": 3,
-        "file": "packages/swift/ScreenSharing/Sources/ScreenSharingWebRTC/Endpoints/ScreenSharingReceiverRecovery.swift",
-        "line": 12
-      },
-      "reason": "Initializer body should span 50 lines or less excluding comments and whitespace: currently spans 80 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  @Test @MainActor func progressAwareGraceExtendsOnlyWhileNewerContentArrivesAndIsCapped() async {",
-    "violation": {
-      "location": {
-        "character": 20,
-        "file": "packages/swift/ScreenSharing/Tests/ScreenSharingTests/Capture/ScreenSharingSourceIdleTests+Grace.swift",
-        "line": 20
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  @Test @MainActor func notifierWakesOncePerThresholdSendsOneNoticeAndRetainsItUntilTheChannelOpens() async {",
-    "violation": {
-      "location": {
-        "character": 20,
-        "file": "packages/swift/ScreenSharing/Tests/ScreenSharingTests/Capture/ScreenSharingSourceIdleTests.swift",
-        "line": 84
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 74 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  @Test @MainActor func verifierRefreshesAfterGraceAndKeepsRetryingWithBackoffUntilTheContentArrives() async {",
-    "violation": {
-      "location": {
-        "character": 20,
-        "file": "packages/swift/ScreenSharing/Tests/ScreenSharingTests/Capture/ScreenSharingSourceIdleTests.swift",
-        "line": 226
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 72 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "  static func picture(",
-    "violation": {
-      "location": {
-        "character": 10,
-        "file": "packages/swift/ScreenSharing/Tests/ScreenSharingTests/Codecs/ScreenSharingCodecRoundTripTests.swift",
-        "line": 357
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
       "ruleDescription": "Function bodies should not span too many lines",
