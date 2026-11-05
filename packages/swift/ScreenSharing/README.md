@@ -167,9 +167,9 @@ Probes (local M1 Pro, macOS 27.2, behaviour only): `xf44` and `444f` sources giv
 
 `SimulatorStreamHost` and `ComputerUseLivePreviewHost` list `engines: ["v2"]` when the app has a media endpoint and serve a v2 start through `ScreenSharingV2StreamLink`: a `ScreenSharingV2HostLink` plus the token handshake above, with no adaptive-quality loop. The link replays the latest frame once the viewer connects, since a still simulator or window sends none. The Computer Use link answers control requests as view-only, as before.
 
-On macOS both viewers are v2-only, with no WebRTC fallback: the Computer Use preview builds its `ScreenSharingViewerBackend` without a WebRTC session, and the macOS app gives the Simulator pane a `SimulatorStreamV2` connector. A host that doesn't list v2 ends the stream with a message to update Codevisor.
+Both viewers are v2-only on macOS and iOS, with no WebRTC fallback: the Computer Use preview builds its `ScreenSharingViewerBackend` without a WebRTC session, and every Simulator pane gets a `SimulatorStreamV2` connector (`SimulatorStreamV2.live`). The macOS app passes the acceptor's in-memory route for its own simulators; iOS passes none. Each viewer asks for the chroma it decodes, as the Screen Sharing viewers do (the Mac probes `ScreenSharingV2Chroma.decodable`; iOS asks for `420`), and the Simulator host picks the encoder from it (`ScreenSharingV2EncoderKind.forViewer`). A host that doesn't list v2 ends the stream with a message to update Codevisor.
 
-What stays on WebRTC only for iOS viewers, until 851-3824 moves them to v2 (851-3826 then deletes it): `SimulatorWebRTCPeer` and `ComputerUseSenderPeer`/`ComputerUseSenderSink` on the hosts, the `ScreenSharingStreamMedia.webRTC` case that selects them, and `SimulatorStreamConnection.attemptWebRTC` with the sponsor's `openTunnel` in the Simulator pane, which iOS uses without a v2 connector.
+The hosts still answer WebRTC starts from older viewers (`SimulatorWebRTCPeer`, `ComputerUseSenderPeer`/`ComputerUseSenderSink`, selected by `ScreenSharingStreamMedia.webRTC`); a follow-up PR for 851-3826 deletes them with the rest of WebRTC.
 
 ## Frame timeline
 

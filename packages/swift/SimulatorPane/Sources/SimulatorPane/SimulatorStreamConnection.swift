@@ -1,11 +1,9 @@
 import CodevisorClient
-import CodevisorCloud
 import CodevisorCore
 import Foundation
 import Observation
 import OSLog
 import ScreenSharing
-import ScreenSharingWebRTC
 
 @MainActor
 @Observable
@@ -105,12 +103,11 @@ public final class SimulatorStreamConnection: SimulatorSharedConnection {
       guard capabilities.version == 1, capabilities.status == "available" else {
         return .ended(capabilities.message ?? "This simulator isn't available on its Mac.")
       }
-      guard let v2 = sponsor.v2 else { return try await attemptWebRTC(capabilities, restart: restart) }
       guard capabilities.engines?.contains(ScreenSharingEngine.v2.rawValue) == true else {
         return .ended("Update Codevisor on the simulator's Mac to stream it here.")
       }
 
-      return try await attemptV2(v2, restart: restart)
+      return try await attemptV2(sponsor.v2, restart: restart)
     } catch {
       if error is CancellationError || Task.isCancelled { return .cancelled }
       Self.log.error("attempt failed: \(String(describing: error), privacy: .public)")
@@ -127,6 +124,7 @@ public final class SimulatorStreamConnection: SimulatorSharedConnection {
     var start = request(restart ? .restart : .start)
     start.engine = ScreenSharingEngine.v2.rawValue
     start.media = address
+    start.chroma = await v2.chroma().rawValue
     let reply = try await client.screenSharing(start)
     Self.log.info("start v2 \(reply.status, privacy: .public)")
     try Task.checkCancellation()
@@ -157,39 +155,6 @@ public final class SimulatorStreamConnection: SimulatorSharedConnection {
     return await heartbeat(until: lost)
   }
 
-  private func attemptWebRTC(_ capabilities: ServerScreenSharingReply, restart: Bool) async throws -> Outcome {
-    var tunnel: CloudTunnelMediaRoute?
-    defer { tunnel?.close() }
-    let receiver = try await Self.makeReceiver(connectivity: capabilities.connectivity)
-    if Task.isCancelled {
-      receiver.close()
-      return .cancelled
-    }
-    let lost = install(receiver, simulator: receiver.simulatorChannel)
-    let offer = try await receiver.makeDescription(offer: true).sdp
-    try Task.checkCancellation()
-    var start = request(restart ? .restart : .start, offer: offer)
-    tunnel = await sponsor.openTunnel?()
-    if let tunnel {
-      start.tunnelMedia = .init(endpointId: tunnel.endpointId, flowId: Int(tunnel.flowId))
-    }
-    let reply = try await client.screenSharing(start)
-    Self.log.info(
-      "start \(reply.status, privacy: .public) tunnel=\(tunnel != nil) hostTunnel=\(reply.tunnelMedia != nil)")
-    try Task.checkCancellation()
-    if reply.status == "starting" { return .lost }
-    guard reply.version == 1, reply.status == "connecting", var answer = reply.answer else {
-      return .ended(reply.message ?? "The simulator's Mac can't stream it right now.")
-    }
-    if let tunnel, reply.tunnelMedia?.flowId == Int(tunnel.flowId),
-      let address = ScreenSharingTunnelSDP.localIPv4(inOffer: offer)
-    {
-      answer = ScreenSharingTunnelSDP.answer(answer, routedTo: address, port: tunnel.localPort)
-    }
-    try await receiver.accept(.init(kind: "answer", sdp: answer))
-    return await heartbeat(until: lost)
-  }
-
   private func heartbeat(until lost: AsyncStream<Void>) async -> Outcome {
     let outcomes = AsyncStream<Outcome>.makeStream()
     let beats = Task { @MainActor [weak self] in
@@ -197,11 +162,8 @@ public final class SimulatorStreamConnection: SimulatorSharedConnection {
         try? await Task.sleep(for: .seconds(8))
         guard let self, !Task.isCancelled else { return }
         if self.phase != .streaming, let stats = await self.session?.statistics() {
-          let keys = [
-            "mimeType", "decoderImplementation", "packetsReceived", "framesReceived", "framesDecoded",
-            "keyFramesDecoded", "framesDropped", "pliCount", "bytesReceived",
-          ]
-          let summary = keys.compactMap { key in stats.first { $0.key.hasSuffix(key) }.map { "\(key)=\($0.value)" } }
+          let keys = ["route", "framesReceived", "bytesReceived", "lossPercent", "nacksSent", "framesSkipped"]
+          let summary = keys.compactMap { key in stats["v2.\(key)"].map { "\(key)=\($0)" } }
           let failure = self.session?.failure ?? "none"
           Self.log.info(
             "no frame yet: \(summary.joined(separator: " "), privacy: .public) decoder=\(failure, privacy: .public)")
@@ -262,27 +224,10 @@ public final class SimulatorStreamConnection: SimulatorSharedConnection {
     simulator = nil
   }
 
-  private func request(
-    _ operation: ServerScreenSharingRequest.Operation, offer: String? = nil
-  ) -> ServerScreenSharingRequest {
+  private func request(_ operation: ServerScreenSharingRequest.Operation) -> ServerScreenSharingRequest {
     .init(
       operation: operation, workspaceId: sponsor.workspaceId, paneId: sponsor.paneId, viewerId: viewerId,
-      displayId: target, offer: offer)
-  }
-
-  private static func makeReceiver(
-    connectivity: ServerScreenSharingConnectivity?
-  ) async throws
-    -> ScreenSharingReceiver
-  {
-    let ice = try connectivity.map { connectivity in
-      try ScreenSharingICEConfiguration(
-        servers: connectivity.servers.map {
-          try ScreenSharingICEServer(urls: $0.urls, username: $0.username, credential: $0.credential)
-        },
-        relayOnly: connectivity.relayOnly)
-    }
-    return try await ScreenSharingReceiver(configuration: .init(), metrics: ScreenSharingMetrics(), connectivity: ice)
+      displayId: target)
   }
 
   private static func message(for error: any Error) -> String {

@@ -7,7 +7,8 @@
     @State private var model = SimulatorPaneModel(
       client: DemoServerClient(machine: DemoWorld.macStudio),
       preferences: SimulatorPanePreferences(udid: DemoWorld.simulator.udid), machineId: DemoWorld.macStudio.serverId,
-      workspaceId: UUID(), paneId: UUID())
+      workspaceId: UUID(), paneId: UUID(),
+      v2: SimulatorStreamV2(address: { nil }, connect: { _ in throw CancellationError() }))
     @State private var hasDevice = false
 
     var body: some View {

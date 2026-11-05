@@ -394,7 +394,7 @@ let package = Package(
     .target(
       name: "SimulatorPane",
       dependencies: [
-        "Autocomplete", "CodevisorCloud", "CodevisorCore", "CodevisorUI", "ScreenSharing", "ScreenSharingWebRTC",
+        "Autocomplete", "CodevisorCore", "CodevisorUI", "ScreenSharing", "ScreenSharingV2",
       ],
       path: "SimulatorPane/Sources/SimulatorPane",
       swiftSettings: strictSwiftSettings

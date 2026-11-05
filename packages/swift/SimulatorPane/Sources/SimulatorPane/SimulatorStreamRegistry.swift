@@ -1,19 +1,36 @@
 import CodevisorClient
-import CodevisorCloud
 import CoreGraphics
 import Foundation
 import ScreenSharing
+import ScreenSharingV2
 
 public struct SimulatorStreamV2 {
   public var address: @MainActor () async -> ServerScreenSharingMediaAddress?
   public var connect: @MainActor (ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession
+  public var chroma: @Sendable () async -> ScreenSharingV2Chroma
 
   public init(
     address: @escaping @MainActor () async -> ServerScreenSharingMediaAddress?,
-    connect: @escaping @MainActor (ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession
+    connect: @escaping @MainActor (ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession,
+    chroma: @escaping @Sendable () async -> ScreenSharingV2Chroma = { .full }
   ) {
     self.address = address
     self.connect = connect
+    self.chroma = chroma
+  }
+
+  @MainActor
+  public static func live(
+    connectLocally: @escaping ScreenSharingV2Connector.ConnectLocally = { _ in nil },
+    chroma: @escaping @Sendable () async -> ScreenSharingV2Chroma = {
+      await Task.detached { ScreenSharingV2Chroma.decodable }.value
+    }
+  ) -> Self {
+    let endpoint = ScreenSharingMediaEndpoint.shared
+    return Self(
+      address: { await endpoint.viewerAddress() },
+      connect: { try await endpoint.connectViewer(to: $0, locally: connectLocally) },
+      chroma: chroma)
   }
 }
 
@@ -21,8 +38,7 @@ struct SimulatorStreamSponsor {
   let workspaceId: UUID
   let paneId: UUID
   let client: any CodevisorServerClienting
-  let v2: SimulatorStreamV2?
-  let openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)?
+  let v2: SimulatorStreamV2
 }
 
 @MainActor

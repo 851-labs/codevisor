@@ -1,4 +1,5 @@
 import CodevisorCore
+import ScreenSharingPane
 import SimulatorPane
 import SwiftUI
 
@@ -26,7 +27,7 @@ extension WorkspaceScreen {
     let model = SimulatorPaneCache.shared.model(for: pane.id) {
       SimulatorPaneModel(
         client: client, preferences: pane.simulator, machineId: serverId, workspaceId: workspace.id,
-        paneId: pane.id, openTunnel: { await machines.tunnelMediaRoute(forMachineId: serverId) })
+        paneId: pane.id, v2: .live(chroma: { ScreenSharingPaneModel.requestedChroma }))
     }
     model.applyPreferences(pane.simulator ?? SimulatorPanePreferences())
     model.onPreferencesChanged = { updateSimulator(pane, preferences: $0) }

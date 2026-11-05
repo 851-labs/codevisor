@@ -28,9 +28,7 @@ final class AppleSimulatorPane: Pane {
       return SimulatorPaneModel(
         client: client, preferences: descriptor.simulator, machineId: context.machine.id, workspaceId: workspaceId,
         paneId: descriptor.id,
-        v2: SimulatorStreamV2(
-          address: { await ScreenSharingViewerMedia.address() },
-          connect: { try await ScreenSharingViewerMedia.connect(to: $0) }))
+        v2: .live(connectLocally: ScreenSharingViewerMedia.connectLocally))
     }
   }
 

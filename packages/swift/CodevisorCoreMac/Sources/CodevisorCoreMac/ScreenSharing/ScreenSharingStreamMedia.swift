@@ -51,8 +51,11 @@ final class ScreenSharingV2StreamLink {
   private var accepting: Task<Void, Never>?
   private var closed = false
 
-  init(configuration: ScreenSharingVideoConfiguration) {
-    link = ScreenSharingV2HostLink(configuration: configuration, metrics: ScreenSharingMetrics())
+  init(configuration: ScreenSharingVideoConfiguration, encoder: ScreenSharingV2EncoderKind = .configured()) {
+    link = ScreenSharingV2HostLink(configuration: configuration, metrics: ScreenSharingMetrics()) {
+      configuration, metrics in
+      try await ScreenSharingV2Encoders.make(encoder, configuration: configuration, metrics: metrics)
+    }
     frames = ScreenSharingV2LatestFrame(router: link.frameRouter)
   }
 
