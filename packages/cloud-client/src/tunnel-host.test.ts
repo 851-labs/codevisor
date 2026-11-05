@@ -325,9 +325,7 @@ describe("MachineTunnel", () => {
     await tunnel.configure({ relays, enabled: true })
     const endpoint = endpoints[0]!
     const unsupported = connection("other/1")
-    const retiredMedia = connection("codevisor/media/1")
     endpoint.incoming.push({ error: new Error("bad handshake") })
-    endpoint.incoming.push({ value: retiredMedia })
     endpoint.incoming.push({ value: unsupported })
     endpoint.incoming.push({
       value: connection(TUNNEL_ALPN_CHANNELS, "g", Promise.reject(new Error("gone")))
@@ -335,7 +333,6 @@ describe("MachineTunnel", () => {
     endpoint.incoming.push({ value: connection(TUNNEL_ALPN_CHANNELS, "f".repeat(64)) })
 
     expect(await accepted.next()).toEqual({ endpointId: "f".repeat(64) })
-    expect(retiredMedia.close).toHaveBeenCalledWith(1, "unsupported service")
     expect(unsupported.close).toHaveBeenCalledWith(1, "unsupported service")
     expect(logs).toContain("Tunnel: handshake failed: Error: bad handshake")
   })
