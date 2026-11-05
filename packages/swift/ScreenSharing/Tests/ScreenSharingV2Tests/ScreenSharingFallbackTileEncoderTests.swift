@@ -28,33 +28,40 @@ struct ScreenSharingFallbackTileEncoderTests {
     #expect(fallback.requests.map(\.update.id) == [2, 3])
   }
 
-  @Test func aFailedOutputBuildsTheFallbackBeforeTheHostHearsOfIt() throws {
+  @Test func aFailedOutputReachesTheHostAtOnceAndStartsBuildingTheFallback() async throws {
     let encoder = fallingBack(from: primary)
-    let buildsWhenReported = Mutex<[Int]>([])
-    encoder.onOutput { [fallbackBuilds] _ in buildsWhenReported.withLock { $0.append(fallbackBuilds.value) } }
+    let reported = TestSignal()
+    encoder.onOutput { _ in reported.signal() }
 
     try encoder.encode(try Self.request(id: 1))
     primary.emit(.failed(tile: 0, refresh: nil, message: "broken"))
+    await fallbackBuilds.cancellableWait(for: 1)
 
-    #expect(buildsWhenReported.withLock { $0 } == [1])
+    #expect(reported.value == 1)
+    #expect(fallbackBuilds.value == 1)
   }
 
-  @Test func aFallbackThatCannotBeBuiltIsTriedAgainOnTheNextEncode() throws {
-    let failing = FailingTileEncoder(primary)
+  @Test func aFallbackThatCannotBeBuiltIsTriedAgainOnALaterEncode() throws {
     let attempts = TestSignal()
-    let encoder = ScreenSharingFallbackTileEncoder(primary: failing, metrics: metrics) { [fallback] _ in
-      attempts.signal()
-      guard attempts.value > 2 else { throw ScreenSharingError.unavailable("No hardware encoder.") }
+    let encoder = failingOver(retryingBuildsAfterNs: 0, attempts: attempts) { attempts.value < 2 }
 
-      return fallback
-    }
-
-    failing.fail(.throwsOnEncode)
     #expect(throws: ScreenSharingError.self) { try encoder.encode(try Self.request(id: 1)) }
     try encoder.encode(try Self.request(id: 2))
 
+    #expect(attempts.value == 2)
     #expect(fallback.requests.map(\.update.id) == [2])
     #expect(metrics.label("encoderFallbackBuildError") != nil)
+  }
+
+  @Test func aFailedBuildIsNotRetriedBeforeItsRetryInterval() throws {
+    let attempts = TestSignal()
+    let encoder = failingOver(retryingBuildsAfterNs: 60_000_000_000, attempts: attempts) { true }
+
+    #expect(throws: ScreenSharingError.self) { try encoder.encode(try Self.request(id: 1)) }
+    #expect(throws: ScreenSharingError.self) { try encoder.encode(try Self.request(id: 2)) }
+
+    #expect(attempts.value == 1)
+    #expect(fallback.requests.isEmpty)
   }
 
   @Test func anEncodeThePrimaryRefusesGoesToTheFallbackAtOnce() throws {
@@ -134,6 +141,20 @@ struct ScreenSharingFallbackTileEncoderTests {
 
     #expect(throws: ScreenSharingError.self) { try encoder.encode(try Self.request(id: 1)) }
     #expect(tiled.requests.isEmpty)
+  }
+
+  private func failingOver(
+    retryingBuildsAfterNs retryNs: Int64, attempts: TestSignal, buildFails: @escaping @Sendable () -> Bool
+  ) -> ScreenSharingFallbackTileEncoder {
+    let failing = FailingTileEncoder(primary)
+    failing.fail(.throwsOnEncode)
+    return ScreenSharingFallbackTileEncoder(primary: failing, metrics: metrics, buildRetryNs: retryNs) {
+      [fallback] _ in
+      attempts.signal()
+      guard !buildFails() else { throw ScreenSharingError.unavailable("No hardware encoder.") }
+
+      return fallback
+    }
   }
 
   private func fallingBack(from primary: any ScreenSharingTileEncoder) -> ScreenSharingFallbackTileEncoder {

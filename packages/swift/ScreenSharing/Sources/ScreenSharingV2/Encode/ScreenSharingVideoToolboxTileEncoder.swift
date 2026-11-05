@@ -56,14 +56,12 @@ public final class ScreenSharingVideoToolboxTileEncoder: ScreenSharingTileEncode
       built.withLock { $0[index] = session }
     }
     let results = built.withLock { $0.compactMap(\.self) }
-    let sessions = results.compactMap { try? $0.get() }
-    guard sessions.count == tiles.count else {
-      sessions.forEach { $0.close() }
-      try results.forEach { _ = try $0.get() }
-      throw ScreenSharingError.unavailable("No VideoToolbox session for every tile.")
+    do {
+      return try results.map { try $0.get() }
+    } catch {
+      results.forEach { (try? $0.get())?.close() }
+      throw error
     }
-
-    return sessions
   }
 
   public func onOutput(_ handler: @escaping @Sendable (ScreenSharingTileEncoderOutput) -> Void) {

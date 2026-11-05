@@ -17,8 +17,14 @@ public enum ScreenSharingV2Encoders {
     }
   }
 
-  public static func warmUpVideoToolbox() {
+  public static func withVideoToolboxFallback(
+    _ primary: any ScreenSharingTileEncoder, configuration: ScreenSharingVideoConfiguration,
+    metrics: ScreenSharingMetrics
+  ) -> ScreenSharingFallbackTileEncoder {
     ScreenSharingVideoToolboxWarmUp.start()
+    return ScreenSharingFallbackTileEncoder(primary: primary, metrics: metrics) { layout in
+      try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
+    }
   }
 
   private static func videoProcessing(
@@ -27,9 +33,6 @@ public enum ScreenSharingV2Encoders {
     try await ScreenSharingVCPSelfTest.pass()
     let primary = try ScreenSharingVCPTileEncoder(
       configuration: configuration, layout: ScreenSharingV2Profile.tileLayout(for: configuration), metrics: metrics)
-    warmUpVideoToolbox()
-    return ScreenSharingFallbackTileEncoder(primary: primary, metrics: metrics) { layout in
-      try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
-    }
+    return withVideoToolboxFallback(primary, configuration: configuration, metrics: metrics)
   }
 }

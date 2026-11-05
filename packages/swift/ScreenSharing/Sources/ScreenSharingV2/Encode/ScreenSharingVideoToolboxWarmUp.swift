@@ -1,3 +1,4 @@
+import Dispatch
 import VideoToolbox
 
 enum ScreenSharingVideoToolboxWarmUp {
@@ -10,6 +11,6 @@ enum ScreenSharingVideoToolboxWarmUp {
   }()
 
   static func start() {
-    Task.detached(priority: .utility) { once }
+    DispatchQueue.global(qos: .utility).async { once }
   }
 }

@@ -45,9 +45,6 @@ struct V2EncoderChoice {
     let primary = try ScreenSharingVCPTileEncoder(
       configuration: configuration, layout: ScreenSharingV2Profile.tileLayout(for: configuration), metrics: metrics)
     let failing = V2ForcedFailureEncoder(primary, after: delay, metrics: metrics)
-    ScreenSharingV2Encoders.warmUpVideoToolbox()
-    return ScreenSharingFallbackTileEncoder(primary: failing, metrics: metrics) { layout in
-      try ScreenSharingVideoToolboxTileEncoder(configuration: configuration, layout: layout, metrics: metrics)
-    }
+    return ScreenSharingV2Encoders.withVideoToolboxFallback(failing, configuration: configuration, metrics: metrics)
   }
 }
