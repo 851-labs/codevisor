@@ -44,6 +44,8 @@ package protocol ScreenSharingRenderPreparer: Sendable {
 @MainActor
 package final class ScreenSharingRenderCoordinator {
   package typealias Hop = @Sendable (_ work: @escaping @Sendable @MainActor () -> Void) -> Void
+  package static let refreshPacingTimeoutNs: Int64 = 20_000_000
+  package var pacesCommitsToRefresh = false
 
   package let mailbox: ScreenSharingFrameMailbox
   package let metrics: ScreenSharingMetrics
@@ -84,18 +86,24 @@ package final class ScreenSharingRenderCoordinator {
   private var reportedSize = CGSize.zero
   private var requestDraw: @MainActor () -> Void = {}
   private let hop: Hop
+  private let nowNs: @Sendable () -> Int64
   private var occupancy = 0
+  private var commitSinceRefreshNs: Int64?
 
   package init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool,
     redrawsOnDemand: Bool = false,
-    hop: @escaping Hop = { work in Task { @MainActor in work() } }
+    pacesCommitsToRefresh: Bool = false,
+    hop: @escaping Hop = { work in Task { @MainActor in work() } },
+    nowNs: @escaping @Sendable () -> Int64 = { ScreenSharingMetrics.nowNs }
   ) {
     self.mailbox = mailbox
     self.metrics = metrics
     self.renderOnArrival = renderOnArrival
     self.redrawsOnDemand = redrawsOnDemand
     self.hop = hop
+    self.nowNs = nowNs
+    self.pacesCommitsToRefresh = pacesCommitsToRefresh
   }
 
   package func bind(requestDraw: @escaping @MainActor () -> Void) {
@@ -126,8 +134,27 @@ package final class ScreenSharingRenderCoordinator {
     requestDraw()
   }
 
+  package func refreshed() {
+    guard commitSinceRefreshNs != nil else { return }
+
+    commitSinceRefreshNs = nil
+    guard !stopped, renderOnArrival, !inFlight, mailbox.isHolding else { return }
+
+    requestDraw()
+  }
+
+  private var waitsForRefresh: Bool {
+    guard pacesCommitsToRefresh, let committedNs = commitSinceRefreshNs else { return false }
+
+    return nowNs() - committedNs < Self.refreshPacingTimeoutNs
+  }
+
   package func select() -> (frame: ScreenSharingVideoFrame, isNewFrame: Bool)? {
     guard !stopped, !inFlight else { return nil }
+    if mailbox.isHolding, waitsForRefresh {
+      metrics.increment("commitsPacedToRefresh")
+      return nil
+    }
     let incoming = mailbox.take()
     guard let frame = incoming ?? (needsRedraw ? lastFrame : nil) else { return nil }
     lastFrame = frame
@@ -212,6 +239,7 @@ package final class ScreenSharingRenderCoordinator {
     let renderOnArrival = renderOnArrival
     let mine = occupancy
     let startedNs = ScreenSharingMetrics.nowNs
+    if isNewFrame { commitSinceRefreshNs = nowNs() }
     if isNewFrame, let receivedAt = frame.receivedAt {
       metrics.observe("receiverCallbackToSubmission", milliseconds: (submittedAt - receivedAt) * 1000)
     }

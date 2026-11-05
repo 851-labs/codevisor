@@ -70,9 +70,9 @@ struct ScreenSharingRenderCoordinatorTests {
     let coordinator: ScreenSharingRenderCoordinator
     let draws = Counter()
     @MainActor final class Counter { var value = 0 }
-    init(renderOnArrival: Bool) {
+    init(renderOnArrival: Bool, nowNs: @escaping @Sendable () -> Int64 = { ScreenSharingMetrics.nowNs }) {
       coordinator = ScreenSharingRenderCoordinator(
-        mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, hop: queue.hop)
+        mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, hop: queue.hop, nowNs: nowNs)
       let draws = draws
       coordinator.bind { draws.value += 1 }
     }
@@ -111,6 +111,44 @@ struct ScreenSharingRenderCoordinatorTests {
     #expect(commits.map(\.rtpTimestamp) == [4])
     #expect(commits.first?.sourceTimestampNs == 4)
     #expect(commits.first?.presentedNs == 3_000_000_000)
+  }
+
+  @Test func aSecondFrameInOneRefreshWaitsForTheNextRefreshWhilePacing() throws {
+    let f = Fixture(renderOnArrival: true, nowNs: { 1_000 })
+    f.coordinator.pacesCommitsToRefresh = true
+    f.mailbox.put(frame(try makeBuffer(), rtp: 1))
+    let first = try #require(f.coordinator.select(), "nothing was committed since the last refresh")
+    let submission = ControlledSubmission()
+    f.coordinator.commit(
+      submission, retaining: Retained(first.frame), frame: first.frame, isNewFrame: true, submittedAt: 1)
+    submission.complete()
+    _ = f.queue.drain()
+    f.mailbox.put(frame(try makeBuffer(), rtp: 2))
+
+    #expect(f.coordinator.select() == nil)
+    #expect(f.counter("commitsPacedToRefresh") == 1)
+    let draws = f.draws.value
+    f.coordinator.refreshed()
+    #expect(f.draws.value == draws + 1)
+    #expect(f.coordinator.select()?.frame.rtpTimestamp == 2)
+  }
+
+  @Test func pacingLetsAFrameThroughOnceARefreshIsOverdue() throws {
+    let clock = PacingClock()
+    let f = Fixture(renderOnArrival: true, nowNs: { clock.ns })
+    f.coordinator.pacesCommitsToRefresh = true
+    f.mailbox.put(frame(try makeBuffer(), rtp: 1))
+    let first = try #require(f.coordinator.select())
+    let submission = ControlledSubmission()
+    f.coordinator.commit(
+      submission, retaining: Retained(first.frame), frame: first.frame, isNewFrame: true, submittedAt: 1)
+    submission.complete()
+    _ = f.queue.drain()
+    f.mailbox.put(frame(try makeBuffer(), rtp: 2))
+    #expect(f.coordinator.select() == nil)
+
+    clock.ns += ScreenSharingRenderCoordinator.refreshPacingTimeoutNs
+    #expect(f.coordinator.select()?.frame.rtpTimestamp == 2)
   }
 
   @Test func selectionOrderAndCachingAreUnchanged() throws {
@@ -377,4 +415,8 @@ extension ScreenSharingRenderCoordinatorTests {
     f.coordinator.deferPresentation()
     #expect(f.coordinator.select() == nil)
   }
+}
+
+private final class PacingClock: @unchecked Sendable {
+  var ns: Int64 = 1_000
 }

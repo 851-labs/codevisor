@@ -5,10 +5,15 @@
   @MainActor
   final class ScreenSharingRefreshObserver: NSObject {
     private let timeline: ScreenSharingFrameTimeline
+    private let refreshed: @MainActor () -> Void
     private var link: CADisplayLink?
 
-    init(view: NSView, timeline: ScreenSharingFrameTimeline, framesPerSecond: Int) {
+    init(
+      view: NSView, timeline: ScreenSharingFrameTimeline, framesPerSecond: Int,
+      refreshed: @escaping @MainActor () -> Void = {}
+    ) {
       self.timeline = timeline
+      self.refreshed = refreshed
       super.init()
       let link = view.displayLink(target: self, selector: #selector(refresh(_:)))
       link.add(to: .main, forMode: .common)
@@ -30,6 +35,7 @@
       timeline.observeRefresh(
         targetNs: ScreenSharingFramePresentation.nanoseconds(link.targetTimestamp),
         periodNs: ScreenSharingFramePresentation.nanoseconds(link.targetTimestamp - link.timestamp))
+      refreshed()
     }
   }
 #endif

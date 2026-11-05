@@ -21,7 +21,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     private var offMainWorker: ScreenSharingMetalPreparer?
   #endif
   private let renderOnArrival: Bool
-  private static func drawableCount(offMain: Bool) -> Int { offMain ? 2 : 3 }
+  private static let drawableCount = 3
 
   public init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, renderOnArrival: Bool = false,
@@ -40,7 +40,8 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     self.metrics = metrics
     self.renderOnArrival = renderOnArrival
     coordinator = ScreenSharingRenderCoordinator(
-      mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, redrawsOnDemand: offMainPreparation)
+      mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, redrawsOnDemand: offMainPreparation,
+      pacesCommitsToRefresh: offMainPreparation)
     let pipelines = try ScreenSharingMetalEncoder.Pipelines(device: device, shader: Self.shader)
     encoder = try ScreenSharingMetalEncoder(device: device, commandQueue: queue, pipelines: pipelines)
     let workerEncoder: ScreenSharingMetalEncoder? =
@@ -55,11 +56,17 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     isPaused = renderOnArrival
     enableSetNeedsDisplay = renderOnArrival
     delegate = self
+    try configureLayer(workerEncoder: workerEncoder)
+    labelRenderPath()
+    coordinator.bind { [weak self] in self?.draw() }
+  }
+
+  private func configureLayer(workerEncoder: ScreenSharingMetalEncoder?) throws {
     #if os(macOS)
       wantsLayer = true
       layer?.isOpaque = true
       if let metalLayer = layer as? CAMetalLayer {
-        metalLayer.maximumDrawableCount = Self.drawableCount(offMain: offMainPreparation)
+        metalLayer.maximumDrawableCount = Self.drawableCount
       }
       if let workerEncoder {
         guard let metalLayer = layer as? CAMetalLayer else {
@@ -72,17 +79,20 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       }
     #else
       isOpaque = true
-      (layer as? CAMetalLayer)?.maximumDrawableCount = Self.drawableCount(offMain: offMainPreparation)
+      (layer as? CAMetalLayer)?.maximumDrawableCount = Self.drawableCount
       _ = workerEncoder
     #endif
-    metrics.label("maximumDrawableCount", String(Self.drawableCount(offMain: offMainPreparation)))
+  }
+
+  private func labelRenderPath() {
+    metrics.label("maximumDrawableCount", String(Self.drawableCount))
     metrics.label("frameSelection", "before drawable acquisition")
     metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
+    metrics.label("renderPacing", coordinator.pacesCommitsToRefresh ? "one commit per refresh" : "on arrival")
     metrics.label(
       "drawableAcquisitionPath",
       preparer == nil
         ? "MTKView.currentDrawable on main actor" : "CAMetalLayer.nextDrawable on render worker, default timeout")
-    coordinator.bind { [weak self] in self?.draw() }
   }
 
   public func stop() {
@@ -126,7 +136,8 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       matchDisplayRefresh()
       if !coordinator.stopped {
         refreshObserver = ScreenSharingRefreshObserver(
-          view: self, timeline: metrics.timeline, framesPerSecond: preferredFramesPerSecond)
+          view: self, timeline: metrics.timeline, framesPerSecond: preferredFramesPerSecond
+        ) { [weak self] in self?.coordinator.refreshed() }
       }
       reportScreenHighDynamicRange()
       screenObserver = NotificationCenter.default.addObserver(
