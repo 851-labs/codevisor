@@ -1,7 +1,14 @@
 import { toolText } from "@codevisor/plugin-kit/test-support"
 import { describe, expect, it } from "vitest"
 
-import { bodyOf, callTool, connectGmail, gmailIdentity } from "./gmail-test-support.js"
+import {
+  bodyOf,
+  callTool,
+  connectGmail,
+  type FakeGmail,
+  fakeGmail,
+  gmailIdentity
+} from "./gmail-test-support.js"
 
 const original = {
   id: "m1",
@@ -253,6 +260,115 @@ describe("gmail sending", () => {
 
     expect([missing.isError, empty.isError]).toEqual([true, true])
     expect(connected.gmail.requests).toEqual([])
+  })
+})
+
+const withAliases = (): FakeGmail => {
+  const gmail = fakeGmail()
+  gmail.addSendAs({
+    sendAsEmail: "Dylan@Emojis.sh",
+    displayName: "Dylan Player",
+    verificationStatus: "accepted"
+  })
+  gmail.addSendAs({ sendAsEmail: "dylan@codevisor.dev", verificationStatus: "accepted" })
+  gmail.addSendAs({ sendAsEmail: "pending@example.com", verificationStatus: "pending" })
+  return gmail
+}
+
+const fromLines = (connected: { gmail: FakeGmail }): Array<string | undefined> =>
+  connected.gmail.outbox.map((entry) =>
+    headerLines(entry.message).find((line) => line.startsWith("From: "))
+  )
+
+describe("gmail send-as aliases", () => {
+  it("replies from the alias the message was sent to, falling back to the account's name", async () => {
+    const connected = await connectGmail(withAliases())
+    connected.gmail.add({ ...original, to: "Dylan <dylan@emojis.sh>" })
+    connected.gmail.add({ id: "m2", from: "bo@acme.com", cc: "dylan@codevisor.dev", subject: "Hi" })
+
+    const replied = await callTool(connected, "reply", {
+      messageId: "m1",
+      body: "Confirmed.",
+      confirm: true
+    })
+    await callTool(connected, "create_draft", { body: "Hey", inReplyToMessageId: "m2" })
+    await callTool(connected, "create_draft", {
+      body: "Hey",
+      inReplyToMessageId: "m2",
+      from: gmailIdentity
+    })
+
+    expect(replied.structuredContent).toMatchObject({
+      from: "Dylan Player <dylan@emojis.sh>",
+      to: "Alice <alice@acme.com>"
+    })
+    expect(fromLines(connected)).toEqual([
+      "From: Dylan Player <dylan@emojis.sh>",
+      "From: Me <dylan@codevisor.dev>",
+      undefined
+    ])
+  })
+
+  it("answers my own alias message to its recipients and keeps my aliases off reply-all", async () => {
+    const connected = await connectGmail(withAliases())
+    connected.gmail.add({
+      id: "m1",
+      from: "Dylan Player <dylan@emojis.sh>",
+      to: "Bob <bob@acme.com>",
+      cc: "dylan@codevisor.dev, Carol <carol@acme.com>, me@example.com",
+      subject: "Budget"
+    })
+
+    const result = await callTool(connected, "create_draft", {
+      body: "Following up.",
+      inReplyToMessageId: "m1",
+      replyAll: true
+    })
+
+    expect(result.structuredContent).toMatchObject({
+      from: "Dylan Player <dylan@emojis.sh>",
+      to: "Bob <bob@acme.com>",
+      cc: "Carol <carol@acme.com>"
+    })
+  })
+
+  it("sends from a chosen alias and refuses addresses the account can't send as", async () => {
+    const connected = await connectGmail(withAliases())
+    const message = { to: "bob@acme.com", subject: "Hi", body: "Hello", confirm: true }
+
+    await callTool(connected, "send", { ...message, from: "DYLAN@emojis.sh" })
+    const pending = await callTool(connected, "send", { ...message, from: "pending@example.com" })
+    const stranger = await callTool(connected, "create_draft", {
+      ...message,
+      from: "Boss <boss@acme.com>"
+    })
+
+    expect(fromLines(connected)).toEqual(["From: Dylan Player <dylan@emojis.sh>"])
+    expect(toolText(pending)).toBe(
+      "pending@example.com isn't a send-as address on this account. Call list_send_as to see the addresses it can send from."
+    )
+    expect(toolText(stranger)).toMatch(/^Boss <boss@acme\.com> isn't a send-as address/)
+  })
+
+  it("keeps a draft's sender when updating it, unless given a new one", async () => {
+    const connected = await connectGmail(withAliases())
+    connected.gmail.addDraft("r-7", {
+      id: "d7",
+      from: "Dylan Player <dylan@emojis.sh>",
+      to: "alice@acme.com",
+      subject: "Plan",
+      text: "Friday?"
+    })
+
+    await callTool(connected, "update_draft", { draftId: "r-7", subject: "Plan (Friday)" })
+    await callTool(connected, "update_draft", { draftId: "r-7", from: "dylan@codevisor.dev" })
+    await callTool(connected, "update_draft", { draftId: "r-7", from: gmailIdentity })
+
+    expect(fromLines(connected)).toEqual([
+      "From: Dylan Player <dylan@emojis.sh>",
+      "From: Me <dylan@codevisor.dev>",
+      undefined
+    ])
   })
 })
 

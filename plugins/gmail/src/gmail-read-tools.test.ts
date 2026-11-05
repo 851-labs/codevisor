@@ -28,7 +28,14 @@ describe("gmail read tools", () => {
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
 
     expect(tools.filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name)).toEqual(
-      ["search_messages", "search_threads", "read_message", "read_thread", "list_labels"]
+      [
+        "search_messages",
+        "search_threads",
+        "read_message",
+        "read_thread",
+        "list_labels",
+        "list_send_as"
+      ]
     )
     expect(
       tools.filter((tool) => tool.annotations?.openWorldHint).map((tool) => tool.name)
@@ -185,6 +192,25 @@ describe("gmail read tools", () => {
     const result = await callTool(connected, "list_labels", {})
 
     expect(result.structuredContent).toEqual({ labels: fakeLabels })
+  })
+
+  it("lists the addresses the account can send from, skipping unverified aliases", async () => {
+    const connected = await connectGmail()
+    connected.gmail.addSendAs({
+      sendAsEmail: "Dylan@Emojis.sh",
+      displayName: "Dylan Player",
+      verificationStatus: "accepted"
+    })
+    connected.gmail.addSendAs({ sendAsEmail: "pending@example.com", verificationStatus: "pending" })
+
+    const result = await callTool(connected, "list_send_as", {})
+
+    expect(result.structuredContent).toEqual({
+      addresses: [
+        { email: gmailIdentity, name: "Me", default: true },
+        { email: "dylan@emojis.sh", name: "Dylan Player", default: false }
+      ]
+    })
   })
 
   it("reports bad arguments, Gmail errors and unknown tools as tool errors", async () => {

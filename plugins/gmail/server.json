@@ -66,6 +66,11 @@
             "effects": "read"
           },
           {
+            "name": "list_send_as",
+            "description": "List the addresses you can send from",
+            "effects": "read"
+          },
+          {
             "name": "create_draft",
             "description": "Create a draft or draft reply",
             "effects": "write"

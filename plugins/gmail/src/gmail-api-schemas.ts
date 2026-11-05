@@ -74,6 +74,16 @@ export const gmailDraft = z.object({
 
 export const gmailWatch = z.object({ historyId: z.string(), expiration: z.string() })
 
+export const gmailSendAs = z.object({
+  sendAsEmail: z.string(),
+  displayName: z.string().default(""),
+  isPrimary: z.boolean().default(false),
+  isDefault: z.boolean().default(false),
+  verificationStatus: z.string().optional()
+})
+
+export const gmailSendAsList = z.object({ sendAs: z.array(gmailSendAs).default([]) })
+
 export const noContent = z.object({})
 
 export type GmailMessage = z.infer<typeof gmailMessage>
@@ -85,3 +95,4 @@ export type GmailHistoryPage = z.infer<typeof gmailHistoryPage>
 export type GmailLabel = z.infer<typeof gmailLabel>
 export type GmailDraft = z.infer<typeof gmailDraft>
 export type GmailWatch = z.infer<typeof gmailWatch>
+export type GmailSendAs = z.infer<typeof gmailSendAs>

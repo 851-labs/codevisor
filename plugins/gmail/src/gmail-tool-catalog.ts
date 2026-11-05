@@ -29,7 +29,12 @@ const searchInput: Tool["inputSchema"] = {
   required: ["query"]
 }
 
+const from = text(
+  "Send-as address to send from, one of list_send_as. Leave it out to use the account's default address; replies default to the address the message was sent to."
+)
+
 const recipients = {
+  from,
   to: text("Comma-separated recipients, such as Ana <ana@example.com>, bo@example.com."),
   cc: text("Comma-separated recipients."),
   bcc: text("Comma-separated recipients."),
@@ -96,6 +101,13 @@ export const gmailTools: ReadonlyArray<Tool> = [
     annotations: readOnly
   },
   {
+    name: "list_send_as",
+    description:
+      "List the addresses this account can send from: its own address and its Gmail send-as aliases. Pass one as from when writing.",
+    inputSchema: { type: "object", properties: {} },
+    annotations: readOnly
+  },
+  {
     name: "create_draft",
     description:
       "Create a draft without sending it. Pass inReplyToMessageId to draft a reply in that message's thread; recipients and subject then default to the reply's.",
@@ -128,7 +140,9 @@ export const gmailTools: ReadonlyArray<Tool> = [
     inputSchema: {
       type: "object",
       properties: {
-        draftId: text("Send this draft instead of composing a new message."),
+        draftId: text(
+          "Send this draft instead of composing a new message. The draft keeps its own sender; change it with update_draft."
+        ),
         ...recipients,
         body: text("Plain-text body."),
         confirm
@@ -147,6 +161,7 @@ export const gmailTools: ReadonlyArray<Tool> = [
         messageId: text("Gmail id of the message being answered."),
         body: text("Plain-text body."),
         replyAll: { type: "boolean", description: "Copy everyone on the message." },
+        from,
         cc: recipients.cc,
         confirm
       },

@@ -2,6 +2,7 @@ import { formatAddress, parseAddresses, type MailAddress } from "./gmail-address
 import type { Outgoing } from "./gmail-api.js"
 
 export interface MessageFields {
+  from: string
   to: string
   cc: string
   bcc: string
@@ -18,6 +19,7 @@ export const composeMessage = (fields: MessageFields): Outgoing => ({
 })
 
 const messageHeaders = (fields: MessageFields): Array<[string, string]> => [
+  ...optionalHeader("From", addressHeader(fields.from)),
   ...optionalHeader("To", addressHeader(fields.to)),
   ...optionalHeader("Cc", addressHeader(fields.cc)),
   ...optionalHeader("Bcc", addressHeader(fields.bcc)),
