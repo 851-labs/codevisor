@@ -1,14 +1,16 @@
 import CoreVideo
 
 struct EncodeLabConfig: Sendable, Codable, Equatable {
+  static let productBaseline = (megabitsPerSecond: 45.0, width: 2560, height: 1440, keyframeIntervalSeconds: 60)
+
   var name = "product"
   var engine = EncodeLabEngine.videoToolbox
   var codec = EncodeLabCodec.hevc444
   var rateControl = EncodeLabRateControl.standard
   var prioritizeSpeed = true
-  var megabitsPerSecond: Double? = 45
-  var width = 2560
-  var height = 1440
+  var megabitsPerSecond: Double? = EncodeLabConfig.productBaseline.megabitsPerSecond
+  var width = EncodeLabConfig.productBaseline.width
+  var height = EncodeLabConfig.productBaseline.height
   var tiles = 1
   var skipCleanTiles = false
   var longTermReferences = false

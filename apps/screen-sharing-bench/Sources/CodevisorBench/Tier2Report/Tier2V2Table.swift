@@ -6,7 +6,7 @@ struct Tier2V2Table {
   private let results: [BenchResult]
 
   init(_ results: [BenchResult]) {
-    self.results = results.filter { $0.system.isEngineV2 && $0.valid }
+    self.results = results.filter { BenchSystem.engineV2Systems.contains($0.system) && $0.valid }
   }
 
   var text: String? {
@@ -24,7 +24,7 @@ struct Tier2V2Table {
   }
 
   private var rows: [String] {
-    BenchSystem.codevisorSystems.flatMap { system in
+    BenchSystem.engineV2Systems.flatMap { system in
       Tier2Group.all(results).compactMap { group in
         let runs = results.filter { $0.system == system && group.contains($0) }
         return runs.isEmpty ? nil : row(system, group, runs: runs)

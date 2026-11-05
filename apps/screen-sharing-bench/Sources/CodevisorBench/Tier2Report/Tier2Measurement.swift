@@ -74,7 +74,7 @@ struct Tier2Measurement {
 
   var encodedPixels: String? {
     switch files.meta.system {
-    case .codevisorV2, .codevisorV2VCP: files.share?["capture_size"]?.string
+    case .codevisor, .codevisorV2, .codevisorV2VCP: files.share?["capture_size"]?.string
     case .appleHP: files.hostDisplayDuringRun.map { "\($0) shown; HP's encoded size isn't visible" }
     case .floor: nil
     }

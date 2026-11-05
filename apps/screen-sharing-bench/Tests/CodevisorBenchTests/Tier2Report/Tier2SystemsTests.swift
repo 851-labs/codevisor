@@ -7,10 +7,12 @@ import Testing
 struct Tier2SystemsTests {
   @Test(arguments: [
     (#""system": "codevisor-v2""#, BenchSystem.codevisorV2),
-    (#""system": "codevisor-v2-vcp", "engine": "v2""#, BenchSystem.codevisorV2VCP),
+    (#""system": "codevisor-v2-vcp""#, BenchSystem.codevisorV2VCP),
     (#""system": "apple-hp""#, BenchSystem.appleHP),
+    (#""system": "codevisor""#, BenchSystem.codevisor),
+    (#""system": "codevisor", "engine": "v2""#, BenchSystem.codevisorV2),
   ])
-  func aRunCountsAsTheSystemItsMetaNames(fields: String, system: BenchSystem) throws {
+  func aRunCountsAsTheSystemItsMetaNamesOrItsOlderEngineRan(fields: String, system: BenchSystem) throws {
     let json =
       #"{"index": 1, "scene": "scroll", "repetition": 1, "seed": 1, "duration_s": 60, "#
       + #""host_observer": true, "git_sha": "f00", "started_at": "2026-10-31T10:00:00Z", "# + fields + "}"
@@ -25,15 +27,16 @@ struct Tier2SystemsTests {
   @Test func eachCodevisorSystemIsComparedWithAppleHPOnItsOwnRepetitions() {
     let results =
       [
-        (BenchSystem.appleHP, [50.0, 51, 52]), (.codevisorV2, [40, 41, 39]), (.codevisorV2VCP, [51, 50, 52]),
+        (BenchSystem.appleHP, [50.0, 51, 52]), (.codevisor, [80, 82, 81]), (.codevisorV2, [40, 41, 39]),
+        (.codevisorV2VCP, [51, 50, 52]),
       ]
       .flatMap { system, ages in ages.enumerated().map { Self.result(system, repetition: $0 + 1, imageAgeP50: $1) } }
 
     let comparisons = Tier2Comparisons.make(results).filter { $0.metric == "image_age_ms.p50" }
 
-    #expect(comparisons.map(\.system) == [.codevisorV2, .codevisorV2VCP])
-    #expect(comparisons.map(\.codevisor) == [[40, 41, 39], [51, 50, 52]])
-    #expect(comparisons.map(\.verdict) == [.codevisorFaster, .noDifference])
+    #expect(comparisons.map(\.system) == [.codevisor, .codevisorV2, .codevisorV2VCP])
+    #expect(comparisons.map(\.codevisor) == [[80, 82, 81], [40, 41, 39], [51, 50, 52]])
+    #expect(comparisons.map(\.verdict) == [.appleFaster, .codevisorFaster, .noDifference])
   }
 
   static func result(_ system: BenchSystem, repetition: Int, imageAgeP50: Double) -> BenchResult {

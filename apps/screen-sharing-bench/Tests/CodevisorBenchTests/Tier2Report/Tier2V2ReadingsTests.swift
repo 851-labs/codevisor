@@ -30,7 +30,7 @@ struct Tier2V2ReadingsTests {
 
   @Test func theViewerTimelineAndTheHostTimingsGiveTheStages() throws {
     let stages = try #require(
-      Tier2V2Readings.stages(viewer: try Self.object(Self.viewer), host: try Self.object(Self.host)))
+      Tier2V2Readings.stages(viewer: try Self.object(Self.viewer), host: try Self.object(Self.host), engineV2: true))
 
     #expect(stages.captureQueue == BenchDistribution(count: 540, p50: 0.07, p95: 0.08, max: 0.09))
     #expect(

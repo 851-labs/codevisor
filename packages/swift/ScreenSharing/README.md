@@ -89,7 +89,7 @@ Run the suites with `bun run swift:test`; `bun run check` runs them with the res
 
 ## Engine v2
 
-`ScreenSharingV2` is the tiled engine of the [HP-class engine design](https://linear.app/851/document/hp-class-engine-design-0b6e749493a3) (E3, 851-3817; tiles E5, 851-3820): ScreenCaptureKit → dirty tiles → admission → `ScreenSharingTileEncoder` → `codevisor-media` over iroh QUIC datagrams, one stream per tile → VideoToolbox decode per tile → one composed picture → presentation. There is no WebRTC, no jitter buffer and no queue deeper than one frame. The bench drives it with `share --engine v2` and `view --engine v2`; the product uses it Mac to Mac (E8, 851-4064).
+`ScreenSharingV2` is the tiled engine of the [HP-class engine design](https://linear.app/851/document/hp-class-engine-design-0b6e749493a3) (E3, 851-3817; tiles E5, 851-3820): ScreenCaptureKit → dirty tiles → admission → `ScreenSharingTileEncoder` → `codevisor-media` over iroh QUIC datagrams, one stream per tile → VideoToolbox decode per tile → one composed picture → presentation. There is no WebRTC, no jitter buffer and no queue deeper than one frame. The bench drives it with `share` and `view --source codevisor` (engine v2 is the bench's only engine since 851-3826); the product uses it Mac to Mac (E8, 851-4064).
 
 **Profile** (`ScreenSharingV2Profile`, from the [encoder lab](https://linear.app/851/document/encoder-lab-851-3767-5f6ac641b750)'s public configuration):
 

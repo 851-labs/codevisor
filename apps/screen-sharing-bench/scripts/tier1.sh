@@ -14,8 +14,10 @@ results=${2:-}
 : "${TIER1_NETWORKS:=N0,N3}"
 : "${TIER1_TRIGGER:=manual}"
 : "${TIER1_SOURCE:=synthetic}"
-: "${TIER1_PLANS:=core-v2,gate-v2}"
+: "${TIER1_PLANS:=core-v2,gate-v2,matrix-v2}"
+: "${TIER1_ENCODER:=vt}"
 core_networks=N0,N3
+other_networks=N1,N2,N4,N5,N6,N7
 gate_options=(--scenes typing,scroll,video --networks N0,N3 --encoder vt)
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 run_id="gha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -40,7 +42,7 @@ scenes() {
 
 nightly() {
   local status=0 plan
-  for plan in core-v2 gate-v2; do
+  for plan in core-v2 gate-v2 matrix-v2; do
     [[ ",$TIER1_PLANS," == *",$plan,"* ]] || continue
     "${plan/-v2/_v2}" || status=1
   done
@@ -51,8 +53,13 @@ core_v2() {
   loopback core-v2 core-v2 "$TIER1_REPETITIONS" --networks "$core_networks" --encoder vt
 }
 
+matrix_v2() {
+  loopback matrix-v2 matrix-v2 1 --networks "$other_networks" --encoder vt
+}
+
 custom() {
-  loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" $(scenes)
+  loopback custom custom "$TIER1_REPETITIONS" --networks "$TIER1_NETWORKS" --source "$TIER1_SOURCE" \
+    --encoder "$TIER1_ENCODER" $(scenes)
 }
 
 gate_v2() {

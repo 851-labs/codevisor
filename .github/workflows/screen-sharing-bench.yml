@@ -23,10 +23,16 @@ on:
         default: ""
         type: string
       plans:
-        description: Tier 1 plans to run, comma-separated (core-v2, gate-v2); empty runs both
+        description: Tier 1 plans to run, comma-separated (core-v2, gate-v2, matrix-v2); empty runs all three
         required: false
         default: ""
         type: string
+      encoder:
+        description: Engine v2 encoder for a custom Tier 1 run, vt (VideoToolbox, codevisor-v2, as the baselines) or vcp (codevisor-v2-vcp)
+        required: false
+        default: vt
+        type: choice
+        options: [vt, vcp]
       source:
         description: Frame source for a custom run (own-window needs tamale's GUI session unlocked)
         required: false
@@ -150,6 +156,7 @@ jobs:
       NETWORKS: ${{ inputs.networks }}
       TIER1_SOURCE: ${{ inputs.source || 'synthetic' }}
       TIER1_PLANS: ${{ inputs.plans }}
+      TIER1_ENCODER: ${{ inputs.encoder || 'vt' }}
       MODE: ${{ needs.plan.outputs.mode }}
       PREFLIGHT: ${{ needs.plan.outputs.preflight }}
     steps:
@@ -157,8 +164,8 @@ jobs:
         run: |
           [[ "$SCENES" =~ ^([a-z-]+(,[a-z-]+)*)?$ ]] || { echo "scenes must be a comma-separated list"; exit 1; }
           [[ "$NETWORKS" =~ ^(N[0-7](,N[0-7])*)?$ ]] || { echo "networks must be like N0,N3"; exit 1; }
-          plan="(core-v2|gate-v2)"
-          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core-v2 or gate-v2"; exit 1; }
+          plan="(core-v2|gate-v2|matrix-v2)"
+          [[ -z "$TIER1_PLANS" || "$TIER1_PLANS" =~ ^$plan(,$plan)*$ ]] || { echo "plans must be core-v2, gate-v2 or matrix-v2"; exit 1; }
           if [[ "$MODE" == custom && -n "$TIER1_PLANS" ]]; then
             echo "::warning::plans applies to the nightly plan only; a run with scenes or networks set is one custom report"
           fi

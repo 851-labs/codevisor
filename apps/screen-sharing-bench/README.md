@@ -142,8 +142,9 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   into an offscreen texture (`--onscreen`: the product `ScreenSharingMetalView` in a window).
 - **Encoders.** `--encoder vcp` (the default since 851-4048, as in the product) uses the VCP encoder (851-3819) and
   records its results as `codevisor-v2-vcp`; `--encoder vt` records `codevisor-v2`, so a cell's baseline never mixes
-  the two encoders. Tier 1's baseline plans (`core-v2`, `gate-v2`, and the PR gate) pass `--encoder vt`, so their
-  `codevisor-v2` series and baselines stay VideoToolbox; a `custom` dispatch uses the default, VCP.
+  the two encoders. Tier 1's baseline plans (`core-v2`, `gate-v2`, `matrix-v2`, and the PR gate) pass `--encoder vt`, so
+  their `codevisor-v2` series and baselines stay VideoToolbox; a `custom` dispatch takes the workflow's `encoder`
+  input (`vt` by default, to match them; `vcp` for `codevisor-v2-vcp`).
 - **Sources.** `synthetic` (the default): `BenchSceneGenerator` renders the next versions ahead, and a strict 60 Hz
   `DispatchSourceTimer` on a user-interactive queue pushes each new version to the host's frame sink, stamped when
   it is pushed, so the capture stage is about 0 and frames are 16.67 ms apart within ±0.06 ms, like ScreenCaptureKit's
@@ -188,8 +189,10 @@ CodevisorBench loopback --source own-window --scenes scroll --networks N0
   timestamp). A scene that fails (for example the connection never opens) is reported as invalid with the error, and
   the matrix goes on.
 - **Engine v1.** Engine v1 (WebRTC) left the bench in 851-3826, with its `codevisor` and `codevisor-r1x2` systems and
-  the `core`, `gate` and `matrix` plans. `codevisor` stays a `BenchSystem` so older reports and the results
-  branch's index still decode.
+  the `core`, `gate` and `matrix` plans (now `core-v2`, `gate-v2` and `matrix-v2`). `codevisor` stays a
+  `BenchSystem` so older reports and the results branch's index still decode, and `tier2-report` still reads an
+  older Tier 2 run directory whose `meta.json` says `"system": "codevisor"` (with `"engine": "v2"` it counts as
+  `codevisor-v2`, as it did).
 - **Results come from the workflow.** `Screen Sharing Bench` (below) runs Tier 1 on tamale. Runs over SSH are for
   development only.
 - **Clocks.** The timeline stamps with mach absolute time (what ScreenCaptureKit, Core Animation and Metal use);
@@ -449,11 +452,13 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
   `workflow_dispatch`. The `tier1` job on tamale (concurrency group `screen-sharing-bench`) waits for a quiet machine
   (C5), then runs `scripts/tier1.sh nightly`: the `core-v2` report (S1–S6 at N0 and N3, 3 interleaved repetitions
   of 30 s with 10 s warm-up, about 20 min) and the `gate-v2` report (exactly the PR gate's run: S2, S3 and S5 at N0
-  and N3, about 10 min), both with `--encoder vt`. Each report records its plan in `run.method.plan`, and a baseline
+  and N3, about 10 min) and the `matrix-v2` report (N1, N2 and N4–N7, 1 repetition, about 20 min), all with
+  `--encoder vt`. Each report records its plan in `run.method.plan`, and a baseline
   only uses nightlies of the same plan: the same cell measured among other scenes differs, for example typing's N3
   p95 is about 35 ms in a core run and about 52 ms in the gate's run. Reports from before plans existed match no
   plan, so a new plan's baseline starts empty (`-f plans=gate-v2` seeds it).
-  A dispatch with `scenes` or `networks` set runs one `custom` report instead (`source` picks `own-window`, which
+  A dispatch with `scenes` or `networks` set runs one `custom` report instead, with the `encoder` input (`vt` by
+  default, or `vcp`) (`source` picks `own-window`, which
   captures the screen: that run installs the build over `~/Applications/CodevisorBench.app` with
   `scripts/install-granted.sh`, because macOS grants Screen Recording to that path only).
 - **`benchmark-results`.** On `main`, `scripts/publish.sh` commits each report to the orphan branch
@@ -489,13 +494,14 @@ Tier 2): the minis refused those to a build run from elsewhere, and the grants m
 open (Finder aside), anyone screen sharing into the Mac, or a locked session (`--allow-locked` skips that check for
 offscreen Tier 1). It also fails when load and Spotlight never stayed quiet for 3 samples in a row before the
 limit (`reached_settle_limit`). `loopback` records Spotlight indexing in `environment.host.spotlight_busy`. The
-`plans` dispatch input (`core-v2`, `gate-v2`; empty runs both) applies to the nightly plan only; a dispatch with
+`plans` dispatch input (`core-v2`, `gate-v2`, `matrix-v2`; empty runs all three) applies to the nightly plan only; a dispatch with
 `scenes` or `networks` set runs one custom report and warns if `plans` was given.
 
 ```sh
 gh workflow run screen-sharing-bench.yml -f kind=nightly                    # the nightly plan, recorded as a baseline
 gh workflow run screen-sharing-bench.yml -f kind=nightly -f plans=gate-v2   # only the gate's baseline (about 12 min)
-gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0,N3 # an ad hoc run (VCP encoder)
+gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0,N3 # an ad hoc codevisor-v2 run
+gh workflow run screen-sharing-bench.yml -f scenes=scroll -f networks=N0 -f encoder=vcp   # an ad hoc codevisor-v2-vcp run
 CodevisorBench gate --index index.jsonl --first first.json --second second.json
 CodevisorBench record --report report.json --results <benchmark-results checkout>
 ```
@@ -516,7 +522,7 @@ CodevisorBench encode-lab --scenes scroll,typing --duration 8 --warm-up 2 \
   `hevc444`, as the product feeds it; 4:2:0 for the others). A 60 Hz timer submits each version on its tick, so the
   encoder sees the scene's real cadence; idle ticks submit nothing, like ScreenCaptureKit.
 - **Configs.** `--configs` takes `;`-separated `key=value` lists; every key defaults to engine v1's product encoder,
-  kept as the lab's baseline (`product`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440,
+  kept as the lab's baseline (`product`, `EncodeLabConfig.productBaseline`: HEVC 4:4:4, standard rate control, speed over quality, 45 Mbit/s, 2560×1440,
   a keyframe every 60 s; `hevc` and `h264` default to low-latency rate control without speed priority). A `preset`
   or `cq` keeps its own bitrate and speed unless `mbps` or `speed` is given too.
   Keys: `name`, `engine` (`vt`, or `vcp` below), `codec` (`hevc444`, `hevc`, `h264`), `rc` (`standard`, `ll`), `mbps`
