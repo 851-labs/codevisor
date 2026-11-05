@@ -1,7 +1,6 @@
 import CodevisorCore
 import Foundation
 import ScreenSharing
-import ScreenSharingWebRTC
 
 extension ComputerUseLivePreview {
   public func makeRemoteViewer(
@@ -71,8 +70,9 @@ final class ComputerUseRemotePreviewConnection {
     target = ComputerUseStreamTarget.displayId(sessionID: chatSessionID.uuidString)
     backend = .native(
       client: client, workspaceId: workspaceId, paneId: paneId,
+      v2: .live(),
       sleep: { try await Task.sleep(for: $0) },
-      makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
+      makeSession: nil,
       makeSurface: { [weak self] session in
         let surface = try ComputerUseLivePreviewSurface(mailbox: session.frames, metrics: session.metrics)
         self?.latestSurface = surface

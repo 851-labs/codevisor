@@ -69,6 +69,8 @@ extension ScreenSharingViewerBackend {
   }
 
   typealias NativeVNCOpen = @Sendable (String) async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
+  typealias NativeMakeSession =
+    @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession
 
   @MainActor
   static func native(
@@ -76,8 +78,7 @@ extension ScreenSharingViewerBackend {
     role: ScreenSharingViewerRole = .tab, tunnelMedia: TunnelMediaProvider? = nil,
     v2: ScreenSharingV2Connector? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    makeSession:
-      @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
+    makeSession: NativeMakeSession?,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
     target: String? = nil,
@@ -108,8 +109,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   private let workspaceId: UUID
   private let paneId: UUID
   private let sleep: @Sendable (Duration) async throws -> Void
-  private let makeSession:
-    @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession
+  private let makeSession: ScreenSharingViewerBackend.NativeMakeSession?
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
   private var previous: Task<Void, Never>?
@@ -127,8 +127,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    makeSession:
-      @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
+    makeSession: ScreenSharingViewerBackend.NativeMakeSession?,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
@@ -236,6 +235,10 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
       case .cancelled:
         break attempts
       case .fallback:
+        guard makeSession != nil else {
+          message = Self.v2Failed
+          break attempts
+        }
         v2Failed = true
         startsFresh = true
       }
@@ -266,6 +269,7 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
           return try await attemptV2(
             v2, attempt: attempt, viewerId: viewerId, display: display, restarts: restarts, emit: emit)
         }
+        guard let makeSession else { return .ended(Self.v2Unavailable) }
         let session = try await makeSession(capabilities.connectivity)
         try open(session, attempt: attempt, display: display, restarts: restarts, emit: emit)
         let offer = try await session.offer()
@@ -307,9 +311,14 @@ private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecti
     {
       outcome = .ended(reason)
     }
-    if attempt.triedV2, !attempt.ready, case .ended = outcome { return .fallback }
+    if attempt.triedV2, !attempt.ready, makeSession != nil, case .ended = outcome { return .fallback }
     return outcome
   }
+
+  private static let v2Unavailable =
+    "The host Mac can't stream over engine v2. Update Codevisor on both Macs, then retry."
+  private static let v2Failed =
+    "This Mac couldn't connect to the host Mac over engine v2. Check the connection, then retry."
 
   private static let missingVideoTimeout: Duration = .seconds(24)
 

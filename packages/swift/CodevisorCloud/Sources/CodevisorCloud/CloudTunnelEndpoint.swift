@@ -71,6 +71,8 @@ public actor CloudTunnelEndpoint {
   private var generation: UInt64 = 0
   private var configWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
   private let firstConfigWait: Duration
+  private let sleep: @Sendable (Duration) async -> Void
+  private var firstConfigWaitExpired = false
   private var allowsDirectPaths = false
   private var screenSharingBindsWithoutCloud = false
 
@@ -80,12 +82,14 @@ public actor CloudTunnelEndpoint {
     bindEndpoint: @escaping @Sendable (NetEndpointConfig) async throws -> NetEndpointHandle = {
       try await netBindEndpoint(config: $0)
     },
-    firstConfigWait: Duration = .seconds(5)
+    firstConfigWait: Duration = .seconds(5),
+    sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
   ) {
     self.credentialStore = credentialStore
     self.bindEndpoint = bindEndpoint
     self.trustAnchorsPem = trustAnchorsPem
     self.firstConfigWait = firstConfigWait
+    self.sleep = sleep
   }
 
   public static func environmentTrustAnchors(
@@ -158,11 +162,16 @@ public actor CloudTunnelEndpoint {
   }
 
   private func waitForFirstConfig() async {
+    guard !firstConfigWaitExpired else { return }
+
     let id = UUID()
     let wait = firstConfigWait
+    let sleep = sleep
     let timeout = Task { [weak self] in
-      try? await Task.sleep(for: wait)
-      await self?.resumeWaiter(id)
+      await sleep(wait)
+      guard !Task.isCancelled else { return }
+
+      await self?.firstConfigWaitTimedOut(id)
     }
     await withCheckedContinuation { continuation in
       configWaiters[id] = continuation
@@ -170,12 +179,14 @@ public actor CloudTunnelEndpoint {
     timeout.cancel()
   }
 
-  private func resumeWaiter(_ id: UUID) {
+  private func firstConfigWaitTimedOut(_ id: UUID) {
+    if config == nil { firstConfigWaitExpired = true }
     configWaiters.removeValue(forKey: id)?.resume()
   }
 
   public func shutdown() async {
     config = nil
+    firstConfigWaitExpired = false
     screenSharingBindsWithoutCloud = false
     replaceBinding(with: nil)
     _ = await binding?.value

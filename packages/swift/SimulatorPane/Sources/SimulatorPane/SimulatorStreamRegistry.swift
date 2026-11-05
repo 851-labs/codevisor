@@ -4,10 +4,24 @@ import CoreGraphics
 import Foundation
 import ScreenSharing
 
+public struct SimulatorStreamV2 {
+  public var address: @MainActor () async -> ServerScreenSharingMediaAddress?
+  public var connect: @MainActor (ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession
+
+  public init(
+    address: @escaping @MainActor () async -> ServerScreenSharingMediaAddress?,
+    connect: @escaping @MainActor (ServerScreenSharingMediaGrant) async throws -> any ScreenSharingSimulatorSession
+  ) {
+    self.address = address
+    self.connect = connect
+  }
+}
+
 struct SimulatorStreamSponsor {
   let workspaceId: UUID
   let paneId: UUID
   let client: any CodevisorServerClienting
+  let v2: SimulatorStreamV2?
   let openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)?
 }
 

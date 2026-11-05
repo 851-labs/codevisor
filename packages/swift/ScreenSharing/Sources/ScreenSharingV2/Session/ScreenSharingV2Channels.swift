@@ -12,6 +12,7 @@ public final class ScreenSharingV2Channels {
   public let videoFormat: ScreenSharingV2Channel<ScreenSharingVideoFormatMessage>
   public let cursor: ScreenSharingV2Channel<ScreenSharingCursorMessage>
   public let audio: ScreenSharingV2Channel<ScreenSharingAudioMessage>
+  public let simulator: ScreenSharingV2Channel<ScreenSharingSimulatorMessage>
   private var accepting: Task<Void, Never>?
 
   public init(sendDatagram: @escaping SendDatagram) {
@@ -39,6 +40,9 @@ public final class ScreenSharingV2Channels {
       codec: .init(encode: { $0.encoded() }, decode: ScreenSharingAudioMessage.decode), bufferedBytes: 16 * 1024,
       datagrams: .init(
         carries: { if case .packet = $0 { true } else { false } }, send: { sendDatagram(.audio, $0) }))
+    simulator = .init(
+      codec: .init(encode: { try $0.encoded() }, decode: ScreenSharingSimulatorMessage.decode),
+      bufferedBytes: 64 * 1024)
   }
 
   public func open(on connection: any ScreenSharingV2Connection, token: String) async throws {
@@ -99,6 +103,7 @@ public final class ScreenSharingV2Channels {
     videoFormat.close()
     cursor.close()
     audio.close()
+    simulator.close()
   }
 
   private func attach(_ stream: any ScreenSharingV2MessageStream, kind: ScreenSharingV2ChannelKind) {
@@ -110,6 +115,7 @@ public final class ScreenSharingV2Channels {
     case .videoFormat: videoFormat.attach(stream)
     case .cursor: cursor.attach(stream)
     case .audio: audio.attach(stream)
+    case .simulator: simulator.attach(stream)
     }
   }
 }

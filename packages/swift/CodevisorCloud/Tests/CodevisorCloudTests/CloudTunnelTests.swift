@@ -111,6 +111,25 @@ struct CloudTunnelTests {
     #expect(await waiting.value == nil)
   }
 
+  @Test("Once a wait for the first config times out, a signed-out app's later requests don't wait again")
+  func firstConfigWaitExpiresOnce() async {
+    let sleeps = TestSignal()
+    let elapse = TestSignal()
+    let tunnel = CloudTunnelEndpoint(
+      credentialStore: InMemoryCloudCredentialStore(token: "t"), trustAnchorsPem: [],
+      sleep: { _ in
+        sleeps.signal()
+        await elapse.wait()
+      })
+    let first = Task { await tunnel.endpoint() }
+    await sleeps.wait()
+    elapse.signal()
+    #expect(await first.value == nil)
+
+    #expect(await tunnel.endpoint() == nil)
+    #expect(sleeps.value == 1)
+  }
+
   @Test("Development trust anchors come from the environment, inline first")
   func environmentTrustAnchors() throws {
     #expect(CloudTunnelEndpoint.environmentTrustAnchors([:]).isEmpty)

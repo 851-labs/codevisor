@@ -2,6 +2,7 @@ import CodevisorCore
 import CoreGraphics
 import Foundation
 import ScreenSharing
+import ScreenSharingV2
 import ScreenSharingWebRTC
 
 enum SimulatorStreamTarget {
@@ -15,12 +16,59 @@ enum SimulatorStreamTarget {
 }
 
 @MainActor
-final class SimulatorSenderPeer: SimulatorFrameSink {
+protocol SimulatorStreamPeer: SimulatorFrameSink {
+  var channel: any ScreenSharingMessageChannel<ScreenSharingSimulatorMessage> { get }
+  var onConnectionChanged: ((String) -> Void)? { get set }
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant
+  func close()
+}
+
+@MainActor
+final class SimulatorV2Peer: SimulatorStreamPeer {
+  private let stream: ScreenSharingV2StreamLink
+  private let viewerEndpointId: String
+  private nonisolated let frames: ScreenSharingV2LatestFrame
+
+  init(size: CGSize, viewerEndpointId: String) throws {
+    stream = ScreenSharingV2StreamLink(configuration: try Self.configuration(size: size))
+    self.viewerEndpointId = viewerEndpointId
+    frames = stream.frames
+  }
+
+  private static func configuration(size: CGSize) throws -> ScreenSharingVideoConfiguration {
+    try ScreenSharingV2Profile.captureConfiguration(width: Int(size.width), height: Int(size.height))
+  }
+
+  var channel: any ScreenSharingMessageChannel<ScreenSharingSimulatorMessage> { stream.link.linkChannels.simulator }
+
+  var onConnectionChanged: ((String) -> Void)? {
+    get { stream.link.onConnectionChanged }
+    set { stream.link.onConnectionChanged = newValue }
+  }
+
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
+    try await stream.listen(for: viewerEndpointId, failed: failed)
+  }
+
+  func prepare(size: CGSize) {
+    guard let configuration = try? Self.configuration(size: size) else { return }
+
+    stream.link.updateVideoConfiguration(configuration)
+  }
+
+  nonisolated func push(_ frame: ScreenSharingVideoFrame) { frames.push(frame) }
+
+  func close() { stream.close() }
+}
+
+@MainActor
+final class SimulatorWebRTCPeer: SimulatorStreamPeer {
   private let sender: ScreenSharingSender
   private let frameSender: ScreenSharingFrameSender
+  private let offer: String
   private(set) var configuration: ScreenSharingVideoConfiguration
 
-  init(size: CGSize, connectivity: ServerScreenSharingConnectivity) async throws {
+  init(size: CGSize, offer: String, connectivity: ServerScreenSharingConnectivity) async throws {
     var options = ScreenSharingPeerOptions()
     options.codec = .hevc
     options.fallbackCodecs = [.h264]
@@ -29,6 +77,7 @@ final class SimulatorSenderPeer: SimulatorFrameSink {
       configuration: configuration, metrics: ScreenSharingMetrics(), options: options,
       connectivity: connectivity.native())
     self.sender = sender
+    self.offer = offer
     self.configuration = configuration
     frameSender = sender.frameSender
   }
@@ -38,16 +87,16 @@ final class SimulatorSenderPeer: SimulatorFrameSink {
       width: Int(size.width), height: Int(size.height), framesPerSecond: 60, bitrate: 10_000_000)
   }
 
-  var channel: ScreenSharingSimulatorChannel { sender.simulatorChannel }
+  var channel: any ScreenSharingMessageChannel<ScreenSharingSimulatorMessage> { sender.simulatorChannel }
 
   var onConnectionChanged: ((String) -> Void)? {
     get { sender.onConnectionChanged }
     set { sender.onConnectionChanged = newValue }
   }
 
-  func answer(offer: String) async throws -> String {
+  func start(failed: @escaping @MainActor (String) -> Void) async throws -> ScreenSharingStreamGrant {
     try await sender.accept(.init(kind: "offer", sdp: offer))
-    return try await sender.makeDescription(offer: false).sdp
+    return .answer(try await sender.makeDescription(offer: false).sdp)
   }
 
   func prepare(size: CGSize) {
@@ -81,11 +130,11 @@ final class SimulatorStreamHost {
 
   private final class Session {
     let udid: String
-    let peer: SimulatorSenderPeer
+    let peer: any SimulatorStreamPeer
     var state = "connecting"
     var quality: Task<Void, Never>?
     var expiresAt: TimeInterval
-    init(udid: String, peer: SimulatorSenderPeer, expiresAt: TimeInterval) {
+    init(udid: String, peer: any SimulatorStreamPeer, expiresAt: TimeInterval) {
       self.udid = udid; self.peer = peer; self.expiresAt = expiresAt
     }
   }
@@ -116,19 +165,7 @@ final class SimulatorStreamHost {
     let owner = Owner(request)
     switch request.operation {
     case .capabilities:
-      guard SimulatorRuntime.loaded else { return Self.noXcode }
-      do {
-        let device = try SimulatorRuntime.device(udid: udid)
-        guard SimulatorRuntime.isBooted(device) else {
-          return .init(status: "starting", message: "The simulator is starting.")
-        }
-        return .init(
-          status: "available",
-          displays: [.init(id: request.displayId ?? "", name: "Simulator", width: 0, height: 0)],
-          connectivity: try connectivity.make(viewerId: request.viewerId))
-      } catch {
-        return .init(status: "unavailable", message: error.localizedDescription)
-      }
+      return capabilities(request, udid: udid)
     case .stop:
       if let session = sessions[owner] { end(owner: owner, session: session) }
       return .init(status: "stopped")
@@ -145,63 +182,107 @@ final class SimulatorStreamHost {
       session.expiresAt = now + Self.lifetime
       return .init(status: session.state)
     case .start, .restart:
-      if let old = sessions[owner] { end(owner: owner, session: old) }
-      guard sessions.count < Self.maximumSessions else {
-        return .init(status: "busy", message: "Too many panes are showing simulators on this Mac.")
+      return await start(request, owner: owner, udid: udid)
+    }
+  }
+
+  private func capabilities(_ request: ServerScreenSharingRequest, udid: String) -> ServerScreenSharingReply {
+    guard SimulatorRuntime.loaded else { return Self.noXcode }
+    do {
+      let device = try SimulatorRuntime.device(udid: udid)
+      guard SimulatorRuntime.isBooted(device) else {
+        return .init(status: "starting", message: "The simulator is starting.")
       }
-      guard let offer = request.offer, offer.utf8.count <= 256 * 1024, offer.contains("a=fingerprint:sha-256 ") else {
-        return .init(status: "failed", message: "Invalid simulator request.")
+      var reply = ServerScreenSharingReply(
+        status: "available",
+        displays: [.init(id: request.displayId ?? "", name: "Simulator", width: 0, height: 0)],
+        connectivity: try connectivity.make(viewerId: request.viewerId))
+      if ScreenSharingMediaEndpoint.shared.isAvailable { reply.engines = [ScreenSharingEngine.v2.rawValue] }
+      return reply
+    } catch {
+      return .init(status: "unavailable", message: error.localizedDescription)
+    }
+  }
+
+  private func start(
+    _ request: ServerScreenSharingRequest, owner: Owner, udid: String
+  ) async -> ServerScreenSharingReply {
+    if let old = sessions[owner] { end(owner: owner, session: old) }
+    guard sessions.count < Self.maximumSessions else {
+      return .init(status: "busy", message: "Too many panes are showing simulators on this Mac.")
+    }
+    guard let media = ScreenSharingStreamMedia(request) else {
+      return .init(status: "failed", message: "Invalid simulator request.")
+    }
+    do {
+      let device = try attach(udid: udid)
+      var size = device.capture?.size
+      for _ in 0..<60 where size == nil {
+        try? await Task.sleep(for: .milliseconds(50))
+        size = device.capture?.size
       }
+      guard let capture = device.capture, let size else {
+        release(udid: udid)
+        return .init(status: "starting", message: "The simulator's screen isn't ready yet.")
+      }
+      let peer: any SimulatorStreamPeer
       do {
-        let device = try attach(udid: udid)
-        var size = device.capture?.size
-        for _ in 0..<60 where size == nil {
-          try? await Task.sleep(for: .milliseconds(50))
-          size = device.capture?.size
-        }
-        guard let capture = device.capture, let size else {
-          release(udid: udid)
-          return .init(status: "starting", message: "The simulator's screen isn't ready yet.")
-        }
-        let peer: SimulatorSenderPeer
-        do {
-          peer = try await SimulatorSenderPeer(
-            size: size, connectivity: try connectivity.make(viewerId: request.viewerId))
-        } catch {
-          release(udid: udid)
-          throw error
-        }
-        guard !isShutdown else {
-          peer.close()
-          release(udid: udid)
-          return .init(status: "stopped")
-        }
-        let session = Session(udid: udid, peer: peer, expiresAt: now + Self.lifetime)
-        sessions[owner] = session
-        peer.onConnectionChanged = { [weak self, weak session] state in
-          guard let self, let session, self.sessions[owner] === session else { return }
-          if state == "connected" { session.state = "viewing" }
-          if ["disconnected", "failed", "closed"].contains(state) { session.state = "reconnecting" }
-        }
-        peer.channel.onMessage = { [weak self] message in self?.receive(message, udid: udid) }
-        peer.channel.onAvailabilityChanged = { [weak self, weak peer] open in
-          guard open, let self, let peer, let device = self.devices[udid] else { return }
-          peer.channel.send(.state(device.control.state))
-        }
-        startWatchdog()
-        do {
-          let answer = try await peer.answer(offer: offer)
-          guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
-          capture.add(peer)
-          adapt(session)
-          return .init(status: "connecting", answer: answer)
-        } catch {
-          if sessions[owner] === session { end(owner: owner, session: session) }
-          throw error
-        }
+        peer = try await makePeer(size: size, media: media, viewerId: request.viewerId)
       } catch {
-        return .init(status: "failed", message: error.localizedDescription)
+        release(udid: udid)
+        throw error
       }
+      guard !isShutdown else {
+        peer.close()
+        release(udid: udid)
+        return .init(status: "stopped")
+      }
+      return try await connect(peer, capture: capture, owner: owner, udid: udid)
+    } catch {
+      return .init(status: "failed", message: error.localizedDescription)
+    }
+  }
+
+  private func connect(
+    _ peer: any SimulatorStreamPeer, capture: SimulatorScreenCapture, owner: Owner, udid: String
+  ) async throws -> ServerScreenSharingReply {
+    let session = Session(udid: udid, peer: peer, expiresAt: now + Self.lifetime)
+    sessions[owner] = session
+    peer.onConnectionChanged = { [weak self, weak session] state in
+      guard let self, let session, self.sessions[owner] === session else { return }
+      if state == "connected" { session.state = "viewing" }
+      if ["disconnected", "failed", "closed"].contains(state) { session.state = "reconnecting" }
+    }
+    peer.channel.onMessage = { [weak self] message in self?.receive(message, udid: udid) }
+    peer.channel.onAvailabilityChanged = { [weak self, weak peer] open in
+      guard open, let self, let peer, let device = self.devices[udid] else { return }
+      peer.channel.send(.state(device.control.state))
+    }
+    startWatchdog()
+    do {
+      let grant = try await peer.start { [weak self, weak session] _ in
+        guard let self, let session, self.sessions[owner] === session else { return }
+        self.end(owner: owner, session: session)
+      }
+      guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
+      capture.add(peer)
+      if let peer = peer as? SimulatorWebRTCPeer { adapt(session, peer: peer) }
+      return .connecting(grant)
+    } catch {
+      if sessions[owner] === session { end(owner: owner, session: session) }
+      throw error
+    }
+  }
+
+  private func makePeer(
+    size: CGSize, media: ScreenSharingStreamMedia, viewerId: UUID
+  ) async throws -> any SimulatorStreamPeer {
+    switch media {
+    case .v2(let viewerEndpointId):
+      return try SimulatorV2Peer(size: size, viewerEndpointId: viewerEndpointId)
+    case .webRTC(let offer):
+      return try await SimulatorWebRTCPeer(
+        size: size, offer: offer, connectivity: try connectivity.make(viewerId: viewerId))
     }
   }
 
@@ -240,19 +321,19 @@ final class SimulatorStreamHost {
     capture.start()
   }
 
-  private func adapt(_ session: Session) {
-    session.quality = Task { [weak self, weak session] in
+  private func adapt(_ session: Session, peer: SimulatorWebRTCPeer) {
+    session.quality = Task { [weak self, weak session, weak peer] in
       await ScreenSharingQualityLoop.run(
-        base: { session?.peer.configuration },
+        base: { peer?.configuration },
         isViewing: { session?.state == "viewing" },
-        statistics: { await session?.peer.statistics() ?? [:] },
+        statistics: { await peer?.statistics() ?? [:] },
         apply: { configuration, _ in
-          guard let self, let session, let capture = self.devices[session.udid]?.capture else { return false }
-          let base = session.peer.configuration
-          session.peer.adapt(to: configuration)
+          guard let self, let session, let peer, let capture = self.devices[session.udid]?.capture else { return false }
+          let base = peer.configuration
+          peer.adapt(to: configuration)
           capture.request(
             CGSize(width: configuration.width, height: configuration.height),
-            from: CGSize(width: base.width, height: base.height), for: session.peer)
+            from: CGSize(width: base.width, height: base.height), for: peer)
           return true
         })
     }

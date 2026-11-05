@@ -25,12 +25,11 @@ extension ScreenSharingHostService {
   private func acceptV2(_ session: ScreenSharingHostSession, on endpoint: NetEndpointHandle) {
     guard let v2 = session.v2, let link = session.peer as? ScreenSharingV2HostLink else { return }
 
-    let expectation = ScreenSharingV2Acceptor.shared.expect(v2.viewerEndpointId, on: endpoint)
+    let ticket = ScreenSharingV2Acceptor.shared.expect(v2.viewerEndpointId, token: v2.token, on: endpoint)
     session.mediaAccept = Task { [weak self, weak session] in
       do {
-        let connection = try await ScreenSharingV2Acceptor.shared.connection(
-          expectation, timeout: Self.v2AcceptTimeout)
-        try await link.accept(ScreenSharingV2IrohConnection(connection)) { [weak session] token in
+        let connection = try await ScreenSharingV2Acceptor.shared.connection(ticket, timeout: Self.v2AcceptTimeout)
+        try await link.accept(connection) { [weak session] token in
           guard let session, !session.stopping, token == v2.token else { return "This screen-sharing session ended." }
           return nil
         }

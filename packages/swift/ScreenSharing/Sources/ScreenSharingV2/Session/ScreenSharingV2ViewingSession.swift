@@ -3,13 +3,14 @@ import ScreenSharing
 import Synchronization
 
 @MainActor
-public final class ScreenSharingV2ViewingSession: ScreenSharingViewingSession {
+public final class ScreenSharingV2ViewingSession: ScreenSharingSimulatorSession {
   public let metrics: ScreenSharingMetrics
   public let frames: ScreenSharingFrameMailbox
   public var onConnectionChanged: ((String) -> Void)?
   public var capabilities: ScreenSharingCapabilities { [.control, .clipboard, .statistics, .systemKeys] }
   public var control: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)? { channels.control }
   public var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { channels.clipboard }
+  public var simulator: any ScreenSharingMessageChannel<ScreenSharingSimulatorMessage> { channels.simulator }
   public var failure: String? { nil }
   public private(set) var videoShowsPointer = true
   public var resizesDesktop: Bool { true }

@@ -46,11 +46,12 @@ public final class SimulatorPaneModel {
 
   public init(
     client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?, machineId: String,
-    workspaceId: UUID, paneId: UUID, openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
+    workspaceId: UUID, paneId: UUID, v2: SimulatorStreamV2? = nil,
+    openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
   ) {
     self.client = client
     let sponsor = SimulatorStreamSponsor(
-      workspaceId: workspaceId, paneId: paneId, client: client, openTunnel: openTunnel)
+      workspaceId: workspaceId, paneId: paneId, client: client, v2: v2, openTunnel: openTunnel)
     makeConnection = { udid in
       SimulatorStreamRegistry.shared.handle(machineId: machineId, udid: udid, sponsor: sponsor)
     }
