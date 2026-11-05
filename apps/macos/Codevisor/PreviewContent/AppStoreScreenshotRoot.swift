@@ -65,10 +65,8 @@ import CodevisorUI
 
     private var splitView: some View {
       NavigationSplitView {
-        SidebarView(
-          navigation: SidebarNavigation(committed: $selection), store: fixture.store, publishesSceneActions: false
-        )
-        .navigationSplitViewColumnWidth(270)
+        SidebarView(selection: $selection, store: fixture.store, publishesSceneActions: false)
+          .navigationSplitViewColumnWidth(270)
       } detail: {
         Group {
           if scene == "browser" {

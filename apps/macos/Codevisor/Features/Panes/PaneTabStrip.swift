@@ -132,11 +132,8 @@ struct PaneTabStrip: View {
     .onAppear {
       appearanceLedger.knownIds = Set(itemIds)
       appearanceLedger.seeded = true
-      installScrollMonitor()
     }
-    .onDisappear {
-      removeScrollMonitor()
-    }
+    .onWorkspaceVisibilityChange(show: installScrollMonitor, hide: removeScrollMonitor)
   }
 
   private var trackBackground: some View {

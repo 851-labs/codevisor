@@ -3,7 +3,7 @@
 
   public extension Autocomplete {
     struct Menu<Label: View>: View {
-      let entries: [Entry]
+      let content: () -> [Entry]
       let label: Label
       let presentation: Binding<Bool>?
       @State private var isPresented = false
@@ -11,9 +11,9 @@
 
       public init(
         isPresented: Binding<Bool>? = nil,
-        @ContentBuilder content: () -> [Entry], @ViewBuilder label: () -> Label
+        @ContentBuilder content: @escaping () -> [Entry], @ViewBuilder label: () -> Label
       ) {
-        entries = content()
+        self.content = content
         self.label = label()
         presentation = isPresented
       }
@@ -26,7 +26,7 @@
           label
         }
         .popover(isPresented: presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-          Surface(entries: entries, mode: .menu, onDismiss: { presented.wrappedValue = false })
+          Surface(entries: content(), mode: .menu, onDismiss: { presented.wrappedValue = false })
             .disabled(!isEnabled)
         }
         .onChange(of: isEnabled) { _, enabled in
@@ -72,10 +72,14 @@
 
   extension Autocomplete {
     struct Configuration {
-      var prompt = Strings.text("Search")
+      private static let defaultPrompt = Strings.text("Search")
+      private static let defaultEmptyMessage = Strings.text("No matches")
+      private static let defaultNoItemsMessage = Strings.text("No items available")
+
+      var prompt = Configuration.defaultPrompt
       var searchLabel: String?
-      var emptyMessage = Strings.text("No matches")
-      var noItemsMessage = Strings.text("No items available")
+      var emptyMessage = Configuration.defaultEmptyMessage
+      var noItemsMessage = Configuration.defaultNoItemsMessage
       var filter: Filter = .contains
       var sizing: Sizing = .stable
       var showsSectionDividers = true

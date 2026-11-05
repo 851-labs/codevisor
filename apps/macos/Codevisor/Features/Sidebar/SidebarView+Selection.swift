@@ -16,23 +16,12 @@ extension SidebarView {
     case .unchanged:
       return
     case .clear:
-      commitNow(nil)
+      selection = nil
     case let .select(id):
       guard let item = sections.joined().first(where: { $0.workspace.id == id }) else { return }
       revealRequest.rowID = id
-      commitNow(item, awayFrom: workspace)
+      activateWorkspace(item)
+      if routesSelectedSession(workspace) { selection = nil }
     }
-  }
-
-  private func commitNow(_ target: SidebarSelection?) {
-    navigation.cancelPending()
-    navigation.committed.wrappedValue = target
-  }
-
-  private func commitNow(_ item: SidebarWorkspaceListItem, awayFrom workspace: Workspace) {
-    let navigator = navigator
-    navigation.cancelPending()
-    navigator.activate(item)
-    if navigator.routesSelectedSession(workspace) { navigation.committed.wrappedValue = nil }
   }
 }

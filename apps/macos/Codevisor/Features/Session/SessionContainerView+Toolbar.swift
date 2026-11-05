@@ -6,12 +6,59 @@ import SimulatorPane
 import SwiftUI
 
 extension SessionContainerView {
-  @ViewBuilder
-  var titledContentColumn: some View {
-    if let model = activeFileModel {
-      contentColumn.navigationTitle(model.title)
+  var sceneChrome: some View {
+    WorkspaceSceneChrome(
+      title: sceneTitle, subtitle: activePaneSubtitle, removesTitle: paneControlsReplaceTitle,
+      values: WorkspaceSceneValues(
+        browser: activeBrowserModel, file: activeFileModel, simulator: activeSimulatorModel,
+        layoutActions: layoutActions(in: selectedWorkspace))
+    ) {
+      paneToolbar
+    }
+  }
+
+  private var sceneTitle: WorkspaceSceneTitle {
+    guard let model = activeFileModel else { return .editable(activePaneTitle) }
+    return .fixed(model.title)
+  }
+
+  @ToolbarContentBuilder
+  private var paneToolbar: some ToolbarContent {
+    if let browser = activeBrowserModel {
+      ChromiumBrowserNavigationControls(model: browser)
+      ChromiumBrowserAddressToolbarItem(model: browser)
     } else {
-      contentColumn.navigationTitle(activePaneTitle)
+      machinePaneToolbar
+    }
+  }
+
+  @ToolbarContentBuilder
+  private var machinePaneToolbar: some ToolbarContent {
+    if let pane = activeScreenSharingPane, let store = pane.store {
+      ScreenSharingToolbar(
+        store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
+    } else {
+      documentPaneToolbar
+    }
+  }
+
+  @ToolbarContentBuilder
+  private var documentPaneToolbar: some ToolbarContent {
+    if let model = activeFileModel {
+      FilePaneToolbar(model: model, onNewTab: addCenterTab)
+    } else {
+      reviewOrSimulatorToolbar
+    }
+  }
+
+  @ToolbarContentBuilder
+  private var reviewOrSimulatorToolbar: some ToolbarContent {
+    if let model = activeReviewModel {
+      ReviewPaneToolbar(model: model, title: activePaneTitle.wrappedValue)
+    } else if let model = activeSimulatorModel {
+      SimulatorPaneToolbar(model: model) { data, name in
+        AppleSimulatorPane.saveScreenshot(data, deviceName: name)
+      }
     }
   }
 

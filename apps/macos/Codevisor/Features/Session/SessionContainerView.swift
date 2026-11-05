@@ -71,30 +71,10 @@ struct SessionContainerView: View {
   }
 
   private func mounted(in workspace: Workspace) -> some View {
-    titledContentColumn
-      .navigationSubtitle(activePaneSubtitle)
-      .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
-      .toolbar {
-        if let browser = activeBrowserModel {
-          ChromiumBrowserNavigationControls(model: browser)
-          ChromiumBrowserAddressToolbarItem(model: browser)
-        } else if let pane = activeScreenSharingPane, let store = pane.store {
-          ScreenSharingToolbar(
-            store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
-        } else if let model = activeFileModel {
-          FilePaneToolbar(model: model, onNewTab: addCenterTab)
-        } else if let model = activeReviewModel {
-          ReviewPaneToolbar(model: model, title: activePaneTitle.wrappedValue)
-        } else if let model = activeSimulatorModel {
-          SimulatorPaneToolbar(model: model) { data, name in
-            AppleSimulatorPane.saveScreenshot(data, deviceName: name)
-          }
-        }
+    contentColumn
+      .background {
+        ActiveWorkspaceOnly { sceneChrome }
       }
-      .focusedSceneValue(\.browserPage, activeBrowserModel)
-      .focusedSceneValue(\.filePane, activeFileModel)
-      .focusedSceneValue(\.simulatorPane, activeSimulatorModel)
-      .focusedSceneValue(\.workspaceLayoutActions, layoutActions(in: workspace))
       .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0, rendered: $1) })
       .environment(
         \.openSubagent,
@@ -126,60 +106,80 @@ struct SessionContainerView: View {
       .onChange(of: activeLeafId) { _, leafId in
         if let openingSplit, openingSplit.leafId != leafId { self.openingSplit = nil }
       }
-      .onAppear {
-        isVisible = true
-        store.navigationWorkspaceId = selectedWorkspace.id
-        sessionFocus.navigationRevision = { store.navigationRevision }
-        sessionFocus.canFocusChat = { chatId in
-          isVisible && store.navigationWorkspaceId == selectedWorkspace.id
-            && activePaneDescriptor?.chatSessionId == chatId
-        }
-        focusSelectedCenterPane()
-      }
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
-        let workspace = selectedWorkspace
-        store.setFocusedChat(
-          candidate, serverId: workspace.serverId, sourceId: focusSourceId,
-          workspaceId: workspace.id, isVisible: isVisible
-        )
+        publishFocusedChat(candidate)
       }
-      .onDisappear {
-        isVisible = false
-        store.clearFocusedChat(sourceId: focusSourceId)
+      .onWorkspaceVisibilityChange(show: showWorkspace, hide: hideWorkspace)
+      .task(id: mountIdentity) { wireMount() }
+  }
+
+  private func wireMount() {
+    splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
+      canMoveSplitLeaf(
+        sourceLeafId,
+        relativeTo: resolution.targetLeafId,
+        edge: resolution.edge,
+        canvasSize: canvasSize
+      )
+    }
+    splitDragCoordinator.onResolve = { sourceLeafId, resolution in
+      moveSplitLeaf(
+        sourceLeafId,
+        relativeTo: resolution.targetLeafId,
+        edge: resolution.edge
+      )
+    }
+    sessionFocus.onChatComposerFocused = { chatId in
+      let workspace = selectedWorkspace
+      guard isVisible,
+        store.navigationWorkspaceId == workspace.id,
+        let leaf = workspace.centerTree.groupId(containingChat: chatId)
+      else { return }
+      if leaf != activeLeafId {
+        activateLeaf(leaf)
       }
-      .task(id: mountIdentity) {
-        splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
-          canMoveSplitLeaf(
-            sourceLeafId,
-            relativeTo: resolution.targetLeafId,
-            edge: resolution.edge,
-            canvasSize: canvasSize
-          )
-        }
-        splitDragCoordinator.onResolve = { sourceLeafId, resolution in
-          moveSplitLeaf(
-            sourceLeafId,
-            relativeTo: resolution.targetLeafId,
-            edge: resolution.edge
-          )
-        }
-        sessionFocus.onChatComposerFocused = { chatId in
-          let workspace = selectedWorkspace
-          guard isVisible,
-            store.navigationWorkspaceId == workspace.id,
-            let leaf = workspace.centerTree.groupId(containingChat: chatId)
-          else { return }
-          if leaf != activeLeafId {
-            activateLeaf(leaf)
-          }
-          if chatId != session?.id {
-            onFocusedChatChanged?(chatId)
-          }
-        }
-        if let session {
-          store.markOpened(session.id, serverId: session.serverId)
-        }
+      if chatId != session?.id {
+        onFocusedChatChanged?(chatId)
       }
+    }
+    if let session {
+      store.markOpened(session.id, serverId: session.serverId)
+    }
+  }
+
+  private func showWorkspace() {
+    isVisible = true
+    store.navigationWorkspaceId = selectedWorkspace.id
+    sessionFocus.navigationRevision = { store.navigationRevision }
+    sessionFocus.canFocusChat = { chatId in
+      isVisible && store.navigationWorkspaceId == selectedWorkspace.id
+        && activePaneDescriptor?.chatSessionId == chatId
+    }
+    setSelectedPanesVisible(true)
+    publishFocusedChat(focusedChatCandidate)
+    focusSelectedCenterPane()
+  }
+
+  private func hideWorkspace() {
+    isVisible = false
+    store.clearFocusedChat(sourceId: focusSourceId)
+    setSelectedPanesVisible(false)
+  }
+
+  private func setSelectedPanesVisible(_ visible: Bool) {
+    let workspace = selectedWorkspace
+    for leaf in workspace.selectedCenterTab?.root.allGroups ?? [] {
+      let key = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: leaf.id)
+      store.centerLeafGroups[key]?.selectedPane?.visibilityChanged(visible)
+    }
+  }
+
+  private func publishFocusedChat(_ candidate: UUID?) {
+    let workspace = selectedWorkspace
+    store.setFocusedChat(
+      candidate, serverId: workspace.serverId, sourceId: focusSourceId,
+      workspaceId: workspace.id, isVisible: isVisible
+    )
   }
 
   var contentColumn: some View {

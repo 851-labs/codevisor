@@ -30,15 +30,18 @@ struct SessionScreen: View {
         }
         .frame(width: 0, height: 0)
       )
-      .onAppear {
-        focus.workspaceCommandHandler = onWorkspaceCommand
-        focus.centerGroup = centerGroup
-        focus.startTypeToFocus()
-      }
-      .onDisappear {
-        focus.stopTypeToFocus()
-        splitDragCoordinator?.dragCancelled()
-      }
+      .onWorkspaceVisibilityChange(show: startHandlingInput, hide: stopHandlingInput)
+  }
+
+  private func startHandlingInput() {
+    focus.workspaceCommandHandler = onWorkspaceCommand
+    focus.centerGroup = centerGroup
+    focus.startTypeToFocus()
+  }
+
+  private func stopHandlingInput() {
+    focus.stopTypeToFocus()
+    splitDragCoordinator?.dragCancelled()
   }
 
   private var centerContent: some View {

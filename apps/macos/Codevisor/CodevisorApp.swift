@@ -42,7 +42,6 @@ struct RootView: View {
   @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
   @State private var sidebarRevealRequest = SidebarRevealRequest()
-  @State private var sidebarHighlight = SidebarHighlight()
   static let sidebarCollapsedKey = "sidebar.collapsed"
   @ClientPreference(Self.sidebarCollapsedKey, default: false) var sidebarCollapsed
   @ClientPreference(FeatureFlag.bots.preferenceKey, default: false) var botsEnabled
@@ -74,7 +73,6 @@ struct RootView: View {
         WindowLayoutReader { panelLayout.updateWindow(width: $0, isFullScreen: $1) }.frame(width: 0, height: 0)
       )
       .onChange(of: selection) { _, newValue in
-        sidebarHighlight.discard()
         guard let store else { return }
         if case let .session(serverId, sessionId) = newValue {
           store.markOpened(sessionId, serverId: serverId)
@@ -149,7 +147,7 @@ struct RootView: View {
 
   private var mainSplit: some View {
     NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-      RootSidebar(navigation: sidebarNavigation, store: store, revealRequest: sidebarRevealRequest)
+      RootSidebar(selection: $selection, store: store, revealRequest: sidebarRevealRequest)
     } detail: {
       Group {
         if let store {
@@ -169,8 +167,8 @@ struct RootView: View {
         width: min(270, panelLayout.windowWidth - 16)
       ) {
         RootSidebar(
-          navigation: sidebarNavigation, store: store, revealRequest: sidebarRevealRequest,
-          publishesSceneActions: false, isDrawer: true)
+          selection: $selection, store: store, revealRequest: sidebarRevealRequest, publishesSceneActions: false,
+          isDrawer: true)
       }
     }
     .onChange(of: clientSidebarVisible, initial: true) { _, visible in
@@ -179,10 +177,6 @@ struct RootView: View {
     .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
       store?.isSidebarVisible = clientSidebarVisible
     }
-  }
-
-  private var sidebarNavigation: SidebarNavigation {
-    SidebarNavigation(committed: $selection, highlight: sidebarHighlight)
   }
 
   private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -200,21 +194,38 @@ struct RootView: View {
     )
   }
 
-  @ViewBuilder
   private func detail(_ store: SessionStore, selection: SidebarSelection?) -> some View {
-    switch selection {
+    ZStack {
+      WorkspaceDeck(active: WorkspaceDeckRoute(selection)) { route in
+        deckPage(store, route: route)
+      }
+      transientDetail(store, selection: selection)
+    }
+  }
+
+  @ViewBuilder
+  private func deckPage(_ store: SessionStore, route: WorkspaceDeckRoute) -> some View {
+    switch route {
     case let .session(serverId, sessionId):
       sessionDetail(store, serverId: serverId, sessionId: sessionId)
     case let .workspace(serverId, workspaceId):
       workspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
-    case let .archivedWorkspace(serverId, workspaceId):
-      archivedWorkspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
     case let .bot(serverId, botId):
       botDetail(store, serverId: serverId, botId: botId)
+    }
+  }
+
+  @ViewBuilder
+  private func transientDetail(_ store: SessionStore, selection: SidebarSelection?) -> some View {
+    switch selection {
+    case let .archivedWorkspace(serverId, workspaceId):
+      archivedWorkspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
     case let .newChat(target):
       newChat(store, target: target)
     case .none:
       newChat(store, target: nil)
+    case .session, .workspace, .bot:
+      EmptyView()
     }
   }
 

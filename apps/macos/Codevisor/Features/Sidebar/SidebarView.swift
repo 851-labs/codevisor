@@ -7,7 +7,7 @@ struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.isActiveSidebarMode) private var isActiveSidebarMode
-  let navigation: SidebarNavigation
+  @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
   var publishesSceneActions = true
 
@@ -36,11 +36,6 @@ struct SidebarView: View {
   var list: ProjectListModel { environment.projectList }
   var rowDetails: [SidebarRowDetail] { ClientPreferences.shared.sidebarRowDetails }
   var isReordering: Bool { drag != nil || groupDrag != nil }
-
-  var selection: SidebarSelection? {
-    get { navigation.shown }
-    nonmutating set { navigation.go(to: newValue) }
-  }
 
   var isNewChatSelected: Bool {
     switch selection {
@@ -258,7 +253,7 @@ final class SidebarRevealRequest {
 #Preview {
   @Previewable @State var selection: SidebarSelection?
   return NavigationSplitView {
-    SidebarView(navigation: SidebarNavigation(committed: $selection))
+    SidebarView(selection: $selection)
       .environment(AppEnvironment.preview())
   } detail: {
     Text("Detail")

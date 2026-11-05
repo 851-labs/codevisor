@@ -3,7 +3,7 @@ import CodevisorUI
 import SwiftUI
 
 struct RootSidebar: View {
-  let navigation: SidebarNavigation
+  @Binding var selection: SidebarSelection?
   let store: SessionStore?
   let revealRequest: SidebarRevealRequest
   var publishesSceneActions = true
@@ -25,7 +25,7 @@ struct RootSidebar: View {
     layout
       .modifier(
         PaletteDestinationsPublisher(
-          selection: navigation.committed, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
+          selection: $selection, store: store, revealRequest: revealRequest, isEnabled: publishesSceneActions)
       )
       .focusedSceneValue(\.rootSidebarActions, sceneActions)
       .background {
@@ -56,7 +56,7 @@ struct RootSidebar: View {
   private var canCreateBots: Bool { botsEnabled && !environment.bots.botMachines.isEmpty }
 
   private func openNewChat() {
-    navigation.go(to: .newChat(nil))
+    selection = .newChat(nil)
     storedMode = .code
   }
 
@@ -111,7 +111,7 @@ struct RootSidebar: View {
     }
     .onChange(of: activeMode, initial: true) { _, mode in
       visitedModes.insert(mode)
-      parkedSelection = navigation.committed.wrappedValue
+      parkedSelection = selection
       parkedMode = SidebarMode.allCases.first { $0 != mode }
     }
   }
@@ -120,9 +120,8 @@ struct RootSidebar: View {
     mode == activeMode || (botsEnabled && visitedModes.contains(mode))
   }
 
-  private func listNavigation(for mode: SidebarMode) -> SidebarNavigation {
-    guard mode != activeMode && mode == parkedMode else { return navigation }
-    return SidebarNavigation(committed: $parkedSelection)
+  private func listSelection(for mode: SidebarMode) -> Binding<SidebarSelection?> {
+    mode != activeMode && mode == parkedMode ? $parkedSelection : $selection
   }
 
   @ViewBuilder
@@ -130,13 +129,13 @@ struct RootSidebar: View {
     switch mode {
     case .chat:
       BotListSidebar(
-        selection: listNavigation(for: mode).selection, botEditor: $botEditor, store: store,
+        selection: listSelection(for: mode), botEditor: $botEditor, store: store,
         publishesSceneActions: publishesSceneActions
       )
       .modifier(SidebarModeLayer(isActive: mode == activeMode))
     case .code:
       SidebarView(
-        navigation: listNavigation(for: mode), store: store, publishesSceneActions: publishesSceneActions,
+        selection: listSelection(for: mode), store: store, publishesSceneActions: publishesSceneActions,
         revealRequest: revealRequest)
     }
   }

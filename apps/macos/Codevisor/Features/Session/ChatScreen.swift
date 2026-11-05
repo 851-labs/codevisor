@@ -111,10 +111,7 @@ struct ChatScreen: View {
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)
       .overlay { livePreviewPiPOverlay }
-      .sheet(item: $controller.presentedSetupRequest) { request in
-        SetupRequestSheet(request: request, controller: controller)
-      }
-      .modifier(ProjectCloneSheetPresenter(controller: controller))
+      .modifier(ChatSetupSheets(controller: controller))
       .environment(\.attachmentImages, attachmentImages)
       .pointerStyle(.default)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
@@ -123,15 +120,12 @@ struct ChatScreen: View {
       .onAppear {
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true
         isAtBottom = controller.scrollState?.isAtBottom ?? true
-        controller.presentationClock.viewDidAppear()
-        presentationSurface.appear(owner: presentationVisibilityOwner)
       }
+      .onWorkspaceVisibilityChange(show: showPresentation, hide: hidePresentation)
       .onDisappear {
-        presentationSurface.disappear(owner: presentationVisibilityOwner)
         historyLoadTask?.cancel()
         historyLoadTask = nil
         projectionWorker.cancel()
-        controller.presentationClock.viewDidDisappear()
       }
       .task(id: ObjectIdentifier(controller)) {
         let hasWarmPresentation = presentationSurface.isWarm
@@ -185,4 +179,13 @@ struct ChatScreen: View {
       }
   }
 
+  private func showPresentation() {
+    controller.presentationClock.viewDidAppear()
+    presentationSurface.appear(owner: presentationVisibilityOwner)
+  }
+
+  private func hidePresentation() {
+    presentationSurface.disappear(owner: presentationVisibilityOwner)
+    controller.presentationClock.viewDidDisappear()
+  }
 }
