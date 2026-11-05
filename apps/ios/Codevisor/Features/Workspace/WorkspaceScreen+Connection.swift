@@ -112,6 +112,23 @@ extension WorkspaceScreen {
   ) {
     guard let project = resolvedProject else { return }
     onDraftWillStart?()
+    let session = startSession(for: controller, in: project, submittedText: submittedText)
+    let workspace = draftWorkspace(for: session, in: project)
+    controller.hostWorkspaceId = workspace.id
+    rememberNewChatChoices(of: controller, in: project)
+    let state = assignChatPane(to: session, in: workspace)
+    if isNewChatPresentation {
+      onDraftStarted?(session.id)
+      return
+    }
+    showStartedChat(session, controller: controller, project: project, panes: state)
+  }
+
+  private func startSession(
+    for controller: SessionController,
+    in project: Project,
+    submittedText: String
+  ) -> ChatSession {
     let session = environment.projectList.newSession(
       in: project,
       title: Self.chatTitle(from: submittedText),
@@ -121,6 +138,20 @@ extension WorkspaceScreen {
       syncToServer: false
     )
     controller.serverSession = session
+    bindSessionCallbacks(of: controller, to: session)
+    ChatControllerCache.shared.register(
+      controller,
+      for: session,
+      environment: environment
+    )
+    return session
+  }
+
+  private func bindSessionCallbacks(of controller: SessionController, to session: ChatSession) {
+    controller.onSetupFailed = { [weak controller] in
+      guard let controller else { return }
+      onDraftFailed?(DraftSetupFailure(environment: environment).discard(controller, startedAs: session))
+    }
     controller.onWorktreeCreated = { [weak projectList = environment.projectList] worktree in
       projectList?.setWorktree(
         name: worktree.name,
@@ -129,12 +160,10 @@ extension WorkspaceScreen {
         serverId: session.serverId
       )
     }
-    ChatControllerCache.shared.register(
-      controller,
-      for: session,
-      environment: environment
-    )
-    let workspace = environment.workspaces.ensureWorkspace(
+  }
+
+  private func draftWorkspace(for session: ChatSession, in project: Project) -> Workspace {
+    environment.workspaces.ensureWorkspace(
       for: WorkspaceSessionSeed(
         sessionId: session.id,
         initialName: session.worktreeName ?? project.name,
@@ -146,7 +175,9 @@ extension WorkspaceScreen {
       ),
       legacyGroups: environment.paneGroups
     )
-    controller.hostWorkspaceId = workspace.id
+  }
+
+  private func rememberNewChatChoices(of controller: SessionController, in project: Project) {
     environment.composerDefaults.performPersistenceBatch(flushImmediately: true) {
       environment.composerDefaults.rememberNewWorkspaceProject(
         serverId: project.serverId,
@@ -156,6 +187,9 @@ extension WorkspaceScreen {
         environment.rememberSentRunLocation(newWorktree: controller.wantsNewWorktree, for: project)
       }
     }
+  }
+
+  private func assignChatPane(to session: ChatSession, in workspace: Workspace) -> PaneGroupState {
     var state = panes
     if let index = state.panes.firstIndex(where: { $0.kind == .chat }) {
       state.panes[index].chatSessionId = session.id
@@ -163,10 +197,15 @@ extension WorkspaceScreen {
     var paneWorkspace = workspace
     Self.applyCompactPaneState(state, to: &paneWorkspace)
     environment.workspaces.save(paneWorkspace)
-    if isNewChatPresentation {
-      onDraftStarted?(session.id)
-      return
-    }
+    return state
+  }
+
+  private func showStartedChat(
+    _ session: ChatSession,
+    controller: SessionController,
+    project: Project,
+    panes state: PaneGroupState
+  ) {
     controllers[session.id] = controller
     self.project = project
     startedSessionId = session.id

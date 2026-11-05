@@ -4,6 +4,7 @@ import Foundation
 enum SessionPreparation {
   case ready(SessionModel)
   case notStarted(String)
+  case returnsToNewChat(String)
   case failed(String, returnsToNewChat: Bool)
 }
 
@@ -115,6 +116,9 @@ extension SessionController {
       isSubmitting = false
       status = .failed(reason)
       return .withdrawn
+    case let .returnsToNewChat(reason):
+      returnToNewChat(reason)
+      return .withdrawn
     case let .failed(reason, _):
       status = projectCloneFailure == nil ? .idle : .failed(reason)
       return .failed(reason)
@@ -148,6 +152,14 @@ extension SessionController {
   private func returnToDraft(_ message: UserMessage) {
     restoreComposerPrompt(message.text)
     cancelUserSendAnimation(for: message.id)
+  }
+
+  private func returnToNewChat(_ reason: String) {
+    let withdrawn = sends.withdrawPreparing()
+    let unsentDraft = composerPromptText
+    restoreComposerPrompt((withdrawn.map(\.text) + [unsentDraft]).filter { !$0.isEmpty }.joined(separator: "\n\n"))
+    for message in withdrawn { cancelUserSendAnimation(for: message.id) }
+    handleSetupFailure(reason, returnsToNewChat: true)
   }
 
   private var unreachableReason: String {

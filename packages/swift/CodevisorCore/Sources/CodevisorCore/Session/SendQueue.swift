@@ -128,6 +128,13 @@ final class SendQueue {
     attachments.releaseSent(entry.attachmentIDs)
   }
 
+  func withdrawPreparing() -> [UserMessage] {
+    let preparing = entries.filter { $0.stage == .preparing }
+    entries.removeAll { $0.stage == .preparing }
+    attachments.returnToDraft(preparing.flatMap(\.attachmentIDs))
+    return preparing.map(\.message)
+  }
+
   var unsent: [Unsent] {
     entries.map { Unsent(message: $0.message, route: $0.route, delivery: $0.delivery) }
   }

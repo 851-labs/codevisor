@@ -30,21 +30,6 @@
     }
   },
   {
-    "text": "  @ViewBuilder func newChatSheet(_ flow: NewChatFlow) -> some View {",
-    "violation": {
-      "location": {
-        "character": 16,
-        "file": "apps/ios/Codevisor/Features/Home/HomeView+NewChat.swift",
-        "line": 286
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func hoistedPresentations<Content: View>(_ content: Content) -> some View {",
     "violation": {
       "location": {
@@ -255,21 +240,6 @@
     }
   },
   {
-    "text": "  private func adoptSession(",
-    "violation": {
-      "location": {
-        "character": 11,
-        "file": "apps/ios/Codevisor/Features/Workspace/WorkspaceScreen+Connection.swift",
-        "line": 109
-      },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 70 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "  func paneContent(_ pane: PaneDescriptorState) -> some View {",
     "violation": {
       "location": {
@@ -352,7 +322,7 @@
         "file": "apps/macos/Codevisor/Features/Session/NewChat/NewChatView.swift",
         "line": 298
       },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 142 lines",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 133 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

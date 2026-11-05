@@ -98,7 +98,7 @@ extension SessionController {
       return .failed(failure, returnsToNewChat: false)
     }
     if let failure = await createRequestedSandbox(showsSetupPhases: showsSetupPhases) {
-      return .failed(failure, returnsToNewChat: false)
+      return .returnsToNewChat(failure)
     }
     if let failure = await createRequestedWorktree(showsSetupPhases: showsSetupPhases) {
       return .failed(failure, returnsToNewChat: showsSetupPhases && !SessionSetupGroup.startedSandbox(in: setupPhases))
@@ -121,6 +121,9 @@ extension SessionController {
       restoreComposer()
       isSubmitting = false
       status = .failed(message)
+    case let .returnsToNewChat(message):
+      restoreComposer()
+      handleSetupFailure(message, returnsToNewChat: true)
     case let .failed(message, returnsToNewChat):
       restoreComposer()
       handleSetupFailure(message, returnsToNewChat: returnsToNewChat)

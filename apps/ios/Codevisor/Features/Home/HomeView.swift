@@ -27,6 +27,7 @@ struct HomeView: View {
   @State var presentedNewChatFlow: NewChatFlow?
   @State var newChatSheetPath = NavigationPath()
   @State var newChatComposerBlocksDismiss = false
+  @State var reopensNewChatOnServerId: String?
   @State var navigation = HomeNavigationState()
   @State var layoutMode: HomeLayoutMode = .stack
   @State var barsAreVertical = false

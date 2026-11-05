@@ -115,12 +115,23 @@ final class ChatControllerCache {
     controller.applyComposerDefaults()
     controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
+    keepAsDraft(controller, slotServerId: slotServerId, environment: environment)
+    return controller
+  }
+
+  func returnToDraft(_ controller: SessionController, from session: ChatSession, environment: AppEnvironment) {
+    let key = Key(serverId: session.serverId, id: session.id)
+    setController(nil, for: key)
+    accessOrder.removeAll { $0 == key }
+    keepAsDraft(controller, slotServerId: controller.project.serverId, environment: environment)
+  }
+
+  private func keepAsDraft(_ controller: SessionController, slotServerId: String, environment: AppEnvironment) {
     controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
       drafts?.saveDraft(draft, forServer: slotServerId)
     }
     environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: slotServerId)
     draftsByServer[slotServerId] = controller
-    return controller
   }
 
   func register(

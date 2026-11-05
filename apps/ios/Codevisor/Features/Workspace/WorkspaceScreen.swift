@@ -25,6 +25,7 @@ struct WorkspaceScreen: View {
   var onInitialComposerFocusRequestFulfilled: ((UUID) -> Void)? = nil
   var onDraftWillStart: (() -> Void)? = nil
   var onDraftStarted: ((UUID) -> Void)? = nil
+  var onDraftFailed: ((ChatSession) -> Void)? = nil
   var onDismissNewChat: (() -> Void)? = nil
   var onWorkspaceReady: ((UUID) -> Void)? = nil
   var transcriptPresentationRole: TranscriptPresentationRole = .foreground

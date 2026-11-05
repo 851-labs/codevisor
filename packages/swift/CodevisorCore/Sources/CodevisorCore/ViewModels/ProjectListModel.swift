@@ -114,6 +114,10 @@ public final class ProjectListModel {
     enqueue(.deleteSession(sessionId: session.id), serverId: session.serverId)
   }
 
+  public func withdrawExpectedSession(_ session: ChatSession) {
+    navigationStore?.withdrawExpectedSession(session.id, machineId: session.serverId)
+  }
+
   public func removeAll() {
     for project in projects where project.serverId == CodevisorMachine.local.id { removeProject(project) }
   }

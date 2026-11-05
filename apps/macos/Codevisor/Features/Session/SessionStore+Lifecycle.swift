@@ -61,6 +61,13 @@ extension SessionStore {
     )
   }
 
+  func discardUnstartedChat(_ session: ChatSession) {
+    let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
+    discard(session)
+    environment.projectList.withdrawExpectedSession(session)
+    if let workspaceId { environment.workspaces.delete(id: workspaceId) }
+  }
+
   func detachCenterLeaves(for session: ChatSession) {
     guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id) else { return }
     for (key, model) in centerLeafGroups where key.workspaceId == workspaceId {

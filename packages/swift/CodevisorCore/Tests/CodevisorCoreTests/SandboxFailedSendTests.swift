@@ -9,40 +9,55 @@ import TranscriptKit
 @MainActor
 @Suite("A send whose sandbox fails to start")
 struct SandboxFailedSendTests {
-  @Test("The message stays in the chat as Not Delivered, and Try Again starts the sandbox again")
-  func retryResendsTheFailedMessage() async throws {
-    let client = FailingSandboxServerClient()
+  @Test("A sandbox the server refuses goes back to New Chat with the message, its attachments, and the reason")
+  func refusedSandboxReturnsToNewChat() async throws {
+    let reason = "Pause after must be one of 15 min, 30 min, 1 hr, 4 hr"
+    let client = FailingSandboxServerClient(refusal: .httpStatus(400, #"{"error":"\#(reason)"}"#))
     let controller = makeController(client: client)
+    controller.attachments.restore([try attachment(in: controller.attachmentFiles)])
+    var didFailSetup = false
+    controller.onSetupFailed = { didFailSetup = true }
 
     await controller.send()
-    let held = try #require(controller.transcriptProjectionInput.pendingUserMessage)
-    let failed = TranscriptDelivery.failed(reason: "Couldn't connect to the dev cloud")
-    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == failed }
-    await controller.retryUnsentMessage(id: held.id)
-    await client.creates.wait(for: 2)
-    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == failed }
+    await awaitObserved { controller.status == .failed(reason) }
 
-    #expect(held.text == "Which machine are you running on?")
-    #expect(controller.transcriptProjectionInput.pendingUserMessage?.id == held.id)
-    #expect(controller.pendingUserMessage == nil)
-    #expect(controller.composerText.isEmpty)
-    #expect(!controller.shouldShowNewChatComposer)
+    #expect(didFailSetup)
+    #expect(controller.shouldShowNewChatComposer)
+    #expect(!controller.hasAcceptedFirstSend)
+    #expect(controller.transcriptProjectionInput.pendingUserMessage == nil)
+    #expect(controller.setupPhases.isEmpty)
+    #expect(controller.composerText == "Which machine are you running on?")
+    #expect(controller.composerAttachments.map(\.name) == ["note.txt"])
   }
 
-  @Test("A sandbox that can't be reached after it starts fails its connect step and the message")
-  func connectFailureFailsTheMessage() async throws {
+  @Test("Sending again after a refused sandbox asks for a new sandbox and comes back the same way")
+  func sendingAgainStartsANewSandbox() async throws {
+    let refused = SessionController.Status.failed("Tart isn't running")
+    let client = FailingSandboxServerClient(refusal: .httpStatus(503, #"{"error":"Tart isn't running"}"#))
+    let controller = makeController(client: client)
+    await controller.send()
+    await awaitObserved { controller.status == refused }
+
+    await controller.send()
+    await client.creates.wait(for: 2)
+    await awaitObserved { controller.status == refused }
+
+    #expect(controller.shouldShowNewChatComposer)
+    #expect(controller.transcriptProjectionInput.pendingUserMessage == nil)
+    #expect(controller.composerText == "Which machine are you running on?")
+  }
+
+  @Test("A sandbox that starts but can't be reached also goes back to New Chat with the reason")
+  func connectFailureReturnsToNewChat() async throws {
     let client = FailingSandboxServerClient(state: "ready")
     let controller = makeController(client: client)
 
     await controller.send()
-    let held = try #require(controller.transcriptProjectionInput.pendingUserMessage)
-    let reason = "The Tart VM didn't report where its project is"
-    await awaitObserved { controller.transcriptProjectionInput.deliveries[held.id] == .failed(reason: reason) }
+    await awaitObserved { controller.status == .failed("The Tart VM didn't report where its project is") }
 
-    let connect = controller.setupPhases.first { $0.id == SandboxSetupSteps.phaseId(.connect) }
-    #expect(connect?.failureMessage == reason)
-    #expect(controller.status == .idle)
-    #expect(controller.composerText.isEmpty)
+    #expect(controller.shouldShowNewChatComposer)
+    #expect(controller.transcriptProjectionInput.pendingUserMessage == nil)
+    #expect(controller.composerText == "Which machine are you running on?")
   }
 
   @Test("A worktree that fails on the started sandbox keeps the chat and its steps, and Try Again tries it again")
@@ -78,6 +93,16 @@ struct SandboxFailedSendTests {
     #expect(!controller.wantsNewWorktree)
   }
 
+  private func attachment(in files: ComposerAttachmentFileStore) throws -> ComposerAttachment {
+    let id = UUID()
+    return ComposerAttachment(
+      id: id, name: "note.txt", mimeType: "text/plain", kind: .file,
+      fileURL: try files.stage(data: Data("note".utf8), id: id, name: "note.txt"),
+      state: .uploaded(
+        ServerAttachmentRef(fileId: "file-1", name: "note.txt", mimeType: "text/plain", sizeBytes: 4, kind: .file))
+    )
+  }
+
   private func makeController(client: FailingSandboxServerClient) -> SessionController {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/hello-world"), serverId: "local")
     let controller = SessionController(
@@ -100,16 +125,19 @@ private final class FailingSandboxServerClient: CodevisorServerClienting, @unche
   let creates = TestSignal()
   let worktrees = TestSignal()
   private let state: String
+  private let refusal: CodevisorServerClientError?
   private let lock = NSLock()
   private var created: [String] = []
 
-  init(state: String = "failed") {
+  init(state: String = "failed", refusal: CodevisorServerClientError? = nil) {
     self.state = state
+    self.refusal = refusal
   }
 
   func createSandbox(_ request: ServerSandboxRequest) async throws -> ServerSandbox {
-    lock.withLock { created.append(request.id) }
     creates.signal()
+    if let refusal { throw refusal }
+    lock.withLock { created.append(request.id) }
     return ServerSandbox(id: request.id, vendor: "tart", name: "Tart", state: "creating")
   }
 

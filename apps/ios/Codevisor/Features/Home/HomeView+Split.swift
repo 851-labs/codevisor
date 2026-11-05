@@ -94,6 +94,7 @@ extension HomeView {
       initialComposerFocusRequest: parameters.isDraft ? detailComposerFocusRequest : nil,
       onInitialComposerFocusRequestFulfilled: consumeDetailFocusRequest,
       onDraftStarted: handleDraftStarted,
+      onDraftFailed: returnToNewChat(afterFailed:),
       onWorkspaceReady: markPromotedWorkspaceReady,
       transcriptPresentationRole: .foreground,
       onSendAnimationCompleted: { _ in commitPendingDraftPromotion(reason: "sendAnimation") }

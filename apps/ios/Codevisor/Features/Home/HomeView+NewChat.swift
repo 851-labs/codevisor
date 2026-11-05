@@ -263,7 +263,7 @@ extension HomeView {
     }
   }
 
-  private func finishNewChatPromotionWithoutAnimation(_ flow: NewChatFlow, reason: String) {
+  func finishNewChatPromotionWithoutAnimation(_ flow: NewChatFlow, reason: String) {
     guard newChatFlow === flow, flow.sessionId != nil else { return }
     IOSNavigationDiagnostics.record("home.newChatPromotion.fallback", "reason=\(reason)")
     flow.promotionWatchdog.cancel()
@@ -287,31 +287,8 @@ extension HomeView {
     NewChatObservedContent(flow: flow) { liveFlow in
       AnyView(
         NavigationStack(path: $newChatSheetPath) {
-          WorkspaceScreen(
-            sessionId: nil,
-            serverId: liveFlow.requestedServerId,
-            isNewChatPresentation: true,
-            isPromotingNewChat: liveFlow.hasStartedExpansion,
-            promotionNavigationTitle: liveFlow.promotionNavigationTitle,
-            initialComposerFocusRequest: liveFlow.composerFocusRequest,
-            onInitialComposerFocusRequestFulfilled:
-              liveFlow.consumeFocusRequest,
-            onDraftWillStart: { beginNewChatExpansion(liveFlow) },
-            onDraftStarted: {
-              beginNewChatPromotion($0, flow: liveFlow)
-            },
-            onDismissNewChat: { cancelNewChat(liveFlow) },
-            transcriptPresentationRole: .foreground,
-            onSendAnimationCompleted: {
-              markFirstSendAnimationCompleted($0, flow: liveFlow)
-            },
-            onSendAnimationStarted: { _ in
-              markFirstSendAnimationStarted(liveFlow)
-            },
-            composerTextEditorHandoffRole: .promotionSource,
-            composerTextEditorHandoffID: liveFlow.id
-          )
-          .detectsVerticalBars()
+          newChatWorkspaceScreen(liveFlow)
+            .detectsVerticalBars()
         }
         .background {
           NewChatPresentationReader { session in
@@ -337,6 +314,34 @@ extension HomeView {
     .interactiveDismissDisabled(flow.isPromoting || newChatComposerBlocksDismiss)
   }
 
+  private func newChatWorkspaceScreen(_ liveFlow: NewChatFlow) -> WorkspaceScreen {
+    WorkspaceScreen(
+      sessionId: nil,
+      serverId: liveFlow.requestedServerId,
+      isNewChatPresentation: true,
+      isPromotingNewChat: liveFlow.hasStartedExpansion,
+      promotionNavigationTitle: liveFlow.promotionNavigationTitle,
+      initialComposerFocusRequest: liveFlow.composerFocusRequest,
+      onInitialComposerFocusRequestFulfilled:
+        liveFlow.consumeFocusRequest,
+      onDraftWillStart: { beginNewChatExpansion(liveFlow) },
+      onDraftStarted: {
+        beginNewChatPromotion($0, flow: liveFlow)
+      },
+      onDraftFailed: returnToNewChat(afterFailed:),
+      onDismissNewChat: { cancelNewChat(liveFlow) },
+      transcriptPresentationRole: .foreground,
+      onSendAnimationCompleted: {
+        markFirstSendAnimationCompleted($0, flow: liveFlow)
+      },
+      onSendAnimationStarted: { _ in
+        markFirstSendAnimationStarted(liveFlow)
+      },
+      composerTextEditorHandoffRole: .promotionSource,
+      composerTextEditorHandoffID: liveFlow.id
+    )
+  }
+
   private func cancelNewChat(_ flow: NewChatFlow) {
     guard newChatFlow === flow else { return }
     if flow.sessionId != nil {
@@ -357,6 +362,7 @@ extension HomeView {
     newChatComposerBlocksDismiss = false
     guard let flow = newChatFlow else {
       resetNewChatPresentation()
+      reopenNewChatAfterSetupFailure()
       return
     }
     guard flow.phase == .composing else {
@@ -370,6 +376,28 @@ extension HomeView {
 
   private func resetNewChatPresentation() {
     newChatSheetPath = NavigationPath()
+  }
+
+  func returnToNewChat(afterFailed session: ChatSession) {
+    guard layoutMode != .split else {
+      pendingDraftPromotion = nil
+      selectDetail(.newChat(serverId: session.serverId))
+      return
+    }
+    guard let flow = newChatFlow else {
+      path.removeAll { $0.anchorSessionId == session.id }
+      presentNewChat(serverId: session.serverId)
+      return
+    }
+    reopensNewChatOnServerId = session.serverId
+    finishNewChatPromotionWithoutAnimation(flow, reason: "setup-failed")
+    path.removeAll { $0.anchorSessionId == session.id }
+  }
+
+  private func reopenNewChatAfterSetupFailure() {
+    guard let serverId = reopensNewChatOnServerId else { return }
+    reopensNewChatOnServerId = nil
+    presentNewChat(serverId: serverId)
   }
 
   func shortID(_ id: UUID) -> String {

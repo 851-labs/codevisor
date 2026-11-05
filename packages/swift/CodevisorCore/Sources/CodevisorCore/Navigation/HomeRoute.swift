@@ -18,4 +18,9 @@ public enum HomeRoute: Hashable, Sendable {
     if case .newChat = self { return true }
     return false
   }
+
+  public var anchorSessionId: UUID? {
+    guard case let .workspace(_, _, anchorSessionId, _, _, _) = self else { return nil }
+    return anchorSessionId
+  }
 }

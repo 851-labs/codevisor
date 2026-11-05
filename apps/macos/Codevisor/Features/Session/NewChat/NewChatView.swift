@@ -397,17 +397,8 @@ struct NewChatView: View {
       }
       controller.onSetupFailed = { [weak controller] in
         guard let controller else { return }
-        controller.serverSession = nil
-        controller.onAgentSessionCreated = nil
-        let owningPaneId = store.paneDraftLocation(for: session)?.paneId
-        if let failedPaneId = owningPaneId ?? paneDraftId {
-          store.restorePaneDraftPersistence(
-            controller,
-            paneId: failedPaneId
-          )
-        } else {
-          store.restoreDraftPersistence(controller)
-        }
+        NewChatSetupFailure(store: store, paneDraftId: paneDraftId).recover(controller, startedAs: session)
+        if paneDraftId == nil { selection = .newChat(NewChatTarget(controller.project)) }
       }
       store.register(controller, for: session)
       if let paneDraftId, let onCreatedInPane {

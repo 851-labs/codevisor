@@ -5,6 +5,12 @@ struct SandboxSetupError: LocalizedError {
   var errorDescription: String? { message }
 }
 
+private struct SandboxOrigin {
+  let project: Project
+  let client: (any CodevisorServerClienting)?
+  let target: SandboxTarget
+}
+
 extension SessionController {
   private static let agentStallLimit = Duration.seconds(180)
   private static let agentWaitLimit = Duration.seconds(30 * 60)
@@ -28,6 +34,7 @@ extension SessionController {
     guard let prewarm = takeSandboxPrewarm(for: target, client: creator) else {
       return "Choose a project to run on a \(target.machineNoun)."
     }
+    let origin = SandboxOrigin(project: project, client: serverClient, target: target)
     let tracker = SandboxSetupTracker(
       controller: self, steps: sandboxSteps(for: target), showsPhases: showsSetupPhases)
     status = .connecting(tracker.steps.status(.create))
@@ -44,8 +51,17 @@ extension SessionController {
       let message = serverErrorMessage(error)
       tracker.failCurrent(message)
       try? await client.destroySandbox(id: prewarm.machineId)
+      await leaveSandbox(for: origin)
       return message
     }
+  }
+
+  private func leaveSandbox(for origin: SandboxOrigin) async {
+    guard sandboxTarget == nil, let client = origin.client else { return }
+
+    handOff(to: origin.project, serverClient: client)
+    sandboxTarget = origin.target
+    await refreshHarnessCapabilities()
   }
 
   private func unreachableHostMessage(for target: SandboxTarget) -> String {
